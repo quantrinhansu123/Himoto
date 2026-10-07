@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownToLine, RotateCcw, Search, X } from 'lucide-react';
 import { CashbookRow, EMPTY_CASHBOOK_FILTERS, CashbookFilters, actorKey, cashbookCsv, filterCashbookRows } from '@/lib/management/cashbook';
-import { createApiCashbookRepository, createDemoCashbookRepository } from '@/lib/management/cashbook-repository';
+import { createApiCashbookRepository } from '@/lib/management/cashbook-repository';
 import { useManagement } from './ManagementProvider';
 import { CashbookTable } from './CashbookTable';
 
 export function CashbookPage() {
   const { source, selectedStore, selectStore, notify } = useManagement();
-  const repository = useMemo(() => source === 'api' ? createApiCashbookRepository(process.env.NEXT_PUBLIC_API_URL || '/api') : createDemoCashbookRepository(), [source]);
+  const repository = useMemo(() => createApiCashbookRepository('/api'), []);
   const [records, setRecords] = useState<CashbookRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,7 +41,7 @@ export function CashbookPage() {
     const url = URL.createObjectURL(new Blob(['\uFEFF', cashbookCsv(filtered)], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a'); link.href = url; link.download = `himoto-so-quy-${source}.csv`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify(`Đã xuất ${filtered.length} phiếu${source === 'demo' ? ' dữ liệu mẫu' : ''}.`);
+    notify(`Đã xuất ${filtered.length} phiếu.`);
   }
   return <section className="mg-page mg-cashbook-page" aria-label="Sổ quỹ / Sổ két"><div className="mg-page-content">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ THU — CHI <span>/</span> 06</div><h1>Sổ quỹ / Sổ két<span className="mg-title-count">{loading || error ? '—' : records.length}</span></h1><p>Tra cứu phiếu thu và phiếu chi theo cùng một cấu trúc dữ liệu.</p></div>
@@ -56,6 +56,6 @@ export function CashbookPage() {
       <a href="#cashbook-expense"><span className="mg-cashbook-count-marker is-expense" /><span>Phiếu chi</span><strong>{loading || error ? '—' : expense.length}</strong><span className="mg-cashbook-jump">Xem bảng ↓</span></a></div>
     <div className="mg-cashbook-tables"><CashbookTable type="income" rows={income} loading={loading} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} />
       <CashbookTable type="expense" rows={expense} loading={loading} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} /></div>
-    <div className="mg-list-note"><span className="mg-note-line" />{source === 'demo' ? 'Dữ liệu phiếu minh họa để duyệt giao diện.' : 'Sổ quỹ đọc từ danh sách giao dịch hiện có. Trường chưa được API cung cấp hiển thị “—”.'}</div>
+    <div className="mg-list-note"><span className="mg-note-line" />Sổ quỹ đọc từ danh sách giao dịch hiện có. Trường chưa có dữ liệu hiển thị “—”.</div>
   </div></section>;
 }

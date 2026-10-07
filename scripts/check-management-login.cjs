@@ -73,13 +73,26 @@ async function run() {
   session.clearLoginLimit(email);
   checks.push('login throttling is case-insensitive and allows retry after the interval');
 
-  const previousEnv = { NODE_ENV: process.env.NODE_ENV, NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE: process.env.NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE, NEXT_PUBLIC_MANAGEMENT_API_MODE: process.env.NEXT_PUBLIC_MANAGEMENT_API_MODE };
+  const previousEnv = { NODE_ENV: process.env.NODE_ENV, NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE: process.env.NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE, NEXT_PUBLIC_MANAGEMENT_API_MODE: process.env.NEXT_PUBLIC_MANAGEMENT_API_MODE, DATABASE_URL: process.env.DATABASE_URL, SUPABASE_DATABASE_URL: process.env.SUPABASE_DATABASE_URL, MANAGEMENT_SESSION_SECRET: process.env.MANAGEMENT_SESSION_SECRET };
   try {
     process.env.NODE_ENV = 'production';
     process.env.NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE = 'api';
     process.env.NEXT_PUBLIC_MANAGEMENT_API_MODE = 'supabase-local';
+    delete process.env.DATABASE_URL; delete process.env.SUPABASE_DATABASE_URL; delete process.env.MANAGEMENT_SESSION_SECRET;
     const request = new NextRequest('http://localhost/api/auth/customers');
-    assert.equal((await session.protectDatabaseRequest(request)).status, 404);
+    assert.equal((await session.protectDatabaseRequest(request)).status, 503);
+    process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+    assert.equal(session.isManagementConfigured(), false);
+    assert.throws(() => session.signSession(7), /MANAGEMENT_SESSION_SECRET/);
+    process.env.MANAGEMENT_SESSION_SECRET = key;
+    assert.equal(session.isManagementConfigured(), true);
+    assert.equal((await session.protectDatabaseRequest(request)).status, 401);
+    const repository = load(path.join(root, 'lib/management/repository')).createManagementRepository();
+    process.env.NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE = 'demo';
+    assert.equal(repository.source, 'api');
+    assert.equal(load(path.join(root, 'lib/management/repository')).createManagementRepository().source, 'api');
+    assert.equal(repository.supportsContractDrafts, true);
+    checks.push('production requires server credentials and a stable secret; legacy demo flags cannot activate sample data');
     process.env.NODE_ENV = 'development';
     assert.equal((await session.protectDatabaseRequest(request)).status, 401);
     assert.equal((await session.protectDatabaseRequest(new NextRequest('http://localhost/api/auth/customers', { method: 'POST', headers: { Origin: 'https://other.invalid' } }))).status, 403);
@@ -103,10 +116,46 @@ async function run() {
       assert.equal(logout.status, 200); assert.match(logout.headers.get('set-cookie'), /Max-Age=0/i);
       row = { ...account, role_id: '3', role: 'nhan-vien', role_slug: 'nhan-vien' };
       assert.equal((await handler.GET(authenticated)).status, 401);
+      process.env.NODE_ENV = 'production';
+      row = account;
+      const secureLogin = await handler.POST(new NextRequest('https://himoto.example/api/session', { method: 'POST', headers: { Host: 'himoto.example', Origin: 'https://himoto.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account.email, password }) }));
+      assert.equal(secureLogin.status, 200);
+      assert.match(secureLogin.headers.get('set-cookie'), /Secure/i);
+      const authorized = new NextRequest('https://himoto.example/api/auth/customers', { headers: { Host: 'himoto.example', Cookie: secureLogin.headers.get('set-cookie').split(';')[0] } });
+      assert.equal(await session.protectDatabaseRequest(authorized), null);
+      checks.push('production HTTPS login and protected API use real account authentication and Secure cookies');
+      const connectDescriptor = Object.getOwnPropertyDescriptor(pool, 'connect');
+      const writes = [];
+      const client = { query: async (sql, values) => {
+        writes.push({ sql, values });
+        return { rows: sql.includes('INSERT INTO himoto.customers') ? [{ id: 99 }] : [], rowCount: 0 };
+      }, release() {} };
+      Object.defineProperty(pool, 'connect', { configurable: true, value: async () => client });
+      try {
+        const customers = load(path.join(root, 'app/api/auth/[...path]/route'));
+        const cookieHeader = secureLogin.headers.get('set-cookie').split(';')[0];
+        const send = (body, apiPath = ['customers']) => customers.POST(new NextRequest('https://himoto.example/api/auth/' + apiPath.join('/'), {
+          method: 'POST', headers: { Host: 'himoto.example', Origin: 'https://himoto.example', Cookie: cookieHeader, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        }), { params: Promise.resolve({ path: apiPath }) });
+        const customer = { name: 'QA Customer', phone: '0900000001', id_card: '001234567890', address: 'QA Address', status: 'warning', store_id: 2, warning_note: 'QA warning' };
+        assert.equal((await send(customer)).status, 201);
+        const insert = writes.find(write => write.sql.includes('INSERT INTO himoto.customers'));
+        assert.match(insert.sql, /store_id, warning/);
+        assert.deepEqual(insert.values.slice(5), [1, 2, 'QA warning']);
+        assert.equal(writes.at(-1).sql, 'COMMIT');
+        writes.length = 0;
+        assert.equal((await send({ ...customer, status: 'blacklist', warning_note: '' })).status, 201);
+        assert.deepEqual(writes.find(write => write.sql.includes('INSERT INTO himoto.customers')).values.slice(5), [2, 2, 'Blacklist']);
+        writes.length = 0;
+        assert.equal((await send({ ...customer, warning_note: '' })).status, 400);
+        assert.equal((await send({}, ['hr', 'staff', 'refill-branches'])).status, 404);
+        assert.equal(writes.length, 0);
+      } finally { Object.defineProperty(pool, 'connect', connectDescriptor); }
+      checks.push('customer API binds branch/status/warning correctly; invalid warnings and removed bulk staff writes never open a transaction (mock database only)');
       checks.push('login handler issues an HttpOnly cookie without password data; session lookup and logout work');
     } finally { Object.defineProperty(pool, 'query', queryDescriptor); }
   } finally { for (const [name, value] of Object.entries(previousEnv)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; } }
-  checks.push('production database access stays disabled; anonymous and cross-origin requests are rejected');
+  checks.push('missing configuration, anonymous and cross-origin requests are rejected; production authentication stays enabled');
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

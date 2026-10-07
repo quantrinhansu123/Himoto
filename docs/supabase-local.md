@@ -1,20 +1,27 @@
-# Supabase data source (local development)
+# Kết nối Supabase — 07/10/2026
 
-Local development reads the existing HIMOTO records in the PostgreSQL schema `himoto` instead of the synthetic fixtures. The connection string stays in the ignored `.env.local`; the browser only calls the Next.js API routes.
+Repo chính: https://github.com/quantrinhansu123/Himoto. Không giới hạn kết nối ở môi trường development nữa; local và production đều dùng cùng Route Handlers và xác thực tài khoản DB.
 
-| Screen | Source tables |
-| --- | --- |
-| Staff | `himoto.staff_profiles`, `himoto.stores` |
-| Customers | `himoto.customers`, `himoto.stores`, `himoto.orders` |
-| Stores | `himoto.stores`, `himoto.users`, `himoto.vehicles`, `himoto.staff_profiles` |
-| Vehicles | `himoto.vehicles`, `himoto.stores` |
-| Contracts | `himoto.orders`, `himoto.order_vehicle_details`, `himoto.customers`, `himoto.vehicles`, `himoto.stores` |
-| Cashbook | `himoto.transactions`, `himoto.users` |
+## Biến môi trường phía server
 
-The adapter reads the lists from Supabase. The customer page can create and update records in `himoto.customers`, and delete records that have no related orders. Deletion is rejected when orders reference the customer so rental history stays intact. Duplicate identity numbers are rejected. The contract composer creates customers against the selected store and searches by identity number or phone within that store; existing unassigned customer records are associated through their non-deleted orders. With `NEXT_PUBLIC_MANAGEMENT_API_MODE=supabase-local`, the composer creates and updates unfinished contract drafts in the existing `himoto.orders` draft fields, with revision checks to reject stale edits. Issued contracts, payments, deposits, and vehicle states are not changed. See [contract drafts](contract-drafts.md). Vehicle daily/monthly rental prices remain empty because the current schema does not provide a confirmed mapping for those fields.
+- `DATABASE_URL`: chuỗi PostgreSQL trong Supabase → Connect → Transaction pooler, cổng 6543. `SUPABASE_DATABASE_URL` được chấp nhận nếu chưa có `DATABASE_URL`.
+- `MANAGEMENT_SESSION_SECRET`: chuỗi ngẫu nhiên ít nhất 32 ký tự, dùng chung và giữ ổn định giữa các instance. Thiếu hoặc quá ngắn trong production sẽ chặn đăng nhập/API.
+- `DATABASE_SSL_CA`: tùy chọn PEM CA bổ sung; root CA công khai của Supabase đã có trong source. Kết nối luôn xác minh CA và hostname, không dùng `rejectUnauthorized: false`.
 
-Open `/login` and use an active HIMOTO administrator account. Passwords are checked against the existing bcrypt hashes in `himoto.users`; no account, password, or schema is changed. The local integration currently returns full datasets and therefore rejects non-administrator accounts until branch and feature permissions are implemented. An HttpOnly, SameSite=Strict signed cookie lasts eight hours; each database request checks that the account is still active and authorized. Mutations require a same-origin request. Logout clears the cookie.
+Đặt ở `.env.local` khi chạy local; đặt ở Environment Variables của đúng project Vercel khi triển khai. Không đặt mật khẩu DB hoặc session secret vào biến `NEXT_PUBLIC_*`, Git, ảnh QA hay tài liệu. Không cần Data API key vì truy vấn chạy phía server bằng `pg`.
 
-The API routes still return 404 outside `NODE_ENV=development`. The dev server binds to `127.0.0.1`. Public deployments show the login design with **Xem bản demo** and never accept real credentials or open the database. Before enabling database reads in a public deployment, implement the required authorization scopes and use the project's CA certificate for full TLS server verification. PostgreSQL `sslmode=require` encrypts the connection but does not verify the server certificate or hostname ([Supabase SSL documentation](https://supabase.com/docs/guides/database/connecting-to-postgres)).
+Ứng dụng luôn dùng API `/api` cùng origin, không chọn fixture theo cờ môi trường và không fallback khi lỗi. Pool có tối đa 4 kết nối mỗi instance, idle timeout 5 giây; dùng `attachDatabasePool` trên Vercel để thu hồi kết nối trước khi instance nghỉ. SQL không dùng named prepared statements, phù hợp transaction pooler.
 
-For a stable local session across server restarts, set a randomly generated `MANAGEMENT_SESSION_SECRET` in the ignored `.env.local`. Without it, the dev server generates an in-memory key; restarting the server signs out local users. Login attempts are limited to ten per email in fifteen minutes within the running server process.
+## Phạm vi dữ liệu
+
+Schema hiện có là `himoto`; không chạy migration, seed, thay schema hoặc chép DB. Mỗi request cần phiên đăng nhập của quản trị viên đang hoạt động. Quyền theo từng cơ sở cho tài khoản nhân viên chưa được triển khai, nên tài khoản không phải quản trị bị từ chối.
+
+Danh mục/sổ quỹ lấy trực tiếp từ DB. Khách hàng tạo/sửa/xóa qua API hiện có; hồ sơ có đơn thuê không được xóa. Log lưu và cập nhật `orders.order_status='draft'`, giữ snapshot và kiểm tra revision; không cập nhật hợp đồng đã phát hành, không sinh giao dịch hay đổi tình trạng xe. API sửa nhân sự/cơ sở/xe và sao chép hợp đồng đã phát hành chưa có, nên giao diện chỉ cho đọc các phần này.
+
+Sơ đồ nhân sự đọc `staff_profiles` và `stores`, không chứa danh sách điện thoại cố định trong code. Nút Làm mới chỉ đọc lại DB; endpoint gán cơ sở hàng loạt bằng danh sách cố định đã bỏ.
+
+## Đối chiếu chỉ đọc ngày 07/10/2026
+
+Kết nối transaction pooler với TLS xác minh đầy đủ đạt. Tại thời điểm kiểm tra: 25 nhân sự, 6 cơ sở, 2.418 khách hàng, 2.691 hợp đồng chưa xóa, 172 xe và 8.844 giao dịch. Số liệu có thể thay đổi khi hệ thống vận hành. Không dùng các con số này làm fixture hay giới hạn danh sách.
+
+Nguồn: [kết nối PostgreSQL](https://supabase.com/docs/guides/database/connecting-to-postgres), [xác minh TLS](https://supabase.com/docs/guides/platform/ssl-enforcement), [pool cho Vercel](https://vercel.com/kb/guide/efficiently-manage-database-connection-pools-with-fluid-compute).

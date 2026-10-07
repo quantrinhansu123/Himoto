@@ -1,1 +1,1 @@
-{"framework":"nextjs","buildCommand":"npm run build","installCommand":"npm ci","env":{"NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE":"demo","NEXT_PUBLIC_RENTAL_APP_URL":"https://himoto-web.onrender.com/car-rental"}}
+{"framework":"nextjs","buildCommand":"npm run build","installCommand":"npm ci","regions":["sin1"]}

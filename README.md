@@ -1,43 +1,36 @@
 # HIMOTO Management
 
-Frontend Next.js + TypeScript cho các màn dạng bảng: Nhân sự, Khách hàng, Hợp đồng (tra cứu, sao chép, sửa và in nháp), Cơ sở, Danh sách xe và Sổ quỹ / Sổ két.
+Ứng dụng quản lý HIMOTO bằng Next.js 15, React 19 và TypeScript.
+Repo chính: https://github.com/quantrinhansu123/Himoto.
+Mã cục bộ: `E:\Himoto`.
 
-Demo: **https://himoto-management.vercel.app**. Repo private: https://github.com/huybitvvt/himoto-management. Vercel đã kết nối repo, nhánh `main`.
+## Chạy local
 
-```bash
-npm ci
-npm run dev
-npm run typecheck
-npm run lint:management
-npm run test:management
-npm run test:contracts
-npm run test:clone
-npm run test:cashbook
-npm run test:drafts
-npm run test:login
-npm run build
+```powershell
+npm.cmd ci
+# Tạo .env.local từ .env.example và điền thông tin Supabase phía server.
+npm.cmd run dev
 ```
 
-Mở http://localhost:3000 để vào màn đăng nhập với ảnh nền HIMOTO. Mặc định dùng dữ liệu mẫu qua nút **Xem bản demo**. Bản nháp hợp đồng giữ trong trình duyệt qua lần tải lại; các thay đổi mẫu khác chỉ giữ trong phiên. Có thể kết nối Supabase khi chạy local bằng `.env.local` và đăng nhập tài khoản quản trị hiện có; xem [đăng nhập](docs/login.md) và [cấu hình Supabase](docs/supabase-local.md). Secret không được đưa vào repo.
+Mở http://127.0.0.1:3000/login và đăng nhập bằng tài khoản quản trị đang hoạt động trong `himoto.users`. Ứng dụng luôn dùng Supabase thật, không có nút vào demo hoặc tự thay dữ liệu mẫu khi lỗi. Không cần các biến `NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE`, `NEXT_PUBLIC_MANAGEMENT_API_MODE` hoặc proxy sang web cũ.
 
-Module đơn thuê xe không được xây dựng lại. Component đọc chi tiết của module cũ được dùng lại ngay trong trang quản lý.
+Frontend gọi `/api` cùng domain; Route Handlers phía server truy cập schema `himoto` qua PostgreSQL pooler. Trình duyệt không nhận thông tin kết nối DB. Danh sách gồm nhân sự, khách hàng, hợp đồng, cơ sở, xe và sổ quỹ. Sơ đồ nhân sự được dựng từ danh mục DB hiện tại.
 
-Tại **Danh sách hợp đồng → Điền và in hợp đồng**, chọn cơ sở để lọc dropdown nhân sự; nhập `DEMO-000001` để thử auto-fill toàn bộ hồ sơ khách hàng. CCCD 12 số / CMND 9 số chưa có sẽ mở popup tạo khách hàng ngay tại màn hình. Mẫu in cũ A4 ngang được chuyển nguyên nội dung/bố cục, tự đổ thông tin và có phụ lục khi chọn nhiều xe. Có thể in hoặc lưu PDF bằng hộp thoại in. Bản soạn là nháp, không cấp số hoặc tạo đơn thuê xe.
+Khách hàng hỗ trợ tạo/cập nhật hồ sơ, cơ sở, trạng thái và cảnh báo; xóa bị chặn khi có liên kết với đơn thuê. Hợp đồng hỗ trợ soạn, lưu bản nháp vào DB, mở Log để tiếp tục và in. Hợp đồng đã phát hành chỉ tra cứu/in; chưa nối sao chép hoặc cập nhật hợp đồng đã phát hành. Sổ quỹ chỉ đọc. Không triển khai nghiệp vụ cọc, giao/trả xe, thanh toán hay tất toán.
 
-Nút **Sao chép hợp đồng** tạo ngay bản ghi mẫu có ID/mã mới, giữ nguyên dữ liệu và mở form sửa. Lưu giữ cả hồ sơ khách, nhiều xe và thông tin in; mở lại không bị ghi đè bởi danh mục. Khách hàng có **Blacklist (khách nợ xấu)** và dropdown cơ sở từ danh mục chung, gồm cả popup thêm khách trên hợp đồng. Xem [chi tiết sao chép và trường khách hàng](docs/contract-clone.md).
+## Kiểm tra
 
-**Sổ quỹ / Sổ két** tại `/cashbook` có hai bảng Phiếu thu/Phiếu chi với cùng bảy cột: ID, Ngày, Giờ, Loại phiếu, Người thực hiện, Lý do, Nội dung. Tìm kiếm và bộ lọc chung, sắp xếp/phân trang riêng; xuất CSV và cuộn ngang bảng trên điện thoại. Xem [giao diện và API chỉ đọc](docs/cashbook.md).
+```powershell
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run test:login
+npm.cmd run test:management
+npm.cmd run test:contracts
+npm.cmd run test:drafts
+npm.cmd run test:cashbook
+npm.cmd run build
+```
 
-Cấu hình Vercel đã có trong `vercel.json`, chạy `vercel --prod`. Bản công khai chỉ dùng dữ liệu mẫu. API thật cần tích hợp và xác minh DTO trước khi bật. Xem [ghi chú triển khai và API](docs/implementation.md), [ảnh giao diện](docs/qa).
+Fixture còn trong source để kiểm tra tự động; chúng không được chọn làm nguồn dữ liệu của ứng dụng. Các tài liệu/ảnh QA demo cũ là lịch sử kiểm tra trước lần kết nối này.
 
-Kiểm tra browser (cần Python Playwright và Chromium): `python scripts/check-management-ui.py --output docs/qa`, `python scripts/preview-management-ui.py --output docs/qa`.
-
-Kiểm tra auto-fill/in: `python scripts/check-contract-ui.py --url http://localhost:3000` (cần thêm PyMuPDF: `pip install pymupdf`). Xem [chi tiết tích hợp](docs/contract-autofill.md).
-
-Kiểm tra sao chép và trường khách hàng: `python scripts/check-contract-clone-ui.py --url http://localhost:3000`. Kết quả: 7 nhóm dữ liệu và 8 nhóm tương tác mới đạt; 11 nhóm auto-fill/in và 8 nhóm danh mục hồi quy đạt.
-
-Kiểm tra sổ quỹ: `python scripts/check-cashbook-ui.py --url http://localhost:3000`. Kết quả: 6 nhóm dữ liệu/adapter và 7 nhóm tương tác đạt.
-
-Đã kiểm tra bản production: build, TypeScript, lint, 8 kiểm tra dữ liệu/adapter, 8 nhóm tương tác, 5 màn ở desktop 1440px và mobile 375px. Không phát hiện lỗi JavaScript hoặc request ghi API trong các ca đã chạy.
-
-![Danh sách xe trên Vercel](docs/qa/vercel/vehicles-1440.png)
+Xem [cấu hình Supabase](docs/supabase-local.md), [đăng nhập](docs/login.md) và [triển khai Vercel](docs/deployment.md).

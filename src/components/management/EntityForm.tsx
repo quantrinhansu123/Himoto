@@ -35,7 +35,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
       else if (value && field.type === 'tel' && !/^\+?\d{9,13}$/.test(value.replace(/[\s.()-]/g, ''))) nextErrors[field.key] = 'Nhập số điện thoại từ 9 đến 13 chữ số.';
       else if (value && field.type === 'number' && (!Number.isFinite(Number(value)) || Number(value) < 0 || !Number.isInteger(Number(value)))) nextErrors[field.key] = 'Nhập một số nguyên không âm.';
       if (field.storeOptions && value && !dataset?.stores.some(s => s.id === Number(value))) nextErrors[field.key] = 'Vui lòng chọn một cơ sở hợp lệ.';
-      if (field.options && value && !field.options.some(option => option.value === value)) nextErrors[field.key] = 'Giá trị chưa được hỗ trợ trong bản xem trước.';
+      if (field.options && value && !field.options.some(option => option.value === value)) nextErrors[field.key] = 'Giá trị chưa được hỗ trợ.';
     }
     if (config.kind === 'vehicles' && dataset?.vehicles.some(v => v.id !== draft.id && String(v.license).trim().toUpperCase() === String(draft.license).trim().toUpperCase())) nextErrors.license = 'Biển số này đã có trong danh sách.';
     if (config.kind === 'customers' && draft.status === 'warning' && !String(draft.warning_note || '').trim()) nextErrors.warning_note = 'Nhập ghi chú cho hồ sơ cần lưu ý.';
@@ -56,12 +56,11 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
       if (config.kind === 'customers' && source === 'api') await updateCustomer(prepared);
       else await save(config.kind, prepared);
       onClose();
-    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : source === 'api' ? 'Không lưu được thay đổi vào Supabase.' : 'Không lưu được dữ liệu mẫu.'); }
+    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Không lưu được thay đổi vào Supabase.'); }
     finally { setSaving(false); }
   }
 
-  const supabaseCustomer = config.kind === 'customers' && source === 'api';
-  return <Dialog title={`${row ? 'Chỉnh sửa' : 'Thêm'} ${config.singular}`} subtitle={`${draft.code} · ${supabaseCustomer ? 'Lưu trực tiếp vào Supabase' : 'Dữ liệu mẫu, chỉ lưu trong phiên xem trước'}`} onClose={() => { if (!saving) onClose(); }}>
+  return <Dialog title={`${row ? 'Chỉnh sửa' : 'Thêm'} ${config.singular}`} subtitle={`${draft.code} · ${'Lưu trực tiếp vào Supabase'}`} onClose={() => { if (!saving) onClose(); }}>
     <form ref={formRef} onSubmit={submit} noValidate>
       <div className="mg-dialog-body"><div className="mg-form-grid">{config.fields.map(field => {
         const options = field.storeOptions ? (dataset?.stores || []).map(store => ({ value: String(store.id), label: store.name })) : field.options;
@@ -79,7 +78,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
         </div>;
       })}</div>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}</div>
       <div className="mg-dialog-footer"><span className="mg-form-note">* Thông tin bắt buộc</span><button className="mg-button" type="button" disabled={saving} onClick={onClose}>Hủy</button>
-        <button className="mg-button mg-button-primary" type="submit" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : supabaseCustomer ? 'Lưu khách hàng' : 'Lưu dữ liệu mẫu'}</button></div>
+        <button className="mg-button mg-button-primary" type="submit" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : 'Lưu khách hàng'}</button></div>
     </form>
   </Dialog>;
 }

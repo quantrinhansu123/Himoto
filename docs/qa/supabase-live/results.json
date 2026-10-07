@@ -1,0 +1,27 @@
+{
+  "passed": 7,
+  "checks": [
+    "production requires authentication on every management route; demo entry and cross-origin writes are blocked",
+    "login is available on mobile without horizontal overflow",
+    "authenticated production APIs read all six real collections, preserve unique IDs and disable caching",
+    "all seven screens match live API counts; staff chart, customer branch/status and Log use DB data on desktop/mobile",
+    "API outages display an error, never sample data; a reload restores real records",
+    "logout removes access to protected real-data APIs",
+    "missing production configuration blocks login, management routes and APIs; demo remains unavailable"
+  ],
+  "counts_at_check": {
+    "staff": 25,
+    "customers": 2418,
+    "stores": 6,
+    "vehicles": 172,
+    "contracts": 2691,
+    "drafts": 5,
+    "transactions": 8844
+  },
+  "javascript_errors": [],
+  "business_writes": 0,
+  "environment": "http://127.0.0.1:3002",
+  "authentication_check": "existing QA administrator session; password verification covered by isolated login tests",
+  "verified_tls": true,
+  "client_bundle_secret_matches": 0
+}

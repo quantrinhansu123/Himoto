@@ -105,9 +105,9 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       const errors = validateCustomer(customer, 'api');
       if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
       if (await this.lookupCustomer(customer.id_card)) throw new Error('Số CCCD/CMND này đã có. Hãy tra cứu khách hàng thay vì tạo thêm.');
-      // The local Supabase adapter also stores the selected branch when creating from a contract.
+      // The Supabase adapter stores branch and profile status on customer creation.
       const payload = await request(READ_ENDPOINTS.customers, { method: 'POST', body: JSON.stringify({
-        name: customer.name.trim(), phone: customer.phone.trim(), email: customer.email.trim(), address: customer.address.trim(), id_card: normalizeIdCard(customer.id_card),
+        name: customer.name.trim(), phone: customer.phone.trim(), email: customer.email.trim(), address: customer.address.trim(), id_card: normalizeIdCard(customer.id_card), warning_note: customer.warning_note.trim(),
         ...(assignment ? { status: assignment.status, store_id: assignment.store_id } : {}),
       }) });
       if (!object(payload)) throw new Error('API chưa trả về hồ sơ khách hàng đã tạo. Không thể xác nhận kết quả.');

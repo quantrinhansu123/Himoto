@@ -50,16 +50,13 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
     // Opening a copied/saved contract must not replace its snapshot with today's customer profile.
     if (preserveCustomer.current) return;
     if (!draft.store_id) { setLookupState('idle'); setCustomerMatches([]); return; }
-    const idCard = normalizeIdCard(idInput);
     const controller = new AbortController(); let current = true;
     setLookupError('');
-    const demoCode = source === 'demo' && /^DEMO-[A-Z0-9-]+$/i.test(idCard);
     const lookupDigits = idInput.replace(/\D/g, '');
-    if (!demoCode && (lookupDigits.length < 9 || lookupDigits.length > 13)) { setLookupState('idle'); setCustomerMatches([]); return; }
+    if (lookupDigits.length < 9 || lookupDigits.length > 13) { setLookupState('idle'); setCustomerMatches([]); return; }
     setLookupState('loading');
     const timer = setTimeout(() => {
-      const lookup = demoCode ? contractAutofill.lookupCustomer(idCard, controller.signal).then(customer => customer && String(customer.store_id) === draft.store_id ? [customer] : [])
-        : contractAutofill.searchCustomers(lookupDigits, draft.store_id, controller.signal);
+      const lookup = contractAutofill.searchCustomers(lookupDigits, draft.store_id, controller.signal);
       void lookup.then(customers => {
         if (!current) return;
         setCustomerMatches(customers);
@@ -150,8 +147,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
   const branchStaff = staffMatchesStore(staff, draft.store_id);
   const branchVehicles = dataset?.vehicles.filter(vehicle => String(vehicle.store_id) === draft.store_id) || [];
   const representative = branchStaff.find(person => String(person.id) === draft.staff_id);
-  const canSearchCustomer = (source === 'demo' && /^DEMO-[A-Z0-9-]+$/i.test(idInput.trim())) || /^\d{9,13}$/.test(idInput.replace(/\D/g, ''));
-  const lookupText = !draft.store_id ? 'Chọn cơ sở cho thuê trước khi tra cứu khách hàng.' : lookupState === 'loading' ? 'Đang tra cứu khách hàng…' : lookupState === 'found' ? `Đã tìm thấy khách hàng #${draft.customer_id} · Thông tin đã tự động điền` : lookupState === 'matches' ? `Tìm thấy ${customerMatches.length} hồ sơ. Chọn đúng khách hàng bên dưới.` : lookupState === 'missing' ? 'Chưa có khách hàng mang giấy tờ hoặc số điện thoại này tại cơ sở đã chọn.' : source === 'demo' ? 'Nhập CCCD/CMND, số điện thoại hoặc thử DEMO-000001.' : 'Nhập CCCD/CMND hoặc số điện thoại (9–13 số) để tra cứu.';
+  const canSearchCustomer = /^\d{9,13}$/.test(idInput.replace(/\D/g, ''));
+  const lookupText = !draft.store_id ? 'Chọn cơ sở cho thuê trước khi tra cứu khách hàng.' : lookupState === 'loading' ? 'Đang tra cứu khách hàng…' : lookupState === 'found' ? `Đã tìm thấy khách hàng #${draft.customer_id} · Thông tin đã tự động điền` : lookupState === 'matches' ? `Tìm thấy ${customerMatches.length} hồ sơ. Chọn đúng khách hàng bên dưới.` : lookupState === 'missing' ? 'Chưa có khách hàng mang giấy tờ hoặc số điện thoại này tại cơ sở đã chọn.' : 'Nhập CCCD/CMND hoặc số điện thoại (9–13 số) để tra cứu.';
   function field(key: keyof Omit<ContractDraft, 'customer' | 'vehicles' | 'customer_id'>, label: string, type = 'text', required = false) {
     return <div className="mg-field" key={key}><label htmlFor={`contract-${key}`}>{label}{required && <span aria-hidden="true"> *</span>}</label>
       <input id={`contract-${key}`} name={key} type={type} value={String(draft[key])} required={required} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 1 : undefined}
@@ -166,10 +163,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
     { key: 'relatives_text', label: 'Thông tin người thân', wide: true }, { key: 'warning_note', label: 'Ghi chú / cảnh báo', wide: true },
   ];
   return <>
-    <Dialog title={editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}${source === 'demo' ? ' · Dữ liệu mẫu' : ''}` : 'Bản nháp · Chưa cấp số hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
+    <Dialog title={editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}` : 'Bản nháp · Chưa cấp số hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
       <form ref={form} noValidate onSubmit={submit}>
         <div className="mg-dialog-body mg-composer-body">
-          <div className="mg-composer-notice">{canSaveDraft ? source === 'demo' ? 'Lưu nháp giữ thông tin đang nhập trong trình duyệt này, kể cả khi chưa điền đủ. Vào mục Log để mở lại và tiếp tục sửa. Bản nháp chưa phát hành hợp đồng.' : canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Log để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách. Chỉnh sửa và lưu trong phiên dữ liệu mẫu; bản in vẫn là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
+          <div className="mg-composer-notice">{canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Log để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách; bản in là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
           <fieldset className="mg-composer-fields" disabled={saving}>
           {(mode === 'edit' || canSaveDraft) && <fieldset className="mg-composer-section"><legend>Thông tin bản ghi</legend><div className="mg-form-grid">
             {canSaveDraft ? <div className="mg-field"><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></div> : <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>}
@@ -186,7 +183,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
           </div></fieldset>
           <fieldset className="mg-composer-section"><legend><span>02</span>Thông tin khách hàng</legend>
             <div className="mg-composer-customer-actions"><button className="mg-button" type="button" disabled={!draft.store_id} onClick={openCustomerCreate}><UserPlus size={16} />Thêm mới</button></div>
-            <div className="mg-field"><label htmlFor="contract-id-card">CCCD / CMND hoặc số điện thoại *</label><div className="mg-lookup-controls"><input id="contract-id-card" autoComplete="off" value={idInput} disabled={!draft.store_id} aria-invalid={Boolean(errors.id_card)} aria-describedby="contract-lookup-status" placeholder={!draft.store_id ? 'Chọn cơ sở trước khi tra cứu khách hàng' : source === 'demo' ? 'CCCD, SĐT hoặc DEMO-000001' : 'CCCD/CMND hoặc SĐT'} onChange={event => changeIdentity(event.target.value)} />
+            <div className="mg-field"><label htmlFor="contract-id-card">CCCD / CMND hoặc số điện thoại *</label><div className="mg-lookup-controls"><input id="contract-id-card" autoComplete="off" value={idInput} disabled={!draft.store_id} aria-invalid={Boolean(errors.id_card)} aria-describedby="contract-lookup-status" placeholder={!draft.store_id ? 'Chọn cơ sở trước khi tra cứu khách hàng' : 'CCCD/CMND hoặc SĐT'} onChange={event => changeIdentity(event.target.value)} />
               <button className="mg-button" type="button" disabled={!draft.store_id || !canSearchCustomer || lookupState === 'loading'} onClick={() => { preserveCustomer.current = false; setLookupRetry(value => value + 1); }}>{lookupState === 'loading' ? <LoaderCircle size={16} className="mg-spin" /> : <Search size={16} />}Tra cứu</button></div>
               <div id="contract-lookup-status" className={`mg-lookup-status is-${lookupState}`} role={lookupState === 'error' ? 'alert' : 'status'}>{lookupState === 'error' ? lookupError : lookupText}</div>
               {lookupState === 'matches' && <div className="mg-customer-match-list" role="listbox" aria-label="Chọn khách hàng tìm thấy">{customerMatches.map(customer => <button key={customer.id} type="button" role="option" aria-selected="false" className="mg-customer-match" onClick={() => selectCustomer(customer)}><strong>{customer.name}</strong><span>{customer.phone || 'Chưa có SĐT'} · CCCD {customer.id_card || 'Chưa có'}</span></button>)}</div>}

@@ -201,6 +201,5 @@ export function createApiRepository(baseUrl = '/api', options: { drafts?: boolea
 }
 
 export function createManagementRepository(): ManagementRepository {
-  return process.env.NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE === 'api'
-    ? createApiRepository(process.env.NEXT_PUBLIC_API_URL || '/api', { drafts: process.env.NEXT_PUBLIC_MANAGEMENT_API_MODE === 'supabase-local' }) : createDemoRepository();
+  return createApiRepository('/api', { drafts: true });
 }

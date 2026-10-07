@@ -3,9 +3,9 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Bike, Building2, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, LogIn, LogOut, Menu, PanelLeftClose, RotateCcw, UsersRound, Wallet, X } from 'lucide-react';
+import { Bike, Building2, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, LogOut, Menu, PanelLeftClose, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
-import { Dialog, trapFocusWithin } from './Dialog';
+import { trapFocusWithin } from './Dialog';
 import type { SessionUser } from '@/lib/server/management-session';
 
 const navigation = [
@@ -19,7 +19,7 @@ const navigation = [
 ];
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
-  const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reset } = useManagement();
+  const { dataset, selectedStore, selectStore, source, canSaveContractDrafts } = useManagement();
   const pathname = usePathname();
   const router = useRouter();
   const active = navigation.find(n => pathname === n.href) || navigation.find(n => n.kind === 'vehicles')!;
@@ -27,11 +27,8 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const writableDrafts = source === 'api' && active.kind === 'contracts' && canSaveContractDrafts;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
   const mobileRef = useRef<HTMLDialogElement>(null);
   const menuRef = useRef<HTMLDetailsElement>(null);
-  const [resetting, setResetting] = useState(false);
-  const [resetError, setResetError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
 
@@ -82,8 +79,8 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
       title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
       <item.icon size={19} strokeWidth={1.8} /><span>{item.label}</span>{active.href === item.href && <ChevronRight className="mg-nav-arrow" size={15} />}
     </Link>)}</nav>
-    <div className="mg-sidebar-bottom"><div className="mg-source-marker"><span />{source === 'demo' ? 'Phiên xem trước' : writableDrafts ? 'Supabase · có thể lưu nháp' : writableCustomers ? 'Supabase · khách hàng có thể sửa' : 'Dữ liệu API · chỉ đọc'}</div>
-      <p>{source === 'demo' ? 'Dữ liệu mẫu để duyệt giao diện.' : writableDrafts ? 'Lưu và tiếp tục sửa hợp đồng đang soạn.' : writableCustomers ? 'Thêm, cập nhật và xóa hồ sơ khách hàng trực tiếp.' : 'Kết nối dữ liệu từ hệ thống.'}</p><span className="mg-version">HIMOTO MANAGEMENT / 01</span></div>
+    <div className="mg-sidebar-bottom"><div className="mg-source-marker"><span />{writableDrafts ? 'Supabase · có thể lưu nháp' : writableCustomers ? 'Supabase · khách hàng có thể sửa' : 'Dữ liệu API · chỉ đọc'}</div>
+      <p>{writableDrafts ? 'Lưu và tiếp tục sửa hợp đồng đang soạn.' : writableCustomers ? 'Thêm, cập nhật và xóa hồ sơ khách hàng trực tiếp.' : 'Kết nối dữ liệu từ hệ thống.'}</p><span className="mg-version">HIMOTO MANAGEMENT / 01</span></div>
   </>;
 
   return <div className={`mg-app ${collapsed ? 'mg-is-collapsed' : ''}`}>
@@ -99,22 +96,17 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
           <span>Quản lý</span><ChevronRight size={14} /><strong>{active.label}</strong></div>
         <div className="mg-topbar-right"><label className="mg-branch-select"><Building2 size={16} /><span className="mg-sr-only">Cơ sở đang xem</span><select value={selectedStore} onChange={event => selectStore(event.target.value)}>
           <option value="all">Tất cả cơ sở</option>{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-          <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{source === 'demo' ? 'Dữ liệu mẫu' : writableDrafts ? 'Lưu nháp' : writableCustomers ? 'Có thể sửa' : 'Chỉ đọc'}</span>
-          <details className="mg-user-menu" ref={menuRef}><summary aria-label="Menu người dùng"><span className="mg-user-avatar">QT</span><div><strong>{user?.name || 'Quản trị viên'}</strong><small>{user ? 'Đã đăng nhập' : source === 'demo' ? 'Tài khoản mẫu' : writableCustomers ? 'Supabase' : 'Phiên tra cứu'}</small></div><ChevronDown size={14} /></summary>
-            <div className="mg-popover"><strong>{source === 'demo' ? 'Phiên xem trước giao diện' : writableCustomers ? 'Khách hàng kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{source === 'demo' ? 'Bản nháp hợp đồng được giữ trong trình duyệt này. Các thay đổi dữ liệu mẫu khác mất khi tải lại trang.' : writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>
-              {source === 'demo' && <button type="button" onClick={() => { if (menuRef.current) menuRef.current.open = false; setResetOpen(true); }}><RotateCcw size={16} />Khôi phục dữ liệu mẫu</button>}
+          <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{writableDrafts ? 'Lưu nháp' : writableCustomers ? 'Có thể sửa' : 'Chỉ đọc'}</span>
+          <details className="mg-user-menu" ref={menuRef}><summary aria-label="Menu người dùng"><span className="mg-user-avatar">QT</span><div><strong>{user?.name || 'Quản trị viên'}</strong><small>{user ? 'Đã đăng nhập' : writableCustomers ? 'Supabase' : 'Phiên tra cứu'}</small></div><ChevronDown size={14} /></summary>
+            <div className="mg-popover"><strong>{writableCustomers ? 'Khách hàng kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>
               <Link href="/contracts/drafts"><FilePenLine size={16} />Mở Log</Link>
-              {user ? <button type="button" disabled={signingOut} onClick={signOut}><LogOut size={16} />{signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button> : <Link href="/login"><LogIn size={16} />Màn đăng nhập</Link>}
+              {<button type="button" disabled={signingOut} onClick={signOut}><LogOut size={16} />{signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>}
               {signOutError && <p role="alert">{signOutError}</p>}</div></details>
         </div>
       </header>
       <main id="management-main" className="mg-content" tabIndex={-1}>{children}</main>
-      <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{source === 'demo' ? 'Bản xem trước · Chưa kết nối dữ liệu thật' : writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
+      <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
     </div>
-    {resetOpen && <Dialog title="Khôi phục dữ liệu mẫu?" subtitle="Các thay đổi mẫu và bản nháp lưu trong trình duyệt sẽ bị bỏ." onClose={() => { if (!resetting) setResetOpen(false); }}>
-      <div className="mg-dialog-body"><p>Dữ liệu thật của hệ thống không bị ảnh hưởng.</p>{resetError && <p className="mg-field-error" role="alert">{resetError}</p>}</div>
-      <div className="mg-dialog-footer"><button className="mg-button" disabled={resetting} onClick={() => setResetOpen(false)}>Hủy</button><button className="mg-button mg-button-primary" disabled={resetting} onClick={async () => { setResetting(true); setResetError(''); try { await reset(); setResetOpen(false); } catch (cause) { setResetError(cause instanceof Error ? cause.message : 'Không khôi phục được dữ liệu.'); } finally { setResetting(false); } }}>{resetting ? 'Đang khôi phục…' : 'Khôi phục'}</button></div>
-    </Dialog>}
   </div>;
 }
 

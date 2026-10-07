@@ -21,7 +21,7 @@ const EMPTY_ROWS: ManagementRow[] = [];
 function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind; draftsOnly?: boolean }) {
   const baseConfig = MANAGEMENT_CONFIG[kind];
   const config = draftsOnly ? { ...baseConfig, title: 'Log', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : baseConfig;
-  const { dataset, loading, error, source, canSaveContractDrafts, selectedStore, selectStore, reload, notify, cloneContract, deleteCustomer } = useManagement();
+  const { dataset, loading, error, source, canSaveContractDrafts, selectedStore, selectStore, reload, notify, deleteCustomer } = useManagement();
   const router = useRouter();
   const searchParams = useSearchParams();
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
@@ -40,9 +40,6 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
   const [composerOpen, setComposerOpen] = useState(false);
   const [printRow, setPrintRow] = useState<ManagementRow | null>(null);
   const [composerMode, setComposerMode] = useState<'print' | 'edit' | 'draft'>('print');
-  const [cloningId, setCloningId] = useState<number | null>(null);
-  const [cloneError, setCloneError] = useState('');
-  const cloneBusy = useRef(false);
   const columnsRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -67,7 +64,7 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
   const columns = config.columns.filter(c => visibleKeys.includes(c.key));
   const statusOptions = [...config.statuses, ...Array.from(new Set(rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
-  const canEdit = (source === 'demo' && kind !== 'contracts') || (source === 'api' && kind === 'customers');
+  const canEdit = kind === 'customers';
   const canDelete = source === 'api' && kind === 'customers';
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
   const updateQuery = (next: Partial<TableQuery>) => { setQuery(current => ({ ...current, ...next })); setPage(1); };
@@ -82,19 +79,10 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
     const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a'); link.href = url; link.download = `himoto-${kind}-${source}.csv`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify(`Đã xuất ${filteredRows.length} bản ghi${source === 'demo' ? ' dữ liệu mẫu' : ''}.`);
+    notify(`Đã xuất ${filteredRows.length} bản ghi.`);
   }
   function view(row: ManagementRow) {
     setViewing(row);
-  }
-  async function copyContract(row: ManagementRow) {
-    if (cloneBusy.current) return;
-    cloneBusy.current = true; setCloningId(row.id); setCloneError('');
-    try {
-      const copy = await cloneContract(row.id);
-      setPrintRow(copy); setComposerMode('edit'); setComposerOpen(true);
-    } catch (cause) { setCloneError(cause instanceof Error ? cause.message : 'Không sao chép được hợp đồng.'); }
-    finally { cloneBusy.current = false; setCloningId(null); }
   }
 
   return <section className="mg-page" aria-label={config.title}>
@@ -122,13 +110,12 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
         {kind === 'contracts' && <div className="mg-date-filters"><span>Ngày bắt đầu thuê</span><label><span className="mg-sr-only">Từ ngày</span><input type="date" aria-label="Từ ngày" value={query.startDate} onChange={event => updateQuery({ startDate: event.target.value })} aria-invalid={invalidDate} /></label><span className="mg-date-divider">—</span><label><span className="mg-sr-only">Đến ngày</span><input type="date" aria-label="Đến ngày" value={query.endDate} onChange={event => updateQuery({ endDate: event.target.value })} aria-invalid={invalidDate} /></label>{invalidDate && <span className="mg-field-error" role="alert">Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.</span>}
           {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace('/contracts')}><X size={13} /></button></span>}</div>}
         {isFiltered && <div className="mg-filter-summary"><span><strong>{filteredRows.length}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
-        {cloneError && <p className="mg-error-message" role="alert">{cloneError}</p>}
         <DataTable config={config} columns={columns} rows={filteredRows.slice(offset, offset + pageSize)} offset={offset} sortKey={sort.key} sortDirection={sort.direction}
           onSort={key => { setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }} onView={view} onEdit={row => { if (kind === 'contracts') { setPrintRow(row); setComposerMode(row.status === 'draft' ? 'draft' : 'edit'); setComposerOpen(true); } else { setEditing(row); setFormOpen(true); } }}
           onDelete={canDelete ? row => { setDeleteTarget(row); setDeleteError(''); } : undefined} canDelete={canDelete}
           onPrint={kind === 'contracts' ? row => { setPrintRow(row); setComposerMode('print'); setComposerOpen(true); } : undefined}
-          onClone={kind === 'contracts' && source === 'demo' ? row => void copyContract(row) : undefined} cloningId={cloningId}
-          canEditContract={kind === 'contracts' && source === 'demo'}
+
+          canEditContract={false}
           canEditDraft={kind === 'contracts' && canSaveContractDrafts}
           canEdit={canEdit} loading={loading} error={error} isFiltered={isFiltered} onReset={clearFilters} onRetry={() => void reload()} />
         <div className="mg-pagination"><div className="mg-result-range" aria-live="polite">Hiển thị <strong>{filteredRows.length ? offset + 1 : 0}–{Math.min(offset + pageSize, filteredRows.length)}</strong> trong <strong>{filteredRows.length}</strong> {config.singular}</div>
@@ -138,7 +125,7 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
           </div>
         </div>
       </div>
-      <div className="mg-list-note"><span className="mg-note-line" />{kind === 'contracts' ? source === 'demo' ? 'Bản nháp được giữ trong trình duyệt này để mở lại và sửa. Dữ liệu mẫu; chưa đồng bộ bản nháp giữa các tài khoản hoặc thiết bị.' : canSaveContractDrafts ? 'Dữ liệu hiện tại từ Supabase. Bản nháp được lưu trên hệ thống để mở lại và tiếp tục sửa. Nhấn Làm mới để cập nhật danh sách.' : 'Danh sách lấy từ hệ thống. Nhấn Làm mới để tải dữ liệu hiện tại; chức năng ghi bản nháp chưa được kết nối.' : kind === 'customers' && source === 'api' ? 'Dữ liệu khách hàng được đọc và cập nhật trực tiếp trong Supabase. Hồ sơ có đơn thuê liên quan sẽ được bảo vệ khỏi thao tác xóa.' : source === 'demo' ? 'Bạn đang xem dữ liệu minh họa. Thêm và chỉnh sửa không ảnh hưởng dữ liệu thật.' : 'Các trường chưa được API cung cấp hiển thị “—”. Danh sách hiện chỉ đọc.'}</div>
+      <div className="mg-list-note"><span className="mg-note-line" />{kind === 'contracts' ? canSaveContractDrafts ? 'Dữ liệu hiện tại từ Supabase. Bản nháp được lưu trên hệ thống để mở lại và tiếp tục sửa. Nhấn Làm mới để cập nhật danh sách.' : 'Danh sách lấy từ hệ thống. Nhấn Làm mới để tải dữ liệu hiện tại; chức năng ghi bản nháp chưa được kết nối.' : kind === 'customers' && source === 'api' ? 'Dữ liệu khách hàng được đọc và cập nhật trực tiếp trong Supabase. Hồ sơ có đơn thuê liên quan sẽ được bảo vệ khỏi thao tác xóa.' : 'Các trường chưa được API cung cấp hiển thị “—”. Danh sách hiện chỉ đọc.'}</div>
     </div>
     {formOpen && <EntityForm config={config} row={editing} onClose={() => setFormOpen(false)} />}
     {createCustomerOpen && kind === 'customers' && <CustomerCreateDialog idCard="" onCreated={() => setCreateCustomerOpen(false)} onClose={() => setCreateCustomerOpen(false)} />}

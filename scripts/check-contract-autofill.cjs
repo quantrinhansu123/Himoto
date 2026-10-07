@@ -87,7 +87,10 @@ async function run() {
     const saved = await api.createCustomer(details); assert.equal(saved.id, 99);
     const writes = requests.filter(request => request.method === 'POST');
     assert.equal(writes.length, 1); assert.equal(writes[0].url, '/api/auth/customers');
-    assert.deepEqual(Object.keys(JSON.parse(writes[0].body)).sort(), ['address', 'email', 'id_card', 'name', 'phone']);
+    assert.deepEqual(Object.keys(JSON.parse(writes[0].body)).sort(), ['address', 'email', 'id_card', 'name', 'phone', 'warning_note']);
+    const assigned = await api.createCustomer({ ...details, warning_note: 'Cần đối chiếu hồ sơ' }, { status: 'warning', store_id: 2 });
+    assert.equal(assigned.store_id, 2); assert.equal(assigned.status, 'warning');
+    assert.equal(JSON.parse(requests.filter(request => request.method === 'POST').at(-1).body).warning_note, 'Cần đối chiếu hồ sơ');
     assert(!requests.some(request => request.url.includes('/order/')));
     checks.push('existing API routes enforce exact lookup, branch scope, duplicate preflight and customer-only writes');
     for (const response of [

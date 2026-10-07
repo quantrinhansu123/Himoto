@@ -1,7 +1,6 @@
 'use client';
 
 import { FormEvent, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Eye, EyeOff, Globe, LoaderCircle } from 'lucide-react';
 
@@ -21,7 +20,7 @@ export function LoginForm({ connected }: { connected: boolean }) {
     event.preventDefault();
     if (pending.current) return;
     setError(''); setInvalid(null);
-    if (!connected) { setError('Đăng nhập chưa khả dụng trên bản xem trước. Hãy chọn Xem bản demo.'); return; }
+    if (!connected) { setError('Hệ thống chưa được cấu hình kết nối dữ liệu. Vui lòng liên hệ quản trị viên.'); return; }
     if (!emailInput.current?.validity.valid || !email.trim()) { setError('Vui lòng nhập email hợp lệ.'); setInvalid('email'); emailInput.current?.focus(); return; }
     if (!password) { setError('Vui lòng nhập mật khẩu.'); setInvalid('password'); passwordInput.current?.focus(); return; }
     pending.current = true; setBusy(true);
@@ -47,7 +46,7 @@ export function LoginForm({ connected }: { connected: boolean }) {
           <p className="hm-login-eyebrow">HỆ THỐNG QUẢN LÝ HIMOTO</p>
           <h1 id="login-heading">Chào mừng trở lại</h1>
           <p className="hm-login-description">Đăng nhập để quản lý xe và hợp đồng.</p>
-          {!connected && <p className="hm-login-demo-note">Bạn đang xem bản demo. Chọn “Xem bản demo” để trải nghiệm giao diện.</p>}
+          {!connected && <p className="hm-login-error" role="alert">Hệ thống chưa được cấu hình kết nối dữ liệu. Vui lòng liên hệ quản trị viên.</p>}
           {error && <p id="login-error" className="hm-login-error" role="alert">{error}</p>}
           <form onSubmit={submit} noValidate aria-busy={busy}>
             <label htmlFor="login-email">Email</label>
@@ -59,7 +58,6 @@ export function LoginForm({ connected }: { connected: boolean }) {
             </div>
             <button type="submit" className="hm-login-submit" disabled={busy || !connected}>{busy ? <LoaderCircle size={19} className="hm-login-spinner" /> : null}{busy ? 'Đang đăng nhập…' : 'Đăng nhập'}{!busy && <ArrowRight size={18} aria-hidden="true" />}</button>
           </form>
-          {!connected && <Link href="/vehicles" className="hm-login-demo">Xem bản demo<ArrowRight size={18} aria-hidden="true" /></Link>}
         </div>
         <p className="hm-login-footer">HIMOTO · Quản lý vận hành</p>
       </div>

@@ -11,13 +11,17 @@ export type SessionUser = { id: number; name: string; email: string };
 type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null };
 type Database = Pick<typeof himotoPool, 'query'>;
 
-// The local integration stays disabled on public deployments, including login.
-export function usesLocalAccounts() {
-  return process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE === 'api' && process.env.NEXT_PUBLIC_MANAGEMENT_API_MODE === 'supabase-local';
+// Missing server configuration must never expose an unauthenticated dashboard.
+export function isManagementConfigured() {
+  return Boolean((process.env.DATABASE_URL || process.env.SUPABASE_DATABASE_URL) &&
+    (process.env.NODE_ENV !== 'production' || (process.env.MANAGEMENT_SESSION_SECRET?.length || 0) >= 32));
 }
 
 const globalSession = globalThis as typeof globalThis & { managementSessionKey?: string; managementLoginAttempts?: Map<string, { count: number; expires: number }> };
 function sessionKey() {
+  if (process.env.NODE_ENV === 'production' && (process.env.MANAGEMENT_SESSION_SECRET?.length || 0) < 32) {
+    throw new Error('Thiếu MANAGEMENT_SESSION_SECRET hợp lệ cho bản triển khai.');
+  }
   return process.env.MANAGEMENT_SESSION_SECRET || (globalSession.managementSessionKey ??= randomBytes(32).toString('hex'));
 }
 function signature(body: string, key: string) { return createHmac('sha256', key).update(body).digest('base64url'); }
@@ -90,7 +94,7 @@ export function sameOrigin(request: NextRequest) {
 }
 
 export async function protectDatabaseRequest(request: NextRequest): Promise<NextResponse | null> {
-  if (!usesLocalAccounts()) return NextResponse.json({ status: 'error' }, { status: 404 });
+  if (!isManagementConfigured()) return NextResponse.json({ status: 'error', message: 'Hệ thống chưa được cấu hình kết nối dữ liệu. Vui lòng liên hệ quản trị viên.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   if (request.method !== 'GET' && !sameOrigin(request)) return NextResponse.json({ status: 'error', message: 'Yêu cầu không hợp lệ.' }, { status: 403 });
   try {
     if (await userFromSession(request.cookies.get(SESSION_COOKIE)?.value)) return null;

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAccount, checkLoginLimit, clearLoginLimit, LoginError, sameOrigin, SESSION_COOKIE, SESSION_SECONDS, signSession, userFromSession, usesLocalAccounts } from '@/lib/server/management-session';
+import { authenticateAccount, checkLoginLimit, clearLoginLimit, LoginError, sameOrigin, SESSION_COOKIE, SESSION_SECONDS, signSession, userFromSession, isManagementConfigured } from '@/lib/server/management-session';
 
 export const runtime = 'nodejs';
 const headers = { 'Cache-Control': 'no-store' };
 
 export async function POST(request: NextRequest) {
-  if (!usesLocalAccounts()) return NextResponse.json({ message: 'Đăng nhập chưa khả dụng trên bản xem trước. Hãy chọn Xem bản demo.' }, { status: 503, headers });
+  if (!isManagementConfigured()) return NextResponse.json({ message: 'Hệ thống chưa được cấu hình kết nối dữ liệu. Vui lòng liên hệ quản trị viên.' }, { status: 503, headers });
   if (!sameOrigin(request)) return NextResponse.json({ message: 'Yêu cầu không hợp lệ.' }, { status: 403, headers });
   try {
     const body: unknown = await request.json();
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!usesLocalAccounts()) return NextResponse.json({ user: null }, { headers });
+  if (!isManagementConfigured()) return NextResponse.json({ message: 'Hệ thống chưa được cấu hình kết nối dữ liệu.' }, { status: 503, headers });
   try {
     const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
     return NextResponse.json({ user }, { status: user ? 200 : 401, headers });

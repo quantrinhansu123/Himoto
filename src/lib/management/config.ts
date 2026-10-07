@@ -9,7 +9,7 @@ export const VEHICLE_STATUSES: Option[] = [
   { value: 'pending', label: 'Đặt trước' }, { value: 'sold', label: 'Đã bán' }, { value: 'bad_debt', label: 'Nợ xấu' },
   { value: 'broken', label: 'Hỏng' }, { value: 'in_transit', label: 'Đang điều chuyển' },
 ];
-export const VEHICLE_TYPES: Option[] = [{ value: 'xega', label: 'Xe ga' }, { value: 'xeso', label: 'Xe số' }, { value: 'xecon', label: 'Xe côn tay' }, { value: 'xesh', label: 'Xe SH' }, { value: 'electric', label: 'Xe điện (mẫu)' }];
+export const VEHICLE_TYPES: Option[] = [{ value: 'xega', label: 'Xe ga' }, { value: 'xeso', label: 'Xe số' }, { value: 'xecon', label: 'Xe côn tay' }, { value: 'xesh', label: 'Xe SH' }, { value: 'electric', label: 'Xe điện' }];
 export const POSITIONS: Option[] = ['Quản lý cơ sở', 'Nhân viên kinh doanh', 'Thu ngân', 'Kỹ thuật viên'].map(label => ({ value: label, label }));
 export const CONTRACT_STATUSES: Option[] = [
   { value: 'draft', label: 'Lưu nháp' }, { value: 'renting', label: 'Đang thuê' },
@@ -19,7 +19,7 @@ export const CONTRACT_STATUSES: Option[] = [
   { value: 'deposit_contract', label: 'Hợp đồng đặt cọc' },
   { value: 'cancel_pending_settlement', label: 'Chờ tất toán hủy' },
 ];
-export const CONTRACT_TYPES: Option[] = [{ value: 'daily', label: 'Thuê theo ngày' }, { value: 'monthly', label: 'Thuê theo tháng' }, { value: 'rental', label: 'Thuê xe' }, { value: 'tour', label: 'Tour / phượt (mẫu)' }];
+export const CONTRACT_TYPES: Option[] = [{ value: 'daily', label: 'Thuê theo ngày' }, { value: 'monthly', label: 'Thuê theo tháng' }, { value: 'rental', label: 'Thuê xe' }, { value: 'tour', label: 'Tour / phượt' }];
 const branchField = { key: 'store_id', label: 'Cơ sở', type: 'select' as const, storeOptions: true, required: true };
 const codeColumn = { key: 'code', label: 'Mã', format: 'code' as const };
 const statusColumn = { key: 'status', label: 'Trạng thái', format: 'status' as const };

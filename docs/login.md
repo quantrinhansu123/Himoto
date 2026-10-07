@@ -1,17 +1,11 @@
-# Đăng nhập và mục Log
+# Đăng nhập HIMOTO — 07/10/2026
 
-- `/` mở `/login`, dùng lại ảnh `himoto-journey.webp` từ web HIMOTO cũ. Form có email, mật khẩu, hiện/ẩn mật khẩu, thông báo lỗi và trạng thái đang đăng nhập.
-- **Log** là tên mục và tiêu đề của `/contracts/drafts`. Nút thao tác và trạng thái vẫn là **Lưu nháp**. Dữ liệu nháp và địa chỉ trang được giữ nguyên.
-- Bản public/demo có nút **Xem bản demo**, không nhận thông tin đăng nhập thật. Từ menu người dùng có thể quay về **Màn đăng nhập**.
-- Local Supabase dùng tài khoản quản trị đang hoạt động trong `himoto.users` và bcrypt hiện có. Chưa triển khai phân quyền theo cơ sở nên tài khoản khác bị từ chối. Không tạo tài khoản hoặc thay đổi mật khẩu/schema.
-- Cookie phiên được ký phía server, HttpOnly, SameSite=Strict, thời hạn tám giờ; dùng Secure khi chạy HTTPS. API đọc/ghi đều kiểm tra phiên và quyền hiện tại. API ghi yêu cầu cùng origin. Có nút **Đăng xuất**.
-- API database vẫn bị tắt trên production. Khóa phiên local nằm trong `.env.local`; không có khóa thì server tạo khóa trong bộ nhớ.
+`/` chuyển đến `/login`. Ảnh nền và logo HIMOTO giữ theo web cũ. Không có nút vào demo. Mọi trang quản lý yêu cầu đăng nhập, kể cả khi cấu hình DB thiếu hoặc DB bị lỗi; khi thiếu cấu hình, màn đăng nhập báo lỗi cấu hình và không mở dữ liệu mẫu.
 
-Kiểm tra:
+`POST /api/session` kiểm tra email/mật khẩu bcrypt hiện có trong `himoto.users`, hỗ trợ hash Laravel `$2y$`, kiểm tra chưa xóa, `status='active'` và quyền quản trị qua role/role_id/roles.slug. Không tạo tài khoản, đặt lại mật khẩu hoặc tự nâng quyền khi kết nối.
 
-```powershell
-npm.cmd run test:login
-python scripts/check-management-login-ui.py --source demo --url http://127.0.0.1:3001
-```
+Phiên có HMAC SHA-256, cookie HttpOnly, SameSite Strict, thời hạn 8 giờ và Secure trên HTTPS. Production bắt buộc `MANAGEMENT_SESSION_SECRET` ít nhất 32 ký tự; không dùng khóa ngẫu nhiên riêng từng instance. Mọi API quản lý kiểm tra lại tài khoản còn hoạt động và còn quyền. Đăng xuất xóa cookie; API không có phiên trả 401, thao tác ghi khác origin trả 403, thiếu cấu hình trả 503.
 
-Browser API kiểm tra dữ liệu thật bằng cookie QA tạm qua `--session-cookie-file`; không gửi mật khẩu thật hay sửa dữ liệu nghiệp vụ. Ca thành công với bcrypt được kiểm tra bằng tài khoản giả trong unit test; chưa kiểm tra đăng nhập bằng mật khẩu tài khoản vận hành.
+Giới hạn 10 lần đăng nhập/email/15 phút hiện nằm trong bộ nhớ của instance. Đây chưa phải bộ đếm dùng chung giữa các instance Vercel. Không có cơ chế tự đăng nhập hoặc bỏ qua mật khẩu ở production.
+
+Kiểm tra: `npm.cmd run test:login` gồm chữ ký/giới hạn phiên, bcrypt, quyền, hạn chế lần thử, thiếu cấu hình, cờ demo cũ, HTTPS production, cookie Secure và bảo vệ API. Kiểm tra browser với dữ liệu thật không chụp/lưu hồ sơ cá nhân, không ghi dữ liệu nghiệp vụ.

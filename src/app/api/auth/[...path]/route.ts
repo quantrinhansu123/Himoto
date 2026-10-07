@@ -125,7 +125,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     if (!query) return NextResponse.json({ status: 'error' }, { status: 404 });
     return await readAll(query);
   } catch (error) {
-    console.error('Supabase read failed:', error instanceof Error ? error.message : 'Unknown database error');
+    console.error('Supabase read failed:', error instanceof Error ? error.name : 'Unknown database error');
     return NextResponse.json({ status: 'error', message: 'Không tải được dữ liệu từ Supabase.' }, { status: 500 });
   }
 }
@@ -135,35 +135,6 @@ export async function POST(request: NextRequest, { params }: Params) {
   if (denied) return denied;
   const { path } = await params;
   if (path.join('/') === 'order/car-rental') return writeDraft(request, null);
-  if (path.join('/') === 'hr/staff/refill-branches') {
-    try {
-      const result = await himotoPool.query(
-        `WITH assignment(phone, store_name) AS (VALUES
-           ('0376541118', 'CS 2'), ('0775284212', 'CS 2'), ('0325518898', 'CS 2'), ('0706355781', 'CS 2'),
-           ('0395505622', 'CS láng'), ('0394566430', 'CS láng'), ('0348444989', 'CS láng'),
-           ('0378784066', 'CS 3'), ('0325378569', 'CS 3'),
-           ('0974992405', 'CS 5'), ('0355403060', 'CS 5'), ('0386125866', 'CS 5'),
-           ('0396589623', 'CH Giáp Bát'), ('0333648392', 'CH Giáp Bát'), ('0963165055', 'CH Giáp Bát'), ('0778430858', 'CH Giáp Bát'),
-           ('0988296110', 'Kho sở hữu')
-         ), targets AS (
-           SELECT p.id, s.id AS store_id
-           FROM himoto.staff_profiles p
-           JOIN assignment a ON regexp_replace(COALESCE(p.phone, ''), '\\D', '', 'g') = a.phone
-           JOIN himoto.stores s ON lower(btrim(s.store_name)) = lower(a.store_name)
-         ), updated AS (
-           UPDATE himoto.staff_profiles p SET store_id = t.store_id
-           FROM targets t WHERE p.id = t.id AND p.store_id IS DISTINCT FROM t.store_id
-           RETURNING p.id
-         )
-         SELECT (SELECT count(*)::int FROM targets) AS matched,
-                (SELECT count(*)::int FROM updated) AS updated`,
-      );
-      return NextResponse.json({ status: 'success', data: result.rows[0] });
-    } catch (error) {
-      console.error('Supabase staff branch refill failed:', error instanceof Error ? error.message : 'Unknown database error');
-      return NextResponse.json({ status: 'error', message: 'Không điền lại được cơ sở nhân sự vào Supabase.' }, { status: 500 });
-    }
-  }
   if (path.join('/') !== 'customers') return NextResponse.json({ status: 'error' }, { status: 404 });
 
   let body: Record<string, unknown>;
@@ -182,9 +153,10 @@ export async function POST(request: NextRequest, { params }: Params) {
   const idCard = typeof body.id_card === 'string' ? body.id_card.replace(/\s+/g, '') : '';
   const storeId = body.store_id == null || body.store_id === '' ? null : Number(body.store_id);
   const status = String(body.status || 'active');
+  const warning = typeof body.warning_note === 'string' ? body.warning_note.trim() : '';
   if (!name || !address || !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || !/^\d{9}$|^\d{12}$/.test(idCard) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
-      (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
+      (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
     return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, điện thoại, CCCD/CMND, địa chỉ và email.' }, { status: 400 });
   }
 
@@ -202,19 +174,19 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ status: 'error', message: 'Số CCCD/CMND này đã có trong danh sách khách hàng.' }, { status: 409 });
     }
     const result = await client.query(
-      `INSERT INTO himoto.customers (name, phone, email, address, id_card, status, store_id, created_at, updated_at)
-       VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, now(), now())
+      `INSERT INTO himoto.customers (name, phone, email, address, id_card, status, store_id, warning, created_at, updated_at)
+       VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, now(), now())
        RETURNING id, name, phone, email, address, id_card,
                  CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
                       WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,
                  warning, created_at, id_card_issued_on, id_card_issued_by, relatives, store_id`,
-      [name, phone, email, address, idCard, status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1, storeId],
+      [name, phone, email, address, idCard, status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1, storeId, status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning : null],
     );
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data: result.rows[0] }, { status: 201 });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Supabase customer insert failed:', error instanceof Error ? error.message : 'Unknown database error');
+    console.error('Supabase customer insert failed:', error instanceof Error ? error.name : 'Unknown database error');
     return NextResponse.json({ status: 'error', message: 'Không lưu được khách hàng vào Supabase.' }, { status: 500 });
   } finally {
     client.release();
@@ -295,7 +267,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'success', data: result.rows[0] });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Supabase customer update failed:', error instanceof Error ? error.message : 'Unknown database error');
+    console.error('Supabase customer update failed:', error instanceof Error ? error.name : 'Unknown database error');
     return NextResponse.json({ status: 'error', message: 'Không lưu được thay đổi khách hàng vào Supabase.' }, { status: 500 });
   } finally {
     client.release();
@@ -326,7 +298,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'success', data: null });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Supabase customer delete failed:', error instanceof Error ? error.message : 'Unknown database error');
+    console.error('Supabase customer delete failed:', error instanceof Error ? error.name : 'Unknown database error');
     return NextResponse.json({ status: 'error', message: 'Không xóa được hồ sơ khách hàng.' }, { status: 500 });
   } finally {
     client.release();
