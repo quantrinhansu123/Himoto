@@ -65,6 +65,16 @@ async function run() {
   assert.equal(mapApiRow('customers', { id: 1, relatives: [{ name: 'Người thân', relationship: 'Anh', phone: '0900001234' }] }).relatives_text, 'Người thân (Anh): 0900001234');
   assert.equal(mapApiRow('customers', { id: 1, relatives: '[{"name":"Người thân","phone":"0900001234"}]' }).relatives_text, 'Người thân: 0900001234');
   checks.push('API mapper retains supplemental identity fields');
+  const detachedCustomer = createContractDraft({ ...data, customers: [] }, 'all', mapApiRow('contracts', {
+    id: 97, status: 'renting', customer_id: 999, customer_name: 'Khách từ dữ liệu hợp đồng',
+    customer_phone: '0900000097', customer_id_card: '001234567897',
+    customer_address: 'Địa chỉ từ dữ liệu hợp đồng', customer_email: 'contract@example.test',
+  })).customer;
+  assert.equal(detachedCustomer.name, 'Khách từ dữ liệu hợp đồng');
+  assert.equal(detachedCustomer.id_card, '001234567897');
+  assert.equal(detachedCustomer.address, 'Địa chỉ từ dữ liệu hợp đồng');
+  assert.equal(detachedCustomer.email, 'contract@example.test');
+  checks.push('contract details retain identity, address and email when the customer master record is unavailable');
   assert.equal(dateTimeInput('2026-10-06T02:15:00.000Z'), '2026-10-06T09:15');
   assert.equal(dateTimeInput('2026-10-06T09:15'), '2026-10-06T09:15');
   assert.equal(dateTimeInput('2026-10-06'), '');

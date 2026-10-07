@@ -1,0 +1,16 @@
+{
+  "passed": 7,
+  "checks": [
+    "legacy five-section form uses labelled tabs with arrow/Home/End keyboard navigation",
+    "validation reveals the hidden failing tab and phone lookup shows the actual CCCD with its leading zeros",
+    "switching tabs and a rejected draft save preserve customer, representative, vehicle, money and notes",
+    "preview and actual print use matching legacy typography; single/multiple vehicles generate one/two A4 landscape PDF pages with all original terms",
+    "successful synthetic draft save survives reload with all fields and both vehicles intact",
+    "read-only details retain each vehicle and full customer identity; missing charges remain blank rather than using current catalogue prices",
+    "375px and landscape dialogs keep every section inside the viewport and preserve keyboard focus/escape behavior"
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequestsBlocked": [],
+  "realBusinessWrites": 0,
+  "dataSource": "synthetic API responses; session authentication reads existing QA account only"
+}

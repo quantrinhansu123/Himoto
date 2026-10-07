@@ -49,7 +49,9 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     if (!snapshot.customer || !Array.isArray(snapshot.vehicles) || !snapshot.vehicles.length) throw new Error('Thông tin hợp đồng đã lưu không hợp lệ.');
     return { ...structuredClone(snapshot), contract_number: row.code };
   }
-  const customer = customerDetails(row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row, name: value(row.customer_name), phone: value(row.customer_phone), id_card: value(row.customer_id_card) } : null);
+  const customer = customerDetails(row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
+    name: value(row.customer_name), phone: value(row.customer_phone), id_card: value(row.customer_id_card),
+    address: value(row.customer_address), email: value(row.customer_email) } : null);
   const items: Record<string, unknown>[] = row?.legacy_items_json ? JSON.parse(String(row.legacy_items_json)) : [];
   const apiVehicles: Record<string, unknown>[] = row?.vehicles_json ? JSON.parse(String(row.vehicles_json)) : [];
   const sourceVehicles = items.length ? items : apiVehicles;

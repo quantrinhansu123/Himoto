@@ -364,7 +364,7 @@ export default {
 	position: relative;
 	background: #fff;
 	color: #111;
-	font-family: 'Roboto', Arial, sans-serif;
+	font-family: "Times New Roman", Times, serif;
 	font-size: 11px;
 	line-height: 1.25;
 	margin: 0 auto;
