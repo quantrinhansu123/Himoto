@@ -36,16 +36,29 @@ def mock_api(route):
         for item in payload['rows']:
             values = dict(item['values'])
             values['status'] = values['status'] or 'active'
+            if values['status'] == 'Chưa hoàn tất':
+                values['status'] = 'draft'
             row_errors = list(item.get('errors', []))
+            warnings = []
+            incomplete_allowed = payload.get('allowIncomplete') is True and values['status'] == 'draft'
+            for field in ['name', 'phone', 'id_card', 'address', 'store']:
+                if not values[field]:
+                    if incomplete_allowed and field in ['id_card', 'address']:
+                        warnings.append('Chưa có ' + ('cccd / cmnd' if field == 'id_card' else 'địa chỉ') + '; cần bổ sung hồ sơ sau khi nhập.')
+                    else:
+                        row_errors.append('Thiếu ' + field)
+            if values['id_card'] and (not values['id_card'].isdigit() or len(values['id_card']) not in [9, 12]):
+                row_errors.append('CCCD/CMND sai định dạng.')
             if values['email'] and '@' not in values['email']:
                 row_errors.append('Email chưa đúng định dạng.')
-            duplicates = [record for record in customers if record['id_card'] == values['id_card'] or record['phone'] == values['phone']]
+            has_errors = bool(row_errors)
+            duplicates = [record for record in customers if (values['id_card'] and record['id_card'] == values['id_card']) or (values['phone'] and record['phone'] == values['phone'])]
             if duplicates:
                 row_errors.append('CCCD/CMND đã có ở khách hàng #99.')
-            state = 'invalid' if item.get('errors') or (values['email'] and '@' not in values['email']) else 'duplicate' if duplicates else 'valid'
-            rows.append({'rowNumber': item['rowNumber'], 'values': values, 'store_id': 2, 'state': state, 'errors': row_errors})
+            state = 'invalid' if has_errors else 'duplicate' if duplicates else 'valid'
+            rows.append({'rowNumber': item['rowNumber'], 'values': values, 'store_id': 2, 'state': state, 'errors': row_errors, 'warnings': warnings})
         valid = sum(row['state'] == 'valid' for row in rows)
-        result = {'rows': rows, 'total': len(rows), 'valid': valid, 'invalid': sum(row['state'] == 'invalid' for row in rows), 'duplicate': sum(row['state'] == 'duplicate' for row in rows), 'imported': valid if payload['commit'] else 0, 'committed': payload['commit']}
+        result = {'rows': rows, 'total': len(rows), 'valid': valid, 'invalid': sum(row['state'] == 'invalid' for row in rows), 'duplicate': sum(row['state'] == 'duplicate' for row in rows), 'incomplete': sum(row['state'] == 'valid' and bool(row['warnings']) for row in rows), 'imported': valid if payload['commit'] else 0, 'committed': payload['commit']}
         if payload['commit']:
             assert valid == len(rows), 'UI must submit only previewed valid rows'
             for row in rows:
@@ -164,6 +177,39 @@ with tempfile.TemporaryDirectory(prefix='himoto-excel-ui-') as temp, sync_playwr
         dialog.get_by_role('button', name='Nhập 1 khách hàng hợp lệ', exact=True).click()
         expect(dialog.get_by_text('Đã nhập 1 khách hàng. Bỏ qua 0 dòng lỗi và 0 dòng trùng.', exact=True)).to_be_visible()
         checks.append('network failure retains parsed data for retry; commit conflict forces new preview before another import')
+        dialog.get_by_role('button', name='Đóng', exact=True).click()
+        page.set_viewport_size({'width': 1440, 'height': 1000})
+        page.get_by_role('button', name='Nhập Excel', exact=True).click()
+        partial = ['Khách thiếu hồ sơ QA', '0900000008', '', '', '', 'Cơ sở QA', 'Chưa hoàn tất', 'Bổ sung hồ sơ QA']
+        active_partial = ['Khách thiếu hồ sơ active QA', '0900000009', '', '', '', 'Cơ sở QA', 'Bình thường', '']
+        wrong_card = ['Khách sai giấy tờ QA', '0900000010', '1234', '', '', 'Cơ sở QA', 'Chưa hoàn tất', '']
+        partial_file = make_file('partial.xlsx', [partial, active_partial, wrong_card])
+        dialog.get_by_label('Chọn file Excel khách hàng (.xlsx)', exact=True).set_input_files(partial_file)
+        expect(dialog.get_by_role('button', name='Kiểm tra lại', exact=True)).to_be_enabled()
+        expect(dialog.get_by_role('button', name='Nhập 0 khách hàng hợp lệ', exact=True)).to_be_disabled()
+        assert requests[-1]['allowIncomplete'] is False
+        dialog.get_by_label('Cho phép hồ sơ Chưa hoàn tất thiếu CCCD/địa chỉ', exact=True).check()
+        expect(dialog.locator('tbody tr')).to_have_count(0)
+        expect(dialog.get_by_role('button', name='Nhập 0 khách hàng hợp lệ', exact=True)).to_be_disabled()
+        dialog.get_by_role('button', name='Kiểm tra lại', exact=True).click()
+        expect(dialog.get_by_role('button', name='Nhập 1 khách hàng hợp lệ', exact=True)).to_be_enabled()
+        assert requests[-1]['allowIncomplete'] is True and requests[-1]['commit'] is False
+        expect(dialog.locator('tbody tr').first).to_contain_text('Chưa có cccd / cmnd')
+        expect(dialog.locator('tbody tr').first).to_contain_text('Chưa có địa chỉ')
+        page.screenshot(path=str(output / 'incomplete-1440.png'), full_page=True)
+        page.set_viewport_size({'width': 375, 'height': 900})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        page.screenshot(path=str(output / 'incomplete-375.png'), full_page=True)
+        dialog.get_by_role('button', name='Nhập 1 khách hàng hợp lệ', exact=True).click()
+        expect(dialog.get_by_text('Đã nhập 1 khách hàng. Bỏ qua 2 dòng lỗi và 0 dòng trùng.', exact=True)).to_be_visible()
+        assert requests[-1]['allowIncomplete'] is True and requests[-1]['commit'] is True and len(requests[-1]['rows']) == 1
+        assert customers[-1]['status'] == 'draft' and not customers[-1]['id_card'] and not customers[-1]['address']
+        expect(dialog.get_by_label('Cho phép hồ sơ Chưa hoàn tất thiếu CCCD/địa chỉ', exact=True)).to_be_disabled()
+        dialog.get_by_role('button', name='Đóng', exact=True).click()
+        expect(page.locator('.mg-title-count')).to_have_text('4')
+        expect(page.get_by_text('Khách thiếu hồ sơ QA', exact=True)).to_be_visible()
+        expect(page.locator('tbody tr').filter(has_text='Khách thiếu hồ sơ QA').get_by_text('Chưa hoàn tất', exact=True)).to_be_visible()
+        checks.append('incomplete mode requires opt-in and fresh preview, warns about missing documents, excludes active/malformed-ID rows, commits draft with notes and renders it at 1440/375px')
         assert not errors, errors
         assert not blocked, blocked
     finally:

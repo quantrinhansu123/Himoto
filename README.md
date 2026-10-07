@@ -35,6 +35,7 @@ npm.cmd run test:contracts
 npm.cmd run test:drafts
 npm.cmd run test:cashbook
 npm.cmd run test:customer-import
+npm.cmd run test:customer-source
 npm.cmd run test:stores
 npm.cmd run build
 ```

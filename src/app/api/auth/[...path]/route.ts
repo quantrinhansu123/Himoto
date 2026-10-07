@@ -19,8 +19,8 @@ const listQueries: Record<string, QueryConfig> = {
   },
   customers: {
     sql: `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card,
-                 CASE WHEN c.status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning'
-                      WHEN c.status = 0 THEN 'draft' ELSE 'active' END AS status,
+                 CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
+                      WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
                  c.warning, c.created_at, c.id_card_issued_on, c.id_card_issued_by, c.relatives,
                  c.store_id, s.store_name,
                  (SELECT count(*)::int FROM himoto.orders o WHERE o.customer_id = c.id AND o.deleted_at IS NULL) AS contract_count
@@ -102,8 +102,8 @@ export async function GET(request: NextRequest, { params }: Params) {
       if (query.length < 9 || query.length > 13 || !Number.isSafeInteger(storeId) || storeId <= 0) return NextResponse.json({ status: 'success', data: [] });
       const result = await himotoPool.query(
         `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card,
-                CASE WHEN c.status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning'
-                     WHEN c.status = 0 THEN 'draft' ELSE 'active' END AS status,
+                CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
+                     WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
                 c.warning AS warning_note, c.created_at, c.id_card_issued_on, c.id_card_issued_by,
                 c.relatives, c.store_id, s.store_name
          FROM himoto.customers c LEFT JOIN himoto.stores s ON s.id = c.store_id

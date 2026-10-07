@@ -28,10 +28,10 @@ export async function POST(request: NextRequest) {
   if (denied) return denied;
   let client;
   try {
-    const { rows, commit } = customerImportRequest(await readImportBody(request));
+    const { rows, commit, allowIncomplete } = customerImportRequest(await readImportBody(request));
     client = await himotoPool.connect();
     await client.query(commit ? 'BEGIN' : 'BEGIN READ ONLY');
-    const result = await importDatabaseCustomers(client, rows, commit);
+    const result = await importDatabaseCustomers(client, rows, commit, allowIncomplete);
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data: result }, { status: commit ? 201 : 200, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

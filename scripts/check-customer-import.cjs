@@ -89,10 +89,24 @@ async function run() {
   assert.equal(shared.validateCustomerImport([input()], stores, [{ id: 9, id_card: '001 234 567 890' }]).duplicate, 1);
   checks.push('server validates required fields, branches, statuses and warnings; all conflicting file rows and existing phone/ID matches are skipped, including +84/0084');
 
+  const partial = input({ id_card: '', address: '', status: 'Chưa hoàn tất', warning_note: 'Bổ sung hồ sơ QA' });
+  assert.equal(shared.validateCustomerImport([partial], stores, []).invalid, 1);
+  result = shared.validateCustomerImport([partial], stores, [], true);
+  assert.equal(result.valid, 1); assert.equal(result.incomplete, 1); assert.equal(result.rows[0].values.status, 'draft'); assert.equal(result.rows[0].warnings.length, 2);
+  for (const patch of [{ status: 'active' }, { status: 'warning' }, { status: 'blacklist' }, { phone: '' }, { name: '' }, { store: '' }, { id_card: '1234' }]) assert.equal(shared.validateCustomerImport([{ ...partial, values: { ...partial.values, ...patch } }], stores, [], true).invalid, 1);
+  result = shared.validateCustomerImport([partial, { ...partial, rowNumber: 3, values: { ...partial.values, phone: '0900000008' } }], stores, [{ id: 9, id_card: null }], true);
+  assert.equal(result.valid, 2); assert.equal(result.duplicate, 0);
+  const repository = load(path.join(root, 'lib/management/repository'));
+  assert.equal(repository.mapApiRow('customers', { id: 1, name: 'QA', status: 'draft', warning: 'Bổ sung QA' }).status, 'draft');
+  checks.push('incomplete mode requires explicit opt-in and draft status, keeps mandatory phone/name/store, rejects malformed nonblank ID, warns about missing documents and preserves draft status with notes');
+
   assert.throws(() => server.customerImportRequest({ rows: [], commit: true }));
   assert.throws(() => server.customerImportRequest({ rows: [input(), input()], commit: false }));
   assert.throws(() => server.customerImportRequest({ rows: [input({ phone: 900000001 })], commit: false }));
   assert.throws(() => server.customerImportRequest({ rows: [input()], commit: 'true' }));
+  assert.throws(() => server.customerImportRequest({ rows: [partial], commit: true, allowIncomplete: 'true' }));
+  assert.equal(server.customerImportRequest({ rows: [partial], commit: false }).allowIncomplete, false);
+  assert.equal(server.customerImportRequest({ rows: [partial], commit: false, allowIncomplete: true }).allowIncomplete, true);
   assert.throws(() => server.customerImportRequest({ rows: Array.from({ length: 1001 }, (_, index) => input({}, index + 2)), commit: false }));
   checks.push('API input validation rejects malformed rows, types, duplicate row numbers, missing mode and batches over 1000');
 
@@ -123,6 +137,13 @@ async function run() {
   existing = [];
   checks.push('preview performs SELECT only; commit locks before rechecking, uses parameterized bulk insert, preserves notes and rejects newly introduced duplicates');
 
+  queries.length = 0;
+  result = await server.importDatabaseCustomers(client, [partial], true, true);
+  const partialInsert = queries.find(query => query.sql.startsWith('INSERT'));
+  assert.equal(result.imported, 1); assert.equal(partialInsert.parameters[3], null); assert.equal(partialInsert.parameters[4], null); assert.equal(partialInsert.parameters[5], 0);
+  await assert.rejects(server.importDatabaseCustomers(client, [partial], true), error => error.status === 409);
+  checks.push('incomplete insert stores missing address/identity as NULL and status 0; commit rechecks opt-in rather than trusting preview');
+
   const session = load(path.join(root, 'lib/server/management-session'));
   const pool = load(path.join(root, 'lib/server/himoto-database')).himotoPool;
   const oldEnv = { DATABASE_URL: process.env.DATABASE_URL, MANAGEMENT_SESSION_SECRET: process.env.MANAGEMENT_SESSION_SECRET, NODE_ENV: process.env.NODE_ENV };
@@ -150,6 +171,8 @@ async function run() {
     queries.length = 0;
     assert.equal((await send({ rows: [input()], commit: true })).status, 201);
     assert.equal(queries.at(-2).sql, 'COMMIT'); assert.equal(queries.at(-1).sql, 'RELEASE');
+    assert.equal((await send({ rows: [partial], commit: true })).status, 409);
+    assert.equal((await send({ rows: [partial], commit: true, allowIncomplete: true })).status, 201);
     existing = [{ id: 9, phone: values.phone }]; queries.length = 0;
     assert.equal((await send({ rows: [input()], commit: true })).status, 409); assert.equal(queries.at(-2).sql, 'ROLLBACK');
     existing = []; failInsert = true; queries.length = 0;
@@ -160,6 +183,34 @@ async function run() {
     for (const [key, value] of Object.entries(oldEnv)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
   checks.push('route enforces real session/origin guards and byte limits; read-only preview, successful commit, conflict and insert-failure rollback verified with DB mocks');
-  console.log(JSON.stringify({ passed: checks.length, checks, databaseWrites: 'mock only' }, null, 2));
+  if (process.argv.includes('--live-temp')) {
+    require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });
+    const c = await load(path.join(root, 'lib/server/himoto-database')).himotoPool.connect();
+    const proxy = { query: (sql, params) => {
+      const rewritten = sql.replaceAll('himoto.customers', 'pg_temp.qa_customers').replaceAll('himoto.stores', 'pg_temp.qa_stores');
+      assert(!rewritten.includes('himoto.'), 'Business tables must be TEMP tables in QA');
+      return c.query(rewritten, params);
+    } };
+    const transaction = async work => { await c.query('SAVEPOINT customer_case'); try { const result = await work(); await c.query('RELEASE SAVEPOINT customer_case'); return result; } catch (e) { await c.query('ROLLBACK TO SAVEPOINT customer_case'); await c.query('RELEASE SAVEPOINT customer_case'); throw e; } };
+    try {
+      await c.query('BEGIN');
+      await c.query(`CREATE TEMP TABLE qa_stores(id bigint PRIMARY KEY,store_name text,code text);
+        CREATE TEMP TABLE qa_customers(id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,name varchar(191) NOT NULL,phone varchar(191),email varchar(191),address varchar(191),id_card varchar(191),status smallint NOT NULL DEFAULT 1,store_id integer,warning varchar(191),created_at timestamptz,updated_at timestamptz);
+        INSERT INTO qa_stores VALUES(2,'Cơ sở QA','CS-QA');`);
+      assert.equal((await transaction(() => server.importDatabaseCustomers(proxy, [partial], false, true))).valid, 1);
+      assert.equal((await c.query('SELECT count(*)::int AS n FROM pg_temp.qa_customers')).rows[0].n, 0);
+      const inserted = await transaction(() => server.importDatabaseCustomers(proxy, [partial], true, true));
+      assert.equal(inserted.imported, 1);
+      const saved = (await c.query('SELECT * FROM pg_temp.qa_customers')).rows[0];
+      assert.equal(saved.id_card, null); assert.equal(saved.address, null); assert.equal(saved.status, 0); assert.equal(saved.warning, partial.values.warning_note); assert.equal(saved.phone, values.phone);
+      await assert.rejects(transaction(() => server.importDatabaseCustomers(proxy, [partial], true, true)), e => e.status === 409);
+      const second = { ...partial, rowNumber: 3, values: { ...partial.values, phone: '0900000008' } };
+      await c.query("ALTER TABLE pg_temp.qa_customers ADD CONSTRAINT reject_test_phone CHECK(phone <> '0900000008')");
+      await assert.rejects(transaction(() => server.importDatabaseCustomers(proxy, [input({ phone: '0900000007' }), second], true, true)), e => e.code === '23514');
+      assert.equal((await c.query('SELECT count(*)::int AS n FROM pg_temp.qa_customers')).rows[0].n, 1);
+      checks.push('real PostgreSQL TEMP tables verify read-only preview, NULL fields/status 0, duplicate rejection and whole-batch rollback on an insert constraint failure');
+    } finally { await c.query('ROLLBACK').catch(() => {}); c.release(); }
+  }
+  console.log(JSON.stringify({ passed: checks.length, checks, permanentBusinessWrites: 0, databaseWrites: process.argv.includes('--live-temp') ? 'TEMP tables and mocks only' : 'mock only' }, null, 2));
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

@@ -21,6 +21,7 @@ export interface CustomerImportRow {
   store_id: number | null;
   state: 'valid' | 'invalid' | 'duplicate';
   errors: string[];
+  warnings: string[];
 }
 export interface CustomerImportResult {
   rows: CustomerImportRow[];
@@ -28,6 +29,7 @@ export interface CustomerImportResult {
   valid: number;
   invalid: number;
   duplicate: number;
+  incomplete: number;
   imported: number;
   committed: boolean;
 }
@@ -47,7 +49,7 @@ const statuses: Record<string, string> = {
   draft: 'draft', 'chua hoan tat': 'draft',
 };
 
-export function validateCustomerImport(inputs: CustomerImportInput[], stores: CustomerImportStore[], existing: CustomerImportExisting[]): CustomerImportResult {
+export function validateCustomerImport(inputs: CustomerImportInput[], stores: CustomerImportStore[], existing: CustomerImportExisting[], allowIncomplete = false): CustomerImportResult {
   const seenCards = new Map<string, number[]>(), seenPhones = new Map<string, number[]>();
   for (const input of inputs) {
     for (const [map, value] of [[seenCards, input.values.id_card.replace(/\s/g, '')], [seenPhones, importPhone(input.values.phone)]] as const) {
@@ -64,10 +66,15 @@ export function validateCustomerImport(inputs: CustomerImportInput[], stores: Cu
     values.phone = values.phone.replace(/[\s.()-]/g, '');
     values.id_card = values.id_card.replace(/\s/g, '');
     values.status = values.status ? statuses[importText(values.status)] || values.status : 'active';
-    if (values.warning_note && ['active', 'draft'].includes(values.status)) values.status = 'warning';
+    const incompleteAllowed = allowIncomplete && values.status === 'draft';
+    if (values.warning_note && (values.status === 'active' || (values.status === 'draft' && !incompleteAllowed))) values.status = 'warning';
     const errors = [...(input.errors || [])];
+    const warnings: string[] = [];
     for (const column of CUSTOMER_IMPORT_COLUMNS) {
-      if (column.required && !values[column.key]) errors.push(`Thiếu ${column.label.toLowerCase()}.`);
+      if (column.required && !values[column.key]) {
+        if (incompleteAllowed && ['id_card', 'address'].includes(column.key)) warnings.push(`Chưa có ${column.label.toLowerCase()}; cần bổ sung hồ sơ sau khi nhập.`);
+        else errors.push(`Thiếu ${column.label.toLowerCase()}.`);
+      }
       if (values[column.key].length > column.max) errors.push(`${column.label} vượt ${column.max} ký tự.`);
     }
     if (values.phone && !/^\+?\d{9,13}$/.test(values.phone)) errors.push('Số điện thoại cần 9–13 chữ số.');
@@ -88,8 +95,9 @@ export function validateCustomerImport(inputs: CustomerImportInput[], stores: Cu
       if (otherRows.length) duplicates.push(`${label} trùng trong file (dòng ${otherRows.slice(0, 5).join(', ')}${otherRows.length > 5 ? ', …' : ''}).`);
       if (current.has(key)) duplicates.push(`${label} đã có ở khách hàng #${current.get(key)}.`);
     }
-    return { rowNumber: input.rowNumber, values, store_id: storeId, state: errors.length ? 'invalid' : duplicates.length ? 'duplicate' : 'valid', errors: [...errors, ...duplicates] };
+    return { rowNumber: input.rowNumber, values, store_id: storeId, state: errors.length ? 'invalid' : duplicates.length ? 'duplicate' : 'valid', errors: [...errors, ...duplicates], warnings };
   });
   return { rows, total: rows.length, valid: rows.filter(row => row.state === 'valid').length,
-    invalid: rows.filter(row => row.state === 'invalid').length, duplicate: rows.filter(row => row.state === 'duplicate').length, imported: 0, committed: false };
+    invalid: rows.filter(row => row.state === 'invalid').length, duplicate: rows.filter(row => row.state === 'duplicate').length,
+    incomplete: rows.filter(row => row.state === 'valid' && row.warnings.length).length, imported: 0, committed: false };
 }
