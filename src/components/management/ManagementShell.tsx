@@ -81,8 +81,6 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
       title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
       <item.icon size={19} strokeWidth={1.8} /><span>{item.label}</span>{active.href === item.href && <ChevronRight className="mg-nav-arrow" size={15} />}
     </Link>)}</nav>
-    <div className="mg-sidebar-bottom"><div className="mg-source-marker"><span />{writableDrafts ? 'Supabase · có thể lưu nháp' : writableCustomers ? 'Supabase · khách hàng có thể sửa' : writableStores ? 'Supabase · cơ sở có thể sửa' : writableVehicles ? 'Supabase · có thể đồng bộ xe' : 'Dữ liệu API · chỉ đọc'}</div>
-      <p>{writableDrafts ? 'Lưu và tiếp tục sửa hợp đồng đang soạn.' : writableCustomers ? 'Thêm, cập nhật và xóa hồ sơ khách hàng trực tiếp.' : writableStores ? 'Thêm, sửa thông tin và xóa cơ sở chưa có dữ liệu liên quan.' : writableVehicles ? 'Đối chiếu Excel, đồng bộ xe và giữ lịch sử liên quan.' : 'Kết nối dữ liệu từ hệ thống.'}</p><span className="mg-version">HIMOTO MANAGEMENT / 01</span></div>
   </>;
 
   return <div className={`mg-app ${collapsed ? 'mg-is-collapsed' : ''}`}>
