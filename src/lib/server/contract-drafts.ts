@@ -10,8 +10,8 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   COALESCE(c.id_card, o.customer_idnumber) AS customer_id_card,
   COALESCE(c.address, o.customer_address) AS customer_address, c.email AS customer_email,
   c.id_card_issued_on, c.id_card_issued_by, c.relatives, c.warning AS warning_note,
-  o.store_id, s.store_name, o.rent_at AS start_date, o.return_at AS end_date,
-  o.total AS total_amount,
+  o.store_id, s.store_name, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
+  o.total AS total_amount, o.pid AS paid_amount,
   CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
        ELSE COALESCE(o.first_deposit_amount, 0) + COALESCE(o.additional_deposit_amount, 0) END AS deposit_amount,
   o.note AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
@@ -27,7 +27,8 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
     SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,
       'driver_license_issued_on', d.driver_license_issued_on, 'borrow_hats', d.borrow_hats,
-      'borrow_raincoats', d.borrow_raincoats) ORDER BY d.id) AS vehicles
+      'borrow_raincoats', d.borrow_raincoats) ORDER BY d.id) AS vehicles,
+      min(d.rent_at) AS start_date, max(d.return_at) AS end_date
     FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
     WHERE d.order_id = o.id AND d.deleted_at IS NULL
   ) ov ON true
@@ -83,7 +84,7 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   const stores = await client.query('SELECT id FROM himoto.stores WHERE id = $1', [edits.draft.store_id || null]);
   const staff = await client.query('SELECT id, store_id, user_id FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id || null]);
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
-  const vehicles = await client.query('SELECT id, current_store_id AS store_id FROM himoto.vehicles WHERE id = ANY($1::bigint[])', [ids]);
+  const vehicles = await client.query('SELECT id, COALESCE(current_store_id, store_id) AS store_id FROM himoto.vehicles WHERE id = ANY($1::bigint[])', [ids]);
   if (edits.draft.customer_id) {
     const keepExistingCustomer = previous && String(previous.customer_id) === String(edits.draft.customer_id) && String(previous.store_id) === edits.draft.store_id;
     const customers = await client.query(`SELECT c.id FROM himoto.customers c WHERE c.id = $1 AND ($3::boolean OR c.store_id = $2 OR

@@ -24,6 +24,8 @@ Xe có cột Màu sắc, [tải mẫu Excel, đối chiếu, đồng bộ và X�
 
 Khách hàng hỗ trợ tạo/cập nhật hồ sơ, cơ sở, trạng thái và cảnh báo; xóa bị chặn khi có liên kết với đơn thuê. Có tải mẫu và nhập Excel `.xlsx` theo hướng dẫn tại [nhập khách hàng từ Excel](docs/customer-excel.md). Hợp đồng hỗ trợ soạn, lưu bản nháp vào DB, mở Log để tiếp tục và in; [bố cục form và mẫu in](docs/contract-layout.md) đối chiếu theo app cũ. Hợp đồng đã phát hành chỉ tra cứu/in; chưa nối sao chép hoặc cập nhật hợp đồng đã phát hành. Sổ quỹ chỉ đọc. Không triển khai nghiệp vụ cọc, giao/trả xe, thanh toán hay tất toán.
 
+[Đối chiếu hợp đồng đang thuê từ Excel](docs/contract-source-data.md): khớp khách, biển số và cơ sở; 6 đơn đã lưu vào Log để bổ sung. Các đơn thiếu hoặc xung đột dữ liệu giữ lại trong Excel đối chiếu.
+
 ## Kiểm tra
 
 ```powershell
@@ -33,6 +35,7 @@ npm.cmd run test:login
 npm.cmd run test:management
 npm.cmd run test:contracts
 npm.cmd run test:drafts
+npm.cmd run test:contract-import
 npm.cmd run test:cashbook
 npm.cmd run test:customer-import
 npm.cmd run test:customer-source

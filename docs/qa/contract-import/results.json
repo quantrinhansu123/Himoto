@@ -1,0 +1,13 @@
+{
+  "passed": 5,
+  "checks": [
+    "Log opens the saved customer, vehicle and branch; incomplete identity remains blank",
+    "source total and paid survive reload; deposit and unit price remain unknown despite a master daily price",
+    "missing identity, representative and signed date prevent producing an issued contract",
+    "incomplete imported draft can be resumed and saved to the same ID with a revision",
+    "375px imported draft has no horizontal overflow"
+  ],
+  "intercepted_saves": 1,
+  "business_writes": 0,
+  "browser_errors": []
+}
