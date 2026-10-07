@@ -175,6 +175,10 @@
 .mg-dialog { width: 650px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 48px); padding: 0; margin: auto; background: #fff; border: 1px solid #e3e7ed; border-radius: 13px; box-shadow: 0 24px 90px #15233330; color: #384654; font: 13px/1.5 'Roboto', Arial, sans-serif; overflow-y: auto; }
 .mg-dialog::backdrop, .mg-mobile-nav::backdrop { background: #18212b70; backdrop-filter: blur(2px); }
 .mg-customer-import { width: 1050px; }
+.mg-vehicle-store-mapping { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
+.mg-import-notes { margin: 16px 0; overflow-wrap: anywhere; }
+.mg-import-notes summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.mg-import-warning { padding: 12px; border: 1px solid #e8cf91; border-radius: 8px; background: #fff8e8; color: #755315; }
 .mg-import-upload { padding: 18px; border: 1px dashed #d9b9bc; border-radius: 8px; background: #fdfafa; }
 .mg-import-upload input[type='file'] { width: 100%; height: auto; padding: 10px; }
 .mg-import-filename { overflow-wrap: anywhere; }

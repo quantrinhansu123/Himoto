@@ -1,0 +1,17 @@
+{
+  "passed": 8,
+  "checks": [
+    "vehicle table renders DB color and electric type label",
+    "downloaded template has color, text plate/chassis and current branch dropdown without fake data",
+    "legacy parsing aligns fields, shows ignored extras, requires branch decision and exports only selected eligible rows with leading zeros",
+    "409 conflict requires fresh preview/warning consent; successful sync refreshes table and exposes downloadable durable backup",
+    "reset discovers relationships and disables deletion before any DELETE request; Escape restores focus",
+    "replace mode remains blocked by history even if the file was selected",
+    "375px layout keeps file controls, branch mapping and preview within the dialog without page overflow",
+    "unlinked reset requires exact confirmation, refreshes table and shows backup link (synthetic only)"
+  ],
+  "pageErrors": [],
+  "unexpectedRequests": [],
+  "businessWrites": 0,
+  "syntheticCommitCalls": 2
+}

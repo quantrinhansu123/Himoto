@@ -20,6 +20,8 @@ Frontend gọi `/api` cùng domain; Route Handlers phía server truy cập schem
 
 Cơ sở có [thêm, sửa thông tin và xóa](docs/store-management.md); cơ sở có dữ liệu liên quan được chặn xóa để giữ lịch sử.
 
+Xe có cột Màu sắc, [tải mẫu Excel, đối chiếu, đồng bộ và Xóa hết](docs/vehicle-excel.md). Đồng bộ giữ ID/lịch sử; bỏ cơ sở ngoài danh sách phải được chọn rõ. Nhập/xóa đều sao lưu và chạy trong giao dịch; xóa toàn bộ bị chặn khi có dữ liệu liên quan.
+
 Khách hàng hỗ trợ tạo/cập nhật hồ sơ, cơ sở, trạng thái và cảnh báo; xóa bị chặn khi có liên kết với đơn thuê. Có tải mẫu và nhập Excel `.xlsx` theo hướng dẫn tại [nhập khách hàng từ Excel](docs/customer-excel.md). Hợp đồng hỗ trợ soạn, lưu bản nháp vào DB, mở Log để tiếp tục và in; [bố cục form và mẫu in](docs/contract-layout.md) đối chiếu theo app cũ. Hợp đồng đã phát hành chỉ tra cứu/in; chưa nối sao chép hoặc cập nhật hợp đồng đã phát hành. Sổ quỹ chỉ đọc. Không triển khai nghiệp vụ cọc, giao/trả xe, thanh toán hay tất toán.
 
 ## Kiểm tra

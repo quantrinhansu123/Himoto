@@ -33,9 +33,9 @@ const listQueries: Record<string, QueryConfig> = {
   },
   'vehicle/vehicles': {
     sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer,
-                 v.current_store_id, s.store_name
+                 v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name
           FROM himoto.vehicles v
-          LEFT JOIN himoto.stores s ON s.id = v.current_store_id
+          LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
           ORDER BY v.id DESC`,
   },
   'order/car-rental': {

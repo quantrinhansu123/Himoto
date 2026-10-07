@@ -9,7 +9,7 @@ export const VEHICLE_STATUSES: Option[] = [
   { value: 'pending', label: 'Đặt trước' }, { value: 'sold', label: 'Đã bán' }, { value: 'bad_debt', label: 'Nợ xấu' },
   { value: 'broken', label: 'Hỏng' }, { value: 'in_transit', label: 'Đang điều chuyển' },
 ];
-export const VEHICLE_TYPES: Option[] = [{ value: 'xega', label: 'Xe ga' }, { value: 'xeso', label: 'Xe số' }, { value: 'xecon', label: 'Xe côn tay' }, { value: 'xesh', label: 'Xe SH' }, { value: 'electric', label: 'Xe điện' }];
+export const VEHICLE_TYPES: Option[] = [{ value: 'xega', label: 'Xe ga' }, { value: 'xeso', label: 'Xe số' }, { value: 'xecon', label: 'Xe côn tay' }, { value: 'xesh', label: 'Xe SH' }, { value: 'xe_dien', label: 'Xe điện' }];
 export const POSITIONS: Option[] = ['Quản lý cơ sở', 'Nhân viên kinh doanh', 'Thu ngân', 'Kỹ thuật viên'].map(label => ({ value: label, label }));
 export const CONTRACT_STATUSES: Option[] = [
   { value: 'draft', label: 'Lưu nháp' }, { value: 'renting', label: 'Đang thuê' },
@@ -82,13 +82,13 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     searchPlaceholder: 'Tìm mã xe, tên xe hoặc biển số…', statuses: VEHICLE_STATUSES,
     filters: [{ key: 'type', label: 'Tất cả loại xe', options: VEHICLE_TYPES }],
     columns: [codeColumn, { key: 'name', label: 'Tên xe', format: 'vehicle', secondary: 'brand' }, { key: 'license', label: 'Biển số' },
-      { key: 'type', label: 'Loại xe' }, branchColumn,
+      { key: 'color', label: 'Màu sắc' }, { key: 'type', label: 'Loại xe' }, branchColumn,
       { key: 'daily_price', label: 'Giá thuê / ngày', format: 'money', align: 'right' },
       { key: 'odometer', label: 'Số km', format: 'number', align: 'right' }, statusColumn,
-      { key: 'year', label: 'Năm sản xuất', hidden: true },
+      { key: 'year', label: 'Năm sản xuất', hidden: true }, { key: 'chassis', label: 'Số khung', hidden: true }, { key: 'engine', label: 'Số máy', hidden: true },
       { key: 'monthly_price', label: 'Giá thuê / tháng', format: 'money', align: 'right', hidden: true }],
     fields: [{ key: 'name', label: 'Tên / dòng xe', required: true }, { key: 'license', label: 'Biển số', required: true },
-      { key: 'brand', label: 'Hãng xe', required: true }, { key: 'type', label: 'Loại xe', type: 'select', options: VEHICLE_TYPES, required: true },
+      { key: 'brand', label: 'Hãng xe', required: true }, { key: 'color', label: 'Màu sắc' }, { key: 'type', label: 'Loại xe', type: 'select', options: VEHICLE_TYPES, required: true },
       branchField, { key: 'status', label: 'Trạng thái', type: 'select', options: VEHICLE_STATUSES, required: true },
       { key: 'daily_price', label: 'Giá thuê / ngày (VNĐ)', type: 'number', required: true },
       { key: 'monthly_price', label: 'Giá thuê / tháng (VNĐ)', type: 'number' },

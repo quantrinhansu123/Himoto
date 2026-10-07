@@ -1,0 +1,18 @@
+{
+  "vehicles": {
+    "total": 173,
+    "uniqueplates": 173
+  },
+  "API": {
+    "vehicles": 200,
+    "allRowsHaveColor": true,
+    "backup": 200,
+    "backupRows": 172,
+    "resetBlocked": true
+  },
+  "backupPermissions": {
+    "anon_read": false,
+    "authenticated_read": false
+  },
+  "businessWrites": 0
+}
