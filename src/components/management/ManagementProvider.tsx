@@ -5,6 +5,8 @@ import { createManagementRepository } from '@/lib/management/repository';
 import { ContractEdits, CustomerAssignment, EditableKind, ManagementDataset, ManagementRepository, ManagementRow } from '@/lib/management/types';
 import { ContractAutofillRepository, createApiAutofillRepository } from '@/lib/management/contract-autofill';
 import { CustomerDetails } from '@/lib/management/contract-document';
+import { StoreCreation, StoreEdits } from '@/lib/management/store-management';
+import { createStoreRecord, deleteStoreRecord, updateStoreRecord } from '@/lib/management/store-repository';
 
 interface ManagementContextValue {
   dataset: ManagementDataset | null;
@@ -21,6 +23,10 @@ interface ManagementContextValue {
   createCustomer: (customer: CustomerDetails, assignment?: CustomerAssignment) => Promise<ManagementRow>;
   updateCustomer: (customer: ManagementRow) => Promise<ManagementRow>;
   deleteCustomer: (id: number) => Promise<void>;
+  acceptImportedCustomers: (count: number) => Promise<void>;
+  updateStore: (id: number, edits: StoreEdits) => Promise<void>;
+  createStore: (store: StoreCreation) => Promise<void>;
+  deleteStore: (id: number) => Promise<void>;
   cloneContract: (id: number) => Promise<ManagementRow>;
   saveContract: (id: number, edits: ContractEdits) => Promise<ManagementRow>;
   saveContractDraft: (id: number | null, edits: ContractEdits) => Promise<ManagementRow>;
@@ -67,7 +73,7 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
   };
   const saveContractDraft = async (id: number | null, edits: ContractEdits) => {
     const result = await repository.saveContractDraft(id, edits);
-    setDataset(result.dataset);
+    setDataset(current => current ? { ...current, contracts: result.dataset.contracts } : result.dataset);
     notify(`Đã lưu nháp ${result.row.code} vào Supabase. Mở mục Log để tiếp tục chỉnh sửa.`);
     return result.row;
   };
@@ -94,7 +100,33 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
     setDataset(current => current ? { ...current, customers: current.customers.filter(item => item.id !== id) } : current);
     notify('Đã xóa hồ sơ khách hàng khỏi Supabase.');
   };
-  return <ManagementContext.Provider value={{ dataset, loading, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), selectedStore, selectStore, reload, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, cloneContract, saveContract, saveContractDraft }}>
+  const acceptImportedCustomers = async (count: number) => {
+    await reload();
+    notify(`Đã nhập ${count} khách hàng từ Excel vào Supabase.`);
+  };
+  const updateStore = async (id: number, edits: StoreEdits) => {
+    const row = await updateStoreRecord(id, edits);
+    setDataset(current => {
+      if (!current) return current;
+      const next = { ...current, stores: current.stores.map(store => store.id === id ? row : store) };
+      for (const kind of ['customers', 'staff', 'vehicles', 'contracts'] as const) next[kind] = next[kind].map(record => record.store_id === id ? { ...record, store_name: row.name } : record);
+      return next;
+    });
+    notify('Đã cập nhật cơ sở trong Supabase.');
+  };
+  const createStore = async (store: StoreCreation) => {
+    const row = await createStoreRecord(store);
+    setDataset(current => current ? { ...current, stores: [row, ...current.stores.filter(record => record.id !== row.id)] } : current);
+    selectStore('all');
+    notify(`Đã tạo cơ sở ${row.name} · ${row.code} trong Supabase.`);
+  };
+  const deleteStore = async (id: number) => {
+    await deleteStoreRecord(id);
+    setDataset(current => current ? { ...current, stores: current.stores.filter(store => store.id !== id) } : current);
+    if (selectedStore === String(id)) selectStore('all');
+    notify('Đã xóa cơ sở khỏi Supabase.');
+  };
+  return <ManagementContext.Provider value={{ dataset, loading, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), selectedStore, selectStore, reload, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft }}>
     {children}
     {notification && <div className="mg-toast" role="status"><span>{notification}</span><button type="button" onClick={() => notify('')} aria-label="Đóng thông báo">×</button></div>}
   </ManagementContext.Provider>;

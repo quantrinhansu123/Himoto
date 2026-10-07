@@ -1,0 +1,10 @@
+{
+  "passed": 4,
+  "checks": [
+    "live collection GET still reads six stores and revisions",
+    "anonymous create rejected with 401",
+    "missing-origin create rejected with 403",
+    "invalid create rejected with 400 before database transaction"
+  ],
+  "realBusinessWrites": 0
+}

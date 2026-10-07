@@ -6,3 +6,6 @@ next-env.d.ts
 !.env.example
 
 .vercel
+
+# Local customer/vehicle workbooks contain operational data.
+/excel-import/

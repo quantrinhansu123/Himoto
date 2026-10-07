@@ -1,0 +1,14 @@
+{
+  "passed": 5,
+  "checks": [
+    "live store GET exposes manager ID and revision",
+    "live manager GET returns IDs and names only",
+    "live Excel preview succeeds with commit=false and zero imported customers",
+    "anonymous preview rejected with 401",
+    "missing-origin preview rejected with 403"
+  ],
+  "storeCount": 6,
+  "managerCount": 46,
+  "previewValid": 1,
+  "realBusinessWrites": 0
+}

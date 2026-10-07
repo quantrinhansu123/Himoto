@@ -1,0 +1,18 @@
+{
+  "passed": 9,
+  "checks": [
+    "stores table has view/edit/delete actions and legacy opening status displays as Hoạt động",
+    "edit validates before request, loads real manager choices, sends schema-backed fields and refreshes row/branch selector after save (mock write)",
+    "delete requires confirmation and dependency rejection retains the store with an explicit reason",
+    "mobile edit stays in viewport, traps keyboard focus and retains entered data on a stale revision conflict",
+    "manager lookup failure disables saving and provides working retry",
+    "unused store deletion handles network failure, removes row on success and resets selected branch (mock write)",
+    "mobile add dialog defaults to active physical branch, validates name/code without writes and retains input after duplicate/network errors",
+    "successful create POST adds the new store to table and branch selector with real returned ID/code (mock write)",
+    "blank code supports automatic assignment, lease-to-own kind is saved and filters reset so the created store is visible (mock write)"
+  ],
+  "javascriptErrors": [],
+  "unexpectedWritesBlocked": [],
+  "realBusinessWrites": 0,
+  "dataSource": "synthetic API responses; server layout authentication reads existing QA account only"
+}

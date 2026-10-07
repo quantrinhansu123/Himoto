@@ -1,0 +1,15 @@
+{
+  "passed": 6,
+  "checks": [
+    "browser download yields a valid blank XLSX with Text identity columns and current branch dropdown",
+    "upload reads real XLSX, preserves leading zeros, previews valid/error/duplicate rows and filters issues",
+    "375px preview has no page overflow, table scrolls internally and keyboard focus stays in dialog",
+    "confirmation sends only eligible rows, shows saved/skipped counts and refreshes customer list (mock write)",
+    "unsupported/blank files and numeric identities display errors and disable import",
+    "network failure retains parsed data for retry; commit conflict forces new preview before another import"
+  ],
+  "javascriptErrors": [],
+  "unexpectedWritesBlocked": [],
+  "realBusinessWrites": 0,
+  "dataSource": "synthetic API responses; server layout authentication reads existing QA account only"
+}

@@ -58,7 +58,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
             {config.kind === 'contracts' && onPrint && <button className="mg-icon-button" type="button" aria-label={`Điền và in ${row.code}`} title="Điền và in hợp đồng" onClick={() => onPrint(row)}><Printer size={17} /></button>}
             {(canEditContract || (canEditDraft && row.status === 'draft')) && <button className="mg-icon-button" type="button" aria-label={`Sửa ${row.code}`} title={row.status === 'draft' ? 'Tiếp tục sửa bản nháp' : 'Chỉnh sửa hợp đồng'} onClick={() => onEdit(row)}><Pencil size={16} /></button>}
             {config.kind !== 'contracts' && canEdit && <button className="mg-icon-button" type="button" aria-label={`Sửa ${row.code}`} title="Chỉnh sửa" onClick={() => onEdit(row)}><Pencil size={16} /></button>}
-            {canDelete && onDelete && <button className="mg-icon-button mg-delete-action" type="button" aria-label={`Xóa ${row.name}`} title="Xóa khách hàng" onClick={() => onDelete(row)}><Trash2 size={16} /></button>}
+            {canDelete && onDelete && <button className="mg-icon-button mg-delete-action" type="button" aria-label={`Xóa ${row.name}`} title={`Xóa ${config.singular}`} onClick={() => onDelete(row)}><Trash2 size={16} /></button>}
             {config.kind === 'contracts' && onClone && <button className="mg-button mg-clone-button" type="button" disabled={cloningId != null} aria-label={`Sao chép hợp đồng ${row.code}`} onClick={() => onClone(row)}>{cloningId === row.id ? <LoaderCircle size={14} className="mg-spin" /> : <Copy size={14} />}{cloningId === row.id ? 'Đang sao chép…' : 'Sao chép hợp đồng'}</button>}
           </div></td></tr>)}</tbody>
     </table>

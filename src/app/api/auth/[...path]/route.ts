@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { CONTRACT_LIST_SQL, DraftSaveError, saveDatabaseDraft } from '@/lib/server/contract-drafts';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
+import { STORE_SELECT_SQL } from '@/lib/server/store-management';
 
 export const runtime = 'nodejs';
 
@@ -28,13 +29,7 @@ const listQueries: Record<string, QueryConfig> = {
           ORDER BY c.id DESC`,
   },
   stores: {
-    sql: `SELECT s.id, s.code, s.store_name, s.store_phone, s.store_address, s.status,
-                 u.name AS manager_name,
-                 (SELECT count(*)::int FROM himoto.vehicles v WHERE v.current_store_id = s.id) AS vehicle_count,
-                 (SELECT count(*)::int FROM himoto.staff_profiles p WHERE p.store_id = s.id) AS staff_count
-          FROM himoto.stores s
-          LEFT JOIN himoto.users u ON u.id = s.user_id AND u.deleted_at IS NULL
-          ORDER BY s.id`,
+    sql: `${STORE_SELECT_SQL} ORDER BY s.id`,
   },
   'vehicle/vehicles': {
     sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer,
@@ -163,6 +158,9 @@ export async function POST(request: NextRequest, { params }: Params) {
   const client = await himotoPool.connect();
   try {
     await client.query('BEGIN');
+    // Serialize duplicate preflight with Excel imports and other customer writes.
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query('LOCK TABLE himoto.customers IN SHARE ROW EXCLUSIVE MODE');
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [idCard]);
     const duplicate = await client.query(
       `SELECT id FROM himoto.customers
@@ -239,6 +237,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const client = await himotoPool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query('LOCK TABLE himoto.customers IN SHARE ROW EXCLUSIVE MODE');
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`customer:${idCard || `id:${id}`}`]);
     const duplicate = idCard ? await client.query(
       `SELECT id FROM himoto.customers WHERE id <> $1 AND regexp_replace(COALESCE(id_card, ''), '\\s+', '', 'g') = $2 LIMIT 1`, [id, idCard],
