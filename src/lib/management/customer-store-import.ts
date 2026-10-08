@@ -1,5 +1,9 @@
 import { CustomerImportStore, importText } from './customer-import';
 
+export const CUSTOMER_STORE_BATCH_SIZE = 1000;
+export const CUSTOMER_STORE_MAX_ROW = 1_048_576;
+export const CUSTOMER_STORE_DUPLICATE = 'Căn cước trùng trong file. Chỉ giữ một dòng cho mỗi khách hàng.';
+
 export interface CustomerStoreInput {
   rowNumber: number;
   values: { id_card: string; store: string };
@@ -54,7 +58,7 @@ export function matchCustomerStores(inputs: CustomerStoreInput[], stores: Custom
     const branches = values.store ? stores.filter(store => String(store.id) === values.store || importText(store.name) === importText(values.store) || (store.code && importText(store.code) === importText(values.store))) : [];
     const branch = branches.length === 1 ? branches[0] : null;
     if (values.store && !branch) errors.push('Cơ sở không tồn tại hoặc tên bị trùng. Dùng tên, mã hoặc ID trong sheet Cơ sở.');
-    if ((fileCards.get(values.id_card)?.length || 0) > 1) errors.push('Căn cước trùng trong file. Chỉ giữ một dòng cho mỗi khách hàng.');
+    if ((fileCards.get(values.id_card)?.length || 0) > 1 && !errors.includes(CUSTOMER_STORE_DUPLICATE)) errors.push(CUSTOMER_STORE_DUPLICATE);
     const matches = existingCards.get(values.id_card) || [];
     const customer = matches.length === 1 ? matches[0] : null;
     if (values.id_card && !customer) errors.push(matches.length ? 'Căn cước khớp nhiều hồ sơ khách hàng. Cần đối chiếu trước.' : 'Không tìm thấy khách hàng có căn cước này.');

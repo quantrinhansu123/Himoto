@@ -1,20 +1,19 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { CUSTOMER_IMPORT_LIMIT } from '@/lib/management/customer-import';
-import { CustomerStoreInput, CustomerStoreResult, matchCustomerStores } from '@/lib/management/customer-store-import';
+import { CUSTOMER_STORE_BATCH_SIZE, CUSTOMER_STORE_MAX_ROW, CustomerStoreInput, CustomerStoreResult, matchCustomerStores } from '@/lib/management/customer-store-import';
 import { CustomerImportError } from './customer-import';
 
 export function customerStoreRequest(body: unknown): { rows: CustomerStoreInput[]; commit: boolean; revision: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new CustomerImportError('Dữ liệu khớp cơ sở không hợp lệ.');
   const { rows, commit, revision = '' } = body as Record<string, unknown>;
-  if (!Array.isArray(rows) || !rows.length || rows.length > CUSTOMER_IMPORT_LIMIT || typeof commit !== 'boolean') throw new CustomerImportError(`Cần từ 1 đến ${CUSTOMER_IMPORT_LIMIT} dòng và chế độ cập nhật hợp lệ.`);
+  if (!Array.isArray(rows) || !rows.length || rows.length > CUSTOMER_STORE_BATCH_SIZE || typeof commit !== 'boolean') throw new CustomerImportError(`Mỗi phần cần từ 1 đến ${CUSTOMER_STORE_BATCH_SIZE} dòng và chế độ cập nhật hợp lệ.`);
   if (typeof revision !== 'string' || (commit && !/^[a-f0-9]{64}$/.test(revision))) throw new CustomerImportError('Cần kiểm tra file trước khi cập nhật cơ sở.');
   const rowNumbers = new Set<number>();
   const inputs = rows.map(raw => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new CustomerImportError('Dòng dữ liệu không hợp lệ.');
     const { rowNumber, values, errors } = raw as Record<string, unknown>;
-    if (typeof rowNumber !== 'number' || !Number.isSafeInteger(rowNumber) || rowNumber < 2 || rowNumber > 10000 || rowNumbers.has(rowNumber) || !values || typeof values !== 'object' || Array.isArray(values)) throw new CustomerImportError('Số dòng hoặc các cột dữ liệu không hợp lệ.');
+    if (typeof rowNumber !== 'number' || !Number.isSafeInteger(rowNumber) || rowNumber < 2 || rowNumber > CUSTOMER_STORE_MAX_ROW || rowNumbers.has(rowNumber) || !values || typeof values !== 'object' || Array.isArray(values)) throw new CustomerImportError('Số dòng hoặc các cột dữ liệu không hợp lệ.');
     rowNumbers.add(rowNumber);
     const fields = values as Record<string, unknown>;
     if (Object.keys(fields).some(key => !['id_card', 'store'].includes(key)) || ['id_card', 'store'].some(key => typeof fields[key] !== 'string' || (fields[key] as string).length > 10000)) throw new CustomerImportError('Căn cước và cơ sở phải là văn bản theo mẫu.');

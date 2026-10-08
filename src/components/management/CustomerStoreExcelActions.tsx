@@ -2,8 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { ArrowDownToLine, Check, ListChecks, LoaderCircle, Upload } from 'lucide-react';
-import { CUSTOMER_IMPORT_LIMIT } from '@/lib/management/customer-import';
 import type { CustomerStoreInput, CustomerStoreResult } from '@/lib/management/customer-store-import';
+import { CustomerStorePreview, CustomerStoreProgress, previewCustomerStoreBatches, saveCustomerStoreBatches } from '@/lib/management/customer-store-batches';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 
@@ -26,6 +26,8 @@ function CustomerStoreExcelDialog({ onClose }: { onClose: () => void }) {
   const { dataset, reload, notify } = useManagement();
   const [inputs, setInputs] = useState<CustomerStoreInput[]>([]);
   const [result, setResult] = useState<CustomerStoreResult | null>(null);
+  const [preview, setPreview] = useState<CustomerStorePreview | null>(null);
+  const [progress, setProgress] = useState<CustomerStoreProgress | null>(null);
   const [filename, setFilename] = useState('');
   const [busy, setBusy] = useState<'template' | 'read' | 'check' | 'save' | ''>('');
   const busyRef = useRef(false);
@@ -34,6 +36,12 @@ function CustomerStoreExcelDialog({ onClose }: { onClose: () => void }) {
   const [page, setPage] = useState(1);
   const summaryRef = useRef<HTMLDivElement>(null);
   const focusSummary = () => requestAnimationFrame(() => summaryRef.current?.focus());
+
+  async function previewRows(rows: CustomerStoreInput[]) {
+    setPreview(null); setProgress(null); setResult(null);
+    const next = await previewCustomerStoreBatches(rows, checkStores, (state, partial) => { setProgress(state); setResult(partial); });
+    setPreview(next); setResult(next.result);
+  }
 
   async function download() {
     if (busyRef.current) return;
@@ -48,45 +56,48 @@ function CustomerStoreExcelDialog({ onClose }: { onClose: () => void }) {
   }
   async function readFile(file: File | undefined) {
     if (!file || busyRef.current) return;
-    busyRef.current = true; setBusy('read'); setError(''); setInputs([]); setResult(null); setFilename(file.name); setPage(1); setIssuesOnly(false);
+    busyRef.current = true; setBusy('read'); setError(''); setInputs([]); setResult(null); setPreview(null); setProgress(null); setFilename(file.name); setPage(1); setIssuesOnly(false);
     try {
       const { readCustomerStoreExcel } = await import('@/lib/management/customer-excel');
       const rows = await readCustomerStoreExcel(file);
-      setInputs(rows); setBusy('check'); setResult(await checkStores(rows, false));
+      setInputs(rows); setBusy('check'); await previewRows(rows);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không đọc được file Excel.'); }
     finally { busyRef.current = false; setBusy(''); focusSummary(); }
   }
   async function submit(commit: boolean) {
-    if (busyRef.current || !inputs.length || (commit && (!result?.ready || result.committed))) return;
-    busyRef.current = true; setBusy(commit ? 'save' : 'check'); setError('');
+    if (busyRef.current || !inputs.length || (commit && (!preview || !result?.ready || result.committed))) return;
+    busyRef.current = true; setBusy(commit ? 'save' : 'check'); setError(''); setProgress(null); setPage(1);
     try {
-      const next = await checkStores(inputs, commit, commit ? result!.revision : '');
-      if (commit && (!next.committed || next.updated !== result!.ready)) throw new Error('Chưa xác nhận đủ khách hàng đã cập nhật. Kiểm tra lại trước khi thử tiếp.');
-      setResult(next); setPage(1);
-      if (commit) { await reload(); notify(`Đã cập nhật cơ sở cho ${next.updated} khách hàng.`); }
+      if (commit) {
+        const next = await saveCustomerStoreBatches(preview!, checkStores, setProgress);
+        setResult(next); setPreview(null);
+        await reload(); notify(`Đã cập nhật cơ sở cho ${next.updated} khách hàng.`);
+      } else await previewRows(inputs);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Không cập nhật được cơ sở.');
-      if (commit) setResult(null);
+      if (commit) { setResult(null); setPreview(null); await reload(); }
     } finally { busyRef.current = false; setBusy(''); focusSummary(); }
   }
   const shown = result?.rows.filter(row => !issuesOnly || row.state === 'invalid') || [];
   const pages = Math.max(1, Math.ceil(shown.length / 20));
   const safePage = Math.min(page, pages);
-  return <Dialog title="Khớp cơ sở theo căn cước" subtitle="Tìm khách hàng đã có bằng căn cước và cập nhật cơ sở từ Excel" className="mg-customer-import" onClose={() => { if (!busyRef.current) onClose(); }}>
+  return <Dialog title="Khớp cơ sở theo căn cước" subtitle="Tìm khách hàng đã có bằng căn cước và cập nhật cơ sở từ Excel" className="mg-customer-import mg-customer-store-import" onClose={() => { if (!busyRef.current) onClose(); }}>
     <div className="mg-dialog-body">
       <p>File gồm hai cột <strong>Căn cước</strong> và <strong>Cơ sở</strong>. Điền tên cơ sở họ gửi hoặc chọn từ danh sách trong mẫu.</p>
       <button type="button" className="mg-button" disabled={Boolean(busy) || result?.committed} onClick={() => void download()}><ArrowDownToLine size={17} aria-hidden="true" />Tải mẫu Excel căn cước / cơ sở</button>
       <div className="mg-import-upload mg-field"><label htmlFor="customer-store-excel-file">Chọn file Excel căn cước / cơ sở (.xlsx)</label>
         <input id="customer-store-excel-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={Boolean(busy) || result?.committed} aria-describedby="customer-store-excel-help" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void readFile(file); }} />
-        <small id="customer-store-excel-help">Tối đa 5 MB và {CUSTOMER_IMPORT_LIMIT.toLocaleString('vi-VN')} dòng. Căn cước để dạng Text để giữ số 0 đầu. Có thể đổi thứ tự hai cột.</small>
+        <small id="customer-store-excel-help">File .xlsx tối đa 5 MB. File trên 1.000 dòng được tự động đọc nối tiếp, không cần tách file. Căn cước để dạng Text để giữ số 0 đầu. Có thể đổi thứ tự hai cột.</small>
       </div>
       {filename && <p className="mg-import-filename">File: {filename}</p>}
       <div ref={summaryRef} tabIndex={-1} className="mg-import-summary" aria-live="polite">
         {busy && <p role="status"><LoaderCircle size={16} className="mg-spin" aria-hidden="true" />{busy === 'template' ? 'Đang tạo mẫu Excel…' : busy === 'read' ? 'Đang đọc Excel…' : busy === 'check' ? 'Đang khớp căn cước và cơ sở…' : 'Đang cập nhật cơ sở…'}</p>}
+        {progress && (busy === 'check' || busy === 'save') && <p role="status">{busy === 'check' ? 'Đã đối chiếu' : 'Đã xử lý'} {progress.processed.toLocaleString('vi-VN')}/{progress.total.toLocaleString('vi-VN')} dòng · Phần {progress.batch}/{progress.batches}{busy === 'save' ? ` · Đã xác nhận lưu ${progress.updated.toLocaleString('vi-VN')} khách hàng` : ''}</p>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         {result && (result.committed ? <p className="mg-import-success" role="status"><Check size={18} aria-hidden="true" />Đã cập nhật cơ sở cho {result.updated} khách hàng. Giữ nguyên {result.unchanged} dòng đã đúng; bỏ qua {result.invalid} dòng lỗi.</p> : <>
           <div className="mg-import-counts"><span>Tổng <strong>{result.total}</strong></span><span>Cần cập nhật <strong>{result.ready}</strong></span><span>Đã đúng cơ sở <strong>{result.unchanged}</strong></span><span>Lỗi <strong>{result.invalid}</strong></span></div>
           <p>Kiểm tra cơ sở hiện tại và cơ sở trong Excel trước khi lưu. Chỉ cập nhật {result.ready} khách hàng khớp duy nhất; dòng lỗi được bỏ qua.</p>
+          {preview && preview.batches.length > 1 && <p>File được lưu nối tiếp theo từng phần. Nếu bị gián đoạn, phần đã lưu được giữ lại; nhấn Kiểm tra lại để tiếp tục phần còn lại.</p>}
         </>)}
       </div>
       {result && !result.committed && <>
@@ -100,7 +111,7 @@ function CustomerStoreExcelDialog({ onClose }: { onClose: () => void }) {
       </>}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={Boolean(busy)} onClick={onClose}>Đóng</button>
-      {!result?.committed && <><button type="button" className="mg-button" disabled={Boolean(busy) || !inputs.length} onClick={() => void submit(false)}>Kiểm tra lại</button><button type="button" className="mg-button mg-button-primary" disabled={Boolean(busy) || !result?.ready} onClick={() => void submit(true)}><Upload size={16} aria-hidden="true" />Cập nhật cơ sở cho {result?.ready || 0} khách hàng</button></>}
+      {!result?.committed && <><button type="button" className="mg-button" disabled={Boolean(busy) || !inputs.length} onClick={() => void submit(false)}>Kiểm tra lại</button><button type="button" className="mg-button mg-button-primary" disabled={Boolean(busy) || !preview || !result?.ready} onClick={() => void submit(true)}><Upload size={16} aria-hidden="true" />Cập nhật cơ sở cho {result?.ready || 0} khách hàng</button></>}
     </div>
   </Dialog>;
 }

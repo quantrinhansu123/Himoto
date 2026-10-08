@@ -24,6 +24,8 @@ customers = [
     {'id': 4, 'name': 'Khách QA bốn', 'id_card': '001234567893', 'store_id': None, 'phone': '0900000004', 'status': 'active'},
 ]
 mode = {'next': ''}
+held = {}
+commit_parts = {'count': 0}
 
 
 def mock_api(route):
@@ -40,6 +42,12 @@ def mock_api(route):
             mode['next'] = ''
             route.fulfill(status=409, json={'status': 'error', 'message': 'Khách hàng, cơ sở hoặc file đã thay đổi. Nhấn Kiểm tra lại trước khi cập nhật.'})
             return
+        if mode['next'] == 'fail_second_commit' and payload['commit']:
+            commit_parts['count'] += 1
+            if commit_parts['count'] == 2:
+                mode['next'] = ''
+                route.abort('failed')
+                return
         rows = []
         cards = [item['values']['id_card'].replace(' ', '') for item in payload['rows']]
         for item in payload['rows']:
@@ -70,9 +78,14 @@ def mock_api(route):
             for row in rows:
                 if row['state'] == 'ready':
                     next(customer for customer in customers if customer['id'] == row['customer_id'])['store_id'] = row['store_id']
-        route.fulfill(json={'status': 'success', 'data': {'rows': rows, 'total': len(rows), 'ready': ready,
+        response = {'status': 'success', 'data': {'rows': rows, 'total': len(rows), 'ready': ready,
                       'unchanged': sum(row['state'] == 'unchanged' for row in rows), 'invalid': sum(row['state'] == 'invalid' for row in rows),
-                      'updated': ready if payload['commit'] else 0, 'committed': payload['commit'], 'revision': revision}})
+                      'updated': ready if payload['commit'] else 0, 'committed': payload['commit'], 'revision': revision}}
+        if mode['next'] == 'hold_second_preview' and not payload['commit'] and payload['rows'][0]['rowNumber'] == 1002:
+            mode['next'] = ''
+            held.update(route=route, response=response)
+            return
+        route.fulfill(json=response)
     elif request.method == 'GET':
         if endpoint == '/api/session':
             route.fulfill(json={'user': {'id': 143, 'name': 'QA'}})
@@ -194,6 +207,62 @@ with tempfile.TemporaryDirectory(prefix='himoto-store-excel-ui-') as temp, sync_
         save.click()
         expect(dialog.get_by_text('Đã cập nhật cơ sở cho 1 khách hàng. Giữ nguyên 0 dòng đã đúng; bỏ qua 0 dòng lỗi.', exact=True)).to_be_visible()
         checks.append('reordered aliases parse correctly; network retry retains inputs; stale preview requires recheck before another save')
+
+        dialog.get_by_role('button', name='Đóng', exact=True).click()
+        action.click()
+        large_customers = [{'id': i + 100, 'name': f'Khách nối tiếp QA {i}', 'id_card': str(100000000000 + i), 'store_id': None, 'status': 'active'} for i in range(2005)]
+        customers.extend(large_customers)
+        large_rows = [[customer['id_card'], stores[0]['name']] for customer in large_customers]
+        large_rows[-1][0] = large_rows[0][0]
+        large_file = make_file('large-2005.xlsx', large_rows)
+        start = len(requests)
+        mode['next'] = 'hold_second_preview'
+        file_input.set_input_files(large_file)
+        expect(dialog.get_by_text('Đã đối chiếu 1.000/2.005 dòng · Phần 1/3', exact=True)).to_be_visible(timeout=30000)
+        expect(dialog.get_by_role('button', name='Cập nhật cơ sở cho 999 khách hàng', exact=True)).to_be_disabled()
+        assert not any(request['commit'] for request in requests[start:])
+        held['route'].fulfill(json=held['response'])
+        large_save = dialog.get_by_role('button', name='Cập nhật cơ sở cho 2003 khách hàng', exact=True)
+        expect(large_save).to_be_enabled(timeout=30000)
+        assert [len(request['rows']) for request in requests[start:]] == [1000, 1000, 5]
+        assert requests[-1]['rows'][-1]['rowNumber'] == 2006
+        expect(dialog.locator('.mg-import-pages')).to_contain_text('2005 dòng')
+        dialog.get_by_label('Chỉ xem dòng lỗi', exact=True).check()
+        expect(dialog.locator('tbody tr')).to_have_count(2)
+        expect(dialog.locator('tbody tr').last).to_contain_text('2006')
+        expect(dialog.locator('tbody tr').first).to_contain_text('trùng trong file')
+        page.screenshot(path=str(output / 'large-cross-part-1440.png'), full_page=True)
+        dialog.get_by_label('Chỉ xem dòng lỗi', exact=True).uncheck()
+        checks.append('2,005-row XLSX automatically previews 1,000/1,000/5 rows with appended progress, disables saving until complete and excludes duplicates across first/last parts')
+
+        commit_parts['count'] = 0
+        mode['next'] = 'fail_second_commit'
+        large_save.click()
+        expect(dialog.get_by_role('alert')).to_contain_text('Đã xác nhận cập nhật 999 khách hàng trước khi dừng.', timeout=30000)
+        assert sum(customer['store_id'] == 23 for customer in large_customers) == 999
+        expect(dialog.get_by_role('button', name='Cập nhật cơ sở cho 0 khách hàng', exact=True)).to_be_disabled()
+        dialog.get_by_role('button', name='Kiểm tra lại', exact=True).click()
+        remaining_save = dialog.get_by_role('button', name='Cập nhật cơ sở cho 1004 khách hàng', exact=True)
+        expect(remaining_save).to_be_enabled(timeout=30000)
+        page.set_viewport_size({'width': 375, 'height': 900})
+        page.wait_for_timeout(200)
+        # Scrolling a long preview must not let sticky table headings cover the
+        # footer actions. Test actual hit targets rather than CSS declarations.
+        for label in ['Đóng', 'Kiểm tra lại', 'Cập nhật cơ sở cho 1004 khách hàng']:
+            button = dialog.get_by_role('button', name=label, exact=True)
+            button.focus()
+            page.wait_for_timeout(50)
+            assert button.evaluate('(node) => { const r = node.getBoundingClientRect(); return node.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); }'), label
+        page.screenshot(path=str(output / 'large-remaining-375.png'), full_page=True)
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), page.evaluate("Array.from(document.querySelectorAll('dialog, dialog button, dialog p')).map(node => ({text: node.textContent.slice(0,90), width: node.getBoundingClientRect().width, right: node.getBoundingClientRect().right})).filter(item => item.right > innerWidth)")
+        start = len(requests)
+        remaining_save.click()
+        expect(dialog.get_by_text('Đã cập nhật cơ sở cho 1004 khách hàng. Giữ nguyên 999 dòng đã đúng; bỏ qua 2 dòng lỗi.', exact=True)).to_be_visible(timeout=30000)
+        assert [len(request['rows']) for request in requests[start:] if request['commit']] == [1000, 5]
+        assert sum(customer['store_id'] == 23 for customer in large_customers) == 2003
+        assert large_customers[0]['store_id'] is None and large_customers[-1]['store_id'] is None
+        page.screenshot(path=str(output / 'large-resumed-375.png'), full_page=True)
+        checks.append('failed second save reports 999 confirmed customers; recheck preserves saved rows and resumes the remaining 1,004 with accurate totals on mobile')
         assert not errors, errors
         assert not blocked, blocked
     finally:

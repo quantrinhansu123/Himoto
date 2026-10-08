@@ -1,6 +1,6 @@
 import type { Cell, Workbook } from 'exceljs';
 import { CUSTOMER_EXCEL_MAX_BYTES, CUSTOMER_IMPORT_COLUMNS, CUSTOMER_IMPORT_LIMIT, CustomerImportField, CustomerImportInput, CustomerImportStore, CustomerImportValues, importText } from './customer-import';
-import type { CustomerStoreInput } from './customer-store-import';
+import { CUSTOMER_STORE_BATCH_SIZE, CUSTOMER_STORE_MAX_ROW, CustomerStoreInput } from './customer-store-import';
 
 async function newWorkbook() {
   const excel = await import('exceljs');
@@ -126,7 +126,7 @@ export async function createCustomerStoreTemplate(stores: CustomerImportStore[])
   branches.columns = [{ header: 'ID cơ sở', key: 'id', width: 15 }, { header: 'Mã cơ sở', key: 'code', width: 20 }, { header: 'Tên cơ sở', key: 'name', width: 40 }];
   stores.forEach(store => branches.addRow(store));
   if (stores.length) workbook.definedNames.add(`'Cơ sở'!$C$2:$C$${stores.length + 1}`, 'HimotoStores');
-  for (let row = 2; row <= CUSTOMER_IMPORT_LIMIT + 1; row++) {
+  for (let row = 2; row <= CUSTOMER_STORE_BATCH_SIZE + 1; row++) {
     sheet.getCell(row, 1).numFmt = '@';
     sheet.getCell(row, 2).numFmt = '@';
     if (stores.length) sheet.getCell(row, 2).dataValidation = { type: 'list', allowBlank: false, formulae: ['HimotoStores'], showErrorMessage: true, error: 'Chọn cơ sở trong danh sách.' };
@@ -141,7 +141,9 @@ export async function createCustomerStoreTemplate(stores: CustomerImportStore[])
     'Hệ thống tìm khách hàng đã có theo căn cước, hiển thị cơ sở hiện tại và cơ sở sẽ cập nhật để kiểm tra trước khi lưu.',
     'Chỉ cập nhật cơ sở khách hàng. Không tạo khách mới, thay giấy tờ, chuyển xe hoặc sửa hợp đồng.',
     'Dòng trùng căn cước, không tìm thấy khách, khớp nhiều khách hoặc cơ sở không rõ sẽ bị bỏ qua. Cơ sở đã đúng giữ nguyên.',
-    'Chỉ nhận .xlsx, tối đa 5 MB và 1.000 dòng. Mẫu không chứa dữ liệu khách hàng thật.',
+    'Chỉ nhận .xlsx, tối đa 5 MB. File trên 1.000 dòng được tự động đọc và xử lý nối tiếp theo từng phần; không cần tách file.',
+    'Nếu quá trình lưu bị gián đoạn, phần đã lưu được giữ lại. Nhấn Kiểm tra lại để đối chiếu và tiếp tục phần còn lại.',
+    'Mẫu không chứa dữ liệu khách hàng thật. Có thể điền tiếp bên dưới các dòng đã định dạng sẵn.',
   ].forEach(text => guide.addRow([text]));
   return workbook.xlsx.writeBuffer();
 }
@@ -149,7 +151,7 @@ export async function createCustomerStoreTemplate(stores: CustomerImportStore[])
 export function parseCustomerStoreWorkbook(workbook: Workbook): CustomerStoreInput[] {
   const sheet = workbook.getWorksheet('Căn cước - Cơ sở') || workbook.worksheets[0];
   if (!sheet) throw new Error('File Excel không có sheet dữ liệu.');
-  if (sheet.columnCount > 30 || sheet.actualRowCount > CUSTOMER_IMPORT_LIMIT + 1 || sheet.rowCount > 10000) throw new Error(`File vượt giới hạn ${CUSTOMER_IMPORT_LIMIT} dòng hoặc có quá nhiều cột.`);
+  if (sheet.columnCount > 30 || sheet.rowCount > CUSTOMER_STORE_MAX_ROW) throw new Error('File có quá nhiều cột hoặc vượt số dòng của Excel.');
   const columns = new Map<'id_card' | 'store', number>();
   sheet.getRow(1).eachCell((cell, index) => {
     const header = importText(cell.text);

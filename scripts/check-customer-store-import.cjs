@@ -18,6 +18,7 @@ function load(filename) {
 const shared = load(path.join(root, 'lib/management/customer-store-import'));
 const excel = load(path.join(root, 'lib/management/customer-excel'));
 const server = load(path.join(root, 'lib/server/customer-store-import'));
+const batching = load(path.join(root, 'lib/management/customer-store-batches'));
 const stores = [{ id: 23, name: 'CH Giáp Bát', code: 'GB' }, { id: 31, name: 'CS láng', code: 'LANG' }];
 const original = [
   { id: 1, name: 'Khách QA một', id_card: '001234567890', store_id: null },
@@ -54,11 +55,13 @@ async function main() {
   assert.match(excel.parseCustomerStoreWorkbook(numeric)[0].errors.join(' '), /công thức/);
   const hidden = workbook(['Căn cước', 'Cơ sở'], [[original[0].id_card, 'GB', 'hidden']]);
   assert.match(excel.parseCustomerStoreWorkbook(hidden)[0].errors.join(' '), /ngoài các cột/);
-  assert.throws(() => excel.parseCustomerStoreWorkbook(workbook(['Căn cước', 'Cơ sở'], Array.from({ length: 1001 }, () => [original[0].id_card, 'GB']))), /giới hạn/);
+  assert.equal(excel.parseCustomerStoreWorkbook(workbook(['Căn cước', 'Cơ sở'], Array.from({ length: 10005 }, () => [original[0].id_card, 'GB']))).length, 10005);
+  const sparse = workbook(['Căn cước', 'Cơ sở'], []); sparse.worksheets[0].getRow(50001).values = [original[0].id_card, 'GB'];
+  assert.equal(excel.parseCustomerStoreWorkbook(sparse)[0].rowNumber, 50001);
   await assert.rejects(excel.readCustomerStoreExcel({ name: 'qa.xls', size: 1 }), /\.xlsx/);
   await assert.rejects(excel.readCustomerStoreExcel({ name: 'qa.xlsx', size: 6 * 1024 * 1024 }), /5 MB/);
   await assert.rejects(excel.readCustomerStoreExcel({ name: 'qa.xlsx', size: 1, arrayBuffer: async () => new ArrayBuffer(1) }), /Không đọc được/);
-  checks.push('missing/duplicate/unknown headers, hidden data, formulas, unsafe numeric identities, overlong/oversized/corrupt and unsupported files are rejected');
+  checks.push('10,005 data rows and sparse row 50,001 parse without truncation; malformed columns/formulas/unsafe identities and oversized/corrupt/unsupported files still reject');
 
   const match = (inputs, branches = stores, customers = original) => shared.matchCustomerStores(inputs, branches, customers);
   assert.equal(match([input()])[0].state, 'ready'); assert.equal(match([input()])[0].previous_store_id, null);
@@ -76,6 +79,9 @@ async function main() {
 
   for (const body of [{ rows: [], commit: false }, { rows: [input(), input()], commit: false }, { rows: [input()], commit: 'false' }, { rows: [input()], commit: true }, { rows: [input(1234)], commit: false }, { rows: [{ ...input(), values: { ...input().values, customer_id: 99 } }], commit: false }, { rows: [input()], commit: false, revision: 1 }]) assert.throws(() => server.customerStoreRequest(body));
   assert.equal(server.customerStoreRequest({ rows: [input()], commit: false }).revision, '');
+  assert.equal(server.customerStoreRequest({ rows: [input(original[0].id_card, 'GB', 50001)], commit: false }).rows[0].rowNumber, 50001);
+  assert.throws(() => server.customerStoreRequest({ rows: Array.from({ length: 1001 }, (_, i) => input(original[0].id_card, 'GB', i + 2)), commit: false }));
+  assert.throws(() => server.customerStoreRequest({ rows: [input(original[0].id_card, 'GB', 1048577)], commit: false }));
   checks.push('request requires typed two-column data, unique row numbers, explicit mode and a valid preview revision for updates');
 
   let customers = structuredClone(original), failUpdate = false, shortUpdate = false;
@@ -108,6 +114,64 @@ async function main() {
   customers = structuredClone(original); shortUpdate = true;
   await assert.rejects(server.importCustomerStores(client, inputs, true, preview.revision), error => error.status === 409); shortUpdate = false;
   checks.push('preview is SELECT-only; commit locks and rechecks revision, handles bigint IDs, updates only eligible customer store fields with parameters and rejects stale/partial updates');
+
+  const largeCustomers = Array.from({ length: 2005 }, (_, i) => ({ id: i + 100, name: `QA ${i}`, id_card: String(100000000000 + i), store_id: null }));
+  const largeInputs = largeCustomers.map((customer, i) => input(customer.id_card, 'GB', i + 2));
+  largeInputs.at(-1).values.id_card = largeInputs[0].values.id_card;
+  let batchCustomers = structuredClone(largeCustomers), calls = [], failCommit = 0, loseCommit = 0, failPreview = 0, commitCount = 0, previewCount = 0;
+  const batchCheck = async (rows, commit, revision) => {
+    assert(rows.length <= shared.CUSTOMER_STORE_BATCH_SIZE);
+    server.customerStoreRequest({ rows, commit, revision });
+    calls.push({ rows, commit, revision });
+    if (!commit && ++previewCount === failPreview) throw new Error('preview offline');
+    if (commit && ++commitCount === failCommit) throw new Error('save offline');
+    const matched = shared.matchCustomerStores(rows, stores, batchCustomers);
+    const currentRevision = require('node:crypto').createHash('sha256').update(JSON.stringify(matched)).digest('hex');
+    const result = { rows: matched, total: rows.length, ready: matched.filter(row => row.state === 'ready').length, unchanged: matched.filter(row => row.state === 'unchanged').length, invalid: matched.filter(row => row.state === 'invalid').length, updated: 0, committed: commit, revision: currentRevision };
+    if (commit) {
+      assert.equal(revision, currentRevision);
+      for (const row of matched.filter(row => row.state === 'ready')) batchCustomers.find(customer => customer.id === row.customer_id).store_id = row.store_id;
+      result.updated = result.ready;
+      if (commitCount === loseCommit) throw new Error('save response lost');
+    }
+    return result;
+  };
+  const progress = [];
+  const largePreview = await batching.previewCustomerStoreBatches(largeInputs, batchCheck, (state, result) => progress.push({ ...state, ready: result.ready }));
+  assert.deepEqual(calls.map(call => call.rows.length), [1000,1000,5]);
+  assert.deepEqual(progress.map(state => state.processed), [1000,2000,2005]);
+  assert.equal(largePreview.result.ready, 2003); assert.equal(largePreview.result.invalid, 2);
+  assert(largePreview.result.rows[0].errors.some(error => error.includes('trùng trong file')));
+  assert(largePreview.result.rows.at(-1).errors.some(error => error.includes('trùng trong file')));
+  assert(calls.every(call => !call.commit));
+  const savedProgress = [];
+  const savedLarge = await batching.saveCustomerStoreBatches(largePreview, batchCheck, state => savedProgress.push(state));
+  assert.equal(savedLarge.updated, 2003); assert.equal(savedLarge.total, 2005); assert.equal(savedLarge.committed, true);
+  assert.deepEqual(savedProgress.map(state => state.updated), [999,1999,2003]);
+  assert.equal(batchCustomers[0].store_id, null); assert.equal(batchCustomers.at(-1).store_id, null);
+  assert.equal(calls.filter(call => call.commit).length, 3);
+  checks.push('2,005-row file previews and saves sequentially in 1,000/1,000/5-row parts with cumulative progress; both cross-part duplicate occurrences are excluded before any save');
+
+  batchCustomers = structuredClone(largeCustomers); calls = []; failCommit = 2; commitCount = 0; previewCount = 0;
+  await assert.rejects(batching.saveCustomerStoreBatches(largePreview, batchCheck, () => {}), error => error.updated === 999 && /Đã xác nhận cập nhật 999/.test(error.message));
+  assert.equal(calls.length, 2);
+  assert.equal(batchCustomers.filter(customer => customer.store_id === 23).length, 999);
+  failCommit = 0; commitCount = 0;
+  const remaining = await batching.previewCustomerStoreBatches(largeInputs, batchCheck, () => {});
+  assert.equal(remaining.result.unchanged, 999); assert.equal(remaining.result.ready, 1004);
+  assert.equal((await batching.saveCustomerStoreBatches(remaining, batchCheck, () => {})).updated, 1004);
+
+  batchCustomers = structuredClone(largeCustomers); calls = []; loseCommit = 2; commitCount = 0;
+  await assert.rejects(batching.saveCustomerStoreBatches(largePreview, batchCheck, () => {}), error => error.updated === 999);
+  assert.equal(batchCustomers.filter(customer => customer.store_id === 23).length, 1999);
+  loseCommit = 0; commitCount = 0;
+  const afterLostResponse = await batching.previewCustomerStoreBatches(largeInputs, batchCheck, () => {});
+  assert.equal(afterLostResponse.result.unchanged, 1999); assert.equal(afterLostResponse.result.ready, 4);
+  assert.equal((await batching.saveCustomerStoreBatches(afterLostResponse, batchCheck, () => {})).updated, 4);
+  failPreview = 2; previewCount = 0; calls = [];
+  await assert.rejects(batching.previewCustomerStoreBatches(largeInputs, batchCheck, () => {}), /preview offline/);
+  assert.equal(calls.length, 2); assert(calls.every(call => !call.commit)); failPreview = 0;
+  checks.push('interrupted preview stops without writes; failed second save reports confirmed partial count; retry and lost-response recovery skip previously saved rows without reapplying them');
 
   const session = load(path.join(root, 'lib/server/management-session'));
   const pool = load(path.join(root, 'lib/server/himoto-database')).himotoPool;
