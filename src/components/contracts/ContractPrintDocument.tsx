@@ -36,8 +36,7 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 						<div className="contract-meta d-flex justify-content-between px-2">
 							<span className="contract-num">Số: <strong>{doc.contract_number || '............'}</strong>/HĐTX</span>
 							<span className="contract-officer">Nguồn khách:
-								{Boolean(doc.customer_source && doc.customer_source.url) && (<a href={doc.customer_source.url} target="_blank" rel="noopener noreferrer"><strong>{doc.customer_source.name || doc.customer_source.url}</strong></a>)}
-								{!doc.customer_source?.url && <strong>{doc.customer_source && doc.customer_source.name ? doc.customer_source.name : '........................'}</strong>}
+								{/^https?:\/\//i.test(doc.customer_source?.url || '') ? <a href={doc.customer_source.url} target="_blank" rel="noopener noreferrer"><strong>{doc.customer_source.name || doc.customer_source.url}</strong></a> : <strong>{doc.customer_source?.name || '........................'}{doc.customer_source?.url ? ` · ${doc.customer_source.url}` : ''}</strong>}
 							</span>
 						</div>
 					</div>

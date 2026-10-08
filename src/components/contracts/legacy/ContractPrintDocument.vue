@@ -30,8 +30,8 @@
 						<div class="contract-meta d-flex justify-content-between px-2">
 							<span class="contract-num">Số: <strong>{{ doc.contract_number || '............' }}</strong>/HĐTX</span>
 							<span class="contract-officer">Nguồn khách:
-								<a v-if="doc.customer_source && doc.customer_source.url" :href="doc.customer_source.url" target="_blank" rel="noopener noreferrer"><strong>{{ doc.customer_source.name || doc.customer_source.url }}</strong></a>
-								<strong v-else>{{ doc.customer_source && doc.customer_source.name ? doc.customer_source.name : '........................' }}</strong>
+								<a v-if="doc.customer_source && /^https?:\/\//i.test(doc.customer_source.url || '')" :href="doc.customer_source.url" target="_blank" rel="noopener noreferrer"><strong>{{ doc.customer_source.name || doc.customer_source.url }}</strong></a>
+								<strong v-else>{{ (doc.customer_source && doc.customer_source.name) || '........................' }}{{ doc.customer_source && doc.customer_source.url ? ' · ' + doc.customer_source.url : '' }}</strong>
 							</span>
 						</div>
 					</div>

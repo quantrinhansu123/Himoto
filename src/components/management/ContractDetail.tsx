@@ -59,7 +59,7 @@ export function ContractDetail({ row, onClose, onPrint }: { row: ManagementRow; 
       {panel('contract', 'Thông tin hợp đồng & Pháp lý', fields([
         ['Mã hợp đồng / Số HĐ giấy', row.code], ['Trạng thái hợp đồng', optionLabel(MANAGEMENT_CONFIG.contracts, 'status', row.status)],
         ['Loại hợp đồng', row.rental_type ? optionLabel(MANAGEMENT_CONFIG.contracts, 'rental_type', String(row.rental_type)) : '—'],
-        ['Ngày ký hợp đồng', date(draft.signed_on)], ['Ngày tạo hợp đồng', dateTime(String(row.created_at || ''))],
+        ['Ngày ký hợp đồng', date(draft.signed_on)], ['Ngày tạo hợp đồng', date(draft.created_on || String(row.created_at || ''))],
         ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
       ]))}
       {panel('customer', 'Thông tin khách hàng (Bên B)', fields([

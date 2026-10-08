@@ -16,7 +16,7 @@ export interface ContractDraft {
   customer_id: number | null; customer: CustomerDetails; vehicles: VehicleDetails[];
   start_date: string; end_date: string; unit_price: string; total_amount: string; paid_amount: string;
   deposit_amount: string; package_name: string; payment_method: string; deposit_payment_method: string;
-  collateral_description: string; customer_source: string; customer_source_url: string; authorization_date: string;
+  collateral_description: string; customer_source: string; customer_source_url: string; authorization_date: string; created_on: string;
   relatives: [ContractRelative, ContractRelative];
 }
 const value = (input: unknown) => input == null ? '' : String(input);
@@ -77,7 +77,8 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   if (row?.draft_json) {
     const snapshot = JSON.parse(String(row.draft_json)) as ContractDraft;
     if (!snapshot.customer || !Array.isArray(snapshot.vehicles) || !snapshot.vehicles.length) throw new Error('Thông tin hợp đồng đã lưu không hợp lệ.');
-    return { ...structuredClone(snapshot), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text) };
+    return { ...structuredClone(snapshot), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
+      created_on: dateInput(snapshot.created_on) || dateInput(row.created_at) || nowDate() };
   }
   const sourceCustomer = row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
     name: value(row.customer_name), phone: value(row.customer_phone), id_card: value(row.customer_id_card),
@@ -104,7 +105,8 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     unit_price: value(vehicle?.daily_price), total_amount: value(row?.total_amount), paid_amount: value(row?.paid_amount),
     deposit_amount: value(row?.deposit_amount), package_name: row?.rental_type === 'monthly' ? 'Theo tháng' : 'Theo ngày',
     payment_method: '', deposit_payment_method: '', collateral_description: value(row?.collateral_description),
-    customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date), relatives, };
+    customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date),
+    created_on: dateInput(row?.created_at) || nowDate(), relatives, };
 }
 export function normalizeIdCard(input: string) { return input.trim().replace(/\s/g, '').toUpperCase(); }
 export function validIdCard(input: string, source: 'demo' | 'api') {
@@ -156,7 +158,6 @@ export function validateContractDraft(draft: ContractDraft, dataset: ManagementD
     const amount = draft[key];
     if (amount && (!/^\d+$/.test(amount) || !Number.isSafeInteger(Number(amount)))) errors[key] = 'Nhập số tiền nguyên không âm.';
   }
-  if (draft.customer_source_url && !/^https?:\/\//i.test(draft.customer_source_url)) errors.customer_source_url = 'Liên kết cần bắt đầu bằng http:// hoặc https://.';
   return errors;
 }
 const money = (amount: string) => amount === '' ? '........................' : `${Number(amount).toLocaleString('vi-VN')} đ`;

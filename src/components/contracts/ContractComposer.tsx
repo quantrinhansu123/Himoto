@@ -212,8 +212,15 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
               {field('contract_number', 'Mã hợp đồng / Số HĐ giấy')}
             </div>
             <div className="mg-form-grid mg-contract-grid-two mg-contract-subsection">
-              <div className="mg-field"><label htmlFor="contract-created-at">Ngày tạo hợp đồng</label><input id="contract-created-at" value={row?.created_at ? new Date(String(row.created_at)).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'Hệ thống ghi nhận khi lưu nháp'} readOnly /></div>
-              {field('customer_source', 'Nguồn khách')}{field('customer_source_url', 'Liên kết nguồn khách', 'url')}
+              <div className="mg-field"><label htmlFor="contract-created-on">Ngày tạo hợp đồng</label><input id="contract-created-on" type="date" value={draft.created_on} onChange={event => change('created_on', event.target.value)} /><small>Gợi ý hôm nay, có thể chọn ngày khác.</small></div>
+              <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><select id="contract-customer-source" value={draft.customer_source} onChange={event => change('customer_source', event.target.value)}>
+                <option value="">Chọn nhân sự</option>{(dataset?.staff || []).map(person => <option key={person.id} value={person.name}>{person.name}{person.code ? ` · ${person.code}` : ''}</option>)}
+                {draft.customer_source && !(dataset?.staff || []).some(person => person.name === draft.customer_source) && <option value={draft.customer_source}>{draft.customer_source}</option>}
+              </select></div>
+              <div className="mg-field"><label htmlFor="contract-customer-source-store">Liên kết nguồn khách</label><select id="contract-customer-source-store" value={draft.customer_source_url} onChange={event => change('customer_source_url', event.target.value)}>
+                <option value="">Chọn cơ sở</option>{(dataset?.stores || []).map(store => <option key={store.id} value={store.name}>{store.name}</option>)}
+                {draft.customer_source_url && !(dataset?.stores || []).some(store => store.name === draft.customer_source_url) && <option value={draft.customer_source_url}>{draft.customer_source_url}</option>}
+              </select></div>
             </div>
             <div className="mg-contract-record-status">{canSaveDraft ? <><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></> : mode === 'edit' ? <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div> : null}</div>
           </>)}
@@ -225,7 +232,6 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
                 <option value="">{staffLoading ? 'Đang tải nhân sự…' : !draft.store_id ? 'Chọn cửa hàng xe trước' : 'Chọn nhân viên làm hợp đồng'}</option>{branchStaff.map(person => <option key={person.id} value={person.id} disabled={!staffIsAvailable(person)}>{person.name} · {person.code}{!staffIsAvailable(person) ? ' · Không làm việc' : ''}</option>)}</select>
                 {errors.staff_id && <p className="mg-field-error">{errors.staff_id}</p>}{staffError ? <div className="mg-field-error" role="alert">{staffError}<button className="mg-inline-button" type="button" onClick={() => setStaffRetry(value => value + 1)}>Thử lại</button></div> : <small id="contract-staff-help">{draft.store_id && !staffLoading ? `${branchStaff.filter(staffIsAvailable).length} nhân sự đang làm việc tại cửa hàng` : 'Chọn cửa hàng xe để tải nhân viên làm hợp đồng.'}</small>}</div>
             </div>
-            <div className="mg-form-grid mg-contract-grid-three">{customerFields.slice(0, 2).map(customerField)}</div>
             <div className="mg-contract-customer-toolbar">
               <div className="mg-field mg-contract-lookup"><label htmlFor="contract-id-card">Tra cứu theo CCCD / CMND hoặc SĐT *</label><div className="mg-lookup-controls"><input id="contract-id-card" autoComplete="off" value={idInput} disabled={!draft.store_id} aria-invalid={Boolean(errors.id_card)} aria-describedby="contract-lookup-status" placeholder={!draft.store_id ? 'Chọn cửa hàng xe trước' : 'CCCD/CMND hoặc SĐT'} onChange={event => changeIdentity(event.target.value)} />
                 <button className="mg-button" type="button" disabled={!draft.store_id || !canSearchCustomer || lookupState === 'loading'} onClick={() => { preserveCustomer.current = false; setLookupRetry(value => value + 1); }}>{lookupState === 'loading' ? <LoaderCircle size={16} className="mg-spin" /> : <Search size={16} />}Tra cứu</button></div>
@@ -235,6 +241,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
               </div>
               <button className="mg-button" type="button" disabled={!draft.store_id} onClick={openCustomerCreate}><UserPlus size={16} />Thêm mới</button>
             </div>
+            <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(0, 2).map(customerField)}</div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(customerField)}</div>
             <div className="mg-contract-relatives">{draft.relatives.map((relative, index) => <div className="mg-contract-relative" key={index}>
               <strong>Người thân {index + 1}</strong>

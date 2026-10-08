@@ -69,7 +69,7 @@ with sync_playwright() as p:
     form.get_by_label('Trạng thái hợp đồng', exact=True).select_option('pending')
     form.get_by_label('Loại hợp đồng', exact=True).select_option('monthly')
     form.get_by_label('Tổng tiền thuê (VNĐ)', exact=True).fill('888000')
-    form.get_by_label('Nguồn khách', exact=True).fill('Nguồn riêng của bản sao')
+    form.get_by_label('Nguồn khách', exact=True).select_option('Nguyễn Minh An')
     form.get_by_role('button', name='Thêm xe vào mẫu', exact=True).click()
     vehicle0 = form.locator('#contract-vehicle-0').input_value()
     second = form.locator('#contract-vehicle-1')
@@ -85,7 +85,7 @@ with sync_playwright() as p:
     expect(page.locator('.mg-table tbody')).to_contain_text('Chờ giao xe')
     expect(page.locator('.mg-table tbody')).to_contain_text('888.000')
     form = edit('HD-2610-033')
-    for label, value in [('Họ và tên', 'Tên riêng của bản sao'), ('Ghi chú hợp đồng', 'Tạo lại nhanh từ hợp đồng đã hủy'), ('Nguồn khách', 'Nguồn riêng của bản sao'), ('Tổng tiền thuê (VNĐ)', '888000')]:
+    for label, value in [('Họ và tên', 'Tên riêng của bản sao'), ('Ghi chú hợp đồng', 'Tạo lại nhanh từ hợp đồng đã hủy'), ('Nguồn khách', 'Nguyễn Minh An'), ('Tổng tiền thuê (VNĐ)', '888000')]:
         expect(form.get_by_label(label, exact=True)).to_have_value(value)
     expect(form.locator('.mg-composer-vehicle')).to_have_count(2)
     expect(form.locator('#contract-vehicle-1-color')).to_have_value('Màu riêng của xe thứ hai')
