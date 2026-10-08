@@ -1,5 +1,7 @@
 # Nhập khách hàng từ Excel
 
+Để cập nhật cơ sở khách hàng đã có bằng file hai cột **Căn cước / Cơ sở**, dùng **Khớp cơ sở theo căn cước**. Xem [hướng dẫn khớp cơ sở](customer-store-excel.md).
+
 Tại **Khách hàng**, chọn **Tải mẫu Excel**. Sheet **Khách hàng** để nhập dữ liệu, **Cơ sở** chứa ID/mã/tên cơ sở hiện tại, **Hướng dẫn** mô tả định dạng. Mẫu không chứa hồ sơ khách hàng thật.
 
 Các cột khớp với hồ sơ hiện có: Họ và tên, Số điện thoại, CCCD / CMND, Email, Địa chỉ, Cơ sở, Trạng thái hồ sơ, Ghi chú / cảnh báo. Họ tên, điện thoại, CCCD/CMND, địa chỉ và cơ sở bắt buộc theo mặc định. Cơ sở nhận ID, mã hoặc tên duy nhất. Trạng thái để trống là Bình thường. Có ghi chú sẽ hiển thị Cần lưu ý, trừ hồ sơ Blacklist và hồ sơ Chưa hoàn tất được cho phép; ghi chú luôn được lưu.

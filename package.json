@@ -17,6 +17,7 @@
     "test:login": "node scripts/check-management-login.cjs",
     "test:cashbook": "node scripts/check-cashbook-data.cjs",
     "test:customer-import": "node scripts/check-customer-import.cjs",
+    "test:customer-stores": "node scripts/check-customer-store-import.cjs",
     "test:customer-source": "node scripts/check-customer-order-excel.cjs",
     "test:stores": "node scripts/check-store-management.cjs",
     "test:vehicles": "node scripts/check-vehicle-import.cjs",

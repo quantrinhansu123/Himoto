@@ -6,6 +6,7 @@ import { CUSTOMER_IMPORT_LIMIT, CustomerImportInput, CustomerImportResult, Custo
 import { CUSTOMER_STATUSES } from '@/lib/management/config';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
+import { CustomerStoreExcelActions } from './CustomerStoreExcelActions';
 
 async function checkImport(rows: CustomerImportInput[], commit: boolean, allowIncomplete: boolean): Promise<CustomerImportResult> {
   const response = await fetch('/api/auth/customers/import', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ rows, commit, allowIncomplete }) });
@@ -34,6 +35,7 @@ export function CustomerExcelActions({ disabled }: { disabled: boolean }) {
   return <>
     <button type="button" className="mg-button" disabled={disabled || downloading} onClick={() => void download()}>{downloading ? <LoaderCircle size={17} className="mg-spin" /> : <ArrowDownToLine size={17} />}Tải mẫu Excel</button>
     <button type="button" className="mg-button" disabled={disabled} onClick={() => setOpen(true)}><Upload size={17} />Nhập Excel</button>
+    <CustomerStoreExcelActions disabled={disabled} />
     {downloadError && <span className="mg-field-error" role="alert">{downloadError}</span>}
     {open && <CustomerExcelDialog onClose={() => setOpen(false)} />}
   </>;

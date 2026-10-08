@@ -1,5 +1,6 @@
 import type { Cell, Workbook } from 'exceljs';
 import { CUSTOMER_EXCEL_MAX_BYTES, CUSTOMER_IMPORT_COLUMNS, CUSTOMER_IMPORT_LIMIT, CustomerImportField, CustomerImportInput, CustomerImportStore, CustomerImportValues, importText } from './customer-import';
+import type { CustomerStoreInput } from './customer-store-import';
 
 async function newWorkbook() {
   const excel = await import('exceljs');
@@ -108,4 +109,75 @@ export function downloadCustomerExcel(buffer: Awaited<ReturnType<typeof createCu
   const url = URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function createCustomerStoreTemplate(stores: CustomerImportStore[]) {
+  const workbook = await newWorkbook();
+  workbook.creator = 'HIMOTO';
+  const sheet = workbook.addWorksheet('Căn cước - Cơ sở', { views: [{ state: 'frozen', ySplit: 1 }] });
+  sheet.columns = [{ header: 'Căn cước', width: 25, style: { numFmt: '@' } }, { header: 'Cơ sở', width: 40, style: { numFmt: '@' } }];
+  sheet.getRow(1).height = 28;
+  sheet.getRow(1).eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB5121B' } };
+  });
+  sheet.autoFilter = 'A1:B1';
+  const branches = workbook.addWorksheet('Cơ sở');
+  branches.columns = [{ header: 'ID cơ sở', key: 'id', width: 15 }, { header: 'Mã cơ sở', key: 'code', width: 20 }, { header: 'Tên cơ sở', key: 'name', width: 40 }];
+  stores.forEach(store => branches.addRow(store));
+  if (stores.length) workbook.definedNames.add(`'Cơ sở'!$C$2:$C$${stores.length + 1}`, 'HimotoStores');
+  for (let row = 2; row <= CUSTOMER_IMPORT_LIMIT + 1; row++) {
+    sheet.getCell(row, 1).numFmt = '@';
+    sheet.getCell(row, 2).numFmt = '@';
+    if (stores.length) sheet.getCell(row, 2).dataValidation = { type: 'list', allowBlank: false, formulae: ['HimotoStores'], showErrorMessage: true, error: 'Chọn cơ sở trong danh sách.' };
+  }
+  const guide = workbook.addWorksheet('Hướng dẫn');
+  guide.getColumn(1).width = 110;
+  [
+    'HIMOTO – KHỚP CƠ SỞ KHÁCH HÀNG THEO CĂN CƯỚC',
+    'Điền hai cột Căn cước và Cơ sở từ dòng 2. Căn cước dùng Text để giữ số 0 đầu; không dùng công thức.',
+    'Căn cước có 12 chữ số; CMND có 9 chữ số. Không tự thêm số 0 đã mất.',
+    'Cơ sở: chọn tên trong danh sách hoặc nhập tên, mã, ID duy nhất tại sheet Cơ sở.',
+    'Hệ thống tìm khách hàng đã có theo căn cước, hiển thị cơ sở hiện tại và cơ sở sẽ cập nhật để kiểm tra trước khi lưu.',
+    'Chỉ cập nhật cơ sở khách hàng. Không tạo khách mới, thay giấy tờ, chuyển xe hoặc sửa hợp đồng.',
+    'Dòng trùng căn cước, không tìm thấy khách, khớp nhiều khách hoặc cơ sở không rõ sẽ bị bỏ qua. Cơ sở đã đúng giữ nguyên.',
+    'Chỉ nhận .xlsx, tối đa 5 MB và 1.000 dòng. Mẫu không chứa dữ liệu khách hàng thật.',
+  ].forEach(text => guide.addRow([text]));
+  return workbook.xlsx.writeBuffer();
+}
+
+export function parseCustomerStoreWorkbook(workbook: Workbook): CustomerStoreInput[] {
+  const sheet = workbook.getWorksheet('Căn cước - Cơ sở') || workbook.worksheets[0];
+  if (!sheet) throw new Error('File Excel không có sheet dữ liệu.');
+  if (sheet.columnCount > 30 || sheet.actualRowCount > CUSTOMER_IMPORT_LIMIT + 1 || sheet.rowCount > 10000) throw new Error(`File vượt giới hạn ${CUSTOMER_IMPORT_LIMIT} dòng hoặc có quá nhiều cột.`);
+  const columns = new Map<'id_card' | 'store', number>();
+  sheet.getRow(1).eachCell((cell, index) => {
+    const header = importText(cell.text);
+    if (!header) return;
+    const key = ['can cuoc', 'so can cuoc', 'cccd', 'so cccd', 'cccd cmnd', 'cmnd', 'id card', 'giay to dinh danh'].includes(header) ? 'id_card'
+      : ['co so', 'ten co so', 'store', 'store id'].includes(header) ? 'store' : null;
+    if (!key) throw new Error(`Cột “${cell.text.slice(0, 80)}” không thuộc mẫu Căn cước / Cơ sở.`);
+    if (columns.has(key)) throw new Error(`Cột ${key === 'id_card' ? 'Căn cước' : 'Cơ sở'} xuất hiện nhiều lần.`);
+    columns.set(key, index);
+  });
+  if (!columns.has('id_card') || !columns.has('store')) throw new Error('Cần đủ hai cột Căn cước và Cơ sở. Tải mẫu Excel để điền.');
+  const inputs: CustomerStoreInput[] = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1 || !row.hasValues) return;
+    const errors: string[] = [];
+    const values = { id_card: cellText(row.getCell(columns.get('id_card')!), 'id_card', errors), store: cellText(row.getCell(columns.get('store')!), 'store', errors) };
+    row.eachCell((cell, index) => { if (cell.value != null && ![...columns.values()].includes(index)) errors.push(`${cell.address}: dữ liệu nằm ngoài các cột có tiêu đề.`); });
+    if (values.id_card || values.store || errors.length) inputs.push({ rowNumber, values, errors });
+  });
+  if (!inputs.length) throw new Error('File chưa có dữ liệu. Điền căn cước và cơ sở từ dòng 2.');
+  return inputs;
+}
+
+export async function readCustomerStoreExcel(file: File) {
+  if (!/\.xlsx$/i.test(file.name)) throw new Error('Chỉ nhận file Excel .xlsx.');
+  if (!file.size || file.size > CUSTOMER_EXCEL_MAX_BYTES) throw new Error('File phải có dữ liệu và không vượt quá 5 MB.');
+  const workbook = await newWorkbook();
+  try { await workbook.xlsx.load(await file.arrayBuffer()); }
+  catch { throw new Error('Không đọc được file Excel. Kiểm tra file có bị hỏng hoặc đặt mật khẩu không.'); }
+  return parseCustomerStoreWorkbook(workbook);
 }
