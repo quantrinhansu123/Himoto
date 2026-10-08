@@ -29,7 +29,10 @@ export function mapCashbookRow(raw: ApiRecord): CashbookRow {
   const user = object(raw.user);
   return { id, ...cashbookDateTime(raw.occurred_at ?? raw.created_at), type: type === 'out' ? 'expense' : 'income',
     actor_id: optionalText(raw.created_by ?? raw.user_id ?? user.id), actor_name: optionalText(raw.user_name ?? user.name),
-    reason: optionalText(raw.reason), content: optionalText(raw.content ?? raw.note), store_id: optionalText(raw.store_id) };
+    reason: optionalText(raw.reason), content: optionalText(raw.content ?? raw.note), store_id: optionalText(raw.store_id),
+    amount: raw.amount == null || raw.amount === '' || !Number.isFinite(Number(raw.amount)) ? undefined : Number(raw.amount),
+    order_id: optionalText(raw.order_id), contract_code: optionalText(raw.contract_code), payment_method: optionalText(raw.payment_method),
+    account: optionalText(raw.account), store_name: optionalText(raw.store_name) };
 }
 export function createDemoCashbookRepository(): CashbookRepository {
   return { async load(signal) { signal?.throwIfAborted(); return structuredClone(createCashbookFixtures()); } };

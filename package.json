@@ -12,6 +12,7 @@
     "test:management": "node scripts/check-management-data.cjs",
     "test:contracts": "node scripts/check-contract-autofill.cjs",
     "test:contract-summary": "node scripts/check-contract-summary.cjs",
+    "test:contract-payments": "node scripts/check-contract-payments.cjs",
     "test:contract-import": "node scripts/check-contract-import.cjs",
     "test:clone": "node scripts/check-contract-clone.cjs",
     "test:drafts": "node scripts/check-contract-drafts.cjs",

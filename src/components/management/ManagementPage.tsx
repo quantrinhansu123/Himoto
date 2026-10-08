@@ -19,16 +19,20 @@ import { CustomerExcelActions } from './CustomerExcelActions';
 import { VehicleExcelActions } from './VehicleExcelActions';
 import { StoreEditDialog } from './StoreEditDialog';
 import { ContractSummary } from './ContractSummary';
+import { ContractPaymentDialog } from './ContractPaymentDialog';
 
 const EMPTY_ROWS: ManagementRow[] = [];
 
-function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind; draftsOnly?: boolean }) {
+function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean }) {
   const baseConfig = MANAGEMENT_CONFIG[kind];
-  const config = draftsOnly ? { ...baseConfig, title: 'Log', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : baseConfig;
+  const config = draftsOnly ? { ...baseConfig, title: 'Log', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : baseConfig;
   const { dataset, loading, error, source, canSaveContractDrafts, selectedStore, selectStore, reload, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
   const router = useRouter();
   const searchParams = useSearchParams();
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
+  const contractId = kind === 'contracts' ? searchParams.get('contract_id') : null;
+  const contractPath = vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : '/contracts';
+  const [paymentId, setPaymentId] = useState<number | null>(null);
   const [query, setQuery] = useState<TableQuery>(EMPTY_QUERY);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -50,8 +54,8 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
   const columnsRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
-    setQuery(current => ({ ...current, filters: { ...current.filters, customer_id: customerId || '' } })); setPage(1);
-  }, [customerId]);
+    setQuery(current => ({ ...current, filters: { ...current.filters, customer_id: customerId || '', id: contractId || '' } })); setPage(1);
+  }, [customerId, contractId]);
   useEffect(() => { setPage(1); }, [selectedStore]);
   useEffect(() => {
     const close = (event: MouseEvent) => { if (columnsRef.current && !columnsRef.current.contains(event.target as Node)) columnsRef.current.open = false; };
@@ -61,7 +65,7 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
   }, []);
 
   const allRows = dataset?.[kind] || EMPTY_ROWS;
-  const rows = useMemo(() => draftsOnly ? allRows.filter(row => row.status === 'draft') : allRows, [allRows, draftsOnly]);
+  const rows = useMemo(() => draftsOnly ? allRows.filter(row => row.status === 'draft') : vatOnly ? allRows.filter(row => Number(row.company_payment_count) > 0) : allRows, [allRows, draftsOnly, vatOnly]);
   const scopedRows = useMemo(() => filterRows(rows, EMPTY_QUERY, selectedStore), [rows, selectedStore]);
   const filteredRows = useMemo(() => sortRows(filterRows(scopedRows, query, 'all'), sort.key, sort.direction), [scopedRows, query, sort]);
   const tabRows = filterRows(scopedRows, { ...query, status: '' }, 'all');
@@ -78,7 +82,7 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
 
   function clearFilters() {
     setQuery(EMPTY_QUERY); setPage(1); selectStore('all');
-    if (customerId) router.replace('/contracts');
+    if (customerId || contractId) router.replace(contractPath);
   }
   function exportCsv() {
     if (!filteredRows.length) return;
@@ -118,7 +122,7 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
           </div>
         </div>
         {kind === 'contracts' && <div className="mg-date-filters"><span>Ngày bắt đầu thuê</span><label><span className="mg-sr-only">Từ ngày</span><input type="date" aria-label="Từ ngày" value={query.startDate} onChange={event => updateQuery({ startDate: event.target.value })} aria-invalid={invalidDate} /></label><span className="mg-date-divider">—</span><label><span className="mg-sr-only">Đến ngày</span><input type="date" aria-label="Đến ngày" value={query.endDate} onChange={event => updateQuery({ endDate: event.target.value })} aria-invalid={invalidDate} /></label>{invalidDate && <span className="mg-field-error" role="alert">Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.</span>}
-          {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace('/contracts')}><X size={13} /></button></span>}</div>}
+          {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}{contractId && <span className="mg-active-filter">Hợp đồng #{contractId}<button type="button" aria-label="Bỏ lọc hợp đồng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}</div>}
         {isFiltered && <div className="mg-filter-summary"><span><strong>{filteredRows.length}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
         {kind === 'contracts' && <ContractSummary rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset} />}
         {kind === 'customers' && blacklistError && <p className="mg-blacklist-error" role="alert">{blacklistError}</p>}
@@ -133,6 +137,7 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
             finally { blacklistPending.current = false; setBlacklistBusyId(null); }
           } : undefined}
           onPrint={kind === 'contracts' ? row => { setPrintRow(row); setComposerMode('print'); setComposerOpen(true); } : undefined}
+          onPayment={kind === 'contracts' && source === 'api' ? row => setPaymentId(row.id) : undefined}
 
           canEditContract={false}
           canEditDraft={kind === 'contracts' && canSaveContractDrafts}
@@ -158,7 +163,8 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
         finally { setDeleteBusy(false); }
       }}>{deleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />{kind === 'stores' ? 'Xóa cơ sở' : 'Xóa khách hàng'}</>}</button></div>
     </Dialog>}
-    {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
+    {paymentId !== null && <ContractPaymentDialog id={paymentId} onClose={() => setPaymentId(null)} />}
+    {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onPayment={() => { setPaymentId(viewing.id); setViewing(null); }} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
     {composerOpen && dataset && <ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} onClose={() => setComposerOpen(false)} onDraftSaved={() => { setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); router.push('/contracts/drafts'); }} />}
     {viewing && kind !== 'contracts' && <Dialog title={String(viewing.name)} subtitle={`${viewing.code} · ${config.title}`} onClose={() => setViewing(null)}>
       <div className="mg-dialog-body"><span className={`mg-status mg-status-${statusTone(viewing.status)}`}><span />{optionLabel(config, 'status', viewing.status)}</span>
@@ -171,6 +177,6 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
 }
 
 const navigationNumber = (kind: ManagementKind) => ['staff', 'customers', 'contracts', 'stores', 'vehicles'].indexOf(kind) + 1;
-export function ManagementPage({ kind, draftsOnly = false }: { kind: ManagementKind; draftsOnly?: boolean }) {
-  return <Suspense fallback={<div className="mg-table-state" role="status">Đang chuẩn bị danh sách…</div>}><ManagementContent key={`${kind}-${draftsOnly}`} kind={kind} draftsOnly={draftsOnly} /></Suspense>;
+export function ManagementPage({ kind, draftsOnly = false, vatOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean }) {
+  return <Suspense fallback={<div className="mg-table-state" role="status">Đang chuẩn bị danh sách…</div>}><ManagementContent key={`${kind}-${draftsOnly}-${vatOnly}`} kind={kind} draftsOnly={draftsOnly} vatOnly={vatOnly} /></Suspense>;
 }

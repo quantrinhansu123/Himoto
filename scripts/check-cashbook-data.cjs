@@ -20,11 +20,11 @@ async function run() {
   const demo = createDemoCashbookRepository(); const data = await demo.load();
   assert.equal(data.length, 48); assert.equal(new Set(data.map(row => row.id)).size, 48);
   for (const type of ['income', 'expense']) assert.equal(data.filter(row => row.type === type).length, 24);
-  assert.deepEqual(CASHBOOK_COLUMNS.map(column => column.label), ['ID', 'Ngày', 'Giờ', 'Loại phiếu', 'Người thực hiện', 'Lý do', 'Nội dung']);
+  assert.deepEqual(CASHBOOK_COLUMNS.map(column => column.label), ['ID', 'Ngày', 'Giờ', 'Loại phiếu', 'Người thực hiện', 'Số tiền', 'Mã hợp đồng', 'Hình thức thanh toán', 'Tài khoản nhận / chi', 'Cơ sở', 'Lý do', 'Nội dung']);
   const mutated = await demo.load(); mutated[0].content = 'Changed externally';
   assert.notEqual((await demo.load())[0].content, mutated[0].content);
   const aborted = new AbortController(); aborted.abort(); await assert.rejects(demo.load(aborted.signal), { name: 'AbortError' });
-  checks.push('two fixture groups have distinct IDs and the exact shared seven-field schema; reads are isolated and cancellable');
+  checks.push('two fixture groups have distinct IDs and shared twelve-field schema; reads are isolated and cancellable');
 
   const selected = filterCashbookRows(data, { ...EMPTY_CASHBOOK_FILTERS, search: 'phi dich vu', actor: 'id:1', startDate: '2026-10-01', endDate: '2026-10-01' }, '1');
   assert.equal(selected.length, 1); assert.equal(selected[0].actor_id, '1'); assert.equal(selected[0].type, 'income');
@@ -41,7 +41,10 @@ async function run() {
   const csv = cashbookCsv([{ ...data[0], reason: '=SUM(1,2)', content: 'Một nội dung, có "dấu ngoặc"' }]);
   assert(csv.includes('"\'=SUM(1,2)"')); assert(csv.includes('có ""dấu ngoặc""'));
   assert.equal(cashbookCell({ ...data[0], time: undefined }, 'time'), '—');
-  checks.push('numeric ID and timestamp sorting leave source untouched; exports preserve all seven columns and escape spreadsheet formulas');
+  assert.deepEqual(sortCashbookRows([{ ...data[0], amount: 100 }, { ...data[0], amount: 20 }, { ...data[0], amount: 0 }], 'amount', 'asc').map(row => row.amount), [0,20,100]);
+  assert.equal(cashbookCell({ ...data[0], amount: 0 }, 'amount'), '0 ₫');
+  assert.equal(filterCashbookRows([{ ...data[0], contract_code: 'HD-123' }], { ...EMPTY_CASHBOOK_FILTERS, search: 'hd-123' }, 'all').length, 1);
+  checks.push('numeric ID/money and timestamp sorting; zero amount valid; exports preserve twelve columns and escape spreadsheet formulas');
 
   assert.deepEqual(cashbookDateTime('2026-10-05T18:15:45Z'), { date: '2026-10-06', time: '01:15:45' });
   assert.deepEqual(cashbookDateTime('2026-10-06 08:30:05'), { date: '2026-10-06', time: '08:30:05' });
@@ -49,6 +52,8 @@ async function run() {
   for (const input of ['2026-02-31', '2026-10-06T24:00:00', 'invalid']) assert.throws(() => cashbookDateTime(input), /không hợp lệ/);
   const row = mapCashbookRow({ id: '0009', type: 'in', created_at: '2026-10-06T08:30:00+07:00', user_name: 'Người tạo', created_by: 2, store_id: 3, note: 'Nội dung được lưu' });
   assert.equal(row.id, '0009'); assert.equal(row.actor_name, 'Người tạo'); assert.equal(row.reason, undefined); assert.equal(row.content, 'Nội dung được lưu');
+  const receipt = mapCashbookRow({ id: 1, type: 'in', amount: '300', order_id: 7, contract_code: 'HD-7', payment_method: 'Tiền mặt', account: 'Két #1', store_name: 'QA' });
+  assert.equal(receipt.amount, 300); assert.equal(receipt.order_id, '7'); assert.equal(receipt.contract_code, 'HD-7'); assert.equal(receipt.account, 'Két #1');
   assert.equal(mapCashbookRow({ id: 1, type: 'addon', user: { id: 8, name: 'Người tạo PHP' } }).type, 'income');
   assert.equal(mapCashbookRow({ id: 1, type: 'out', payer_receiver: 'Người nhận' }).actor_name, undefined);
   assert.throws(() => mapCashbookRow({ id: 1, type: 'transfer' }), /chưa được xác nhận/);

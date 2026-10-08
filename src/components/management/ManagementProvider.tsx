@@ -9,6 +9,7 @@ import { StoreCreation, StoreEdits } from '@/lib/management/store-management';
 import { createStoreRecord, deleteStoreRecord, updateStoreRecord } from '@/lib/management/store-repository';
 import { updateCustomerBlacklist } from '@/lib/management/customer-blacklist';
 import { CUSTOMER_STATUSES } from '@/lib/management/config';
+import type { PaymentContext } from '@/lib/management/contract-payments';
 
 interface ManagementContextValue {
   dataset: ManagementDataset | null;
@@ -33,6 +34,7 @@ interface ManagementContextValue {
   cloneContract: (id: number) => Promise<ManagementRow>;
   saveContract: (id: number, edits: ContractEdits) => Promise<ManagementRow>;
   saveContractDraft: (id: number | null, edits: ContractEdits) => Promise<ManagementRow>;
+  acceptContractPayment: (context: PaymentContext) => void;
 }
 const ManagementContext = createContext<ManagementContextValue | null>(null);
 
@@ -134,7 +136,12 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
     if (selectedStore === String(id)) selectStore('all');
     notify('Đã xóa cơ sở khỏi Supabase.');
   };
-  return <ManagementContext.Provider value={{ dataset, loading, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), selectedStore, selectStore, reload, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft }}>
+  const acceptContractPayment = (context: PaymentContext) => {
+    setDataset(current => current ? { ...current, contracts: current.contracts.map(row => row.id === context.id ? { ...row,
+      total_amount: context.total_amount ?? undefined, paid_amount: context.paid_amount ?? undefined, draft_revision: context.revision,
+      company_paid_amount: context.company_paid_amount, company_payment_count: context.company_payment_count } : row) } : current);
+  };
+  return <ManagementContext.Provider value={{ dataset, loading, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), selectedStore, selectStore, reload, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft, acceptContractPayment }}>
     {children}
     {notification && <div className="mg-toast" role="status"><span>{notification}</span><button type="button" onClick={() => notify('')} aria-label="Đóng thông báo">×</button></div>}
   </ManagementContext.Provider>;

@@ -1,0 +1,15 @@
+{
+  "passed": 6,
+  "checks": [
+    "multiple partial cash payments, automatic contract content, totals/history updated, overpayment blocked without request",
+    "lost response survives close/reload; frozen input and identical UUID replay confirm one income only",
+    "stale revision rejects without credit; fresh reload permits ordinary bank payment to correct account",
+    "shared company account works from other branch; success navigates VAT with matching row; common list retains both contracts; mobile no overflow",
+    "missing company bank configuration blocks submission with visible explanation",
+    "cashbook has twelve columns with income amount, contract, method, account and content; contract link applies exact ID filter"
+  ],
+  "syntheticReceipts": 5,
+  "unexpected": [],
+  "jsErrors": [],
+  "operationalWrites": 0
+}

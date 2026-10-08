@@ -22,7 +22,7 @@ const money = (value: unknown) => value == null || value === '' || !Number.isFin
 const dateTime = (value: string) => value ? formatDateTime(value) : '—';
 const date = (value: string) => value ? new Date(value).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
 
-export function ContractDetail({ row, onClose, onPrint }: { row: ManagementRow; onClose: () => void; onPrint: () => void }) {
+export function ContractDetail({ row, onClose, onPrint, onPayment }: { row: ManagementRow; onClose: () => void; onPrint: () => void; onPayment?: () => void }) {
   const { dataset } = useManagement();
   const [section, setSection] = useState<ContractSection>('vehicle');
   const draft = createContractDraft(dataset || { stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all', row);
@@ -86,6 +86,7 @@ export function ContractDetail({ row, onClose, onPrint }: { row: ManagementRow; 
       ]))}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
+      {row.status !== 'draft' && onPayment && <button type="button" className="mg-button" onClick={onPayment}>Thanh toán / Lịch sử</button>}
       <button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
   </Dialog>;
 }

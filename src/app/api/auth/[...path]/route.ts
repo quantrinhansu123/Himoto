@@ -42,10 +42,21 @@ const listQueries: Record<string, QueryConfig> = {
     sql: `${CONTRACT_LIST_SQL} ORDER BY o.id DESC`,
   },
   transactions: {
-    sql: `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id,
-                 t.name AS reason, COALESCE(t."desc", t.note) AS content
+    sql: `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id, s.store_name,
+                 CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' ELSE t.name END AS reason,
+                 COALESCE(t."desc", t.note) AS content, t.value AS amount,t.order_id,
+                 COALESCE(o.contract_number,o.draft_reference,'#' || t.order_id::text) AS contract_code,
+                 CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'
+                      WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
+                      WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty'
+                      WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản' END AS payment_method,
+                 CASE WHEN t.cash_id IS NOT NULL THEN 'Két tiền mặt #' || t.cash_id::text
+                      ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account
           FROM himoto.transactions t
           LEFT JOIN himoto.users u ON u.id = t.user_id
+          LEFT JOIN himoto.orders o ON o.id=t.order_id
+          LEFT JOIN himoto.stores s ON s.id=t.store_id
+          LEFT JOIN himoto.banks b ON b.id=t.bank_id
           ORDER BY t.id DESC`,
   },
 };

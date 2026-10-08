@@ -130,6 +130,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     start_date: text(raw.start_date || raw.rent_at), end_date: text(raw.end_date || raw.return_at),
     total_amount: number(raw.total_amount ?? raw.total), deposit_amount: number(raw.deposit_amount),
     paid_amount: number(raw.paid_amount),
+    company_paid_amount: number(raw.company_paid_amount), company_payment_count: number(raw.company_payment_count),
     rental_type: text(raw.rental_type), notes: text(raw.notes ?? raw.note),
     signed_on: text(raw.signed_on), authorization_date: text(raw.authorization_date), collateral_description: text(raw.collateral_description),
     customer_source: text(raw.customer_source), customer_source_url: text(raw.customer_source_url),

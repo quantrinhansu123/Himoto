@@ -12,6 +12,7 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   c.id_card_issued_on, c.id_card_issued_by, c.relatives, c.warning AS warning_note,
   o.store_id, s.store_name, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
   o.total AS total_amount, o.pid AS paid_amount,
+  COALESCE(company.paid_amount,0) AS company_paid_amount, COALESCE(company.payment_count,0) AS company_payment_count,
   CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
        ELSE COALESCE(o.first_deposit_amount, 0) + COALESCE(o.additional_deposit_amount, 0) END AS deposit_amount,
   o.note AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
@@ -23,6 +24,11 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   FROM himoto.orders o
   LEFT JOIN himoto.customers c ON c.id = o.customer_id
   LEFT JOIN himoto.stores s ON s.id = o.store_id
+  LEFT JOIN (
+    SELECT order_id, SUM(value) AS paid_amount, COUNT(*)::int AS payment_count
+    FROM himoto.transactions WHERE type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
+    GROUP BY order_id
+  ) company ON company.order_id=o.id
   LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,

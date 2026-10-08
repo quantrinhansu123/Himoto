@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, FileSearch, LoaderCircle, RotateCcw } from 'lucide-react';
 import { CASHBOOK_COLUMNS, CashbookColumnKey, CashbookRow, VoucherType, VOUCHER_LABELS, cashbookCell, sortCashbookRows } from '@/lib/management/cashbook';
 
@@ -17,10 +18,10 @@ export function CashbookTable({ type, rows, loading, error, filtered, onReset, o
   const offset = (safePage - 1) * pageSize;
   return <section className="mg-data-panel mg-cashbook-panel" aria-labelledby={`cashbook-${type}-title`} id={`cashbook-${type}`}>
     <div className="mg-cashbook-panel-heading"><span className={`mg-cashbook-symbol is-${type}`} aria-hidden="true">{type === 'income' ? <ArrowDownLeft size={20} /> : <ArrowUpRight size={20} />}</span>
-      <div><h2 id={`cashbook-${type}-title`}>{title}<span className="mg-title-count">{loading || error ? '—' : rows.length}</span></h2><p>{type === 'income' ? 'Các phiếu ghi nhận khoản thu.' : 'Các phiếu ghi nhận khoản chi.'}</p><p className="mg-cashbook-mobile-hint">Cuộn ngang để xem đủ 7 cột.</p></div>
-      <span className="mg-cashbook-panel-description">Cùng mẫu 7 cột</span>
+      <div><h2 id={`cashbook-${type}-title`}>{title}<span className="mg-title-count">{loading || error ? '—' : rows.length}</span></h2><p>{type === 'income' ? 'Các phiếu ghi nhận khoản thu.' : 'Các phiếu ghi nhận khoản chi.'}</p><p className="mg-cashbook-mobile-hint">Cuộn ngang để xem đủ {CASHBOOK_COLUMNS.length} cột.</p></div>
+      <span className="mg-cashbook-panel-description">Cùng mẫu {CASHBOOK_COLUMNS.length} cột</span>
     </div>
-    <div className="mg-table-scroll" tabIndex={0} role="region" aria-label={`Bảng ${title.toLowerCase()}, cuộn ngang để xem đủ bảy cột`}>
+    <div className="mg-table-scroll" tabIndex={0} role="region" aria-label={`Bảng ${title.toLowerCase()}, cuộn ngang để xem đủ ${CASHBOOK_COLUMNS.length} cột`}>
       <table className="mg-table mg-cashbook-table" aria-busy={loading}><caption className="mg-sr-only">{title}</caption>
         <thead><tr>{CASHBOOK_COLUMNS.map(column => <th key={column.key} scope="col" aria-sort={sort.key === column.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'}>
           <button type="button" className="mg-sort" aria-label={`Sắp xếp ${title.toLowerCase()} theo ${column.label}`} onClick={() => { setSort(current => ({ key: column.key, direction: current.key === column.key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }}>
@@ -31,6 +32,7 @@ export function CashbookTable({ type, rows, loading, error, filtered, onReset, o
           : sorted.slice(offset, offset + pageSize).map(row => <tr key={row.id}>{CASHBOOK_COLUMNS.map(column => <td key={column.key}>
             {column.key === 'type' ? <span className={`mg-status mg-status-${type === 'income' ? 'green' : 'red'}`}><span />{title}</span>
               : column.key === 'id' ? <span className="mg-code">{row.id}</span>
+              : column.key === 'contract_code' && row.order_id ? <Link className="mg-cashbook-contract-link" href={`/contracts?contract_id=${row.order_id}`}>{cashbookCell(row,column.key)}</Link>
               : <span className={`mg-cashbook-cell mg-cashbook-${column.key}`}>{cashbookCell(row, column.key)}</span>}
           </td>)}</tr>)}</tbody>
       </table>
