@@ -28,7 +28,7 @@ export function Dialog({ title, subtitle, children, onClose, className = '' }: {
     const releaseFocus = dialog ? trapFocusWithin(dialog) : () => {};
     const keepFocusVisible = (event: FocusEvent) => {
       const target = event.target as HTMLElement;
-      if (!dialog || !target.closest('.mg-dialog-body')) return;
+      if (!dialog || !target.closest('.mg-dialog-body') || target.tagName === 'SELECT') return;
       dialog.style.scrollPaddingTop = `${(dialog.querySelector('.mg-dialog-header')?.getBoundingClientRect().height || 0) + 12}px`;
       dialog.style.scrollPaddingBottom = `${(dialog.querySelector('.mg-dialog-footer')?.getBoundingClientRect().height || 0) + 12}px`;
       requestAnimationFrame(() => { if (dialog.open && target === document.activeElement) target.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });

@@ -6,7 +6,8 @@ import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { ContractDraft, ContractRelative, CustomerDetails, LegacyContractDocument, buildContractDocument, createContractDraft, customerDetails, emptyVehicle, formatRelatives, normalizeIdCard, pairRelatives, relativesFromRow, staffIsAvailable, staffMatchesStore, validateContractDraft, vehicleDetails } from '@/lib/management/contract-document';
 import { ManagementRow } from '@/lib/management/types';
-import { CONTRACT_STATUSES, CONTRACT_TYPES } from '@/lib/management/config';
+import { CONTRACT_STATUSES, CONTRACT_TYPES, VEHICLE_STATUSES } from '@/lib/management/config';
+import { normalize } from '@/lib/management/table-utils';
 import { validateDraftSave } from '@/lib/management/contract-drafts';
 import { CustomerCreateDialog } from './CustomerCreateDialog';
 import { ContractPrintPreview } from './ContractPrintPreview';
@@ -38,6 +39,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
   const [document, setDocument] = useState<LegacyContractDocument | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [section, setSection] = useState<ContractSection>('contract');
+  const [vehicleSearch, setVehicleSearch] = useState<Record<number, string>>({});
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
     const controller = new AbortController(); let current = true;
@@ -163,6 +165,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
   }
   const branchStaff = staffMatchesStore(staff, draft.store_id);
   const branchVehicles = dataset?.vehicles.filter(vehicle => String(vehicle.store_id) === draft.store_id) || [];
+  function chooseVehicle(index: number, id: string) {
+    const selected = branchVehicles.find(item => String(item.id) === id);
+    setDraft(previous => ({
+      ...previous,
+      vehicles: previous.vehicles.map((item, i) => i === index ? selected ? vehicleDetails(selected, previous.customer) : emptyVehicle() : item),
+      unit_price: selected && index === 0 && !previous.unit_price ? String(selected.daily_price ?? '') : previous.unit_price,
+    }));
+    setErrors(previous => ({ ...previous, [`vehicle_${index}`]: '' }));
+    setSaveError('');
+  }
   const representative = branchStaff.find(person => String(person.id) === draft.staff_id);
   const canSearchCustomer = /^\d{9,13}$/.test(idInput.replace(/\D/g, ''));
   const lookupText = !draft.store_id ? 'Chọn cơ sở cho thuê trước khi tra cứu khách hàng.' : lookupState === 'loading' ? 'Đang tra cứu khách hàng…' : lookupState === 'found' ? `Đã tìm thấy khách hàng #${draft.customer_id} · Thông tin đã tự động điền` : lookupState === 'matches' ? `Tìm thấy ${customerMatches.length} hồ sơ. Chọn đúng khách hàng bên dưới.` : lookupState === 'missing' ? 'Chưa có khách hàng mang giấy tờ hoặc số điện thoại này tại cơ sở đã chọn.' : 'Nhập CCCD/CMND hoặc số điện thoại (9–13 số) để tra cứu.';
@@ -258,18 +270,29 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
           {panel('vehicle', 'Thông tin phương tiện', <>
             <div className="mg-form-grid mg-contract-grid-two">{field('start_date', 'Thuê lúc', 'datetime-local', true)}{field('end_date', 'Hẹn trả', 'datetime-local', true)}</div>
             <p className="mg-composer-hint">Thời gian thuê và hẹn trả áp dụng cho các xe trong hợp đồng.</p>
-            {draft.vehicles.map((vehicle, index) => <div key={index} className="mg-composer-vehicle"><div className="mg-composer-vehicle-header"><strong>Thông tin xe thuê số {index + 1}</strong>{draft.vehicles.length > 1 && <button className="mg-icon-button" type="button" aria-label={`Bỏ xe ${index + 1}`} onClick={() => change('vehicles', draft.vehicles.filter((_, i) => i !== index))}><Trash2 size={16} /></button>}</div>
-              <div className="mg-field"><label htmlFor={`contract-vehicle-${index}`}>Chọn xe *</label><select id={`contract-vehicle-${index}`} disabled={!draft.store_id} value={vehicle.id} aria-invalid={Boolean(errors[`vehicle_${index}`])} onChange={event => {
-                const selected = branchVehicles.find(item => String(item.id) === event.target.value);
-                change('vehicles', draft.vehicles.map((item, i) => i === index ? selected ? vehicleDetails(selected, draft.customer) : emptyVehicle() : item));
-                if (selected && !draft.unit_price && index === 0) change('unit_price', String(selected.daily_price ?? ''));
-              }}><option value="">Chọn xe</option>{branchVehicles.map(item => <option key={item.id} value={item.id}>{item.name} · {item.license}</option>)}</select>{errors[`vehicle_${index}`] && <p className="mg-field-error">{errors[`vehicle_${index}`]}</p>}</div>
+            {draft.vehicles.map((vehicle, index) => {
+              const query = normalize(vehicleSearch[index] || '');
+              const choices = branchVehicles.filter(item => !query || normalize(`${item.name} ${item.license}`).includes(query));
+              return <div key={index} className="mg-composer-vehicle"><div className="mg-composer-vehicle-header"><strong>Thông tin xe thuê số {index + 1}</strong>{draft.vehicles.length > 1 && <button className="mg-icon-button" type="button" aria-label={`Bỏ xe ${index + 1}`} onClick={() => change('vehicles', draft.vehicles.filter((_, i) => i !== index))}><Trash2 size={16} /></button>}</div>
+              <div className="mg-field"><label htmlFor={`contract-vehicle-${index}`}>Chọn xe *</label><select id={`contract-vehicle-${index}`} disabled={!draft.store_id} value={vehicle.id} aria-invalid={Boolean(errors[`vehicle_${index}`])} onChange={event => chooseVehicle(index, event.target.value)}><option value="">{draft.store_id ? 'Chọn xe' : 'Chọn cửa hàng xe trước'}</option>{branchVehicles.map(item => <option key={item.id} value={item.id}>{item.name} · {item.license}</option>)}</select>
+                {draft.store_id ? <>
+                  <input className="mg-vehicle-filter" id={`contract-vehicle-filter-${index}`} aria-label={`Tìm xe ${index + 1}`} value={vehicleSearch[index] || ''} autoComplete="off" placeholder="Tìm tên xe hoặc biển số, rồi bấm xe bên dưới" onChange={event => setVehicleSearch(previous => ({ ...previous, [index]: event.target.value }))} />
+                  {choices.length > 0 && <div className="mg-vehicle-option-list" role="listbox" aria-label={`Danh sách xe ${index + 1}`}>{choices.map(item => {
+                    const status = VEHICLE_STATUSES.find(option => option.value === item.status)?.label || String(item.status || '');
+                    const selected = vehicle.id === String(item.id);
+                    return <button key={item.id} type="button" role="option" aria-selected={selected} className={`mg-customer-match mg-vehicle-option${selected ? ' is-selected' : ''}`} onClick={() => chooseVehicle(index, String(item.id))}><strong>{item.name} · {item.license}</strong><span>{[item.brand, status].filter(Boolean).join(' · ')}</span></button>;
+                  })}</div>}
+                  {!branchVehicles.length && <small>Cửa hàng đã chọn chưa có xe.</small>}
+                  {branchVehicles.length > 0 && !choices.length && <small>Không có xe khớp từ khóa.</small>}
+                </> : <small>Chọn cửa hàng xe ở phần Khách hàng trước khi chọn xe.</small>}
+                {errors[`vehicle_${index}`] && <p className="mg-field-error">{errors[`vehicle_${index}`]}</p>}</div>
               {vehicle.id && <div className="mg-composer-vehicle-summary">{vehicle.license} · {vehicle.brand} · {vehicle.type_text} · {vehicle.year || 'Chưa có năm sản xuất'}</div>}
               <div className="mg-form-grid mg-contract-grid-three">{(['driver_name', 'driver_license_number', 'driver_license_issued_on', 'borrow_hats', 'borrow_raincoats', 'color'] as const).map(key => {
                 const labels = { color: 'Màu xe', driver_name: 'Tên người lái', driver_license_number: 'Số GP lái xe', driver_license_issued_on: 'Ngày cấp GPLX', borrow_hats: 'Số mũ mượn', borrow_raincoats: 'Số áo mưa' };
                 return <div className="mg-field" key={key}><label htmlFor={`contract-vehicle-${index}-${key}`}>{labels[key]}</label><input id={`contract-vehicle-${index}-${key}`} type={key === 'driver_license_issued_on' ? 'date' : key.startsWith('borrow_') ? 'number' : 'text'} min={key.startsWith('borrow_') ? 0 : undefined} value={vehicle[key]} aria-invalid={Boolean(errors[`vehicle_${index}_${key}`])} onChange={event => change('vehicles', draft.vehicles.map((item, i) => i === index ? { ...item, [key]: event.target.value } : item))} />{errors[`vehicle_${index}_${key}`] && <p className="mg-field-error">{errors[`vehicle_${index}_${key}`]}</p>}</div>;
               })}</div>
-            </div>)}
+            </div>;
+            })}
             <button className="mg-button" type="button" disabled={!draft.store_id} onClick={() => change('vehicles', [...draft.vehicles, emptyVehicle()])}><Plus size={16} />Thêm xe</button>
           </>)}
           {panel('payment', 'Chi phí', <>
