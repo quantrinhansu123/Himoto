@@ -19,7 +19,8 @@ checks, errors, blocked, saved = [], [], [], []
 customer = {'id': 77, 'name': 'Khách hợp đồng QA', 'phone': '0900000077', 'id_card': '001234567877',
             'address': 'Địa chỉ hợp đồng QA', 'email': 'contract@example.invalid', 'birthday': '1995-05-20',
             'id_card_issued_on': '2024-01-15', 'id_card_issued_by': 'Nơi cấp QA',
-            'relatives': [{'name': 'Người thân QA', 'relationship': 'Mẹ', 'phone': '0900000078'}],
+            'relatives': [{'name': 'Người thân QA', 'relationship': 'Mẹ', 'phone': '0900000078'},
+                          {'name': 'Người thân QA 2', 'relationship': 'Anh', 'phone': '0900000079'}],
             'warning': 'Cảnh báo QA', 'status': 'active', 'store_id': 2}
 stores = [{'id': i, 'code': f'CS-QA-{i}', 'store_name': f'Cửa hàng QA {i}', 'status': 'opening',
            'store_address': 'Địa chỉ cửa hàng QA', 'store_phone': '0900000002'} for i in [2, 3]]
@@ -141,16 +142,21 @@ with sync_playwright() as playwright:
     expect(form.get_by_role('tab', name='Khách hàng', exact=False)).to_have_attribute('aria-selected', 'true')
     page.wait_for_function('document.activeElement.id === "contract-store"')
     form.get_by_label('Cửa hàng xe', exact=False).select_option('2')
+    representative = form.get_by_label('Đại diện ủy quyền Bên A', exact=False)
+    expect(representative.locator('option[value="8"]')).to_have_count(1)
+    representative.select_option('8')
     form.get_by_label('Tra cứu theo CCCD', exact=False).fill(customer['phone'])
     expect(form.get_by_label('Tên khách hàng', exact=True)).to_have_value(customer['name'])
     expect(form.get_by_label('Số CMTND/CCCD', exact=True)).to_have_value(customer['id_card'])
     expect(form.get_by_label('Số CMTND/CCCD', exact=True)).to_have_attribute('readonly', '')
+    expect(form.get_by_label('Email', exact=True)).to_have_count(0)
+    expect(form.get_by_label('Ngày sinh', exact=True)).to_have_count(0)
     checks.append('validation reveals the hidden failing tab and phone lookup shows the actual CCCD with its leading zeros')
     select_tab(form, 'Hợp đồng & pháp lý')
-    form.get_by_label('Đại diện Ủy quyền Bên A', exact=False).select_option('8')
+    expect(form.get_by_label('Ngày HĐ ủy quyền', exact=True)).to_have_count(0)
+    expect(form.get_by_label('Chức vụ đại diện', exact=True)).to_have_count(0)
     form.get_by_label('Nguồn khách', exact=True).fill('Nguồn khách bố cục QA')
     form.get_by_label('Ngày ký hợp đồng', exact=False).fill('2026-10-07')
-    form.get_by_label('Ngày HĐ ủy quyền', exact=True).fill('2026-10-01')
     form.screenshot(path=str(output / 'form-contract-1440.png'))
     select_tab(form, 'Phương tiện')
     form.get_by_label('Thuê lúc', exact=False).fill('2026-10-07T09:00')

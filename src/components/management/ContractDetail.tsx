@@ -60,14 +60,15 @@ export function ContractDetail({ row, onClose, onPrint }: { row: ManagementRow; 
         ['Mã hợp đồng / Số HĐ giấy', row.code], ['Trạng thái hợp đồng', optionLabel(MANAGEMENT_CONFIG.contracts, 'status', row.status)],
         ['Loại hợp đồng', row.rental_type ? optionLabel(MANAGEMENT_CONFIG.contracts, 'rental_type', String(row.rental_type)) : '—'],
         ['Ngày ký hợp đồng', date(draft.signed_on)], ['Ngày tạo hợp đồng', dateTime(String(row.created_at || ''))],
-        ['Ngày HĐ ủy quyền', date(draft.authorization_date)], ['Đại diện Ủy quyền Bên A (Himoto)', text(representative?.name)],
-        ['Chức vụ đại diện', text(representative?.position)], ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
+        ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
       ]))}
       {panel('customer', 'Thông tin khách hàng (Bên B)', fields([
-        ['Cửa hàng xe', text(store?.name || row.store_name)], ['Tên khách hàng', text(draft.customer.name)], ['SĐT', text(draft.customer.phone)],
+        ['Cửa hàng xe', text(store?.name || row.store_name)], ['Đại diện ủy quyền Bên A (Nhân viên làm hợp đồng)', text(representative?.name)],
+        ['Tên khách hàng', text(draft.customer.name)], ['SĐT', text(draft.customer.phone)],
         ['Số CMTND/CCCD', text(draft.customer.id_card)], ['Ngày cấp CCCD', date(draft.customer.id_card_issued_on)],
         ['Nơi cấp CCCD', text(draft.customer.id_card_issued_by)], ['Địa chỉ thường trú / tạm trú', text(draft.customer.address)],
-        ['Thông tin người thân', text(draft.customer.relatives_text)], ['Email', text(draft.customer.email)], ['Ngày sinh', date(draft.customer.birthday)],
+        ['Người thân 1', text(draft.relatives[0] ? `${draft.relatives[0].name}${draft.relatives[0].relationship ? ` (${draft.relatives[0].relationship})` : ''}${draft.relatives[0].phone ? `: ${draft.relatives[0].phone}` : ''}` : '')],
+        ['Người thân 2', text(draft.relatives[1] ? `${draft.relatives[1].name}${draft.relatives[1].relationship ? ` (${draft.relatives[1].relationship})` : ''}${draft.relatives[1].phone ? `: ${draft.relatives[1].phone}` : ''}` : '')],
       ]))}
       {panel('payment', 'Chi phí', <>
         <div className="mg-contract-cost-section"><h3>Tiền cọc</h3>{fields([

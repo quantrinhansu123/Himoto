@@ -47,10 +47,12 @@ async function run() {
   draft.vehicles = [vehicleDetails(data.vehicles[0], draft.customer), vehicleDetails(data.vehicles[4], draft.customer)];
   draft.start_date = '2026-10-06T09:15'; draft.end_date = '2026-10-07T10:45'; draft.signed_on = '2026-10-06';
   draft.unit_price = '150000'; draft.total_amount = '300000'; draft.paid_amount = ''; draft.deposit_amount = '1000000';
+  draft.relatives = [{ name: 'Người thân một', relationship: 'Mẹ', phone: '0900000099' }, { name: 'Người thân hai', relationship: 'Anh', phone: '0900000088' }];
   assert.deepEqual(validateContractDraft(draft, data, data.staff, 'demo'), {});
   const invalid = { ...draft, staff_id: '2', end_date: draft.start_date, unit_price: '-1', vehicles: [draft.vehicles[0], draft.vehicles[0]], customer_source_url: 'javascript:alert(1)' };
   const errors = validateContractDraft(invalid, data, data.staff, 'demo');
   for (const key of ['staff_id', 'end_date', 'unit_price', 'vehicle_1', 'customer_source_url']) assert(errors[key]);
+  assert(validateContractDraft({ ...draft, relatives: [draft.relatives[0], { name: '', relationship: '', phone: '' }] }, data, data.staff, 'demo').relative_1_name);
   checks.push('print validation rejects wrong branch, duplicate vehicle, reversed dates, negative money and unsafe source links');
   const doc = buildContractDocument(draft, data.stores[0], data.staff[0]);
   assert.equal(doc.contract_number, 'Chưa cấp số'); assert.equal(doc.is_preview, true);
@@ -62,7 +64,9 @@ async function run() {
   checks.push('legacy print DTO retains signatures, full identity, local dates, multiple vehicles, draft watermark and missing values');
   const full = mapApiRow('customers', { id: 1, name: 'Khách', id_card: '001234567890', id_card_issued_on: '2024-01-15', id_card_issued_by: 'Nơi cấp', birthday: '1990-02-03', relatives_text: 'Người thân', warning: 'Lưu ý' });
   assert.equal(full.id_card_issued_by, 'Nơi cấp'); assert.equal(full.relatives_text, 'Người thân'); assert.equal(full.birthday, '1990-02-03');
-  assert.equal(mapApiRow('customers', { id: 1, relatives: [{ name: 'Người thân', relationship: 'Anh', phone: '0900001234' }] }).relatives_text, 'Người thân (Anh): 0900001234');
+  const withRelative = mapApiRow('customers', { id: 1, relatives: [{ name: 'Người thân', relationship: 'Anh', phone: '0900001234', email: 'than@example.test', birthday: '1990-01-01' }] });
+  assert.equal(withRelative.relatives_text, 'Người thân (Anh): 0900001234');
+  assert.equal(withRelative.relatives_json, JSON.stringify([{ name: 'Người thân', relationship: 'Anh', phone: '0900001234' }]));
   assert.equal(mapApiRow('customers', { id: 1, relatives: '[{"name":"Người thân","phone":"0900001234"}]' }).relatives_text, 'Người thân: 0900001234');
   checks.push('API mapper retains supplemental identity fields');
   const detachedCustomer = createContractDraft({ ...data, customers: [] }, 'all', mapApiRow('contracts', {

@@ -45,7 +45,7 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 					<div className="legal-references mt-1">
 						<p className="legal-line">- Căn cứ Bộ Luật Dân sự số 91/2005/QH13 đã được Quốc Hội ban hành ngày 24/11/2015;</p>
 						<p className="legal-line">- Căn cứ Luật Thương mại số 36/2005/QH11 đã được Quốc Hội thông qua ngày 14/06/2005;</p>
-						<p className="legal-line">- Căn cứ Hợp đồng ủy quyền ký ngày: {(doc.lessor.authorization && doc.lessor.authorization.date) || '........................'} giữa Công ty CP TMDV Himoto Việt Nam và {(doc.lessor.authorization && doc.lessor.authorization.party_name) || representativeNameA}</p>
+						<p className="legal-line">- Căn cứ Hợp đồng ủy quyền giữa Công ty CP TMDV Himoto Việt Nam và {(doc.lessor.authorization && doc.lessor.authorization.party_name) || representativeNameA}</p>
 						<p className="legal-line">- Căn cứ vào nhu cầu và khả năng cung ứng của các bên.</p>
 					</div>
 
@@ -63,8 +63,7 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 						</div>
 						<div className="party-row">- ĐC trụ sở chính: {doc.lessor.head_office}</div>
 						<div className="party-row d-flex justify-content-between">
-							<span>- NGƯỜI ỦY QUYỀN A: <strong className="text-uppercase">{representativeNameA}</strong> {Boolean(doc.lessor.authorization && doc.lessor.authorization.date) && (<span className="font-italic small ml-1">(Ngày {doc.lessor.authorization.date})</span>)}</span>
-							<span>- Chức vụ: <strong>{doc.lessor.representative_title || 'Nhân viên quầy giao dịch'}</strong></span>
+							<span>- NGƯỜI ỦY QUYỀN A: <strong className="text-uppercase">{representativeNameA}</strong></span>
 						</div>
 					</div>
 
@@ -80,7 +79,7 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 							<span>Cấp ngày: {doc.customer.id_card_issued_on || '....../....../..........'}</span>
 							<span className="text-truncate">Tại: {doc.customer.id_card_issued_by || '................................'}</span>
 						</div>
-						<div className="party-row">- Thông tin người thân: {doc.customer.relatives_text || '...................................................................................................................................................................'}</div>
+						{(doc.relatives || []).map((relative, index) => <div className="party-row" key={index}>- Người thân {index + 1}: {relative.name ? `${relative.name}${relative.relationship ? ` (${relative.relationship})` : ''}${relative.phone ? `: ${relative.phone}` : ''}` : '................................................................'}</div>)}
 					</div>
 
 					<div className="contract-intro mt-1">

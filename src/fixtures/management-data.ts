@@ -31,7 +31,8 @@ export function createDemoDataset(): ManagementDataset {
       address: `Địa chỉ mẫu ${i + 1}, Hà Nội`, store_id: store.id, store_name: store.name,
       status: i % 13 === 12 ? 'blacklist' : i % 9 === 8 ? 'warning' : 'active',
       birthday: '1995-05-20', id_card_issued_on: '2024-01-15', id_card_issued_by: 'Nơi cấp mẫu',
-      relatives_text: 'Người thân mẫu · 0900000099',
+      relatives_json: JSON.stringify([{ name: 'Người thân mẫu', relationship: 'Mẹ', phone: '0900000099' }, { name: 'Người thân hai', relationship: 'Anh', phone: '0900000088' }]),
+      relatives_text: 'Người thân mẫu (Mẹ): 0900000099 - Và: Người thân hai (Anh): 0900000088',
       warning_note: i % 13 === 12 ? 'Ghi chú mẫu: khách nợ xấu.' : i % 9 === 8 ? 'Ghi chú mẫu: cần kiểm tra thông tin liên hệ.' : '',
       created_at: '2026-09-01' };
   });

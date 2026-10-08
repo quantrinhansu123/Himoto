@@ -3,6 +3,8 @@ import { VEHICLE_TYPES } from './config';
 
 export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'birthday', 'relatives_text', 'warning_note'] as const;
 export type CustomerDetails = Record<(typeof CUSTOMER_FIELDS)[number], string>;
+export interface ContractRelative { name: string; relationship: string; phone: string }
+export function emptyRelative(): ContractRelative { return { name: '', relationship: '', phone: '' }; }
 export interface VehicleDetails {
   id: string; name: string; license: string; brand: string; type_text: string; color: string; year: string;
   driver_name: string; driver_license_number: string; driver_license_issued_on: string;
@@ -15,6 +17,7 @@ export interface ContractDraft {
   start_date: string; end_date: string; unit_price: string; total_amount: string; paid_amount: string;
   deposit_amount: string; package_name: string; payment_method: string; deposit_payment_method: string;
   collateral_description: string; customer_source: string; customer_source_url: string; authorization_date: string;
+  relatives: [ContractRelative, ContractRelative];
 }
 const value = (input: unknown) => input == null ? '' : String(input);
 export const dateInput = (input: unknown) => value(input).slice(0, 10);
@@ -27,6 +30,33 @@ export function dateTimeInput(input: unknown): string {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
   const part = (type: string) => parts.find(item => item.type === type)?.value;
   return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+}
+function relativeRecord(input: unknown): ContractRelative {
+  const row = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  return { name: value(row.name).trim(), relationship: value(row.relationship || row.relation).trim(), phone: value(row.phone).trim() };
+}
+function parseRelativeLine(part: string): ContractRelative {
+  const text = part.trim();
+  const phone = text.match(/:\s*(\+?\d[\d\s.()-]*)$/);
+  const withoutPhone = phone ? text.slice(0, phone.index).trim() : text;
+  const relation = withoutPhone.match(/^(.*)\(([^)]*)\)\s*$/);
+  if (relation) return { name: relation[1].trim(), relationship: relation[2].trim(), phone: (phone?.[1] || '').trim() };
+  return { name: withoutPhone, relationship: '', phone: (phone?.[1] || '').trim() };
+}
+export function pairRelatives(input: unknown, fallbackText = ''): [ContractRelative, ContractRelative] {
+  let list: ContractRelative[] = [];
+  let parsed = input;
+  if (typeof input === 'string' && input.trim()) { try { parsed = JSON.parse(input); } catch { parsed = input; } }
+  if (Array.isArray(parsed)) list = parsed.map(relativeRecord);
+  const filled = list.filter(item => item.name || item.relationship || item.phone);
+  const source = filled.length ? filled : fallbackText.split(' - Và: ').map(parseRelativeLine).filter(item => item.name || item.phone);
+  return [source[0] || emptyRelative(), source[1] || emptyRelative()];
+}
+export function formatRelatives(relatives: ContractRelative[]) {
+  return relatives.filter(item => item.name || item.phone).map(item => `${item.name}${item.relationship ? ` (${item.relationship})` : ''}${item.phone ? `: ${item.phone}` : ''}`).join(' - Và: ');
+}
+export function relativesFromRow(row?: ManagementRow | null) {
+  return pairRelatives(row?.relatives_json, value(row?.relatives_text));
 }
 export function customerDetails(row?: ManagementRow | null): CustomerDetails {
   return Object.fromEntries(CUSTOMER_FIELDS.map(key => [key, key === 'id_card_issued_on' || key === 'birthday' ? dateInput(row?.[key]) : value(row?.[key])])) as CustomerDetails;
@@ -47,11 +77,13 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   if (row?.draft_json) {
     const snapshot = JSON.parse(String(row.draft_json)) as ContractDraft;
     if (!snapshot.customer || !Array.isArray(snapshot.vehicles) || !snapshot.vehicles.length) throw new Error('Thông tin hợp đồng đã lưu không hợp lệ.');
-    return { ...structuredClone(snapshot), contract_number: row.code };
+    return { ...structuredClone(snapshot), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text) };
   }
-  const customer = customerDetails(row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
+  const sourceCustomer = row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
     name: value(row.customer_name), phone: value(row.customer_phone), id_card: value(row.customer_id_card),
-    address: value(row.customer_address), email: value(row.customer_email) } : null);
+    address: value(row.customer_address), email: value(row.customer_email) } : null;
+  const relatives = relativesFromRow(sourceCustomer);
+  const customer = { ...customerDetails(sourceCustomer), relatives_text: formatRelatives(relatives) || value(sourceCustomer?.relatives_text) };
   const items: Record<string, unknown>[] = row?.legacy_items_json ? JSON.parse(String(row.legacy_items_json)) : [];
   const apiVehicles: Record<string, unknown>[] = row?.vehicles_json ? JSON.parse(String(row.vehicles_json)) : [];
   const sourceVehicles = items.length ? items : apiVehicles;
@@ -72,7 +104,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     unit_price: value(vehicle?.daily_price), total_amount: value(row?.total_amount), paid_amount: value(row?.paid_amount),
     deposit_amount: value(row?.deposit_amount), package_name: row?.rental_type === 'monthly' ? 'Theo tháng' : 'Theo ngày',
     payment_method: '', deposit_payment_method: '', collateral_description: value(row?.collateral_description),
-    customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date), };
+    customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date), relatives, };
 }
 export function normalizeIdCard(input: string) { return input.trim().replace(/\s/g, '').toUpperCase(); }
 export function validIdCard(input: string, source: 'demo' | 'api') {
@@ -92,12 +124,23 @@ export function validateCustomer(customer: CustomerDetails, source: 'demo' | 'ap
   if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) errors.email = 'Email chưa đúng định dạng.';
   return errors;
 }
+export function validateContractCustomer(customer: CustomerDetails, source: 'demo' | 'api') {
+  const errors = validateCustomer(customer, source);
+  delete errors.email;
+  return errors;
+}
 export function validateContractDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
   const errors: Record<string, string> = {};
   if (!dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở cho thuê.';
   if (!staffMatchesStore(staff, draft.store_id).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự đang làm việc tại cơ sở này.';
   if (!draft.customer_id) errors.id_card = 'Tra cứu hoặc tạo khách hàng trước khi in.';
-  Object.assign(errors, validateCustomer(draft.customer, source));
+  Object.assign(errors, validateContractCustomer(draft.customer, source));
+  const relatives = pairRelatives(draft.relatives, draft.customer.relatives_text);
+  relatives.forEach((relative, index) => {
+    if (!relative.name.trim()) errors[`relative_${index}_name`] = `Nhập họ tên người thân ${index + 1}.`;
+    if (!relative.relationship.trim()) errors[`relative_${index}_relationship`] = `Nhập quan hệ người thân ${index + 1}.`;
+    if (!/^\+?\d{9,13}$/.test(relative.phone.replace(/[\s.()-]/g, ''))) errors[`relative_${index}_phone`] = `Nhập số điện thoại người thân ${index + 1} từ 9 đến 13 chữ số.`;
+  });
   if (!draft.signed_on) errors.signed_on = 'Chọn ngày ký.';
   const validDateTime = (input: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input) && Number.isFinite(new Date(input).getTime());
   if (!validDateTime(draft.start_date)) errors.start_date = 'Chọn thời gian bắt đầu thuê.';
@@ -136,7 +179,8 @@ export function buildContractDocument(draft: ContractDraft, store: ManagementRow
       branch_name: store.name, branch_address: value(store.address), branch_phone: value(store.phone),
       representative_name: staff.name, representative_title: value(staff.position),
       authorization: { date: printedDate(draft.authorization_date), party_name: staff.name } },
-    customer: { ...draft.customer, id_card_issued_on: printedDate(draft.customer.id_card_issued_on) },
+    relatives: pairRelatives(draft.relatives, draft.customer.relatives_text),
+    customer: { ...draft.customer, relatives_text: formatRelatives(pairRelatives(draft.relatives, draft.customer.relatives_text)), id_card_issued_on: printedDate(draft.customer.id_card_issued_on) },
     customer_source: { name: draft.customer_source, url: draft.customer_source_url },
     vehicles, vehicles_count: vehicles.length, primary_vehicle: vehicles[0],
     rent_time: { start: timeParts(draft.start_date), end: timeParts(draft.end_date) },

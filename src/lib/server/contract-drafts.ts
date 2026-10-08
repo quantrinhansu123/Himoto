@@ -45,9 +45,14 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !draft.customer || typeof draft.customer !== 'object' || Array.isArray(draft.customer)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   const defaults = createContractDraft({ stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all');
   for (const key of Object.keys(defaults)) {
-    if (['customer', 'vehicles', 'customer_id'].includes(key)) continue;
+    if (['customer', 'vehicles', 'customer_id', 'relatives'].includes(key)) continue;
     const value = draft[key as keyof typeof draft];
     if (typeof value !== 'string' || value.length > 4000) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
+  }
+  if (!Array.isArray(draft.relatives) || draft.relatives.length !== 2) throw new DraftSaveError('Hợp đồng cần đủ 2 người thân.');
+  for (const relative of draft.relatives) {
+    if (!relative || typeof relative !== 'object' || Array.isArray(relative)) throw new DraftSaveError('Thông tin người thân không hợp lệ.');
+    for (const key of ['name', 'relationship', 'phone'] as const) if (typeof relative[key] !== 'string' || relative[key].length > 4000) throw new DraftSaveError('Thông tin người thân không hợp lệ.');
   }
   for (const key of CUSTOMER_FIELDS) if (typeof draft.customer[key] !== 'string' || draft.customer[key].length > 4000) throw new DraftSaveError('Thông tin khách hàng không hợp lệ.');
   if (draft.customer_lookup !== undefined && (typeof draft.customer_lookup !== 'string' || draft.customer_lookup.length > 100)) throw new DraftSaveError('Thông tin tra cứu không hợp lệ.');

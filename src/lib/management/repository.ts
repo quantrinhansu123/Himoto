@@ -67,12 +67,21 @@ type ApiRow = Record<string, unknown>;
 const text = (value: unknown): string => value == null ? '' : String(value);
 const number = (value: unknown): number | undefined => value == null || value === '' || !Number.isFinite(Number(value)) ? undefined : Number(value);
 const object = (value: unknown): ApiRow => value && typeof value === 'object' && !Array.isArray(value) ? value as ApiRow : {};
-function relativesText(value: unknown): string {
+function relativeRows(value: unknown) {
   let parsed = value;
-  if (typeof value === 'string') { try { parsed = JSON.parse(value); } catch { return value; } }
-  if (!Array.isArray(parsed)) return typeof parsed === 'string' ? parsed : '';
-  return parsed.map(object).filter(relative => relative.name || relative.phone).map(relative =>
-    `${text(relative.name)}${relative.relationship ? ` (${text(relative.relationship)})` : ''}${relative.phone ? `: ${text(relative.phone)}` : ''}`).join(' - Và: ');
+  if (typeof value === 'string') { try { parsed = JSON.parse(value); } catch { return []; } }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map(object).filter(relative => relative.name || relative.phone).map(relative => ({
+    name: text(relative.name), relationship: text(relative.relationship || relative.relation), phone: text(relative.phone),
+  }));
+}
+function relativesText(value: unknown): string {
+  if (typeof value === 'string') { try { JSON.parse(value); } catch { return value; } }
+  return relativeRows(value).map(relative => `${relative.name}${relative.relationship ? ` (${relative.relationship})` : ''}${relative.phone ? `: ${relative.phone}` : ''}`).join(' - Và: ');
+}
+function relativesJson(value: unknown) {
+  const rows = relativeRows(value);
+  return rows.length ? JSON.stringify(rows) : '';
 }
 
 export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
@@ -92,7 +101,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     status: ({ '1': 'active', '0': 'inactive', opening: 'active' } as Record<string, string>)[base.status] || base.status };
   if (kind === 'customers') return { ...base, code: text(raw.code) || `KH-${String(id).padStart(3, '0')}`, id_card: text(raw.id_card || raw.identity_card), warning_note: text(raw.warning || raw.warning_note),
     id_card_issued_on: text(raw.id_card_issued_on || raw.id_card_date), id_card_issued_by: text(raw.id_card_issued_by || raw.id_card_place),
-    birthday: text(raw.birthday || raw.date_of_birth), relatives_text: text(raw.relatives_text) || relativesText(raw.relatives),
+    birthday: text(raw.birthday || raw.date_of_birth), relatives_text: text(raw.relatives_text) || relativesText(raw.relatives), relatives_json: relativesJson(raw.relatives),
     contract_count: number(raw.contract_count), status: ['blacklist', 'bad_debt'].includes(base.status) ? 'blacklist' : ['draft', '0'].includes(base.status) ? 'draft' : raw.warning || raw.warning_note ? 'warning' :
       (({ '1': 'active', '0': 'draft' } as Record<string, string>)[base.status] || base.status) };
   if (kind === 'vehicles') return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type),
@@ -114,7 +123,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     customer_id_card: text(raw.customer_id_card || customer.id_card),
     customer_address: text(raw.customer_address || customer.address), customer_email: text(raw.customer_email || customer.email),
     id_card_issued_on: text(raw.id_card_issued_on), id_card_issued_by: text(raw.id_card_issued_by),
-    relatives_text: relativesText(raw.relatives), warning_note: text(raw.warning_note),
+    relatives_text: relativesText(raw.relatives), relatives_json: relativesJson(raw.relatives), warning_note: text(raw.warning_note),
     vehicle_id: number(raw.vehicle_id ?? vehicles[0]?.id), vehicles_json: JSON.stringify(vehicles),
     vehicle_name: vehicles.map(v => text(v.name)).filter(Boolean).join(', '),
     license: vehicles.map(v => text(v.license)).filter(Boolean).join(', '),
