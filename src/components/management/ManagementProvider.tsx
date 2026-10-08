@@ -7,6 +7,8 @@ import { ContractAutofillRepository, createApiAutofillRepository } from '@/lib/m
 import { CustomerDetails } from '@/lib/management/contract-document';
 import { StoreCreation, StoreEdits } from '@/lib/management/store-management';
 import { createStoreRecord, deleteStoreRecord, updateStoreRecord } from '@/lib/management/store-repository';
+import { updateCustomerBlacklist } from '@/lib/management/customer-blacklist';
+import { CUSTOMER_STATUSES } from '@/lib/management/config';
 
 interface ManagementContextValue {
   dataset: ManagementDataset | null;
@@ -23,6 +25,7 @@ interface ManagementContextValue {
   createCustomer: (customer: CustomerDetails, assignment?: CustomerAssignment) => Promise<ManagementRow>;
   updateCustomer: (customer: ManagementRow) => Promise<ManagementRow>;
   deleteCustomer: (id: number) => Promise<void>;
+  setCustomerBlacklist: (customer: ManagementRow, blacklisted: boolean) => Promise<void>;
   acceptImportedCustomers: (count: number) => Promise<void>;
   updateStore: (id: number, edits: StoreEdits) => Promise<void>;
   createStore: (store: StoreCreation) => Promise<void>;
@@ -100,6 +103,11 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
     setDataset(current => current ? { ...current, customers: current.customers.filter(item => item.id !== id) } : current);
     notify('Đã xóa hồ sơ khách hàng khỏi Supabase.');
   };
+  const setCustomerBlacklist = async (customer: ManagementRow, blacklisted: boolean) => {
+    const changes = await updateCustomerBlacklist(customer, blacklisted);
+    setDataset(current => current ? { ...current, customers: current.customers.map(row => row.id === customer.id ? { ...row, ...changes } : row) } : current);
+    notify(blacklisted ? `Đã đưa ${customer.name} vào Blacklist.` : `Đã bỏ Blacklist cho ${customer.name}. Trạng thái: ${CUSTOMER_STATUSES.find(option => option.value === changes.status)?.label}.`);
+  };
   const acceptImportedCustomers = async (count: number) => {
     await reload();
     notify(`Đã nhập ${count} khách hàng từ Excel vào Supabase.`);
@@ -126,7 +134,7 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
     if (selectedStore === String(id)) selectStore('all');
     notify('Đã xóa cơ sở khỏi Supabase.');
   };
-  return <ManagementContext.Provider value={{ dataset, loading, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), selectedStore, selectStore, reload, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft }}>
+  return <ManagementContext.Provider value={{ dataset, loading, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), selectedStore, selectStore, reload, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft }}>
     {children}
     {notification && <div className="mg-toast" role="status"><span>{notification}</span><button type="button" onClick={() => notify('')} aria-label="Đóng thông báo">×</button></div>}
   </ManagementContext.Provider>;

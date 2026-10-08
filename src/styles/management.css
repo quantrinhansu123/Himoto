@@ -105,6 +105,22 @@
 .mg-active-filter button { padding: 0; background: transparent; border: 0; display: flex; }
 .mg-filter-summary { display: flex; align-items: center; gap: 16px; border-top: 1px solid #f0f2f5; padding: 10px 20px; background: #fffdf6; color: #897756; font-size: 11px; }
 .mg-filter-summary button { display: flex; align-items: center; gap: 5px; border: 0; background: transparent; font-size: 11px; color: #8a6500; padding: 0; }
+.mg-contract-summary { border-top: 1px solid #e4e8ed; padding: 16px 20px; background: #fbfcfd; }
+.mg-contract-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.mg-contract-metrics > div { min-width: 0; border: 1px solid #e4e8ed; border-radius: 8px; background: #fff; padding: 13px; }
+.mg-contract-metrics dt { color: #53606e; font-size: 12px; font-weight: 600; }
+.mg-contract-metrics dd { color: #20262e; font-size: 20px !important; font-weight: 800 !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; margin: 8px 0 6px; }
+.mg-contract-metrics span { display: block; color: #607085; font-size: 11px; line-height: 1.5; }
+.mg-contract-summary-note { color: #53606e; font-size: 11px; line-height: 1.6; margin: 10px 0 0; }
+.mg-contract-summary-note.is-incomplete { color: #a12a33; }
+@media (max-width: 1199px) { .mg-contract-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 639px) {
+  .mg-contract-summary { padding: 14px; }
+  .mg-contract-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mg-contract-metrics > div { padding: 11px; }
+  .mg-contract-metrics > div:nth-child(n+3) { grid-column: 1 / -1; }
+  .mg-contract-metrics dd { font-size: 18px !important; }
+}
 .mg-table-scroll { overflow: auto; max-height: 650px; min-height: 310px; scrollbar-width: thin; scrollbar-color: #d5dce4 #fafbfc; scroll-padding-top: 46px; }
 .mg-table { width: 100%; border-collapse: separate; border-spacing: 0; white-space: nowrap; font-size: 12px; }
 .mg-table-vehicles { min-width: 1080px; }
@@ -340,6 +356,12 @@
 .mg-vehicle-option.is-selected { border-color: #b4232d; background: #fff7f7; }
 .mg-table-contracts .mg-actions-column { width: 156px; min-width: 156px; }
 .mg-table-customers .mg-actions-column, .mg-table-stores .mg-actions-column { width: 110px; min-width: 110px; }
+.mg-table-customers .mg-actions-column { width: 160px; min-width: 160px; }
+.mg-customer-actions { flex-wrap: wrap; }
+.mg-blacklist-button { flex-basis: 100%; justify-content: center; padding: 7px 8px; font-size: 11px; min-height: 34px; color: #a12a33; }
+.mg-blacklist-button.is-blacklisted { color: #087450; }
+.mg-blacklist-error { padding: 12px 20px; margin: 0; color: #a12a33; background: #fff4f4; font-size: 13px; }
+@media (max-width: 639px) { .mg-blacklist-button { min-height: 44px; } }
 .mg-contract-actions { flex-wrap: wrap; max-width: 144px; margin: auto; }
 .mg-clone-button { flex-basis: 100%; font-size: 12px; gap: 5px; padding: 6px; min-height: 30px; }
 .mg-composer-fields { border: 0; padding: 0; margin: 0; min-width: 0; }

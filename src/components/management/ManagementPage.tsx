@@ -18,13 +18,14 @@ import { StaffOrganizationChart } from './StaffOrganizationChart';
 import { CustomerExcelActions } from './CustomerExcelActions';
 import { VehicleExcelActions } from './VehicleExcelActions';
 import { StoreEditDialog } from './StoreEditDialog';
+import { ContractSummary } from './ContractSummary';
 
 const EMPTY_ROWS: ManagementRow[] = [];
 
 function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind; draftsOnly?: boolean }) {
   const baseConfig = MANAGEMENT_CONFIG[kind];
   const config = draftsOnly ? { ...baseConfig, title: 'Log', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : baseConfig;
-  const { dataset, loading, error, source, canSaveContractDrafts, selectedStore, selectStore, reload, notify, deleteCustomer, deleteStore } = useManagement();
+  const { dataset, loading, error, source, canSaveContractDrafts, selectedStore, selectStore, reload, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
   const router = useRouter();
   const searchParams = useSearchParams();
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
@@ -40,6 +41,9 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
   const [deleteTarget, setDeleteTarget] = useState<ManagementRow | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [blacklistBusyId, setBlacklistBusyId] = useState<number | null>(null);
+  const [blacklistError, setBlacklistError] = useState('');
+  const blacklistPending = useRef(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [printRow, setPrintRow] = useState<ManagementRow | null>(null);
   const [composerMode, setComposerMode] = useState<'print' | 'edit' | 'draft'>('print');
@@ -98,7 +102,7 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
             if (kind === 'customers' && source === 'api') setCreateCustomerOpen(true);
             else { setEditing(null); setFormOpen(true); }
           }}><Plus size={18} />{config.addLabel}</button>}
-          {(kind === 'stores' || kind === 'vehicles') && <button type="button" className="mg-button" disabled={loading} onClick={() => void reload()}><RotateCcw size={17} />Làm mới</button>}
+          {(kind === 'stores' || kind === 'vehicles' || kind === 'customers') && <button type="button" className="mg-button" disabled={loading || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} />Làm mới</button>}
           {kind === 'contracts' && <>{source === 'api' && <span className="mg-readonly"><ShieldCheck size={16} />{canSaveContractDrafts ? 'Có thể lưu và sửa nháp' : 'Danh sách chỉ đọc'}</span>}<button type="button" className="mg-button" disabled={loading} onClick={() => void reload()}><RotateCcw size={17} />Làm mới</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !dataset} onClick={() => { setPrintRow(null); setComposerMode('draft'); setComposerOpen(true); }}><Plus size={17} />Nhập hợp đồng</button></>}</div>
       </div>
 
@@ -116,9 +120,18 @@ function ManagementContent({ kind, draftsOnly = false }: { kind: ManagementKind;
         {kind === 'contracts' && <div className="mg-date-filters"><span>Ngày bắt đầu thuê</span><label><span className="mg-sr-only">Từ ngày</span><input type="date" aria-label="Từ ngày" value={query.startDate} onChange={event => updateQuery({ startDate: event.target.value })} aria-invalid={invalidDate} /></label><span className="mg-date-divider">—</span><label><span className="mg-sr-only">Đến ngày</span><input type="date" aria-label="Đến ngày" value={query.endDate} onChange={event => updateQuery({ endDate: event.target.value })} aria-invalid={invalidDate} /></label>{invalidDate && <span className="mg-field-error" role="alert">Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.</span>}
           {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace('/contracts')}><X size={13} /></button></span>}</div>}
         {isFiltered && <div className="mg-filter-summary"><span><strong>{filteredRows.length}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
+        {kind === 'contracts' && <ContractSummary rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset} />}
+        {kind === 'customers' && blacklistError && <p className="mg-blacklist-error" role="alert">{blacklistError}</p>}
         <DataTable config={config} columns={columns} rows={filteredRows.slice(offset, offset + pageSize)} offset={offset} sortKey={sort.key} sortDirection={sort.direction}
           onSort={key => { setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }} onView={view} onEdit={row => { if (kind === 'contracts') { setPrintRow(row); setComposerMode(row.status === 'draft' ? 'draft' : 'edit'); setComposerOpen(true); } else { setEditing(row); setFormOpen(true); } }}
           onDelete={canDelete ? row => { setDeleteTarget(row); setDeleteError(''); } : undefined} canDelete={canDelete}
+          blacklistBusyId={blacklistBusyId} onBlacklist={kind === 'customers' ? async row => {
+            if (blacklistPending.current) return;
+            blacklistPending.current = true; setBlacklistBusyId(row.id); setBlacklistError('');
+            try { await setCustomerBlacklist(row, row.status !== 'blacklist'); }
+            catch (cause) { setBlacklistError(cause instanceof Error ? cause.message : 'Không đổi được trạng thái Blacklist.'); }
+            finally { blacklistPending.current = false; setBlacklistBusyId(null); }
+          } : undefined}
           onPrint={kind === 'contracts' ? row => { setPrintRow(row); setComposerMode('print'); setComposerOpen(true); } : undefined}
 
           canEditContract={false}

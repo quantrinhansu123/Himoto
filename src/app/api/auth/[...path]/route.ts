@@ -21,7 +21,7 @@ const listQueries: Record<string, QueryConfig> = {
     sql: `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card,
                  CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
                       WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
-                 c.warning, c.created_at, c.id_card_issued_on, c.id_card_issued_by, c.relatives,
+                 c.warning, c.created_at, c.xmin::text AS customer_revision, c.id_card_issued_on, c.id_card_issued_by, c.relatives,
                  c.store_id, s.store_name,
                  (SELECT count(*)::int FROM himoto.orders o WHERE o.customer_id = c.id AND o.deleted_at IS NULL) AS contract_count
           FROM himoto.customers c
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest, { params }: Params) {
        RETURNING id, name, phone, email, address, id_card,
                  CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
                       WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,
-                 warning, created_at, id_card_issued_on, id_card_issued_by, relatives, store_id`,
+                 warning, created_at, xmin::text AS customer_revision, id_card_issued_on, id_card_issued_by, relatives, store_id`,
       [name, phone, email, address, idCard, status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1, storeId, status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning : null],
     );
     await client.query('COMMIT');
@@ -256,7 +256,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
        RETURNING id, name, email, phone, address, id_card,
          CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
               WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,
-         warning AS warning_note, created_at, id_card_issued_on, id_card_issued_by, relatives, store_id`,
+         warning AS warning_note, created_at, xmin::text AS customer_revision, id_card_issued_on, id_card_issued_by, relatives, store_id`,
       [id, name, phone, email, address, idCard, dbStatus, dbWarning, storeId],
     );
     if (!result.rowCount) {

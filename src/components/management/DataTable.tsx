@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Copy, Eye, FileSearch, LoaderCircle, Pencil, Printer, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Copy, Eye, FileSearch, LoaderCircle, Pencil, Printer, RotateCcw, ShieldBan, ShieldCheck, Trash2 } from 'lucide-react';
 import { ManagementColumn, ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
@@ -34,6 +34,8 @@ interface Props {
   canEditDraft?: boolean;
   canEdit: boolean;
   canDelete?: boolean;
+  onBlacklist?: (row: ManagementRow) => void;
+  blacklistBusyId?: number | null;
   loading: boolean;
   error: string;
   isFiltered: boolean;
@@ -41,7 +43,7 @@ interface Props {
   onRetry: () => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onClone, cloningId, canEditContract, canEditDraft, canEdit, canDelete, loading, error, isFiltered, onReset, onRetry }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onClone, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry }: Props) {
   const columnCount = columns.length + 2;
   return <div className="mg-table-scroll" tabIndex={0} role="region" aria-label={`Bảng ${config.title.toLowerCase()}, cuộn ngang để xem thêm cột`}>
     <table className={`mg-table mg-table-${config.kind}`} aria-busy={loading}>
@@ -54,11 +56,17 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : error ? <tr><td colSpan={columnCount}><div className="mg-table-state mg-table-error" role="alert"><FileSearch size={30} /><strong>Không tải được dữ liệu</strong><p>{error}</p><button className="mg-button" onClick={onRetry}><RotateCcw size={15} />Thử lại</button></div></td></tr>
         : rows.length === 0 ? <tr><td colSpan={columnCount}><div className="mg-table-state"><FileSearch size={32} /><strong>{isFiltered ? 'Không tìm thấy kết quả' : 'Danh sách đang trống'}</strong><p>{isFiltered ? 'Thử từ khóa khác hoặc bỏ bớt bộ lọc.' : 'Chưa có bản ghi để hiển thị.'}</p>{isFiltered && <button className="mg-button" onClick={onReset}>Xóa bộ lọc</button>}</div></td></tr>
         : rows.map((row, index) => <tr key={row.id}><td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} className={column.align === 'right' ? 'mg-align-right' : ''}><Cell row={row} column={column} config={config} /></td>)}
-          <td className="mg-actions-column"><div className={`mg-row-actions${onClone ? ' mg-contract-actions' : ''}`}><button className="mg-icon-button" type="button" aria-label={`Xem ${row.code}`} title="Xem chi tiết" onClick={() => onView(row)}><Eye size={17} /></button>
+          <td className="mg-actions-column"><div className={`mg-row-actions${onClone ? ' mg-contract-actions' : ''}${onBlacklist ? ' mg-customer-actions' : ''}`}><button className="mg-icon-button" type="button" aria-label={`Xem ${row.code}`} title="Xem chi tiết" onClick={() => onView(row)}><Eye size={17} /></button>
             {config.kind === 'contracts' && onPrint && <button className="mg-icon-button" type="button" aria-label={`Điền và in ${row.code}`} title="Điền và in hợp đồng" onClick={() => onPrint(row)}><Printer size={17} /></button>}
             {(canEditContract || (canEditDraft && row.status === 'draft')) && <button className="mg-icon-button" type="button" aria-label={`Sửa ${row.code}`} title={row.status === 'draft' ? 'Tiếp tục sửa bản nháp' : 'Chỉnh sửa hợp đồng'} onClick={() => onEdit(row)}><Pencil size={16} /></button>}
             {config.kind !== 'contracts' && canEdit && <button className="mg-icon-button" type="button" aria-label={`Sửa ${row.code}`} title="Chỉnh sửa" onClick={() => onEdit(row)}><Pencil size={16} /></button>}
             {canDelete && onDelete && <button className="mg-icon-button mg-delete-action" type="button" aria-label={`Xóa ${row.name}`} title={`Xóa ${config.singular}`} onClick={() => onDelete(row)}><Trash2 size={16} /></button>}
+            {config.kind === 'customers' && onBlacklist && <button className={`mg-button mg-blacklist-button${row.status === 'blacklist' ? ' is-blacklisted' : ''}`} type="button"
+              disabled={blacklistBusyId != null || !row.customer_revision} aria-label={`${row.status === 'blacklist' ? 'Bỏ Blacklist cho' : 'Đưa vào Blacklist:'} ${row.name}`}
+              title={!row.customer_revision ? 'Nhấn Làm mới để tải phiên bản hồ sơ' : undefined} onClick={() => onBlacklist(row)}>
+              {blacklistBusyId === row.id ? <LoaderCircle size={14} className="mg-spin" /> : row.status === 'blacklist' ? <ShieldCheck size={14} /> : <ShieldBan size={14} />}
+              {blacklistBusyId === row.id ? 'Đang đổi…' : row.status === 'blacklist' ? 'Bỏ Blacklist' : 'Đưa vào Blacklist'}
+            </button>}
             {config.kind === 'contracts' && onClone && <button className="mg-button mg-clone-button" type="button" disabled={cloningId != null} aria-label={`Sao chép hợp đồng ${row.code}`} onClick={() => onClone(row)}>{cloningId === row.id ? <LoaderCircle size={14} className="mg-spin" /> : <Copy size={14} />}{cloningId === row.id ? 'Đang sao chép…' : 'Sao chép hợp đồng'}</button>}
           </div></td></tr>)}</tbody>
     </table>
