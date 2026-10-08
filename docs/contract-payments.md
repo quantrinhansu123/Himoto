@@ -9,6 +9,8 @@ Mỗi lần thu tạo một `transactions` loại `in`, trạng thái `approved`
 
 Khi không còn công nợ và có xe được gia hạn, hộp thoại tự chọn **Thu tiền gia hạn**. Số liệu tiền thiếu/sai, nháp, xe đã trả/xóa, ngày không tăng và trạng thái không phù hợp đều bị chặn. Ngày trả chung dùng ngày lớn nhất của các chi tiết còn hiệu lực nếu parent trống; parent có ngày chỉ được tăng, không giảm ngày của xe khác.
 
+Ô số tiền tự thêm dấu chấm hàng nghìn khi gõ/dán, ví dụ `1.000.000`; nội dung gửi API và lưu để thử lại vẫn là chuỗi số nguyên `1000000`.
+
 Nội dung tự điền **`Gia hạn hợp đồng_<mã hợp đồng>`**, có thể chỉnh trước khi gửi. Thao tác ghi nhận tiền đã nhận; không thực hiện chuyển tiền hoặc tự xác minh ngân hàng. Không đổi trạng thái hợp đồng hay tiền cọc, không tính lại các khoản gia hạn/thu lịch sử.
 
 ## Tài khoản nhận và VAT

@@ -127,7 +127,19 @@ with sync_playwright() as playwright:
 
     dialog = open_payment(1)
     expect(dialog.get_by_label('Tài khoản nhận')).to_have_value('1')
+    amount_input = dialog.get_by_label('Số tiền thu (VNĐ)')
+    amount_input.press_sequentially('1000000')
+    expect(amount_input).to_have_value('1.000.000')
+    amount_input.evaluate('(el)=>el.setSelectionRange(3,3)')
+    amount_input.press('Backspace')
+    expect(amount_input).to_have_value('100.000')
+    amount_input.evaluate('(el)=>el.setSelectionRange(1,1)')
+    amount_input.press('Delete')
+    expect(amount_input).to_have_value('10.000')
+    amount_input.fill('1.000')
+    expect(amount_input).to_have_value('1.000')
     dialog.get_by_label('Số tiền thu (VNĐ)').fill('1001')
+    expect(amount_input).to_have_value('1.001')
     dialog.get_by_role('button',name='Ghi nhận thanh toán',exact=True).click()
     expect(dialog.get_by_role('alert')).to_contain_text('số tiền còn thiếu')
     assert len(submissions) == 0
@@ -220,7 +232,8 @@ with sync_playwright() as playwright:
     expect(dialog.get_by_label('Nghiệp vụ',exact=True)).to_have_value('renewal')
     expect(dialog.get_by_role('button',name='Thu tiền và gia hạn',exact=True)).to_be_visible()
     dialog.get_by_label('Xe cần gia hạn',exact=True).select_option('102')
-    dialog.get_by_label('Số tiền thu (VNĐ)').fill('400')
+    dialog.get_by_label('Số tiền thu (VNĐ)').fill('1.000.000')
+    expect(dialog.get_by_label('Số tiền thu (VNĐ)')).to_have_value('1.000.000')
     dialog.get_by_label('Ngày hẹn trả mới',exact=True).fill('2026-02-10T10:01')
     before_requests = len(submissions)
     dialog.get_by_role('button',name='Thu tiền và gia hạn',exact=True).click()
@@ -241,13 +254,15 @@ with sync_playwright() as playwright:
     expect(dialog.get_by_label('Xe cần gia hạn',exact=True)).to_have_value('102')
     expect(dialog.get_by_label('Ngày hẹn trả mới',exact=True)).to_have_value('2026-03-10T10:01')
     expect(dialog.get_by_label('Ngày hẹn trả mới',exact=True)).to_be_disabled()
+    expect(dialog.get_by_label('Số tiền thu (VNĐ)')).to_have_value('1.000.000')
     dialog.get_by_role('button',name='Thử lại lần thu này').click()
     expect(dialog.get_by_label('Số tiền thu (VNĐ)')).to_have_value('')
     assert submissions[-1]['request_id']==renewal_id and len(receipts)==6
-    assert records[0]['total_amount']=='1050400' and records[0]['paid_amount']=='20900400'
+    assert submissions[-1]['amount']=='1000000'
+    assert records[0]['total_amount']=='2050000' and records[0]['paid_amount']=='21900000'
     assert items[1][0]==original_other and items[1][1]['return_at']=='2026-03-10T10:01:00+07:00'
     expect(dialog.locator('.mg-payment-history')).to_contain_text('Gia hạn QA-B đến')
-    checks.append('legacy paid above original fee defaults to renewal; invalid date blocked; selected vehicle/date and fee survive lost response/reload; replay charges once; other vehicle unchanged')
+    checks.append('grouped money supports typing, paste and middle edits; raw integer payload and formatted amount survive lost response/reload; renewal charges once and other vehicle unchanged')
     dialog.get_by_label('Xe cần gia hạn',exact=True).select_option('101')
     dialog.get_by_label('Ngày hẹn trả mới',exact=True).fill('2026-04-10T10:01')
     dialog.get_by_label('Số tiền thu (VNĐ)').fill('500')

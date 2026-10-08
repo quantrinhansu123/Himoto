@@ -9,6 +9,8 @@ import { useManagement } from './ManagementProvider';
 import { formatMoney } from '@/lib/formatters';
 import { PAYABLE_STATUSES, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, PaymentMethod, PaymentRequestError, loadPaymentContext, paymentAccounts, saveContractPayment, vietnamPaymentTime } from '@/lib/management/contract-payments';
 
+const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
 export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: () => void }) {
   const { acceptContractPayment, notify, selectStore } = useManagement();
   const router = useRouter();
@@ -56,6 +58,20 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
   const canCollect = purpose === 'renewal' ? renewable : payable;
   const locked = saving || Boolean(pending);
   const money = (value: number | null) => value === null ? 'Chưa đối chiếu' : formatMoney(value);
+
+  function changeAmount(input: HTMLInputElement) {
+    const raw = input.value.replaceAll('.', '');
+    if (!/^\d{0,13}$/.test(raw)) return;
+    const digitsBeforeCaret = input.value.slice(0, input.selectionStart ?? input.value.length).replaceAll('.', '').length;
+    const formatted = groupAmount(raw);
+    let position = 0, digits = 0;
+    while (position < formatted.length && digits < digitsBeforeCaret) {
+      if (formatted[position] !== '.') digits++;
+      position++;
+    }
+    setAmount(raw);
+    requestAnimationFrame(() => { if (document.activeElement === input) input.setSelectionRange(position, position); });
+  }
 
   async function refresh() {
     setLoading(true);
@@ -109,7 +125,12 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
               <label className="mg-field-wide">Ngày hẹn trả mới<input aria-label="Ngày hẹn trả mới" type="datetime-local" required value={returnAt} onChange={event => setReturnAt(event.target.value)} /></label>
               <p className="mg-field-wide">Phí gia hạn mới được cộng vào tiền hợp đồng và tổng đã thu. Chỉ đổi ngày trả của xe đã chọn.</p>
             </>}
-            <label>Số tiền thu (VNĐ)<input aria-label="Số tiền thu (VNĐ)" inputMode="numeric" pattern="[1-9][0-9]{0,12}" required value={amount} onChange={event => setAmount(event.target.value)} placeholder="Nhập số tiền" /></label>
+            <label>Số tiền thu (VNĐ)<input aria-label="Số tiền thu (VNĐ)" inputMode="numeric" pattern="[1-9][0-9.]{0,16}" maxLength={17} required value={groupAmount(amount)} onChange={event => changeAmount(event.currentTarget)} onKeyDown={event => {
+              const input = event.currentTarget, position = input.selectionStart;
+              if (event.ctrlKey || event.metaKey || event.altKey || position === null || position !== input.selectionEnd) return;
+              if (event.key === 'Backspace' && input.value[position - 1] === '.') input.setSelectionRange(position - 1, position - 1);
+              if (event.key === 'Delete' && input.value[position] === '.') input.setSelectionRange(position + 1, position + 1);
+            }} placeholder="Nhập số tiền" /></label>
             <label>Ngày giờ thu<input aria-label="Ngày giờ thu" type="datetime-local" required value={paidAt} onChange={event => setPaidAt(event.target.value)} /></label>
             <label className="mg-field-wide">Hình thức thanh toán<select aria-label="Hình thức thanh toán" value={method} onChange={event => { setMethod(event.target.value as PaymentMethod); setAccountId(''); }}>
               {PAYMENT_METHODS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
