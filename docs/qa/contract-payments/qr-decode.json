@@ -1,0 +1,9 @@
+{
+  "vietqrImageDecoded": true,
+  "bankBinCorrect": true,
+  "publicDemoAccountCorrect": true,
+  "amountCorrect": true,
+  "contentCorrect": true,
+  "crcValid": true,
+  "operationalWrites": 0
+}

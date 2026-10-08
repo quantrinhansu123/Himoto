@@ -614,7 +614,31 @@
 .mg-payment-success { color: #166534; }
 .mg-payment-purpose { display: grid; gap: 8px; margin-bottom: 20px; }
 .mg-payment-purpose select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; }
+.mg-transfer-qr { display: grid; gap: 14px; }
+.mg-transfer-qr h3, .mg-transfer-qr p { margin: 0; }
+.mg-transfer-qr > img { justify-self: center; width: 240px; height: 240px; max-width: 100%; object-fit: contain; background: white; }
+.mg-transfer-qr dl { margin: 0; display: grid; gap: 10px; background: #f3f7fb; padding: 16px; border-radius: 8px; }
+.mg-transfer-qr dl > div { display: grid; grid-template-columns: 125px 1fr; gap: 12px; }
+.mg-transfer-qr dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.mg-transfer-confirm { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer; }
+.mg-transfer-confirm input { flex-shrink: 0; width: 20px; height: 20px; accent-color: #b5121b; }
+.mg-duty-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; padding: 16px; }
+.mg-duty-toolbar label { display: grid; gap: 6px; font-weight: 600; }
+.mg-duty-toolbar :is(input,select) { max-width: 100%; min-height: 40px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; background: white; }
+.mg-duty-week { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.mg-duty-range { font-weight: 600; margin: 20px 0 14px; }
+.mg-duty-calendar { display: grid; grid-template-columns: repeat(7,minmax(150px,1fr)); gap: 10px; overflow-x: auto; padding-bottom: 12px; }
+.mg-duty-day { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; min-height: 230px; }
+.mg-duty-day.is-today { border-color: #b5121b; }
+.mg-duty-day h2 { font-size: 14px; margin: 0 0 12px; text-transform: capitalize; }
+.mg-duty-empty { color: #64748b; }
+.mg-duty-card { display: grid; gap: 6px; background: white; padding: 12px; border: 1px solid #e2e8f0; border-left: 3px solid #b5121b; border-radius: 6px; margin-top: 10px; overflow-wrap: anywhere; }
+.mg-duty-card > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.mg-duty-card p { margin: 0; white-space: pre-wrap; }
+.mg-duty-card .mg-button { min-height: 38px; padding: 6px 9px; }
+@media (max-width: 900px) { .mg-duty-calendar { grid-template-columns: 1fr; } .mg-duty-day { min-height: auto; } .mg-duty-toolbar > label { width: 100%; } .mg-duty-card .mg-button { min-height: 44px; } }
 @media (max-width: 600px) {
+  .mg-transfer-qr dl > div { grid-template-columns: 1fr; gap: 2px; }
   .mg-payment-totals, .mg-payment-fields { grid-template-columns: 1fr; }
   .mg-payment-dialog .mg-dialog-footer { flex-wrap: wrap; }
   .mg-payment-dialog .mg-dialog-footer button { flex: 1 1 auto; }

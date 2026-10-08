@@ -3,17 +3,27 @@ const fs = require('node:fs'), path = require('node:path'), ts = require('typesc
 const { randomUUID } = require('node:crypto');
 const root = path.resolve(__dirname, '../src'), cache = new Map();
 function load(filename) {
+  if (filename.endsWith('.json')) return JSON.parse(fs.readFileSync(filename,'utf8'));
   const file = filename.endsWith('.ts') ? filename : `${filename}.ts`;
   if (cache.has(file)) return cache.get(file).exports;
   const module = { exports: {} }; cache.set(file, module);
   const localRequire = name => name === 'server-only' ? {} : name.startsWith('@/') ? load(path.join(root, name.slice(2))) : name.startsWith('.') ? load(path.resolve(path.dirname(file), name)) : require(name);
-  new Function('require', 'module', 'exports', ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(localRequire, module, module.exports);
+  new Function('require', 'module', 'exports', ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText)(localRequire, module, module.exports);
   return module.exports;
 }
 async function main() {
   const server = load(path.join(root, 'lib/server/contract-payments'));
   const shared = load(path.join(root, 'lib/management/contract-payments'));
   const checks = [];
+  const qr=load(path.join(root,'lib/management/transfer-qr'));
+  assert.equal(qr.bankBin('VietinBank'),'970415');assert.equal(qr.bankBin('MB Bank'),'970422');assert.equal(qr.bankBin('VP Bank'),'970432');assert.equal(qr.bankBin('unverified bank'),undefined);
+  const qrAccount={id:3,kind:'bank',store_id:0,owner_type:'company',bank_name:'VietinBank',account_number:'000000000000',owner_name:'QA ONLY'};
+  const qrInput={amount:'1000000',note:'Gia hạn hợp đồng_#19074'};
+  const generated=qr.transferQr(qrAccount,qrInput,'#19074'),qrUrl=new URL(generated.url);
+  assert.equal(qrUrl.origin,'https://img.vietqr.io');assert.equal(qrUrl.pathname,'/image/970415-000000000000-qr_only.png');assert.equal(qrUrl.searchParams.get('amount'),'1000000');assert.equal(qrUrl.searchParams.get('addInfo'),'Gia han hop dong 19074');assert.equal(qrUrl.searchParams.get('accountName'),'QA ONLY');
+  for(const account of [{...qrAccount,bank_name:'unknown'},{...qrAccount,account_number:'../evil'},{...qrAccount,owner_name:''}])assert.throws(()=>qr.transferQr(account,qrInput,'#19074'));
+  for(const input of [{...qrInput,amount:'1.000'},{...qrInput,amount:'0'},{...qrInput,note:'a'.repeat(51)}])assert.throws(()=>qr.transferQr(qrAccount,input,'#19074'));
+  checks.push('VietQR: verified bank aliases, exact receiving account/amount/content, safe URL encoding; missing/unknown account and unsupported amounts/content blocked');
   const base = { request_id: randomUUID(), revision: '123', amount: '300', method: 'cash', account_id: 1, paid_at: '2026-01-01T10:01', note: ' QA ' };
   assert.equal(server.parseContractPayment(base).note, 'QA');
   for (const patch of [{ amount: '0' }, { amount: '-1' }, { amount: '1.2' }, { amount: '1e3' }, { amount: 300 }, { amount: '10000000000000' }, { revision: '' }, { request_id: 'anything' }, { method: 'split' }, { account_id: '1' }, { account_id: -1 }, { paid_at: '2026-02-30T12:00' }, { paid_at: '2099-01-01T10:00' }, { pid: '999' }, { user_id: 1 }, { note: 'a'.repeat(2001) }]) assert.throws(() => server.parseContractPayment({ ...base, ...patch }));

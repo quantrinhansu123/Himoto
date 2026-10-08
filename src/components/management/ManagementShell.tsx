@@ -3,13 +3,14 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Bike, Building2, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
+import { Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { trapFocusWithin } from './Dialog';
 import type { SessionUser } from '@/lib/server/management-session';
 
 const navigation = [
   { href: '/staff', label: 'Nhân sự', kind: 'staff' as const, icon: UsersRound },
+  { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster' as const, icon: CalendarDays },
   { href: '/customers', label: 'Khách hàng', kind: 'customers' as const, icon: ContactRound },
   { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts' as const, icon: Files },
   { href: '/contracts/vat', label: 'Hợp đồng VAT', kind: 'contracts' as const, icon: ReceiptText },
@@ -26,6 +27,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const active = navigation.find(n => pathname === n.href) || navigation.find(n => n.kind === 'vehicles')!;
   const writableCustomers = source === 'api' && active.kind === 'customers';
   const writableStores = source === 'api' && active.kind === 'stores';
+  const writableDuties = source === 'api' && active.kind === 'duty-roster';
   const writableVehicles = source === 'api' && active.kind === 'vehicles';
   const writableDrafts = source === 'api' && active.kind === 'contracts' && canSaveContractDrafts;
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -97,16 +99,16 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
           <span>Quản lý</span><ChevronRight size={14} /><strong>{active.label}</strong></div>
         <div className="mg-topbar-right"><label className="mg-branch-select"><Building2 size={16} /><span className="mg-sr-only">Cơ sở đang xem</span><select aria-label="Cơ sở đang xem" value={selectedStore} onChange={event => selectStore(event.target.value)}>
           <option value="all">Tất cả cơ sở</option>{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-          <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{writableDrafts ? 'Lưu nháp' : writableVehicles ? 'Đồng bộ xe' : writableCustomers || writableStores ? 'Có thể sửa' : 'Chỉ đọc'}</span>
+          <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{writableDrafts ? 'Lưu nháp' : writableVehicles ? 'Đồng bộ xe' : writableCustomers || writableStores || writableDuties ? 'Có thể sửa' : 'Chỉ đọc'}</span>
           <details className="mg-user-menu" ref={menuRef}><summary aria-label="Menu người dùng"><span className="mg-user-avatar">QT</span><div><strong>{user?.name || 'Quản trị viên'}</strong><small>{user ? 'Đã đăng nhập' : writableCustomers ? 'Supabase' : 'Phiên tra cứu'}</small></div><ChevronDown size={14} /></summary>
-            <div className="mg-popover"><strong>{writableCustomers ? 'Khách hàng kết nối Supabase' : writableStores ? 'Cơ sở kết nối Supabase' : writableVehicles ? 'Xe kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : writableStores ? 'Thêm và sửa cơ sở; xóa cơ sở có dữ liệu liên quan sẽ bị chặn để giữ lịch sử.' : writableVehicles ? 'Đồng bộ Excel có sao lưu. Xóa hết bị chặn khi xe có dữ liệu liên quan.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>
+            <div className="mg-popover"><strong>{writableDuties ? 'Quản lý lịch trực' : writableCustomers ? 'Khách hàng kết nối Supabase' : writableStores ? 'Cơ sở kết nối Supabase' : writableVehicles ? 'Xe kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{writableDuties ? 'Thêm, sửa hoặc xóa ca; hệ thống kiểm tra trùng giờ của cùng nhân viên.' : writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : writableStores ? 'Thêm và sửa cơ sở; xóa cơ sở có dữ liệu liên quan sẽ bị chặn để giữ lịch sử.' : writableVehicles ? 'Đồng bộ Excel có sao lưu. Xóa hết bị chặn khi xe có dữ liệu liên quan.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>
               <Link href="/contracts/drafts"><FilePenLine size={16} />Mở Log</Link>
               {<button type="button" disabled={signingOut} onClick={signOut}><LogOut size={16} />{signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>}
               {signOutError && <p role="alert">{signOutError}</p>}</div></details>
         </div>
       </header>
       <main id="management-main" className="mg-content" tabIndex={-1}>{children}</main>
-      <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : writableStores ? 'Cơ sở · Ghi trực tiếp vào Supabase' : writableVehicles ? 'Xe · Đồng bộ có sao lưu' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
+      <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{writableDuties ? 'Lịch trực theo tuần' : writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : writableStores ? 'Cơ sở · Ghi trực tiếp vào Supabase' : writableVehicles ? 'Xe · Đồng bộ có sao lưu' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
     </div>
   </div>;
 }

@@ -5,9 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LoaderCircle, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
+import { TransferQrPanel } from './TransferQrPanel';
 import { useManagement } from './ManagementProvider';
 import { formatMoney } from '@/lib/formatters';
-import { PAYABLE_STATUSES, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, PaymentMethod, PaymentRequestError, loadPaymentContext, paymentAccounts, saveContractPayment, vietnamPaymentTime } from '@/lib/management/contract-payments';
+import { PAYABLE_STATUSES, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentAccount, PaymentContext, PaymentInput, PaymentMethod, PaymentRequestError, loadPaymentContext, paymentAccounts, saveContractPayment, vietnamPaymentTime } from '@/lib/management/contract-payments';
+import { transferQr } from '@/lib/management/transfer-qr';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
@@ -28,6 +30,8 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
   const [purpose, setPurpose] = useState<'debt' | 'renewal'>('debt');
   const [itemId, setItemId] = useState('');
   const [returnAt, setReturnAt] = useState('');
+  const [transferReview, setTransferReview] = useState<{ input: PaymentInput; account: PaymentAccount; qr: ReturnType<typeof transferQr> } | null>(null);
+  const [transferConfirmed, setTransferConfirmed] = useState(false);
   const busy = useRef(false);
   const storageKey = `himoto-contract-payment-${id}`;
 
@@ -56,7 +60,7 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
   const effectiveItemId = itemId || (context?.items.length === 1 ? String(context.items[0].id) : '');
   const selectedItem = context?.items.find(item => String(item.id) === effectiveItemId);
   const canCollect = purpose === 'renewal' ? renewable : payable;
-  const locked = saving || Boolean(pending);
+  const locked = saving || Boolean(pending) || Boolean(transferReview);
   const money = (value: number | null) => value === null ? 'Chưa đối chiếu' : formatMoney(value);
 
   function changeAmount(input: HTMLInputElement) {
@@ -82,19 +86,30 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy.current || !context) return;
-    const input: PaymentInput = pending || { request_id: crypto.randomUUID(), revision: context.revision, amount, method, account_id: Number(effectiveAccount), paid_at: paidAt, note: note.trim(),
+    const input: PaymentInput = pending || transferReview?.input || { request_id: crypto.randomUUID(), revision: context.revision, amount, method, account_id: Number(effectiveAccount), paid_at: paidAt, note: note.trim(),
       ...(purpose === 'renewal' ? { purpose: 'renewal', item_id: Number(effectiveItemId), item_revision: selectedItem?.revision, return_at: returnAt } : {}) };
     if (!pending && (!canCollect || !/^[1-9]\d{0,12}$/.test(amount) || (purpose === 'debt' && (context.remaining === null || Number(amount) > context.remaining)) || !accounts.some(account => account.id === input.account_id))) {
       setError('Kiểm tra số tiền còn thiếu và tài khoản nhận.'); return;
     }
     if (!pending && purpose === 'renewal' && (!selectedItem?.return_at || !returnAt || new Date(`${returnAt}+07:00`).getTime() <= new Date(selectedItem.return_at).getTime())) { setError('Chọn xe và ngày hẹn trả mới sau ngày hẹn trả hiện tại.'); return; }
+    if (!pending && input.method !== 'cash' && !transferReview) {
+      try {
+        const account = accounts.find(row => row.id === input.account_id)!;
+        const qr = transferQr(account, input, context.code);
+        setTransferReview({ input, account, qr }); setTransferConfirmed(false); setError(''); setSuccess('');
+        const dialog = event.currentTarget.closest('dialog');
+        requestAnimationFrame(() => { if (dialog) dialog.scrollTop = 0; });
+      } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không tạo được QR chuyển khoản.'); }
+      return;
+    }
+    if (!pending && transferReview && !transferConfirmed) { setError('Kiểm tra tiền vào tài khoản rồi xác nhận đã nhận đủ tiền.'); return; }
     // Persist before sending. A lost response must retry the same receipt, even after closing/reloading.
     try { sessionStorage.setItem(storageKey, JSON.stringify(input)); }
     catch { setError('Trình duyệt không lưu được lần thu. Cho phép lưu dữ liệu trang rồi thử lại.'); return; }
     busy.current = true; setSaving(true); setPending(input); setError(''); setSuccess('');
     try {
       const result = await saveContractPayment(id, input);
-      sessionStorage.removeItem(storageKey); setPending(null); setContext(result.context); acceptContractPayment(result.context);
+      sessionStorage.removeItem(storageKey); setPending(null); setTransferReview(null); setTransferConfirmed(false); setContext(result.context); acceptContractPayment(result.context);
       setAmount(''); setNote(`Gia hạn hợp đồng_${result.context.code}`); setPaidAt(vietnamPaymentTime());
       const message = `Đã xác nhận ${input.purpose === 'renewal' ? 'gia hạn và ' : ''}phiếu Thu #${result.transaction_id} · ${formatMoney(Number(input.amount))}.`;
       if (input.purpose === 'renewal') setReturnAt('');
@@ -103,7 +118,7 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
     } catch (cause) {
       const definite = cause instanceof PaymentRequestError && cause.status >= 400 && cause.status < 500;
       if (definite) {
-        sessionStorage.removeItem(storageKey); setPending(null);
+        sessionStorage.removeItem(storageKey); setPending(null); setTransferReview(null); setTransferConfirmed(false);
         try { const fresh = await loadPaymentContext(id); setContext(fresh); acceptContractPayment(fresh); } catch { setContext(null); }
       }
       setError(`${cause instanceof Error ? cause.message : 'Chưa xác nhận được thanh toán.'}${definite ? '' : ' Giữ nguyên lần thu và bấm Thử lại để tránh ghi trùng.'}`);
@@ -115,7 +130,8 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
       <div className="mg-dialog-body">
         {loading && <p role="status"><LoaderCircle size={18} className="mg-spin" /> Đang tải thanh toán…</p>}
         {context && <>
-          <dl className="mg-payment-totals"><div><dt>Tiền hợp đồng</dt><dd>{money(context.total_amount)}</dd></div><div><dt>Tổng đã thu</dt><dd>{money(context.paid_amount)}</dd></div><div><dt>Còn thiếu</dt><dd>{money(context.remaining)}</dd></div></dl>
+          {(!transferReview || pending) && <dl className="mg-payment-totals"><div><dt>Tiền hợp đồng</dt><dd>{money(context.total_amount)}</dd></div><div><dt>Tổng đã thu</dt><dd>{money(context.paid_amount)}</dd></div><div><dt>Còn thiếu</dt><dd>{money(context.remaining)}</dd></div></dl>}
+          {transferReview && !pending ? <TransferQrPanel account={transferReview.account} input={transferReview.input} qr={transferReview.qr} confirmed={transferConfirmed} onConfirm={setTransferConfirmed} /> : <>
           {(payable || renewable || pending) && <label className="mg-payment-purpose">Nghiệp vụ<select aria-label="Nghiệp vụ" value={purpose} disabled={locked || loading} onChange={event => { setPurpose(event.target.value as 'debt' | 'renewal'); setError(''); }}><option value="debt" disabled={!payable}>Thu công nợ còn thiếu</option><option value="renewal" disabled={!renewable}>Thu tiền gia hạn</option></select></label>}
           {(canCollect || pending) ? <fieldset className="mg-payment-fields" disabled={locked || loading}>
             <legend>Ghi nhận lần thanh toán</legend>
@@ -141,8 +157,8 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
             {!accounts.length && <p className="mg-field-wide mg-field-error">{method === 'company_transfer' ? 'Chưa có tài khoản công ty được cấu hình. Cần bổ sung thông tin ngân hàng trước khi thu.' : 'Chưa có tài khoản nhận đang hoạt động tại cơ sở của hợp đồng.'}</p>}
             <label className="mg-field-wide">Nội dung thu / chuyển khoản<textarea aria-label="Nội dung thu / chuyển khoản" maxLength={2000} value={note} onChange={event => setNote(event.target.value)} rows={2} /></label>
             {method === 'company_transfer' && <p className="mg-field-wide">Sau khi ghi nhận, hợp đồng sẽ có trong Hợp đồng VAT và chuyển đến danh sách đó.</p>}
-          </fieldset> : <p>{context.remaining === null ? 'Cần đối chiếu số liệu tiền trước khi thu.' : context.remaining === 0 ? 'Không còn công nợ theo số liệu hiện có. Chọn Thu tiền gia hạn nếu tiếp tục thuê xe.' : 'Trạng thái hợp đồng này chưa cho phép thu tiền.'}</p>}
-          <div className="mg-payment-history-heading"><h3>Lịch sử phiếu Thu ({context.history.length})</h3><button type="button" className="mg-button" disabled={saving || loading} onClick={() => void refresh()}><RotateCcw size={15} />Làm mới</button></div>
+          </fieldset> : <p>{context.remaining === null ? 'Cần đối chiếu số liệu tiền trước khi thu.' : context.remaining === 0 ? 'Không còn công nợ theo số liệu hiện có. Chọn Thu tiền gia hạn nếu tiếp tục thuê xe.' : 'Trạng thái hợp đồng này chưa cho phép thu tiền.'}</p>}</>}
+          <div className="mg-payment-history-heading"><h3>Lịch sử phiếu Thu ({context.history.length})</h3><button type="button" className="mg-button" disabled={locked || loading} onClick={() => void refresh()}><RotateCcw size={15} />Làm mới</button></div>
           <ul className="mg-payment-history">{context.history.map(receipt => <li key={receipt.id}><strong>Phiếu Thu #{receipt.id} · {formatMoney(receipt.amount)}</strong><span>{new Date(receipt.paid_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} · {receipt.method}</span><span>{receipt.account || 'Chưa xác định tài khoản'} · {receipt.actor || '—'}</span><p>{receipt.note}</p>{receipt.renewal && <span>Gia hạn {receipt.renewal.license || receipt.renewal.vehicle_name} đến {new Date(receipt.renewal.return_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</span>}</li>)}</ul>
           {!context.history.length && <p>Chưa có phiếu Thu được duyệt.</p>}
           <Link href="/cashbook" aria-disabled={saving} onClick={event => { if (busy.current) event.preventDefault(); else onClose(); }}>Mở Sổ quỹ / Sổ két</Link>
@@ -152,7 +168,8 @@ export function ContractPaymentDialog({ id, onClose }: { id: number; onClose: ()
         {!context && !loading && <button type="button" className="mg-button" onClick={() => void refresh()}>Tải lại thông tin</button>}
       </div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
-        {(canCollect || pending) && <button type="submit" className="mg-button mg-button-primary" disabled={saving || loading || !context || (!pending && !accounts.length)}>{saving ? <LoaderCircle className="mg-spin" size={16} /> : <Wallet size={16} />}{saving ? 'Đang ghi nhận…' : pending ? 'Thử lại lần thu này' : purpose === 'renewal' ? 'Thu tiền và gia hạn' : 'Ghi nhận thanh toán'}</button>}
+        {transferReview && !pending && <button type="button" className="mg-button" disabled={saving} onClick={() => { setTransferReview(null); setTransferConfirmed(false); setError(''); }}>Quay lại</button>}
+        {(canCollect || pending || transferReview) && <button type="submit" className="mg-button mg-button-primary" disabled={saving || loading || !context || (!pending && (!accounts.length || Boolean(transferReview && !transferConfirmed)))}>{saving ? <LoaderCircle className="mg-spin" size={16} /> : <Wallet size={16} />}{saving ? 'Đang ghi nhận…' : pending ? 'Thử lại lần thu này' : transferReview ? 'Xác nhận đã nhận tiền' : method !== 'cash' ? 'Hiện mã QR chuyển khoản' : purpose === 'renewal' ? 'Thu tiền và gia hạn' : 'Ghi nhận thanh toán'}</button>}
       </div>
     </form>
   </Dialog>;

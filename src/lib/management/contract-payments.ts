@@ -7,7 +7,7 @@ export type PaymentMethod = typeof PAYMENT_METHODS[number]['value'];
 export const PAYABLE_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt'];
 export const RENEWABLE_STATUSES = ['renting', 'overdue'];
 export const MAX_PAYMENT_AMOUNT = 9_999_999_999_999;
-export interface PaymentAccount { id: number; label: string; kind: 'cash' | 'bank'; store_id: number; owner_type: string }
+export interface PaymentAccount { id: number; label: string; kind: 'cash' | 'bank'; store_id: number; owner_type: string; bank_name?: string; account_number?: string; owner_name?: string }
 export interface ContractPayment {
   id: number; amount: number; paid_at: string; method: string; account: string;
   note: string; actor: string;

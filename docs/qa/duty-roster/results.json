@@ -1,0 +1,14 @@
+{
+  "passed": 6,
+  "checks": [
+    "navigation, week anchored Monday, seven days and empty state; no fabricated schedules",
+    "create saves selected branch/staff/date/time; inactive staff excluded; reversed hours blocked before request",
+    "edit restores Vietnam hours and updates card; stale revision freezes input and refreshes without false success",
+    "server overlap shown without new shift; overnight appears on both days; branch/staff filters combine",
+    "375px stacked week fits viewport; explicit delete confirmation, cancel preserves shift, confirmed delete updates roster",
+    "lost response locks form and requires read before continuing; failed GET clears stale rows, disables writes, recovers on retry"
+  ],
+  "jsErrors": [],
+  "unexpected": [],
+  "operationalWrites": 0
+}

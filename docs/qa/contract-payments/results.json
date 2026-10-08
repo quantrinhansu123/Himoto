@@ -1,5 +1,5 @@
 {
-  "passed": 8,
+  "passed": 9,
   "checks": [
     "multiple partial cash payments, automatic contract content, totals/history updated, overpayment blocked without request",
     "lost response survives close/reload; frozen input and identical UUID replay confirm one income only",
@@ -8,7 +8,8 @@
     "missing company bank configuration blocks submission with visible explanation",
     "cashbook has twelve columns with income amount, contract, method, account and content; contract link applies exact ID filter",
     "grouped money supports typing, paste and middle edits; raw integer payload and formatted amount survive lost response/reload; renewal charges once and other vehicle unchanged",
-    "multiple renewed vehicles accept independent fees/new dates; company renewal navigates VAT, keeps automatic content; mobile form fits viewport"
+    "multiple renewed vehicles accept independent fees/new dates; company renewal navigates VAT, keeps automatic content; mobile form fits viewport",
+    "ordinary/company transfers show QR with account/amount/content; open/back creates no income, renewal or VAT; received-money confirmation required before POST"
   ],
   "syntheticReceipts": 7,
   "unexpected": [],
