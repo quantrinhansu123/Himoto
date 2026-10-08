@@ -43,7 +43,7 @@ const listQueries: Record<string, QueryConfig> = {
   },
   transactions: {
     sql: `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id, s.store_name,
-                 CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' ELSE t.name END AS reason,
+                 CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' ELSE t.name END AS reason,
                  COALESCE(t."desc", t.note) AS content, t.value AS amount,t.order_id,
                  COALESCE(o.contract_number,o.draft_reference,'#' || t.order_id::text) AS contract_code,
                  CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'

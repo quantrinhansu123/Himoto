@@ -22,6 +22,8 @@ records = [dict(id=i, contract_number=f'QA-{i}', status='renting', customer_id=1
     company_paid_amount=0, company_payment_count=0, start_date='2026-01-01', draft_revision='1', vehicles=[])
     for i in [1, 2]]
 history = {1: [], 2: []}
+items = {number: [dict(id=number*100+1,vehicle_id=100,name='Xe QA A',license='QA-A',revision='1',return_at='2026-01-10T10:01:00+07:00',renewal_amount=500),
+    dict(id=number*100+2,vehicle_id=101,name='Xe QA B',license='QA-B',revision='1',return_at='2026-02-10T10:01:00+07:00',renewal_amount=0)] for number in [1,2]}
 
 def context_for(number):
     row = records[number - 1]
@@ -30,8 +32,9 @@ def context_for(number):
     if mode['company']:
         accounts.append(dict(id=3, label='Ngân hàng QA · QA company · 000000000000', kind='bank', store_id=0, owner_type='company'))
     return dict(id=number, code=row['contract_number'], status=row['status'], store_id=row['store_id'], revision=row['draft_revision'],
-        total_amount=1000, paid_amount=int(row['paid_amount']), remaining=1000-int(row['paid_amount']),
-        company_paid_amount=row['company_paid_amount'], company_payment_count=row['company_payment_count'], accounts=accounts, history=history[number])
+        total_amount=int(row['total_amount']), paid_amount=int(row['paid_amount']), remaining=max(int(row['total_amount'])-int(row['paid_amount']),0),
+        company_paid_amount=row['company_paid_amount'], company_payment_count=row['company_payment_count'], accounts=accounts, history=history[number],
+        items=items[number],end_date=max(item['return_at'] for item in items[number]))
 
 def mock_api(route):
     request = route.request
@@ -56,11 +59,24 @@ def mock_api(route):
                 assert payload == old, 'Lost response must reuse exact payment request'
             else:
                 assert payload['revision'] == records[number-1]['draft_revision']
-                assert set(payload) == {'request_id','revision','amount','method','account_id','paid_at','note'}
-                assert 0 < int(payload['amount']) <= context_for(number)['remaining']
+                is_renewal = payload.get('purpose') == 'renewal'
+                assert set(payload) == {'request_id','revision','amount','method','account_id','paid_at','note'} | ({'purpose','item_id','item_revision','return_at'} if is_renewal else set())
+                assert int(payload['amount']) > 0
+                if not is_renewal:
+                    assert int(payload['amount']) <= context_for(number)['remaining']
                 transaction_id = 900+len(receipts)
                 receipts[payload['request_id']] = (copy.deepcopy(payload), transaction_id)
                 row = records[number-1]
+                renewal = None
+                if is_renewal:
+                    selected = next(item for item in items[number] if item['id']==payload['item_id'])
+                    assert selected['revision'] == payload['item_revision']
+                    renewal = dict(license=selected['license'],vehicle_name=selected['name'],before_return_at=selected['return_at'],return_at=payload['return_at']+':00+07:00')
+                    selected['return_at'] = renewal['return_at']
+                    selected['renewal_amount'] += int(payload['amount'])
+                    selected['revision'] = str(int(selected['revision'])+1)
+                    row['total_amount'] = str(int(row['total_amount'])+int(payload['amount']))
+                    row['end_date'] = max(item['return_at'] for item in items[number])
                 row['paid_amount'] = str(int(row['paid_amount'])+int(payload['amount']))
                 row['draft_revision'] = str(int(row['draft_revision'])+1)
                 if payload['method'] == 'company_transfer':
@@ -68,7 +84,7 @@ def mock_api(route):
                     row['company_paid_amount'] += int(payload['amount'])
                     row['company_payment_count'] += 1
                 history[number].insert(0, dict(id=transaction_id, amount=int(payload['amount']), paid_at='2026-01-01T03:01:00Z',
-                    method={'cash':'Tiền mặt','transfer':'Chuyển khoản','company_transfer':'CK tài khoản công ty'}[payload['method']], account='Tài khoản QA', note=payload['note'], actor='QA'))
+                    method={'cash':'Tiền mặt','transfer':'Chuyển khoản','company_transfer':'CK tài khoản công ty'}[payload['method']], account='Tài khoản QA', note=payload['note'], actor='QA',renewal=renewal))
             if mode['lost']:
                 mode['lost'] = False
                 route.abort('failed')
@@ -197,6 +213,54 @@ with sync_playwright() as playwright:
     expect(page.get_by_role('button',name='Thanh toán QA-2',exact=True)).to_be_visible()
     expect(page.get_by_role('button',name='Thanh toán QA-1',exact=True)).to_have_count(0)
     checks.append('cashbook has twelve columns with income amount, contract, method, account and content; contract link applies exact ID filter')
+    records[0]['total_amount']='1050000'
+    records[0]['paid_amount']='20900000'
+    page.goto(args.url+'/contracts',wait_until='domcontentloaded')
+    dialog = open_payment(1)
+    expect(dialog.get_by_label('Nghiệp vụ',exact=True)).to_have_value('renewal')
+    expect(dialog.get_by_role('button',name='Thu tiền và gia hạn',exact=True)).to_be_visible()
+    dialog.get_by_label('Xe cần gia hạn',exact=True).select_option('102')
+    dialog.get_by_label('Số tiền thu (VNĐ)').fill('400')
+    dialog.get_by_label('Ngày hẹn trả mới',exact=True).fill('2026-02-10T10:01')
+    before_requests = len(submissions)
+    dialog.get_by_role('button',name='Thu tiền và gia hạn',exact=True).click()
+    expect(dialog.get_by_role('alert')).to_contain_text('sau ngày hẹn trả hiện tại')
+    assert len(submissions)==before_requests
+    original_other = copy.deepcopy(items[1][0])
+    dialog.get_by_label('Ngày hẹn trả mới',exact=True).fill('2026-03-10T10:01')
+    dialog.evaluate('(el)=>{document.activeElement.blur();el.scrollTop=0}')
+    page.screenshot(path=str(output/'desktop-renewal.png'),full_page=True)
+    mode['lost']=True
+    dialog.get_by_role('button',name='Thu tiền và gia hạn',exact=True).click()
+    expect(dialog.get_by_role('button',name='Thử lại lần thu này')).to_be_enabled()
+    renewal_id = submissions[-1]['request_id']
+    dialog.get_by_role('button',name='Đóng',exact=True).click()
+    page.reload(wait_until='domcontentloaded')
+    dialog = open_payment(1)
+    expect(dialog.get_by_label('Nghiệp vụ',exact=True)).to_have_value('renewal')
+    expect(dialog.get_by_label('Xe cần gia hạn',exact=True)).to_have_value('102')
+    expect(dialog.get_by_label('Ngày hẹn trả mới',exact=True)).to_have_value('2026-03-10T10:01')
+    expect(dialog.get_by_label('Ngày hẹn trả mới',exact=True)).to_be_disabled()
+    dialog.get_by_role('button',name='Thử lại lần thu này').click()
+    expect(dialog.get_by_label('Số tiền thu (VNĐ)')).to_have_value('')
+    assert submissions[-1]['request_id']==renewal_id and len(receipts)==6
+    assert records[0]['total_amount']=='1050400' and records[0]['paid_amount']=='20900400'
+    assert items[1][0]==original_other and items[1][1]['return_at']=='2026-03-10T10:01:00+07:00'
+    expect(dialog.locator('.mg-payment-history')).to_contain_text('Gia hạn QA-B đến')
+    checks.append('legacy paid above original fee defaults to renewal; invalid date blocked; selected vehicle/date and fee survive lost response/reload; replay charges once; other vehicle unchanged')
+    dialog.get_by_label('Xe cần gia hạn',exact=True).select_option('101')
+    dialog.get_by_label('Ngày hẹn trả mới',exact=True).fill('2026-04-10T10:01')
+    dialog.get_by_label('Số tiền thu (VNĐ)').fill('500')
+    dialog.get_by_label('Hình thức thanh toán',exact=True).select_option('company_transfer')
+    page.set_viewport_size({'width':375,'height':812})
+    box=dialog.bounding_box()
+    assert box['x']>=0 and box['x']+box['width']<=375 and dialog.evaluate('(el)=>el.scrollWidth<=el.clientWidth+1')
+    page.screenshot(path=str(output/'mobile-renewal.png'),full_page=True)
+    dialog.get_by_role('button',name='Thu tiền và gia hạn',exact=True).click()
+    expect(page).to_have_url(re.compile(r'/contracts/vat\?contract_id=1$'))
+    assert records[0]['company_payment_count']==1 and records[0]['company_paid_amount']==500
+    assert len(receipts)==7 and submissions[-1]['note']=='Gia hạn hợp đồng_QA-1'
+    checks.append('multiple renewed vehicles accept independent fees/new dates; company renewal navigates VAT, keeps automatic content; mobile form fits viewport')
     assert not unexpected, unexpected
     assert not errors, errors
     report = dict(passed=len(checks),checks=checks,syntheticReceipts=len(receipts),unexpected=unexpected,jsErrors=errors,operationalWrites=0)

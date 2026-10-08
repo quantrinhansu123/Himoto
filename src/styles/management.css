@@ -612,6 +612,8 @@
 .mg-payment-history li { display: grid; gap: 6px; padding: 14px 0; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; }
 .mg-payment-history li p { margin: 0; white-space: pre-wrap; }
 .mg-payment-success { color: #166534; }
+.mg-payment-purpose { display: grid; gap: 8px; margin-bottom: 20px; }
+.mg-payment-purpose select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; }
 @media (max-width: 600px) {
   .mg-payment-totals, .mg-payment-fields { grid-template-columns: 1fr; }
   .mg-payment-dialog .mg-dialog-footer { flex-wrap: wrap; }

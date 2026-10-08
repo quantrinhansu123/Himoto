@@ -2,9 +2,14 @@
 
 Cập nhật 08/10/2026. `/contracts` có nút **Thanh toán** cho hợp đồng Đang thuê, Quá hạn, Chờ thanh toán và Nợ xấu. Chi tiết hợp đồng đã phát hành có **Thanh toán / Lịch sử** để tra phiếu kể cả khi không còn được thu thêm.
 
-Mỗi lần thu tạo một `transactions` loại `in`, trạng thái `approved`, gắn `order_id`, cơ sở của hợp đồng và người đăng nhập. `orders.pid` (Tổng đã thu) tăng đúng số tiền đó. Cho phép thanh toán nhiều lần, mỗi lần có ID phiếu riêng. Không thu vượt phần còn thiếu `max(total - pid, 0)`; số liệu thiếu/sai, nháp và trạng thái chưa được phép thu đều bị chặn.
+Mỗi lần thu tạo một `transactions` loại `in`, trạng thái `approved`, gắn `order_id`, cơ sở của hợp đồng và người đăng nhập. Cho phép thanh toán nhiều lần, mỗi lần có ID phiếu riêng. Có hai nghiệp vụ:
 
-Nội dung tự điền **`Gia hạn hợp đồng_<mã hợp đồng>`**, có thể chỉnh trước khi gửi. Đây là nội dung phiếu thu/chuyển khoản; thao tác thanh toán không tự thay ngày hẹn trả, phát hành gia hạn, đổi trạng thái hợp đồng hoặc sửa tiền cọc.
+- **Thu công nợ còn thiếu:** tăng `orders.pid` đúng số tiền thu; không vượt `max(total - pid, 0)`. Không đổi phí hoặc ngày trả.
+- **Thu tiền gia hạn:** dành cho Đang thuê/Quá hạn, chọn một xe chưa trả, nhập phí nguyên VNĐ và ngày hẹn trả mới sau ngày hiện tại của xe. Tăng cả `orders.total` và `orders.pid` đúng phí mới, nên công nợ cũ giữ nguyên; cộng `order_vehicle_details.total_renewal_amount` và đổi ngày trả của xe đã chọn. Các xe khác giữ nguyên. Hợp đồng đã trả đủ hoặc có tổng đã thu lớn hơn tiền kỳ cũ vẫn gia hạn được. Mỗi xe/lần gia hạn có một phiếu riêng.
+
+Khi không còn công nợ và có xe được gia hạn, hộp thoại tự chọn **Thu tiền gia hạn**. Số liệu tiền thiếu/sai, nháp, xe đã trả/xóa, ngày không tăng và trạng thái không phù hợp đều bị chặn. Ngày trả chung dùng ngày lớn nhất của các chi tiết còn hiệu lực nếu parent trống; parent có ngày chỉ được tăng, không giảm ngày của xe khác.
+
+Nội dung tự điền **`Gia hạn hợp đồng_<mã hợp đồng>`**, có thể chỉnh trước khi gửi. Thao tác ghi nhận tiền đã nhận; không thực hiện chuyển tiền hoặc tự xác minh ngân hàng. Không đổi trạng thái hợp đồng hay tiền cọc, không tính lại các khoản gia hạn/thu lịch sử.
 
 ## Tài khoản nhận và VAT
 
@@ -19,13 +24,13 @@ Danh sách này phục vụ theo dõi hợp đồng có khoản thu công ty. Kh
 
 ## Giao dịch và chống thu trùng
 
-Chạy migration [2026-10-08-contract-payments.sql](sql/2026-10-08-contract-payments.sql) trước khi bật POST thanh toán. Bảng mới `management_contract_payments` chỉ lưu UUID lần thu, liên kết hợp đồng/phiếu/người thực hiện và SHA-256 của yêu cầu; bật RLS, thu hồi quyền anon/authenticated.
+Chạy migration [2026-10-08-contract-payments.sql](sql/2026-10-08-contract-payments.sql) và [2026-10-08-contract-renewals.sql](sql/2026-10-08-contract-renewals.sql) trước khi bật tính năng. `management_contract_payments` lưu UUID lần thu, liên kết hợp đồng/phiếu/người thực hiện, SHA-256 yêu cầu và `renewal_payload` cho lần gia hạn: xe, ngày trả trước/sau, phí và tổng đã thu trước/sau. Bảng bật RLS, thu hồi quyền anon/authenticated. Migration gia hạn chỉ thêm cột JSONB nullable, không cập nhật dữ liệu vận hành.
 
-API `/api/auth/order/car-rental/[id]/payments` GET/POST yêu cầu phiên admin hợp lệ; POST kiểm tra cùng nguồn, lấy người thực hiện từ session. Không nhận actor, tổng đã thu hay trạng thái do trình duyệt cung cấp. Khóa UUID, khóa hàng hợp đồng và revision `xmin`, kiểm tra lại tài khoản trước ghi. Phiếu Thu, cập nhật `pid` và UUID được COMMIT cùng nhau; lỗi thì ROLLBACK.
+API `/api/auth/order/car-rental/[id]/payments` GET/POST yêu cầu phiên admin hợp lệ; POST kiểm tra cùng nguồn, lấy người thực hiện từ session. Không nhận actor, tổng đã thu hay trạng thái do trình duyệt cung cấp. Khóa UUID, hàng hợp đồng và revision `xmin`; gia hạn khóa thêm hàng chi tiết xe và kiểm tra revision riêng; kiểm tra lại tài khoản trước ghi. Phiếu Thu, phí, ngày trả và UUID được COMMIT cùng nhau; lỗi thì ROLLBACK toàn bộ. Phiếu gia hạn có `name='order:renewal'`, `order_item_id` và liên kết chi tiết xe; Sổ quỹ hiển thị lý do **Thu tiền gia hạn**.
 
 Gửi lại cùng UUID/nội dung trả về phiếu đã có, kể cả revision đã đổi. Dùng UUID cho nội dung khác bị từ chối. Trình duyệt lưu lần thu đang gửi trong `sessionStorage` trước POST; mất phản hồi giữ nguyên nội dung và UUID để thử lại qua đóng/mở hoặc tải lại trang trong cùng tab. Lỗi rõ ràng 4xx tải lại số liệu trước khi cho sửa. Không tự báo thành công hoặc cộng tiền khi chưa xác nhận.
 
-Không sửa giá, tổng phí, cọc, trạng thái hợp đồng, số dư đầu kỳ hoặc lịch sử phiếu cũ. Số dư ngân hàng/két vẫn dựa vào giao dịch và số dư đầu kỳ; không cộng thêm lần thứ hai vào một cột số dư.
+Không suy giá gia hạn từ giá xe hoặc lịch sử. Chỉ cộng phí mới được nhập rõ; giữ giá thuê ban đầu, cọc, trạng thái, số dư đầu kỳ và phiếu cũ. Số dư ngân hàng/két vẫn dựa vào giao dịch và số dư đầu kỳ; không cộng thêm lần thứ hai vào một cột số dư. Không dùng tổng phiếu lịch sử để sửa lại `pid` khi dữ liệu cũ lệch nhau.
 
 ## Kiểm chứng
 
@@ -38,6 +43,6 @@ npm.cmd run build
 python scripts/check-contract-payments-ui.py --session-cookie-file .backups/contract-payments/qa-session.txt
 ```
 
-TEMP dùng identity riêng trước INSERT, thay toàn bộ tên bảng vận hành trong truy vấn và outer ROLLBACK. Browser giả lập mọi `/api/**`; kiểm tra thu từng phần, thu trùng khi mất mạng/tải lại, revision, công ty dùng chung, chuyển bảng VAT, 12 cột Thu/Chi, liên kết hợp đồng và 1440/375px. Không tạo phiếu QA trên bảng vận hành. Cookie và ảnh/kết quả cục bộ nằm trong `.backups/` được Git ignore.
+10 nhóm dữ liệu TEMP dùng identity riêng trước INSERT, thay toàn bộ tên bảng vận hành trong truy vấn và outer ROLLBACK. Browser giả lập mọi `/api/**`; kiểm tra thu từng phần, thu trùng khi mất mạng/tải lại, revision, công ty dùng chung, chuyển bảng VAT, 12 cột Thu/Chi, liên kết hợp đồng và 1440/375px. Gia hạn được kiểm tra với số liệu kiểu legacy đã thu vượt phí cũ, nhiều xe, ngày sai, xe sai/đã trả, rollback sau khi ghi phiếu/chi tiết, công nợ cũ không đổi và retry không gia hạn hai lần. Không tạo phiếu QA trên bảng vận hành. Cookie và kết quả cục bộ nằm trong `.backups/` được Git ignore.
 
-Kết quả/ảnh tổng hợp không chứa dữ liệu vận hành: [6 nhóm UI](qa/contract-payments/results.json), [desktop](qa/contract-payments/desktop-payment.png), [mobile](qa/contract-payments/mobile-company-payment.png), [Hợp đồng VAT](qa/contract-payments/mobile-vat.png).
+Kết quả/ảnh tổng hợp không chứa dữ liệu vận hành: [8 nhóm UI](qa/contract-payments/results.json), [thu công nợ](qa/contract-payments/desktop-payment.png), [gia hạn desktop](qa/contract-payments/desktop-renewal.png), [gia hạn mobile](qa/contract-payments/mobile-renewal.png), [Hợp đồng VAT](qa/contract-payments/mobile-vat.png).

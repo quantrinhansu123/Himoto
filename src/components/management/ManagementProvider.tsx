@@ -139,6 +139,7 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
   const acceptContractPayment = (context: PaymentContext) => {
     setDataset(current => current ? { ...current, contracts: current.contracts.map(row => row.id === context.id ? { ...row,
       total_amount: context.total_amount ?? undefined, paid_amount: context.paid_amount ?? undefined, draft_revision: context.revision,
+      end_date: context.end_date ?? undefined,
       company_paid_amount: context.company_paid_amount, company_payment_count: context.company_payment_count } : row) } : current);
   };
   return <ManagementContext.Provider value={{ dataset, loading, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), selectedStore, selectStore, reload, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft, acceptContractPayment }}>
