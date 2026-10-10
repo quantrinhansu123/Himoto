@@ -24,7 +24,7 @@ export function summarizeContracts(rows: ManagementRow[], customers: ManagementR
   let totalAmount: number | null = 0, receivableAmount: number | null = 0, badDebtAmount: number | null = 0;
   for (const row of rows) {
     const customerId = Number(row.customer_id);
-    if (blacklist.has(customerId)) matchedBlacklist.add(customerId);
+    if (row.customer_status === undefined ? blacklist.has(customerId) : row.customer_status === 'blacklist') matchedBlacklist.add(customerId);
     if (!EXCLUDED_TOTAL_STATUSES.has(row.status)) {
       const total = amount(row.total_amount);
       totalAmount = totalAmount === null || total === null ? null : totalAmount + total;

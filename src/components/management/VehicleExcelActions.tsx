@@ -56,7 +56,7 @@ export function VehicleExcelActions({ disabled }: { disabled: boolean }) {
 }
 
 function VehicleImportDialog({ stores, onClose }: { stores: CustomerImportStore[]; onClose: () => void }) {
-  const { reload, notify } = useManagement();
+  const { reload, notify, invalidateData } = useManagement();
   const [inputs, setInputs] = useState<VehicleImportInput[]>([]), [result, setResult] = useState<VehicleImportResult | null>(null);
   const [filename, setFilename] = useState(''), [ignored, setIgnored] = useState<string[]>([]), [legacy, setLegacy] = useState(false);
   const [mapping, setMapping] = useState<Record<string, string>>({}), [mode, setMode] = useState<VehicleImportMode>('sync');
@@ -84,7 +84,7 @@ function VehicleImportDialog({ stores, onClose }: { stores: CustomerImportStore[
       const next = await check(mappedRows(), commit);
       if (commit && (!next.committed || next.total !== inputs.length || next.inserted + next.updated + next.skipped !== inputs.length)) throw new Error('Chưa xác nhận đủ xe đã nhập. Làm mới và kiểm tra lại.');
       setResult(next); setAccepted(false);
-      if (commit) { await reload(); notify(`Đã đồng bộ ${next.updated} xe và thêm ${next.inserted} xe. Đã sao lưu dữ liệu trước thay đổi.`); }
+      if (commit) { invalidateData(['contracts', 'stores']); await reload(['vehicles']); notify(`Đã đồng bộ ${next.updated} xe và thêm ${next.inserted} xe. Đã sao lưu dữ liệu trước thay đổi.`); }
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không nhập được xe.'); if (commit) setResult(null); }
     finally { busyRef.current = false; setBusy(''); focusSummary(); }
   }
@@ -139,7 +139,7 @@ function VehicleImportDialog({ stores, onClose }: { stores: CustomerImportStore[
 }
 
 function VehicleResetDialog({ onClose }: { onClose: () => void }) {
-  const { reload, notify } = useManagement();
+  const { reload, notify, invalidateData } = useManagement();
   const [preview, setPreview] = useState<VehicleResetPreview | null>(null), [confirmation, setConfirmation] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(true), [backupId, setBackupId] = useState('');
   const busyRef = useRef(true);
   useEffect(() => {
@@ -152,7 +152,7 @@ function VehicleResetDialog({ onClose }: { onClose: () => void }) {
     busyRef.current = true; setBusy(true); setError('');
     try {
       const data = await request<{ removed: number; backupId: string }>('/api/auth/vehicles/reset', 'DELETE', { revision: preview.revision, confirmation });
-      setBackupId(data.backupId); await reload(); notify(`Đã xóa ${data.removed} xe. Bản sao lưu được giữ trong CSDL.`);
+      setBackupId(data.backupId); invalidateData(['contracts', 'stores']); await reload(['vehicles']); notify(`Đã xóa ${data.removed} xe. Bản sao lưu được giữ trong CSDL.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không xóa được xe.'); setPreview(null); }
     finally { busyRef.current = false; setBusy(false); }
   }

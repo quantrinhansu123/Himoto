@@ -1,3 +1,13 @@
+import { mapApiRow } from './repository';
+import type { ManagementRow } from './types';
+
+export async function loadCustomerContracts(customerId: number, signal?: AbortSignal): Promise<ManagementRow[]> {
+  const response = await fetch(`/api/auth/order/car-rental?customer_id=${customerId}`, { credentials: 'same-origin', cache: 'no-store', signal, headers: { Accept: 'application/json' } });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.status !== 'success' || !Array.isArray(result?.data)) throw new Error(result?.message || 'Không tải được hợp đồng của khách hàng.');
+  return result.data.map((row: Record<string, unknown>) => mapApiRow('contracts', row));
+}
+
 export type ContractChangeKind = 'created' | 'renewal' | 'extra' | 'swap' | 'return';
 
 export interface ContractChange {

@@ -36,7 +36,7 @@ export function ContractDetail({ row, onClose, onPrint, onPayment, onReturn, onR
   const wantsHistory = section === 'changes' || section === 'cashflow';
   const fetchHistory = useCallback((signal?: AbortSignal) => {
     setHistoryLoading(true); setHistoryError('');
-    loadContractHistory(row.id, signal).then(setHistory).catch(cause => {
+    loadContractHistory(row.id, signal).then(value => { if (!signal?.aborted) setHistory(value); }).catch(cause => {
       if (!signal?.aborted) setHistoryError(cause instanceof Error ? cause.message : 'Không tải được lịch sử hợp đồng.');
     }).finally(() => { if (!signal?.aborted) setHistoryLoading(false); });
   }, [row.id]);
@@ -95,7 +95,7 @@ export function ContractDetail({ row, onClose, onPrint, onPayment, onReturn, onR
         ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
       ]))}
       {panel('customer', 'Thông tin khách hàng (Bên B)', fields([
-        ['Cửa hàng xe', text(store?.name || row.store_name)], ['Đại diện ủy quyền Bên A (Nhân viên làm hợp đồng)', text(representative?.name)],
+        ['Cửa hàng xe', text(store?.name || row.store_name)], ['Đại diện ủy quyền Bên A (Nhân viên làm hợp đồng)', text(draft.staff_name || representative?.name || row.staff_name)],
         ['Tên khách hàng', text(draft.customer.name)], ['SĐT', text(draft.customer.phone)],
         ['Số CMTND/CCCD', text(draft.customer.id_card)], ['Ngày cấp CCCD', date(draft.customer.id_card_issued_on)],
         ['Nơi cấp CCCD', text(draft.customer.id_card_issued_by)], ['Số giấy phép lái xe', text(draft.customer.driver_license_number)],
@@ -115,7 +115,7 @@ export function ContractDetail({ row, onClose, onPrint, onPayment, onReturn, onR
       </>)}
       {panel('signing', 'Ký kết & Ghi chú', fields([
         ['Tài sản thế chấp / Đặt cọc tài sản', text(draft.collateral_description)],
-        ['Người ký Bên A (Himoto)', text(representative?.name)], ['Người ký Bên B (Khách thuê)', text(draft.customer.name)],
+        ['Người ký Bên A (Himoto)', text(draft.staff_name || representative?.name || row.staff_name)], ['Người ký Bên B (Khách thuê)', text(draft.customer.name)],
         ['Ghi chú hợp đồng', text(row.notes)], ['Cảnh báo', text(draft.customer.warning_note)],
       ]))}
       {panel('changes', 'Danh sách chỉnh sửa hợp đồng', <>

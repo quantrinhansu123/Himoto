@@ -23,7 +23,7 @@ export function CustomerStoreExcelActions({ disabled }: { disabled: boolean }) {
 }
 
 function CustomerStoreExcelDialog({ onClose }: { onClose: () => void }) {
-  const { dataset, reload, notify } = useManagement();
+  const { dataset, reload, notify, invalidateData } = useManagement();
   const [inputs, setInputs] = useState<CustomerStoreInput[]>([]);
   const [result, setResult] = useState<CustomerStoreResult | null>(null);
   const [preview, setPreview] = useState<CustomerStorePreview | null>(null);
@@ -71,11 +71,11 @@ function CustomerStoreExcelDialog({ onClose }: { onClose: () => void }) {
       if (commit) {
         const next = await saveCustomerStoreBatches(preview!, checkStores, setProgress);
         setResult(next); setPreview(null);
-        await reload(); notify(`Đã cập nhật cơ sở cho ${next.updated} khách hàng.`);
+        invalidateData(['contracts']); await reload(['customers']); notify(`Đã cập nhật cơ sở cho ${next.updated} khách hàng.`);
       } else await previewRows(inputs);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Không cập nhật được cơ sở.');
-      if (commit) { setResult(null); setPreview(null); await reload(); }
+      if (commit) { setResult(null); setPreview(null); invalidateData(['contracts']); await reload(['customers']); }
     } finally { busyRef.current = false; setBusy(''); focusSummary(); }
   }
   const shown = result?.rows.filter(row => !issuesOnly || row.state === 'invalid') || [];

@@ -13,7 +13,7 @@ function load(filename) {
 const shared = load(path.join(root, 'lib/management/vehicle-import'));
 const excel = load(path.join(root, 'lib/management/vehicle-excel'));
 const server = load(path.join(root, 'lib/server/vehicle-import'));
-const values = patch => ({ id: '', name: 'Xe QA', brand: 'Honda', type: 'Xe điện', year: '2025', license: 'QA-01001', color: 'Đen', chassis: '0012345', engine: '006789', store: 'Cơ sở QA', status: 'Sẵn sàng', odometer: '100', ...patch });
+const values = patch => ({ id: '', name: 'Xe QA', brand: 'Honda', type: 'Xe điện', year: '2025', license: 'QA-01001', color: 'Đen', chassis: '0012345', engine: '006789', store: 'Cơ sở QA', status: 'Sẵn sàng', odometer: '100', daily_price: '', monthly_price: '', ...patch });
 const input = (patch = {}, rowNumber = 2) => ({ rowNumber, values: values(patch), errors: [], warnings: [] });
 const stores = [{ id: 23, name: 'Cơ sở QA', code: 'QA-23' }];
 const request = (rows, patch = {}) => server.vehicleImportRequest({ rows, mode: 'sync', commit: false, revision: '', acceptWarnings: false, skipUnknownStores: false, ...patch });
@@ -26,6 +26,15 @@ async function main() {
   result = shared.validateVehicleImport([input({ color: '' })], stores, [], 'sync');
   assert.equal(result[0].state, 'valid'); assert(result[0].warnings.length);
   checks.push('schema length, numeric IDs/year/km, license/type/status/store validation and missing/numeric color handling');
+
+  for (const key of ['daily_price', 'monthly_price']) {
+    for (const price of ['', '0', '180000', '9007199254740991']) assert.equal(shared.validateVehicleImport([input({ [key]: price })], stores, [], 'sync')[0].state, 'valid');
+    for (const price of ['-1', '1.5', 'abc', '9007199254740992']) assert.equal(shared.validateVehicleImport([input({ [key]: price })], stores, [], 'sync')[0].state, 'invalid');
+  }
+  assert.equal(request([input()]).rows[0].values.daily_price, '');
+  assert.throws(() => request([input({ daily_price: undefined })]));
+  assert.throws(() => request([input({ monthly_price: 180000 })]));
+  checks.push('daily/monthly price fields accept blank, zero and safe nonnegative integers; server requires string fields');
 
   const current = [{ id: '101', license: 'QA-01001', store_id: '23', current_store_id: '31', color: 'Đỏ', status: 'using' }];
   assert.equal(shared.validateVehicleImport([input({ id: '101', store: 'Cơ sở cũ #4' })], stores, current, 'sync')[0].state, 'valid');
@@ -44,13 +53,16 @@ async function main() {
 
   const template = new Excel.Workbook(); await template.xlsx.load(await excel.createVehicleTemplate(stores));
   assert.equal(template.worksheets[0].getCell('G1').value, 'Màu sắc');
+  assert.equal(template.worksheets[0].getCell('M1').value, 'Đơn giá thuê / ngày (VNĐ)');
+  assert.equal(template.worksheets[0].getCell('N1').value, 'Đơn giá thuê / tháng (VNĐ)');
   assert.equal(template.worksheets[0].getCell('F2').numFmt, '@'); assert.equal(template.worksheets[0].getCell('H2').numFmt, '@');
   assert.equal(template.worksheets[0].getCell('J2').dataValidation.formulae[0], 'HimotoVehicleStores');
   const standard = new Excel.Workbook(); const s = standard.addWorksheet('Xe');
   s.addRow([...shared.VEHICLE_IMPORT_COLUMNS.map(c => c.label), '2', '4']);
-  s.addRow([...shared.VEHICLE_IMPORT_COLUMNS.map(c => values()[c.key]), 'Không rõ', 123]);
+  s.addRow([...shared.VEHICLE_IMPORT_COLUMNS.map(c => values({ daily_price: '180000', monthly_price: '0' })[c.key]), 'Không rõ', 123]);
   const parsed = excel.parseVehicleWorkbook(standard);
   assert.equal(parsed.rows[0].values.license, 'QA-01001'); assert.equal(parsed.rows[0].values.color, 'Đen'); assert.equal(parsed.ignoredColumns.length, 2);
+  assert.equal(parsed.rows[0].values.daily_price, '180000'); assert.equal(parsed.rows[0].values.monthly_price, '0');
   s.getCell('F2').value = { formula: '1+1', result: 2 }; assert(excel.parseVehicleWorkbook(standard).rows[0].errors.length);
   s.getCell('M1').value = 'Biển số'; assert.throws(() => excel.parseVehicleWorkbook(standard), /hai lần/);
   checks.push('download template includes Text formats and real branch dropdown; header matching ignores extras and rejects formulas/duplicate core columns');
@@ -85,12 +97,12 @@ async function main() {
     try {
       await c.query('BEGIN');
       await c.query(`CREATE TEMP SEQUENCE qa_vehicles_id_seq;
-        CREATE TEMP TABLE qa_vehicles (id bigint PRIMARY KEY DEFAULT nextval('pg_temp.qa_vehicles_id_seq'),name varchar(255) NOT NULL,brand varchar(255) NOT NULL,type varchar(25) NOT NULL,year bigint NOT NULL,store_id bigint NOT NULL,license varchar(25) NOT NULL,color varchar(255),chassis varchar(255),engine varchar(255),status varchar(255) NOT NULL,cost_price varchar(255),sale_price varchar(255),price_range text,created_by bigint NOT NULL,created_at timestamptz,updated_at timestamptz,type_of_service_id smallint NOT NULL DEFAULT 1,price_min bigint DEFAULT 0,price_max bigint DEFAULT 0,odometer bigint,current_store_id bigint);
+        CREATE TEMP TABLE qa_vehicles (id bigint PRIMARY KEY DEFAULT nextval('pg_temp.qa_vehicles_id_seq'),name varchar(255) NOT NULL,brand varchar(255) NOT NULL,type varchar(25) NOT NULL,year bigint NOT NULL,store_id bigint NOT NULL,license varchar(25) NOT NULL,color varchar(255),chassis varchar(255),engine varchar(255),status varchar(255) NOT NULL,cost_price varchar(255),sale_price varchar(255),price_range text,created_by bigint NOT NULL,created_at timestamptz,updated_at timestamptz,type_of_service_id smallint NOT NULL DEFAULT 1,price_min bigint DEFAULT 0,price_max bigint DEFAULT 0,odometer bigint,current_store_id bigint,daily_price bigint,monthly_price bigint);
         CREATE TEMP TABLE qa_stores(id bigint PRIMARY KEY,store_name text,code text);
         CREATE TEMP TABLE qa_orders(vehicle_id bigint);
         CREATE TEMP TABLE qa_backups(id uuid PRIMARY KEY,action text,created_by bigint,row_count integer,sha256 text,payload jsonb);
         INSERT INTO qa_stores VALUES(23,'Cơ sở QA','QA-23');
-        INSERT INTO qa_vehicles(id,name,brand,type,year,store_id,license,color,status,created_by,current_store_id,cost_price) VALUES(101,'Cũ QA','Honda','xega',2024,23,'QA-01001','Đỏ','using',143,31,'123');`);
+        INSERT INTO qa_vehicles(id,name,brand,type,year,store_id,license,color,status,created_by,current_store_id,cost_price,daily_price,monthly_price) VALUES(101,'Cũ QA','Honda','xega',2024,23,'QA-01001','Đỏ','using',143,31,'123',180000,3000000);`);
       let preview = await transaction(() => server.importDatabaseVehicles(proxy, request([input({ id: '101', color: '', chassis: '', engine: '', odometer: '' }), input({ id: '105', license: 'QA-01005' }, 3), input({ store: 'Cơ sở cũ #4' }, 4)], { skipUnknownStores: true }), 143));
       assert.equal(preview.valid, 2); assert.equal(preview.skipped, 1); assert.equal(await count('qa_backups'), 0);
       const committed = await transaction(() => server.importDatabaseVehicles(proxy, request([input({ id: '101', color: '', chassis: '', engine: '', odometer: '' }), input({ id: '105', license: 'QA-01005' }, 3), input({ store: 'Cơ sở cũ #4' }, 4)], { skipUnknownStores: true, commit: true, revision: preview.revision, acceptWarnings: true }), 143));
@@ -99,6 +111,7 @@ async function main() {
       assert.equal(server.vehicleSnapshotHash(backup.payload), backup.sha256);
       const saved = (await c.query('SELECT * FROM pg_temp.qa_vehicles WHERE id=101')).rows[0];
       assert.equal(saved.status, 'using'); assert.equal(saved.current_store_id, '31'); assert.equal(saved.store_id, '23'); assert.equal(saved.cost_price, '123'); assert.equal(saved.color, 'Đỏ');
+      assert.equal(saved.daily_price, '180000'); assert.equal(saved.monthly_price, '3000000');
       checks.push('real PostgreSQL TEMP-table sync preserves IDs/store/status/prices/nonblank color, inserts explicit ID, skips selected outside-store rows and saves exact pre-change snapshot');
 
       preview = await transaction(() => server.importDatabaseVehicles(proxy, request([input({ license: 'QA-01006' })]), 143));

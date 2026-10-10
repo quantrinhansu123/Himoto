@@ -9,7 +9,7 @@ const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::
 export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_reference,
   o.order_type AS rental_type,
   CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
-  o.customer_id,
+  o.customer_id, c.status AS customer_status,
   COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
   COALESCE(c.id_card, o.customer_idnumber) AS customer_id_card,
   COALESCE(c.address, o.customer_address) AS customer_address, c.email AS customer_email,
@@ -29,6 +29,8 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   o.note AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
   (SELECT p.id FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id
     AND p.store_id = o.store_id ORDER BY p.id LIMIT 1) AS staff_id,
+  (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id
+    AND p.store_id = o.store_id ORDER BY p.id LIMIT 1) AS staff_name,
   o.draft_payload, o.contract_signed_on AS signed_on, o.contract_authorization_date AS authorization_date,
   o.contract_collateral_description AS collateral_description, o.customer_source, o.customer_source_url,
   COALESCE(ov.vehicles, '[]'::json) AS vehicles
@@ -42,6 +44,7 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   ) company ON company.order_id=o.id
   LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
+      'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,
       'driver_license_issued_on', d.driver_license_issued_on, 'borrow_hats', d.borrow_hats,
       'borrow_raincoats', d.borrow_raincoats) ORDER BY d.id) AS vehicles,

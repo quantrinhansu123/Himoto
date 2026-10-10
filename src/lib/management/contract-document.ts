@@ -100,14 +100,18 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   const vehicles = sourceVehicles.map(item => {
     const id = value(item.vehicle_id ?? item.id);
     const master = dataset.vehicles.find(vehicle => String(vehicle.id) === id);
-    const details = master ? vehicleDetails(master, customer) : { ...emptyVehicle(), id, name: value(item.name), license: value(item.license) };
+    const embedded = { ...apiVehicles.find(vehicle => value(vehicle.id) === id), ...item };
+    const details = master ? vehicleDetails(master, customer) : { ...emptyVehicle(), id, name: value(embedded.name), license: value(embedded.license),
+      brand: value(embedded.brand), color: value(embedded.color), year: value(embedded.year),
+      type_text: VEHICLE_TYPES.find(type => type.value === (embedded.type === 'electric' ? 'xe_dien' : embedded.type))?.label || value(embedded.type),
+      driver_name: customer.name, driver_license_number: customer.driver_license_number, driver_license_issued_on: customer.driver_license_issued_on };
     for (const key of ['driver_name', 'driver_license_number', 'borrow_hats', 'borrow_raincoats'] as const) if (item[key] != null) details[key] = value(item[key]);
     if (item.driver_license_issued_on) details.driver_license_issued_on = dateInput(item.driver_license_issued_on);
     return details;
   });
   const vehicle = row ? dataset.vehicles.find(item => item.id === row.vehicle_id) : null;
   return { contract_number: row?.code || '', signed_on: dateInput(row?.signed_on || row?.created_at) || nowDate(),
-    store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: '',
+    store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: value(row?.staff_name),
     customer_id: row?.customer_id ? Number(row.customer_id) : null, customer,
     vehicles: vehicles.length ? vehicles : [vehicle ? vehicleDetails(vehicle, customer) : emptyVehicle()],
     start_date: dateTimeInput(row?.start_date), end_date: dateTimeInput(row?.end_date),

@@ -8,7 +8,7 @@ import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 
 export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { orderId: number; contractCode: string; onClose: () => void }) {
-  const { dataset, notify, reload } = useManagement();
+  const { dataset, notify, reload, invalidateData } = useManagement();
   const [rows, setRows] = useState<ReturnableContractItem[]>([]);
   const [itemId, setItemId] = useState('');
   const [vehicleId, setVehicleId] = useState('');
@@ -39,7 +39,8 @@ export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { 
     try {
       const result = await changeContractVehicle({ item_id: selected.item_id, item_revision: selected.item_revision, vehicle_id: Number(vehicleId) });
       notify(`${selected.contract_code}: đã đổi xe ${result.old_license} → ${result.new_license}; hợp đồng được giữ nguyên.`);
-      await reload();
+      invalidateData(['vehicles', 'customers']);
+      await reload(['contracts']);
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không đổi được xe trong hợp đồng.'); }
     finally { setSaving(false); }

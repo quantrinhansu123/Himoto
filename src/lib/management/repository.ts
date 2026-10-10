@@ -25,6 +25,7 @@ export function createDemoRepository(draftStorage?: DraftStorage): ManagementRep
   return {
     source: 'demo',
     async load() { initialize(); return structuredClone(dataset); },
+    async loadKind(kind) { initialize(); return structuredClone(dataset[kind]); },
     async save(kind: EditableKind, row: ManagementRow) {
       if (!['staff', 'customers', 'stores', 'vehicles'].includes(kind)) throw new Error('Danh sách hợp đồng chỉ đọc.');
       const records = dataset[kind];
@@ -119,7 +120,9 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
   const mapped: ManagementRow = { ...base, code, name: code,
     store_id: base.store_id ?? number(store.id), store_name: base.store_name || text(store.store_name || store.name),
     staff_id: number(raw.staff_id ?? raw.contract_responsible_user_id),
+    staff_name: text(raw.staff_name),
     customer_id: number(raw.customer_id), customer_name: text(raw.customer_name || customer.name),
+    customer_status: raw.customer_status == null ? undefined : ['2', 'blacklist', 'bad_debt'].includes(text(raw.customer_status)) ? 'blacklist' : text(raw.customer_status),
     customer_phone: text(raw.customer_phone || customer.phone),
     customer_id_card: text(raw.customer_id_card || customer.id_card),
     customer_address: text(raw.customer_address || customer.address), customer_email: text(raw.customer_email || customer.email),
@@ -182,6 +185,11 @@ export function createApiRepository(baseUrl = '/api', options: { drafts?: boolea
   return {
     source: 'api',
     supportsContractDrafts: Boolean(options.drafts),
+    async loadKind(kind) {
+      const rows = await read(kind);
+      loaded = { ...(loaded || { staff: [], customers: [], contracts: [], stores: [], vehicles: [] }), [kind]: rows };
+      return rows;
+    },
     async load() {
       const kinds: ManagementKind[] = ['staff', 'customers', 'contracts', 'stores', 'vehicles'];
       const values = await Promise.all(kinds.map(read));

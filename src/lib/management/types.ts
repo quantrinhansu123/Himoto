@@ -29,6 +29,7 @@ export interface ManagementRepository {
   source: 'demo' | 'api';
   supportsContractDrafts?: boolean;
   load(): Promise<ManagementDataset>;
+  loadKind(kind: ManagementKind): Promise<ManagementRow[]>;
   save(kind: EditableKind, row: ManagementRow): Promise<ManagementDataset>;
   cloneContract(id: number): Promise<ContractMutationResult>;
   saveContract(id: number, edits: ContractEdits): Promise<ContractMutationResult>;

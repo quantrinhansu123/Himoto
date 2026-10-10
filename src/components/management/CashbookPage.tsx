@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, RotateCcw, Search, X } from 'lucide-react';
 import { CashbookRow, EMPTY_CASHBOOK_FILTERS, CashbookFilters, actorKey, cashbookCsv, filterCashbookRows } from '@/lib/management/cashbook';
 import { createApiCashbookRepository } from '@/lib/management/cashbook-repository';
@@ -14,6 +14,8 @@ export function CashbookPage() {
   const repository = useMemo(() => createApiCashbookRepository('/api'), []);
   const [records, setRecords] = useState<CashbookRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const hasLoaded = useRef(false);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState<CashbookFilters>(EMPTY_CASHBOOK_FILTERS);
@@ -30,10 +32,10 @@ export function CashbookPage() {
   }
   useEffect(() => {
     const controller = new AbortController(); let current = true;
-    setLoading(true); setError(''); setRecords([]);
-    void repository.load(controller.signal).then(rows => { if (current) setRecords(rows); }).catch(cause => {
+    setLoading(!hasLoaded.current); setRefreshing(hasLoaded.current); setError('');
+    void repository.load(controller.signal).then(rows => { if (current) { setRecords(rows); hasLoaded.current = true; } }).catch(cause => {
       if (current) setError(cause instanceof Error ? cause.message : 'Không tải được sổ quỹ. Vui lòng thử lại.');
-    }).finally(() => { if (current) setLoading(false); });
+    }).finally(() => { if (current) { setLoading(false); setRefreshing(false); } });
     return () => { current = false; controller.abort(); };
   }, [repository, retry]);
   useEffect(() => { setQuery(current => ({ ...current, actor: '' })); }, [selectedStore]);
@@ -58,7 +60,7 @@ export function CashbookPage() {
   }
   return <section className="mg-page mg-cashbook-page" aria-label="Sổ quỹ / Sổ két"><div className="mg-page-content">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ THU — CHI <span>/</span> 06</div><h1>Sổ quỹ / Sổ két<span className="mg-title-count">{loading || error ? '—' : records.length}</span></h1><p>Tra cứu phiếu thu và phiếu chi theo cùng một cấu trúc dữ liệu.</p></div>
-      <div className="mg-heading-actions"><button type="button" className="mg-button" disabled={loading} onClick={() => setRetry(value => value + 1)}><RotateCcw size={16} />Tải lại</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || invalidDate || !filtered.length} onClick={exportCsv}><ArrowDownToLine size={17} />Xuất CSV</button></div></div>
+      <div className="mg-heading-actions"><button type="button" className="mg-button" disabled={loading || refreshing} onClick={() => setRetry(value => value + 1)}><RotateCcw size={16} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Tải lại'}</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || invalidDate || !filtered.length} onClick={exportCsv}><ArrowDownToLine size={17} />Xuất CSV</button></div></div>
     <div className="mg-data-panel mg-cashbook-filters"><div className="mg-toolbar"><label className="mg-search" htmlFor="cashbook-search"><Search size={17} /><span className="mg-sr-only">Tìm trên cả hai bảng</span><input id="cashbook-search" type="search" placeholder="Tìm ID, người thực hiện, lý do, nội dung…" value={query.search} onChange={event => update({ search: event.target.value })} />{query.search && <button type="button" aria-label="Xóa từ khóa" onClick={() => update({ search: '' })}><X size={15} /></button>}</label>
       <div className="mg-filter-controls"><label htmlFor="cashbook-actor" className="mg-cashbook-select-label">Người thực hiện<select id="cashbook-actor" value={query.actor} disabled={loading || Boolean(error)} onChange={event => update({ actor: event.target.value })}><option value="">Tất cả người thực hiện</option>{actors.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div></div>
       <div className="mg-date-filters"><span>Ngày phát sinh</span><label htmlFor="cashbook-start">Từ ngày <input id="cashbook-start" type="date" value={query.startDate} aria-invalid={invalidDate} aria-describedby={invalidDate ? 'cashbook-date-error' : undefined} onChange={event => update({ startDate: event.target.value })} /></label>

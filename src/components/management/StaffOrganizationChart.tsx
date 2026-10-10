@@ -18,13 +18,13 @@ function PersonCard({ person }: { person: ManagementRow }) {
 }
 
 export function StaffOrganizationChart() {
-  const { dataset, selectedStore, reload, loading, error } = useManagement();
+  const { dataset, selectedStore, reload, loading, refreshing, error } = useManagement();
   const staff = dataset?.staff || [];
   const stores = (dataset?.stores || []).filter(store => selectedStore === 'all' || String(store.id) === selectedStore);
   const unassigned = selectedStore === 'all' ? staff.filter(person => !stores.some(store => store.id === person.store_id)) : [];
   return <section className="mg-org-section" aria-labelledby="staff-org-title">
     <div className="mg-org-heading"><div><span className="mg-eyebrow">CƠ CẤU TỔ CHỨC</span><h2 id="staff-org-title">Sơ đồ nhân sự</h2><p>Nhân sự và cơ sở theo dữ liệu hiện tại trên hệ thống.</p></div>
-      <button type="button" className="mg-button" disabled={loading} onClick={() => void reload()}><RotateCcw size={16} />Làm mới</button></div>
+      <button type="button" className="mg-button" disabled={loading || refreshing} onClick={() => void reload()}><RotateCcw size={16} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button></div>
     {loading ? <p role="status">Đang tải sơ đồ nhân sự…</p> : error ? <p role="alert">Không tải được sơ đồ nhân sự. Vui lòng thử lại.</p> : <div className="mg-org-scroll" tabIndex={0} role="region" aria-label="Sơ đồ nhân sự, cuộn ngang để xem đầy đủ">
       <div className="mg-org-chart"><div className="mg-org-root">HIMOTO</div>
         {unassigned.length > 0 && <div className="mg-org-departments">{staffGroups(unassigned).map(([position, people], index) => <article className={`mg-org-card mg-org-tone-${index % 6}`} key={position}>

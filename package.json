@@ -10,6 +10,7 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test:management": "node scripts/check-management-data.cjs",
+    "test:management-loading": "node scripts/check-management-loading.cjs",
     "test:contracts": "node scripts/check-contract-autofill.cjs",
     "test:contract-summary": "node scripts/check-contract-summary.cjs",
     "test:contract-payments": "node scripts/check-contract-payments.cjs",

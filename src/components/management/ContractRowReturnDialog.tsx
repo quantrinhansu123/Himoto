@@ -11,7 +11,7 @@ const localNow = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(
 const localMillis = (value: string) => new Date(`${value}:00+07:00`).getTime();
 
 export function ContractRowReturnDialog({ contractId, contractCode = '', onClose }: { contractId?: number; contractCode?: string; onClose: () => void }) {
-  const { notify, reload } = useManagement();
+  const { notify, reload, invalidateData } = useManagement();
   const [searchTerm, setSearchTerm] = useState(contractCode);
   const [rows, setRows] = useState<ReturnableContractItem[]>([]);
   const [itemId, setItemId] = useState('');
@@ -73,7 +73,8 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
     try {
       const result = await returnContractItem({ item_id: selected.item_id, item_revision: selected.item_revision, returned_at: returnedAt, hourly_rate: hourlyRate, ...(feeOverride === null ? {} : { fee_override: feeOverride }) });
       notify(result.fee ? `${result.contract_code}: đã trả xe, thêm ${formatMoney(result.fee)} tiền trả muộn.` : `${result.contract_code}: đã ghi nhận trả xe.`);
-      await reload();
+      invalidateData(['vehicles', 'customers']);
+      await reload(['contracts']);
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không ghi nhận được trả xe.'); }
     finally { setSaving(false); }

@@ -171,7 +171,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const savingDraft = (submitter instanceof HTMLButtonElement && submitter.value === 'draft') || (editingDraft && !(submitter instanceof HTMLButtonElement && submitter.value === 'preview'));
     const savingRecord = mode === 'edit' && !(submitter instanceof HTMLButtonElement && submitter.value === 'preview');
-    const next = savingDraft ? validateDraftSave(draft, dataset) : validateContractDraft(draft, dataset, staff, source);
+    const next = savingDraft ? validateDraftSave(draft, { ...dataset, staff }) : validateContractDraft(draft, dataset, staff, source);
     if (!savingDraft && lookupState !== 'found') next.id_card = 'Tra cứu hoặc tạo khách hàng trước khi lưu / in.';
     setErrors(next); setSaveError('');
     if (Object.keys(next).length) {
@@ -314,7 +314,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
                   setDraft(previous => ({ ...previous, staff_id: selected ? String(selected.id) : '', staff_name: selected ? '' : name }));
                   setErrors(previous => ({ ...previous, staff_id: '' })); setSaveError('');
                 }} />
-                <datalist id="contract-staff-options">{(dataset?.staff || []).filter(staffIsAvailable).map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
+                <datalist id="contract-staff-options">{branchStaff.filter(staffIsAvailable).map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
                 {errors.staff_id && <p className="mg-field-error">{errors.staff_id}</p>}{staffError ? <div className="mg-field-error" role="alert">{staffError}<button className="mg-inline-button" type="button" onClick={() => setStaffRetry(value => value + 1)}>Thử lại</button></div> : <small id="contract-staff-help">{draft.store_id && !staffLoading ? `${branchStaff.filter(staffIsAvailable).length} nhân sự đang làm việc tại cửa hàng. Có thể chọn gợi ý hoặc nhập tên mới.` : 'Chọn cửa hàng xe để tải nhân viên làm hợp đồng.'}</small>}</div>
             </div>
             <div className="mg-contract-customer-toolbar">

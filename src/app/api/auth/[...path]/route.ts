@@ -8,7 +8,7 @@ import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 export const runtime = 'nodejs';
 
 type Params = { params: Promise<{ path: string[] }> };
-type QueryConfig = { sql: string };
+type QueryConfig = { sql: string; values?: number[] };
 
 const listQueries: Record<string, QueryConfig> = {
   'hr/staff': {
@@ -64,7 +64,7 @@ const listQueries: Record<string, QueryConfig> = {
 };
 
 async function readAll(query: QueryConfig) {
-  const data = await himotoPool.query(query.sql);
+  const data = await himotoPool.query(query.sql, query.values);
   // The UI filters and sorts locally, so return each current dataset in one
   // response instead of making dozens of sequential page requests.
   return NextResponse.json({ status: 'success', data: data.rows }, { headers: { 'Cache-Control': 'no-store' } });
@@ -133,7 +133,21 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
     const query = listQueries[key];
     if (!query) return NextResponse.json({ status: 'error' }, { status: 404 });
+    if (key === 'hr/staff' && request.nextUrl.searchParams.has('store_id')) {
+      const storeId = request.nextUrl.searchParams.get('store_id') || '';
+      if (!/^\d+$/.test(storeId) || !Number.isSafeInteger(Number(storeId)) || Number(storeId) <= 0) {
+        return NextResponse.json({ status: 'error', message: 'Mã cơ sở không hợp lệ.' }, { status: 400 });
+      }
+      return await readAll({ sql: query.sql.replace('ORDER BY p.id DESC', 'WHERE p.store_id=$1 ORDER BY p.id DESC'), values: [Number(storeId)] });
+    }
     if (key === 'order/car-rental') {
+      const customerId = request.nextUrl.searchParams.get('customer_id');
+      if (customerId !== null) {
+        if (!/^\d+$/.test(customerId) || !Number.isSafeInteger(Number(customerId)) || Number(customerId) <= 0) {
+          return NextResponse.json({ status: 'error', message: 'Mã khách hàng không hợp lệ.' }, { status: 400 });
+        }
+        return await readAll({ sql: `${CONTRACT_LIST_SQL} AND o.customer_id=$1 AND o.order_status <> 'draft' ORDER BY o.id DESC`, values: [Number(customerId)] });
+      }
       return await readAll({ sql: query.sql });
     }
     return await readAll(query);
