@@ -9,6 +9,7 @@ Thay đổi ứng dụng chỉ nằm trong `src/styles/management.css` và `src/
 - Ẩn nút mở menu mobile ở desktop; menu vẫn hoạt động ở tablet/mobile.
 - Giữ chữ tối trên nút vàng khi hover; tăng độ tương phản của placeholder và một số nhãn phụ. Hai cặp màu chính đã sửa là `#1e293b` trên `#d97706`, và `#64748b` trên nền trắng.
 - Khai báo token `--mg-shadow-dialog` để shadow của dialog hiển thị đúng.
+- Khai báo độ rộng đủ 12 cột cho bảng sổ quỹ (`.mg-cashbook-table`), đặt `min-width: 1905px` và vùng cuộn ngang độc lập để các cột cuối (hình thức thanh toán, tài khoản, cơ sở, lý do, nội dung) không bị ép hẹp hay rớt dòng từng ký tự.
 
 ## Kiểm chứng
 
@@ -18,6 +19,7 @@ Thay đổi ứng dụng chỉ nằm trong `src/styles/management.css` và `src/
 - `npm.cmd run test:vehicles`: 6 nhóm qua.
 - `scripts/check-management-loading-ui.py`: 9 nhóm qua, gồm tải riêng danh mục, giữ bảng khi refresh và cache theo tab.
 - `scripts/check-contract-layout-ui.py`: 7 nhóm qua, gồm bàn phím, validation, lưu/mở nháp mô phỏng và PDF A4 ngang 1/2 trang.
+- `scripts/check-cashbook-layout-ui.py`: 10 nhóm qua ở 5 kích thước (1440/1270/1024/768/375px), các cột cuối đạt độ rộng ≥ 140px, chiều cao dòng tối đa < 180px, cuộn ngang bằng phím mũi tên và không tràn ngang trang.
 - Kiểm tra 9 trang quản lý ở 1440/768/375px: 27 màn hình không tràn ngang toàn trang, không có lỗi JavaScript. Kiểm tra thêm menu mobile, màu nút khi hover, shadow dialog và đăng nhập ở ba kích thước.
 
 QA chạy trên production build cục bộ, Chromium, với API nghiệp vụ được mô phỏng; không tạo hoặc sửa dữ liệu nghiệp vụ thật. Chưa kiểm tra Safari/Firefox hay đo thời gian tải trên Vercel.
@@ -30,4 +32,5 @@ QA chạy trên production build cục bộ, Chromium, với API nghiệp vụ �
 | --- | --- | --- | --- |
 | Danh sách xe | [Ảnh](qa/redesign/vehicles-1440.png) | [Ảnh](qa/redesign/vehicles-768.png) | [Ảnh](qa/redesign/vehicles-375.png) |
 | Form hợp đồng, tab khách hàng | [Ảnh](qa/redesign/form-customer-1440.png) | [Ảnh](qa/redesign/form-customer-768.png) | [Ảnh](qa/redesign/form-customer-375.png) |
+| Sổ quỹ / Sổ két | [Ảnh](qa/redesign/cashbook-1440.png) | [Ảnh](qa/redesign/cashbook-768.png) | [Ảnh](qa/redesign/cashbook-375.png) |
 | Đăng nhập | [Ảnh](qa/redesign/login-1440.png) | [Ảnh](qa/redesign/login-768.png) | [Ảnh](qa/redesign/login-375.png) |

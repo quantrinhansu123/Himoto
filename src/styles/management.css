@@ -1786,22 +1786,38 @@
 }
 
 .mg-cashbook-table {
-  min-width: 1010px;
+  min-width: 1905px;
+  width: 100%;
   table-layout: fixed;
 }
-.mg-cashbook-table th:nth-child(1) { width: 135px; }
+.mg-cashbook-table th:nth-child(1) { width: 85px; }
 .mg-cashbook-table th:nth-child(2) { width: 105px; }
 .mg-cashbook-table th:nth-child(3) { width: 90px; }
-.mg-cashbook-table th:nth-child(4) { width: 110px; }
-.mg-cashbook-table th:nth-child(5) { width: 155px; }
-.mg-cashbook-table th:nth-child(6) { width: 165px; }
-.mg-cashbook-table th:nth-child(7) { width: 250px; }
+.mg-cashbook-table th:nth-child(4) { width: 115px; }
+.mg-cashbook-table th:nth-child(5) { width: 160px; }
+.mg-cashbook-table th:nth-child(6) { width: 135px; }
+.mg-cashbook-table th:nth-child(7) { width: 125px; }
+.mg-cashbook-table th:nth-child(8) { width: 170px; }
+.mg-cashbook-table th:nth-child(9) { width: 240px; }
+.mg-cashbook-table th:nth-child(10) { width: 160px; }
+.mg-cashbook-table th:nth-child(11) { width: 220px; }
+.mg-cashbook-table th:nth-child(12) { width: 300px; }
 .mg-cashbook-table td { vertical-align: top; }
 .mg-cashbook-cell {
   display: block;
   line-height: 1.55;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.mg-cashbook-contract-link {
+  color: var(--mg-brand-700);
+  font-family: var(--mg-font-mono);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mg-cashbook-contract-link:hover {
+  color: var(--mg-brand-800);
 }
 .mg-cashbook-date, .mg-cashbook-time {
   white-space: nowrap;
