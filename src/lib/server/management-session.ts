@@ -17,7 +17,8 @@ export function isManagementConfigured() {
     (process.env.NODE_ENV !== 'production' || (process.env.MANAGEMENT_SESSION_SECRET?.length || 0) >= 32));
 }
 
-const globalSession = globalThis as typeof globalThis & { managementSessionKey?: string; managementLoginAttempts?: Map<string, { count: number; expires: number }> };
+const globalSession = globalThis as typeof globalThis & { managementSessionKey?: string; managementLoginAttempts?: Map<string, { count: number; expires: number }>;
+  managementReadSessions?: Map<number, { expires: number; allowed: Promise<boolean> }> };
 function sessionKey() {
   if (process.env.NODE_ENV === 'production' && (process.env.MANAGEMENT_SESSION_SECRET?.length || 0) < 32) {
     throw new Error('Thiếu MANAGEMENT_SESSION_SECRET hợp lệ cho bản triển khai.');
@@ -82,6 +83,24 @@ export async function userFromSession(token: string | undefined, database: Datab
   return account && allowedAccount(account) ? safeUser(account) : null;
 }
 
+// Reads only: the signed token is verified on every request, but the account
+// status/role lookup is shared for a few seconds so a page's parallel list
+// requests cost one database round trip. Writes always re-check the account.
+const READ_SESSION_TTL_MS = 15_000;
+function readSessionAllowed(token: string | undefined): Promise<boolean> {
+  const id = verifySession(token);
+  if (id === null) return Promise.resolve(false);
+  const checks = globalSession.managementReadSessions ??= new Map();
+  const now = Date.now();
+  const cached = checks.get(id);
+  if (cached && cached.expires > now) return cached.allowed;
+  for (const [key, value] of checks) if (value.expires <= now) checks.delete(key);
+  const allowed = userFromSession(token).then(Boolean);
+  checks.set(id, { expires: now + READ_SESSION_TTL_MS, allowed });
+  allowed.then(ok => { if (!ok) checks.delete(id); }, () => checks.delete(id));
+  return allowed;
+}
+
 export async function currentSessionUser() {
   return userFromSession((await cookies()).get(SESSION_COOKIE)?.value);
 }
@@ -97,7 +116,8 @@ export async function protectDatabaseRequest(request: NextRequest): Promise<Next
   if (!isManagementConfigured()) return NextResponse.json({ status: 'error', message: 'Hệ thống chưa được cấu hình kết nối dữ liệu. Vui lòng liên hệ quản trị viên.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   if (request.method !== 'GET' && !sameOrigin(request)) return NextResponse.json({ status: 'error', message: 'Yêu cầu không hợp lệ.' }, { status: 403 });
   try {
-    if (await userFromSession(request.cookies.get(SESSION_COOKIE)?.value)) return null;
+    const token = request.cookies.get(SESSION_COOKIE)?.value;
+    if (request.method === 'GET' ? await readSessionAllowed(token) : await userFromSession(token)) return null;
     return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
   } catch {
     return NextResponse.json({ status: 'error', message: 'Không xác thực được phiên đăng nhập. Vui lòng thử lại.' }, { status: 503 });

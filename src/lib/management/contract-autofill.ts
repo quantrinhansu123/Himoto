@@ -1,7 +1,8 @@
-import { CustomerDetails, normalizeIdCard, staffMatchesStore, validateCustomer } from './contract-document';
+import { CustomerDetails, normalizeIdCard, staffMatchesStore, validateCustomer, pairRelatives, relativesFromRow } from './contract-document';
 import { mapApiRow, READ_ENDPOINTS } from './repository';
 import { CustomerAssignment, ManagementRepository, ManagementRow } from './types';
 import { CUSTOMER_STATUSES } from './config';
+import { parseCustomerRelatives } from './customer-relatives';
 
 export interface ContractAutofillRepository {
   lookupCustomer(idCard: string, signal?: AbortSignal): Promise<ManagementRow | null>;
@@ -107,7 +108,9 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       if (await this.lookupCustomer(customer.id_card)) throw new Error('Số CCCD/CMND này đã có. Hãy tra cứu khách hàng thay vì tạo thêm.');
       // The Supabase adapter stores branch and profile status on customer creation.
       const payload = await request(READ_ENDPOINTS.customers, { method: 'POST', body: JSON.stringify({
-        name: customer.name.trim(), phone: customer.phone.trim(), email: customer.email.trim(), address: customer.address.trim(), id_card: normalizeIdCard(customer.id_card), warning_note: customer.warning_note.trim(),
+        name: customer.name.trim(), phone: customer.phone.trim(), address: customer.address.trim(), id_card: normalizeIdCard(customer.id_card), warning_note: customer.warning_note.trim(),
+        driver_license_number: customer.driver_license_number.trim(), driver_license_issued_on: customer.driver_license_issued_on,
+        relatives: parseCustomerRelatives(pairRelatives(customer.relatives_json, customer.relatives_text)),
         ...(assignment ? { status: assignment.status, store_id: assignment.store_id } : {}),
       }) });
       if (!object(payload)) throw new Error('API chưa trả về hồ sơ khách hàng đã tạo. Không thể xác nhận kết quả.');
@@ -117,9 +120,11 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
     },
     async updateCustomer(customer) {
       const payload = await request(`${READ_ENDPOINTS.customers}/${customer.id}`, { method: 'PATCH', body: JSON.stringify({
-        name: String(customer.name || '').trim(), phone: String(customer.phone || '').trim(), email: String(customer.email || '').trim(),
+        name: String(customer.name || '').trim(), phone: String(customer.phone || '').trim(),
         address: String(customer.address || '').trim(), id_card: normalizeIdCard(String(customer.id_card || '')),
         status: customer.status, warning_note: String(customer.warning_note || '').trim(), store_id: customer.store_id ?? null,
+        driver_license_number: String(customer.driver_license_number || '').trim(), driver_license_issued_on: String(customer.driver_license_issued_on || ''),
+        relatives: parseCustomerRelatives(relativesFromRow(customer)),
       }) });
       if (!object(payload)) throw new Error('API chưa trả về hồ sơ khách hàng đã cập nhật.');
       return mapApiRow('customers', payload);

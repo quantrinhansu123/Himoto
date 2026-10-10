@@ -3,6 +3,7 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { CONTRACT_LIST_SQL, DraftSaveError, saveDatabaseDraft } from '@/lib/server/contract-drafts';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { STORE_SELECT_SQL } from '@/lib/server/store-management';
+import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 
 export const runtime = 'nodejs';
 
@@ -18,21 +19,22 @@ const listQueries: Record<string, QueryConfig> = {
           ORDER BY p.id DESC`,
   },
   customers: {
-    sql: `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card,
+    sql: `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card, c.driver_license_number, c.driver_license_issued_on::text AS driver_license_issued_on,
                  CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
                       WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
                  c.warning, c.created_at, c.xmin::text AS customer_revision, c.id_card_issued_on, c.id_card_issued_by, c.relatives,
-                 c.store_id, s.store_name,
-                 (SELECT count(*)::int FROM himoto.orders o WHERE o.customer_id = c.id AND o.deleted_at IS NULL) AS contract_count
+                 c.store_id, s.store_name, COALESCE(oc.contract_count, 0) AS contract_count
           FROM himoto.customers c
           LEFT JOIN himoto.stores s ON s.id = c.store_id
+          LEFT JOIN (SELECT customer_id, count(*)::int AS contract_count FROM himoto.orders
+                     WHERE deleted_at IS NULL GROUP BY customer_id) oc ON oc.customer_id = c.id
           ORDER BY c.id DESC`,
   },
   stores: {
     sql: `${STORE_SELECT_SQL} ORDER BY s.id`,
   },
   'vehicle/vehicles': {
-    sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer,
+    sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name
           FROM himoto.vehicles v
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
@@ -43,7 +45,7 @@ const listQueries: Record<string, QueryConfig> = {
   },
   transactions: {
     sql: `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id, s.store_name,
-                 CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' ELSE t.name END AS reason,
+                 CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' ELSE t.name END AS reason,
                  COALESCE(t."desc", t.note) AS content, t.value AS amount,t.order_id,
                  COALESCE(o.contract_number,o.draft_reference,'#' || t.order_id::text) AS contract_code,
                  CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'
@@ -97,7 +99,9 @@ export async function GET(request: NextRequest, { params }: Params) {
     if (key === 'customers/search-by-id-card') {
       const idCard = request.nextUrl.searchParams.get('id_card')?.replace(/\s+/g, '') || '';
       const result = await himotoPool.query(
-        `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card, c.status::text AS status,
+        `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card, c.driver_license_number, c.driver_license_issued_on::text AS driver_license_issued_on,
+                CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
+                     WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
                 c.warning, c.created_at, c.id_card_issued_on, c.id_card_issued_by, c.relatives,
                 c.store_id, s.store_name
          FROM himoto.customers c LEFT JOIN himoto.stores s ON s.id = c.store_id
@@ -112,7 +116,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       const storeId = Number(request.nextUrl.searchParams.get('store_id'));
       if (query.length < 9 || query.length > 13 || !Number.isSafeInteger(storeId) || storeId <= 0) return NextResponse.json({ status: 'success', data: [] });
       const result = await himotoPool.query(
-        `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card,
+        `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card, c.driver_license_number, c.driver_license_issued_on::text AS driver_license_issued_on,
                 CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
                      WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
                 c.warning AS warning_note, c.created_at, c.id_card_issued_on, c.id_card_issued_by,
@@ -129,6 +133,9 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
     const query = listQueries[key];
     if (!query) return NextResponse.json({ status: 'error' }, { status: 404 });
+    if (key === 'order/car-rental') {
+      return await readAll({ sql: query.sql });
+    }
     return await readAll(query);
   } catch (error) {
     console.error('Supabase read failed:', error instanceof Error ? error.name : 'Unknown database error');
@@ -160,8 +167,14 @@ export async function POST(request: NextRequest, { params }: Params) {
   const storeId = body.store_id == null || body.store_id === '' ? null : Number(body.store_id);
   const status = String(body.status || 'active');
   const warning = typeof body.warning_note === 'string' ? body.warning_note.trim() : '';
+  const driverLicenseNumber = typeof body.driver_license_number === 'string' ? body.driver_license_number.trim() : '';
+  const driverLicenseIssuedOn = typeof body.driver_license_issued_on === 'string' ? body.driver_license_issued_on.trim() : '';
+  let relatives: ReturnType<typeof parseCustomerRelatives>;
+  try { relatives = parseCustomerRelatives(body.relatives ?? []); }
+  catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
   if (!name || !address || !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || !/^\d{9}$|^\d{12}$/.test(idCard) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
+      (driverLicenseIssuedOn && !/^\d{4}-\d{2}-\d{2}$/.test(driverLicenseIssuedOn)) || driverLicenseNumber.length > 100 ||
       (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
     return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, điện thoại, CCCD/CMND, địa chỉ và email.' }, { status: 400 });
   }
@@ -183,13 +196,13 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ status: 'error', message: 'Số CCCD/CMND này đã có trong danh sách khách hàng.' }, { status: 409 });
     }
     const result = await client.query(
-      `INSERT INTO himoto.customers (name, phone, email, address, id_card, status, store_id, warning, created_at, updated_at)
-       VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, now(), now())
-       RETURNING id, name, phone, email, address, id_card,
+      `INSERT INTO himoto.customers (name, phone, email, address, id_card, status, store_id, warning, driver_license_number, driver_license_issued_on, relatives, created_at, updated_at)
+       VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, NULLIF($9,''), NULLIF($10,'')::date, $11::jsonb, now(), now())
+       RETURNING id, name, phone, email, address, id_card, driver_license_number, driver_license_issued_on::text AS driver_license_issued_on,
                  CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
                       WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,
                  warning, created_at, xmin::text AS customer_revision, id_card_issued_on, id_card_issued_by, relatives, store_id`,
-      [name, phone, email, address, idCard, status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1, storeId, status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning : null],
+      [name, phone, email, address, idCard, status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1, storeId, status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning : null, driverLicenseNumber, driverLicenseIssuedOn, JSON.stringify(relatives)],
     );
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data: result.rows[0] }, { status: 201 });
@@ -239,8 +252,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const warning = typeof body.warning_note === 'string' ? body.warning_note.trim() : '';
   const storeId = body.store_id == null || body.store_id === '' ? null : Number(body.store_id);
   const status = String(body.status || '');
+  const driverLicenseNumber = typeof body.driver_license_number === 'string' ? body.driver_license_number.trim() : '';
+  const driverLicenseIssuedOn = typeof body.driver_license_issued_on === 'string' ? body.driver_license_issued_on.trim() : '';
+  let relatives: ReturnType<typeof parseCustomerRelatives> | undefined;
+  try { relatives = body.relatives === undefined ? undefined : parseCustomerRelatives(body.relatives); }
+  catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
   if (!name || !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || (idCard && !/^\d{9}$|^\d{12}$/.test(idCard)) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
+      (driverLicenseIssuedOn && !/^\d{4}-\d{2}-\d{2}$/.test(driverLicenseIssuedOn)) || driverLicenseNumber.length > 100 ||
       (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
     return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, số điện thoại, giấy tờ, email, cơ sở và trạng thái hồ sơ.' }, { status: 400 });
   }
@@ -261,14 +280,16 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const dbStatus = status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1;
     const dbWarning = status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning : null;
     const result = await client.query(
-      `UPDATE himoto.customers SET name=$2, phone=$3, email=NULLIF($4,''), address=NULLIF($5,''),
-         id_card=NULLIF($6,''), status=$7, warning=$8, store_id=$9, updated_at=now()
+      `UPDATE himoto.customers SET name=$2, phone=$3, address=NULLIF($4,''),
+         id_card=NULLIF($5,''), status=$6, warning=$7, store_id=$8,
+         driver_license_number=NULLIF($9,''), driver_license_issued_on=NULLIF($10,'')::date,
+         relatives=COALESCE($11::jsonb, relatives), updated_at=now()
        WHERE id=$1
-       RETURNING id, name, email, phone, address, id_card,
+       RETURNING id, name, email, phone, address, id_card, driver_license_number, driver_license_issued_on::text AS driver_license_issued_on,
          CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
               WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,
          warning AS warning_note, created_at, xmin::text AS customer_revision, id_card_issued_on, id_card_issued_by, relatives, store_id`,
-      [id, name, phone, email, address, idCard, dbStatus, dbWarning, storeId],
+      [id, name, phone, address, idCard, dbStatus, dbWarning, storeId, driverLicenseNumber, driverLicenseIssuedOn, relatives === undefined ? null : JSON.stringify(relatives)],
     );
     if (!result.rowCount) {
       await client.query('ROLLBACK');

@@ -16,7 +16,8 @@ function load(filename) {
 async function run() {
   const { createDemoRepository, mapApiRow } = load(path.join(root, 'lib/management/repository'));
   const { createDemoAutofillRepository, createApiAutofillRepository } = load(path.join(root, 'lib/management/contract-autofill'));
-  const { createContractDraft, customerDetails, vehicleDetails, buildContractDocument, validateContractDraft, validIdCard, staffMatchesStore, dateTimeInput } = load(path.join(root, 'lib/management/contract-document'));
+  const { createContractDraft, customerDetails, vehicleDetails, buildContractDocument, validateContractDraft, validIdCard, staffMatchesStore, dateTimeInput, relativesFromRow } = load(path.join(root, 'lib/management/contract-document'));
+  const { parseCustomerRelatives } = load(path.join(root, 'lib/management/customer-relatives'));
   const checks = [];
   const repository = createDemoRepository(); const data = await repository.load();
   const demo = createDemoAutofillRepository(repository);
@@ -28,6 +29,14 @@ async function run() {
   checks.push('CCCD/CMND validation preserves leading zeroes and excludes fixture IDs from real APIs');
   const customer = await demo.lookupCustomer(' demo-000001 ');
   assert.equal(customer.id, 1); assert.equal(customer.id_card_issued_on, '2024-01-15');
+  const filledCustomer = customerDetails(customer);
+  assert.equal(filledCustomer.name, customer.name);
+  assert.equal(filledCustomer.phone, customer.phone);
+  assert.equal(filledCustomer.address, customer.address);
+  assert.equal(filledCustomer.id_card, customer.id_card);
+  assert.equal(filledCustomer.id_card_issued_on, '2024-01-15');
+  assert.equal(customerDetails().name, '');
+  assert.equal(customerDetails().phone, '');
   assert.equal(await demo.lookupCustomer('001234567890'), null);
   const controller = new AbortController(); controller.abort();
   await assert.rejects(demo.lookupCustomer('DEMO-000001', controller.signal), { name: 'AbortError' });
@@ -101,9 +110,24 @@ async function run() {
     const saved = await api.createCustomer(details); assert.equal(saved.id, 99);
     const writes = requests.filter(request => request.method === 'POST');
     assert.equal(writes.length, 1); assert.equal(writes[0].url, '/api/auth/customers');
-    assert.deepEqual(Object.keys(JSON.parse(writes[0].body)).sort(), ['address', 'email', 'id_card', 'name', 'phone', 'warning_note']);
-    const assigned = await api.createCustomer({ ...details, warning_note: 'Cần đối chiếu hồ sơ' }, { status: 'warning', store_id: 2 });
+    assert.deepEqual(Object.keys(JSON.parse(writes[0].body)).sort(), ['address', 'driver_license_issued_on', 'driver_license_number', 'id_card', 'name', 'phone', 'relatives', 'warning_note']);
+    const family = [{ name: 'Người thân mẫu', relationship: 'Mẹ', phone: '0900000011' }];
+    const assigned = await api.createCustomer({ ...details, driver_license_number: '0012345678', driver_license_issued_on: '2021-02-03', relatives_json: JSON.stringify(family), warning_note: 'Cần đối chiếu hồ sơ' }, { status: 'warning', store_id: 2 });
     assert.equal(assigned.store_id, 2); assert.equal(assigned.status, 'warning');
+    assert.equal(assigned.driver_license_number, '0012345678');
+    assert.equal(assigned.driver_license_issued_on, '2021-02-03');
+    assert.deepEqual(relativesFromRow(assigned)[0], family[0]);
+    assert.deepEqual(JSON.parse(requests.filter(request => request.method === 'POST').at(-1).body).relatives, family);
+    assert.deepEqual(parseCustomerRelatives([{ name: '', relationship: '', phone: '' }]), []);
+    assert.throws(() => parseCustomerRelatives([{ name: 'Người thân', relationship: 'Mẹ', phone: 'abc' }]), /SĐT/);
+    global.fetch = async (url, options) => {
+      requests.push({ url, method: options.method, body: options.body });
+      return { ok: true, json: async () => ({ status: 'success', data: { ...assigned, ...JSON.parse(options.body) } }) };
+    };
+    const updated = await api.updateCustomer(assigned);
+    assert.deepEqual(JSON.parse(requests.at(-1).body).relatives, family);
+    assert.equal(updated.driver_license_number, '0012345678');
+    assert.deepEqual(relativesFromRow(updated)[0], family[0]);
     assert.equal(JSON.parse(requests.filter(request => request.method === 'POST').at(-1).body).warning_note, 'Cần đối chiếu hồ sơ');
     assert(!requests.some(request => request.url.includes('/order/')));
     checks.push('existing API routes enforce exact lookup, branch scope, duplicate preflight and customer-only writes');

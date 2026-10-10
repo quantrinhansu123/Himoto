@@ -32,6 +32,9 @@ async function main() {
   assert.equal(server.parseContractPayment(renewalInput).purpose,'renewal');
   for (const patch of [{ purpose:'advance' },{ item_id:0 },{ item_revision:'' },{ return_at:'2026-02-30T10:01' },{ return_at:'' }]) assert.throws(() => server.parseContractPayment({...renewalInput,...patch}));
   assert.throws(() => server.parseContractPayment({...base,item_id:101}));
+  assert.equal(server.parseContractPayment({ ...base, purpose: 'extra' }).purpose, 'extra');
+  for (const patch of [{ note: '  ' }, { item_id: 101 }, { return_at: '2026-01-20T10:01' }]) assert.throws(() => server.parseContractPayment({ ...base, purpose: 'extra', ...patch }));
+  assert.equal(shared.canAddExtraReceipt('completed'), true); assert.equal(shared.canAddExtraReceipt('draft'), false); assert.equal(shared.canAddExtraReceipt('cancelled'), false);
   checks.push('strict positive integer money, UUID, revision, Vietnam dates and allowlisted fields; actor and totals cannot be supplied');
 
   const context = { id: 1, code: 'QA', revision: '123', status: 'renting', store_id: 23, total_amount: 1000, paid_amount: 300, remaining: 700, company_paid_amount: 0, company_payment_count: 0, history: [],items:[],end_date:null, accounts: [
@@ -157,6 +160,16 @@ async function main() {
       assert.equal(legacyRenewal.context.total_amount,1300);assert.equal(legacyRenewal.context.paid_amount,2300);assert.equal(legacyRenewal.context.remaining,0);assert.equal(legacyRenewal.context.end_date,'2026-03-01T03:01:00.000Z');assert.equal(legacyRenewal.company_transfer,true);
       const debtBefore=(await server.readPaymentContext(proxy,4)).remaining;const withDebt=await renew({return_at:'2026-03-01T10:01'},4);assert.equal(withDebt.context.remaining,debtBefore);
       checks.push('PostgreSQL TEMP: legacy paid greater than original total accepts a new company renewal and updates explicit parent date; old outstanding debt stays unchanged on renewal');
+      await c.query("UPDATE qa_payment_orders SET order_status='completed' WHERE id=4");
+      const extraBefore=await server.readPaymentContext(proxy,4);
+      const extraReceipt=await pay({purpose:'extra',amount:'150',note:'Phụ thu QA'},4);
+      assert.equal(extraReceipt.context.total_amount,extraBefore.total_amount+150);assert.equal(extraReceipt.context.paid_amount,extraBefore.paid_amount+150);assert.equal(extraReceipt.context.remaining,extraBefore.remaining);
+      const extraRow=(await c.query('SELECT * FROM qa_payment_transactions WHERE id=$1',[extraReceipt.transaction_id])).rows[0];
+      assert.equal(extraRow.name,'order:extra');assert.equal(extraRow.type,'in');assert.equal(extraRow.status,'approved');assert.equal(extraRow.note,'Phụ thu QA');
+      const extraCount=await count('transactions');
+      for(const status of ['draft','cancelled']){await c.query('UPDATE qa_payment_orders SET order_status=$1 WHERE id=4',[status]);await assert.rejects(pay({purpose:'extra',amount:'150',note:'Phụ thu QA'},4),e=>e.status===409);}
+      assert.equal(await count('transactions'),extraCount);
+      checks.push('PostgreSQL TEMP: extra receipt on a completed contract writes an approved cashbook income, raises total and paid equally and keeps debt; draft/cancelled rejected');
     } finally { await c.query('ROLLBACK'); c.release(); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

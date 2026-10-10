@@ -101,6 +101,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     status: ({ '1': 'active', '0': 'inactive', opening: 'active' } as Record<string, string>)[base.status] || base.status };
   if (kind === 'customers') return { ...base, code: text(raw.code) || `KH-${String(id).padStart(3, '0')}`, id_card: text(raw.id_card || raw.identity_card), warning_note: text(raw.warning || raw.warning_note),
     id_card_issued_on: text(raw.id_card_issued_on || raw.id_card_date), id_card_issued_by: text(raw.id_card_issued_by || raw.id_card_place),
+    driver_license_number: text(raw.driver_license_number), driver_license_issued_on: text(raw.driver_license_issued_on).slice(0, 10),
     birthday: text(raw.birthday || raw.date_of_birth), relatives_text: text(raw.relatives_text) || relativesText(raw.relatives), relatives_json: relativesJson(raw.relatives),
     customer_revision: text(raw.customer_revision), contract_count: number(raw.contract_count), status: ['blacklist', 'bad_debt'].includes(base.status) ? 'blacklist' : ['draft', '0'].includes(base.status) ? 'draft' : raw.warning || raw.warning_note ? 'warning' :
       (({ '1': 'active', '0': 'draft' } as Record<string, string>)[base.status] || base.status) };
@@ -122,6 +123,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     customer_phone: text(raw.customer_phone || customer.phone),
     customer_id_card: text(raw.customer_id_card || customer.id_card),
     customer_address: text(raw.customer_address || customer.address), customer_email: text(raw.customer_email || customer.email),
+    customer_driver_license_number: text(raw.customer_driver_license_number), customer_driver_license_issued_on: text(raw.customer_driver_license_issued_on),
     id_card_issued_on: text(raw.id_card_issued_on), id_card_issued_by: text(raw.id_card_issued_by),
     relatives_text: relativesText(raw.relatives), relatives_json: relativesJson(raw.relatives), warning_note: text(raw.warning_note),
     vehicle_id: number(raw.vehicle_id ?? vehicles[0]?.id), vehicles_json: JSON.stringify(vehicles),
@@ -129,13 +131,14 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     license: vehicles.map(v => text(v.license)).filter(Boolean).join(', '),
     start_date: text(raw.start_date || raw.rent_at), end_date: text(raw.end_date || raw.return_at),
     total_amount: number(raw.total_amount ?? raw.total), deposit_amount: number(raw.deposit_amount),
-    paid_amount: number(raw.paid_amount),
+    paid_amount: number(raw.paid_amount), return_adjustment_amount: number(raw.return_adjustment_amount), unit_price: number(raw.unit_price), package_name: text(raw.package_name),
+    payment_method: text(raw.payment_method), deposit_payment_method: text(raw.deposit_payment_method),
     company_paid_amount: number(raw.company_paid_amount), company_payment_count: number(raw.company_payment_count),
     rental_type: text(raw.rental_type), notes: text(raw.notes ?? raw.note),
     signed_on: text(raw.signed_on), authorization_date: text(raw.authorization_date), collateral_description: text(raw.collateral_description),
     customer_source: text(raw.customer_source), customer_source_url: text(raw.customer_source_url),
     legacy_items_json: JSON.stringify(Array.isArray(payload.order_items) ? payload.order_items : []), draft_revision: text(raw.draft_revision),
-    draft_json: typeof raw.draft_json === 'string' ? raw.draft_json : undefined,
+    draft_json: typeof raw.draft_json === 'string' ? raw.draft_json : snapshot.customer && Array.isArray(snapshot.vehicles) ? JSON.stringify(snapshot) : undefined,
     // Keep numeric/unrecognized statuses visible until the API contract is agreed.
   };
   if (mapped.status === 'draft' && saved.version === 1 && snapshot.customer && Array.isArray(snapshot.vehicles)) {

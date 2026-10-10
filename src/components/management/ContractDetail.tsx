@@ -1,11 +1,13 @@
 'use client';
 
-import { ReactNode, useState } from 'react';
-import { Printer } from 'lucide-react';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { Bike, CalendarPlus, LoaderCircle, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
+import { CashflowColumns, cashflowTotals } from './CashflowColumns';
 import { useManagement } from './ManagementProvider';
-import { ContractSection, ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
+import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
 import { createContractDraft } from '@/lib/management/contract-document';
+import { CHANGE_LABELS, ContractHistory, loadContractHistory } from '@/lib/management/contract-history';
 import { ManagementRow } from '@/lib/management/types';
 import { MANAGEMENT_CONFIG, optionLabel } from '@/lib/management/config';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
@@ -16,15 +18,34 @@ const SECTIONS = [
   { id: 'customer', label: 'Khách hàng (Bên B)' },
   { id: 'payment', label: 'Chi phí' },
   { id: 'signing', label: 'Ký kết & ghi chú' },
+  { id: 'changes', label: 'Lịch sử chỉnh sửa' },
+  { id: 'cashflow', label: 'Lịch sử thu chi' },
 ] as const;
+type DetailSection = (typeof SECTIONS)[number]['id'];
 const text = (value: unknown) => value == null || value === '' ? '—' : String(value);
 const money = (value: unknown) => value == null || value === '' || !Number.isFinite(Number(value)) ? '—' : formatMoney(Number(value));
 const dateTime = (value: string) => value ? formatDateTime(value) : '—';
 const date = (value: string) => value ? new Date(value).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
 
-export function ContractDetail({ row, onClose, onPrint, onPayment }: { row: ManagementRow; onClose: () => void; onPrint: () => void; onPayment?: () => void }) {
-  const { dataset } = useManagement();
-  const [section, setSection] = useState<ContractSection>('vehicle');
+export function ContractDetail({ row, onClose, onPrint, onPayment, onReturn, onRenew, onVehicleChange }: { row: ManagementRow; onClose: () => void; onPrint: () => void; onPayment?: () => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void }) {
+  const { dataset, source } = useManagement();
+  const [section, setSection] = useState<DetailSection>('vehicle');
+  const [history, setHistory] = useState<ContractHistory | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const wantsHistory = section === 'changes' || section === 'cashflow';
+  const fetchHistory = useCallback((signal?: AbortSignal) => {
+    setHistoryLoading(true); setHistoryError('');
+    loadContractHistory(row.id, signal).then(setHistory).catch(cause => {
+      if (!signal?.aborted) setHistoryError(cause instanceof Error ? cause.message : 'Không tải được lịch sử hợp đồng.');
+    }).finally(() => { if (!signal?.aborted) setHistoryLoading(false); });
+  }, [row.id]);
+  useEffect(() => {
+    if (!wantsHistory || history || source !== 'api') return;
+    const controller = new AbortController();
+    fetchHistory(controller.signal);
+    return () => controller.abort();
+  }, [wantsHistory, history, source, fetchHistory]);
   const draft = createContractDraft(dataset || { stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all', row);
   const savedDraft = Boolean(row.draft_json);
   const pricing = savedDraft ? draft : row;
@@ -32,11 +53,22 @@ export function ContractDetail({ row, onClose, onPrint, onPayment }: { row: Mana
   const sourceVehicles = legacyVehicles.length ? legacyVehicles : JSON.parse(String(row.vehicles_json || '[]')) as Record<string, unknown>[];
   const representative = dataset?.staff.find(person => String(person.id) === draft.staff_id);
   const store = dataset?.stores.find(store => String(store.id) === draft.store_id);
+  const canOperateRental = ['renting', 'overdue', 'wait_payment'].includes(row.status);
   function fields(values: [string, ReactNode][]) {
     return <dl className="mg-contract-detail-grid">{values.map(([label, value]) => <div key={label}
       className={['Địa chỉ thường trú / tạm trú', 'Thông tin người thân', 'Ghi chú hợp đồng', 'Cảnh báo', 'Tài sản thế chấp / Đặt cọc tài sản'].includes(label) ? 'mg-field-wide' : undefined}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
   }
-  function panel(id: ContractSection, title: string, children: ReactNode) {
+  function historyState(empty: boolean, emptyText: string) {
+    if (source !== 'api') return <p className="mg-contract-history-state">Lịch sử chỉ có khi kết nối dữ liệu Supabase.</p>;
+    if (historyLoading && !history) return <p className="mg-contract-history-state" role="status"><LoaderCircle size={16} className="mg-spin" /> Đang tải lịch sử…</p>;
+    if (historyError) return <p className="mg-contract-history-state mg-field-error" role="alert">{historyError}</p>;
+    if (history && empty) return <p className="mg-contract-history-state">{emptyText}</p>;
+    return null;
+  }
+  const refreshButton = source === 'api' && <button type="button" className="mg-button" disabled={historyLoading} onClick={() => fetchHistory()}>
+    {historyLoading ? <LoaderCircle size={15} className="mg-spin" /> : <RotateCcw size={15} />}Làm mới</button>;
+  const { income: incomeTotal, expense: expenseTotal } = cashflowTotals(history?.cashflow || []);
+  function panel(id: DetailSection, title: string, children: ReactNode) {
     return <section id={`contract-detail-panel-${id}`} role="tabpanel" aria-labelledby={`contract-detail-tab-${id}`}
       hidden={section !== id} className="mg-contract-panel"><h3 className="mg-contract-section-title">{title}</h3>{children}</section>;
   }
@@ -66,7 +98,8 @@ export function ContractDetail({ row, onClose, onPrint, onPayment }: { row: Mana
         ['Cửa hàng xe', text(store?.name || row.store_name)], ['Đại diện ủy quyền Bên A (Nhân viên làm hợp đồng)', text(representative?.name)],
         ['Tên khách hàng', text(draft.customer.name)], ['SĐT', text(draft.customer.phone)],
         ['Số CMTND/CCCD', text(draft.customer.id_card)], ['Ngày cấp CCCD', date(draft.customer.id_card_issued_on)],
-        ['Nơi cấp CCCD', text(draft.customer.id_card_issued_by)], ['Địa chỉ thường trú / tạm trú', text(draft.customer.address)],
+        ['Nơi cấp CCCD', text(draft.customer.id_card_issued_by)], ['Số giấy phép lái xe', text(draft.customer.driver_license_number)],
+        ['Ngày cấp GPLX', date(draft.customer.driver_license_issued_on)], ['Nơi ở hiện tại', text(draft.customer.address)],
         ['Người thân 1', text(draft.relatives[0] ? `${draft.relatives[0].name}${draft.relatives[0].relationship ? ` (${draft.relatives[0].relationship})` : ''}${draft.relatives[0].phone ? `: ${draft.relatives[0].phone}` : ''}` : '')],
         ['Người thân 2', text(draft.relatives[1] ? `${draft.relatives[1].name}${draft.relatives[1].relationship ? ` (${draft.relatives[1].relationship})` : ''}${draft.relatives[1].phone ? `: ${draft.relatives[1].phone}` : ''}` : '')],
       ]))}
@@ -76,7 +109,8 @@ export function ContractDetail({ row, onClose, onPrint, onPayment }: { row: Mana
         ])}</div>
         <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3>{fields([
           ['Gói thuê', text(pricing.package_name)], ['Đơn giá áp dụng', money(pricing.unit_price)],
-          ['Tổng phí thuê xe', money(pricing.total_amount)], ['Số tiền đã thanh toán', money(pricing.paid_amount)], ['Hình thức thanh toán', text(pricing.payment_method)],
+          ['Tổng phí thuê xe', money(pricing.total_amount)], ['Phát sinh trả xe', money(row.return_adjustment_amount)],
+          ['Số tiền đã thanh toán', money(pricing.paid_amount)], ['Hình thức thanh toán', text(pricing.payment_method)],
         ])}</div>
       </>)}
       {panel('signing', 'Ký kết & Ghi chú', fields([
@@ -84,9 +118,33 @@ export function ContractDetail({ row, onClose, onPrint, onPayment }: { row: Mana
         ['Người ký Bên A (Himoto)', text(representative?.name)], ['Người ký Bên B (Khách thuê)', text(draft.customer.name)],
         ['Ghi chú hợp đồng', text(row.notes)], ['Cảnh báo', text(draft.customer.warning_note)],
       ]))}
+      {panel('changes', 'Danh sách chỉnh sửa hợp đồng', <>
+        <div className="mg-contract-history-toolbar"><p>Ghi nhận tạo hợp đồng, gia hạn, thu thêm, đổi xe và trả xe.</p>{refreshButton}</div>
+        {historyState(!history?.changes.length, 'Chưa có lần chỉnh sửa nào.')}
+        {history && history.changes.length > 0 && <ol className="mg-contract-changes">{history.changes.map(change => <li key={change.id} className={`is-${change.kind}`}>
+          <span className="mg-contract-change-kind">{CHANGE_LABELS[change.kind]}</span>
+          <div><strong>{change.title}{change.amount ? ` · ${formatMoney(change.amount)}` : ''}</strong>
+            {change.detail && <p>{change.detail}</p>}
+            <small>{dateTime(change.at)} · {change.actor}</small></div>
+        </li>)}</ol>}
+      </>)}
+      {panel('cashflow', 'Lịch sử thu chi', <>
+        <div className="mg-contract-history-toolbar"><p>Tất cả phiếu thu / chi gắn với hợp đồng trong Sổ quỹ / Sổ két.</p><div>
+          {row.status !== 'draft' && row.status !== 'cancelled' && onPayment && <button type="button" className="mg-button mg-button-primary" onClick={onPayment}><Plus size={15} />Thêm phiếu thu</button>}
+          {refreshButton}</div></div>
+        {history && history.cashflow.length > 0 && <dl className="mg-payment-totals"><div><dt>Tổng thu (đã duyệt)</dt><dd>{formatMoney(incomeTotal)}</dd></div>
+          <div><dt>Tổng chi (đã duyệt)</dt><dd>{formatMoney(expenseTotal)}</dd></div><div><dt>Chênh lệch</dt><dd>{formatMoney(incomeTotal - expenseTotal)}</dd></div></dl>}
+        {historyState(!history?.cashflow.length, 'Chưa có phiếu thu / chi nào cho hợp đồng này.')}
+        {history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow} />}
+      </>)}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
-      {row.status !== 'draft' && onPayment && <button type="button" className="mg-button" onClick={onPayment}>Thanh toán / Lịch sử</button>}
+      {canOperateRental && <>
+        <button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15} />Trả xe</button>
+        <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>
+        <button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>
+      </>}
+      {row.status !== 'draft' && onPayment && <button type="button" className="mg-button" onClick={onPayment}><Wallet size={15} />Thu chi / Lịch sử</button>}
       <button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
   </Dialog>;
 }

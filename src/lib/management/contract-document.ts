@@ -1,8 +1,8 @@
 import { ManagementDataset, ManagementRow } from './types';
 import { VEHICLE_TYPES } from './config';
 
-export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'birthday', 'relatives_text', 'warning_note'] as const;
-export type CustomerDetails = Record<(typeof CUSTOMER_FIELDS)[number], string>;
+export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'driver_license_number', 'driver_license_issued_on', 'birthday', 'relatives_text', 'warning_note'] as const;
+export type CustomerDetails = Record<(typeof CUSTOMER_FIELDS)[number], string> & { relatives_json?: string };
 export interface ContractRelative { name: string; relationship: string; phone: string }
 export function emptyRelative(): ContractRelative { return { name: '', relationship: '', phone: '' }; }
 export interface VehicleDetails {
@@ -12,7 +12,7 @@ export interface VehicleDetails {
 }
 export interface ContractDraft {
   customer_lookup?: string;
-  contract_number: string; signed_on: string; store_id: string; staff_id: string;
+  contract_number: string; signed_on: string; store_id: string; staff_id: string; staff_name: string;
   customer_id: number | null; customer: CustomerDetails; vehicles: VehicleDetails[];
   start_date: string; end_date: string; unit_price: string; total_amount: string; paid_amount: string;
   deposit_amount: string; package_name: string; payment_method: string; deposit_payment_method: string;
@@ -59,15 +59,17 @@ export function relativesFromRow(row?: ManagementRow | null) {
   return pairRelatives(row?.relatives_json, value(row?.relatives_text));
 }
 export function customerDetails(row?: ManagementRow | null): CustomerDetails {
-  return Object.fromEntries(CUSTOMER_FIELDS.map(key => [key, key === 'id_card_issued_on' || key === 'birthday' ? dateInput(row?.[key]) : value(row?.[key])])) as CustomerDetails;
+  return Object.fromEntries(CUSTOMER_FIELDS.map(key => [key,
+    key === 'id_card_issued_on' || key === 'driver_license_issued_on' || key === 'birthday' ? dateInput(row?.[key]) : value(row?.[key]),
+  ])) as CustomerDetails;
 }
 export function emptyVehicle(): VehicleDetails {
-  return { id: '', name: '', license: '', brand: '', type_text: '', color: '', year: '', driver_name: '', driver_license_number: '', driver_license_issued_on: '', borrow_hats: '0', borrow_raincoats: '0', rent_at: '', return_at: '' };
+  return { id: '', name: '', license: '', brand: '', type_text: '', color: '', year: '', driver_name: '', driver_license_number: '', driver_license_issued_on: '', borrow_hats: '02', borrow_raincoats: '02', rent_at: '', return_at: '' };
 }
 export function vehicleDetails(row: ManagementRow, customer: CustomerDetails): VehicleDetails {
   return { ...emptyVehicle(), id: String(row.id), name: row.name, license: value(row.license), brand: value(row.brand),
     type_text: VEHICLE_TYPES.find(type => type.value === row.type)?.label || value(row.type), color: value(row.color), year: value(row.year),
-    driver_name: customer.name, driver_license_number: value(row.driver_license_number), driver_license_issued_on: dateInput(row.driver_license_issued_on) };
+    driver_name: customer.name, driver_license_number: customer.driver_license_number, driver_license_issued_on: customer.driver_license_issued_on };
 }
 function nowDate() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -77,12 +79,19 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   if (row?.draft_json) {
     const snapshot = JSON.parse(String(row.draft_json)) as ContractDraft;
     if (!snapshot.customer || !Array.isArray(snapshot.vehicles) || !snapshot.vehicles.length) throw new Error('Thông tin hợp đồng đã lưu không hợp lệ.');
-    return { ...structuredClone(snapshot), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
+    const live = row.status !== 'draft' ? {
+      ...(row.end_date ? { end_date: dateTimeInput(row.end_date) } : {}),
+      ...(row.total_amount != null ? { total_amount: value(row.total_amount) } : {}),
+      ...(row.paid_amount != null ? { paid_amount: value(row.paid_amount) } : {}),
+    } : {};
+    return { ...structuredClone(snapshot), ...live, staff_name: snapshot.staff_name || '', customer: { ...customerDetails(snapshot.customer as unknown as ManagementRow), ...snapshot.customer },
+      vehicles: snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
       created_on: dateInput(snapshot.created_on) || dateInput(row.created_at) || nowDate() };
   }
   const sourceCustomer = row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
     name: value(row.customer_name), phone: value(row.customer_phone), id_card: value(row.customer_id_card),
-    address: value(row.customer_address), email: value(row.customer_email) } : null;
+    address: value(row.customer_address), email: value(row.customer_email),
+    driver_license_number: value(row.customer_driver_license_number), driver_license_issued_on: value(row.customer_driver_license_issued_on) } : null;
   const relatives = relativesFromRow(sourceCustomer);
   const customer = { ...customerDetails(sourceCustomer), relatives_text: formatRelatives(relatives) || value(sourceCustomer?.relatives_text) };
   const items: Record<string, unknown>[] = row?.legacy_items_json ? JSON.parse(String(row.legacy_items_json)) : [];
@@ -98,7 +107,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   });
   const vehicle = row ? dataset.vehicles.find(item => item.id === row.vehicle_id) : null;
   return { contract_number: row?.code || '', signed_on: dateInput(row?.signed_on || row?.created_at) || nowDate(),
-    store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id),
+    store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: '',
     customer_id: row?.customer_id ? Number(row.customer_id) : null, customer,
     vehicles: vehicles.length ? vehicles : [vehicle ? vehicleDetails(vehicle, customer) : emptyVehicle()],
     start_date: dateTimeInput(row?.start_date), end_date: dateTimeInput(row?.end_date),
@@ -134,7 +143,7 @@ export function validateContractCustomer(customer: CustomerDetails, source: 'dem
 export function validateContractDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
   const errors: Record<string, string> = {};
   if (!dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở cho thuê.';
-  if (!staffMatchesStore(staff, draft.store_id).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự đang làm việc tại cơ sở này.';
+  if (!draft.staff_name.trim() && !staffMatchesStore(staff, draft.store_id).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự hoặc nhập tên người đại diện.';
   if (!draft.customer_id) errors.id_card = 'Tra cứu hoặc tạo khách hàng trước khi in.';
   Object.assign(errors, validateContractCustomer(draft.customer, source));
   const relatives = pairRelatives(draft.relatives, draft.customer.relatives_text);

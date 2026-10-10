@@ -6,6 +6,8 @@ import { CashbookRow, EMPTY_CASHBOOK_FILTERS, CashbookFilters, actorKey, cashboo
 import { createApiCashbookRepository } from '@/lib/management/cashbook-repository';
 import { useManagement } from './ManagementProvider';
 import { CashbookTable } from './CashbookTable';
+import { ContractPaymentDialog } from './ContractPaymentDialog';
+import type { PaymentPurpose } from '@/lib/management/contract-payments';
 
 export function CashbookPage() {
   const { source, selectedStore, selectStore, notify } = useManagement();
@@ -15,6 +17,17 @@ export function CashbookPage() {
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState<CashbookFilters>(EMPTY_CASHBOOK_FILTERS);
+  const [paymentTarget, setPaymentTarget] = useState<{ id: number; purpose: PaymentPurpose } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rawId = params.get('contract_id'), purpose = params.get('purpose');
+    if (!rawId || !/^\d+$/.test(rawId)) return;
+    setPaymentTarget({ id: Number(rawId), purpose: purpose === 'renewal' || purpose === 'extra' ? purpose : 'debt' });
+  }, []);
+  function closePayment() {
+    setPaymentTarget(null);
+    window.history.replaceState({}, '', '/cashbook');
+  }
   useEffect(() => {
     const controller = new AbortController(); let current = true;
     setLoading(true); setError(''); setRecords([]);
@@ -57,5 +70,5 @@ export function CashbookPage() {
     <div className="mg-cashbook-tables"><CashbookTable type="income" rows={income} loading={loading} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} />
       <CashbookTable type="expense" rows={expense} loading={loading} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} /></div>
     <div className="mg-list-note"><span className="mg-note-line" />Sổ quỹ đọc từ danh sách giao dịch hiện có. Trường chưa có dữ liệu hiển thị “—”.</div>
-  </div></section>;
+  </div>{paymentTarget && <ContractPaymentDialog key={`${paymentTarget.id}-${paymentTarget.purpose}`} id={paymentTarget.id} initialPurpose={paymentTarget.purpose} onClose={closePayment} onPaymentSaved={() => setRetry(value => value + 1)} />}</section>;
 }

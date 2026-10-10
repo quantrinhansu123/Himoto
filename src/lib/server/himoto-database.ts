@@ -17,9 +17,11 @@ function createPool() {
   const pool = new Pool({
     connectionString: url.toString(),
     ssl: { rejectUnauthorized: true, ca: [...rootCertificates, SUPABASE_ROOT_CA, ...(process.env.DATABASE_SSL_CA ? [process.env.DATABASE_SSL_CA.replace(/\\n/g, '\n')] : [])] },
-    max: 4,
+    // A management page opens five list requests at once; a new TLS connection to Supabase costs ~400 ms.
+    // Serverless instances keep the short idle window so suspended functions do not hold connections.
+    max: process.env.VERCEL ? 4 : 8,
     connectionTimeoutMillis: 8_000,
-    idleTimeoutMillis: 5_000,
+    idleTimeoutMillis: process.env.VERCEL ? 5_000 : 120_000,
   });
   // Never include SQL or connection details in request logs.
   pool.on('error', () => console.error('Database idle connection failed.'));

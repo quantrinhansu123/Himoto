@@ -28,7 +28,7 @@ export function updateContractRecord(dataset: ManagementDataset, id: number, edi
   const amount = (input: string) => input === '' ? undefined : Number(input);
   return { ...source, status: edits.status, rental_type: edits.rental_type, notes: edits.notes,
     store_id: Number(draft.store_id), store_name: dataset.stores.find(store => String(store.id) === draft.store_id)?.name,
-    staff_id: Number(draft.staff_id), customer_id: draft.customer_id!, customer_name: draft.customer.name,
+    staff_id: draft.staff_id ? Number(draft.staff_id) : undefined, customer_id: draft.customer_id!, customer_name: draft.customer.name,
     customer_phone: draft.customer.phone, customer_id_card: draft.customer.id_card,
     vehicle_id: Number(draft.vehicles[0].id), vehicle_name: draft.vehicles.map(vehicle => vehicle.name).join(', '),
     license: draft.vehicles.map(vehicle => vehicle.license).join(', '),

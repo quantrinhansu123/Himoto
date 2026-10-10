@@ -14,7 +14,7 @@ Cập nhật 08/10/2026. `/cashbook` đọc giao dịch thật từ Supabase qua
 | Hình thức thanh toán | Tiền mặt / Chuyển khoản / CK tài khoản công ty / hỗn hợp theo dữ liệu lưu |
 | Tài khoản nhận / chi | Ngân hàng/chủ tài khoản/số tài khoản hoặc két tiền mặt |
 | Cơ sở | Cơ sở của giao dịch |
-| Lý do | Tên nghiệp vụ; `order:payment` hiển thị Thanh toán hợp đồng |
+| Lý do | Tên nghiệp vụ; `order:payment` hiển thị Thanh toán hợp đồng, `order:renewal` Thu tiền gia hạn, `order:extra` Phiếu thu thêm hợp đồng |
 | Nội dung | `desc` hoặc `note`; thu hợp đồng mặc định `Gia hạn hợp đồng_<mã hợp đồng>` |
 
 Thanh toán từ Hợp đồng tạo một phiếu Thu riêng mỗi lần và cập nhật Tổng đã thu cùng transaction, xem [contract-payments.md](contract-payments.md). Danh sách Sổ quỹ tự tải dữ liệu mới khi mở lại; đang ở trang có thể bấm Tải lại. Không có thao tác tạo/sửa/xóa phiếu trực tiếp tại danh sách này.

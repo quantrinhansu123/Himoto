@@ -11,13 +11,13 @@ export const CONTRACT_FORM_SECTIONS = [
 ] as const;
 export type ContractSection = (typeof CONTRACT_FORM_SECTIONS)[number]['id'];
 
-export function ContractSectionTabs({ prefix, sections = CONTRACT_FORM_SECTIONS, active, onChange }: {
+export function ContractSectionTabs<T extends string = ContractSection>({ prefix, sections = CONTRACT_FORM_SECTIONS as unknown as readonly { id: T; label: string }[], active, onChange }: {
   prefix: string;
-  sections?: readonly { id: ContractSection; label: string }[];
-  active: ContractSection;
-  onChange: (section: ContractSection) => void;
+  sections?: readonly { id: T; label: string }[];
+  active: T;
+  onChange: (section: T) => void;
 }) {
-  const tabs = useRef<Partial<Record<ContractSection, HTMLButtonElement | null>>>({});
+  const tabs = useRef<Partial<Record<T, HTMLButtonElement | null>>>({});
   return <div className="mg-contract-tabs" role="tablist" aria-label="Các phần của hợp đồng">
     {sections.map((section, index) => <button key={section.id} ref={element => { tabs.current[section.id] = element; }}
       id={`${prefix}-tab-${section.id}`} type="button" role="tab" aria-selected={active === section.id}

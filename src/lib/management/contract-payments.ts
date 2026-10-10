@@ -7,6 +7,8 @@ export type PaymentMethod = typeof PAYMENT_METHODS[number]['value'];
 export const PAYABLE_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt'];
 export const RENEWABLE_STATUSES = ['renting', 'overdue'];
 export const MAX_PAYMENT_AMOUNT = 9_999_999_999_999;
+export const canAddExtraReceipt = (status: string) => !['draft', 'cancelled'].includes(status);
+export type PaymentPurpose = 'debt' | 'renewal' | 'extra';
 export interface PaymentAccount { id: number; label: string; kind: 'cash' | 'bank'; store_id: number; owner_type: string; bank_name?: string; account_number?: string; owner_name?: string }
 export interface ContractPayment {
   id: number; amount: number; paid_at: string; method: string; account: string;
@@ -15,7 +17,7 @@ export interface ContractPayment {
 }
 export interface RenewalItem {
   id: number; vehicle_id: number; name: string; license: string; revision: string;
-  return_at: string | null; renewal_amount: number | null;
+  return_at: string | null; renewal_amount: number | null; daily_price: number | null;
 }
 export interface PaymentContext {
   id: number; code: string; status: string; store_id: number; revision: string;
@@ -26,7 +28,7 @@ export interface PaymentContext {
 }
 export interface PaymentInput {
   request_id: string; revision: string; amount: string; method: PaymentMethod; account_id: number; paid_at: string; note: string;
-  purpose?: 'renewal'; item_id?: number; item_revision?: string; return_at?: string;
+  purpose?: 'renewal' | 'extra'; item_id?: number; item_revision?: string; return_at?: string;
 }
 export interface PaymentResult { context: PaymentContext; transaction_id: number; replayed: boolean; company_transfer: boolean }
 export class PaymentRequestError extends Error {

@@ -4,7 +4,7 @@ import { VEHICLE_EXCEL_MAX_BYTES, VEHICLE_IMPORT_COLUMNS, VEHICLE_IMPORT_LIMIT, 
 
 const legacyHeaders = ['Tên', 'Brand', 'Loại xe', 'Đời xe', 'Biển số', 'Màu sắc', 'Cửa hàng', 'Giá mua', 'Giá bán', 'Trạng thái', 'Ngày tạo'];
 // Verified against all 21 source columns, the legacy exporter and matching DB IDs.
-const legacyColumns: Record<VehicleImportField, number> = { id: 1, name: 2, brand: 3, type: 4, year: 5, store: 6, license: 7, chassis: 8, engine: 9, status: 10, color: 17, odometer: 21 };
+const legacyColumns: Partial<Record<VehicleImportField, number>> = { id: 1, name: 2, brand: 3, type: 4, year: 5, store: 6, license: 7, chassis: 8, engine: 9, status: 10, color: 17, odometer: 21 };
 export interface VehicleWorkbook { rows: VehicleImportInput[]; legacy: boolean; ignoredColumns: string[] }
 async function workbook() { const excel = await import('exceljs'); return new excel.Workbook(); }
 const aliases: Record<string, VehicleImportField> = { ten: 'name', brand: 'brand', 'doi xe': 'year', 'bien so xe': 'license', 'cua hang': 'store', 'id co so': 'store', 'store id': 'store', 'current store id': 'store', 'kilomet': 'odometer' };
@@ -32,7 +32,7 @@ export function parseVehicleWorkbook(book: Workbook): VehicleWorkbook {
   const columns = new Map<VehicleImportField, number>();
   const ignoredColumns: string[] = [];
   if (legacy) {
-    Object.entries(legacyColumns).forEach(([key, index]) => columns.set(key as VehicleImportField, index));
+    Object.entries(legacyColumns).forEach(([key, index]) => { if (index) columns.set(key as VehicleImportField, index); });
     ignoredColumns.push('K: Giá mua', 'L: Giá bán', 'M: Khoảng giá', 'N: Người tạo', 'O: Ngày tạo', 'P: Ngày sửa', 'R: Loại dịch vụ', 'S/T: Giá min/max');
   } else {
     for (let i = 1; i <= sheet.columnCount; i++) {
@@ -69,7 +69,7 @@ export async function createVehicleTemplate(stores: CustomerImportStore[], rows:
   sheet.columns = VEHICLE_IMPORT_COLUMNS.map(column => ({ header: `${column.label}${column.required ? ' *' : ''}`, key: column.key, width: column.width, style: { numFmt: '@' } }));
   sheet.getRow(1).height = 30;
   sheet.getRow(1).eachCell(cell => { cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB5121B' } }; cell.alignment = { vertical: 'middle', wrapText: true }; });
-  sheet.autoFilter = 'A1:L1';
+  sheet.autoFilter = `A1:${String.fromCharCode(64 + VEHICLE_IMPORT_COLUMNS.length)}1`;
   rows.forEach(row => sheet.addRow(row.values));
   const branches = book.addWorksheet('Cơ sở');
   branches.columns = [{ header: 'ID cơ sở', key: 'id', width: 16 }, { header: 'Mã cơ sở', key: 'code', width: 20 }, { header: 'Tên cơ sở', key: 'name', width: 40 }];

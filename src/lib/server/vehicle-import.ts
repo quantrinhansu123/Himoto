@@ -106,14 +106,14 @@ export async function importDatabaseVehicles(client: Client, request: ReturnType
     const values: unknown[] = [];
     const tuples = updates.map(row => {
       const offset = values.length; const v = row.values;
-      values.push(row.targetId, v.name, v.brand, v.type, v.year, v.license, v.color, v.chassis, v.engine, v.odometer);
-      const casts = ['bigint', 'text', 'text', 'text', 'bigint', 'text', 'text', 'text', 'text', 'bigint'];
+      values.push(row.targetId, v.name, v.brand, v.type, v.year, v.license, v.color, v.chassis, v.engine, v.odometer, v.daily_price, v.monthly_price);
+      const casts = ['bigint', 'text', 'text', 'text', 'bigint', 'text', 'text', 'text', 'text', 'bigint', 'bigint', 'bigint'];
       return `(${casts.map((cast, i) => `NULLIF($${offset + i + 1}::text, '')::${cast}`).join(',')})`;
     });
     const changed = await client.query(`UPDATE himoto.vehicles AS v SET name=d.name, brand=d.brand, type=d.type, year=d.year,
       license=d.license, color=COALESCE(d.color, v.color), chassis=COALESCE(d.chassis, v.chassis), engine=COALESCE(d.engine, v.engine),
-      odometer=COALESCE(d.odometer, v.odometer), updated_at=now()
-      FROM (VALUES ${tuples.join(',')}) AS d(id,name,brand,type,year,license,color,chassis,engine,odometer)
+      odometer=COALESCE(d.odometer, v.odometer), daily_price=COALESCE(d.daily_price, v.daily_price), monthly_price=COALESCE(d.monthly_price, v.monthly_price), updated_at=now()
+      FROM (VALUES ${tuples.join(',')}) AS d(id,name,brand,type,year,license,color,chassis,engine,odometer,daily_price,monthly_price)
       WHERE v.id=d.id RETURNING v.id`, values);
     if (changed.rowCount !== updates.length) throw new VehicleImportError('Không cập nhật đủ xe. Đã hủy toàn bộ lần nhập.', 500);
   }
@@ -125,11 +125,11 @@ export async function importDatabaseVehicles(client: Client, request: ReturnType
     const values: unknown[] = [];
     const tuples = inserts.map(row => {
       const v = row.values, offset = values.length;
-      values.push(row.targetId, v.name, v.brand, v.type, v.year, v.license, v.color || null, v.chassis || null, v.engine || null, row.storeId, v.status, v.odometer || null, actorId);
-      const params = Array.from({ length: 13 }, (_, i) => `$${offset + i + 1}`);
+      values.push(row.targetId, v.name, v.brand, v.type, v.year, v.license, v.color || null, v.chassis || null, v.engine || null, row.storeId, v.status, v.odometer || null, v.daily_price || null, v.monthly_price || null, actorId);
+      const params = Array.from({ length: 15 }, (_, i) => `$${offset + i + 1}`);
       return `(COALESCE(${params[0]}::bigint,nextval('himoto.vehicles_id_seq')),${params.slice(1).join(',')},${params[9]},now(),now())`;
     });
-    const added = await client.query(`INSERT INTO himoto.vehicles (id,name,brand,type,year,license,color,chassis,engine,store_id,status,odometer,created_by,current_store_id,created_at,updated_at)
+    const added = await client.query(`INSERT INTO himoto.vehicles (id,name,brand,type,year,license,color,chassis,engine,store_id,status,odometer,daily_price,monthly_price,created_by,current_store_id,created_at,updated_at)
       VALUES ${tuples.join(',')} RETURNING id`, values);
     if (added.rowCount !== inserts.length) throw new VehicleImportError('Không nhập đủ xe. Đã hủy toàn bộ lần nhập.', 500);
   }

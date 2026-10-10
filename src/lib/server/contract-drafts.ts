@@ -4,17 +4,28 @@ import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } fro
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
 
+const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
+  FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
 export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_reference,
-  o.order_type AS rental_type, o.order_status AS status, o.customer_id,
+  o.order_type AS rental_type,
+  CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
+  o.customer_id,
   COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
   COALESCE(c.id_card, o.customer_idnumber) AS customer_id_card,
   COALESCE(c.address, o.customer_address) AS customer_address, c.email AS customer_email,
-  c.id_card_issued_on, c.id_card_issued_by, c.relatives, c.warning AS warning_note,
+  c.id_card_issued_on, c.id_card_issued_by,
+  c.driver_license_number AS customer_driver_license_number, c.driver_license_issued_on::text AS customer_driver_license_issued_on,
+  c.relatives, c.warning AS warning_note,
   o.store_id, s.store_name, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
   o.total AS total_amount, o.pid AS paid_amount,
+  NULLIF(o.draft_payload->'management_composer'->'draft'->>'unit_price','')::numeric AS unit_price,
+  o.draft_payload->'management_composer'->'draft'->>'package_name' AS package_name,
+  o.draft_payload->'management_composer'->'draft'->>'payment_method' AS payment_method,
+  o.draft_payload->'management_composer'->'draft'->>'deposit_payment_method' AS deposit_payment_method,
   COALESCE(company.paid_amount,0) AS company_paid_amount, COALESCE(company.payment_count,0) AS company_payment_count,
   CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
        ELSE COALESCE(o.first_deposit_amount, 0) + COALESCE(o.additional_deposit_amount, 0) END AS deposit_amount,
+  ${CONTRACT_RETURN_ADJUSTMENT_SQL} AS return_adjustment_amount,
   o.note AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
   (SELECT p.id FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id
     AND p.store_id = o.store_id ORDER BY p.id LIMIT 1) AS staff_id,
@@ -39,7 +50,6 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
     WHERE d.order_id = o.id AND d.deleted_at IS NULL
   ) ov ON true
   WHERE o.deleted_at IS NULL`;
-
 export class DraftSaveError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }

@@ -16,6 +16,8 @@ export const VEHICLE_IMPORT_COLUMNS = [
   { key: 'store', label: 'Cơ sở', required: true, width: 32, max: 255 },
   { key: 'status', label: 'Trạng thái', required: true, width: 24, max: 255 },
   { key: 'odometer', label: 'Số km', required: false, width: 18, max: 16 },
+  { key: 'daily_price', label: 'Đơn giá thuê / ngày (VNĐ)', required: false, width: 26, max: 16 },
+  { key: 'monthly_price', label: 'Đơn giá thuê / tháng (VNĐ)', required: false, width: 28, max: 16 },
 ] as const;
 export type VehicleImportField = (typeof VEHICLE_IMPORT_COLUMNS)[number]['key'];
 export type VehicleImportValues = Record<VehicleImportField, string>;
@@ -74,6 +76,7 @@ export function validateVehicleImport(inputs: VehicleImportInput[], stores: Cust
     if (values.color && /^\d+(?:\.\d+)?$/.test(values.color)) errors.push('Màu sắc đang là số; cần xác nhận và sửa trước khi nhập.');
     if (!values.color) warnings.push(updating && current?.color ? 'Màu sắc trống: giữ màu đang có trong CSDL.' : 'Chưa có màu sắc; để trống, cần bổ sung sau.');
     if (values.odometer && (!/^\d+$/.test(values.odometer) || !Number.isSafeInteger(Number(values.odometer)))) errors.push('Số km phải là số nguyên không âm trong giới hạn an toàn.');
+    for (const key of ['daily_price', 'monthly_price'] as const) if (values[key] && (!/^\d+$/.test(values[key]) || !Number.isSafeInteger(Number(values[key])))) errors.push(`${key === 'daily_price' ? 'Đơn giá ngày' : 'Đơn giá tháng'} phải là số nguyên không âm trong giới hạn an toàn.`);
     for (const [label, value, map] of [['Biển số', vehiclePlate(values.license), plates], ['ID xe', values.id ? String(Number(values.id)) : '', ids]] as const) {
       if (value && (map.get(value)?.length || 0) > 1) errors.push(`${label} trùng trong file (dòng ${map.get(value)!.slice(0, 6).join(', ')}).`);
     }

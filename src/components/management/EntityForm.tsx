@@ -5,6 +5,9 @@ import { Check, LoaderCircle } from 'lucide-react';
 import { ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
+import { ContractRelative, relativesFromRow, formatRelatives } from '@/lib/management/contract-document';
+import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
+import { CustomerRelativesFields } from '@/components/contracts/CustomerRelativesFields';
 
 export function EntityForm({ config, row, onClose }: { config: ManagementConfig; row: ManagementRow | null; onClose: () => void }) {
   const { dataset, selectedStore, source, save, updateCustomer } = useManagement();
@@ -21,6 +24,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
     return defaults;
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [relatives, setRelatives] = useState<[ContractRelative, ContractRelative]>(() => relativesFromRow(row));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const formRef = useRef<HTMLFormElement>(null);
@@ -29,6 +33,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
     event.preventDefault();
     const nextErrors: Record<string, string> = {};
     for (const field of config.fields) {
+      if (config.kind === 'customers' && field.key === 'relatives_text') continue;
       const value = String(draft[field.key] ?? '').trim();
       if (field.required && !value) nextErrors[field.key] = `Vui lòng nhập ${field.label.toLowerCase()}.`;
       else if (value && field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) nextErrors[field.key] = 'Email chưa đúng định dạng.';
@@ -47,7 +52,14 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
     }
     if (config.kind === 'contracts') return; // Contract edits use their dedicated snapshot-aware form and repository methods.
     const prepared = { ...draft };
+    if (config.kind === 'customers') {
+      try {
+        prepared.relatives_json = JSON.stringify(parseCustomerRelatives(relatives));
+        prepared.relatives_text = formatRelatives(relatives);
+      } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.'); return; }
+    }
     for (const field of config.fields) {
+      if (config.kind === 'customers' && field.key === 'relatives_text') continue;
       const value = String(draft[field.key] ?? '').trim();
       prepared[field.key] = field.type === 'number' || field.storeOptions ? (value ? Number(value) : undefined) : value;
     }
@@ -62,7 +74,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
 
   return <Dialog title={`${row ? 'Chỉnh sửa' : 'Thêm'} ${config.singular}`} subtitle={`${draft.code} · ${'Lưu trực tiếp vào Supabase'}`} onClose={() => { if (!saving) onClose(); }}>
     <form ref={formRef} onSubmit={submit} noValidate>
-      <div className="mg-dialog-body"><div className="mg-form-grid">{config.fields.map(field => {
+      <div className="mg-dialog-body"><div className="mg-form-grid">{config.fields.filter(field => config.kind !== 'customers' || field.key !== 'relatives_text').map(field => {
         const options = field.storeOptions ? (dataset?.stores || []).map(store => ({ value: String(store.id), label: store.name })) : field.options;
         const id = `field-${field.key}`;
         const props = { id, name: field.key, value: draft[field.key] ?? '', disabled: saving,
@@ -76,7 +88,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
             : field.type === 'textarea' ? <textarea {...props} rows={3} /> : <input {...props} type={field.type || 'text'} required={field.required} min={field.type === 'number' ? 0 : undefined} step={field.type === 'number' ? 1 : undefined} />}
           {field.hint && <small id={`${id}-hint`}>{field.hint}</small>}{errors[field.key] && <p id={`${id}-error`} className="mg-field-error">{errors[field.key]}</p>}
         </div>;
-      })}</div>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}</div>
+      })}{config.kind === 'customers' && <CustomerRelativesFields prefix="edit-customer" relatives={relatives} disabled={saving} onChange={setRelatives} />}</div>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}</div>
       <div className="mg-dialog-footer"><span className="mg-form-note">* Thông tin bắt buộc</span><button className="mg-button" type="button" disabled={saving} onClick={onClose}>Hủy</button>
         <button className="mg-button mg-button-primary" type="submit" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : 'Lưu khách hàng'}</button></div>
     </form>

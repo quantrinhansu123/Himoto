@@ -5,7 +5,7 @@ export const CUSTOMER_IMPORT_COLUMNS = [
   { key: 'phone', label: 'Số điện thoại', required: true, width: 20, max: 32 },
   { key: 'id_card', label: 'CCCD / CMND', required: true, width: 22, max: 12 },
   { key: 'email', label: 'Email', required: false, width: 30, max: 191 },
-  { key: 'address', label: 'Địa chỉ', required: true, width: 45, max: 191 },
+  { key: 'address', label: 'Nơi ở hiện tại', required: true, width: 45, max: 191 },
   { key: 'store', label: 'Cơ sở', required: true, width: 30, max: 255 },
   { key: 'status', label: 'Trạng thái hồ sơ', required: false, width: 30, max: 100 },
   { key: 'warning_note', label: 'Ghi chú / cảnh báo', required: false, width: 45, max: 191 },

@@ -1,7 +1,6 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowDownToLine, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, ListFilter, Plus, RotateCcw, Search, ShieldCheck, Trash2, X } from 'lucide-react';
 import { MANAGEMENT_CONFIG, optionLabel, statusTone } from '@/lib/management/config';
@@ -19,7 +18,10 @@ import { CustomerExcelActions } from './CustomerExcelActions';
 import { VehicleExcelActions } from './VehicleExcelActions';
 import { StoreEditDialog } from './StoreEditDialog';
 import { ContractSummary } from './ContractSummary';
-import { ContractPaymentDialog } from './ContractPaymentDialog';
+import { ContractRowReturnDialog } from './ContractRowReturnDialog';
+import { ContractVehicleSwapDialog } from './ContractVehicleSwapDialog';
+import { ContractRenewalDialog } from './ContractRenewalDialog';
+import { CustomerDetail } from './CustomerDetail';
 
 const EMPTY_ROWS: ManagementRow[] = [];
 
@@ -32,7 +34,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
   const contractId = kind === 'contracts' ? searchParams.get('contract_id') : null;
   const contractPath = vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : '/contracts';
-  const [paymentId, setPaymentId] = useState<number | null>(null);
+  const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
+  const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string } | null>(null);
+  const [renewTarget, setRenewTarget] = useState<ManagementRow | null>(null);
   const [query, setQuery] = useState<TableQuery>(EMPTY_QUERY);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -107,7 +111,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
             else { setEditing(null); setFormOpen(true); }
           }}><Plus size={18} />{config.addLabel}</button>}
           {(kind === 'stores' || kind === 'vehicles' || kind === 'customers') && <button type="button" className="mg-button" disabled={loading || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} />Làm mới</button>}
-          {kind === 'contracts' && <>{source === 'api' && <span className="mg-readonly"><ShieldCheck size={16} />{canSaveContractDrafts ? 'Có thể lưu và sửa nháp' : 'Danh sách chỉ đọc'}</span>}<button type="button" className="mg-button" disabled={loading} onClick={() => void reload()}><RotateCcw size={17} />Làm mới</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !dataset} onClick={() => { setPrintRow(null); setComposerMode('draft'); setComposerOpen(true); }}><Plus size={17} />Nhập hợp đồng</button></>}</div>
+          {kind === 'contracts' && <>{source === 'api' && <span className="mg-readonly"><ShieldCheck size={16} />{canSaveContractDrafts ? 'Có thể lưu và sửa nháp' : 'Danh sách chỉ đọc'}</span>}<button type="button" className="mg-button" disabled={loading} onClick={() => void reload()}><RotateCcw size={17} />Làm mới</button>{source === 'api' && <button type="button" className="mg-button" disabled={loading || Boolean(error)} onClick={() => setReturnTarget({ orderId: null, code: '' })}><RotateCcw size={16} />Trả xe</button>}<button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !dataset} onClick={() => { setPrintRow(null); setComposerMode('draft'); setComposerOpen(true); }}><Plus size={17} />Nhập hợp đồng</button></>}</div>
       </div>
 
       {kind === 'staff' && <StaffOrganizationChart />}
@@ -137,7 +141,10 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
             finally { blacklistPending.current = false; setBlacklistBusyId(null); }
           } : undefined}
           onPrint={kind === 'contracts' ? row => { setPrintRow(row); setComposerMode('print'); setComposerOpen(true); } : undefined}
-          onPayment={kind === 'contracts' && source === 'api' ? row => setPaymentId(row.id) : undefined}
+          onPayment={kind === 'contracts' && source === 'api' ? row => router.push(`/cashbook?contract_id=${row.id}&purpose=debt`) : undefined}
+          onReturn={kind === 'contracts' && source === 'api' ? row => setReturnTarget({ orderId: row.id, code: row.code }) : undefined}
+          onRenew={kind === 'contracts' && source === 'api' ? row => setRenewTarget(row) : undefined}
+          onVehicleChange={kind === 'contracts' && source === 'api' ? row => setVehicleTarget({ orderId: row.id, code: row.code }) : undefined}
 
           canEditContract={false}
           canEditDraft={kind === 'contracts' && canSaveContractDrafts}
@@ -163,14 +170,16 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
         finally { setDeleteBusy(false); }
       }}>{deleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />{kind === 'stores' ? 'Xóa cơ sở' : 'Xóa khách hàng'}</>}</button></div>
     </Dialog>}
-    {paymentId !== null && <ContractPaymentDialog id={paymentId} onClose={() => setPaymentId(null)} />}
-    {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onPayment={() => { setPaymentId(viewing.id); setViewing(null); }} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
+    {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} onClose={() => setReturnTarget(null)} />}
+    {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} onClose={() => setRenewTarget(null)} />}
+    {vehicleTarget && kind === 'contracts' && <ContractVehicleSwapDialog orderId={vehicleTarget.orderId} contractCode={vehicleTarget.code} onClose={() => setVehicleTarget(null)} />}
+    {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onPayment={() => { router.push(`/cashbook?contract_id=${viewing.id}&purpose=debt`); setViewing(null); }} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
     {composerOpen && dataset && <ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} onClose={() => setComposerOpen(false)} onDraftSaved={() => { setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); router.push('/contracts/drafts'); }} />}
-    {viewing && kind !== 'contracts' && <Dialog title={String(viewing.name)} subtitle={`${viewing.code} · ${config.title}`} onClose={() => setViewing(null)}>
+    {viewing && kind === 'customers' && <CustomerDetail row={viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }} />}
+    {viewing && kind !== 'contracts' && kind !== 'customers' && <Dialog title={String(viewing.name)} subtitle={`${viewing.code} · ${config.title}`} onClose={() => setViewing(null)}>
       <div className="mg-dialog-body"><span className={`mg-status mg-status-${statusTone(viewing.status)}`}><span />{optionLabel(config, 'status', viewing.status)}</span>
         <dl className="mg-detail-grid">{config.columns.filter(column => column.key !== 'name' && column.key !== 'status').map(column => <div key={column.key}><dt>{column.label}</dt><dd>{optionLabel(config, column.key, formatValue(viewing[column.key], column.format))}</dd></div>)}
-          {config.fields.filter(field => !config.columns.some(column => column.key === field.key) && field.key !== 'store_id').map(field => <div key={field.key}><dt>{field.label}</dt><dd>{viewing[field.key] || '—'}</dd></div>)}</dl>
-        {kind === 'customers' && <Link className="mg-button mg-related-link" href={`/contracts?customer_id=${viewing.id}`} onClick={() => setViewing(null)}>Xem hợp đồng liên quan <ChevronRight size={15} /></Link>}</div>
+          {config.fields.filter(field => !config.columns.some(column => column.key === field.key) && field.key !== 'store_id').map(field => <div key={field.key}><dt>{field.label}</dt><dd>{viewing[field.key] || '—'}</dd></div>)}</dl></div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={() => setViewing(null)}>Đóng</button>{canEdit && <button type="button" className="mg-button mg-button-primary" onClick={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }}>Chỉnh sửa thông tin</button>}</div>
     </Dialog>}
   </section>;
