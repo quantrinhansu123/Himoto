@@ -88,6 +88,31 @@ export function CashbookPage() {
     } catch (cause) { setDeleteError(cause instanceof Error ? cause.message : 'Không xóa được phiếu.'); }
     finally { setDeleteBusy(false); }
   }
+  const [deleteAllType, setDeleteAllType] = useState<'income' | 'expense' | null>(null);
+  const [deleteAllText, setDeleteAllText] = useState('');
+  const [deleteAllProgress, setDeleteAllProgress] = useState(0);
+  const deleteAllRows = deleteAllType === 'income' ? income : deleteAllType === 'expense' ? expense : [];
+  const deleteAllLabel = deleteAllType === 'expense' ? 'phiếu chi' : 'phiếu thu';
+  function openDeleteAll(type: 'income' | 'expense') { setDeleteError(''); setDeleteAllText(''); setDeleteAllType(type); }
+  async function deleteAll() {
+    if (deleteBusy || !deleteAllRows.length || deleteAllText.trim().toUpperCase() !== 'XOA') return;
+    setDeleteBusy(true); setDeleteError('');
+    const ids = deleteAllRows.map(row => Number(row.id));
+    let done = 0;
+    try {
+      for (let index = 0; index < ids.length; index += 500) {
+        done += (await bulkDelete('transactions', ids.slice(index, index + 500))).length;
+        setDeleteAllProgress(done);
+      }
+      setSelectedIds(new Set()); setDeleteAllType(null);
+      notify(`Đã xóa ${done} ${deleteAllLabel}.`);
+    } catch (cause) {
+      setDeleteError(`${done ? `Đã xóa ${done}/${ids.length}. ` : ''}${cause instanceof Error ? cause.message : 'Không xóa được phiếu.'}`);
+    } finally {
+      setDeleteBusy(false); setDeleteAllProgress(0);
+      if (done) setRetry(value => value + 1);
+    }
+  }
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
   const isFiltered = Boolean(query.search || query.actor || query.startDate || query.endDate || selectedStore !== 'all');
   const update = (next: Partial<CashbookFilters>) => setQuery(current => ({ ...current, ...next }));
@@ -111,13 +136,21 @@ export function CashbookPage() {
     <div className="mg-cashbook-overview" aria-label="Số phiếu theo bộ lọc"><a href="#cashbook-income"><span className="mg-cashbook-count-marker is-income" /><span>Phiếu thu</span><strong>{loading || error ? '—' : income.length}</strong><span className="mg-cashbook-jump">Xem bảng ↓</span></a>
       <a href="#cashbook-expense"><span className="mg-cashbook-count-marker is-expense" /><span>Phiếu chi</span><strong>{loading || error ? '—' : expense.length}</strong><span className="mg-cashbook-jump">Xem bảng ↓</span></a></div>
     <CashbookAccounts accounts={storeAccounts} loading={accountsLoading} error={accountsError} onRetry={() => setRetry(value => value + 1)} />
-    <div className="mg-cashbook-tables"><CashbookTable type="income" rows={income} loading={loading} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} />
-      <CashbookTable type="expense" rows={expense} loading={loading} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} /></div>
+    <div className="mg-cashbook-tables"><CashbookTable type="income" rows={income} loading={loading} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} onDeleteAll={() => openDeleteAll('income')} />
+      <CashbookTable type="expense" rows={expense} loading={loading} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} onDeleteAll={() => openDeleteAll('expense')} /></div>
     <div className="mg-list-note"><span className="mg-note-line" />Sổ quỹ đọc từ danh sách giao dịch hiện có. Trường chưa có dữ liệu hiển thị “—”.</div>
   </div>{deleteOpen && <Dialog title={`Xóa ${selectedIds.size} phiếu?`} subtitle={selectedRows.slice(0, 6).map(row => `#${row.id}`).join(', ') + (selectedRows.length > 6 ? '…' : '')} onClose={() => { if (!deleteBusy) setDeleteOpen(false); }}>
       <div className="mg-dialog-body"><p>Phiếu sẽ bị xóa hẳn khỏi Sổ quỹ và số dư tài khoản được tính lại. Phiếu thu gắn hợp đồng sẽ được trừ khỏi số tiền đã thu của hợp đồng đó (phiếu gia hạn / thu thêm còn trừ khỏi tổng tiền hợp đồng). Ngày hẹn trả đã gia hạn không tự lùi lại. Không thể hoàn tác.</p>
         <p><strong>{selectedRows.filter(row => row.type === 'income').length}</strong> phiếu thu · <strong>{selectedRows.filter(row => row.type === 'expense').length}</strong> phiếu chi · tổng <strong>{new Intl.NumberFormat('vi-VN').format(selectedRows.reduce((sum, row) => sum + (row.amount || 0), 0))} ₫</strong></p>
         {deleteError && <p className="mg-error-message" role="alert">{deleteError}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={deleteBusy} onClick={() => setDeleteOpen(false)}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={deleteBusy} onClick={() => void deleteSelected()}>{deleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa {selectedIds.size} phiếu</>}</button></div>
+    </Dialog>}{deleteAllType && <Dialog title={`Xóa hết ${deleteAllRows.length} ${deleteAllLabel}?`} subtitle={isFiltered ? 'Theo cơ sở / bộ lọc đang chọn' : 'Toàn bộ sổ quỹ'} onClose={() => { if (!deleteBusy) setDeleteAllType(null); }}>
+      <form onSubmit={event => { event.preventDefault(); void deleteAll(); }}>
+        <div className="mg-dialog-body"><p>Tất cả <strong>{deleteAllRows.length} {deleteAllLabel}</strong> đang hiển thị trong bảng{isFiltered ? ' (đã áp dụng bộ lọc)' : ''} sẽ bị xóa hẳn, tổng <strong>{new Intl.NumberFormat('vi-VN').format(deleteAllRows.reduce((sum, row) => sum + (row.amount || 0), 0))} ₫</strong>. Số dư tài khoản được tính lại; phiếu thu gắn hợp đồng được trừ khỏi số tiền đã thu của hợp đồng. Không thể hoàn tác.</p>
+          <div className="mg-field"><label htmlFor="cashbook-delete-all-confirm">Gõ <strong>XOA</strong> để xác nhận</label><input id="cashbook-delete-all-confirm" value={deleteAllText} autoComplete="off" disabled={deleteBusy} onChange={event => setDeleteAllText(event.target.value)} /></div>
+          {deleteBusy && <p role="status">Đang xóa… {deleteAllProgress}/{deleteAllRows.length}</p>}
+          {deleteError && <p className="mg-error-message" role="alert">{deleteError}</p>}</div>
+        <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={deleteBusy} onClick={() => setDeleteAllType(null)}>Hủy</button><button type="submit" className="mg-button mg-button-danger" disabled={deleteBusy || deleteAllText.trim().toUpperCase() !== 'XOA'}>{deleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa hết {deleteAllRows.length} {deleteAllLabel}</>}</button></div>
+      </form>
     </Dialog>}{paymentTarget && <ContractPaymentDialog key={`${paymentTarget.id}-${paymentTarget.purpose}`} id={paymentTarget.id} initialPurpose={paymentTarget.purpose} onClose={closePayment} onPaymentSaved={() => setRetry(value => value + 1)} />}</section>;
 }

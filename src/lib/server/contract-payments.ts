@@ -66,15 +66,15 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   const accounts = await client.query(`SELECT id, 'bank' AS kind, store_id, owner_type,bank_name,account_number,owner_name,
       bank_name || ' · ' || owner_name || ' · ' || account_number AS label
     FROM himoto.banks WHERE lower(status) = 'active' AND account_type IN (0,1) AND (store_id=$1 OR owner_type='company')
-    UNION ALL SELECT id, 'cash' AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,'Két tiền mặt #' || id::text AS label
+    UNION ALL SELECT id, 'cash' AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,COALESCE(NULLIF(name,''),'Két tiền mặt #' || id::text) AS label
     FROM himoto.cash WHERE lower(status)='active' AND store_id=$1 ORDER BY kind,id`, [order.store_id]);
   const history = await client.query(`SELECT t.id,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,
       CASE WHEN t.cash_id IS NOT NULL THEN 'Tiền mặt' WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty'
         WHEN t.bank_id IS NOT NULL THEN 'Chuyển khoản' ELSE 'Chưa xác định' END AS method,
-      CASE WHEN t.cash_id IS NOT NULL THEN 'Két tiền mặt #' || t.cash_id::text
+      CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name,''),'Két tiền mặt #' || t.cash_id::text)
         ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account,
       t.bank_owner_type,r.renewal_payload
-    FROM himoto.transactions t LEFT JOIN himoto.users u ON u.id=t.user_id LEFT JOIN himoto.banks b ON b.id=t.bank_id
+    FROM himoto.transactions t LEFT JOIN himoto.users u ON u.id=t.user_id LEFT JOIN himoto.banks b ON b.id=t.bank_id LEFT JOIN himoto.cash cb ON cb.id=t.cash_id
     LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id
     WHERE t.order_id=$1 AND t.type IN ('in','addon','out') AND t.status='approved' ORDER BY t.created_at DESC,t.id DESC`, [id]);
   const company = history.rows.filter(row => row.type !== 'out' && row.bank_owner_type === 'company');

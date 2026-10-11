@@ -23,12 +23,13 @@ const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.val
       WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
     CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản' WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
       WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty' WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản' END AS method,
-    CASE WHEN t.cash_id IS NOT NULL THEN 'Két tiền mặt #' || t.cash_id::text ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account,
+    CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name,''),'Két tiền mặt #' || t.cash_id::text) ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account,
     r.renewal_payload
   FROM himoto.transactions t
   JOIN himoto.orders o ON o.id=t.order_id
   LEFT JOIN himoto.users u ON u.id=t.user_id
   LEFT JOIN himoto.banks b ON b.id=t.bank_id
+  LEFT JOIN himoto.cash cb ON cb.id=t.cash_id
   LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id`;
 const mapCashflow = (row: Record<string, unknown>): ContractCashflow => ({
   id: Number(row.id), at: iso(row.created_at), type: row.type === 'out' ? 'expense' : 'income', reason: String(row.reason || '—'),

@@ -13,25 +13,68 @@ export function parseAccountPath(path: string[], suffix?: string): { kind: 'bank
 
 const text = (value: unknown, max: number) => typeof value === 'string' ? value.trim().slice(0, max + 1) : '';
 
-export async function updateAccount(kind: 'bank' | 'cash', id: number, request: Request) {
+/** Parses `cashbook/accounts/{bank|cash}` for creating an account. */
+export function parseAccountCollectionPath(path: string[]): 'bank' | 'cash' | null {
+  return path.length === 3 && path[0] === 'cashbook' && path[1] === 'accounts' && (path[2] === 'bank' || path[2] === 'cash') ? path[2] : null;
+}
+
+type AccountValues = { storeId: number; status: 'Active' | 'Inactive'; opening: number; ownerType: 'company' | 'unknown'; bankName: string; ownerName: string; accountNumber: string; name: string };
+
+// Company bank accounts are shared by every store and are stored with store_id 0.
+async function readAccountValues(kind: 'bank' | 'cash', request: Request): Promise<AccountValues | NextResponse> {
   let body: Record<string, unknown>;
   try {
     const parsed: unknown = await request.json();
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid');
     body = parsed as Record<string, unknown>;
   } catch { return json(400, 'Thông tin tài khoản không hợp lệ.'); }
-  const status = body.status === 'inactive' ? 'inactive' : body.status === 'active' ? 'active' : '';
+  const status = body.status === 'inactive' ? 'Inactive' : body.status === 'active' ? 'Active' : '';
   const opening = Number(body.opening_balance ?? 0);
-  if (!status || !Number.isFinite(opening) || Math.abs(opening) > 1e13) return json(400, 'Kiểm tra trạng thái và số dư đầu kỳ.');
+  if (!status || !Number.isSafeInteger(opening) || Math.abs(opening) > 1e13) return json(400, 'Kiểm tra trạng thái và số dư đầu kỳ (số nguyên, đơn vị đồng).');
+  const ownerType = kind === 'bank' && body.owner_type === 'company' ? 'company' : 'unknown';
+  const bankName = text(body.bank_name, 191), ownerName = text(body.owner_name, 191), accountNumber = text(body.account_number, 191);
+  if (kind === 'bank' && (!bankName || !ownerName || !accountNumber || bankName.length > 191 || ownerName.length > 191 || accountNumber.length > 191)) return json(400, 'Nhập đủ ngân hàng, chủ tài khoản và số tài khoản.');
+  const name = kind === 'cash' ? text(body.name, 191) : '';
+  if (name.length > 191) return json(400, 'Tên két tối đa 191 ký tự.');
+  let storeId = 0;
+  if (ownerType !== 'company') {
+    storeId = Number(body.store_id);
+    if (!Number.isSafeInteger(storeId) || storeId <= 0) return json(400, 'Chọn cơ sở cho tài khoản.');
+    const store = await himotoPool.query('SELECT 1 FROM himoto.stores WHERE id=$1', [storeId]);
+    if (!store.rowCount) return json(400, 'Cơ sở đã chọn không còn tồn tại.');
+  }
+  return { storeId, status, opening, ownerType, bankName, ownerName, accountNumber, name };
+}
+
+export async function createAccount(kind: 'bank' | 'cash', request: Request) {
   try {
+    const values = await readAccountValues(kind, request);
+    if (values instanceof NextResponse) return values;
+    const result = kind === 'cash'
+      ? await himotoPool.query('INSERT INTO himoto.cash (store_id, opening_balance, status, name, created_at, updated_at) VALUES ($1,$2,$3,NULLIF($4,\'\'),now(),now()) RETURNING id',
+        [values.storeId, values.opening, values.status, values.name])
+      : await himotoPool.query(`INSERT INTO himoto.banks (store_id, bank_name, account_number, owner_name, opening_balance, account_type, status, owner_type, created_at, updated_at)
+          VALUES ($1,$2,$3,$4,$5,1,$6,$7,now(),now()) RETURNING id`,
+        [values.storeId, values.bankName, values.accountNumber, values.ownerName, values.opening, values.status, values.ownerType]);
+    return NextResponse.json({ status: 'success', data: { id: result.rows[0].id } }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) {
+    console.error('Supabase account insert failed:', error instanceof Error ? error.name : 'Unknown database error');
+    return json(500, 'Không tạo được tài khoản.');
+  }
+}
+
+export async function updateAccount(kind: 'bank' | 'cash', id: number, request: Request) {
+  try {
+    const values = await readAccountValues(kind, request);
+    if (values instanceof NextResponse) return values;
     if (kind === 'cash') {
-      const result = await himotoPool.query('UPDATE himoto.cash SET status=$2, opening_balance=$3 WHERE id=$1 RETURNING id', [id, status, opening]);
+      const result = await himotoPool.query('UPDATE himoto.cash SET store_id=$2, status=$3, opening_balance=$4, name=NULLIF($5,\'\'), updated_at=now() WHERE id=$1 RETURNING id',
+        [id, values.storeId, values.status, values.opening, values.name]);
       if (!result.rowCount) return json(404, 'Không tìm thấy két tiền mặt.');
     } else {
-      const bankName = text(body.bank_name, 191), ownerName = text(body.owner_name, 191), accountNumber = text(body.account_number, 64);
-      if (!bankName || !ownerName || !accountNumber || bankName.length > 191 || ownerName.length > 191 || accountNumber.length > 64) return json(400, 'Nhập đủ ngân hàng, chủ tài khoản và số tài khoản.');
-      const result = await himotoPool.query('UPDATE himoto.banks SET bank_name=$2, owner_name=$3, account_number=$4, status=$5, opening_balance=$6 WHERE id=$1 RETURNING id',
-        [id, bankName, ownerName, accountNumber, status, opening]);
+      const result = await himotoPool.query(`UPDATE himoto.banks SET store_id=$2, owner_type=$3, bank_name=$4, owner_name=$5, account_number=$6, status=$7, opening_balance=$8, updated_at=now()
+          WHERE id=$1 RETURNING id`,
+        [id, values.storeId, values.ownerType, values.bankName, values.ownerName, values.accountNumber, values.status, values.opening]);
       if (!result.rowCount) return json(404, 'Không tìm thấy tài khoản ngân hàng.');
     }
     return NextResponse.json({ status: 'success', data: null }, { headers: { 'Cache-Control': 'no-store' } });

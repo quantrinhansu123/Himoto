@@ -3,8 +3,8 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { CONTRACT_LIST_SQL, DraftSaveError, saveDatabaseDraft } from '@/lib/server/contract-drafts';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { STORE_SELECT_SQL } from '@/lib/server/store-management';
-import { deleteAccount, listAccountTransactions, parseAccountPath, updateAccount } from '@/lib/server/cashbook-accounts';
-import { parseStaffPath, updateStaff } from '@/lib/server/staff-management';
+import { createAccount, deleteAccount, listAccountTransactions, parseAccountCollectionPath, parseAccountPath, updateAccount } from '@/lib/server/cashbook-accounts';
+import { createStaff, parseStaffPath, updateStaff } from '@/lib/server/staff-management';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 
 export const runtime = 'nodejs';
@@ -66,9 +66,10 @@ const listQueries: Record<string, QueryConfig> = {
                       WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
                       WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty'
                       WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản' END AS payment_method,
-                 CASE WHEN t.cash_id IS NOT NULL THEN 'Két tiền mặt #' || t.cash_id::text
+                 CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name, ''), 'Két tiền mặt #' || t.cash_id::text)
                       ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account
           FROM himoto.transactions t
+          LEFT JOIN himoto.cash cb ON cb.id = t.cash_id
           LEFT JOIN himoto.users u ON u.id = t.user_id
           LEFT JOIN himoto.orders o ON o.id=t.order_id
           LEFT JOIN himoto.stores s ON s.id=t.store_id
@@ -76,16 +77,16 @@ const listQueries: Record<string, QueryConfig> = {
           ORDER BY t.id DESC`,
   },
   'cashbook/accounts': {
-    sql: `SELECT a.kind, a.id, a.store_id, s.store_name, a.label, a.bank_name, a.owner_name, a.account_number, a.owner_type, a.status, a.opening_balance,
+    sql: `SELECT a.kind, a.id, a.store_id, s.store_name, a.label, a.name, a.bank_name, a.owner_name, a.account_number, a.owner_type, a.status, a.opening_balance,
                  COALESCE(t.income, 0) AS income, COALESCE(t.expense, 0) AS expense, COALESCE(t.voucher_count, 0)::int AS voucher_count,
                  a.opening_balance + COALESCE(t.income, 0) - COALESCE(t.expense, 0) AS balance
           FROM (
-            SELECT 'bank' AS kind, b.id, b.store_id, concat_ws(' · ', b.bank_name, b.owner_name, b.account_number) AS label,
+            SELECT 'bank' AS kind, b.id, b.store_id, concat_ws(' · ', b.bank_name, b.owner_name, b.account_number) AS label, NULL::text AS name,
                    b.bank_name::text AS bank_name, b.owner_name::text AS owner_name, b.account_number::text AS account_number,
                    COALESCE(b.owner_type, '') AS owner_type, b.status, COALESCE(b.opening_balance, 0) AS opening_balance
             FROM himoto.banks b
             UNION ALL
-            SELECT 'cash', c.id, c.store_id, 'Két tiền mặt #' || c.id::text, NULL, NULL, NULL, '', c.status, COALESCE(c.opening_balance, 0)
+            SELECT 'cash', c.id, c.store_id, COALESCE(NULLIF(c.name, ''), 'Két tiền mặt #' || c.id::text), c.name::text, NULL, NULL, NULL, '', c.status, COALESCE(c.opening_balance, 0)
             FROM himoto.cash c
           ) a
           LEFT JOIN himoto.stores s ON s.id = a.store_id
@@ -201,6 +202,9 @@ export async function POST(request: NextRequest, { params }: Params) {
   if (denied) return denied;
   const { path } = await params;
   if (path.join('/') === 'order/car-rental') return writeDraft(request, null);
+  if (path.join('/') === 'hr/staff') return createStaff(request);
+  const newAccountKind = parseAccountCollectionPath(path);
+  if (newAccountKind) return createAccount(newAccountKind, request);
   if (path.join('/') !== 'customers') return NextResponse.json({ status: 'error' }, { status: 404 });
 
   let body: Record<string, unknown>;

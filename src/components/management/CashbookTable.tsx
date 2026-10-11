@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, FileSearch, LoaderCircle, RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, FileSearch, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { CASHBOOK_COLUMNS, CashbookColumnKey, CashbookRow, VoucherType, VOUCHER_LABELS, cashbookCell, sortCashbookRows } from '@/lib/management/cashbook';
 
 interface Props {
   type: VoucherType; rows: CashbookRow[]; loading: boolean; error: string; filtered: boolean; onReset: () => void; onRetry: () => void;
-  selectedIds?: ReadonlySet<string>; onSelectionChange?: (ids: string[], selected: boolean) => void;
+  selectedIds?: ReadonlySet<string>; onSelectionChange?: (ids: string[], selected: boolean) => void; onDeleteAll?: () => void;
 }
-export function CashbookTable({ type, rows, loading, error, filtered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function CashbookTable({ type, rows, loading, error, filtered, onReset, onRetry, selectedIds, onSelectionChange, onDeleteAll }: Props) {
   const selectable = Boolean(selectedIds && onSelectionChange);
   const columnCount = CASHBOOK_COLUMNS.length + (selectable ? 1 : 0);
   const title = VOUCHER_LABELS[type];
@@ -26,7 +26,8 @@ export function CashbookTable({ type, rows, loading, error, filtered, onReset, o
   return <section className="mg-data-panel mg-cashbook-panel" aria-labelledby={`cashbook-${type}-title`} id={`cashbook-${type}`}>
     <div className="mg-cashbook-panel-heading"><span className={`mg-cashbook-symbol is-${type}`} aria-hidden="true">{type === 'income' ? <ArrowDownLeft size={20} /> : <ArrowUpRight size={20} />}</span>
       <div><h2 id={`cashbook-${type}-title`}>{title}<span className="mg-title-count">{loading || error ? '—' : rows.length}</span></h2><p>{type === 'income' ? 'Các phiếu ghi nhận khoản thu.' : 'Các phiếu ghi nhận khoản chi.'}</p><p className="mg-cashbook-mobile-hint">Cuộn ngang để xem đủ {CASHBOOK_COLUMNS.length} cột.</p></div>
-      <span className="mg-cashbook-panel-description">Cùng mẫu {CASHBOOK_COLUMNS.length} cột</span>
+      {onDeleteAll ? <button type="button" className="mg-button mg-button-danger mg-cashbook-delete-all" disabled={loading || Boolean(error) || !rows.length} onClick={onDeleteAll}><Trash2 size={15} />Xóa hết ({rows.length})</button>
+        : <span className="mg-cashbook-panel-description">Cùng mẫu {CASHBOOK_COLUMNS.length} cột</span>}
     </div>
     <div className="mg-table-scroll" tabIndex={0} role="region" aria-label={`Bảng ${title.toLowerCase()}, cuộn ngang để xem đủ ${CASHBOOK_COLUMNS.length} cột`}>
       <table className="mg-table mg-cashbook-table" aria-busy={loading}><caption className="mg-sr-only">{title}</caption>

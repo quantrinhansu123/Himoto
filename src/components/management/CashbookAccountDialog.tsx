@@ -2,11 +2,14 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, LoaderCircle, Trash2 } from 'lucide-react';
-import { CashbookAccount, CashbookAccountVoucher, deleteCashbookAccount, loadCashbookAccountVouchers, updateCashbookAccount } from '@/lib/management/cashbook-repository';
+import { CashbookAccount, CashbookAccountEdits, CashbookAccountVoucher, createCashbookAccount, deleteCashbookAccount, loadCashbookAccountVouchers, updateCashbookAccount } from '@/lib/management/cashbook-repository';
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
 import { Dialog } from './Dialog';
+import { useManagement } from './ManagementProvider';
 
-export type AccountDialogMode = 'view' | 'edit' | 'delete';
+export type AccountDialogMode = 'create' | 'view' | 'edit' | 'delete';
+type AccountType = 'cash' | 'bank' | 'company';
+const ACCOUNT_TYPES: [AccountType, string][] = [['cash', 'Tiền mặt (két)'], ['bank', 'Ngân hàng cơ sở'], ['company', 'TK công ty']];
 const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)} ₫`;
 
 const VIEW_TABS = [{ id: 'info', label: 'Chi tiết' }, { id: 'vouchers', label: 'Danh sách thu chi' }] as const;
@@ -54,11 +57,16 @@ function AccountVouchers({ account }: { account: CashbookAccount }) {
   </div>;
 }
 
-interface Props { account: CashbookAccount; mode: AccountDialogMode; onClose: () => void; onChanged: () => void }
-export function CashbookAccountDialog({ account, mode, onClose, onChanged }: Props) {
-  const isBank = account.kind === 'bank';
-  const [draft, setDraft] = useState({ bank_name: account.bank_name || '', owner_name: account.owner_name || '', account_number: account.account_number || '',
-    status: account.status.toLowerCase() === 'active' ? 'active' : 'inactive', opening_balance: String(account.opening_balance) });
+type Props = { onClose: () => void; onChanged: () => void } & ({ mode: 'create'; account?: undefined; defaultStoreId?: string } | { mode: Exclude<AccountDialogMode, 'create'>; account: CashbookAccount; defaultStoreId?: undefined });
+export function CashbookAccountDialog({ account, mode, defaultStoreId, onClose, onChanged }: Props) {
+  const { dataset } = useManagement();
+  const stores = dataset?.stores || [];
+  const [draft, setDraft] = useState({
+    type: (!account ? 'cash' : account.kind === 'cash' ? 'cash' : account.owner_type === 'company' ? 'company' : 'bank') as AccountType,
+    store_id: account ? (account.store_id && account.store_id !== '0' ? account.store_id : '') : defaultStoreId || '',
+    name: account?.name || '', bank_name: account?.bank_name || '', owner_name: account?.owner_name || '', account_number: account?.account_number || '',
+    status: !account || account.status.toLowerCase() === 'active' ? 'active' : 'inactive', opening_balance: String(account?.opening_balance ?? 0) });
+  const isBank = draft.type !== 'cash';
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const busy = useRef(false);
@@ -74,15 +82,43 @@ export function CashbookAccountDialog({ account, mode, onClose, onChanged }: Pro
   function submit(event: FormEvent) {
     event.preventDefault();
     const opening = Number(draft.opening_balance);
-    if (draft.opening_balance.trim() === '' || !Number.isFinite(opening)) { setError('Số dư đầu kỳ không hợp lệ.'); return; }
+    if (draft.opening_balance.trim() === '' || !Number.isSafeInteger(opening)) { setError('Số dư đầu kỳ phải là số nguyên (đồng).'); return; }
+    if (draft.type !== 'company' && !draft.store_id) { setError('Chọn cơ sở cho tài khoản.'); return; }
     if (isBank && (!draft.bank_name.trim() || !draft.owner_name.trim() || !draft.account_number.trim())) { setError('Nhập đủ ngân hàng, chủ tài khoản và số tài khoản.'); return; }
-    void run(() => updateCashbookAccount(account, { status: draft.status as 'active' | 'inactive', opening_balance: opening,
-      ...(isBank ? { bank_name: draft.bank_name.trim(), owner_name: draft.owner_name.trim(), account_number: draft.account_number.trim() } : {}) }));
+    const values: CashbookAccountEdits = { status: draft.status as 'active' | 'inactive', opening_balance: opening,
+      ...(draft.type !== 'company' ? { store_id: draft.store_id } : {}),
+      ...(!isBank ? { name: draft.name.trim() } : {}),
+      ...(isBank ? { owner_type: draft.type === 'company' ? 'company' : 'store', bank_name: draft.bank_name.trim(), owner_name: draft.owner_name.trim(), account_number: draft.account_number.trim() } : {}) };
+    void run(() => account ? updateCashbookAccount(account, values) : createCashbookAccount(isBank ? 'bank' : 'cash', values));
   }
   const close = () => { if (!busy.current) onClose(); };
-  const title = mode === 'view' ? 'Chi tiết tài khoản' : mode === 'edit' ? 'Sửa tài khoản' : 'Xóa tài khoản';
+  if (mode === 'create' || mode === 'edit') {
+    const typeOptions = ACCOUNT_TYPES.filter(([value]) => !account || (account.kind === 'cash' ? value === 'cash' : value !== 'cash'));
+    const storeMissing = draft.store_id && !stores.some(store => String(store.id) === draft.store_id);
+    return <Dialog title={account ? 'Sửa tài khoản' : 'Thêm tài khoản'} subtitle={account?.label} onClose={close}>
+      <form noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
+        <div className="mg-field"><label htmlFor="account-type">Loại tài khoản *</label><select id="account-type" value={draft.type} disabled={saving || typeOptions.length < 2} onChange={event => change('type', event.target.value)}>
+          {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+        {draft.type === 'company' ? <div className="mg-field"><label htmlFor="account-store">Cơ sở</label><input id="account-store" value="Toàn công ty (dùng chung mọi cơ sở)" disabled /></div>
+          : <div className="mg-field"><label htmlFor="account-store">Cơ sở *</label><select id="account-store" value={draft.store_id} disabled={saving} onChange={event => change('store_id', event.target.value)}>
+            <option value="">Chọn cơ sở</option>{storeMissing && <option value={draft.store_id}>{account?.store_name || `Cơ sở #${draft.store_id}`}</option>}
+            {stores.map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>}
+        {!isBank && <div className="mg-field mg-field-wide"><label htmlFor="account-cash-name">Tên két / nội dung</label><input id="account-cash-name" value={draft.name} maxLength={191} disabled={saving}
+          placeholder={account ? `Két tiền mặt #${account.id}` : 'VD: Két quầy lễ tân'} onChange={event => change('name', event.target.value)} /><small>Để trống sẽ hiện “Két tiền mặt #số”.</small></div>}
+        {isBank && <>
+          <div className="mg-field"><label htmlFor="account-bank-name">Ngân hàng *</label><input id="account-bank-name" value={draft.bank_name} maxLength={191} disabled={saving} onChange={event => change('bank_name', event.target.value)} /></div>
+          <div className="mg-field"><label htmlFor="account-owner-name">Chủ tài khoản *</label><input id="account-owner-name" value={draft.owner_name} maxLength={191} disabled={saving} onChange={event => change('owner_name', event.target.value)} /></div>
+          <div className="mg-field"><label htmlFor="account-number">Số tài khoản *</label><input id="account-number" value={draft.account_number} maxLength={191} disabled={saving} onChange={event => change('account_number', event.target.value)} /></div>
+        </>}
+        <div className="mg-field"><label htmlFor="account-opening">Số dư đầu kỳ (₫)</label><input id="account-opening" type="number" step="1" value={draft.opening_balance} disabled={saving} onChange={event => change('opening_balance', event.target.value)} /></div>
+        <div className="mg-field"><label htmlFor="account-status">Trạng thái</label><select id="account-status" value={draft.status} disabled={saving} onChange={event => change('status', event.target.value)}><option value="active">Đang sử dụng</option><option value="inactive">Ngừng sử dụng</option></select></div>
+      </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
+        <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button><button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : account ? 'Lưu tài khoản' : 'Thêm tài khoản'}</button></div></form>
+    </Dialog>;
+  }
+  const title = mode === 'view' ? 'Chi tiết tài khoản' : 'Xóa tài khoản';
   const details: [string, string][] = [['Loại', account.kind === 'cash' ? 'Tiền mặt' : account.owner_type === 'company' ? 'TK công ty' : 'Ngân hàng'],
-    ...(isBank ? [['Ngân hàng', account.bank_name || '—'], ['Chủ tài khoản', account.owner_name || '—'], ['Số tài khoản', account.account_number || '—']] as [string, string][] : [['Két', account.label]] as [string, string][]),
+    ...(isBank ? [['Ngân hàng', account.bank_name || '—'], ['Chủ tài khoản', account.owner_name || '—'], ['Số tài khoản', account.account_number || '—']] as [string, string][] : [['Tên két / nội dung', account.label]] as [string, string][]),
     ['Cơ sở', account.store_name || (account.owner_type === 'company' ? 'Toàn công ty' : '—')],
     ['Trạng thái', account.status.toLowerCase() === 'active' ? 'Đang sử dụng' : 'Ngừng sử dụng'],
     ['Số dư đầu kỳ', money(account.opening_balance)], ['Tổng thu', money(account.income)], ['Tổng chi', money(account.expense)],
@@ -92,16 +128,6 @@ export function CashbookAccountDialog({ account, mode, onClose, onChanged }: Pro
       <div role="tabpanel" id={`account-panel-${tab}`} aria-labelledby={`account-tab-${tab}`}>
         {tab === 'info' ? <dl className="mg-detail-grid">{details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : <AccountVouchers account={account} />}</div></div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button></div></>}
-    {mode === 'edit' && <form noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
-      {isBank && <>
-        <div className="mg-field"><label htmlFor="account-bank-name">Ngân hàng *</label><input id="account-bank-name" value={draft.bank_name} maxLength={191} disabled={saving} onChange={event => change('bank_name', event.target.value)} /></div>
-        <div className="mg-field"><label htmlFor="account-owner-name">Chủ tài khoản *</label><input id="account-owner-name" value={draft.owner_name} maxLength={191} disabled={saving} onChange={event => change('owner_name', event.target.value)} /></div>
-        <div className="mg-field"><label htmlFor="account-number">Số tài khoản *</label><input id="account-number" value={draft.account_number} maxLength={64} disabled={saving} onChange={event => change('account_number', event.target.value)} /></div>
-      </>}
-      <div className="mg-field"><label htmlFor="account-opening">Số dư đầu kỳ (₫)</label><input id="account-opening" type="number" step="1" value={draft.opening_balance} disabled={saving} onChange={event => change('opening_balance', event.target.value)} /></div>
-      <div className="mg-field"><label htmlFor="account-status">Trạng thái</label><select id="account-status" value={draft.status} disabled={saving} onChange={event => change('status', event.target.value)}><option value="active">Đang sử dụng</option><option value="inactive">Ngừng sử dụng</option></select></div>
-    </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
-      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button><button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : 'Lưu tài khoản'}</button></div></form>}
     {mode === 'delete' && <><div className="mg-dialog-body"><p>Xóa vĩnh viễn <strong>{account.label}</strong>? Chỉ xóa được tài khoản chưa có phiếu thu/chi nào. Nếu đã có phiếu, hãy chuyển sang “Ngừng sử dụng”.</p>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={saving} onClick={() => void run(() => deleteCashbookAccount(account))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Trash2 size={16} />}{saving ? 'Đang xóa…' : 'Xóa tài khoản'}</button></div></>}
   </Dialog>;

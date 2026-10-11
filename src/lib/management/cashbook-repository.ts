@@ -39,10 +39,10 @@ export function createDemoCashbookRepository(): CashbookRepository {
 }
 export interface CashbookAccount {
   key: string; kind: 'bank' | 'cash'; id: string; label: string; store_id?: string; store_name?: string; owner_type: string; status: string;
-  bank_name?: string; owner_name?: string; account_number?: string;
+  name?: string; bank_name?: string; owner_name?: string; account_number?: string;
   opening_balance: number; income: number; expense: number; balance: number; voucher_count: number;
 }
-export interface CashbookAccountEdits { status: 'active' | 'inactive'; opening_balance: number; bank_name?: string; owner_name?: string; account_number?: string }
+export interface CashbookAccountEdits { status: 'active' | 'inactive'; opening_balance: number; store_id?: string; owner_type?: 'company' | 'store'; name?: string; bank_name?: string; owner_name?: string; account_number?: string }
 const amount = (value: unknown, field: string): number => {
   const parsed = Number(value ?? 0);
   if (!Number.isFinite(parsed)) throw new Error(`API trả về ${field} tài khoản không hợp lệ.`);
@@ -52,7 +52,7 @@ export function mapCashbookAccount(raw: ApiRecord): CashbookAccount {
   const id = optionalText(raw.id), kind = raw.kind;
   if (!id || (kind !== 'bank' && kind !== 'cash')) throw new Error('API trả về tài khoản thiếu ID hoặc loại.');
   return { key: `${kind}:${id}`, kind, id, label: optionalText(raw.label) || (kind === 'cash' ? `Két tiền mặt #${id}` : `Tài khoản #${id}`),
-    bank_name: optionalText(raw.bank_name), owner_name: optionalText(raw.owner_name), account_number: optionalText(raw.account_number),
+    name: optionalText(raw.name), bank_name: optionalText(raw.bank_name), owner_name: optionalText(raw.owner_name), account_number: optionalText(raw.account_number),
     store_id: optionalText(raw.store_id), store_name: optionalText(raw.store_name), owner_type: String(raw.owner_type || ''), status: String(raw.status || ''),
     opening_balance: amount(raw.opening_balance, 'số dư đầu kỳ'), income: amount(raw.income, 'tổng thu'), expense: amount(raw.expense, 'tổng chi'),
     balance: amount(raw.balance, 'số dư'), voucher_count: amount(raw.voucher_count, 'số phiếu') };
@@ -64,8 +64,8 @@ export async function loadCashbookAccounts(baseUrl = '/api', signal?: AbortSigna
   if (envelope.status !== 'success' || !Array.isArray(envelope.data)) throw new Error('API tài khoản trả về cấu trúc chưa được hỗ trợ.');
   return envelope.data.map(item => mapCashbookAccount(object(item)));
 }
-async function writeCashbookAccount(account: CashbookAccount, method: 'PATCH' | 'DELETE', body?: CashbookAccountEdits) {
-  const response = await fetch(`/api/auth/cashbook/accounts/${account.kind}/${encodeURIComponent(account.id)}`, { method, cache: 'no-store', credentials: 'same-origin',
+async function writeCashbookAccount(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: CashbookAccountEdits) {
+  const response = await fetch(`/api/auth/cashbook/accounts/${path}`, { method, cache: 'no-store', credentials: 'same-origin',
     headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
   const envelope = object(await response.json().catch(() => ({})));
   if (!response.ok || envelope.status !== 'success') throw new Error(optionalText(envelope.message) || `Không thực hiện được thao tác (HTTP ${response.status}).`);
@@ -83,8 +83,10 @@ export async function loadCashbookAccountVouchers(account: CashbookAccount, rang
       user_name: optionalText(raw.user_name), contract_code: optionalText(raw.contract_code), content: optionalText(raw.content) } as CashbookAccountVoucher;
   });
 }
-export const updateCashbookAccount = (account: CashbookAccount, edits: CashbookAccountEdits) => writeCashbookAccount(account, 'PATCH', edits);
-export const deleteCashbookAccount = (account: CashbookAccount) => writeCashbookAccount(account, 'DELETE');
+const accountPath = (account: CashbookAccount) => `${account.kind}/${encodeURIComponent(account.id)}`;
+export const createCashbookAccount = (kind: CashbookAccount['kind'], values: CashbookAccountEdits) => writeCashbookAccount(kind, 'POST', values);
+export const updateCashbookAccount = (account: CashbookAccount, edits: CashbookAccountEdits) => writeCashbookAccount(accountPath(account), 'PATCH', edits);
+export const deleteCashbookAccount = (account: CashbookAccount) => writeCashbookAccount(accountPath(account), 'DELETE');
 
 // Verified in apps/api/src/modules/finance/finance.controller.ts. This adapter performs GET only.
 export const CASHBOOK_ENDPOINT = '/auth/transactions';

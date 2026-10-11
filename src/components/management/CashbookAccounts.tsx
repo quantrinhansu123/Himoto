@@ -1,21 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import { Banknote, Eye, FileSearch, Landmark, LoaderCircle, Pencil, RotateCcw, Trash2, WalletCards } from 'lucide-react';
+import { Banknote, Eye, FileSearch, Landmark, LoaderCircle, Pencil, Plus, RotateCcw, Trash2, WalletCards } from 'lucide-react';
 import type { CashbookAccount } from '@/lib/management/cashbook-repository';
 import { AccountDialogMode, CashbookAccountDialog } from './CashbookAccountDialog';
+import { useManagement } from './ManagementProvider';
 
 const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)} ₫`;
 const typeLabel = (account: CashbookAccount) => account.kind === 'cash' ? 'Tiền mặt' : account.owner_type === 'company' ? 'TK công ty' : 'Ngân hàng';
 
 interface Props { accounts: CashbookAccount[]; loading: boolean; error: string; onRetry: () => void }
 export function CashbookAccounts({ accounts, loading, error, onRetry }: Props) {
-  const [target, setTarget] = useState<{ account: CashbookAccount; mode: AccountDialogMode } | null>(null);
+  const { selectedStore } = useManagement();
+  const [target, setTarget] = useState<{ account: CashbookAccount; mode: Exclude<AccountDialogMode, 'create'> } | null>(null);
+  const [creating, setCreating] = useState(false);
   const total = accounts.reduce((sum, account) => ({ opening: sum.opening + account.opening_balance, income: sum.income + account.income, expense: sum.expense + account.expense, balance: sum.balance + account.balance }), { opening: 0, income: 0, expense: 0, balance: 0 });
   return <section className="mg-data-panel mg-cashbook-panel mg-cashbook-accounts" aria-labelledby="cashbook-accounts-title" id="cashbook-accounts">
     <div className="mg-cashbook-panel-heading"><span className="mg-cashbook-symbol is-account" aria-hidden="true"><WalletCards size={20} /></span>
       <div><h2 id="cashbook-accounts-title">Danh sách TK<span className="mg-title-count">{loading || error ? '—' : accounts.length}</span></h2><p>Số dư = số dư đầu kỳ + tổng thu − tổng chi của từng tài khoản.</p></div>
       <span className="mg-cashbook-panel-description">Tính trên toàn bộ phiếu, không theo bộ lọc ngày</span>
+      <button type="button" className="mg-button mg-button-primary mg-cashbook-account-add" onClick={() => setCreating(true)}><Plus size={16} />Thêm tài khoản</button>
     </div>
     <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Bảng danh sách tài khoản và số dư">
       <table className="mg-table mg-cashbook-account-table" aria-busy={loading}><caption className="mg-sr-only">Danh sách tài khoản và số dư</caption>
@@ -43,5 +47,6 @@ export function CashbookAccounts({ accounts, loading, error, onRetry }: Props) {
       </table>
     </div>
     {target && <CashbookAccountDialog key={`${target.mode}-${target.account.key}`} account={target.account} mode={target.mode} onClose={() => setTarget(null)} onChanged={onRetry} />}
+    {creating && <CashbookAccountDialog mode="create" defaultStoreId={selectedStore === 'all' ? '' : selectedStore} onClose={() => setCreating(false)} onChanged={onRetry} />}
   </section>;
 }

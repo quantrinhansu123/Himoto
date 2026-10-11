@@ -24,12 +24,14 @@ const ContractComposer = dynamic(() => loadComposer().then(module => module.Cont
 const CustomerCreateDialog = dynamic(() => import('@/components/contracts/CustomerCreateDialog').then(module => module.CustomerCreateDialog), { ssr: false, loading: FeatureLoading });
 const CustomerExcelActions = dynamic(() => import('./CustomerExcelActions').then(module => module.CustomerExcelActions), { ssr: false, loading: FeatureLoading });
 const VehicleExcelActions = dynamic(() => import('./VehicleExcelActions').then(module => module.VehicleExcelActions), { ssr: false, loading: FeatureLoading });
+const VehicleEditDialog = dynamic(() => import('./VehicleEditDialog').then(module => module.VehicleEditDialog), { ssr: false, loading: FeatureLoading });
 const StoreEditDialog = dynamic(() => import('./StoreEditDialog').then(module => module.StoreEditDialog), { ssr: false, loading: FeatureLoading });
 const ContractRowReturnDialog = dynamic(() => import('./ContractRowReturnDialog').then(module => module.ContractRowReturnDialog), { ssr: false, loading: FeatureLoading });
 const ContractVehicleSwapDialog = dynamic(() => import('./ContractVehicleSwapDialog').then(module => module.ContractVehicleSwapDialog), { ssr: false, loading: FeatureLoading });
 const ContractRenewalDialog = dynamic(() => import('./ContractRenewalDialog').then(module => module.ContractRenewalDialog), { ssr: false, loading: FeatureLoading });
 const CustomerDetail = dynamic(() => import('./CustomerDetail').then(module => module.CustomerDetail), { ssr: false, loading: FeatureLoading });
 const StoreDetail = dynamic(() => import('./StoreDetail').then(module => module.StoreDetail), { ssr: false, loading: FeatureLoading });
+const StaffDialog = dynamic(() => import('./StaffDialogs').then(module => module.StaffDialog), { ssr: false, loading: FeatureLoading });
 
 const EMPTY_ROWS: ManagementRow[] = [];
 
@@ -54,6 +56,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   const [editing, setEditing] = useState<ManagementRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [createStaffOpen, setCreateStaffOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ManagementRow | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -64,6 +67,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState('');
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
+  const [deleteAllText, setDeleteAllText] = useState('');
+  const [deleteAllProgress, setDeleteAllProgress] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
   const [printRow, setPrintRow] = useState<ManagementRow | null>(null);
   const [composerMode, setComposerMode] = useState<'print' | 'edit' | 'draft'>('print');
@@ -97,8 +103,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   const columns = config.columns.filter(c => visibleKeys.includes(c.key));
   const statusOptions = [...config.statuses, ...Array.from(new Set(rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
-  const canEdit = kind === 'customers' || kind === 'stores';
-  const canDelete = source === 'api' && (kind === 'customers' || kind === 'stores');
+  const canEdit = kind === 'customers' || kind === 'stores' || kind === 'vehicles';
+  const canDelete = source === 'api' && (kind === 'customers' || kind === 'stores' || kind === 'vehicles');
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
   const canBulkDelete = source === 'api';
   useEffect(() => {
@@ -122,6 +128,25 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
       await ensureData([kind], true).catch(() => {});
     } catch (cause) { setBulkDeleteError(cause instanceof Error ? cause.message : `Không xóa được ${config.singular}.`); }
     finally { setBulkDeleteBusy(false); }
+  }
+  async function deleteAllFiltered() {
+    if (bulkDeleteBusy || !filteredRows.length || deleteAllText.trim().toUpperCase() !== 'XOA') return;
+    setBulkDeleteBusy(true); setBulkDeleteError('');
+    const ids = filteredRows.map(row => row.id);
+    let done = 0;
+    try {
+      for (let index = 0; index < ids.length; index += 500) {
+        done += (await bulkDelete(kind, ids.slice(index, index + 500))).length;
+        setDeleteAllProgress(done);
+      }
+      setSelectedIds(new Set()); setDeleteAllOpen(false); setDeleteAllText('');
+      notify(`Đã xóa ${done} ${config.singular}.`);
+    } catch (cause) {
+      setBulkDeleteError(`${done ? `Đã xóa ${done}/${ids.length}. ` : ''}${cause instanceof Error ? cause.message : `Không xóa được ${config.singular}.`}`);
+    } finally {
+      setBulkDeleteBusy(false); setDeleteAllProgress(0);
+      if (done) { if (kind === 'contracts') invalidateData(['vehicles']); await ensureData([kind], true).catch(() => {}); }
+    }
   }
   const bulkDeleteNote: Record<ManagementKind, string> = {
     contracts: 'Hợp đồng đã chọn sẽ bị ẩn khỏi danh sách (xóa mềm, dữ liệu vẫn được giữ trong hệ thống). Xe đang thuê theo các hợp đồng này được trả về trạng thái Lưu kho; phiếu thu/chi đã ghi vẫn giữ nguyên trong Sổ quỹ.',
@@ -156,11 +181,12 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   return <section className="mg-page" aria-label={config.title}>
     <div className="mg-page-content">
       <div className="mg-page-heading"><div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopedRows.length}</span></h1><p>{config.description}</p></div>
-        <div className="mg-heading-actions">{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
+        <div className="mg-heading-actions">{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}{canBulkDelete && kind === 'contracts' && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !filteredRows.length} onClick={() => { setBulkDeleteError(''); setDeleteAllText(''); setDeleteAllOpen(true); }}><Trash2 size={16} />Xóa hết ({filteredRows.length})</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
           {kind === 'customers' && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}
-          {(kind === 'customers' || kind === 'stores') && <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error)} onClick={() => {
+          {(kind === 'customers' || kind === 'stores' || kind === 'vehicles' || kind === 'staff') && <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error)} onClick={() => {
             if (kind === 'customers' && source === 'api') setCreateCustomerOpen(true);
+            else if (kind === 'staff') setCreateStaffOpen(true);
             else { setEditing(null); setFormOpen(true); }
           }}><Plus size={18} />{config.addLabel}</button>}
           {(kind === 'stores' || kind === 'vehicles' || kind === 'customers') && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
@@ -210,19 +236,36 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
           </div>
         </div>
       </div>
-      <div className="mg-list-note"><span className="mg-note-line" />{kind === 'contracts' ? canSaveContractDrafts ? 'Dữ liệu hiện tại từ Supabase. Bản nháp được lưu trên hệ thống để mở lại và tiếp tục sửa. Nhấn Làm mới để cập nhật danh sách.' : 'Danh sách lấy từ hệ thống. Nhấn Làm mới để tải dữ liệu hiện tại; chức năng ghi bản nháp chưa được kết nối.' : kind === 'customers' && source === 'api' ? 'Dữ liệu khách hàng được đọc và cập nhật trực tiếp trong Supabase. Hồ sơ có đơn thuê liên quan sẽ được bảo vệ khỏi thao tác xóa.' : kind === 'stores' ? 'Cơ sở được cập nhật trực tiếp trong Supabase. Chỉ xóa được cơ sở chưa có dữ liệu liên quan; có thể chọn Tạm ngừng để giữ lịch sử.' : kind === 'vehicles' ? 'Xe được đồng bộ trực tiếp vào Supabase sau khi đối chiếu Excel. Mỗi lần nhập / xóa đều có sao lưu; xe có dữ liệu liên quan được bảo vệ khỏi xóa.' : 'Các trường chưa được API cung cấp hiển thị “—”. Danh sách hiện chỉ đọc.'}</div>
+      <div className="mg-list-note"><span className="mg-note-line" />{kind === 'contracts' ? canSaveContractDrafts ? 'Dữ liệu hiện tại từ Supabase. Bản nháp được lưu trên hệ thống để mở lại và tiếp tục sửa. Nhấn Làm mới để cập nhật danh sách.' : 'Danh sách lấy từ hệ thống. Nhấn Làm mới để tải dữ liệu hiện tại; chức năng ghi bản nháp chưa được kết nối.' : kind === 'customers' && source === 'api' ? 'Dữ liệu khách hàng được đọc và cập nhật trực tiếp trong Supabase. Hồ sơ có đơn thuê liên quan sẽ được bảo vệ khỏi thao tác xóa.' : kind === 'stores' ? 'Cơ sở được cập nhật trực tiếp trong Supabase. Chỉ xóa được cơ sở chưa có dữ liệu liên quan; có thể chọn Tạm ngừng để giữ lịch sử.' : kind === 'vehicles' ? 'Xe được thêm, sửa trực tiếp trong Supabase hoặc đồng bộ từ Excel. Trạng thái Đang thuê do hợp đồng cập nhật; xe có dữ liệu liên quan được bảo vệ khỏi xóa.' : kind === 'staff' ? 'Nhân sự được thêm, sửa trực tiếp trong Supabase; mã nhân sự do hệ thống tự cấp. Nhân sự còn lịch trực hoặc dữ liệu liên quan được bảo vệ khỏi xóa.' : 'Các trường chưa được API cung cấp hiển thị “—”. Danh sách hiện chỉ đọc.'}</div>
     </div>
-    {formOpen && kind === 'stores' ? <StoreEditDialog row={editing} onSaved={() => { if (!editing) { setQuery(EMPTY_QUERY); setPage(1); } }} onClose={() => setFormOpen(false)} /> : formOpen && <EntityForm config={config} row={editing} onClose={() => setFormOpen(false)} />}
+    {formOpen && kind === 'vehicles' ? <VehicleEditDialog row={editing} onClose={() => setFormOpen(false)} /> : formOpen && kind === 'stores' ? <StoreEditDialog row={editing} onSaved={() => { if (!editing) { setQuery(EMPTY_QUERY); setPage(1); } }} onClose={() => setFormOpen(false)} /> : formOpen && <EntityForm config={config} row={editing} onClose={() => setFormOpen(false)} />}
+    {createStaffOpen && kind === 'staff' && <StaffDialog row={null} mode="create" stores={dataset?.stores || EMPTY_ROWS} defaultStoreId={selectedStore === 'all' ? '' : selectedStore} onClose={() => setCreateStaffOpen(false)}
+      onChanged={async created => { if (created) notify(`Đã thêm nhân sự ${created.name}${created.code ? ` · ${created.code}` : ''}.`); await reload(['stores', 'staff']); }} />}
     {createCustomerOpen && kind === 'customers' && <CustomerCreateDialog idCard="" onCreated={() => setCreateCustomerOpen(false)} onClose={() => setCreateCustomerOpen(false)} />}
-    {deleteTarget && canDelete && <Dialog title={kind === 'stores' ? 'Xóa cơ sở?' : 'Xóa hồ sơ khách hàng?'} subtitle={`${deleteTarget.name} · ${deleteTarget.code}`} onClose={() => { if (!deleteBusy) { setDeleteTarget(null); setDeleteError(''); } }}>
-      <div className="mg-dialog-body"><p>{kind === 'stores' ? 'Chỉ xóa cơ sở chưa có xe, nhân sự, khách hàng, hợp đồng, giao dịch hoặc dữ liệu liên quan. Cơ sở đã được sử dụng sẽ được giữ lại để bảo toàn lịch sử.' : 'Thao tác này sẽ xóa hồ sơ khách hàng khỏi Supabase. Hồ sơ đang được dùng trong đơn thuê sẽ không thể xóa để bảo toàn lịch sử.'}</p>{deleteError && <p className="mg-error-message" role="alert">{deleteError}</p>}</div>
+    {deleteTarget && canDelete && <Dialog title={kind === 'stores' ? 'Xóa cơ sở?' : kind === 'vehicles' ? 'Xóa xe?' : 'Xóa hồ sơ khách hàng?'} subtitle={kind === 'vehicles' ? `${deleteTarget.name} · ${deleteTarget.license || deleteTarget.code}` : `${deleteTarget.name} · ${deleteTarget.code}`} onClose={() => { if (!deleteBusy) { setDeleteTarget(null); setDeleteError(''); } }}>
+      <div className="mg-dialog-body"><p>{kind === 'stores' ? 'Chỉ xóa cơ sở chưa có xe, nhân sự, khách hàng, hợp đồng, giao dịch hoặc dữ liệu liên quan. Cơ sở đã được sử dụng sẽ được giữ lại để bảo toàn lịch sử.' : kind === 'vehicles' ? 'Xe sẽ bị xóa hẳn khỏi Supabase. Chỉ xóa được xe chưa từng nằm trong hợp đồng, bản nháp hoặc dữ liệu liên quan; xe đã dùng nên chuyển sang Đã bán hoặc Hỏng để giữ lịch sử.' : 'Thao tác này sẽ xóa hồ sơ khách hàng khỏi Supabase. Hồ sơ đang được dùng trong đơn thuê sẽ không thể xóa để bảo toàn lịch sử.'}</p>{deleteError && <p className="mg-error-message" role="alert">{deleteError}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={deleteBusy} onClick={async () => {
         if (!deleteTarget || deleteBusy) return;
         setDeleteBusy(true); setDeleteError('');
-        try { if (kind === 'stores') await deleteStore(deleteTarget.id); else await deleteCustomer(deleteTarget.id); setDeleteTarget(null); }
+        try {
+          if (kind === 'stores') await deleteStore(deleteTarget.id);
+          else if (kind === 'vehicles') { await bulkDelete('vehicles', [deleteTarget.id]); notify(`Đã xóa xe ${deleteTarget.license || deleteTarget.name}.`); await ensureData(['vehicles'], true).catch(() => {}); }
+          else await deleteCustomer(deleteTarget.id);
+          setDeleteTarget(null);
+        }
         catch (cause) { setDeleteError(cause instanceof Error ? cause.message : `Không xóa được ${config.singular}.`); }
         finally { setDeleteBusy(false); }
-      }}>{deleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />{kind === 'stores' ? 'Xóa cơ sở' : 'Xóa khách hàng'}</>}</button></div>
+      }}>{deleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />{kind === 'stores' ? 'Xóa cơ sở' : kind === 'vehicles' ? 'Xóa xe' : 'Xóa khách hàng'}</>}</button></div>
+    </Dialog>}
+    {deleteAllOpen && canBulkDelete && <Dialog title={`Xóa hết ${filteredRows.length} ${config.singular}?`} subtitle={isFiltered ? 'Theo cơ sở / bộ lọc / tab đang chọn' : 'Toàn bộ danh sách'} onClose={() => { if (!bulkDeleteBusy) setDeleteAllOpen(false); }}>
+      <form onSubmit={event => { event.preventDefault(); void deleteAllFiltered(); }}>
+        <div className="mg-dialog-body"><p>{bulkDeleteNote[kind]}</p>
+          <p>Sẽ xóa <strong>{filteredRows.length}</strong> {config.singular} đang hiển thị trong danh sách{isFiltered ? ' (đã áp dụng bộ lọc)' : ''}, không chỉ trang hiện tại.</p>
+          <div className="mg-field"><label htmlFor="delete-all-confirm">Gõ <strong>XOA</strong> để xác nhận</label><input id="delete-all-confirm" value={deleteAllText} autoComplete="off" disabled={bulkDeleteBusy} onChange={event => setDeleteAllText(event.target.value)} /></div>
+          {bulkDeleteBusy && <p role="status">Đang xóa… {deleteAllProgress}/{filteredRows.length}</p>}
+          {bulkDeleteError && <p className="mg-error-message" role="alert">{bulkDeleteError}</p>}</div>
+        <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={bulkDeleteBusy} onClick={() => setDeleteAllOpen(false)}>Hủy</button><button type="submit" className="mg-button mg-button-danger" disabled={bulkDeleteBusy || deleteAllText.trim().toUpperCase() !== 'XOA'}>{bulkDeleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa hết {filteredRows.length} {config.singular}</>}</button></div>
+      </form>
     </Dialog>}
     {bulkDeleteOpen && canBulkDelete && <Dialog title={`Xóa ${selectedIds.size} ${config.singular}?`} subtitle={rows.filter(row => selectedIds.has(row.id)).map(row => row.code || row.name || `#${row.id}`).slice(0, 6).join(', ') + (selectedIds.size > 6 ? '…' : '')} onClose={() => { if (!bulkDeleteBusy) setBulkDeleteOpen(false); }}>
       <div className="mg-dialog-body"><p>{bulkDeleteNote[kind]}</p>{bulkDeleteError && <p className="mg-error-message" role="alert">{bulkDeleteError}</p>}</div>

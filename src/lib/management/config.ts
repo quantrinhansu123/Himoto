@@ -94,9 +94,8 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     fields: [{ key: 'name', label: 'Tên / dòng xe', required: true }, { key: 'license', label: 'Biển số', required: true },
       { key: 'brand', label: 'Hãng xe', required: true }, { key: 'color', label: 'Màu sắc' }, { key: 'type', label: 'Loại xe', type: 'select', options: VEHICLE_TYPES, required: true },
       branchField, { key: 'status', label: 'Trạng thái', type: 'select', options: VEHICLE_STATUSES, required: true },
-      { key: 'daily_price', label: 'Giá thuê / ngày (VNĐ)', type: 'number', required: true },
-      { key: 'monthly_price', label: 'Giá thuê / tháng (VNĐ)', type: 'number' },
-      { key: 'odometer', label: 'Số km', type: 'number', required: true }, { key: 'year', label: 'Năm sản xuất', type: 'number' }],
+      { key: 'odometer', label: 'Số km', type: 'number' }, { key: 'year', label: 'Năm sản xuất', type: 'number', required: true },
+      { key: 'chassis', label: 'Số khung' }, { key: 'engine', label: 'Số máy' }],
   },
 };
 

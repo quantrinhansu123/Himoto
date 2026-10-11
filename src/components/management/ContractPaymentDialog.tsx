@@ -3,13 +3,14 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LoaderCircle, Plus, RotateCcw, Wallet } from 'lucide-react';
+import { LoaderCircle, Plus, RotateCcw, Trash2, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { TransferQrPanel } from './TransferQrPanel';
 import { useManagement } from './ManagementProvider';
 import { formatMoney } from '@/lib/formatters';
 import { PAYABLE_STATUSES, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentAccount, PaymentContext, PaymentInput, PaymentMethod, PaymentPurpose, PaymentRequestError, RenewalItem, canAddExtraReceipt, loadPaymentContext, paymentAccounts, saveContractPayment, vietnamPaymentTime } from '@/lib/management/contract-payments';
 import { transferQr } from '@/lib/management/transfer-qr';
+import { bulkDelete } from '@/lib/management/bulk-delete';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const defaultNote = (purpose: PaymentPurpose, code: string) => purpose === 'extra' ? `Thu thêm hợp đồng_${code}` : purpose === 'deposit_refund' ? `Trả cọc hợp đồng_${code}` : `Gia hạn hợp đồng_${code}`;
@@ -35,6 +36,8 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
   const [renewalDays, setRenewalDays] = useState('1');
   const [transferReview, setTransferReview] = useState<{ input: PaymentInput; account: PaymentAccount; qr: ReturnType<typeof transferQr> } | null>(null);
   const [transferConfirmed, setTransferConfirmed] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const busy = useRef(false);
   const storageKey = `himoto-contract-payment-${id}`;
 
@@ -124,6 +127,19 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
     requestAnimationFrame(() => { if (document.activeElement === input) input.setSelectionRange(position, position); });
   }
 
+  async function deleteAllReceipts() {
+    if (busy.current || !context?.history.length) return;
+    busy.current = true; setDeleting(true); setError(''); setSuccess('');
+    try {
+      const deleted = await bulkDelete('transactions', context.history.map(receipt => receipt.id));
+      const fresh = await loadPaymentContext(id);
+      setContext(fresh); acceptContractPayment(fresh); setConfirmDeleteAll(false);
+      const message = `Đã xóa ${deleted.length} phiếu Thu / Chi của hợp đồng ${fresh.code}.`;
+      setSuccess(message); notify(message);
+      onPaymentSaved?.();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không xóa được phiếu.'); }
+    finally { busy.current = false; setDeleting(false); }
+  }
   async function refresh() {
     setLoading(true);
     try { const fresh = await loadPaymentContext(id); setContext(fresh); acceptContractPayment(fresh); }
@@ -229,8 +245,26 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
           <div className="mg-payment-history-heading"><h3>Lịch sử phiếu Thu / Chi ({context.history.length})</h3><div className="mg-payment-history-actions">
             {refundAllowed && !refund && <button type="button" className="mg-button" disabled={locked || loading} onClick={() => choosePurpose('deposit_refund')}><Wallet size={15} />Trả cọc</button>}
             {extraAllowed && !(purpose === 'extra' && canCollect) && <button type="button" className="mg-button mg-button-primary" disabled={locked || loading} onClick={() => choosePurpose('extra')}><Plus size={15} />Thêm phiếu thu</button>}
+            {context.history.length > 0 && <button type="button" className="mg-button mg-button-danger" disabled={locked || loading || deleting} onClick={() => setConfirmDeleteAll(true)}><Trash2 size={15} />Xóa hết phiếu</button>}
             <button type="button" className="mg-button" disabled={locked || loading} onClick={() => void refresh()}><RotateCcw size={15} />Làm mới</button></div></div>
-          <ul className="mg-payment-history">{context.history.map(receipt => <li key={receipt.id} className={receipt.type === 'out' ? 'is-expense' : undefined}><strong>Phiếu {receipt.type === 'out' ? 'Chi' : 'Thu'} #{receipt.id}{receipt.deposit ? (receipt.type === 'out' ? ' · Trả cọc' : ' · Tiền cọc') : ''} · {receipt.type === 'out' ? '−' : ''}{formatMoney(receipt.amount)}</strong><span>{vietnamText(receipt.paid_at)} · {receipt.method}</span><span>{receipt.account || 'Chưa xác định tài khoản'} · {receipt.actor || '—'}</span><p>{receipt.note}</p>{receipt.renewal && <span>Gia hạn {receipt.renewal.license || receipt.renewal.vehicle_name} đến {vietnamText(receipt.renewal.return_at)}</span>}</li>)}</ul>
+          {confirmDeleteAll && context.history.length > 0 && <div className="mg-payment-delete-confirm" role="alertdialog" aria-label="Xác nhận xóa hết phiếu">
+            <p>Xóa vĩnh viễn <strong>{context.history.length} phiếu</strong> của hợp đồng {context.code} (thu {formatMoney(context.history.filter(receipt => receipt.type !== 'out').reduce((sum, receipt) => sum + receipt.amount, 0))}, chi {formatMoney(context.history.filter(receipt => receipt.type === 'out').reduce((sum, receipt) => sum + receipt.amount, 0))}) khỏi Sổ quỹ / Sổ két?
+              Tổng đã thu của hợp đồng giảm tương ứng; phiếu gia hạn / thu thêm cũng trừ khỏi tiền hợp đồng. Không hoàn tác được.</p>
+            <div><button type="button" className="mg-button" disabled={deleting} onClick={() => setConfirmDeleteAll(false)}>Hủy</button>
+              <button type="button" className="mg-button mg-button-danger" disabled={deleting} onClick={() => void deleteAllReceipts()}>{deleting ? <LoaderCircle size={15} className="mg-spin" /> : <Trash2 size={15} />}{deleting ? 'Đang xóa…' : 'Xóa hết'}</button></div>
+          </div>}
+          {context.history.length > 0 && <div className="mg-payment-history-columns">{(['in', 'out'] as const).map(type => {
+            const receipts = context.history.filter(receipt => (receipt.type === 'out' ? 'out' : 'in') === type);
+            const sum = receipts.reduce((total, receipt) => total + receipt.amount, 0);
+            return <section key={type} className={type === 'out' ? 'is-expense' : 'is-income'}>
+              <h4>{type === 'out' ? 'Phiếu Chi' : 'Phiếu Thu'} ({receipts.length}) · {type === 'out' ? '−' : ''}{formatMoney(sum)}</h4>
+              {receipts.length ? <ul className="mg-payment-history">{receipts.map(receipt => <li key={receipt.id} className={type === 'out' ? 'is-expense' : undefined}>
+                <strong>#{receipt.id}{receipt.deposit ? (type === 'out' ? ' · Trả cọc' : ' · Tiền cọc') : ''} · {type === 'out' ? '−' : ''}{formatMoney(receipt.amount)}</strong>
+                <span>{vietnamText(receipt.paid_at)} · {receipt.method}</span><span>{receipt.account || 'Chưa xác định tài khoản'} · {receipt.actor || '—'}</span>
+                {receipt.note && <p>{receipt.note}</p>}{receipt.renewal && <span>Gia hạn {receipt.renewal.license || receipt.renewal.vehicle_name} đến {vietnamText(receipt.renewal.return_at)}</span>}</li>)}</ul>
+                : <p className="mg-payment-history-empty">Chưa có phiếu {type === 'out' ? 'chi' : 'thu'}.</p>}
+            </section>;
+          })}</div>}
           {!context.history.length && <p>Chưa có phiếu Thu / Chi được duyệt.</p>}
           <Link href="/cashbook" aria-disabled={saving} onClick={event => { if (busy.current) event.preventDefault(); else onClose(); }}>Mở Sổ quỹ / Sổ két</Link>
         </>}

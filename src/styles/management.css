@@ -1101,6 +1101,9 @@
   width: 30px;
   height: 30px;
 }
+.mg-table-vehicles .mg-actions-column { width: 112px; min-width: 112px; }
+.mg-row-actions .mg-icon-button-danger { color: var(--mg-red-text); }
+.mg-row-actions .mg-icon-button-danger:hover:not(:disabled) { background: var(--mg-red-bg); }
 
 /* Empty, Loading, and Error States */
 .mg-table-state {
@@ -1821,6 +1824,8 @@
 .mg-cashbook-panel .mg-pagination { flex-wrap: wrap; gap: 10px; }
 @media (max-width: 1199px) { .mg-cashbook-tables { grid-template-columns: minmax(0, 1fr); } }
 .mg-cashbook-accounts { margin-bottom: 18px; }
+.mg-cashbook-accounts .mg-cashbook-panel-heading { flex-wrap: wrap; }
+.mg-cashbook-account-add { flex-shrink: 0; }
 .mg-cashbook-symbol.is-account { background: #eef4fb; color: #2d5c8a; border-color: #cfdcea; }
 .mg-cashbook-account-table { min-width: 920px; width: 100%; }
 .mg-cashbook-account-table th:nth-child(2) { width: 34%; }
@@ -1869,6 +1874,7 @@
   margin: 3px 0 0;
 }
 .mg-cashbook-mobile-hint { display: none; }
+.mg-cashbook-delete-all { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
 .mg-cashbook-panel-description {
   margin-left: auto;
   font-size: 12px;
@@ -2324,6 +2330,15 @@
 .mg-payment-fields p { margin: 0; }
 
 .mg-payment-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mg-payment-history-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.mg-payment-history-columns > section { min-width: 0; padding: 10px; border: 1px solid var(--mg-line); border-radius: var(--mg-radius-md); background: var(--mg-slate-50); }
+.mg-payment-history-columns h4 { margin: 0 0 8px; font-size: 13px; color: var(--mg-green-text); }
+.mg-payment-history-columns .is-expense h4 { color: var(--mg-red-text); }
+.mg-payment-history-columns .mg-payment-history { margin: 0; }
+.mg-payment-delete-confirm { display: grid; gap: 10px; margin: 0 0 12px; padding: 12px; border: 1px solid var(--mg-red-border); border-radius: var(--mg-radius-md); background: var(--mg-red-bg); color: var(--mg-red-text); font-size: 13px; }
+.mg-payment-delete-confirm p { margin: 0; }
+.mg-payment-delete-confirm > div { display: flex; justify-content: flex-end; gap: 8px; }
+.mg-payment-history-empty { margin: 0; color: var(--mg-slate-500); font-size: 12.5px; }
 .mg-payment-history-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 .mg-contract-detail .mg-contract-tabs, .mg-customer-detail .mg-contract-tabs {
@@ -3029,6 +3044,7 @@
   .mg-cashbook-select-label { width: 100%; flex-wrap: wrap; }
   .mg-cashbook-filters .mg-filter-controls, .mg-cashbook-filters select { width: 100%; max-width: none; }
   .mg-cashbook-panel-description { display: none; }
+  .mg-cashbook-account-add { margin-left: auto; }
   .mg-cashbook-page .mg-button, .mg-cashbook-page .mg-search,
   .mg-cashbook-page select, .mg-cashbook-page input[type='date'] { min-height: 40px; }
 
@@ -3039,7 +3055,7 @@
   .mg-composer-person svg { flex-shrink: 0; margin-top: 2px; }
 
   .mg-transfer-qr dl > div { grid-template-columns: 1fr; gap: 2px; }
-  .mg-payment-totals, .mg-payment-fields { grid-template-columns: 1fr; }
+  .mg-payment-totals, .mg-payment-fields, .mg-payment-history-columns { grid-template-columns: 1fr; }
   .mg-payment-dialog .mg-dialog-footer { flex-wrap: wrap; }
   .mg-payment-dialog .mg-dialog-footer button { flex: 1 1 auto; }
 

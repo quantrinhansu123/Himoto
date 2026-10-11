@@ -1,0 +1,76 @@
+'use client';
+
+import { FormEvent, useRef, useState } from 'react';
+import { Check, LoaderCircle } from 'lucide-react';
+import { ManagementRow } from '@/lib/management/types';
+import { VEHICLE_STATUSES, VEHICLE_TYPES } from '@/lib/management/config';
+import { VehicleEdits, saveVehicleRecord } from '@/lib/management/vehicle-repository';
+import { Dialog } from './Dialog';
+import { useManagement } from './ManagementProvider';
+
+const FIELDS: { key: keyof VehicleEdits; label: string; required?: boolean; type?: 'number'; max?: number }[] = [
+  { key: 'name', label: 'Tên / dòng xe', required: true, max: 255 }, { key: 'license', label: 'Biển số', required: true, max: 25 },
+  { key: 'brand', label: 'Hãng xe', required: true, max: 255 }, { key: 'color', label: 'Màu sắc', max: 255 },
+  { key: 'year', label: 'Năm sản xuất', required: true, type: 'number' }, { key: 'odometer', label: 'Số km', type: 'number' },
+  { key: 'chassis', label: 'Số khung', max: 255 }, { key: 'engine', label: 'Số máy', max: 255 },
+];
+
+export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null; onClose: () => void }) {
+  const { dataset, selectedStore, ensureData, notify } = useManagement();
+  const stores = dataset?.stores || [];
+  const value = (key: string) => row?.[key] == null ? '' : String(row[key]);
+  const [draft, setDraft] = useState<VehicleEdits>({ name: value('name'), license: value('license'), brand: value('brand') || 'honda', color: value('color'),
+    type: value('type') || VEHICLE_TYPES[0].value, year: value('year'), store_id: value('store_id') || (selectedStore !== 'all' ? selectedStore : ''),
+    status: value('status') || 'ready', chassis: value('chassis'), engine: value('engine'), odometer: value('odometer') });
+  const [errors, setErrors] = useState<Partial<Record<keyof VehicleEdits, string>>>({});
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const busy = useRef(false);
+  const form = useRef<HTMLFormElement>(null);
+  const rented = row?.status === 'using';
+  const statusOptions = VEHICLE_STATUSES.filter(option => option.value !== 'using' || rented);
+  const storeMissing = draft.store_id && !stores.some(store => String(store.id) === draft.store_id);
+  function change(key: keyof VehicleEdits, next: string) { setDraft(current => ({ ...current, [key]: next })); setErrors(current => ({ ...current, [key]: '' })); }
+  async function submit(event: FormEvent) {
+    event.preventDefault(); if (busy.current) return;
+    const next: Partial<Record<keyof VehicleEdits, string>> = {};
+    for (const field of FIELDS) if (field.required && !draft[field.key].trim()) next[field.key] = `Vui lòng nhập ${field.label.toLowerCase()}.`;
+    const year = Number(draft.year);
+    if (draft.year.trim() && (!Number.isInteger(year) || year < 1980 || year > new Date().getFullYear() + 1)) next.year = 'Năm sản xuất không hợp lệ.';
+    if (draft.odometer.trim() && (!Number.isInteger(Number(draft.odometer)) || Number(draft.odometer) < 0)) next.odometer = 'Nhập một số nguyên không âm.';
+    if (!draft.store_id) next.store_id = 'Chọn cơ sở cho xe.';
+    const license = draft.license.trim().toUpperCase();
+    if (license && dataset?.vehicles.some(vehicle => vehicle.id !== row?.id && String(vehicle.license).trim().toUpperCase() === license)) next.license = 'Biển số này đã có trong danh sách.';
+    setErrors(next); setError('');
+    if (Object.keys(next).length) { requestAnimationFrame(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return; }
+    busy.current = true; setSaving(true);
+    try {
+      await saveVehicleRecord(row?.id ?? null, draft);
+      await ensureData(['vehicles'], true).catch(() => {});
+      notify(row ? `Đã cập nhật xe ${license}.` : `Đã thêm xe ${license}.`);
+      onClose();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được xe.'); }
+    finally { busy.current = false; setSaving(false); }
+  }
+  const describedBy = (key: string) => errors[key as keyof VehicleEdits] ? `vehicle-${key}-error` : undefined;
+  const fieldError = (key: keyof VehicleEdits) => errors[key] && <p id={`vehicle-${key}-error`} className="mg-field-error">{errors[key]}</p>;
+  return <Dialog title={row ? 'Chỉnh sửa xe' : 'Thêm xe'} subtitle={row ? `${row.code} · ${value('license')}` : 'Lưu trực tiếp vào Supabase'} onClose={() => { if (!busy.current) onClose(); }}>
+    <form ref={form} noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
+      {FIELDS.slice(0, 4).map(field => <div key={field.key} className="mg-field"><label htmlFor={`vehicle-${field.key}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
+        <input id={`vehicle-${field.key}`} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
+      <div className="mg-field"><label htmlFor="vehicle-type">Loại xe<span aria-hidden="true"> *</span></label><select id="vehicle-type" value={draft.type} disabled={saving} onChange={event => change('type', event.target.value)}>
+        {VEHICLE_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+      <div className="mg-field"><label htmlFor="vehicle-store_id">Cơ sở hiện tại<span aria-hidden="true"> *</span></label><select id="vehicle-store_id" value={draft.store_id} disabled={saving} aria-invalid={Boolean(errors.store_id)} aria-describedby={describedBy('store_id')} onChange={event => change('store_id', event.target.value)}>
+        <option value="">Chọn cơ sở</option>{storeMissing && <option value={draft.store_id}>{value('store_name') || `Cơ sở #${draft.store_id}`}</option>}
+        {stores.map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select>{fieldError('store_id')}</div>
+      <div className="mg-field"><label htmlFor="vehicle-status">Trạng thái<span aria-hidden="true"> *</span></label><select id="vehicle-status" value={draft.status} disabled={saving || rented} aria-describedby={rented ? 'vehicle-status-hint' : undefined} onChange={event => change('status', event.target.value)}>
+        {statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+        {rented && <small id="vehicle-status-hint">Xe đang thuê theo hợp đồng. Trả xe trên hợp đồng để đổi trạng thái.</small>}</div>
+      {FIELDS.slice(4).map(field => <div key={field.key} className="mg-field"><label htmlFor={`vehicle-${field.key}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
+        <input id={`vehicle-${field.key}`} type={field.type || 'text'} min={field.type ? 0 : undefined} step={field.type ? 1 : undefined} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
+    </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
+      <div className="mg-dialog-footer"><span className="mg-form-note">* Thông tin bắt buộc</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
+        <button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : row ? 'Lưu xe' : 'Thêm xe'}</button></div>
+    </form>
+  </Dialog>;
+}
