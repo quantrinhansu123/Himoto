@@ -78,3 +78,11 @@ Kiểm tra trên production build cuối với dữ liệu QA mô phỏng:
 Không có lỗi JavaScript hay ghi dữ liệu nghiệp vụ thật trong các kiểm tra giao diện. Phạm vi trình duyệt đã kiểm tra là Chromium; chưa xác nhận Safari/iPhone thật hoặc trình duyệt trong ứng dụng nhắn tin.
 
 Ảnh mới: [Sổ quỹ](qa/mobile-product/cashbook-375.png), [phiếu của tài khoản](qa/mobile-product/account-vouchers-375.png), [lịch sử xe](qa/mobile-product/vehicle-history-375.png), [Excel khách hàng](qa/mobile-product/excel-customer-375.png), [Excel cơ sở](qa/mobile-product/excel-store-375.png), [Excel xe](qa/mobile-product/excel-vehicle-375.png). Kết quả: [chi tiết/form](qa/mobile-product/results.json), [54 lượt màn hình](qa/mobile-cards/mobile-regression-results.json), [Sổ quỹ desktop/mobile](qa/mobile-product/cashbook-layout-results.json).
+
+## Bộ lọc ngày và phân trang mobile — 2026-10-12
+
+Sửa bộ lọc Ngày phát sinh trong Sổ quỹ: mỗi nhãn Từ ngày/Đến ngày nằm trên ô nhập, hai ô có chiều rộng bằng nhau và nằm trong khung lọc. Trước đó, mỗi ô còn kế thừa hai cột gồm nhãn rộng 88px và ô nhập, khiến ô ngày bị ép hẹp. Phân trang trên các danh sách mobile được gom giữa hàng, giữ số trang hiện tại và tổng trang sát nhau, gồm trường hợp danh sách trống `1 / 1`.
+
+Kiểm tra production build: Sổ quỹ có 16 trường hợp trên Chromium và 16 trên WebKit ở 1440/1270/1024/768/320/375/430/812px. Kiểm tra thêm ngày đã chọn, lọc ngày, khoảng ngày sai, xóa bộ lọc và phân trang khi trống. Rà lại 54 lượt trên chín trang quản lý bằng Chromium, gồm khoảng cách số trang ở các danh sách dùng chung. Build, kiểm tra kiểu dữ liệu và lint trong build đều qua; không có lỗi JavaScript hoặc ghi dữ liệu nghiệp vụ thật. WebKit chạy trên Windows; chưa thử Safari/iPhone thật.
+
+Ảnh WebKit: [ô ngày và phân trang ở 375px](qa/mobile-spacing/cashbook-webkit-375.png), [phân trang khi trống](qa/mobile-spacing/empty-pagination-webkit-375.png). Kết quả: [Chromium](qa/mobile-spacing/chromium-results.json), [WebKit](qa/mobile-spacing/webkit-results.json).

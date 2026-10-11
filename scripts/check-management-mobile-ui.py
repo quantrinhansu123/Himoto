@@ -72,6 +72,10 @@ with sync_playwright() as p:
             mask_account(page)
             assert page.evaluate('width => document.documentElement.scrollWidth <= width', width), f'Page overflow: {path} {width}'
             assert not page.locator('.mg-app table:visible').count(), f'Visible mobile table: {path} {width}'
+            for pager in page.locator('.mg-page-buttons:visible').all():
+                current = pager.locator('.mg-current-page').bounding_box()
+                total = pager.locator('.mg-page-total').bounding_box()
+                assert 0 <= total['x'] - current['x'] - current['width'] <= 12, f'Page numbers too far apart: {path} {width}'
             for selector in ['.mg-mobile-toggle','.mg-user-menu summary','.mg-heading-actions .mg-button']:
                 for control in page.locator(selector).all():
                     if control.is_visible():

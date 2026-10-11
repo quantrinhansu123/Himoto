@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--url', default='http://127.0.0.1:3101')
 parser.add_argument('--session-cookie-file', required=True, help='Ignored local QA cookie JSON')
 parser.add_argument('--output', default='.backups/cashbook-layout/ui')
+parser.add_argument('--browser', choices=['chromium', 'webkit'], default='chromium')
 args = parser.parse_args()
 output = Path(args.output)
 output.mkdir(parents=True, exist_ok=True)
@@ -23,6 +24,23 @@ records = [dict(id=83001 + index, type='in' if index == 0 else 'out',
     content='Nội dung QA kiểm tra khoản thu chi có mô tả dài, tài khoản ngân hàng và mã hợp đồng QA-12001; giữ đầy đủ thông tin.')
     for index in range(2)]
 errors, unexpected, writes, screens = [], [], [], []
+viewport_sizes = [(1440, 1000), (1270, 900), (1024, 900), (768, 1024), (320, 740), (375, 812), (430, 932), (812, 375)]
+
+def check_mobile_filters(page):
+    filters = page.locator('.mg-cashbook-filters .mg-date-filters')
+    bounds = filters.bounding_box()
+    for field in filters.locator('input[type="date"]').all():
+        label = field.locator('..').bounding_box()
+        box = field.bounding_box()
+        assert box['y'] >= label['y'] + 16, 'Each date label must sit above its input on phones'
+        assert box['x'] >= bounds['x'] and box['x'] + box['width'] <= bounds['x'] + bounds['width'], 'Date input must stay inside its filter panel'
+        assert box['width'] >= 110, 'Date input is too narrow to read a full date'
+
+def check_pagination(panel):
+    current = panel.locator('.mg-current-page').bounding_box()
+    total = panel.locator('.mg-page-total').bounding_box()
+    gap = total['x'] - current['x'] - current['width']
+    assert 0 <= gap <= 12, f'Current/total page numbers must stay together: {gap}px'
 
 def mock_api(route):
     endpoint = urlparse(route.request.url).path
@@ -42,7 +60,7 @@ def mock_api(route):
         route.abort()
 
 with sync_playwright() as p:
-    browser = p.chromium.launch()
+    browser = getattr(p, args.browser).launch()
     context = browser.new_context(viewport={'width': 1440, 'height': 1000}, timezone_id='Asia/Ho_Chi_Minh', reduced_motion='reduce')
     context.add_cookies(json.loads(Path(args.session_cookie_file).read_text(encoding='utf-8-sig')))
     context.route('**/api/**', mock_api)
@@ -51,11 +69,15 @@ with sync_playwright() as p:
     page.goto(args.url + '/cashbook', wait_until='networkidle')
     page.add_style_tag(content='.mg-user-menu strong {visibility:hidden !important;}')
     page.locator('.mg-user-avatar').evaluate_all("els => els.forEach(el => el.textContent='QA')")
-    for width, height in [(1440, 1000), (1270, 900), (1024, 900), (768, 1024), (375, 812)]:
+    for width, height in viewport_sizes:
         page.set_viewport_size({'width': width, 'height': height})
         panels = [page.locator('#cashbook-income'), page.locator('#cashbook-expense')]
         if width <= 900:
+            if width <= 600:
+                check_mobile_filters(page)
             for panel, record in zip(panels, records):
+                if width <= 600:
+                    check_pagination(panel)
                 expect(panel.locator('.mg-desktop-records')).not_to_be_visible()
                 card = panel.locator('.mg-mobile-card-detail')
                 expect(card).to_have_count(1)
@@ -68,6 +90,23 @@ with sync_playwright() as p:
                 card.locator('summary').click()
             page.evaluate('window.scrollTo(0, 0)')
             page.screenshot(path=str(output / f'cashbook-{width}.png'), full_page=True)
+            if width <= 600:
+                page.locator('#cashbook-start').fill('2026-10-10')
+                page.locator('#cashbook-end').fill('2026-10-10')
+                expect(panels[0].locator('.mg-mobile-card-detail')).to_have_count(1)
+                check_mobile_filters(page)
+                page.locator('#cashbook-start').fill('2026-10-11')
+                expect(page.locator('#cashbook-date-error')).to_contain_text('Đến ngày phải bằng hoặc sau Từ ngày.')
+                page.locator('#cashbook-end').fill('2026-10-11')
+                expect(page.locator('#cashbook-date-error')).to_have_count(0)
+                for panel in panels:
+                    expect(panel.locator('.mg-mobile-card-detail')).to_have_count(0)
+                    expect(panel.locator('.mg-page-total')).to_have_text('/ 1')
+                    check_pagination(panel)
+                if width == 375:
+                    panels[1].screenshot(path=str(output / 'cashbook-empty-pagination-375.png'))
+                page.locator('.mg-cashbook-filters').get_by_role('button', name='Xóa bộ lọc', exact=True).click()
+                expect(panels[0].locator('.mg-mobile-card-detail')).to_have_count(1)
             continue
         for panel, record in zip(panels, records):
             expect(panel.locator('tbody .mg-code')).to_have_text(str(record['id']))
@@ -102,7 +141,7 @@ with sync_playwright() as p:
             region.evaluate('el => { el.scrollLeft = 0; }')
     browser.close()
 
-result = {'screens': screens, 'javascriptErrors': errors, 'unexpectedRequests': unexpected, 'businessWrites': writes}
+result = {'browser': args.browser, 'screens': screens, 'javascriptErrors': errors, 'unexpectedRequests': unexpected, 'businessWrites': writes}
 (output / 'results.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
 assert not errors and not unexpected and not writes, 'QA must have no browser errors or unexpected/business writes'
 for screen in screens:
@@ -113,7 +152,9 @@ for screen in screens:
     assert len(screen['columnWidths']) == len(columns) + 1, 'Selection must keep all twelve data columns'
     assert min(screen['columnWidths'][-5:]) >= 140, f"Last five columns are squeezed: {screen}"
     assert screen['rowHeight'] < 180, f"Long text causes excessive row height: {screen}"
-print(json.dumps({'passed': 10, 'viewportWidths': [1440,1270,1024,768,375],
+print(json.dumps({'passed': len(screens), 'browser': args.browser, 'viewportWidths': [width for width, height in viewport_sizes],
     'checks': ['desktop 12-column tables retain long content and keyboard access without page overflow',
-               'mobile cards expand to expose all twelve fields, including long account/content values'],
+               'mobile cards expand to expose all twelve fields, including long account/content values',
+               'phone date labels sit above readable inputs; filled dates filter/reset correctly and reject invalid ranges',
+               'current/total page numbers stay together, including empty 1/1 lists'],
     'businessWrites': 0, 'javascriptErrors': errors}, indent=2))
