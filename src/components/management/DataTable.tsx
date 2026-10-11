@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Bike, CalendarPlus, Copy, Eye, FileSearch, LoaderCircle, Pencil, Printer, RotateCcw, ShieldBan, ShieldCheck, Trash2, Wallet } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, Bike, CalendarPlus, ChevronDown, Copy, Eye, FileSearch, LoaderCircle, Pencil, Printer, RefreshCw, RotateCcw, ShieldBan, ShieldCheck, Trash2, Wallet } from 'lucide-react';
 import { ManagementColumn, ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
@@ -37,6 +37,7 @@ interface Props {
   onRenew?: (row: ManagementRow) => void;
   onVehicleChange?: (row: ManagementRow) => void;
   onClone?: (row: ManagementRow) => void;
+  onVehicleAction?: (row: ManagementRow, mode: 'transfer' | 'status') => void;
   cloningId?: number | null;
   canEditContract?: boolean;
   canEditDraft?: boolean;
@@ -53,7 +54,7 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment, onReturn, onRenew, onVehicleChange, onClone, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment, onReturn, onRenew, onVehicleChange, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const selectable = Boolean(selectedIds && onSelectionChange);
   const columnCount = columns.length + (selectable ? 3 : 2);
   const pageIds = rows.map(row => row.id);
@@ -99,7 +100,11 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
             const actions = rowActions(row), label = row.license || row.code || row.name || '';
             const inline = INLINE_ACTION_KINDS.includes(config.kind) ? actions.filter(action => INLINE_ACTION_KEYS[action.key]) : [];
             const rest = actions.filter(action => !inline.includes(action));
-            return <>{inline.map(action => <button key={action.key} type="button" className={`mg-icon-button${action.danger ? ' mg-icon-button-danger' : ''}`} disabled={action.disabled}
+            return <>{config.kind === 'vehicles' && onVehicleAction && <RowActionsMenu label={`Hành động xe ${label}`.trim()} triggerLabel={<>Hành động xe<ChevronDown size={14} /></>} actions={[
+                { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') },
+                { key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') },
+              ]} />}
+              {inline.map(action => <button key={action.key} type="button" className={`mg-icon-button${action.danger ? ' mg-icon-button-danger' : ''}`} disabled={action.disabled}
               aria-label={`${INLINE_ACTION_KEYS[action.key]} ${label}`.trim()} title={INLINE_ACTION_KEYS[action.key]} onClick={action.onSelect}>{action.icon}</button>)}
               {rest.length > 0 && <RowActionsMenu label={`Thao tác ${row.code || row.name || ''}`.trim()} actions={rest} busy={cloningId === row.id || blacklistBusyId === row.id} />}</>;
           })()}</div></td></tr>)}</tbody>

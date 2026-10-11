@@ -18,7 +18,7 @@ interface MenuPosition { top?: number; bottom?: number; right: number }
 
 const MENU_ESTIMATED_HEIGHT = 320;
 
-export function RowActionsMenu({ label, actions, busy }: { label: string; actions: RowAction[]; busy?: boolean }) {
+export function RowActionsMenu({ label, actions, busy, triggerLabel, disabled }: { label: string; actions: RowAction[]; busy?: boolean; triggerLabel?: ReactNode; disabled?: boolean }) {
   const [position, setPosition] = useState<MenuPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -76,9 +76,9 @@ export function RowActionsMenu({ label, actions, busy }: { label: string; action
   };
 
   return <>
-    <button ref={triggerRef} type="button" className={`mg-icon-button mg-row-menu-trigger${open ? ' is-open' : ''}`} aria-label={label} title="Thao tác"
-      aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={toggle}>
-      {busy ? <LoaderCircle size={16} className="mg-spin" /> : <MoreHorizontal size={18} />}
+    <button ref={triggerRef} type="button" className={`${triggerLabel ? 'mg-button mg-row-menu-trigger-text' : 'mg-icon-button'} mg-row-menu-trigger${open ? ' is-open' : ''}`} aria-label={triggerLabel ? undefined : label} title={triggerLabel ? undefined : 'Thao tác'}
+      aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} disabled={disabled} onClick={toggle}>
+      {busy ? <LoaderCircle size={16} className="mg-spin" /> : triggerLabel || <MoreHorizontal size={18} />}
     </button>
     {open && createPortal(<div ref={menuRef} id={menuId} role="menu" aria-label={label} className="mg-row-menu"
       style={{ ...position, maxHeight: `calc(100dvh - ${position.top ?? position.bottom ?? 0}px - 12px)` }} onKeyDown={onMenuKeyDown}>

@@ -35,7 +35,7 @@ async function run() {
     const { replaceContractVehicle, recordVehicleReturn } = load(path.join(root,'lib/server/contract-returns'));
     const { mapApiRow } = load(path.join(root,'lib/management/repository'));
     const c = await db.connect();
-    const tables = ['stores','customers','staff_profiles','vehicles','orders','order_vehicle_details','transactions','users','banks','cash','management_contract_payments','management_contract_vehicle_swaps'];
+    const tables = ['stores','customers','staff_profiles','vehicles','orders','order_vehicle_details','transactions','users','banks','cash','management_contract_payments','management_contract_vehicle_swaps','vehicle_location_events'];
     const proxy = { query: (sql, values) => {
       for (const table of tables) sql = sql.replaceAll(`himoto.${table}`,`pg_temp.qa_cross_${table}`);
       assert(!sql.includes('himoto.'),'Every business query must use TEMP tables');
@@ -70,9 +70,11 @@ async function run() {
           (100,'Vehicle QA 100','Honda','xeso',2026,32,32,'QA-100','ready',143),
           (101,'Vehicle QA 101','Honda','xeso',2026,34,34,'QA-101','ready',143);
         INSERT INTO qa_cross_cash(id,store_id,opening_balance,status) VALUES (5,31,0,'Active'),(15,32,0,'Active');`);
-      await updateDatabaseVehicle(proxy,100,values(100,'using'));
+      await updateDatabaseVehicle(proxy,100,values(100,'using'),143);
       const checkout = await vehicle(100);
       assert.deepEqual([checkout.status,Number(checkout.store_id),Number(checkout.current_store_id)],['using',32,32]);
+      const statusEvent = (await c.query("SELECT event_type,ref_type,notes,created_by FROM qa_cross_vehicle_location_events WHERE vehicle_id=100")).rows;
+      assert.deepEqual(statusEvent.map(row=>[row.event_type,row.ref_type,row.notes,Number(row.created_by)]),[['status_change','using','Lưu kho → Đang thuê',143]]);
       checks.push('PostgreSQL TEMP: Nguyễn Hoàng can reconcile a checkout as using before a contract exists, preserving both inventory branches');
 
       const customer = mapApiRow('customers',(await c.query('SELECT * FROM qa_cross_customers WHERE id=7')).rows[0]);
@@ -111,9 +113,9 @@ async function run() {
       checks.push('PostgreSQL TEMP: finalize requires no stock reset/transfer; rental revenue and deposit receipts use Láng accounts, NH accounts are rejected and customer ownership stays Láng');
 
       await assert.rejects(isolated(()=>finalizeContractDraft(proxy,Number(duplicate.id),143,{...input,revision:duplicate.draft_revision})),/hợp đồng/);
-      await assert.rejects(isolated(()=>updateDatabaseVehicle(proxy,100,values(100,'ready'))),/hợp đồng mở/);
-      await assert.rejects(isolated(()=>updateDatabaseVehicle(proxy,100,values(100,'using',31))),/không được đổi cơ sở/);
-      await updateDatabaseVehicle(proxy,100,{...values(100,'using'),color:'Black'});
+      await assert.rejects(isolated(()=>updateDatabaseVehicle(proxy,100,values(100,'ready'),143)),/hợp đồng mở/);
+      await assert.rejects(isolated(()=>updateDatabaseVehicle(proxy,100,values(100,'using',31),143)),/không được đổi cơ sở/);
+      await updateDatabaseVehicle(proxy,100,{...values(100,'using'),color:'Black'},143);
       checks.push('PostgreSQL TEMP: an actual open contract blocks double rental, manual status reset and stock transfer; harmless profile edits remain possible');
       const line = (await c.query('SELECT id,xmin::text AS revision FROM qa_cross_order_vehicle_details WHERE order_id=$1',[id])).rows[0];
       await replaceContractVehicle(proxy,143,{item_id:Number(line.id),item_revision:line.revision,vehicle_id:101});

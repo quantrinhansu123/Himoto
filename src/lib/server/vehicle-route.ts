@@ -14,7 +14,7 @@ export async function saveVehicle(request: NextRequest, id: number | null) {
     if (!actorId) throw new VehicleSaveError('Phiên đăng nhập không hợp lệ.', 401);
     client = await himotoPool.connect();
     await client.query('BEGIN');
-    const data = id === null ? await createDatabaseVehicle(client, values, actorId) : await updateDatabaseVehicle(client, id, values);
+    const data = id === null ? await createDatabaseVehicle(client, values, actorId) : await updateDatabaseVehicle(client, id, values, actorId);
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { status: id === null ? 201 : 200, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

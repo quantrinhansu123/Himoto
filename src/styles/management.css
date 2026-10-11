@@ -3265,3 +3265,17 @@
 .mg-account-voucher-col .mg-table-scroll { max-height: 46dvh; overflow: auto; }
 .mg-account-voucher-col td small { display: block; color: var(--mg-slate-500); }
 @media (max-width: 760px) { .mg-account-voucher-grid { grid-template-columns: 1fr; } }
+
+.mg-table-vehicles .mg-actions-column { width: 240px; min-width: 240px; }
+.mg-row-actions .mg-row-menu-trigger.mg-row-menu-trigger-text { width: auto; height: 30px; min-height: 30px; padding: 0 10px; gap: 4px; font-size: 12px; white-space: nowrap; }
+.mg-vehicle-action-result { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.mg-vehicle-action-result li { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--mg-line); border-radius: 8px; background: var(--mg-slate-50); line-height: 1.5; }
+.mg-vehicle-action-result li > svg { flex: none; margin-top: 3px; color: var(--mg-green-text, #15803d); }
+.mg-vehicle-action-result li.is-warning { border-color: #fcd34d; background: #fffbeb; }
+.mg-vehicle-action-result li.is-warning > svg { color: #b45309; }
+.mg-vehicle-detail { width: 1240px; }
+.mg-vehicle-detail .mg-table-scroll { min-height: 0; max-height: 56dvh; }
+.mg-vehicle-history-table { min-width: 1180px; }
+.mg-vehicle-history-note { white-space: normal; min-width: 220px; max-width: 320px; }
+.mg-vehicle-history-actions { display: flex; gap: 8px; align-items: center; }
+.mg-vehicle-history-actions select { height: 36px; padding: 0 10px; border: 1px solid var(--mg-line); border-radius: 8px; background: #fff; font: inherit; font-size: 13px; }

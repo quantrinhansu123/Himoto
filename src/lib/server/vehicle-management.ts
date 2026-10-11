@@ -4,7 +4,7 @@ import { VEHICLE_STATUSES, VEHICLE_TYPES } from '@/lib/management/config';
 
 type Client = Pick<PoolClient, 'query'>;
 export class VehicleSaveError extends Error { constructor(message: string, public status = 400) { super(message); } }
-export interface VehicleValues { name: string; license: string; brand: string; type: string; year: number; store_id: number; status: string; color: string; chassis: string; engine: string; odometer: number | null }
+export interface VehicleValues { name: string; license: string; brand: string; type: string; year: number; store_id: number; status: string; color: string; chassis: string; engine: string; odometer: number | null; note: string }
 
 const text = (value: unknown, label: string, max: number, required = false) => {
   const result = typeof value === 'string' ? value.trim() : value == null ? '' : null;
@@ -25,7 +25,7 @@ export function parseVehicleValues(body: unknown): VehicleValues {
   if (storeId === null || Number.isNaN(storeId) || storeId <= 0) throw new VehicleSaveError('Chọn cơ sở cho xe.');
   if (Number.isNaN(odometer) || (odometer !== null && odometer < 0)) throw new VehicleSaveError('Số km phải là số nguyên không âm.');
   return { name: text(raw.name, 'Tên xe', 255, true), license: text(raw.license, 'Biển số', 25, true).toUpperCase(), brand: text(raw.brand, 'Hãng xe', 255, true),
-    type, year, store_id: storeId, status, color: text(raw.color, 'Màu sắc', 255), chassis: text(raw.chassis, 'Số khung', 255), engine: text(raw.engine, 'Số máy', 255), odometer };
+    type, year, store_id: storeId, status, color: text(raw.color, 'Màu sắc', 255), chassis: text(raw.chassis, 'Số khung', 255), engine: text(raw.engine, 'Số máy', 255), odometer, note: text(raw.note, 'Ghi chú', 500) };
 }
 
 // Inventory may record a checkout before the source branch enters the contract.
@@ -51,11 +51,22 @@ export async function createDatabaseVehicle(client: Client, values: VehicleValue
   const result = await client.query(`INSERT INTO himoto.vehicles (name, brand, type, year, store_id, current_store_id, license, color, chassis, engine, status, odometer, type_of_service_id, created_by, created_at, updated_at)
     VALUES ($1,$2,$3,$4,$5,$5,$6,NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,$11,0,$12,now(),now()) RETURNING id`,
     [values.name, values.brand, values.type, values.year, values.store_id, values.license, values.color, values.chassis, values.engine, values.status, values.odometer, actorId]);
-  return { id: Number(result.rows[0].id) };
+  const id = Number(result.rows[0].id);
+  if (values.note) await logVehicleEvent(client, { vehicleId: id, fromStoreId: values.store_id, toStoreId: values.store_id, type: 'note', refType: null, odometer: values.odometer, notes: values.note, actorId });
+  return { id };
+}
+
+const statusLabel = (value: string) => VEHICLE_STATUSES.find(option => option.value === value)?.label || value;
+
+// vehicle_location_events.created_at is a local (Asia/Ho_Chi_Minh) timestamp, as written by the legacy app.
+async function logVehicleEvent(client: Client, event: { vehicleId: number; fromStoreId: unknown; toStoreId: unknown; type: string; refType: string | null; odometer: number | null; notes: string; actorId: number }) {
+  await client.query(`INSERT INTO himoto.vehicle_location_events (vehicle_id,from_store_id,to_store_id,event_type,ref_type,odometer,notes,created_by,created_at,updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,now() AT TIME ZONE 'Asia/Ho_Chi_Minh',now() AT TIME ZONE 'Asia/Ho_Chi_Minh')`,
+    [event.vehicleId, event.fromStoreId ?? null, event.toStoreId ?? null, event.type, event.refType, event.odometer, event.notes, event.actorId]);
 }
 
 // Cơ sở on the list is where the vehicle is now (current_store_id); the original store_id is kept.
-export async function updateDatabaseVehicle(client: Client, id: number, values: VehicleValues) {
+export async function updateDatabaseVehicle(client: Client, id: number, values: VehicleValues, actorId: number) {
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query('LOCK TABLE himoto.vehicles IN SHARE ROW EXCLUSIVE MODE');
   const current = await client.query('SELECT status, COALESCE(current_store_id,store_id) AS store_id FROM himoto.vehicles WHERE id=$1 FOR UPDATE', [id]);
@@ -64,5 +75,12 @@ export async function updateDatabaseVehicle(client: Client, id: number, values: 
   await client.query(`UPDATE himoto.vehicles SET name=$2, brand=$3, type=$4, year=$5, current_store_id=$6, license=$7, color=NULLIF($8,''), chassis=NULLIF($9,''),
     engine=NULLIF($10,''), status=$11, odometer=$12, updated_at=now() WHERE id=$1`,
     [id, values.name, values.brand, values.type, values.year, values.store_id, values.license, values.color, values.chassis, values.engine, values.status, values.odometer]);
+  const before = current.rows[0], oldStatus = String(before.status);
+  const storeChanged = String(before.store_id) !== String(values.store_id), statusChanged = oldStatus !== values.status;
+  const base = { vehicleId: id, fromStoreId: before.store_id, toStoreId: values.store_id, odometer: values.odometer, actorId };
+  if (storeChanged) await logVehicleEvent(client, { ...base, type: 'manual_transfer', refType: null, notes: statusChanged ? '' : values.note });
+  if (statusChanged) await logVehicleEvent(client, { ...base, fromStoreId: values.store_id, type: 'status_change', refType: values.status,
+    notes: [`${statusLabel(oldStatus)} → ${statusLabel(values.status)}`, values.note].filter(Boolean).join(' · ') });
+  if (!storeChanged && !statusChanged && values.note) await logVehicleEvent(client, { ...base, type: 'note', refType: null, notes: values.note });
   return { id };
 }

@@ -21,7 +21,7 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
   const value = (key: string) => row?.[key] == null ? '' : String(row[key]);
   const [draft, setDraft] = useState<VehicleEdits>({ name: value('name'), license: value('license'), brand: value('brand') || 'honda', color: value('color'),
     type: value('type') || VEHICLE_TYPES[0].value, year: value('year'), store_id: value('store_id') || (selectedStore !== 'all' ? selectedStore : ''),
-    status: value('status') || 'ready', chassis: value('chassis'), engine: value('engine'), odometer: value('odometer') });
+    status: value('status') || 'ready', chassis: value('chassis'), engine: value('engine'), odometer: value('odometer'), note: '' });
   const [errors, setErrors] = useState<Partial<Record<keyof VehicleEdits, string>>>({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -68,6 +68,9 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
         {rented ? <small id="vehicle-status-hint">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng để đổi trạng thái.</small> : <small>Đã giao xe nhưng chưa nhập hợp đồng: chọn Đang thuê để khớp kho. Sau đó nhập hợp đồng trực tiếp, giữ nguyên cơ sở xe.</small>}</div>
       {FIELDS.slice(4).map(field => <div key={field.key} className="mg-field"><label htmlFor={`vehicle-${field.key}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
         <input id={`vehicle-${field.key}`} type={field.type || 'text'} min={field.type ? 0 : undefined} step={field.type ? 1 : undefined} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
+      <div className="mg-field mg-field-wide"><label htmlFor="vehicle-note">Ghi chú</label>
+        <textarea id="vehicle-note" value={draft.note} maxLength={500} disabled={saving} placeholder="VD: đưa xe đi sửa phanh, chuyển xe sang cơ sở khác…" onChange={event => change('note', event.target.value)} />
+        <small>Lưu vào tab Lịch sử của xe cùng thay đổi cơ sở / trạng thái.</small></div>
     </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
       <div className="mg-dialog-footer"><span className="mg-form-note">* Thông tin bắt buộc</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
         <button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : row ? 'Lưu xe' : 'Thêm xe'}</button></div>
