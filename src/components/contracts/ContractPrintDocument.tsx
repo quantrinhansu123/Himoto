@@ -118,12 +118,12 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 							</div>
 							<div className="clause-row d-flex justify-content-between">
 								<span><strong>2.2.</strong> Giá thuê: <strong>{doc.pricing.unit_price_text}</strong></span>
-								<span>- Đã thu thuê/phí: <strong>{doc.pricing.paid_amount_formatted}</strong> ({doc.pricing.payment_method_text})</span>
+								<span>- Đã thu thuê/phí: <strong>{doc.pricing.paid_amount_formatted}</strong></span>
 								<span>- Gói: <strong>{doc.pricing.package_name}</strong></span>
 							</div>
 							<div className="clause-row"><strong>{doc.pricing.calculation_text}</strong></div>
 							<div className="clause-row">
-								<strong>2.3.</strong> Đặt cọc (Tài sản thế chấp): <strong>{doc.deposit.deposit_amount_formatted}</strong> ({doc.deposit.collateral_description}) ({doc.deposit.payment_method_text}){doc.deposit.paid_amount_formatted && <> · Đã nhận cọc: <strong>{doc.deposit.paid_amount_formatted}</strong></>}
+								<strong>2.3.</strong> Đặt cọc (Tài sản thế chấp): <strong>{doc.deposit.deposit_amount_formatted}</strong> ({doc.deposit.collateral_description}){doc.deposit.paid_amount_formatted && <> · Đã nhận cọc: <strong>{doc.deposit.paid_amount_formatted}</strong></>}
 							</div>
 						</div>
 					</div>
