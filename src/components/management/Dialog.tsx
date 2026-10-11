@@ -16,6 +16,19 @@ export function trapFocusWithin(container: HTMLElement) {
   return () => container.removeEventListener('keydown', keydown);
 }
 
+// Overlays can nest and unmount in any order, so the page unlocks only when the last one closes.
+let scrollLocks = 0;
+let unlockedOverflow = '';
+export function lockBodyScroll() {
+  if (scrollLocks++ === 0) { unlockedOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--scrollLocks === 0) document.body.style.overflow = unlockedOverflow;
+  };
+}
+
 export function Dialog({ title, subtitle, children, onClose, className = '' }: { title: string; subtitle?: string; children: ReactNode; onClose: () => void; className?: string }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -23,8 +36,7 @@ export function Dialog({ title, subtitle, children, onClose, className = '' }: {
     const dialog = ref.current;
     const previousFocus = document.activeElement as HTMLElement | null;
     if (!dialog?.open) dialog?.showModal();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockBodyScroll();
     const releaseFocus = dialog ? trapFocusWithin(dialog) : () => {};
     const keepFocusVisible = (event: FocusEvent) => {
       const target = event.target as HTMLElement;
@@ -34,7 +46,7 @@ export function Dialog({ title, subtitle, children, onClose, className = '' }: {
       requestAnimationFrame(() => { if (dialog.open && target === document.activeElement) target.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
     };
     dialog?.addEventListener('focusin', keepFocusVisible);
-    return () => { releaseFocus(); dialog?.removeEventListener('focusin', keepFocusVisible); dialog?.close(); document.body.style.overflow = previousOverflow; previousFocus?.focus(); };
+    return () => { releaseFocus(); dialog?.removeEventListener('focusin', keepFocusVisible); dialog?.close(); unlockScroll(); previousFocus?.focus(); };
   }, []);
   return <dialog ref={ref} className={`mg-dialog ${className}`} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose(); } }}>

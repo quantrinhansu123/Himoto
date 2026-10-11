@@ -17,7 +17,9 @@ const STATUS_LABELS: Record<string, string> = { approved: 'Đã duyệt', pendin
 const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.value,COALESCE(t."desc",t.note) AS note,t.status,u.name AS actor,
     COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||t.order_id::text) AS contract_code,
     CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn'
-      WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc'
+      WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng'
+      WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách'
+      WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc'
       WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
     CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản' WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
       WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty' WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản' END AS method,
@@ -56,16 +58,24 @@ export async function readContractHistory(client: Database, id: number): Promise
     ORDER BY t.created_at DESC,t.id DESC`, [id]);
   const cashflow = transactions.rows.map(mapCashflow);
 
-  const changes: ContractChange[] = [{ id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
-    title: 'Tạo hợp đồng', detail: '', amount: null }];
+  const created: ContractChange = { id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
+    title: 'Tạo hợp đồng', detail: '', amount: null };
+  const changes: ContractChange[] = [created];
+  // Earliest renewal's "before" values describe the contract as originally created.
+  const originals: { at: number; return_at: string | null; total: number | null }[] = [];
   for (const row of transactions.rows) {
     if (row.status !== 'approved') continue;
     if (row.name === 'order:renewal') {
       const payload = row.renewal_payload as Record<string, unknown> | null;
       const vehicle = payload ? String(payload.license || payload.vehicle_name || '') : '';
+      const lines = Array.isArray(payload?.items) ? payload.items as Record<string, unknown>[] : payload ? [payload] : [];
+      const span = lines.map(line => `${lines.length > 1 ? `${line.license || line.vehicle_name || 'Xe'}: ` : ''}Hẹn trả ${vietnamTime(line.before_return_at)} → ${vietnamTime(line.return_at)}`).join('; ');
       changes.push({ id: `renewal-${row.id}`, kind: 'renewal', at: iso(row.created_at), actor: String(row.actor || '—'), amount: Number(row.value) || 0,
         title: `Gia hạn${vehicle ? ` xe ${vehicle}` : ''}`,
-        detail: payload ? `Hẹn trả ${vietnamTime(payload.before_return_at)} → ${vietnamTime(payload.return_at)} · Phiếu Thu #${row.id}` : `Phiếu Thu #${row.id}` });
+        detail: `${span ? `${span} · ` : ''}Phiếu Thu #${row.id}`,
+        ...(payload ? { version: { label: `Gia hạn ${vietnamTime(row.created_at)}`, return_at: payload.return_at ? iso(payload.return_at) : null, total: amountOrNull(payload.total), paid: amountOrNull(payload.paid) } } : {}) });
+      const before = lines.map(line => iso(line.before_return_at)).filter(Boolean).sort((a, b) => new Date(a).getTime() - new Date(b).getTime()).at(-1);
+      if (payload) originals.push({ at: new Date(iso(row.created_at)).getTime(), return_at: before || null, total: amountOrNull(payload.before_total) });
     } else if (row.name === 'order:extra') {
       changes.push({ id: `extra-${row.id}`, kind: 'extra', at: iso(row.created_at), actor: String(row.actor || '—'), amount: Number(row.value) || 0,
         title: 'Thu thêm', detail: `${row.note ? `${row.note} · ` : ''}Cộng vào tiền hợp đồng · Phiếu Thu #${row.id}` });
@@ -97,9 +107,12 @@ export async function readContractHistory(client: Database, id: number): Promise
       const actor = actors.rows.find(row => Number(row.id) === Number(item.actor_id));
       const fee = amountOrNull(item.fee);
       const late = Number(item.late_minutes) || 0;
+      const discount = Number(item.early_discount) || 0;
+      const timing = late ? ` · Trễ ${Math.ceil(late / 60)} giờ${fee && fee > 0 ? ` · Phí trả muộn ${formatMoney(fee)}` : ''}`
+        : new Date(iso(item.actual_return_at)).getTime() < new Date(iso(item.scheduled_return_at)).getTime() ? ` · Trả sớm${discount ? ` · Giảm doanh thu ${formatMoney(discount)}` : ''}` : ' · Đúng hạn';
       changes.push({ id: `return-${index}`, kind: 'return', at: iso(item.actual_return_at), actor: String(actor?.name || '—'), amount: fee,
         title: `Trả xe${vehicle ? ` ${vehicle.license || vehicle.name}` : ''}`,
-        detail: `Hẹn trả ${vietnamTime(item.scheduled_return_at)}${late ? ` · Trễ ${Math.ceil(late / 60)} giờ${fee ? ` · Phí trả muộn ${formatMoney(fee)}` : ''}` : ' · Đúng hạn'}` });
+        detail: `Hẹn trả ${vietnamTime(item.scheduled_return_at)}${timing}` });
     });
   }
 
@@ -115,9 +128,13 @@ export async function readContractHistory(client: Database, id: number): Promise
         detail: [`Hẹn trả ${vietnamTime(item.before_return_at)} → ${vietnamTime(item.return_at)}`,
           overdue ? `Quá hạn ${Math.floor(overdue / 1440)} ngày ${Math.ceil((overdue % 1440) / 60)} giờ` : '',
           before !== null && after !== null && before !== after ? `Tiền hợp đồng ${formatMoney(before)} → ${formatMoney(after)}` : '',
-          item.note ? String(item.note) : ''].filter(Boolean).join(' · ') });
+          item.note ? String(item.note) : ''].filter(Boolean).join(' · '),
+        version: { label: `Phiên bản v${item.version}`, return_at: item.return_at ? iso(item.return_at) : null, total: after, paid: amountOrNull(item.paid) } });
+      originals.push({ at: new Date(iso(item.created_at)).getTime(), return_at: item.before_return_at ? iso(item.before_return_at) : null, total: before });
     }
   }
+  const first = originals.sort((a, b) => a.at - b.at)[0];
+  if (first) created.version = { label: 'Bản tạo hợp đồng (v1)', return_at: first.return_at, total: first.total, paid: null };
 
   changes.sort((a, b) => (new Date(b.at).getTime() || 0) - (new Date(a.at).getTime() || 0));
   return { changes, cashflow };

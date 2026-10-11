@@ -79,7 +79,7 @@ export async function createVehicleTemplate(stores: CustomerImportStore[], rows:
     for (let j = 1; j <= VEHICLE_IMPORT_COLUMNS.length; j++) sheet.getCell(i, j).numFmt = '@';
     if (stores.length) sheet.getCell(i, 10).dataValidation = { type: 'list', allowBlank: false, formulae: ['HimotoVehicleStores'], showErrorMessage: true, error: 'Chọn cơ sở hiện có.' };
     sheet.getCell(i, 4).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Xe ga,Xe số,Xe côn tay,Xe SH,Xe điện"'], showErrorMessage: true, error: 'Chọn loại xe.' };
-    sheet.getCell(i, 11).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Sẵn sàng,Đang thuê,Bảo dưỡng,Đặt trước,Đã bán,Nợ xấu,Hỏng,Đang điều chuyển"'], showErrorMessage: true, error: 'Chọn trạng thái.' };
+    sheet.getCell(i, 11).dataValidation = { type: 'list', allowBlank: false, formulae: ['"Lưu kho,Đang thuê,Bảo dưỡng,Đặt trước,Đã bán,Nợ xấu,Hỏng,Đang điều chuyển"'], showErrorMessage: true, error: 'Chọn trạng thái.' };
   }
   const guide = book.addWorksheet('Hướng dẫn'); guide.getColumn(1).width = 120;
   [

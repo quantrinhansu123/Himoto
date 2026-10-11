@@ -2261,6 +2261,44 @@
 }
 .mg-payment-totals dt { color: var(--mg-slate-500); font-size: 12px; margin-bottom: 4px; }
 .mg-payment-totals dd { margin: 0; font-size: 16px; font-weight: 700; color: var(--mg-slate-900); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mg-renewal-picks { display: grid; gap: 8px; }
+.mg-renewal-pick, .mg-return-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--mg-line);
+  border-radius: var(--mg-radius);
+  background: #fff;
+}
+.mg-renewal-pick.is-checked { border-color: var(--mg-brand-600); background: var(--mg-slate-50); }
+.mg-renewal-pick-name, .mg-return-line-head { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.mg-renewal-pick-name input, .mg-return-line-head input { width: 16px; height: 16px; margin: 0; accent-color: var(--mg-brand-600); }
+.mg-renewal-pick small, .mg-return-line-time { grid-column: 1; color: var(--mg-slate-500); font-size: 12px; }
+.mg-renewal-pick > input { grid-column: 2; grid-row: 1 / span 2; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mg-payment-history li.is-expense strong { color: var(--mg-red-text); }
+.mg-return-lines { display: grid; gap: 8px; margin-top: 12px; }
+.mg-return-line { grid-template-columns: minmax(0, 1fr); }
+.mg-return-line-head span { color: var(--mg-slate-500); font-weight: 500; }
+.mg-return-line.is-off { opacity: .65; }
+.mg-return-line.is-late { border-color: var(--mg-red-border); background: var(--mg-red-bg); }
+.mg-return-line.is-done { color: var(--mg-slate-500); background: var(--mg-slate-50); font-size: 12.5px; }
+.mg-return-line-adjust { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 12.5px; }
+.mg-return-line-adjust label { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.mg-return-line-adjust input { width: 150px; padding: 6px 8px; border: 1px solid var(--mg-line-strong); border-radius: var(--mg-radius); text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mg-return-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 12px 16px;
+  border: 1px solid var(--mg-line);
+  border-radius: var(--mg-radius-md);
+  background: var(--mg-slate-50);
+}
+.mg-return-summary dt { color: var(--mg-slate-500); font-size: 12px; margin-bottom: 3px; }
+.mg-return-summary dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
 .mg-payment-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2377,6 +2415,15 @@
 .mg-contract-changes .is-extra .mg-contract-change-kind { background: var(--mg-green-bg); color: var(--mg-green-text); }
 .mg-contract-changes .is-swap .mg-contract-change-kind { background: var(--mg-amber-bg); color: var(--mg-amber-text); }
 .mg-contract-changes .is-return .mg-contract-change-kind { background: var(--mg-red-bg); color: var(--mg-red-text); }
+.mg-contract-changes li:has(.mg-contract-change-actions) { grid-template-columns: 100px minmax(0, 1fr) auto; }
+.mg-contract-change-actions { display: flex; align-items: flex-start; gap: 6px; }
+.mg-contract-change-actions .mg-button { min-height: 28px; padding: 4px 8px; gap: 4px; font-size: 12px; }
+.mg-contract-version-view { display: grid; gap: 10px; margin-top: 8px; padding: 12px; border: 1px solid var(--mg-line); border-radius: var(--mg-radius-md); background: var(--mg-slate-50); }
+.mg-contract-version-view h4 { margin: 4px 0 0; font-size: 13px; color: var(--mg-slate-900); }
+.mg-contract-days { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 12.5px; }
+.mg-contract-days th, .mg-contract-days td { padding: 6px 8px; border-bottom: 1px solid var(--mg-line); text-align: left; }
+.mg-contract-days th { color: var(--mg-slate-500); font-weight: 600; }
+.mg-contract-days td:last-child { font-weight: 700; }
 
 .mg-contract-cashflow-columns {
   display: grid;
@@ -2897,7 +2944,9 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .mg-store-detail .mg-contract-tabs button:last-child { grid-column: auto; }
-  .mg-contract-changes li { grid-template-columns: 1fr; gap: 6px; }
+  .mg-contract-changes li, .mg-contract-changes li:has(.mg-contract-change-actions) { grid-template-columns: 1fr; gap: 6px; }
+  .mg-renewal-pick { grid-template-columns: 1fr; }
+  .mg-renewal-pick > input { grid-column: 1; grid-row: auto; }
 
   .mg-return-search { flex-wrap: wrap; }
   .mg-return-search input { flex-basis: calc(100% - 36px); }

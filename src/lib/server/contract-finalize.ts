@@ -69,7 +69,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (deposit === 0 && input.deposit) throw new ContractFinalizeError('Bản nháp không có tiền cọc để ghi phiếu thu.');
   if (total === 0 && input.rental) throw new ContractFinalizeError('Bản nháp không có tiền thuê để ghi phiếu thu.');
 
-  const vehicles = await client.query(`SELECT id, license, COALESCE(current_store_id, store_id) AS store_id FROM himoto.vehicles WHERE id = ANY($1::bigint[]) ORDER BY id FOR UPDATE`, [vehicleIds]);
+  const vehicles = await client.query(`SELECT id, license, status, COALESCE(current_store_id, store_id) AS store_id FROM himoto.vehicles WHERE id = ANY($1::bigint[]) ORDER BY id FOR UPDATE`, [vehicleIds]);
   if (vehicles.rowCount !== vehicleIds.length) throw new ContractFinalizeError('Có xe trong bản nháp không còn tồn tại.', 409);
   const wrongStore = vehicles.rows.find(row => Number(row.store_id) !== storeId);
   if (wrongStore) throw new ContractFinalizeError(`Xe ${wrongStore.license} không thuộc cơ sở của hợp đồng.`, 409);
@@ -78,6 +78,8 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.completed_at IS NULL AND d.deleted_at IS NULL
       AND o.deleted_at IS NULL AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
   if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(row => `xe ${row.license} đang thuộc hợp đồng ${row.code}`).join('; ')} chưa trả xe.`, 409);
+  const notStored = vehicles.rows.filter(row => row.status !== 'ready');
+  if (notStored.length) throw new ContractFinalizeError(`Chỉ cho thuê xe đang Lưu kho: ${notStored.map(row => row.license).join(', ')} đang ở trạng thái khác.`, 409);
   // The legacy app pre-created an empty line per draft (no money, not returned, no receipt). Those
   // placeholders are retired here; any legacy line carrying money or receipts still needs review.
   const existing = await client.query(`SELECT d.id, COALESCE(d.total_money, 0) AS total_money, COALESCE(d.total_renewal_amount, 0) AS renewal_amount, d.completed_at,
@@ -110,6 +112,8 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
 
   const startAt = `${start}:00+07:00`, endAt = `${end}:00+07:00`;
   const type = draft.package_name === 'Theo tháng' ? 'month' : 'day';
+  const rentalDays = Math.max(Math.ceil((new Date(endAt).getTime() - new Date(startAt).getTime()) / 86_400_000), 1);
+  const hiringFee = unitPrice || (type === 'day' && total ? Math.round(total / rentalDays / lines.length) : 0);
   const itemIds: number[] = [];
   for (const [index, line] of lines.entries()) {
     const text = (key: string) => typeof line[key] === 'string' && String(line[key]).trim() ? String(line[key]).trim() : null;
@@ -118,7 +122,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
       (vehicle_id, order_id, price_id, borrow_hats, borrow_raincoats, rent_at, return_at, total_money, hiring_fee, status, type, handler_price,
        total_renewal_amount, driver_name, driver_license_number, driver_license_issued_on, created_at, updated_at)
       VALUES ($1,$2,0,$3,$4,$5,$6,$7,$8,1,$9,0,0,$10,$11,$12,now(),now()) RETURNING id`,
-    [vehicleIds[index], id, count('borrow_hats'), count('borrow_raincoats'), startAt, endAt, index === 0 ? total : 0, unitPrice, type,
+    [vehicleIds[index], id, count('borrow_hats'), count('borrow_raincoats'), startAt, endAt, index === 0 ? total : 0, hiringFee, type,
       text('driver_name'), text('driver_license_number'), /^\d{4}-\d{2}-\d{2}$/.test(String(line.driver_license_issued_on ?? '')) ? line.driver_license_issued_on : null]);
     itemIds.push(Number(inserted.rows[0].id));
   }

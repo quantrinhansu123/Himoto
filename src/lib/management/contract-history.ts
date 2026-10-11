@@ -10,9 +10,11 @@ export async function loadCustomerContracts(customerId: number, signal?: AbortSi
 
 export type ContractChangeKind = 'created' | 'renewal' | 'extra' | 'swap' | 'return';
 
+export interface ContractVersionSnapshot { label: string; return_at: string | null; total: number | null; paid: number | null }
 export interface ContractChange {
   id: string; kind: ContractChangeKind; at: string; actor: string;
   title: string; detail: string; amount: number | null;
+  version?: ContractVersionSnapshot;
 }
 export interface ContractCashflow {
   id: number; at: string; type: 'income' | 'expense'; reason: string; note: string;

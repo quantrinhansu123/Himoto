@@ -5,7 +5,7 @@ export const STAFF_STATUSES: Option[] = [{ value: 'active', label: 'Đang làm v
 export const CUSTOMER_STATUSES: Option[] = [{ value: 'active', label: 'Bình thường' }, { value: 'warning', label: 'Cần lưu ý' }, { value: 'blacklist', label: 'Blacklist (khách nợ xấu)' }, { value: 'draft', label: 'Chưa hoàn tất' }];
 export const STORE_STATUSES: Option[] = [{ value: 'active', label: 'Hoạt động' }, { value: 'inactive', label: 'Tạm ngừng' }];
 export const VEHICLE_STATUSES: Option[] = [
-  { value: 'ready', label: 'Sẵn sàng' }, { value: 'using', label: 'Đang thuê' }, { value: 'repairing', label: 'Bảo dưỡng' },
+  { value: 'ready', label: 'Lưu kho' }, { value: 'using', label: 'Đang thuê' }, { value: 'repairing', label: 'Bảo dưỡng' },
   { value: 'pending', label: 'Đặt trước' }, { value: 'sold', label: 'Đã bán' }, { value: 'bad_debt', label: 'Nợ xấu' },
   { value: 'broken', label: 'Hỏng' }, { value: 'in_transit', label: 'Đang điều chuyển' },
 ];

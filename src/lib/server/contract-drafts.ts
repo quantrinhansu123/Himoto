@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } from '@/lib/management/contract-document';
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
+import { depositLateral, rentalPaidSql } from './contract-deposits';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
@@ -17,7 +18,7 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   c.driver_license_number AS customer_driver_license_number, c.driver_license_issued_on::text AS customer_driver_license_issued_on,
   c.relatives, c.warning AS warning_note,
   o.store_id, s.store_name, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
-  o.total AS total_amount, o.pid AS paid_amount,
+  o.total AS total_amount, ${rentalPaidSql()} AS paid_amount, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded,
   NULLIF(o.draft_payload->'management_composer'->'draft'->>'unit_price','')::numeric AS unit_price,
   o.draft_payload->'management_composer'->'draft'->>'package_name' AS package_name,
   o.draft_payload->'management_composer'->'draft'->>'payment_method' AS payment_method,
@@ -42,12 +43,13 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
     FROM himoto.transactions WHERE type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
     GROUP BY order_id
   ) company ON company.order_id=o.id
+  ${depositLateral()}
   LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
       'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,
       'driver_license_issued_on', d.driver_license_issued_on, 'borrow_hats', d.borrow_hats,
-      'borrow_raincoats', d.borrow_raincoats) ORDER BY d.id) AS vehicles,
+      'borrow_raincoats', d.borrow_raincoats, 'rent_at', d.rent_at, 'return_at', d.return_at, 'completed_at', d.completed_at) ORDER BY d.id) AS vehicles,
       min(d.rent_at) AS start_date, max(d.return_at) AS end_date
     FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
     WHERE d.order_id = o.id AND d.deleted_at IS NULL

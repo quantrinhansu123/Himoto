@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
-import { ContractReturnError, loadContractReturnableItems, parseReturnInput, recordVehicleReturn, searchReturnableItems } from '@/lib/server/contract-returns';
+import { ContractReturnError, loadContractReturnableItems, parseReturnBatch, recordVehicleReturn, searchReturnableItems } from '@/lib/server/contract-returns';
 
 export const runtime = 'nodejs';
 
@@ -26,11 +26,14 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
   let client;
   try {
-    const input = parseReturnInput(await request.json());
+    const body = await request.json();
+    const inputs = parseReturnBatch(body);
     client = await himotoPool.connect();
     await client.query('BEGIN');
-    const data = await recordVehicleReturn(client, user.id, input);
+    const results = [];
+    for (const input of inputs) results.push(await recordVehicleReturn(client, user.id, input));
     await client.query('COMMIT');
+    const data = body && typeof body === 'object' && 'items' in body ? results : results[0];
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});

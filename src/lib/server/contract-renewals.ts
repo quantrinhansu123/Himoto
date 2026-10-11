@@ -2,6 +2,7 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
 import type { RenewalInput, RenewalResult, RenewalVersion } from '@/lib/management/contract-renewals';
+import { rentalPaid } from './contract-deposits';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractRenewalError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -52,10 +53,11 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   const versions = Array.isArray(composer.versions) ? composer.versions as RenewalVersion[] : [];
   const overdueMinutes = beforeReturn ? Math.max(0, Math.floor((Date.now() - new Date(beforeReturn).getTime()) / 60_000)) : 0;
   const total = beforeTotal === null ? null : beforeTotal + amount;
+  const paid = await rentalPaid(client, orderId, item.pid);
   const version: RenewalVersion = { version: versions.length + 2, kind: 'renewal', created_at: new Date().toISOString(), actor_id: actorId,
     item_id: input.item_id, vehicle_id: Number(item.vehicle_id), vehicle_name: String(item.vehicle_name || ''), license: String(item.license || ''),
     rent_at: iso(item.rent_at), before_return_at: beforeReturn, return_at: newReturn, overdue_minutes: overdueMinutes,
-    amount, before_total: beforeTotal, total, paid: item.pid == null || item.pid === '' ? null : Number(item.pid), note: input.note };
+    amount, before_total: beforeTotal, total, paid, note: input.note };
   payload.management_composer = { ...composer, versions: [...versions, version] };
 
   await client.query(`UPDATE himoto.order_vehicle_details SET return_at=$2::timestamptz,

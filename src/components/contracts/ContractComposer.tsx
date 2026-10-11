@@ -40,6 +40,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const editingDraft = mode === 'draft' || row?.status === 'draft';
   const canSaveDraft = !row || row.status === 'draft';
   const [draft, setDraft] = useState<ContractDraft>(() => createContractDraft(dataset!, selectedStore, row));
+  // A finalized contract (or one of its versions) keeps its ledger total until the user edits dates, price or the first vehicle.
+  const livePricing = useRef(row && row.status !== 'draft' ? { start: draft.start_date, end: draft.end_date, unit: draft.unit_price, vehicle: draft.vehicles[0]?.id } : null);
   const [idInput, setIdInput] = useState(String(draft.customer_lookup ?? draft.customer.id_card ?? ''));
   const preserveCustomer = useRef(Boolean((row?.draft_json || row?.status === 'draft') && draft.customer_id && String(draft.customer.name ?? '').trim()));
   const [lookupState, setLookupState] = useState<LookupState>((row?.draft_json || row?.status === 'draft') && draft.customer_id ? 'found' : 'idle');
@@ -226,12 +228,15 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const monthlyPackage = draft.package_name === 'Theo tháng';
   useEffect(() => {
     const rate = monthlyPackage ? pricingVehicle?.monthly_price : pricingVehicle?.daily_price;
+    if (livePricing.current && String(pricingVehicle?.id) === livePricing.current.vehicle) return;
     if (pricingVehicle) {
       const nextRate = rate == null || !Number.isFinite(Number(rate)) ? '' : String(rate);
       setDraft(previous => previous.unit_price === nextRate ? previous : { ...previous, unit_price: nextRate });
     }
   }, [pricingVehicle?.id, pricingVehicle?.daily_price, pricingVehicle?.monthly_price, monthlyPackage]);
   useEffect(() => {
+    const live = livePricing.current;
+    if (live && live.start === draft.start_date && live.end === draft.end_date && live.unit === draft.unit_price) return;
     const units = rentalUnits(draft.start_date, draft.end_date, monthlyPackage);
     if (units && draft.unit_price && Number.isSafeInteger(Number(draft.unit_price))) {
       const total = String(units * Number(draft.unit_price));

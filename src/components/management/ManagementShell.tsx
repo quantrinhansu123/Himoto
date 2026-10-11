@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
-import { trapFocusWithin } from './Dialog';
+import { lockBodyScroll, trapFocusWithin } from './Dialog';
 import type { SessionUser } from '@/lib/server/management-session';
 
 const navigation = [
@@ -60,10 +60,9 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   useEffect(() => {
     if (mobileOpen) mobileRef.current?.showModal(); else mobileRef.current?.close();
     if (!mobileOpen) return;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockBodyScroll();
     const releaseFocus = mobileRef.current ? trapFocusWithin(mobileRef.current) : () => {};
-    return () => { releaseFocus(); document.body.style.overflow = overflow; };
+    return () => { releaseFocus(); unlockScroll(); };
   }, [mobileOpen]);
   useEffect(() => {
     const close = (event: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(event.target as Node)) menuRef.current.open = false; };

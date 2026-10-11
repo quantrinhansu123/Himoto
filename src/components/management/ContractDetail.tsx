@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
-import { Bike, CalendarPlus, LoaderCircle, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
+import { Bike, CalendarPlus, Eye, LoaderCircle, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { CashflowColumns, cashflowTotals } from './CashflowColumns';
 import { useManagement } from './ManagementProvider';
@@ -26,10 +26,24 @@ const text = (value: unknown) => value == null || value === '' ? '—' : String(
 const money = (value: unknown) => value == null || value === '' || !Number.isFinite(Number(value)) ? '—' : formatMoney(Number(value));
 const dateTime = (value: string) => value ? formatDateTime(value) : '—';
 const date = (value: string) => value ? new Date(value).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
+const millis = (value: unknown) => {
+  const raw = value == null ? '' : String(value);
+  return raw ? new Date(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw) ? `${raw}:00+07:00` : raw).getTime() : NaN;
+};
+function rentalDays(start: unknown, end: unknown) {
+  const from = millis(start), to = millis(end);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return '—';
+  const minutes = Math.round((to - from) / 60_000);
+  const days = Math.floor(minutes / 1440), hours = Math.ceil((minutes % 1440) / 60);
+  return hours === 24 ? `${days + 1} ngày` : `${days} ngày${hours ? ` ${hours} giờ` : ''}`;
+}
 
-export function ContractDetail({ row, onClose, onPrint, onPayment, onReturn, onRenew, onVehicleChange }: { row: ManagementRow; onClose: () => void; onPrint: () => void; onPayment?: () => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void }) {
+export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
+
+export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange }: { row: ManagementRow; onClose: () => void; onPrint: () => void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: () => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void }) {
   const { dataset, source } = useManagement();
   const [section, setSection] = useState<DetailSection>('vehicle');
+  const [viewingVersion, setViewingVersion] = useState('');
   const [history, setHistory] = useState<ContractHistory | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
@@ -68,6 +82,8 @@ export function ContractDetail({ row, onClose, onPrint, onPayment, onReturn, onR
   const refreshButton = source === 'api' && <button type="button" className="mg-button" disabled={historyLoading} onClick={() => fetchHistory()}>
     {historyLoading ? <LoaderCircle size={15} className="mg-spin" /> : <RotateCcw size={15} />}Làm mới</button>;
   const { income: incomeTotal, expense: expenseTotal } = cashflowTotals(history?.cashflow || []);
+  const versionTimes = (history?.changes || []).filter(change => change.kind === 'created' || change.version)
+    .map(change => new Date(change.at).getTime()).sort((a, b) => a - b);
   function panel(id: DetailSection, title: string, children: ReactNode) {
     return <section id={`contract-detail-panel-${id}`} role="tabpanel" aria-labelledby={`contract-detail-tab-${id}`}
       hidden={section !== id} className="mg-contract-panel"><h3 className="mg-contract-section-title">{title}</h3>{children}</section>;
@@ -104,13 +120,27 @@ export function ContractDetail({ row, onClose, onPrint, onPayment, onReturn, onR
         ['Người thân 2', text(draft.relatives[1] ? `${draft.relatives[1].name}${draft.relatives[1].relationship ? ` (${draft.relatives[1].relationship})` : ''}${draft.relatives[1].phone ? `: ${draft.relatives[1].phone}` : ''}` : '')],
       ]))}
       {panel('payment', 'Chi phí', <>
-        <div className="mg-contract-cost-section"><h3>Tiền cọc</h3>{fields([
+        <div className="mg-contract-cost-section"><h3>Thời gian thuê</h3>{fields([
+          ['Thuê lúc', dateTime(draft.start_date)], ['Hẹn trả', dateTime(draft.end_date)], ['Số ngày thuê', rentalDays(draft.start_date, draft.end_date)],
+        ])}
+          {sourceVehicles.some(vehicle => vehicle.rent_at) && <table className="mg-contract-days">
+            <thead><tr><th>Xe</th><th>Thuê lúc</th><th>Hẹn trả / Đã trả</th><th>Số ngày thuê</th></tr></thead>
+            <tbody>{sourceVehicles.map((vehicle, index) => {
+              const end = vehicle.completed_at || vehicle.return_at;
+              return <tr key={index}><td>{text(vehicle.license || vehicle.name)}</td><td>{dateTime(String(vehicle.rent_at || ''))}</td>
+                <td>{dateTime(String(end || ''))}{vehicle.completed_at ? ' (đã trả)' : ''}</td><td>{rentalDays(vehicle.rent_at, end)}</td></tr>;
+            })}</tbody></table>}
+        </div>
+        <div className="mg-contract-cost-section"><h3>Tiền cọc (tách riêng, không trừ vào tiền thuê)</h3>{fields([
           ['Số tiền đặt cọc', money(pricing.deposit_amount)], ['Hình thức đặt cọc', text(pricing.deposit_payment_method)],
+          ['Cọc đã thu', money(row.deposit_paid)], ['Đã trả cọc', money(row.deposit_refunded)],
+          ['Cọc đang giữ', money(Math.max((Number(row.deposit_paid) || 0) - (Number(row.deposit_refunded) || 0), 0))],
         ])}</div>
         <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3>{fields([
           ['Gói thuê', text(pricing.package_name)], ['Đơn giá áp dụng', money(pricing.unit_price)],
-          ['Tổng phí thuê xe', money(pricing.total_amount)], ['Phát sinh trả xe', money(row.return_adjustment_amount)],
-          ['Số tiền đã thanh toán', money(pricing.paid_amount)], ['Hình thức thanh toán', text(pricing.payment_method)],
+          ['Tổng phí thuê xe', money(row.total_amount ?? pricing.total_amount)], ['Phát sinh trả xe (+ trễ / − trả sớm)', money(row.return_adjustment_amount)],
+          ['Đã thu tiền thuê', money(row.paid_amount)], ['Còn thiếu tiền thuê', row.total_amount == null || row.paid_amount == null ? '—' : money(Math.max(Number(row.total_amount) - Number(row.paid_amount), 0))],
+          ['Hình thức thanh toán', text(pricing.payment_method)],
         ])}</div>
       </>)}
       {panel('signing', 'Ký kết & Ghi chú', fields([
@@ -121,12 +151,36 @@ export function ContractDetail({ row, onClose, onPrint, onPayment, onReturn, onR
       {panel('changes', 'Danh sách chỉnh sửa hợp đồng', <>
         <div className="mg-contract-history-toolbar"><p>Ghi nhận tạo hợp đồng, gia hạn, thu thêm, đổi xe và trả xe.</p>{refreshButton}</div>
         {historyState(!history?.changes.length, 'Chưa có lần chỉnh sửa nào.')}
-        {history && history.changes.length > 0 && <ol className="mg-contract-changes">{history.changes.map(change => <li key={change.id} className={`is-${change.kind}`}>
-          <span className="mg-contract-change-kind">{CHANGE_LABELS[change.kind]}</span>
-          <div><strong>{change.title}{change.amount ? ` · ${formatMoney(change.amount)}` : ''}</strong>
-            {change.detail && <p>{change.detail}</p>}
-            <small>{dateTime(change.at)} · {change.actor}</small></div>
-        </li>)}</ol>}
+        {history && history.changes.length > 0 && <ol className="mg-contract-changes">{history.changes.map(change => {
+          const printable = change.kind === 'created' || Boolean(change.version);
+          const version: ContractVersionPrint = change.version
+            ? { end_date: change.version.return_at, total_amount: change.version.total, paid_amount: change.version.paid }
+            : { end_date: null, total_amount: null, paid_amount: null };
+          const open = viewingVersion === change.id;
+          const at = new Date(change.at).getTime();
+          const until = versionTimes.find(time => time > at) ?? Infinity;
+          const receipts = history.cashflow.filter(item => new Date(item.at).getTime() < until);
+          return <li key={change.id} className={`is-${change.kind}`}>
+            <span className="mg-contract-change-kind">{CHANGE_LABELS[change.kind]}</span>
+            <div><strong>{change.title}{change.amount ? ` · ${change.amount < 0 ? '−' : ''}${formatMoney(Math.abs(change.amount))}` : ''}</strong>
+              {change.detail && <p>{change.detail}</p>}
+              <small>{dateTime(change.at)} · {change.actor}</small>
+              {open && <div className="mg-contract-version-view">
+                {fields([['Phiên bản', change.version?.label || 'Hợp đồng hiện tại'], ['Thuê lúc', dateTime(draft.start_date)],
+                  ['Hẹn trả', change.version?.return_at ? dateTime(change.version.return_at) : dateTime(draft.end_date)],
+                  ['Tiền thuê', change.version ? money(change.version.total) : money(row.total_amount)],
+                  ['Số ngày thuê', rentalDays(draft.start_date, change.version?.return_at || draft.end_date)],
+                  ['Xe', text(draft.vehicles.map(vehicle => vehicle.license || vehicle.name).filter(Boolean).join(', '))]])}
+                <h4>Lịch sử thanh toán đến thời điểm này</h4>
+                {receipts.length ? <CashflowColumns items={receipts} /> : <p className="mg-contract-history-state">Chưa có phiếu thu / chi.</p>}
+              </div>}
+            </div>
+            {printable && <div className="mg-contract-change-actions">
+              <button type="button" className="mg-button" aria-expanded={open} onClick={() => setViewingVersion(open ? '' : change.id)}><Eye size={14} />{open ? 'Ẩn' : 'Xem'}</button>
+              <button type="button" className="mg-button" onClick={() => change.version && onPrintVersion ? onPrintVersion(version) : onPrint()}><Printer size={14} />In</button>
+            </div>}
+          </li>;
+        })}</ol>}
       </>)}
       {panel('cashflow', 'Lịch sử thu chi', <>
         <div className="mg-contract-history-toolbar"><p>Tất cả phiếu thu / chi gắn với hợp đồng trong Sổ quỹ / Sổ két.</p><div>

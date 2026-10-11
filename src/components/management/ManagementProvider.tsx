@@ -146,6 +146,7 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
   const acceptContractPayment = (context: PaymentContext) => {
     loader.update('contracts', rows => rows.map(row => row.id === context.id ? { ...row,
       total_amount: context.total_amount ?? undefined, paid_amount: context.paid_amount ?? undefined, draft_revision: context.revision,
+      deposit_paid: context.deposit_paid, deposit_refunded: context.deposit_refunded,
       end_date: context.end_date ?? undefined,
       company_paid_amount: context.company_paid_amount, company_payment_count: context.company_payment_count } : row));
   };

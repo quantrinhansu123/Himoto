@@ -114,9 +114,11 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
           </fieldset>
           {stillOverdue && <p className="mg-field-error">Ngày trả mới vẫn ở quá khứ, hợp đồng sẽ tiếp tục quá hạn.</p>}
           <dl className="mg-payment-totals">
-            <div><dt>Tiền hợp đồng</dt><dd>{total === null ? 'Chưa đối chiếu' : formatMoney(total)}{fee > 0 && nextTotal !== null && <> → <strong>{formatMoney(nextTotal)}</strong></>}</dd></div>
-            <div><dt>Đã thu</dt><dd>{paid === null ? '—' : formatMoney(paid)}</dd></div>
-            <div><dt>Còn thiếu sau gia hạn</dt><dd>{nextTotal === null || paid === null ? '—' : formatMoney(Math.max(nextTotal - paid, 0))}</dd></div>
+            <div><dt>Tiền thuê hợp đồng</dt><dd>{total === null ? 'Chưa đối chiếu' : formatMoney(total)}{fee > 0 && nextTotal !== null && <> → <strong>{formatMoney(nextTotal)}</strong></>}</dd></div>
+            <div><dt>Đã thu tiền thuê</dt><dd>{paid === null ? '—' : formatMoney(paid)}</dd></div>
+            <div><dt>Còn thiếu sau gia hạn (không trừ cọc)</dt><dd>{nextTotal === null || paid === null ? '—' : formatMoney(Math.max(nextTotal - paid, 0))}</dd></div>
+            <div><dt>Tiền cọc đã thu</dt><dd>{formatMoney(selected?.deposit_paid ?? 0)}</dd></div>
+            <div><dt>Cọc đang giữ</dt><dd>{formatMoney(selected?.deposit_held ?? 0)}</dd></div>
           </dl>
           <p className="mg-composer-hint">Chi phí gia hạn được cộng vào tiền hợp đồng (khách thanh toán sau bằng nút Thanh toán). Phiên bản mới được ghi vào Lịch sử chỉnh sửa và dùng khi in hợp đồng.</p>
         </>}
