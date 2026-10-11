@@ -72,6 +72,7 @@ export function RowActionsMenu({ label, actions, busy }: { label: string; action
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
       : event.key === 'ArrowDown' ? (current + 1) % items.length : (current - 1 + items.length) % items.length;
     items[next].focus({ preventScroll: true });
+    items[next].scrollIntoView({ block: 'nearest', inline: 'nearest' });
   };
 
   return <>
@@ -79,7 +80,8 @@ export function RowActionsMenu({ label, actions, busy }: { label: string; action
       aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={toggle}>
       {busy ? <LoaderCircle size={16} className="mg-spin" /> : <MoreHorizontal size={18} />}
     </button>
-    {open && createPortal(<div ref={menuRef} id={menuId} role="menu" aria-label={label} className="mg-row-menu" style={position} onKeyDown={onMenuKeyDown}>
+    {open && createPortal(<div ref={menuRef} id={menuId} role="menu" aria-label={label} className="mg-row-menu"
+      style={{ ...position, maxHeight: `calc(100dvh - ${position.top ?? position.bottom ?? 0}px - 12px)` }} onKeyDown={onMenuKeyDown}>
       {actions.map(action => <button key={action.key} type="button" role="menuitem" className={action.danger ? 'is-danger' : undefined}
         disabled={action.disabled} title={action.title} onClick={() => { close(true); action.onSelect(); }}>
         {action.icon}<span>{action.label}</span>

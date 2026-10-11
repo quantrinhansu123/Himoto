@@ -10,3 +10,5 @@ next-env.d.ts
 # Local customer/vehicle workbooks contain operational data.
 /excel-import/
 /.backups/
+__pycache__/
+*.pyc

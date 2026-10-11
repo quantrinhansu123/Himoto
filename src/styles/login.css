@@ -30,4 +30,15 @@
 @keyframes hm-login-spin { to { transform: rotate(360deg); } }
 @media (max-width: 900px) { .hm-login { grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr); } .hm-login-main { padding: 70px 24px 30px; } .hm-login-card { padding: 28px 24px; } }
 @media (max-width: 700px) { .hm-login { display: block; } .hm-login-art { display: none; } .hm-login-main { min-height: 100vh; min-height: 100dvh; padding: 60px 20px 28px; } .hm-login-language { top: 20px; right: 20px; } .hm-login-logo { margin-bottom: 20px; } .hm-login-card { padding: 24px 20px; } }
+@media (max-width: 900px), (hover: none) and (pointer: coarse) {
+  .hm-login input { font-size: 16px; min-height: 48px; }
+  .hm-login-password input { padding-right: 52px; }
+  .hm-login-password button { width: 44px; height: 44px; }
+  .hm-login-submit { min-height: 48px; font-size: 16px; }
+}
+@media (max-width: 700px) {
+  .hm-login-main { padding: max(64px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+  .hm-login-language { top: max(20px, env(safe-area-inset-top)); right: 16px; }
+  .hm-login-card { padding: 24px 20px; }
+}
 @media (prefers-reduced-motion: reduce) { .hm-login-spinner { animation: none; } }

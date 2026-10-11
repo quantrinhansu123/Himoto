@@ -889,6 +889,7 @@
   scrollbar-width: thin;
   scrollbar-color: var(--mg-slate-300) var(--mg-slate-50);
 }
+.mg-table-mobile-hint { display: none; }
 .mg-table {
   width: 100%;
   border-collapse: separate;
@@ -2998,6 +2999,162 @@
   .mg-contract-preview .table-responsive { overflow-x: auto; }
   .mg-contract-preview table { min-width: 420px; }
   .mg-contract-preview .modal-title { font-size: 16px; }
+}
+
+/* Touch controls also apply to tablets in landscape and devices with a coarse pointer. */
+@media (max-width: 900px), (hover: none) and (pointer: coarse) {
+  .mg-app .mg-button, .mg-dialog .mg-button,
+  .mg-app .mg-icon-button, .mg-dialog .mg-icon-button,
+  .mg-app .mg-sort, .mg-app .mg-status-tabs > button,
+  .mg-column-menu > summary, .mg-user-menu > summary,
+  .mg-dialog .mg-method-picker > summary, .mg-import-notes > summary {
+    min-height: 44px;
+  }
+  .mg-app .mg-icon-button, .mg-dialog .mg-icon-button, .mg-app .mg-sort { min-width: 44px; }
+  .mg-app :is(input, select, textarea):not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='file']),
+  .mg-dialog :is(input, select, textarea):not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='file']) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .mg-search { min-height: 46px; height: auto; }
+  .mg-search input { min-width: 0; }
+  .mg-search button { min-width: 44px; min-height: 44px; }
+  .mg-column-menu label, .mg-method-picker-options label { min-height: 44px; }
+  .mg-popover > :is(button, a), .mg-row-menu > button { min-height: 44px; }
+  .mg-popover { max-width: calc(100vw - 24px); max-height: calc(100dvh - 100px); overflow-y: auto; }
+  .mg-row-menu { max-width: calc(100vw - 24px); max-height: calc(100dvh - 96px); overflow-y: auto; }
+  .mg-dialog .mg-field > label { font-size: 14px; }
+  .mg-dialog .mg-field > small, .mg-dialog .mg-field-error { font-size: 12.5px; line-height: 1.5; }
+}
+
+@media (max-width: 900px) {
+  .mg-mobile-nav[open] {
+    width: min(340px, calc(100vw - 44px));
+    padding: max(12px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .mg-mobile-close { position: sticky; top: 0; right: auto; align-self: flex-end; flex-shrink: 0; background: #fff; z-index: 1; }
+  .mg-mobile-nav .mg-brand, .mg-mobile-nav .mg-workspace { flex-shrink: 0; }
+  .mg-mobile-nav .mg-nav-link { min-height: 48px; font-size: 14px; }
+  .mg-column-menu .mg-popover {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: min(280px, calc(100vw - 32px));
+    max-height: min(60dvh, calc(100dvh - 84px));
+    z-index: 80;
+  }
+  .mg-contract-tabs, .mg-contract-detail .mg-contract-tabs, .mg-customer-detail .mg-contract-tabs {
+    display: flex;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    margin-bottom: 16px;
+  }
+  .mg-contract-tabs button {
+    flex: 0 0 auto;
+    min-height: 48px;
+    padding: 10px 14px;
+    border-bottom: 0;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+  .mg-contract-tabs button:not(:last-child) { border-right: 1px solid var(--mg-line); }
+  .mg-contract-panel { padding: 16px; }
+  .mg-lookup-controls { flex-wrap: wrap; }
+  .mg-lookup-controls input { flex-basis: 100%; }
+  .mg-lookup-controls .mg-button { flex: 1 1 auto; justify-content: center; }
+}
+
+@media (max-width: 600px) {
+  .mg-topbar { position: sticky; top: 0; z-index: 20; padding: 8px 12px; min-height: 60px; }
+  .mg-breadcrumb { flex-shrink: 0; }
+  .mg-breadcrumb strong { display: none; }
+  .mg-topbar-right { flex: 1; min-width: 0; gap: 8px; }
+  .mg-branch-select { flex: 1; min-width: 0; min-height: 44px; padding: 0 8px; }
+  .mg-branch-select select { width: 100%; min-width: 0; max-width: none; }
+  .mg-user-menu { flex-shrink: 0; }
+  .mg-user-menu summary { min-width: 44px; justify-content: center; }
+  .mg-user-avatar { width: 32px; height: 32px; font-size: 11px; }
+  .mg-content { padding: 16px 12px; }
+  .mg-app h1 { font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+  .mg-page-heading p { font-size: 13px; }
+  .mg-heading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mg-heading-actions .mg-button { width: 100%; min-width: 0; justify-content: center; white-space: normal; line-height: 1.4; padding: 10px; }
+  .mg-heading-actions .mg-button-primary { margin-left: 0; }
+  .mg-filter-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mg-filter-controls select { width: 100%; min-width: 0; max-width: none; }
+  .mg-column-menu { grid-column: 1 / -1; justify-self: end; margin-left: 0; }
+  .mg-column-menu summary span { display: inline; }
+  .mg-status-tabs > button { font-size: 14px; }
+  .mg-date-filters { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .mg-date-filters label { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 8px; }
+  .mg-date-filters input { width: 100%; min-width: 0; }
+  .mg-table-mobile-hint { display: block; margin: 0; padding: 10px 12px; color: var(--mg-slate-600); background: var(--mg-slate-50); font-size: 12px; line-height: 1.5; border-bottom: 1px solid var(--mg-line); }
+  .mg-table-scroll { min-height: 0; max-height: min(64dvh, 520px); overscroll-behavior-x: contain; }
+  .mg-table { font-size: 14px; }
+  .mg-table th { padding-top: 2px; padding-bottom: 2px; }
+  .mg-table td { height: 60px; }
+  .mg-table .mg-record-code { position: sticky; left: 0; z-index: 1; box-shadow: 4px 0 6px -4px rgba(15, 23, 42, 0.12); }
+  .mg-table th.mg-record-code { z-index: 3; }
+  .mg-table .mg-record-code .mg-code { display: block; max-width: 110px; white-space: normal; overflow-wrap: anywhere; }
+  .mg-cashbook-table :is(th, td):first-child { position: sticky; left: 0; z-index: 1; box-shadow: 4px 0 6px -4px rgba(15, 23, 42, 0.12); }
+  .mg-cashbook-table th:first-child { z-index: 3; }
+  .mg-pagination { gap: 12px; padding: 12px; }
+  .mg-pagination-controls { flex-wrap: wrap; gap: 12px; }
+  .mg-page-buttons { width: 100%; justify-content: space-between; }
+  .mg-app .mg-page-buttons .mg-icon-button { width: 44px; height: 44px; }
+  .mg-dialog { width: 100vw; max-width: 100vw; max-height: 100dvh; border-radius: 0; border-left: 0; border-right: 0; }
+  .mg-dialog-header { padding-top: max(14px, env(safe-area-inset-top)); align-items: center; }
+  .mg-dialog-header h2 { font-size: 18px; }
+  .mg-dialog-body { padding: 16px; }
+  .mg-dialog-footer { z-index: 3; padding: 12px 16px max(12px, env(safe-area-inset-bottom)); gap: 8px; }
+  .mg-dialog-footer > .mg-button { flex: 1 1 auto; min-width: 80px; justify-content: center; white-space: normal; line-height: 1.4; }
+  .mg-contract-panel { padding: 14px; }
+  .mg-contract-customer-toolbar > .mg-button { flex: 1 1 auto; justify-content: center; }
+  .mg-contract-record-status { flex-wrap: wrap; }
+  .mg-composer-person { flex-wrap: wrap; }
+  .mg-import-filter, .mg-import-pages { flex-wrap: wrap; }
+  .mg-import-filter select { width: 100%; }
+  .mg-import-pages > span { flex-basis: 100%; }
+  .mg-import-upload input[type='file'] { font-size: 16px; min-height: 44px; }
+  .mg-cashbook-select-label { grid-column: 1 / -1; }
+  .mg-cashbook-filters .mg-date-filters label { display: grid; }
+  .mg-cashbook-panel-heading { padding: 14px 12px; }
+  .mg-cashbook-panel-heading h2 { flex-wrap: wrap; }
+  .mg-duty-toolbar { padding: 12px; gap: 12px; }
+  .mg-duty-week { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 8px; }
+  .mg-duty-week label { grid-column: 1 / -1; order: -1; }
+  .mg-duty-week input { width: 100%; min-width: 0; }
+  .mg-duty-card { padding: 12px; font-size: 14px; }
+  .mg-duty-card strong { font-size: 15px; }
+  .mg-duty-card span, .mg-duty-card b { font-size: 13px; }
+  .mg-duty-card > div { gap: 8px; }
+  .mg-duty-card .mg-button { flex: 1 1 auto; font-size: 13px !important; }
+  .mg-org-section { padding: 14px; }
+  .mg-org-heading { flex-wrap: wrap; }
+  .mg-org-chart { min-width: 0; padding: 0; text-align: left; }
+  .mg-org-root { width: 100%; max-width: 100%; margin-bottom: 14px; font-size: 18px; text-align: center; }
+  .mg-org-departments, .mg-org-stores { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .mg-org-stores { margin-top: 16px; }
+  .mg-org-root::after, .mg-org-departments::before, .mg-org-card::before,
+  .mg-org-stores::before, .mg-org-stores::after, .mg-org-store::before { display: none; }
+  .mg-org-card h3, .mg-org-store h3 { padding: 12px; font-size: 15px; }
+  .mg-org-people { padding: 8px; gap: 8px; }
+  .mg-org-person { padding: 10px; font-size: 14px; justify-items: start; overflow-wrap: anywhere; }
+  .mg-org-phone { justify-content: flex-start; gap: 8px; font-size: 13px; }
+  .mg-org-phone a { display: inline-flex; align-items: center; min-height: 44px; }
+  .mg-toast { bottom: max(12px, env(safe-area-inset-bottom)); align-items: flex-start; }
+  .mg-toast button { min-width: 44px; min-height: 44px; flex-shrink: 0; }
+}
+
+@media (max-width: 900px) and (max-height: 500px) {
+  .mg-dialog-header { padding: 8px 12px; }
+  .mg-dialog-body { padding: 12px; }
+  .mg-dialog-footer { padding: 8px 12px; }
+  .mg-contract-tabs { margin-bottom: 12px; }
 }
 
 /* ==========================================================================
