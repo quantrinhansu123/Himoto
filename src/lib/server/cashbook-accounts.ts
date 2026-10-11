@@ -20,7 +20,7 @@ export function parseAccountCollectionPath(path: string[]): 'bank' | 'cash' | nu
 
 type AccountValues = { storeId: number; status: 'Active' | 'Inactive'; opening: number; ownerType: 'company' | 'unknown'; bankName: string; ownerName: string; accountNumber: string; name: string };
 
-// Company bank accounts are shared by every store and are stored with store_id 0.
+// A company account can belong to a branch; store_id 0 retains legacy shared accounts.
 async function readAccountValues(kind: 'bank' | 'cash', request: Request): Promise<AccountValues | NextResponse> {
   let body: Record<string, unknown>;
   try {
@@ -36,9 +36,8 @@ async function readAccountValues(kind: 'bank' | 'cash', request: Request): Promi
   if (kind === 'bank' && (!bankName || !ownerName || !accountNumber || bankName.length > 191 || ownerName.length > 191 || accountNumber.length > 191)) return json(400, 'Nhập đủ ngân hàng, chủ tài khoản và số tài khoản.');
   const name = kind === 'cash' ? text(body.name, 191) : '';
   if (name.length > 191) return json(400, 'Tên két tối đa 191 ký tự.');
-  let storeId = 0;
-  if (ownerType !== 'company') {
-    storeId = Number(body.store_id);
+  const storeId = body.store_id == null || body.store_id === '' ? 0 : Number(body.store_id);
+  if (storeId !== 0 || ownerType !== 'company') {
     if (!Number.isSafeInteger(storeId) || storeId <= 0) return json(400, 'Chọn cơ sở cho tài khoản.');
     const store = await himotoPool.query('SELECT 1 FROM himoto.stores WHERE id=$1', [storeId]);
     if (!store.rowCount) return json(400, 'Cơ sở đã chọn không còn tồn tại.');

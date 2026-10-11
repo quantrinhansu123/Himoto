@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useRef, useState } from 'react';
+import { validIdentityIssueDate } from '@/lib/management/customer-identity';
 import { Check, LoaderCircle } from 'lucide-react';
 import { ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
@@ -45,6 +46,8 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
     if (config.kind === 'vehicles' && dataset?.vehicles.some(v => v.id !== draft.id && String(v.license).trim().toUpperCase() === String(draft.license).trim().toUpperCase())) nextErrors.license = 'Biển số này đã có trong danh sách.';
     if (config.kind === 'customers' && draft.status === 'warning' && !String(draft.warning_note || '').trim()) nextErrors.warning_note = 'Nhập ghi chú cho hồ sơ cần lưu ý.';
     if (config.kind === 'customers' && String(draft.id_card || '').trim() && !/^\d{9}$|^\d{12}$/.test(String(draft.id_card).replace(/\s+/g, ''))) nextErrors.id_card = 'CCCD/CMND phải có 9 hoặc 12 chữ số.';
+    if (config.kind === 'customers' && !validIdentityIssueDate(String(draft.id_card_issued_on || ''))) nextErrors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
+    if (config.kind === 'customers' && String(draft.id_card_issued_by || '').length > 255) nextErrors.id_card_issued_by = 'Nơi cấp CCCD/CMND tối đa 255 ký tự.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
       requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());

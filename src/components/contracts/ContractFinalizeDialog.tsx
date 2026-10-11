@@ -1,86 +1,102 @@
 'use client';
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, LoaderCircle } from 'lucide-react';
+import { CheckCircle2, LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { PAYMENT_METHODS, PaymentContext, PaymentMethod, loadPaymentContext, paymentAccounts, vietnamPaymentTime } from '@/lib/management/contract-payments';
-import { FinalizeReceipt, FinalizeResult, finalizeContract } from '@/lib/management/contract-finalize';
+import { FinalizeCollection, FinalizeResult, finalizeContract } from '@/lib/management/contract-finalize';
+import type { ContractCharge } from '@/lib/management/contract-charges';
+import { DateTime24Field } from './DateTime24Field';
 
 const money = (value: number) => `${value.toLocaleString('vi-VN')} đ`;
-interface ReceiptState { collect: boolean; method: PaymentMethod; account: string }
+const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string }
+interface CollectionState { collect: boolean; rows: CollectionRow[] }
 
-export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethod, rentalMethod, onClose, onDone }: {
-  orderId: number; revision: string; code: string; total: number; deposit: number; depositMethod: PaymentMethod; rentalMethod: PaymentMethod;
-  onClose: () => void; onDone: (result: FinalizeResult) => void;
+export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], onClose, onDone }: {
+  orderId: number; revision: string; code: string; total: number; deposit: number; depositMethods: PaymentMethod[]; rentalMethods: PaymentMethod[];
+  charges?: ContractCharge[]; onClose: () => void; onDone: (result: FinalizeResult) => void;
 }) {
-  const [context, setContext] = useState<PaymentContext | null>(null);
-  const [loadError, setLoadError] = useState('');
-  const [paidAt, setPaidAt] = useState(() => vietnamPaymentTime());
-  const [depositState, setDepositState] = useState<ReceiptState>({ collect: deposit > 0, method: depositMethod, account: '' });
-  const [rentalState, setRentalState] = useState<ReceiptState>({ collect: total > 0, method: rentalMethod, account: '' });
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const busy = useRef(false);
+  const [context,setContext] = useState<PaymentContext|null>(null), [loadError,setLoadError] = useState('');
+  const [depositState,setDepositState] = useState<CollectionState>({collect:false,rows:[]});
+  const [rentalState,setRentalState] = useState<CollectionState>({collect:false,rows:[]});
+  const [error,setError] = useState(''), [saving,setSaving] = useState(false);
+  const busy = useRef(false), nextKey = useRef(0);
+  const initialMethods = useRef({deposit:depositMethods,rental:rentalMethods});
+  const depositDue = Math.max(deposit-(context?.deposit_paid || 0),0), rentalDue = Math.max(total-(context?.paid_amount || 0),0);
+  const newRow = (method: PaymentMethod, amount = ''): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime()});
 
-  useEffect(() => {
+  useEffect(()=>{
     const controller = new AbortController();
-    loadPaymentContext(orderId, controller.signal).then(setContext)
-      .catch(cause => { if (!controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : 'Không tải được danh sách tài khoản nhận tiền.'); });
-    return () => controller.abort();
-  }, [orderId]);
+    loadPaymentContext(orderId,controller.signal).then(value=>{
+      if (controller.signal.aborted) return;
+      setContext(value);
+      const seed = (due: number, methods: PaymentMethod[]): CollectionState => ({collect:due>0,
+        rows:due>0 ? methods.map(method=>({key:nextKey.current++,method,amount:methods.length===1 ? String(due) : '',account:'',paid_at:vietnamPaymentTime()})) : []});
+      setDepositState(seed(Math.max(deposit-value.deposit_paid,0),initialMethods.current.deposit));
+      setRentalState(seed(Math.max(total-(value.paid_amount || 0),0),initialMethods.current.rental));
+    }).catch(cause=>{if(!controller.signal.aborted)setLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');});
+    return ()=>controller.abort();
+  },[orderId,deposit,total]);
 
-  function accountsFor(state: ReceiptState) { return context ? paymentAccounts(context, state.method) : []; }
-  function chosenAccount(state: ReceiptState) {
-    const accounts = accountsFor(state);
-    return accounts.find(account => String(account.id) === state.account) || accounts[0];
-  }
-  function receipt(state: ReceiptState, amount: number): FinalizeReceipt | null {
-    if (!state.collect || amount <= 0) return null;
-    const account = chosenAccount(state);
-    if (!account) throw new Error(`Không có tài khoản ${PAYMENT_METHODS.find(item => item.value === state.method)?.label} đang hoạt động cho cơ sở này.`);
-    return { method: state.method, account_id: account.id };
+  const accountsFor = (row: CollectionRow) => context ? paymentAccounts(context,row.method) : [];
+  const chosenAccount = (row: CollectionRow) => accountsFor(row).find(account=>String(account.id)===row.account) || accountsFor(row)[0];
+  const collected = (state: CollectionState) => state.collect ? state.rows.reduce((sum,row)=>sum+(Number(row.amount)||0),0) : 0;
+  function collections(state: CollectionState, purpose: FinalizeCollection['purpose'], due: number): FinalizeCollection[] {
+    if (!state.collect || !due) return [];
+    if (!state.rows.length) throw new Error('Thêm khoản tiền đã nhận, hoặc bỏ chọn thu tiền để ghi nhận chưa thu.');
+    if (collected(state)>due) throw new Error(`Khoản ${purpose==='deposit' ? 'cọc' : 'thuê/phí'} vượt số còn phải thu ${money(due)}.`);
+    return state.rows.map(row=>{
+      if (!/^[1-9]\d{0,12}$/.test(row.amount) || !Number.isSafeInteger(Number(row.amount))) throw new Error('Nhập số tiền lớn hơn 0 cho từng khoản thu.');
+      const account = chosenAccount(row);
+      if (!account) throw new Error('Chọn tài khoản nhận tiền đang hoạt động tại cơ sở nguồn khách.');
+      if (!row.paid_at) throw new Error('Nhập thời điểm thực tế đã nhận tiền.');
+      return {purpose,amount:row.amount,method:row.method,account_id:account.id,paid_at:row.paid_at};
+    });
   }
   async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (busy.current || !context) return;
-    setError('');
-    let input;
-    try { input = { revision, paid_at: paidAt, deposit: receipt(depositState, deposit), rental: receipt(rentalState, total) }; }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Chọn tài khoản nhận tiền.'); return; }
-    busy.current = true; setSaving(true);
-    try { onDone(await finalizeContract(orderId, input)); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu chính thức được hợp đồng.'); }
-    finally { busy.current = false; setSaving(false); }
+    event.preventDefault(); if(busy.current || !context)return; setError('');
+    let receipts: FinalizeCollection[];
+    try {receipts=[...collections(depositState,'deposit',depositDue),...collections(rentalState,'rental',rentalDue)];}
+    catch(cause){setError(cause instanceof Error ? cause.message : 'Kiểm tra các khoản đã nhận.');return;}
+    busy.current=true;setSaving(true);
+    try{onDone(await finalizeContract(orderId,{revision,receipts}));}
+    catch(cause){setError(cause instanceof Error ? cause.message : 'Không lưu chính thức được hợp đồng.');}
+    finally{busy.current=false;setSaving(false);}
   }
 
-  function receiptFields(label: string, amount: number, state: ReceiptState, setState: (next: ReceiptState) => void) {
-    if (amount <= 0) return <div className="mg-finalize-receipt"><strong>{label}</strong><span>Không có — không ghi phiếu thu.</span></div>;
-    const accounts = accountsFor(state);
-    return <fieldset className="mg-finalize-receipt"><legend>{label}: {money(amount)}</legend>
-      <label className="mg-checkbox"><input type="checkbox" checked={state.collect} onChange={event => setState({ ...state, collect: event.target.checked })} />Đã thu, ghi phiếu thu vào Sổ quỹ</label>
-      {state.collect && <div className="mg-form-grid mg-contract-grid-two">
-        <div className="mg-field"><label>Hình thức<select value={state.method} onChange={event => setState({ ...state, method: event.target.value as PaymentMethod, account: '' })}>
-          {PAYMENT_METHODS.map(method => <option key={method.value} value={method.value}>{method.label}</option>)}</select></label></div>
-        <div className="mg-field"><label>Tài khoản nhận<select value={chosenAccount(state) ? String(chosenAccount(state)!.id) : ''} disabled={!accounts.length} onChange={event => setState({ ...state, account: event.target.value })}>
-          {accounts.length ? accounts.map(account => <option key={account.id} value={account.id}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select></label></div>
-      </div>}
-      {!state.collect && <small>Chưa thu — số tiền này sẽ là công nợ, thu sau bằng nút Thanh toán.</small>}
+  function section(purpose: FinalizeCollection['purpose'], label: string, amount: number, due: number, state: CollectionState, setState: (next: CollectionState)=>void) {
+    const update = (key: number, patch: Partial<CollectionRow>) => setState({...state,rows:state.rows.map(row=>row.key===key ? {...row,...patch} : row)});
+    return <fieldset className="mg-finalize-receipt" data-purpose={purpose}><legend>{label}: {money(amount)}</legend>
+      <p className="mg-composer-hint">Đã ghi nhận trước: {money(amount-due)} · Còn phải thu: {money(due)}</p>
+      {due>0 && <><label className="mg-checkbox"><input type="checkbox" checked={state.collect} onChange={event=>setState({...state,collect:event.target.checked})} />Ghi nhận các khoản đã nhận</label>
+        {state.collect && <>
+          {state.rows.map((row,index)=><div className="mg-collection-row" key={row.key}>
+            <div className="mg-collection-row-heading"><strong>Khoản {index+1}</strong><button type="button" className="mg-icon-button" aria-label={`Bỏ khoản ${label.toLowerCase()} ${index+1}`} onClick={()=>setState({...state,rows:state.rows.filter(item=>item.key!==row.key)})}><Trash2 size={15}/></button></div>
+            <div className="mg-form-grid mg-contract-grid-two">
+              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-amount`}>Số tiền đã nhận (VNĐ)</label><input id={`${purpose}-collection-${index}-amount`} inputMode="numeric" value={formatInput(row.amount)} onChange={event=>update(row.key,{amount:event.target.value.replace(/\D/g,'')})}/></div>
+              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-method`}>Hình thức</label><select id={`${purpose}-collection-${index}-method`} value={row.method} onChange={event=>update(row.key,{method:event.target.value as PaymentMethod,account:''})}>{PAYMENT_METHODS.map(method=><option key={method.value} value={method.value}>{method.value==='transfer' ? 'CK tài khoản cá nhân' : method.label}</option>)}</select></div>
+              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-account`}>Tài khoản nhận</label><select id={`${purpose}-collection-${index}-account`} value={chosenAccount(row)?.id || ''} disabled={!accountsFor(row).length} onChange={event=>update(row.key,{account:event.target.value})}>{accountsFor(row).length ? accountsFor(row).map(account=><option key={account.id} value={account.id}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select></div>
+              <DateTime24Field id={`${purpose}-collection-${index}-paid-at`} label="Thời điểm nhận" value={row.paid_at} onChange={value=>update(row.key,{paid_at:value})}/>
+            </div>
+          </div>)}
+          <button type="button" className="mg-button" disabled={state.rows.length>=20} onClick={()=>setState({...state,rows:[...state.rows,newRow('cash',String(Math.max(due-collected(state),0)))]})}><Plus size={15}/>Thêm khoản thu {purpose==='deposit' ? 'cọc' : 'thuê/phí'}</button>
+          <p className={collected(state)>due ? 'mg-field-error' : 'mg-composer-hint'}>Sẽ ghi nhận: {money(collected(state))} · Còn chưa thu: {money(Math.max(due-collected(state),0))}</p>
+        </>}
+        {!state.collect && <small>Chưa nhận tiền: giữ nguyên số còn phải thu, không ghi nhận vào tài khoản.</small>}
+      </>}
     </fieldset>;
   }
-
-  return <Dialog title={`Lưu chính thức ${code}`} onClose={saving ? () => {} : onClose}>
-    <form onSubmit={submit}>
-      <div className="mg-dialog-body mg-finalize-dialog">
-        <p className="mg-composer-hint">Hợp đồng sẽ chuyển sang <strong>Đang thuê</strong>, được cấp số hợp đồng chính thức, xe chuyển sang trạng thái Đang thuê và rời khỏi mục Hợp đồng nháp. Bước này không hoàn tác được.</p>
-        {loadError ? <p className="mg-field-error" role="alert">{loadError}</p> : !context ? <p role="status"><LoaderCircle size={16} className="mg-spin" /> Đang tải tài khoản nhận tiền…</p> : <>
-          {receiptFields('Tiền cọc', deposit, depositState, setDepositState)}
-          {receiptFields('Tiền thuê xe', total, rentalState, setRentalState)}
-          {(deposit > 0 || total > 0) && <div className="mg-field"><label>Thời điểm thu<input type="datetime-local" value={paidAt} max={vietnamPaymentTime()} onChange={event => setPaidAt(event.target.value)} /></label></div>}
-        </>}
-        {error && <p className="mg-field-error" role="alert">{error}</p>}
-      </div>
-      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button>
-        <button type="submit" className="mg-button mg-button-primary" disabled={saving || !context}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CheckCircle2 size={16} />}{saving ? 'Đang lưu…' : 'Xác nhận lưu chính thức'}</button></div>
-    </form>
+  return <Dialog title={`Xác nhận thu tiền · ${code}`} onClose={saving ? ()=>{} : onClose}>
+    <form onSubmit={submit}><div className="mg-dialog-body mg-finalize-dialog">
+      <p className="mg-composer-hint">Ghi đúng từng khoản tiền đã nhận và tài khoản nhận. Cọc trước ghi ngày nhận trước đó; mỗi lần chuyển khoản hoặc nhận tiền mặt thêm một dòng. Sau xác nhận, hợp đồng được phát hành và xe chuyển sang Đang thuê.</p>
+      {charges.length>0 && <p className="mg-composer-hint">Phí khác trong hợp đồng: {charges.filter(item=>Number(item.amount)>0).map(item=>`${item.name}: ${money(Number(item.amount))}`).join(' · ')}</p>}
+      {loadError ? <p role="alert" className="mg-field-error">{loadError}</p> : !context ? <p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải tài khoản nhận tiền…</p> : <>
+        {section('deposit','Tiền cọc',deposit,depositDue,depositState,setDepositState)}
+        {section('rental','Tiền thuê và phí khác',total,rentalDue,rentalState,setRentalState)}
+        <p className="mg-collection-total">Tổng nhận thêm: <strong>{money(collected(depositState)+collected(rentalState))}</strong><br/>Cọc: {money(collected(depositState))} · Thuê/phí: {money(collected(rentalState))}</p>
+      </>}
+      {error && <p className="mg-field-error" role="alert">{error}</p>}
+    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : 'Xác nhận lưu chính thức'}</button></div></form>
   </Dialog>;
 }

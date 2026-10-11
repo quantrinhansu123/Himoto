@@ -4,6 +4,7 @@ import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } fro
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
 import { depositLateral, rentalPaidSql } from './contract-deposits';
+import { chargeTotal } from '@/lib/management/contract-charges';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
@@ -19,6 +20,7 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   c.relatives, c.warning AS warning_note,
   o.store_id, s.store_name, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
   o.total AS total_amount, ${rentalPaidSql()} AS paid_amount, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded,
+  COALESCE(collections.rows,'[]'::json) AS collections,
   NULLIF(o.draft_payload->'management_composer'->'draft'->>'unit_price','')::numeric AS unit_price,
   o.draft_payload->'management_composer'->'draft'->>'package_name' AS package_name,
   o.draft_payload->'management_composer'->'draft'->>'payment_method' AS payment_method,
@@ -45,6 +47,15 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   ) company ON company.order_id=o.id
   ${depositLateral()}
   LEFT JOIN LATERAL (
+    SELECT json_agg(json_build_object('purpose',CASE WHEN t.name='order:deposit' OR t.name LIKE 'order:deposit:%' THEN 'deposit' ELSE 'rental' END,
+      'amount',t.value,'paid_at',to_char(t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD"T"HH24:MI'),
+      'method',CASE WHEN t.cash_id IS NOT NULL THEN 'Tiền mặt' WHEN t.bank_owner_type='company' THEN 'CK tk công ty' ELSE 'CK tk cá nhân' END,
+      'account',CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(ca.name,''),'Két tiền mặt #'||t.cash_id::text)
+        ELSE concat_ws(' · ',b.bank_name,b.owner_name,b.account_number) END) ORDER BY t.created_at,t.id) AS rows
+    FROM himoto.transactions t LEFT JOIN himoto.banks b ON b.id=t.bank_id LEFT JOIN himoto.cash ca ON ca.id=t.cash_id
+    WHERE t.order_id=o.id AND t.type IN ('in','addon') AND t.status='approved'
+  ) collections ON true
+  LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
       'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,
@@ -63,6 +74,7 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   const edits = input as ContractEdits;
   const draft = edits.draft;
+  if (chargeTotal(draft?.extra_charges) === null) throw new DraftSaveError('Các khoản phí khác không hợp lệ.');
   if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !draft.customer || typeof draft.customer !== 'object' || Array.isArray(draft.customer)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   const defaults = createContractDraft({ stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all');
   for (const key of Object.keys(defaults)) {
@@ -82,8 +94,12 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (!Array.isArray(draft.vehicles) || !draft.vehicles.length || draft.vehicles.length > 20) throw new DraftSaveError('Bản nháp cần từ 1 đến 20 dòng xe.');
   for (const vehicle of draft.vehicles) {
     if (!vehicle || typeof vehicle !== 'object' || Array.isArray(vehicle)) throw new DraftSaveError('Thông tin xe không hợp lệ.');
-    for (const key of Object.keys(emptyVehicle())) if (typeof vehicle[key as keyof typeof vehicle] !== 'string' || vehicle[key as keyof typeof vehicle].length > 4000) throw new DraftSaveError('Thông tin xe không hợp lệ.');
+    for (const key of Object.keys(emptyVehicle())) {
+      const value = vehicle[key as keyof typeof vehicle];
+      if (typeof value !== 'string' || value.length > 4000) throw new DraftSaveError('Thông tin xe không hợp lệ.');
+    }
     if (vehicle.id && (!/^\d+$/.test(vehicle.id) || !Number.isSafeInteger(Number(vehicle.id)) || Number(vehicle.id) <= 0)) throw new DraftSaveError('ID xe không hợp lệ.');
+    for (const key of ['stock_store_id','stock_store_name'] as const) if (vehicle[key] !== undefined && (typeof vehicle[key] !== 'string' || vehicle[key]!.length > 255)) throw new DraftSaveError('Thông tin cơ sở xe không hợp lệ.');
   }
   if (edits.status !== 'draft' || typeof edits.rental_type !== 'string' || typeof edits.notes !== 'string' || edits.notes.length > 4000 || draft.contract_number.length > 32) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   if (edits.revision !== undefined && (typeof edits.revision !== 'string' || !/^\d+$/.test(edits.revision))) throw new DraftSaveError('Phiên bản bản nháp không hợp lệ.');
@@ -107,15 +123,14 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     if (previous.order_status !== 'draft') throw new DraftSaveError('Chỉ được cập nhật hợp đồng đang lưu nháp.', 409);
     if (!edits.revision || previous.draft_revision !== edits.revision) throw new DraftSaveError('Bản nháp đã được người khác cập nhật. Đóng form và nhấn Làm mới trước khi sửa tiếp.', 409);
   }
-  const stores = await client.query('SELECT id FROM himoto.stores WHERE id = $1', [edits.draft.store_id || null]);
+  const stores = await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.store_id || null]);
   const staff = await client.query('SELECT id, store_id, user_id FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id || null]);
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
-  const vehicles = await client.query('SELECT id, COALESCE(current_store_id, store_id) AS store_id FROM himoto.vehicles WHERE id = ANY($1::bigint[])', [ids]);
+  const vehicles = await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
+    FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id) WHERE v.id = ANY($1::bigint[])`, [ids]);
   if (edits.draft.customer_id) {
-    const keepExistingCustomer = previous && String(previous.customer_id) === String(edits.draft.customer_id) && String(previous.store_id) === edits.draft.store_id;
-    const customers = await client.query(`SELECT c.id FROM himoto.customers c WHERE c.id = $1 AND ($3::boolean OR c.store_id = $2 OR
-      (c.store_id IS NULL AND EXISTS (SELECT 1 FROM himoto.orders o WHERE o.customer_id = c.id AND o.store_id = $2 AND o.deleted_at IS NULL)))`, [edits.draft.customer_id, edits.draft.store_id || null, Boolean(keepExistingCustomer)]);
-    if (!customers.rowCount) throw new DraftSaveError('Khách hàng không thuộc cơ sở đã chọn. Hãy tra cứu lại.');
+    const customers = await client.query('SELECT id FROM himoto.customers WHERE id = $1 FOR SHARE', [edits.draft.customer_id]);
+    if (!customers.rowCount) throw new DraftSaveError('Không tìm thấy hồ sơ khách hàng. Hãy tra cứu lại.');
   }
   const existingCode = previous ? String(previous.contract_number || previous.draft_reference || `#${id}`) : '';
   const dataset: ManagementDataset = {
@@ -126,6 +141,19 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   };
   try { saveDraftRecord(dataset, id, edits); }
   catch (error) { throw new DraftSaveError(error instanceof Error ? error.message : 'Thông tin bản nháp không hợp lệ.'); }
+  // These values describe real receipts, never the amounts typed into a draft.
+  delete edits.draft.collections; delete edits.draft.deposit_paid_amount;
+  edits.draft.paid_amount='0';
+  if (id !== null) {
+    const collected = await client.query(`SELECT COALESCE(SUM(value),0) AS paid FROM himoto.transactions
+      WHERE order_id=$1 AND status='approved' AND type IN ('in','addon') AND NOT (name='order:deposit' OR name LIKE 'order:deposit:%')`,[id]);
+    edits.draft.paid_amount=String(collected.rows[0].paid);
+  }
+  for (const line of edits.draft.vehicles) {
+    const stock = vehicles.rows.find(vehicle=>String(vehicle.id)===line.id);
+    if (stock) { line.stock_store_id=String(stock.store_id); line.stock_store_name=String(stock.store_name || ''); }
+  }
+  if (!edits.draft.customer_source_url && stores.rows[0]?.store_name) edits.draft.customer_source_url=String(stores.rows[0].store_name);
   const reference = previous ? nullable(String(previous.draft_reference || '')) : nullable(edits.draft.contract_number.trim());
   const duplicate = reference ? await client.query('SELECT id FROM himoto.orders WHERE (draft_reference = $1 OR contract_number = $1) AND ($2::bigint IS NULL OR id <> $2)', [reference, id]) : null;
   if (duplicate?.rowCount) throw new DraftSaveError('Mã bản nháp đã được sử dụng.', 409);

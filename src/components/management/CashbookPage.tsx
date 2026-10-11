@@ -52,7 +52,7 @@ export function CashbookPage() {
     }).finally(() => { if (current) setAccountsLoading(false); });
     return () => { current = false; controller.abort(); };
   }, [retry]);
-  const storeAccounts = useMemo(() => selectedStore === 'all' ? accounts : accounts.filter(account => account.store_id === selectedStore || account.owner_type === 'company'), [accounts, selectedStore]);
+  const storeAccounts = useMemo(() => selectedStore === 'all' ? accounts : accounts.filter(account => account.store_id === selectedStore || (account.owner_type === 'company' && (!account.store_id || account.store_id === '0'))), [accounts, selectedStore]);
   useEffect(() => { setQuery(current => ({ ...current, actor: '' })); }, [selectedStore]);
   const filtered = useMemo(() => filterCashbookRows(records, query, selectedStore), [records, query, selectedStore]);
   const income = useMemo(() => filtered.filter(row => row.type === 'income'), [filtered]);

@@ -1,16 +1,18 @@
 import { CONTRACT_TYPES } from './config';
 import { ContractDraft } from './contract-document';
 import { ContractEdits, ManagementDataset, ManagementRow } from './types';
+import { chargeErrors } from './contract-charges';
 
 // Drafts may be incomplete. Validate values that were entered, without applying
 // the requirements for printing or issuing an operational rental contract.
 export function validateDraftSave(draft: ContractDraft, dataset: ManagementDataset) {
   const errors: Record<string, string> = {};
+  Object.assign(errors,chargeErrors(draft.extra_charges,false));
   if (draft.store_id && !dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Cơ sở đã chọn không còn tồn tại.';
   if (draft.staff_id && !dataset.staff.some(row => String(row.id) === draft.staff_id && String(row.store_id) === draft.store_id)) errors.staff_id = 'Nhân sự phải thuộc cơ sở đã chọn.';
   const vehicleIds = new Set<string>();
   draft.vehicles.forEach((vehicle, index) => {
-    if (vehicle.id && !dataset.vehicles.some(row => String(row.id) === vehicle.id && String(row.store_id) === draft.store_id)) errors[`vehicle_${index}`] = 'Xe phải thuộc cơ sở đã chọn.';
+    if (vehicle.id && !dataset.vehicles.some(row => String(row.id) === vehicle.id)) errors[`vehicle_${index}`] = 'Xe đã chọn không còn tồn tại.';
     if (vehicle.id && vehicleIds.has(vehicle.id)) errors[`vehicle_${index}`] = 'Xe này đã được chọn trên bản nháp.';
     if (vehicle.id) vehicleIds.add(vehicle.id);
     for (const key of ['borrow_hats', 'borrow_raincoats'] as const) if (vehicle[key] && !/^\d+$/.test(vehicle[key])) errors[`vehicle_${index}_${key}`] = 'Nhập số nguyên không âm.';

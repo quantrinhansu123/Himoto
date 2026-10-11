@@ -119,14 +119,13 @@ export function planContractImport(sources: ContractExcelSource[], snapshot: Con
     const customers = first.phone ? snapshot.customers.filter(customer => importPhone(customer.phone || '') === importPhone(first.phone) && importText(customer.name) === importText(first.name)) : [];
     const customer = customers.length === 1 ? customers[0] : undefined;
     if (!customer) errors.push('Chưa khớp được duy nhất khách hàng theo tên và điện thoại.');
-    if (customer?.store_id != null && id(customer.store_id) !== first.storeId) errors.push('Khách hàng thuộc cơ sở khác; cần đối chiếu.');
     if (customer && (!customer.id_card || !customer.address)) warnings.push('Hồ sơ khách chưa đủ CCCD/địa chỉ; chưa đủ thông tin để phát hành bản hợp đồng.');
     const vehicleIds: number[] = [];
     for (const source of unique) {
       const candidates = snapshot.vehicles.filter(vehicle => vehiclePlate(vehicle.license) === vehiclePlate(source.license));
       if (candidates.length !== 1) { errors.push(`${source.license}: chưa có xe hoặc biển số trùng trong CSDL.`); continue; }
       const vehicle = candidates[0]; vehicleIds.push(Number(vehicle.id));
-      if (id(vehicle.current_store_id ?? vehicle.store_id) !== first.storeId) errors.push(`${source.license}: cơ sở hiện tại của xe khác cơ sở trong file.`);
+      if (id(vehicle.current_store_id ?? vehicle.store_id) !== first.storeId) warnings.push(`${source.license}: xe lấy từ cơ sở khác; giữ nguyên kho xe, doanh thu theo cơ sở nguồn khách trong file.`);
       if (!['ready', 'using', 'rent'].includes(vehicle.status)) errors.push(`${source.license}: xe đang ở trạng thái không thể khớp đơn thuê mới.`);
       if (importText(vehicle.name) !== importText(source.vehicleName)) warnings.push(`${source.license}: tên xe trong file khác danh mục; khớp theo biển số.`);
     }

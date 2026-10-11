@@ -29,7 +29,9 @@ function draftForPlan(plan: ContractImportPlan, snapshot: ContractImportSnapshot
   draft.customer.name = customer.name; draft.customer.phone = customer.phone || '';
   draft.vehicles = plan.vehicleIds.map(vehicleId => {
     const vehicle = snapshot.vehicles.find(vehicle => Number(vehicle.id) === vehicleId)!;
-    return { ...emptyVehicle(), id: String(vehicleId), name: vehicle.name, license: vehicle.license };
+    const stockId = vehicle.current_store_id ?? vehicle.store_id;
+    return { ...emptyVehicle(), id: String(vehicleId), name: vehicle.name, license: vehicle.license,
+      stock_store_id:String(stockId || ''), stock_store_name:snapshot.stores.find(store=>String(store.id)===String(stockId))?.name || '' };
   });
   const dates = plan.sources.map(source => ({ start: source.start, end: source.end }));
   draft.start_date = dates.map(item => item.start).sort()[0].replace(' ', 'T').slice(0, 16);

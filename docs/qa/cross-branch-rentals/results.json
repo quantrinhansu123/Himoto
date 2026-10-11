@@ -1,0 +1,14 @@
+{
+  "passed": 7,
+  "checks": [
+    "lookup before selecting any branch finds the profile, shows original/first rental branches and automatically attributes this contract to source Láng",
+    "explicit 15:30 under an AM/PM browser locale; today default and numeric durations cross month/year/leap boundaries, with manual return dates preserved and invalid days flagged",
+    "stock filter works independently of source; NH manual checkout is selectable, repairs and occupied vehicles are excluded, changing source preserves the vehicle and updates revenue",
+    "multi-method menu keeps internal selections, closes on outside mouse/focus and Escape, and retains chosen methods without closing the dialog",
+    "24-hour date/time and source/stock fields fit 375px portrait and 812px landscape",
+    "saved request preserves Láng source, original customer ID, NH vehicle, unambiguous 24-hour timestamps and selected payment methods",
+    "inventory status/branch remain editable for checkout without a contract; both are locked for vehicles on an actual open contract"
+  ],
+  "errors": [],
+  "realBusinessWrites": 0
+}

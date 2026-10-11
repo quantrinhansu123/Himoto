@@ -130,7 +130,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
     ...(earlyDiscount ? { early_discount: earlyDiscount } : {}), actor_id: actorId };
   await client.query(`UPDATE himoto.orders SET
       total=CASE WHEN $2::bigint=0 THEN total ELSE ($3::numeric)::text END,
-      draft_payload=(jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer}',
+      draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer}',
         jsonb_set(CASE WHEN jsonb_typeof(draft_payload::jsonb->'management_composer')='object'
           THEN draft_payload::jsonb->'management_composer' ELSE '{}'::jsonb END,'{return_adjustments}',
           COALESCE(draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb) || $5::jsonb,true),true)::json,
@@ -152,8 +152,12 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   if (String(item.item_revision) !== input.item_revision) throw new ContractReturnError('Chi tiết xe đã thay đổi. Tải lại danh sách trước khi đổi.', 409);
   if (Number(item.vehicle_id) === input.vehicle_id) throw new ContractReturnError('Biển số xe đang chọn không thay đổi.');
   const newVehicle = await client.query(`SELECT id,license FROM himoto.vehicles
-    WHERE id=$1 AND COALESCE(current_store_id,store_id)=$2 AND status='ready' FOR UPDATE`, [input.vehicle_id,item.store_id]);
-  if (!newVehicle.rowCount) throw new ContractReturnError('Xe mới phải sẵn sàng tại đúng cơ sở của hợp đồng.', 409);
+    WHERE id=$1 AND status='ready' FOR UPDATE`, [input.vehicle_id]);
+  if (!newVehicle.rowCount) throw new ContractReturnError('Xe mới phải đang Lưu kho.', 409);
+  const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+    WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [input.vehicle_id]);
+  if (openRental.rowCount) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
   const duplicate = await client.query(`SELECT 1 FROM himoto.order_vehicle_details
     WHERE order_id=$1 AND vehicle_id=$2 AND id<>$3 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.order_id,input.vehicle_id,input.item_id]);
   if (duplicate.rowCount) throw new ContractReturnError('Xe mới đã nằm trong hợp đồng này.', 409);

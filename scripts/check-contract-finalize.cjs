@@ -22,7 +22,7 @@ async function main() {
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });
     const c = await load(path.join(root, 'lib/server/himoto-database')).himotoPool.connect();
-    const tables = ['order_vehicle_details', 'orders', 'vehicles', 'transactions', 'banks', 'cash', 'users', 'management_contract_payments'];
+    const tables = ['order_vehicle_details', 'orders', 'vehicles', 'transactions', 'banks', 'cash', 'users', 'management_contract_payments', 'stores'];
     const proxy = { query: async (sql, params) => {
       let rewritten = sql;
       for (const table of tables) rewritten = rewritten.replaceAll(`himoto.${table}`, `pg_temp.qa_fin_${table}`);
@@ -46,7 +46,7 @@ async function main() {
       const day = (await c.query(`SELECT to_char(now() AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYMMDD') AS day`)).rows[0].day;
       await c.query(`INSERT INTO qa_fin_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES
           (100,'Xe A','Honda','xeso',2026,23,23,'QA-A','ready',143),(101,'Xe B','Honda','xeso',2026,23,23,'QA-B','ready',143),
-          (102,'Xe C','Honda','xeso',2026,31,31,'QA-C','ready',143),(103,'Xe D','Honda','xeso',2026,23,23,'QA-D','using',143);
+          (102,'Xe C','Honda','xeso',2026,31,31,'QA-C','repairing',143),(103,'Xe D','Honda','xeso',2026,23,23,'QA-D','using',143);
         INSERT INTO qa_fin_cash(id,store_id,opening_balance,status) VALUES (5,23,0,'Active'),(15,31,0,'Active');
         INSERT INTO qa_fin_banks(id,store_id,bank_name,account_number,owner_name,opening_balance,account_type,status,owner_type) VALUES
           (6,23,'QA Bank','001','QA',0,0,'Active','personal'),(7,1,'QA Corp','002','HIMOTO',0,1,'Active','company');`);
@@ -85,7 +85,7 @@ async function main() {
       const after = JSON.stringify((await c.query('SELECT o.id,o.order_status,o.pid,o.contract_number,(SELECT count(*) FROM qa_fin_order_vehicle_details d WHERE d.order_id=o.id) AS lines FROM qa_fin_orders o ORDER BY o.id')).rows)
         + JSON.stringify((await c.query('SELECT count(*) FROM qa_fin_transactions')).rows) + JSON.stringify((await c.query('SELECT id,status FROM qa_fin_vehicles ORDER BY id')).rows);
       assert.equal(after, before);
-      checks.push('PostgreSQL TEMP: already-final contract, vehicle on another open contract, vehicle at another branch, stale revision, wrong-method or other-branch account and a deposit receipt with no deposit are rejected without any change');
+      checks.push('PostgreSQL TEMP: already-final contract, vehicle on another open contract, unavailable vehicle, stale revision, wrong-method or other-branch account and a deposit receipt with no deposit are rejected without any change');
 
       await c.query("UPDATE qa_fin_vehicles SET status='ready' WHERE id=101");
       await c.query("UPDATE qa_fin_order_vehicle_details SET completed_at=now() WHERE order_id=1 AND vehicle_id=101");

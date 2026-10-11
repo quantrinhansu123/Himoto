@@ -70,6 +70,7 @@ async function run() {
   const legacyClient = { query: async sql => {
     if (sql.includes('FOR UPDATE')) return { rows: [{ id: 99, order_status: 'draft', contract_number: 'PUBLIC-NUMBER', draft_reference: 'DRAFT-REFERENCE', draft_revision: '1' }] };
     if (sql.startsWith(CONTRACT_LIST_SQL)) return { rows: [{ id: 99, status: 'draft', contract_number: 'PUBLIC-NUMBER' }] };
+    if (sql.includes('COALESCE(SUM(value),0) AS paid')) return {rows:[{paid:0}],rowCount:1};
     return { rows: [], rowCount: 0 };
   } };
   const numbered = await saveDatabaseDraft(legacyClient, 99, { ...edits, draft: { ...draft, contract_number: 'PUBLIC-NUMBER' }, revision: '1' });

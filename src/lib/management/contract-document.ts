@@ -1,17 +1,24 @@
 import { ManagementDataset, ManagementRow } from './types';
 import { VEHICLE_TYPES } from './config';
+import { validIdentityIssueDate } from './customer-identity';
+import { addRentalDays, vietnamRentalTime } from './rental-time';
+import { chargeErrors, chargeTotal, type ContractCharge, type ContractCollection } from './contract-charges';
 
 export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'driver_license_number', 'driver_license_issued_on', 'birthday', 'relatives_text', 'warning_note'] as const;
 export type CustomerDetails = Record<(typeof CUSTOMER_FIELDS)[number], string> & { relatives_json?: string };
 export interface ContractRelative { name: string; relationship: string; phone: string }
 export function emptyRelative(): ContractRelative { return { name: '', relationship: '', phone: '' }; }
 export interface VehicleDetails {
+  stock_store_id?: string; stock_store_name?: string;
   id: string; name: string; license: string; brand: string; type_text: string; color: string; year: string;
   driver_name: string; driver_license_number: string; driver_license_issued_on: string;
   borrow_hats: string; borrow_raincoats: string; rent_at: string; return_at: string;
 }
 export interface ContractDraft {
   customer_lookup?: string;
+  extra_charges?: ContractCharge[];
+  collections?: ContractCollection[];
+  deposit_paid_amount?: string;
   contract_number: string; signed_on: string; store_id: string; staff_id: string; staff_name: string;
   customer_id: number | null; customer: CustomerDetails; vehicles: VehicleDetails[];
   start_date: string; end_date: string; unit_price: string; total_amount: string; paid_amount: string;
@@ -68,6 +75,7 @@ export function emptyVehicle(): VehicleDetails {
 }
 export function vehicleDetails(row: ManagementRow, customer: CustomerDetails): VehicleDetails {
   return { ...emptyVehicle(), id: String(row.id), name: row.name, license: value(row.license), brand: value(row.brand),
+    stock_store_id: value(row.store_id), stock_store_name: value(row.store_name),
     type_text: VEHICLE_TYPES.find(type => type.value === row.type)?.label || value(row.type), color: value(row.color), year: value(row.year),
     driver_name: customer.name, driver_license_number: customer.driver_license_number, driver_license_issued_on: customer.driver_license_issued_on };
 }
@@ -82,9 +90,16 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     const live = row.status !== 'draft' ? {
       ...(row.end_date ? { end_date: dateTimeInput(row.end_date) } : {}),
       ...(row.total_amount != null ? { total_amount: value(row.total_amount) } : {}),
-      ...(row.paid_amount != null ? { paid_amount: value(row.paid_amount) } : {}),
     } : {};
-    return { ...structuredClone(snapshot), ...live, staff_name: snapshot.staff_name || '', customer: { ...customerDetails(snapshot.customer as unknown as ManagementRow), ...snapshot.customer },
+    const collections = row.collections_json ? JSON.parse(String(row.collections_json)) as ContractCollection[] : snapshot.collections;
+    return { ...structuredClone(snapshot), ...live,
+      ...(row.paid_amount != null ? {paid_amount:value(row.paid_amount)} : {}),
+      ...(row.deposit_paid != null ? {deposit_paid_amount:value(row.deposit_paid)} : {}),
+      ...(collections ? {collections} : {}),
+      ...(row.status!=='draft' && collections?.length ? {
+        payment_method:[...new Set(collections.filter(item=>item.purpose==='rental').map(item=>item.method))].join(', '),
+        deposit_payment_method:[...new Set(collections.filter(item=>item.purpose==='deposit').map(item=>item.method))].join(', '),
+      } : {}), staff_name: snapshot.staff_name || '', customer: { ...customerDetails(snapshot.customer as unknown as ManagementRow), ...snapshot.customer },
       vehicles: snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
       created_on: dateInput(snapshot.created_on) || dateInput(row.created_at) || nowDate() };
   }
@@ -110,16 +125,19 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     return details;
   });
   const vehicle = row ? dataset.vehicles.find(item => item.id === row.vehicle_id) : null;
+  const startDate = row ? dateTimeInput(row.start_date) : vietnamRentalTime();
   return { contract_number: row?.code || '', signed_on: dateInput(row?.signed_on || row?.created_at) || nowDate(),
     store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: value(row?.staff_name),
     customer_id: row?.customer_id ? Number(row.customer_id) : null, customer,
     vehicles: vehicles.length ? vehicles : [vehicle ? vehicleDetails(vehicle, customer) : emptyVehicle()],
-    start_date: dateTimeInput(row?.start_date), end_date: dateTimeInput(row?.end_date),
-    unit_price: value(vehicle?.daily_price), total_amount: value(row?.total_amount), paid_amount: value(row?.paid_amount),
+    start_date: startDate, end_date: row ? dateTimeInput(row.end_date) : addRentalDays(startDate, '1'),
+    unit_price: value(vehicle?.daily_price), total_amount: value(row?.total_amount), paid_amount: row ? value(row.paid_amount) : '0',
     deposit_amount: value(row?.deposit_amount), package_name: row?.rental_type === 'monthly' ? 'Theo tháng' : 'Theo ngày',
     payment_method: '', deposit_payment_method: '', collateral_description: value(row?.collateral_description),
     customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date),
-    created_on: dateInput(row?.created_at) || nowDate(), relatives, };
+    created_on: dateInput(row?.created_at) || nowDate(), relatives,
+    ...(row?.collections_json ? {collections:JSON.parse(String(row.collections_json)) as ContractCollection[]} : {}),
+    ...(row?.deposit_paid != null ? {deposit_paid_amount:value(row.deposit_paid)} : {}), };
 }
 export function normalizeIdCard(input: string) { return input.trim().replace(/\s/g, '').toUpperCase(); }
 export function validIdCard(input: string, source: 'demo' | 'api') {
@@ -137,6 +155,8 @@ export function validateCustomer(customer: CustomerDetails, source: 'demo' | 'ap
   if (!validIdCard(customer.id_card, source)) errors.id_card = 'CCCD cần 12 chữ số; CMND cần 9 chữ số.';
   if (!customer.address.trim()) errors.address = 'Nhập địa chỉ khách hàng.';
   if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) errors.email = 'Email chưa đúng định dạng.';
+  if (!validIdentityIssueDate(customer.id_card_issued_on)) errors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
+  if (customer.id_card_issued_by.length > 255) errors.id_card_issued_by = 'Nơi cấp CCCD/CMND tối đa 255 ký tự.';
   return errors;
 }
 export function validateContractCustomer(customer: CustomerDetails, source: 'demo' | 'api') {
@@ -146,7 +166,8 @@ export function validateContractCustomer(customer: CustomerDetails, source: 'dem
 }
 export function validateContractDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
   const errors: Record<string, string> = {};
-  if (!dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở cho thuê.';
+  Object.assign(errors,chargeErrors(draft.extra_charges,true));
+  if (!dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở nguồn khách / ghi nhận doanh thu.';
   if (!draft.staff_name.trim() && !staffMatchesStore(staff, draft.store_id).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự hoặc nhập tên người đại diện.';
   if (!draft.customer_id) errors.id_card = 'Tra cứu hoặc tạo khách hàng trước khi in.';
   Object.assign(errors, validateContractCustomer(draft.customer, source));
@@ -162,7 +183,7 @@ export function validateContractDraft(draft: ContractDraft, dataset: ManagementD
   if (!validDateTime(draft.end_date) || draft.end_date <= draft.start_date) errors.end_date = 'Thời gian hẹn trả phải sau thời gian bắt đầu.';
   const ids = new Set<string>();
   draft.vehicles.forEach((vehicle, index) => {
-    if (!dataset.vehicles.some(row => String(row.id) === vehicle.id && String(row.store_id) === draft.store_id)) errors[`vehicle_${index}`] = 'Chọn xe tại đúng cơ sở.';
+    if (!dataset.vehicles.some(row => String(row.id) === vehicle.id)) errors[`vehicle_${index}`] = 'Chọn xe hiện có trong hệ thống.';
     if (ids.has(vehicle.id)) errors[`vehicle_${index}`] = 'Xe này đã được chọn trên mẫu.';
     ids.add(vehicle.id);
     for (const key of ['borrow_hats', 'borrow_raincoats'] as const) if (!/^\d+$/.test(vehicle[key])) errors[`vehicle_${index}_${key}`] = 'Nhập số nguyên không âm.';
@@ -198,10 +219,12 @@ export function buildContractDocument(draft: ContractDraft, store: ManagementRow
     customer_source: { name: draft.customer_source, url: draft.customer_source_url },
     vehicles, vehicles_count: vehicles.length, primary_vehicle: vehicles[0],
     rent_time: { start: timeParts(draft.start_date), end: timeParts(draft.end_date) },
+    extra_charges:(draft.extra_charges || []).filter(item=>item.name.trim() && Number(item.amount)>0).map(item=>({name:item.name,amount:money(item.amount)})),
+    collections:(draft.collections || []).map(item=>({...item,amount_formatted:money(String(item.amount)),paid_at_formatted:`${printedDate(item.paid_at.slice(0,10))} ${item.paid_at.slice(11,16)}`})),
     pricing: { unit_price_text: draft.unit_price ? `${money(draft.unit_price)} / ${draft.package_name === 'Theo tháng' ? 'tháng' : 'ngày'}` : 'Theo bảng giá',
-      paid_amount_formatted: money(draft.paid_amount), payment_method_text: draft.payment_method || '........................',
-      package_name: draft.package_name, calculation_text: `Tổng tiền thuê: ${money(draft.total_amount)}` },
-    deposit: { deposit_amount_formatted: money(draft.deposit_amount), collateral_description: draft.collateral_description || '........................', payment_method_text: draft.deposit_payment_method || '........................' },
+      paid_amount_formatted: money(draft.paid_amount), payment_method_text: draft.paid_amount==='' ? 'Chưa có số liệu' : Number(draft.paid_amount)>0 ? draft.payment_method || '........................' : 'Chưa thu',
+      package_name: draft.package_name, calculation_text: `Tổng phí thuê${chargeTotal(draft.extra_charges) ? ' và phí khác' : ''}: ${money(draft.total_amount)}` },
+    deposit: { deposit_amount_formatted: money(draft.deposit_amount), paid_amount_formatted:draft.deposit_paid_amount===undefined ? '' : money(draft.deposit_paid_amount), collateral_description: draft.collateral_description || '........................', payment_method_text: draft.deposit_payment_method || '........................' },
     equipment: { total_hats: vehicles.reduce((sum, v) => sum + Number(v.borrow_hats), 0), total_raincoats: vehicles.reduce((sum, v) => sum + Number(v.borrow_raincoats), 0) },
     signers: { signer_a_name: staff.name, signer_b_name: draft.customer.name },
     // Blank return receipt preserved from the template; this composer does not perform a return.

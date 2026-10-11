@@ -30,7 +30,7 @@ export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { 
 
   const selected = rows.find(row => String(row.item_id) === itemId) || null;
   const replacements = useMemo(() => selected ? (dataset?.vehicles || []).filter(vehicle =>
-    String(vehicle.store_id) === String(selected.store_id) && vehicle.status === 'ready' && vehicle.id !== selected.vehicle_id) : [], [dataset, selected]);
+    vehicle.status === 'ready' && vehicle.id !== selected.vehicle_id && !JSON.parse(String(vehicle.rentals_json || '[]')).length) : [], [dataset, selected]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -53,7 +53,7 @@ export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { 
         {!loading && !rows.length && <p>Hợp đồng này không còn xe đang thuê để đổi.</p>}
         {rows.length > 1 && <div className="mg-field"><label htmlFor="contract-swap-item">Xe trong hợp đồng</label><select id="contract-swap-item" value={itemId} onChange={event => { setItemId(event.target.value); setVehicleId(''); }}><option value="">Chọn xe cần đổi</option>{rows.map(row => <option key={row.item_id} value={row.item_id}>{row.vehicle_name} · {row.license}</option>)}</select></div>}
         {selected && <>
-          <div className="mg-field"><label htmlFor="contract-swap-replacement">Xe thay thế tại {selected.store_name}</label><select id="contract-swap-replacement" required value={vehicleId} onChange={event => setVehicleId(event.target.value)}><option value="">Chọn xe sẵn sàng</option>{replacements.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.license}</option>)}</select></div>
+          <div className="mg-field"><label htmlFor="contract-swap-replacement">Xe thay thế · tất cả cơ sở</label><select id="contract-swap-replacement" required value={vehicleId} onChange={event => setVehicleId(event.target.value)}><option value="">Chọn xe sẵn sàng</option>{replacements.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.license} · {vehicle.store_name}</option>)}</select></div>
           <p className="mg-composer-hint">Chỉ thay xe và biển số. Khách hàng, thời hạn, giá thuê và các thông tin khác được giữ nguyên. Hạn trả hiện tại: {formatDateTime(selected.scheduled_return_at)}.</p>
           {!replacements.length && <p className="mg-field-error">Không có xe sẵn sàng tại cơ sở này.</p>}
         </>}

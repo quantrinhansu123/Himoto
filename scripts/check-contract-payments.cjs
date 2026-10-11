@@ -40,10 +40,11 @@ async function main() {
   const context = { id: 1, code: 'QA', revision: '123', status: 'renting', store_id: 23, total_amount: 1000, paid_amount: 300, remaining: 700, company_paid_amount: 0, company_payment_count: 0, history: [],items:[],end_date:null, accounts: [
     { id: 1, kind: 'cash', store_id: 23, owner_type: '' }, { id: 2, kind: 'cash', store_id: 31, owner_type: '' },
     { id: 1, kind: 'bank', store_id: 23, owner_type: 'unknown' }, { id: 2, kind: 'bank', store_id: 31, owner_type: 'personal' }, { id: 3, kind: 'bank', store_id: 31, owner_type: 'company' },
+    { id: 4, kind: 'bank', store_id: 23, owner_type: 'company' }, { id: 5, kind: 'bank', store_id: 0, owner_type: 'company' },
   ] };
   assert.deepEqual(shared.paymentAccounts(context, 'cash').map(a => a.id), [1]);
   assert.deepEqual(shared.paymentAccounts(context, 'transfer').map(a => a.id), [1]);
-  assert.deepEqual(shared.paymentAccounts(context, 'company_transfer').map(a => a.id), [3]);
+  assert.deepEqual(shared.paymentAccounts(context, 'company_transfer').map(a => a.id), [4, 5]);
   assert.equal(shared.vietnamPaymentTime(new Date('2026-01-01T20:30:00Z')), '2026-01-02T03:30');
   checks.push('cash and ordinary transfers scoped by contract branch; company accounts explicit; no inference from unknown ownership');
   const originalFetch = global.fetch;

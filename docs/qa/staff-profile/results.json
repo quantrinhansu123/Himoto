@@ -1,0 +1,12 @@
+{
+  "passed": 6,
+  "checks": [
+    "aliases share one NVKD group; top departments, PKD headquarters and branch Leader; departed staff hidden with explicit toggle",
+    "editable role combobox supports keyboard, PT/TPKD, saved custom suggestions and canonical NVKD writes",
+    "blocked staff deletion offers retirement and removes the profile from active chart without deleting history",
+    "staff dialog and suggestions fit desktop, 375px portrait and 812px landscape; Escape closes popup first",
+    "company account has editable branch/shared scope; branch filtering excludes other company accounts; remove-owner-suggestion persists locally",
+    "customer popup exposes and persists issue date/place on desktop and mobile"
+  ],
+  "errors": []
+}

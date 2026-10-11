@@ -1,7 +1,8 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, paymentAccounts } from '@/lib/management/contract-payments';
-import type { FinalizeInput, FinalizeReceipt, FinalizeResult } from '@/lib/management/contract-finalize';
+import type { FinalizeInput, FinalizeReceipt, FinalizeCollection, FinalizeResult } from '@/lib/management/contract-finalize';
+import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { readPaymentContext } from './contract-payments';
 
 type Database = Pick<PoolClient, 'query'>;
@@ -11,8 +12,12 @@ export class ContractFinalizeError extends Error {
 
 const OPEN_STATUSES = ['renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract'];
 const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
-const validLocal = (value: unknown): value is string => typeof value === 'string' && LOCAL_DATE_TIME.test(value)
-  && new Date(new Date(`${value}+07:00`).getTime() + 7 * 3600000).toISOString().slice(0, 16) === value;
+const validLocal = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !LOCAL_DATE_TIME.test(value)) return false;
+  const date = new Date(`${value}+07:00`);
+  return Number.isFinite(date.getTime()) && new Date(date.getTime() + 7 * 3600000).toISOString().slice(0,16) === value;
+};
+const validPaidAt = (value: unknown): value is string => validLocal(value) && new Date(`${value}+07:00`).getTime() <= Date.now()+5*60000;
 const amountOf = (value: unknown) => {
   const text = value == null ? '' : String(value).trim();
   if (text === '') return 0;
@@ -32,9 +37,22 @@ function parseReceipt(value: unknown, label: string): FinalizeReceipt | null {
 export function parseFinalizeInput(body: unknown): FinalizeInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractFinalizeError('Thông tin lưu chính thức không hợp lệ.');
   const input = body as Record<string, unknown>;
+  if ('receipts' in input) {
+    if (Object.keys(input).some(key=>!['revision','receipts'].includes(key)) || typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision) ||
+      !Array.isArray(input.receipts) || input.receipts.length > 40) throw new ContractFinalizeError('Thông tin các khoản thu không hợp lệ.');
+    const receipts: FinalizeCollection[] = input.receipts.map(value=>{
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ContractFinalizeError('Khoản thu không hợp lệ.');
+      const row = value as Record<string,unknown>;
+      if (Object.keys(row).some(key=>!['purpose','amount','method','account_id','paid_at'].includes(key)) || !['deposit','rental'].includes(String(row.purpose)) ||
+        typeof row.amount !== 'string' || !/^[1-9]\d{0,12}$/.test(row.amount) || amountOf(row.amount) === null || !validPaidAt(row.paid_at)) throw new ContractFinalizeError('Nhập loại tiền, số tiền nguyên dương và thời điểm nhận hợp lệ.');
+      const receipt = parseReceipt({method:row.method,account_id:row.account_id},'khoản thu')!;
+      return {...receipt,purpose:row.purpose as FinalizeCollection['purpose'],amount:row.amount,paid_at:row.paid_at};
+    });
+    return {revision:input.revision,receipts};
+  }
   if (Object.keys(input).some(key => !['revision', 'paid_at', 'deposit', 'rental'].includes(key)) || !('deposit' in input) || !('rental' in input) ||
       typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision)) throw new ContractFinalizeError('Thông tin lưu chính thức không hợp lệ.');
-  if (!validLocal(input.paid_at) || new Date(`${input.paid_at}+07:00`).getTime() > Date.now() + 5 * 60000) throw new ContractFinalizeError('Ngày giờ thu tiền không hợp lệ hoặc nằm trong tương lai.');
+  if (!validPaidAt(input.paid_at)) throw new ContractFinalizeError('Ngày giờ thu tiền không hợp lệ hoặc nằm trong tương lai.');
   return { revision: input.revision, paid_at: input.paid_at, deposit: parseReceipt(input.deposit, 'tiền cọc'), rental: parseReceipt(input.rental, 'tiền thuê') };
 }
 
@@ -45,7 +63,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractFinalizeError('Hợp đồng hoặc người thực hiện không hợp lệ.');
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
-  const locked = await client.query(`SELECT id, order_status, store_id, customer_id, contract_number, draft_reference, draft_payload, xmin::text AS revision
+  const locked = await client.query(`SELECT id, order_status, store_id, customer_id, pid, contract_number, draft_reference, draft_payload, xmin::text AS revision
     FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id]);
   const order = locked.rows[0];
   if (!order) throw new ContractFinalizeError('Không tìm thấy bản nháp.', 404);
@@ -65,21 +83,31 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   const vehicleIds = lines.map(line => Number(line?.id));
   if (!lines.length || vehicleIds.some(value => !Number.isSafeInteger(value) || value <= 0) || new Set(vehicleIds).size !== vehicleIds.length) throw new ContractFinalizeError('Bản nháp cần chọn đủ xe, không trùng xe.', 409);
   const total = amountOf(draft.total_amount), deposit = amountOf(draft.deposit_amount), unitPrice = amountOf(draft.unit_price);
+  const otherFees = chargeTotal(draft.extra_charges);
+  if (otherFees === null || Object.keys(chargeErrors(draft.extra_charges as ContractCharge[] | undefined,true)).length || (total !== null && otherFees > total)) throw new ContractFinalizeError('Kiểm tra tên, số tiền và tổng các khoản phí khác.',409);
   if (total === null || deposit === null || unitPrice === null || total + deposit > MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Số tiền thuê / tiền cọc của bản nháp không hợp lệ.', 409);
-  if (deposit === 0 && input.deposit) throw new ContractFinalizeError('Bản nháp không có tiền cọc để ghi phiếu thu.');
-  if (total === 0 && input.rental) throw new ContractFinalizeError('Bản nháp không có tiền thuê để ghi phiếu thu.');
+  if (!('receipts' in input)) {
+    if (deposit === 0 && input.deposit) throw new ContractFinalizeError('Bản nháp không có tiền cọc để ghi phiếu thu.');
+    if (total === 0 && input.rental) throw new ContractFinalizeError('Bản nháp không có tiền thuê để ghi phiếu thu.');
+  }
 
-  const vehicles = await client.query(`SELECT id, license, status, COALESCE(current_store_id, store_id) AS store_id FROM himoto.vehicles WHERE id = ANY($1::bigint[]) ORDER BY id FOR UPDATE`, [vehicleIds]);
+  const vehicles = await client.query(`SELECT v.id, v.license, v.status, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
+    FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
+    WHERE v.id = ANY($1::bigint[]) ORDER BY v.id FOR UPDATE OF v`, [vehicleIds]);
   if (vehicles.rowCount !== vehicleIds.length) throw new ContractFinalizeError('Có xe trong bản nháp không còn tồn tại.', 409);
-  const wrongStore = vehicles.rows.find(row => Number(row.store_id) !== storeId);
-  if (wrongStore) throw new ContractFinalizeError(`Xe ${wrongStore.license} không thuộc cơ sở của hợp đồng.`, 409);
   const conflicts = await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
     WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.completed_at IS NULL AND d.deleted_at IS NULL
       AND o.deleted_at IS NULL AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
   if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(row => `xe ${row.license} đang thuộc hợp đồng ${row.code}`).join('; ')} chưa trả xe.`, 409);
-  const notStored = vehicles.rows.filter(row => row.status !== 'ready');
-  if (notStored.length) throw new ContractFinalizeError(`Chỉ cho thuê xe đang Lưu kho: ${notStored.map(row => row.license).join(', ')} đang ở trạng thái khác.`, 409);
+  const notStored = vehicles.rows.filter(row => !['ready','using','rent'].includes(row.status));
+  if (notStored.length) throw new ContractFinalizeError(`Xe không sẵn sàng cho thuê: ${notStored.map(row => row.license).join(', ')} đang ở trạng thái khác.`, 409);
+  // An inventory checkout may precede contract entry. Attach it once, preserving
+  // its stock branch; the locked open-contract check above prevents double rental.
+  for (const line of lines) {
+    const stock = vehicles.rows.find(vehicle=>String(vehicle.id)===String(line.id))!;
+    line.stock_store_id=String(stock.store_id); line.stock_store_name=String(stock.store_name || '');
+  }
   // The legacy app pre-created an empty line per draft (no money, not returned, no receipt). Those
   // placeholders are retired here; any legacy line carrying money or receipts still needs review.
   const existing = await client.query(`SELECT d.id, COALESCE(d.total_money, 0) AS total_money, COALESCE(d.total_renewal_amount, 0) AS renewal_amount, d.completed_at,
@@ -92,6 +120,17 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (retiredItemIds.length) await client.query('UPDATE himoto.order_vehicle_details SET deleted_at=now(), updated_at=now() WHERE id = ANY($1::bigint[])', [retiredItemIds]);
 
   const context = await readPaymentContext(client, id);
+  const oldDepositPaid = context.deposit_paid, oldRentalPaid = context.paid_amount ?? 0;
+  const depositDue = Math.max(deposit-oldDepositPaid,0), rentalDue = Math.max(total-oldRentalPaid,0);
+  const receipts: FinalizeCollection[] = 'receipts' in input ? input.receipts : [
+    ...(input.deposit && depositDue ? [{...input.deposit,purpose:'deposit' as const,amount:String(depositDue),paid_at:input.paid_at}] : []),
+    ...(input.rental && rentalDue ? [{...input.rental,purpose:'rental' as const,amount:String(rentalDue),paid_at:input.paid_at}] : []),
+  ];
+  const depositCollected = receipts.filter(row=>row.purpose==='deposit').reduce((sum,row)=>sum+Number(row.amount),0);
+  const rentalCollected = receipts.filter(row=>row.purpose==='rental').reduce((sum,row)=>sum+Number(row.amount),0);
+  if (!Number.isSafeInteger(depositCollected+rentalCollected) || depositCollected>depositDue || rentalCollected>rentalDue) throw new ContractFinalizeError('Tổng các khoản thu vượt số tiền cọc hoặc tiền thuê/phí còn phải thu.',409);
+  const previousPaid = amountOf(order.pid);
+  if (previousPaid === null || previousPaid+depositCollected+rentalCollected>MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Tổng đã thu không hợp lệ hoặc vượt giới hạn.',409);
   async function account(receipt: FinalizeReceipt | null, label: string) {
     if (!receipt) return null;
     await client.query(`SELECT id FROM himoto.${receipt.method === 'cash' ? 'cash' : 'banks'} WHERE id=$1 FOR SHARE`, [receipt.account_id]);
@@ -99,8 +138,8 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     if (!found) throw new ContractFinalizeError(`Tài khoản nhận ${label} không hoạt động hoặc không thuộc cơ sở.`, 409);
     return found;
   }
-  const depositAccount = await account(input.deposit, 'tiền cọc');
-  const rentalAccount = await account(input.rental, 'tiền thuê');
+  const accounts = [];
+  for (const row of receipts) accounts.push(await account(row,row.purpose==='deposit' ? 'tiền cọc' : 'tiền thuê/phí'));
 
   let code = String(order.contract_number || '').trim();
   if (!code) {
@@ -113,7 +152,8 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   const startAt = `${start}:00+07:00`, endAt = `${end}:00+07:00`;
   const type = draft.package_name === 'Theo tháng' ? 'month' : 'day';
   const rentalDays = Math.max(Math.ceil((new Date(endAt).getTime() - new Date(startAt).getTime()) / 86_400_000), 1);
-  const hiringFee = unitPrice || (type === 'day' && total ? Math.round(total / rentalDays / lines.length) : 0);
+  const rentalBase = total-otherFees;
+  const hiringFee = unitPrice || (type === 'day' && rentalBase ? Math.round(rentalBase / rentalDays / lines.length) : 0);
   const itemIds: number[] = [];
   for (const [index, line] of lines.entries()) {
     const text = (key: string) => typeof line[key] === 'string' && String(line[key]).trim() ? String(line[key]).trim() : null;
@@ -128,26 +168,34 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   }
 
   const transactionIds: number[] = [];
-  async function receipt(found: Awaited<ReturnType<typeof account>>, amount: number, name: string, note: string) {
+  async function receipt(found: Awaited<ReturnType<typeof account>>, amount: number, name: string, note: string, paidAt: string) {
     if (!found || amount <= 0) return 0;
     const row = await client.query(`INSERT INTO himoto.transactions
       (order_id,created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id)
       VALUES ($1,$2,now(),$3,'in',$4,$5,'approved',$6,$7,$8,$9,$10,$11,'order',$1) RETURNING id`,
-    [id, `${input.paid_at}:00+07:00`, name, amount, note, actorId, storeId, found.kind === 'bank' ? found.id : null, found.kind === 'cash' ? found.id : null,
+    [id, `${paidAt}:00+07:00`, name, amount, note, actorId, storeId, found.kind === 'bank' ? found.id : null, found.kind === 'cash' ? found.id : null,
       found.kind === 'cash' ? 1 : 2, found.kind === 'bank' ? found.owner_type : null]);
     transactionIds.push(Number(row.rows[0].id));
     return amount;
   }
-  const paid = await receipt(depositAccount, deposit, 'order:deposit', `Thu tiền cọc hợp đồng ${code}`)
-    + await receipt(rentalAccount, total, 'order:rental_fees', `Thu tiền thuê xe hợp đồng ${code}`);
+  for (const [index,row] of receipts.entries()) await receipt(accounts[index],Number(row.amount),row.purpose==='deposit' ? 'order:deposit' : 'order:rental_fees',
+    `Thu ${row.purpose==='deposit' ? 'tiền cọc' : 'tiền thuê và phí khác'} hợp đồng ${code}`,row.paid_at);
+  const paid = previousPaid+depositCollected+rentalCollected;
+  const methodLabels = {cash:'Tiền mặt',transfer:'CK tk cá nhân',company_transfer:'CK tk công ty'};
+  const actualMethods = (purpose: 'deposit'|'rental') => [...new Set([
+    ...context.history.filter(row=>row.type==='in' && row.deposit===(purpose==='deposit')).map(row=>row.method),
+    ...receipts.filter(row=>row.purpose===purpose).map(row=>methodLabels[row.method]),
+  ])].join(', ');
+  draft.paid_amount=String(oldRentalPaid+rentalCollected); draft.deposit_paid_amount=String(oldDepositPaid+depositCollected);
+  draft.payment_method=actualMethods('rental'); draft.deposit_payment_method=actualMethods('deposit');
 
   const finalized = { at: new Date().toISOString(), actor_id: actorId, contract_number: code, item_ids: itemIds, transaction_ids: transactionIds,
     ...(retiredItemIds.length ? { retired_legacy_item_ids: retiredItemIds } : {}) };
   await client.query(`UPDATE himoto.orders SET order_status='renting', order_mode='standard', contract_number=$2,
       contract_issued_at=now() AT TIME ZONE 'Asia/Ho_Chi_Minh', rent_at=$3, return_at=$4, total=$5, total_rental_fees=$6, first_deposit_amount=$7,
       pid=$8, created_without_collect_deposit=$9, created_without_collect_rental_fees=$10, draft_payload=$11, updated_at=now()
-    WHERE id=$1`, [id, code, startAt, endAt, String(total), total, deposit || null, paid, deposit > 0 && !depositAccount, total > 0 && !rentalAccount,
-    JSON.stringify({ ...payload, management_composer: { ...composer, finalized } })]);
+    WHERE id=$1`, [id, code, startAt, endAt, String(total), rentalBase, deposit || null, paid, oldDepositPaid+depositCollected<deposit, oldRentalPaid+rentalCollected<total,
+    JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized } })]);
   await client.query(`UPDATE himoto.vehicles SET status='using', updated_at=now() WHERE id = ANY($1::bigint[])`, [vehicleIds]);
   return { order_id: id, code, total_amount: total, deposit_amount: deposit, paid_amount: paid, transaction_ids: transactionIds };
 }

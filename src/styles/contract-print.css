@@ -8,6 +8,9 @@
 	line-height: 1.25;
 	margin: 0 auto;
 }
+.contract-print-wrapper .contract-payment-appendix h2 { text-align: center; margin: 8mm 0 4mm; }
+.contract-print-wrapper .contract-payment-appendix table { width: 100%; border-collapse: collapse; margin: 3mm 0; }
+.contract-print-wrapper .contract-payment-appendix th, .contract-print-wrapper .contract-payment-appendix td { border: 1px solid #555; padding: 2px 5px; text-align: left; overflow-wrap: anywhere; }
 
 .contract-print-wrapper .contract-page.a4-landscape {
 	width: 285mm;

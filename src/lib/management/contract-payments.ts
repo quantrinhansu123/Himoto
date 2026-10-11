@@ -38,7 +38,7 @@ export class PaymentRequestError extends Error {
 }
 export function paymentAccounts(context: PaymentContext, method: PaymentMethod) {
   return context.accounts.filter(account => method === 'cash' ? account.kind === 'cash' && account.store_id === context.store_id
-    : method === 'company_transfer' ? account.kind === 'bank' && account.owner_type === 'company'
+    : method === 'company_transfer' ? account.kind === 'bank' && account.owner_type === 'company' && (account.store_id === 0 || account.store_id === context.store_id)
       : account.kind === 'bank' && account.owner_type !== 'company' && account.store_id === context.store_id);
 }
 export function vietnamPaymentTime(now = new Date()) {

@@ -2,6 +2,7 @@ import { createDemoDataset, reconcileDataset } from '@/fixtures/management-data'
 import { EditableKind, ManagementDataset, ManagementKind, ManagementRepository, ManagementRow } from './types';
 import { cloneContractRecord, updateContractRecord } from './contract-record';
 import { DraftStorage, readDemoDrafts, saveDraftRecord, writeDemoDrafts, DEMO_DRAFT_STORAGE_KEY } from './contract-drafts';
+import { normalizeStaffPosition } from './staff-positions';
 
 export function createDemoRepository(draftStorage?: DraftStorage): ManagementRepository {
   let dataset = createDemoDataset();
@@ -94,14 +95,15 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     phone: text(raw.phone || raw.store_phone), email: text(raw.email),
     address: text(raw.address || raw.store_address), created_at: text(raw.created_at),
   };
-  if (kind === 'staff') return { ...base, position: text(raw.position), hire_date: text(raw.joined_at),
+  if (kind === 'staff') return { ...base, position: normalizeStaffPosition(raw.position), hire_date: text(raw.joined_at), notes: text(raw.notes),
     status: ({ '1': 'active', '0': 'inactive' } as Record<string, string>)[base.status] || base.status };
   if (kind === 'stores') return { ...base, manager_name: text(raw.manager_name),
     user_id: number(raw.user_id), kind: text(raw.kind), store_revision: text(raw.store_revision),
     vehicle_count: number(raw.vehicle_count), staff_count: number(raw.staff_count),
     status: ({ '1': 'active', '0': 'inactive', opening: 'active' } as Record<string, string>)[base.status] || base.status };
   if (kind === 'customers') return { ...base, code: text(raw.code) || `KH-${String(id).padStart(3, '0')}`, id_card: text(raw.id_card || raw.identity_card), warning_note: text(raw.warning || raw.warning_note),
-    id_card_issued_on: text(raw.id_card_issued_on || raw.id_card_date), id_card_issued_by: text(raw.id_card_issued_by || raw.id_card_place),
+    first_rental_store_id: number(raw.first_rental_store_id), first_rental_store_name: text(raw.first_rental_store_name), first_rented_at: text(raw.first_rented_at),
+    id_card_issued_on: text(raw.id_card_issued_on || raw.id_card_date).slice(0, 10), id_card_issued_by: text(raw.id_card_issued_by || raw.id_card_place),
     driver_license_number: text(raw.driver_license_number), driver_license_issued_on: text(raw.driver_license_issued_on).slice(0, 10),
     birthday: text(raw.birthday || raw.date_of_birth), relatives_text: text(raw.relatives_text) || relativesText(raw.relatives), relatives_json: relativesJson(raw.relatives),
     customer_revision: text(raw.customer_revision), contract_count: number(raw.contract_count), status: ['blacklist', 'bad_debt'].includes(base.status) ? 'blacklist' : ['draft', '0'].includes(base.status) ? 'draft' : raw.warning || raw.warning_note ? 'warning' :
@@ -136,6 +138,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     start_date: text(raw.start_date || raw.rent_at), end_date: text(raw.end_date || raw.return_at),
     total_amount: number(raw.total_amount ?? raw.total), deposit_amount: number(raw.deposit_amount),
     paid_amount: number(raw.paid_amount), deposit_paid: number(raw.deposit_paid), deposit_refunded: number(raw.deposit_refunded), return_adjustment_amount: number(raw.return_adjustment_amount), unit_price: number(raw.unit_price), package_name: text(raw.package_name),
+    collections_json:Array.isArray(raw.collections) ? JSON.stringify(raw.collections) : '',
     payment_method: text(raw.payment_method), deposit_payment_method: text(raw.deposit_payment_method),
     company_paid_amount: number(raw.company_paid_amount), company_payment_count: number(raw.company_payment_count),
     rental_type: text(raw.rental_type), notes: text(raw.notes ?? raw.note),
@@ -152,7 +155,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
       staff_id: number(snapshot.staff_id), customer_id: number(snapshot.customer_id), customer_name: text(customer.name),
       customer_phone: text(customer.phone), customer_id_card: text(customer.id_card), vehicle_id: number(vehicles[0]?.id),
       vehicle_name: vehicles.map(vehicle => text(vehicle.name)).filter(Boolean).join(', '), license: vehicles.map(vehicle => text(vehicle.license)).filter(Boolean).join(', '),
-      total_amount: number(snapshot.total_amount), deposit_amount: number(snapshot.deposit_amount), paid_amount: number(snapshot.paid_amount) };
+      total_amount: number(snapshot.total_amount), deposit_amount: number(snapshot.deposit_amount), paid_amount: number(raw.paid_amount) ?? 0 };
   }
   return mapped;
 }

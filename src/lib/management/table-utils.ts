@@ -1,4 +1,5 @@
 import { CellValue, ManagementRow } from './types';
+import { staffRoles } from './staff-positions';
 
 export interface TableQuery {
   search: string;
@@ -15,7 +16,7 @@ export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: st
   return rows.filter(row => {
     if (storeId && storeId !== 'all' && String(row.store_id ?? row.id) !== storeId) return false;
     if (query.status && row.status !== query.status) return false;
-    if (Object.entries(query.filters).some(([key, value]) => value && String(row[key] ?? '') !== value)) return false;
+    if (Object.entries(query.filters).some(([key, value]) => value && String(row[key] ?? '') !== value && !(key === 'position' && staffRoles(row.position).includes(value)))) return false;
     const date = String(row.start_date ?? '').slice(0, 10);
     if (query.startDate && (!date || date < query.startDate)) return false;
     if (query.endDate && (!date || date > query.endDate)) return false;

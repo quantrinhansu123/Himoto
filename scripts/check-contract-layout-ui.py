@@ -62,7 +62,7 @@ def mock_api(route):
         return
     if endpoint == '/api/auth/customers/search':
         query = parse_qs(url.query)
-        data = [customer] if query.get('store_id') == ['2'] and query.get('query', [''])[0] in [customer['phone'], customer['id_card']] else []
+        data = [customer] if query.get('query', [''])[0] in [customer['phone'], customer['id_card']] else []
     elif endpoint == '/api/auth/hr/staff':
         store_id = parse_qs(url.query).get('store_id', [''])[0]
         data = [s for s in staff if not store_id or str(s['store_id']) == store_id]
@@ -141,7 +141,7 @@ with sync_playwright() as playwright:
     form.get_by_role('button', name='Xem mẫu in', exact=True).click()
     expect(form.get_by_role('tab', name='Khách hàng', exact=False)).to_have_attribute('aria-selected', 'true')
     page.wait_for_function('document.activeElement.id === "contract-store"')
-    form.get_by_label('Cửa hàng xe', exact=False).select_option('2')
+    form.locator('#contract-store').select_option('2')
     representative = form.get_by_label('Đại diện ủy quyền Bên A', exact=False)
     expect(representative).to_have_attribute('list', 'contract-staff-options')
     expect(form.locator('#contract-staff-options option')).to_have_attribute('value', staff[0]['name'])
@@ -161,8 +161,12 @@ with sync_playwright() as playwright:
     form.get_by_label('Ngày ký hợp đồng', exact=False).fill('2026-10-07')
     form.screenshot(path=str(output / 'form-contract-1440.png'))
     select_tab(form, 'Phương tiện')
-    form.get_by_label('Thuê lúc', exact=False).fill('2026-10-07T09:00')
-    form.get_by_label('Hẹn trả', exact=False).fill('2026-10-09T09:00')
+    form.locator('#contract-start_date').fill('2026-10-07')
+    form.get_by_label('Giờ thuê lúc (24h)', exact=True).select_option('09')
+    form.get_by_label('Phút thuê lúc', exact=True).select_option('00')
+    form.locator('#contract-end_date').fill('2026-10-09')
+    form.get_by_label('Giờ hẹn trả (24h)', exact=True).select_option('09')
+    form.get_by_label('Phút hẹn trả', exact=True).select_option('00')
     form.locator('#contract-vehicle-0').click()
     form.locator('#contract-vehicle-0-options-101').click()
     form.locator('.mg-composer-vehicle').first.get_by_label('Số giấy phép lái xe', exact=True).fill('GPLX-QA-001')
@@ -170,10 +174,11 @@ with sync_playwright() as playwright:
     form.screenshot(path=str(output / 'form-vehicle-1440.png'))
     select_tab(form, 'Chi phí')
     form.get_by_label('Số tiền đặt cọc', exact=False).fill('0')
-    expect(form.get_by_label('Tổng phí thuê xe', exact=False)).to_have_attribute('readonly', '')
-    expect(form.get_by_label('Tổng phí thuê xe', exact=False)).to_have_value('360.000')
-    expect(form.get_by_label('Số tiền đã thanh toán', exact=False)).to_have_attribute('readonly', '')
-    expect(form.get_by_label('Số tiền đã thanh toán', exact=False)).to_have_value('360.000')
+    expect(form.locator('#contract-total_amount')).to_have_attribute('readonly', '')
+    expect(form.locator('#contract-total_amount')).to_have_value('360.000')
+    expect(form.locator('#contract-amount-due')).to_have_attribute('readonly', '')
+    expect(form.locator('#contract-amount-due')).to_have_value('360.000')
+    assert form.get_by_label('Số tiền đã thanh toán', exact=False).count() == 0
     select_tab(form, 'Ký kết & ghi chú')
     form.get_by_label('Tài sản thế chấp', exact=False).fill('Giấy tờ QA')
     form.get_by_label('Ghi chú hợp đồng', exact=True).fill('Ghi chú bố cục QA')
@@ -241,7 +246,9 @@ with sync_playwright() as playwright:
     expect(detail.locator('.mg-composer-vehicle').first).to_contain_text('QA-101')
     expect(detail.locator('.mg-composer-vehicle').last).to_contain_text('QA-102')
     select_tab(detail, 'Chi phí')
-    expect(detail.get_by_role('tabpanel').locator('dd')).to_have_text(['—'] * 8)
+    for label in ['Số tiền đặt cọc', 'Đơn giá áp dụng', 'Tổng phí thuê xe', 'Đã thu tiền thuê', 'Còn thiếu tiền thuê']:
+        field = detail.get_by_role('tabpanel').locator('dl > div').filter(has=page.get_by_text(label,exact=True))
+        expect(field.locator('dd')).to_have_text('—')
     select_tab(detail, 'Khách hàng')
     expect(detail).to_contain_text(customer['id_card'])
     expect(detail).to_contain_text(customer['address'])

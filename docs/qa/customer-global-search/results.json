@@ -1,0 +1,13 @@
+{
+  "passed": 6,
+  "checks": [
+    "formatted phone lookup before selecting a branch fills identity, address, license, relatives and separate owner/first rental branches",
+    "changing the rental branch retains the selected customer and original owner, while contract staff remain restricted to the rental branch",
+    "duplicate phone numbers require an explicit profile choice showing owner and first rental branches",
+    "CCCD also searches globally; new profiles show no rental history; missing customers and request errors clear old origin details",
+    "a late previous lookup cannot overwrite the currently selected profile",
+    "desktop and mobile origin panels render without horizontal overflow or browser errors; no business writes"
+  ],
+  "businessWrites": 0,
+  "searches": 8
+}

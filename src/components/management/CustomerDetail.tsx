@@ -74,7 +74,7 @@ export function CustomerDetail({ row, config, canEdit, onEdit, onClose }: { row:
       {panel('details', <>
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
         <dl className="mg-detail-grid">{config.columns.filter(column => column.key !== 'name' && column.key !== 'status').map(column => <div key={column.key}><dt>{column.label}</dt><dd>{optionLabel(config, column.key, formatValue(row[column.key], column.format))}</dd></div>)}
-          {config.fields.filter(field => !config.columns.some(column => column.key === field.key) && field.key !== 'store_id').map(field => <div key={field.key}><dt>{field.label}</dt><dd>{row[field.key] || '—'}</dd></div>)}</dl>
+          {config.fields.filter(field => !config.columns.some(column => column.key === field.key) && field.key !== 'store_id').map(field => <div key={field.key}><dt>{field.label}</dt><dd>{formatValue(row[field.key], field.type === 'date' ? 'date' : undefined)}</dd></div>)}</dl>
       </>)}
       {panel('contracts', <>
         <div className="mg-contract-history-toolbar"><p>Hợp đồng của khách hàng đang xem.</p><button type="button" className="mg-button" disabled={contractsLoading} onClick={() => fetchContracts()}>

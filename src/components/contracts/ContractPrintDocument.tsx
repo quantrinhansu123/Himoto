@@ -1,9 +1,10 @@
 import { LegacyContractDocument } from '@/lib/management/contract-document';
 
-// Mechanical port of the original Vue template. Its wording and layout are retained.
+// Preserve the legacy legal template; current fees and receipt splits use an appendix.
 export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) {
   const representativeNameA = doc.lessor.representative_name || doc.lessor.authorization.party_name || doc.signers.signer_a_name || '................................';
   const primaryVehicle = doc.primary_vehicle || doc.vehicles[0];
+  const collectionPages = Array.from({length:Math.max(Math.ceil(doc.extra_charges.length/12),Math.ceil(doc.collections.length/12))},(_,index)=>index);
   return (
 	<div className="contract-print-wrapper" >
 		{/* Watermark khi xem trước / in nháp */}
@@ -117,12 +118,12 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 							</div>
 							<div className="clause-row d-flex justify-content-between">
 								<span><strong>2.2.</strong> Giá thuê: <strong>{doc.pricing.unit_price_text}</strong></span>
-								<span>- Đã thanh toán: <strong>{doc.pricing.paid_amount_formatted}</strong> ({doc.pricing.payment_method_text})</span>
+								<span>- Đã thu thuê/phí: <strong>{doc.pricing.paid_amount_formatted}</strong> ({doc.pricing.payment_method_text})</span>
 								<span>- Gói: <strong>{doc.pricing.package_name}</strong></span>
 							</div>
 							<div className="clause-row"><strong>{doc.pricing.calculation_text}</strong></div>
 							<div className="clause-row">
-								<strong>2.3.</strong> Đặt cọc (Tài sản thế chấp): <strong>{doc.deposit.deposit_amount_formatted}</strong> ({doc.deposit.collateral_description}) ({doc.deposit.payment_method_text})
+								<strong>2.3.</strong> Đặt cọc (Tài sản thế chấp): <strong>{doc.deposit.deposit_amount_formatted}</strong> ({doc.deposit.collateral_description}) ({doc.deposit.payment_method_text}){doc.deposit.paid_amount_formatted && <> · Đã nhận cọc: <strong>{doc.deposit.paid_amount_formatted}</strong></>}
 							</div>
 						</div>
 					</div>
@@ -315,6 +316,13 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 				</div>
 			</div>
 		</div>)}
+    {collectionPages.map(index=><div className="contract-page a4-landscape page-break contract-payment-appendix" key={`collections-${index}`}>
+      <h2>CHI TIẾT PHÍ VÀ CÁC KHOẢN ĐÃ THU</h2><p>Hợp đồng: <strong>{doc.contract_number}</strong> · Khách hàng: {doc.customer.name} · Cơ sở nguồn/doanh thu: {doc.lessor.branch_name}</p>
+      {doc.extra_charges.slice(index*12,(index+1)*12).length>0 && <><h3>Phí khác trong hợp đồng</h3><table><thead><tr><th>Nội dung</th><th>Số tiền</th></tr></thead><tbody>{doc.extra_charges.slice(index*12,(index+1)*12).map((item,i)=><tr key={i}><td>{item.name}</td><td>{item.amount}</td></tr>)}</tbody></table></>}
+      {doc.collections.slice(index*12,(index+1)*12).length>0 && <><h3>Các khoản đã nhận</h3><table><thead><tr><th>Loại tiền</th><th>Thời điểm nhận</th><th>Hình thức</th><th>Tài khoản nhận</th><th>Số tiền</th></tr></thead><tbody>{doc.collections.slice(index*12,(index+1)*12).map((item,i)=><tr key={i}><td>{item.purpose==='deposit' ? 'Cọc' : 'Thuê và phí khác'}</td><td>{item.paid_at_formatted}</td><td>{item.method}</td><td>{item.account}</td><td>{item.amount_formatted}</td></tr>)}</tbody></table></>}
+      <p><strong>{doc.pricing.calculation_text}</strong> · Tiền cọc: {doc.deposit.deposit_amount_formatted}</p><p>Đã thu thuê/phí: <strong>{doc.pricing.paid_amount_formatted}</strong>{doc.deposit.paid_amount_formatted && <> · Đã nhận cọc: <strong>{doc.deposit.paid_amount_formatted}</strong></>}</p>
+      {!doc.collections.length && <p>Chưa có khoản thu được ghi nhận.</p>}
+    </div>)}
 	</div>
 );
 }

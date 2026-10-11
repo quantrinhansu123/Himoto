@@ -96,7 +96,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         {fields([['Thuê lúc', dateTime(draft.start_date)], ['Hẹn trả', dateTime(draft.end_date)]])}
         {draft.vehicles.map((vehicle, index) => <div className="mg-composer-vehicle" key={index}>
           <div className="mg-composer-vehicle-header"><strong>Thông tin xe thuê số {index + 1}</strong></div>
-          {fields([['Tên xe', text(vehicle.name)], ['Biển số', text(vehicle.license)], ['Màu xe', text(vehicle.color)],
+          {fields([['Tên xe', text(vehicle.name)], ['Biển số', text(vehicle.license)], ['Cơ sở quản lý xe lúc lập hợp đồng', text(vehicle.stock_store_name)], ['Màu xe', text(vehicle.color)],
             ['Loại xe', text(vehicle.type_text)], ['Hãng xe', text(vehicle.brand)], ['Đời xe', text(vehicle.year)],
             ['Tên người lái', text(vehicle.driver_name)], ['Số GP lái xe', text(vehicle.driver_license_number)],
             ['Ngày cấp GPLX', date(vehicle.driver_license_issued_on)],
@@ -111,7 +111,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
       ]))}
       {panel('customer', 'Thông tin khách hàng (Bên B)', fields([
-        ['Cửa hàng xe', text(store?.name || row.store_name)], ['Đại diện ủy quyền Bên A (Nhân viên làm hợp đồng)', text(draft.staff_name || representative?.name || row.staff_name)],
+        ['Cơ sở nguồn khách / doanh thu', text(store?.name || row.store_name)], ['Đại diện ủy quyền Bên A (Nhân viên làm hợp đồng)', text(draft.staff_name || representative?.name || row.staff_name)],
         ['Tên khách hàng', text(draft.customer.name)], ['SĐT', text(draft.customer.phone)],
         ['Số CMTND/CCCD', text(draft.customer.id_card)], ['Ngày cấp CCCD', date(draft.customer.id_card_issued_on)],
         ['Nơi cấp CCCD', text(draft.customer.id_card_issued_by)], ['Số giấy phép lái xe', text(draft.customer.driver_license_number)],
@@ -142,6 +142,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
           ['Đã thu tiền thuê', money(row.paid_amount)], ['Còn thiếu tiền thuê', row.total_amount == null || row.paid_amount == null ? '—' : money(Math.max(Number(row.total_amount) - Number(row.paid_amount), 0))],
           ['Hình thức thanh toán', text(pricing.payment_method)],
         ])}</div>
+        {draft.extra_charges && draft.extra_charges.length>0 && <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng (đã tính trong tổng phí)</h3>{fields(draft.extra_charges.filter(item=>Number(item.amount)>0).map(item=>[item.name,money(item.amount)]))}</div>}
       </>)}
       {panel('signing', 'Ký kết & Ghi chú', fields([
         ['Tài sản thế chấp / Đặt cọc tài sản', text(draft.collateral_description)],

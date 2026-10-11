@@ -1,5 +1,6 @@
 import { ManagementConfig, ManagementKind, Option } from './types';
 import { ORDER_STATUS } from '@/lib/formatters';
+import { STAFF_POSITIONS } from './staff-positions';
 
 export const STAFF_STATUSES: Option[] = [{ value: 'active', label: 'Đang làm việc' }, { value: 'inactive', label: 'Tạm nghỉ' }, { value: 'leave', label: 'Đã nghỉ việc' }];
 export const CUSTOMER_STATUSES: Option[] = [{ value: 'active', label: 'Bình thường' }, { value: 'warning', label: 'Cần lưu ý' }, { value: 'blacklist', label: 'Blacklist (khách nợ xấu)' }, { value: 'draft', label: 'Chưa hoàn tất' }];
@@ -10,7 +11,7 @@ export const VEHICLE_STATUSES: Option[] = [
   { value: 'broken', label: 'Hỏng' }, { value: 'in_transit', label: 'Đang điều chuyển' },
 ];
 export const VEHICLE_TYPES: Option[] = [{ value: 'xega', label: 'Xe ga' }, { value: 'xeso', label: 'Xe số' }, { value: 'xecon', label: 'Xe côn tay' }, { value: 'xesh', label: 'Xe SH' }, { value: 'xe_dien', label: 'Xe điện' }];
-export const POSITIONS: Option[] = ['Quản lý cơ sở', 'Nhân viên kinh doanh', 'Thu ngân', 'Kỹ thuật viên'].map(label => ({ value: label, label }));
+export const POSITIONS: Option[] = STAFF_POSITIONS.map(label => ({ value: label, label }));
 export const CONTRACT_STATUSES: Option[] = [
   { value: 'draft', label: 'Lưu nháp' }, { value: 'renting', label: 'Đang thuê' },
   { value: 'completed', label: 'Hoàn thành' }, { value: 'pending', label: 'Chờ giao xe' },
@@ -48,10 +49,12 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
       branchColumn, { key: 'contract_count', label: 'Hợp đồng', format: 'number', align: 'right' }, statusColumn],
     fields: [{ key: 'name', label: 'Họ và tên', required: true }, { key: 'phone', label: 'Số điện thoại', type: 'tel', required: true },
       { key: 'id_card', label: 'Giấy tờ định danh', hint: 'Có thể bổ sung sau đối với hồ sơ chưa hoàn tất.' },
+      { key: 'id_card_issued_on', label: 'Ngày cấp CCCD / CMND', type: 'date' },
+      { key: 'id_card_issued_by', label: 'Nơi cấp CCCD / CMND' },
       { key: 'address', label: 'Nơi ở hiện tại', wide: true, hint: 'Ghi số nhà, phường/xã, quận/huyện.' },
       { key: 'driver_license_number', label: 'Số giấy phép lái xe' },
       { key: 'driver_license_issued_on', label: 'Ngày cấp GPLX', type: 'date' },
-      branchField, { key: 'status', label: 'Trạng thái hồ sơ', type: 'select', options: CUSTOMER_STATUSES, required: true },
+      { ...branchField, label: 'Cơ sở nguồn khách' }, { key: 'status', label: 'Trạng thái hồ sơ', type: 'select', options: CUSTOMER_STATUSES, required: true },
       { key: 'warning_note', label: 'Ghi chú / cảnh báo', type: 'textarea', wide: true },
       { key: 'relatives_text', label: 'Thông tin người thân', wide: true }],
   },
@@ -61,7 +64,7 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     searchPlaceholder: 'Tìm mã hợp đồng, khách hàng hoặc biển số…', statuses: CONTRACT_STATUSES,
     filters: [{ key: 'rental_type', label: 'Tất cả loại hợp đồng', options: CONTRACT_TYPES }],
     columns: [{ ...codeColumn, label: 'Mã hợp đồng' }, { key: 'customer_name', label: 'Khách hàng', format: 'person', secondary: 'customer_phone' },
-      { key: 'vehicle_name', label: 'Xe / biển số', format: 'vehicle', secondary: 'license' }, branchColumn,
+      { key: 'vehicle_name', label: 'Xe / biển số', format: 'vehicle', secondary: 'license' }, { ...branchColumn, label: 'Nguồn / doanh thu' },
       { key: 'start_date', label: 'Bắt đầu thuê', format: 'date' }, { key: 'end_date', label: 'Dự kiến trả', format: 'date' },
       { key: 'total_amount', label: 'Tiền thuê', format: 'money', align: 'right' },
       { key: 'return_adjustment_amount', label: 'Phát sinh trả xe', format: 'money', align: 'right' },

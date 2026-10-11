@@ -24,6 +24,8 @@ export function CustomerCreateDialog({ idCard, storeId, onCreated, onClose }: { 
   const fields: { key: keyof CustomerDetails; label: string; type?: string; required?: boolean; wide?: boolean; hint?: string }[] = [
     { key: 'id_card', label: 'CCCD / CMND', required: true }, { key: 'name', label: 'Họ và tên', required: true },
     { key: 'phone', label: 'Số điện thoại', type: 'tel', required: true },
+    { key: 'id_card_issued_on', label: 'Ngày cấp CCCD / CMND', type: 'date' },
+    { key: 'id_card_issued_by', label: 'Nơi cấp CCCD / CMND' },
     { key: 'address', label: 'Nơi ở hiện tại', required: true, wide: true, hint: 'Ghi số nhà, phường/xã, quận/huyện.' },
     { key: 'driver_license_number', label: 'Số giấy phép lái xe' },
     { key: 'driver_license_issued_on', label: 'Ngày cấp GPLX', type: 'date' },
@@ -56,7 +58,7 @@ export function CustomerCreateDialog({ idCard, storeId, onCreated, onClose }: { 
         {field.hint && <small>{field.hint}</small>}
         {errors[field.key] && <p className="mg-field-error" id={`new-customer-${field.key}-error`}>{errors[field.key]}</p>}
       </div>)}{<>
-        <div className="mg-field"><label htmlFor="new-customer-store">Cơ sở *</label><select id="new-customer-store" value={branch} disabled={saving} aria-invalid={Boolean(errors.store_id)} aria-describedby={errors.store_id ? 'new-customer-store-error' : undefined} onChange={event => { setBranch(event.target.value); setErrors(current => ({ ...current, store_id: '' })); }}>
+        <div className="mg-field"><label htmlFor="new-customer-store">Cơ sở nguồn khách *</label><select id="new-customer-store" value={branch} disabled={saving} aria-invalid={Boolean(errors.store_id)} aria-describedby={errors.store_id ? 'new-customer-store-error' : undefined} onChange={event => { setBranch(event.target.value); setErrors(current => ({ ...current, store_id: '' })); }}>
           <option value="">Chọn cơ sở</option>{dataset?.stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select>{errors.store_id && <p id="new-customer-store-error" className="mg-field-error">{errors.store_id}</p>}</div>
         <div className="mg-field"><label htmlFor="new-customer-status">Trạng thái hồ sơ *</label><select id="new-customer-status" value={status} disabled={saving} onChange={event => setStatus(event.target.value)}>{CUSTOMER_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
       </>}<CustomerRelativesFields prefix="new-customer" relatives={relatives} disabled={saving} onChange={setRelatives} /></div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>

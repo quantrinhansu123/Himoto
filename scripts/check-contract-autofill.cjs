@@ -41,6 +41,11 @@ async function run() {
   const controller = new AbortController(); controller.abort();
   await assert.rejects(demo.lookupCustomer('DEMO-000001', controller.signal), { name: 'AbortError' });
   checks.push('exact identity lookup, full profile autofill, explicit missing and cancellation');
+  assert.equal((await demo.searchCustomers(customer.phone))[0].id, customer.id);
+  assert.equal((await demo.searchCustomers(` ${customer.phone.slice(0, 3)}.${customer.phone.slice(3)} `))[0].id, customer.id);
+  assert.equal((await demo.searchCustomers('0000000000')).length, 0);
+  await assert.rejects(demo.searchCustomers(customer.phone, controller.signal), { name: 'AbortError' });
+  checks.push('phone lookup is global, accepts formatting, preserves leading zeros and supports cancellation');
   const details = { ...customerDetails(), name: 'Khách mới mẫu', phone: '0900001234', address: 'Địa chỉ mẫu', email: 'moi@example.test', id_card: '001234567890', id_card_issued_by: 'Nơi cấp mẫu' };
   const created = await demo.createCustomer(details);
   assert.equal(created.id, 33); assert.equal((await demo.lookupCustomer(details.id_card)).id_card, '001234567890');
@@ -110,7 +115,7 @@ async function run() {
     const saved = await api.createCustomer(details); assert.equal(saved.id, 99);
     const writes = requests.filter(request => request.method === 'POST');
     assert.equal(writes.length, 1); assert.equal(writes[0].url, '/api/auth/customers');
-    assert.deepEqual(Object.keys(JSON.parse(writes[0].body)).sort(), ['address', 'driver_license_issued_on', 'driver_license_number', 'id_card', 'name', 'phone', 'relatives', 'warning_note']);
+    assert.deepEqual(Object.keys(JSON.parse(writes[0].body)).sort(), ['address', 'driver_license_issued_on', 'driver_license_number', 'id_card', 'id_card_issued_by', 'id_card_issued_on', 'name', 'phone', 'relatives', 'warning_note']);
     const family = [{ name: 'Người thân mẫu', relationship: 'Mẹ', phone: '0900000011' }];
     const assigned = await api.createCustomer({ ...details, driver_license_number: '0012345678', driver_license_issued_on: '2021-02-03', relatives_json: JSON.stringify(family), warning_note: 'Cần đối chiếu hồ sơ' }, { status: 'warning', store_id: 2 });
     assert.equal(assigned.store_id, 2); assert.equal(assigned.status, 'warning');
@@ -130,7 +135,23 @@ async function run() {
     assert.deepEqual(relativesFromRow(updated)[0], family[0]);
     assert.equal(JSON.parse(requests.filter(request => request.method === 'POST').at(-1).body).warning_note, 'Cần đối chiếu hồ sơ');
     assert(!requests.some(request => request.url.includes('/order/')));
-    checks.push('existing API routes enforce exact lookup, branch scope, duplicate preflight and customer-only writes');
+    checks.push('existing API routes enforce exact identity, branch staff scope, duplicate preflight and customer-only writes');
+    global.fetch = async (url, options) => {
+      requests.push({ url, method: options.method });
+      return { ok: true, json: async () => ({ status: 'success', data: [
+        { id: 1, name: 'Khách A', phone: '090.000.0011', store_id: 1, store_name: 'CS A', first_rental_store_id: 3, first_rental_store_name: 'CS C', first_rented_at: '2025-01-01' },
+        { id: 2, name: 'Khách B', phone: '0900000011', store_id: 2, store_name: 'CS B' },
+      ] }) };
+    };
+    const matches = await api.searchCustomers('090 000 0011');
+    assert.deepEqual(matches.map(row => row.store_id), [1, 2]);
+    assert.equal(matches[0].first_rental_store_id, 3); assert.equal(matches[0].first_rental_store_name, 'CS C');
+    assert.equal(requests.at(-1).url, '/api/auth/customers/search?query=0900000011');
+    global.fetch = async () => ({ ok: true, json: async () => ({ status: 'success', data: [{ id: 1, phone: '0999999999' }] }) });
+    await assert.rejects(api.searchCustomers('0900000011'), /không khớp/);
+    global.fetch = async () => ({ ok: false, status: 401, json: async () => ({ status: 'error', message: 'Phiên hết hạn' }) });
+    await assert.rejects(api.searchCustomers('0900000011'), /Phiên hết hạn/);
+    checks.push('global API phone lookup returns every branch and origin metadata; mismatched and unauthorized responses fail explicitly');
     for (const response of [
       { ok: false, status: 401 },
       { ok: true, json: async () => ({ status: 'error', data: null }) },

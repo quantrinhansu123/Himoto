@@ -10,5 +10,8 @@ next-env.d.ts
 # Local customer/vehicle workbooks contain operational data.
 /excel-import/
 /.backups/
+# Local operational workbooks must not be published.
+/*.xlsx
 __pycache__/
 *.pyc
+/docs/HANDOFF-*.md

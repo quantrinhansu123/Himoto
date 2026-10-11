@@ -65,7 +65,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   const depositPaid = money(order.deposit_paid) ?? 0, depositRefunded = money(order.deposit_refunded) ?? 0;
   const accounts = await client.query(`SELECT id, 'bank' AS kind, store_id, owner_type,bank_name,account_number,owner_name,
       bank_name || ' · ' || owner_name || ' · ' || account_number AS label
-    FROM himoto.banks WHERE lower(status) = 'active' AND account_type IN (0,1) AND (store_id=$1 OR owner_type='company')
+    FROM himoto.banks WHERE lower(status) = 'active' AND account_type IN (0,1) AND (store_id=$1 OR (owner_type='company' AND COALESCE(store_id,0)=0))
     UNION ALL SELECT id, 'cash' AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,COALESCE(NULLIF(name,''),'Két tiền mặt #' || id::text) AS label
     FROM himoto.cash WHERE lower(status)='active' AND store_id=$1 ORDER BY kind,id`, [order.store_id]);
   const history = await client.query(`SELECT t.id,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,

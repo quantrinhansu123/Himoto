@@ -46,7 +46,7 @@ export function CashbookAccounts({ accounts, loading, error, onRetry }: Props) {
           <td className={`mg-align-right mg-numeric mg-cashbook-balance${total.balance < 0 ? ' is-negative' : ''}`}><strong>{money(total.balance)}</strong></td><td /></tr></tfoot>}
       </table>
     </div>
-    {target && <CashbookAccountDialog key={`${target.mode}-${target.account.key}`} account={target.account} mode={target.mode} onClose={() => setTarget(null)} onChanged={onRetry} />}
-    {creating && <CashbookAccountDialog mode="create" defaultStoreId={selectedStore === 'all' ? '' : selectedStore} onClose={() => setCreating(false)} onChanged={onRetry} />}
+    {target && <CashbookAccountDialog key={`${target.mode}-${target.account.key}`} account={target.account} mode={target.mode} ownerSuggestions={accounts.map(item => item.owner_name || '')} onClose={() => setTarget(null)} onChanged={onRetry} />}
+    {creating && <CashbookAccountDialog mode="create" defaultStoreId={selectedStore === 'all' ? '' : selectedStore} ownerSuggestions={accounts.map(item => item.owner_name || '')} onClose={() => setCreating(false)} onChanged={onRetry} />}
   </section>;
 }

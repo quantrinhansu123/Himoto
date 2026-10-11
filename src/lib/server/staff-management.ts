@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
+import { normalizeStaffPosition } from '@/lib/management/staff-positions';
 
 const json = (status: number, message: string) => NextResponse.json({ status: 'error', message }, { status });
 const STATUSES = ['active', 'inactive', 'leave'];
@@ -19,7 +20,7 @@ async function readStaffBody(request: Request) {
     body = parsed as Record<string, unknown>;
   } catch { return json(400, 'Thông tin nhân sự không hợp lệ.'); }
   const str = (value: unknown) => typeof value === 'string' ? value.trim() : '';
-  const name = str(body.name), phone = str(body.phone), email = str(body.email), position = str(body.position), status = str(body.status);
+  const name = str(body.name), phone = str(body.phone), email = str(body.email), position = normalizeStaffPosition(str(body.position)), status = str(body.status);
   const storeId = body.store_id == null || body.store_id === '' ? null : Number(body.store_id);
   if (!name || name.length > 191 || position.length > 191 || !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !STATUSES.includes(status) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
@@ -56,7 +57,7 @@ export async function updateStaff(id: number, request: Request) {
   const { name, phone, email, position, status, storeId } = input;
   try {
     const result = await himotoPool.query(
-      `UPDATE himoto.staff_profiles SET full_name=$2, phone=$3, email=NULLIF($4,''), position=NULLIF($5,''), store_id=$6, status=$7 WHERE id=$1 RETURNING id`,
+      `UPDATE himoto.staff_profiles SET full_name=$2, phone=$3, email=NULLIF($4,''), position=NULLIF($5,''), store_id=$6, status=$7, updated_at=now() WHERE id=$1 RETURNING id`,
       [id, name, phone, email, position, storeId, status]);
     if (!result.rowCount) return json(404, 'Không tìm thấy nhân sự cần cập nhật.');
     return NextResponse.json({ status: 'success', data: null }, { headers: { 'Cache-Control': 'no-store' } });

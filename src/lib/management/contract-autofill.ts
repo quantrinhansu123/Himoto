@@ -6,7 +6,7 @@ import { parseCustomerRelatives } from './customer-relatives';
 
 export interface ContractAutofillRepository {
   lookupCustomer(idCard: string, signal?: AbortSignal): Promise<ManagementRow | null>;
-  searchCustomers(query: string, storeId: string, signal?: AbortSignal): Promise<ManagementRow[]>;
+  searchCustomers(query: string, signal?: AbortSignal): Promise<ManagementRow[]>;
   loadStaff(storeId: string, signal?: AbortSignal): Promise<ManagementRow[]>;
   createCustomer(customer: CustomerDetails, assignment?: CustomerAssignment): Promise<ManagementRow>;
   updateCustomer(customer: ManagementRow): Promise<ManagementRow>;
@@ -21,12 +21,12 @@ export function createDemoAutofillRepository(repository: ManagementRepository): 
       if (matches.length > 1) throw new Error('Có nhiều hồ sơ trùng số giấy tờ. Cần kiểm tra lại dữ liệu khách hàng.');
       return matches[0] || null;
     },
-    async searchCustomers(query, storeId, signal) {
+    async searchCustomers(query, signal) {
       signal?.throwIfAborted();
       const dataset = await repository.load(); signal?.throwIfAborted();
-      const normalized = normalizeIdCard(query);
       const phone = query.replace(/\D/g, '');
-      return dataset.customers.filter(row => String(row.store_id) === storeId && (normalizeIdCard(String(row.id_card || '')) === normalized || String(row.phone || '').replace(/\D/g, '') === phone));
+      if (!/^\d{9,13}$/.test(phone)) return [];
+      return dataset.customers.filter(row => String(row.id_card || '').replace(/\D/g, '') === phone || String(row.phone || '').replace(/\D/g, '') === phone);
     },
     async loadStaff(storeId, signal) { signal?.throwIfAborted(); return staffMatchesStore((await repository.load()).staff, storeId); },
     async createCustomer(customer, assignment) {
@@ -78,12 +78,14 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       if (normalizeIdCard(String(row.id_card || '')) !== normalized) throw new Error('API trả về khách hàng không khớp số CCCD/CMND.');
       return row;
     },
-    async searchCustomers(query, storeId, signal) {
+    async searchCustomers(query, signal) {
       const normalized = query.replace(/\D/g, '');
-      if (!normalized || !storeId) return [];
-      const payload = await request(`${READ_ENDPOINTS.customers}/search?${new URLSearchParams({ query: normalized, store_id: storeId })}`, { method: 'GET', signal });
+      if (!/^\d{9,13}$/.test(normalized)) return [];
+      const payload = await request(`${READ_ENDPOINTS.customers}/search?${new URLSearchParams({ query: normalized })}`, { method: 'GET', signal });
       if (!Array.isArray(payload) || !payload.every(object)) throw new Error('API tra cứu trả về danh sách chưa được hỗ trợ.');
-      return payload.map(row => mapApiRow('customers', row));
+      const rows = payload.map(row => mapApiRow('customers', row));
+      if (rows.some(row => String(row.id_card || '').replace(/\D/g, '') !== normalized && String(row.phone || '').replace(/\D/g, '') !== normalized)) throw new Error('API trả về khách hàng không khớp CCCD/CMND hoặc SĐT đã nhập.');
+      return rows;
     },
     async loadStaff(storeId, signal) {
       if (!storeId) return [];
@@ -110,6 +112,7 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       const payload = await request(READ_ENDPOINTS.customers, { method: 'POST', body: JSON.stringify({
         name: customer.name.trim(), phone: customer.phone.trim(), address: customer.address.trim(), id_card: normalizeIdCard(customer.id_card), warning_note: customer.warning_note.trim(),
         driver_license_number: customer.driver_license_number.trim(), driver_license_issued_on: customer.driver_license_issued_on,
+        id_card_issued_on: customer.id_card_issued_on, id_card_issued_by: customer.id_card_issued_by.trim(),
         relatives: parseCustomerRelatives(pairRelatives(customer.relatives_json, customer.relatives_text)),
         ...(assignment ? { status: assignment.status, store_id: assignment.store_id } : {}),
       }) });
@@ -124,6 +127,7 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
         address: String(customer.address || '').trim(), id_card: normalizeIdCard(String(customer.id_card || '')),
         status: customer.status, warning_note: String(customer.warning_note || '').trim(), store_id: customer.store_id ?? null,
         driver_license_number: String(customer.driver_license_number || '').trim(), driver_license_issued_on: String(customer.driver_license_issued_on || ''),
+        id_card_issued_on: String(customer.id_card_issued_on || '').slice(0, 10), id_card_issued_by: String(customer.id_card_issued_by || '').trim(),
         relatives: parseCustomerRelatives(relativesFromRow(customer)),
       }) });
       if (!object(payload)) throw new Error('API chưa trả về hồ sơ khách hàng đã cập nhật.');

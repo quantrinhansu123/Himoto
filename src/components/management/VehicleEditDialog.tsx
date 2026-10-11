@@ -27,8 +27,8 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
   const [saving, setSaving] = useState(false);
   const busy = useRef(false);
   const form = useRef<HTMLFormElement>(null);
-  const rented = row?.status === 'using';
-  const statusOptions = VEHICLE_STATUSES.filter(option => option.value !== 'using' || rented);
+  const rented = (() => { try { return JSON.parse(String(row?.rentals_json || '[]')).length > 0; } catch { return row?.status === 'using'; } })();
+  const statusOptions = VEHICLE_STATUSES;
   const storeMissing = draft.store_id && !stores.some(store => String(store.id) === draft.store_id);
   function change(key: keyof VehicleEdits, next: string) { setDraft(current => ({ ...current, [key]: next })); setErrors(current => ({ ...current, [key]: '' })); }
   async function submit(event: FormEvent) {
@@ -60,12 +60,12 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
         <input id={`vehicle-${field.key}`} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
       <div className="mg-field"><label htmlFor="vehicle-type">Loại xe<span aria-hidden="true"> *</span></label><select id="vehicle-type" value={draft.type} disabled={saving} onChange={event => change('type', event.target.value)}>
         {VEHICLE_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-      <div className="mg-field"><label htmlFor="vehicle-store_id">Cơ sở hiện tại<span aria-hidden="true"> *</span></label><select id="vehicle-store_id" value={draft.store_id} disabled={saving} aria-invalid={Boolean(errors.store_id)} aria-describedby={describedBy('store_id')} onChange={event => change('store_id', event.target.value)}>
+      <div className="mg-field"><label htmlFor="vehicle-store_id">Cơ sở hiện tại<span aria-hidden="true"> *</span></label><select id="vehicle-store_id" value={draft.store_id} disabled={saving || rented} aria-invalid={Boolean(errors.store_id)} aria-describedby={describedBy('store_id')} onChange={event => change('store_id', event.target.value)}>
         <option value="">Chọn cơ sở</option>{storeMissing && <option value={draft.store_id}>{value('store_name') || `Cơ sở #${draft.store_id}`}</option>}
         {stores.map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select>{fieldError('store_id')}</div>
       <div className="mg-field"><label htmlFor="vehicle-status">Trạng thái<span aria-hidden="true"> *</span></label><select id="vehicle-status" value={draft.status} disabled={saving || rented} aria-describedby={rented ? 'vehicle-status-hint' : undefined} onChange={event => change('status', event.target.value)}>
         {statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
-        {rented && <small id="vehicle-status-hint">Xe đang thuê theo hợp đồng. Trả xe trên hợp đồng để đổi trạng thái.</small>}</div>
+        {rented ? <small id="vehicle-status-hint">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng để đổi trạng thái.</small> : <small>Đã giao xe nhưng chưa nhập hợp đồng: chọn Đang thuê để khớp kho. Sau đó nhập hợp đồng trực tiếp, giữ nguyên cơ sở xe.</small>}</div>
       {FIELDS.slice(4).map(field => <div key={field.key} className="mg-field"><label htmlFor={`vehicle-${field.key}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
         <input id={`vehicle-${field.key}`} type={field.type || 'text'} min={field.type ? 0 : undefined} step={field.type ? 1 : undefined} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
     </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>

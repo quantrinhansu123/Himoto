@@ -6,6 +6,7 @@ import { CashbookAccount, CashbookAccountEdits, CashbookAccountVoucher, createCa
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
+import { SuggestionInput } from './SuggestionInput';
 
 export type AccountDialogMode = 'create' | 'view' | 'edit' | 'delete';
 type AccountType = 'cash' | 'bank' | 'company';
@@ -57,8 +58,8 @@ function AccountVouchers({ account }: { account: CashbookAccount }) {
   </div>;
 }
 
-type Props = { onClose: () => void; onChanged: () => void } & ({ mode: 'create'; account?: undefined; defaultStoreId?: string } | { mode: Exclude<AccountDialogMode, 'create'>; account: CashbookAccount; defaultStoreId?: undefined });
-export function CashbookAccountDialog({ account, mode, defaultStoreId, onClose, onChanged }: Props) {
+type Props = { onClose: () => void; onChanged: () => void; ownerSuggestions?: string[] } & ({ mode: 'create'; account?: undefined; defaultStoreId?: string } | { mode: Exclude<AccountDialogMode, 'create'>; account: CashbookAccount; defaultStoreId?: undefined });
+export function CashbookAccountDialog({ account, mode, defaultStoreId, onClose, onChanged, ownerSuggestions = [] }: Props) {
   const { dataset } = useManagement();
   const stores = dataset?.stores || [];
   const [draft, setDraft] = useState({
@@ -86,7 +87,7 @@ export function CashbookAccountDialog({ account, mode, defaultStoreId, onClose, 
     if (draft.type !== 'company' && !draft.store_id) { setError('Chọn cơ sở cho tài khoản.'); return; }
     if (isBank && (!draft.bank_name.trim() || !draft.owner_name.trim() || !draft.account_number.trim())) { setError('Nhập đủ ngân hàng, chủ tài khoản và số tài khoản.'); return; }
     const values: CashbookAccountEdits = { status: draft.status as 'active' | 'inactive', opening_balance: opening,
-      ...(draft.type !== 'company' ? { store_id: draft.store_id } : {}),
+      store_id: draft.store_id || '0',
       ...(!isBank ? { name: draft.name.trim() } : {}),
       ...(isBank ? { owner_type: draft.type === 'company' ? 'company' : 'store', bank_name: draft.bank_name.trim(), owner_name: draft.owner_name.trim(), account_number: draft.account_number.trim() } : {}) };
     void run(() => account ? updateCashbookAccount(account, values) : createCashbookAccount(isBank ? 'bank' : 'cash', values));
@@ -96,18 +97,17 @@ export function CashbookAccountDialog({ account, mode, defaultStoreId, onClose, 
     const typeOptions = ACCOUNT_TYPES.filter(([value]) => !account || (account.kind === 'cash' ? value === 'cash' : value !== 'cash'));
     const storeMissing = draft.store_id && !stores.some(store => String(store.id) === draft.store_id);
     return <Dialog title={account ? 'Sửa tài khoản' : 'Thêm tài khoản'} subtitle={account?.label} onClose={close}>
-      <form noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
+      <form noValidate autoComplete="off" onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
         <div className="mg-field"><label htmlFor="account-type">Loại tài khoản *</label><select id="account-type" value={draft.type} disabled={saving || typeOptions.length < 2} onChange={event => change('type', event.target.value)}>
           {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
-        {draft.type === 'company' ? <div className="mg-field"><label htmlFor="account-store">Cơ sở</label><input id="account-store" value="Toàn công ty (dùng chung mọi cơ sở)" disabled /></div>
-          : <div className="mg-field"><label htmlFor="account-store">Cơ sở *</label><select id="account-store" value={draft.store_id} disabled={saving} onChange={event => change('store_id', event.target.value)}>
-            <option value="">Chọn cơ sở</option>{storeMissing && <option value={draft.store_id}>{account?.store_name || `Cơ sở #${draft.store_id}`}</option>}
-            {stores.map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>}
+        <div className="mg-field"><label htmlFor="account-store">Cơ sở{draft.type !== 'company' && ' *'}</label><select id="account-store" value={draft.store_id} disabled={saving} onChange={event => change('store_id', event.target.value)}>
+          <option value="">{draft.type === 'company' ? 'Toàn công ty (dùng chung mọi cơ sở)' : 'Chọn cơ sở'}</option>{storeMissing && <option value={draft.store_id}>{account?.store_name || `Cơ sở #${draft.store_id}`}</option>}
+          {stores.map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
         {!isBank && <div className="mg-field mg-field-wide"><label htmlFor="account-cash-name">Tên két / nội dung</label><input id="account-cash-name" value={draft.name} maxLength={191} disabled={saving}
           placeholder={account ? `Két tiền mặt #${account.id}` : 'VD: Két quầy lễ tân'} onChange={event => change('name', event.target.value)} /><small>Để trống sẽ hiện “Két tiền mặt #số”.</small></div>}
         {isBank && <>
           <div className="mg-field"><label htmlFor="account-bank-name">Ngân hàng *</label><input id="account-bank-name" value={draft.bank_name} maxLength={191} disabled={saving} onChange={event => change('bank_name', event.target.value)} /></div>
-          <div className="mg-field"><label htmlFor="account-owner-name">Chủ tài khoản *</label><input id="account-owner-name" value={draft.owner_name} maxLength={191} disabled={saving} onChange={event => change('owner_name', event.target.value)} /></div>
+          <div className="mg-field"><label htmlFor="account-owner-name">Chủ tài khoản *</label><SuggestionInput id="account-owner-name" value={draft.owner_name} suggestions={ownerSuggestions} dismissalKey="himoto:account-owner:hidden-suggestions:v1" disabled={saving} onChange={value => change('owner_name', value)} /><small>Gõ mới hoặc chọn gợi ý. Nút × chỉ xóa gợi ý trên trình duyệt này.</small></div>
           <div className="mg-field"><label htmlFor="account-number">Số tài khoản *</label><input id="account-number" value={draft.account_number} maxLength={191} disabled={saving} onChange={event => change('account_number', event.target.value)} /></div>
         </>}
         <div className="mg-field"><label htmlFor="account-opening">Số dư đầu kỳ (₫)</label><input id="account-opening" type="number" step="1" value={draft.opening_balance} disabled={saving} onChange={event => change('opening_balance', event.target.value)} /></div>
