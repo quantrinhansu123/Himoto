@@ -1,0 +1,163 @@
+{
+  "screens": [
+    {
+      "width": 1440,
+      "panel": "cashbook-income",
+      "pageOverflow": false,
+      "canScroll": true,
+      "columnWidths": [
+        40,
+        85,
+        105,
+        90,
+        115,
+        160,
+        135,
+        125,
+        170,
+        240,
+        160,
+        220,
+        300
+      ],
+      "rowHeight": 81.421875
+    },
+    {
+      "width": 1440,
+      "panel": "cashbook-expense",
+      "pageOverflow": false,
+      "canScroll": true,
+      "columnWidths": [
+        40,
+        85,
+        105,
+        90,
+        115,
+        160,
+        135,
+        125,
+        170,
+        240,
+        160,
+        220,
+        300
+      ],
+      "rowHeight": 121.703125
+    },
+    {
+      "width": 1270,
+      "panel": "cashbook-income",
+      "pageOverflow": false,
+      "canScroll": true,
+      "columnWidths": [
+        40,
+        85,
+        105,
+        90,
+        115,
+        160,
+        135,
+        125,
+        170,
+        240,
+        160,
+        220,
+        300
+      ],
+      "rowHeight": 81.421875
+    },
+    {
+      "width": 1270,
+      "panel": "cashbook-expense",
+      "pageOverflow": false,
+      "canScroll": true,
+      "columnWidths": [
+        40,
+        85,
+        105,
+        90,
+        115,
+        160,
+        135,
+        125,
+        170,
+        240,
+        160,
+        220,
+        300
+      ],
+      "rowHeight": 121.703125
+    },
+    {
+      "width": 1024,
+      "panel": "cashbook-income",
+      "pageOverflow": false,
+      "canScroll": true,
+      "columnWidths": [
+        40,
+        85,
+        105,
+        90,
+        115,
+        160,
+        135,
+        125,
+        170,
+        240,
+        160,
+        220,
+        300
+      ],
+      "rowHeight": 81.421875
+    },
+    {
+      "width": 1024,
+      "panel": "cashbook-expense",
+      "pageOverflow": false,
+      "canScroll": true,
+      "columnWidths": [
+        40,
+        85,
+        105,
+        90,
+        115,
+        160,
+        135,
+        125,
+        170,
+        240,
+        160,
+        220,
+        300
+      ],
+      "rowHeight": 121.703125
+    },
+    {
+      "width": 768,
+      "panel": "cashbook-income",
+      "mobileCards": true,
+      "pageOverflow": false
+    },
+    {
+      "width": 768,
+      "panel": "cashbook-expense",
+      "mobileCards": true,
+      "pageOverflow": false
+    },
+    {
+      "width": 375,
+      "panel": "cashbook-income",
+      "mobileCards": true,
+      "pageOverflow": false
+    },
+    {
+      "width": 375,
+      "panel": "cashbook-expense",
+      "mobileCards": true,
+      "pageOverflow": false
+    }
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequests": [],
+  "businessWrites": []
+}

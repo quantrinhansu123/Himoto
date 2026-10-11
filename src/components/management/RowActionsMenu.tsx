@@ -41,12 +41,18 @@ export function RowActionsMenu({ label, actions, busy, triggerLabel, disabled }:
 
   useEffect(() => {
     if (!open) return;
+    const anchor = triggerRef.current?.getBoundingClientRect();
     menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
       if (!menuRef.current?.contains(target) && !triggerRef.current?.contains(target)) close();
     };
-    const onScroll = (event: Event) => { if (!menuRef.current?.contains(event.target as Node)) close(); };
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Node && menuRef.current?.contains(event.target)) return;
+      const rect = triggerRef.current?.getBoundingClientRect();
+      // A queued scroll event from bringing the trigger into view must not close a new menu.
+      if (!rect || !anchor || Math.abs(rect.top - anchor.top) > 1 || Math.abs(rect.right - anchor.right) > 1) close();
+    };
     const onResize = () => close();
     document.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('scroll', onScroll, true);
@@ -86,6 +92,6 @@ export function RowActionsMenu({ label, actions, busy, triggerLabel, disabled }:
         disabled={action.disabled} title={action.title} onClick={() => { close(true); action.onSelect(); }}>
         {action.icon}<span>{action.label}</span>
       </button>)}
-    </div>, document.body)}
+    </div>, triggerRef.current?.closest('dialog') || document.body)}
   </>;
 }

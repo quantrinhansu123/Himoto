@@ -16,6 +16,7 @@ import { CashbookFilters, CashbookRow, EMPTY_CASHBOOK_FILTERS, filterCashbookRow
 import { CashbookAccount, createApiCashbookRepository, loadCashbookAccounts } from '@/lib/management/cashbook-repository';
 import { ManagementRow } from '@/lib/management/types';
 import { formatMoney } from '@/lib/formatters';
+import { MobileDetailsCard } from './MobileDetailsCard';
 
 const SECTIONS = [
   { id: 'details', label: 'Chi tiết' },
@@ -64,7 +65,15 @@ function StoreRelatedList({ kind, storeId, onOpenList, onClose }: { kind: ListSe
     <label className="mg-search mg-store-detail-search"><Search size={17} /><span className="mg-sr-only">Tìm {config.title.toLowerCase()} của cơ sở</span>
       <input type="search" placeholder={config.searchPlaceholder} value={search} onChange={event => setSearch(event.target.value)} />
       {search && <button type="button" aria-label="Xóa từ khóa" onClick={() => setSearch('')}><X size={15} /></button>}</label>
-    <div className="mg-table-scroll mg-store-detail-table" tabIndex={0} role="region" aria-label={`Bảng ${config.title.toLowerCase()} của cơ sở`}>
+    <div className="mg-mobile-records" aria-busy={loading}>
+      {loading ? <p className="mg-contract-history-state" role="status">Đang tải {config.title.toLowerCase()}…</p>
+        : resource.error ? <div className="mg-table-state mg-table-error" role="alert"><p>{resource.error}</p><button type="button" className="mg-button" onClick={() => void ensureData([kind], true).catch(() => {})}>Thử lại</button></div>
+        : !visible.length ? <p>{search ? 'Không tìm thấy kết quả' : `Cơ sở chưa có ${config.singular}`}</p>
+        : <ul className="mg-mobile-card-list">{visible.map(row => <MobileDetailsCard key={row.id} title={String(kind === 'contracts' ? row.customer_name || row.code : row.name)}
+          summary={<><span>{String(row.license || row.phone || row.code || '—')}</span><span>{optionLabel(config, 'status', row.status)}</span></>}
+          fields={columns.map(column => [column.label, kind === 'contracts' && column.key === 'code' ? <Link href={`/contracts?contract_id=${row.id}`} onClick={onClose}>{row.code || '—'}</Link> : <Cell row={row} column={column} config={config} />] as const)} />)}</ul>}
+    </div>
+    <div className="mg-table-scroll mg-store-detail-table mg-desktop-records" tabIndex={0} role="region" aria-label={`Bảng ${config.title.toLowerCase()} của cơ sở`}>
       <table className={`mg-table mg-table-${kind}`} aria-busy={loading}><caption className="mg-sr-only">{config.title} của cơ sở</caption>
         <thead><tr><th scope="col" className="mg-index">STT</th>{columns.map(column => <th key={column.key} scope="col" className={column.align === 'right' ? 'mg-align-right' : ''}>{column.label}</th>)}</tr></thead>
         <tbody>{loading ? <tr><td colSpan={columns.length + 1}><div className="mg-table-state" role="status"><LoaderCircle size={25} className="mg-spin" /><strong>Đang tải {config.title.toLowerCase()}…</strong></div></td></tr>

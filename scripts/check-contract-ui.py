@@ -231,14 +231,15 @@ with sync_playwright() as p:
     expect(preview).to_be_visible()
     assert preview.locator('.mg-dialog-header button').evaluate('(button) => button.getBoundingClientRect().right <= window.innerWidth && button.getBoundingClientRect().width >= 28')
     viewport = preview.locator('.mg-contract-paper-scroll')
-    assert viewport.evaluate('(node) => node.scrollWidth > node.clientWidth')
-    viewport.evaluate('(node) => { node.scrollLeft = 500; }')
-    assert viewport.evaluate('(node) => node.scrollLeft') > 0
+    page.wait_for_function('document.querySelector(".mg-contract-paper-scroll").scrollWidth <= document.querySelector(".mg-contract-paper-scroll").clientWidth + 1')
+    preview.get_by_role('button', name='Phóng to mẫu in', exact=True).click()
+    page.wait_for_function('document.querySelector(".mg-contract-paper-scroll").scrollWidth > document.querySelector(".mg-contract-paper-scroll").clientWidth')
+    preview.get_by_role('button', name='Vừa màn hình', exact=True).click()
     assert not page.evaluate('document.documentElement.scrollWidth > window.innerWidth')
     preview.screenshot(path=str(output / 'print-preview-375.png'))
     page.keyboard.press('Escape'); expect(preview).to_have_count(0)
     page.keyboard.press('Escape'); expect(form).to_have_count(0)
-    checks.append('375px form and nested popup contain keyboard focus, preserve URL and scroll the paper without page overflow')
+    checks.append('375px form and nested popup contain keyboard focus; paper fits the phone and supports zoom without page overflow')
 
     assert not writes, writes
     assert not errors, errors

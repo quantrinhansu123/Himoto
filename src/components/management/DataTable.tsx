@@ -5,6 +5,7 @@ import { ManagementColumn, ManagementConfig, ManagementRow } from '@/lib/managem
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
 import { RowAction, RowActionsMenu } from './RowActionsMenu';
+import { ManagementMobileList } from './ManagementMobileList';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
@@ -63,6 +64,10 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     const isContract = config.kind === 'contracts';
     const isActiveContract = isContract && ['renting', 'overdue', 'wait_payment'].includes(row.status);
     const actions: RowAction[] = [{ key: 'view', label: 'Xem chi tiết', icon: <Eye size={16} />, onSelect: () => onView(row) }];
+    if (config.kind === 'vehicles' && onVehicleAction) actions.push(
+      { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') },
+      { key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') },
+    );
     if (isContract && onPrint) actions.push({ key: 'print', label: 'Điền và in hợp đồng', icon: <Printer size={16} />, onSelect: () => onPrint(row) });
     if (isContract && onPayment && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'payment', label: 'Thanh toán', icon: <Wallet size={16} />, onSelect: () => onPayment(row) });
     if (isActiveContract && onReturn) actions.push({ key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
@@ -82,8 +87,10 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (canDelete && onDelete) actions.push({ key: 'delete', label: `Xóa ${config.singular}`, danger: true, icon: <Trash2 size={16} />, onSelect: () => onDelete(row) });
     return actions;
   };
-  return <><p className="mg-table-mobile-hint">Vuốt ngang để xem thêm cột. Mở menu Thao tác để xem chi tiết.</p>
-  <div className="mg-table-scroll" tabIndex={0} role="region" aria-label={`Bảng ${config.title.toLowerCase()}, cuộn ngang để xem thêm cột`}>
+  return <><ManagementMobileList config={config} rows={rows} sortKey={sortKey} sortDirection={sortDirection} onSort={onSort} onView={onView}
+    actions={rowActions} busyId={cloningId ?? blacklistBusyId} loading={loading} error={error} isFiltered={isFiltered} onReset={onReset} onRetry={onRetry}
+    selectedIds={selectedIds} onSelectionChange={onSelectionChange} />
+  <div className="mg-table-scroll mg-desktop-records" tabIndex={0} role="region" aria-label={`Bảng ${config.title.toLowerCase()}, cuộn ngang để xem thêm cột`}>
     <table className={`mg-table mg-table-${config.kind}`} aria-busy={loading}>
       <thead><tr>{selectable && <th scope="col" className="mg-select-column"><input type="checkbox" aria-label="Chọn tất cả dòng trên trang này" disabled={loading || Boolean(error) || !rows.length}
         checked={rows.length > 0 && pageSelected === rows.length} ref={input => { if (input) input.indeterminate = pageSelected > 0 && pageSelected < rows.length; }}
@@ -99,11 +106,9 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
           <td className="mg-actions-column"><div className="mg-row-actions">{(() => {
             const actions = rowActions(row), label = row.license || row.code || row.name || '';
             const inline = INLINE_ACTION_KINDS.includes(config.kind) ? actions.filter(action => INLINE_ACTION_KEYS[action.key]) : [];
-            const rest = actions.filter(action => !inline.includes(action));
-            return <>{config.kind === 'vehicles' && onVehicleAction && <RowActionsMenu label={`Hành động xe ${label}`.trim()} triggerLabel={<>Hành động xe<ChevronDown size={14} /></>} actions={[
-                { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') },
-                { key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') },
-              ]} />}
+            const vehicleActions = actions.filter(action => ['transfer', 'status'].includes(action.key));
+            const rest = actions.filter(action => !inline.includes(action) && !vehicleActions.includes(action));
+            return <>{vehicleActions.length > 0 && <RowActionsMenu label={`Hành động xe ${label}`.trim()} triggerLabel={<>Hành động xe<ChevronDown size={14} /></>} actions={vehicleActions} />}
               {inline.map(action => <button key={action.key} type="button" className={`mg-icon-button${action.danger ? ' mg-icon-button-danger' : ''}`} disabled={action.disabled}
               aria-label={`${INLINE_ACTION_KEYS[action.key]} ${label}`.trim()} title={INLINE_ACTION_KEYS[action.key]} onClick={action.onSelect}>{action.icon}</button>)}
               {rest.length > 0 && <RowActionsMenu label={`Thao tác ${row.code || row.name || ''}`.trim()} actions={rest} busy={cloningId === row.id || blacklistBusyId === row.id} />}</>;

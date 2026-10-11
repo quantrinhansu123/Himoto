@@ -1,0 +1,16 @@
+{
+  "passed": 8,
+  "checks": [
+    "five lists use compact cards at 320x740",
+    "five lists use compact cards at 375x812",
+    "five lists use compact cards at 768x1024",
+    "five lists use compact cards at 844x390",
+    "desktop retains five full tables at 1440px",
+    "selection, select all, pagination, sorting, filtering and empty state work without opening details",
+    "a queued scroll event with an unchanged anchor does not close a newly opened menu",
+    "mobile error state retries successfully"
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequestsBlocked": [],
+  "realBusinessWrites": 0
+}

@@ -1,0 +1,23 @@
+{
+  "passed": 15,
+  "checks": [
+    "nine routes retain usable touch controls, readable inputs and cards without visible tables at 320x812",
+    "card sorting, action menu, five contract tabs, dialog footer and full navigation remain accessible at 320x812",
+    "nine routes retain usable touch controls, readable inputs and cards without visible tables at 375x812",
+    "card sorting, action menu, five contract tabs, dialog footer and full navigation remain accessible at 375x812",
+    "nine routes retain usable touch controls, readable inputs and cards without visible tables at 390x844",
+    "card sorting, action menu, five contract tabs, dialog footer and full navigation remain accessible at 390x844",
+    "nine routes retain usable touch controls, readable inputs and cards without visible tables at 430x932",
+    "card sorting, action menu, five contract tabs, dialog footer and full navigation remain accessible at 430x932",
+    "nine routes retain usable touch controls, readable inputs and cards without visible tables at 768x1024",
+    "card sorting, action menu, five contract tabs, dialog footer and full navigation remain accessible at 768x1024",
+    "nine routes retain usable touch controls, readable inputs and cards without visible tables at 812x375",
+    "card sorting, action menu, five contract tabs, dialog footer and full navigation remain accessible at 812x375",
+    "compact cards, sorting and account menu fit a phone without a visible record table",
+    "vehicle/customer/store/staff details and customer/store/duty forms fit a phone without saving data",
+    "login retains 16px inputs and fits narrow phones and landscape"
+  ],
+  "routeViewports": 54,
+  "javascriptErrors": [],
+  "businessWrites": 0
+}

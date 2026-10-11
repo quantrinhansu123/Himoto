@@ -5,6 +5,7 @@ import { Banknote, Eye, FileSearch, Landmark, LoaderCircle, Pencil, Plus, Rotate
 import type { CashbookAccount } from '@/lib/management/cashbook-repository';
 import { AccountDialogMode, CashbookAccountDialog } from './CashbookAccountDialog';
 import { useManagement } from './ManagementProvider';
+import { RowActionsMenu } from './RowActionsMenu';
 
 const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)} ₫`;
 const typeLabel = (account: CashbookAccount) => account.kind === 'cash' ? 'Tiền mặt' : account.owner_type === 'company' ? 'TK công ty' : 'Ngân hàng';
@@ -21,7 +22,24 @@ export function CashbookAccounts({ accounts, loading, error, onRetry }: Props) {
       <span className="mg-cashbook-panel-description">Tính trên toàn bộ phiếu, không theo bộ lọc ngày</span>
       <button type="button" className="mg-button mg-button-primary mg-cashbook-account-add" onClick={() => setCreating(true)}><Plus size={16} />Thêm tài khoản</button>
     </div>
-    <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Bảng danh sách tài khoản và số dư">
+    <div className="mg-mobile-records" aria-busy={loading}>
+      {loading ? <div className="mg-table-state" role="status"><LoaderCircle size={25} className="mg-spin" /><strong>Đang tính số dư…</strong></div>
+        : error ? <div className="mg-table-state mg-table-error" role="alert"><strong>Không tải được danh sách tài khoản</strong><p>{error}</p><button type="button" className="mg-button" onClick={onRetry}>Thử lại</button></div>
+        : !accounts.length ? <div className="mg-table-state"><strong>Chưa có tài khoản cho cơ sở này</strong></div>
+        : <><ul className="mg-mobile-card-list">{accounts.map(account => <li key={account.key} className="mg-mobile-record-card">
+          <button type="button" className="mg-mobile-card-main" onClick={() => setTarget({ account, mode: 'view' })}>
+            <span className="mg-mobile-card-title">{account.name || account.bank_name || account.label}</span>
+            <span className="mg-mobile-card-summary"><span>{typeLabel(account)}</span><span>{account.store_name || (account.owner_type === 'company' ? 'Toàn công ty' : '—')}</span></span>
+            <span className={`mg-mobile-card-amount${account.balance < 0 ? ' is-negative' : ''}`}>Số dư {money(account.balance)}{account.status.toLowerCase() !== 'active' && ' · Ngừng sử dụng'}</span>
+          </button>
+          <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${account.label}`} actions={[
+            { key: 'view', label: 'Xem chi tiết', icon: <Eye size={16} />, onSelect: () => setTarget({ account, mode: 'view' }) },
+            { key: 'edit', label: 'Sửa tài khoản', icon: <Pencil size={16} />, onSelect: () => setTarget({ account, mode: 'edit' }) },
+            { key: 'delete', label: 'Xóa tài khoản', icon: <Trash2 size={16} />, danger: true, onSelect: () => setTarget({ account, mode: 'delete' }) },
+          ]} /></div>
+        </li>)}</ul><p className="mg-mobile-list-total">Tổng số dư <strong>{money(total.balance)}</strong></p></>}
+    </div>
+    <div className="mg-table-scroll mg-desktop-records" tabIndex={0} role="region" aria-label="Bảng danh sách tài khoản và số dư">
       <table className="mg-table mg-cashbook-account-table" aria-busy={loading}><caption className="mg-sr-only">Danh sách tài khoản và số dư</caption>
         <thead><tr><th scope="col">Loại</th><th scope="col">Tài khoản</th><th scope="col">Cơ sở</th><th scope="col" className="mg-align-right">Số dư đầu kỳ</th><th scope="col" className="mg-align-right">Tổng thu</th><th scope="col" className="mg-align-right">Tổng chi</th><th scope="col" className="mg-align-right">Số dư</th><th scope="col" className="mg-align-right">Thao tác</th></tr></thead>
         <tbody>{loading ? <tr><td colSpan={8}><div className="mg-table-state" role="status"><LoaderCircle size={25} className="mg-spin" /><strong>Đang tính số dư…</strong></div></td></tr>

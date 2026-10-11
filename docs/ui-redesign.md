@@ -1,8 +1,8 @@
-# Giao diện HIMOTO — 2026-10-10
+# Giao diện HIMOTO
 
 Giao diện quản lý và đăng nhập dùng màu vàng thương hiệu trên nền trắng/xám, hệ token CSS thống nhất, bảng và bộ lọc gọn hơn, sidebar/topbar rõ trạng thái đang chọn, form/dialog thích ứng với màn hình nhỏ.
 
-Thay đổi ứng dụng chỉ nằm trong `src/styles/management.css` và `src/styles/login.css`. Giữ nguyên API, logic nghiệp vụ, cache, tải dữ liệu theo trang/tab/cơ sở và mẫu in hợp đồng.
+Đợt chỉnh giao diện ngày 2026-10-10 chỉ thay đổi `src/styles/management.css` và `src/styles/login.css`. Các cập nhật mobile ngày 2026-10-12 được ghi riêng bên dưới.
 
 ## Các lỗi đã sửa sau review
 
@@ -34,3 +34,47 @@ QA chạy trên production build cục bộ, Chromium, với API nghiệp vụ �
 | Form hợp đồng, tab khách hàng | [Ảnh](qa/redesign/form-customer-1440.png) | [Ảnh](qa/redesign/form-customer-768.png) | [Ảnh](qa/redesign/form-customer-375.png) |
 | Sổ quỹ / Sổ két | [Ảnh](qa/redesign/cashbook-1440.png) | [Ảnh](qa/redesign/cashbook-768.png) | [Ảnh](qa/redesign/cashbook-375.png) |
 | Đăng nhập | [Ảnh](qa/redesign/login-1440.png) | [Ảnh](qa/redesign/login-768.png) | [Ảnh](qa/redesign/login-375.png) |
+
+## Thẻ mobile và xem mẫu in — 2026-10-12
+
+Ở màn hình rộng tối đa 900px, danh sách xe, khách hàng, hợp đồng (gồm nháp/VAT), nhân sự và cơ sở dùng thẻ chữ nhật ngắn. Mỗi thẻ có tên, thông tin nhận diện/liên hệ cơ bản và trạng thái. Chạm phần nội dung mở chi tiết; nút ba chấm chứa các thao tác theo quyền hiện có, gồm chuyển xe/đổi trạng thái. Checkbox chọn nhiều đứng riêng để không mở nhầm chi tiết. Sắp xếp, bộ lọc và phân trang vẫn dùng chung dữ liệu với desktop.
+
+Mẫu xem trước tự vừa chiều rộng màn hình, xoay từng trang thành chiều dọc khi cầm điện thoại dọc và chuyển lại ngang khi xoay điện thoại. Có nút xoay trang, phóng to/thu nhỏ và vừa màn hình để đối chiếu thông tin với khách. Ở điện thoại nằm ngang, thanh công cụ gọn hơn và vùng đọc hợp đồng có cuộn riêng. Hợp đồng nhiều trang được xếp liên tiếp; xoay/phóng to chỉ áp dụng cho bản xem trước. Khi in/PDF vẫn dùng nội dung, kiểu chữ và khổ A4 ngang ban đầu.
+
+Kiểm chứng trên production build cục bộ với API nghiệp vụ mô phỏng, không ghi dữ liệu thật:
+
+- `npm.cmd run lint:management`, `npm.cmd run typecheck`, `npm.cmd run build`: qua.
+- `npm.cmd run test:management-loading`: 12 nhóm kiểm tra tải/cache dữ liệu.
+- `scripts/check-mobile-cards-ui.py`: 8 nhóm qua; năm danh mục ở 320/375/768/844/1440px; mở chi tiết, menu, chọn nhiều, phân trang, sắp xếp, lọc, danh sách trống và thử lại khi lỗi.
+- `scripts/check-contract-layout-ui.py`: 9 nhóm qua; mẫu xem trước ở 320/375/667/844px, xoay/phóng to, vùng đọc nằm ngang, các trang phụ lục và PDF A4 ngang một/hai trang từ desktop/mobile.
+- `scripts/check-management-mobile-ui.py`: 15 nhóm qua, 54 màn hình trên chín trang ở 320/375/390/430/768/812px, gồm điều hướng, menu, form, chi tiết và đăng nhập; không có lỗi JavaScript.
+
+Ảnh dùng dữ liệu QA mô phỏng: [xe](qa/mobile-cards/vehicles-375.png), [hợp đồng](qa/mobile-cards/contracts-375.png), [khách hàng](qa/mobile-cards/customers-375.png), [nhân sự](qa/mobile-cards/staff-375.png), [cơ sở](qa/mobile-cards/stores-375.png), [mẫu in dọc](qa/mobile-print/print-preview-375.png), [mẫu in ngang](qa/mobile-print/print-preview-667.png).
+
+Kiểm tra bằng Chromium; chưa kiểm tra trực tiếp trên Safari/iPhone hoặc trình duyệt bên trong ứng dụng nhắn tin.
+
+## Thanh toán hợp đồng trên mobile — 2026-10-12
+
+Hộp thoại thanh toán trước đó vẫn xếp sáu số liệu thành một cột dài. Ở màn hình tối đa 600px, phần tổng tiền nay có hai cột, ba hàng: tiền thuê/tổng đã thu/còn thiếu bên trái, tiền cọc đã thu/đã trả/đang giữ bên phải. Giữ đầy đủ số liệu và chú thích công nợ không trừ cọc. Thu gọn khoảng cách ở tiêu đề và form; checkbox gia hạn đứng cùng dòng với tên xe, nhóm thao tác lịch sử xuống dòng theo chiều rộng màn hình.
+
+Kiểm chứng bằng Chromium trên production build cục bộ: chín nhóm kiểm tra ở 320/375/430/667/768/1440px, gồm chuyển nghiệp vụ thu công nợ/thu thêm/trả cọc/gia hạn, mở/quay lại mã QR, số tiền lớn và số liệu chưa đối chiếu. Không tràn ngang hộp thoại, nút cuối form nằm trong màn hình; ô nhập tối thiểu 44px, cỡ chữ 16px. Khối tổng tiền ở 375px cao khoảng 176px. `npm.cmd run build` qua; không có lỗi JavaScript và không ghi dữ liệu nghiệp vụ thật.
+
+Ảnh dữ liệu QA mô phỏng: [thanh toán mobile](qa/mobile-payment/payment-375.png), [desktop](qa/mobile-payment/payment-1440.png), [kết quả kiểm tra](qa/mobile-payment/results.json). Chưa kiểm tra Safari/iPhone thật.
+
+## Rà soát toàn sản phẩm trước khi push — 2026-10-12
+
+Bổ sung thẻ mobile cho các màn còn dùng bảng: Sổ quỹ (tài khoản, phiếu thu/chi), phiếu của từng tài khoản, danh sách liên quan trong chi tiết cơ sở, lịch sử xe, thời gian thuê từng xe và ba phần đối chiếu Excel (khách hàng, cơ sở theo căn cước, xe). Thẻ có thông tin ngắn, chạm để xem đầy đủ và menu ba chấm. Tài khoản mở hộp thoại chi tiết/sửa/xóa hiện có; phiếu giữ đủ 12 trường, chọn nhiều, sắp xếp và phân trang. Menu nằm trong hộp thoại đang mở để vẫn bấm được trên mobile. Bộ lọc ngày Sổ quỹ và các khối tổng tiền được xếp gọn hơn.
+
+Kiểm tra trên production build cuối với dữ liệu QA mô phỏng:
+
+- `npm.cmd run lint:management`, `npm.cmd run typecheck`, `npm.cmd run build`: qua.
+- Tải/cache dữ liệu: 12 nhóm; dữ liệu Sổ quỹ: sáu nhóm.
+- `scripts/check-management-mobile-ui.py`: 15 nhóm, 54 lượt trên chín trang ở 320/375/390/430/768/812px; không có bảng hiển thị trên mobile, không tràn ngang trang; gồm điều hướng, đăng nhập, form và chi tiết.
+- `scripts/check-mobile-cards-ui.py`: tám nhóm cho năm danh mục, thao tác, chọn nhiều, sắp xếp/phân trang/lọc và thử lại khi lỗi; desktop vẫn dùng bảng.
+- `scripts/check-mobile-product-ui.py`: 81 trường hợp ở 320/375/812px, gồm danh sách phụ, menu trong hộp thoại, đủ bảy tab chi tiết hợp đồng, trả xe/gia hạn/đổi xe, lịch sử xe và ba phần đối chiếu Excel. Ba yêu cầu đối chiếu Excel được mô phỏng, không gửi lệnh lưu thật.
+- `scripts/check-cashbook-layout-ui.py`: 10 trường hợp ở 1440/1270/1024/768/375px; desktop giữ 12 cột và cuộn bằng bàn phím; mobile mở thẻ để đọc đủ thông tin dài.
+- Thanh toán: chín nhóm qua; mẫu in/PDF: chín nhóm qua, giữ A4 ngang một/hai trang.
+
+Không có lỗi JavaScript hay ghi dữ liệu nghiệp vụ thật trong các kiểm tra giao diện. Phạm vi trình duyệt đã kiểm tra là Chromium; chưa xác nhận Safari/iPhone thật hoặc trình duyệt trong ứng dụng nhắn tin.
+
+Ảnh mới: [Sổ quỹ](qa/mobile-product/cashbook-375.png), [phiếu của tài khoản](qa/mobile-product/account-vouchers-375.png), [lịch sử xe](qa/mobile-product/vehicle-history-375.png), [Excel khách hàng](qa/mobile-product/excel-customer-375.png), [Excel cơ sở](qa/mobile-product/excel-store-375.png), [Excel xe](qa/mobile-product/excel-vehicle-375.png). Kết quả: [chi tiết/form](qa/mobile-product/results.json), [54 lượt màn hình](qa/mobile-cards/mobile-regression-results.json), [Sổ quỹ desktop/mobile](qa/mobile-product/cashbook-layout-results.json).

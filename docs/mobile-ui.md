@@ -1,5 +1,7 @@
 # Giao diện mobile — 11/10/2026
 
+Tài liệu này ghi đợt sửa ngày 11/10. Giao diện hiện tại ngày 12/10 đã chuyển danh sách, Sổ quỹ, các tab liên quan và đối chiếu Excel sang thẻ mobile; mẫu in có xoay/phóng to. Xem [bản cập nhật và kết quả kiểm tra](ui-redesign.md).
+
 Tối ưu màn hình đăng nhập và toàn bộ trang quản lý: xe, khách hàng, hợp đồng/VAT/Log, cơ sở, nhân sự, lịch trực và sổ quỹ. Chỉ sửa phần trình bày; giữ nguyên API, nghiệp vụ, cache, dynamic import và mẫu in hợp đồng.
 
 ## Thay đổi

@@ -7,6 +7,7 @@ import { CUSTOMER_STATUSES } from '@/lib/management/config';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 import { CustomerStoreExcelActions } from './CustomerStoreExcelActions';
+import { MobileDetailsCard } from './MobileDetailsCard';
 
 async function checkImport(rows: CustomerImportInput[], commit: boolean, allowIncomplete: boolean): Promise<CustomerImportResult> {
   const response = await fetch('/api/auth/customers/import', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ rows, commit, allowIncomplete }) });
@@ -102,7 +103,12 @@ function CustomerExcelDialog({ onClose }: { onClose: () => void }) {
       </div>
       {result && !result.committed && <>
         <label className="mg-import-filter"><input type="checkbox" checked={filter === 'issues'} onChange={event => { setFilter(event.target.checked ? 'issues' : 'all'); setPage(1); }} />Chỉ xem dòng lỗi / trùng</label>
-        <div className="mg-import-table-scroll" role="region" aria-label="Xem trước khách hàng Excel" tabIndex={0}>
+        <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{shown.slice((safePage - 1) * 20, safePage * 20).map(row => <MobileDetailsCard key={row.rowNumber} title={row.values.name || `Dòng ${row.rowNumber}`}
+          summary={<><span>Dòng {row.rowNumber} · {row.values.phone || '—'}</span><span>{row.state === 'valid' ? 'Hợp lệ' : row.state === 'duplicate' ? 'Trùng' : 'Lỗi'}</span></>}
+          fields={[["Dòng", row.rowNumber], ["Điện thoại", row.values.phone || '—'], ["CCCD / CMND", row.values.id_card || '—'], ["Email", row.values.email || '—'], ["Địa chỉ", row.values.address || '—'], ["Cơ sở", row.values.store || '—'],
+            ["Trạng thái", CUSTOMER_STATUSES.find(status => status.value === row.values.status)?.label || row.values.status], ["Ghi chú / cảnh báo", row.values.warning_note || '—'],
+            ["Kết quả", <>{row.state === 'valid' ? 'Hợp lệ' : row.state === 'duplicate' ? 'Trùng' : 'Lỗi'}{row.errors.map((message, i) => <p key={`e${i}`} className="mg-field-error">{message}</p>)}{row.warnings?.map((message, i) => <p key={`w${i}`}>{message}</p>)}</>]]} />)}</ul>{!shown.length && <p className="mg-import-empty">Không có dòng lỗi / trùng.</p>}</div>
+        <div className="mg-import-table-scroll mg-desktop-records" role="region" aria-label="Xem trước khách hàng Excel" tabIndex={0}>
           <table className="mg-table mg-import-table"><caption className="mg-sr-only">Kết quả kiểm tra từng dòng trong file Excel</caption><thead><tr><th scope="col">Dòng</th><th scope="col">Khách hàng</th><th scope="col">Điện thoại</th><th scope="col">CCCD / CMND</th><th scope="col">Email</th><th scope="col">Địa chỉ</th><th scope="col">Cơ sở</th><th scope="col">Trạng thái</th><th scope="col">Ghi chú / cảnh báo</th><th scope="col">Kết quả</th></tr></thead>
             <tbody>{shown.slice((safePage - 1) * 20, safePage * 20).map(row => <tr key={row.rowNumber}><td>{row.rowNumber}</td><td>{row.values.name || '—'}</td><td>{row.values.phone || '—'}</td><td>{row.values.id_card || '—'}</td><td>{row.values.email || '—'}</td><td>{row.values.address || '—'}</td><td>{row.values.store || '—'}</td><td>{CUSTOMER_STATUSES.find(status => status.value === row.values.status)?.label || row.values.status}</td><td>{row.values.warning_note || '—'}</td><td className="mg-import-result"><strong>{row.state === 'valid' ? 'Hợp lệ' : row.state === 'duplicate' ? 'Trùng' : 'Lỗi'}</strong>{row.errors.map((message, i) => <p key={`error-${i}`}>{message}</p>)}{row.warnings?.map((message, i) => <p key={`warning-${i}`}>{message}</p>)}</td></tr>)}</tbody>
           </table>{!shown.length && <p className="mg-import-empty">Không có dòng lỗi / trùng.</p>}

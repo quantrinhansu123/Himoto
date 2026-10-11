@@ -11,6 +11,7 @@ import { CHANGE_LABELS, ContractHistory, loadContractHistory } from '@/lib/manag
 import { ManagementRow } from '@/lib/management/types';
 import { MANAGEMENT_CONFIG, optionLabel } from '@/lib/management/config';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
+import { MobileDetailsCard } from './MobileDetailsCard';
 
 const SECTIONS = [
   { id: 'vehicle', label: 'Thông tin phương tiện' },
@@ -123,7 +124,10 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         <div className="mg-contract-cost-section"><h3>Thời gian thuê</h3>{fields([
           ['Thuê lúc', dateTime(draft.start_date)], ['Hẹn trả', dateTime(draft.end_date)], ['Số ngày thuê', rentalDays(draft.start_date, draft.end_date)],
         ])}
-          {sourceVehicles.some(vehicle => vehicle.rent_at) && <table className="mg-contract-days">
+          {sourceVehicles.some(vehicle => vehicle.rent_at) && <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{sourceVehicles.map((vehicle, index) => <MobileDetailsCard key={index} title={text(vehicle.license || vehicle.name)}
+            summary={<><span>{rentalDays(vehicle.rent_at, vehicle.completed_at || vehicle.return_at)}</span><span>{vehicle.completed_at ? 'Đã trả' : 'Đang thuê'}</span></>}
+            fields={[["Thuê lúc", dateTime(String(vehicle.rent_at || ''))], ["Hẹn trả / Đã trả", dateTime(String(vehicle.completed_at || vehicle.return_at || ''))], ["Số ngày thuê", rentalDays(vehicle.rent_at, vehicle.completed_at || vehicle.return_at)]]} />)}</ul></div>}
+          {sourceVehicles.some(vehicle => vehicle.rent_at) && <table className="mg-contract-days mg-desktop-records">
             <thead><tr><th>Xe</th><th>Thuê lúc</th><th>Hẹn trả / Đã trả</th><th>Số ngày thuê</th></tr></thead>
             <tbody>{sourceVehicles.map((vehicle, index) => {
               const end = vehicle.completed_at || vehicle.return_at;

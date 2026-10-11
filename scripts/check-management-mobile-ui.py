@@ -25,7 +25,7 @@ transactions = [dict(id=90+i, type='in' if i == 0 else 'out', created_at='2026-1
     account='Ngân hàng QA · CHỦ TÀI KHOẢN QA · 000000000000', reason='Phiếu thu chi QA', content='Nội dung kiểm tra bố cục mobile với dữ liệu dài.') for i in range(2)]
 endpoints = {'/api/auth/stores': stores, '/api/auth/hr/staff': staff, '/api/auth/vehicle/vehicles': vehicles,
     '/api/auth/customers': customers, '/api/auth/order/car-rental': contracts, '/api/auth/transactions': transactions,
-    '/api/auth/stores/managers': [dict(id=8,name='Người phụ trách QA')]}
+    '/api/auth/stores/managers': [dict(id=8,name='Người phụ trách QA')], '/api/auth/cashbook/accounts': []}
 
 def mock_api(route):
     parsed = urlparse(route.request.url)
@@ -71,6 +71,7 @@ with sync_playwright() as p:
             expect(page.locator('.mg-app h1')).to_be_visible()
             mask_account(page)
             assert page.evaluate('width => document.documentElement.scrollWidth <= width', width), f'Page overflow: {path} {width}'
+            assert not page.locator('.mg-app table:visible').count(), f'Visible mobile table: {path} {width}'
             for selector in ['.mg-mobile-toggle','.mg-user-menu summary','.mg-heading-actions .mg-button']:
                 for control in page.locator(selector).all():
                     if control.is_visible():
@@ -80,6 +81,8 @@ with sync_playwright() as p:
                 if field.is_visible():
                     assert field.evaluate('el => parseFloat(getComputedStyle(el).fontSize)') >= 16, f'Small input text: {path} {width}'
             for region in page.locator('.mg-table-scroll').all():
+                if not region.is_visible():
+                    continue
                 bounds(region, width)
                 if region.evaluate('el => el.scrollWidth > el.clientWidth'):
                     region.evaluate('el => {el.scrollLeft = el.scrollWidth;}')
@@ -87,18 +90,17 @@ with sync_playwright() as p:
                     region.evaluate('el => {el.scrollLeft = 0;}')
             if width in [375,768]:
                 page.screenshot(path=str(out/f'{path.replace("/","-")}-{width}.png'), full_page=True)
-        checks.append(f'nine routes retain usable touch controls, readable inputs and contained tables at {width}x{height}')
+        checks.append(f'nine routes retain usable touch controls, readable inputs and cards without visible tables at {width}x{height}')
 
         page.goto(args.url+'/contracts', wait_until='networkidle')
         mask_account(page)
-        column_picker=page.locator('.mg-column-menu')
-        column_picker.locator('summary').click()
-        bounds(column_picker.locator('.mg-popover'),width,height)
+        expect(page.locator('.mg-column-menu')).not_to_be_visible()
+        sort_control=page.get_by_label('Sắp xếp danh sách',exact=True)
+        sort_control.scroll_into_view_if_needed()
+        bounds(sort_control,width,height)
         if width == 375:
-            page.screenshot(path=str(out/'column-picker-375.png'))
-        page.keyboard.press('Escape')
-        expect(column_picker.locator('.mg-popover')).not_to_be_visible()
-        trigger = page.locator('.mg-row-menu-trigger').first
+            page.screenshot(path=str(out/'cards-sort-375.png'))
+        trigger = page.locator('.mg-mobile-card-actions .mg-row-menu-trigger').first
         trigger.scroll_into_view_if_needed()
         page.wait_for_timeout(100)
         trigger.click()
@@ -142,31 +144,24 @@ with sync_playwright() as p:
             page.screenshot(path=str(out/'navigation-375.png'))
         page.keyboard.press('Escape')
         expect(drawer).not_to_be_visible()
-        checks.append(f'column picker, action menu, five contract tabs, dialog footer and full navigation remain accessible at {width}x{height}')
+        checks.append(f'card sorting, action menu, five contract tabs, dialog footer and full navigation remain accessible at {width}x{height}')
 
     page.set_viewport_size({'width':375,'height':812})
     page.goto(args.url+'/vehicles',wait_until='networkidle')
-    column_menu = page.locator('.mg-column-menu')
-    column_menu.locator('summary').click()
-    bounds(column_menu.locator('.mg-popover'),375,812)
-    code_option = column_menu.get_by_label('Mã',exact=True)
-    code_option.uncheck()
-    page.keyboard.press('Escape')
-    expect(page.locator('tbody .mg-identity strong').first).to_have_text('Xe QA')
-    table_region = page.locator('.mg-table-scroll')
-    table_region.evaluate('el => {el.scrollLeft=el.scrollWidth;}')
+    expect(page.locator('.mg-mobile-card-title').first).to_have_text('Xe QA')
+    expect(page.locator('.mg-desktop-records')).not_to_be_visible()
+    bounds(page.get_by_label('Sắp xếp danh sách',exact=True),375,812)
     assert page.evaluate('document.documentElement.scrollWidth <= 375')
-    table_region.evaluate('el => {el.scrollLeft=0;}')
     page.locator('.mg-user-menu summary').click()
     bounds(page.locator('.mg-user-menu .mg-popover'),375,812)
     page.locator('.mg-user-menu summary').click()
     expect(page.locator('.mg-user-menu .mg-popover')).not_to_be_visible()
-    checks.append('column picker and account menu fit a phone; hiding the code column preserves other fields')
+    checks.append('compact cards, sorting and account menu fit a phone without a visible record table')
 
     for path in ['vehicles','customers','stores','staff']:
         page.goto(args.url+'/'+path,wait_until='networkidle')
         mask_account(page)
-        detail_trigger=page.locator('.mg-row-menu-trigger').first
+        detail_trigger=page.locator('.mg-mobile-card-actions .mg-row-menu-trigger').first
         detail_trigger.scroll_into_view_if_needed()
         page.wait_for_timeout(100)
         detail_trigger.click()

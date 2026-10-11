@@ -1,7 +1,9 @@
+import { ComponentType, Fragment, ReactNode } from 'react';
 import { LegacyContractDocument } from '@/lib/management/contract-document';
 
 // Preserve the legacy legal template; current fees and receipt splits use an appendix.
-export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) {
+export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContractDocument; pageWrapper?: ComponentType<{ children: ReactNode }> }) {
+  const Page = pageWrapper || Fragment;
   const representativeNameA = doc.lessor.representative_name || doc.lessor.authorization.party_name || doc.signers.signer_a_name || '................................';
   const primaryVehicle = doc.primary_vehicle || doc.vehicles[0];
   const collectionPages = Array.from({length:Math.max(Math.ceil(doc.extra_charges.length/12),Math.ceil(doc.collections.length/12))},(_,index)=>index);
@@ -13,7 +15,7 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 		</div>)}
 
 		{/* Trang 1: A4 Ngang gồm Hợp đồng (Trái) & Phụ lục + Bảng trả xe (Phải) */}
-		<div className="contract-page a4-landscape">
+		<Page><div className="contract-page a4-landscape">
 			<div className="contract-two-columns">
 				{/* CỘT TRÁI: HỢP ĐỒNG THUÊ XE */}
 				<div className="contract-col col-left">
@@ -256,10 +258,10 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 					</div>
 				</div>
 			</div>
-		</div>
+		</div></Page>
 
 		{/* Trang 2 (Tùy chọn): Phụ lục danh sách xe thuê nếu có từ 2 xe trở lên */}
-		{Boolean(doc.vehicles_count > 1) && (<div className="contract-page a4-landscape page-break mt-4">
+		{Boolean(doc.vehicles_count > 1) && (<Page><div className="contract-page a4-landscape page-break mt-4">
 			<div className="appendix-multi-vehicles p-3">
 				<div className="text-center mb-3">
 					<h4 className="font-weight-bold">PHỤ LỤC DANH SÁCH XE THUÊ</h4>
@@ -315,14 +317,14 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 					</div>
 				</div>
 			</div>
-		</div>)}
-    {collectionPages.map(index=><div className="contract-page a4-landscape page-break contract-payment-appendix" key={`collections-${index}`}>
+		</div></Page>)}
+    {collectionPages.map(index=><Page key={`collections-${index}`}><div className="contract-page a4-landscape page-break contract-payment-appendix">
       <h2>CHI TIẾT PHÍ VÀ CÁC KHOẢN ĐÃ THU</h2><p>Hợp đồng: <strong>{doc.contract_number}</strong> · Khách hàng: {doc.customer.name} · Cơ sở nguồn/doanh thu: {doc.lessor.branch_name}</p>
       {doc.extra_charges.slice(index*12,(index+1)*12).length>0 && <><h3>Phí khác trong hợp đồng</h3><table><thead><tr><th>Nội dung</th><th>Số tiền</th></tr></thead><tbody>{doc.extra_charges.slice(index*12,(index+1)*12).map((item,i)=><tr key={i}><td>{item.name}</td><td>{item.amount}</td></tr>)}</tbody></table></>}
       {doc.collections.slice(index*12,(index+1)*12).length>0 && <><h3>Các khoản đã nhận</h3><table><thead><tr><th>Loại tiền</th><th>Thời điểm nhận</th><th>Hình thức</th><th>Tài khoản nhận</th><th>Số tiền</th></tr></thead><tbody>{doc.collections.slice(index*12,(index+1)*12).map((item,i)=><tr key={i}><td>{item.purpose==='deposit' ? 'Cọc' : 'Thuê và phí khác'}</td><td>{item.paid_at_formatted}</td><td>{item.method}</td><td>{item.account}</td><td>{item.amount_formatted}</td></tr>)}</tbody></table></>}
       <p><strong>{doc.pricing.calculation_text}</strong> · Tiền cọc: {doc.deposit.deposit_amount_formatted}</p><p>Đã thu thuê/phí: <strong>{doc.pricing.paid_amount_formatted}</strong>{doc.deposit.paid_amount_formatted && <> · Đã nhận cọc: <strong>{doc.deposit.paid_amount_formatted}</strong></>}</p>
       {!doc.collections.length && <p>Chưa có khoản thu được ghi nhận.</p>}
-    </div>)}
+    </div></Page>)}
 	</div>
 );
 }

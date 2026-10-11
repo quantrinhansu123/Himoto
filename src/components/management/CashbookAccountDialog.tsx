@@ -7,6 +7,7 @@ import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs'
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 import { SuggestionInput } from './SuggestionInput';
+import { MobileDetailsCard } from './MobileDetailsCard';
 
 export type AccountDialogMode = 'create' | 'view' | 'edit' | 'delete';
 type AccountType = 'cash' | 'bank' | 'company';
@@ -20,7 +21,11 @@ function VoucherColumn({ title, kind, rows }: { title: string; kind: 'income' | 
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
   return <section className="mg-account-voucher-col" aria-label={title}>
     <h3>{title}<span className="mg-title-count">{rows.length}</span></h3>
-    <div className="mg-table-scroll"><table className="mg-table"><thead><tr><th scope="col">Ngày</th><th scope="col">Hợp đồng / nội dung</th><th scope="col" className="mg-align-right">Số tiền</th></tr></thead>
+    <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{rows.map(row => <MobileDetailsCard key={row.id} title={row.contract_code || row.content || `Phiếu #${row.id}`}
+      summary={<><span>{money(row.amount)}</span><span>{row.date ? row.date.split('-').reverse().join('/') : '—'}</span></>}
+      fields={[["ID", row.id], ["Ngày", row.date ? row.date.split('-').reverse().join('/') : '—'], ["Giờ", row.time || '—'], ["Hợp đồng", row.contract_code || '—'], ["Nội dung", row.content || '—'], ["Người thực hiện", row.user_name || '—'], ["Số tiền", money(row.amount)]]} />)}</ul>
+      {!rows.length && <p>Không có phiếu trong khoảng ngày đã chọn.</p>}<p className="mg-mobile-list-total">Tổng <strong>{money(total)}</strong></p></div>
+    <div className="mg-table-scroll mg-desktop-records"><table className="mg-table"><thead><tr><th scope="col">Ngày</th><th scope="col">Hợp đồng / nội dung</th><th scope="col" className="mg-align-right">Số tiền</th></tr></thead>
       <tbody>{rows.length ? rows.map(row => <tr key={row.id}><td>{row.date ? row.date.split('-').reverse().join('/') : '—'}{row.time && <small> {row.time.slice(0, 5)}</small>}</td>
         <td><span className="mg-cashbook-cell" title={row.content}>{row.contract_code || row.content || '—'}</span>{row.contract_code && row.content && <small>{row.content}</small>}</td>
         <td className={`mg-align-right mg-numeric ${kind === 'income' ? 'mg-cashbook-income-amount' : 'mg-cashbook-expense-amount'}`}>{money(row.amount)}</td></tr>)

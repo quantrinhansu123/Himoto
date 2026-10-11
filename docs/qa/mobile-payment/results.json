@@ -1,0 +1,460 @@
+{
+  "checks": [
+    {
+      "viewport": "320x740",
+      "width": 320,
+      "overflow": 0,
+      "summaryHeight": 192.359375,
+      "cells": [
+        {
+          "x": 29,
+          "y": 142.375
+        },
+        {
+          "x": 29,
+          "y": 195.5625
+        },
+        {
+          "x": 29,
+          "y": 248.75
+        },
+        {
+          "x": 168,
+          "y": 142.375
+        },
+        {
+          "x": 168,
+          "y": 195.5625
+        },
+        {
+          "x": 168,
+          "y": 248.75
+        }
+      ],
+      "footer": {
+        "top": 670,
+        "bottom": 739
+      },
+      "controls": [
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 66,
+          "font": 16
+        }
+      ]
+    },
+    {
+      "viewport": "375x812",
+      "width": 375,
+      "overflow": 0,
+      "summaryHeight": 175.5625,
+      "cells": [
+        {
+          "x": 29,
+          "y": 119.4375
+        },
+        {
+          "x": 29,
+          "y": 172.625
+        },
+        {
+          "x": 29,
+          "y": 225.8125
+        },
+        {
+          "x": 195.5,
+          "y": 119.4375
+        },
+        {
+          "x": 195.5,
+          "y": 172.625
+        },
+        {
+          "x": 195.5,
+          "y": 225.8125
+        }
+      ],
+      "footer": {
+        "top": 742,
+        "bottom": 811
+      },
+      "controls": [
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 66,
+          "font": 16
+        }
+      ]
+    },
+    {
+      "viewport": "430x932",
+      "width": 430,
+      "overflow": 0,
+      "summaryHeight": 175.5625,
+      "cells": [
+        {
+          "x": 29,
+          "y": 119.4375
+        },
+        {
+          "x": 29,
+          "y": 172.625
+        },
+        {
+          "x": 29,
+          "y": 225.8125
+        },
+        {
+          "x": 223,
+          "y": 119.4375
+        },
+        {
+          "x": 223,
+          "y": 172.625
+        },
+        {
+          "x": 223,
+          "y": 225.8125
+        }
+      ],
+      "footer": {
+        "top": 862,
+        "bottom": 931
+      },
+      "controls": [
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 66,
+          "font": 16
+        }
+      ]
+    },
+    {
+      "viewport": "667x375",
+      "width": 635,
+      "overflow": 0,
+      "summaryHeight": 134,
+      "cells": [
+        {
+          "x": 46,
+          "y": 116.9375
+        },
+        {
+          "x": 241.65625,
+          "y": 116.9375
+        },
+        {
+          "x": 437.328125,
+          "y": 116.9375
+        },
+        {
+          "x": 46,
+          "y": 174.9375
+        },
+        {
+          "x": 241.65625,
+          "y": 174.9375
+        },
+        {
+          "x": 437.328125,
+          "y": 174.9375
+        }
+      ],
+      "footer": {
+        "top": 289,
+        "bottom": 350
+      },
+      "controls": [
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 66,
+          "font": 16
+        }
+      ]
+    },
+    {
+      "viewport": "768x1024",
+      "width": 736,
+      "overflow": 0,
+      "summaryHeight": 134,
+      "cells": [
+        {
+          "x": 58,
+          "y": 146.9375
+        },
+        {
+          "x": 279.328125,
+          "y": 146.9375
+        },
+        {
+          "x": 500.65625,
+          "y": 146.9375
+        },
+        {
+          "x": 58,
+          "y": 204.9375
+        },
+        {
+          "x": 279.328125,
+          "y": 204.9375
+        },
+        {
+          "x": 500.65625,
+          "y": 204.9375
+        }
+      ],
+      "footer": {
+        "top": 926,
+        "bottom": 999
+      },
+      "controls": [
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 66,
+          "font": 16
+        }
+      ]
+    },
+    {
+      "viewport": "1440x1000",
+      "width": 760,
+      "overflow": 0,
+      "summaryHeight": 134,
+      "cells": [
+        {
+          "x": 382,
+          "y": 146.9375
+        },
+        {
+          "x": 611.328125,
+          "y": 146.9375
+        },
+        {
+          "x": 840.65625,
+          "y": 146.9375
+        },
+        {
+          "x": 382,
+          "y": 204.9375
+        },
+        {
+          "x": 611.328125,
+          "y": 204.9375
+        },
+        {
+          "x": 840.65625,
+          "y": 204.9375
+        }
+      ],
+      "footer": {
+        "top": 902,
+        "bottom": 975
+      },
+      "controls": [
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 44,
+          "font": 16
+        },
+        {
+          "height": 66,
+          "font": 16
+        }
+      ]
+    },
+    {
+      "check": "Switch debt / extra / refund / renewal without overflow"
+    },
+    {
+      "check": "QR review and back; no payment submitted"
+    },
+    {
+      "check": "Large amounts and unreconciled values at 320px"
+    }
+  ],
+  "javascript_errors": [],
+  "business_writes": 0,
+  "unexpected_requests": []
+}

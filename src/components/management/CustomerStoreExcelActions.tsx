@@ -6,6 +6,7 @@ import type { CustomerStoreInput, CustomerStoreResult } from '@/lib/management/c
 import { CustomerStorePreview, CustomerStoreProgress, previewCustomerStoreBatches, saveCustomerStoreBatches } from '@/lib/management/customer-store-batches';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
+import { MobileDetailsCard } from './MobileDetailsCard';
 
 async function checkStores(rows: CustomerStoreInput[], commit: boolean, revision = ''): Promise<CustomerStoreResult> {
   const response = await fetch('/api/auth/customers/match-stores', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ rows, commit, revision }) });
@@ -102,7 +103,11 @@ function CustomerStoreExcelDialog({ onClose }: { onClose: () => void }) {
       </div>
       {result && !result.committed && <>
         <label className="mg-import-filter"><input type="checkbox" checked={issuesOnly} onChange={event => { setIssuesOnly(event.target.checked); setPage(1); }} />Chỉ xem dòng lỗi</label>
-        <div className="mg-import-table-scroll" role="region" aria-label="Xem trước cơ sở theo căn cước" tabIndex={0}>
+        <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{shown.slice((safePage - 1) * 20, safePage * 20).map(row => <MobileDetailsCard key={row.rowNumber} title={row.customer_name || row.values.id_card || `Dòng ${row.rowNumber}`}
+          summary={<><span>Dòng {row.rowNumber} · {row.store_name || row.values.store || '—'}</span><span>{row.state === 'ready' ? 'Sẽ cập nhật' : row.state === 'unchanged' ? 'Đã đúng cơ sở' : 'Lỗi'}</span></>}
+          fields={[["Dòng", row.rowNumber], ["Căn cước", row.values.id_card || '—'], ["Khách hàng khớp", row.customer_id ? `${row.customer_name} (#${row.customer_id})` : '—'], ["Cơ sở hiện tại", row.previous_store_name || 'Chưa có cơ sở'], ["Cơ sở trong Excel", row.values.store || '—'], ["Cơ sở sẽ lưu", row.store_name || '—'],
+            ["Kết quả", <>{row.state === 'ready' ? 'Sẽ cập nhật' : row.state === 'unchanged' ? 'Đã đúng cơ sở' : 'Lỗi'}{row.errors.map((message, i) => <p key={i} className="mg-field-error">{message}</p>)}</>]]} />)}</ul>{!shown.length && <p className="mg-import-empty">Không có dòng lỗi.</p>}</div>
+        <div className="mg-import-table-scroll mg-desktop-records" role="region" aria-label="Xem trước cơ sở theo căn cước" tabIndex={0}>
           <table className="mg-table mg-import-table"><caption className="mg-sr-only">Đối chiếu căn cước, khách hàng và cơ sở từng dòng Excel</caption><thead><tr><th scope="col">Dòng</th><th scope="col">Căn cước</th><th scope="col">Khách hàng khớp</th><th scope="col">Cơ sở hiện tại</th><th scope="col">Cơ sở trong Excel</th><th scope="col">Cơ sở sẽ lưu</th><th scope="col">Kết quả</th></tr></thead>
             <tbody>{shown.slice((safePage - 1) * 20, safePage * 20).map(row => <tr key={row.rowNumber}><td>{row.rowNumber}</td><td>{row.values.id_card || '—'}</td><td>{row.customer_id ? `${row.customer_name} (#${row.customer_id})` : '—'}</td><td>{row.previous_store_name || 'Chưa có cơ sở'}</td><td>{row.values.store || '—'}</td><td>{row.store_name || '—'}</td><td className="mg-import-result"><strong>{row.state === 'ready' ? 'Sẽ cập nhật' : row.state === 'unchanged' ? 'Đã đúng cơ sở' : 'Lỗi'}</strong>{row.errors.map((message, i) => <p key={i}>{message}</p>)}</td></tr>)}</tbody>
           </table>{!shown.length && <p className="mg-import-empty">Không có dòng lỗi.</p>}

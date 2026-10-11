@@ -890,6 +890,7 @@
   scrollbar-color: var(--mg-slate-300) var(--mg-slate-50);
 }
 .mg-table-mobile-hint { display: none; }
+.mg-mobile-records { display: none; }
 .mg-table {
   width: 100%;
   border-collapse: separate;
@@ -1950,7 +1951,15 @@
   background: var(--mg-slate-200);
   max-width: 100%;
 }
-.mg-contract-paper-scroll .contract-print-wrapper { width: 285mm; }
+.mg-contract-paper-scroll .contract-print-wrapper { width: max-content; min-width: 100%; overflow: hidden; }
+.mg-contract-preview-page { position: relative; overflow: hidden; margin: 0 auto 16px; }
+.mg-contract-preview-page:last-child { margin-bottom: 0; }
+.mg-contract-preview-page-content { position: absolute; top: 0; left: 0; width: 285mm; transform-origin: top left; }
+.mg-contract-preview-page .contract-page.a4-landscape { margin: 0; }
+.mg-contract-preview-controls { display: flex; align-items: center; gap: 6px; padding: 8px 24px; border-bottom: 1px solid var(--mg-line); flex-wrap: wrap; }
+.mg-contract-preview-controls output { min-width: 48px; text-align: center; font-size: 12px; color: var(--mg-slate-600); }
+.mg-contract-preview-hint { margin: 0 0 0 auto; font-size: 12px; color: var(--mg-slate-600); }
+.mg-contract-paper-scroll .contract-print-wrapper .contract-watermark { font-size: 16px; border-width: 2px; padding: 6px 10px; max-width: 90%; white-space: normal; overflow-wrap: anywhere; }
 .mg-contract-print-frame {
   position: fixed;
   width: 1px;
@@ -3066,7 +3075,30 @@
   .mg-composer-person svg { flex-shrink: 0; margin-top: 2px; }
 
   .mg-transfer-qr dl > div { grid-template-columns: 1fr; gap: 2px; }
-  .mg-payment-totals, .mg-payment-fields, .mg-payment-history-columns { grid-template-columns: 1fr; }
+  .mg-payment-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mg-payment-totals > div { min-width: 0; }
+  .mg-payment-fields, .mg-payment-history-columns { grid-template-columns: 1fr; }
+  .mg-payment-dialog .mg-dialog-header { padding: max(12px, env(safe-area-inset-top)) 16px 12px; gap: 12px; }
+  .mg-payment-dialog .mg-dialog-header h2 { font-size: 17px; line-height: 1.35; }
+  .mg-payment-dialog .mg-payment-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(3, auto);
+    grid-auto-flow: column;
+    gap: 10px 16px;
+    padding: 12px;
+    margin-bottom: 14px;
+    align-items: start;
+  }
+  .mg-payment-dialog .mg-payment-totals > div { min-width: 0; }
+  .mg-payment-dialog .mg-payment-totals dt { line-height: 1.4; }
+  .mg-payment-dialog .mg-payment-totals dd { line-height: 1.4; }
+  .mg-payment-dialog .mg-payment-purpose { margin-bottom: 14px; }
+  .mg-payment-dialog .mg-payment-fields { gap: 12px; margin-bottom: 16px; }
+  .mg-payment-dialog .mg-renewal-pick-name { display: flex; gap: 8px; min-height: 44px; }
+  .mg-payment-dialog .mg-renewal-pick-name input { flex: 0 0 16px; width: 16px; height: 16px; }
+  .mg-payment-dialog .mg-payment-history-heading { flex-wrap: wrap; gap: 8px; margin: 16px 0 10px; }
+  .mg-payment-dialog .mg-payment-history-heading h3 { margin: 0; font-size: 14px; }
+  .mg-payment-dialog .mg-payment-history-actions { flex: 1 1 100%; justify-content: flex-start; }
   .mg-payment-dialog .mg-dialog-footer { flex-wrap: wrap; }
   .mg-payment-dialog .mg-dialog-footer button { flex: 1 1 auto; }
 
@@ -3198,6 +3230,9 @@
   .mg-import-upload input[type='file'] { font-size: 16px; min-height: 44px; }
   .mg-cashbook-select-label { grid-column: 1 / -1; }
   .mg-cashbook-filters .mg-date-filters label { display: grid; }
+  .mg-cashbook-filters .mg-date-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mg-cashbook-filters .mg-date-filters > span { grid-column: 1 / -1; }
+  .mg-cashbook-filters .mg-date-filters input { width: 100%; min-width: 0; }
   .mg-cashbook-panel-heading { padding: 14px 12px; }
   .mg-cashbook-panel-heading h2 { flex-wrap: wrap; }
   .mg-duty-toolbar { padding: 12px; gap: 12px; }
@@ -3275,6 +3310,69 @@
 .mg-vehicle-action-result li.is-warning > svg { color: #b45309; }
 .mg-vehicle-detail { width: 1240px; }
 .mg-vehicle-detail .mg-table-scroll { min-height: 0; max-height: 56dvh; }
+
+/* Compact record cards for phones, including landscape orientation. */
+@media (max-width: 900px) {
+  .mg-desktop-records { display: none; }
+  .mg-mobile-records { display: block; }
+  .mg-filter-controls .mg-column-menu { display: none; }
+  .mg-mobile-list-controls { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--mg-line); }
+  .mg-mobile-select-all { display: flex; align-items: center; gap: 6px; min-height: 44px; font-size: 12px; color: var(--mg-slate-600); white-space: nowrap; }
+  .mg-mobile-sort { min-width: 0; margin-left: auto; }
+  .mg-mobile-sort select { width: 100%; max-width: 160px; border: 1px solid var(--mg-line); border-radius: var(--mg-radius); padding: 0 8px; background: white; color: var(--mg-slate-700); }
+  .mg-mobile-card-list { list-style: none; padding: 12px; margin: 0; display: grid; gap: 8px; }
+  .mg-mobile-record-card { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--mg-line); border-radius: 10px; background: white; }
+  .mg-mobile-record-card.is-selected { border-color: var(--mg-brand-400); background: var(--mg-brand-50); }
+  .mg-mobile-card-select { width: 44px; flex: none; display: flex; justify-content: center; align-items: flex-start; padding-top: 16px; cursor: pointer; }
+  .mg-mobile-card-select input, .mg-mobile-select-all input { width: 18px; height: 18px; accent-color: var(--mg-brand-600); cursor: pointer; }
+  .mg-mobile-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 12px 4px 12px 12px; border: 0; border-radius: 9px; background: transparent; text-align: left; cursor: pointer; color: var(--mg-slate-800); font: inherit; }
+  .mg-mobile-card-select + .mg-mobile-card-main { padding-left: 0; }
+  .mg-mobile-card-main:active { background: var(--mg-slate-100); }
+  .mg-mobile-card-main:focus-visible { outline: 2px solid var(--mg-brand-600); outline-offset: -2px; }
+  .mg-mobile-card-title { font-size: 14px; font-weight: 650; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
+  .mg-mobile-card-summary { display: flex; gap: 6px; width: 100%; font-size: 12px; color: var(--mg-slate-600); line-height: 1.4; }
+  .mg-mobile-card-summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mg-mobile-card-summary > span + span::before { content: '·'; margin-right: 6px; }
+  .mg-mobile-card-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+  .mg-mobile-card-footer .mg-status { font-size: 10.5px; padding: 2px 6px; max-width: 100%; white-space: normal; }
+  .mg-mobile-card-extra { min-width: 0; font-size: 11px; color: var(--mg-slate-600); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mg-mobile-card-actions { flex: none; padding: 4px; }
+  .mg-mobile-card-actions .mg-icon-button { width: 44px; height: 44px; background: transparent; }
+  .mg-mobile-card-detail { flex: 1; min-width: 0; }
+  .mg-mobile-card-detail summary { min-height: 64px; list-style: none; }
+  .mg-mobile-card-detail summary::-webkit-details-marker { display: none; }
+  .mg-mobile-card-select + .mg-mobile-card-detail summary { padding-left: 0; }
+  .mg-mobile-detail-fields { display: grid; gap: 10px; margin: 0; padding: 4px 12px 12px; }
+  .mg-mobile-detail-fields dt { color: var(--mg-slate-500); font-size: 12px; }
+  .mg-mobile-detail-fields dd { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+  .mg-mobile-detail-fields dd p { margin: 4px 0; }
+  .mg-mobile-card-amount { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+  .mg-mobile-card-amount.is-negative { color: var(--mg-red-text); }
+  .mg-mobile-list-total { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px; margin: 0; border-top: 1px solid var(--mg-line); overflow-wrap: anywhere; }
+  .mg-cashbook-panel-heading > div { flex: 1; min-width: 0; }
+  .mg-vehicle-history-actions { flex-wrap: wrap; }
+  .mg-vehicle-history-actions select { flex: 1; min-width: 0; }
+  .mg-mobile-records .mg-table-state { min-height: 180px; }
+  .mg-contract-preview-controls { padding: 8px 12px; }
+  .mg-contract-preview-hint { flex-basis: 100%; margin: 0; }
+  .mg-contract-paper-scroll { padding: 12px; }
+  .mg-contract-print-toolbar p { line-height: 1.5; }
+}
+
+@media (max-width: 900px) and (max-height: 500px) {
+  .mg-contract-print-dialog[open] { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto minmax(0, 1fr) auto; width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; overflow: hidden; border-radius: 0; }
+  .mg-contract-print-dialog .mg-dialog-header { grid-column: 1 / -1; grid-row: 1; padding: 4px 12px; }
+  .mg-contract-print-dialog .mg-dialog-header h2 { font-size: 16px; }
+  .mg-contract-print-dialog .mg-dialog-header p, .mg-contract-print-toolbar p, .mg-contract-preview-hint { display: none; }
+  .mg-contract-print-toolbar { grid-column: 2; grid-row: 2; padding: 4px 8px; }
+  .mg-contract-print-toolbar .mg-button { width: auto; }
+  .mg-contract-preview-controls { grid-column: 1; grid-row: 2; padding: 4px 8px; gap: 2px; flex-wrap: nowrap; }
+  .mg-contract-preview-controls .mg-button { padding-inline: 8px; font-size: 12px; white-space: nowrap; }
+  .mg-contract-preview-controls output { min-width: 36px; }
+  .mg-contract-print-dialog > .mg-error-message { grid-column: 1 / -1; grid-row: 3; margin: 0; padding: 4px 12px; }
+  .mg-contract-paper-scroll { grid-column: 1 / -1; grid-row: 4; min-height: 0; padding: 8px; }
+  .mg-contract-print-dialog .mg-dialog-footer { grid-column: 1 / -1; grid-row: 5; position: static; padding: 4px 12px; }
+}
 .mg-vehicle-history-table { min-width: 1180px; }
 .mg-vehicle-history-note { white-space: normal; min-width: 220px; max-width: 320px; }
 .mg-vehicle-history-actions { display: flex; gap: 8px; align-items: center; }

@@ -33,6 +33,8 @@ def mock_api(route):
         route.fulfill(json={'status': 'success', 'data': records})
     elif endpoint == '/api/auth/stores':
         route.fulfill(json={'status': 'success', 'data': [dict(id=1, store_name='Cơ sở QA', status='opening')]})
+    elif endpoint == '/api/auth/cashbook/accounts':
+        route.fulfill(json={'status': 'success', 'data': []})
     elif endpoint in ['/api/session', '/api/auth/me']:
         route.fulfill(json={'user': {'id': 144, 'name': 'QA'}})
     else:
@@ -52,6 +54,21 @@ with sync_playwright() as p:
     for width, height in [(1440, 1000), (1270, 900), (1024, 900), (768, 1024), (375, 812)]:
         page.set_viewport_size({'width': width, 'height': height})
         panels = [page.locator('#cashbook-income'), page.locator('#cashbook-expense')]
+        if width <= 900:
+            for panel, record in zip(panels, records):
+                expect(panel.locator('.mg-desktop-records')).not_to_be_visible()
+                card = panel.locator('.mg-mobile-card-detail')
+                expect(card).to_have_count(1)
+                card.locator('summary').click()
+                expect(card.locator('dt')).to_have_count(12)
+                for key in ['payment_method', 'account', 'store_name', 'reason', 'content']:
+                    expect(card.get_by_text(record[key], exact=True)).to_have_count(1)
+                screens.append(dict(width=width, panel=panel.get_attribute('id'), mobileCards=True,
+                    pageOverflow=page.evaluate('document.documentElement.scrollWidth > innerWidth')))
+                card.locator('summary').click()
+            page.evaluate('window.scrollTo(0, 0)')
+            page.screenshot(path=str(output / f'cashbook-{width}.png'), full_page=True)
+            continue
         for panel, record in zip(panels, records):
             expect(panel.locator('tbody .mg-code')).to_have_text(str(record['id']))
             assert panel.locator('th button span').all_inner_texts() == columns
@@ -90,10 +107,13 @@ result = {'screens': screens, 'javascriptErrors': errors, 'unexpectedRequests': 
 assert not errors and not unexpected and not writes, 'QA must have no browser errors or unexpected/business writes'
 for screen in screens:
     assert not screen['pageOverflow'], f"Page overflow at {screen['width']}px"
+    if screen.get('mobileCards'):
+        continue
     assert screen['canScroll'], f"Wide table needs its own scroll region at {screen['width']}px"
-    assert min(screen['columnWidths'][7:]) >= 140, f"Last five columns are squeezed: {screen}"
+    assert len(screen['columnWidths']) == len(columns) + 1, 'Selection must keep all twelve data columns'
+    assert min(screen['columnWidths'][-5:]) >= 140, f"Last five columns are squeezed: {screen}"
     assert screen['rowHeight'] < 180, f"Long text causes excessive row height: {screen}"
 print(json.dumps({'passed': 10, 'viewportWidths': [1440,1270,1024,768,375],
-    'checks': ['both 12-column tables retain long content without narrow text columns or oversized rows',
-               'horizontal scrolling and keyboard access reach the last column without page overflow'],
+    'checks': ['desktop 12-column tables retain long content and keyboard access without page overflow',
+               'mobile cards expand to expose all twelve fields, including long account/content values'],
     'businessWrites': 0, 'javascriptErrors': errors}, indent=2))
