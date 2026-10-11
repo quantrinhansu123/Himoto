@@ -219,9 +219,9 @@ with sync_playwright() as playwright:
           const el = document.querySelector('.mg-contract-paper-scroll');
           return el && el.scrollWidth <= el.clientWidth + 1;
         }''')
-        expect(preview.get_by_role('button', name='Xoay trang', exact=True)).to_have_attribute('aria-pressed', 'true' if width < height else 'false')
+        expect(preview.get_by_role('button', name='Xoay trang', exact=True)).to_have_count(0)
         bounds = preview.locator('.contract-page').first.bounding_box()
-        assert bounds['height'] > bounds['width'] if width < height else bounds['width'] > bounds['height'], bounds
+        assert bounds['width'] > bounds['height'], bounds
         assert not page.evaluate('document.documentElement.scrollWidth > innerWidth')
         if width > height:
             assert paper_viewport.bounding_box()['height'] >= height / 2, 'Landscape controls leave too little space to read the contract'
@@ -233,11 +233,8 @@ with sync_playwright() as playwright:
         }''')
         preview.get_by_role('button', name='Vừa màn hình', exact=True).click()
         page.wait_for_function('document.querySelector(".mg-contract-paper-scroll").scrollWidth <= document.querySelector(".mg-contract-paper-scroll").clientWidth + 1')
-    preview.get_by_role('button', name='Xoay trang', exact=True).click()
-    expect(preview.get_by_role('button', name='Xoay trang', exact=True)).to_have_attribute('aria-pressed', 'true')
-    preview.get_by_role('button', name='Xoay trang', exact=True).click()
     page.set_viewport_size({'width': 1440, 'height': 1000})
-    checks.append('phone previews fit every page, rotate vertically in portrait and support zoom/reset in landscape without clipping')
+    checks.append('phone previews keep A4 landscape in both orientations, fit every page and support zoom/reset without a rotation button or clipping')
     preview.get_by_role('button', name='Quay lại thông tin').click()
     select_tab(form, 'Phương tiện')
     form.get_by_role('button', name='Thêm xe', exact=True).click()
@@ -250,12 +247,11 @@ with sync_playwright() as playwright:
     expect(preview.locator('.mg-contract-preview-page')).to_have_count(2)
     pages = preview.locator('.mg-contract-preview-page').all()
     assert pages[1].bounding_box()['y'] >= pages[0].bounding_box()['y'] + pages[0].bounding_box()['height']
-    # Printing from a rotated/zoomed phone preview still produces the original A4 pages.
-    preview.get_by_role('button', name='Xoay trang', exact=True).click()
+    # Printing from a zoomed phone preview still produces the original A4 pages.
     preview.get_by_role('button', name='Phóng to mẫu in', exact=True).click()
     pdf_from_print(page, context, preview, 'contract-mobile-multiple-vehicles.pdf', 2)
     page.set_viewport_size({'width': 1440, 'height': 1000})
-    checks.append('multiple preview pages remain stacked on phones; mobile rotation/zoom does not change the printed PDF')
+    checks.append('multiple preview pages remain stacked on phones; mobile zoom does not change the printed PDF')
     preview.get_by_role('button', name='Quay lại thông tin').click()
     checks.append('preview and actual print use matching legacy typography; single/multiple vehicles generate one/two A4 landscape PDF pages with all original terms')
     form.get_by_role('button', name='Lưu nháp', exact=True).click()

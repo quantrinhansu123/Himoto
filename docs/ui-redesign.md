@@ -39,17 +39,17 @@ QA chạy trên production build cục bộ, Chromium, với API nghiệp vụ �
 
 Ở màn hình rộng tối đa 900px, danh sách xe, khách hàng, hợp đồng (gồm nháp/VAT), nhân sự và cơ sở dùng thẻ chữ nhật ngắn. Mỗi thẻ có tên, thông tin nhận diện/liên hệ cơ bản và trạng thái. Chạm phần nội dung mở chi tiết; nút ba chấm chứa các thao tác theo quyền hiện có, gồm chuyển xe/đổi trạng thái. Checkbox chọn nhiều đứng riêng để không mở nhầm chi tiết. Sắp xếp, bộ lọc và phân trang vẫn dùng chung dữ liệu với desktop.
 
-Mẫu xem trước tự vừa chiều rộng màn hình, xoay từng trang thành chiều dọc khi cầm điện thoại dọc và chuyển lại ngang khi xoay điện thoại. Có nút xoay trang, phóng to/thu nhỏ và vừa màn hình để đối chiếu thông tin với khách. Ở điện thoại nằm ngang, thanh công cụ gọn hơn và vùng đọc hợp đồng có cuộn riêng. Hợp đồng nhiều trang được xếp liên tiếp; xoay/phóng to chỉ áp dụng cho bản xem trước. Khi in/PDF vẫn dùng nội dung, kiểu chữ và khổ A4 ngang ban đầu.
+Theo yêu cầu cập nhật ngày 2026-10-12, mẫu xem trước giữ trang A4 ngang và tự vừa chiều rộng màn hình ở cả hai hướng cầm điện thoại, như ảnh mẫu đã chốt. Bỏ nút xoay trang và cơ chế tự xoay tờ giấy; giữ phóng to/thu nhỏ và vừa màn hình để đối chiếu thông tin với khách. Ở điện thoại nằm ngang, thanh công cụ gọn hơn và vùng đọc hợp đồng có cuộn riêng. Hợp đồng nhiều trang được xếp liên tiếp; phóng to chỉ áp dụng cho bản xem trước. Khi in/PDF vẫn dùng nội dung, kiểu chữ và khổ A4 ngang ban đầu.
 
 Kiểm chứng trên production build cục bộ với API nghiệp vụ mô phỏng, không ghi dữ liệu thật:
 
 - `npm.cmd run lint:management`, `npm.cmd run typecheck`, `npm.cmd run build`: qua.
 - `npm.cmd run test:management-loading`: 12 nhóm kiểm tra tải/cache dữ liệu.
 - `scripts/check-mobile-cards-ui.py`: 8 nhóm qua; năm danh mục ở 320/375/768/844/1440px; mở chi tiết, menu, chọn nhiều, phân trang, sắp xếp, lọc, danh sách trống và thử lại khi lỗi.
-- `scripts/check-contract-layout-ui.py`: 9 nhóm qua; mẫu xem trước ở 320/375/667/844px, xoay/phóng to, vùng đọc nằm ngang, các trang phụ lục và PDF A4 ngang một/hai trang từ desktop/mobile.
+- `scripts/check-contract-layout-ui.py`: 9 nhóm qua; mẫu xem trước ở 320/375/667/844px giữ A4 ngang, không có nút xoay trang, phóng to/vừa màn hình, vùng đọc nằm ngang, các trang phụ lục và PDF A4 ngang một/hai trang từ desktop/mobile.
 - `scripts/check-management-mobile-ui.py`: 15 nhóm qua, 54 màn hình trên chín trang ở 320/375/390/430/768/812px, gồm điều hướng, menu, form, chi tiết và đăng nhập; không có lỗi JavaScript.
 
-Ảnh dùng dữ liệu QA mô phỏng: [xe](qa/mobile-cards/vehicles-375.png), [hợp đồng](qa/mobile-cards/contracts-375.png), [khách hàng](qa/mobile-cards/customers-375.png), [nhân sự](qa/mobile-cards/staff-375.png), [cơ sở](qa/mobile-cards/stores-375.png), [mẫu in dọc](qa/mobile-print/print-preview-375.png), [mẫu in ngang](qa/mobile-print/print-preview-667.png).
+Ảnh dùng dữ liệu QA mô phỏng: [xe](qa/mobile-cards/vehicles-375.png), [hợp đồng](qa/mobile-cards/contracts-375.png), [khách hàng](qa/mobile-cards/customers-375.png), [nhân sự](qa/mobile-cards/staff-375.png), [cơ sở](qa/mobile-cards/stores-375.png), [mẫu in khi cầm máy dọc](qa/mobile-print/print-preview-375.png), [mẫu in khi cầm máy ngang](qa/mobile-print/print-preview-667.png).
 
 Kiểm tra bằng Chromium; chưa kiểm tra trực tiếp trên Safari/iPhone hoặc trình duyệt bên trong ứng dụng nhắn tin.
 
