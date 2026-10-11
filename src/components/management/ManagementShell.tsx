@@ -13,8 +13,8 @@ const navigation = [
   { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster' as const, icon: CalendarDays },
   { href: '/customers', label: 'Khách hàng', kind: 'customers' as const, icon: ContactRound },
   { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts' as const, icon: Files },
+  { href: '/contracts/drafts', label: 'Hợp đồng nháp', kind: 'contracts' as const, icon: FilePenLine },
   { href: '/contracts/vat', label: 'Hợp đồng VAT', kind: 'contracts' as const, icon: ReceiptText },
-  { href: '/contracts/drafts', label: 'Log', kind: 'contracts' as const, icon: FilePenLine },
   { href: '/stores', label: 'Cơ sở', kind: 'stores' as const, icon: Building2 },
   { href: '/vehicles', label: 'Danh sách xe', kind: 'vehicles' as const, icon: Bike },
   { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook' as const, icon: Wallet },
@@ -102,7 +102,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
           <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{writableDrafts ? 'Lưu nháp' : writableVehicles ? 'Đồng bộ xe' : writableCustomers || writableStores || writableDuties ? 'Có thể sửa' : 'Chỉ đọc'}</span>
           <details className="mg-user-menu" ref={menuRef}><summary aria-label="Menu người dùng"><span className="mg-user-avatar">QT</span><div><strong>{user?.name || 'Quản trị viên'}</strong><small>{user ? 'Đã đăng nhập' : writableCustomers ? 'Supabase' : 'Phiên tra cứu'}</small></div><ChevronDown size={14} /></summary>
             <div className="mg-popover"><strong>{writableDuties ? 'Quản lý lịch trực' : writableCustomers ? 'Khách hàng kết nối Supabase' : writableStores ? 'Cơ sở kết nối Supabase' : writableVehicles ? 'Xe kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{writableDuties ? 'Thêm, sửa hoặc xóa ca; hệ thống kiểm tra trùng giờ của cùng nhân viên.' : writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : writableStores ? 'Thêm và sửa cơ sở; xóa cơ sở có dữ liệu liên quan sẽ bị chặn để giữ lịch sử.' : writableVehicles ? 'Đồng bộ Excel có sao lưu. Xóa hết bị chặn khi xe có dữ liệu liên quan.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>
-              <Link href="/contracts/drafts"><FilePenLine size={16} />Mở Log</Link>
+              <Link href="/contracts/drafts"><FilePenLine size={16} />Mở hợp đồng nháp</Link>
               {<button type="button" disabled={signingOut} onClick={signOut}><LogOut size={16} />{signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>}
               {signOutError && <p role="alert">{signOutError}</p>}</div></details>
         </div>

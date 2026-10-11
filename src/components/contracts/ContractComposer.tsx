@@ -1,16 +1,18 @@
 'use client';
 
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, LoaderCircle, Plus, Printer, Save, Search, Trash2, UserPlus } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, LoaderCircle, Plus, Printer, Save, Search, Trash2, UserPlus } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { ContractDraft, ContractRelative, CustomerDetails, LegacyContractDocument, buildContractDocument, createContractDraft, customerDetails, emptyVehicle, formatRelatives, normalizeIdCard, pairRelatives, relativesFromRow, staffIsAvailable, staffMatchesStore, validateContractDraft, vehicleDetails } from '@/lib/management/contract-document';
 import { ManagementRow } from '@/lib/management/types';
-import { CONTRACT_STATUSES, CONTRACT_TYPES, VEHICLE_STATUSES } from '@/lib/management/config';
-import { normalize } from '@/lib/management/table-utils';
+import { CONTRACT_STATUSES, CONTRACT_TYPES } from '@/lib/management/config';
 import { validateDraftSave } from '@/lib/management/contract-drafts';
 import { CustomerCreateDialog } from './CustomerCreateDialog';
 import { ContractPrintPreview } from './ContractPrintPreview';
+import { VehiclePicker } from './VehiclePicker';
+import { ContractFinalizeDialog } from './ContractFinalizeDialog';
+import { FinalizeResult, draftPaymentMethod } from '@/lib/management/contract-finalize';
 import { CONTRACT_FORM_SECTIONS, ContractSection, ContractSectionTabs } from './ContractSectionTabs';
 
 type LookupState = 'idle' | 'loading' | 'found' | 'matches' | 'missing' | 'error';
@@ -31,8 +33,10 @@ function rentalUnits(start: string, end: string, monthly: boolean) {
   if (!Number.isFinite(milliseconds) || milliseconds <= 0) return 0;
   return Math.max(1, Math.ceil(milliseconds / (monthly ? 30 : 1) / 86_400_000));
 }
-export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }: { row?: ManagementRow | null; mode?: 'print' | 'edit' | 'draft'; onClose: () => void; onDraftSaved?: () => void }) {
+export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, onFinalized }: { row?: ManagementRow | null; mode?: 'print' | 'edit' | 'draft'; onClose: () => void; onDraftSaved?: () => void; onFinalized?: (result: FinalizeResult) => void }) {
   const { dataset, selectedStore, source, canSaveContractDrafts, contractAutofill, saveContract, saveContractDraft } = useManagement();
+  const [savedDraft, setSavedDraft] = useState<{ id: number; revision: string } | null>(null);
+  const [finalizeTarget, setFinalizeTarget] = useState<{ id: number; revision: string; code: string } | null>(null);
   const editingDraft = mode === 'draft' || row?.status === 'draft';
   const canSaveDraft = !row || row.status === 'draft';
   const [draft, setDraft] = useState<ContractDraft>(() => createContractDraft(dataset!, selectedStore, row));
@@ -57,7 +61,6 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
   const [document, setDocument] = useState<LegacyContractDocument | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [section, setSection] = useState<ContractSection>('contract');
-  const [vehicleSearch, setVehicleSearch] = useState<Record<number, string>>({});
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
     const controller = new AbortController(); let current = true;
@@ -169,14 +172,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
     event.preventDefault();
     if (!dataset || busy.current) return;
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
-    const savingDraft = (submitter instanceof HTMLButtonElement && submitter.value === 'draft') || (editingDraft && !(submitter instanceof HTMLButtonElement && submitter.value === 'preview'));
-    const savingRecord = mode === 'edit' && !(submitter instanceof HTMLButtonElement && submitter.value === 'preview');
+    const action = submitter instanceof HTMLButtonElement ? submitter.value : '';
+    const finalizing = action === 'finalize' && canSaveDraft;
+    const savingDraft = !finalizing && (action === 'draft' || (editingDraft && action !== 'preview'));
+    const savingRecord = mode === 'edit' && action !== 'preview';
     const next = savingDraft ? validateDraftSave(draft, { ...dataset, staff }) : validateContractDraft(draft, dataset, staff, source);
     if (!savingDraft && lookupState !== 'found') next.id_card = 'Tra cứu hoặc tạo khách hàng trước khi lưu / in.';
     setErrors(next); setSaveError('');
     if (Object.keys(next).length) {
       const details = [...new Set(Object.values(next).filter(Boolean))].slice(0, 3).join(' ');
-      setSaveError(`Chưa thể ${savingDraft ? 'lưu nháp' : savingRecord ? 'lưu hợp đồng' : 'tạo bản in'}. ${details}`);
+      setSaveError(`Chưa thể ${finalizing ? 'lưu chính thức' : savingDraft ? 'lưu nháp' : savingRecord ? 'lưu hợp đồng' : 'tạo bản in'}. ${details}`);
       requestAnimationFrame(() => {
         const invalid = form.current?.querySelector<HTMLElement>('[aria-invalid="true"]:not([disabled])');
         const panel = invalid?.closest<HTMLElement>('[data-contract-section]');
@@ -184,12 +189,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
         requestAnimationFrame(() => invalid?.focus());
       }); return;
     }
-    if (savingDraft) {
+    if (savingDraft || finalizing) {
       busy.current = true; setSaving(true);
+      const revision = savedDraft?.revision ?? (row?.draft_revision ? String(row.draft_revision) : '');
       try {
-        await saveContractDraft(row?.id ?? null, { draft: { ...draft, customer_lookup: idInput }, status: 'draft', rental_type: rentalType, notes,
-          ...(source === 'api' && row?.draft_revision ? { revision: String(row.draft_revision) } : {}) });
-        onClose(); onDraftSaved?.();
+        const saved = await saveContractDraft(savedDraft?.id ?? row?.id ?? null, { draft: { ...draft, customer_lookup: idInput }, status: 'draft', rental_type: rentalType, notes,
+          ...(source === 'api' && revision ? { revision } : {}) });
+        if (finalizing) {
+          setSavedDraft({ id: saved.id, revision: String(saved.draft_revision) });
+          setFinalizeTarget({ id: saved.id, revision: String(saved.draft_revision), code: saved.code });
+        } else { onClose(); onDraftSaved?.(); }
       } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Không lưu được bản nháp. Vui lòng thử lại.'); }
       finally { busy.current = false; setSaving(false); }
       return;
@@ -212,6 +221,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
   }
   const branchStaff = staffMatchesStore(staff, draft.store_id);
   const branchVehicles = dataset?.vehicles.filter(vehicle => String(vehicle.store_id) === draft.store_id) || [];
+  const branchName = dataset?.stores.find(store => String(store.id) === draft.store_id)?.name || '';
   const pricingVehicle = branchVehicles.find(vehicle => String(vehicle.id) === draft.vehicles[0]?.id);
   const monthlyPackage = draft.package_name === 'Theo tháng';
   useEffect(() => {
@@ -235,7 +245,6 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
   }, [draft.deposit_amount, draft.total_amount]);
   function chooseVehicle(index: number, id: string) {
     const selected = branchVehicles.find(item => String(item.id) === id);
-    setVehicleSearch(previous => ({ ...previous, [index]: '' }));
     setDraft(previous => ({
       ...previous,
       vehicles: previous.vehicles.map((item, i) => i === index ? selected ? vehicleDetails(selected, previous.customer) : emptyVehicle() : item),
@@ -285,7 +294,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
     <Dialog title={editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}` : 'Bản nháp · Chưa cấp số hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
       <form ref={form} noValidate onSubmit={submit}>
         <div className="mg-dialog-body mg-composer-body">
-          <div className="mg-composer-notice">{canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Log để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách; bản in là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
+          <div className="mg-composer-notice">{canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Hợp đồng nháp để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách; bản in là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
           <fieldset className="mg-composer-fields" disabled={saving}>
           <ContractSectionTabs prefix="contract-composer" active={section} onChange={setSection} />
           {panel('contract', 'Thông tin hợp đồng & Pháp lý', <>
@@ -344,21 +353,11 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
             <div className="mg-form-grid mg-contract-grid-two">{field('start_date', 'Thuê lúc', 'datetime-local', true)}{field('end_date', 'Hẹn trả', 'datetime-local', true)}</div>
             <p className="mg-composer-hint">Thời gian thuê và hẹn trả áp dụng cho các xe trong hợp đồng.</p>
             {draft.vehicles.map((vehicle, index) => {
-              const query = normalize(vehicleSearch[index] || '');
-              const choices = query ? branchVehicles.filter(item => normalize(`${item.name} ${item.license}`).includes(query)) : [];
               return <div key={index} className="mg-composer-vehicle"><div className="mg-composer-vehicle-header"><strong>Thông tin xe thuê số {index + 1}</strong>{draft.vehicles.length > 1 && <button className="mg-icon-button" type="button" aria-label={`Bỏ xe ${index + 1}`} onClick={() => change('vehicles', draft.vehicles.filter((_, i) => i !== index))}><Trash2 size={16} /></button>}</div>
-              <div className="mg-field"><label htmlFor={`contract-vehicle-${index}`}>Chọn xe *</label><select id={`contract-vehicle-${index}`} disabled={!draft.store_id} value={vehicle.id} aria-invalid={Boolean(errors[`vehicle_${index}`])} onChange={event => chooseVehicle(index, event.target.value)}><option value="">{draft.store_id ? 'Chọn xe' : 'Chọn cửa hàng xe trước'}</option>{branchVehicles.map(item => <option key={item.id} value={item.id}>{item.name} · {item.license}</option>)}</select>
-                {draft.store_id ? <>
-                  <input className="mg-vehicle-filter" id={`contract-vehicle-filter-${index}`} aria-label={`Tìm xe ${index + 1}`} value={vehicleSearch[index] || ''} autoComplete="off" placeholder="Tìm tên xe hoặc biển số, rồi bấm xe bên dưới" onChange={event => setVehicleSearch(previous => ({ ...previous, [index]: event.target.value }))} />
-                  {choices.length > 0 && <div className="mg-vehicle-option-list" role="listbox" aria-label={`Danh sách xe ${index + 1}`}>{choices.map(item => {
-                    const status = VEHICLE_STATUSES.find(option => option.value === item.status)?.label || String(item.status || '');
-                    const selected = vehicle.id === String(item.id);
-                    const price = monthlyPackage ? item.monthly_price : item.daily_price;
-                    return <button key={item.id} type="button" role="option" aria-selected={selected} className={`mg-customer-match mg-vehicle-option${selected ? ' is-selected' : ''}`} onClick={() => chooseVehicle(index, String(item.id))}><strong>{item.name} · {item.license}</strong><span>{[item.brand, status, price == null ? 'Chưa có đơn giá' : `${Number(price).toLocaleString('vi-VN')} đ/${monthlyPackage ? 'tháng' : 'ngày'}`].filter(Boolean).join(' · ')}</span></button>;
-                  })}</div>}
-                  {!branchVehicles.length && <small>Cửa hàng đã chọn chưa có xe.</small>}
-                  {query && branchVehicles.length > 0 && !choices.length && <small>Không có xe khớp từ khóa.</small>}
-                </> : <small>Chọn cửa hàng xe ở phần Khách hàng trước khi chọn xe.</small>}
+              <div className="mg-field"><label htmlFor={`contract-vehicle-${index}`}>Chọn xe {branchName ? `tại ${branchName}` : ''} *</label>
+                <VehiclePicker id={`contract-vehicle-${index}`} index={index} vehicles={branchVehicles} value={vehicle.id} storeName={branchName || 'cơ sở'} monthly={monthlyPackage}
+                  ownOrderId={row?.id} takenIds={draft.vehicles.map(item => item.id).filter(Boolean)} disabled={!draft.store_id} invalid={Boolean(errors[`vehicle_${index}`])} onChange={id => chooseVehicle(index, id)} />
+                {!draft.store_id && <small>Chọn cửa hàng xe ở phần Khách hàng trước khi chọn xe.</small>}
                 {errors[`vehicle_${index}`] && <p className="mg-field-error">{errors[`vehicle_${index}`]}</p>}</div>
               {vehicle.id && <div className="mg-composer-vehicle-summary">{vehicle.license} · {vehicle.brand} · {vehicle.type_text} · {vehicle.year || 'Chưa có năm sản xuất'}</div>}
               <div className="mg-form-grid mg-contract-grid-three">{(['driver_name', 'driver_license_number', 'driver_license_issued_on', 'borrow_hats', 'borrow_raincoats', 'color'] as const).map(key => {
@@ -397,11 +396,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved }:
         </div>
         <div className="mg-dialog-footer"><span className="mg-form-note">{canSaveDraft ? '* Cần điền đủ để in; có thể lưu nháp trước' : '* Thông tin bắt buộc'}</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
           {canSaveDraft && <button type="submit" value="draft" className="mg-button mg-button-primary" disabled={saving || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
+          {canSaveDraft && source === 'api' && canSaveContractDrafts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || staffLoading || lookupState === 'loading'} title="Kiểm tra đủ thông tin, cấp số hợp đồng và chuyển sang Đang thuê"><CheckCircle2 size={16} />Lưu chính thức</button>}
           {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || staffLoading || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || staffLoading || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>
     </Dialog>
     {customerModal && <CustomerCreateDialog idCard={/^\d{9}$|^\d{12}$/.test(normalizeIdCard(idInput)) ? normalizeIdCard(idInput) : ''} storeId={draft.store_id} onCreated={customerCreated} onClose={() => setCustomerModal(false)} />}
     {document && <ContractPrintPreview doc={document} onClose={() => setDocument(null)} />}
+    {finalizeTarget && <ContractFinalizeDialog orderId={finalizeTarget.id} revision={finalizeTarget.revision} code={finalizeTarget.code}
+      total={Number(draft.total_amount) || 0} deposit={Number(draft.deposit_amount) || 0}
+      depositMethod={draftPaymentMethod(draft.deposit_payment_method)} rentalMethod={draftPaymentMethod(draft.payment_method)}
+      onClose={() => setFinalizeTarget(null)} onDone={result => { setFinalizeTarget(null); onClose(); onFinalized?.(result); }} />}
   </>;
 }

@@ -152,7 +152,7 @@ export function planContractImport(sources: ContractExcelSource[], snapshot: Con
       const info = importInfo(target), targetDetails = detailsForOrder(target, liveDetails);
       if (String(info?.sourcePaid ?? target.pid ?? '') !== first.paid || String(info?.sourceTotal ?? target.total ?? '') !== first.total) warnings.push('Số tiền trong Excel khác hợp đồng đang có; giữ nguyên, chờ đối chiếu chứng từ.');
       if (unique.some(source => !targetDetails.some(detail => id(detail.vehicle_id) === id(snapshot.vehicles.find(v => vehiclePlate(v.license) === vehiclePlate(source.license))?.id) && instant(detail.return_at) === instant(contractImportTimestamp(source.end))))) warnings.push('Thời gian trả trong Excel khác hợp đồng đang có; cần đối chiếu gia hạn và múi giờ.');
-      if (target.order_status === 'draft') warnings.push('Đã nhập vào Log dưới dạng nháp; tiếp tục bổ sung tại bản nháp hiện có.');
+      if (target.order_status === 'draft') warnings.push('Đã nhập vào mục Hợp đồng nháp; tiếp tục bổ sung tại bản nháp hiện có.');
     }
     for (const vehicleId of vehicleIds) {
       const conflicts = activeOrders.filter(order => id(order.id) !== id(target?.id) && liveDetails.some(detail => id(detail.order_id) === id(order.id) && id(detail.vehicle_id) === vehicleId && !detail.completed_at));

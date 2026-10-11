@@ -17,7 +17,8 @@ const STATUS_LABELS: Record<string, string> = { approved: 'Đã duyệt', pendin
 const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.value,COALESCE(t."desc",t.note) AS note,t.status,u.name AS actor,
     COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||t.order_id::text) AS contract_code,
     CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn'
-      WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' ELSE t.name END AS reason,
+      WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc'
+      WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
     CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản' WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
       WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty' WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản' END AS method,
     CASE WHEN t.cash_id IS NOT NULL THEN 'Két tiền mặt #' || t.cash_id::text ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account,

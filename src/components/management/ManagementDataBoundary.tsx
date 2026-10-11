@@ -17,7 +17,8 @@ export function ManagementDataBoundary({ kinds, title, onClose, children }: {
     return () => { active = false; };
   }, [ensureData, kinds]);
   const error = kinds.map(kind => resources[kind].error).filter(Boolean).join(' ');
-  if (ready) return children;
+  // Previously loaded rows stay usable while the background refresh runs.
+  if (ready || kinds.every(kind => resources[kind].loaded)) return children;
   return <Dialog title={title} onClose={onClose}><div className="mg-dialog-body">
     {error ? <p className="mg-field-error" role="alert">{error}</p> : <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải dữ liệu…</p>}
   </div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>

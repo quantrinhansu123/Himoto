@@ -46,10 +46,15 @@ interface Props {
   isFiltered: boolean;
   onReset: () => void;
   onRetry: () => void;
+  selectedIds?: ReadonlySet<number>;
+  onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment, onReturn, onRenew, onVehicleChange, onClone, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry }: Props) {
-  const columnCount = columns.length + 2;
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment, onReturn, onRenew, onVehicleChange, onClone, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+  const selectable = Boolean(selectedIds && onSelectionChange);
+  const columnCount = columns.length + (selectable ? 3 : 2);
+  const pageIds = rows.map(row => row.id);
+  const pageSelected = pageIds.filter(id => selectedIds?.has(id)).length;
   const rowActions = (row: ManagementRow): RowAction[] => {
     const isContract = config.kind === 'contracts';
     const isActiveContract = isContract && ['renting', 'overdue', 'wait_payment'].includes(row.status);
@@ -76,14 +81,17 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
   return <div className="mg-table-scroll" tabIndex={0} role="region" aria-label={`Bảng ${config.title.toLowerCase()}, cuộn ngang để xem thêm cột`}>
     <table className={`mg-table mg-table-${config.kind}`} aria-busy={loading}>
       <caption className="mg-sr-only">{config.title}</caption>
-      <thead><tr><th scope="col" className="mg-index">STT</th>{columns.map(column => <th key={column.key} scope="col" className={column.align === 'right' ? 'mg-align-right' : ''}
+      <thead><tr>{selectable && <th scope="col" className="mg-select-column"><input type="checkbox" aria-label="Chọn tất cả dòng trên trang này" disabled={loading || Boolean(error) || !rows.length}
+        checked={rows.length > 0 && pageSelected === rows.length} ref={input => { if (input) input.indeterminate = pageSelected > 0 && pageSelected < rows.length; }}
+        onChange={event => onSelectionChange?.(pageIds, event.target.checked)} /></th>}<th scope="col" className="mg-index">STT</th>{columns.map(column => <th key={column.key} scope="col" className={column.align === 'right' ? 'mg-align-right' : ''}
         aria-sort={sortKey === column.key ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}>
         <button type="button" className="mg-sort" onClick={() => onSort(column.key)} aria-label={`Sắp xếp theo ${column.label}`}><span>{column.label}</span>{sortKey === column.key ? sortDirection === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} /> : <ArrowUpDown size={12} />}</button>
       </th>)}<th scope="col" className="mg-actions-column">Thao tác</th></tr></thead>
       <tbody>{loading ? <tr><td colSpan={columnCount}><div className="mg-table-state" role="status"><LoaderCircle className="mg-spin" size={26} /><strong>Đang tải danh sách…</strong><p>Thông tin sẽ xuất hiện trong giây lát.</p></div></td></tr>
         : error ? <tr><td colSpan={columnCount}><div className="mg-table-state mg-table-error" role="alert"><FileSearch size={30} /><strong>Không tải được dữ liệu</strong><p>{error}</p><button className="mg-button" onClick={onRetry}><RotateCcw size={15} />Thử lại</button></div></td></tr>
         : rows.length === 0 ? <tr><td colSpan={columnCount}><div className="mg-table-state"><FileSearch size={32} /><strong>{isFiltered ? 'Không tìm thấy kết quả' : 'Danh sách đang trống'}</strong><p>{isFiltered ? 'Thử từ khóa khác hoặc bỏ bớt bộ lọc.' : 'Chưa có bản ghi để hiển thị.'}</p>{isFiltered && <button className="mg-button" onClick={onReset}>Xóa bộ lọc</button>}</div></td></tr>
-        : rows.map((row, index) => <tr key={row.id}><td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} className={column.align === 'right' ? 'mg-align-right' : ''}><Cell row={row} column={column} config={config} /></td>)}
+        : rows.map((row, index) => <tr key={row.id} className={selectedIds?.has(row.id) ? 'is-selected' : undefined}>{selectable && <td className="mg-select-column"><input type="checkbox" aria-label={`Chọn ${row.code || row.name || `#${row.id}`}`}
+          checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}<td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} className={column.align === 'right' ? 'mg-align-right' : ''}><Cell row={row} column={column} config={config} /></td>)}
           <td className="mg-actions-column"><div className="mg-row-actions">
             <RowActionsMenu label={`Thao tác ${row.code || row.name || ''}`.trim()} actions={rowActions(row)} busy={cloningId === row.id || blacklistBusyId === row.id} /></div></td></tr>)}</tbody>
     </table>

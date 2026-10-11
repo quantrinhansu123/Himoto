@@ -14,7 +14,7 @@ import { formatDateTime, formatMoney } from '@/lib/formatters';
 
 const SECTIONS = [
   { id: 'vehicle', label: 'Thông tin phương tiện' },
-  { id: 'contract', label: 'Thông tin hợp đồng' },
+  { id: 'contract', label: 'Hợp đồng' },
   { id: 'customer', label: 'Khách hàng (Bên B)' },
   { id: 'payment', label: 'Chi phí' },
   { id: 'signing', label: 'Ký kết & ghi chú' },

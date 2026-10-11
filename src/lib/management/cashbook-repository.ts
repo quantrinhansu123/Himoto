@@ -37,6 +37,55 @@ export function mapCashbookRow(raw: ApiRecord): CashbookRow {
 export function createDemoCashbookRepository(): CashbookRepository {
   return { async load(signal) { signal?.throwIfAborted(); return structuredClone(createCashbookFixtures()); } };
 }
+export interface CashbookAccount {
+  key: string; kind: 'bank' | 'cash'; id: string; label: string; store_id?: string; store_name?: string; owner_type: string; status: string;
+  bank_name?: string; owner_name?: string; account_number?: string;
+  opening_balance: number; income: number; expense: number; balance: number; voucher_count: number;
+}
+export interface CashbookAccountEdits { status: 'active' | 'inactive'; opening_balance: number; bank_name?: string; owner_name?: string; account_number?: string }
+const amount = (value: unknown, field: string): number => {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) throw new Error(`API trả về ${field} tài khoản không hợp lệ.`);
+  return parsed;
+};
+export function mapCashbookAccount(raw: ApiRecord): CashbookAccount {
+  const id = optionalText(raw.id), kind = raw.kind;
+  if (!id || (kind !== 'bank' && kind !== 'cash')) throw new Error('API trả về tài khoản thiếu ID hoặc loại.');
+  return { key: `${kind}:${id}`, kind, id, label: optionalText(raw.label) || (kind === 'cash' ? `Két tiền mặt #${id}` : `Tài khoản #${id}`),
+    bank_name: optionalText(raw.bank_name), owner_name: optionalText(raw.owner_name), account_number: optionalText(raw.account_number),
+    store_id: optionalText(raw.store_id), store_name: optionalText(raw.store_name), owner_type: String(raw.owner_type || ''), status: String(raw.status || ''),
+    opening_balance: amount(raw.opening_balance, 'số dư đầu kỳ'), income: amount(raw.income, 'tổng thu'), expense: amount(raw.expense, 'tổng chi'),
+    balance: amount(raw.balance, 'số dư'), voucher_count: amount(raw.voucher_count, 'số phiếu') };
+}
+export async function loadCashbookAccounts(baseUrl = '/api', signal?: AbortSignal): Promise<CashbookAccount[]> {
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/auth/cashbook/accounts`, { method: 'GET', cache: 'no-store', signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`Không tải được danh sách tài khoản (HTTP ${response.status}).`);
+  const envelope = object(await response.json());
+  if (envelope.status !== 'success' || !Array.isArray(envelope.data)) throw new Error('API tài khoản trả về cấu trúc chưa được hỗ trợ.');
+  return envelope.data.map(item => mapCashbookAccount(object(item)));
+}
+async function writeCashbookAccount(account: CashbookAccount, method: 'PATCH' | 'DELETE', body?: CashbookAccountEdits) {
+  const response = await fetch(`/api/auth/cashbook/accounts/${account.kind}/${encodeURIComponent(account.id)}`, { method, cache: 'no-store', credentials: 'same-origin',
+    headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const envelope = object(await response.json().catch(() => ({})));
+  if (!response.ok || envelope.status !== 'success') throw new Error(optionalText(envelope.message) || `Không thực hiện được thao tác (HTTP ${response.status}).`);
+}
+export interface CashbookAccountVoucher { id: string; date?: string; time?: string; type: 'income' | 'expense'; amount: number; user_name?: string; contract_code?: string; content?: string }
+export async function loadCashbookAccountVouchers(account: CashbookAccount, range: { from: string; to: string }, signal?: AbortSignal): Promise<CashbookAccountVoucher[]> {
+  const query = new URLSearchParams(); if (range.from) query.set('from', range.from); if (range.to) query.set('to', range.to);
+  const response = await fetch(`/api/auth/cashbook/accounts/${account.kind}/${encodeURIComponent(account.id)}/transactions?${query}`, { cache: 'no-store', signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+  const envelope = object(await response.json().catch(() => ({})));
+  if (!response.ok || envelope.status !== 'success' || !Array.isArray(envelope.data)) throw new Error(optionalText(envelope.message) || `Không tải được danh sách thu chi (HTTP ${response.status}).`);
+  return envelope.data.map(item => {
+    const raw = object(item), id = optionalText(raw.id), type = String(raw.type || '');
+    if (!id || !['in', 'addon', 'out'].includes(type)) throw new Error('API trả về phiếu của tài khoản không hợp lệ.');
+    return { id, ...cashbookDateTime(raw.created_at), type: type === 'out' ? 'expense' : 'income', amount: amount(raw.amount, 'số tiền'),
+      user_name: optionalText(raw.user_name), contract_code: optionalText(raw.contract_code), content: optionalText(raw.content) } as CashbookAccountVoucher;
+  });
+}
+export const updateCashbookAccount = (account: CashbookAccount, edits: CashbookAccountEdits) => writeCashbookAccount(account, 'PATCH', edits);
+export const deleteCashbookAccount = (account: CashbookAccount) => writeCashbookAccount(account, 'DELETE');
+
 // Verified in apps/api/src/modules/finance/finance.controller.ts. This adapter performs GET only.
 export const CASHBOOK_ENDPOINT = '/auth/transactions';
 export function createApiCashbookRepository(baseUrl = '/api'): CashbookRepository {

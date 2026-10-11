@@ -91,7 +91,7 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
     const result = await repository.saveContractDraft(id, edits);
     loader.update('contracts', rows => [result.row, ...rows.filter(row => row.id !== result.row.id)]);
     invalidateData(['customers']);
-    notify(`Đã lưu nháp ${result.row.code} vào Supabase. Mở mục Log để tiếp tục chỉnh sửa.`);
+    notify(`Đã lưu nháp ${result.row.code} vào Supabase. Mở mục Hợp đồng nháp để tiếp tục chỉnh sửa.`);
     return result.row;
   };
   const createCustomer = async (customer: CustomerDetails, assignment?: CustomerAssignment) => {

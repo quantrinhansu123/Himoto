@@ -3,6 +3,8 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { CONTRACT_LIST_SQL, DraftSaveError, saveDatabaseDraft } from '@/lib/server/contract-drafts';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { STORE_SELECT_SQL } from '@/lib/server/store-management';
+import { deleteAccount, listAccountTransactions, parseAccountPath, updateAccount } from '@/lib/server/cashbook-accounts';
+import { parseStaffPath, updateStaff } from '@/lib/server/staff-management';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 
 export const runtime = 'nodejs';
@@ -35,9 +37,21 @@ const listQueries: Record<string, QueryConfig> = {
   },
   'vehicle/vehicles': {
     sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
-                 v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name
+                 v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name,
+                 r.rentals
           FROM himoto.vehicles v
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
+          LEFT JOIN LATERAL (
+            SELECT json_agg(json_build_object('order_id', o.id,
+                     'code', COALESCE(NULLIF(o.contract_number, ''), NULLIF(o.draft_reference, ''), '#' || o.id::text),
+                     'status', CASE WHEN o.order_status = 'renting' AND d.return_at < now() THEN 'overdue' ELSE o.order_status END,
+                     'customer', COALESCE(c.name, o.customer_name, ''), 'return_at', d.return_at) ORDER BY d.rent_at DESC) AS rentals
+            FROM himoto.order_vehicle_details d
+            JOIN himoto.orders o ON o.id = d.order_id
+            LEFT JOIN himoto.customers c ON c.id = o.customer_id
+            WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+              AND o.order_status IN ('renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract')
+          ) r ON true
           ORDER BY v.id DESC`,
   },
   'order/car-rental': {
@@ -45,7 +59,7 @@ const listQueries: Record<string, QueryConfig> = {
   },
   transactions: {
     sql: `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id, s.store_name,
-                 CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' ELSE t.name END AS reason,
+                 CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc' WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
                  COALESCE(t."desc", t.note) AS content, t.value AS amount,t.order_id,
                  COALESCE(o.contract_number,o.draft_reference,'#' || t.order_id::text) AS contract_code,
                  CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'
@@ -60,6 +74,29 @@ const listQueries: Record<string, QueryConfig> = {
           LEFT JOIN himoto.stores s ON s.id=t.store_id
           LEFT JOIN himoto.banks b ON b.id=t.bank_id
           ORDER BY t.id DESC`,
+  },
+  'cashbook/accounts': {
+    sql: `SELECT a.kind, a.id, a.store_id, s.store_name, a.label, a.bank_name, a.owner_name, a.account_number, a.owner_type, a.status, a.opening_balance,
+                 COALESCE(t.income, 0) AS income, COALESCE(t.expense, 0) AS expense, COALESCE(t.voucher_count, 0)::int AS voucher_count,
+                 a.opening_balance + COALESCE(t.income, 0) - COALESCE(t.expense, 0) AS balance
+          FROM (
+            SELECT 'bank' AS kind, b.id, b.store_id, concat_ws(' · ', b.bank_name, b.owner_name, b.account_number) AS label,
+                   b.bank_name::text AS bank_name, b.owner_name::text AS owner_name, b.account_number::text AS account_number,
+                   COALESCE(b.owner_type, '') AS owner_type, b.status, COALESCE(b.opening_balance, 0) AS opening_balance
+            FROM himoto.banks b
+            UNION ALL
+            SELECT 'cash', c.id, c.store_id, 'Két tiền mặt #' || c.id::text, NULL, NULL, NULL, '', c.status, COALESCE(c.opening_balance, 0)
+            FROM himoto.cash c
+          ) a
+          LEFT JOIN himoto.stores s ON s.id = a.store_id
+          LEFT JOIN (
+            SELECT CASE WHEN cash_id IS NOT NULL THEN 'cash' ELSE 'bank' END AS kind, COALESCE(cash_id, bank_id) AS account_id,
+                   sum(value) FILTER (WHERE type IN ('in', 'addon')) AS income, sum(value) FILTER (WHERE type = 'out') AS expense, count(*) AS voucher_count
+            FROM himoto.transactions
+            WHERE status = 'approved' AND (cash_id IS NOT NULL OR bank_id IS NOT NULL)
+            GROUP BY 1, 2
+          ) t ON t.kind = a.kind AND t.account_id = a.id
+          ORDER BY a.kind, a.id`,
   },
 };
 
@@ -96,6 +133,8 @@ export async function GET(request: NextRequest, { params }: Params) {
   const { path } = await params;
   const key = path.join('/');
   try {
+    const accountTx = parseAccountPath(path, 'transactions');
+    if (accountTx) return await listAccountTransactions(accountTx.kind, accountTx.id, request.nextUrl.searchParams);
     if (key === 'customers/search-by-id-card') {
       const idCard = request.nextUrl.searchParams.get('id_card')?.replace(/\s+/g, '') || '';
       const result = await himotoPool.query(
@@ -247,6 +286,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 export async function PATCH(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
+  const patchPath = (await params).path;
+  const account = parseAccountPath(patchPath);
+  if (account) return updateAccount(account.kind, account.id, request);
+  const staffId = parseStaffPath(patchPath);
+  if (staffId) return updateStaff(staffId, request);
   const id = await getCustomerId(params);
   if (!id) return NextResponse.json({ status: 'error', message: 'Mã khách hàng không hợp lệ.' }, { status: 400 });
 
@@ -323,6 +367,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 export async function DELETE(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
+  const account = parseAccountPath((await params).path);
+  if (account) return deleteAccount(account.kind, account.id);
   const id = await getCustomerId(params);
   if (!id) return NextResponse.json({ status: 'error', message: 'Mã khách hàng không hợp lệ.' }, { status: 400 });
   const client = await himotoPool.connect();

@@ -30,7 +30,7 @@ export function vehicleImportRequest(body: unknown) {
   return { rows, mode: raw.mode as VehicleImportMode, commit: raw.commit, revision: raw.revision, acceptWarnings: raw.acceptWarnings, skipUnknownStores: raw.skipUnknownStores };
 }
 
-async function referenceColumns(client: Client) {
+export async function referenceColumns(client: Client) {
   const result = await client.query(`SELECT table_schema, table_name, column_name, data_type FROM information_schema.columns
     WHERE table_schema='himoto' AND table_name <> 'vehicles'
       AND (column_name='vehicle_id' OR column_name LIKE '%\\_vehicle_id' ESCAPE '\\'
