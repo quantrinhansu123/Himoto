@@ -2,7 +2,7 @@ export interface ReturnableContractItem {
   item_id: number; order_id: number; contract_code: string; order_status: string; customer_name: string;
   customer_id_card: string; vehicle_id: number; vehicle_name: string; license: string; store_id: number;
   store_name: string; scheduled_start_at: string | null; scheduled_return_at: string | null; completed_at: string | null; item_revision: string; order_revision: string;
-  total_amount: number | null; paid_amount: number | null; overdue: boolean;
+  total_amount: number | null; paid_amount: number | null; overdue: boolean; daily_price: number | null;
 }
 export interface ReturnInput { item_id: number; item_revision: string; returned_at: string; hourly_rate: string; fee_override?: string }
 export interface ReturnResult { item_id: number; contract_code: string; returned_at: string; scheduled_return_at: string; late_minutes: number; chargeable_hours: number; hourly_rate: number; fee: number; total_amount: number | null; status: string }

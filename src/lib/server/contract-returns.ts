@@ -34,7 +34,8 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
   v.id AS vehicle_id,v.name AS vehicle_name,v.license, o.store_id,s.store_name,
   d.rent_at AS scheduled_start_at,d.return_at AS scheduled_return_at,d.completed_at,d.xmin::text AS item_revision,o.xmin::text AS order_revision,
   NULLIF(o.total::text,'')::numeric AS total_amount,NULLIF(o.pid::text,'')::numeric AS paid_amount,
-  (d.completed_at IS NULL AND d.return_at < now()) AS overdue
+  (d.completed_at IS NULL AND d.return_at < now()) AS overdue,
+  CASE WHEN d.type='day' THEN NULLIF(d.hiring_fee::text,'')::numeric END AS daily_price
   FROM himoto.order_vehicle_details d
   JOIN himoto.orders o ON o.id=d.order_id
   JOIN himoto.vehicles v ON v.id=d.vehicle_id
@@ -49,7 +50,8 @@ function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractI
     vehicle_id: Number(row.vehicle_id), vehicle_name: String(row.vehicle_name || ''), license: String(row.license || ''),
     store_id: Number(row.store_id), store_name: String(row.store_name || ''), scheduled_start_at: toIso(row.scheduled_start_at), scheduled_return_at: toIso(row.scheduled_return_at), completed_at: toIso(row.completed_at),
     item_revision: String(row.item_revision), order_revision: String(row.order_revision),
-    total_amount: row.total_amount == null ? null : Number(row.total_amount), paid_amount: row.paid_amount == null ? null : Number(row.paid_amount), overdue: Boolean(row.overdue) }));
+    total_amount: row.total_amount == null ? null : Number(row.total_amount), paid_amount: row.paid_amount == null ? null : Number(row.paid_amount), overdue: Boolean(row.overdue),
+    daily_price: Number(row.daily_price) > 0 ? Number(row.daily_price) : null }));
 }
 
 export async function searchReturnableItems(client: Database, query: string): Promise<ReturnableContractItem[]> {

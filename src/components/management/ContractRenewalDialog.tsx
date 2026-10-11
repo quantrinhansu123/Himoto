@@ -10,12 +10,20 @@ import { Dialog } from './Dialog';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const vietnamInput = (ms: number) => new Date(ms + 7 * 3_600_000).toISOString().slice(0, 16);
+const DEFAULT_HOURLY_RATE = '20000';
+function defaultRate(row: ReturnableContractItem | null, unit: 'day' | 'hour', fallbackDaily?: number) {
+  if (unit === 'hour') return DEFAULT_HOURLY_RATE;
+  const daily = row?.daily_price || fallbackDaily;
+  return daily ? String(daily) : '';
+}
 
 export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClose }: { orderId: number; contractCode: string; unitPrice?: number; onClose: () => void }) {
   const { notify, reload } = useManagement();
   const [rows, setRows] = useState<ReturnableContractItem[]>([]);
   const [itemId, setItemId] = useState('');
-  const [days, setDays] = useState('1');
+  const [unit, setUnit] = useState<'day' | 'hour'>('day');
+  const [count, setCount] = useState('1');
+  const [rateInput, setRateInput] = useState('');
   const [returnAt, setReturnAt] = useState('');
   const [amount, setAmount] = useState('');
   const [amountTouched, setAmountTouched] = useState(false);
@@ -29,23 +37,30 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     void loadContractReturnableItems(orderId, controller.signal).then(result => {
       const open = result.filter(row => !row.completed_at);
       setRows(open);
-      if (open.length === 1) setItemId(String(open[0].item_id));
+      if (open.length === 1) { setItemId(String(open[0].item_id)); setRateInput(defaultRate(open[0], 'day', unitPrice)); }
     }).catch(cause => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được xe trong hợp đồng.');
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [orderId]);
+  }, [orderId, unitPrice]);
 
   const selected = rows.find(row => String(row.item_id) === itemId) || null;
   const overdue = useMemo(() => overdueParts(selected?.scheduled_return_at ?? null), [selected?.scheduled_return_at]);
   const dueMs = selected?.scheduled_return_at ? new Date(selected.scheduled_return_at).getTime() : NaN;
-  const dayCount = /^\d+$/.test(days) ? Number(days) : 0;
+  const maxCount = unit === 'day' ? 365 : 720;
+  const unitCount = /^\d+$/.test(count) ? Number(count) : 0;
+  const rate = /^\d{1,9}$/.test(rateInput) ? Number(rateInput) : 0;
 
   useEffect(() => {
-    if (!selected || !Number.isFinite(dueMs) || dayCount < 1 || dayCount > 365) return;
-    setReturnAt(vietnamInput(dueMs + dayCount * 86_400_000));
-    if (!amountTouched && unitPrice) setAmount(String(unitPrice * dayCount));
-  }, [selected, dueMs, dayCount, unitPrice, amountTouched]);
+    if (!selected || !Number.isFinite(dueMs) || unitCount < 1 || unitCount > maxCount) return;
+    setReturnAt(vietnamInput(dueMs + unitCount * (unit === 'day' ? 86_400_000 : 3_600_000)));
+    if (!amountTouched && rate) setAmount(String(rate * unitCount));
+  }, [selected, dueMs, unit, unitCount, maxCount, rate, amountTouched]);
+
+  function changeUnit(next: 'day' | 'hour') {
+    setUnit(next); setCount('1'); setAmountTouched(false); setAmount('');
+    setRateInput(defaultRate(selected, next, unitPrice));
+  }
 
   const fee = /^\d+$/.test(amount) ? Number(amount) : 0;
   const total = selected?.total_amount ?? null;
@@ -76,7 +91,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
       <div className="mg-dialog-body">
         {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && !rows.length && !error && <p>Hợp đồng này không còn xe đang thuê để gia hạn.</p>}
-        {rows.length > 1 && <div className="mg-field"><label htmlFor="renewal-item">Xe cần gia hạn</label><select id="renewal-item" value={itemId} onChange={event => { setItemId(event.target.value); setAmountTouched(false); }}><option value="">Chọn xe</option>{rows.map(row => <option key={row.item_id} value={row.item_id}>{row.vehicle_name} · {row.license}</option>)}</select></div>}
+        {rows.length > 1 && <div className="mg-field"><label htmlFor="renewal-item">Xe cần gia hạn</label><select id="renewal-item" value={itemId} onChange={event => { setItemId(event.target.value); setAmountTouched(false); setAmount(''); setRateInput(defaultRate(rows.find(row => String(row.item_id) === event.target.value) || null, unit, unitPrice)); }}><option value="">Chọn xe</option>{rows.map(row => <option key={row.item_id} value={row.item_id}>{row.vehicle_name} · {row.license}</option>)}</select></div>}
         {selected && <>
           <dl className="mg-renewal-facts">
             <div><dt>Xe</dt><dd>{selected.vehicle_name || '—'} · {selected.license || '—'}</dd></div>
@@ -87,11 +102,14 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
           </dl>
           <fieldset className="mg-payment-fields" disabled={saving}>
             <legend>Thông tin gia hạn</legend>
-            <label>Số ngày gia hạn<input type="number" min={1} max={365} value={days} onChange={event => setDays(event.target.value)} /></label>
+            <label>Gia hạn theo<select value={unit} onChange={event => changeUnit(event.target.value as 'day' | 'hour')}><option value="day">Ngày</option><option value="hour">Giờ</option></select></label>
+            <label>{unit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}<input type="number" min={1} max={maxCount} value={count} onChange={event => setCount(event.target.value)} /></label>
+            <label>{unit === 'day' ? 'Đơn giá / ngày (VNĐ)' : 'Đơn giá / giờ (VNĐ)'}<input inputMode="numeric" value={groupAmount(rateInput)} placeholder={unit === 'day' ? 'Nhập đơn giá/ngày' : 'Nhập đơn giá/giờ'}
+              onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,9}$/.test(raw)) { setRateInput(raw); setAmountTouched(false); } }} /></label>
             <label>Ngày trả mới<input type="datetime-local" required value={returnAt} onChange={event => setReturnAt(event.target.value)} aria-invalid={Boolean(returnAt) && !validReturn} /></label>
             <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn"
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
-              <small>{unitPrice ? `Gợi ý: ${formatMoney(unitPrice)} × ${dayCount || 0} ngày = ${formatMoney(unitPrice * (dayCount || 0))}. Có thể sửa.` : 'Hợp đồng chưa có đơn giá/ngày; nhập chi phí gia hạn.'}</small></label>
+              <small>{rate ? `Gợi ý: ${formatMoney(rate)} × ${unitCount || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(rate * (unitCount || 0))}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
             <label className="mg-field-wide">Ghi chú<textarea rows={2} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} placeholder="Lý do gia hạn, thỏa thuận với khách…" /></label>
           </fieldset>
           {stillOverdue && <p className="mg-field-error">Ngày trả mới vẫn ở quá khứ, hợp đồng sẽ tiếp tục quá hạn.</p>}
