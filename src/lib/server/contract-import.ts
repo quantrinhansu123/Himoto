@@ -23,6 +23,7 @@ function draftForPlan(plan: ContractImportPlan, snapshot: ContractImportSnapshot
   draft.contract_number = `EXCEL-${plan.sourceId}`;
   draft.signed_on = ''; draft.authorization_date = ''; draft.package_name = '';
   draft.store_id = String(plan.storeId); draft.customer_id = plan.customerId;
+  draft.vehicle_store_id = String(plan.storeId);
   const customer = snapshot.customers.find(customer => Number(customer.id) === plan.customerId)!;
   const fields = customer as unknown as Record<string, unknown>;
   for (const key of CUSTOMER_FIELDS) draft.customer[key] = fields[key] == null ? '' : String(fields[key]);

@@ -86,3 +86,33 @@ Sửa bộ lọc Ngày phát sinh trong Sổ quỹ: mỗi nhãn Từ ngày/Đế
 Kiểm tra production build: Sổ quỹ có 16 trường hợp trên Chromium và 16 trên WebKit ở 1440/1270/1024/768/320/375/430/812px. Kiểm tra thêm ngày đã chọn, lọc ngày, khoảng ngày sai, xóa bộ lọc và phân trang khi trống. Rà lại 54 lượt trên chín trang quản lý bằng Chromium, gồm khoảng cách số trang ở các danh sách dùng chung. Build, kiểm tra kiểu dữ liệu và lint trong build đều qua; không có lỗi JavaScript hoặc ghi dữ liệu nghiệp vụ thật. WebKit chạy trên Windows; chưa thử Safari/iPhone thật.
 
 Ảnh WebKit: [ô ngày và phân trang ở 375px](qa/mobile-spacing/cashbook-webkit-375.png), [phân trang khi trống](qa/mobile-spacing/empty-pagination-webkit-375.png). Kết quả: [Chromium](qa/mobile-spacing/chromium-results.json), [WebKit](qa/mobile-spacing/webkit-results.json).
+
+## Cửa hàng xe, hình thức thanh toán và tìm trả xe — 2026-10-12
+
+Đổi tên “Cơ sở thụ hưởng” thành “Cơ sở sử dụng xe” trong form đổi trạng thái, thông báo kiểm tra và lịch sử xe.
+
+Form hợp đồng trên desktop/mobile dùng “Cửa hàng xe” để chọn xe và tải gợi ý nhân viên làm hợp đồng. Hai vị trí chọn ở tab Khách hàng/Phương tiện dùng chung lựa chọn, được lưu và khôi phục khi mở lại. Tra cứu khách thuộc cơ sở khác hoặc đổi cơ sở doanh thu giữ nguyên cửa hàng xe/nhân viên đã chọn. Phần nguồn khách và doanh thu vẫn theo hồ sơ khách, có thể sửa tại Liên kết nguồn khách. Hợp đồng cũ chưa có cửa hàng xe riêng tiếp tục dùng cơ sở đã lưu cho đến khi người dùng chọn lại.
+
+Sửa lỗi WebKit chuyển focus về hộp thoại khi bấm checkbox, làm menu hình thức thanh toán đóng trước khi click hoàn tất. Giữ lựa chọn Tiền mặt/chuyển khoản qua đổi tab, lưu và mở lại; hợp đồng cũ khôi phục hình thức đã lưu. Khi lưu chính thức, khoản chưa thu vẫn giữ hình thức dự kiến; các khoản đã thu dùng hình thức thực tế. Lựa chọn dự kiến không tự tạo phiếu thu.
+
+Form Trả xe tìm bằng mã hợp đồng, CCCD, biển số hoặc SĐT khách. Biển số chấp nhận chữ thường, có/không dấu phân cách và một phần biển số; SĐT/CCCD so khớp đủ số, giữ số 0 đầu. Truy vấn dùng tham số và xử lý ký tự wildcard.
+
+Lựa chọn cửa hàng xe nằm trong JSON hợp đồng hiện có; không thêm bảng/cột hoặc chạy migration. QA dùng API mô phỏng và PostgreSQL trong bộ nhớ (PGlite), không ghi dữ liệu Supabase thật. WebKit chạy trên Windows; chưa kiểm tra Safari/iPhone thật.
+
+Lệnh kiểm tra SQL độc lập, không dùng kết nối cơ sở dữ liệu thật:
+
+```powershell
+npm.cmd install --prefix .backups/contract-flow-qa --no-package-lock --no-save @electric-sql/pglite
+npm.cmd run test:contract-branch-flows -- --pglite-path .backups/contract-flow-qa/node_modules/@electric-sql/pglite
+```
+
+Kiểm tra giao diện bằng `scripts/check-contract-branch-flows-ui.py` với `--browser chromium` hoặc `--browser webkit`, `--session-cookie-file` trỏ đến cookie QA cục bộ. Luồng kiểm tra gồm chọn xe ở cơ sở khác nguồn khách, tick checkbox/nhãn, Escape/bấm ngoài, lưu/mở nháp, gợi ý khoản thu chính thức và bốn cách tìm trả xe. Không gửi lệnh thu tiền hoặc trả xe thật.
+
+Kết quả trên production build cục bộ:
+
+- `lint:management`, lint năm module server đã sửa, `typecheck` và `build`: qua.
+- Kiểm tra cửa hàng xe/thanh toán/tìm trả xe: sáu nhóm trên Chromium và sáu trên WebKit ở 320/375/1440px; không có lỗi JavaScript hoặc yêu cầu nghiệp vụ ngoài mô phỏng.
+- Kiểm tra logic và SQL PostgreSQL trong bộ nhớ: bốn nhóm qua, gồm lưu/cập nhật/đọc lại nháp và truy vấn tìm trả xe thực tế.
+- Kiểm tra lại form/mẫu in/PDF: chín nhóm qua; nhập Excel, sao chép, tổng hợp và parser lưu chính thức đều qua kiểm tra logic.
+
+Ảnh dữ liệu QA: [cửa hàng xe/nhân viên mobile](qa/contract-branch-flows/customer-branch-webkit-375.png), [desktop](qa/contract-branch-flows/customer-branch-chromium-1440.png), [hình thức nhận cọc đã giữ](qa/contract-branch-flows/payment-methods-webkit-375.png), [kết quả tìm trả xe](qa/contract-branch-flows/return-search-webkit-375.png). Kết quả: [Chromium](qa/contract-branch-flows/chromium-results.json), [WebKit](qa/contract-branch-flows/webkit-results.json), [logic/SQL](qa/contract-branch-flows/unit-results.json), [form/mẫu in/PDF](qa/contract-branch-flows/layout-results.json).

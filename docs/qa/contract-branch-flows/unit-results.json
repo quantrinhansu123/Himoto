@@ -1,0 +1,10 @@
+{
+  "passed": 4,
+  "checks": [
+    "vehicle staff branch differs from revenue branch; invalid staff/branch IDs are rejected while old snapshots remain compatible",
+    "draft reopen preserves both payment choices; old orders restore them and an uncollected deposit keeps its intended method",
+    "in-memory PostgreSQL executes actual draft save/update/list SQL, retaining vehicle branch, staff and payment choices without receipts",
+    "actual PostgreSQL return lookup finds contract, CCCD, formatted phone and plates with/without punctuation; legacy phone fallback and escaped wildcards work"
+  ],
+  "realDatabaseAccess": false
+}

@@ -1,0 +1,30 @@
+{
+  "passed": 6,
+  "browser": "webkit",
+  "checks": [
+    "320px: vehicle branch/staff survive a different customer source; cash/multiple methods survive tabs, save/reload and initialize official receipts",
+    "320px: old order payment choices remain visible; return form accepts contract, CCCD, plate and phone without submitting returns",
+    "375px: vehicle branch/staff survive a different customer source; cash/multiple methods survive tabs, save/reload and initialize official receipts",
+    "375px: old order payment choices remain visible; return form accepts contract, CCCD, plate and phone without submitting returns",
+    "1440px: vehicle branch/staff survive a different customer source; cash/multiple methods survive tabs, save/reload and initialize official receipts",
+    "1440px: old order payment choices remain visible; return form accepts contract, CCCD, plate and phone without submitting returns"
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequests": [],
+  "mockedDraftWrites": 6,
+  "mockedReturnSearches": [
+    "29B1-123.45",
+    "0900000077",
+    "001234567877",
+    "OLD-QA-900",
+    "29B1-123.45",
+    "0900000077",
+    "001234567877",
+    "OLD-QA-900",
+    "29B1-123.45",
+    "0900000077",
+    "001234567877",
+    "OLD-QA-900"
+  ],
+  "realBusinessWrites": 0
+}

@@ -15,6 +15,8 @@ export interface VehicleDetails {
   borrow_hats: string; borrow_raincoats: string; rent_at: string; return_at: string;
 }
 export interface ContractDraft {
+  // Vehicle selection and contract staff branch; store_id remains the revenue branch.
+  vehicle_store_id?: string;
   customer_lookup?: string;
   extra_charges?: ContractCharge[];
   collections?: ContractCollection[];
@@ -27,6 +29,7 @@ export interface ContractDraft {
   relatives: [ContractRelative, ContractRelative];
 }
 const value = (input: unknown) => input == null ? '' : String(input);
+export function contractStaffStoreId(draft: ContractDraft) { return draft.vehicle_store_id ?? draft.store_id; }
 export const dateInput = (input: unknown) => value(input).slice(0, 10);
 export function dateTimeInput(input: unknown): string {
   const timestamp = value(input);
@@ -83,6 +86,9 @@ function nowDate() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)?.value).join('-');
 }
+function collectionMethods(collections: ContractCollection[] | undefined, purpose: 'deposit' | 'rental', fallback: string) {
+  return [...new Set((collections || []).filter(item => item.purpose === purpose).map(item => item.method))].join(', ') || fallback;
+}
 export function createContractDraft(dataset: ManagementDataset, storeId: string, row?: ManagementRow | null): ContractDraft {
   if (row?.draft_json) {
     const snapshot = JSON.parse(String(row.draft_json)) as ContractDraft;
@@ -97,8 +103,8 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
       ...(row.deposit_paid != null ? {deposit_paid_amount:value(row.deposit_paid)} : {}),
       ...(collections ? {collections} : {}),
       ...(row.status!=='draft' && collections?.length ? {
-        payment_method:[...new Set(collections.filter(item=>item.purpose==='rental').map(item=>item.method))].join(', '),
-        deposit_payment_method:[...new Set(collections.filter(item=>item.purpose==='deposit').map(item=>item.method))].join(', '),
+        payment_method:collectionMethods(collections, 'rental', snapshot.payment_method),
+        deposit_payment_method:collectionMethods(collections, 'deposit', snapshot.deposit_payment_method),
       } : {}), staff_name: snapshot.staff_name || '', customer: { ...customerDetails(snapshot.customer as unknown as ManagementRow), ...snapshot.customer },
       vehicles: snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
       created_on: dateInput(snapshot.created_on) || dateInput(row.created_at) || nowDate() };
@@ -126,17 +132,19 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   });
   const vehicle = row ? dataset.vehicles.find(item => item.id === row.vehicle_id) : null;
   const startDate = row ? dateTimeInput(row.start_date) : vietnamRentalTime();
+  const collections = row?.collections_json ? JSON.parse(String(row.collections_json)) as ContractCollection[] : undefined;
   return { contract_number: row?.code || '', signed_on: dateInput(row?.signed_on || row?.created_at) || nowDate(),
-    store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: value(row?.staff_name),
+    store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId),
+    vehicle_store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: value(row?.staff_name),
     customer_id: row?.customer_id ? Number(row.customer_id) : null, customer,
     vehicles: vehicles.length ? vehicles : [vehicle ? vehicleDetails(vehicle, customer) : emptyVehicle()],
     start_date: startDate, end_date: row ? dateTimeInput(row.end_date) : addRentalDays(startDate, '1'),
     unit_price: value(vehicle?.daily_price), total_amount: value(row?.total_amount), paid_amount: row ? value(row.paid_amount) : '0',
     deposit_amount: value(row?.deposit_amount), package_name: row?.rental_type === 'monthly' ? 'Theo tháng' : 'Theo ngày',
-    payment_method: '', deposit_payment_method: '', collateral_description: value(row?.collateral_description),
+    payment_method: collectionMethods(collections, 'rental', value(row?.payment_method)), deposit_payment_method: collectionMethods(collections, 'deposit', value(row?.deposit_payment_method)), collateral_description: value(row?.collateral_description),
     customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date),
     created_on: dateInput(row?.created_at) || nowDate(), relatives,
-    ...(row?.collections_json ? {collections:JSON.parse(String(row.collections_json)) as ContractCollection[]} : {}),
+    ...(collections ? {collections} : {}),
     ...(row?.deposit_paid != null ? {deposit_paid_amount:value(row.deposit_paid)} : {}), };
 }
 export function normalizeIdCard(input: string) { return input.trim().replace(/\s/g, '').toUpperCase(); }
@@ -167,8 +175,9 @@ export function validateContractCustomer(customer: CustomerDetails, source: 'dem
 export function validateContractDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
   const errors: Record<string, string> = {};
   Object.assign(errors,chargeErrors(draft.extra_charges,true));
-  if (!dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở nguồn khách / ghi nhận doanh thu.';
-  if (!draft.staff_name.trim() && !staffMatchesStore(staff, draft.store_id).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự hoặc nhập tên người đại diện.';
+  if (contractStaffStoreId(draft) && !dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở nguồn khách / ghi nhận doanh thu.';
+  if (!dataset.stores.some(row => String(row.id) === contractStaffStoreId(draft))) errors.vehicle_store_id = 'Chọn cửa hàng xe.';
+  if (!draft.staff_name.trim() && !staffMatchesStore(staff, contractStaffStoreId(draft)).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự tại cửa hàng xe hoặc nhập tên người đại diện.';
   if (!draft.customer_id) errors.id_card = 'Tra cứu hoặc tạo khách hàng trước khi in.';
   Object.assign(errors, validateContractCustomer(draft.customer, source));
   const relatives = pairRelatives(draft.relatives, draft.customer.relatives_text);

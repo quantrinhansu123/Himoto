@@ -75,9 +75,14 @@ export async function searchReturnableItems(client: Database, query: string): Pr
   if (!text) return [];
   const pattern = `%${text.replace(/[\\%_]/g, '\\$&')}%`;
   const digits = text.replace(/\D/g, '');
+  const plate = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
   const result = await client.query(`${RETURNABLE_SQL}
-    AND (COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) ILIKE $1 ESCAPE '\\' OR ($2 <> '' AND regexp_replace(COALESCE(c.id_card::text,o.customer_idnumber::text,''),'\\D','','g')=$2))
-    ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id LIMIT 100`, [pattern, digits]);
+    AND (COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) ILIKE $1 ESCAPE '\\'
+      OR ($2 <> '' AND regexp_replace(COALESCE(c.id_card::text,o.customer_idnumber::text,''),'\\D','','g')=$2)
+      OR ($2 <> '' AND regexp_replace(COALESCE(NULLIF(c.phone,''),o.customer_phone,''),'\\D','','g')=$2)
+      OR v.license ILIKE $1 ESCAPE '\\'
+      OR ($3 <> '' AND regexp_replace(upper(COALESCE(v.license,'')),'[^A-Z0-9]','','g') LIKE '%'||$3||'%'))
+    ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id LIMIT 100`, [pattern, digits, plate]);
   return mapReturnableRows(result.rows);
 }
 

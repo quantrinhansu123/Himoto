@@ -31,9 +31,9 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   ${CONTRACT_RETURN_ADJUSTMENT_SQL} AS return_adjustment_amount,
   o.note AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
   (SELECT p.id FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id
-    AND p.store_id = o.store_id ORDER BY p.id LIMIT 1) AS staff_id,
+    AND p.store_id::text = COALESCE(NULLIF(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id',''),o.store_id::text) ORDER BY p.id LIMIT 1) AS staff_id,
   (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id
-    AND p.store_id = o.store_id ORDER BY p.id LIMIT 1) AS staff_name,
+    AND p.store_id::text = COALESCE(NULLIF(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id',''),o.store_id::text) ORDER BY p.id LIMIT 1) AS staff_name,
   o.draft_payload, o.contract_signed_on AS signed_on, o.contract_authorization_date AS authorization_date,
   o.contract_collateral_description AS collateral_description, o.customer_source, o.customer_source_url,
   COALESCE(ov.vehicles, '[]'::json) AS vehicles
@@ -78,7 +78,7 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !draft.customer || typeof draft.customer !== 'object' || Array.isArray(draft.customer)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   const defaults = createContractDraft({ stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all');
   for (const key of Object.keys(defaults)) {
-    if (['customer', 'vehicles', 'customer_id', 'relatives'].includes(key)) continue;
+    if (['customer', 'vehicles', 'customer_id', 'relatives', 'vehicle_store_id'].includes(key)) continue;
     const value = draft[key as keyof typeof draft];
     if (typeof value !== 'string' || value.length > 4000) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   }
@@ -90,7 +90,8 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   for (const key of CUSTOMER_FIELDS) if (typeof draft.customer[key] !== 'string' || draft.customer[key].length > 4000) throw new DraftSaveError('Thông tin khách hàng không hợp lệ.');
   if (draft.customer_lookup !== undefined && (typeof draft.customer_lookup !== 'string' || draft.customer_lookup.length > 100)) throw new DraftSaveError('Thông tin tra cứu không hợp lệ.');
   if (draft.customer_id !== null && (!Number.isSafeInteger(draft.customer_id) || draft.customer_id <= 0)) throw new DraftSaveError('ID khách hàng không hợp lệ.');
-  for (const key of ['store_id', 'staff_id'] as const) if (draft[key] && (!/^\d+$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key])) || Number(draft[key]) <= 0)) throw new DraftSaveError('ID cơ sở hoặc nhân sự không hợp lệ.');
+  if (draft.vehicle_store_id !== undefined && typeof draft.vehicle_store_id !== 'string') throw new DraftSaveError('Cửa hàng xe không hợp lệ.');
+  for (const key of ['store_id', 'vehicle_store_id', 'staff_id'] as const) if (draft[key] && (!/^\d+$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key])) || Number(draft[key]) <= 0)) throw new DraftSaveError('ID cơ sở hoặc nhân sự không hợp lệ.');
   if (!Array.isArray(draft.vehicles) || !draft.vehicles.length || draft.vehicles.length > 20) throw new DraftSaveError('Bản nháp cần từ 1 đến 20 dòng xe.');
   for (const vehicle of draft.vehicles) {
     if (!vehicle || typeof vehicle !== 'object' || Array.isArray(vehicle)) throw new DraftSaveError('Thông tin xe không hợp lệ.');
@@ -124,6 +125,8 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     if (!edits.revision || previous.draft_revision !== edits.revision) throw new DraftSaveError('Bản nháp đã được người khác cập nhật. Đóng form và nhấn Làm mới trước khi sửa tiếp.', 409);
   }
   const stores = await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.store_id || null]);
+  const vehicleStores = edits.draft.vehicle_store_id && edits.draft.vehicle_store_id !== edits.draft.store_id
+    ? await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.vehicle_store_id]) : stores;
   const staff = await client.query('SELECT id, store_id, user_id FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id || null]);
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
   const vehicles = await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
@@ -134,7 +137,7 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   }
   const existingCode = previous ? String(previous.contract_number || previous.draft_reference || `#${id}`) : '';
   const dataset: ManagementDataset = {
-    stores: stores.rows.map(row => ({ ...row, id: Number(row.id) })) as ManagementRow[],
+    stores: [...stores.rows, ...vehicleStores.rows].map(row => ({ ...row, id: Number(row.id) })) as ManagementRow[],
     staff: staff.rows.map(row => ({ ...row, id: Number(row.id) })) as ManagementRow[],
     vehicles: vehicles.rows.map(row => ({ ...row, id: Number(row.id) })) as ManagementRow[], customers: [],
     contracts: previous ? [{ id: id!, code: existingCode, name: existingCode, status: 'draft' }] : [],

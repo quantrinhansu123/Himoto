@@ -8,7 +8,14 @@ export function PaymentMethodPicker({ label, value, onChange }: { label: string;
   const chosen = value.split(',').map(item=>item.trim()).filter(Boolean);
   useEffect(()=>{
     if (!open) return;
-    const closeOutside = (event: Event) => { if (ref.current && !ref.current.contains(event.target as Node)) ref.current.open = false; };
+    const closeOutside = (event: Event) => {
+      const picker = ref.current, target = event.target as Node;
+      if (!picker || picker.contains(target)) return;
+      // WebKit can focus the containing dialog when a checkbox is pressed.
+      // Closing on that focus event removes the checkbox before its click fires.
+      if (event.type === 'focusin' && target.contains(picker)) return;
+      picker.open = false;
+    };
     document.addEventListener('pointerdown',closeOutside,true); document.addEventListener('focusin',closeOutside);
     return ()=>{ document.removeEventListener('pointerdown',closeOutside,true); document.removeEventListener('focusin',closeOutside); };
   },[open]);

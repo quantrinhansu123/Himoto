@@ -6,7 +6,7 @@ import { Dialog } from './Dialog';
 import { CashflowColumns, cashflowTotals } from './CashflowColumns';
 import { useManagement } from './ManagementProvider';
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
-import { createContractDraft } from '@/lib/management/contract-document';
+import { contractStaffStoreId, createContractDraft } from '@/lib/management/contract-document';
 import { CHANGE_LABELS, ContractHistory, loadContractHistory } from '@/lib/management/contract-history';
 import { ManagementRow } from '@/lib/management/types';
 import { MANAGEMENT_CONFIG, optionLabel } from '@/lib/management/config';
@@ -112,6 +112,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
       ]))}
       {panel('customer', 'Thông tin khách hàng (Bên B)', fields([
+        ['Cửa hàng xe', text(dataset?.stores.find(store => String(store.id) === contractStaffStoreId(draft))?.name)],
         ['Cơ sở nguồn khách / doanh thu', text(store?.name || row.store_name)], ['Đại diện ủy quyền Bên A (Nhân viên làm hợp đồng)', text(draft.staff_name || representative?.name || row.staff_name)],
         ['Tên khách hàng', text(draft.customer.name)], ['SĐT', text(draft.customer.phone)],
         ['Số CMTND/CCCD', text(draft.customer.id_card)], ['Ngày cấp CCCD', date(draft.customer.id_card_issued_on)],

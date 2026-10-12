@@ -123,14 +123,14 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
   }
 
   const invalid = lines.some(line => line.override !== undefined && !/^\d{1,13}$/.test(line.override));
-  const subtitle = rows[0] ? `${rows[0].contract_code} · ${rows[0].customer_name}` : contractId !== undefined ? 'Đang tải xe trực tiếp từ hợp đồng đã chọn' : 'Tìm theo mã hợp đồng hoặc CCCD để ghi nhận trả xe';
+  const subtitle = rows[0] ? `${rows[0].contract_code} · ${rows[0].customer_name}` : contractId !== undefined ? 'Đang tải xe trực tiếp từ hợp đồng đã chọn' : 'Tìm theo mã hợp đồng, CCCD, biển số hoặc SĐT khách để trả xe';
 
   return <Dialog title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={() => { if (!saving) onClose(); }}>
     <form onSubmit={event => { if (lines.length) void submit(event); else void search(event); }}>
       <div className="mg-dialog-body">
-        {!contractCode && <div className="mg-return-search"><label className="mg-sr-only" htmlFor="contract-return-search">Mã hợp đồng hoặc CCCD</label><input id="contract-return-search" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void loadItems(searchTerm); } }} placeholder="Nhập mã hợp đồng hoặc số CCCD" /><button className="mg-button" type="button" disabled={loading || !searchTerm.trim()} onClick={() => void loadItems(searchTerm)}>{loading ? <LoaderCircle size={15} className="mg-spin" /> : null}Tìm</button></div>}
+        {!contractCode && <div className="mg-return-search"><label className="mg-sr-only" htmlFor="contract-return-search">Mã hợp đồng, CCCD, biển số hoặc SĐT khách</label><input id="contract-return-search" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void loadItems(searchTerm); } }} placeholder="Mã HĐ, CCCD, biển số hoặc SĐT khách" /><button className="mg-button" type="button" disabled={loading || !searchTerm.trim()} onClick={() => void loadItems(searchTerm)}>{loading ? <LoaderCircle size={15} className="mg-spin" /> : null}Tìm</button></div>}
         {contractCode && !rows.length && loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
-        {!loading && rows.length === 0 && !error && (searchTerm ? <p>{contractCode ? 'Hợp đồng này không có xe trong danh sách chi tiết để trả.' : 'Không tìm thấy hợp đồng hoặc xe khớp mã hợp đồng / CCCD.'}</p> : <p>Nhập mã hợp đồng hoặc CCCD để tra cứu xe cần trả.</p>)}
+        {!loading && rows.length === 0 && !error && (searchTerm ? <p>{contractCode ? 'Hợp đồng này không có xe trong danh sách chi tiết để trả.' : 'Không tìm thấy xe khớp mã hợp đồng, CCCD, biển số hoặc SĐT khách.'}</p> : <p>Nhập mã hợp đồng, CCCD, biển số hoặc SĐT khách để tra cứu xe cần trả.</p>)}
         {rows.length > 0 && !openRows.length && <div className="mg-return-estimate"><span>Tất cả xe trong hợp đồng đã được trả; hợp đồng không còn xe đang thuê.</span></div>}
         {openRows.length > 0 && <>
           <div className="mg-form-grid mg-contract-grid-two">

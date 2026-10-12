@@ -1,5 +1,5 @@
 import { CONTRACT_TYPES } from './config';
-import { ContractDraft } from './contract-document';
+import { ContractDraft, contractStaffStoreId } from './contract-document';
 import { ContractEdits, ManagementDataset, ManagementRow } from './types';
 import { chargeErrors } from './contract-charges';
 
@@ -9,7 +9,8 @@ export function validateDraftSave(draft: ContractDraft, dataset: ManagementDatas
   const errors: Record<string, string> = {};
   Object.assign(errors,chargeErrors(draft.extra_charges,false));
   if (draft.store_id && !dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Cơ sở đã chọn không còn tồn tại.';
-  if (draft.staff_id && !dataset.staff.some(row => String(row.id) === draft.staff_id && String(row.store_id) === draft.store_id)) errors.staff_id = 'Nhân sự phải thuộc cơ sở đã chọn.';
+  if (draft.vehicle_store_id && !dataset.stores.some(row => String(row.id) === draft.vehicle_store_id)) errors.vehicle_store_id = 'Cửa hàng xe đã chọn không còn tồn tại.';
+  if (draft.staff_id && !dataset.staff.some(row => String(row.id) === draft.staff_id && String(row.store_id) === contractStaffStoreId(draft))) errors.staff_id = 'Nhân sự phải thuộc cửa hàng xe đã chọn.';
   const vehicleIds = new Set<string>();
   draft.vehicles.forEach((vehicle, index) => {
     if (vehicle.id && !dataset.vehicles.some(row => String(row.id) === vehicle.id)) errors[`vehicle_${index}`] = 'Xe đã chọn không còn tồn tại.';

@@ -55,7 +55,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
     if (mode === 'transfer' && storeId === String(selected.store_id)) return setError('Xe đang ở cơ sở này. Chọn cơ sở khác.');
     if (mode === 'status' && status !== 'ready' && status !== 'using') return setError('Chọn trạng thái Đang thuê hoặc Lưu kho.');
     if (mode === 'status' && status === currentStatus) return setError(`Xe đang ở trạng thái ${optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)}.`);
-    if (mode === 'status' && !storeId) return setError('Chọn cơ sở thụ hưởng.');
+    if (mode === 'status' && !storeId) return setError('Chọn cơ sở sử dụng xe.');
     if (mode === 'status' && status === 'using' && (!customer.name.trim() || !customer.phone.trim() || !customer.idCard.trim())) return setError('Nhập tên, số điện thoại và CCCD của khách thuê.');
     busy.current = true; setSaving(true); setError('');
     try {
@@ -97,7 +97,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
           <select id="vehicle-action-status" value={status} disabled={saving || !selected} onChange={event => setStatus(event.target.value)}>
             {status === '' && <option value="">{selected ? `${optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)} (hiện tại)` : 'Chọn trạng thái'}</option>}
             {STATUS_CHOICES.map(option => <option key={option.value} value={option.value}>{option.label}{option.value === currentStatus ? ' (hiện tại)' : ''}</option>)}</select></div>
-        <div className="mg-field"><label htmlFor="vehicle-action-store">Cơ sở thụ hưởng<span aria-hidden="true"> *</span></label>
+        <div className="mg-field"><label htmlFor="vehicle-action-store">Cơ sở sử dụng xe<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-store" value={storeId} disabled={saving || !selected} onChange={event => setStoreId(event.target.value)}>
             <option value="">Chọn cơ sở</option>{stores.map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
         <div className="mg-field"><label htmlFor="vehicle-action-customer">Tên khách{status === 'using' && <span aria-hidden="true"> *</span>}</label>

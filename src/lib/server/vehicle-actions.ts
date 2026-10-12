@@ -38,7 +38,7 @@ export function parseVehicleAction(body: unknown): VehicleActionInput {
   if (raw.status === 'using' && !idCard) throw new VehicleActionError('Nhập CCCD của khách để kiểm tra và tạo hợp đồng nháp.');
   if (phone && !/^\+?\d{8,15}$/.test(phone)) throw new VehicleActionError('Số điện thoại không hợp lệ.');
   if (idCard && !/^\d{9}$|^\d{12}$/.test(idCard)) throw new VehicleActionError('CCCD phải gồm 9 hoặc 12 chữ số.');
-  return { action: 'status', status: raw.status, beneficiary_store_id: storeId(raw.beneficiary_store_id, 'cơ sở thụ hưởng'), customer_name: name, customer_phone: phone, customer_id_card: idCard, note };
+  return { action: 'status', status: raw.status, beneficiary_store_id: storeId(raw.beneficiary_store_id, 'cơ sở sử dụng xe'), customer_name: name, customer_phone: phone, customer_id_card: idCard, note };
 }
 
 // Phone and CCCD must point at the same profile; a match on either reuses it instead of creating a duplicate.

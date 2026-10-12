@@ -187,7 +187,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     ...receipts.filter(row=>row.purpose===purpose).map(row=>methodLabels[row.method]),
   ])].join(', ');
   draft.paid_amount=String(oldRentalPaid+rentalCollected); draft.deposit_paid_amount=String(oldDepositPaid+depositCollected);
-  draft.payment_method=actualMethods('rental'); draft.deposit_payment_method=actualMethods('deposit');
+  draft.payment_method=actualMethods('rental') || draft.payment_method; draft.deposit_payment_method=actualMethods('deposit') || draft.deposit_payment_method;
 
   const finalized = { at: new Date().toISOString(), actor_id: actorId, contract_number: code, item_ids: itemIds, transaction_ids: transactionIds,
     ...(retiredItemIds.length ? { retired_legacy_item_ids: retiredItemIds } : {}) };
