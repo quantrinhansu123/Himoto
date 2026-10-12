@@ -1,0 +1,14 @@
+{
+  "passed": 8,
+  "checks": [
+    "reservation receipts must be positive rental advances; handover cannot accept money or a forged revision",
+    "100k advance becomes a linked approved receipt today; booking waits for handover, stock stays ready at its current branch, rental debt is 200k and refundable deposit is zero",
+    "actual cashbook account SQL reconciles opening balance + 100k once, preserves the receiving branch/account and actual paid date",
+    "duplicate reservation, stock conflict and stale handover are rejected; handover retains code/advance, changes vehicle to using and never creates a second receipt",
+    "remaining rental collection produces exactly 300k total, 1.3m cash balance, zero debt; UUID retries and overcollection cannot count the advance twice",
+    "200k bank advance follows the same booking flow and reconciles against the bank, leaving only 100k rent to collect",
+    "additional advance before pickup is payable on the waiting booking; full prepayment and handover retain 300k bank receipts without charging twice",
+    "failure after receipt insertion rolls back the receipt, reservation and vehicle lines together"
+  ],
+  "realDatabaseAccess": false
+}

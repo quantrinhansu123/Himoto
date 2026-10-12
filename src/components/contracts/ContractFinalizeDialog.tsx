@@ -13,9 +13,9 @@ const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.'
 interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string }
 interface CollectionState { collect: boolean; rows: CollectionRow[] }
 
-export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], onClose, onDone }: {
+export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, onClose, onDone }: {
   orderId: number; revision: string; code: string; total: number; deposit: number; depositMethods: PaymentMethod[]; rentalMethods: PaymentMethod[];
-  charges?: ContractCharge[]; onClose: () => void; onDone: (result: FinalizeResult) => void;
+  charges?: ContractCharge[]; reservation?: boolean; onClose: () => void; onDone: (result: FinalizeResult) => void;
 }) {
   const [context,setContext] = useState<PaymentContext|null>(null), [loadError,setLoadError] = useState('');
   const [depositState,setDepositState] = useState<CollectionState>({collect:false,rows:[]});
@@ -33,11 +33,12 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       setContext(value);
       const seed = (due: number, methods: PaymentMethod[]): CollectionState => ({collect:due>0,
         rows:due>0 ? methods.map(method=>({key:nextKey.current++,method,amount:methods.length===1 ? String(due) : '',account:'',paid_at:vietnamPaymentTime()})) : []});
-      setDepositState(seed(Math.max(deposit-value.deposit_paid,0),initialMethods.current.deposit));
-      setRentalState(seed(Math.max(total-(value.paid_amount || 0),0),initialMethods.current.rental));
+      setDepositState(reservation ? {collect:false,rows:[]} : seed(Math.max(deposit-value.deposit_paid,0),initialMethods.current.deposit));
+      const rental = seed(Math.max(total-(value.paid_amount || 0),0),initialMethods.current.rental);
+      setRentalState(reservation ? {...rental,rows:rental.rows.map(row=>({...row,amount:''}))} : rental);
     }).catch(cause=>{if(!controller.signal.aborted)setLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');});
     return ()=>controller.abort();
-  },[orderId,deposit,total]);
+  },[orderId,deposit,total,reservation]);
 
   const accountsFor = (row: CollectionRow) => context ? paymentAccounts(context,row.method) : [];
   const chosenAccount = (row: CollectionRow) => accountsFor(row).find(account=>String(account.id)===row.account) || accountsFor(row)[0];
@@ -57,10 +58,10 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   async function submit(event: FormEvent) {
     event.preventDefault(); if(busy.current || !context)return; setError('');
     let receipts: FinalizeCollection[];
-    try {receipts=[...collections(depositState,'deposit',depositDue),...collections(rentalState,'rental',rentalDue)];}
+    try {receipts=[...collections(depositState,'deposit',depositDue),...collections(rentalState,'rental',rentalDue)]; if (reservation && !receipts.length) throw new Error('Nhập khoản tiền giữ xe đã nhận.');}
     catch(cause){setError(cause instanceof Error ? cause.message : 'Kiểm tra các khoản đã nhận.');return;}
     busy.current=true;setSaving(true);
-    try{onDone(await finalizeContract(orderId,{revision,receipts}));}
+    try{onDone(await finalizeContract(orderId,{revision,receipts,...(reservation ? {reservation:true as const} : {})}));}
     catch(cause){setError(cause instanceof Error ? cause.message : 'Không lưu chính thức được hợp đồng.');}
     finally{busy.current=false;setSaving(false);}
   }
@@ -87,16 +88,16 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       </>}
     </fieldset>;
   }
-  return <Dialog title={`Xác nhận thu tiền · ${code}`} onClose={saving ? ()=>{} : onClose}>
+  return <Dialog title={`${reservation ? 'Xác nhận cọc giữ xe' : 'Xác nhận thu tiền'} · ${code}`} onClose={saving ? ()=>{} : onClose}>
     <form onSubmit={submit}><div className="mg-dialog-body mg-finalize-dialog">
-      <p className="mg-composer-hint">Ghi đúng từng khoản tiền đã nhận và tài khoản nhận. Cọc trước ghi ngày nhận trước đó; mỗi lần chuyển khoản hoặc nhận tiền mặt thêm một dòng. Sau xác nhận, hợp đồng được phát hành và xe chuyển sang Đang thuê.</p>
+      <p className="mg-composer-hint">{reservation ? 'Nhập đúng tiền giữ xe đã nhận (ví dụ 100.000 hoặc 200.000 đ), thời điểm và tài khoản nhận. Khoản này trừ vào tiền thuê, tạo phiếu Thu ngay; xe ở trạng thái chờ giao, chưa Đang thuê.' : 'Ghi đúng từng khoản tiền đã nhận và tài khoản nhận. Cọc trước ghi ngày nhận trước đó; mỗi lần chuyển khoản hoặc nhận tiền mặt thêm một dòng. Sau xác nhận, hợp đồng được phát hành và xe chuyển sang Đang thuê.'}</p>
       {charges.length>0 && <p className="mg-composer-hint">Phí khác trong hợp đồng: {charges.filter(item=>Number(item.amount)>0).map(item=>`${item.name}: ${money(Number(item.amount))}`).join(' · ')}</p>}
       {loadError ? <p role="alert" className="mg-field-error">{loadError}</p> : !context ? <p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải tài khoản nhận tiền…</p> : <>
-        {section('deposit','Tiền cọc',deposit,depositDue,depositState,setDepositState)}
-        {section('rental','Tiền thuê và phí khác',total,rentalDue,rentalState,setRentalState)}
-        <p className="mg-collection-total">Tổng nhận thêm: <strong>{money(collected(depositState)+collected(rentalState))}</strong><br/>Cọc: {money(collected(depositState))} · Thuê/phí: {money(collected(rentalState))}</p>
+        {!reservation && section('deposit','Tiền cọc',deposit,depositDue,depositState,setDepositState)}
+        {section('rental',reservation ? 'Tiền thuê dự kiến' : 'Tiền thuê và phí khác',total,rentalDue,rentalState,setRentalState)}
+        <p className="mg-collection-total">{reservation ? 'Tiền giữ xe đã nhận' : 'Tổng nhận thêm'}: <strong>{money(collected(depositState)+collected(rentalState))}</strong>{!reservation && <><br/>Cọc: {money(collected(depositState))} · Thuê/phí: {money(collected(rentalState))}</>}</p>
       </>}
       {error && <p className="mg-field-error" role="alert">{error}</p>}
-    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : 'Xác nhận lưu chính thức'}</button></div></form>
+    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>
   </Dialog>;
 }

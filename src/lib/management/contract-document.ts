@@ -17,6 +17,7 @@ export interface VehicleDetails {
 export interface ContractDraft {
   // Vehicle selection and contract staff branch; store_id remains the revenue branch.
   vehicle_store_id?: string;
+  reservation?: boolean;
   customer_lookup?: string;
   extra_charges?: ContractCharge[];
   collections?: ContractCollection[];
@@ -201,6 +202,13 @@ export function validateContractDraft(draft: ContractDraft, dataset: ManagementD
     const amount = draft[key];
     if (amount && (!/^\d+$/.test(amount) || !Number.isSafeInteger(Number(amount)))) errors[key] = 'Nhập số tiền nguyên không âm.';
   }
+  return errors;
+}
+export function validateReservationDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
+  const errors = validateContractDraft(draft, dataset, staff, source);
+  // Legal signatures and relatives are completed before printing the rental contract.
+  for (const key of Object.keys(errors)) if (key === 'signed_on' || key === 'address' || key.startsWith('relative_')) delete errors[key];
+  if (!draft.total_amount || Number(draft.total_amount) <= 0) errors.total_amount = 'Nhập tiền thuê dự kiến để đối chiếu khoản giữ xe.';
   return errors;
 }
 const money = (amount: string) => amount === '' ? '........................' : `${Number(amount).toLocaleString('vi-VN')} đ`;

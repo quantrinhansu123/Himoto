@@ -17,7 +17,7 @@ export const CONTRACT_STATUSES: Option[] = [
   { value: 'completed', label: 'Hoàn thành' }, { value: 'pending', label: 'Chờ giao xe' },
   { value: 'overdue', label: 'Quá hạn' }, { value: 'cancelled', label: 'Đã hủy' },
   { value: 'bad_debt', label: 'Nợ xấu' }, { value: 'wait_payment', label: 'Chờ thanh toán' },
-  { value: 'deposit_contract', label: 'Hợp đồng đặt cọc' },
+  { value: 'deposit_contract', label: 'Đã cọc, chờ nhận xe' },
   { value: 'cancel_pending_settlement', label: 'Chờ tất toán hủy' },
 ];
 export const CONTRACT_TYPES: Option[] = [{ value: 'daily', label: 'Thuê theo ngày' }, { value: 'monthly', label: 'Thuê theo tháng' }, { value: 'rental', label: 'Thuê xe' }, { value: 'tour', label: 'Tour / phượt' }];

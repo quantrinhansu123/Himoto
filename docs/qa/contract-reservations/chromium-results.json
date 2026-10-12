@@ -1,0 +1,14 @@
+{
+  "passed": 4,
+  "browser": "chromium",
+  "checks": [
+    "320px: minimal registered customer, staff of actual holding branch, blank advance requires amount, 100k booking/reload/handover/200k remaining receipt reconcile to 300k and cash balance 1.3m",
+    "375px: minimal registered customer, staff of actual holding branch, blank advance requires amount, 100k booking/reload/handover/200k remaining receipt reconcile to 300k and cash balance 1.3m",
+    "1440px: minimal registered customer, staff of actual holding branch, blank advance requires amount, 100k booking/reload/handover/200k remaining receipt reconcile to 300k and cash balance 1.3m",
+    "375px: a fully prepaid waiting booking hands over without opening an extra collection form or creating a receipt"
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequests": [],
+  "mockedWrites": 13,
+  "realBusinessWrites": 0
+}

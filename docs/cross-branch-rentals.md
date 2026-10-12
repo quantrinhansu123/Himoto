@@ -2,7 +2,7 @@
 
 - `customers.store_id` là cơ sở nguồn của hồ sơ khách. Tra SĐT/CCCD toàn hệ thống, không cần chọn cơ sở trước; hiển thị nguồn hồ sơ và cơ sở của hợp đồng thuê đầu tiên. Chọn hồ sơ tự gợi ý cơ sở nguồn/doanh thu cho hợp đồng.
 - `orders.store_id` là cơ sở nguồn/doanh thu của hợp đồng. Bộ lọc và tổng tiền hợp đồng, phiếu thu, tài khoản nhận tiền dùng cơ sở này. Có thể chọn lại nguồn của hợp đồng khi nhập hộ; thao tác này không chuyển hồ sơ khách hay kho xe. “Liên kết nguồn khách” và “Cơ sở nguồn khách / doanh thu” cùng cập nhật lựa chọn này.
-- `vehicles.store_id` giữ cơ sở gốc; `vehicles.current_store_id` giữ cơ sở đang quản lý xe. Chọn xe toàn hệ thống hoặc lọc riêng **Cơ sở giữ xe / kho xe**. Lưu/phát hành/trả hợp đồng không đổi hai trường này. Server xác nhận kho xe và lưu vào snapshot `stock_store_id/name`; không tin tên kho gửi từ client.
+- `vehicles.store_id` giữ cơ sở gốc; `vehicles.current_store_id` giữ cơ sở đang quản lý xe. Chọn **Cửa hàng xe** để lọc xe và tải gợi ý nhân viên theo cơ sở đang giữ xe. Lựa chọn cửa hàng xe lưu riêng trong JSON hợp đồng (`vehicle_store_id`); chọn xe đầu tiên đồng bộ theo kho hiện tại của xe. Tra cứu khách hoặc đổi cơ sở doanh thu không đổi nhân viên/cửa hàng xe. Lưu/phát hành/trả hợp đồng không đổi hai trường cơ sở của xe. Server xác nhận kho xe và lưu vào snapshot `stock_store_id/name`; không tin tên kho gửi từ client.
 
 Ví dụ nguồn Láng, xe Nguyễn Hoàng: lập hợp đồng có nguồn/doanh thu Láng, chọn xe kho Nguyễn Hoàng. Nguyễn Hoàng vẫn thấy xe trong kho của mình với trạng thái Đang thuê; doanh thu và phiếu thu của hợp đồng về Láng. Không cần chuyển xe sang Láng.
 
@@ -13,6 +13,7 @@ Nếu Nguyễn Hoàng khớp kho trước lúc Láng nhập hợp đồng, có t
 - Hợp đồng mới mặc định thuê hôm nay theo giờ Việt Nam, hẹn trả sau 1 ngày. Chọn giờ 00–23 và phút 00–59, ví dụ **15:30**, độc lập thiết lập AM/PM của trình duyệt.
 - Nhập số ngày nguyên dương để tự tính hẹn trả, giữ cùng giờ và xử lý đổi tháng/năm/năm nhuận. Sửa hẹn trả trực tiếp được; khi đó đổi giờ/ngày thuê không ghi đè hẹn trả đã nhập. Nhập lại số ngày bật tính tự động. Nháp cũ giữ ngày giờ đã lưu.
 - Hình thức cọc/thanh toán chọn nhiều mục, bấm ngoài hoặc chuyển focus ra ngoài sẽ đóng; Escape đóng danh sách và giữ form. Các mục đã chọn vẫn giữ nguyên.
+- Khách trả trước để giữ xe ngày mai: **Hợp đồng → Nhận cọc giữ xe**. Khoản này trừ vào tiền thuê, có phiếu Thu ngay và đơn chờ giao xe; xem [hướng dẫn nhận cọc giữ xe](contract-reservations.md).
 - Sửa lỗi thiếu dấu ngoặc trong SQL ghi nhận trả xe, được phát hiện khi kiểm thử đầy đủ luồng.
 
 ## Kiểm tra

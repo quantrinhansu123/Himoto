@@ -116,3 +116,20 @@ Kết quả trên production build cục bộ:
 - Kiểm tra lại form/mẫu in/PDF: chín nhóm qua; nhập Excel, sao chép, tổng hợp và parser lưu chính thức đều qua kiểm tra logic.
 
 Ảnh dữ liệu QA: [cửa hàng xe/nhân viên mobile](qa/contract-branch-flows/customer-branch-webkit-375.png), [desktop](qa/contract-branch-flows/customer-branch-chromium-1440.png), [hình thức nhận cọc đã giữ](qa/contract-branch-flows/payment-methods-webkit-375.png), [kết quả tìm trả xe](qa/contract-branch-flows/return-search-webkit-375.png). Kết quả: [Chromium](qa/contract-branch-flows/chromium-results.json), [WebKit](qa/contract-branch-flows/webkit-results.json), [logic/SQL](qa/contract-branch-flows/unit-results.json), [form/mẫu in/PDF](qa/contract-branch-flows/layout-results.json).
+
+## Cọc giữ xe trừ tiền thuê — 2026-10-12
+
+Thêm **Hợp đồng → Nhận cọc giữ xe** để ghi khoản 100–200k đã nhận trước ngày thuê. Khoản trả trước tạo phiếu Thu liên kết ngay với hợp đồng và tăng số dư tài khoản nhận; đơn ở trạng thái **Đã cọc, chờ nhận xe**. Ngày nhận mặc định là ngày mai. Tiền này được trừ vào tiền thuê, tách khỏi cọc bảo đảm hoàn trả. Địa chỉ/người thân có thể bổ sung trước khi in; lưu nháp chưa tạo phiếu Thu.
+
+Menu ba chấm có **Giao xe** cho đơn chờ nhận. Xác nhận giao xe chuyển đơn/xe sang Đang thuê, giữ mã đơn và khoản đã thu; nếu còn thiếu tiền thuê thì mở form thu phần còn lại trong Sổ quỹ. Đã trả đủ thì không mở form thu thêm. Chọn xe đầu tiên đồng bộ cửa hàng/gợi ý nhân viên theo cơ sở đang giữ xe, độc lập cơ sở nguồn khách/doanh thu.
+
+Hướng dẫn nhập và kiểm thử: [Nhận cọc giữ xe trước ngày thuê](contract-reservations.md). Không thêm schema hay ghi dữ liệu Supabase thật khi kiểm thử.
+
+Kiểm chứng trên production build cục bộ:
+
+- Luồng nhận cọc/giao xe/thu phần còn lại: bốn nhóm Chromium và bốn nhóm WebKit ở 320/375/1440px; gồm trường hợp đã trả đủ không mở form thu thêm.
+- SQL PostgreSQL trong bộ nhớ: tám nhóm, có tiền mặt/chuyển khoản, đối chiếu số dư, thu thêm trước khi giao, chống ghi trùng/xung đột xe và rollback.
+- Rà lại cửa hàng xe, hình thức thanh toán và tìm trả xe: sáu nhóm Chromium và sáu nhóm WebKit. Form/mẫu in/PDF: chín nhóm Chromium.
+- Kiểm tra nháp, autofill, tổng hợp hợp đồng, Sổ quỹ, thanh toán và phát hành; lint phần quản lý/server, typecheck, build và `git diff --check`: qua.
+
+Kết quả: [luồng mới trên Chromium](qa/contract-reservations/chromium-results.json), [WebKit](qa/contract-reservations/webkit-results.json), [SQL](qa/contract-reservations/sql-results.json), [luồng hiện có trên Chromium](qa/contract-reservations/branch-chromium-results.json), [WebKit](qa/contract-reservations/branch-webkit-results.json), [mẫu in/PDF](qa/contract-reservations/layout-results.json). Chưa kiểm tra Safari/iPhone thật.

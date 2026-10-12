@@ -22,6 +22,7 @@
     "test:clone": "node scripts/check-contract-clone.cjs",
     "test:drafts": "node scripts/check-contract-drafts.cjs",
     "test:contract-branch-flows": "node scripts/check-contract-branch-flows.cjs",
+    "test:contract-reservations": "node scripts/check-contract-reservations.cjs",
     "test:login": "node scripts/check-management-login.cjs",
     "test:cashbook": "node scripts/check-cashbook-data.cjs",
     "test:customer-import": "node scripts/check-customer-import.cjs",

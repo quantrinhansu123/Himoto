@@ -38,7 +38,7 @@ export function parseFinalizeInput(body: unknown): FinalizeInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractFinalizeError('Thông tin lưu chính thức không hợp lệ.');
   const input = body as Record<string, unknown>;
   if ('receipts' in input) {
-    if (Object.keys(input).some(key=>!['revision','receipts'].includes(key)) || typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision) ||
+    if (Object.keys(input).some(key=>!['revision','receipts','reservation'].includes(key)) || (input.reservation !== undefined && input.reservation !== true) || typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision) ||
       !Array.isArray(input.receipts) || input.receipts.length > 40) throw new ContractFinalizeError('Thông tin các khoản thu không hợp lệ.');
     const receipts: FinalizeCollection[] = input.receipts.map(value=>{
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ContractFinalizeError('Khoản thu không hợp lệ.');
@@ -48,7 +48,8 @@ export function parseFinalizeInput(body: unknown): FinalizeInput {
       const receipt = parseReceipt({method:row.method,account_id:row.account_id},'khoản thu')!;
       return {...receipt,purpose:row.purpose as FinalizeCollection['purpose'],amount:row.amount,paid_at:row.paid_at};
     });
-    return {revision:input.revision,receipts};
+    if (input.reservation && (!receipts.length || receipts.some(row=>row.purpose !== 'rental'))) throw new ContractFinalizeError('Nhập tiền giữ xe trả trước, được trừ vào tiền thuê.');
+    return {revision:input.revision,receipts,...(input.reservation ? {reservation:true as const} : {})};
   }
   if (Object.keys(input).some(key => !['revision', 'paid_at', 'deposit', 'rental'].includes(key)) || !('deposit' in input) || !('rental' in input) ||
       typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision)) throw new ContractFinalizeError('Thông tin lưu chính thức không hợp lệ.');
@@ -60,6 +61,7 @@ export function parseFinalizeInput(body: unknown): FinalizeInput {
 // status and receipts are written together or not at all.
 export async function finalizeContractDraft(client: Database, id: number, actorId: number, input: FinalizeInput): Promise<FinalizeResult> {
   input = parseFinalizeInput(input);
+  const reservation = 'receipts' in input && input.reservation === true;
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractFinalizeError('Hợp đồng hoặc người thực hiện không hợp lệ.');
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
@@ -79,6 +81,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (!Number.isSafeInteger(customerId) || customerId <= 0) throw new ContractFinalizeError('Bản nháp chưa có khách hàng.', 409);
   const start = draft.start_date, end = draft.end_date;
   if (!validLocal(start) || !validLocal(end) || end <= start) throw new ContractFinalizeError('Thời gian thuê / hẹn trả của bản nháp không hợp lệ.', 409);
+  if (reservation && new Date(`${start}+07:00`).getTime() < Date.now()) throw new ContractFinalizeError('Chọn thời gian dự kiến nhận xe từ hiện tại trở đi.', 409);
   const lines = Array.isArray(draft.vehicles) ? draft.vehicles as Record<string, unknown>[] : [];
   const vehicleIds = lines.map(line => Number(line?.id));
   if (!lines.length || vehicleIds.some(value => !Number.isSafeInteger(value) || value <= 0) || new Set(vehicleIds).size !== vehicleIds.length) throw new ContractFinalizeError('Bản nháp cần chọn đủ xe, không trùng xe.', 409);
@@ -100,7 +103,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.completed_at IS NULL AND d.deleted_at IS NULL
       AND o.deleted_at IS NULL AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
   if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(row => `xe ${row.license} đang thuộc hợp đồng ${row.code}`).join('; ')} chưa trả xe.`, 409);
-  const notStored = vehicles.rows.filter(row => !['ready','using','rent'].includes(row.status));
+  const notStored = vehicles.rows.filter(row => !(reservation ? ['ready'] : ['ready','using','rent']).includes(row.status));
   if (notStored.length) throw new ContractFinalizeError(`Xe không sẵn sàng cho thuê: ${notStored.map(row => row.license).join(', ')} đang ở trạng thái khác.`, 409);
   // An inventory checkout may precede contract entry. Attach it once, preserving
   // its stock branch; the locked open-contract check above prevents double rental.
@@ -179,7 +182,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     return amount;
   }
   for (const [index,row] of receipts.entries()) await receipt(accounts[index],Number(row.amount),row.purpose==='deposit' ? 'order:deposit' : 'order:rental_fees',
-    `Thu ${row.purpose==='deposit' ? 'tiền cọc' : 'tiền thuê và phí khác'} hợp đồng ${code}`,row.paid_at);
+    `Thu ${reservation ? 'tiền giữ xe (trừ tiền thuê)' : row.purpose==='deposit' ? 'tiền cọc' : 'tiền thuê và phí khác'} hợp đồng ${code}`,row.paid_at);
   const paid = previousPaid+depositCollected+rentalCollected;
   const methodLabels = {cash:'Tiền mặt',transfer:'CK tk cá nhân',company_transfer:'CK tk công ty'};
   const actualMethods = (purpose: 'deposit'|'rental') => [...new Set([
@@ -191,11 +194,11 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
 
   const finalized = { at: new Date().toISOString(), actor_id: actorId, contract_number: code, item_ids: itemIds, transaction_ids: transactionIds,
     ...(retiredItemIds.length ? { retired_legacy_item_ids: retiredItemIds } : {}) };
-  await client.query(`UPDATE himoto.orders SET order_status='renting', order_mode='standard', contract_number=$2,
+  await client.query(`UPDATE himoto.orders SET order_status=$12, order_mode='standard', contract_number=$2,
       contract_issued_at=now() AT TIME ZONE 'Asia/Ho_Chi_Minh', rent_at=$3, return_at=$4, total=$5, total_rental_fees=$6, first_deposit_amount=$7,
       pid=$8, created_without_collect_deposit=$9, created_without_collect_rental_fees=$10, draft_payload=$11, updated_at=now()
     WHERE id=$1`, [id, code, startAt, endAt, String(total), rentalBase, deposit || null, paid, oldDepositPaid+depositCollected<deposit, oldRentalPaid+rentalCollected<total,
-    JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized } })]);
-  await client.query(`UPDATE himoto.vehicles SET status='using', updated_at=now() WHERE id = ANY($1::bigint[])`, [vehicleIds]);
-  return { order_id: id, code, total_amount: total, deposit_amount: deposit, paid_amount: paid, transaction_ids: transactionIds };
+    JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized, ...(reservation ? {reservation:{at:finalized.at,actor_id:actorId,applies_to:'rental'}} : {}) } }), reservation ? 'deposit_contract' : 'renting']);
+  if (!reservation) await client.query(`UPDATE himoto.vehicles SET status='using', updated_at=now() WHERE id = ANY($1::bigint[])`, [vehicleIds]);
+  return { order_id: id, code, total_amount: total, deposit_amount: deposit, paid_amount: paid, transaction_ids: transactionIds, status:reservation ? 'deposit_contract' : 'renting' };
 }
