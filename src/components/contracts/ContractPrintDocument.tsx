@@ -216,22 +216,6 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 							</ul>
 						</div>
 					</div>
-
-					{/* Chữ ký Phụ lục */}
-					<div className="appendix-signatures mt-1 d-flex">
-						<div className="sig-block text-center">
-							<div className="sig-role font-weight-bold">ĐẠI DIỆN BÊN A</div>
-							<div className="sig-hint">(Ký, đóng dấu, ghi rõ họ tên)</div>
-							<div className="sig-space-sm"></div>
-							<div className="sig-name font-weight-bold text-uppercase">{doc.signers.signer_a_name || representativeNameA}</div>
-						</div>
-						<div className="sig-block text-center">
-							<div className="sig-role font-weight-bold">BÊN B</div>
-							<div className="sig-hint">(Ký, ghi rõ họ tên)</div>
-							<div className="sig-space-sm"></div>
-							<div className="sig-name font-weight-bold text-uppercase">{doc.signers.signer_b_name}</div>
-						</div>
-					</div>
 				</div>
 			</div>
 		</div></Page>

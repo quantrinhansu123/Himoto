@@ -177,14 +177,13 @@
 	border-radius: 2px;
 }
 
-.contract-print-wrapper .contract-signatures,
-.contract-print-wrapper .appendix-signatures {
-	justify-content: center;
-	gap: 12%;
+.contract-print-wrapper .contract-signatures {
+	justify-content: space-between;
 }
 
 .contract-print-wrapper .sig-block {
-	width: 34%;
+	width: max-content;
+	max-width: 48%;
 }
 
 .contract-print-wrapper .sig-role {
@@ -198,10 +197,6 @@
 
 .contract-print-wrapper .sig-space {
 	height: 24px;
-}
-
-.contract-print-wrapper .sig-space-sm {
-	height: 25px;
 }
 
 .contract-print-wrapper .sig-name {
