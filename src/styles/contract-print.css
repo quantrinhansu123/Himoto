@@ -179,6 +179,7 @@
 
 .contract-print-wrapper .contract-signatures {
 	justify-content: space-between;
+	padding-inline: 8mm;
 }
 
 .contract-print-wrapper .sig-block {
