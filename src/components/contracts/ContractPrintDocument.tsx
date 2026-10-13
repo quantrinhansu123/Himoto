@@ -106,7 +106,6 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 								<span>- Nhãn hiệu: <strong>{primaryVehicle.brand || '............'}</strong></span>
 								<span>- Loại xe: <strong>{primaryVehicle.type_text || 'Xe ga'}</strong></span>
 								<span>- Màu sắc: <strong>{primaryVehicle.color || '............'}</strong></span>
-								<span>- Năm sản xuất: <strong>{primaryVehicle.year || '............'}</strong></span>
 							</div>
 							<div className="d-flex justify-content-between">
 								<span>- Tên Lái xe: <strong>{primaryVehicle.driver_name || doc.customer.name || '................................................'}</strong></span>
@@ -253,7 +252,6 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 							<th>Biển số</th>
 							<th>Loại xe</th>
 							<th>Màu sắc</th>
-							<th>Năm SX</th>
 							<th>Người lái</th>
 							<th>GPLX</th>
 							<th>Mũ BH</th>
@@ -268,7 +266,6 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 							<td className="font-weight-bold text-danger">{v.license}</td>
 							<td>{v.type_text}</td>
 							<td>{v.color}</td>
-							<td>{v.year}</td>
 							<td className="text-left">{v.driver_name}</td>
 							<td>{v.driver_license_number} {Boolean(v.driver_license_issued_on) && (<span className="small d-block">({v.driver_license_issued_on})</span>)}</td>
 							<td>{v.borrow_hats}</td>
