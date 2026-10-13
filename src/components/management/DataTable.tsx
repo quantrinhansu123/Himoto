@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, Bike, CalendarPlus, ChevronDown, Copy, Eye, FileSearch, LoaderCircle, Pencil, Printer, RefreshCw, RotateCcw, ShieldBan, ShieldCheck, Trash2, Wallet } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, Bike, CalendarPlus, Copy, Eye, FileSearch, LoaderCircle, Pencil, Printer, RefreshCw, RotateCcw, ShieldBan, ShieldCheck, Trash2, Wallet } from 'lucide-react';
 import { ManagementColumn, ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
@@ -17,10 +17,6 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
   const display = optionLabel(config, column.key, formatValue(value, column.format));
   return <span className={`mg-cell-value ${column.format === 'money' || column.format === 'number' ? 'mg-numeric' : ''}`} title={display}>{display}</span>;
 }
-
-const INLINE_ACTION_KINDS: ManagementConfig['kind'][] = ['vehicles'];
-const INLINE_ACTION_KEYS: Record<string, string> = { view: 'Xem', edit: 'Sửa', delete: 'Xóa' };
-
 interface Props {
   config: ManagementConfig;
   columns: ManagementColumn[];
@@ -105,16 +101,9 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : rows.length === 0 ? <tr><td colSpan={columnCount}><div className="mg-table-state"><FileSearch size={32} /><strong>{isFiltered ? 'Không tìm thấy kết quả' : 'Danh sách đang trống'}</strong><p>{isFiltered ? 'Thử từ khóa khác hoặc bỏ bớt bộ lọc.' : 'Chưa có bản ghi để hiển thị.'}</p>{isFiltered && <button className="mg-button" onClick={onReset}>Xóa bộ lọc</button>}</div></td></tr>
         : rows.map((row, index) => <tr key={row.id} className={selectedIds?.has(row.id) ? 'is-selected' : undefined}>{selectable && <td className="mg-select-column"><input type="checkbox" aria-label={`Chọn ${row.code || row.name || `#${row.id}`}`}
           checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}<td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} className={`${column.align === 'right' ? 'mg-align-right' : ''}${column.key === 'code' ? ' mg-record-code' : ''}`}><Cell row={row} column={column} config={config} /></td>)}
-          <td className="mg-actions-column"><div className="mg-row-actions">{(() => {
-            const actions = rowActions(row), label = row.license || row.code || row.name || '';
-            const inline = INLINE_ACTION_KINDS.includes(config.kind) ? actions.filter(action => INLINE_ACTION_KEYS[action.key]) : [];
-            const vehicleActions = actions.filter(action => ['transfer', 'status'].includes(action.key));
-            const rest = actions.filter(action => !inline.includes(action) && !vehicleActions.includes(action));
-            return <>{vehicleActions.length > 0 && <RowActionsMenu label={`Hành động xe ${label}`.trim()} triggerLabel={<>Hành động xe<ChevronDown size={14} /></>} actions={vehicleActions} />}
-              {inline.map(action => <button key={action.key} type="button" className={`mg-icon-button${action.danger ? ' mg-icon-button-danger' : ''}`} disabled={action.disabled}
-              aria-label={`${INLINE_ACTION_KEYS[action.key]} ${label}`.trim()} title={INLINE_ACTION_KEYS[action.key]} onClick={action.onSelect}>{action.icon}</button>)}
-              {rest.length > 0 && <RowActionsMenu label={`Thao tác ${row.code || row.name || ''}`.trim()} actions={rest} busy={cloningId === row.id || blacklistBusyId === row.id} />}</>;
-          })()}</div></td></tr>)}</tbody>
+          <td className="mg-actions-column"><div className="mg-row-actions">
+            <RowActionsMenu label={`Thao tác ${row.license || row.code || row.name || ''}`.trim()} actions={rowActions(row)} busy={cloningId === row.id || blacklistBusyId === row.id} />
+          </div></td></tr>)}</tbody>
     </table>
   </div></>;
 }
