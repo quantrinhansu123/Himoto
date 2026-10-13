@@ -125,13 +125,13 @@ with sync_playwright() as playwright:
     checks.append('branch, status, type, accent-free search and inclusive dates combine; empty/reset values are accurate')
 
     mode['missing'] = True
-    page.get_by_role('button', name='Làm mới', exact=True).click()
+    page.reload(wait_until='domcontentloaded')
     expect(metric('Công nợ')).to_have_text('—')
     expect(metric('Tổng tiền')).to_have_text(re.compile(r'20\.700\s*₫'))
     expect(summary.get_by_text('Chưa đủ số liệu', exact=False)).to_be_visible()
     mode['missing'] = False
     mode['hold_reads'] = True
-    page.get_by_role('button', name='Làm mới', exact=True).click()
+    page.reload(wait_until='domcontentloaded')
     expect(metric('Số hợp đồng')).to_have_text('—')
     expect(summary).to_have_attribute('aria-busy', 'true')
     page.wait_for_timeout(300)
@@ -141,14 +141,14 @@ with sync_playwright() as playwright:
     held.clear()
     check_values(20, 1, '20.700 ₫', '12.300 ₫', '1.500 ₫')
     mode['read_error'] = True
-    page.get_by_role('button', name='Làm mới', exact=True).click()
+    page.reload(wait_until='domcontentloaded')
     expect(page.get_by_text('Không tải được dữ liệu', exact=True)).to_be_visible()
     expect(metric('Số hợp đồng')).to_have_text('—')
     expect(metric('Tổng tiền')).to_have_text('—')
     mode['read_error'] = False
     page.get_by_role('button', name='Thử lại', exact=True).click()
     check_values(20, 1, '20.700 ₫', '12.300 ₫', '1.500 ₫')
-    checks.append('missing paid data remains unknown; reload displays unavailable/loading placeholders, then recovers')
+    checks.append('missing paid data remains unknown; page reload displays unavailable/loading placeholders, then recovers')
 
     page.goto(args.url + '/contracts?customer_id=2', wait_until='domcontentloaded')
     check_values(1, 0, '2.000 ₫', '1.500 ₫', '1.500 ₫')
@@ -193,9 +193,8 @@ with sync_playwright() as playwright:
     assert mark.bounding_box()['height'] >= 44
     page.screenshot(path=str(output / 'blacklist-375.png'), full_page=True)
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-    page.goto(args.url + '/contracts', wait_until='domcontentloaded')
     mode['large'] = True
-    page.get_by_role('button', name='Làm mới', exact=True).click()
+    page.goto(args.url + '/contracts', wait_until='domcontentloaded')
     expect(metric('Tổng tiền')).to_contain_text('10.000.000.019.699')
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     summary.scroll_into_view_if_needed()

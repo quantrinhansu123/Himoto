@@ -66,8 +66,27 @@ export function ContractPrintDocument({ doc }: { doc: LegacyContractDocument }) 
 css = source.split('<style scoped>', 1)[1].split('</style>', 1)[0]
 # Preserve the legacy styles, limiting their selectors to this document.
 css = re.sub(r'(?m)^(\.[^\n{]+)(?=\s*\{)', lambda m: m[1] if m[1].startswith('.contract-print-wrapper') else '.contract-print-wrapper ' + m[1], css)
-css = css.replace('body * {', 'body.himoto-contract-frame * {')
-css = css.replace('\t.contract-print-wrapper,\n\t.contract-print-wrapper *', '\t.himoto-contract-frame .contract-print-wrapper,\n\t.himoto-contract-frame .contract-print-wrapper *')
+legacy_isolation = '\tbody * {\n\t\tvisibility: hidden !important;\n\t}\n\n\t.contract-print-wrapper,\n\t.contract-print-wrapper * {\n\t\tvisibility: visible !important;\n\t}\n'
+assert legacy_isolation in css
+css = css.replace('/* In ấn @media print */', '.himoto-print-root {\n\tdisplay: none;\n}\n\n/* In ấn @media print */').replace(legacy_isolation, '''\thtml.himoto-printing,
+\thtml.himoto-printing body {
+\t\tmargin: 0 !important;
+\t\tpadding: 0 !important;
+\t\theight: auto !important;
+\t\tmin-height: 0 !important;
+\t\toverflow: visible !important;
+\t\tbackground: #fff !important;
+\t}
+
+\thtml.himoto-printing body > :not(.himoto-print-root),
+\thtml.himoto-printing dialog {
+\t\tdisplay: none !important;
+\t}
+
+\thtml.himoto-printing .himoto-print-root {
+\t\tdisplay: block;
+\t}
+''')
 css += '''
 /* Utilities the legacy template received from Bootstrap, scoped to its document. */
 .contract-print-wrapper .d-flex { display: flex; }

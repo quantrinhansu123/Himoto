@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
+import { BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
 import type { SessionUser } from '@/lib/server/management-session';
@@ -15,6 +15,7 @@ const navigation = [
   { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts' as const, icon: Files },
   { href: '/contracts/drafts', label: 'Hợp đồng nháp', kind: 'contracts' as const, icon: FilePenLine },
   { href: '/contracts/vat', label: 'Hợp đồng VAT', kind: 'contracts' as const, icon: ReceiptText },
+  { href: '/contracts/battery', label: 'Hợp đồng thuê pin', kind: 'battery-contracts' as const, icon: BatteryCharging },
   { href: '/stores', label: 'Cơ sở', kind: 'stores' as const, icon: Building2 },
   { href: '/vehicles', label: 'Danh sách xe', kind: 'vehicles' as const, icon: Bike },
   { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook' as const, icon: Wallet },

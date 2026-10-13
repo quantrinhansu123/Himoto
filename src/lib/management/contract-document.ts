@@ -236,8 +236,6 @@ export function buildContractDocument(draft: ContractDraft, store: ManagementRow
     customer_source: { name: draft.customer_source, url: draft.customer_source_url },
     vehicles, vehicles_count: vehicles.length, primary_vehicle: vehicles[0],
     rent_time: { start: timeParts(draft.start_date), end: timeParts(draft.end_date) },
-    extra_charges:(draft.extra_charges || []).filter(item=>item.name.trim() && Number(item.amount)>0).map(item=>({name:item.name,amount:money(item.amount)})),
-    collections:(draft.collections || []).map(item=>({...item,amount_formatted:money(String(item.amount)),paid_at_formatted:`${printedDate(item.paid_at.slice(0,10))} ${item.paid_at.slice(11,16)}`})),
     pricing: { unit_price_text: draft.unit_price ? `${money(draft.unit_price)} / ${draft.package_name === 'Theo tháng' ? 'tháng' : 'ngày'}` : 'Theo bảng giá',
       paid_amount_formatted: money(draft.paid_amount), payment_method_text: draft.paid_amount==='' ? 'Chưa có số liệu' : Number(draft.paid_amount)>0 ? draft.payment_method || '........................' : 'Chưa thu',
       package_name: draft.package_name, calculation_text: `Tổng phí thuê${chargeTotal(draft.extra_charges) ? ' và phí khác' : ''}: ${money(draft.total_amount)}` },

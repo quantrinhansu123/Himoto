@@ -152,38 +152,31 @@ with sync_playwright() as p:
     form = page.locator('dialog.mg-contract-composer')
     page.evaluate('''() => {
       window.__printCalls = 0;
-      const append = document.body.appendChild.bind(document.body);
-      document.body.appendChild = node => {
-        const result = append(node);
-        if (node.tagName === 'IFRAME' && node.className === 'mg-contract-print-frame') {
-          node.contentWindow.print = () => { window.__printCalls += 1; };
-        }
-        return result;
-      };
+      window.print = () => { window.__printCalls += 1; };
     }''')
     form.get_by_role('button', name='Xem mẫu in', exact=True).click()
     preview = page.locator('dialog.mg-contract-print-dialog')
-    appendix = preview.locator('.contract-payment-appendix')
-    expect(appendix).to_contain_text('Phí ship')
-    expect(appendix).to_contain_text('50.000 đ')
-    expect(appendix).to_contain_text('Đã thu thuê/phí: 250.000 đ')
-    expect(appendix).to_contain_text('Đã nhận cọc: 2.000.000 đ')
-    expect(appendix.locator('table').last.locator('tbody tr')).to_have_count(3)
+    paper = preview.locator('.contract-print-wrapper')
+    expect(paper).to_contain_text('Đã thu phí thuê: 250.000 đ')
+    expect(paper).not_to_contain_text('Đã nhận cọc')
+    expect(paper).not_to_contain_text('CHI TIẾT PHÍ VÀ CÁC KHOẢN ĐÃ THU')
     preview.screenshot(path=str(out / 'print-preview-1440.png'))
     preview.get_by_role('button', name='In hợp đồng', exact=True).click()
     page.wait_for_function('window.__printCalls > 0')
-    frame = page.locator('iframe.mg-contract-print-frame').content_frame
-    html = frame.locator('html').evaluate('(el)=>"<!doctype html>"+el.outerHTML')
+    html = page.evaluate('''() => '<!doctype html><html lang="vi" class="himoto-printing"><head>'
+      + Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'), node => node instanceof HTMLLinkElement ? `<link rel="stylesheet" href="${node.href}">` : node.outerHTML).join('')
+      + '</head><body>' + document.querySelector('.himoto-print-root').outerHTML + '</body></html>' ''')
     print_page = context.new_page()
     print_page.set_content(html, wait_until='networkidle')
     print_page.pdf(path=str(out / 'split-collections.pdf'), prefer_css_page_size=True, print_background=True)
     with fitz.open(out / 'split-collections.pdf') as pdf:
-        assert len(pdf) == 2, len(pdf)
+        assert len(pdf) == 1, len(pdf)
         text = '\n'.join(p.get_text() for p in pdf)
-        for value in ['Phí ship', '50.000', '200.000', '1.800.000', '250.000', 'TK cá nhân Láng QA', 'TK công ty Láng QA']:
+        for value in ['250.000', '2.000.000']:
             assert value in text, value
-        pdf[1].get_pixmap(matrix=fitz.Matrix(1.5, 1.5)).save(str(out / 'collections-pdf-page.png'))
-    checks.append('reopened contract prints actual 250k fees separately from 2m deposit, named ship fee and three account receipts on an A4 appendix; actual PDF has two pages')
+        assert 'CHI TIẾT PHÍ VÀ CÁC KHOẢN ĐÃ THU' not in text
+        pdf[0].get_pixmap(matrix=fitz.Matrix(1.5, 1.5)).save(str(out / 'collections-pdf-page.png'))
+    checks.append('reopened contract prints actual 250k fees separately from 2m deposit on the contract page, without a fee/receipt appendix; actual PDF has one page')
     assert not errors, errors
     (out / 'results.json').write_text(json.dumps(dict(passed=len(checks), checks=checks, errors=errors, realBusinessWrites=0), ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(dict(passed=len(checks), checks=checks), ensure_ascii=False))

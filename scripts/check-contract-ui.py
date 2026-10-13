@@ -17,6 +17,10 @@ checks, errors, writes = [], [], []
 def normalize(text):
     return re.sub(r'\s+', ' ', text).strip()
 
+PRINT_HTML = '''() => '<!doctype html><html lang="vi" class="himoto-printing"><head>'
+  + Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'), node => node instanceof HTMLLinkElement ? `<link rel="stylesheet" href="${node.href}">` : node.outerHTML).join('')
+  + '</head><body>' + document.querySelector('.himoto-print-root').outerHTML + '</body></html>' '''
+
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(viewport={'width': 1440, 'height': 1000}, timezone_id='Asia/Ho_Chi_Minh', reduced_motion='reduce')
@@ -133,23 +137,16 @@ with sync_playwright() as p:
     # Invoke the real print handler while suppressing the OS print dialog in automation.
     page.evaluate('''() => {
       window.__printCalls = 0;
-      const append = document.body.appendChild.bind(document.body);
-      document.body.appendChild = node => {
-        const result = append(node);
-        if (node.tagName === 'IFRAME' && node.className === 'mg-contract-print-frame') {
-          node.contentWindow.print = () => { window.__printCalls += 1; };
-        }
-        return result;
-      };
+      window.print = () => { window.__printCalls += 1; };
     }''')
     preview.get_by_role('button', name='In hợp đồng', exact=True).click()
-    expect(page.locator('iframe.mg-contract-print-frame')).to_have_count(1)
+    expect(page.locator('.himoto-print-root')).to_have_count(1)
     page.wait_for_function('window.__printCalls === 1')
-    frame = page.locator('iframe.mg-contract-print-frame').content_frame
+    frame = page.locator('.himoto-print-root')
     assert frame.locator('form').count() == 0
     expect(frame.locator('.contract-main-title')).to_have_text('HỢP ĐỒNG THUÊ XE')
-    assert 'Khách mới trong modal' in frame.locator('body').inner_text()
-    html = frame.locator('html').evaluate('(node) => "<!doctype html>" + node.outerHTML')
+    assert 'Khách mới trong modal' in frame.inner_text()
+    html = page.evaluate(PRINT_HTML)
     print_page = context.new_page()
     print_page.set_content(html, wait_until='networkidle')
     pdf_path = output / 'contract-single-vehicle.pdf'
@@ -166,7 +163,7 @@ with sync_playwright() as p:
     checks.append('actual print handler isolates the document and produces one A4 landscape PDF with no form chrome')
 
     preview.get_by_role('button', name='Quay lại thông tin').click()
-    expect(page.locator('iframe.mg-contract-print-frame')).to_have_count(0)
+    expect(page.locator('.himoto-print-root')).to_have_count(0)
     form.get_by_role('button', name='Thêm xe vào mẫu').click()
     form.locator('#contract-vehicle-1').click()
     form.locator('#contract-vehicle-1-options-6').click()
@@ -176,7 +173,7 @@ with sync_playwright() as p:
     assert 'DEMO-006' in preview.locator('.appendix-multi-vehicles').inner_text()
     preview.get_by_role('button', name='In hợp đồng', exact=True).click()
     page.wait_for_function('window.__printCalls === 2')
-    html = page.locator('iframe.mg-contract-print-frame').content_frame.locator('html').evaluate('(node) => "<!doctype html>" + node.outerHTML')
+    html = page.evaluate(PRINT_HTML)
     print_page = context.new_page(); print_page.set_content(html, wait_until='networkidle')
     multi_path = output / 'contract-multiple-vehicles.pdf'
     print_page.pdf(path=str(multi_path), prefer_css_page_size=True, print_background=True)

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { CONTRACT_DATA_KINDS, VEHICLE_DATA_KINDS } from '@/lib/management/data-loader';
 import { ManagementDataBoundary } from './ManagementDataBoundary';
-import { ArrowDownToLine, ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, ListFilter, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, ListFilter, Plus, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { RowActionsMenu } from './RowActionsMenu';
 import type { VehicleActionMode } from './VehicleActionDialog';
 import { MANAGEMENT_CONFIG, optionLabel, statusTone } from '@/lib/management/config';
@@ -73,10 +73,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState('');
-  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [vehicleAction, setVehicleAction] = useState<{ mode: VehicleActionMode; vehicle: ManagementRow | null } | null>(null);
-  const [deleteAllText, setDeleteAllText] = useState('');
-  const [deleteAllProgress, setDeleteAllProgress] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
   const [printRow, setPrintRow] = useState<ManagementRow | null>(null);
   const [composerMode, setComposerMode] = useState<'print' | 'edit' | 'draft' | 'reservation'>('print');
@@ -114,7 +111,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   const canEdit = kind === 'customers' || kind === 'stores' || kind === 'vehicles';
   const canDelete = source === 'api' && (kind === 'customers' || kind === 'stores' || kind === 'vehicles');
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
-  const canBulkDelete = source === 'api';
+  const canBulkDelete = source === 'api' && kind !== 'contracts';
   useEffect(() => {
     setSelectedIds(current => {
       const present = new Set(rows.map(row => row.id));
@@ -132,29 +129,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
       const deleted = await bulkDelete(kind, [...selectedIds]);
       setSelectedIds(new Set()); setBulkDeleteOpen(false);
       notify(`Đã xóa ${deleted.length} ${config.singular}.`);
-      if (kind === 'contracts') invalidateData(['vehicles']);
       await ensureData([kind], true).catch(() => {});
     } catch (cause) { setBulkDeleteError(cause instanceof Error ? cause.message : `Không xóa được ${config.singular}.`); }
     finally { setBulkDeleteBusy(false); }
-  }
-  async function deleteAllFiltered() {
-    if (bulkDeleteBusy || !filteredRows.length || deleteAllText.trim().toUpperCase() !== 'XOA') return;
-    setBulkDeleteBusy(true); setBulkDeleteError('');
-    const ids = filteredRows.map(row => row.id);
-    let done = 0;
-    try {
-      for (let index = 0; index < ids.length; index += 500) {
-        done += (await bulkDelete(kind, ids.slice(index, index + 500))).length;
-        setDeleteAllProgress(done);
-      }
-      setSelectedIds(new Set()); setDeleteAllOpen(false); setDeleteAllText('');
-      notify(`Đã xóa ${done} ${config.singular}.`);
-    } catch (cause) {
-      setBulkDeleteError(`${done ? `Đã xóa ${done}/${ids.length}. ` : ''}${cause instanceof Error ? cause.message : `Không xóa được ${config.singular}.`}`);
-    } finally {
-      setBulkDeleteBusy(false); setDeleteAllProgress(0);
-      if (done) { if (kind === 'contracts') invalidateData(['vehicles']); await ensureData([kind], true).catch(() => {}); }
-    }
   }
   const bulkDeleteNote: Record<ManagementKind, string> = {
     contracts: 'Hợp đồng đã chọn sẽ bị ẩn khỏi danh sách (xóa mềm, dữ liệu vẫn được giữ trong hệ thống). Xe đang thuê theo các hợp đồng này được trả về trạng thái Lưu kho; phiếu thu/chi đã ghi vẫn giữ nguyên trong Sổ quỹ.',
@@ -189,7 +166,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   return <section className="mg-page" aria-label={config.title}>
     <div className="mg-page-content">
       <div className="mg-page-heading"><div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopedRows.length}</span></h1><p>{config.description}</p></div>
-        <div className="mg-heading-actions">{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}{canBulkDelete && kind === 'contracts' && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !filteredRows.length} onClick={() => { setBulkDeleteError(''); setDeleteAllText(''); setDeleteAllOpen(true); }}><Trash2 size={16} />Xóa hết ({filteredRows.length})</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
+        <div className="mg-heading-actions">{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}{kind !== 'contracts' && <button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>}
           {kind === 'customers' && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && source === 'api' && <RowActionsMenu label="Hành động xe" triggerLabel={<>Hành động xe<ChevronDown size={16} /></>} disabled={loading || Boolean(error) || !dataset} actions={[
@@ -203,7 +180,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
             else { setEditing(null); setFormOpen(true); }
           }}><Plus size={18} />{config.addLabel}</button>}
           {(kind === 'stores' || kind === 'vehicles' || kind === 'customers') && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
-          {kind === 'contracts' && <>{source === 'api' && <span className="mg-readonly"><ShieldCheck size={16} />{canSaveContractDrafts ? 'Có thể lưu và sửa nháp' : 'Danh sách chỉ đọc'}</span>}<button type="button" className="mg-button" disabled={loading || refreshing} onClick={() => void reload()}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>{source === 'api' && <button type="button" className="mg-button" disabled={loading || Boolean(error)} onClick={() => setReturnTarget({ orderId: null, code: '' })}><RotateCcw size={16} />Trả xe</button>}<button type="button" className="mg-button" disabled={loading || Boolean(error) || !dataset || !canSaveContractDrafts} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={() => { setPrintRow(null); setComposerMode('draft'); setComposerOpen(true); }}><Plus size={17} />Nhập hợp đồng</button></>}</div>
+          {kind === 'contracts' && <><button type="button" className="mg-button" disabled={loading || Boolean(error) || !dataset || !canSaveContractDrafts} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={() => { setPrintRow(null); setComposerMode('draft'); setComposerOpen(true); }}><Plus size={17} />Nhập hợp đồng</button></>}</div>
       </div>
 
       {kind === 'staff' && <StaffOrganizationChart />}
@@ -217,7 +194,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
             <details className="mg-column-menu" ref={columnsRef}><summary className="mg-button" aria-label="Ẩn hiện cột"><Columns3 size={16} /><span>Cột</span></summary><div className="mg-popover"><strong>Hiển thị cột</strong>{config.columns.map(column => <label key={column.key}><input type="checkbox" checked={visibleKeys.includes(column.key)} disabled={visibleKeys.length === 1 && visibleKeys.includes(column.key)} onChange={event => setVisibleKeys(current => event.target.checked ? [...current, column.key] : current.filter(key => key !== column.key))} />{column.label}</label>)}</div></details>
           </div>
         </div>
-        {kind === 'contracts' && <div className="mg-date-filters"><span>Ngày bắt đầu thuê</span><label><span className="mg-sr-only">Từ ngày</span><input type="date" aria-label="Từ ngày" value={query.startDate} onChange={event => updateQuery({ startDate: event.target.value })} aria-invalid={invalidDate} /></label><span className="mg-date-divider">—</span><label><span className="mg-sr-only">Đến ngày</span><input type="date" aria-label="Đến ngày" value={query.endDate} onChange={event => updateQuery({ endDate: event.target.value })} aria-invalid={invalidDate} /></label>{invalidDate && <span className="mg-field-error" role="alert">Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.</span>}
+        {kind === 'contracts' && <div className="mg-date-filters mg-date-range-inline"><span>Ngày bắt đầu thuê</span><label><span className="mg-sr-only">Từ ngày</span><input type="date" aria-label="Từ ngày" value={query.startDate} onChange={event => updateQuery({ startDate: event.target.value })} aria-invalid={invalidDate} /></label><span className="mg-date-divider">—</span><label><span className="mg-sr-only">Đến ngày</span><input type="date" aria-label="Đến ngày" value={query.endDate} onChange={event => updateQuery({ endDate: event.target.value })} aria-invalid={invalidDate} /></label>{invalidDate && <span className="mg-field-error" role="alert">Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.</span>}
           {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}{contractId && <span className="mg-active-filter">Hợp đồng #{contractId}<button type="button" aria-label="Bỏ lọc hợp đồng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}</div>}
         {isFiltered && <div className="mg-filter-summary"><span><strong>{filteredRows.length}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
         {kind === 'contracts' && <ContractSummary rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset} />}
@@ -251,7 +228,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
           </div>
         </div>
       </div>
-      <div className="mg-list-note"><span className="mg-note-line" />{kind === 'contracts' ? canSaveContractDrafts ? 'Dữ liệu hiện tại từ Supabase. Bản nháp được lưu trên hệ thống để mở lại và tiếp tục sửa. Nhấn Làm mới để cập nhật danh sách.' : 'Danh sách lấy từ hệ thống. Nhấn Làm mới để tải dữ liệu hiện tại; chức năng ghi bản nháp chưa được kết nối.' : kind === 'customers' && source === 'api' ? 'Dữ liệu khách hàng được đọc và cập nhật trực tiếp trong Supabase. Hồ sơ có đơn thuê liên quan sẽ được bảo vệ khỏi thao tác xóa.' : kind === 'stores' ? 'Cơ sở được cập nhật trực tiếp trong Supabase. Chỉ xóa được cơ sở chưa có dữ liệu liên quan; có thể chọn Tạm ngừng để giữ lịch sử.' : kind === 'vehicles' ? 'Có thể đánh dấu Đang thuê trước khi nhập hợp đồng. Xe đã có hợp đồng mở phải trả xe trên hợp đồng; cơ sở giữ xe và cơ sở ghi nhận doanh thu được quản lý riêng.' : kind === 'staff' ? 'Nhân sự được thêm, sửa trực tiếp trong Supabase; mã nhân sự do hệ thống tự cấp. Nhân sự còn lịch trực hoặc dữ liệu liên quan được bảo vệ khỏi xóa.' : 'Các trường chưa được API cung cấp hiển thị “—”. Danh sách hiện chỉ đọc.'}</div>
+      <div className="mg-list-note"><span className="mg-note-line" />{kind === 'contracts' ? canSaveContractDrafts ? 'Dữ liệu hiện tại từ Supabase. Bản nháp được lưu trên hệ thống để mở lại và tiếp tục sửa.' : 'Danh sách lấy từ hệ thống; chức năng ghi bản nháp chưa được kết nối.' : kind === 'customers' && source === 'api' ? 'Dữ liệu khách hàng được đọc và cập nhật trực tiếp trong Supabase. Hồ sơ có đơn thuê liên quan sẽ được bảo vệ khỏi thao tác xóa.' : kind === 'stores' ? 'Cơ sở được cập nhật trực tiếp trong Supabase. Chỉ xóa được cơ sở chưa có dữ liệu liên quan; có thể chọn Tạm ngừng để giữ lịch sử.' : kind === 'vehicles' ? 'Có thể đánh dấu Đang thuê trước khi nhập hợp đồng. Xe đã có hợp đồng mở phải trả xe trên hợp đồng; cơ sở giữ xe và cơ sở ghi nhận doanh thu được quản lý riêng.' : kind === 'staff' ? 'Nhân sự được thêm, sửa trực tiếp trong Supabase; mã nhân sự do hệ thống tự cấp. Nhân sự còn lịch trực hoặc dữ liệu liên quan được bảo vệ khỏi xóa.' : 'Các trường chưa được API cung cấp hiển thị “—”. Danh sách hiện chỉ đọc.'}</div>
     </div>
     {formOpen && kind === 'vehicles' ? <VehicleEditDialog row={editing} onClose={() => setFormOpen(false)} /> : formOpen && kind === 'stores' ? <StoreEditDialog row={editing} onSaved={() => { if (!editing) { setQuery(EMPTY_QUERY); setPage(1); } }} onClose={() => setFormOpen(false)} /> : formOpen && <EntityForm config={config} row={editing} onClose={() => setFormOpen(false)} />}
     {createStaffOpen && kind === 'staff' && <StaffDialog row={null} mode="create" stores={dataset?.stores || EMPTY_ROWS} defaultStoreId={selectedStore === 'all' ? '' : selectedStore} onClose={() => setCreateStaffOpen(false)}
@@ -271,16 +248,6 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
         catch (cause) { setDeleteError(cause instanceof Error ? cause.message : `Không xóa được ${config.singular}.`); }
         finally { setDeleteBusy(false); }
       }}>{deleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />{kind === 'stores' ? 'Xóa cơ sở' : kind === 'vehicles' ? 'Xóa xe' : 'Xóa khách hàng'}</>}</button></div>
-    </Dialog>}
-    {deleteAllOpen && canBulkDelete && <Dialog title={`Xóa hết ${filteredRows.length} ${config.singular}?`} subtitle={isFiltered ? 'Theo cơ sở / bộ lọc / tab đang chọn' : 'Toàn bộ danh sách'} onClose={() => { if (!bulkDeleteBusy) setDeleteAllOpen(false); }}>
-      <form onSubmit={event => { event.preventDefault(); void deleteAllFiltered(); }}>
-        <div className="mg-dialog-body"><p>{bulkDeleteNote[kind]}</p>
-          <p>Sẽ xóa <strong>{filteredRows.length}</strong> {config.singular} đang hiển thị trong danh sách{isFiltered ? ' (đã áp dụng bộ lọc)' : ''}, không chỉ trang hiện tại.</p>
-          <div className="mg-field"><label htmlFor="delete-all-confirm">Gõ <strong>XOA</strong> để xác nhận</label><input id="delete-all-confirm" value={deleteAllText} autoComplete="off" disabled={bulkDeleteBusy} onChange={event => setDeleteAllText(event.target.value)} /></div>
-          {bulkDeleteBusy && <p role="status">Đang xóa… {deleteAllProgress}/{filteredRows.length}</p>}
-          {bulkDeleteError && <p className="mg-error-message" role="alert">{bulkDeleteError}</p>}</div>
-        <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={bulkDeleteBusy} onClick={() => setDeleteAllOpen(false)}>Hủy</button><button type="submit" className="mg-button mg-button-danger" disabled={bulkDeleteBusy || deleteAllText.trim().toUpperCase() !== 'XOA'}>{bulkDeleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa hết {filteredRows.length} {config.singular}</>}</button></div>
-      </form>
     </Dialog>}
     {bulkDeleteOpen && canBulkDelete && <Dialog title={`Xóa ${selectedIds.size} ${config.singular}?`} subtitle={rows.filter(row => selectedIds.has(row.id)).map(row => row.code || row.name || `#${row.id}`).slice(0, 6).join(', ') + (selectedIds.size > 6 ? '…' : '')} onClose={() => { if (!bulkDeleteBusy) setBulkDeleteOpen(false); }}>
       <div className="mg-dialog-body"><p>{bulkDeleteNote[kind]}</p>{bulkDeleteError && <p className="mg-error-message" role="alert">{bulkDeleteError}</p>}</div>

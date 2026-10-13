@@ -164,17 +164,8 @@ with sync_playwright() as p:
         expect(picker('Hình thức dự kiến nhận cọc').locator('summary')).to_have_text('Tiền mặt')
         expect(picker('Hình thức dự kiến thu thuê/phí').locator('summary')).to_have_text('Tiền mặt')
         form.get_by_role('button', name='Đóng', exact=True).click()
-        page.get_by_role('button', name='Trả xe', exact=True).click()
-        dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Trả xe', exact=True))
-        for term in ['29B1-123.45', '0900000077', customer['id_card'], 'OLD-QA-900']:
-            dialog.locator('#contract-return-search').fill(term)
-            dialog.get_by_role('button', name='Tìm', exact=True).click()
-            expect(dialog.locator('.mg-return-line-head strong')).to_have_text('Xe QA · 29B1-123.45')
-        if width == 375:
-            dialog.screenshot(path=str(out / 'return-search-375.png'))
-        assert dialog.evaluate('(el) => el.scrollWidth <= el.clientWidth')
-        dialog.get_by_role('button', name='Đóng', exact=True).click()
-        checks.append(f'{width}px: old order payment choices remain visible; return form accepts contract, CCCD, plate and phone without submitting returns')
+        expect(page.get_by_role('button', name='Trả xe', exact=True)).to_have_count(0)
+        checks.append(f'{width}px: old order payment choices remain visible; the contract list has no page-level return button')
     assert not errors and not unexpected, (errors, unexpected)
     browser.close()
 result = dict(passed=len(checks), browser=args.browser, checks=checks, javascriptErrors=errors, unexpectedRequests=unexpected,

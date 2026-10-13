@@ -88,16 +88,21 @@ def select_tab(container, name):
     container.get_by_role('tab', name=name, exact=False).click()
 
 
+PRINT_HTML = '''() => '<!doctype html><html lang="vi" class="himoto-printing"><head>'
+  + Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'), node => node instanceof HTMLLinkElement ? `<link rel="stylesheet" href="${node.href}">` : node.outerHTML).join('')
+  + '</head><body>' + document.querySelector('.himoto-print-root').outerHTML + '</body></html>' '''
+
+
 def pdf_from_print(page, context, preview, filename, expected_pages):
     count = page.evaluate('window.__printCalls')
     preview.get_by_role('button', name='In hợp đồng', exact=True).click()
     page.wait_for_function('(count) => window.__printCalls > count', arg=count)
-    frame = page.locator('iframe.mg-contract-print-frame').content_frame
+    frame = page.locator('.himoto-print-root')
     assert frame.locator('form').count() == 0
     for selector in ['.contract-print-wrapper', '.party-b .party-row span']:
         style = '(el) => { const s = getComputedStyle(el); return [s.fontFamily, s.fontSize, s.fontWeight]; }'
         assert preview.locator(selector).first.evaluate(style) == frame.locator(selector).first.evaluate(style)
-    html = frame.locator('html').evaluate('(el) => "<!doctype html>" + el.outerHTML')
+    html = page.evaluate(PRINT_HTML)
     print_page = context.new_page()
     print_page.set_content(html, wait_until='networkidle')
     print_page.pdf(path=str(output / filename), prefer_css_page_size=True, print_background=True)
@@ -191,14 +196,7 @@ with sync_playwright() as playwright:
     checks.append('switching tabs and a rejected draft save preserve customer, representative, vehicle, money and notes')
     page.evaluate('''() => {
       window.__printCalls = 0;
-      const append = document.body.appendChild.bind(document.body);
-      document.body.appendChild = node => {
-        const result = append(node);
-        if (node.tagName === 'IFRAME' && node.className === 'mg-contract-print-frame') {
-          node.contentWindow.print = () => { window.__printCalls += 1; };
-        }
-        return result;
-      };
+      window.print = () => { window.__printCalls += 1; };
     }''')
     form.get_by_role('button', name='Xem mẫu in', exact=True).click()
     preview = page.locator('dialog.mg-contract-print-dialog')

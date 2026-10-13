@@ -594,19 +594,6 @@
 
 .mg-mobile-toggle { display: none; }
 
-.mg-readonly {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--mg-slate-600);
-  background: var(--mg-slate-100);
-  border: 1px solid var(--mg-line);
-  border-radius: var(--mg-radius);
-  padding: 7px 11px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
 /* ==========================================================================
    Data Panel, Tabs & Filter Toolbar
    ========================================================================== */
@@ -1956,15 +1943,6 @@
 .mg-contract-preview-controls output { min-width: 48px; text-align: center; font-size: 12px; color: var(--mg-slate-600); }
 .mg-contract-preview-hint { margin: 0 0 0 auto; font-size: 12px; color: var(--mg-slate-600); }
 .mg-contract-paper-scroll .contract-print-wrapper .contract-watermark { font-size: 16px; border-width: 2px; padding: 6px 10px; max-width: 90%; white-space: normal; overflow-wrap: anywhere; }
-.mg-contract-print-frame {
-  position: fixed;
-  width: 1px;
-  height: 1px;
-  border: 0;
-  left: -10000px;
-  top: 0;
-}
-
 /* ==========================================================================
    Contract Tabs & Step Layout
    ========================================================================== */
@@ -2348,6 +2326,16 @@
 }
 .mg-payment-fields .mg-field-wide { grid-column: 1 / -1; }
 .mg-payment-fields p { margin: 0; }
+
+.mg-battery-dialog { width: 760px; }
+.mg-battery-dialog .mg-payment-fields { padding-top: 14px; border-top: 1px solid var(--mg-line); }
+.mg-battery-dialog .mg-payment-fields:first-of-type { padding-top: 0; border-top: 0; }
+.mg-battery-lookup { display: grid; gap: 6px; }
+.mg-battery-lookup-input { position: relative; display: block; }
+.mg-battery-lookup-input svg { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--mg-slate-500); }
+.mg-battery-lookup-input input { padding-right: 34px; }
+.mg-table-battery td { white-space: nowrap; }
+.mg-table-battery .mg-cell-sub { margin-top: 2px; color: var(--mg-slate-500); font-size: 12px; }
 
 .mg-payment-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mg-payment-history-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
@@ -2961,9 +2949,13 @@
   }
   .mg-contract-tabs button:last-child { grid-column: 1 / -1; border-bottom: 0; }
   .mg-contract-tabs button:nth-child(2n) { border-right: 0; }
-  .mg-contract-grid-three, .mg-contract-grid-two, .mg-contract-detail-grid {
+  .mg-contract-grid-three, .mg-contract-grid-two {
     grid-template-columns: minmax(0, 1fr);
   }
+  .mg-contract-detail-grid { gap: 12px 10px; }
+  .mg-contract-detail-grid dt { font-size: 11px; line-height: 1.35; }
+  .mg-contract-detail-grid dd { font-size: 13px; }
+  .mg-contract-detail-grid .mg-field-wide { grid-column: 1 / -1; }
   .mg-contract-customer-toolbar { flex-wrap: wrap; }
   .mg-contract-customer-toolbar > button { margin-top: 0; }
   .mg-contract-lookup { flex-basis: 100%; }
@@ -2993,7 +2985,7 @@
   .mg-contract-summary { padding: 12px 14px; }
   .mg-contract-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .mg-contract-metrics > div { padding: 10px; }
-  .mg-contract-metrics > div:nth-child(n+3) { grid-column: 1 / -1; }
+  .mg-contract-metrics > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .mg-contract-metrics dd { font-size: 17px; }
   .mg-row-menu > button { min-height: 42px; }
   .mg-blacklist-button { min-height: 42px; }
@@ -3196,6 +3188,9 @@
   .mg-date-filters { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .mg-date-filters label { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 8px; }
   .mg-date-filters input { width: 100%; min-width: 0; }
+  .mg-date-range-inline { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
+  .mg-date-range-inline > span:first-child, .mg-date-range-inline > .mg-field-error { grid-column: 1 / -1; }
+  .mg-date-range-inline label { display: block; min-width: 0; }
   .mg-table-mobile-hint { display: block; margin: 0; padding: 10px 12px; color: var(--mg-slate-600); background: var(--mg-slate-50); font-size: 12px; line-height: 1.5; border-bottom: 1px solid var(--mg-line); }
   .mg-table-scroll { min-height: 0; max-height: min(64dvh, 520px); overscroll-behavior-x: contain; }
   .mg-table { font-size: 14px; }

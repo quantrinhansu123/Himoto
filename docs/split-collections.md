@@ -16,7 +16,7 @@ Ví dụ khác sau cọc trước 200.000: nhận thêm 1.500.000 tiền mặt v
 
 Tiền cọc đã có trong sổ quỹ được hiển thị là đã ghi nhận trước; chỉ thu phần còn lại, tránh cộng trùng. Tài khoản và phiếu thu dùng cơ sở nguồn/doanh thu của hợp đồng. Xe lấy ở cơ sở khác giữ nguyên kho quản lý.
 
-Mẫu in ghi **Đã thu thuê/phí** theo số thực nhận, tách tiền cọc. Phụ lục liệt kê phí theo tên và các khoản đã thu theo tài khoản/thời điểm. Các khoản đã nhận lấy từ giao dịch được duyệt trong DB, không lấy số tiền client tự khai. Tổng phí thuê trong DB giữ phần thuê gốc để gia hạn không tính nhầm phí ship vào đơn giá ngày.
+Mẫu in ghi **Đã thu phí thuê** theo số thực nhận, tách tiền cọc. Phụ lục liệt kê phí theo tên và các khoản đã thu theo tài khoản/thời điểm. Các khoản đã nhận lấy từ giao dịch được duyệt trong DB, không lấy số tiền client tự khai. Tổng phí thuê trong DB giữ phần thuê gốc để gia hạn không tính nhầm phí ship vào đơn giá ngày.
 
 Không cần migration mới cho việc chia thu tiền. Hỗ trợ API phát hành cũ với một dòng cho mỗi loại tiền; API mới nhận mảng `receipts`. Kiểm tra giới hạn tiền, số dòng, tài khoản/hình thức/cơ sở, thời điểm và phần còn phải thu trước khi phát hành trong cùng transaction.
 
