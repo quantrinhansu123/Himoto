@@ -42,7 +42,6 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 					<div className="contract-title-wrap text-center mt-1">
 						<div className="contract-main-title">HỢP ĐỒNG THUÊ XE</div>
 						<div className="contract-meta px-2">
-							<span />
 							<span className="contract-num">Số: <strong>{doc.contract_number || '............'}</strong>/HĐTX</span>
 							<span className="contract-officer">NV: <strong>{doc.staff_name || '........................'}</strong></span>
 						</div>
@@ -138,12 +137,15 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 
 					{/* Điều 3 & 4 */}
 					<div className="contract-clause mt-1">
-						<div className="clause-heading"><strong>ĐIỀU 3: QUYỀN VÀ NGHĨA VỤ CỦA CÁC BÊN</strong> <span className="sub-text">(Chi tiết phụ lục kèm theo, là một phần không thể tách rời của hợp đồng này)</span></div>
+						<div className="clause-heading"><strong>ĐIỀU 3: QUYỀN VÀ NGHĨA VỤ CỦA CÁC BÊN</strong></div>
+						<div className="clause-note">(Chi tiết phụ lục kèm theo, là một phần không thể tách rời của hợp đồng này)</div>
 						<div className="clause-heading"><strong>ĐIỀU 4: TRÁCH NHIỆM CỦA CÁC BÊN:</strong></div>
 						<div className="clause-content">
-							<p className="clause-p"><strong>4.1. Trách nhiệm của bên A:</strong> - Bên A giao chìa khóa và xe cho bên B, kèm theo: <strong>{doc.equipment.total_hats}</strong> mũ bảo hiểm, <strong>{doc.equipment.total_raincoats}</strong> áo mưa.</p>
+							<p className="clause-p"><strong>4.1. Trách nhiệm của bên A:</strong></p>
+							<p className="clause-p">- Bên A giao chìa khóa và xe cho bên B, kèm theo: <strong>{doc.equipment.total_hats}</strong> mũ bảo hiểm, <strong>{doc.equipment.total_raincoats}</strong> áo mưa.</p>
 							<p className="clause-p">- Khi bên B trả xe cho bên A, bên A phải hoàn lại số tiền cọc cho bên B sau khi cấn trừ mọi chi phí liên quan khác do bên B gây ra (hỏng hóc, sửa chữa và các vấn đề khác do lỗi của bên B).</p>
-							<p className="clause-p"><strong>4.2. Trách nhiệm của bên B:</strong> - Các thông tin về nhân thân của bên B cung cấp ở trên là đúng và chấp nhận những cam kết kèm theo phụ lục hợp đồng.</p>
+							<p className="clause-p"><strong>4.2. Trách nhiệm của bên B:</strong></p>
+							<p className="clause-p">- Các thông tin về nhân thân của bên B cung cấp ở trên là đúng và chấp nhận những cam kết kèm theo phụ lục hợp đồng.</p>
 							<p className="clause-p">- Được quyền sử dụng xe để đi lại và phải thanh toán tiền thuê xe và trả xe cho bên A đúng hạn hoặc gia hạn HĐ khi hết hạn.</p>
 							<p className="clause-p">- Trường hợp có bất cứ sự cố gì về xe, bên B phải thông báo cho bên A, không tự ý sửa chữa, thay thế, thay đổi cấu trúc xe.</p>
 							<p className="clause-p">- Tự chịu mọi trách nhiệm đi xe trên đường, không vi phạm luật giao thông.</p>

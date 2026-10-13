@@ -111,14 +111,16 @@
 
 .contract-print-wrapper .contract-meta {
 	display: grid;
-	grid-template-columns: 1fr auto 1fr;
-	gap: 8px;
+	grid-template-columns: minmax(0, auto) minmax(0, auto);
+	justify-content: center;
+	gap: 12mm;
 	align-items: baseline;
 	font-size: 10.5px;
 }
 
 .contract-print-wrapper .contract-meta .contract-officer {
-	text-align: right;
+	text-align: left;
+	overflow-wrap: anywhere;
 }
 
 .contract-print-wrapper .legal-references {
@@ -157,6 +159,9 @@
 
 .contract-print-wrapper .clause-heading {
 	font-size: 10.5px;
+}
+.contract-print-wrapper .clause-note {
+	font-style: italic;
 }
 
 .contract-print-wrapper .hours-badge {

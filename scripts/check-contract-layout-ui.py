@@ -138,6 +138,17 @@ def pdf_from_print(page, context, preview, filename, expected_pages):
         assert 'Lưu nháp' not in content
         assert 'Năm sản xuất' not in content
         assert content.count('ĐẠI DIỆN BÊN A') == 1
+        first = pdf[0]
+        left = lambda text: [rect for rect in first.search_for(text) if rect.x1 < first.rect.width / 2]
+        heading = left('ĐIỀU 3: QUYỀN VÀ NGHĨA VỤ CỦA CÁC BÊN')
+        note = left('(Chi tiết phụ lục kèm theo, là một phần không thể tách rời của hợp đồng này)')
+        assert heading and note and min(rect.y0 for rect in note) > max(rect.y1 for rect in heading), (heading, note)
+        for title, paragraph in [('4.1. Trách nhiệm của bên A:', 'Bên A giao chìa khóa và xe cho bên B, kèm theo:'),
+                                 ('4.2. Trách nhiệm của bên B:', 'Các thông tin về nhân thân của bên B cung cấp ở trên là đúng')]:
+            title_at, paragraph_at = left(title), left(paragraph)
+            assert title_at and paragraph_at and min(rect.y0 for rect in paragraph_at) > max(rect.y1 for rect in title_at), (title_at, paragraph_at)
+        number, officer = left('Số:'), left('NV:')
+        assert number and officer and abs(number[0].y0 - officer[0].y0) < 1, (number, officer)
         for label in ['BẢNG XÁC NHẬN VIỆC TRẢ XE', 'Giờ trả xe', 'Số tiền trả khách', 'Xác nhận của Bên A:', 'Bên B ký tên:']:
             positions = pdf[0].search_for(label)
             assert len(positions) == 1, (filename, label, positions)
@@ -233,6 +244,7 @@ with sync_playwright() as playwright:
     paper = preview.locator('.contract-print-wrapper')
     assert 'Times New Roman' in paper.evaluate('(el) => getComputedStyle(el).fontFamily')
     assert float(preview.locator('.party-b .party-row span').first.evaluate('(el) => getComputedStyle(el).fontSize').rstrip('px')) < 14
+    assert preview.locator('.clause-note').evaluate('(el)=>getComputedStyle(el).fontStyle') == 'italic'
     normalize = lambda text: re.sub(r'\s+', ' ', text).strip()
     source = Path('src/components/contracts/legacy/ContractPrintDocument.vue').read_text(encoding='utf-8')
     terms = [normalize(re.sub('<[^>]+>', '', item)) for item in re.findall(r'<li>(.*?)</li>', source, re.S)]
@@ -240,6 +252,7 @@ with sync_playwright() as playwright:
     assert [normalize(t).casefold() for t in paper.locator('.term-list li').all_text_contents()] == [t.casefold() for t in terms]
     preview.screenshot(path=str(output / 'print-preview-1440.png'))
     pdf_from_print(page, context, preview, 'contract-single-vehicle.pdf', 1)
+    checks.append('circled DOCX layout: contract number/staff share one line; Article 3 note is on its own italic line; 4.1/4.2 headings are above their paragraphs in the actual PDF')
     for width, height in [(320, 740), (375, 812), (667, 375), (844, 390)]:
         page.set_viewport_size({'width': width, 'height': height})
         paper_viewport = preview.locator('.mg-contract-paper-scroll')

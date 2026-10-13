@@ -8,6 +8,8 @@ Các tab giữ dữ liệu khi chuyển phần. Bàn phím hỗ trợ mũi tên,
 
 Bản in dùng Times New Roman, A4 ngang hai cột. Theo mẫu `HĐTX mẫu 1.docx` và yêu cầu cập nhật ngày 2026-10-13, hợp đồng thuê xe không in năm sản xuất và chỉ có một khối chữ ký chung cho hợp đồng cùng các phụ lục, đặt dưới nội dung phụ lục ở cột phải. Trang danh sách nhiều xe không có khối ký lần hai. Bảng xác nhận trả xe nằm dưới khối ký chung, gồm hai hàng, bốn cột: giờ trả xe, số tiền trả khách, xác nhận của Bên A và Bên B ký tên. Hai ô xác nhận để trống khi in hợp đồng, dành cho lúc khách trả xe. CSS giao diện không tăng cỡ chữ/độ đậm trong mẫu in; xem trước và bản in dùng cùng định dạng.
 
+Đối chiếu các vị trí khoanh ngày 14/10: Số HĐ và NV nằm cùng nhóm căn giữa dưới tiêu đề; chú thích Điều 3 xuống dòng in nghiêng; tiêu đề 4.1/4.2 tách riêng khỏi các dòng nội dung. Đơn giá, khoản thuê và phí vẫn lấy từ dữ liệu hợp đồng; không tự bịa đơn giá cho hợp đồng cũ chưa có thông tin.
+
 Phạm vi là bố cục các trường hiện có và mẫu in. Loại hợp đồng, điều kiện lưu nháp và thời gian thuê chung cho các xe giữ theo dữ liệu hiện tại. Không bổ sung luồng thu tiền, phát hành, upload ảnh bàn giao hay nghiệp vụ giám hộ/50cc của app cũ.
 
 Kiểm tra: `npm.cmd run test:contracts`, `npm.cmd run test:drafts`, `npm.cmd run test:management`, typecheck, lint và build. Browser QA: `python scripts/check-contract-layout-ui.py --url http://127.0.0.1:3005 --session-cookie-file <file-session-cục-bộ>`; mọi API nghiệp vụ được giả lập. Kết quả, ảnh và PDF tại `docs/qa/contract-layout/`. Không ghi dữ liệu vận hành thật.
