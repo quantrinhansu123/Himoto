@@ -40,23 +40,25 @@ const StoreDetail = dynamic(() => import('./StoreDetail').then(module => module.
 const StaffDialog = dynamic(() => import('./StaffDialogs').then(module => module.StaffDialog), { ssr: false, loading: FeatureLoading });
 
 const EMPTY_ROWS: ManagementRow[] = [];
+const overdueDays = (returnAt: unknown, now: number) => { const due = Date.parse(String(returnAt ?? '')); return Number.isFinite(due) ? Math.max(0, Math.floor((now - due) / 86_400_000)) : undefined; };
 
-function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean }) {
+function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean }) {
   const baseConfig = MANAGEMENT_CONFIG[kind];
-  const config = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : baseConfig;
+  const config = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : overdueOnly ? { ...baseConfig, title: 'Hợp đồng quá hạn', description: 'Hợp đồng đang thuê đã quá ngày hẹn trả xe. Liên hệ khách, gia hạn hoặc nhận trả xe.', columns: [...baseConfig.columns, { key: 'overdue_days', label: 'Số ngày quá hạn', format: 'number' as const, align: 'right' as const }] } : baseConfig;
   const { dataset, loading, refreshing, error, source, canSaveContractDrafts, selectedStore, selectStore, reload, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
   const router = useRouter();
   const searchParams = useSearchParams();
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
   const contractId = kind === 'contracts' ? searchParams.get('contract_id') : null;
-  const contractPath = vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : '/contracts';
+  const contractPath = vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : overdueOnly ? '/contracts/overdue' : '/contracts';
   const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
   const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string } | null>(null);
   const [renewTarget, setRenewTarget] = useState<ManagementRow | null>(null);
   const [query, setQuery] = useState<TableQuery>(EMPTY_QUERY);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'code', direction: 'asc' });
+  const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' }>(overdueOnly ? { key: 'overdue_days', direction: 'desc' } : { key: 'code', direction: 'asc' });
+  const [openedAt] = useState(() => Date.now());
   const [visibleKeys, setVisibleKeys] = useState<string[]>(config.columns.filter(c => !c.hidden).map(c => c.key));
   const [viewing, setViewing] = useState<ManagementRow | null>(null);
   const [editing, setEditing] = useState<ManagementRow | null>(null);
@@ -97,7 +99,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
   }, []);
 
   const allRows = dataset?.[kind] || EMPTY_ROWS;
-  const rows = useMemo(() => draftsOnly ? allRows.filter(row => row.status === 'draft') : vatOnly ? allRows.filter(row => Number(row.company_payment_count) > 0) : allRows, [allRows, draftsOnly, vatOnly]);
+  const rows = useMemo(() => draftsOnly ? allRows.filter(row => row.status === 'draft') : vatOnly ? allRows.filter(row => Number(row.company_payment_count) > 0)
+    : overdueOnly ? allRows.filter(row => row.status === 'overdue').map(row => ({ ...row, overdue_days: overdueDays(row.end_date, openedAt) })) : allRows, [allRows, draftsOnly, vatOnly, overdueOnly, openedAt]);
   const scopedRows = useMemo(() => filterRows(rows, EMPTY_QUERY, selectedStore), [rows, selectedStore]);
   const filteredRows = useMemo(() => sortRows(filterRows(scopedRows, query, 'all'), sort.key, sort.direction), [scopedRows, query, sort]);
   const tabRows = useMemo(() => filterRows(scopedRows, { ...query, status: '' }, 'all'), [scopedRows, query]);
@@ -165,7 +168,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
 
   return <section className="mg-page" aria-label={config.title}>
     <div className="mg-page-content">
-      <div className="mg-page-heading"><div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopedRows.length}</span></h1><p>{config.description}</p></div>
+      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1></div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopedRows.length}</span></h1><p>{config.description}</p></div>}
         <div className="mg-heading-actions">{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}{kind !== 'contracts' && <button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>}
           {kind === 'customers' && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}
@@ -187,7 +190,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
 
       <div className="mg-data-panel">
         <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!query.status ? 'is-active' : ''} aria-pressed={!query.status} onClick={() => updateQuery({ status: '' })}>Tất cả<span>{tabRows.length}</span></button>
-          {statusOptions.filter(option => (kind === 'contracts' && option.value === 'draft') || statusCounts.has(option.value) || query.status === option.value).map(option => <button type="button" key={option.value} className={query.status === option.value ? 'is-active' : ''} aria-pressed={query.status === option.value} onClick={() => updateQuery({ status: option.value })}>{option.label}<span>{statusCounts.get(option.value) || 0}</span></button>)}</div>
+          {statusOptions.filter(option => (kind === 'contracts' && !overdueOnly && option.value === 'draft') || statusCounts.has(option.value) || query.status === option.value).map(option => <button type="button" key={option.value} className={query.status === option.value ? 'is-active' : ''} aria-pressed={query.status === option.value} onClick={() => updateQuery({ status: option.value })}>{option.label}<span>{statusCounts.get(option.value) || 0}</span></button>)}</div>
         <div className="mg-toolbar"><label className="mg-search"><Search size={17} /><span className="mg-sr-only">Tìm kiếm {config.title.toLowerCase()}</span><input type="search" placeholder={config.searchPlaceholder} value={query.search} onChange={event => updateQuery({ search: event.target.value })} />{query.search && <button type="button" aria-label="Xóa từ khóa" onClick={() => updateQuery({ search: '' })}><X size={15} /></button>}</label>
           <div className="mg-filter-controls"><span className="mg-filter-icon"><ListFilter size={16} /></span>{config.filters.map(filter => <label className="mg-sr-label" key={filter.key}><span className="mg-sr-only">{filter.label}</span><select aria-label={filter.label} value={query.filters[filter.key] || ''} onChange={event => updateQuery({ filters: { ...query.filters, [filter.key]: event.target.value } })}><option value="">{filter.label}</option>{(kind === 'staff' && filter.key === 'position' ? staffPositionSuggestions(allRows.map(row => row.position)).map(label => ({ value: label, label })) : filter.options).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
             <label className="mg-sr-label"><span className="mg-sr-only">Lọc trạng thái</span><select aria-label="Lọc trạng thái" value={query.status} onChange={event => updateQuery({ status: event.target.value })}><option value="">Tất cả trạng thái</option>{statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
@@ -281,6 +284,6 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false }: { kind
 }
 
 const navigationNumber = (kind: ManagementKind) => ['staff', 'customers', 'contracts', 'stores', 'vehicles'].indexOf(kind) + 1;
-export function ManagementPage({ kind, draftsOnly = false, vatOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean }) {
-  return <Suspense fallback={<div className="mg-table-state" role="status">Đang chuẩn bị danh sách…</div>}><ManagementContent key={`${kind}-${draftsOnly}-${vatOnly}`} kind={kind} draftsOnly={draftsOnly} vatOnly={vatOnly} /></Suspense>;
+export function ManagementPage({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean }) {
+  return <Suspense fallback={<div className="mg-table-state" role="status">Đang chuẩn bị danh sách…</div>}><ManagementContent key={`${kind}-${draftsOnly}-${vatOnly}-${overdueOnly}`} kind={kind} draftsOnly={draftsOnly} vatOnly={vatOnly} overdueOnly={overdueOnly} /></Suspense>;
 }

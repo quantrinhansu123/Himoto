@@ -1,6 +1,12 @@
 import { ComponentType, Fragment, ReactNode } from 'react';
 import { LegacyContractDocument } from '@/lib/management/contract-document';
 
+function PaymentMethod({ value }: { value: string }) {
+  const text = value.toLowerCase();
+  const transfer = /ck|chuyển khoản|transfer/.test(text), cash = /tiền mặt|cash/.test(text);
+  return <span className="payment-method">(<span className={transfer ? 'is-picked' : ''}>CK</span> / <span className={cash ? 'is-picked' : ''}>TM</span>)</span>;
+}
+
 // Preserve the legacy legal template.
 export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContractDocument; pageWrapper?: ComponentType<{ children: ReactNode }> }) {
   const Page = pageWrapper || Fragment;
@@ -38,16 +44,14 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 						<div className="contract-meta px-2">
 							<span />
 							<span className="contract-num">Số: <strong>{doc.contract_number || '............'}</strong>/HĐTX</span>
-							<span className="contract-officer">Nguồn khách:
-								{/^https?:\/\//i.test(doc.customer_source?.url || '') ? <a href={doc.customer_source.url} target="_blank" rel="noopener noreferrer"><strong>{doc.customer_source.name || doc.customer_source.url}</strong></a> : <strong>{doc.customer_source?.name || '........................'}{doc.customer_source?.url ? ` · ${doc.customer_source.url}` : ''}</strong>}
-							</span>
+							<span className="contract-officer">NV: <strong>{doc.staff_name || '........................'}</strong></span>
 						</div>
 					</div>
 
 					<div className="legal-references mt-1">
-						<p className="legal-line">- Căn cứ Bộ Luật Dân sự số 91/2005/QH13 đã được Quốc Hội ban hành ngày 24/11/2015;</p>
+						<p className="legal-line">- Căn cứ Bộ luật Dân sự số 91/2005/QH13 đã được Quốc Hội ban hành ngày 24/11/2015;</p>
 						<p className="legal-line">- Căn cứ Luật Thương mại số 36/2005/QH11 đã được Quốc Hội thông qua ngày 14/06/2005;</p>
-						<p className="legal-line">- Căn cứ Hợp đồng ủy quyền giữa Công ty CP TMDV Himoto Việt Nam và {(doc.lessor.authorization && doc.lessor.authorization.party_name) || representativeNameA}</p>
+						<p className="legal-line">- Căn cứ Hợp đồng ủy quyền ký ngày {doc.lessor.authorization.date || '……………'} giữa Công ty CP TMDV Himoto Việt Nam và {doc.lessor.authorization.party_name || representativeNameA}</p>
 						<p className="legal-line">- Căn cứ vào nhu cầu và khả năng cung ứng của các bên.</p>
 					</div>
 
@@ -57,22 +61,24 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 
 					{/* Bên A */}
 					<div className="party-info party-a mt-1">
-						<div className="party-name"><strong>Bên A (Bên cho thuê): {doc.lessor.company_name}</strong></div>
+						<div className="party-name"><strong>BÊN A (Bên cho thuê): {doc.lessor.company_name}</strong></div>
 						<div className="party-row d-flex justify-content-between">
 							<span>- MST: {doc.lessor.tax_code}</span>
-							<span className="text-truncate mr-2">- Tại ĐĐ kinh doanh: <strong>{doc.lessor.branch_name}</strong> ({doc.lessor.branch_address})</span>
-							<span className="flex-shrink-0">SĐT: <strong>{doc.lessor.branch_phone}</strong></span>
+							<span>- Đại diện là Bà: {doc.lessor.director_name}</span>
+							<span>- Chức vụ: {doc.lessor.director_title}</span>
 						</div>
 						<div className="party-row">- ĐC trụ sở chính: {doc.lessor.head_office}</div>
 						<div className="party-row d-flex justify-content-between">
-							<span>- ĐẠI DIỆN ỦY QUYỀN: <strong className="text-uppercase">{representativeNameA}</strong></span>
+							<span className="text-truncate mr-2">- Tại địa điểm kinh doanh: <strong>{doc.lessor.branch_name}</strong>{doc.lessor.branch_address ? ` (${doc.lessor.branch_address})` : ''}</span>
+							<span className="flex-shrink-0">Số điện thoại liên hệ: <strong>{doc.lessor.branch_phone || '……………'}</strong></span>
 						</div>
+						<div className="party-row">- Đại diện ủy quyền: <strong className="text-uppercase">{representativeNameA}</strong></div>
 					</div>
 
 					{/* Bên B */}
 					<div className="party-info party-b mt-1">
 						<div className="party-row d-flex justify-content-between">
-							<span><strong>Bên B (Bên thuê) Ông/Bà:</strong> <strong className="text-uppercase">{doc.customer.name || '...................................................................'}</strong></span>
+							<span><strong>BÊN B (Bên thuê) Ông/Bà:</strong> <strong className="text-uppercase">{doc.customer.name || '...................................................................'}</strong></span>
 							<span>Điện thoại: <strong>{doc.customer.phone || '................................'}</strong></span>
 						</div>
 						<div className="party-row">- Địa chỉ: {doc.customer.address || '...................................................................................................................................................................'}</div>
@@ -81,7 +87,7 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 							<span>Cấp ngày: {doc.customer.id_card_issued_on || '....../....../..........'}</span>
 							<span className="text-truncate">Tại: {doc.customer.id_card_issued_by || '................................'}</span>
 						</div>
-						{(doc.relatives || []).map((relative, index) => <div className="party-row" key={index}>- Người thân {index + 1}: {relative.name ? `${relative.name}${relative.relationship ? ` (${relative.relationship})` : ''}${relative.phone ? `: ${relative.phone}` : ''}` : '................................................................'}</div>)}
+						<div className="party-row">- Thông tin người thân: {(doc.relatives || []).slice(0, 2).map(relative => relative.name ? `${relative.name}${relative.relationship ? ` (${relative.relationship})` : ''}${relative.phone ? `: ${relative.phone}` : ''}` : '……………………………………').join(' Và ')}</div>
 					</div>
 
 					<div className="contract-intro mt-1">
@@ -100,6 +106,7 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 								<span>- Nhãn hiệu: <strong>{primaryVehicle.brand || '............'}</strong></span>
 								<span>- Loại xe: <strong>{primaryVehicle.type_text || 'Xe ga'}</strong></span>
 								<span>- Màu sắc: <strong>{primaryVehicle.color || '............'}</strong></span>
+								<span>- Năm sản xuất: <strong>{primaryVehicle.year || '............'}</strong></span>
 							</div>
 							<div className="d-flex justify-content-between">
 								<span>- Tên Lái xe: <strong>{primaryVehicle.driver_name || doc.customer.name || '................................................'}</strong></span>
@@ -114,17 +121,17 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 						<div className="clause-heading"><strong>ĐIỀU 2: THỜI HẠN, GIÁ THUÊ, PHƯƠNG THỨC THANH TOÁN:</strong></div>
 						<div className="clause-content">
 							<div className="clause-row">
-								<strong>2.1.</strong> Bắt đầu: <strong>{doc.rent_time.start.hour}</strong> h <strong>{doc.rent_time.start.minute}</strong> phút, ngày <strong>{doc.rent_time.start.day}</strong>/<strong>{doc.rent_time.start.month}</strong>/<strong>{doc.rent_time.start.year}</strong>
-								- đến: <strong>{doc.rent_time.end.hour}</strong> h <strong>{doc.rent_time.end.minute}</strong> phút, ngày <strong>{doc.rent_time.end.day}</strong>/<strong>{doc.rent_time.end.month}</strong>/<strong>{doc.rent_time.end.year}</strong>
+								<strong>2.1.</strong> Bắt đầu: <strong>{doc.rent_time.start.hour}</strong> h <strong>{doc.rent_time.start.minute}</strong> phút, ngày <strong>{doc.rent_time.start.day}</strong> tháng <strong>{doc.rent_time.start.month}</strong> năm <strong>{doc.rent_time.start.year}</strong>
+								{' '}- Đến: <strong>{doc.rent_time.end.hour}</strong> h <strong>{doc.rent_time.end.minute}</strong> phút, ngày <strong>{doc.rent_time.end.day}</strong> tháng <strong>{doc.rent_time.end.month}</strong> năm <strong>{doc.rent_time.end.year}</strong>
 							</div>
 							<div className="clause-row d-flex justify-content-between">
-								<span><strong>2.2.</strong> Giá thuê: <strong>{doc.pricing.unit_price_text}</strong></span>
-								<span>- Đã thu phí thuê: <strong>{doc.pricing.paid_amount_formatted}</strong></span>
-								<span>- Gói: <strong>{doc.pricing.package_name}</strong></span>
+								<span><strong>2.2.</strong> Giá thuê: <strong>{doc.pricing.unit_price_text}</strong>.</span>
+								<span>- Đã thanh toán: <strong>{doc.pricing.paid_amount_formatted}</strong> <PaymentMethod value={doc.pricing.payment_method} /></span>
+								<span>- Gói thuê: <strong>{doc.pricing.package_name}</strong></span>
 							</div>
 							<div className="clause-row"><strong>{doc.pricing.calculation_text}</strong></div>
 							<div className="clause-row">
-								<strong>2.3.</strong> Đặt cọc (Tài sản thế chấp): <strong>{doc.deposit.deposit_amount_formatted}</strong> ({doc.deposit.collateral_description})
+								<strong>2.3.</strong> Đặt cọc (Tài sản thế chấp): <strong>{doc.deposit.deposit_amount_formatted}</strong>{doc.deposit.collateral_text ? <> – <strong>{doc.deposit.collateral_text}</strong></> : ''} <PaymentMethod value={doc.deposit.payment_method} />
 							</div>
 						</div>
 					</div>
@@ -134,16 +141,23 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 						<div className="clause-heading"><strong>ĐIỀU 3: QUYỀN VÀ NGHĨA VỤ CỦA CÁC BÊN</strong> <span className="sub-text">(Chi tiết phụ lục kèm theo, là một phần không thể tách rời của hợp đồng này)</span></div>
 						<div className="clause-heading"><strong>ĐIỀU 4: TRÁCH NHIỆM CỦA CÁC BÊN:</strong></div>
 						<div className="clause-content">
-							<p className="clause-p"><strong>4.1. Trách nhiệm của bên A:</strong> Bên A giao chìa khóa và xe cho bên B, kèm theo: <strong>{doc.equipment.total_hats}</strong> mũ bảo hiểm, <strong>{doc.equipment.total_raincoats}</strong> áo mưa. Khi bên B trả xe cho bên A, bên A phải hoàn lại số tiền cọc cho bên B sau khi cấn trừ mọi chi phí liên quan khác do bên B gây ra (hỏng hóc, sửa chữa và các vấn đề khác do lỗi của bên B).</p>
-							<p className="clause-p"><strong>4.2. Trách nhiệm của bên B:</strong> Các thông tin về nhân thân của bên B cung cấp ở trên là đúng và chấp nhận những cam kết kèm theo phụ lục hợp đồng. Được quyền sử dụng xe để đi lại và phải thanh toán tiền thuê xe và trả xe cho bên A đúng hạn hoặc gia hạn HĐ khi hết hạn. Trường hợp có bất cứ sự cố gì về xe, bên B phải thông báo cho bên A, không tự ý sửa chữa, thay thế, thay đổi cấu trúc xe. Tự chịu mọi trách nhiệm đi xe trên đường, không vi phạm luật giao thông. Không giao xe cho người khác mượn, không dùng xe chở hàng cấm, vi phạm pháp luật.</p>
+							<p className="clause-p"><strong>4.1. Trách nhiệm của bên A:</strong> - Bên A giao chìa khóa và xe cho bên B, kèm theo: <strong>{doc.equipment.total_hats}</strong> mũ bảo hiểm, <strong>{doc.equipment.total_raincoats}</strong> áo mưa.</p>
+							<p className="clause-p">- Khi bên B trả xe cho bên A, bên A phải hoàn lại số tiền cọc cho bên B sau khi cấn trừ mọi chi phí liên quan khác do bên B gây ra (hỏng hóc, sửa chữa và các vấn đề khác do lỗi của bên B).</p>
+							<p className="clause-p"><strong>4.2. Trách nhiệm của bên B:</strong> - Các thông tin về nhân thân của bên B cung cấp ở trên là đúng và chấp nhận những cam kết kèm theo phụ lục hợp đồng.</p>
+							<p className="clause-p">- Được quyền sử dụng xe để đi lại và phải thanh toán tiền thuê xe và trả xe cho bên A đúng hạn hoặc gia hạn HĐ khi hết hạn.</p>
+							<p className="clause-p">- Trường hợp có bất cứ sự cố gì về xe, bên B phải thông báo cho bên A, không tự ý sửa chữa, thay thế, thay đổi cấu trúc xe.</p>
+							<p className="clause-p">- Tự chịu mọi trách nhiệm đi xe trên đường, không vi phạm luật giao thông.</p>
+							<p className="clause-p">- Không giao xe cho người khác đi lại, mượn, cất giữ. Không dùng xe để vận chuyển hàng cấm, vi phạm pháp luật.</p>
 						</div>
 					</div>
 
 					{/* Điều 5 */}
 					<div className="contract-clause mt-1">
-						<div className="clause-heading"><strong>ĐIỀU 5. ĐIỀU KHOẢN CHUNG:</strong></div>
+						<div className="clause-heading"><strong>ĐIỀU 5. ĐIỀU KHOẢN CHUNG</strong></div>
 						<div className="clause-content">
-							<p className="clause-p">Hai bên cam kết thi hành đúng các điều khoản của hợp đồng này... Hợp đồng này có hiệu lực từ ngày ký và được thanh lý sau khi hai bên thực hiện xong nghĩa vụ. Hợp đồng được lập thành 02 (hai) bản có giá trị pháp lý như nhau, Bên A giữ 01 bản, Bên B giữ 01 bản.</p>
+							<p className="clause-p">- Hai bên cam kết thi hành đúng các điều khoản của hợp đồng, không bên nào tự ý đơn phương sửa đổi, đình chỉ hoặc hủy bỏ hợp đồng. Mọi sửa đổi, bổ sung nội dung của Hợp đồng này đều phải lập thành văn bản, có xác nhận của các bên.</p>
+							<p className="clause-p">- Hợp đồng này có hiệu lực kể từ ngày ký và được thanh lý sau khi hai bên thực hiện xong nghĩa vụ của mình và không có khiếu nại nào. Hợp đồng được lập thành 02 (hai) bản có giá trị pháp lý như nhau, Bên A giữ 01 bản, Bên B giữ 01 bản.</p>
+							<p className="clause-p">- Các bên đã đọc lại toàn bộ nội dung Hợp đồng này, đã hiểu và đồng ý với toàn bộ nội dung ghi trong Hợp đồng (bao gồm cả phụ lục hợp đồng kèm theo) và ký xác nhận dưới đây.</p>
 						</div>
 					</div>
 
@@ -168,7 +182,7 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 				<div className="contract-col col-right">
 					<div className="appendix-title-wrap text-center">
 						<div className="appendix-main-title">PHỤ LỤC HỢP ĐỒNG:</div>
-						<div className="appendix-subtitle">(kèm theo hợp đồng và là một phần không thể tách rời của hợp đồng)</div>
+						<div className="appendix-subtitle">(Kèm theo hợp đồng và là một phần không thể tách rời của hợp đồng)</div>
 					</div>
 
 					<div className="appendix-terms mt-1">
@@ -196,7 +210,7 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 						<div className="term-section mt-1">
 							<div className="term-heading"><strong>Bên B cam kết:</strong></div>
 							<ul className="term-list commitments">
-								<li>Nếu tôi không thể hoàn trả tài sản đã thuê cho bên A, thì dựa theo điều 175 bộ luật hình sự năm 2015 và sửa đổi năm 2017. Tôi xin chịu hoàn toàn trách nhiệm trước pháp luật.</li>
+								<li>Nếu tôi không thể hoàn trả tài sản đã thuê cho bên A, thì dựa theo điều 175 Bộ luật Hình sự năm 2015 và sửa đổi năm 2017. Tôi xin chịu hoàn toàn trách nhiệm trước pháp luật.</li>
 								<li>Không giao xe cho người khác mượn, không được chuyển nhượng, tặng cho, cầm cố, thế chấp, cho thuê lại hoặc thực hiện bất kỳ giao dịch nào có liên quan đến tài sản thuê của bên A.</li>
 								<li>Nếu tôi chậm thanh toán tiền thuê xe không đúng hạn hợp đồng, bên A được quyền thu hồi xe bất cứ lúc nào và tôi chịu mọi chi phí phát sinh trong quá trình trên.</li>
 								<li>Làm mất mũ bảo hiểm phạt <strong>70.000 VNĐ/1 mũ</strong>.</li>
@@ -218,42 +232,6 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 							<div className="sig-space-sm"></div>
 							<div className="sig-name font-weight-bold text-uppercase">{doc.signers.signer_b_name}</div>
 						</div>
-					</div>
-
-					{/* BẢNG XÁC NHẬN VIỆC TRẢ XE */}
-					<div className="return-receipt-box mt-2">
-						<div className="receipt-company text-center font-weight-bold">
-							CÔNG TY CỔ PHẦN THƯƠNG MẠI DỊCH VỤ HIMOTO VIỆT NAM
-						</div>
-						<div className="receipt-title text-center font-weight-bold">
-							BẢNG XÁC NHẬN VIỆC TRẢ XE
-						</div>
-						<table className="receipt-table w-100">
-							<tbody>
-								<tr>
-									<td className="receipt-td-label" style={{ width: "25%" }}>Giờ trả xe:</td>
-									<td className="receipt-td-val" style={{ width: "25%" }}>
-										<strong>{doc.return_confirmation.return_hour || '.....'}</strong> h <strong>{doc.return_confirmation.return_minute || '.....'}</strong> phút
-									</td>
-									<td className="receipt-td-label" style={{ width: "25%" }}>Xác nhận Bên A:</td>
-									<td className="receipt-td-val" style={{ width: "25%" }}>
-										{doc.return_confirmation.signer_a_name || representativeNameA}
-									</td>
-								</tr>
-								<tr>
-									<td className="receipt-td-label">Số tiền trả khách:</td>
-									<td className="receipt-td-val" colSpan={2}>
-										<strong>{doc.return_confirmation.refund_amount_formatted || '................................'}</strong>
-										{Boolean(doc.return_confirmation.additional_note) && (<span className="ml-2 font-italic small">({doc.return_confirmation.additional_note})</span>)}
-									</td>
-									<td className="receipt-td-val text-center">
-										<div>Bên B ký tên:</div>
-										<div className="receipt-sig-space"></div>
-										<strong>{doc.return_confirmation.signer_b_name || ''}</strong>
-									</td>
-								</tr>
-							</tbody>
-						</table>
 					</div>
 				</div>
 			</div>

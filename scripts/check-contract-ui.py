@@ -125,7 +125,7 @@ with sync_playwright() as p:
     preview = page.get_by_role('dialog', name='Xem trước mẫu in hợp đồng', exact=True)
     expect(preview).to_be_visible()
     paper = preview.locator('.contract-print-wrapper')
-    for text in ['Khách mới trong modal', '001234567890', 'Trần Hoài Linh', 'DEMO-002', '20/02/2025', 'Nơi cấp mới mẫu', 'HỢP ĐỒNG THUÊ XE', 'PHỤ LỤC HỢP ĐỒNG:', 'BẢNG XÁC NHẬN VIỆC TRẢ XE', 'BẢN NHÁP - CHƯA PHÁT HÀNH']:
+    for text in ['Khách mới trong modal', '001234567890', 'Trần Hoài Linh', 'DEMO-002', '20/02/2025', 'Nơi cấp mới mẫu', 'HỢP ĐỒNG THUÊ XE', 'PHỤ LỤC HỢP ĐỒNG:', 'BẢN NHÁP - CHƯA PHÁT HÀNH']:
         assert text in paper.inner_text(), text
     original_template = Path('src/components/contracts/legacy/ContractPrintDocument.vue').read_text(encoding='utf-8')
     expected_terms = [normalize(re.sub('<[^>]+>', '', item)) for item in re.findall(r'<li>(.*?)</li>', original_template, re.S)]
@@ -155,7 +155,7 @@ with sync_playwright() as p:
     assert len(pdf) == 1, f'Single vehicle printed {len(pdf)} pages'
     assert pdf[0].rect.width > pdf[0].rect.height
     pdf_text = ''.join(pdf_page.get_text() for pdf_page in pdf)
-    for text in ['001234567890', 'Khách mới trong modal', 'DEMO-002', 'HỢP ĐỒNG THUÊ XE', 'BẢNG XÁC NHẬN VIỆC TRẢ XE']:
+    for text in ['001234567890', 'Khách mới trong modal', 'DEMO-002', 'HỢP ĐỒNG THUÊ XE']:
         assert text in pdf_text, text
     assert 'CCCD / CMND *' not in pdf_text
     pdf[0].get_pixmap(matrix=fitz.Matrix(1.5, 1.5)).save(str(output / 'contract-pdf-page.png'))

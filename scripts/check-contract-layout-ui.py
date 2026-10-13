@@ -110,7 +110,7 @@ def pdf_from_print(page, context, preview, filename, expected_pages):
         assert len(pdf) == expected_pages, f'{filename}: {len(pdf)} pages'
         assert all(abs(p.rect.width - 841.89) < 2 and abs(p.rect.height - 595.28) < 2 for p in pdf)
         content = '\n'.join(p.get_text() for p in pdf)
-        for value in [customer['name'], customer['id_card'], 'QA-101', 'HỢP ĐỒNG THUÊ XE', 'BẢNG XÁC NHẬN VIỆC TRẢ XE']:
+        for value in [customer['name'], customer['id_card'], 'QA-101', 'HỢP ĐỒNG THUÊ XE']:
             assert value in content, value
         assert 'Lưu nháp' not in content
         if expected_pages == 2:

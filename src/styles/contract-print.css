@@ -138,7 +138,7 @@
 
 .contract-print-wrapper .party-info {
 	font-size: 10px;
-	line-height: 1.25;
+	line-height: 1.18;
 }
 
 .contract-print-wrapper .party-row {
@@ -152,7 +152,7 @@
 
 .contract-print-wrapper .contract-clause {
 	font-size: 10px;
-	line-height: 1.25;
+	line-height: 1.17;
 }
 
 .contract-print-wrapper .clause-heading {
@@ -166,7 +166,7 @@
 }
 
 .contract-print-wrapper .clause-p {
-	margin-bottom: 2px;
+	margin-bottom: 0;
 	text-align: justify;
 }
 
@@ -191,7 +191,7 @@
 }
 
 .contract-print-wrapper .sig-space {
-	height: 35px;
+	height: 24px;
 }
 
 .contract-print-wrapper .sig-space-sm {
@@ -270,6 +270,13 @@
 
 .contract-print-wrapper .receipt-sig-space {
 	height: 20px;
+}
+
+.contract-print-wrapper .payment-method .is-picked {
+	font-weight: 700;
+	border: 1px solid #111;
+	border-radius: 50%;
+	padding: 0 2px;
 }
 
 .himoto-print-root {

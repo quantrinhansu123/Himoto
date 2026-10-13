@@ -2044,7 +2044,7 @@
 }
 
 .mg-method-picker { position: relative; }
-.mg-datetime24 { display: grid; grid-template-columns: minmax(140px, 1fr) 132px; gap: 8px; }
+.mg-datetime24 { display: grid; grid-template-columns: minmax(140px, 1fr) 164px; gap: 8px; }
 .mg-extra-charge-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; gap: 12px; align-items: end; margin: 12px 0; }
 .mg-extra-charge-row > button { align-self: center; }
 .mg-collection-row { border: 1px solid var(--mg-border); border-radius: 8px; padding: 12px; margin: 12px 0; }
@@ -2052,8 +2052,8 @@
 .mg-collection-total { padding: 12px; border-radius: 8px; background: var(--mg-surface-muted, #f3f5f7); line-height: 1.8; }
 @media (max-width: 600px) { .mg-extra-charge-row { grid-template-columns: minmax(0, 1fr) 32px; } .mg-extra-charge-row > .mg-field { grid-column: 1; } .mg-extra-charge-row > button { grid-column: 2; grid-row: 1 / span 2; } }
 .mg-time24 { display: flex; align-items: center; gap: 4px; }
-.mg-time24 select { min-width: 0; flex: 1; padding-right: 15px !important; }
-@media (max-width: 600px) { .mg-datetime24 { grid-template-columns: minmax(0, 1fr); } .mg-time24 { width: 150px; } }
+.mg-time24 select { min-width: 0; flex: 1 1 0; padding: 8px 4px 8px 10px !important; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .mg-datetime24 { grid-template-columns: minmax(0, 1fr); } .mg-time24 { width: 164px; } }
 .mg-method-picker summary {
   min-height: 38px;
   padding: 8px 11px;
@@ -2439,7 +2439,7 @@
 .mg-contract-changes .is-swap .mg-contract-change-kind { background: var(--mg-amber-bg); color: var(--mg-amber-text); }
 .mg-contract-changes .is-return .mg-contract-change-kind { background: var(--mg-red-bg); color: var(--mg-red-text); }
 .mg-contract-changes li:has(.mg-contract-change-actions) { grid-template-columns: 100px minmax(0, 1fr) auto; }
-.mg-contract-change-actions { display: flex; align-items: flex-start; gap: 6px; }
+.mg-contract-changes li > .mg-contract-change-actions { display: flex; align-items: flex-start; gap: 6px; }
 .mg-contract-change-actions .mg-button { min-height: 28px; padding: 4px 8px; gap: 4px; font-size: 12px; }
 .mg-contract-version-view { display: grid; gap: 10px; margin-top: 8px; padding: 12px; border: 1px solid var(--mg-line); border-radius: var(--mg-radius-md); background: var(--mg-slate-50); }
 .mg-contract-version-view h4 { margin: 4px 0 0; font-size: 13px; color: var(--mg-slate-900); }

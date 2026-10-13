@@ -157,7 +157,7 @@ with sync_playwright() as p:
     form.get_by_role('button', name='Xem mẫu in', exact=True).click()
     preview = page.locator('dialog.mg-contract-print-dialog')
     paper = preview.locator('.contract-print-wrapper')
-    expect(paper).to_contain_text('Đã thu phí thuê: 250.000 đ')
+    expect(paper).to_contain_text('Đã thanh toán: 250.000 đ')
     expect(paper).not_to_contain_text('Đã nhận cọc')
     expect(paper).not_to_contain_text('CHI TIẾT PHÍ VÀ CÁC KHOẢN ĐÃ THU')
     preview.screenshot(path=str(out / 'print-preview-1440.png'))
