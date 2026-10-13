@@ -9,7 +9,7 @@ import { chargeTotal } from '@/lib/management/contract-charges';
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
 export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_reference,
-  o.order_type AS rental_type,
+  COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''),o.order_type) AS rental_type,
   CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
   o.customer_id, c.status AS customer_status,
   COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
@@ -92,6 +92,11 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (draft.customer_id !== null && (!Number.isSafeInteger(draft.customer_id) || draft.customer_id <= 0)) throw new DraftSaveError('ID khách hàng không hợp lệ.');
   if (draft.vehicle_store_id !== undefined && typeof draft.vehicle_store_id !== 'string') throw new DraftSaveError('Cửa hàng xe không hợp lệ.');
   if (draft.reservation !== undefined && typeof draft.reservation !== 'boolean') throw new DraftSaveError('Thông tin giữ xe không hợp lệ.');
+  if (draft.ownership !== undefined && typeof draft.ownership !== 'boolean') throw new DraftSaveError('Thông tin thuê sở hữu không hợp lệ.');
+  if (draft.ownership_term_months !== undefined && !['6','12','24','custom'].includes(draft.ownership_term_months)) throw new DraftSaveError('Thời hạn thuê sở hữu không hợp lệ.');
+  if (draft.custom_installments !== undefined && (!Array.isArray(draft.custom_installments) || draft.custom_installments.length > 3659 || draft.custom_installments.some(item =>
+      !item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['due_at','amount'].includes(key)) ||
+      typeof item.due_at !== 'string' || item.due_at.length > 16 || typeof item.amount !== 'string' || !/^\d{0,13}$/.test(item.amount)))) throw new DraftSaveError('Lịch đóng tiền tùy chọn không hợp lệ.');
   for (const key of ['store_id', 'vehicle_store_id', 'staff_id'] as const) if (draft[key] && (!/^\d+$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key])) || Number(draft[key]) <= 0)) throw new DraftSaveError('ID cơ sở hoặc nhân sự không hợp lệ.');
   if (!Array.isArray(draft.vehicles) || !draft.vehicles.length || draft.vehicles.length > 20) throw new DraftSaveError('Bản nháp cần từ 1 đến 20 dòng xe.');
   for (const vehicle of draft.vehicles) {
@@ -105,7 +110,7 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   }
   if (edits.status !== 'draft' || typeof edits.rental_type !== 'string' || typeof edits.notes !== 'string' || edits.notes.length > 4000 || draft.contract_number.length > 32) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   if (edits.revision !== undefined && (typeof edits.revision !== 'string' || !/^\d+$/.test(edits.revision))) throw new DraftSaveError('Phiên bản bản nháp không hợp lệ.');
-  return { draft: structuredClone(draft), status: 'draft', rental_type: edits.rental_type, notes: edits.notes,
+  return { draft: { ...structuredClone(draft), ...(edits.rental_type === 'ownership' || draft.ownership !== undefined ? {ownership: edits.rental_type === 'ownership'} : {}) }, status: 'draft', rental_type: edits.rental_type, notes: edits.notes,
     ...(edits.revision ? { revision: edits.revision } : {}) };
 }
 

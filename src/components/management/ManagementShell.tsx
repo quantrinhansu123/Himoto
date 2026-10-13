@@ -16,6 +16,7 @@ const navigation = [
   { href: '/contracts/drafts', label: 'Hợp đồng nháp', kind: 'contracts' as const, icon: FilePenLine },
   { href: '/contracts/vat', label: 'Hợp đồng VAT', kind: 'contracts' as const, icon: ReceiptText },
   { href: '/contracts/overdue', label: 'Hợp đồng quá hạn', kind: 'contracts' as const, icon: AlarmClock },
+  { href: '/contracts/due', label: 'Đến hạn đóng tiền', kind: 'contracts' as const, icon: CalendarDays },
   { href: '/contracts/battery', label: 'Hợp đồng thuê pin', kind: 'battery-contracts' as const, icon: BatteryCharging },
   { href: '/stores', label: 'Cơ sở', kind: 'stores' as const, icon: Building2 },
   { href: '/vehicles', label: 'Danh sách xe', kind: 'vehicles' as const, icon: Bike },

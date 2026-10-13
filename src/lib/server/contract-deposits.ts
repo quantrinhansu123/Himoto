@@ -17,7 +17,8 @@ export const rentalPaidSql = (order = 'o') => `CASE WHEN NULLIF(${order}.pid::te
 const LOCAL_TIME = `'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$'`;
 export const dailyPriceSql = (line = 'd', order = 'o') => {
   const field = (key: string) => `(${order}.draft_payload::jsonb #>> '{management_composer,draft,${key}}')`;
-  return `CASE WHEN ${line}.type<>'day' THEN NULL WHEN ${line}.hiring_fee > 0 THEN ${line}.hiring_fee
+  return `CASE WHEN ${order}.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL THEN NULL
+    WHEN ${line}.type<>'day' THEN NULL WHEN ${line}.hiring_fee > 0 THEN ${line}.hiring_fee
     WHEN ${order}.total_rental_fees > 0 AND ${field('start_date')} ~ ${LOCAL_TIME} AND ${field('end_date')} ~ ${LOCAL_TIME}
       THEN round(${order}.total_rental_fees::numeric / NULLIF(GREATEST(ceil(extract(epoch FROM (${field('end_date')}::timestamp - ${field('start_date')}::timestamp)) / 86400), 1)
         * (SELECT count(*) FROM himoto.order_vehicle_details x WHERE x.order_id=${order}.id AND x.deleted_at IS NULL), 0))

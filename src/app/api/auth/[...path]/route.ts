@@ -52,9 +52,9 @@ const listQueries: Record<string, QueryConfig> = {
   },
   transactions: {
     sql: `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id, s.store_name,
-                 CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc' WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
+                 CASE WHEN t.name='battery:rental' THEN 'Thu tiền thuê pin' WHEN t.name='battery:deposit' THEN 'Thu cọc thuê pin' WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc' WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
                  COALESCE(t."desc", t.note) AS content, t.value AS amount,t.order_id,
-                 COALESCE(o.contract_number,o.draft_reference,'#' || t.order_id::text) AS contract_code,
+                 COALESCE(o.contract_number,o.draft_reference,bc.code,'#' || t.order_id::text) AS contract_code,
                  CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'
                       WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
                       WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty'
@@ -65,6 +65,7 @@ const listQueries: Record<string, QueryConfig> = {
           LEFT JOIN himoto.cash cb ON cb.id = t.cash_id
           LEFT JOIN himoto.users u ON u.id = t.user_id
           LEFT JOIN himoto.orders o ON o.id=t.order_id
+          LEFT JOIN himoto.battery_contracts bc ON t.object_type='battery_contract' AND bc.id=t.object_id
           LEFT JOIN himoto.stores s ON s.id=t.store_id
           LEFT JOIN himoto.banks b ON b.id=t.bank_id
           ORDER BY t.id DESC`,

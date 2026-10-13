@@ -115,9 +115,10 @@ export async function listAccountTransactions(kind: 'bank' | 'cash', id: number,
   try {
     const result = await himotoPool.query(
       `SELECT t.id, t.created_at, t.type, t.value AS amount, u.name AS user_name,
-              COALESCE(o.contract_number, o.draft_reference, CASE WHEN t.order_id IS NOT NULL THEN '#' || t.order_id::text END) AS contract_code,
+              COALESCE(o.contract_number, o.draft_reference, bc.code, CASE WHEN t.order_id IS NOT NULL THEN '#' || t.order_id::text END) AS contract_code,
               COALESCE(t."desc", t.note) AS content
        FROM himoto.transactions t LEFT JOIN himoto.users u ON u.id = t.user_id LEFT JOIN himoto.orders o ON o.id = t.order_id
+       LEFT JOIN himoto.battery_contracts bc ON t.object_type='battery_contract' AND bc.id=t.object_id
        WHERE t.${column} = $1 AND t.status = 'approved'
          AND ($2::date IS NULL OR (t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= $2::date)
          AND ($3::date IS NULL OR (t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= $3::date)

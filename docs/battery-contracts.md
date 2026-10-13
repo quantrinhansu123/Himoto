@@ -1,0 +1,11 @@
+# Hợp đồng thuê pin
+
+- Mẫu tham chiếu: PDF hợp đồng thuê pin người dùng cung cấp ngày 14/10/2026. Giữ A4 dọc, nội dung bốn điều và chữ ký; không chép lỗi số hiệu năm trong mẫu vào phần căn cứ hiện tại.
+- Khung xem trước đo đúng chiều rộng A4 dọc, không dùng chiều rộng A4 ngang của hợp đồng xe. Có vừa màn hình, phóng to và cuộn trên điện thoại. Các dòng thông tin dài tự xuống dòng, không cắt mép phải.
+- Hợp đồng mới mặc định cơ sở Thuê sở hữu khi chưa chọn cơ sở, gói **1 tháng**, đơn vị tháng và ngày kết thúc sau một tháng lịch. Gợi ý ngày cuối tháng kẹp đúng tháng ngắn/năm nhuận. Đổi ngày bắt đầu chỉ cập nhật gợi ý nếu ngày kết thúc chưa được sửa riêng; nút **Gợi ý thuê 1 tháng** có thể áp dụng lại.
+- Tiền thuê đã nhận và tiền cọc chọn riêng **CK tài khoản cá nhân / CK tài khoản công ty / Tiền mặt**, cùng tài khoản hoặc két thực nhận. Tài khoản cá nhân/két phải cùng cơ sở; tài khoản công ty có thể dùng chung hoặc cùng cơ sở. Server kiểm tra lại trạng thái và phạm vi tài khoản.
+- Lưu hợp đồng và phiếu thu dùng cùng giao dịch PostgreSQL. Phiếu nằm trong `himoto.transactions`, `object_type=battery_contract`, `object_id` là ID hợp đồng, tên `battery:rental` / `battery:deposit`; `order_id` để trống, không cộng tiền vào hợp đồng xe. Sổ quỹ và số dư tài khoản dùng các phiếu đã duyệt này.
+- Khi sửa, số đã thu là tổng lũy kế: chỉ phần tăng thêm tạo phiếu mới. Sửa thông tin không thu lại tiền. Server chặn giảm số đã thu dưới tổng phiếu hiện có, đổi cơ sở đã có phiếu, và thay tài khoản cũ mà không có khoản thu mới. UUID giúp thử lại lần tạo không ghi trùng.
+- Hợp đồng cũ chưa có phiếu không tự phát sinh phiếu thu. Khi người dùng mở sửa, chọn tài khoản và lưu số đã nhận, server ghi phiếu tương ứng. Xóa phiếu tại Sổ quỹ cập nhật lại số đã thu/cọc của hợp đồng; xóa mềm hợp đồng không xóa các phiếu tài chính.
+
+Kiểm tra: `npm.cmd run test:battery-contracts`; `node scripts/check-battery-contracts.cjs --live-temp` dùng bảng TEMP và rollback, không ghi nghiệp vụ thật. Browser QA: `python -X utf8 scripts/check-battery-contracts-ui.py --url http://127.0.0.1:3005 --session-cookie-file <cookie-file>` dùng dữ liệu và API mô phỏng để kiểm tra form, tài khoản, mở lại, PDF A4 dọc, các kích thước điện thoại 320/375/844px.

@@ -1,7 +1,7 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { BATTERY_PAYMENT_METHODS, BATTERY_STATUSES, BatteryContract, BatteryContractInput } from '@/lib/management/battery-contracts';
+import { BATTERY_COLLECTION_METHODS, BATTERY_PAYMENT_METHODS, BATTERY_STATUSES, BatteryContract, BatteryContractInput, type BatteryCollectionMethod } from '@/lib/management/battery-contracts';
 type Database = Pick<PoolClient, 'query'>;
 export class BatteryContractError extends Error { constructor(message: string, public status = 400) { super(message); } }
 
@@ -13,7 +13,7 @@ const TEXT_LIMITS = {
   battery_name: 255, vehicle_license: 32, vehicle_brand: 120, vehicle_type: 120, vehicle_color: 60, vehicle_year: 10, price_unit: 30, package_name: 120, deposit_note: 500, notes: 2000,
 } as const;
 const MONEY_FIELDS = ['rent_price', 'paid_amount', 'deposit_amount'] as const;
-const FIELDS = ['store_id', 'customer_id', 'status', 'signed_on', 'id_card_issued_on', 'starts_at', 'ends_at', 'paid_method', 'deposit_method', ...Object.keys(TEXT_LIMITS), ...MONEY_FIELDS];
+const FIELDS = ['store_id', 'customer_id', 'status', 'signed_on', 'id_card_issued_on', 'starts_at', 'ends_at', 'paid_method', 'deposit_method', 'paid_account_type','paid_account_id','deposit_account_type','deposit_account_id','collected_at', ...Object.keys(TEXT_LIMITS), ...MONEY_FIELDS];
 
 export function parseBatteryInput(body: unknown, editing = false): BatteryContractInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BatteryContractError('Thông tin hợp đồng thuê pin không hợp lệ.');
@@ -42,9 +42,24 @@ export function parseBatteryInput(body: unknown, editing = false): BatteryContra
   if (value.ends_at && Date.parse(`${value.ends_at}+07:00`) <= Date.parse(`${value.starts_at}+07:00`)) throw new BatteryContractError('Thời điểm kết thúc phải sau thời điểm bắt đầu.');
   if (!text.customer_name) throw new BatteryContractError('Nhập tên khách hàng (Bên B).');
   if (!text.battery_name) throw new BatteryContractError('Nhập loại pin cho thuê.');
+  const accounts: Partial<BatteryContractInput> = {};
+  for (const purpose of ['paid','deposit'] as const) {
+    const type = value[`${purpose}_account_type`] ?? (value[`${purpose}_method`] === 'TM' ? 'cash' : value[`${purpose}_method`] === 'CK' ? 'transfer' : '');
+    const id = value[`${purpose}_account_id`] ?? null;
+    if (!BATTERY_COLLECTION_METHODS.some(option=>option.value === type) || id !== null && (!Number.isSafeInteger(id) || Number(id) <= 0)) throw new BatteryContractError('Hình thức hoặc tài khoản nhận tiền chưa hợp lệ.');
+    const positive = Number(money[purpose === 'paid' ? 'paid_amount' : 'deposit_amount']) > 0;
+    if (positive && (!type || id === null)) throw new BatteryContractError('Chọn tài khoản nhận tiền thuê và tiền cọc đã thu.');
+    const method = type === 'cash' ? 'TM' : type ? 'CK' : '';
+    if (value[`${purpose}_method`] !== method) throw new BatteryContractError('Hình thức thanh toán chưa khớp tài khoản nhận tiền.');
+    accounts[`${purpose}_account_type`] = type as BatteryCollectionMethod;
+    accounts[`${purpose}_account_id`] = id === null ? null : Number(id);
+  }
+  const collected = value.collected_at ?? value.starts_at;
+  if (typeof collected !== 'string' || !validTime(collected)) throw new BatteryContractError('Thời điểm nhận tiền chưa hợp lệ.');
+  if ((Number(money.paid_amount) > 0 || Number(money.deposit_amount) > 0) && Date.parse(`${collected}+07:00`) > Date.now()+60000) throw new BatteryContractError('Thời điểm đã nhận tiền không được ở tương lai.');
   if (editing ? typeof value.revision !== 'string' || !/^\d{1,20}$/.test(value.revision) : typeof value.request_id !== 'string' || !uuid.test(value.request_id)) throw new BatteryContractError('Phiên bản hợp đồng không hợp lệ. Tải lại trang rồi thử lại.');
   return {
-    ...text, ...money, store_id: Number(value.store_id), customer_id: value.customer_id === null ? null : Number(value.customer_id),
+    ...text, ...money, ...accounts, collected_at:collected, store_id: Number(value.store_id), customer_id: value.customer_id === null ? null : Number(value.customer_id),
     status: value.status as BatteryContractInput['status'], signed_on: value.signed_on, id_card_issued_on: value.id_card_issued_on,
     starts_at: value.starts_at, ends_at: value.ends_at, paid_method: value.paid_method as BatteryContractInput['paid_method'], deposit_method: value.deposit_method as BatteryContractInput['deposit_method'],
     ...(editing ? { revision: String(value.revision) } : { request_id: String(value.request_id).toLowerCase() }),
@@ -52,7 +67,16 @@ export function parseBatteryInput(body: unknown, editing = false): BatteryContra
 }
 
 const SELECT = `SELECT b.*, b.signed_on::text AS signed_on_text, b.id_card_issued_on::text AS id_card_issued_on_text, b.xmin::text AS revision,
-  s.store_name, s.store_address, s.store_phone FROM himoto.battery_contracts b LEFT JOIN himoto.stores s ON s.id=b.store_id`;
+  s.store_name, s.store_address, s.store_phone,
+  rp.account_id AS paid_account_id,rp.method AS paid_account_type,dp.account_id AS deposit_account_id,dp.method AS deposit_account_type,
+  GREATEST(rp.collected_at,dp.collected_at) AS collection_at
+  FROM himoto.battery_contracts b LEFT JOIN himoto.stores s ON s.id=b.store_id
+  LEFT JOIN LATERAL (SELECT COALESCE(t.cash_id,t.bank_id) AS account_id,
+    CASE WHEN t.cash_id IS NOT NULL THEN 'cash' WHEN t.bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method,t.created_at AS collected_at
+    FROM himoto.transactions t WHERE t.object_type='battery_contract' AND t.object_id=b.id AND t.name='battery:rental' AND t.status='approved' ORDER BY t.id DESC LIMIT 1) rp ON true
+  LEFT JOIN LATERAL (SELECT COALESCE(t.cash_id,t.bank_id) AS account_id,
+    CASE WHEN t.cash_id IS NOT NULL THEN 'cash' WHEN t.bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method,t.created_at AS collected_at
+    FROM himoto.transactions t WHERE t.object_type='battery_contract' AND t.object_id=b.id AND t.name='battery:deposit' AND t.status='approved' ORDER BY t.id DESC LIMIT 1) dp ON true`;
 const localTime = (input: unknown) => input instanceof Date ? new Date(input.getTime() + 7 * 3600000).toISOString().slice(0, 16) : '';
 const money = (input: unknown) => input == null ? null : Number(input);
 const text = (input: unknown) => input == null ? '' : String(input);
@@ -67,6 +91,9 @@ function map(row: Record<string, unknown>): BatteryContract {
     rent_price: money(row.rent_price), price_unit: text(row.price_unit), package_name: text(row.package_name), paid_amount: money(row.paid_amount),
     paid_method: text(row.paid_method) as BatteryContract['paid_method'], deposit_amount: money(row.deposit_amount), deposit_note: text(row.deposit_note),
     deposit_method: text(row.deposit_method) as BatteryContract['deposit_method'], notes: text(row.notes),
+    paid_account_type:(text(row.paid_account_type) || (row.paid_method === 'TM' ? 'cash' : row.paid_method === 'CK' ? 'transfer' : '')) as BatteryCollectionMethod,paid_account_id:money(row.paid_account_id),
+    deposit_account_type:(text(row.deposit_account_type) || (row.deposit_method === 'TM' ? 'cash' : row.deposit_method === 'CK' ? 'transfer' : '')) as BatteryCollectionMethod,deposit_account_id:money(row.deposit_account_id),
+    collected_at:localTime(row.collection_at) || localTime(row.starts_at),
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : text(row.created_at), revision: text(row.revision),
   };
 }
@@ -102,7 +129,11 @@ export async function saveBatteryContract(client: Database, actorId: number, raw
       if (previous.rows[0].request_hash !== hash || previous.rows[0].deleted_at) throw new BatteryContractError('Mã lần lưu đã được dùng. Tải lại trang trước khi tạo hợp đồng khác.', 409);
       return readOne(client, Number(previous.rows[0].id));
     }
-  } else if ((await readOne(client, id)).revision !== input.revision) throw new BatteryContractError('Hợp đồng đã được người khác cập nhật. Tải lại trang và mở lại để sửa.', 409);
+  } else {
+    const previous = await readOne(client,id);
+    if (previous.revision !== input.revision) throw new BatteryContractError('Hợp đồng đã được người khác cập nhật. Tải lại trang và mở lại để sửa.', 409);
+    if (previous.store_id !== input.store_id && (previous.paid_account_id || previous.deposit_account_id)) throw new BatteryContractError('Hợp đồng đã có phiếu thu; giữ cơ sở để số dư và lịch sử đúng.',409);
+  }
   const store = await client.query("SELECT id FROM himoto.stores WHERE id=$1 AND status IN ('opening','active') FOR SHARE", [input.store_id]);
   if (!store.rowCount) throw new BatteryContractError('Cơ sở không tồn tại hoặc đã ngừng hoạt động.', 409);
   if (input.customer_id !== null && !(await client.query('SELECT id FROM himoto.customers WHERE id=$1 FOR SHARE', [input.customer_id])).rowCount) throw new BatteryContractError('Khách hàng đã chọn không còn tồn tại. Tra cứu lại khách hàng.', 409);
@@ -119,7 +150,40 @@ export async function saveBatteryContract(client: Database, actorId: number, raw
       VALUES(${values.map((_, index) => `$${index + 1}`).join(',')},$${values.length},$${values.length + 1},$${values.length + 2},$${values.length + 3}) RETURNING id`,
       [...values, code, input.request_id, hash])).rows[0].id);
   }
+  await collectBatteryPayments(client,id,actorId,input);
   return readOne(client, id);
+}
+
+async function collectBatteryPayments(client: Database,id: number,actorId: number,input: BatteryContractInput) {
+  const totals = await client.query(`SELECT name,COALESCE(SUM(value),0) AS amount FROM himoto.transactions
+    WHERE object_type='battery_contract' AND object_id=$1 AND status='approved' AND type='in' GROUP BY name`,[id]);
+  for (const purpose of ['paid','deposit'] as const) {
+    const name = purpose === 'paid' ? 'battery:rental' : 'battery:deposit';
+    const target = Number(purpose === 'paid' ? input.paid_amount : input.deposit_amount) || 0;
+    const before = Number(totals.rows.find(row=>row.name === name)?.amount || 0), delta = target-before;
+    if (delta < 0) throw new BatteryContractError('Số đã thu thấp hơn phiếu thu hiện có. Đối chiếu Sổ quỹ trước khi điều chỉnh; không tự xóa tiền đã nhận.',409);
+    if (!delta) {
+      if (target > 0) {
+        const latest = await client.query(`SELECT COALESCE(cash_id,bank_id) AS account_id,
+          CASE WHEN cash_id IS NOT NULL THEN 'cash' WHEN bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method
+          FROM himoto.transactions WHERE object_type='battery_contract' AND object_id=$1 AND name=$2 AND status='approved' ORDER BY id DESC LIMIT 1`,[id,name]);
+        if (Number(latest.rows[0]?.account_id) !== input[`${purpose}_account_id`] || latest.rows[0]?.method !== input[`${purpose}_account_type`]) throw new BatteryContractError('Không đổi tài khoản của khoản đã thu bằng cách sửa hợp đồng. Đối chiếu phiếu trong Sổ quỹ; tài khoản mới áp dụng cho khoản thu tăng thêm.',409);
+      }
+      continue;
+    }
+    const method = input[`${purpose}_account_type`], accountId = input[`${purpose}_account_id`];
+    const cash = method === 'cash';
+    const result = await client.query(`SELECT id,store_id,${cash ? "''::text" : 'owner_type'} AS owner_type FROM himoto.${cash ? 'cash' : 'banks'}
+      WHERE id=$1 AND lower(status)='active' FOR SHARE`,[accountId]);
+    const account = result.rows[0];
+    if (!account || (method === 'company_transfer' ? account.owner_type !== 'company' || ![0,input.store_id].includes(Number(account.store_id))
+      : Number(account.store_id) !== input.store_id || !cash && account.owner_type === 'company')) throw new BatteryContractError('Tài khoản nhận không hoạt động hoặc không khớp hình thức / cơ sở thuê pin.',409);
+    const code = (await client.query('SELECT code FROM himoto.battery_contracts WHERE id=$1',[id])).rows[0].code;
+    await client.query(`INSERT INTO himoto.transactions(created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id)
+      VALUES($1,now(),$2,'in',$3,$4,'approved',$5,$6,$7,$8,$9,$10,'battery_contract',$11)`,
+      [`${input.collected_at}:00+07:00`,name,delta,`${purpose === 'paid' ? 'Thu tiền thuê pin' : 'Thu cọc thuê pin'}_${code}`,actorId,input.store_id,
+        cash ? null : accountId,cash ? accountId : null,cash ? 1 : 2,cash ? null : account.owner_type,id]);
+  }
 }
 
 export async function deleteBatteryContract(client: Database, id: number, revision: string, actorId: number) {

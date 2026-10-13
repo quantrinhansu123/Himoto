@@ -93,12 +93,35 @@ PRINT_HTML = '''() => '<!doctype html><html lang="vi" class="himoto-printing"><h
   + '</head><body>' + document.querySelector('.himoto-print-root').outerHTML + '</body></html>' '''
 
 
+def check_signatures_and_return_table(document):
+    # One shared signing section for the contract and every vehicle appendix.
+    expect(document.locator('.appendix-signatures')).to_have_count(1)
+    expect(document.locator('.col-left .sig-block, .appendix-multi-vehicles .sig-space')).to_have_count(0)
+    expect(document.locator('.sig-space')).to_have_count(2)
+    expect(document.locator('.col-right .sig-role')).to_have_text(['ĐẠI DIỆN BÊN A', 'BÊN B'])
+    assert 'Năm sản xuất' not in document.inner_text()
+    receipt = document.locator('.col-right .receipt-table')
+    expect(receipt.locator('tr')).to_have_count(2)
+    expect(receipt.locator('.receipt-td-label')).to_have_text([
+        'Giờ trả xe', 'Xác nhận của Bên A:', 'Số tiền trả khách', 'Bên B ký tên:'])
+    for row in receipt.locator('tr').all():
+        expect(row.locator('td')).to_have_count(4)
+        expect(row.locator('td').last).to_have_text('')
+    assert document.locator('.appendix-confirmations').evaluate('''(el) => {
+      const signatures = el.querySelector('.appendix-signatures').getBoundingClientRect();
+      const receipt = el.querySelector('.return-receipt-box').getBoundingClientRect();
+      return receipt.top >= signatures.bottom && receipt.right <= el.getBoundingClientRect().right + 1;
+    }''')
+
+
 def pdf_from_print(page, context, preview, filename, expected_pages):
+    check_signatures_and_return_table(preview.locator('.contract-print-wrapper'))
     count = page.evaluate('window.__printCalls')
     preview.get_by_role('button', name='In hợp đồng', exact=True).click()
     page.wait_for_function('(count) => window.__printCalls > count', arg=count)
     frame = page.locator('.himoto-print-root')
     assert frame.locator('form').count() == 0
+    check_signatures_and_return_table(frame)
     for selector in ['.contract-print-wrapper', '.party-b .party-row span']:
         style = '(el) => { const s = getComputedStyle(el); return [s.fontFamily, s.fontSize, s.fontWeight]; }'
         assert preview.locator(selector).first.evaluate(style) == frame.locator(selector).first.evaluate(style)
@@ -113,6 +136,12 @@ def pdf_from_print(page, context, preview, filename, expected_pages):
         for value in [customer['name'], customer['id_card'], 'QA-101', 'HỢP ĐỒNG THUÊ XE']:
             assert value in content, value
         assert 'Lưu nháp' not in content
+        assert 'Năm sản xuất' not in content
+        assert content.count('ĐẠI DIỆN BÊN A') == 1
+        for label in ['BẢNG XÁC NHẬN VIỆC TRẢ XE', 'Giờ trả xe', 'Số tiền trả khách', 'Xác nhận của Bên A:', 'Bên B ký tên:']:
+            positions = pdf[0].search_for(label)
+            assert len(positions) == 1, (filename, label, positions)
+            assert positions[0].x0 > pdf[0].rect.width / 2, (filename, label, positions[0])
         if expected_pages == 2:
             assert 'QA-102' in pdf[1].get_text()
         else:
@@ -207,7 +236,8 @@ with sync_playwright() as playwright:
     normalize = lambda text: re.sub(r'\s+', ' ', text).strip()
     source = Path('src/components/contracts/legacy/ContractPrintDocument.vue').read_text(encoding='utf-8')
     terms = [normalize(re.sub('<[^>]+>', '', item)) for item in re.findall(r'<li>(.*?)</li>', source, re.S)]
-    assert [normalize(t) for t in paper.locator('.term-list li').all_text_contents()] == terms
+    # The DOCX capitalizes "Bộ luật Hình sự"; the archived Vue wording is lowercase.
+    assert [normalize(t).casefold() for t in paper.locator('.term-list li').all_text_contents()] == [t.casefold() for t in terms]
     preview.screenshot(path=str(output / 'print-preview-1440.png'))
     pdf_from_print(page, context, preview, 'contract-single-vehicle.pdf', 1)
     for width, height in [(320, 740), (375, 812), (667, 375), (844, 390)]:
@@ -251,7 +281,7 @@ with sync_playwright() as playwright:
     page.set_viewport_size({'width': 1440, 'height': 1000})
     checks.append('multiple preview pages remain stacked on phones; mobile zoom does not change the printed PDF')
     preview.get_by_role('button', name='Quay lại thông tin').click()
-    checks.append('preview and actual print use matching legacy typography; single/multiple vehicles generate one/two A4 landscape PDF pages with all original terms')
+    checks.append('preview and print omit vehicle manufacture year, share one signing section in the right appendix and keep a blank 2-by-4 return receipt; desktop/mobile PDFs retain one/two A4 landscape pages')
     form.get_by_role('button', name='Lưu nháp', exact=True).click()
     expect(page).to_have_url(args.url + '/contracts/drafts')
     assert saved[-1]['draft']['customer']['id_card'] == customer['id_card']
@@ -260,7 +290,7 @@ with sync_playwright() as playwright:
     assert saved[-1]['draft']['staff_id'] == '8'
     assert saved[-1]['draft']['staff_name'] == ''
     page.reload(wait_until='domcontentloaded')
-    page.get_by_role('button', name='Thao tác NHAP-QA-901', exact=True).click()
+    page.locator('.mg-table tbody tr').filter(has=page.get_by_text('NHAP-QA-901', exact=True)).get_by_role('button', name=re.compile('^Thao tác ')).click()
     page.get_by_role('menuitem', name='Tiếp tục sửa bản nháp', exact=True).click()
     expect(form.get_by_label('Nguồn khách', exact=True)).to_have_value('Đại diện QA 8')
     expect(form.get_by_label('Liên kết nguồn khách', exact=True)).to_have_value('Cửa hàng QA 2')
@@ -270,7 +300,7 @@ with sync_playwright() as playwright:
     checks.append('successful synthetic draft save survives reload with all fields and both vehicles intact')
     form.get_by_role('button', name='Đóng', exact=True).click()
     page.goto(args.url + '/contracts', wait_until='domcontentloaded')
-    page.get_by_role('button', name='Thao tác HD-QA-900', exact=True).click()
+    page.locator('.mg-table tbody tr').filter(has=page.get_by_text('HD-QA-900', exact=True)).get_by_role('button', name=re.compile('^Thao tác ')).click()
     page.get_by_role('menuitem', name='Xem chi tiết', exact=True).click()
     detail = page.locator('dialog.mg-contract-detail')
     expect(detail.locator('.mg-composer-vehicle')).to_have_count(2)

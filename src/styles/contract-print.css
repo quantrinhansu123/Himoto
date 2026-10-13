@@ -177,7 +177,11 @@
 	border-radius: 2px;
 }
 
-.contract-print-wrapper .contract-signatures {
+.contract-print-wrapper .appendix-confirmations {
+	break-inside: avoid;
+}
+
+.contract-print-wrapper .appendix-signatures {
 	justify-content: space-between;
 	padding-inline: 8mm;
 }
@@ -198,6 +202,10 @@
 
 .contract-print-wrapper .sig-space {
 	height: 24px;
+}
+
+.contract-print-wrapper .appendix-signatures .sig-space {
+	height: 10mm;
 }
 
 .contract-print-wrapper .sig-name {
@@ -240,8 +248,6 @@
 
 /* Bảng xác nhận trả xe */
 .contract-print-wrapper .return-receipt-box {
-	border: 1.5px solid #111;
-	padding: 4px;
 	margin-top: 4px;
 }
 
@@ -258,20 +264,23 @@
 	border-collapse: collapse;
 	margin-top: 3px;
 	font-size: 9.5px;
+	table-layout: fixed;
 }
 
 .contract-print-wrapper .receipt-table td {
 	border: 1px solid #666;
 	padding: 2px 4px;
+	width: 25%;
+	vertical-align: top;
+	overflow-wrap: anywhere;
 }
 
-.contract-print-wrapper .receipt-td-label {
-	font-weight: bold;
-	background: #f9f9f9;
+.contract-print-wrapper .receipt-table tr:first-child {
+	height: 6mm;
 }
 
-.contract-print-wrapper .receipt-sig-space {
-	height: 20px;
+.contract-print-wrapper .receipt-table tr:last-child {
+	height: 9mm;
 }
 
 .contract-print-wrapper .payment-method .is-picked {
@@ -308,7 +317,7 @@
 .battery-print-wrapper b { font-weight: 700; }
 .battery-print-wrapper .battery-head {
 	display: grid;
-	grid-template-columns: 40mm 1fr auto;
+	grid-template-columns: 40mm minmax(0, 1fr) minmax(24mm, auto);
 	align-items: start;
 	gap: 4mm;
 }
@@ -332,7 +341,7 @@
 .battery-print-wrapper .battery-number { display: grid; gap: 2px; }
 .battery-print-wrapper .battery-nation { text-align: center; font-size: 13px; }
 .battery-print-wrapper .battery-nation em { font-style: normal; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
-.battery-print-wrapper .battery-number { font-size: 13px; }
+.battery-print-wrapper .battery-number { font-size: 13px; max-width: 42mm; overflow-wrap: anywhere; }
 .battery-print-wrapper .battery-number em { font-style: italic; }
 .battery-print-wrapper h1 {
 	margin: 2mm 0 1mm;
@@ -347,8 +356,10 @@
 	display: flex;
 	align-items: baseline;
 	gap: 4px;
-	white-space: nowrap;
+	flex-wrap: wrap;
+	white-space: normal;
 }
+.battery-print-wrapper .battery-row > span { min-width: 0; overflow-wrap: anywhere; }
 .battery-print-wrapper .battery-fill {
 	flex: 1 1 auto;
 	min-width: 20mm;
@@ -360,9 +371,11 @@
 .battery-print-wrapper .battery-fill-medium { flex: 0 1 75mm; }
 .battery-print-wrapper .battery-cols {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: space-between;
 	gap: 3mm;
 }
+.battery-print-wrapper .battery-cols > span { min-width: 0; overflow-wrap: anywhere; }
 .battery-print-wrapper .is-picked {
 	font-weight: 700;
 	border: 1px solid #111;

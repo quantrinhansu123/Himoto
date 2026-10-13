@@ -18,6 +18,7 @@ import { StaffOrganizationChart } from './StaffOrganizationChart';
 import { ContractSummary } from './ContractSummary';
 import { bulkDelete } from '@/lib/management/bulk-delete';
 import { staffPositionSuggestions } from '@/lib/management/staff-positions';
+import { applyInstallmentBilling } from '@/lib/management/contract-billing';
 
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
@@ -42,15 +43,16 @@ const StaffDialog = dynamic(() => import('./StaffDialogs').then(module => module
 const EMPTY_ROWS: ManagementRow[] = [];
 const overdueDays = (returnAt: unknown, now: number) => { const due = Date.parse(String(returnAt ?? '')); return Number.isFinite(due) ? Math.max(0, Math.floor((now - due) / 86_400_000)) : undefined; };
 
-function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean }) {
-  const baseConfig = MANAGEMENT_CONFIG[kind];
+function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false, paymentDueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean; paymentDueOnly?: boolean }) {
+  const baseConfig = paymentDueOnly ? { ...MANAGEMENT_CONFIG[kind], title: 'Đến hạn đóng tiền', description: 'Khoản thuê sở hữu đã đến hẹn và chưa đóng đủ. Liên hệ khách để thu tiền theo lịch.', columns: [...MANAGEMENT_CONFIG[kind].columns,
+    {key:'billing_next_due_at',label:'Ngày hẹn đóng tiền',format:'date' as const}, {key:'billing_due_amount',label:'Tiền đến hạn còn thiếu',format:'money' as const,align:'right' as const}] } : MANAGEMENT_CONFIG[kind];
   const config = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : overdueOnly ? { ...baseConfig, title: 'Hợp đồng quá hạn', description: 'Hợp đồng đang thuê đã quá ngày hẹn trả xe. Liên hệ khách, gia hạn hoặc nhận trả xe.', columns: [...baseConfig.columns, { key: 'overdue_days', label: 'Số ngày quá hạn', format: 'number' as const, align: 'right' as const }] } : baseConfig;
   const { dataset, loading, refreshing, error, source, canSaveContractDrafts, selectedStore, selectStore, reload, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
   const router = useRouter();
   const searchParams = useSearchParams();
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
   const contractId = kind === 'contracts' ? searchParams.get('contract_id') : null;
-  const contractPath = vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : overdueOnly ? '/contracts/overdue' : '/contracts';
+  const contractPath = paymentDueOnly ? '/contracts/due' : vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : overdueOnly ? '/contracts/overdue' : '/contracts';
   const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
   const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string } | null>(null);
   const [renewTarget, setRenewTarget] = useState<ManagementRow | null>(null);
@@ -58,7 +60,12 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' }>(overdueOnly ? { key: 'overdue_days', direction: 'desc' } : { key: 'code', direction: 'asc' });
-  const [openedAt] = useState(() => Date.now());
+  const [openedAt, setOpenedAt] = useState(() => Date.now());
+  useEffect(() => {
+    if (kind !== 'contracts') return;
+    const timer = window.setInterval(() => setOpenedAt(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [kind]);
   const [visibleKeys, setVisibleKeys] = useState<string[]>(config.columns.filter(c => !c.hidden).map(c => c.key));
   const [viewing, setViewing] = useState<ManagementRow | null>(null);
   const [editing, setEditing] = useState<ManagementRow | null>(null);
@@ -99,9 +106,14 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   }, []);
 
   const allRows = dataset?.[kind] || EMPTY_ROWS;
-  const rows = useMemo(() => draftsOnly ? allRows.filter(row => row.status === 'draft') : vatOnly ? allRows.filter(row => Number(row.company_payment_count) > 0)
-    : overdueOnly ? allRows.filter(row => row.status === 'overdue').map(row => ({ ...row, overdue_days: overdueDays(row.end_date, openedAt) })) : allRows, [allRows, draftsOnly, vatOnly, overdueOnly, openedAt]);
+  const rows = useMemo(() => {
+    const billed = kind === 'contracts' ? allRows.map(row => applyInstallmentBilling(row, openedAt)) : allRows;
+    return paymentDueOnly ? billed.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0)
+      : draftsOnly ? billed.filter(row => row.status === 'draft') : vatOnly ? billed.filter(row => Number(row.company_payment_count) > 0)
+      : overdueOnly ? billed.filter(row => row.status === 'overdue').map(row => ({ ...row, overdue_days: overdueDays(row.end_date, openedAt) })) : billed;
+  }, [allRows, kind, draftsOnly, vatOnly, overdueOnly, paymentDueOnly, openedAt]);
   const scopedRows = useMemo(() => filterRows(rows, EMPTY_QUERY, selectedStore), [rows, selectedStore]);
+  const dueCount = scopedRows.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0).length;
   const filteredRows = useMemo(() => sortRows(filterRows(scopedRows, query, 'all'), sort.key, sort.direction), [scopedRows, query, sort]);
   const tabRows = useMemo(() => filterRows(scopedRows, { ...query, status: '' }, 'all'), [scopedRows, query]);
   const statusCounts = useMemo(() => { const counts = new Map<string, number>(); for (const row of tabRows) counts.set(row.status, (counts.get(row.status) || 0) + 1); return counts; }, [tabRows]);
@@ -200,6 +212,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         {kind === 'contracts' && <div className="mg-date-filters mg-date-range-inline"><span>Ngày bắt đầu thuê</span><label><span className="mg-sr-only">Từ ngày</span><input type="date" aria-label="Từ ngày" value={query.startDate} onChange={event => updateQuery({ startDate: event.target.value })} aria-invalid={invalidDate} /></label><span className="mg-date-divider">—</span><label><span className="mg-sr-only">Đến ngày</span><input type="date" aria-label="Đến ngày" value={query.endDate} onChange={event => updateQuery({ endDate: event.target.value })} aria-invalid={invalidDate} /></label>{invalidDate && <span className="mg-field-error" role="alert">Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.</span>}
           {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}{contractId && <span className="mg-active-filter">Hợp đồng #{contractId}<button type="button" aria-label="Bỏ lọc hợp đồng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}</div>}
         {isFiltered && <div className="mg-filter-summary"><span><strong>{filteredRows.length}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
+        {kind === 'contracts' && !loading && !error && dueCount > 0 && <div className="mg-billing-reminder" role="status"><p><strong>{dueCount} hợp đồng thuê sở hữu đến hạn đóng tiền.</strong> Khoản chưa đóng đủ tiếp tục hiện để kế toán giục nợ.</p>{!paymentDueOnly && <button className="mg-button" type="button" onClick={() => router.push('/contracts/due')}>Xem khoản đến hạn</button>}</div>}
         {kind === 'contracts' && <ContractSummary rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset} />}
         {kind === 'customers' && blacklistError && <p className="mg-blacklist-error" role="alert">{blacklistError}</p>}
         <DataTable config={config} columns={columns} rows={filteredRows.slice(offset, offset + pageSize)} offset={offset} sortKey={sort.key} sortDirection={sort.direction}
@@ -284,6 +297,6 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
 }
 
 const navigationNumber = (kind: ManagementKind) => ['staff', 'customers', 'contracts', 'stores', 'vehicles'].indexOf(kind) + 1;
-export function ManagementPage({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean }) {
-  return <Suspense fallback={<div className="mg-table-state" role="status">Đang chuẩn bị danh sách…</div>}><ManagementContent key={`${kind}-${draftsOnly}-${vatOnly}-${overdueOnly}`} kind={kind} draftsOnly={draftsOnly} vatOnly={vatOnly} overdueOnly={overdueOnly} /></Suspense>;
+export function ManagementPage({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false, paymentDueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean; paymentDueOnly?: boolean }) {
+  return <Suspense fallback={<div className="mg-table-state" role="status">Đang chuẩn bị danh sách…</div>}><ManagementContent key={`${kind}-${draftsOnly}-${vatOnly}-${overdueOnly}-${paymentDueOnly}`} kind={kind} draftsOnly={draftsOnly} vatOnly={vatOnly} overdueOnly={overdueOnly} paymentDueOnly={paymentDueOnly} /></Suspense>;
 }

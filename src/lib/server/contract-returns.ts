@@ -2,6 +2,7 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import type { ReturnableContractItem, ReturnInput, ReturnResult } from '@/lib/management/contract-returns';
 import { dailyPriceSql, depositLateral, rentalPaid, rentalPaidSql } from './contract-deposits';
+import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractReturnError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -47,7 +48,7 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
   COALESCE(c.name,o.customer_name,'') AS customer_name,COALESCE(c.id_card::text,o.customer_idnumber::text,'') AS customer_id_card,
   v.id AS vehicle_id,v.name AS vehicle_name,v.license, o.store_id,s.store_name,
   d.rent_at AS scheduled_start_at,d.return_at AS scheduled_return_at,d.completed_at,d.xmin::text AS item_revision,o.xmin::text AS order_revision,
-  NULLIF(o.total::text,'')::numeric AS total_amount,${rentalPaidSql()} AS paid_amount,dep.paid AS deposit_paid,dep.paid-dep.refunded AS deposit_held,
+  NULLIF(o.total::text,'')::numeric AS total_amount,o.draft_payload,${rentalPaidSql()} AS paid_amount,dep.paid AS deposit_paid,dep.paid-dep.refunded AS deposit_held,
   (d.completed_at IS NULL AND d.return_at < now()) AS overdue,
   ${dailyPriceSql()} AS daily_price
   FROM himoto.order_vehicle_details d
@@ -60,14 +61,21 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
     AND o.order_status IN ('renting','overdue','wait_payment','completed')`;
 
 function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractItem[] {
-  return rows.map(row => ({ item_id: Number(row.item_id), order_id: Number(row.order_id), contract_code: String(row.contract_code),
+  return rows.map(row => {
+    const value = (row.draft_payload as {management_composer?: {installment_plan?: unknown}} | undefined)?.management_composer?.installment_plan;
+    const plan = value ? parseInstallmentPlan(value) : null;
+    if (value && !plan) throw new ContractReturnError('Lịch đóng tiền chưa hợp lệ. Cần đối chiếu hợp đồng.', 409);
+    const baseTotal = row.total_amount == null ? null : Number(row.total_amount), paid = row.paid_amount == null ? null : Number(row.paid_amount);
+    const total = plan && (row.order_status !== 'completed' || plan.stopped_at) ? installmentBalance(plan, baseTotal, paid).accrued_total : baseTotal;
+    return { item_id: Number(row.item_id), order_id: Number(row.order_id), contract_code: String(row.contract_code),
     order_status: String(row.order_status), customer_name: String(row.customer_name), customer_id_card: String(row.customer_id_card),
     vehicle_id: Number(row.vehicle_id), vehicle_name: String(row.vehicle_name || ''), license: String(row.license || ''),
     store_id: Number(row.store_id), store_name: String(row.store_name || ''), scheduled_start_at: toIso(row.scheduled_start_at), scheduled_return_at: toIso(row.scheduled_return_at), completed_at: toIso(row.completed_at),
     item_revision: String(row.item_revision), order_revision: String(row.order_revision),
-    total_amount: row.total_amount == null ? null : Number(row.total_amount), paid_amount: row.paid_amount == null ? null : Number(row.paid_amount), overdue: Boolean(row.overdue),
+    total_amount: total, paid_amount: paid, overdue: Boolean(row.overdue),
     daily_price: Number(row.daily_price) > 0 ? Number(row.daily_price) : null,
-    deposit_paid: Number(row.deposit_paid) || 0, deposit_held: Math.max(Number(row.deposit_held) || 0, 0) }));
+    deposit_paid: Number(row.deposit_paid) || 0, deposit_held: Math.max(Number(row.deposit_held) || 0, 0) };
+  });
 }
 
 export async function searchReturnableItems(client: Database, query: string): Promise<ReturnableContractItem[]> {
@@ -96,7 +104,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
   const itemResult = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.return_at,d.xmin::text AS item_revision,
-      o.order_status,o.total,o.pid,o.xmin::text AS order_revision,
+      o.order_status,o.total,o.pid,o.draft_payload,o.xmin::text AS order_revision,
       COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS contract_code
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
@@ -116,10 +124,16 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   const lateFee = input.fee_override === undefined ? chargeableHours * hourlyRate : Number(input.fee_override);
   if (!Number.isSafeInteger(lateFee) || lateFee > MAX_MONEY) throw new ContractReturnError('Tiền trả muộn vượt giới hạn lưu trữ.');
   const fee = lateFee - earlyDiscount;
-  const oldTotal = item.total == null || item.total === '' ? null : Number(item.total);
+  const baseTotal = item.total == null || item.total === '' ? null : Number(item.total);
+  const planValue = item.draft_payload?.management_composer?.installment_plan;
+  const plan = planValue ? parseInstallmentPlan(planValue) : null;
+  if (planValue && !plan) throw new ContractReturnError('Lịch đóng tiền chưa hợp lệ. Cần đối chiếu hợp đồng.', 409);
+  if (plan && input.returned_at < plan.start) throw new ContractReturnError('Ngày trả không được trước ngày bắt đầu thuê sở hữu.', 409);
+  if (plan && earlyDiscount) throw new ContractReturnError('Thuê sở hữu cần đối chiếu lịch đóng tiền khi giảm doanh thu trả sớm; không tự trừ vào tiền kỳ đầu.', 409);
+  const paid = await rentalPaid(client, Number(item.order_id), item.pid) ?? 0;
+  const oldTotal = plan ? installmentBalance(plan, baseTotal, paid, returnedMs).accrued_total : baseTotal;
   if (fee && (oldTotal === null || !Number.isSafeInteger(oldTotal) || oldTotal + fee > MAX_MONEY)) throw new ContractReturnError('Chưa có tổng phí hợp đồng hợp lệ để điều chỉnh khi trả xe.', 409);
   if (oldTotal !== null && oldTotal + fee < 0) throw new ContractReturnError('Số tiền giảm khi trả sớm vượt tổng tiền thuê của hợp đồng.');
-  const paid = await rentalPaid(client, Number(item.order_id), item.pid) ?? 0;
 
   const actual = localTimestamp(input.returned_at);
   await client.query('UPDATE himoto.order_vehicle_details SET completed_at=$2::timestamptz,updated_at=now() WHERE id=$1', [input.item_id, actual]);
@@ -139,7 +153,9 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
         jsonb_set(CASE WHEN jsonb_typeof(draft_payload::jsonb->'management_composer')='object'
           THEN draft_payload::jsonb->'management_composer' ELSE '{}'::jsonb END,'{return_adjustments}',
           COALESCE(draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb) || $5::jsonb,true),true)::json,
-      order_status=$4,updated_at=now() WHERE id=$1`, [item.order_id,fee,nextTotal ?? 0,nextStatus,JSON.stringify([returnAdjustment])]);
+      order_status=$4,updated_at=now() WHERE id=$1`, [item.order_id,fee,plan ? (baseTotal ?? 0)+fee : nextTotal ?? 0,nextStatus,JSON.stringify([returnAdjustment])]);
+  if (plan && !remainingItems) await client.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(draft_payload::jsonb,
+    '{management_composer,installment_plan,stopped_at}',to_jsonb($2::text),true)::json WHERE id=$1`, [item.order_id,input.returned_at < plan.end ? input.returned_at : plan.end]);
   const vehicleOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
   if (!vehicleOpen.rowCount) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
   return { item_id: input.item_id, contract_code: String(item.contract_code), returned_at: actual, scheduled_return_at: toIso(item.return_at)!,

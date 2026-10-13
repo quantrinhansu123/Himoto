@@ -23,7 +23,7 @@ export function PreviewPage({ children }: { children: ReactNode }) {
     return () => observer.disconnect();
   }, []);
   return <div className="mg-contract-preview-page" style={{ width: size.width * scale, height: size.height * scale }}>
-    <div ref={content} className="mg-contract-preview-page-content" style={{ transform: `scale(${scale})` }}>{children}</div>
+    <div ref={content} className="mg-contract-preview-page-content" style={{ width: size.width, transform: `scale(${scale})` }}>{children}</div>
   </div>;
 }
 

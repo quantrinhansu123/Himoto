@@ -58,9 +58,9 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
       setContext(fresh);
       if (restored) return;
       const payableNow = PAYABLE_STATUSES.includes(fresh.status) && fresh.remaining !== null && fresh.remaining > 0;
-      const renewableNow = RENEWABLE_STATUSES.includes(fresh.status) && fresh.items.length > 0;
+      const renewableNow = !fresh.billing && RENEWABLE_STATUSES.includes(fresh.status) && fresh.items.length > 0;
       let next = initialPurpose;
-      if (next === 'debt' && !payableNow) next = renewableNow && fresh.remaining === 0 ? 'renewal' : canAddExtraReceipt(fresh.status) && fresh.remaining !== null ? 'extra' : next;
+      if (next === 'debt' && !payableNow && !fresh.billing) next = renewableNow && fresh.remaining === 0 ? 'renewal' : canAddExtraReceipt(fresh.status) && fresh.remaining !== null ? 'extra' : next;
       setPurpose(next); setNote(defaultNote(next, fresh.code));
     }).catch(cause => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được thanh toán.');
@@ -71,7 +71,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
   const accounts = context ? paymentAccounts(context, method) : [];
   const effectiveAccount = accountId || (accounts.length === 1 ? String(accounts[0].id) : '');
   const payable = Boolean(context && PAYABLE_STATUSES.includes(context.status) && context.remaining !== null && context.remaining > 0);
-  const renewable = Boolean(context && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
+  const renewable = Boolean(context && !context.billing && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
   const days = /^\d+$/.test(renewalDays) && Number(renewalDays) >= 1 && Number(renewalDays) <= 365 ? Number(renewalDays) : 0;
   const suggestedFor = (item: RenewalItem) => item.daily_price && days ? String(item.daily_price * days) : '';
   const renewalLines = (context?.items || []).filter(item => String(item.id) in picks).map(item => {
@@ -197,7 +197,8 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
       <div className="mg-dialog-body">
         {loading && <p role="status"><LoaderCircle size={18} className="mg-spin" /> Đang tải thanh toán…</p>}
         {context && <>
-          {(!transferReview || pending) && <dl className="mg-payment-totals"><div><dt>Tiền thuê hợp đồng</dt><dd>{money(context.total_amount)}</dd></div><div><dt>Đã thu tiền thuê</dt><dd>{money(context.paid_amount)}</dd></div><div><dt>Còn thiếu (không trừ cọc)</dt><dd>{money(context.remaining)}</dd></div>
+          {context.billing && <p className="mg-composer-hint">Thuê sở hữu · Lịch gồm {context.billing.period_count} kỳ, tổng tiền thuê {money(context.billing.expected_total)} (cọc riêng). Đã đóng đủ {context.billing.paid_periods} kỳ. {context.billing.stopped_at ? `Đã dừng phát sinh kỳ mới từ ${vietnamText(`${context.billing.stopped_at}:00+07:00`)}.` : context.billing.next_due_at ? `Ngày hẹn tiếp theo: ${vietnamText(`${context.billing.next_due_at}:00+07:00`)}.` : 'Đã đóng đủ tiền thuê theo lịch.'} Chỉ thu các khoản đã đến hạn.</p>}
+          {(!transferReview || pending) && <dl className="mg-payment-totals"><div><dt>{context.billing ? 'Tiền thuê và phí đã đến hạn' : 'Tiền thuê hợp đồng'}</dt><dd>{money(context.total_amount)}</dd></div><div><dt>Đã thu tiền thuê</dt><dd>{money(context.paid_amount)}</dd></div><div><dt>Còn thiếu (không trừ cọc)</dt><dd>{money(context.remaining)}</dd></div>
             <div><dt>Tiền cọc đã thu</dt><dd>{formatMoney(context.deposit_paid)}</dd></div><div><dt>Đã trả cọc</dt><dd>{formatMoney(context.deposit_refunded)}</dd></div><div><dt>Cọc đang giữ</dt><dd>{formatMoney(context.deposit_held)}</dd></div></dl>}
           {transferReview && !pending ? <TransferQrPanel account={transferReview.account} input={transferReview.input} qr={transferReview.qr} confirmed={transferConfirmed} onConfirm={setTransferConfirmed} /> : <>
           {(payable || renewable || extraAllowed || refundAllowed || pending) && <label className="mg-payment-purpose">Nghiệp vụ<select aria-label="Nghiệp vụ" value={purpose} disabled={locked || loading} onChange={event => choosePurpose(event.target.value as PaymentPurpose)}><option value="debt" disabled={!payable}>Thu công nợ còn thiếu</option><option value="renewal" disabled={!renewable}>Thu tiền gia hạn</option><option value="extra" disabled={!extraAllowed}>Thêm phiếu thu (thu khác)</option><option value="deposit_refund" disabled={!refundAllowed}>Phiếu chi: Trả cọc cho khách</option></select></label>}

@@ -1,6 +1,7 @@
 import { ManagementConfig, ManagementKind, Option } from './types';
 import { ORDER_STATUS } from '@/lib/formatters';
 import { STAFF_POSITIONS } from './staff-positions';
+import { OWNERSHIP_TERMS } from './contract-billing';
 
 export const STAFF_STATUSES: Option[] = [{ value: 'active', label: 'Đang làm việc' }, { value: 'inactive', label: 'Tạm nghỉ' }, { value: 'leave', label: 'Đã nghỉ việc' }];
 export const CUSTOMER_STATUSES: Option[] = [{ value: 'active', label: 'Bình thường' }, { value: 'warning', label: 'Cần lưu ý' }, { value: 'blacklist', label: 'Blacklist (khách nợ xấu)' }, { value: 'draft', label: 'Chưa hoàn tất' }];
@@ -20,7 +21,7 @@ export const CONTRACT_STATUSES: Option[] = [
   { value: 'deposit_contract', label: 'Đã cọc, chờ nhận xe' },
   { value: 'cancel_pending_settlement', label: 'Chờ tất toán hủy' },
 ];
-export const CONTRACT_TYPES: Option[] = [{ value: 'daily', label: 'Thuê theo ngày' }, { value: 'monthly', label: 'Thuê theo tháng' }, { value: 'rental', label: 'Thuê xe' }, { value: 'tour', label: 'Tour / phượt' }];
+export const CONTRACT_TYPES: Option[] = [{ value: 'daily', label: 'Thuê theo ngày' }, { value: 'monthly', label: 'Thuê theo tháng' }, { value: 'ownership', label: 'Thuê sở hữu' }, { value: 'rental', label: 'Thuê xe' }, { value: 'tour', label: 'Tour / phượt' }];
 const branchField = { key: 'store_id', label: 'Cơ sở', type: 'select' as const, storeOptions: true, required: true };
 const codeColumn = { key: 'code', label: 'Mã', format: 'code' as const };
 const statusColumn = { key: 'status', label: 'Trạng thái', format: 'status' as const };
@@ -62,14 +63,14 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     kind: 'contracts', title: 'Danh sách hợp đồng', singular: 'hợp đồng',
     description: 'Tra cứu, sao chép và chỉnh sửa thông tin hợp đồng.',
     searchPlaceholder: 'Tìm mã hợp đồng, khách hàng hoặc biển số…', statuses: CONTRACT_STATUSES,
-    filters: [{ key: 'rental_type', label: 'Tất cả loại hợp đồng', options: CONTRACT_TYPES }],
+    filters: [{ key: 'rental_type', label: 'Tất cả loại hợp đồng', options: CONTRACT_TYPES }, {key:'ownership_term_months',label:'Tất cả thời hạn sở hữu',options:OWNERSHIP_TERMS}],
     columns: [{ ...codeColumn, label: 'Mã hợp đồng' }, { key: 'customer_name', label: 'Khách hàng', format: 'person', secondary: 'customer_phone' },
       { key: 'vehicle_name', label: 'Xe / biển số', format: 'vehicle', secondary: 'license' }, { ...branchColumn, label: 'Nguồn / doanh thu' },
       { key: 'start_date', label: 'Bắt đầu thuê', format: 'date' }, { key: 'end_date', label: 'Dự kiến trả', format: 'date' },
       { key: 'total_amount', label: 'Tiền thuê', format: 'money', align: 'right' },
       { key: 'return_adjustment_amount', label: 'Phát sinh trả xe', format: 'money', align: 'right' },
       { key: 'deposit_amount', label: 'Tiền cọc', format: 'money', align: 'right' }, statusColumn,
-      { key: 'rental_type', label: 'Loại hợp đồng', hidden: true }], fields: [],
+      { key: 'rental_type', label: 'Loại hợp đồng', hidden: true }, {key:'ownership_term_months',label:'Thời hạn sở hữu',hidden:true}], fields: [],
   },
   stores: {
     kind: 'stores', title: 'Cơ sở', singular: 'cơ sở', addLabel: 'Thêm cơ sở',

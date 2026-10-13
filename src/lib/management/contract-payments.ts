@@ -27,6 +27,8 @@ export interface PaymentContext {
   company_paid_amount: number; company_payment_count: number;
   accounts: PaymentAccount[]; history: ContractPayment[];
   items: RenewalItem[]; end_date: string | null;
+  billing?: import('./contract-billing').InstallmentBalance;
+  billing_base_total?: number | null;
 }
 export interface PaymentInput {
   request_id: string; revision: string; amount: string; method: PaymentMethod; account_id: number; paid_at: string; note: string;

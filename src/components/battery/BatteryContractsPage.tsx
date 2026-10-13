@@ -2,7 +2,10 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { FileSearch, LoaderCircle, Pencil, Plus, Printer, RotateCcw, Search, Trash2, X } from 'lucide-react';
-import { BATTERY_PAYMENT_METHODS, BATTERY_STATUSES, BatteryContract, BatteryContractInput, batteryRequest, BatteryRequestError, batteryStatusLabel, DEFAULT_BATTERY_NAME } from '@/lib/management/battery-contracts';
+import { BATTERY_COLLECTION_METHODS, BATTERY_STATUSES, BatteryContract, BatteryContractInput, batteryPaymentAccounts, batteryRequest, BatteryRequestError, batteryStatusLabel, DEFAULT_BATTERY_NAME, type BatteryCollectionMethod } from '@/lib/management/battery-contracts';
+import { loadCashbookAccounts, type CashbookAccount } from '@/lib/management/cashbook-repository';
+import { addRentalMonths, isOwnershipStore } from '@/lib/management/contract-billing';
+import { DateTime24Field } from '@/components/contracts/DateTime24Field';
 import { customerDetails } from '@/lib/management/contract-document';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import type { ManagementRow } from '@/lib/management/types';
@@ -110,11 +113,20 @@ function BatteryForm({ row, storeId, onClose, onSaved, onRefresh }: { row: Batte
   const { dataset, contractAutofill } = useManagement();
   const stores = dataset?.stores.filter(store => ['active', 'opening'].includes(store.status) || store.id === row?.store_id) || [];
   const [form, setForm] = useState<FormState>(() => row ? formFromRow(row) : {
-    store_id: storeId === 'all' ? '' : storeId, customer_id: null, status: 'renting', staff_name: '', signed_on: vietnamDate(), signed_place: '',
+    store_id: storeId === 'all' ? String(stores.find(store=>isOwnershipStore(store.name))?.id || '') : storeId, customer_id: null, status: 'renting', staff_name: '', signed_on: vietnamDate(), signed_place: '',
     customer_name: '', customer_phone: '', customer_address: '', customer_id_card: '', id_card_issued_on: '', id_card_issued_by: '',
     battery_name: DEFAULT_BATTERY_NAME, vehicle_license: '', vehicle_brand: '', vehicle_type: '', vehicle_color: '', vehicle_year: '',
-    starts_at: vietnamNow(), ends_at: '', rent_price: null, price_unit: 'tháng', package_name: '', paid_amount: null, paid_method: '', deposit_amount: null, deposit_note: '', deposit_method: '', notes: '',
+    starts_at: vietnamNow(), ends_at: addRentalMonths(vietnamNow(),1), rent_price: null, price_unit: 'tháng', package_name: '1 tháng', paid_amount: null, paid_method: '', deposit_amount: null, deposit_note: '', deposit_method: '', notes: '',
+    paid_account_type: '', paid_account_id: null, deposit_account_type: '', deposit_account_id: null, collected_at: vietnamNow(),
   });
+  const [accounts,setAccounts] = useState<CashbookAccount[]>([]);
+  const [accountsError,setAccountsError] = useState('');
+  const [accountsLoading,setAccountsLoading] = useState(true);
+  useEffect(()=>{
+    const controller = new AbortController();
+    loadCashbookAccounts('/api',controller.signal).then(setAccounts).catch(cause=>{if (!controller.signal.aborted) setAccountsError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận.');}).finally(()=>{if (!controller.signal.aborted) setAccountsLoading(false);});
+    return ()=>controller.abort();
+  },[]);
   const [lookup, setLookup] = useState(row?.customer_id_card || row?.customer_phone || '');
   const [lookupState, setLookupState] = useState<LookupState>(row?.customer_id ? 'found' : 'idle');
   const [matches, setMatches] = useState<ManagementRow[]>([]);
@@ -151,6 +163,10 @@ function BatteryForm({ row, storeId, onClose, onSaved, onRefresh }: { row: Batte
     event.preventDefault(); if (busy.current) return;
     const print = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'print';
     if (form.ends_at && Date.parse(`${form.ends_at}+07:00`) <= Date.parse(`${form.starts_at}+07:00`)) { setError('Thời điểm kết thúc phải sau thời điểm bắt đầu.'); return; }
+    for (const purpose of ['paid','deposit'] as const) {
+      const amount = purpose === 'paid' ? form.paid_amount : form.deposit_amount;
+      if (Number(amount) > 0 && !batteryPaymentAccounts(accounts,Number(form.store_id),form[`${purpose}_account_type`] || '').some(account=>Number(account.id) === form[`${purpose}_account_id`])) { setError('Chọn hình thức và tài khoản nhận cho từng khoản tiền thuê / cọc đã thu.');return; }
+    }
     const input: BatteryContractInput = { ...form, store_id: Number(form.store_id), ...(row ? { revision: row.revision } : { request_id: requestId.current }) };
     busy.current = true; setSaving(true); setError('');
     try {
@@ -167,8 +183,13 @@ function BatteryForm({ row, storeId, onClose, onSaved, onRefresh }: { row: Batte
     <label className={props.wide ? 'mg-field-wide' : undefined}>{label}{props.required ? ' *' : ''}<input type={props.type || 'text'} required={props.required} maxLength={props.maxLength} list={props.list} placeholder={props.placeholder} value={String(form[key] ?? '')} onChange={event => update(key, event.target.value as never)} /></label>;
   const amount = (key: 'rent_price' | 'paid_amount' | 'deposit_amount', label: string) =>
     <label>{label}<input inputMode="numeric" placeholder="0" value={moneyInput(form[key])} onChange={event => update(key, parseMoney(event.target.value))} /></label>;
-  const method = (key: 'paid_method' | 'deposit_method', label: string) =>
-    <label>{label}<select value={form[key]} onChange={event => update(key, event.target.value as FormState[typeof key])}>{BATTERY_PAYMENT_METHODS.map(option => <option key={option} value={option}>{option === 'CK' ? 'Chuyển khoản (CK)' : option === 'TM' ? 'Tiền mặt (TM)' : 'Chưa chọn'}</option>)}</select></label>;
+  const method = (purpose: 'paid' | 'deposit', label: string) => {
+    const type = form[`${purpose}_account_type`] || '';
+    const available = batteryPaymentAccounts(accounts,Number(form.store_id),type);
+    const positive = Number(purpose === 'paid' ? form.paid_amount : form.deposit_amount) > 0;
+    return <><label>{label}<select aria-label={label} required={positive} value={type} onChange={event=>setForm(current=>({...current,[`${purpose}_account_type`]:event.target.value as BatteryCollectionMethod,[`${purpose}_account_id`]:null,[`${purpose}_method`]:event.target.value === 'cash' ? 'TM' : event.target.value ? 'CK' : ''}))}>{BATTERY_COLLECTION_METHODS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      {type && <label>{purpose === 'paid' ? 'Tài khoản nhận tiền thuê' : 'Tài khoản nhận tiền cọc'}<select aria-label={purpose === 'paid' ? 'Tài khoản nhận tiền thuê' : 'Tài khoản nhận tiền cọc'} required={positive} disabled={accountsLoading} value={form[`${purpose}_account_id`] || ''} onChange={event=>update(`${purpose}_account_id`,event.target.value ? Number(event.target.value) : null)}><option value="">Chọn tài khoản nhận</option>{available.map(account=><option key={account.key} value={account.id}>{account.label}</option>)}</select>{!accountsLoading && !available.length && <small className="mg-field-error">Không có tài khoản đang hoạt động phù hợp với cơ sở đã chọn.</small>}</label>}</>;
+  };
   return <>
     <Dialog title={row ? `Sửa hợp đồng thuê pin ${row.code}` : 'Tạo hợp đồng thuê pin'} className="mg-battery-dialog" onClose={() => { if (!busy.current) onClose(); }}><form onSubmit={submit}><div className="mg-dialog-body">
       <fieldset className="mg-payment-fields" disabled={saving || uncertain}><legend>Thông tin chung</legend>
@@ -199,15 +220,19 @@ function BatteryForm({ row, storeId, onClose, onSaved, onRefresh }: { row: Batte
         {text('vehicle_year', 'Năm sản xuất', { maxLength: 10 })}
       </fieldset>
       <fieldset className="mg-payment-fields" disabled={saving || uncertain}><legend>Điều 2 · Thời hạn, giá thuê, thanh toán</legend>
-        {text('starts_at', 'Bắt đầu', { type: 'datetime-local', required: true })}
-        {text('ends_at', 'Đến', { type: 'datetime-local' })}
+        <DateTime24Field id="battery-start" label="Bắt đầu" value={form.starts_at} onChange={value=>setForm(current=>({...current,starts_at:value,...(current.ends_at === addRentalMonths(current.starts_at,1) ? {ends_at:addRentalMonths(value,1)} : {})}))} />
+        <DateTime24Field id="battery-end" label="Đến" value={form.ends_at} onChange={value=>update('ends_at',value)} required={false} />
+        <div className="mg-field-wide"><button type="button" className="mg-button" onClick={()=>setForm(current=>({...current,ends_at:addRentalMonths(current.starts_at,1),price_unit:'tháng',package_name:'1 tháng'}))}>Gợi ý thuê 1 tháng</button></div>
         {amount('rent_price', 'Giá thuê (đ)')}
         {text('price_unit', 'Đơn vị tính (/…)', { maxLength: 30, placeholder: 'tháng, tuần, ngày…' })}
         {amount('paid_amount', 'Đã thanh toán (đ)')}
-        {method('paid_method', 'Hình thức thanh toán')}
+        {method('paid', 'Hình thức thanh toán')}
         {text('package_name', 'Gói thuê', { wide: true, maxLength: 120 })}
-        {amount('deposit_amount', 'Đặt cọc (đ)')}
-        {method('deposit_method', 'Hình thức đặt cọc')}
+        {amount('deposit_amount', 'Tiền cọc đã nhận (đ)')}
+        {method('deposit', 'Hình thức đặt cọc')}
+        <DateTime24Field id="battery-collected" label="Thời điểm nhận tiền" value={form.collected_at || vietnamNow()} onChange={value=>update('collected_at',value)} />
+        <p className="mg-field-wide mg-composer-hint">Tiền thuê đã thanh toán và tiền cọc được ghi thành phiếu thu riêng vào tài khoản đã chọn. Khi sửa, chỉ phần tăng thêm được ghi phiếu mới; không thu lại số đã nhận.</p>
+        {accountsError && <p className="mg-field-wide mg-field-error" role="alert">{accountsError}</p>}
         {text('deposit_note', 'Tài sản thế chấp / ghi chú cọc', { wide: true, maxLength: 500 })}
         <label className="mg-field-wide">Ghi chú nội bộ (không in)<textarea rows={2} maxLength={2000} value={form.notes} onChange={event => update('notes', event.target.value)} /></label>
       </fieldset>

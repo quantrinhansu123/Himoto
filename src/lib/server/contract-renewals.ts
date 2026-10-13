@@ -38,6 +38,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
     FOR UPDATE OF d,o`, [input.item_id, orderId]);
   const item = locked.rows[0];
   if (!item) throw new ContractRenewalError('Xe đã trả, đã xóa hoặc không thuộc hợp đồng này.', 404);
+  if (item.draft_payload?.management_composer?.installment_plan) throw new ContractRenewalError('Thuê sở hữu đóng tiền theo lịch đã lập. Không cộng kỳ đóng tiền thành phí gia hạn.', 409);
   if (!RENEWAL_STATUSES.includes(String(item.order_status))) throw new ContractRenewalError('Chỉ gia hạn hợp đồng đang thuê, quá hạn hoặc chờ thanh toán.', 409);
   if (item.order_revision !== input.order_revision || item.item_revision !== input.item_revision) throw new ContractRenewalError('Hợp đồng vừa được cập nhật. Đóng và mở lại Gia hạn để xem số liệu mới.', 409);
   const beforeReturn = iso(item.return_at);

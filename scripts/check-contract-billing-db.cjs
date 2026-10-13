@@ -1,0 +1,73 @@
+const assert = require('node:assert/strict');
+const path = require('node:path');
+require('@next/env').loadEnvConfig(path.resolve(__dirname,'..'),false,{info(){},error(){}});
+const {load,root} = require('./lib/load-typescript.cjs');
+const billing=load(path.join(root,'lib/management/contract-billing'));
+const finalizer=load(path.join(root,'lib/server/contract-finalize'));
+const payments=load(path.join(root,'lib/server/contract-payments'));
+const returns=load(path.join(root,'lib/server/contract-returns'));
+const {vietnamPaymentTime}=load(path.join(root,'lib/management/contract-payments'));
+const {randomUUID}=require('node:crypto');
+const pool=load(path.join(root,'lib/server/himoto-database')).himotoPool;
+async function main(){
+ const c=await pool.connect(),checks=[];
+ const tables=['orders','order_vehicle_details','vehicles','stores','transactions','banks','cash','users','management_contract_payments'];
+ const proxy={query:async(sql,params)=>{let rewritten=sql;for(const table of tables)rewritten=rewritten.replaceAll(`himoto.${table}`,`pg_temp.qa_bill_${table}`);assert(!rewritten.includes('himoto.'),'Every business query must use TEMP');return c.query(rewritten,params);}};
+ const savepoint=async(work)=>{await c.query('SAVEPOINT bill_case');try{const r=await work();await c.query('RELEASE SAVEPOINT bill_case');return r;}catch(error){await c.query('ROLLBACK TO SAVEPOINT bill_case');await c.query('RELEASE SAVEPOINT bill_case');throw error;}};
+ const originalNow=Date.now;
+ try{
+  await c.query('BEGIN');
+  for(const table of tables)await c.query(`CREATE TEMP TABLE qa_bill_${table} (LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS) ON COMMIT DROP`);
+  await c.query('CREATE TEMP SEQUENCE qa_bill_seq START 99000');
+  for(const table of ['order_vehicle_details','transactions'])await c.query(`ALTER TABLE qa_bill_${table} ALTER COLUMN id SET DEFAULT nextval('qa_bill_seq')`);
+  await c.query("INSERT INTO qa_bill_cash(id,store_id,opening_balance,status) VALUES(5,23,0,'Active')");
+  await c.query("INSERT INTO qa_bill_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES(100,'Xe QA','Honda','xeso',2026,23,23,'QA-OWN','ready',143)");
+  const start=vietnamPaymentTime(new Date(originalNow()-2*86400000));
+  const endDate=new Date(`${start}:00Z`);endDate.setUTCFullYear(endDate.getUTCFullYear()+1);const end=endDate.toISOString().slice(0,16);
+  const draft={start_date:start,end_date:end,package_name:'Theo tháng',unit_price:'3000000',total_amount:'3000000',deposit_amount:'3000000',ownership:true,
+   vehicles:[{id:'100',driver_name:'QA',driver_license_number:'QA',driver_license_issued_on:'2020-01-02',borrow_hats:'1',borrow_raincoats:'0'}]};
+  const payload={management_composer:{version:1,rental_type:'ownership',draft}};
+  await c.query("INSERT INTO qa_bill_orders(id,order_status,order_mode,store_id,customer_id,total,pid,draft_reference,draft_payload) VALUES(1,'draft','draft',23,9,'0',0,'QA-OWN',$1)",[JSON.stringify(payload)]);
+  const revision=(await c.query('SELECT xmin::text AS revision FROM qa_bill_orders WHERE id=1')).rows[0].revision;
+  const paidAt=vietnamPaymentTime(new Date(originalNow()-60000));
+  const result=await savepoint(()=>finalizer.finalizeContractDraft(proxy,1,143,{revision,receipts:[
+   {purpose:'deposit',amount:'3000000',method:'cash',account_id:5,paid_at:paidAt},{purpose:'rental',amount:'3000000',method:'cash',account_id:5,paid_at:paidAt}]}));
+  assert.equal(result.total_amount,3000000);assert.equal(result.deposit_amount,3000000);assert.equal(result.paid_amount,6000000);
+  const stored=(await c.query('SELECT total,total_rental_fees,draft_payload FROM qa_bill_orders WHERE id=1')).rows[0];
+  assert.equal(Number(stored.total),3000000);assert.equal(Number(stored.total_rental_fees),3000000);
+  const plan=stored.draft_payload.management_composer.installment_plan;
+  await c.query("UPDATE qa_bill_order_vehicle_details SET type='week' WHERE order_id=1");
+  assert.equal(billing.installmentSchedule(plan).length,12);
+  let context=await payments.readPaymentContext(proxy,1);
+  assert.equal(context.total_amount,3000000);assert.equal(context.paid_amount,3000000);assert.equal(context.deposit_paid,3000000);assert.equal(context.remaining,0);
+  assert.equal(context.billing.expected_total,36000000);assert.equal(context.billing.paid_periods,1);
+  checks.push('TEMP PostgreSQL: issue one-year ownership contract; create separate 3m rental/deposit receipts; persist 12-payment/36m plan and 3m initial charge');
+  const input=(ctx,amount,patch={})=>({request_id:randomUUID(),revision:ctx.revision,amount:String(amount),method:'cash',account_id:5,paid_at:vietnamPaymentTime(new Date(Date.now()-60000)),note:'QA ownership',...patch});
+  await assert.rejects(()=>savepoint(()=>payments.recordContractPayment(proxy,1,143,input(context,3000000))),/vượt phần còn thiếu/);
+  checks.push('TEMP: collecting a future installment as current debt is rejected before any receipt');
+  Date.now=()=>Date.parse(`${billing.installmentSchedule(plan)[1].due_at}:00+07:00`);
+  context=await payments.readPaymentContext(proxy,1);
+  assert.equal(context.total_amount,6000000);assert.equal(context.remaining,3000000);assert.equal(context.billing.due_amount,3000000);
+  const partial=await savepoint(()=>payments.recordContractPayment(proxy,1,143,input(context,1000000)));
+  assert.equal(partial.context.remaining,2000000);assert.equal(partial.context.billing.paid_periods,1);
+  const extra=await savepoint(()=>payments.recordContractPayment(proxy,1,143,input(partial.context,100000,{purpose:'extra'})));
+  assert.equal(extra.context.remaining,2000000);assert.equal(extra.context.billing_base_total,3100000);
+  const receipt=input(extra.context,2000000);
+  const settled=await savepoint(()=>payments.recordContractPayment(proxy,1,143,receipt));
+  assert.equal(settled.context.remaining,0);assert.equal(settled.context.deposit_held,3000000);assert.equal(settled.context.billing.paid_periods,2);
+  const replay=await payments.recordContractPayment(proxy,1,143,receipt);assert.equal(replay.replayed,true);assert.equal(replay.transaction_id,settled.transaction_id);
+  checks.push('TEMP: due-date accrual, partial receipts, one-time extra fee, settlement and idempotent retry preserve deposit and due balances');
+  await assert.rejects(()=>savepoint(()=>payments.recordContractPayment(proxy,1,143,input(settled.context,100000,{purpose:'renewal',item_id:settled.context.items[0].id,item_revision:settled.context.items[0].revision,return_at:'2090-01-01T09:00'}))),/theo lịch đã lập/);
+  Date.now=()=>Date.parse(`${billing.installmentSchedule(plan)[2].due_at}:00+07:00`);
+  context=await payments.readPaymentContext(proxy,1);assert.equal(context.total_amount,9100000);assert.equal(context.remaining,3000000);
+  assert.equal(Number((await c.query('SELECT total FROM qa_bill_orders WHERE id=1')).rows[0].total),3100000);
+  checks.push('TEMP: third installment accrues once; stored base stays 3.1m; ownership cannot silently add installments as renewal fees');
+  const returned=await savepoint(()=>returns.recordVehicleReturn(proxy,143,{item_id:context.items[0].id,item_revision:context.items[0].revision,returned_at:vietnamPaymentTime(new Date(Date.now())),hourly_rate:'0'}));
+  assert.equal(returned.status,'wait_payment');assert.equal(returned.total_amount,9100000);
+  Date.now=()=>Date.parse('2040-01-01T09:00:00+07:00');
+  context=await payments.readPaymentContext(proxy,1);assert.equal(context.total_amount,9100000);assert.equal(context.remaining,3000000);assert(context.billing.stopped_at);
+  checks.push('TEMP: returning every vehicle retains the 3m already due and freezes future accrual; weekly line type satisfies actual table constraints');
+  console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));
+ }finally{Date.now=originalNow;await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

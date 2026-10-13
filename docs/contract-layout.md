@@ -6,7 +6,7 @@ Form nhập/sửa chia thành năm tab: **Hợp đồng & pháp lý**, **Khách 
 
 Các tab giữ dữ liệu khi chuyển phần. Bàn phím hỗ trợ mũi tên, Home/End, Tab và Escape. Kiểm tra lỗi trước khi in tự mở tab có trường cần sửa. Màn hình xem hiển thị từng xe riêng và chỉ dùng khoản tiền đã có trên hợp đồng; dữ liệu thiếu hiển thị `—`.
 
-Bản in giữ nguyên template và nội dung app cũ, dùng Times New Roman, A4 ngang hai cột. CSS giao diện không tăng cỡ chữ/độ đậm trong mẫu in. Xem trước và iframe in dùng cùng định dạng; nhiều xe có trang phụ lục.
+Bản in dùng Times New Roman, A4 ngang hai cột. Theo mẫu `HĐTX mẫu 1.docx` và yêu cầu cập nhật ngày 2026-10-13, hợp đồng thuê xe không in năm sản xuất và chỉ có một khối chữ ký chung cho hợp đồng cùng các phụ lục, đặt dưới nội dung phụ lục ở cột phải. Trang danh sách nhiều xe không có khối ký lần hai. Bảng xác nhận trả xe nằm dưới khối ký chung, gồm hai hàng, bốn cột: giờ trả xe, số tiền trả khách, xác nhận của Bên A và Bên B ký tên. Hai ô xác nhận để trống khi in hợp đồng, dành cho lúc khách trả xe. CSS giao diện không tăng cỡ chữ/độ đậm trong mẫu in; xem trước và bản in dùng cùng định dạng.
 
 Phạm vi là bố cục các trường hiện có và mẫu in. Loại hợp đồng, điều kiện lưu nháp và thời gian thuê chung cho các xe giữ theo dữ liệu hiện tại. Không bổ sung luồng thu tiền, phát hành, upload ảnh bàn giao hay nghiệp vụ giám hộ/50cc của app cũ.
 

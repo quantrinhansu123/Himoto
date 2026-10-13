@@ -3,6 +3,7 @@ import { EditableKind, ManagementDataset, ManagementKind, ManagementRepository, 
 import { cloneContractRecord, updateContractRecord } from './contract-record';
 import { DraftStorage, readDemoDrafts, saveDraftRecord, writeDemoDrafts, DEMO_DRAFT_STORAGE_KEY } from './contract-drafts';
 import { normalizeStaffPosition } from './staff-positions';
+import { applyInstallmentBilling, ownershipTerm } from './contract-billing';
 
 export function createDemoRepository(draftStorage?: DraftStorage): ManagementRepository {
   let dataset = createDemoDataset();
@@ -142,10 +143,12 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     payment_method: text(raw.payment_method), deposit_payment_method: text(raw.deposit_payment_method),
     company_paid_amount: number(raw.company_paid_amount), company_payment_count: number(raw.company_payment_count),
     rental_type: text(raw.rental_type), notes: text(raw.notes ?? raw.note),
+    ownership_term_months: [raw.rental_type,saved.rental_type].includes('ownership') ? text(snapshot.ownership_term_months) || ownershipTerm(text(snapshot.start_date),text(snapshot.end_date)) : '',
     signed_on: text(raw.signed_on), authorization_date: text(raw.authorization_date), collateral_description: text(raw.collateral_description),
     customer_source: text(raw.customer_source), customer_source_url: text(raw.customer_source_url),
     legacy_items_json: JSON.stringify(Array.isArray(payload.order_items) ? payload.order_items : []), draft_revision: text(raw.draft_revision),
     draft_json: typeof raw.draft_json === 'string' ? raw.draft_json : snapshot.customer && Array.isArray(snapshot.vehicles) ? JSON.stringify(snapshot) : undefined,
+    billing_plan_json: saved.installment_plan ? JSON.stringify(saved.installment_plan) : '',
     // Keep numeric/unrecognized statuses visible until the API contract is agreed.
   };
   if (mapped.status === 'draft' && saved.version === 1 && snapshot.customer && Array.isArray(snapshot.vehicles)) {
@@ -157,7 +160,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
       vehicle_name: vehicles.map(vehicle => text(vehicle.name)).filter(Boolean).join(', '), license: vehicles.map(vehicle => text(vehicle.license)).filter(Boolean).join(', '),
       total_amount: number(snapshot.total_amount), deposit_amount: number(snapshot.deposit_amount), paid_amount: number(raw.paid_amount) ?? 0 };
   }
-  return mapped;
+  return applyInstallmentBilling(mapped);
 }
 
 export function createApiRepository(baseUrl = '/api', options: { drafts?: boolean } = {}): ManagementRepository {

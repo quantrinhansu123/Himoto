@@ -129,6 +129,7 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 								<span>- Gói thuê: <strong>{doc.pricing.package_name}</strong></span>
 							</div>
 							<div className="clause-row"><strong>{doc.pricing.calculation_text}</strong></div>
+							{doc.pricing.installment_text && <div className="clause-row">{doc.pricing.installment_text}</div>}
 							<div className="clause-row">
 								<strong>2.3.</strong> Đặt cọc (Tài sản thế chấp): <strong>{doc.deposit.deposit_amount_formatted}</strong>{doc.deposit.collateral_text ? <> – <strong>{doc.deposit.collateral_text}</strong></> : ''} <PaymentMethod value={doc.deposit.payment_method} />
 							</div>
@@ -160,21 +161,6 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 						</div>
 					</div>
 
-					{/* Chữ ký Hợp đồng */}
-					<div className="contract-signatures mt-2 d-flex">
-						<div className="sig-block text-center">
-							<div className="sig-role font-weight-bold">NGƯỜI ỦY QUYỀN A</div>
-							<div className="sig-hint">(Ký, đóng dấu, ghi rõ họ tên)</div>
-							<div className="sig-space"></div>
-							<div className="sig-name font-weight-bold text-uppercase">{doc.signers.signer_a_name || representativeNameA}</div>
-						</div>
-						<div className="sig-block text-center">
-							<div className="sig-role font-weight-bold">BÊN B</div>
-							<div className="sig-hint">(Ký, ghi rõ họ tên)</div>
-							<div className="sig-space"></div>
-							<div className="sig-name font-weight-bold text-uppercase">{doc.signers.signer_b_name}</div>
-						</div>
-					</div>
 				</div>
 
 				{/* CỘT PHẢI: PHỤ LỤC HỢP ĐỒNG & BẢNG XÁC NHẬN TRẢ XE */}
@@ -214,6 +200,47 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 								<li>Nếu tôi chậm thanh toán tiền thuê xe không đúng hạn hợp đồng, bên A được quyền thu hồi xe bất cứ lúc nào và tôi chịu mọi chi phí phát sinh trong quá trình trên.</li>
 								<li>Làm mất mũ bảo hiểm phạt <strong>70.000 VNĐ/1 mũ</strong>.</li>
 							</ul>
+						</div>
+					</div>
+
+					{/* Ký chung hợp đồng và phụ lục; xác nhận trả xe khi khách trả. */}
+					<div className="appendix-confirmations">
+						<div className="appendix-signatures mt-2 d-flex">
+							<div className="sig-block text-center">
+								<div className="sig-role font-weight-bold">ĐẠI DIỆN BÊN A</div>
+								<div className="sig-hint">(Ký, đóng dấu, ghi rõ họ tên)</div>
+								<div className="sig-space"></div>
+								<div className="sig-name font-weight-bold text-uppercase">{doc.signers.signer_a_name || representativeNameA}</div>
+							</div>
+							<div className="sig-block text-center">
+								<div className="sig-role font-weight-bold">BÊN B</div>
+								<div className="sig-hint">(Ký, ghi rõ họ tên)</div>
+								<div className="sig-space"></div>
+								<div className="sig-name font-weight-bold text-uppercase">{doc.signers.signer_b_name}</div>
+							</div>
+						</div>
+
+						<div className="return-receipt-box mt-2">
+							<div className="receipt-company text-center font-weight-bold">
+								CÔNG TY CỔ PHẦN THƯƠNG MẠI<br />DỊCH VỤ HIMOTO VIỆT NAM
+							</div>
+							<div className="receipt-title text-center font-weight-bold">BẢNG XÁC NHẬN VIỆC TRẢ XE</div>
+							<table className="receipt-table w-100" aria-label="Bảng xác nhận việc trả xe">
+								<tbody>
+									<tr>
+										<td className="receipt-td-label">Giờ trả xe</td>
+										<td>{doc.return_confirmation.return_hour || '……'} h {doc.return_confirmation.return_minute || '……'} phút</td>
+										<td className="receipt-td-label">Xác nhận của Bên A:</td>
+										<td>{doc.return_confirmation.signer_a_name}</td>
+									</tr>
+									<tr>
+										<td className="receipt-td-label">Số tiền trả khách</td>
+										<td>{doc.return_confirmation.refund_amount_formatted || '……………………'} Và {doc.return_confirmation.additional_note || '………………'}</td>
+										<td className="receipt-td-label">Bên B ký tên:</td>
+										<td>{doc.return_confirmation.signer_b_name}</td>
+									</tr>
+								</tbody>
+							</table>
 						</div>
 					</div>
 				</div>
@@ -262,20 +289,23 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 					</tbody>
 				</table>
 
-				<div className="d-flex justify-content-between mt-4 px-5">
-					<div className="text-center">
-						<div className="font-weight-bold">ĐẠI DIỆN BÊN A</div>
-						<div className="sig-space"></div>
-						<div className="font-weight-bold text-uppercase">{doc.signers.signer_a_name || representativeNameA}</div>
-					</div>
-					<div className="text-center">
-						<div className="font-weight-bold">BÊN B</div>
-						<div className="sig-space"></div>
-						<div className="font-weight-bold text-uppercase">{doc.signers.signer_b_name}</div>
-					</div>
-				</div>
 			</div>
 		</div></Page>)}
+
+		{doc.ownership_schedule.length > 0 && <Page><div className="contract-page a4-landscape page-break mt-4">
+			<div className="appendix-ownership-billing p-3">
+				<div className="text-center mb-3">
+					<h4 className="font-weight-bold">PHỤ LỤC LỊCH ĐÓNG TIỀN THUÊ SỞ HỮU</h4>
+					<p>Đính kèm Hợp đồng thuê xe số: <strong>{doc.contract_number}</strong>/HĐTX</p>
+					<p>Khoản đầu tiên thu khi lập hợp đồng. Các khoản tiếp theo thu theo ngày hẹn; tiền cọc ghi riêng trong hợp đồng.</p>
+				</div>
+				<table className="table table-bordered table-sm">
+					<thead><tr><th scope="col">Lần đóng</th><th scope="col">Ngày hẹn đóng tiền</th><th scope="col">Tiền thuê (VNĐ)</th></tr></thead>
+					<tbody>{doc.ownership_schedule.map(period => <tr key={period.number}><td>{period.number}</td><td>{period.due_at.slice(0, 10).split('-').reverse().join('/')} {period.due_at.slice(11)}</td><td>{period.amount.toLocaleString('vi-VN')}</td></tr>)}</tbody>
+					<tfoot><tr><th colSpan={2} scope="row">Tổng tiền thuê theo lịch (cọc riêng)</th><td>{doc.ownership_schedule.reduce((sum, period) => sum + period.amount, 0).toLocaleString('vi-VN')}</td></tr></tfoot>
+				</table>
+			</div>
+		</div></Page>}
 	</div>
 );
 }

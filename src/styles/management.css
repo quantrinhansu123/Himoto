@@ -1928,17 +1928,21 @@
   margin: 0;
 }
 .mg-contract-print-toolbar .mg-button { flex-shrink: 0; }
+.mg-billing-reminder { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 12px; background: #fffbeb; color: #78350f; border: 1px solid #fcd34d; border-radius: 8px; }
+.mg-billing-reminder p { margin: 0; flex: 1; min-width: 180px; }
 .mg-contract-paper-scroll {
   padding: 20px;
   overflow: auto;
   background: var(--mg-slate-200);
   max-width: 100%;
 }
-.mg-contract-paper-scroll .contract-print-wrapper { width: max-content; min-width: 100%; overflow: hidden; }
+.mg-contract-paper-scroll .contract-print-wrapper,
+.mg-contract-paper-scroll .battery-print-wrapper { width: max-content; min-width: 100%; overflow: hidden; }
 .mg-contract-preview-page { position: relative; overflow: hidden; margin: 0 auto 16px; }
 .mg-contract-preview-page:last-child { margin-bottom: 0; }
 .mg-contract-preview-page-content { position: absolute; top: 0; left: 0; width: 285mm; transform-origin: top left; }
 .mg-contract-preview-page .contract-page.a4-landscape { margin: 0; }
+.mg-contract-preview-page .battery-page { margin: 0; }
 .mg-contract-preview-controls { display: flex; align-items: center; gap: 6px; padding: 8px 24px; border-bottom: 1px solid var(--mg-line); flex-wrap: wrap; }
 .mg-contract-preview-controls output { min-width: 48px; text-align: center; font-size: 12px; color: var(--mg-slate-600); }
 .mg-contract-preview-hint { margin: 0 0 0 auto; font-size: 12px; color: var(--mg-slate-600); }
@@ -3322,6 +3326,7 @@
   .mg-mobile-card-summary { display: flex; gap: 6px; width: 100%; font-size: 12px; color: var(--mg-slate-600); line-height: 1.4; }
   .mg-mobile-card-summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mg-mobile-card-summary > span + span::before { content: '·'; margin-right: 6px; }
+  .mg-mobile-card-billing { display: grid; gap: 3px; font-size: 12px; color: var(--mg-slate-800); line-height: 1.4; }
   .mg-mobile-card-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
   .mg-mobile-card-footer .mg-status { font-size: 10.5px; padding: 2px 6px; max-width: 100%; white-space: normal; }
   .mg-mobile-card-extra { min-width: 0; font-size: 11px; color: var(--mg-slate-600); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

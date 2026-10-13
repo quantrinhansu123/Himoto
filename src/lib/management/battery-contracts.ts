@@ -6,6 +6,14 @@ export const BATTERY_STATUSES = [
 export type BatteryStatus = (typeof BATTERY_STATUSES)[number]['value'];
 export const BATTERY_PAYMENT_METHODS = ['', 'CK', 'TM'] as const;
 export type BatteryPaymentMethod = (typeof BATTERY_PAYMENT_METHODS)[number];
+export type BatteryCollectionMethod = '' | 'transfer' | 'company_transfer' | 'cash';
+export const BATTERY_COLLECTION_METHODS = [{value:'',label:'Chưa chọn'}, {value:'transfer',label:'CK tài khoản cá nhân'}, {value:'company_transfer',label:'CK tài khoản công ty'}, {value:'cash',label:'Tiền mặt'}] as const;
+export interface BatteryPaymentAccount { id: number | string; kind: string; store_id?: number | string; owner_type: string; status: string; label: string }
+export function batteryPaymentAccounts<T extends BatteryPaymentAccount>(accounts: T[], storeId: number, method: BatteryCollectionMethod): T[] {
+  return accounts.filter(account => account.status.toLowerCase() === 'active' && (method === 'cash' ? account.kind === 'cash' && Number(account.store_id) === storeId
+    : method === 'company_transfer' ? account.kind === 'bank' && account.owner_type === 'company' && (!Number(account.store_id) || Number(account.store_id) === storeId)
+    : method === 'transfer' && account.kind === 'bank' && account.owner_type !== 'company' && Number(account.store_id) === storeId));
+}
 export const DEFAULT_BATTERY_NAME = 'Pin xe điện 2.4 của Vinfast';
 
 export interface BatteryContractFields {
@@ -16,6 +24,9 @@ export interface BatteryContractFields {
   starts_at: string; ends_at: string;
   rent_price: number | null; price_unit: string; package_name: string; paid_amount: number | null; paid_method: BatteryPaymentMethod;
   deposit_amount: number | null; deposit_note: string; deposit_method: BatteryPaymentMethod; notes: string;
+  paid_account_type?: BatteryCollectionMethod; paid_account_id?: number | null;
+  deposit_account_type?: BatteryCollectionMethod; deposit_account_id?: number | null;
+  collected_at?: string;
 }
 export interface BatteryContractInput extends BatteryContractFields { revision?: string; request_id?: string }
 export interface BatteryContract extends BatteryContractFields {

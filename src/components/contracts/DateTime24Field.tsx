@@ -3,12 +3,12 @@
 import { vietnamRentalTime } from '@/lib/management/rental-time';
 
 /** Explicit 00–23 hour choices do not depend on browser AM/PM preferences. */
-export function DateTime24Field({ id, label, value, onChange, error }: {
-  id: string; label: string; value: string; onChange: (value: string) => void; error?: string;
+export function DateTime24Field({ id, label, value, onChange, error, required = true }: {
+  id: string; label: string; value: string; onChange: (value: string) => void; error?: string; required?: boolean;
 }) {
   const date = value.slice(0,10), hour = value.slice(11,13), minute = value.slice(14,16);
   const setTime = (nextHour: string, nextMinute: string) => onChange(`${date || vietnamRentalTime().slice(0,10)}T${nextHour || '00'}:${nextMinute || '00'}`);
-  return <div className="mg-field"><label htmlFor={id}>{label} *</label>
+  return <div className="mg-field"><label htmlFor={id}>{label}{required && ' *'}</label>
     <div className="mg-datetime24">
       <input id={id} type="date" value={date} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined}
         onChange={event => onChange(event.target.value ? `${event.target.value}T${hour || '00'}:${minute || '00'}` : '')} />

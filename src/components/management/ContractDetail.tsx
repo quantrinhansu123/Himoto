@@ -108,6 +108,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
       {panel('contract', 'Thông tin hợp đồng & Pháp lý', fields([
         ['Mã hợp đồng / Số HĐ giấy', row.code], ['Trạng thái hợp đồng', optionLabel(MANAGEMENT_CONFIG.contracts, 'status', row.status)],
         ['Loại hợp đồng', row.rental_type ? optionLabel(MANAGEMENT_CONFIG.contracts, 'rental_type', String(row.rental_type)) : '—'],
+        ...(row.rental_type === 'ownership' ? [['Thời hạn sở hữu',optionLabel(MANAGEMENT_CONFIG.contracts,'ownership_term_months',String(row.ownership_term_months || 'custom'))] as [string,string]] : []),
         ['Ngày ký hợp đồng', date(draft.signed_on)], ['Ngày tạo hợp đồng', date(draft.created_on || String(row.created_at || ''))],
         ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
       ]))}
@@ -147,6 +148,12 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
           ['Đã thu tiền thuê', money(row.paid_amount)], ['Còn thiếu tiền thuê', row.total_amount == null || row.paid_amount == null ? '—' : money(Math.max(Number(row.total_amount) - Number(row.paid_amount), 0))],
           ['Hình thức thanh toán', text(pricing.payment_method)],
         ])}</div>
+        {row.billing_plan_json && <div className="mg-contract-cost-section"><h3>Lịch đóng tiền thuê sở hữu</h3>{fields([
+          ['Tiền thuê theo lịch (cọc riêng)', money(row.billing_expected_total)],
+          ['Đã đóng đủ kỳ', `${row.billing_paid_periods ?? '—'} / ${row.billing_period_count ?? '—'}`],
+          ['Ngày hẹn cần đóng tiếp theo', row.billing_next_due_at ? dateTime(String(row.billing_next_due_at)) : 'Không còn khoản đến hẹn'],
+          ['Tiền đến hạn còn thiếu', money(row.billing_due_amount)],
+        ])}</div>}
         {draft.extra_charges && draft.extra_charges.length>0 && <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng (đã tính trong tổng phí)</h3>{fields(draft.extra_charges.filter(item=>Number(item.amount)>0).map(item=>[item.name,money(item.amount)]))}</div>}
       </>)}
       {panel('signing', 'Ký kết & Ghi chú', fields([
@@ -201,7 +208,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
       {canOperateRental && <>
         <button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15} />Trả xe</button>
-        <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>
+        {!row.billing_plan_json && <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>}
         <button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>
       </>}
       {row.status !== 'draft' && onPayment && <button type="button" className="mg-button" onClick={onPayment}><Wallet size={15} />Thu chi / Lịch sử</button>}

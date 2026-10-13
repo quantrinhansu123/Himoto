@@ -1,4 +1,5 @@
 import 'server-only';
+import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { dailyPriceSql, DEPOSIT_REFUND_NAME, depositLateral, rentalPaidSql } from './contract-deposits';
@@ -57,11 +58,16 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   if (!Number.isSafeInteger(id) || id <= 0) throw new ContractPaymentError('Mã hợp đồng không hợp lệ.');
   const result = await client.query(`SELECT o.id, COALESCE(NULLIF(o.contract_number,''), o.draft_reference, '#' || o.id::text) AS code,
       CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,(SELECT max(d.return_at) FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL)) < now() THEN 'overdue' ELSE o.order_status END AS status,
-      o.store_id, o.total, ${rentalPaidSql()} AS rental_paid, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded, o.xmin::text AS revision,
+      o.store_id, o.total, o.draft_payload, ${rentalPaidSql()} AS rental_paid, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded, o.xmin::text AS revision,
       COALESCE(o.return_at,(SELECT max(d.return_at) FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL)) AS end_date
     FROM himoto.orders o ${depositLateral()} WHERE o.id=$1 AND o.deleted_at IS NULL`, [id]);
   if (!result.rowCount) throw new ContractPaymentError('Không tìm thấy hợp đồng.', 404);
-  const order = result.rows[0], total = money(order.total), paid = money(order.rental_paid);
+  const order = result.rows[0], baseTotal = money(order.total), paid = money(order.rental_paid);
+  const planValue = order.draft_payload?.management_composer?.installment_plan;
+  const plan = planValue ? parseInstallmentPlan(planValue) : null;
+  if (planValue && !plan) throw new ContractPaymentError('Lịch đóng tiền thuê sở hữu chưa hợp lệ. Cần đối chiếu trước khi thanh toán.', 409);
+  const billing = plan && (['renting', 'overdue', 'wait_payment', 'bad_debt'].includes(String(order.status)) || order.status === 'completed' && plan.stopped_at) ? installmentBalance(plan, baseTotal, paid) : undefined;
+  const total = billing ? billing.accrued_total : baseTotal;
   const depositPaid = money(order.deposit_paid) ?? 0, depositRefunded = money(order.deposit_refunded) ?? 0;
   const accounts = await client.query(`SELECT id, 'bank' AS kind, store_id, owner_type,bank_name,account_number,owner_name,
       bank_name || ' · ' || owner_name || ' · ' || account_number AS label
@@ -83,7 +89,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY d.id`, [id]);
   return { id: Number(order.id), code: String(order.code), status: String(order.status), store_id: Number(order.store_id), revision: String(order.revision),
-    total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0),
+    total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0), ...(billing ? {billing, billing_base_total: baseTotal} : {}),
     deposit_paid: depositPaid, deposit_refunded: depositRefunded, deposit_held: Math.max(depositPaid - depositRefunded, 0),
     company_paid_amount: company.reduce((sum, row) => sum + Number(row.amount), 0), company_payment_count: company.length,
     end_date: order.end_date instanceof Date ? order.end_date.toISOString() : order.end_date == null ? null : String(order.end_date),
@@ -131,6 +137,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
   const lines = renewal ? renewalLines(input) : [];
   let renewalPayload: Record<string, unknown> | null = null;
   if (renewal) {
+    if (context.billing) throw new ContractPaymentError('Thuê sở hữu thu tiền theo lịch đã lập. Không cộng kỳ đóng tiền thành phí gia hạn hoặc đổi ngày kết thúc hợp đồng.', 409);
     if (!RENEWABLE_STATUSES.includes(context.status)) throw new ContractPaymentError('Chỉ gia hạn hợp đồng đang thuê hoặc quá hạn.', 409);
     if (context.total_amount === null || context.paid_amount === null || context.total_amount + amount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tiền gia hạn hoặc tổng phí chưa hợp lệ / vượt giới hạn lưu trữ.', 409);
     const renewed = [];

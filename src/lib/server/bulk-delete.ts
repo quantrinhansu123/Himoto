@@ -103,6 +103,14 @@ async function deleteContracts(client: Client, ids: number[]) {
 // of its total for renewal/extra receipts, which raised the total when collected).
 async function deleteTransactions(client: Client, ids: number[]) {
   const rows = await lockRows(client, 'transactions', ids, 'phiếu');
+  const batteryIds = [...new Set(rows.filter(row=>row.object_type === 'battery_contract').map(row=>Number(row.object_id)))];
+  for (const batteryId of batteryIds) {
+    const receipts = rows.filter(row=>row.object_type === 'battery_contract' && Number(row.object_id) === batteryId && row.status === 'approved' && row.type === 'in');
+    const paid = receipts.filter(row=>row.name === 'battery:rental').reduce((sum,row)=>sum+Number(row.value || 0),0);
+    const deposit = receipts.filter(row=>row.name === 'battery:deposit').reduce((sum,row)=>sum+Number(row.value || 0),0);
+    await client.query(`UPDATE himoto.battery_contracts SET paid_amount=GREATEST(COALESCE(paid_amount,0)-$2,0),
+      deposit_amount=GREATEST(COALESCE(deposit_amount,0)-$3,0),updated_at=now() WHERE id=$1`,[batteryId,paid,deposit]);
+  }
   const byOrder = new Map<number, { paid: number; total: number }>();
   for (const row of rows) {
     if (row.order_id == null || !['in', 'addon'].includes(String(row.type))) continue;
