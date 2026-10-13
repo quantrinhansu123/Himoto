@@ -177,8 +177,14 @@
 	border-radius: 2px;
 }
 
+.contract-print-wrapper .contract-signatures,
+.contract-print-wrapper .appendix-signatures {
+	justify-content: center;
+	gap: 4%;
+}
+
 .contract-print-wrapper .sig-block {
-	width: 48%;
+	width: 30%;
 }
 
 .contract-print-wrapper .sig-role {

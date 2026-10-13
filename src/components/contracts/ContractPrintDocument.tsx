@@ -162,7 +162,7 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 					</div>
 
 					{/* Chữ ký Hợp đồng */}
-					<div className="contract-signatures mt-2 d-flex justify-content-between px-3">
+					<div className="contract-signatures mt-2 d-flex">
 						<div className="sig-block text-center">
 							<div className="sig-role font-weight-bold">NGƯỜI ỦY QUYỀN A</div>
 							<div className="sig-hint">(Ký, đóng dấu, ghi rõ họ tên)</div>
@@ -219,7 +219,7 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 					</div>
 
 					{/* Chữ ký Phụ lục */}
-					<div className="appendix-signatures mt-1 d-flex justify-content-between px-3">
+					<div className="appendix-signatures mt-1 d-flex">
 						<div className="sig-block text-center">
 							<div className="sig-role font-weight-bold">ĐẠI DIỆN BÊN A</div>
 							<div className="sig-hint">(Ký, đóng dấu, ghi rõ họ tên)</div>
