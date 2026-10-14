@@ -3496,3 +3496,12 @@
   .mg-sales-charts { grid-template-columns: minmax(0, 1fr); }
   .mg-sales-bars li { grid-template-columns: minmax(80px, 110px) minmax(0, 1fr) auto; }
 }
+
+/* List filters split the row evenly so an extra filter never leaves one control on its own line. */
+.mg-list-filters { flex: 1 1 540px; flex-wrap: nowrap; justify-content: flex-end; }
+.mg-list-filters > label { flex: 1 1 0; min-width: 0; max-width: 260px; }
+.mg-list-filters select { width: 100%; max-width: none; text-overflow: ellipsis; }
+@media (max-width: 600px) {
+  .mg-list-filters > label { max-width: none; }
+  .mg-list-filters > label:last-of-type:nth-of-type(odd) { grid-column: 1 / -1; }
+}
