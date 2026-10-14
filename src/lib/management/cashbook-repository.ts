@@ -1,10 +1,11 @@
 import { createCashbookFixtures } from '@/fixtures/cashbook-data';
-import { CashbookRow } from './cashbook';
+import { CashbookColumnKey, CashbookFilters, CashbookRow, VoucherType } from './cashbook';
 
 export interface CashbookRepository { load(signal?: AbortSignal): Promise<CashbookRow[]> }
 type ApiRecord = Record<string, unknown>;
 const object = (value: unknown): ApiRecord => value && typeof value === 'object' && !Array.isArray(value) ? value as ApiRecord : {};
 const optionalText = (value: unknown): string | undefined => value == null || value === '' ? undefined : String(value);
+const voucherDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 
 export function cashbookDateTime(value: unknown): { date?: string; time?: string } {
   const timestamp = optionalText(value);
@@ -17,7 +18,7 @@ export function cashbookDateTime(value: unknown): { date?: string; time?: string
   const local = new Date(`${match[1]}T${match[2]}${match[3] || 'Z'}`);
   if (!Number.isFinite(local.getTime()) || Number(match[2].slice(0, 2)) > 23 || Number(match[2].slice(3, 5)) > 59 || Number(match[2].slice(6, 8) || 0) > 59) throw new Error('API trả về giờ phiếu không hợp lệ.');
   if (!match[3]) return { date: match[1], time: match[2] };
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(local);
+  const parts = voucherDateFormatter.formatToParts(local);
   const part = (name: string) => parts.find(item => item.type === name)?.value;
   return { date: `${part('year')}-${part('month')}-${part('day')}`, time: `${part('hour')}:${part('minute')}:${part('second')}` };
 }
@@ -36,6 +37,57 @@ export function mapCashbookRow(raw: ApiRecord): CashbookRow {
 }
 export function createDemoCashbookRepository(): CashbookRepository {
   return { async load(signal) { signal?.throwIfAborted(); return structuredClone(createCashbookFixtures()); } };
+}
+export interface CashbookPagination { page: number; pageSize: number; key: CashbookColumnKey; direction: 'asc' | 'desc' }
+export const DEFAULT_CASHBOOK_PAGINATION: CashbookPagination = { page: 1, pageSize: 5, key: 'date', direction: 'desc' };
+export interface CashbookPageResult { rows: CashbookRow[]; total: number; amount: number; page: number; pageSize: number }
+export interface CashbookListResult { total: number; income: CashbookPageResult; expense: CashbookPageResult; actors: [string, string][] }
+export function cashbookQuery(filters: CashbookFilters, storeId: string): URLSearchParams {
+  const query = new URLSearchParams();
+  if (storeId && storeId !== 'all') query.set('store_id', storeId);
+  if (filters.search) query.set('search', filters.search);
+  if (filters.actor) query.set('actor', filters.actor);
+  if (filters.startDate) query.set('from', filters.startDate);
+  if (filters.endDate) query.set('to', filters.endDate);
+  return query;
+}
+async function readCashbook(query: URLSearchParams, signal?: AbortSignal): Promise<unknown> {
+  const response = await fetch(`/api/auth/cashbook/vouchers?${query}`, { method: 'GET', cache: 'no-store', signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+  const envelope = object(await response.json().catch(() => ({})));
+  if (!response.ok || envelope.status !== 'success') throw new Error(optionalText(envelope.message) || `Không tải được sổ quỹ (HTTP ${response.status}).`);
+  return envelope.data;
+}
+export async function loadCashbookPage(filters: CashbookFilters, storeId: string, income: CashbookPagination, expense: CashbookPagination, signal?: AbortSignal): Promise<CashbookListResult> {
+  const query = cashbookQuery(filters, storeId);
+  for (const [kind, config] of [['income', income], ['expense', expense]] as const) {
+    query.set(`${kind}_page`, String(config.page)); query.set(`${kind}_limit`, String(config.pageSize));
+    query.set(`${kind}_sort`, config.key); query.set(`${kind}_direction`, config.direction);
+  }
+  const data = object(await readCashbook(query, signal));
+  const page = (value: unknown): CashbookPageResult => {
+    const raw = object(value);
+    if (!Array.isArray(raw.rows) || !Number.isSafeInteger(raw.total) || Number(raw.total) < 0 || !Number.isSafeInteger(raw.page) || Number(raw.page) < 1 || !Number.isSafeInteger(raw.pageSize) || Number(raw.pageSize) < 1 || Number(raw.pageSize) > 50 || raw.rows.length > Number(raw.pageSize) || !Number.isFinite(Number(raw.amount))) throw new Error('API sổ quỹ trả về phân trang không hợp lệ.');
+    return { rows: raw.rows.map(item => mapCashbookRow(object(item))), total: Number(raw.total), amount: Number(raw.amount), page: Number(raw.page), pageSize: Number(raw.pageSize) };
+  };
+  if (!Number.isSafeInteger(data.total) || Number(data.total) < 0 || !Array.isArray(data.actors) || !data.actors.every(actor => Array.isArray(actor) && actor.length === 2 && actor.every(item => typeof item === 'string'))) throw new Error('API sổ quỹ thiếu tổng số phiếu hoặc người thực hiện.');
+  return { total: Number(data.total), income: page(data.income), expense: page(data.expense), actors: (data.actors as [string, string][]).sort((a, b) => a[1].localeCompare(b[1], 'vi')) };
+}
+// Full filtered records are fetched only when the user explicitly exports them.
+export async function loadCashbookExport(filters: CashbookFilters, storeId: string): Promise<CashbookRow[]> {
+  const query = cashbookQuery(filters, storeId); query.set('mode', 'all');
+  const rows = await readCashbook(query);
+  if (!Array.isArray(rows)) throw new Error('API xuất sổ quỹ trả về cấu trúc không hợp lệ.');
+  return rows.map(item => mapCashbookRow(object(item)));
+}
+export async function loadCashbookDeleteIds(filters: CashbookFilters, storeId: string, type: VoucherType, signal?: AbortSignal): Promise<{ id: string; amount: number }[]> {
+  const query = cashbookQuery(filters, storeId); query.set('mode', 'ids'); query.set('type', type);
+  const rows = await readCashbook(query, signal);
+  if (!Array.isArray(rows)) throw new Error('API trả về danh sách phiếu không hợp lệ.');
+  return rows.map(item => {
+    const raw = object(item), id = optionalText(raw.id), amount = Number(raw.amount);
+    if (!id || !/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || !Number.isFinite(amount)) throw new Error('API trả về ID hoặc số tiền phiếu không hợp lệ.');
+    return { id, amount };
+  });
 }
 export interface CashbookAccount {
   key: string; kind: 'bank' | 'cash'; id: string; label: string; store_id?: string; store_name?: string; owner_type: string; status: string;

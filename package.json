@@ -27,6 +27,7 @@
     "test:contract-reservations": "node scripts/check-contract-reservations.cjs",
     "test:login": "node scripts/check-management-login.cjs",
     "test:cashbook": "node scripts/check-cashbook-data.cjs",
+    "test:cashbook-pagination": "node scripts/check-cashbook-pagination.cjs",
     "test:customer-import": "node scripts/check-customer-import.cjs",
     "test:customer-stores": "node scripts/check-customer-store-import.cjs",
     "test:customer-search": "node scripts/check-customer-global-search.cjs",

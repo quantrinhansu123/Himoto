@@ -2,7 +2,7 @@
 import argparse
 import json
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright, expect
 
 parser = argparse.ArgumentParser()
@@ -47,8 +47,15 @@ def mock_api(route):
     if route.request.method != 'GET':
         writes.append(endpoint)
         route.abort()
-    elif endpoint == '/api/auth/transactions':
-        route.fulfill(json={'status': 'success', 'data': records})
+    elif endpoint == '/api/auth/cashbook/vouchers':
+        query = {key: values[0] for key, values in parse_qs(urlparse(route.request.url).query).items()}
+        selected = [row for row in records if (not query.get('from') or row['created_at'][:10] >= query['from']) and
+            (not query.get('to') or row['created_at'][:10] <= query['to'])]
+        data = {'total': len(records), 'actors': [['id:8', 'Nhân sự QA · #8']]}
+        for kind in ['income', 'expense']:
+            rows = [row for row in selected if (row['type'] == 'out') == (kind == 'expense')]
+            data[kind] = dict(rows=rows, total=len(rows), amount=sum(row['amount'] for row in rows), page=1, pageSize=int(query.get(kind+'_limit', 5)))
+        route.fulfill(json={'status': 'success', 'data': data})
     elif endpoint == '/api/auth/stores':
         route.fulfill(json={'status': 'success', 'data': [dict(id=1, store_name='Cơ sở QA', status='opening')]})
     elif endpoint == '/api/auth/cashbook/accounts':

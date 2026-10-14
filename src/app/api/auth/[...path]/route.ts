@@ -8,6 +8,7 @@ import { createStaff, parseStaffPath, updateStaff } from '@/lib/server/staff-man
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { validIdentityIssueDate } from '@/lib/management/customer-identity';
 import { CUSTOMER_PROFILE_SQL, CUSTOMER_SEARCH_SQL } from '@/lib/server/customer-search';
+import { CASHBOOK_LIST_SQL, CashbookQueryError, listCashbook } from '@/lib/server/cashbook-list';
 
 export const runtime = 'nodejs';
 
@@ -61,24 +62,7 @@ const listQueries: Record<string, QueryConfig> = {
     sql: `${CONTRACT_LIST_SQL} ORDER BY o.id DESC`,
   },
   transactions: {
-    sql: `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id, s.store_name,
-                 CASE WHEN t.name='battery:rental' THEN 'Thu tiền thuê pin' WHEN t.name='battery:deposit' THEN 'Thu cọc thuê pin' WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc' WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
-                 COALESCE(t."desc", t.note) AS content, t.value AS amount,t.order_id,
-                 COALESCE(o.contract_number,o.draft_reference,bc.code,'#' || t.order_id::text) AS contract_code,
-                 CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'
-                      WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
-                      WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty'
-                      WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản' END AS payment_method,
-                 CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name, ''), 'Két tiền mặt #' || t.cash_id::text)
-                      ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account
-          FROM himoto.transactions t
-          LEFT JOIN himoto.cash cb ON cb.id = t.cash_id
-          LEFT JOIN himoto.users u ON u.id = t.user_id
-          LEFT JOIN himoto.orders o ON o.id=t.order_id
-          LEFT JOIN himoto.battery_contracts bc ON t.object_type='battery_contract' AND bc.id=t.object_id
-          LEFT JOIN himoto.stores s ON s.id=t.store_id
-          LEFT JOIN himoto.banks b ON b.id=t.bank_id
-          ORDER BY t.id DESC`,
+    sql: `${CASHBOOK_LIST_SQL} ORDER BY t.id DESC`,
   },
   'cashbook/accounts': {
     sql: `SELECT a.kind, a.id, a.store_id, s.store_name, a.label, a.name, a.bank_name, a.owner_name, a.account_number, a.owner_type, a.status, a.opening_balance,
@@ -138,6 +122,10 @@ export async function GET(request: NextRequest, { params }: Params) {
   const { path } = await params;
   const key = path.join('/');
   try {
+    if (key === 'cashbook/vouchers') {
+      const data = await listCashbook(request.nextUrl.searchParams);
+      return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     const accountTx = parseAccountPath(path, 'transactions');
     if (accountTx) return await listAccountTransactions(accountTx.kind, accountTx.id, request.nextUrl.searchParams);
     if (key === 'customers/search-by-id-card') {
@@ -177,6 +165,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
     return await readAll(query);
   } catch (error) {
+    if (error instanceof CashbookQueryError) return NextResponse.json({ status: 'error', message: error.message }, { status: 400 });
     console.error('Supabase read failed:', error instanceof Error ? error.name : 'Unknown database error');
     return NextResponse.json({ status: 'error', message: 'Không tải được dữ liệu từ Supabase.' }, { status: 500 });
   }

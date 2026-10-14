@@ -4,30 +4,37 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, FileSearch, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { CASHBOOK_COLUMNS, CashbookColumnKey, CashbookRow, VoucherType, VOUCHER_LABELS, cashbookCell, sortCashbookRows } from '@/lib/management/cashbook';
+import { CashbookPagination, DEFAULT_CASHBOOK_PAGINATION } from '@/lib/management/cashbook-repository';
 import { MobileDetailsCard } from './MobileDetailsCard';
 
 interface Props {
   type: VoucherType; rows: CashbookRow[]; loading: boolean; error: string; filtered: boolean; onReset: () => void; onRetry: () => void;
+  total?: number; pagination?: CashbookPagination; onPaginationChange?: (value: CashbookPagination) => void;
   selectedIds?: ReadonlySet<string>; onSelectionChange?: (ids: string[], selected: boolean) => void; onDeleteAll?: () => void;
 }
-export function CashbookTable({ type, rows, loading, error, filtered, onReset, onRetry, selectedIds, onSelectionChange, onDeleteAll }: Props) {
+export function CashbookTable({ type, rows, total: remoteTotal, pagination: remotePagination, onPaginationChange: remoteChange, loading, error, filtered, onReset, onRetry, selectedIds, onSelectionChange, onDeleteAll }: Props) {
   const selectable = Boolean(selectedIds && onSelectionChange);
   const columnCount = CASHBOOK_COLUMNS.length + (selectable ? 1 : 0);
   const title = VOUCHER_LABELS[type];
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
-  const [sort, setSort] = useState<{ key: CashbookColumnKey; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'desc' });
-  useEffect(() => { setPage(1); }, [rows]);
-  const sorted = useMemo(() => sortCashbookRows(rows, sort.key, sort.direction), [rows, sort]);
-  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const [localPagination, setLocalPagination] = useState<CashbookPagination>(DEFAULT_CASHBOOK_PAGINATION);
+  const pagination = remotePagination || localPagination;
+  const onPaginationChange = remoteChange || setLocalPagination;
+  useEffect(() => { if (!remotePagination) setLocalPagination(current => ({ ...current, page: 1 })); }, [rows, remotePagination]);
+  const sorted = useMemo(() => remotePagination ? rows : sortCashbookRows(rows, pagination.key, pagination.direction), [rows, remotePagination, pagination.key, pagination.direction]);
+  const total = remoteTotal ?? sorted.length;
+  const { page, pageSize } = pagination;
+  const sort = pagination;
+  const setPage = (next: number) => onPaginationChange({ ...pagination, page: next });
+  const setSort = (next: { key: CashbookColumnKey; direction: 'asc' | 'desc' }) => onPaginationChange({ ...pagination, ...next, page: 1 });
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pageCount);
   const offset = (safePage - 1) * pageSize;
-  const pageRows = sorted.slice(offset, offset + pageSize);
+  const pageRows = remotePagination ? rows : sorted.slice(offset, offset + pageSize);
   const pageSelected = pageRows.filter(row => selectedIds?.has(row.id)).length;
   return <section className="mg-data-panel mg-cashbook-panel" aria-labelledby={`cashbook-${type}-title`} id={`cashbook-${type}`}>
     <div className="mg-cashbook-panel-heading"><span className={`mg-cashbook-symbol is-${type}`} aria-hidden="true">{type === 'income' ? <ArrowDownLeft size={20} /> : <ArrowUpRight size={20} />}</span>
-      <div><h2 id={`cashbook-${type}-title`}>{title}<span className="mg-title-count">{loading || error ? '—' : rows.length}</span></h2><p>{type === 'income' ? 'Các phiếu ghi nhận khoản thu.' : 'Các phiếu ghi nhận khoản chi.'}</p></div>
-      {onDeleteAll ? <button type="button" className="mg-button mg-button-danger mg-cashbook-delete-all" disabled={loading || Boolean(error) || !rows.length} onClick={onDeleteAll}><Trash2 size={15} />Xóa hết ({rows.length})</button>
+      <div><h2 id={`cashbook-${type}-title`}>{title}<span className="mg-title-count">{loading || error ? '—' : total}</span></h2><p>{type === 'income' ? 'Các phiếu ghi nhận khoản thu.' : 'Các phiếu ghi nhận khoản chi.'}</p></div>
+      {onDeleteAll ? <button type="button" className="mg-button mg-button-danger mg-cashbook-delete-all" disabled={loading || Boolean(error) || !total} onClick={onDeleteAll}><Trash2 size={15} />Xóa hết ({total})</button>
         : <span className="mg-cashbook-panel-description">Cùng mẫu {CASHBOOK_COLUMNS.length} cột</span>}
     </div>
     <div className="mg-mobile-records" aria-busy={loading}>
@@ -35,13 +42,13 @@ export function CashbookTable({ type, rows, loading, error, filtered, onReset, o
         {selectable && <label className="mg-mobile-select-all"><input type="checkbox" aria-label={`Chọn tất cả thẻ ${title.toLowerCase()} trên trang này`} disabled={loading || Boolean(error) || !pageRows.length}
           checked={pageRows.length > 0 && pageSelected === pageRows.length} ref={input => { if (input) input.indeterminate = pageSelected > 0 && pageSelected < pageRows.length; }}
           onChange={event => onSelectionChange?.(pageRows.map(row => row.id), event.target.checked)} />Chọn tất cả</label>}
-        <label className="mg-mobile-sort"><span className="mg-sr-only">Sắp xếp {title.toLowerCase()}</span><select aria-label={`Sắp xếp ${title.toLowerCase()}`} value={sort.key} onChange={event => { setSort(current => ({ ...current, key: event.target.value as CashbookColumnKey })); setPage(1); }}>
+        <label className="mg-mobile-sort"><span className="mg-sr-only">Sắp xếp {title.toLowerCase()}</span><select aria-label={`Sắp xếp ${title.toLowerCase()}`} value={sort.key} onChange={event => setSort({ ...sort, key: event.target.value as CashbookColumnKey })}>
           {CASHBOOK_COLUMNS.map(column => <option key={column.key} value={column.key}>{column.label}</option>)}</select></label>
-        <button type="button" className="mg-icon-button" aria-label={`Đổi chiều sắp xếp ${title.toLowerCase()}`} onClick={() => { setSort(current => ({ ...current, direction: current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }}>{sort.direction === 'asc' ? <ArrowUp size={17} /> : <ArrowDown size={17} />}</button>
+        <button type="button" className="mg-icon-button" aria-label={`Đổi chiều sắp xếp ${title.toLowerCase()}`} onClick={() => setSort({ ...sort, direction: sort.direction === 'asc' ? 'desc' : 'asc' })}>{sort.direction === 'asc' ? <ArrowUp size={17} /> : <ArrowDown size={17} />}</button>
       </div>
       {loading ? <div className="mg-table-state" role="status"><LoaderCircle size={25} className="mg-spin" /><strong>Đang tải {title.toLowerCase()}…</strong></div>
         : error ? <div className="mg-table-state mg-table-error" role="alert"><strong>Không tải được {title.toLowerCase()}</strong><p>{error}</p><button type="button" className="mg-button" onClick={onRetry}>Thử lại</button></div>
-        : !sorted.length ? <div className="mg-table-state"><strong>{filtered ? 'Không tìm thấy kết quả' : `Chưa có ${title.toLowerCase()}`}</strong>{filtered && <button type="button" className="mg-button" onClick={onReset}>Xóa bộ lọc</button>}</div>
+        : !rows.length ? <div className="mg-table-state"><strong>{filtered ? 'Không tìm thấy kết quả' : `Chưa có ${title.toLowerCase()}`}</strong>{filtered && <button type="button" className="mg-button" onClick={onReset}>Xóa bộ lọc</button>}</div>
         : <ul className="mg-mobile-card-list">{pageRows.map(row => <MobileDetailsCard key={row.id} title={`${title} #${row.id} · ${row.reason || row.contract_code || 'Thu chi'}`}
           summary={<><span>{cashbookCell(row, 'amount')}</span><span>{cashbookCell(row, 'date')}</span></>}
           selection={selectable ? { label: `Chọn phiếu ${row.id}`, checked: Boolean(selectedIds?.has(row.id)), onChange: checked => onSelectionChange?.([row.id], checked) } : undefined}
@@ -52,11 +59,11 @@ export function CashbookTable({ type, rows, loading, error, filtered, onReset, o
         <thead><tr>{selectable && <th scope="col" className="mg-select-column"><input type="checkbox" aria-label={`Chọn tất cả ${title.toLowerCase()} trên trang này`} disabled={loading || Boolean(error) || !pageRows.length}
           checked={pageRows.length > 0 && pageSelected === pageRows.length} ref={input => { if (input) input.indeterminate = pageSelected > 0 && pageSelected < pageRows.length; }}
           onChange={event => onSelectionChange?.(pageRows.map(row => row.id), event.target.checked)} /></th>}{CASHBOOK_COLUMNS.map(column => <th key={column.key} scope="col" className={`mg-cashbook-col-${column.key}`} aria-sort={sort.key === column.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'}>
-          <button type="button" className="mg-sort" aria-label={`Sắp xếp ${title.toLowerCase()} theo ${column.label}`} onClick={() => { setSort(current => ({ key: column.key, direction: current.key === column.key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }}>
+          <button type="button" className="mg-sort" aria-label={`Sắp xếp ${title.toLowerCase()} theo ${column.label}`} onClick={() => setSort({ key: column.key, direction: sort.key === column.key && sort.direction === 'asc' ? 'desc' : 'asc' })}>
             <span>{column.label}</span>{sort.key === column.key ? sort.direction === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} /> : <ArrowUpDown size={12} />}</button></th>)}</tr></thead>
         <tbody>{loading ? <tr><td colSpan={columnCount}><div className="mg-table-state" role="status"><LoaderCircle size={25} className="mg-spin" /><strong>Đang tải {title.toLowerCase()}…</strong></div></td></tr>
           : error ? <tr><td colSpan={columnCount}><div className="mg-table-state mg-table-error" role="alert"><FileSearch size={28} /><strong>Không tải được {title.toLowerCase()}</strong><p>{error}</p><button type="button" className="mg-button" onClick={onRetry}><RotateCcw size={15} />Thử lại</button></div></td></tr>
-          : !sorted.length ? <tr><td colSpan={columnCount}><div className="mg-table-state"><FileSearch size={28} /><strong>{filtered ? 'Không tìm thấy kết quả' : `Chưa có ${title.toLowerCase()}`}</strong><p>{filtered ? 'Đổi từ khóa, ngày hoặc người thực hiện để tìm lại.' : 'Danh sách sẽ hiển thị khi có phiếu.'}</p>{filtered && <button type="button" className="mg-button" onClick={onReset}>Xóa bộ lọc</button>}</div></td></tr>
+          : !rows.length ? <tr><td colSpan={columnCount}><div className="mg-table-state"><FileSearch size={28} /><strong>{filtered ? 'Không tìm thấy kết quả' : `Chưa có ${title.toLowerCase()}`}</strong><p>{filtered ? 'Đổi từ khóa, ngày hoặc người thực hiện để tìm lại.' : 'Danh sách sẽ hiển thị khi có phiếu.'}</p>{filtered && <button type="button" className="mg-button" onClick={onReset}>Xóa bộ lọc</button>}</div></td></tr>
           : pageRows.map(row => <tr key={row.id} className={selectedIds?.has(row.id) ? 'is-selected' : undefined}>{selectable && <td className="mg-select-column"><input type="checkbox" aria-label={`Chọn phiếu ${row.id}`}
             checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}{CASHBOOK_COLUMNS.map(column => <td key={column.key}>
             {column.key === 'type' ? <span className={`mg-status mg-status-${type === 'income' ? 'green' : 'red'}`}><span />{title}</span>
@@ -66,8 +73,8 @@ export function CashbookTable({ type, rows, loading, error, filtered, onReset, o
           </td>)}</tr>)}</tbody>
       </table>
     </div>
-    <div className="mg-pagination"><div className="mg-result-range" aria-live="polite">Hiển thị <strong>{sorted.length && !loading && !error ? offset + 1 : 0}–{loading || error ? 0 : Math.min(offset + pageSize, sorted.length)}</strong> trong <strong>{loading || error ? '—' : sorted.length}</strong> {title.toLowerCase()}</div>
-      <div className="mg-pagination-controls"><label>Số dòng<select aria-label={`Số dòng mỗi trang ${title.toLowerCase()}`} value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}>{[5, 10, 20, 50].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+    <div className="mg-pagination"><div className="mg-result-range" aria-live="polite">Hiển thị <strong>{pageRows.length && !loading && !error ? offset + 1 : 0}–{loading || error ? 0 : Math.min(offset + pageRows.length, total)}</strong> trong <strong>{loading || error ? '—' : total}</strong> {title.toLowerCase()}</div>
+      <div className="mg-pagination-controls"><label>Số dòng<select aria-label={`Số dòng mỗi trang ${title.toLowerCase()}`} value={pageSize} onChange={event => onPaginationChange({ ...pagination, pageSize: Number(event.target.value), page: 1 })}>{[5, 10, 20, 50].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
         <div className="mg-page-buttons"><button type="button" className="mg-icon-button" aria-label={`Trang trước ${title.toLowerCase()}`} disabled={safePage === 1 || loading || Boolean(error)} onClick={() => setPage(safePage - 1)}><ChevronLeft size={17} /></button>
           <span className="mg-current-page" aria-label={`Trang hiện tại ${title.toLowerCase()}`}>{safePage}</span><span className="mg-page-total">/ {pageCount}</span>
           <button type="button" className="mg-icon-button" aria-label={`Trang sau ${title.toLowerCase()}`} disabled={safePage === pageCount || loading || Boolean(error)} onClick={() => setPage(safePage + 1)}><ChevronRight size={17} /></button></div>
