@@ -66,5 +66,5 @@ export interface ManagementConfig {
   columns: ManagementColumn[];
   fields: ManagementField[];
   statuses: Option[];
-  filters: { key: string; label: string; options: Option[] }[];
+  filters: { key: string; label: string; options: Option[]; storeOptions?: boolean }[];
 }

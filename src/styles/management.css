@@ -3403,3 +3403,13 @@
   .mg-operation-action { padding: 16px; min-height: 140px; }
   .mg-operation-action strong { font-size: 16px; }
 }
+
+@media (max-width: 900px) {
+  .mg-page-vehicles .mg-heading-actions { display: contents; }
+  .mg-page-vehicles .mg-heading-actions > :not(.mg-page-add):not(.mg-mobile-status-action):not(dialog) { display: none; }
+  .mg-page-vehicles .mg-heading-actions .mg-page-add { position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 40; width: auto; min-height: 48px; margin: 0; justify-content: center; font-size: 15px; box-shadow: 0 8px 24px rgba(15, 23, 42, .22); }
+  .mg-page-vehicles .mg-page-content { padding-bottom: 88px; }
+}
+@media (max-width: 767px) {
+  .mg-page-vehicles .mg-heading-actions .mg-page-add { bottom: calc(74px + env(safe-area-inset-bottom)); }
+}

@@ -31,20 +31,30 @@ const listQueries: Record<string, QueryConfig> = {
   'vehicle/vehicles': {
     sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name,
-                 r.rentals
+                 r.rentals, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name
           FROM himoto.vehicles v
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
           LEFT JOIN LATERAL (
             SELECT json_agg(json_build_object('order_id', o.id,
                      'code', COALESCE(NULLIF(o.contract_number, ''), NULLIF(o.draft_reference, ''), '#' || o.id::text),
                      'status', CASE WHEN o.order_status = 'renting' AND d.return_at < now() THEN 'overdue' ELSE o.order_status END,
-                     'customer', COALESCE(c.name, o.customer_name, ''), 'return_at', d.return_at) ORDER BY d.rent_at DESC) AS rentals
+                     'customer', COALESCE(c.name, o.customer_name, ''), 'return_at', d.return_at) ORDER BY d.rent_at DESC) AS rentals,
+                   (array_agg(o.store_id ORDER BY d.rent_at DESC))[1] AS store_id
             FROM himoto.order_vehicle_details d
             JOIN himoto.orders o ON o.id = d.order_id
             LEFT JOIN himoto.customers c ON c.id = o.customer_id
             WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
               AND o.order_status IN ('renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract')
           ) r ON true
+          LEFT JOIN LATERAL (
+            SELECT e.ref_type, e.to_store_id FROM himoto.vehicle_location_events e
+            WHERE e.vehicle_id = v.id AND e.event_type = 'status_change'
+            ORDER BY e.created_at DESC, e.id DESC LIMIT 1
+          ) ev ON true
+          CROSS JOIN LATERAL (
+            SELECT COALESCE(r.store_id, CASE WHEN v.status = 'using' AND ev.ref_type = 'using' THEN ev.to_store_id END, v.current_store_id, v.store_id) AS beneficiary_store_id
+          ) b
+          LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
           ORDER BY v.id DESC`,
   },
   'order/car-rental': {

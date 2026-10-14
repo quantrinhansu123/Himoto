@@ -112,6 +112,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
   if (kind === 'vehicles') return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type),
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
     rentals_json: Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
+    beneficiary_store_id: number(raw.beneficiary_store_id ?? raw.current_store_id ?? raw.store_id), beneficiary_store_name: text(raw.beneficiary_store_name || raw.store_name),
     odometer: number(raw.odometer), daily_price: number(raw.daily_price), monthly_price: number(raw.monthly_price), year: text(raw.year),
     status: ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[base.status] || base.status };
   const customer = object(raw.customer);
