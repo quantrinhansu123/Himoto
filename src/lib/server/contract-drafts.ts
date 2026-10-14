@@ -36,6 +36,9 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
     AND p.store_id::text = COALESCE(NULLIF(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id',''),o.store_id::text) ORDER BY p.id LIMIT 1) AS staff_id,
   (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id
     AND p.store_id::text = COALESCE(NULLIF(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id',''),o.store_id::text) ORDER BY p.id LIMIT 1) AS staff_name,
+  COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),
+    (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.id::text = o.draft_payload->'management_composer'->'draft'->>'staff_id'),
+    (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id ORDER BY p.id LIMIT 1)) AS representative_name,
   o.draft_payload, o.contract_signed_on AS signed_on, o.contract_authorization_date AS authorization_date,
   o.contract_collateral_description AS collateral_description, o.customer_source, o.customer_source_url,
   COALESCE(ov.vehicles, '[]'::json) AS vehicles

@@ -143,7 +143,7 @@ with sync_playwright() as p:
     tab = lambda name: form.get_by_role('tab', name=name, exact=False).click()
     tab('Hợp đồng & pháp lý')
     form.locator('#contract-sales_staff_id').select_option('10')
-    form.locator('#contract-tls_staff_id').select_option('20')
+    expect(form.locator('#contract-tls_staff_id')).to_have_count(0)
     assert form.locator('#contract-sales_staff_id option[value="20"]').count() == 0
     tab('Khách hàng')
     form.locator('#contract-store').select_option('35')
@@ -161,12 +161,12 @@ with sync_playwright() as p:
     finalize = page.get_by_role('dialog', name=re.compile('Xác nhận thu tiền'))
     expect(finalize.locator('.mg-collection-total strong')).to_have_text('3.200.000 đ')
     assert saves[-1]['draft']['customer']['id_card'] == '' and saves[-1]['draft']['relatives'][0]['name'] == ''
-    assert saves[-1]['draft']['sales_staff_id'] == '10' and saves[-1]['draft']['tls_staff_id'] == '20'
+    assert saves[-1]['draft']['sales_staff_id'] == '10' and not saves[-1]['draft'].get('tls_staff_id')
     finalize.get_by_role('button', name='Xác nhận lưu chính thức', exact=True).click()
     expect(finalize).not_to_be_visible()
     expect(page).to_have_url(args.url + '/contracts?contract_id=901')
     assert sorted((r['purpose'], r['amount']) for r in collections[-1]['receipts']) == [('deposit', '3000000'), ('rental', '200000')]
-    checks.append('Incomplete legal profile can issue operational contract; default print still blocks; official receipt request separates rental/deposit and saves both employee IDs')
+    checks.append('Incomplete legal profile can issue operational contract; default print still blocks; official receipt request separates rental/deposit and saves the NVKD employee ID')
 
     go('/contracts')
     page.locator('.mg-mobile-record-card').filter(has_text='HD-QA-900').locator('.mg-row-menu-trigger').click()
@@ -178,7 +178,6 @@ with sync_playwright() as p:
         form.get_by_label(label, exact=True).uncheck()
     form.locator('#contract-required-relatives').select_option('0')
     form.locator('#contract-sales_staff_id').select_option('10')
-    form.locator('#contract-tls_staff_id').select_option('20')
     tab('Khách hàng')
     form.locator('#contract-customer-id_card').fill('001234567877')
     form.get_by_role('button', name='Lưu hồ sơ hợp đồng', exact=True).click()

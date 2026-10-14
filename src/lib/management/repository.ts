@@ -122,10 +122,13 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
   const payload = object(raw.draft_payload);
   const saved = object(payload.management_composer);
   const snapshot = object(saved.draft);
+  const salesStaffId = text(object(saved.profile).sales_staff_id ?? snapshot.sales_staff_id);
+  const salesAttribution = object(object(saved.profile_attribution).NVKD ?? object(saved.sales_attribution).NVKD);
   const mapped: ManagementRow = { ...base, code, name: code,
+    sales_staff_id: /^[1-9]\d{0,14}$/.test(salesStaffId) ? Number(salesStaffId) : undefined, sales_staff_name: text(salesAttribution.name),
     store_id: base.store_id ?? number(store.id), store_name: base.store_name || text(store.store_name || store.name),
     staff_id: number(raw.staff_id ?? raw.contract_responsible_user_id),
-    staff_name: text(raw.staff_name),
+    staff_name: text(raw.staff_name), representative_name: text(raw.representative_name || raw.staff_name),
     customer_id: number(raw.customer_id), customer_name: text(raw.customer_name || customer.name),
     customer_status: raw.customer_status == null ? undefined : ['2', 'blacklist', 'bad_debt'].includes(text(raw.customer_status)) ? 'blacklist' : text(raw.customer_status),
     customer_phone: text(raw.customer_phone || customer.phone),

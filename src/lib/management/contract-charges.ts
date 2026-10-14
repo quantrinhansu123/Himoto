@@ -1,4 +1,6 @@
-export interface ContractCharge { name: string; amount: string }
+import { PAYMENT_METHODS, type PaymentMethod } from './contract-payments';
+
+export interface ContractCharge { name: string; amount: string; method?: PaymentMethod }
 export interface ContractCollection { purpose: 'deposit' | 'rental'; amount: number; method: string; account: string; paid_at: string }
 const MAX_MONEY = 9_999_999_999_999;
 
@@ -8,8 +10,8 @@ export function chargeTotal(input: unknown): number | null {
   if (!Array.isArray(input) || input.length > 20) return null;
   let total = 0;
   for (const item of input) {
-    if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key=>!['name','amount'].includes(key)) ||
-      typeof item.name !== 'string' || item.name.length > 100 || typeof item.amount !== 'string' || (item.amount && !/^\d{1,13}$/.test(item.amount))) return null;
+    if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key=>!['name','amount','method'].includes(key)) ||
+      (item.method !== undefined && !PAYMENT_METHODS.some(method=>method.value===item.method)) || typeof item.name !== 'string' || item.name.length > 100 || typeof item.amount !== 'string' || (item.amount && !/^\d{1,13}$/.test(item.amount))) return null;
     const amount = Number(item.amount);
     if (!Number.isSafeInteger(amount) || amount > MAX_MONEY || total + amount > MAX_MONEY) return null;
     total += amount;

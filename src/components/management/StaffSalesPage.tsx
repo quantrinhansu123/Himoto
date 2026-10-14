@@ -1,20 +1,91 @@
 'use client';
-import { useEffect,useState } from 'react';
-import { ArrowDownToLine,RotateCcw } from 'lucide-react';
+import { useEffect,useMemo,useState } from 'react';
+import { ArrowDownToLine,CalendarRange,FilterX,Receipt,RotateCcw,TrendingUp,TriangleAlert,Wallet } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
+import { SalesCharts } from './SalesCharts';
 import { loadStaffSales,type StaffSalesReport } from '@/lib/management/staff-sales';
+import { summarizeBySalesStaff,summarizeByStore,summarizeSalesKpis,type SalesKpis,type SourceSalesSummary } from '@/lib/management/source-sales';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { csvCell } from '@/lib/management/table-utils';
 const money=(value:number)=>`${value.toLocaleString('vi-VN')} đ`;
+function downloadCsv(rows:(string|number)[][],filename:string){const data=rows.map(row=>row.map(value=>csvCell(String(value))).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF',data],{type:'text/csv;charset=utf-8;'}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}
+const isoDate=(year:number,month:number,day:number)=>new Date(Date.UTC(year,month,day)).toISOString().slice(0,10);
+const viDate=(value:string)=>value.split('-').reverse().join('/');
+const PRESETS=[{id:'today',label:'Hôm nay'},{id:'7d',label:'7 ngày qua'},{id:'month',label:'Tháng này'},{id:'last-month',label:'Tháng trước'},{id:'quarter',label:'Quý này'},{id:'year',label:'Năm nay'}] as const;
+function presetRange(id:typeof PRESETS[number]['id'],today:string):[string,string] {
+  const [year,month,day]=today.split('-').map(Number);
+  switch(id){
+    case 'today': return [today,today];
+    case '7d': return [isoDate(year,month-1,day-6),today];
+    case 'month': return [isoDate(year,month-1,1),today];
+    case 'last-month': return [isoDate(year,month-2,1),isoDate(year,month-1,0)];
+    case 'quarter': return [isoDate(year,Math.floor((month-1)/3)*3,1),today];
+    case 'year': return [isoDate(year,0,1),today];
+  }
+}
+const DEPARTMENTS=[{value:'',label:'Tất cả'},{value:'NVKD',label:'NVKD'},{value:'TLS',label:'TLS'}];
+function SalesKpiCards({kpis,loading,error}:{kpis:SalesKpis;loading:boolean;error:string}) {
+  const ready=!loading && !error;
+  const rate=kpis.revenue ? Math.min(Math.round(kpis.paid/kpis.revenue*100),100) : 0;
+  const cards=[
+    {key:'revenue',icon:TrendingUp,label:'Tổng doanh số',value:kpis.revenue,hint:`${kpis.contracts.toLocaleString('vi-VN')} hợp đồng bắt đầu trong kỳ`},
+    {key:'paid',icon:Wallet,label:'Số tiền đã thu',value:kpis.paid,hint:`Đạt ${rate}% tổng doanh số`,progress:rate},
+    {key:'debt',icon:Receipt,label:'Công nợ',value:kpis.debt,hint:`${kpis.debtContracts.toLocaleString('vi-VN')} hợp đồng còn thiếu tiền`},
+    {key:'overdue',icon:TriangleAlert,label:'Nợ xấu quá hạn',value:kpis.overdueDebt,hint:`${kpis.overdueContracts.toLocaleString('vi-VN')} hợp đồng · nợ xấu ${money(kpis.badDebt)}`},
+  ];
+  return <dl className="mg-sales-kpis" aria-busy={loading}>{cards.map(({key,icon:Icon,label,value,hint,progress})=><div key={key} className={`mg-sales-kpi is-${key}`}>
+    <dt><span className="mg-sales-kpi-icon" aria-hidden="true"><Icon size={16}/></span>{label}</dt>
+    <dd>{ready ? money(value) : '—'}</dd>
+    {progress!==undefined && <div className="mg-sales-kpi-bar" aria-hidden="true"><span style={{width:`${ready ? progress : 0}%`}}/></div>}
+    <span>{loading ? 'Đang tải…' : error ? 'Không tải được số liệu' : hint}</span>
+  </div>)}</dl>;
+}
+const SUMMARY_HEADERS=['Hợp đồng','Khách','Tiền thuê','Đã thu tiền thuê','Tiền cọc'];
+function SummaryTable({title,description,column,unit,summary,filename,loading,error}:{title:string;description:string;column:string;unit:string;summary:SourceSalesSummary;filename:string;loading:boolean;error:string}) {
+  const {rows,total}=summary;
+  return <div className="mg-source-sales"><div className="mg-source-sales-heading"><div><h2>{title}</h2><p>{description}</p></div><button className="mg-button" type="button" disabled={loading || !rows.length} onClick={()=>downloadCsv([[column,...SUMMARY_HEADERS],...rows.map(row=>[row.name,row.contracts,row.customers,row.rent,row.paid,row.deposit]),['Tổng',total.contracts,total.customers,total.rent,total.paid,total.deposit]],filename)}><ArrowDownToLine size={16}/>Xuất CSV</button></div>
+    {loading ? <p role="status" className="mg-table-state">Đang tải danh sách hợp đồng…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : !rows.length ? <p className="mg-table-state">Không có hợp đồng trong kỳ.</p> :
+    <><SalesCharts summary={summary} unit={unit}/><div className="mg-table-scroll" tabIndex={0} role="region" aria-label={title}><table className="mg-table mg-source-sales-table"><thead><tr><th scope="col">{column}</th>{SUMMARY_HEADERS.map(label=><th scope="col" key={label} className="mg-align-right">{label}</th>)}</tr></thead>
+      <tbody>{rows.map(row=><tr key={row.key || 'none'} className={row.key ? undefined : 'is-muted'}><td>{row.name}</td><td className="mg-align-right">{row.contracts}</td><td className="mg-align-right">{row.customers}</td><td className="mg-align-right">{money(row.rent)}</td><td className="mg-align-right">{money(row.paid)}</td><td className="mg-align-right">{money(row.deposit)}</td></tr>)}</tbody>
+      <tfoot><tr><th scope="row">Tổng</th><td className="mg-align-right">{total.contracts}</td><td className="mg-align-right">{total.customers}</td><td className="mg-align-right">{money(total.rent)}</td><td className="mg-align-right">{money(total.paid)}</td><td className="mg-align-right">{money(total.deposit)}</td></tr></tfoot></table></div></>}
+  </div>;
+}
 export function StaffSalesPage() {
-  const {selectedStore}=useManagement();const today=vietnamDate();
+  const {selectedStore,dataset,loading:contractsLoading,error:contractsError,reload}=useManagement();const today=vietnamDate();
   const [from,setFrom]=useState(`${today.slice(0,7)}-01`),[to,setTo]=useState(today),[department,setDepartment]=useState('');
   const [report,setReport]=useState<StaffSalesReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(setReport).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[from,to,selectedStore,retry]);
   const rows=(report?.rows || []).filter(row=>!department || row.department === department);
-  function exportCsv(){const data=[['Nhân viên','Bộ phận','Cách tính','Hợp đồng','Khách','Khách mới','Doanh số'],...rows.map(row=>[row.name,row.department,row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên',row.contracts,row.customers,row.new_customers,row.revenue])].map(row=>row.map(value=>csvCell(String(value))).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF',data],{type:'text/csv;charset=utf-8;'}));const link=document.createElement('a');link.href=url;link.download=`doanh-so-${from}-${to}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}
-  return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Doanh số nhân viên</h1><p>NVKD: tiền thuê thực thu trong kỳ, gồm gia hạn, không gồm cọc. TLS: tiền thuê HĐ mở mới đầu tiên, không tính thuê sở hữu, khách quay lại hoặc gia hạn.</p></div><div className="mg-heading-actions"><button className="mg-button" type="button" onClick={()=>setRetry(v=>v+1)}><RotateCcw size={16}/>Tải lại</button><button className="mg-button" type="button" disabled={loading || !rows.length} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất CSV</button></div></div>
-    <div className="mg-data-panel"><div className="mg-toolbar"><label>Từ ngày<input aria-label="Từ ngày doanh số" type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Đến ngày<input aria-label="Đến ngày doanh số" type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><label>Bộ phận<select aria-label="Bộ phận doanh số" value={department} onChange={e=>setDepartment(e.target.value)}><option value="">Tất cả bộ phận</option><option value="NVKD">NVKD</option><option value="TLS">TLS</option></select></label></div>
+  const contracts=dataset?.contracts;
+  const staff=dataset?.staff;
+  const sources=useMemo(()=>summarizeBySalesStaff(contracts || [],from,to,selectedStore,staff),[contracts,from,to,selectedStore,staff]);
+  const stores=useMemo(()=>summarizeByStore(contracts || [],from,to,selectedStore),[contracts,from,to,selectedStore]);
+  const kpis=useMemo(()=>summarizeSalesKpis(contracts || [],from,to,selectedStore),[contracts,from,to,selectedStore]);
+  const summaryLoading=contractsLoading && !contracts?.length;
+  const activePreset=PRESETS.find(preset=>{const [start,end]=presetRange(preset.id,today);return start===from && end===to;})?.id;
+  const periodDays=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;
+  const storeName=selectedStore==='all' ? 'Tất cả cơ sở' : dataset?.stores.find(store=>String(store.id)===selectedStore)?.name || `Cơ sở #${selectedStore}`;
+  const isDefault=activePreset==='month' && !department;
+  function choosePreset(id:typeof PRESETS[number]['id']){const [start,end]=presetRange(id,today);setFrom(start);setTo(end);}
+  function changeFrom(value:string){if(!value)return;setFrom(value);if(value>to)setTo(value);}
+  function changeTo(value:string){if(!value)return;setTo(value);if(value<from)setFrom(value);}
+  const scope='Hợp đồng có ngày bắt đầu thuê trong kỳ; không tính nháp, giữ xe / chờ nhận xe và đã hủy.';
+  function exportCsv(){downloadCsv([['Nhân viên','Bộ phận','Cách tính','Hợp đồng','Khách','Khách mới','Doanh số'],...rows.map(row=>[row.name,row.department,row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên',row.contracts,row.customers,row.new_customers,row.revenue])],`doanh-so-${from}-${to}.csv`);}
+  return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Doanh số nhân viên</h1><p>NVKD: tiền thuê thực thu trong kỳ, gồm gia hạn, không gồm cọc. TLS: tiền thuê HĐ mở mới đầu tiên, không tính thuê sở hữu, khách quay lại hoặc gia hạn.</p></div><div className="mg-heading-actions"><button className="mg-button" type="button" onClick={()=>{setRetry(v=>v+1);void reload();}}><RotateCcw size={16}/>Tải lại</button><button className="mg-button" type="button" disabled={loading || !rows.length} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất CSV</button></div></div>
+    <div className="mg-data-panel"><div className="mg-sales-filter" role="search" aria-label="Bộ lọc doanh số">
+      <div className="mg-sales-filter-presets" role="group" aria-label="Chọn nhanh kỳ báo cáo">{PRESETS.map(preset=><button key={preset.id} type="button" className={activePreset===preset.id ? 'is-active' : ''} aria-pressed={activePreset===preset.id} onClick={()=>choosePreset(preset.id)}>{preset.label}</button>)}</div>
+      <div className="mg-sales-filter-row">
+        <div className="mg-sales-filter-field"><span className="mg-sales-filter-label">Khoảng ngày</span><div className="mg-sales-filter-range"><CalendarRange size={16} aria-hidden="true"/><input aria-label="Từ ngày doanh số" type="date" value={from} max={today} onChange={e=>changeFrom(e.target.value)}/><span aria-hidden="true">→</span><input aria-label="Đến ngày doanh số" type="date" value={to} max={today} onChange={e=>changeTo(e.target.value)}/></div></div>
+        <div className="mg-sales-filter-field"><span className="mg-sales-filter-label" id="sales-department-label">Bộ phận NVKD / TLS</span><div className="mg-sales-segmented" role="group" aria-labelledby="sales-department-label">{DEPARTMENTS.map(item=><button key={item.value || 'all'} type="button" className={department===item.value ? 'is-active' : ''} aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div></div>
+        <button type="button" className="mg-button mg-sales-filter-reset" disabled={isDefault} onClick={()=>{choosePreset('month');setDepartment('');}}><FilterX size={16}/>Đặt lại</button>
+      </div>
+      <p className="mg-sales-filter-summary">Kỳ báo cáo <strong>{viDate(from)} – {viDate(to)}</strong> · {periodDays} ngày · {storeName}</p>
+    </div>
+    <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>
+    <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền hợp đồng còn thiếu của đơn đang thuê, quá hạn, chờ thanh toán và nợ xấu; Nợ xấu quá hạn gồm đơn Quá hạn và Nợ xấu.</p>
+    <SummaryTable title="Theo NVKD ghi nhận doanh số" description={`Tổng hợp từ Danh sách hợp đồng theo cột NVKD ghi nhận doanh số. ${scope}`} column="NVKD ghi nhận doanh số" unit="nhân viên" summary={sources} filename={`doanh-so-nvkd-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
+    <SummaryTable title="Doanh thu theo cơ sở" description={`Tổng hợp từ Danh sách hợp đồng theo cột Nguồn / doanh thu. ${scope}`} column="Cơ sở (Nguồn / doanh thu)" unit="cơ sở" summary={stores} filename={`doanh-thu-co-so-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
+    <div className="mg-source-sales-heading mg-source-sales-heading-sub"><div><h2>Theo NVKD / TLS được phân công</h2></div></div>
     {loading ? <p role="status" className="mg-table-state">Đang tải doanh số…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : <><ul className="mg-sales-cards">{rows.map(row=><li key={`${row.department}-${row.staff_id}`}><strong>{row.name} · {row.department}</strong><b>{money(row.revenue)}</b><span>{row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên'}</span><span>{row.contracts} hợp đồng · {row.customers} khách · {row.new_customers} khách mới</span></li>)}</ul>{!rows.length && <p className="mg-table-state">Chưa có doanh số được gắn nhân viên trong kỳ.</p>}</>}
     </div>
   </div></section>;

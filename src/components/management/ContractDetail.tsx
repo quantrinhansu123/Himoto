@@ -8,6 +8,7 @@ import { useManagement } from './ManagementProvider';
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
 import { contractStaffStoreId, createContractDraft } from '@/lib/management/contract-document';
 import { CHANGE_LABELS, ContractHistory, loadContractHistory } from '@/lib/management/contract-history';
+import { paymentMethodLabel } from '@/lib/management/contract-payments';
 import { ManagementRow } from '@/lib/management/types';
 import { MANAGEMENT_CONFIG, optionLabel } from '@/lib/management/config';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
@@ -154,7 +155,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
           ['Ngày hẹn cần đóng tiếp theo', row.billing_next_due_at ? dateTime(String(row.billing_next_due_at)) : 'Không còn khoản đến hẹn'],
           ['Tiền đến hạn còn thiếu', money(row.billing_due_amount)],
         ])}</div>}
-        {draft.extra_charges && draft.extra_charges.length>0 && <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng (đã tính trong tổng phí)</h3>{fields(draft.extra_charges.filter(item=>Number(item.amount)>0).map(item=>[item.name,money(item.amount)]))}</div>}
+        {draft.extra_charges && draft.extra_charges.length>0 && <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng (đã tính trong tổng phí)</h3>{fields(draft.extra_charges.filter(item=>Number(item.amount)>0).map(item=>[item.name,item.method ? `${money(item.amount)} · ${paymentMethodLabel(item.method)}` : money(item.amount)]))}</div>}
       </>)}
       {panel('signing', 'Ký kết & Ghi chú', fields([
         ['Tài sản thế chấp / Đặt cọc tài sản', text(draft.collateral_description)],

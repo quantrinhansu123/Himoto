@@ -4,6 +4,7 @@ export const PAYMENT_METHODS = [
   { value: 'company_transfer', label: 'CK tài khoản công ty' },
 ] as const;
 export type PaymentMethod = typeof PAYMENT_METHODS[number]['value'];
+export const paymentMethodLabel = (method: PaymentMethod) => method === 'transfer' ? 'CK tài khoản cá nhân' : PAYMENT_METHODS.find(item => item.value === method)?.label || method;
 export const PAYABLE_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt', 'deposit_contract'];
 export const RENEWABLE_STATUSES = ['renting', 'overdue'];
 export const MAX_PAYMENT_AMOUNT = 9_999_999_999_999;

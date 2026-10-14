@@ -3,14 +3,14 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
-import { PAYMENT_METHODS, PaymentContext, PaymentMethod, loadPaymentContext, paymentAccounts, vietnamPaymentTime } from '@/lib/management/contract-payments';
+import { PAYMENT_METHODS, PaymentContext, PaymentMethod, loadPaymentContext, paymentAccounts, paymentMethodLabel, vietnamPaymentTime } from '@/lib/management/contract-payments';
 import { FinalizeCollection, FinalizeResult, finalizeContract } from '@/lib/management/contract-finalize';
 import type { ContractCharge } from '@/lib/management/contract-charges';
 import { DateTime24Field } from './DateTime24Field';
 
 const money = (value: number) => `${value.toLocaleString('vi-VN')} đ`;
 const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
-interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string }
+interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string; label?: string }
 interface CollectionState { collect: boolean; rows: CollectionRow[] }
 
 export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, onClose, onDone }: {
@@ -22,7 +22,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   const [rentalState,setRentalState] = useState<CollectionState>({collect:false,rows:[]});
   const [error,setError] = useState(''), [saving,setSaving] = useState(false);
   const busy = useRef(false), nextKey = useRef(0);
-  const initialMethods = useRef({deposit:depositMethods,rental:rentalMethods});
+  const initialMethods = useRef({deposit:depositMethods,rental:rentalMethods,charges});
   const depositDue = Math.max(deposit-(context?.deposit_paid || 0),0), rentalDue = Math.max(total-(context?.paid_amount || 0),0);
   const newRow = (method: PaymentMethod, amount = ''): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime()});
 
@@ -31,11 +31,16 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     loadPaymentContext(orderId,controller.signal).then(value=>{
       if (controller.signal.aborted) return;
       setContext(value);
-      const seed = (due: number, methods: PaymentMethod[]): CollectionState => ({collect:due>0,
-        rows:due>0 ? methods.map(method=>({key:nextKey.current++,method,amount:methods.length===1 ? String(due) : '',account:'',paid_at:vietnamPaymentTime()})) : []});
-      setDepositState(reservation ? {collect:false,rows:[]} : seed(Math.max(deposit-value.deposit_paid,0),initialMethods.current.deposit));
-      const rental = seed(Math.max(total-(value.paid_amount || 0),0),initialMethods.current.rental);
-      setRentalState(reservation ? {...rental,rows:rental.rows.map(row=>({...row,amount:''}))} : rental);
+      const row = (method: PaymentMethod, amount: string, label?: string): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime(),label});
+      const seed = (due: number, methods: PaymentMethod[], label?: string) => due>0 ? methods.map(method=>row(method,methods.length===1 ? String(due) : '',label)) : [];
+      const depositDue = Math.max(deposit-value.deposit_paid,0), rentalDue = Math.max(total-(value.paid_amount || 0),0);
+      const fees = initialMethods.current.charges.filter(item=>item.name.trim() && Number(item.amount)>0);
+      const feeTotal = fees.reduce((sum,item)=>sum+Number(item.amount),0);
+      const rentalRows = feeTotal && feeTotal<=rentalDue
+        ? [...seed(rentalDue-feeTotal,initialMethods.current.rental,'Tiền thuê xe'),...fees.map(item=>row(item.method || initialMethods.current.rental[0],item.amount,item.name.trim()))]
+        : seed(rentalDue,initialMethods.current.rental);
+      setDepositState(reservation ? {collect:false,rows:[]} : {collect:depositDue>0,rows:seed(depositDue,initialMethods.current.deposit)});
+      setRentalState({collect:rentalDue>0,rows:reservation ? rentalRows.map(item=>({...item,amount:''})) : rentalRows});
     }).catch(cause=>{if(!controller.signal.aborted)setLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');});
     return ()=>controller.abort();
   },[orderId,deposit,total,reservation]);
@@ -73,10 +78,10 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       {due>0 && <><label className="mg-checkbox"><input type="checkbox" checked={state.collect} onChange={event=>setState({...state,collect:event.target.checked})} />Ghi nhận các khoản đã nhận</label>
         {state.collect && <>
           {state.rows.map((row,index)=><div className="mg-collection-row" key={row.key}>
-            <div className="mg-collection-row-heading"><strong>Khoản {index+1}</strong><button type="button" className="mg-icon-button" aria-label={`Bỏ khoản ${label.toLowerCase()} ${index+1}`} onClick={()=>setState({...state,rows:state.rows.filter(item=>item.key!==row.key)})}><Trash2 size={15}/></button></div>
+            <div className="mg-collection-row-heading"><strong>Khoản {index+1}{row.label ? ` · ${row.label}` : ''}</strong><button type="button" className="mg-icon-button" aria-label={`Bỏ khoản ${label.toLowerCase()} ${index+1}`} onClick={()=>setState({...state,rows:state.rows.filter(item=>item.key!==row.key)})}><Trash2 size={15}/></button></div>
             <div className="mg-form-grid mg-contract-grid-two">
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-amount`}>Số tiền đã nhận (VNĐ)</label><input id={`${purpose}-collection-${index}-amount`} inputMode="numeric" value={formatInput(row.amount)} onChange={event=>update(row.key,{amount:event.target.value.replace(/\D/g,'')})}/></div>
-              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-method`}>Hình thức</label><select id={`${purpose}-collection-${index}-method`} value={row.method} onChange={event=>update(row.key,{method:event.target.value as PaymentMethod,account:''})}>{PAYMENT_METHODS.map(method=><option key={method.value} value={method.value}>{method.value==='transfer' ? 'CK tài khoản cá nhân' : method.label}</option>)}</select></div>
+              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-method`}>Hình thức</label><select id={`${purpose}-collection-${index}-method`} value={row.method} onChange={event=>update(row.key,{method:event.target.value as PaymentMethod,account:''})}>{PAYMENT_METHODS.map(method=><option key={method.value} value={method.value}>{paymentMethodLabel(method.value)}</option>)}</select></div>
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-account`}>Tài khoản nhận</label><select id={`${purpose}-collection-${index}-account`} value={chosenAccount(row)?.id || ''} disabled={!accountsFor(row).length} onChange={event=>update(row.key,{account:event.target.value})}>{accountsFor(row).length ? accountsFor(row).map(account=><option key={account.id} value={account.id}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select></div>
               <DateTime24Field id={`${purpose}-collection-${index}-paid-at`} label="Thời điểm nhận" value={row.paid_at} onChange={value=>update(row.key,{paid_at:value})}/>
             </div>
