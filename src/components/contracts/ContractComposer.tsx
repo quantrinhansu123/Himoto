@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ChevronLeft, ChevronRight, LoaderCircle, Plus, Printer, Save, Search, Trash2, UserPlus } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
@@ -21,7 +21,7 @@ import { CONTRACT_FORM_SECTIONS, ContractSection, ContractSectionTabs } from './
 import { DateTime24Field } from './DateTime24Field';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
-import { addRentalMonths, billingInterval, createInstallmentPlan, installmentSchedule, isOwnershipStore, OWNERSHIP_TERMS, ownershipTerm, rentalPeriodCount, type OwnershipTerm } from '@/lib/management/contract-billing';
+import { billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } from '@/lib/management/contract-billing';
 
 type LookupState = 'idle' | 'loading' | 'found' | 'matches' | 'missing' | 'error';
 function customerStatusLabel(status?: string) {
@@ -61,7 +61,6 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [lookupState, setLookupState] = useState<LookupState>(row && draft.customer_id && draft.customer.name.trim() ? 'found' : 'idle');
   const [status, setStatus] = useState(row?.status || 'pending');
   const [rentalType, setRentalType] = useState(String(row?.rental_type || 'daily'));
-  const rentalTypePicked = useRef(false);
   const [notes, setNotes] = useState(String(row?.notes || ''));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -152,27 +151,21 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   function changeRentalStart(value: string) {
     if (!autoReturn) setRentalDays(rentalDayCount(value,draft.end_date));
     setDraft(previous=>{
-      const term = previous.ownership_term_months;
-      const end = rentalType === 'ownership' && term && term !== 'custom' ? addRentalMonths(value,Number(term)) : autoReturn ? addRentalDays(value,rentalDays) : '';
+      const end = autoReturn ? addRentalDays(value,rentalDays) : '';
       return {...previous,start_date:value,...(end ? {end_date:end} : {})};
     });
     setErrors(previous=>({...previous,start_date:'',end_date:'',rental_days:''})); setSaveError('');
   }
   function changeRentalEnd(value: string) {
     setAutoReturn(false); setRentalDays(rentalDayCount(draft.start_date,value));
-    setDraft(previous=>({...previous,end_date:value,...(rentalType === 'ownership' ? {ownership_term_months:ownershipTerm(previous.start_date,value)} : {})}));
+    setDraft(previous=>({...previous,end_date:value}));
     setSaveError('');setErrors(previous=>({...previous,end_date:''}));
     setErrors(previous=>({...previous,rental_days:''}));
-  }
-  function changeOwnershipTerm(term: OwnershipTerm) {
-    setAutoReturn(false);
-    setDraft(previous=>({...previous,ownership_term_months:term,...(term !== 'custom' && addRentalMonths(previous.start_date,Number(term)) ? {end_date:addRentalMonths(previous.start_date,Number(term))} : {})}));
-    setErrors(previous=>({...previous,end_date:''}));setSaveError('');
   }
   function changeRentalDays(value: string) {
     setRentalDays(value); setAutoReturn(true);
     const end = addRentalDays(draft.start_date,value);
-    if (end) setDraft(previous=>({...previous,end_date:end,...(rentalType === 'ownership' ? {ownership_term_months:ownershipTerm(previous.start_date,end)} : {})}));
+    if (end) setDraft(previous=>({...previous,end_date:end}));
     setErrors(previous=>({...previous,rental_days:value && !end ? 'Nhập số ngày nguyên lớn hơn 0 và ngày thuê hợp lệ.' : ''}));
   }
   function moneyField(key: 'deposit_amount' | 'unit_price' | 'total_amount', label: string, readOnly = false) {
@@ -275,36 +268,26 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const monthlyPackage = draft.package_name === 'Theo tháng';
   const ownership = rentalType === 'ownership';
   const requirements = documentRequirements(draft.document_requirements);
-  useEffect(()=>{if (ownership) setRentalDays(rentalDayCount(draft.start_date,draft.end_date));},[ownership,draft.start_date,draft.end_date]);
-  const ownershipPlan = useMemo(() => ownership ? createInstallmentPlan(draft.start_date, draft.end_date, draft.package_name, Number(draft.unit_price), draft.custom_installments) : null,
-    [ownership, draft.start_date, draft.end_date, draft.package_name, draft.unit_price, draft.custom_installments]);
-  const ownershipPeriods = ownershipPlan ? installmentSchedule(ownershipPlan) : [];
   const otherFees = chargeTotal(draft.extra_charges) ?? 0;
   useEffect(() => {
-    if (row && row.status !== 'draft' || rentalTypePicked.current || ownership) return;
-    if (isOwnershipStore(dataset?.stores.find(store => String(store.id) === staffStoreId)?.name)) {
-      setRentalType('ownership'); setDraft(previous => ({ ...previous, ownership: true, package_name: 'Theo tháng' }));
-    }
-  }, [dataset?.stores, staffStoreId, row, ownership]);
-  useEffect(() => {
-    if (ownership || draft.package_name === 'Tùy chọn') return;
+    if (draft.package_name === 'Tùy chọn') return;
     const rate = monthlyPackage ? pricingVehicle?.monthly_price : draft.package_name === 'Theo tuần' && pricingVehicle?.daily_price != null ? Number(pricingVehicle.daily_price) * 7 : pricingVehicle?.daily_price;
     if (livePricing.current && String(pricingVehicle?.id) === livePricing.current.vehicle) return;
     if (pricingVehicle) {
       const nextRate = rate == null || !Number.isFinite(Number(rate)) ? '' : String(rate);
       setDraft(previous => previous.unit_price === nextRate ? previous : { ...previous, unit_price: nextRate });
     }
-  }, [pricingVehicle, monthlyPackage, draft.package_name, ownership]);
+  }, [pricingVehicle, monthlyPackage, draft.package_name]);
   useEffect(() => {
     const live = livePricing.current;
     if (live && live.start === draft.start_date && live.end === draft.end_date && live.unit === draft.unit_price) return;
     const interval = billingInterval(draft.package_name);
-    const units = ownership ? ownershipPlan ? 1 : 0 : interval ? rentalPeriodCount(draft.start_date, draft.end_date, interval) : 0;
+    const units = interval ? rentalPeriodCount(draft.start_date, draft.end_date, interval) : 0;
     if (units && draft.unit_price && Number.isSafeInteger(Number(draft.unit_price))) {
-      const total = String((ownership ? 1 : units) * Number(draft.unit_price)+otherFees);
+      const total = String(units * Number(draft.unit_price)+otherFees);
       setDraft(previous => previous.total_amount === total && Boolean(previous.ownership) === ownership ? previous : { ...previous, ownership, total_amount: total });
     }
-  }, [draft.start_date, draft.end_date, draft.unit_price, draft.package_name, draft.custom_installments, ownership, otherFees, ownershipPlan]);
+  }, [draft.start_date, draft.end_date, draft.unit_price, draft.package_name, ownership, otherFees]);
   function changeCharges(next: ContractCharge[]) {
     setDraft(previous=>({...previous,extra_charges:next,total_amount:String(Math.max((Number(previous.total_amount)||0)-(chargeTotal(previous.extra_charges)||0),0)+(chargeTotal(next)||0))}));
     setSaveError('');setErrors(previous=>Object.fromEntries(Object.entries(previous).filter(([key])=>!key.startsWith('charge_') && key!=='extra_charges')));
@@ -375,10 +358,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
           <ContractSectionTabs prefix="contract-composer" active={section} onChange={setSection} />
           {panel('contract', 'Thông tin hợp đồng & Pháp lý', <>
             <div className="mg-form-grid mg-contract-grid-three">
-              <div className="mg-field"><label htmlFor="contract-record-type">Loại hợp đồng</label><select id="contract-record-type" value={rentalType} onChange={event => { const next = event.target.value; rentalTypePicked.current = true; setRentalType(next); setDraft(previous => ({ ...previous, ownership: next === 'ownership', package_name: ['monthly', 'ownership'].includes(next) ? 'Theo tháng' : 'Theo ngày' })); }}>{CONTRACT_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+              <div className="mg-field"><label htmlFor="contract-record-type">Loại hợp đồng</label><select id="contract-record-type" value={rentalType} onChange={event => { const next = event.target.value; setRentalType(next); setDraft(previous => ({ ...previous, ownership: next === 'ownership', ...(next === 'ownership' ? {tls_staff_id:''} : {package_name:next === 'monthly' ? 'Theo tháng' : 'Theo ngày'}) })); }}>{CONTRACT_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
               {field('signed_on', 'Ngày ký hợp đồng', 'date', !reserving)}
               {field('contract_number', 'Mã hợp đồng / Số HĐ giấy')}
-              {ownership && <div className="mg-field"><label htmlFor="contract-ownership-term">Thời hạn thuê sở hữu</label><select id="contract-ownership-term" value={draft.ownership_term_months || ownershipTerm(draft.start_date,draft.end_date)} onChange={event=>changeOwnershipTerm(event.target.value as OwnershipTerm)}>{OWNERSHIP_TERMS.map(term=><option key={term.value} value={term.value}>{term.label}</option>)}</select><small>Chọn 6, 12 hoặc 24 tháng để tính ngày kết thúc từ ngày bắt đầu thuê.</small></div>}
+              {ownership && <div className="mg-field"><label htmlFor="contract-ownership-term">Phân loại thuê sở hữu</label><select id="contract-ownership-term" value={draft.ownership_term_months || 'custom'} onChange={event=>change('ownership_term_months',event.target.value as ContractDraft['ownership_term_months'])}>{OWNERSHIP_TERMS.map(term=><option key={term.value} value={term.value}>{term.label}</option>)}</select></div>}
             </div>
             <div className="mg-form-grid mg-contract-grid-two mg-contract-subsection">
               <div className="mg-field"><label htmlFor="contract-created-on">Ngày tạo hợp đồng</label><input id="contract-created-on" type="date" value={draft.created_on} onChange={event => change('created_on', event.target.value)} /><small>Gợi ý hôm nay, có thể chọn ngày khác.</small></div>
@@ -389,7 +372,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               </select><small>Cơ sở ghi nhận doanh thu hợp đồng, gợi ý theo hồ sơ khách.</small>{errors.store_id && <p className="mg-field-error">{errors.store_id}</p>}</div>
             </div>
             <div className="mg-form-grid mg-contract-grid-two mg-contract-subsection">
-              {(['sales_staff_id','tls_staff_id'] as const).map(key=><div className="mg-field" key={key}><label htmlFor={`contract-${key}`}>{key === 'sales_staff_id' ? 'NVKD ghi nhận doanh số' : 'Nhân viên TLS giới thiệu khách'}</label><select id={`contract-${key}`} value={draft[key] || ''} onChange={event=>change(key,event.target.value)}><option value="">Chưa phân công</option>{dataset?.staff.filter(person=>staffIsAvailable(person) && staffRoles(person.position).includes(key === 'sales_staff_id' ? 'NVKD' : 'TLS')).map(person=><option key={person.id} value={person.id}>{person.name} · {person.code}</option>)}</select><small>{key === 'sales_staff_id' ? 'Tiền thuê thực thu của mọi khách, gồm gia hạn; không gồm cọc.' : 'Tiền thuê HĐ mở mới đầu tiên; sở hữu tính tổng lịch thuê. Không tính khách quay lại và gia hạn.'}</small></div>)}
+              {(['sales_staff_id','tls_staff_id'] as const).filter(key=>!ownership || key !== 'tls_staff_id').map(key=><div className="mg-field" key={key}><label htmlFor={`contract-${key}`}>{key === 'sales_staff_id' ? 'NVKD ghi nhận doanh số' : 'Nhân viên TLS giới thiệu khách'}</label><select id={`contract-${key}`} value={draft[key] || ''} onChange={event=>change(key,event.target.value)}><option value="">Chưa phân công</option>{dataset?.staff.filter(person=>staffIsAvailable(person) && staffRoles(person.position).includes(key === 'sales_staff_id' ? 'NVKD' : 'TLS')).map(person=><option key={person.id} value={person.id}>{person.name} · {person.code}</option>)}</select><small>{key === 'sales_staff_id' ? 'Tiền thuê thực thu của mọi khách, gồm gia hạn; không gồm cọc.' : 'Tiền thuê HĐ mở mới đầu tiên. Không tính sở hữu, khách quay lại và gia hạn.'}</small></div>)}
               {attributionError && <p className="mg-field-error" role="alert">{attributionError}</p>}
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
@@ -461,24 +444,11 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               {moneyField('deposit_amount', 'Số tiền đặt cọc (VNĐ)')}{paymentMethodField('deposit_payment_method', 'Hình thức dự kiến nhận cọc')}
             </div></div>}
             <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3><div className="mg-form-grid mg-contract-grid-two">
-              <div className="mg-field"><label htmlFor="contract-package_name">{ownership ? 'Kỳ đóng tiền' : 'Gói thuê'}</label><select id="contract-package_name" value={draft.package_name} onChange={event => { const next = event.target.value; change('package_name', next); if (!ownership) setRentalType(next === 'Theo tháng' ? 'monthly' : 'daily'); }}><option value="Theo ngày">Theo ngày</option><option value="Theo tuần">Theo tuần</option><option value="Theo tháng">Theo tháng</option>{ownership && <option value="Tùy chọn">Tùy chọn ngày hẹn và số tiền</option>}</select></div>
-              {moneyField('unit_price', draft.package_name === 'Tùy chọn' ? 'Số tiền thuê thu lần đầu (VNĐ)' : 'Đơn giá áp dụng (VNĐ)')}
-              <div className="mg-field"><label htmlFor="contract-rental-base">{ownership ? 'Tiền thuê kỳ đầu (VNĐ)' : 'Tiền thuê xe (VNĐ)'}</label><input id="contract-rental-base" readOnly value={formatMoneyInput(String(Math.max((Number(draft.total_amount)||0)-otherFees,0)))}/></div>
+              <div className="mg-field"><label htmlFor="contract-package_name">Gói thuê</label><select id="contract-package_name" value={draft.package_name} onChange={event => { const next = event.target.value; change('package_name', next); if (!ownership) setRentalType(next === 'Theo tháng' ? 'monthly' : 'daily'); }}><option value="Theo ngày">Theo ngày</option><option value="Theo tuần">Theo tuần</option><option value="Theo tháng">Theo tháng</option></select></div>
+              {moneyField('unit_price', 'Đơn giá áp dụng (VNĐ)')}
+              <div className="mg-field"><label htmlFor="contract-rental-base">Tiền thuê xe (VNĐ)</label><input id="contract-rental-base" readOnly value={formatMoneyInput(String(Math.max((Number(draft.total_amount)||0)-otherFees,0)))}/></div>
               {paymentMethodField('payment_method', 'Hình thức dự kiến thu thuê/phí')}
-            </div>{ownership && <div className="mg-composer-hint">
-              <p>Thuê sở hữu đóng theo kỳ. Khi lập hợp đồng chỉ tính tiền cọc, kỳ đầu và phí khác.</p>
-              {ownershipPlan ? <p>{ownershipPeriods.length} kỳ · Tiền thuê theo lịch: {ownershipPeriods.reduce((sum, period) => sum + period.amount, 0).toLocaleString('vi-VN')} đ (cọc riêng). Kỳ tiếp theo: {ownershipPeriods[1]?.due_at.replace('T', ' ') || 'Không còn kỳ tiếp theo'}. Các kỳ chưa đến hạn chưa tính vào công nợ.</p>
-                : <p>Nhập thời hạn hợp lệ và đơn giá kỳ để lập lịch đóng tiền.</p>}
-            </div>}</div>
-            {ownership && draft.package_name === 'Tùy chọn' && <div className="mg-contract-cost-section"><h3>Lịch đóng tiền sau khoản đầu tiên</h3>
-              <p className="mg-composer-hint">Kê ngày hẹn tăng dần và số tiền từng lần, trước ngày hết hạn hợp đồng. Tiền thuê lần đầu đã kê ở trên.</p>
-              {(draft.custom_installments || []).map((item, index) => <div className="mg-form-grid mg-contract-grid-two" key={index}>
-                <DateTime24Field id={`ownership-installment-${index}-due`} label={`Ngày hẹn lần ${index + 2}`} value={item.due_at} onChange={value => change('custom_installments', (draft.custom_installments || []).map((line, i) => i === index ? { ...line, due_at: value } : line))} />
-                <div className="mg-field"><label htmlFor={`ownership-installment-${index}-amount`}>Số tiền lần {index + 2} (VNĐ)</label><input id={`ownership-installment-${index}-amount`} inputMode="numeric" value={formatMoneyInput(item.amount)} onChange={event => change('custom_installments', (draft.custom_installments || []).map((line, i) => i === index ? { ...line, amount: event.target.value.replace(/\D/g, '') } : line))} /></div>
-                <button className="mg-button" type="button" onClick={() => change('custom_installments', (draft.custom_installments || []).filter((_, i) => i !== index))}><Trash2 size={16} />Bỏ lần {index + 2}</button>
-              </div>)}
-              <button className="mg-button" type="button" onClick={() => change('custom_installments', [...(draft.custom_installments || []), { due_at: '', amount: '' }])}><Plus size={16} />Thêm ngày hẹn đóng tiền</button>
-            </div>}
+            </div></div>
             <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng</h3>
               {(draft.extra_charges || []).map((item,index)=><div className="mg-extra-charge-row" key={index}>
                 <div className="mg-field"><label htmlFor={`contract-charge-${index}-name`}>Tên khoản phí {index+1}</label><input id={`contract-charge-${index}-name`} value={item.name} maxLength={100} placeholder="Ví dụ: Phí ship" aria-invalid={Boolean(errors[`charge_${index}_name`])} onChange={event=>changeCharges((draft.extra_charges || []).map((row,i)=>i===index ? {...row,name:event.target.value} : row))}/>{errors[`charge_${index}_name`] && <p className="mg-field-error">{errors[`charge_${index}_name`]}</p>}</div>
@@ -489,7 +459,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               {errors.extra_charges && <p className="mg-field-error">{errors.extra_charges}</p>}
             </div>
             <div className="mg-form-grid mg-contract-grid-two">
-              {moneyField('total_amount', ownership ? 'Tiền thuê kỳ đầu và phí khác (VNĐ)' : 'Tổng tiền thuê và phí khác (VNĐ)', true)}
+              {moneyField('total_amount', 'Tổng tiền thuê và phí khác (VNĐ)', true)}
               <div className="mg-field"><label htmlFor="contract-amount-due">Tổng cần thu gồm cọc (VNĐ)</label><input id="contract-amount-due" readOnly value={formatMoneyInput(String((Number(draft.deposit_amount)||0)+(Number(draft.total_amount)||0)))}/><small>Gồm cọc + tiền thuê + phí khác. Đây là số cần thu, chưa phải tiền đã nhận.</small></div>
             </div>
             <p className="mg-composer-hint">Bấm Lưu chính thức để chia số tiền đã nhận vào từng tài khoản/tiền mặt. Có thể ghi nhận cọc trước, thu nhiều lần hoặc để lại phần chưa thu.</p>

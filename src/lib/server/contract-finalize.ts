@@ -4,7 +4,6 @@ import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, paymentAccounts } from '@/lib/mana
 import type { FinalizeInput, FinalizeReceipt, FinalizeCollection, FinalizeResult } from '@/lib/management/contract-finalize';
 import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { readPaymentContext } from './contract-payments';
-import { addRentalMonths, createInstallmentPlan, type CustomInstallment } from '@/lib/management/contract-billing';
 import { staffRoles } from '@/lib/management/staff-positions';
 
 type Database = Pick<PoolClient, 'query'>;
@@ -101,9 +100,9 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (otherFees === null || Object.keys(chargeErrors(draft.extra_charges as ContractCharge[] | undefined,true)).length || (total !== null && otherFees > total)) throw new ContractFinalizeError('Kiểm tra tên, số tiền và tổng các khoản phí khác.',409);
   if (total === null || deposit === null || unitPrice === null || total + deposit > MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Số tiền thuê / tiền cọc của bản nháp không hợp lệ.', 409);
   const ownership = composer.rental_type === 'ownership';
-  if (ownership && draft.ownership_term_months !== undefined && (!['6','12','24','custom'].includes(String(draft.ownership_term_months)) || draft.ownership_term_months !== 'custom' && addRentalMonths(start,Number(draft.ownership_term_months)) !== end)) throw new ContractFinalizeError('Ngày kết thúc chưa khớp thời hạn sở hữu 6, 12 hoặc 24 tháng đã chọn.',409);
-  const installmentPlan = ownership ? createInstallmentPlan(start, end, String(draft.package_name), unitPrice, draft.custom_installments as CustomInstallment[] | undefined) : null;
-  if (ownership && (!installmentPlan || total !== unitPrice + otherFees)) throw new ContractFinalizeError('Thuê sở hữu chỉ tính một kỳ thuê và phí khác khi lập hợp đồng. Kiểm tra đơn giá, kỳ đóng tiền và thời hạn, rồi lưu nháp lại.', 409);
+  if (draft.ownership_term_months !== undefined && !['6','12','24','custom'].includes(String(draft.ownership_term_months))) throw new ContractFinalizeError('Phân loại thuê sở hữu chưa hợp lệ.',409);
+  // Ownership currently follows ordinary rental operations; the term is a label.
+  delete composer.installment_plan;
   if (ownership || draft.ownership !== undefined) draft.ownership = ownership;
   if (!('receipts' in input)) {
     if (deposit === 0 && input.deposit) throw new ContractFinalizeError('Bản nháp không có tiền cọc để ghi phiếu thu.');
@@ -214,7 +213,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
       contract_issued_at=now() AT TIME ZONE 'Asia/Ho_Chi_Minh', rent_at=$3, return_at=$4, total=$5, total_rental_fees=$6, first_deposit_amount=$7,
       pid=$8, created_without_collect_deposit=$9, created_without_collect_rental_fees=$10, draft_payload=$11, updated_at=now()
     WHERE id=$1`, [id, code, startAt, endAt, String(total), rentalBase, deposit || null, paid, oldDepositPaid+depositCollected<deposit, oldRentalPaid+rentalCollected<total,
-    JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized, ...(installmentPlan ? {installment_plan: installmentPlan} : {}), ...(reservation ? {reservation:{at:finalized.at,actor_id:actorId,applies_to:'rental'}} : {}) } }), reservation ? 'deposit_contract' : 'renting']);
+    JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized, ...(reservation ? {reservation:{at:finalized.at,actor_id:actorId,applies_to:'rental'}} : {}) } }), reservation ? 'deposit_contract' : 'renting']);
   if (!reservation) await client.query(`UPDATE himoto.vehicles SET status='using', updated_at=now() WHERE id = ANY($1::bigint[])`, [vehicleIds]);
   return { order_id: id, code, total_amount: total, deposit_amount: deposit, paid_amount: paid, transaction_ids: transactionIds, status:reservation ? 'deposit_contract' : 'renting' };
 }

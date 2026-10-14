@@ -1,7 +1,6 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { StaffSalesReport, StaffSalesRow } from '@/lib/management/staff-sales';
-import { installmentSchedule, parseInstallmentPlan } from '@/lib/management/contract-billing';
 
 export class StaffSalesError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -12,6 +11,9 @@ const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number
 // initial fees first when collecting combined rent/fee receipts, as billing does.
 const SALES_CTE = `WITH eligible AS (
   SELECT o.*, row_number() OVER(PARTITION BY o.customer_id ORDER BY COALESCE(o.rent_at,o.created_at),o.id) AS rental_number,
+    (COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type,'')='ownership'
+      OR COALESCE(o.draft_payload #>> '{management_composer,draft,ownership}','false')='true'
+      OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL) AS ownership,
     COALESCE(f.amount,0) AS initial_fees,
     COALESCE(o.total_rental_fees,
       CASE WHEN o.draft_payload #>> '{management_composer,draft,total_amount}' ~ '^[0-9]{1,13}$'
@@ -39,7 +41,6 @@ const SALES_CTE = `WITH eligible AS (
 ), attributed AS (
   SELECT o.id,o.customer_id,o.rental_number,a.department,a.staff_id,a.saved_name,
     CASE WHEN a.department='TLS' THEN o.original_rent ELSE COALESCE(r.revenue,0) END AS revenue,
-    CASE WHEN a.department='TLS' THEN o.draft_payload #> '{management_composer,installment_plan}' END AS installment_plan,
     (COALESCE(o.rent_at,o.created_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date AS started_in_range
   FROM eligible o LEFT JOIN receipts r ON r.order_id=o.id
   CROSS JOIN LATERAL (SELECT
@@ -50,11 +51,9 @@ const SALES_CTE = `WITH eligible AS (
     ('TLS',CASE WHEN ids.tls_id ~ '^[1-9][0-9]{0,14}$' THEN ids.tls_id::bigint END,COALESCE(o.draft_payload #>> '{management_composer,profile_attribution,TLS,name}',o.draft_payload #>> '{management_composer,sales_attribution,TLS,name}'))
   ) a(department,staff_id,saved_name)
   WHERE ($3::bigint IS NULL OR o.store_id=$3) AND a.staff_id IS NOT NULL
-    AND (a.department='NVKD' OR o.rental_number=1 AND (COALESCE(o.rent_at,o.created_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date)
+    AND (a.department='NVKD' OR NOT o.ownership AND o.rental_number=1 AND (COALESCE(o.rent_at,o.created_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date)
 )
 `;
-// Keep rows per contract so ownership uses the same validated calendar/custom
-// schedule as debt collection, without changing the amount payable at signing.
 export const STAFF_SALES_SQL = `${SALES_CTE}
 SELECT a.*,COALESCE(NULLIF(a.saved_name,''),s.full_name,'Nhân viên #' || a.staff_id::text) AS name
 FROM attributed a LEFT JOIN himoto.staff_profiles s ON s.id=a.staff_id
@@ -68,14 +67,7 @@ export async function staffSales(client: Pick<PoolClient, 'query'>, from: string
   for (const item of result.rows) {
     const key = `${item.department}:${item.staff_id}`;
     const entry = grouped.get(key) ?? { row: { staff_id: Number(item.staff_id), department: item.department, name: String(item.name), contracts: 0, customers: 0, new_customers: 0, revenue: 0 }, customers: new Set<number>(), newCustomers: new Set<number>() };
-    let revenue = Number(item.revenue);
-    if (item.department === 'TLS' && item.installment_plan) {
-      const plan = parseInstallmentPlan(item.installment_plan);
-      if (!plan) throw new StaffSalesError('Lịch thuê sở hữu chưa hợp lệ; cần đối chiếu doanh số TLS.', 409);
-      // A later vehicle return must not rewrite the value of the original sale.
-      revenue = installmentSchedule({ ...plan, stopped_at: undefined }).reduce((sum, period) => sum + period.amount, 0);
-    }
-    entry.row.revenue += revenue; entry.row.contracts += 1; entry.customers.add(Number(item.customer_id));
+    entry.row.revenue += Number(item.revenue); entry.row.contracts += 1; entry.customers.add(Number(item.customer_id));
     if (Number(item.rental_number) === 1 && item.started_in_range) entry.newCustomers.add(Number(item.customer_id));
     grouped.set(key, entry);
   }

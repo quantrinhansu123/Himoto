@@ -141,7 +141,7 @@ Kết quả: [luồng mới trên Chromium](qa/contract-reservations/chromium-re
 Trong hợp đồng chọn riêng **NVKD ghi nhận doanh số** và **Nhân viên TLS giới thiệu khách**, bên cạnh nguồn khách/cơ sở ghi nhận doanh thu. Báo cáo **Doanh số nhân viên** lọc ngày, cơ sở, bộ phận và xuất CSV:
 
 - **NVKD:** tiền thuê thực thu theo ngày phiếu thu đã duyệt, gồm gia hạn, mọi khách; loại cọc và phí khác có phân loại.
-- **TLS:** tiền thuê gốc trên hợp đồng mở mới đầu tiên, ghi nhận trong kỳ bắt đầu thuê; không phụ thuộc đã thu, không tính khách quay lại/gia hạn. Thuê sở hữu dùng toàn bộ lịch đã ký: 12 kỳ × 3 triệu = 36 triệu, không thay đổi khoản thu lúc ký (cọc + kỳ đầu).
+- **TLS:** tiền thuê gốc trên hợp đồng mở mới đầu tiên, ghi nhận trong kỳ bắt đầu thuê; không phụ thuộc đã thu, không tính thuê sở hữu, khách quay lại hoặc gia hạn.
 - Lần thuê đầu xét toàn hệ thống trước khi lọc ngày/cơ sở; bỏ nháp, giữ xe và hủy. Phí ban đầu có trong snapshot được trừ khỏi các phiếu thu thuê/phí theo thứ tự thu, không trừ lặp khi đổi tháng báo cáo. Hợp đồng cũ thiếu phân công nhân viên cần gán lại; không suy đoán từ tên nguồn khách.
 
 **Lưu chính thức** dùng thông tin vận hành: khách/điện thoại, cửa hàng, xe, thời gian và tiền. Người thân, CCCD, địa chỉ, đại diện có thể bổ sung sau. **Yêu cầu hồ sơ khi in hợp đồng** cho chọn các trường cần hoàn tất và số người thân 0/1/2; lựa chọn lưu riêng theo từng hợp đồng. Không hạ kiểm tra tiền, tài khoản hoặc xe khi thiếu hồ sơ.
@@ -157,4 +157,14 @@ node scripts/check-contract-billing-db.cjs
 
 Kiểm tra giao diện bằng `scripts/check-operations-ui.py` với `--browser chromium` hoặc `webkit`, cookie QA cục bộ và toàn bộ API nghiệp vụ được mô phỏng. Cookie/ảnh QA nằm trong `.backups/operations`, không đưa token lên Git.
 
-Kết quả: sáu nhóm nghiệp vụ/doanh số/hồ sơ trên PostgreSQL TEMP; năm nhóm phát hành/thu kỳ sở hữu; sáu nhóm UI Chromium và sáu WebKit; mười nhóm form/mẫu in/PDF. Autofill/nháp, lint, typecheck và production build qua. Không ghi tiền hoặc đổi xe trong dữ liệu thật; chưa kiểm tra iPhone/Safari thật.
+Kết quả ở lần kiểm tra ban đầu: sáu nhóm nghiệp vụ/doanh số/hồ sơ trên PostgreSQL TEMP; sáu nhóm UI Chromium và sáu WebKit; mười nhóm form/mẫu in/PDF. Autofill/nháp, lint, typecheck và production build qua. Không ghi tiền hoặc đổi xe trong dữ liệu thật; chưa kiểm tra iPhone/Safari thật.
+
+### Thuê sở hữu tạm xử lý như HĐ thường — yêu cầu cập nhật 2026-10-14
+
+**Phân loại thuê sở hữu** có nhãn 6/12/24 tháng và Chưa phân loại. Chị chọn thủ công; nhãn không suy ra từ ngày thuê/trả, không đổi ngày trả, giá thuê, tiền cọc hoặc công nợ. Có thể đổi nhãn HĐ đã phát hành bằng **Lưu hồ sơ hợp đồng**.
+
+Thuê sở hữu dùng gói/giá/thời gian, thu tiền và gia hạn như HĐ thường. Không tạo lịch trả góp, cộng nợ tự động, hoặc in phụ lục lịch đóng tiền. TLS loại toàn bộ HĐ sở hữu (kể cả nhãn và lịch cũ); NVKD ghi nhận tiền thuê thực thu theo ngày phiếu thu, bao gồm gia hạn và loại cọc. Báo cáo mặc định theo tháng hiện tại.
+
+Đã kiểm tra dữ liệu hiện có: không có HĐ chưa xóa lưu lịch trả góp tự động, nên không chạy chuyển dữ liệu hoặc sửa phiếu thu thật. Kiểm thử TEMP xác nhận HĐ thuê một tháng 3 triệu, cọc 3 triệu, nhãn 12 tháng vẫn giữ nguyên tiền/ngày; qua ba tháng không phát sinh nợ mới, gia hạn và chống thu trùng hoạt động như HĐ thường.
+
+Kiểm tra cập nhật: sáu nhóm doanh số/hồ sơ và ba nhóm phát hành/gia hạn trên PostgreSQL TEMP; bảy nhóm UI Chromium và bảy WebKit ở 320/375px. Lint, typecheck, build và kiểm tra autofill/phát hành qua.

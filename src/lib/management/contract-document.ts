@@ -3,7 +3,7 @@ import { VEHICLE_TYPES } from './config';
 import { validIdentityIssueDate } from './customer-identity';
 import { addRentalDays, vietnamRentalTime } from './rental-time';
 import { chargeErrors, chargeTotal, type ContractCharge, type ContractCollection } from './contract-charges';
-import { addRentalMonths, billingUnitLabel, createInstallmentPlan, installmentSchedule, type CustomInstallment, type OwnershipTerm } from './contract-billing';
+import { billingUnitLabel, type CustomInstallment, type OwnershipTerm } from './contract-billing';
 import { documentRequirements, type ContractDocumentRequirements } from './contract-requirements';
 
 export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'driver_license_number', 'driver_license_issued_on', 'birthday', 'relatives_text', 'warning_note'] as const;
@@ -151,7 +151,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     start_date: startDate, end_date: row ? dateTimeInput(row.end_date) : addRentalDays(startDate, '1'),
     unit_price: value(vehicle?.daily_price), total_amount: value(row?.total_amount), paid_amount: row ? value(row.paid_amount) : '0',
     deposit_amount: value(row?.deposit_amount), package_name: value(row?.package_name) || (['monthly', 'ownership'].includes(String(row?.rental_type)) ? 'Theo tháng' : 'Theo ngày'),
-    ...(row?.rental_type === 'ownership' ? { ownership: true } : {}),
+    ...(row?.rental_type === 'ownership' ? { ownership: true, ownership_term_months: value(row.ownership_term_months) as OwnershipTerm || 'custom' } : {}),
     payment_method: collectionMethods(collections, 'rental', value(row?.payment_method)), deposit_payment_method: collectionMethods(collections, 'deposit', value(row?.deposit_payment_method)), collateral_description: value(row?.collateral_description),
     customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date),
     created_on: dateInput(row?.created_at) || nowDate(), relatives,
@@ -221,10 +221,6 @@ export function validateContractDraft(draft: ContractDraft, dataset: ManagementD
     const amount = draft[key];
     if (amount && (!/^\d+$/.test(amount) || !Number.isSafeInteger(Number(amount)))) errors[key] = 'Nhập số tiền nguyên không âm.';
   }
-  if (draft.ownership && !createInstallmentPlan(draft.start_date, draft.end_date, draft.package_name, Number(draft.unit_price), draft.custom_installments)) {
-    errors.unit_price = 'Kiểm tra đơn giá kỳ và lịch đóng tiền: ngày hẹn tăng dần, trước ngày hết hạn, số tiền từng lần lớn hơn 0.';
-  }
-  if (draft.ownership && draft.ownership_term_months && draft.ownership_term_months !== 'custom' && addRentalMonths(draft.start_date, Number(draft.ownership_term_months)) !== draft.end_date) errors.end_date = 'Ngày kết thúc chưa khớp thời hạn sở hữu đã chọn.';
   return errors;
 }
 export function validateOperationalDraft(draft: ContractDraft,dataset: ManagementDataset,staff: ManagementRow[],source: 'demo'|'api') {
@@ -249,7 +245,6 @@ function timeParts(input: string) {
 const printedDate = (input: string) => input ? input.split('-').reverse().join('/') : '';
 export function buildContractDocument(draft: ContractDraft, store: ManagementRow, staff: ManagementRow) {
   const signed = timeParts(draft.signed_on);
-  const plan = draft.ownership ? createInstallmentPlan(draft.start_date, draft.end_date, draft.package_name, Number(draft.unit_price), draft.custom_installments) : null;
   const vehicles = draft.vehicles.map(vehicle => ({ ...vehicle, driver_license_issued_on: printedDate(vehicle.driver_license_issued_on),
     rent_at: `${printedDate(dateInput(draft.start_date))} ${draft.start_date.slice(11, 16)}`,
     return_at: `${printedDate(dateInput(draft.end_date))} ${draft.end_date.slice(11, 16)}` }));
@@ -270,12 +265,12 @@ export function buildContractDocument(draft: ContractDraft, store: ManagementRow
     rent_time: { start: timeParts(draft.start_date), end: timeParts(draft.end_date) },
     pricing: { unit_price_text: draft.unit_price ? `${money(draft.unit_price)} / ${billingUnitLabel(draft.package_name)}` : 'Theo bảng giá',
       paid_amount_formatted: money(draft.paid_amount), payment_method: draft.payment_method, payment_method_text: draft.paid_amount==='' ? 'Chưa có số liệu' : Number(draft.paid_amount)>0 ? draft.payment_method || '........................' : 'Chưa thu',
-      package_name: draft.package_name, calculation_text: `${draft.ownership ? 'Tiền thuê kỳ đầu' : 'Tổng phí thuê'}${chargeTotal(draft.extra_charges) ? ' và phí khác' : ''}: ${money(draft.total_amount)}`,
-      installment_text: plan ? `Thuê sở hữu: ${installmentSchedule(plan).length} kỳ${plan.interval === 'custom' ? ', ngày hẹn và số tiền theo lịch đã kê' : `, ${money(draft.unit_price)}/${billingUnitLabel(draft.package_name)}`}. Đóng theo kỳ; cọc ghi riêng.` : '' },
+      package_name: draft.package_name, calculation_text: `Tổng phí thuê${chargeTotal(draft.extra_charges) ? ' và phí khác' : ''}: ${money(draft.total_amount)}`,
+      installment_text: '' },
     deposit: { deposit_amount_formatted: money(draft.deposit_amount), paid_amount_formatted:draft.deposit_paid_amount===undefined ? '' : money(draft.deposit_paid_amount), collateral_description: draft.collateral_description || '........................', collateral_text: draft.collateral_description, payment_method: draft.deposit_payment_method, payment_method_text: draft.deposit_payment_method || '........................' },
     equipment: { total_hats: vehicles.reduce((sum, v) => sum + Number(v.borrow_hats), 0), total_raincoats: vehicles.reduce((sum, v) => sum + Number(v.borrow_raincoats), 0) },
     signers: { signer_a_name: staff.name, signer_b_name: draft.customer.name },
-    ownership_schedule: plan ? installmentSchedule(plan) : [],
+    ownership_schedule: [] as {number:number;due_at:string;amount:number}[],
     // Blank return receipt preserved from the template; this composer does not perform a return.
     return_confirmation: { return_hour: '', return_minute: '', signer_a_name: '', signer_b_name: '', refund_amount_formatted: '', additional_note: '' },
   };

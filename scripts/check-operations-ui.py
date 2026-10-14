@@ -48,11 +48,13 @@ def mock_api(route):
                       draft_payload=dict(management_composer=dict(version=1, **edits)))
         contracts[:] = [issued, record]
         route.fulfill(json=dict(status='success', data=record))
-    elif request.method == 'PATCH' and path == '/api/auth/order/car-rental/900/profile':
+    elif request.method == 'PATCH' and path in ['/api/auth/order/car-rental/900/profile', '/api/auth/order/car-rental/901/profile']:
         payload = request.post_data_json
         profiles.append(payload)
-        issued['draft_payload'] = dict(management_composer=dict(profile=payload['profile']))
-        issued['draft_revision'] = '3'
+        target = next(c for c in contracts if c['id'] == int(path.split('/')[-2]))
+        composer = target.setdefault('draft_payload', {}).setdefault('management_composer', {})
+        composer['profile'] = payload['profile']
+        target['draft_revision'] = '3'
         route.fulfill(json=dict(status='success', data=dict(revision='3')))
     elif request.method == 'POST' and path == '/api/auth/order/car-rental/901/finalize':
         collections.append(request.post_data_json)
@@ -70,7 +72,7 @@ def mock_api(route):
     elif path == '/api/auth/staff-sales':
         route.fulfill(json=dict(status='success', data=dict(rows=[
             dict(staff_id=10, name='NVKD QA', department='NVKD', contracts=2, customers=1, new_customers=1, revenue=3500000),
-            dict(staff_id=20, name='TLS QA', department='TLS', contracts=1, customers=1, new_customers=1, revenue=36000000)],
+            dict(staff_id=20, name='TLS QA', department='TLS', contracts=1, customers=1, new_customers=1, revenue=6000000)],
             unassigned_revenue=200000, unassigned_contracts=1)))
     elif path == '/api/auth/order/car-rental/901/payments':
         route.fulfill(json=dict(status='success', data=dict(id=901, code='NHAP-QA-901', status='draft', store_id=35, revision='2',
@@ -196,7 +198,7 @@ with sync_playwright() as p:
 
     go('/staff-sales')
     expect(page.locator('.mg-sales-cards li')).to_have_count(2)
-    expect(page.locator('.mg-sales-cards')).to_contain_text('36.000.000 đ')
+    expect(page.locator('.mg-sales-cards')).to_contain_text('6.000.000 đ')
     page.get_by_label('Bộ phận doanh số', exact=True).select_option('TLS')
     expect(page.locator('.mg-sales-cards li')).to_have_count(1)
     expect(page.locator('.mg-sales-cards')).to_contain_text('Tiền thuê HĐ mở mới đầu tiên')
@@ -218,6 +220,67 @@ with sync_playwright() as p:
     assert new_customers[-1]['id_card'] == '' and new_customers[-1]['address'] == ''
     checks.append('Quick contract can create a temporary customer with name/phone only and retain their linked ID')
     page.keyboard.press('Escape')
+    go('/contracts?action=new')
+    tab('Hợp đồng & pháp lý')
+    form.locator('#contract-record-type').select_option('ownership')
+    expect(form.locator('#contract-tls_staff_id')).to_have_count(0)
+    tab('Chi phí')
+    expect(form.locator('#contract-package_name')).to_have_value('Theo ngày')
+    form.locator('#contract-package_name').select_option('Theo tháng')
+    tab('Khách hàng')
+    form.locator('#contract-store').select_option('35')
+    form.locator('#contract-id-card').fill(customer['phone'])
+    expect(form.locator('#contract-customer-name')).to_have_value(customer['name'])
+    tab('Phương tiện')
+    form.locator('#contract-start_date').fill('2026-10-13')
+    form.get_by_label('Giờ thuê lúc (24h)', exact=True).select_option('09')
+    form.get_by_label('Phút thuê lúc', exact=True).select_option('00')
+    form.locator('#contract-end_date').fill('2026-11-13')
+    form.get_by_label('Giờ hẹn trả (24h)', exact=True).select_option('09')
+    form.get_by_label('Phút hẹn trả', exact=True).select_option('00')
+    form.locator('#contract-vehicle-0').click()
+    form.locator('#contract-vehicle-0-options-101').click()
+    tab('Chi phí')
+    form.locator('#contract-unit_price').fill('3000000')
+    form.locator('#contract-deposit_amount').fill('3000000')
+    expect(form.locator('#contract-package_name')).to_have_value('Theo tháng')
+    expect(form.locator('#contract-package_name option[value="Tùy chọn"]')).to_have_count(0)
+    expect(form.locator('#contract-total_amount')).to_have_value('3.000.000')
+    expect(form.locator('#contract-amount-due')).to_have_value('6.000.000')
+    for term in ['6', '12', '24']:
+        tab('Hợp đồng & pháp lý')
+        form.get_by_label('Phân loại thuê sở hữu', exact=True).select_option(term)
+        tab('Phương tiện')
+        expect(form.locator('#contract-end_date')).to_have_value('2026-11-13')
+        tab('Chi phí')
+        expect(form.locator('#contract-total_amount')).to_have_value('3.000.000')
+    assert form.get_by_text('Lịch đóng tiền sau khoản đầu tiên', exact=True).count() == 0
+    form.get_by_role('button', name='Lưu nháp', exact=True).click()
+    expect(form).not_to_be_visible()
+    expect(page).to_have_url(args.url + '/contracts/drafts')
+    assert saves[-1]['draft']['ownership_term_months'] == '24' and saves[-1]['draft']['tls_staff_id'] == ''
+    record = next(c for c in contracts if c['id'] == 901)
+    record.update(status='renting', rental_type='ownership', contract_number='OWN-QA-901', total_amount=3000000,
+                  paid_amount=3000000, start_date='2026-10-13T09:00:00+07:00', end_date='2026-11-13T09:00:00+07:00')
+    go('/contracts')
+    page.locator('.mg-mobile-record-card').filter(has_text='OWN-QA-901').locator('.mg-row-menu-trigger').click()
+    expect(page.get_by_role('menuitem', name='Gia hạn', exact=True)).to_be_visible()
+    page.get_by_role('menuitem', name='Điền và in hợp đồng', exact=True).click()
+    tab('Hợp đồng & pháp lý')
+    expect(form.get_by_label('Phân loại thuê sở hữu', exact=True)).to_have_value('24')
+    form.get_by_label('Phân loại thuê sở hữu', exact=True).select_option('6')
+    form.get_by_role('button', name='Lưu hồ sơ hợp đồng', exact=True).click()
+    expect(form).to_contain_text('Đã lưu hồ sơ')
+    assert profiles[-1]['profile']['ownership_term_months'] == '6'
+    assert 'end_date' not in profiles[-1]['profile'] and 'total_amount' not in profiles[-1]['profile']
+    page.keyboard.press('Escape')
+    go('/contracts')
+    page.locator('.mg-mobile-record-card').filter(has_text='OWN-QA-901').locator('.mg-row-menu-trigger').click()
+    page.get_by_role('menuitem', name='Điền và in hợp đồng', exact=True).click()
+    tab('Hợp đồng & pháp lý')
+    expect(form.get_by_label('Phân loại thuê sở hữu', exact=True)).to_have_value('6')
+    page.keyboard.press('Escape')
+    checks.append('Ownership 6/12/24 labels are manual and persist for issued contracts, without changing dates/money, offering schedules, or blocking ordinary renewal')
     page.set_viewport_size(dict(width=1440, height=1000))
     go('/login')
     expect(page).to_have_url(args.url + '/vehicles')

@@ -1,6 +1,6 @@
 import type { ContractDraft } from './contract-document';
-export type ContractProfile = Pick<ContractDraft,'customer'|'relatives'|'staff_id'|'staff_name'|'signed_on'|'authorization_date'|'collateral_description'|'document_requirements'|'sales_staff_id'|'tls_staff_id'>;
-export const PROFILE_KEYS = ['customer','relatives','staff_id','staff_name','signed_on','authorization_date','collateral_description','document_requirements','sales_staff_id','tls_staff_id'] as const;
+export type ContractProfile = Pick<ContractDraft,'customer'|'relatives'|'staff_id'|'staff_name'|'signed_on'|'authorization_date'|'collateral_description'|'document_requirements'|'sales_staff_id'|'tls_staff_id'|'ownership_term_months'>;
+export const PROFILE_KEYS = ['customer','relatives','staff_id','staff_name','signed_on','authorization_date','collateral_description','document_requirements','sales_staff_id','tls_staff_id','ownership_term_months'] as const;
 export function contractProfile(draft:ContractDraft):ContractProfile {
   return Object.fromEntries(PROFILE_KEYS.filter(key=>draft[key] !== undefined).map(key=>[key,draft[key]])) as unknown as ContractProfile;
 }

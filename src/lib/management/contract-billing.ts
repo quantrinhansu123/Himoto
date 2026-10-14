@@ -2,7 +2,7 @@ import type { ManagementRow } from './types';
 
 export type BillingInterval = 'day' | 'week' | 'month' | 'custom';
 export type OwnershipTerm = '6' | '12' | '24' | 'custom';
-export const OWNERSHIP_TERMS = [{value:'6',label:'6 tháng'}, {value:'12',label:'12 tháng'}, {value:'24',label:'24 tháng'}, {value:'custom',label:'Thời hạn khác'}];
+export const OWNERSHIP_TERMS = [{value:'custom',label:'Chưa phân loại'}, {value:'6',label:'6 tháng'}, {value:'12',label:'12 tháng'}, {value:'24',label:'24 tháng'}];
 export interface CustomInstallment { due_at: string; amount: string }
 export interface InstallmentPlan {
   version: 1; start: string; end: string; interval: BillingInterval; amount: number;

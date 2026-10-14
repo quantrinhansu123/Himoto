@@ -79,12 +79,12 @@ async function main(){
   assert.equal(billing.addRentalMonths('2024-01-31T10:30',1),'2024-02-29T10:30');
   assert.equal(billing.addRentalMonths('2026-01-31T10:30',1),'2026-02-28T10:30');
   assert.equal(billing.ownershipTerm(start,'2027-12-01T09:00'),'custom');
-  checks.push('ownership 6/12/24 month classification and suggested end dates use calendar months, including leap days and month ends');
+  checks.push('calendar month helpers retain month-end and leap-day behavior');
   const server=load(path.join(root,'lib/server/contract-finalize'));
   const client={query:async sql=>({rowCount:sql.includes('SELECT id, order_status') ? 1 : 0,rows:sql.includes('SELECT id, order_status') ? [{id:1,order_status:'draft',revision:'1',store_id:1,customer_id:1,
-    draft_payload:{management_composer:{rental_type:'ownership',draft:{start_date:start,end_date:end,package_name:'Theo tháng',unit_price:'3000000',total_amount:'39000000',deposit_amount:'3000000',vehicles:[{id:'1'}]}}}}] : []})};
-  await assert.rejects(()=>server.finalizeContractDraft(client,1,1,{revision:'1',receipts:[]}),/một kỳ thuê/);
-  checks.push('server rejects a stale/tampered 39m ownership draft before creating any vehicle line or receipt');
+    draft_payload:{management_composer:{rental_type:'ownership',draft:{start_date:start,end_date:end,package_name:'Theo tháng',unit_price:'3000000',total_amount:'3000000',deposit_amount:'3000000',ownership_term_months:'60',vehicles:[{id:'1'}]}}}}] : []})};
+  await assert.rejects(()=>server.finalizeContractDraft(client,1,1,{revision:'1',receipts:[]}),/Phân loại/);
+  checks.push('server rejects unsupported ownership labels before creating vehicle lines or receipts');
   console.log(JSON.stringify({passed:checks.length,checks},null,2));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
