@@ -22,9 +22,12 @@ import { CONTRACT_FORM_SECTIONS, ContractSection, ContractSectionTabs } from './
 import { DateTime24Field } from './DateTime24Field';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
-import { billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } from '@/lib/management/contract-billing';
+import { addRentalMonths, billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } from '@/lib/management/contract-billing';
 
 type LookupState = 'idle' | 'loading' | 'found' | 'matches' | 'missing' | 'error';
+function rentalTermMonths(rentalType: string) {
+  return Number(/^monthly_(\d+)$/.exec(rentalType)?.[1] || 0);
+}
 function customerStatusLabel(status?: string) {
   const value = String(status || '').toLowerCase();
   if (['blacklist', 'bad_debt', 'blocked'].includes(value)) return 'Cảnh báo: khách hàng bị chặn / có nợ xấu';
@@ -51,6 +54,9 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     }
     return initial;
   });
+  const [salesText, setSalesText] = useState<string | null>(null);
+  // NVKD mirrors "Nguồn khách" until the user picks or types an NVKD directly.
+  const salesFollowsSource = useRef(!draft.sales_staff_id);
   const reserving = canSaveDraft && Boolean(draft.reservation);
   const [rentalDays, setRentalDays] = useState(() => rentalDayCount(draft.start_date,draft.end_date));
   const [autoReturn, setAutoReturn] = useState(!row);
@@ -149,7 +155,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       ...(contractStaffStoreId(previous) !== storeId ? { staff_id: '', staff_name: '' } : {}) }));
     setErrors(previous => ({ ...previous, vehicle_store_id: '', staff_id: '', store_id: '' })); setSaveError('');
   }
+  function changeRentalType(next: string) {
+    const months = rentalTermMonths(next), end = months ? addRentalMonths(draft.start_date, months) : '';
+    setRentalType(next);
+    if (end) { setAutoReturn(false); setRentalDays(rentalDayCount(draft.start_date, end)); }
+    setDraft(previous => ({ ...previous, ownership: next === 'ownership', ...(end ? {end_date:end} : {}), ...(next === 'ownership' ? {tls_staff_id:''} : {package_name:next.startsWith('monthly') ? 'Theo tháng' : 'Theo ngày'}) }));
+    if (end) setErrors(previous=>({...previous,end_date:'',rental_days:''}));
+  }
   function changeRentalStart(value: string) {
+    const termEnd = rentalTermMonths(rentalType) ? addRentalMonths(value, rentalTermMonths(rentalType)) : '';
+    if (termEnd) { setRentalDays(rentalDayCount(value,termEnd)); setDraft(previous=>({...previous,start_date:value,end_date:termEnd})); setErrors(previous=>({...previous,start_date:'',end_date:'',rental_days:''})); setSaveError(''); return; }
     if (!autoReturn) setRentalDays(rentalDayCount(value,draft.end_date));
     setDraft(previous=>{
       const end = autoReturn ? addRentalDays(value,rentalDays) : '';
@@ -262,6 +277,26 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     }
   }
   const branchStaff = staffMatchesStore(staff, staffStoreId);
+  const salesStaff = (dataset?.staff || []).filter(person => staffIsAvailable(person) && staffRoles(person.position).includes('NVKD'));
+  const nameKey = (value: unknown) => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+  const salesOption = (person: ManagementRow) => salesStaff.filter(item => nameKey(item.name) === nameKey(person.name)).length > 1 ? `${person.name} · ${person.code}` : String(person.name || '');
+  const findSalesStaff = (text: string) => { const matches = nameKey(text) ? salesStaff.filter(person => nameKey(salesOption(person)) === nameKey(text)) : []; return matches.length === 1 ? matches[0] : undefined; };
+  const assignedSales = salesStaff.find(person => String(person.id) === draft.sales_staff_id);
+  const salesValue = salesText ?? (assignedSales ? salesOption(assignedSales) : '');
+  const salesUnmatched = Boolean(salesText?.trim()) && !draft.sales_staff_id;
+  function changeSource(value: string) {
+    change('customer_source', value);
+    if (!salesFollowsSource.current) return;
+    const person = findSalesStaff(value);
+    setSalesText(null);
+    change('sales_staff_id', person ? String(person.id) : '');
+  }
+  function changeSales(value: string) {
+    const person = findSalesStaff(value);
+    salesFollowsSource.current = !value.trim();
+    setSalesText(value);
+    change('sales_staff_id', person ? String(person.id) : '');
+  }
   const allVehicles = dataset?.vehicles || [];
   const branchVehicles = allVehicles.filter(vehicle => !staffStoreId || String(vehicle.store_id) === staffStoreId || draft.vehicles.some(item=>item.id===String(vehicle.id)));
   const branchName = dataset?.stores.find(store => String(store.id) === draft.store_id)?.name || '';
@@ -358,25 +393,23 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
           <fieldset className="mg-composer-fields" disabled={saving}>
           <ContractSectionTabs prefix="contract-composer" active={section} onChange={setSection} />
           {panel('contract', 'Thông tin hợp đồng & Pháp lý', <>
-            <div className="mg-form-grid mg-contract-grid-three">
-              <div className="mg-field"><label htmlFor="contract-record-type">Loại hợp đồng</label><select id="contract-record-type" value={rentalType} onChange={event => { const next = event.target.value; setRentalType(next); setDraft(previous => ({ ...previous, ownership: next === 'ownership', ...(next === 'ownership' ? {tls_staff_id:''} : {package_name:next === 'monthly' ? 'Theo tháng' : 'Theo ngày'}) })); }}>{CONTRACT_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-              {field('signed_on', 'Ngày ký hợp đồng', 'date', !reserving)}
-              {field('contract_number', 'Mã hợp đồng / Số HĐ giấy')}
+            <div className="mg-form-grid mg-contract-grid-two">
+              <div className={`mg-field${ownership ? '' : ' mg-field-wide'}`}><label htmlFor="contract-record-type">Loại hợp đồng</label><select id="contract-record-type" value={rentalType} onChange={event => changeRentalType(event.target.value)}>{CONTRACT_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
               {ownership && <div className="mg-field"><label htmlFor="contract-ownership-term">Phân loại thuê sở hữu</label><select id="contract-ownership-term" value={draft.ownership_term_months || 'custom'} onChange={event=>change('ownership_term_months',event.target.value as ContractDraft['ownership_term_months'])}>{OWNERSHIP_TERMS.map(term=><option key={term.value} value={term.value}>{term.label}</option>)}</select></div>}
-            </div>
-            <div className="mg-form-grid mg-contract-grid-two mg-contract-subsection">
+              {field('contract_number', 'Mã hợp đồng / Số HĐ giấy')}
+              {field('signed_on', 'Ngày ký hợp đồng', 'date', !reserving)}
               <div className="mg-field"><label htmlFor="contract-created-on">Ngày tạo hợp đồng</label><input id="contract-created-on" type="date" value={draft.created_on} onChange={event => change('created_on', event.target.value)} /><small>Gợi ý hôm nay, có thể chọn ngày khác.</small></div>
-              <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-staff-options" value={draft.customer_source} placeholder="Chọn hoặc nhập tên nhân sự" onChange={event => change('customer_source', event.target.value)} /></div>
               <div className="mg-field"><label htmlFor="contract-customer-source-store">Liên kết nguồn khách</label><select id="contract-customer-source-store" value={draft.customer_source_url || branchName} aria-invalid={Boolean(errors.store_id)} onChange={event => { const store = dataset?.stores.find(item=>item.name===event.target.value); if(store) changeSourceStore(String(store.id)); else change('customer_source_url',event.target.value); }}>
                 <option value="">Chọn cơ sở</option>{(dataset?.stores || []).map(store => <option key={store.id} value={store.name}>{store.name}</option>)}
                 {draft.customer_source_url && !(dataset?.stores || []).some(store => store.name === draft.customer_source_url) && <option value={draft.customer_source_url}>{draft.customer_source_url}</option>}
               </select><small>Cơ sở ghi nhận doanh thu hợp đồng, gợi ý theo hồ sơ khách.</small>{errors.store_id && <p className="mg-field-error">{errors.store_id}</p>}</div>
+              <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-staff-options" value={draft.customer_source} placeholder="Chọn hoặc nhập tên nhân sự" onChange={event => changeSource(event.target.value)} /></div>
+              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD ghi nhận doanh số</label><input id="contract-sales_staff_id" list="contract-sales-staff-options" value={salesValue} placeholder="Chọn hoặc nhập tên NVKD" aria-invalid={salesUnmatched} onChange={event=>changeSales(event.target.value)} onBlur={()=>{if(draft.sales_staff_id)setSalesText(null);}} />
+                <datalist id="contract-sales-staff-options">{salesStaff.map(person=><option key={person.id} value={salesOption(person)}>{person.code}</option>)}</datalist>
+                {salesUnmatched ? <p className="mg-field-error">Không có NVKD tên này. Chọn trong danh sách gợi ý; để trống là chưa phân công.</p> : <small>Tự điền theo Nguồn khách nếu là NVKD. Tiền thuê thực thu của mọi khách, gồm gia hạn; không gồm cọc.</small>}</div>
+              {attributionError && <p className="mg-field-error mg-field-wide" role="alert">{attributionError}</p>}
             </div>
-            <div className="mg-form-grid mg-contract-grid-two mg-contract-subsection">
-              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD ghi nhận doanh số</label><select id="contract-sales_staff_id" value={draft.sales_staff_id || ''} onChange={event=>change('sales_staff_id',event.target.value)}><option value="">Chưa phân công</option>{dataset?.staff.filter(person=>staffIsAvailable(person) && staffRoles(person.position).includes('NVKD')).map(person=><option key={person.id} value={person.id}>{person.name} · {person.code}</option>)}</select><small>Tiền thuê thực thu của mọi khách, gồm gia hạn; không gồm cọc.</small></div>
-              {attributionError && <p className="mg-field-error" role="alert">{attributionError}</p>}
-            </div>
-            <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
+            <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
             <div className="mg-contract-record-status">{canSaveDraft ? <><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></> : mode === 'edit' ? <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div> : null}</div>
           </>)}
           {panel('customer', 'Thông tin khách hàng (Bên B)', <>
@@ -445,7 +478,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               {moneyField('deposit_amount', 'Số tiền đặt cọc (VNĐ)')}{paymentMethodField('deposit_payment_method', 'Hình thức dự kiến nhận cọc')}
             </div></div>}
             <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3><div className="mg-form-grid mg-contract-grid-two">
-              <div className="mg-field"><label htmlFor="contract-package_name">Gói thuê</label><select id="contract-package_name" value={draft.package_name} onChange={event => { const next = event.target.value; change('package_name', next); if (!ownership) setRentalType(next === 'Theo tháng' ? 'monthly' : 'daily'); }}><option value="Theo ngày">Theo ngày</option><option value="Theo tuần">Theo tuần</option><option value="Theo tháng">Theo tháng</option></select></div>
+              <div className="mg-field"><label htmlFor="contract-package_name">Gói thuê</label><select id="contract-package_name" value={draft.package_name} onChange={event => { const next = event.target.value; change('package_name', next); if (!ownership && !(next === 'Theo tháng' && rentalType.startsWith('monthly'))) setRentalType(next === 'Theo tháng' ? 'monthly' : 'daily'); }}><option value="Theo ngày">Theo ngày</option><option value="Theo tuần">Theo tuần</option><option value="Theo tháng">Theo tháng</option></select></div>
               {moneyField('unit_price', 'Đơn giá áp dụng (VNĐ)')}
               <div className="mg-field"><label htmlFor="contract-rental-base">Tiền thuê xe (VNĐ)</label><input id="contract-rental-base" readOnly value={formatMoneyInput(String(Math.max((Number(draft.total_amount)||0)-otherFees,0)))}/></div>
               {paymentMethodField('payment_method', 'Hình thức dự kiến thu thuê/phí')}

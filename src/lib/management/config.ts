@@ -21,7 +21,7 @@ export const CONTRACT_STATUSES: Option[] = [
   { value: 'deposit_contract', label: 'Đã cọc, chờ nhận xe' },
   { value: 'cancel_pending_settlement', label: 'Chờ tất toán hủy' },
 ];
-export const CONTRACT_TYPES: Option[] = [{ value: 'daily', label: 'Thuê theo ngày' }, { value: 'monthly', label: 'Thuê theo tháng' }, { value: 'ownership', label: 'Thuê sở hữu' }, { value: 'rental', label: 'Thuê xe' }, { value: 'tour', label: 'Tour / phượt' }];
+export const CONTRACT_TYPES: Option[] = [{ value: 'daily', label: 'Thuê theo ngày' }, { value: 'monthly', label: 'Thuê theo tháng' }, { value: 'monthly_3', label: 'Thuê 3 tháng' }, { value: 'monthly_6', label: 'Thuê 6 tháng' }, { value: 'monthly_12', label: 'Thuê 12 tháng' }, { value: 'ownership', label: 'Thuê sở hữu' }, { value: 'rental', label: 'Thuê xe' }, { value: 'tour', label: 'Tour / phượt' }];
 const branchField = { key: 'store_id', label: 'Cơ sở', type: 'select' as const, storeOptions: true, required: true };
 const codeColumn = { key: 'code', label: 'Mã', format: 'code' as const };
 const statusColumn = { key: 'status', label: 'Trạng thái', format: 'status' as const };
