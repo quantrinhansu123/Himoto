@@ -1,4 +1,6 @@
 import 'server-only';
+import { validDocumentRequirements } from '@/lib/management/contract-requirements';
+import { staffRoles } from '@/lib/management/staff-positions';
 import type { PoolClient } from 'pg';
 import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } from '@/lib/management/contract-document';
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
@@ -93,6 +95,8 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (draft.vehicle_store_id !== undefined && typeof draft.vehicle_store_id !== 'string') throw new DraftSaveError('Cửa hàng xe không hợp lệ.');
   if (draft.reservation !== undefined && typeof draft.reservation !== 'boolean') throw new DraftSaveError('Thông tin giữ xe không hợp lệ.');
   if (draft.ownership !== undefined && typeof draft.ownership !== 'boolean') throw new DraftSaveError('Thông tin thuê sở hữu không hợp lệ.');
+  if (draft.document_requirements !== undefined && !validDocumentRequirements(draft.document_requirements)) throw new DraftSaveError('Yêu cầu hồ sơ để in chưa hợp lệ.');
+  for (const key of ['sales_staff_id','tls_staff_id'] as const) if (draft[key] !== undefined && (typeof draft[key] !== 'string' || draft[key] && (!/^[1-9]\d*$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key]))))) throw new DraftSaveError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
   if (draft.ownership_term_months !== undefined && !['6','12','24','custom'].includes(draft.ownership_term_months)) throw new DraftSaveError('Thời hạn thuê sở hữu không hợp lệ.');
   if (draft.custom_installments !== undefined && (!Array.isArray(draft.custom_installments) || draft.custom_installments.length > 3659 || draft.custom_installments.some(item =>
       !item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['due_at','amount'].includes(key)) ||
@@ -134,6 +138,11 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   const vehicleStores = edits.draft.vehicle_store_id && edits.draft.vehicle_store_id !== edits.draft.store_id
     ? await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.vehicle_store_id]) : stores;
   const staff = await client.query('SELECT id, store_id, user_id FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id || null]);
+  for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
+    if (!edits.draft[key]) continue;
+    const attributed = await client.query('SELECT id,position,status FROM himoto.staff_profiles WHERE id=$1 FOR SHARE',[edits.draft[key]]);
+    if (!attributed.rowCount || !['active','1'].includes(String(attributed.rows[0].status)) || !staffRoles(attributed.rows[0].position).includes(role)) throw new DraftSaveError(`Chọn nhân viên ${role} đang làm việc để ghi nhận doanh số.`,409);
+  }
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
   const vehicles = await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id) WHERE v.id = ANY($1::bigint[])`, [ids]);

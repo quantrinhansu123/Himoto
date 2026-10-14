@@ -133,3 +133,28 @@ Kiểm chứng trên production build cục bộ:
 - Kiểm tra nháp, autofill, tổng hợp hợp đồng, Sổ quỹ, thanh toán và phát hành; lint phần quản lý/server, typecheck, build và `git diff --check`: qua.
 
 Kết quả: [luồng mới trên Chromium](qa/contract-reservations/chromium-results.json), [WebKit](qa/contract-reservations/webkit-results.json), [SQL](qa/contract-reservations/sql-results.json), [luồng hiện có trên Chromium](qa/contract-reservations/branch-chromium-results.json), [WebKit](qa/contract-reservations/branch-webkit-results.json), [mẫu in/PDF](qa/contract-reservations/layout-results.json). Chưa kiểm tra Safari/iPhone thật.
+
+## Thao tác điện thoại, doanh số và hồ sơ tạm — 2026-10-14
+
+Điện thoại đăng nhập vào **Thao tác nhanh**: làm hợp đồng, trả xe, gia hạn, đổi trạng thái xe. Thanh điều hướng dưới dẫn đến thao tác, hợp đồng, xe và sổ quỹ. CSV/Excel/xóa trên danh sách thu gọn trong **Quản lý dữ liệu**; desktop giữ các nút hiện có.
+
+Trong hợp đồng chọn riêng **NVKD ghi nhận doanh số** và **Nhân viên TLS giới thiệu khách**, bên cạnh nguồn khách/cơ sở ghi nhận doanh thu. Báo cáo **Doanh số nhân viên** lọc ngày, cơ sở, bộ phận và xuất CSV:
+
+- **NVKD:** tiền thuê thực thu theo ngày phiếu thu đã duyệt, gồm gia hạn, mọi khách; loại cọc và phí khác có phân loại.
+- **TLS:** tiền thuê gốc trên hợp đồng mở mới đầu tiên, ghi nhận trong kỳ bắt đầu thuê; không phụ thuộc đã thu, không tính khách quay lại/gia hạn. Thuê sở hữu dùng toàn bộ lịch đã ký: 12 kỳ × 3 triệu = 36 triệu, không thay đổi khoản thu lúc ký (cọc + kỳ đầu).
+- Lần thuê đầu xét toàn hệ thống trước khi lọc ngày/cơ sở; bỏ nháp, giữ xe và hủy. Phí ban đầu có trong snapshot được trừ khỏi các phiếu thu thuê/phí theo thứ tự thu, không trừ lặp khi đổi tháng báo cáo. Hợp đồng cũ thiếu phân công nhân viên cần gán lại; không suy đoán từ tên nguồn khách.
+
+**Lưu chính thức** dùng thông tin vận hành: khách/điện thoại, cửa hàng, xe, thời gian và tiền. Người thân, CCCD, địa chỉ, đại diện có thể bổ sung sau. **Yêu cầu hồ sơ khi in hợp đồng** cho chọn các trường cần hoàn tất và số người thân 0/1/2; lựa chọn lưu riêng theo từng hợp đồng. Không hạ kiểm tra tiền, tài khoản hoặc xe khi thiếu hồ sơ.
+
+**Lưu hồ sơ hợp đồng** bổ sung thông tin và phân công nhân viên cho hợp đồng đã phát hành. API chỉ nhận các trường hồ sơ cho phép, kiểm tra phiên bản, vai trò nhân viên; giữ khách liên kết, ngày thuê/trả, công nợ, kho xe và phiếu thu đã ghi.
+
+Kiểm tra logic/doanh số/hồ sơ trên bảng PostgreSQL TEMP, rollback và không ghi dữ liệu vận hành thật:
+
+```powershell
+npm.cmd run test:staff-sales
+node scripts/check-contract-billing-db.cjs
+```
+
+Kiểm tra giao diện bằng `scripts/check-operations-ui.py` với `--browser chromium` hoặc `webkit`, cookie QA cục bộ và toàn bộ API nghiệp vụ được mô phỏng. Cookie/ảnh QA nằm trong `.backups/operations`, không đưa token lên Git.
+
+Kết quả: sáu nhóm nghiệp vụ/doanh số/hồ sơ trên PostgreSQL TEMP; năm nhóm phát hành/thu kỳ sở hữu; sáu nhóm UI Chromium và sáu WebKit; mười nhóm form/mẫu in/PDF. Autofill/nháp, lint, typecheck và production build qua. Không ghi tiền hoặc đổi xe trong dữ liệu thật; chưa kiểm tra iPhone/Safari thật.

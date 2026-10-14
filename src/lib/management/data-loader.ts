@@ -7,6 +7,7 @@ const STORE_KINDS: readonly ManagementKind[] = ['stores'];
 const PAGE_KINDS: Record<string, readonly ManagementKind[]> = {
   staff: ['stores', 'staff'], customers: ['stores', 'customers'], contracts: ['stores', 'contracts'],
   stores: STORE_KINDS, vehicles: ['stores', 'vehicles'], 'duty-roster': ['stores', 'staff'], cashbook: STORE_KINDS,
+  operations: ['stores','contracts'], 'staff-sales': ['stores','staff'],
 };
 
 export function managementKindsForPath(pathname: string): readonly ManagementKind[] {

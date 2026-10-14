@@ -194,7 +194,7 @@ with sync_playwright() as playwright:
     form.get_by_label('Tra cứu theo CCCD', exact=False).fill(customer['phone'])
     expect(form.get_by_label('Tên khách hàng', exact=True)).to_have_value(customer['name'])
     expect(form.get_by_label('Số CMTND/CCCD', exact=True)).to_have_value(customer['id_card'])
-    expect(form.get_by_label('Số CMTND/CCCD', exact=True)).to_have_attribute('readonly', '')
+    expect(form.get_by_label('Số CMTND/CCCD', exact=True)).to_be_editable()
     expect(form.get_by_label('Email', exact=True)).to_have_count(0)
     expect(form.get_by_label('Ngày sinh', exact=True)).to_have_count(0)
     checks.append('validation reveals the hidden failing tab and phone lookup shows the actual CCCD with its leading zeros')

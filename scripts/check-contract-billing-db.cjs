@@ -11,7 +11,7 @@ const {randomUUID}=require('node:crypto');
 const pool=load(path.join(root,'lib/server/himoto-database')).himotoPool;
 async function main(){
  const c=await pool.connect(),checks=[];
- const tables=['orders','order_vehicle_details','vehicles','stores','transactions','banks','cash','users','management_contract_payments'];
+ const tables=['orders','order_vehicle_details','vehicles','stores','transactions','banks','cash','users','management_contract_payments','staff_profiles'];
  const proxy={query:async(sql,params)=>{let rewritten=sql;for(const table of tables)rewritten=rewritten.replaceAll(`himoto.${table}`,`pg_temp.qa_bill_${table}`);assert(!rewritten.includes('himoto.'),'Every business query must use TEMP');return c.query(rewritten,params);}};
  const savepoint=async(work)=>{await c.query('SAVEPOINT bill_case');try{const r=await work();await c.query('RELEASE SAVEPOINT bill_case');return r;}catch(error){await c.query('ROLLBACK TO SAVEPOINT bill_case');await c.query('RELEASE SAVEPOINT bill_case');throw error;}};
  const originalNow=Date.now;
@@ -21,10 +21,11 @@ async function main(){
   await c.query('CREATE TEMP SEQUENCE qa_bill_seq START 99000');
   for(const table of ['order_vehicle_details','transactions'])await c.query(`ALTER TABLE qa_bill_${table} ALTER COLUMN id SET DEFAULT nextval('qa_bill_seq')`);
   await c.query("INSERT INTO qa_bill_cash(id,store_id,opening_balance,status) VALUES(5,23,0,'Active')");
+  await c.query("INSERT INTO qa_bill_staff_profiles(id,staff_code,full_name,phone,position,status,store_id) VALUES(10,'QA-10','NVKD QA','0900000010','NVKD','active',23),(20,'QA-20','TLS QA','0900000020','TLS','active',23)");
   await c.query("INSERT INTO qa_bill_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES(100,'Xe QA','Honda','xeso',2026,23,23,'QA-OWN','ready',143)");
   const start=vietnamPaymentTime(new Date(originalNow()-2*86400000));
   const endDate=new Date(`${start}:00Z`);endDate.setUTCFullYear(endDate.getUTCFullYear()+1);const end=endDate.toISOString().slice(0,16);
-  const draft={start_date:start,end_date:end,package_name:'Theo tháng',unit_price:'3000000',total_amount:'3000000',deposit_amount:'3000000',ownership:true,
+  const draft={start_date:start,end_date:end,package_name:'Theo tháng',unit_price:'3000000',total_amount:'3000000',deposit_amount:'3000000',ownership:true,sales_staff_id:'10',tls_staff_id:'20',
    vehicles:[{id:'100',driver_name:'QA',driver_license_number:'QA',driver_license_issued_on:'2020-01-02',borrow_hats:'1',borrow_raincoats:'0'}]};
   const payload={management_composer:{version:1,rental_type:'ownership',draft}};
   await c.query("INSERT INTO qa_bill_orders(id,order_status,order_mode,store_id,customer_id,total,pid,draft_reference,draft_payload) VALUES(1,'draft','draft',23,9,'0',0,'QA-OWN',$1)",[JSON.stringify(payload)]);
@@ -36,6 +37,7 @@ async function main(){
   const stored=(await c.query('SELECT total,total_rental_fees,draft_payload FROM qa_bill_orders WHERE id=1')).rows[0];
   assert.equal(Number(stored.total),3000000);assert.equal(Number(stored.total_rental_fees),3000000);
   const plan=stored.draft_payload.management_composer.installment_plan;
+  assert.deepEqual(stored.draft_payload.management_composer.sales_attribution,{NVKD:{staff_id:10,name:'NVKD QA'},TLS:{staff_id:20,name:'TLS QA'}});
   await c.query("UPDATE qa_bill_order_vehicle_details SET type='week' WHERE order_id=1");
   assert.equal(billing.installmentSchedule(plan).length,12);
   let context=await payments.readPaymentContext(proxy,1);

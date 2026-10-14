@@ -198,6 +198,8 @@ export async function POST(request: NextRequest, { params }: Params) {
   const idCard = typeof body.id_card === 'string' ? body.id_card.replace(/\s+/g, '') : '';
   const storeId = body.store_id == null || body.store_id === '' ? null : Number(body.store_id);
   const status = String(body.status || 'active');
+  const incomplete = body.allow_incomplete === true && status === 'draft';
+  if (body.allow_incomplete !== undefined && (typeof body.allow_incomplete !== 'boolean' || body.allow_incomplete && status !== 'draft')) return NextResponse.json({status:'error',message:'Hồ sơ tạm cần chọn trạng thái Chưa hoàn tất.'},{status:400});
   const warning = typeof body.warning_note === 'string' ? body.warning_note.trim() : '';
   const driverLicenseNumber = typeof body.driver_license_number === 'string' ? body.driver_license_number.trim() : '';
   const driverLicenseIssuedOn = typeof body.driver_license_issued_on === 'string' ? body.driver_license_issued_on.trim() : '';
@@ -207,7 +209,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   let relatives: ReturnType<typeof parseCustomerRelatives>;
   try { relatives = parseCustomerRelatives(body.relatives ?? []); }
   catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
-  if (!name || !address || !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || !/^\d{9}$|^\d{12}$/.test(idCard) ||
+  if (!name || !incomplete && !address || !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || (idCard ? !/^\d{9}$|^\d{12}$/.test(idCard) : !incomplete) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
       (driverLicenseIssuedOn && !/^\d{4}-\d{2}-\d{2}$/.test(driverLicenseIssuedOn)) || driverLicenseNumber.length > 100 ||
       (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
@@ -223,8 +225,9 @@ export async function POST(request: NextRequest, { params }: Params) {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [idCard]);
     const duplicate = await client.query(
       `SELECT id FROM himoto.customers
-       WHERE regexp_replace(COALESCE(id_card, ''), '\\s+', '', 'g') = $1 LIMIT 1`,
-      [idCard],
+       WHERE ($1 <> '' AND regexp_replace(COALESCE(id_card, ''), '\\s+', '', 'g') = $1)
+         OR ($1 = '' AND regexp_replace(COALESCE(phone,''),'[^0-9]','','g') = $2) LIMIT 1`,
+      [idCard,phone.replace(/\D/g,'')],
     );
     if (duplicate.rowCount) {
       await client.query('ROLLBACK');
@@ -232,7 +235,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
     const result = await client.query(
       `INSERT INTO himoto.customers (name, phone, email, address, id_card, status, store_id, warning, driver_license_number, driver_license_issued_on, relatives, id_card_issued_on, id_card_issued_by, created_at, updated_at)
-       VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, NULLIF($9,''), NULLIF($10,'')::date, $11::jsonb, NULLIF($12,'')::date, NULLIF($13,''), now(), now())
+       VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5,''), $6, $7, $8, NULLIF($9,''), NULLIF($10,'')::date, $11::jsonb, NULLIF($12,'')::date, NULLIF($13,''), now(), now())
        RETURNING id, name, phone, email, address, id_card, driver_license_number, driver_license_issued_on::text AS driver_license_issued_on,
                  CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
                       WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,

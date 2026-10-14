@@ -4,16 +4,17 @@ import { FormEvent, useRef, useState } from 'react';
 import { Check, LoaderCircle } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
-import { ContractRelative, CustomerDetails, customerDetails, pairRelatives, formatRelatives, validateCustomer } from '@/lib/management/contract-document';
+import { ContractRelative, CustomerDetails, customerDetails, pairRelatives, formatRelatives, validateCustomer, validateOperationalCustomer } from '@/lib/management/contract-document';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { CustomerRelativesFields } from './CustomerRelativesFields';
 import { ManagementRow } from '@/lib/management/types';
 import { CUSTOMER_STATUSES } from '@/lib/management/config';
 
-export function CustomerCreateDialog({ idCard, storeId, onCreated, onClose }: { idCard: string; storeId?: string; onCreated: (row: ManagementRow) => void; onClose: () => void }) {
+export function CustomerCreateDialog({ idCard, storeId, allowIncomplete = false, onCreated, onClose }: { idCard: string; storeId?: string; allowIncomplete?: boolean; onCreated: (row: ManagementRow) => void; onClose: () => void }) {
   const { source, dataset, selectedStore, createCustomer } = useManagement();
   const [branch, setBranch] = useState(storeId || (selectedStore !== 'all' ? selectedStore : String(dataset?.stores[0]?.id || '')));
-  const [status, setStatus] = useState('active');
+  const [status, setStatus] = useState(allowIncomplete ? 'draft' : 'active');
+  const incomplete = allowIncomplete && status === 'draft';
   const [customer, setCustomer] = useState<CustomerDetails>(() => ({ ...customerDetails(), id_card: idCard }));
   const [relatives, setRelatives] = useState<[ContractRelative, ContractRelative]>(() => pairRelatives(null));
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -33,7 +34,7 @@ export function CustomerCreateDialog({ idCard, storeId, onCreated, onClose }: { 
   ];
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy.current) return;
-    const next = validateCustomer(customer, source);
+    const next = incomplete ? validateOperationalCustomer(customer,source) : validateCustomer(customer, source);
     if (!dataset?.stores.some(store => String(store.id) === branch)) next.store_id = 'Chọn cơ sở cho khách hàng.';
     if (status === 'warning' && !customer.warning_note.trim()) next.warning_note = 'Nhập ghi chú cho hồ sơ cần lưu ý.';
     setErrors(next); setError('');
@@ -42,7 +43,7 @@ export function CustomerCreateDialog({ idCard, storeId, onCreated, onClose }: { 
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.'); return; }
     busy.current = true; setSaving(true);
     try {
-      const assignment = { status, store_id: Number(branch) };
+      const assignment = { status, store_id: Number(branch), ...(incomplete ? {allow_incomplete:true} : {}) };
       onCreated(await createCustomer({ ...customer, relatives_text: formatRelatives(relatives), relatives_json: JSON.stringify(parseCustomerRelatives(relatives)) }, assignment));
     }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Không tạo được khách hàng. Vui lòng thử lại.'); }
@@ -50,9 +51,9 @@ export function CustomerCreateDialog({ idCard, storeId, onCreated, onClose }: { 
   }
   return <Dialog title="Thêm khách hàng tại chỗ" subtitle="Lưu hồ sơ vào Supabase" onClose={() => { if (!busy.current) onClose(); }}>
     <form ref={form} noValidate onSubmit={submit}>
-      <div className="mg-dialog-body"><div className="mg-form-grid">{fields.map(field => <div className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`} key={field.key}>
-        <label htmlFor={`new-customer-${field.key}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
-        <input id={`new-customer-${field.key}`} name={field.key} type={field.type || 'text'} value={customer[field.key]} disabled={saving} required={field.required}
+      <div className="mg-dialog-body">{incomplete && <p className="mg-composer-hint">Hồ sơ tạm: cần tên và số điện thoại để nhận diện khách. CCCD, địa chỉ và người thân có thể bổ sung sau.</p>}<div className="mg-form-grid">{fields.map(field => <div className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`} key={field.key}>
+        <label htmlFor={`new-customer-${field.key}`}>{field.label}{field.required && !(incomplete && ['id_card','address'].includes(field.key)) && <span aria-hidden="true"> *</span>}</label>
+        <input id={`new-customer-${field.key}`} name={field.key} type={field.type || 'text'} value={customer[field.key]} disabled={saving} required={field.required && !(incomplete && ['id_card','address'].includes(field.key))}
           aria-invalid={Boolean(errors[field.key])} aria-describedby={errors[field.key] ? `new-customer-${field.key}-error` : undefined}
           onChange={event => { setCustomer(current => ({ ...current, [field.key]: event.target.value })); setErrors(current => ({ ...current, [field.key]: '' })); }} />
         {field.hint && <small>{field.hint}</small>}

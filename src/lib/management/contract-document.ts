@@ -4,6 +4,7 @@ import { validIdentityIssueDate } from './customer-identity';
 import { addRentalDays, vietnamRentalTime } from './rental-time';
 import { chargeErrors, chargeTotal, type ContractCharge, type ContractCollection } from './contract-charges';
 import { addRentalMonths, billingUnitLabel, createInstallmentPlan, installmentSchedule, type CustomInstallment, type OwnershipTerm } from './contract-billing';
+import { documentRequirements, type ContractDocumentRequirements } from './contract-requirements';
 
 export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'driver_license_number', 'driver_license_issued_on', 'birthday', 'relatives_text', 'warning_note'] as const;
 export type CustomerDetails = Record<(typeof CUSTOMER_FIELDS)[number], string> & { relatives_json?: string };
@@ -20,6 +21,9 @@ export interface ContractDraft {
   vehicle_store_id?: string;
   reservation?: boolean;
   ownership?: boolean;
+  document_requirements?: ContractDocumentRequirements;
+  sales_staff_id?: string;
+  tls_staff_id?: string;
   ownership_term_months?: OwnershipTerm;
   custom_installments?: CustomInstallment[];
   customer_lookup?: string;
@@ -95,6 +99,7 @@ function collectionMethods(collections: ContractCollection[] | undefined, purpos
   return [...new Set((collections || []).filter(item => item.purpose === purpose).map(item => item.method))].join(', ') || fallback;
 }
 export function createContractDraft(dataset: ManagementDataset, storeId: string, row?: ManagementRow | null): ContractDraft {
+  const profile = row?.profile_json ? JSON.parse(String(row.profile_json)) as Partial<ContractDraft> : {};
   if (row?.draft_json) {
     const snapshot = JSON.parse(String(row.draft_json)) as ContractDraft;
     if (!snapshot.customer || !Array.isArray(snapshot.vehicles) || !snapshot.vehicles.length) throw new Error('Thông tin hợp đồng đã lưu không hợp lệ.');
@@ -112,7 +117,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
         deposit_payment_method:collectionMethods(collections, 'deposit', snapshot.deposit_payment_method),
       } : {}), staff_name: snapshot.staff_name || '', customer: { ...customerDetails(snapshot.customer as unknown as ManagementRow), ...snapshot.customer },
       vehicles: snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
-      created_on: dateInput(snapshot.created_on) || dateInput(row.created_at) || nowDate() };
+      created_on: dateInput(snapshot.created_on) || dateInput(row.created_at) || nowDate(), ...profile };
   }
   const sourceCustomer = row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
     name: value(row.customer_name), phone: value(row.customer_phone), id_card: value(row.customer_id_card),
@@ -151,6 +156,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date),
     created_on: dateInput(row?.created_at) || nowDate(), relatives,
     ...(collections ? {collections} : {}),
+    ...profile,
     ...(row?.deposit_paid != null ? {deposit_paid_amount:value(row.deposit_paid)} : {}), };
 }
 export function normalizeIdCard(input: string) { return input.trim().replace(/\s/g, '').toUpperCase(); }
@@ -178,16 +184,24 @@ export function validateContractCustomer(customer: CustomerDetails, source: 'dem
   delete errors.email;
   return errors;
 }
+export function validateOperationalCustomer(customer: CustomerDetails,source: 'demo'|'api') {
+  const errors = validateCustomer(customer,source);
+  if (!customer.id_card.trim()) delete errors.id_card;
+  if (!customer.address.trim()) delete errors.address;
+  return errors;
+}
 export function validateContractDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
   const errors: Record<string, string> = {};
+  const requirements = documentRequirements(draft.document_requirements);
   Object.assign(errors,chargeErrors(draft.extra_charges,true));
   if (contractStaffStoreId(draft) && !dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở nguồn khách / ghi nhận doanh thu.';
   if (!dataset.stores.some(row => String(row.id) === contractStaffStoreId(draft))) errors.vehicle_store_id = 'Chọn cửa hàng xe.';
-  if (!draft.staff_name.trim() && !staffMatchesStore(staff, contractStaffStoreId(draft)).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự tại cửa hàng xe hoặc nhập tên người đại diện.';
+  if (requirements.representative && !draft.staff_name.trim() && !staffMatchesStore(staff, contractStaffStoreId(draft)).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự tại cửa hàng xe hoặc nhập tên người đại diện.';
   if (!draft.customer_id) errors.id_card = 'Tra cứu hoặc tạo khách hàng trước khi in.';
   Object.assign(errors, validateContractCustomer(draft.customer, source));
+  for (const key of ['phone','id_card','address'] as const) if (!requirements[key] && !draft.customer[key].trim()) delete errors[key];
   const relatives = pairRelatives(draft.relatives, draft.customer.relatives_text);
-  relatives.forEach((relative, index) => {
+  relatives.slice(0,requirements.relatives).forEach((relative, index) => {
     if (!relative.name.trim()) errors[`relative_${index}_name`] = `Nhập họ tên người thân ${index + 1}.`;
     if (!relative.relationship.trim()) errors[`relative_${index}_relationship`] = `Nhập quan hệ người thân ${index + 1}.`;
     if (!/^\+?\d{9,13}$/.test(relative.phone.replace(/[\s.()-]/g, ''))) errors[`relative_${index}_phone`] = `Nhập số điện thoại người thân ${index + 1} từ 9 đến 13 chữ số.`;
@@ -211,6 +225,13 @@ export function validateContractDraft(draft: ContractDraft, dataset: ManagementD
     errors.unit_price = 'Kiểm tra đơn giá kỳ và lịch đóng tiền: ngày hẹn tăng dần, trước ngày hết hạn, số tiền từng lần lớn hơn 0.';
   }
   if (draft.ownership && draft.ownership_term_months && draft.ownership_term_months !== 'custom' && addRentalMonths(draft.start_date, Number(draft.ownership_term_months)) !== draft.end_date) errors.end_date = 'Ngày kết thúc chưa khớp thời hạn sở hữu đã chọn.';
+  return errors;
+}
+export function validateOperationalDraft(draft: ContractDraft,dataset: ManagementDataset,staff: ManagementRow[],source: 'demo'|'api') {
+  const errors = validateContractDraft({...draft,document_requirements:{phone:true,id_card:false,address:false,representative:false,relatives:0}},dataset,staff,source);
+  delete errors.signed_on;
+  if (!draft.customer_id) errors.id_card = 'Tra cứu hoặc tạo hồ sơ khách hàng để gắn hợp đồng.';
+  if (!draft.total_amount) errors.total_amount = 'Nhập tiền thuê để đối chiếu công nợ.';
   return errors;
 }
 export function validateReservationDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {

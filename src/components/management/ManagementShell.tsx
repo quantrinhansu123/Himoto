@@ -3,12 +3,14 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
+import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, House, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
 import type { SessionUser } from '@/lib/server/management-session';
 
 const navigation = [
+  {href:'/operations',label:'Thao tác nhanh',kind:'operations' as const,icon:House},
+  {href:'/staff-sales',label:'Doanh số nhân viên',kind:'staff-sales' as const,icon:ReceiptText},
   { href: '/staff', label: 'Nhân sự', kind: 'staff' as const, icon: UsersRound },
   { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster' as const, icon: CalendarDays },
   { href: '/customers', label: 'Khách hàng', kind: 'customers' as const, icon: ContactRound },
@@ -112,6 +114,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
       </header>
       <main id="management-main" className="mg-content" tabIndex={-1}>{children}</main>
       <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{writableBattery ? 'Hợp đồng thuê pin · Ghi trực tiếp vào Supabase' : writableDuties ? 'Lịch trực theo tuần' : writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : writableStores ? 'Cơ sở · Ghi trực tiếp vào Supabase' : writableVehicles ? 'Xe · Đồng bộ có sao lưu' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
+      <nav className="mg-mobile-bottom-nav" aria-label="Thao tác chính trên điện thoại">{navigation.filter(item=>['/operations','/contracts','/vehicles','/cashbook'].includes(item.href)).map(item=><Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined}><item.icon size={20}/><span>{item.href === '/operations' ? 'Thao tác' : item.href === '/contracts' ? 'Hợp đồng' : item.href === '/vehicles' ? 'Xe' : 'Sổ quỹ'}</span></Link>)}</nav>
     </div>
   </div>;
 }

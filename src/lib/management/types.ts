@@ -23,7 +23,7 @@ export interface ContractEdits {
   notes: string;
 }
 export interface ContractMutationResult { row: ManagementRow; dataset: ManagementDataset }
-export interface CustomerAssignment { status: string; store_id: number }
+export interface CustomerAssignment { status: string; store_id: number; allow_incomplete?: boolean }
 
 export interface ManagementRepository {
   source: 'demo' | 'api';

@@ -19,6 +19,7 @@ import { ContractSummary } from './ContractSummary';
 import { bulkDelete } from '@/lib/management/bulk-delete';
 import { staffPositionSuggestions } from '@/lib/management/staff-positions';
 import { applyInstallmentBilling } from '@/lib/management/contract-billing';
+import { ResponsiveDataActions } from './ResponsiveDataActions';
 
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
@@ -56,6 +57,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
   const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string } | null>(null);
   const [renewTarget, setRenewTarget] = useState<ManagementRow | null>(null);
+  const [renewPicker,setRenewPicker] = useState(false);
+  const [renewSearch,setRenewSearch] = useState('');
+  const handledAction = useRef('');
   const [query, setQuery] = useState<TableQuery>(EMPTY_QUERY);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -88,6 +92,17 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [composerMode, setComposerMode] = useState<'print' | 'edit' | 'draft' | 'reservation'>('print');
   const [handoverId,setHandoverId] = useState<number|null>(null);
   const columnsRef = useRef<HTMLDetailsElement>(null);
+  useEffect(()=>{
+    const action = searchParams.get('action');
+    if (!action) {handledAction.current='';return;}
+    if (loading || error || !dataset || handledAction.current === action) return;
+    handledAction.current = action;
+    if (kind === 'contracts' && action === 'new') {setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}
+    else if (kind === 'contracts' && action === 'return') setReturnTarget({orderId:null,code:''});
+    else if (kind === 'contracts' && action === 'renew') setRenewPicker(true);
+    else if (kind === 'vehicles' && action === 'status') setVehicleAction({mode:'status',vehicle:null});
+    router.replace(contractPath === '/contracts' && kind !== 'contracts' ? '/vehicles' : contractPath,{scroll:false});
+  },[searchParams,loading,error,dataset,kind,router,contractPath]);
 
   useEffect(() => {
     setQuery(current => ({ ...current, filters: { ...current.filters, customer_id: customerId || '', id: contractId || '' } })); setPage(1);
@@ -178,12 +193,14 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     void ensureData(CONTRACT_DATA_KINDS).catch(() => {});
   }
 
-  return <section className="mg-page" aria-label={config.title}>
+  return <section className={`mg-page mg-page-${kind}`} aria-label={config.title}>
     <div className="mg-page-content">
       <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1></div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopedRows.length}</span></h1><p>{config.description}</p></div>}
-        <div className="mg-heading-actions">{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}{kind !== 'contracts' && <button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>}
+        <div className="mg-heading-actions">{kind !== 'contracts' && <ResponsiveDataActions>{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
           {kind === 'customers' && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}
+          </ResponsiveDataActions>}
+          {kind === 'vehicles' && <button type="button" className="mg-button mg-mobile-status-action" disabled={loading || Boolean(error)} onClick={()=>setVehicleAction({mode:'status',vehicle:null})}><RefreshCw size={16}/>Đổi trạng thái xe</button>}
           {kind === 'vehicles' && source === 'api' && <RowActionsMenu label="Hành động xe" triggerLabel={<>Hành động xe<ChevronDown size={16} /></>} disabled={loading || Boolean(error) || !dataset} actions={[
             { key: 'create', label: 'Nhập xe', icon: <Plus size={16} />, onSelect: () => { setEditing(null); setFormOpen(true); } },
             { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => setVehicleAction({ mode: 'transfer', vehicle: null }) },
@@ -271,6 +288,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     </Dialog>}
     {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} onClose={() => setReturnTarget(null)} />}
     {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} onClose={() => setRenewTarget(null)} />}
+    {renewPicker && <Dialog title="Chọn hợp đồng gia hạn" onClose={()=>setRenewPicker(false)}><div className="mg-dialog-body"><label className="mg-field">Tìm hợp đồng cần gia hạn<input type="search" autoFocus value={renewSearch} placeholder="Mã hợp đồng, khách, SĐT hoặc biển số" onChange={event=>setRenewSearch(event.target.value)}/></label><ul className="mg-operation-picks">{filterRows((dataset?.contracts || []).filter(row=>['renting','overdue'].includes(row.status) && !row.billing_plan_json),{...EMPTY_QUERY,search:renewSearch},selectedStore).slice(0,30).map(row=><li key={row.id}><button type="button" onClick={()=>{setRenewPicker(false);setRenewTarget(row);}}><strong>{row.code} · {row.customer_name}</strong><span>{row.license} · {row.customer_phone}</span></button></li>)}</ul></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setRenewPicker(false)}>Đóng</button></div></Dialog>}
     {vehicleTarget && kind === 'contracts' && <ManagementDataBoundary kinds={VEHICLE_DATA_KINDS} title="Đổi xe" onClose={() => setVehicleTarget(null)}><ContractVehicleSwapDialog orderId={vehicleTarget.orderId} contractCode={vehicleTarget.code} onClose={() => setVehicleTarget(null)} /></ManagementDataBoundary>}
     {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onPayment={() => { router.push(`/cashbook?contract_id=${viewing.id}&purpose=debt`); setViewing(null); }} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }}
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}

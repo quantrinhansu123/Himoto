@@ -29,7 +29,7 @@ export function LoginForm({ connected }: { connected: boolean }) {
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.user) throw new Error(result?.message || 'Không đăng nhập được. Vui lòng thử lại.');
       setPassword('');
-      router.replace('/vehicles'); router.refresh();
+      router.replace(window.matchMedia('(max-width: 767px)').matches ? '/operations' : '/vehicles'); router.refresh();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không kết nối được hệ thống. Vui lòng thử lại.'); }
     finally { pending.current = false; setBusy(false); }
   }
