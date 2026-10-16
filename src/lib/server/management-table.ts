@@ -28,11 +28,13 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     : input.scope==='renewable' ? ` AND o.order_status IN ('renting','overdue') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(input.scope);
   const all=params.get('all')==='1';
   const fullSql=kind==='contracts' ? `${CONTRACT_LIST_SQL}${clause}` : CUSTOMER_PROFILE_SQL;
-  const sql=all ? fullSql : kind==='contracts' ? contractTableSql(clause)
+  // SQL already narrows specialized contract lists; avoid a second detail query for these scopes.
+  const fullDetails=all||Boolean(input.scope);
+  const sql=fullDetails ? fullSql : kind==='contracts' ? contractTableSql(clause)
     : `SELECT id,name,phone,id_card,address,status,warning,store_id,store_name,contract_count FROM (${CUSTOMER_PROFILE_SQL}) listing`;
   const result=await client.query(sql);
   const projected=projectManagementTable(result.rows.map(row=>mapApiRow(kind,row)),input,all);
-  if(all||!projected.rows.length)return projected;
+  if(fullDetails||!projected.rows.length)return projected;
   const ids=projected.rows.map(row=>row.id);
   const details=await client.query(`${fullSql}${kind==='contracts' ? ' AND o.id' : ' WHERE c.id'}=ANY($1::bigint[])`,[ids]);
   const mapped=new Map(details.rows.map(row=>{const record=mapApiRow(kind,row);return [record.id,record];}));
