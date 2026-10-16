@@ -1,0 +1,13 @@
+{
+  "passed": 5,
+  "checks": [
+    "front OCR fills identity/address before the held Cloudinary upload completes and preserves a name typed while AI was reading",
+    "back OCR fills issue date and issuer from the second image; 0-prefixed identity, manual phone/name and normal profile status remain intact",
+    "photo replacement ignores stale OCR; provider errors preserve inputs/photos and allow manual entry without retrying automatically",
+    "a plate camera exists before choosing a vehicle; concurrent CCCD/plate results both persist, selecting the exact inventory vehicle and keeping its photo",
+    "manual vehicle selection during OCR is preserved; mobile and desktop camera/status layouts fit without overflow"
+  ],
+  "errors": [],
+  "realBusinessWrites": 0,
+  "realProviderCalls": 0
+}

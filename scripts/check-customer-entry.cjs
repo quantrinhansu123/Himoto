@@ -63,6 +63,8 @@ async function main() {
       await client.query('CREATE TEMP TABLE qa_photo_customers(id bigint PRIMARY KEY); CREATE TEMP TABLE qa_photo_orders(id bigint PRIMARY KEY,deleted_at timestamptz)');
       const ddl = migration.match(/CREATE TABLE[\s\S]*?\n\);/)[0].replace('CREATE TABLE IF NOT EXISTS himoto.management_record_photos', 'CREATE TEMP TABLE qa_photo_files').replace('REFERENCES himoto.users(id)', '');
       await client.query(ddl);
+      const cloudMigration = fs.readFileSync(path.resolve(__dirname, '../docs/sql/2026-10-16-cloudinary-photos.sql'), 'utf8');
+      await client.query(cloudMigration.replace(/^BEGIN;|^COMMIT;/gm, '').replaceAll('himoto.management_record_photos', 'pg_temp.qa_photo_files'));
       for (const statement of migration.match(/ALTER TABLE himoto\.management_record_photos ADD COLUMN[\s\S]*?;/g)) {
         await client.query(statement.replaceAll('himoto.management_record_photos', 'pg_temp.qa_photo_files').replaceAll('himoto.customers', 'pg_temp.qa_photo_customers').replaceAll('himoto.orders', 'pg_temp.qa_photo_orders'));
       }

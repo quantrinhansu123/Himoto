@@ -3588,3 +3588,5 @@
 .mg-photo-actions .mg-button { min-height: 44px; }
 .mg-photo-slot small { color: var(--mg-text-muted, #60707a); }
 .mg-payment-state { font-weight: 600; }
+.mg-photo-feedback { margin: 10px 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.mg-photo-feedback p { margin: 0 0 8px; }

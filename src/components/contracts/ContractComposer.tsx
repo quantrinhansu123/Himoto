@@ -26,6 +26,8 @@ import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
 import { addRentalMonths, billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } from '@/lib/management/contract-billing';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/management/record-photos';
+import { usePhotoOcr } from '@/components/management/usePhotoOcr';
+import { mergeOcrCustomer, plateKey, type OcrFields } from '@/lib/management/photo-ocr';
 
 type LookupState = 'idle' | 'loading' | 'found' | 'matches' | 'missing' | 'error';
 function rentalTermMonths(rentalType: string) {
@@ -78,6 +80,42 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [processingCustomerPhoto, setProcessingCustomerPhoto] = useState(false);
   const [processingPlatePhoto, setProcessingPlatePhoto] = useState(false);
   const [photoVersion, setPhotoVersion] = useState(0);
+  const draftRef = useRef(draft); draftRef.current = draft;
+  const previousCustomerAi = useRef<OcrFields>({});
+  const customerOcr = usePhotoOcr({
+    kind: slot => slot === 'id_front' ? 'cccd_front' : 'cccd_back',
+    snapshot: () => ({ ...draftRef.current.customer }),
+    apply: (_slot, result, before) => {
+      const current = draftRef.current;
+      const merged = mergeOcrCustomer(current.customer, result.fields, before, previousCustomerAi.current);
+      previousCustomerAi.current = { ...previousCustomerAi.current, ...merged.applied };
+      const next = { ...current, customer: merged.customer, vehicles: current.vehicles.map(vehicle => ({ ...vehicle,
+        ...(merged.applied.name && (!vehicle.driver_name || vehicle.driver_name === current.customer.name) ? { driver_name: merged.customer.name } : {}) })) };
+      draftRef.current = next; setDraft(next);
+      setErrors(current => Object.fromEntries(Object.entries(current).filter(([key]) => !Object.hasOwn(merged.applied, key))));
+      return Object.keys(merged.applied).length ? 'Đã điền thông tin từ CCCD. Kiểm tra lại trước khi lưu.' : 'Đã đọc ảnh; giữ nguyên thông tin đang có.';
+    },
+  });
+  const plateOcr = usePhotoOcr({
+    kind: () => 'plate', snapshot: () => draftRef.current.vehicles.map(vehicle => vehicle.id),
+    apply: (slot, result, before, file) => {
+      const license = result.fields.license || '';
+      const matches = (dataset?.vehicles || []).filter(vehicle => plateKey(String(vehicle.license || '')) === plateKey(license));
+      if (matches.length !== 1) throw new Error(`Đọc được biển số ${license}, ${matches.length ? 'có nhiều xe trùng biển số' : 'chưa tìm thấy xe trong kho'}. Kiểm tra và chọn xe thủ công.`);
+      const selected = matches[0], current = draftRef.current;
+      if (slot !== 'scan_plate' && slot !== `plate-${selected.id}`) throw new Error(`Ảnh có biển số ${license}, không khớp xe đang chọn. Kiểm tra lại ảnh.`);
+      const existing = current.vehicles.findIndex(vehicle => vehicle.id === String(selected.id));
+      if (existing < 0) {
+        if (slot !== 'scan_plate') throw new Error('Xe đã thay đổi trong lúc AI đọc ảnh. Chụp lại ảnh cho xe đang chọn.');
+        const index = before.findIndex(id => !id);
+        if (index < 0) throw new Error(`Đọc được biển số ${license}. Bấm Thêm xe để thêm vào hợp đồng, rồi đọc lại ảnh.`);
+        if (current.vehicles.length !== before.length || current.vehicles[index]?.id !== before[index]) throw new Error('Lựa chọn xe đã thay đổi trong lúc AI đọc ảnh. Giữ nguyên xe đang chọn; đọc lại ảnh nếu cần.');
+        chooseVehicle(index, String(selected.id));
+      }
+      setPlatePhotos(previous => { const next = { ...previous, [`plate-${selected.id}`]: file }; if (slot === 'scan_plate') delete next.scan_plate; return next; });
+      return `Đã đọc biển số ${selected.license} và ${existing < 0 ? 'chọn' : 'đối chiếu'} xe ${selected.name}.`;
+    },
+  });
   const [saveError, setSaveError] = useState('');
   const busy = useRef(false);
   const [lookupError, setLookupError] = useState('');
@@ -205,6 +243,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       <PaymentMethodPicker label={label} value={draft[key]} onChange={value=>change(key,value)} /></div>;
   }
   function changeIdentity(value: string) {
+    previousCustomerAi.current = {}; customerOcr.cancel('id_front'); customerOcr.cancel('id_back');
     setCustomerPhotos({});
     preserveCustomer.current = false;
     setSelectedCustomer(null);
@@ -223,6 +262,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     setDraft(previous => withCustomer(previous, customer));
   }
   function customerCreated(customer: ManagementRow) {
+    previousCustomerAi.current = {}; customerOcr.cancel('id_front'); customerOcr.cancel('id_back');
     setCustomerPhotos({});
     preserveCustomer.current = true;
     setSelectedCustomer(customer);
@@ -236,7 +276,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!dataset || busy.current || processingCustomerPhoto || processingPlatePhoto) return;
+    if (!dataset || busy.current || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending) return;
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const action = submitter instanceof HTMLButtonElement ? submitter.value : '';
     const finalizing = action === 'finalize' && canSaveDraft;
@@ -342,13 +382,15 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   }
   function chooseVehicle(index: number, id: string) {
     const selected = allVehicles.find(item => String(item.id) === id);
-    setDraft(previous => ({
+    const previous = draftRef.current;
+    const next = {
       ...previous,
       ...(selected && index === 0 && selected.store_id ? { vehicle_store_id: String(selected.store_id),
         ...(contractStaffStoreId(previous) !== String(selected.store_id) ? {staff_id:'',staff_name:''} : {}) } : {}),
       vehicles: previous.vehicles.map((item, i) => i === index ? selected ? vehicleDetails(selected, previous.customer) : emptyVehicle() : item),
       unit_price: selected && index === 0 && !previous.unit_price ? String(selected.daily_price ?? '') : previous.unit_price,
-    }));
+    };
+    draftRef.current = next; setDraft(next);
     setErrors(previous => ({ ...previous, [`vehicle_${index}`]: '' }));
     setSaveError('');
   }
@@ -379,7 +421,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     setCustomerPhotos({}); setPlatePhotos({}); setPhotoVersion(current => current + 1);
   }
   async function persistProfile() {
-    if(!row || !profileRevision || busy.current || processingCustomerPhoto || processingPlatePhoto)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
+    if(!row || !profileRevision || busy.current || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
     try{const result=await saveContractProfile(row.id,profileRevision,contractProfile(draft));setProfileRevision(result.revision);await savePhotos(row.id);setProfileMessage('Đã lưu hồ sơ, ảnh và yêu cầu khi in. Tiền, công nợ và kho xe giữ theo giao dịch đã ghi.');void ensureData(['contracts'],true).catch(()=>{});}
     catch(cause){setSaveError(cause instanceof Error ? cause.message : 'Không lưu được hồ sơ.');}
     finally{busy.current=false;setSaving(false);}
@@ -462,7 +504,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             </div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(0, 2).map(customerField)}</div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(customerField)}</div>
-            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${photoVersion}`} entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Chụp CCCD" value={customerPhotos} onChange={setCustomerPhotos} onBusyChange={setProcessingCustomerPhoto} disabled={saving} />}
+            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${photoVersion}`} entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Chụp CCCD · Tự điền bằng AI" value={customerPhotos} onChange={setCustomerPhotos} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
             <div className="mg-contract-relatives">{draft.relatives.map((relative, index) => <div className="mg-contract-relative" key={index}>
               <strong>Người thân {index + 1}</strong>
               <div className="mg-form-grid mg-contract-grid-three">{(['name', 'relationship', 'phone'] as const).map(key => {
@@ -501,7 +543,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             </div>;
             })}
             <button className="mg-button" type="button" onClick={() => change('vehicles', [...draft.vehicles, emptyVehicle()])}><Plus size={16} />Thêm xe</button>
-            {source === 'api' && draft.vehicles.some(vehicle => vehicle.id) && <RecordPhotoFields key={`plates-${photoVersion}`} entity="contracts" recordId={savedDraft?.id || row?.id} slots={draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))} title="Chụp biển số xe" value={platePhotos} onChange={setPlatePhotos} onBusyChange={setProcessingPlatePhoto} disabled={saving} />}
+            {source === 'api' && <RecordPhotoFields key={`plates-${photoVersion}`} entity="contracts" recordId={savedDraft?.id || row?.id} slots={[{ key: 'scan_plate', label: 'Biển số để tự chọn xe' }, ...draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))]} title="Chụp biển số · Tự chọn xe bằng AI" value={platePhotos} onChange={setPlatePhotos} onBusyChange={setProcessingPlatePhoto} disabled={saving} ocr={plateOcr} />}
           </>)}
           {panel('payment', 'Chi phí', <>
             {!reserving && <div className="mg-contract-cost-section"><h3>Tiền cọc</h3><div className="mg-form-grid mg-contract-grid-two">
@@ -543,10 +585,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
           </fieldset>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}{profileMessage && <p className="mg-payment-success" role="status">{profileMessage}</p>}
         </div>
         <div className="mg-dialog-footer"><span className="mg-form-note">{canSaveDraft ? 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
-          {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
-          {canSaveDraft && source === 'api' && canSaveContractDrafts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || staffLoading || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
+          {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
+          {canSaveDraft && source === 'api' && canSaveContractDrafts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending || staffLoading || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
           {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || staffLoading || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
-          {row && !canSaveDraft && source === 'api' && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
+          {row && !canSaveDraft && source === 'api' && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || staffLoading || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>
     </Dialog>

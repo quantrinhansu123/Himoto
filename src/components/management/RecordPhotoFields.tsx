@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { Camera, ImagePlus, LoaderCircle, X } from 'lucide-react';
-import { PendingPhotos, PhotoEntity, PhotoSlot, SavedPhoto, photoEndpoint, prepareRecordPhoto, saveRecordPhotos } from '@/lib/management/record-photos';
+import { PendingPhotos, PhotoEntity, PhotoSlot, SavedPhoto, photoEndpoint, prepareRecordPhoto, saveRecordPhotos, uploadRecordPhoto } from '@/lib/management/record-photos';
+import type { PhotoOcrController } from './usePhotoOcr';
 
 function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange }: { slot: PhotoSlot; file?: File; savedUrl?: string; disabled: boolean; onChange: (file?: File) => void; onBusyChange: (busy: boolean) => void }) {
   const camera = useRef<HTMLInputElement>(null), library = useRef<HTMLInputElement>(null);
@@ -40,13 +41,22 @@ function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange }: 
   </div>;
 }
 
-export function RecordPhotoFields({ entity, recordId, slots, value, onChange, disabled = false, onBusyChange, title = 'Ảnh hồ sơ' }: {
+export function RecordPhotoFields({ entity, recordId, slots, value, onChange, disabled = false, onBusyChange, title = 'Ảnh hồ sơ', ocr }: {
   entity: PhotoEntity; recordId?: number; slots: PhotoSlot[]; value: PendingPhotos; onChange: (value: PendingPhotos) => void;
-  disabled?: boolean; onBusyChange?: (busy: boolean) => void; title?: string;
+  disabled?: boolean; onBusyChange?: (busy: boolean) => void; title?: string; ocr?: PhotoOcrController;
 }) {
   const [saved, setSaved] = useState<SavedPhoto[]>([]), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   const busySlots = useRef(new Set<string>());
   const latestValue = useRef(value); latestValue.current = value;
+  const [uploadStates, setUploadStates] = useState<Record<string, { loading: boolean; error?: string }>>({});
+  function upload(slot: string, file: File, retry = false) {
+    setUploadStates(current => ({ ...current, [slot]: { loading: true } }));
+    void uploadRecordPhoto(file, retry).then(() => {
+      if (latestValue.current[slot] === file) setUploadStates(current => ({ ...current, [slot]: { loading: false } }));
+    }).catch(cause => {
+      if (latestValue.current[slot] === file) setUploadStates(current => ({ ...current, [slot]: { loading: false, error: cause instanceof Error ? cause.message : 'Không tải được ảnh.' } }));
+    });
+  }
   useEffect(() => {
     setSaved([]); setError('');
     if (!recordId) return;
@@ -62,10 +72,21 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
     {error && <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={() => setRetry(current => current + 1)}>Thử lại</button></p>}
     <div className="mg-photo-grid">{slots.map(slot => {
       const photo = saved.find(photo => photo.slot === slot.key);
-      return <PhotoField key={slot.key} slot={slot} file={value[slot.key]} disabled={disabled}
+      const state = ocr?.states[slot.key], uploadState = uploadStates[slot.key];
+      return <div key={slot.key}><PhotoField slot={slot} file={value[slot.key]} disabled={disabled}
         savedUrl={photo && recordId ? `${photoEndpoint(entity, recordId, slot.key)}?v=${encodeURIComponent(photo.updated_at)}` : undefined}
         onBusyChange={busy => { if (busy) busySlots.current.add(slot.key); else busySlots.current.delete(slot.key); onBusyChange?.(busySlots.current.size > 0); }}
-        onChange={file => { const next = { ...latestValue.current }; if (file) next[slot.key] = file; else delete next[slot.key]; latestValue.current = next; onChange(next); }} />;
+        onChange={file => {
+          const next = { ...latestValue.current }; if (file) next[slot.key] = file; else delete next[slot.key]; latestValue.current = next; onChange(next);
+          if (file) upload(slot.key, file);
+          else setUploadStates(current => { const next = { ...current }; delete next[slot.key]; return next; });
+          ocr?.read(slot.key, file);
+        }} />
+        {uploadState && value[slot.key] && <p className={uploadState.error ? 'mg-field-error' : 'mg-photo-feedback'} role={uploadState.error ? 'alert' : 'status'}>{uploadState.loading ? 'Đang tải ảnh…' : uploadState.error || 'Đã tải ảnh.'}{uploadState.error && <button type="button" className="mg-button" disabled={disabled} onClick={() => upload(slot.key, value[slot.key], true)}>Tải ảnh lại</button>}</p>}
+        {state && <div className="mg-photo-feedback"><p role={state.phase === 'error' ? 'alert' : 'status'} className={state.phase === 'error' ? 'mg-field-error' : undefined}>{state.message}</p>
+          {state.phase === 'reading' ? <button type="button" className="mg-button" disabled={disabled} onClick={() => ocr?.cancel(slot.key)}>Bỏ qua AI</button> : value[slot.key] && <button type="button" className="mg-button" disabled={disabled} onClick={() => ocr?.read(slot.key, value[slot.key])}>Đọc lại ảnh</button>}
+        </div>}
+      </div>;
     })}</div>
   </fieldset>;
 }

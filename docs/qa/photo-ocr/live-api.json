@@ -1,0 +1,10 @@
+{
+  "checks": {
+    "authenticatedGeminiExtraction": 200,
+    "anonymous": 401,
+    "crossOrigin": 403,
+    "authenticatedCloudinarySignature": 200
+  },
+  "realBusinessWrites": 0,
+  "syntheticImageOnly": true
+}

@@ -15,6 +15,7 @@ args = parser.parse_args()
 out = Path(args.output) / args.browser
 out.mkdir(parents=True, exist_ok=True)
 checks, writes, errors, contracts, photo_data = [], [], [], [], {}
+cloud_photos = {}
 fail_customer_photo = True
 fail_plate_photo = True
 stores = [dict(id=31, store_name='Cơ sở QA', code='QA31', status='opening', store_address='Địa chỉ QA', store_phone='0900000090')]
@@ -33,15 +34,21 @@ def mock(route):
     req = route.request
     parsed = urlparse(req.url)
     endpoint = parsed.path
+    if endpoint == '/api/auth/photo-uploads/sign':
+        upload_id = req.post_data_json['upload_id']
+        route.fulfill(json=dict(status='success', data=dict(cloud_name='qa-cloud', api_key='qa-key', signature='qa-signature', params=dict(public_id=f'himoto/management/143/{upload_id}', type='authenticated', timestamp=1800000000))))
+        return
+    if endpoint == '/api/auth/photo-ocr':
+        route.fulfill(json=dict(status='success', data=dict(fields=dict(name='Khách mới QA', id_card='009876543210') if req.headers.get('x-photo-kind') != 'plate' else {})))
+        return
     if endpoint.startswith('/api/auth/record-photos/'):
         parts = endpoint.split('/')
         entity, record_id = parts[4], int(parts[5])
         slot = parts[6] if len(parts) > 6 else None
         key = (entity, record_id, slot)
         if req.method == 'PUT':
-            assert req.headers['content-type'] == 'image/jpeg'
-            # WebKit's interception API omits Blob request bodies; capture the actual bytes at fetch entry.
-            uploaded = req.post_data_buffer or base64.b64decode(page.evaluate('(url) => window.__qaPhotoBodies[url]', req.url))
+            assert req.headers['content-type'] == 'application/json'
+            uploaded = cloud_photos[req.post_data_json['public_id']]
             assert uploaded.startswith(bytes([255, 216, 255]))
             if entity == 'customers' and record_id == 8 and fail_customer_photo:
                 fail_customer_photo = False
@@ -106,14 +113,21 @@ with sync_playwright() as p:
     context = browser.new_context(viewport=dict(width=375, height=812), timezone_id='Asia/Ho_Chi_Minh', locale='vi-VN', reduced_motion='reduce')
     context.add_cookies([dict(name='himoto_management_session', value=Path(args.session_cookie_file).read_text().strip(), url=args.url, httpOnly=True, sameSite='Strict')])
     context.route('**/api/auth/**', mock)
+    def mock_cloud(route):
+        captured = page.evaluate('(url) => window.__qaCloudBodies[new URL(url).searchParams.get("qa_upload")]', route.request.url)
+        cloud_photos[captured['public_id']] = base64.b64decode(captured['bytes'])
+        route.fulfill(json=dict(public_id=captured['public_id'], version=1800000000, signature='qa-response-signature'))
+    context.route('https://api.cloudinary.com/**', mock_cloud)
     context.add_init_script('''
-      window.__qaPhotoBodies = {};
+      window.__qaCloudBodies = {};
       const originalFetch = window.fetch.bind(window);
       window.fetch = async (input, init) => {
-        if (String(input).includes('/api/auth/record-photos/') && init?.method === 'PUT' && init.body instanceof Blob) {
-          const bytes = new Uint8Array(await init.body.arrayBuffer());
+        if (String(input).startsWith('https://api.cloudinary.com/') && init?.body instanceof FormData) {
+          const bytes = new Uint8Array(await init.body.get('file').arrayBuffer());
           let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
-          window.__qaPhotoBodies[new URL(String(input), location.href).href] = btoa(binary);
+          const publicId = init.body.get('public_id');
+          window.__qaCloudBodies[publicId] = {public_id:publicId,bytes:btoa(binary)};
+          const url = new URL(String(input)); url.searchParams.set('qa_upload',publicId); input = url.href;
         }
         return originalFetch(input, init);
       };
@@ -149,7 +163,7 @@ with sync_playwright() as p:
     expect(dialog.get_by_role('button', name='Lưu khách hàng', exact=True)).to_be_enabled()
     dialog.screenshot(path=str(out / 'new-customer-375.png'))
     dialog.get_by_role('button', name='Lưu khách hàng', exact=True).click()
-    expect(dialog.get_by_role('alert')).to_contain_text('Lỗi tải ảnh QA')
+    expect(dialog.locator('.mg-error-message')).to_contain_text('Lỗi tải ảnh QA')
     dialog.get_by_role('button', name='Lưu khách hàng', exact=True).click()
     expect(dialog).to_have_count(0)
     creates = [w for w in writes if w['path'] == '/api/auth/customers']
@@ -194,7 +208,7 @@ with sync_playwright() as p:
     form.get_by_role('tab', name='Chi phí', exact=False).click()
     form.locator('#contract-deposit_amount').fill('1000000')
     form.get_by_role('button', name='Hoàn tất & thanh toán', exact=True).click()
-    expect(form.get_by_role('alert')).to_contain_text('Lỗi ảnh biển số QA')
+    expect(form.locator('.mg-error-message')).to_contain_text('Lỗi ảnh biển số QA')
     form.get_by_role('button', name='Hoàn tất & thanh toán', exact=True).click()
     receipt = page.get_by_role('dialog').filter(has_text='Xác nhận thanh toán')
     expect(receipt.locator('#rental-collection-0-amount')).to_have_value('200.000', timeout=20000)

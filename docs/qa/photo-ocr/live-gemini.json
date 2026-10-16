@@ -1,0 +1,16 @@
+{
+  "provider": "Gemini",
+  "syntheticImagesOnly": true,
+  "plate": true,
+  "identity": [
+    {
+      "side": "front",
+      "recognizedCorrectly": true
+    },
+    {
+      "side": "back",
+      "recognizedCorrectly": true
+    }
+  ],
+  "realCustomerDataSent": false
+}
