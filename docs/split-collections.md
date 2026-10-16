@@ -2,7 +2,7 @@
 
 Trong bước **Chi phí**, tiền thuê xe tính theo ngày/đơn giá. Thêm các khoản phí bằng **Tên khoản phí + Số tiền**, ví dụ phí ship 50.000 đ. Tổng tiền thuê/phí bao gồm các khoản này; tổng cần thu còn cộng tiền cọc. Hai tổng này không được coi là tiền đã nhận.
 
-Bấm **Hoàn tất & thanh toán** để mở bước xác nhận thanh toán. Mỗi dòng ghi loại tiền (cọc hoặc thuê/phí), số tiền thực nhận, hình thức, tài khoản nhận và thời điểm nhận theo giờ Việt Nam 24h. Có thể thêm nhiều dòng cho tiền mặt, tài khoản cá nhân và tài khoản công ty. Chọn nhiều hình thức dự kiến yêu cầu điền số tiền từng dòng. Bỏ chọn ghi nhận để phát hành khi chưa thu; nhập ít hơn số phải thu để giữ phần còn thiếu.
+Bấm **Hoàn tất & thanh toán** để mở bước xác nhận thanh toán. Mỗi dòng ghi loại tiền (cọc hoặc thuê/phí), số tiền thực nhận, hình thức, tài khoản nhận và thời điểm nhận theo giờ Việt Nam 24h. Có thể thêm nhiều dòng cho tiền mặt, tài khoản cá nhân và tài khoản công ty. Khi chia nhiều hình thức, một khoản tự tính phần còn lại: cọc 2 triệu, nhập 1,8 triệu thì khoản sau là 200 nghìn. Sửa tay khoản tự tính để thu một phần; các lần sửa sau giữ nguyên số nhập tay. Phí cố định và tiền đã thu trước vẫn được tính riêng; khoản tự tính bằng 0 không tạo phiếu thu. Bỏ chọn ghi nhận để phát hành khi chưa thu; nhập ít hơn số phải thu để giữ phần còn thiếu.
 
 Ví dụ cọc 2 triệu + thuê 200.000 + ship 50.000, tổng cần thu 2.250.000 đ:
 
@@ -20,4 +20,4 @@ Mẫu in ghi **Đã thu phí thuê** theo số thực nhận, tách tiền cọc
 
 Không cần migration mới cho việc chia thu tiền. Hỗ trợ API phát hành cũ với một dòng cho mỗi loại tiền; API mới nhận mảng `receipts`. Kiểm tra giới hạn tiền, số dòng, tài khoản/hình thức/cơ sở, thời điểm và phần còn phải thu trước khi phát hành trong cùng transaction.
 
-Kiểm tra: `node scripts/check-split-collections.cjs --live-temp` gồm 5 nhóm; chỉ bảng TEMP, rollback và sequence riêng. `python scripts/check-split-collections-ui.py --session-cookie-file <file phiên cục bộ>` giả lập mọi API nghiệp vụ, kiểm tra form, mobile 375px, request chia thu và PDF A4. Ảnh/PDF/kết quả trong `docs/qa/split-collections/`.
+Kiểm tra: `node scripts/check-split-collections.cjs --live-temp` gồm 6 nhóm; chỉ bảng TEMP, rollback và sequence riêng. `python scripts/check-split-collections-ui.py --session-cookie-file <file phiên cục bộ>` giả lập mọi API nghiệp vụ, kiểm tra form, mobile 375px, request chia thu và PDF A4. Thêm `--payments-only --browser webkit` để kiểm tra riêng thanh toán trên WebKit, hoặc `--payments-only --zero-remainder` để kiểm tra khoản còn lại bằng 0. Ảnh/PDF/kết quả trong `docs/qa/split-collections/`.

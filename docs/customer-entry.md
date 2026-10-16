@@ -5,6 +5,7 @@
 - Form khách mới và phần Khách hàng trong hợp đồng có **Chụp CCCD** mặt trước/mặt sau. Phần Phương tiện có **Chụp biển số xe**, riêng từng xe. Có nút chụp bằng camera sau và chọn ảnh thư viện; trình duyệt quyết định giao diện camera trên thiết bị. [Gemini tự điền và tải Cloudinary song song](photo-ocr.md) đọc CCCD và hỗ trợ chọn xe theo biển số ngay sau khi chụp.
 - Ảnh mới lưu khi lưu khách hàng, lưu nháp, hoàn tất hợp đồng hoặc lưu hồ sơ hợp đồng. Chi tiết khách hàng/hợp đồng cho xem lại và thay ảnh bằng nút **Lưu ảnh**. Nếu tải ảnh lỗi, giữ form và thử lại; lần thử tiếp dùng khách hàng/bản nháp đã lưu.
 - **Hoàn tất & thanh toán** mở bước **Xác nhận thanh toán**. Kiểm tra tiền cọc, tiền thuê/phí, tài khoản và ngày thực nhận. Bỏ chọn khoản chưa nhận; thu một phần sẽ để lại số còn thiếu. Nhấn **Xác nhận lưu chính thức** để phát hành và ghi phiếu thu theo nghiệp vụ hiện có.
+- Khi chia cọc hoặc tiền thuê thành nhiều hình thức, một khoản tự tính phần còn lại: cọc 2.000.000 đ, khoản đầu 1.800.000 đ thì khoản sau là 200.000 đ. Sửa tay khoản tự tính để ghi nhận thu một phần; phí cố định và khoản đã thu trước vẫn được giữ riêng. Khoản tự tính bằng 0 không tạo phiếu thu.
 
 ## Lưu trữ
 

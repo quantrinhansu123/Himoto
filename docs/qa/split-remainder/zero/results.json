@@ -1,0 +1,10 @@
+{
+  "passed": 3,
+  "checks": [
+    "named ship fee is included in 250k rental/fees and 2.25m quote; adding/removing fees recalculates; no quote is labelled as money collected",
+    "2m split: 1.8m automatically leaves 200k; changes recalculate, manual partial amounts persist, adding/removing rows restores the balance; overcollection is blocked and fixed ship fees stay unchanged; 375px mobile fits",
+    "request sends the exact deposit split, accounts and receipt dates plus 250k cash fees; automatic zero amounts create no receipt and draft money received remains zero"
+  ],
+  "errors": [],
+  "realBusinessWrites": 0
+}

@@ -12,6 +12,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--url', default='http://127.0.0.1:3102')
 parser.add_argument('--session-cookie-file', required=True)
 parser.add_argument('--output', default='docs/qa/split-collections')
+parser.add_argument('--browser', default='chromium', choices=['chromium', 'webkit'])
+parser.add_argument('--payments-only', action='store_true')
+parser.add_argument('--zero-remainder', action='store_true')
 args = parser.parse_args()
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
@@ -71,7 +74,7 @@ def mock(route):
     route.fulfill(json={'status': 'success', 'data': data})
 
 with sync_playwright() as p:
-    browser = p.chromium.launch()
+    browser = getattr(p, args.browser).launch()
     context = browser.new_context(viewport={'width': 1440, 'height': 1000}, timezone_id='Asia/Ho_Chi_Minh', locale='en-US', reduced_motion='reduce')
     context.add_cookies([dict(name='himoto_management_session', value=Path(args.session_cookie_file).read_text().strip(),
         url=args.url, httpOnly=True, sameSite='Strict')])
@@ -118,8 +121,26 @@ with sync_playwright() as p:
     expect(receipt.locator('#deposit-collection-0-amount')).to_be_visible(timeout=20000)
     expect(receipt.locator('#deposit-collection-0-amount')).to_have_value('')
     expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('')
+    receipt.locator('#deposit-collection-0-amount').fill('1800000')
+    expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('200.000')
+    receipt.locator('#deposit-collection-0-amount').fill('1700000')
+    expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('300.000')
+    receipt.locator('#deposit-collection-0-amount').fill('2000000')
+    expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('0')
+    receipt.locator('#deposit-collection-0-amount').fill('1800000')
+    page.set_viewport_size({'width': 375, 'height': 812})
+    receipt.screenshot(path=str(out / 'auto-remainder-375.png'))
+    page.set_viewport_size({'width': 1440, 'height': 1000})
+    receipt.locator('#deposit-collection-1-amount').fill('100000')
+    receipt.locator('#deposit-collection-0-amount').fill('1700000')
+    expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('100.000')
+    expect(receipt.locator('[data-purpose=deposit]')).to_contain_text('Thanh toán một phần')
+    receipt.get_by_role('button', name='Bỏ khoản tiền cọc 2', exact=True).click()
+    receipt.get_by_role('button', name='Thêm khoản thu cọc', exact=True).click()
+    expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('300.000')
+    receipt.locator('#deposit-collection-1-method').select_option('company_transfer')
     receipt.locator('#deposit-collection-0-amount').fill('200000')
-    receipt.locator('#deposit-collection-1-amount').fill('1800000')
+    expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('1.800.000')
     expect(receipt.locator('#deposit-collection-0-account')).to_have_value('6')
     expect(receipt.locator('#deposit-collection-1-account')).to_have_value('7')
     yesterday = (datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')) - timedelta(days=1)).strftime('%Y-%m-%d')
@@ -136,21 +157,32 @@ with sync_playwright() as p:
     receipt.get_by_role('button', name='Thêm khoản thu cọc', exact=True).click()
     expect(receipt.locator('#deposit-collection-2-amount')).to_be_visible()
     receipt.get_by_role('button', name='Bỏ khoản tiền cọc 3', exact=True).click()
+    expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('1.800.000')
+    if args.zero_remainder:
+        receipt.locator('#deposit-collection-0-amount').fill('2000000')
+        expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('0')
     for width, height in [(1440, 1000), (375, 812)]:
         page.set_viewport_size({'width': width, 'height': height})
         assert receipt.evaluate('(el)=>el.scrollWidth<=el.clientWidth+1')
         receipt.screenshot(path=str(out / f'split-receipts-{width}.png'))
-    checks.append('multiple selected methods require explicit allocation; rows support distinct accounts/dates and adding/removing; overcollection is blocked and partial payment leaves debt; 375px mobile fits')
+    checks.append('2m split: 1.8m automatically leaves 200k; changes recalculate, manual partial amounts persist, adding/removing rows restores the balance; overcollection is blocked and fixed ship fees stay unchanged; 375px mobile fits')
     page.set_viewport_size({'width': 1440, 'height': 1000})
     receipt.get_by_role('button', name='Xác nhận lưu chính thức', exact=True).click()
     expect(form).to_have_count(0)
     allocation = writes[-1]['body']['receipts']
-    assert [(r['purpose'], r['amount'], r['account_id']) for r in allocation] == [
-        ('deposit', '200000', 6), ('deposit', '1800000', 7), ('rental', '200000', 5), ('rental', '50000', 5)]
+    expected_deposit = [('deposit', '2000000', 6)] if args.zero_remainder else [('deposit', '200000', 6), ('deposit', '1800000', 7)]
+    assert [(r['purpose'], r['amount'], r['account_id']) for r in allocation] == expected_deposit + [('rental', '200000', 5), ('rental', '50000', 5)]
+    assert all(int(row['amount'])>0 and 'automatic' not in row for row in allocation)
     assert allocation[0]['paid_at'].startswith(yesterday)
     assert writes[0]['body']['draft']['paid_amount'] == '0'
     assert writes[0]['body']['draft']['extra_charges'] == [dict(name='Phí ship', amount='50000', method='cash')]
-    checks.append('request sends exactly 200k personal advance, 1.8m company deposit and 250k cash fees, with actual dates; draft money received remains zero')
+    checks.append('request sends the exact deposit split, accounts and receipt dates plus 250k cash fees; automatic zero amounts create no receipt and draft money received remains zero')
+    if args.payments_only:
+        assert not errors, errors
+        (out / 'results.json').write_text(json.dumps(dict(passed=len(checks), checks=checks, errors=errors, realBusinessWrites=0), ensure_ascii=False, indent=2), encoding='utf-8')
+        print(json.dumps(dict(passed=len(checks), checks=checks), ensure_ascii=False))
+        browser.close()
+        raise SystemExit(0)
     page.goto(args.url + '/contracts', wait_until='domcontentloaded')
     page.get_by_role('button', name='Thao tác 261011-QA-0001', exact=True).click()
     page.get_by_role('menuitem', name='Điền và in hợp đồng', exact=True).click()

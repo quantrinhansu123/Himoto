@@ -4,13 +4,13 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { PAYMENT_METHODS, PaymentContext, PaymentMethod, loadPaymentContext, paymentAccounts, paymentMethodLabel, vietnamPaymentTime } from '@/lib/management/contract-payments';
-import { FinalizeCollection, FinalizeResult, finalizeContract } from '@/lib/management/contract-finalize';
+import { FinalizeCollection, FinalizeResult, balanceCollectionAmounts, finalizeContract } from '@/lib/management/contract-finalize';
 import type { ContractCharge } from '@/lib/management/contract-charges';
 import { DateTime24Field } from './DateTime24Field';
 
 const money = (value: number) => `${value.toLocaleString('vi-VN')} đ`;
 const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
-interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string; label?: string }
+interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string; label?: string; automatic?: boolean }
 interface CollectionState { collect: boolean; rows: CollectionRow[] }
 
 export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, onClose, onDone }: {
@@ -32,7 +32,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       if (controller.signal.aborted) return;
       setContext(value);
       const row = (method: PaymentMethod, amount: string, label?: string): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime(),label});
-      const seed = (due: number, methods: PaymentMethod[], label?: string) => due>0 ? methods.map(method=>row(method,methods.length===1 ? String(due) : '',label)) : [];
+      const seed = (due: number, methods: PaymentMethod[], label?: string) => due>0 ? methods.map((method,index)=>({...row(method,methods.length===1 ? String(due) : '',label),automatic:!reservation && methods.length>1 && index===methods.length-1})) : [];
       const depositDue = Math.max(deposit-value.deposit_paid,0), rentalDue = Math.max(total-(value.paid_amount || 0),0);
       const fees = initialMethods.current.charges.filter(item=>item.name.trim() && Number(item.amount)>0);
       const feeTotal = fees.reduce((sum,item)=>sum+Number(item.amount),0);
@@ -52,7 +52,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     if (!state.collect || !due) return [];
     if (!state.rows.length) throw new Error('Thêm khoản tiền đã nhận, hoặc bỏ chọn thu tiền để ghi nhận chưa thu.');
     if (collected(state)>due) throw new Error(`Khoản ${purpose==='deposit' ? 'cọc' : 'thuê/phí'} vượt số còn phải thu ${money(due)}.`);
-    return state.rows.map(row=>{
+    return state.rows.filter(row=>!(row.automatic && row.amount==='0')).map(row=>{
       if (!/^[1-9]\d{0,12}$/.test(row.amount) || !Number.isSafeInteger(Number(row.amount))) throw new Error('Nhập số tiền lớn hơn 0 cho từng khoản thu.');
       const account = chosenAccount(row);
       if (!account) throw new Error('Chọn tài khoản nhận tiền đang hoạt động tại cơ sở nguồn khách.');
@@ -72,21 +72,26 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   }
 
   function section(purpose: FinalizeCollection['purpose'], label: string, amount: number, due: number, state: CollectionState, setState: (next: CollectionState)=>void) {
-    const update = (key: number, patch: Partial<CollectionRow>) => setState({...state,rows:state.rows.map(row=>row.key===key ? {...row,...patch} : row)});
+    const update = (key: number, patch: Partial<CollectionRow>) => setState({...state,rows:balanceCollectionAmounts(state.rows.map(row=>row.key===key ? {...row,...patch,...(patch.amount!==undefined ? {automatic:false} : {})} : row),due)});
+    const add = () => {
+      const hasAutomatic = state.rows.some(row=>row.automatic);
+      const added = {...newRow('cash',hasAutomatic ? '' : String(Math.max(due-collected(state),0))),automatic:!reservation && !hasAutomatic};
+      setState({...state,rows:balanceCollectionAmounts([...state.rows,added],due)});
+    };
     return <fieldset className="mg-finalize-receipt" data-purpose={purpose}><legend>{label}: {money(amount)}</legend>
       <p className="mg-composer-hint">Đã ghi nhận trước: {money(amount-due)} · Còn phải thu: {money(due)}</p>
       {due>0 && <><label className="mg-checkbox"><input type="checkbox" checked={state.collect} onChange={event=>setState({...state,collect:event.target.checked})} />{purpose === 'deposit' ? 'Đã nhận tiền cọc' : 'Khách đã thanh toán tiền thuê / phí'}</label>
         {state.collect && <>
           {state.rows.map((row,index)=><div className="mg-collection-row" key={row.key}>
-            <div className="mg-collection-row-heading"><strong>Khoản {index+1}{row.label ? ` · ${row.label}` : ''}</strong><button type="button" className="mg-icon-button" aria-label={`Bỏ khoản ${label.toLowerCase()} ${index+1}`} onClick={()=>setState({...state,rows:state.rows.filter(item=>item.key!==row.key)})}><Trash2 size={15}/></button></div>
+            <div className="mg-collection-row-heading"><strong>Khoản {index+1}{row.label ? ` · ${row.label}` : ''}</strong><button type="button" className="mg-icon-button" aria-label={`Bỏ khoản ${label.toLowerCase()} ${index+1}`} onClick={()=>setState({...state,rows:balanceCollectionAmounts(state.rows.filter(item=>item.key!==row.key),due)})}><Trash2 size={15}/></button></div>
             <div className="mg-form-grid mg-contract-grid-two">
-              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-amount`}>Số tiền đã nhận (VNĐ)</label><input id={`${purpose}-collection-${index}-amount`} inputMode="numeric" value={formatInput(row.amount)} onChange={event=>update(row.key,{amount:event.target.value.replace(/\D/g,'')})}/></div>
+              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-amount`}>Số tiền đã nhận (VNĐ)</label><input id={`${purpose}-collection-${index}-amount`} inputMode="numeric" value={formatInput(row.amount)} onChange={event=>update(row.key,{amount:event.target.value.replace(/\D/g,'')})}/>{row.automatic && <small>Tự tính phần còn lại. Có thể sửa theo số tiền thực nhận.</small>}</div>
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-method`}>Hình thức</label><select id={`${purpose}-collection-${index}-method`} value={row.method} onChange={event=>update(row.key,{method:event.target.value as PaymentMethod,account:''})}>{PAYMENT_METHODS.map(method=><option key={method.value} value={method.value}>{paymentMethodLabel(method.value)}</option>)}</select></div>
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-account`}>Tài khoản nhận</label><select id={`${purpose}-collection-${index}-account`} value={chosenAccount(row)?.id || ''} disabled={!accountsFor(row).length} onChange={event=>update(row.key,{account:event.target.value})}>{accountsFor(row).length ? accountsFor(row).map(account=><option key={account.id} value={account.id}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select></div>
               <DateTime24Field id={`${purpose}-collection-${index}-paid-at`} label="Thời điểm nhận" value={row.paid_at} onChange={value=>update(row.key,{paid_at:value})}/>
             </div>
           </div>)}
-          <button type="button" className="mg-button" disabled={state.rows.length>=20} onClick={()=>setState({...state,rows:[...state.rows,newRow('cash',String(Math.max(due-collected(state),0)))]})}><Plus size={15}/>Thêm khoản thu {purpose==='deposit' ? 'cọc' : 'thuê/phí'}</button>
+          <button type="button" className="mg-button" disabled={state.rows.length>=20} onClick={add}><Plus size={15}/>Thêm khoản thu {purpose==='deposit' ? 'cọc' : 'thuê/phí'}</button>
           <p className={collected(state)>due ? 'mg-field-error' : 'mg-composer-hint'}>Sẽ ghi nhận: {money(collected(state))} · Còn chưa thu: {money(Math.max(due-collected(state),0))}</p>
         </>}
         {!state.collect && <small>Chưa nhận tiền: giữ nguyên số còn phải thu, không ghi nhận vào tài khoản.</small>}

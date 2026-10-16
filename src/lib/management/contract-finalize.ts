@@ -5,6 +5,16 @@ export interface FinalizeCollection extends FinalizeReceipt { purpose: 'deposit'
 export type FinalizeInput = { revision: string; paid_at: string; deposit: FinalizeReceipt | null; rental: FinalizeReceipt | null } | { revision: string; receipts: FinalizeCollection[]; reservation?: true };
 export interface FinalizeResult { order_id: number; code: string; total_amount: number; deposit_amount: number; paid_amount: number; transaction_ids: number[]; status?: 'renting' | 'deposit_contract' }
 
+/** Balance only the automatic row; editing it manually opts into a partial payment. */
+export function balanceCollectionAmounts<T extends { amount: string; automatic?: boolean }>(rows: T[], due: number): T[] {
+  const target = rows.findIndex(row => row.automatic);
+  if (target < 0) return rows;
+  const others = rows.filter((_, index) => index !== target);
+  const ready = others.every(row => /^[1-9]\d{0,12}$/.test(row.amount) && Number.isSafeInteger(Number(row.amount)));
+  const amount = ready ? String(Math.max(due - others.reduce((sum, row) => sum + Number(row.amount), 0), 0)) : '';
+  return rows.map((row, index) => index === target ? { ...row, amount } : row);
+}
+
 const METHOD_BY_LABEL: Record<string, PaymentMethod> = { 'Tiền mặt': 'cash', 'CK tk cá nhân': 'transfer', 'CK tk công ty': 'company_transfer' };
 export function draftPaymentMethod(value: string): PaymentMethod {
   const first = value.split(',').map(item => item.trim()).find(item => METHOD_BY_LABEL[item]);
