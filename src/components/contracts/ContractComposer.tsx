@@ -434,7 +434,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     };
     return <div className={`mg-field ${item.wide ? 'mg-field-wide' : ''}`} key={item.key}>
       <label htmlFor={fieldId}>{item.label}</label>
-      {item.type === 'date' ? <VietnamDateField id={fieldId} value={draft.customer[item.key]} disabled={lookupState !== 'found'}
+      {item.type === 'date' ? <VietnamDateField id={fieldId} value={draft.customer[item.key] || ''} disabled={lookupState !== 'found'}
         invalid={Boolean(errors[item.key])} onChange={setCustomerValue} />
         : <input id={fieldId} type={item.type || 'text'} value={draft.customer[item.key]}
           disabled={lookupState !== 'found'} readOnly={item.key === 'id_card'} aria-invalid={Boolean(errors[item.key])}

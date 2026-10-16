@@ -113,7 +113,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
   function choosePurpose(next: PaymentPurpose) {
     setPurpose(next); setError(''); setSuccess('');
     if (next === 'deposit_refund' && context) setAmount(String(context.deposit_held));
-    else if (next === 'debt' && context?.remaining !== null && context.remaining > 0) setAmount(String(context.remaining));
+    else if (next === 'debt' && context && context.remaining !== null && context.remaining > 0) setAmount(String(context.remaining));
     else if (next === 'extra' || next === 'renewal') setAmount('');
     if (context && (['debt', 'extra', 'deposit_refund', 'renewal'] as const).some(kind => note === defaultNote(kind, context.code)) || !note.trim()) setNote(defaultNote(next, context?.code || ''));
   }

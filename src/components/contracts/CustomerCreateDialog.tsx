@@ -83,7 +83,7 @@ export function CustomerCreateDialog({ idCard, storeId, allowIncomplete = false,
         return <Fragment key={field.key}><div className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`}>
         <label htmlFor={fieldId}>{field.label}{required && <span aria-hidden="true"> *</span>}</label>
         {field.type === 'date'
-          ? <VietnamDateField id={fieldId} value={customer[field.key]} disabled={fieldsDisabled} invalid={Boolean(errors[field.key])}
+          ? <VietnamDateField id={fieldId} value={customer[field.key] || ''} disabled={fieldsDisabled} invalid={Boolean(errors[field.key])}
               describedBy={errors[field.key] ? `${fieldId}-error` : undefined} onChange={setValue} />
           : <input id={fieldId} name={field.key} type={field.type || 'text'} value={customer[field.key]} disabled={fieldsDisabled} required={required}
               aria-invalid={Boolean(errors[field.key])} aria-describedby={errors[field.key] ? `${fieldId}-error` : undefined}
