@@ -1,0 +1,23 @@
+{
+  "runs": [
+    {
+      "range": [
+        "2026-10-01",
+        "2026-10-31"
+      ],
+      "beforeMs": 2141,
+      "afterMs": 932,
+      "exactResultMatch": true
+    },
+    {
+      "range": [
+        "2025-01-01",
+        "2026-10-31"
+      ],
+      "beforeMs": 1749,
+      "afterMs": 970,
+      "exactResultMatch": true
+    }
+  ],
+  "businessWrites": 0
+}

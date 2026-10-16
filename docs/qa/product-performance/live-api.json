@@ -1,0 +1,43 @@
+{
+  "commit": "e87c349",
+  "passed": 6,
+  "results": [
+    {
+      "path": "/api/auth/customers?table=1&page=2&size=10&sort=contract_count&direction=desc",
+      "authenticated": true,
+      "status": 200,
+      "rows": 10
+    },
+    {
+      "path": "/api/auth/order/car-rental?table=1&scope=vat&sort=company_paid_amount&direction=desc&size=10",
+      "authenticated": true,
+      "status": 200,
+      "rows": 7
+    },
+    {
+      "path": "/api/auth/order/car-rental?table=1&scope=ownership&sort=contract_type_name&size=10",
+      "authenticated": true,
+      "status": 200,
+      "rows": 10
+    },
+    {
+      "path": "/api/auth/customers?table=1&size=51",
+      "authenticated": true,
+      "status": 400,
+      "rows": null
+    },
+    {
+      "path": "/api/auth/customers?table=1",
+      "authenticated": false,
+      "status": 401,
+      "rows": null
+    },
+    {
+      "path": "/api/auth/order/car-rental?summary=operations",
+      "authenticated": false,
+      "status": 401,
+      "rows": null
+    }
+  ],
+  "realBusinessWrites": 0
+}

@@ -1,0 +1,28 @@
+{
+  "realBusinessWrites": 0,
+  "realProviderCalls": 0,
+  "checks": {
+    "build": "passed",
+    "lint": "passed",
+    "typecheck": "passed",
+    "managementTable": 5,
+    "managementLoading": 12,
+    "contractAutofill": 13,
+    "contractSummary": 8,
+    "contractDrafts": 5,
+    "contractBilling": 12,
+    "staffSales": 6,
+    "finalizeValidation": 1,
+    "pagedBrowserChromium": 5,
+    "pagedBrowserWebKit": 5,
+    "photoOcrWebKit": 8,
+    "splitCollectionsChromium": 3
+  },
+  "readOnlyComparison": {
+    "contracts": 25570,
+    "customers": 22850,
+    "scopes": 6,
+    "fullDetailsAndFinancialTotalsMatch": true,
+    "salesSummaryMonthAndLongRangeMatch": true
+  }
+}

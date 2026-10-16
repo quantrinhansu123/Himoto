@@ -1,0 +1,630 @@
+{
+  "baseUrl": "https://himoto.vercel.app",
+  "results": [
+    {
+      "path": "/operations",
+      "run": 1,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 1547,
+      "ttfb": 41,
+      "domContentLoaded": 550,
+      "fcp": 480,
+      "lcp": 480,
+      "blockingMs": 62,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 647,
+          "duration": 166,
+          "ttfb": 164,
+          "transfer": 411,
+          "encoded": 111,
+          "decoded": 290
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 662,
+          "duration": 179,
+          "ttfb": 177,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 37,
+      "scriptRequests": 10,
+      "scriptBytes": 143979,
+      "apiBytes": 2026,
+      "totalTransfer": 276903,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/operations",
+      "run": 2,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 1469,
+      "ttfb": 34,
+      "domContentLoaded": 467,
+      "fcp": 392,
+      "lcp": 392,
+      "blockingMs": 57,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 566,
+          "duration": 102,
+          "ttfb": 100,
+          "transfer": 411,
+          "encoded": 111,
+          "decoded": 290
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 586,
+          "duration": 95,
+          "ttfb": 93,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 37,
+      "scriptRequests": 10,
+      "scriptBytes": 143979,
+      "apiBytes": 2026,
+      "totalTransfer": 276903,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/operations",
+      "run": 3,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 1469,
+      "ttfb": 36,
+      "domContentLoaded": 393,
+      "fcp": 400,
+      "lcp": 400,
+      "blockingMs": 59,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 571,
+          "duration": 100,
+          "ttfb": 96,
+          "transfer": 411,
+          "encoded": 111,
+          "decoded": 290
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 591,
+          "duration": 106,
+          "ttfb": 104,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 37,
+      "scriptRequests": 10,
+      "scriptBytes": 143979,
+      "apiBytes": 2026,
+      "totalTransfer": 276903,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/contracts",
+      "run": 1,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 2906,
+      "ttfb": 40,
+      "domContentLoaded": 432,
+      "fcp": 428,
+      "lcp": 732,
+      "blockingMs": 27,
+      "longTasks": 1,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/contract-types",
+          "start": 737,
+          "duration": 129,
+          "ttfb": 127,
+          "transfer": 588,
+          "encoded": 288,
+          "decoded": 1106
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 738,
+          "duration": 1637,
+          "ttfb": 1632,
+          "transfer": 5485,
+          "encoded": 5185,
+          "decoded": 34227
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 748,
+          "duration": 154,
+          "ttfb": 152,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 42,
+      "scriptRequests": 14,
+      "scriptBytes": 173570,
+      "apiBytes": 37069,
+      "totalTransfer": 313367,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/contracts",
+      "run": 2,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 2875,
+      "ttfb": 37,
+      "domContentLoaded": 364,
+      "fcp": 396,
+      "lcp": 396,
+      "blockingMs": 101,
+      "longTasks": 3,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/contract-types",
+          "start": 641,
+          "duration": 96,
+          "ttfb": 93,
+          "transfer": 588,
+          "encoded": 288,
+          "decoded": 1106
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 645,
+          "duration": 1706,
+          "ttfb": 1703,
+          "transfer": 5485,
+          "encoded": 5185,
+          "decoded": 34227
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 661,
+          "duration": 114,
+          "ttfb": 112,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 42,
+      "scriptRequests": 14,
+      "scriptBytes": 173570,
+      "apiBytes": 37069,
+      "totalTransfer": 313367,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/contracts",
+      "run": 3,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 2719,
+      "ttfb": 35,
+      "domContentLoaded": 491,
+      "fcp": 420,
+      "lcp": 684,
+      "blockingMs": 39,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/contract-types",
+          "start": 614,
+          "duration": 95,
+          "ttfb": 93,
+          "transfer": 588,
+          "encoded": 288,
+          "decoded": 1106
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 615,
+          "duration": 1580,
+          "ttfb": 1577,
+          "transfer": 5485,
+          "encoded": 5185,
+          "decoded": 34227
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 622,
+          "duration": 127,
+          "ttfb": 125,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 42,
+      "scriptRequests": 14,
+      "scriptBytes": 173570,
+      "apiBytes": 37069,
+      "totalTransfer": 313367,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/customers",
+      "run": 1,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 1515,
+      "ttfb": 40,
+      "domContentLoaded": 390,
+      "fcp": 384,
+      "lcp": 652,
+      "blockingMs": 38,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/customers",
+          "start": 572,
+          "duration": 403,
+          "ttfb": 400,
+          "transfer": 1658,
+          "encoded": 1358,
+          "decoded": 5780
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 578,
+          "duration": 88,
+          "ttfb": 86,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 42,
+      "scriptRequests": 15,
+      "scriptBytes": 180667,
+      "apiBytes": 7516,
+      "totalTransfer": 316339,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/customers",
+      "run": 2,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 1547,
+      "ttfb": 35,
+      "domContentLoaded": 388,
+      "fcp": 384,
+      "lcp": 644,
+      "blockingMs": 36,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/customers",
+          "start": 575,
+          "duration": 427,
+          "ttfb": 424,
+          "transfer": 1658,
+          "encoded": 1358,
+          "decoded": 5780
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 581,
+          "duration": 93,
+          "ttfb": 92,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 42,
+      "scriptRequests": 15,
+      "scriptBytes": 180667,
+      "apiBytes": 7516,
+      "totalTransfer": 316339,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/customers",
+      "run": 3,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 1687,
+      "ttfb": 35,
+      "domContentLoaded": 387,
+      "fcp": 404,
+      "lcp": 404,
+      "blockingMs": 57,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/customers",
+          "start": 567,
+          "duration": 589,
+          "ttfb": 587,
+          "transfer": 1658,
+          "encoded": 1358,
+          "decoded": 5780
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 583,
+          "duration": 519,
+          "ttfb": 517,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        }
+      ],
+      "resourceCount": 42,
+      "scriptRequests": 15,
+      "scriptBytes": 180667,
+      "apiBytes": 7516,
+      "totalTransfer": 316339,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/staff-sales",
+      "run": 1,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 2890,
+      "ttfb": 35,
+      "domContentLoaded": 379,
+      "fcp": 396,
+      "lcp": 396,
+      "blockingMs": 75,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/staff-sales",
+          "start": 587,
+          "duration": 1767,
+          "ttfb": 1764,
+          "transfer": 501,
+          "encoded": 201,
+          "decoded": 348
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 588,
+          "duration": 156,
+          "ttfb": 0,
+          "transfer": 0,
+          "encoded": 0,
+          "decoded": 0
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 609,
+          "duration": 122,
+          "ttfb": 119,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        },
+        {
+          "path": "/api/auth/hr/staff",
+          "start": 609,
+          "duration": 105,
+          "ttfb": 102,
+          "transfer": 2091,
+          "encoded": 1791,
+          "decoded": 7996
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 736,
+          "duration": 988,
+          "ttfb": 985,
+          "transfer": 1127,
+          "encoded": 827,
+          "decoded": 2665
+        }
+      ],
+      "resourceCount": 41,
+      "scriptRequests": 11,
+      "scriptBytes": 151334,
+      "apiBytes": 12745,
+      "totalTransfer": 287866,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/staff-sales",
+      "run": 2,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 2656,
+      "ttfb": 39,
+      "domContentLoaded": 515,
+      "fcp": 452,
+      "lcp": 452,
+      "blockingMs": 67,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/staff-sales",
+          "start": 591,
+          "duration": 1531,
+          "ttfb": 1528,
+          "transfer": 501,
+          "encoded": 201,
+          "decoded": 348
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 591,
+          "duration": 698,
+          "ttfb": 695,
+          "transfer": 1127,
+          "encoded": 827,
+          "decoded": 2665
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 606,
+          "duration": 181,
+          "ttfb": 179,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        },
+        {
+          "path": "/api/auth/hr/staff",
+          "start": 606,
+          "duration": 805,
+          "ttfb": 802,
+          "transfer": 2091,
+          "encoded": 1791,
+          "decoded": 7996
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 1429,
+          "duration": 665,
+          "ttfb": 662,
+          "transfer": 1127,
+          "encoded": 827,
+          "decoded": 2665
+        }
+      ],
+      "resourceCount": 41,
+      "scriptRequests": 11,
+      "scriptBytes": 151334,
+      "apiBytes": 15410,
+      "totalTransfer": 288993,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    },
+    {
+      "path": "/staff-sales",
+      "run": 3,
+      "viewport": "desktop",
+      "status": 200,
+      "settledMs": 2828,
+      "ttfb": 43,
+      "domContentLoaded": 444,
+      "fcp": 384,
+      "lcp": 384,
+      "blockingMs": 69,
+      "longTasks": 2,
+      "buildId": null,
+      "api": [
+        {
+          "path": "/api/auth/staff-sales",
+          "start": 578,
+          "duration": 1727,
+          "ttfb": 1725,
+          "transfer": 501,
+          "encoded": 201,
+          "decoded": 348
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 579,
+          "duration": 168,
+          "ttfb": 0,
+          "transfer": 0,
+          "encoded": 0,
+          "decoded": 0
+        },
+        {
+          "path": "/api/auth/stores",
+          "start": 597,
+          "duration": 181,
+          "ttfb": 179,
+          "transfer": 805,
+          "encoded": 505,
+          "decoded": 1736
+        },
+        {
+          "path": "/api/auth/hr/staff",
+          "start": 597,
+          "duration": 131,
+          "ttfb": 129,
+          "transfer": 2091,
+          "encoded": 1791,
+          "decoded": 7996
+        },
+        {
+          "path": "/api/auth/order/car-rental",
+          "start": 740,
+          "duration": 880,
+          "ttfb": 877,
+          "transfer": 1127,
+          "encoded": 827,
+          "decoded": 2665
+        }
+      ],
+      "resourceCount": 41,
+      "scriptRequests": 11,
+      "scriptBytes": 151334,
+      "apiBytes": 12745,
+      "totalTransfer": 287866,
+      "failed": [],
+      "errors": [],
+      "nonReadRequests": [],
+      "problem": null
+    }
+  ],
+  "commit": "e87c349"
+}
