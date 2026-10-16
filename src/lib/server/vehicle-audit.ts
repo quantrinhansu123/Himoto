@@ -33,18 +33,18 @@ export function vehicleFieldChanges(before: RecordValues, after: RecordValues, s
 /** Called in the same transaction as the vehicle write. An audit failure must roll back the operation. */
 export async function writeVehicleAudit(client: Pick<PoolClient, 'query'>, event: {
   vehicleId: number; before: RecordValues; after: RecordValues; actorId: number; type: string;
-  toStoreId?: unknown; refType?: string | null; refId?: number | null; note: string;
+  fromStoreId?: unknown; toStoreId?: unknown; routeNames?: {from:string;to:string}; refType?: string | null; refId?: number | null; note: string;
   customer?: { name: string; phone: string; idCard: string };
 }) {
-  const from = event.before.store_id, to = event.toStoreId ?? event.after.store_id;
+  const from = event.fromStoreId ?? event.before.store_id, to = event.toStoreId ?? event.after.store_id;
   const ids = [...new Set([from, to, event.before.beneficiary_store_id, event.after.beneficiary_store_id].filter(value => value != null).map(String))];
   const stores = await client.query('SELECT id,store_name FROM himoto.stores WHERE id=ANY($1::bigint[]) ORDER BY id FOR SHARE', [ids]);
   const names = new Map<string, string>(stores.rows.map(row => [String(row.id), String(row.store_name)]));
   const user = await client.query('SELECT name FROM himoto.users WHERE id=$1', [event.actorId]);
   if (!user.rowCount) throw new Error('Không xác định được người thao tác xe.');
   const snapshot = { version: 1, actor_id: event.actorId, actor_name: String(user.rows[0].name || `Tài khoản #${event.actorId}`),
-    vehicle_name: text(event.after.name), license: text(event.after.license), from_store_name: names.get(String(from)) || '',
-    to_store_name: names.get(String(to)) || '', changes: vehicleFieldChanges(event.before, event.after, names) };
+    vehicle_name: text(event.after.name), license: text(event.after.license), from_store_name: event.routeNames?.from ?? names.get(String(from)) ?? '',
+    to_store_name: event.routeNames?.to ?? names.get(String(to)) ?? '', changes: vehicleFieldChanges(event.before, event.after, names) };
   const result = await client.query(`INSERT INTO himoto.vehicle_location_events
     (vehicle_id,from_store_id,to_store_id,event_type,ref_type,ref_id,odometer,notes,customer_name,customer_phone,customer_id_card,created_by,created_at,updated_at,audit_snapshot)
     VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,

@@ -3479,6 +3479,16 @@
 .mg-vehicle-audit-content ul { margin: 0; padding-left: 16px; }
 .mg-vehicle-audit-content li + li { margin-top: 5px; }
 .mg-vehicle-audit-content p { margin: 6px 0 0; }
+.mg-transfer-direction { display: block; margin: 0; color: var(--mg-slate-800); font-size: 13px; font-weight: 600; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+.mg-transfer-pending { margin: 12px 0; padding: 12px; border: 1px solid var(--mg-brand-300); border-radius: 8px; background: var(--mg-brand-50); }
+.mg-transfer-pending p { margin: 6px 0 0; font-size: 13px; }
+@media (max-width: 767px) {
+  .mg-mobile-record-card.mg-mobile-card-receive { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; }
+  .mg-mobile-card-receive > .mg-mobile-card-select { grid-column: 1; grid-row: 1; }
+  .mg-mobile-card-receive > .mg-mobile-card-main { grid-column: 2; grid-row: 1; padding-left: 0; }
+  .mg-mobile-card-receive > .mg-mobile-card-actions { grid-column: 3; grid-row: 1; }
+  .mg-mobile-card-receive > .mg-mobile-receive { grid-column: 2; grid-row: 2; min-height: 44px; margin: 0 0 12px; justify-content: center; }
+}
 .mg-vehicle-history-actions { display: flex; gap: 8px; align-items: center; }
 .mg-vehicle-history-actions select { height: 36px; padding: 0 10px; border: 1px solid var(--mg-line); border-radius: 8px; background: #fff; font: inherit; font-size: 13px; }
 .mg-document-requirements { margin: 16px 0; padding: 12px; border: 1px solid var(--mg-line); border-radius: 10px; }

@@ -2,12 +2,12 @@
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeftRight, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react';
+import { ArrowLeftRight, Check, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { Dialog } from './Dialog';
 import type { VehicleActionMode } from './VehicleActionDialog';
 import { useManagement } from './ManagementProvider';
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
-import { loadVehicleHistory, VEHICLE_EVENT_ACTIONS, VehicleEvent, VehicleEventAction } from '@/lib/management/vehicle-history';
+import { loadVehicleHistory, VEHICLE_EVENT_ACTIONS, VehicleEvent, VehicleEventAction, vehicleEventRoute, vehicleTransferRoute } from '@/lib/management/vehicle-history';
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
 import { ManagementConfig, ManagementRow } from '@/lib/management/types';
@@ -55,6 +55,7 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
   return <Dialog title={String(row.name)} subtitle={`${row.license || row.code} · ${config.title}`} className="mg-customer-detail mg-vehicle-detail" onClose={onClose}>
     <div className="mg-dialog-body">
       <ContractSectionTabs prefix="vehicle-detail" sections={SECTIONS} active={section} onChange={setSection} />
+      {row.status==='in_transit'&&<div className="mg-transfer-pending" role="status"><strong>Xe đang Chờ luân chuyển</strong><p className="mg-transfer-direction">{vehicleTransferRoute(row)||'Chưa có thông tin cơ sở chuyển đi. Kiểm tra tab Lịch sử.'}</p><p>Khi xe đã đến nơi, bấm <strong>Nhận xe</strong> bên dưới.</p></div>}
       {panel('details', <>
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
         {row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
@@ -72,7 +73,8 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
         {loading && !events && <p className="mg-contract-history-state" role="status"><LoaderCircle size={16} className="mg-spin" /> Đang tải lịch sử xe…</p>}
         {error && <p className="mg-contract-history-state mg-field-error" role="alert">{error}</p>}
         {events && shown.length > 0 && <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{shown.map(event => <MobileDetailsCard key={event.key} title={event.label}
-          summary={<><span>{formatDateTime(event.at || '')}</span><span>{dash(event.location)}</span></>}
+          summary={<><span>{formatDateTime(event.at || '')}</span>{!vehicleEventRoute(event)&&<span>{dash(event.location)}</span>}</>}
+          preview={vehicleEventRoute(event)}
           fields={[["Tên xe", dash(event.vehicle_name)], ["Biển số", dash(event.license)], ["Vị trí", dash(event.location)], ["Cơ sở phụ trách", dash(event.responsible_store)], ["Cơ sở sử dụng xe", dash(event.beneficiary_store)],
             ["Nội dung thao tác", content(event)], ["Ngày giờ", formatDateTime(event.at || '')], ["Người thao tác", dash(event.actor)]]} />)}</ul></div>}
         {events && (shown.length ? <div className="mg-table-scroll mg-desktop-records"><table className="mg-table mg-vehicle-history-table">
@@ -91,8 +93,9 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
       </>)}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
+      {canEdit&&source==='api'&&row.status==='in_transit'&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onAction('receive')}><Check size={16}/>Nhận xe</button>}
       {canEdit && source === 'api' && <>
-        <button type="button" className="mg-button" onClick={() => onAction('transfer')}><ArrowLeftRight size={16} />Chuyển xe</button>
+        {row.status!=='in_transit'&&<button type="button" className="mg-button" onClick={() => onAction('transfer')}><ArrowLeftRight size={16} />Chuyển xe</button>}
         <button type="button" className="mg-button" onClick={() => onAction('status')}><RefreshCw size={16} />Đổi trạng thái</button></>}
       {canEdit && <button type="button" className="mg-button mg-button-primary" onClick={onEdit}>Chỉnh sửa thông tin</button>}</div>
   </Dialog>;

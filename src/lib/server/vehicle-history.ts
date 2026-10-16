@@ -12,7 +12,7 @@ const iso = (value: unknown) => value instanceof Date ? value.toISOString() : va
 const text = (value: unknown) => value == null ? '' : String(value).trim();
 const statusLabel = (value: string) => VEHICLE_STATUSES.find(option => option.value === value)?.label || value;
 const jsonArray = (path: string) => `jsonb_array_elements(CASE WHEN jsonb_typeof(o.draft_payload::jsonb #> '${path}')='array' THEN o.draft_payload::jsonb #> '${path}' ELSE '[]'::jsonb END)`;
-const TRANSFER_LABELS: Record<string, string> = { transfer_dispatch: 'Xuất chuyển kho', transfer_receive: 'Nhận chuyển kho' };
+const TRANSFER_LABELS: Record<string, string> = { transfer_dispatch: 'Xuất chuyển kho', transfer_receive: 'Nhận chuyển kho',manual_transfer_receive:'Nhận xe' };
 const STATUS_ACTION: Record<string, [VehicleEventAction, string]> = { repairing: ['repair', 'Sửa chữa / bảo dưỡng'], broken: ['repair', 'Báo hỏng'] };
 
 export async function readVehicleHistory(client: Database, vehicleId: number): Promise<VehicleEvent[]> {

@@ -1,13 +1,14 @@
 {
-  "passed": 5,
+  "passed": 6,
   "checks": [
     "A failed transfer preserves destination/note for retry, with no displayed success or partial state change",
     "Successful transfer refreshes branch/state; a second transfer is disabled while pending",
     "Vehicle history displays the original/destination branch, old/new status, operation time and actor",
+    "Pending cards/detail expose Receive; confirmation shows the exact route, failed receipt keeps pending state, and successful receipt hides the action and logs once",
     "Receiving and editing produce separate filtered log entries; reload keeps history and the original transfer plate",
     "Audit history uses mobile cards at 320px without horizontal page/dialog overflow"
   ],
   "errors": [],
-  "syntheticWrites": 4,
+  "syntheticWrites": 5,
   "realBusinessWrites": 0
 }

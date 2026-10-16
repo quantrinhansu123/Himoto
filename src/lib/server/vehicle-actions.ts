@@ -5,6 +5,7 @@ import { createContractDraft, customerDetails, vehicleDetails } from '@/lib/mana
 import type { ManagementRow } from '@/lib/management/types';
 import { saveDatabaseDraft } from './contract-drafts';
 import { vehicleRevision, writeVehicleAudit } from './vehicle-audit';
+import { readPendingVehicleTransfer } from './vehicle-transfers';
 
 type Client = Pick<PoolClient, 'query'>;
 export interface VehicleActionCustomer { id: number; name: string; created: boolean; matched_by: string }
@@ -12,6 +13,7 @@ export interface VehicleActionResult { id: number; event_id: number; customer?: 
 export class VehicleActionError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export type VehicleActionInput = (
   | { action: 'transfer'; to_store_id: number; note: string }
+  | { action: 'receive'; transfer_event_id: number; note: string }
   | { action: 'status'; status: 'ready' | 'using'; beneficiary_store_id: number; customer_name: string; customer_phone: string; customer_id_card: string; note: string }) & { revision?: string };
 
 const text = (value: unknown, label: string, max: number) => {
@@ -32,6 +34,7 @@ export function parseVehicleAction(body: unknown): VehicleActionInput {
   let revision: string | undefined;
   try { revision = vehicleRevision(raw.revision); } catch { throw new VehicleActionError('Phiên bản thông tin xe không hợp lệ.'); }
   const note = text(raw.note, 'Ghi chú', 500);
+  if (raw.action === 'receive') return {action:'receive',transfer_event_id:storeId(raw.transfer_event_id,'lần chuyển xe cần nhận'),note,...(revision?{revision}:{})};
   if (raw.action === 'transfer') return { action: 'transfer', to_store_id: storeId(raw.to_store_id, 'cơ sở chuyển đến'), note, ...(revision ? {revision} : {}) };
   if (raw.action !== 'status') throw new VehicleActionError('Thao tác không hợp lệ.');
   if (raw.status !== 'ready' && raw.status !== 'using') throw new VehicleActionError('Chọn trạng thái Đang thuê hoặc Lưu kho.');
@@ -94,7 +97,19 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
       AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [vehicleId]);
-  if (open.rowCount) throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}. Trả xe trên hợp đồng trước khi ${input.action === 'transfer' ? 'chuyển xe' : 'đổi trạng thái'}.`, 409);
+  if (open.rowCount) throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}. Trả xe trên hợp đồng trước khi ${input.action === 'transfer' ? 'chuyển xe' : input.action==='receive'?'nhận xe':'đổi trạng thái'}.`, 409);
+  if(input.action==='receive') {
+    if(vehicle.status!=='in_transit')throw new VehicleActionError('Xe không còn Chờ luân chuyển hoặc đã được nhận. Nhấn Làm mới để kiểm tra.',409);
+    const transfer=await readPendingVehicleTransfer(client,vehicleId);
+    if(!transfer||Number(transfer.id)!==input.transfer_event_id||Number(transfer.to_store_id)!==Number(vehicle.store_id))throw new VehicleActionError('Lần chuyển xe đã thay đổi hoặc không khớp cơ sở hiện tại. Nhấn Làm mới rồi kiểm tra lịch sử.',409);
+    if(!Number(transfer.receivable))throw new VehicleActionError('Lần chuyển xe này đã được nhận hoặc thuộc phiếu điều chuyển của hệ thống cũ. Kiểm tra lại lịch sử.',409);
+    if(!(await client.query('SELECT id FROM himoto.stores WHERE id=$1 FOR SHARE',[vehicle.store_id])).rowCount)throw new VehicleActionError('Cơ sở nhận xe không còn tồn tại. Kiểm tra lại trước khi nhận.',409);
+    await client.query("UPDATE himoto.vehicles SET status='ready',updated_at=now() WHERE id=$1",[vehicleId]);
+    const eventId=await writeVehicleAudit(client,{vehicleId,before:vehicle,after:{...vehicle,status:'ready'},actorId,
+      type:'manual_transfer_receive',fromStoreId:transfer.from_store_id,toStoreId:transfer.to_store_id,
+      routeNames:{from:transfer.from_store_name,to:transfer.to_store_name},refType:'vehicle_location_events',refId:Number(transfer.id),note:input.note});
+    return {id:vehicleId,event_id:eventId};
+  }
   const target = input.action === 'transfer' ? input.to_store_id : input.beneficiary_store_id;
   if (!(await client.query('SELECT 1 FROM himoto.stores WHERE id=$1 FOR SHARE', [target])).rowCount) throw new VehicleActionError('Cơ sở đã chọn không còn tồn tại.', 409);
   const current = String(vehicle.status) === 'rent' ? 'using' : String(vehicle.status);

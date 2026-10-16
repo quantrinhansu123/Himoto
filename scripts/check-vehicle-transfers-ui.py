@@ -15,6 +15,7 @@ out = Path(args.output) / args.browser
 out.mkdir(parents=True, exist_ok=True)
 checks, errors, writes, history = [], [], [], []
 fail_transfer = True
+fail_receive = True
 stores = [dict(id=i, store_name=name, status='opening') for i, name in [(31, 'Cơ sở đi QA'), (32, 'Cơ sở đến QA')]]
 vehicle = dict(id=701, name='Xe chuyển QA', license='QA-701', brand='Honda', type='xeso', year=2024, color='Đỏ',
     status='ready', store_id=31, current_store_id=31, store_name=stores[0]['store_name'], odometer=1000,
@@ -30,7 +31,7 @@ def log(action, label, before, changes, note):
 
 
 def mock(route):
-    global fail_transfer
+    global fail_transfer, fail_receive
     req = route.request
     endpoint = urlparse(req.url).path
     if req.method == 'POST' and endpoint == '/api/auth/vehicles/701/actions':
@@ -45,13 +46,25 @@ def mock(route):
                 fail_transfer = False
                 route.fulfill(status=500, json=dict(status='error', message='Không lưu được thao tác xe QA.'))
                 return
-            vehicle.update(current_store_id=32, store_name=stores[1]['store_name'], status='in_transit', vehicle_revision='11')
+            vehicle.update(current_store_id=32, store_name=stores[1]['store_name'], status='in_transit', vehicle_revision='11',
+                transfer_event_id=1,transfer_from_store_id=31,transfer_to_store_id=32,
+                transfer_from_store_name=stores[0]['store_name'],transfer_to_store_name=stores[1]['store_name'],transfer_receivable=1)
             log('transfer', 'Chuyển kho', before, [dict(field='store_id', label='Cơ sở hiện tại', **{'from': before['store_name'], 'to': vehicle['store_name']}),
                 dict(field='status', label='Trạng thái', **{'from': 'Lưu kho', 'to': 'Chờ luân chuyển'})], body['note'])
         else:
-            assert body['action'] == 'status' and body['status'] == 'ready'
+            assert body['action'] == 'receive' and body['transfer_event_id'] == '1'
+            assert 'to_store_id' not in body and 'beneficiary_store_id' not in body
+            if fail_receive:
+                fail_receive=False
+                route.fulfill(status=500,json=dict(status='error',message='Không thể ghi nhận xe QA.'))
+                return
             vehicle.update(status='ready', vehicle_revision='12')
-            log('status', 'Đổi trạng thái: Lưu kho', before, [dict(field='status', label='Trạng thái', **{'from': 'Chờ luân chuyển', 'to': 'Lưu kho'})], body['note'])
+            log('transfer', 'Nhận xe', before, [dict(field='status', label='Trạng thái', **{'from': 'Chờ luân chuyển', 'to': 'Lưu kho'})], body['note'])
+            history[0]['responsible_store']=before['transfer_from_store_name']
+            history[0]['beneficiary_store']=before['transfer_to_store_name']
+            for key in list(vehicle):
+                if key.startswith('transfer_'):
+                    del vehicle[key]
         route.fulfill(json=dict(status='success', data=dict(id=701, event_id=len(history))))
         return
     if req.method == 'PATCH' and endpoint == '/api/auth/vehicles/701':
@@ -96,6 +109,9 @@ with sync_playwright() as p:
         dialog.get_by_role('tab', name='Lịch sử', exact=False).click()
         if page.viewport_size['width'] < 768:
             expect(dialog.locator('.mg-mobile-record-card').first).to_be_visible()
+            if history[0]['action'] == 'transfer':
+                expect(dialog.locator('.mg-mobile-card-main .mg-transfer-direction').first).to_be_visible()
+                assert dialog.locator('.mg-mobile-card-detail').first.get_attribute('open') is None
             dialog.locator('.mg-mobile-card-detail summary').first.click()
         else:
             expect(dialog.locator('tbody tr').first).to_be_visible()
@@ -116,6 +132,8 @@ with sync_playwright() as p:
     dialog.get_by_role('button', name='Chuyển xe', exact=True).click()
     expect(dialog).not_to_be_visible()
     expect(page.locator('.mg-page-vehicles')).to_contain_text('Chờ luân chuyển')
+    expect(page.get_by_role('button',name='Nhận xe',exact=True)).to_be_visible()
+    page.screenshot(path=str(out / 'pending-receipt.png'))
     assert vehicle['current_store_id'] == 32 and vehicle['store_id'] == 31 and len(history) == 1
     action('Chuyển xe')
     dialog = page.get_by_role('dialog', name='Chuyển xe', exact=True)
@@ -124,6 +142,10 @@ with sync_playwright() as p:
     dialog.get_by_role('button', name='Hủy', exact=True).click()
     checks.append('Successful transfer refreshes branch/state; a second transfer is disabled while pending')
     dialog = open_history()
+    expect(dialog.locator('.mg-transfer-pending .mg-transfer-direction')).to_have_text('Cơ sở đi QA → Cơ sở đến QA')
+    expect(dialog.get_by_role('button',name='Nhận xe',exact=True)).to_be_visible()
+    if page.viewport_size['width'] < 768:
+        expect(dialog.locator('.mg-mobile-card-main .mg-transfer-direction').first).to_have_text('Cơ sở đi QA → Cơ sở đến QA')
     visible = dialog.locator('.mg-vehicle-audit-content:visible')
     expect(visible.first).to_contain_text('Cơ sở đi QA')
     expect(visible.first).to_contain_text('Cơ sở đến QA')
@@ -132,15 +154,23 @@ with sync_playwright() as p:
     expect(dialog).to_contain_text('Người thao tác QA')
     expect(dialog).to_contain_text('16:25')
     dialog.screenshot(path=str(out / 'transfer-history.png'))
-    dialog.get_by_role('button', name='Đóng', exact=True).click()
     checks.append('Vehicle history displays the original/destination branch, old/new status, operation time and actor')
-    action('Đổi trạng thái')
-    dialog = page.get_by_role('dialog', name='Đổi trạng thái', exact=True)
-    dialog.locator('#vehicle-action-status').select_option('ready')
+    dialog.get_by_role('button',name='Nhận xe',exact=True).click()
+    dialog = page.get_by_role('dialog', name='Nhận xe', exact=True)
+    expect(dialog.locator('#vehicle-receive-from')).to_have_value('Cơ sở đi QA')
+    expect(dialog.locator('#vehicle-receive-to')).to_have_value('Cơ sở đến QA')
+    assert vehicle['status']=='in_transit' and len(history)==1
     dialog.locator('#vehicle-action-note').fill('Đã nhận xe QA')
-    dialog.get_by_role('button', name='Đổi trạng thái', exact=True).click()
+    dialog.screenshot(path=str(out / 'receive-confirmation.png'))
+    dialog.get_by_role('button', name='Xác nhận đã nhận xe', exact=True).click()
+    expect(dialog.get_by_role('alert')).to_have_text('Không thể ghi nhận xe QA.')
+    assert vehicle['status']=='in_transit' and len(history)==1
+    expect(dialog.locator('#vehicle-action-note')).to_have_value('Đã nhận xe QA')
+    dialog.get_by_role('button', name='Xác nhận đã nhận xe', exact=True).click()
     expect(dialog).not_to_be_visible()
     assert vehicle['status'] == 'ready' and vehicle['current_store_id'] == 32
+    expect(page.get_by_role('button',name='Nhận xe',exact=True)).to_have_count(0)
+    checks.append('Pending cards/detail expose Receive; confirmation shows the exact route, failed receipt keeps pending state, and successful receipt hides the action and logs once')
     action('Chỉnh sửa')
     dialog = page.get_by_role('dialog', name='Chỉnh sửa xe', exact=True)
     dialog.locator('#vehicle-license').fill('QA-NEW')

@@ -111,6 +111,8 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     customer_revision: text(raw.customer_revision), contract_count: number(raw.contract_count), status: ['blacklist', 'bad_debt'].includes(base.status) ? 'blacklist' : ['draft', '0'].includes(base.status) ? 'draft' : raw.warning || raw.warning_note ? 'warning' :
       (({ '1': 'active', '0': 'draft' } as Record<string, string>)[base.status] || base.status) };
   if (kind === 'vehicles') return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type), vehicle_revision: text(raw.vehicle_revision),
+    transfer_event_id:number(raw.transfer_event_id),transfer_from_store_id:number(raw.transfer_from_store_id),transfer_to_store_id:number(raw.transfer_to_store_id),
+    transfer_from_store_name:text(raw.transfer_from_store_name),transfer_to_store_name:text(raw.transfer_to_store_name),transfer_receivable:number(raw.transfer_receivable),
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
     rentals_json: Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
     beneficiary_store_id: number(raw.beneficiary_store_id ?? raw.current_store_id ?? raw.store_id), beneficiary_store_name: text(raw.beneficiary_store_name || raw.store_name),

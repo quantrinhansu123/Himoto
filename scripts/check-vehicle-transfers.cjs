@@ -53,6 +53,9 @@ async function main(){
     const changes=event.audit_snapshot.changes;
     assert.deepEqual(changes.find(change=>change.field==='status'),{field:'status',label:'Trạng thái',from:'Lưu kho',to:'Chờ luân chuyển',from_value:'ready',to_value:'in_transit'});
     assert.equal(changes.find(change=>change.field==='store_id').from,'Cơ sở đi QA');assert.equal(changes.find(change=>change.field==='store_id').to,'Cơ sở đến QA');
+    const transferJoin=load(path.join(root,'lib/server/vehicle-transfers')).VEHICLE_TRANSFER_JOIN_SQL;
+    const pending=(await proxy.query(`SELECT pending_transfer.* FROM himoto.vehicles v ${transferJoin} WHERE v.id=$1`,[101])).rows[0];
+    assert.equal(Number(pending.id),result.event_id);assert.equal(pending.from_store_name,'Cơ sở đi QA');assert.equal(pending.to_store_name,'Cơ sở đến QA');assert.equal(Number(pending.receivable),1);
     checks.push('Transfer atomically changes current branch and ready → in_transit, preserves original owner, and stores authenticated actor/time plus structured old/new values');
     await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,{action:'transfer',to_store_id:33,note:'',revision:before.revision},143)),e=>e instanceof VehicleActionError&&e.status===409);
     await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,{action:'transfer',to_store_id:33,note:''},143)),e=>e instanceof VehicleActionError&&e.status===409);
@@ -69,11 +72,23 @@ async function main(){
     await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,103,{action:'transfer',to_store_id:32,note:''},143)),e=>e instanceof VehicleActionError&&e.status===409);
     assert.equal((await vehicle(103)).status,'ready');assert.equal(await count(),oldCount);
     checks.push('An open rental blocks transfer even if an old inventory status still says ready');
-    const ready={action:'status',status:'ready',beneficiary_store_id:32,customer_name:'',customer_phone:'',customer_id_card:'',note:'Đã nhận xe QA',revision:(await vehicle(101)).revision};
+    const ready={action:'receive',transfer_event_id:result.event_id,note:'Đã nhận xe QA',revision:(await vehicle(101)).revision};
+    const beforeReceive=await count();
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,{...ready,transfer_event_id:result.event_id+999},143)),e=>e instanceof VehicleActionError&&e.status===409);
+    failAudit=true;
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,ready,143)),/Simulated audit/);failAudit=false;
+    assert.equal((await vehicle(101)).status,'in_transit');assert.equal(await count(),beforeReceive);
     await attempt(()=>applyVehicleAction(proxy,101,ready,143));assert.equal((await vehicle(101)).status,'ready');
-    const received=(await c.query('SELECT audit_snapshot FROM qa_transfer_vehicle_location_events ORDER BY id DESC LIMIT 1')).rows[0].audit_snapshot;
+    const receivedRow=(await c.query('SELECT * FROM qa_transfer_vehicle_location_events ORDER BY id DESC LIMIT 1')).rows[0],received=receivedRow.audit_snapshot;
     assert.equal(received.changes.find(change=>change.field==='status').from,'Chờ luân chuyển');assert.equal(received.changes.find(change=>change.field==='status').to,'Lưu kho');
-    checks.push('Marking the received vehicle as ready retains the destination and logs pending transfer → stock');
+    assert.equal(receivedRow.event_type,'manual_transfer_receive');assert.equal(Number(receivedRow.ref_id),result.event_id);assert.equal(Number(receivedRow.from_store_id),31);assert.equal(Number(receivedRow.to_store_id),32);
+    assert.equal(received.from_store_name,'Cơ sở đi QA');assert.equal(received.to_store_name,'Cơ sở đến QA');
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,ready,143)),e=>e instanceof VehicleActionError&&e.status===409);
+    assert.equal(await count(),beforeReceive+1);
+    checks.push('Explicit receipt binds the original transfer/source/destination, logs pending → stock, blocks wrong/repeated receipts and rolls back on audit failure');
+    await c.query("UPDATE qa_transfer_vehicles SET status='in_transit' WHERE id=101");
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,{...ready,revision:undefined},143)),e=>e instanceof VehicleActionError&&e.status===409);
+    await c.query("UPDATE qa_transfer_vehicles SET status='ready' WHERE id=101");
     const edit=parseVehicleValues({name:'Xe đã sửa QA',brand:'Honda mới',license:'qa-new-101',type:'xega',year:2025,store_id:32,status:'ready',color:'Xanh',chassis:'Khung QA',engine:'Máy QA',odometer:1500,note:'Ghi chú sửa QA',revision:(await vehicle(101)).revision});
     await attempt(()=>updateDatabaseVehicle(proxy,101,edit,143));
     const edited=(await c.query('SELECT * FROM qa_transfer_vehicle_location_events ORDER BY id DESC LIMIT 1')).rows[0];
@@ -109,6 +124,7 @@ async function main(){
     assert.equal((await c.query('SELECT count(*) AS n FROM qa_transfer_orders')).rows[0].n,draftsBefore);
     checks.push('Existing checkout still creates its customer/draft and records beneficiary changes; audit failure rolls back the vehicle, new customer and draft together');
     assert.throws(()=>parseVehicleAction({action:'transfer',to_store_id:32,revision:123}),VehicleActionError);
+    assert.throws(()=>parseVehicleAction({action:'receive',transfer_event_id:0}),VehicleActionError);
     assert.throws(()=>parseVehicleValues({...edit,revision:'invalid'}),VehicleSaveError);
     await c.query('ROLLBACK');
   }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}

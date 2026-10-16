@@ -36,7 +36,7 @@ interface Props {
   onVehicleChange?: (row: ManagementRow) => void;
   onBatteryRent?: (row: ManagementRow) => void;
   onClone?: (row: ManagementRow) => void;
-  onVehicleAction?: (row: ManagementRow, mode: 'transfer' | 'status') => void;
+  onVehicleAction?: (row: ManagementRow, mode: 'transfer' | 'status' | 'receive') => void;
   cloningId?: number | null;
   canEditContract?: boolean;
   canEditDraft?: boolean;
@@ -66,6 +66,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
       { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') },
       { key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') },
     );
+    if(config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction)actions.splice(1,0,{key:'receive',label:'Nhận xe',icon:<Bike size={16}/>,onSelect:()=>onVehicleAction(row,'receive')});
     if (isContract && onPrint) actions.push({ key: 'print', label: 'Điền và in hợp đồng', icon: <Printer size={16} />, onSelect: () => onPrint(row) });
     if (isContract && onPayment && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'payment', label: 'Thanh toán', icon: <Wallet size={16} />, onSelect: () => onPayment(row) });
     if (isContract && onHandover && row.status === 'deposit_contract') actions.push({key:'handover',label:'Giao xe',icon:<Bike size={16}/>,onSelect:()=>onHandover(row)});
@@ -104,6 +105,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : rows.map((row, index) => <tr key={row.id} className={selectedIds?.has(row.id) ? 'is-selected' : undefined}>{selectable && <td className="mg-select-column"><input type="checkbox" aria-label={`Chọn ${row.code || row.name || `#${row.id}`}`}
           checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}<td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} className={`${column.align === 'right' ? 'mg-align-right' : ''}${column.key === 'code' ? ' mg-record-code' : ''}`}><Cell row={row} column={column} config={config} /></td>)}
           <td className="mg-actions-column"><div className="mg-row-actions">
+            {config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onVehicleAction(row,'receive')}>Nhận xe</button>}
             <RowActionsMenu label={`Thao tác ${row.license || row.code || row.name || ''}`.trim()} actions={rowActions(row)} busy={cloningId === row.id || blacklistBusyId === row.id} />
           </div></td></tr>)}</tbody>
     </table>

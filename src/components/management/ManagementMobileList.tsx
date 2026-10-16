@@ -5,6 +5,7 @@ import { ManagementConfig, ManagementKind, ManagementRow } from '@/lib/managemen
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
 import { RowAction, RowActionsMenu } from './RowActionsMenu';
+import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
   vehicles: ['overdue_days', 'license', 'store_name', 'daily_price'],
@@ -55,12 +56,13 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
       : <ul className="mg-mobile-card-list" aria-label={config.title}>{rows.map(row => {
         const title = String((config.kind === 'contracts' ? row.customer_name : row.name) || row.code || `#${row.id}`);
         const label = String((config.kind === 'vehicles' ? row.license : row.code) || row.code || title);
+        const receive=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='receive'):undefined;
         const summary = SUMMARY_KEYS[config.kind].filter(key => row[key] !== undefined && row[key] !== '').map(key => {
           const column = config.columns.find(item => item.key === key);
           const value = optionLabel(config, key, formatValue(row[key], column?.format));
           return { key, label: column?.label || (key === 'customer_phone' ? 'Số điện thoại' : 'Biển số'), value };
         });
-        return <li key={row.id} className={`mg-mobile-record-card${selectedIds?.has(row.id) ? ' is-selected' : ''}`}>
+        return <li key={row.id} className={`mg-mobile-record-card${receive?' mg-mobile-card-receive':''}${selectedIds?.has(row.id) ? ' is-selected' : ''}`}>
           {selectable && <label className="mg-mobile-card-select"><input type="checkbox" aria-label={`Chọn ${label}`} checked={Boolean(selectedIds?.has(row.id))}
             onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={() => onView(row)}>
@@ -74,7 +76,9 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
               {config.kind === 'vehicles' && row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
               {summary[2] && <span className="mg-mobile-card-extra" title={`${summary[2].label}: ${summary[2].value}`}>{summary[2].value}{summary[3] && ` · ${summary[3].value}`}</span>}
             </span>
+            {receive&&vehicleTransferRoute(row)&&<span className="mg-transfer-direction">{vehicleTransferRoute(row)}</span>}
           </button>
+          {receive&&<button type="button" className="mg-button mg-button-primary mg-mobile-receive" disabled={busyId===row.id} onClick={receive.onSelect}>Nhận xe</button>}
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId === row.id} /></div>
         </li>;
       })}</ul>}

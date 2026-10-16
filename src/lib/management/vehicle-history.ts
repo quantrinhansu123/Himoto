@@ -5,6 +5,14 @@ export interface VehicleEvent {
   responsible_store: string; beneficiary_store: string; note: string; at: string | null; actor: string; order_id: number | null;
   changes?: VehicleChange[];
 }
+/** Transfer direction stays visible without expanding a mobile history card. */
+export function vehicleEventRoute(event:VehicleEvent) {
+  return event.action==='transfer' && (event.responsible_store||event.beneficiary_store)
+    ? `${event.responsible_store||'Chưa rõ cơ sở đi'} → ${event.beneficiary_store||'Chưa rõ cơ sở đến'}` : '';
+}
+export function vehicleTransferRoute(row:Record<string,unknown>) {
+  return row.transfer_event_id ? `${row.transfer_from_store_name||'Chưa rõ cơ sở đi'} → ${row.transfer_to_store_name||row.store_name||'Chưa rõ cơ sở đến'}` : '';
+}
 
 export const VEHICLE_EVENT_ACTIONS: { value: VehicleEventAction; label: string }[] = [
   { value: 'rent', label: 'Thuê' }, { value: 'return', label: 'Trả xe' }, { value: 'transfer', label: 'Chuyển kho' },

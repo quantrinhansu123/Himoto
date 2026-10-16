@@ -11,6 +11,7 @@ import { CUSTOMER_PROFILE_SQL, CUSTOMER_SEARCH_SQL } from '@/lib/server/customer
 import { CASHBOOK_LIST_SQL, CashbookQueryError, listCashbook } from '@/lib/server/cashbook-list';
 import { ManagementTableError, readManagementTable } from '@/lib/server/management-table';
 import { PageSummaryError, readOperationsSummary, readSalesSummary } from '@/lib/server/page-summaries';
+import { VEHICLE_TRANSFER_JOIN_SQL } from '@/lib/server/vehicle-transfers';
 
 export const runtime = 'nodejs';
 
@@ -34,12 +35,16 @@ const listQueries: Record<string, QueryConfig> = {
   'vehicle/vehicles': {
     sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, v.xmin::text AS vehicle_revision,
+                 pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
+                 pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
+                 pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
                  r.rentals, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  gps.has_device AS gps_has_device,
                  gps.normalized_status AS gps_normalized_status,
                  gps.last_at AS gps_last_at
           FROM himoto.vehicles v
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
+          ${VEHICLE_TRANSFER_JOIN_SQL}
           LEFT JOIN LATERAL (
             SELECT json_agg(json_build_object('order_id', o.id,
                      'code', COALESCE(NULLIF(o.contract_number, ''), NULLIF(o.draft_reference, ''), '#' || o.id::text),
