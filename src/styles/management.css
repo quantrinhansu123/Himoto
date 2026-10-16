@@ -1654,6 +1654,8 @@
 .mg-finalize-receipt legend, .mg-finalize-receipt > strong { padding: 0 4px; font-weight: 600; color: var(--mg-slate-800); }
 .mg-finalize-receipt > span, .mg-finalize-receipt small { color: var(--mg-slate-500); font-size: 12.5px; }
 .mg-finalize-receipt .mg-form-grid { margin: 0; }
+.mg-finalize-receipt .mg-datetime24 { grid-template-columns: minmax(0, 1fr); }
+.mg-finalize-receipt .mg-time24 { width: 164px; max-width: 100%; }
 .mg-checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .mg-button-finalize { background: var(--mg-green-text); border-color: var(--mg-green-text); color: #fff; }
 .mg-button-finalize:hover:not(:disabled) { filter: brightness(1.08); }
@@ -3505,3 +3507,13 @@
   .mg-list-filters > label { max-width: none; }
   .mg-list-filters > label:last-of-type:nth-of-type(odd) { grid-column: 1 / -1; }
 }
+.mg-record-photos { margin: 20px 0; padding: 16px; border: 1px solid var(--mg-border, #dce2e6); border-radius: 10px; min-width: 0; }
+.mg-record-photos legend { padding: 0 6px; font-weight: 600; }
+.mg-photo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; }
+.mg-photo-slot { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+.mg-photo-slot > a { display: block; width: 100%; }
+.mg-photo-slot img { display: block; width: 100%; max-height: 220px; object-fit: contain; border-radius: 8px; background: #f3f5f6; }
+.mg-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mg-photo-actions .mg-button { min-height: 44px; }
+.mg-photo-slot small { color: var(--mg-text-muted, #60707a); }
+.mg-payment-state { font-weight: 600; }

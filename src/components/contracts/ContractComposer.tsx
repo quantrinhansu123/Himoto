@@ -23,6 +23,9 @@ import { DateTime24Field } from './DateTime24Field';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
 import { addRentalMonths, billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } from '@/lib/management/contract-billing';
+import { IssueDateInput } from '@/components/management/IssueDateInput';
+import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
+import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/management/record-photos';
 
 type LookupState = 'idle' | 'loading' | 'found' | 'matches' | 'missing' | 'error';
 function rentalTermMonths(rentalType: string) {
@@ -70,6 +73,11 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [rentalType, setRentalType] = useState(String(row?.rental_type || 'daily'));
   const [notes, setNotes] = useState(String(row?.notes || ''));
   const [saving, setSaving] = useState(false);
+  const [customerPhotos, setCustomerPhotos] = useState<PendingPhotos>({});
+  const [platePhotos, setPlatePhotos] = useState<PendingPhotos>({});
+  const [processingCustomerPhoto, setProcessingCustomerPhoto] = useState(false);
+  const [processingPlatePhoto, setProcessingPlatePhoto] = useState(false);
+  const [photoVersion, setPhotoVersion] = useState(0);
   const [saveError, setSaveError] = useState('');
   const busy = useRef(false);
   const [lookupError, setLookupError] = useState('');
@@ -197,6 +205,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       <PaymentMethodPicker label={label} value={draft[key]} onChange={value=>change(key,value)} /></div>;
   }
   function changeIdentity(value: string) {
+    setCustomerPhotos({});
     preserveCustomer.current = false;
     setSelectedCustomer(null);
     setIdInput(value); setLookupState('idle'); setLookupError(''); setDocument(null); setSaveError('');
@@ -214,6 +223,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     setDraft(previous => withCustomer(previous, customer));
   }
   function customerCreated(customer: ManagementRow) {
+    setCustomerPhotos({});
     preserveCustomer.current = true;
     setSelectedCustomer(customer);
     setDraft(previous => withCustomer(previous, customer));
@@ -226,7 +236,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!dataset || busy.current) return;
+    if (!dataset || busy.current || processingCustomerPhoto || processingPlatePhoto) return;
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const action = submitter instanceof HTMLButtonElement ? submitter.value : '';
     const finalizing = action === 'finalize' && canSaveDraft;
@@ -252,8 +262,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       try {
         const saved = await saveContractDraft(savedDraft?.id ?? row?.id ?? null, { draft: { ...draft, customer_lookup: idInput }, status: 'draft', rental_type: rentalType, notes,
           ...(source === 'api' && revision ? { revision } : {}) });
+        setSavedDraft({ id: saved.id, revision: String(saved.draft_revision) });
+        setDraft(previous => ({ ...previous, contract_number: saved.code }));
+        await savePhotos(saved.id);
         if (finalizing) {
-          setSavedDraft({ id: saved.id, revision: String(saved.draft_revision) });
           setFinalizeTarget({ id: saved.id, revision: String(saved.draft_revision), code: saved.code });
         } else { onClose(); onDraftSaved?.(); }
       } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Không lưu được bản nháp. Vui lòng thử lại.'); }
@@ -262,7 +274,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     }
     if (savingRecord && row) {
       busy.current = true; setSaving(true);
-      try { await saveContract(row.id, { draft, status, rental_type: rentalType, notes }); onClose(); }
+      try { await saveContract(row.id, { draft, status, rental_type: rentalType, notes }); await savePhotos(row.id); onClose(); }
       catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Không lưu được hợp đồng. Vui lòng thử lại.'); }
       finally { busy.current = false; setSaving(false); }
       return;
@@ -348,7 +360,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   function field(key: keyof Omit<ContractDraft, 'customer' | 'vehicles' | 'customer_id'>, label: string, type = 'text', required = false) {
     return <div className="mg-field" key={key}><label htmlFor={`contract-${key}`}>{label}{required && <span aria-hidden="true"> *</span>}</label>
       <input id={`contract-${key}`} name={key} type={type} value={String(draft[key])} required={required} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 1 : undefined}
-        readOnly={Boolean(row) && (mode === 'edit' || editingDraft) && key === 'contract_number'}
+        readOnly={(Boolean(savedDraft) || Boolean(row) && (mode === 'edit' || editingDraft)) && key === 'contract_number'}
         aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `contract-${key}-error` : undefined} onChange={event => change(key, event.target.value)} />
       {errors[key] && <p id={`contract-${key}-error`} className="mg-field-error">{errors[key]}</p>}</div>;
   }
@@ -360,21 +372,30 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     { key: 'address', label: 'Nơi ở hiện tại', wide: true, hint: 'Ghi số nhà, phường/xã, quận/huyện.' },
   ];
   const sectionIndex = CONTRACT_FORM_SECTIONS.findIndex(item => item.id === section);
+  async function savePhotos(contractId: number) {
+    if (draft.customer_id) await saveRecordPhotos('customers', draft.customer_id, customerPhotos);
+    const selectedPlates = Object.fromEntries(Object.entries(platePhotos).filter(([slot]) => draft.vehicles.some(vehicle => slot === `plate-${vehicle.id}`)));
+    await saveRecordPhotos('contracts', contractId, selectedPlates);
+    setCustomerPhotos({}); setPlatePhotos({}); setPhotoVersion(current => current + 1);
+  }
   async function persistProfile() {
-    if(!row || !profileRevision || busy.current)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
-    try{const result=await saveContractProfile(row.id,profileRevision,contractProfile(draft));setProfileRevision(result.revision);setProfileMessage('Đã lưu hồ sơ và yêu cầu khi in. Tiền, công nợ và kho xe giữ theo giao dịch đã ghi.');void ensureData(['contracts'],true).catch(()=>{});}
+    if(!row || !profileRevision || busy.current || processingCustomerPhoto || processingPlatePhoto)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
+    try{const result=await saveContractProfile(row.id,profileRevision,contractProfile(draft));setProfileRevision(result.revision);await savePhotos(row.id);setProfileMessage('Đã lưu hồ sơ, ảnh và yêu cầu khi in. Tiền, công nợ và kho xe giữ theo giao dịch đã ghi.');void ensureData(['contracts'],true).catch(()=>{});}
     catch(cause){setSaveError(cause instanceof Error ? cause.message : 'Không lưu được hồ sơ.');}
     finally{busy.current=false;setSaving(false);}
   }
   function customerField(item: (typeof customerFields)[number]) {
+    const update = (value: string) => {
+      setDraft(previous => ({ ...previous, customer: { ...previous.customer, [item.key]: value } }));
+      setErrors(previous => ({ ...previous, [item.key]: '' })); setSaveError('');
+    };
     return <div className={`mg-field ${item.wide ? 'mg-field-wide' : ''}`} key={item.key}>
       <label htmlFor={`contract-customer-${item.key}`}>{item.label}</label>
-      <input id={`contract-customer-${item.key}`} type={item.type || 'text'} value={draft.customer[item.key]}
+      {item.type === 'date' ? <IssueDateInput id={`contract-customer-${item.key}`} value={draft.customer[item.key] || ''} disabled={lookupState !== 'found'} aria-invalid={Boolean(errors[item.key])} onValueChange={update} /> : <input id={`contract-customer-${item.key}`} type={item.type || 'text'} value={draft.customer[item.key]}
         disabled={lookupState !== 'found'} aria-invalid={Boolean(errors[item.key])}
         onChange={event => {
-          setDraft(previous => ({ ...previous, customer: { ...previous.customer, [item.key]: event.target.value } }));
-          setErrors(previous => ({ ...previous, [item.key]: '' })); setSaveError('');
-        }} />
+          update(event.target.value);
+        }} />}
       {item.hint && <small>{item.hint}</small>}
       {errors[item.key] && <p className="mg-field-error">{errors[item.key]}</p>}
     </div>;
@@ -440,6 +461,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             </div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(0, 2).map(customerField)}</div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(customerField)}</div>
+            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${photoVersion}`} entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Chụp CCCD" value={customerPhotos} onChange={setCustomerPhotos} onBusyChange={setProcessingCustomerPhoto} disabled={saving} />}
             <div className="mg-contract-relatives">{draft.relatives.map((relative, index) => <div className="mg-contract-relative" key={index}>
               <strong>Người thân {index + 1}</strong>
               <div className="mg-form-grid mg-contract-grid-three">{(['name', 'relationship', 'phone'] as const).map(key => {
@@ -472,6 +494,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             </div>;
             })}
             <button className="mg-button" type="button" onClick={() => change('vehicles', [...draft.vehicles, emptyVehicle()])}><Plus size={16} />Thêm xe</button>
+            {source === 'api' && draft.vehicles.some(vehicle => vehicle.id) && <RecordPhotoFields key={`plates-${photoVersion}`} entity="contracts" recordId={savedDraft?.id || row?.id} slots={draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))} title="Chụp biển số xe" value={platePhotos} onChange={setPlatePhotos} onBusyChange={setProcessingPlatePhoto} disabled={saving} />}
           </>)}
           {panel('payment', 'Chi phí', <>
             {!reserving && <div className="mg-contract-cost-section"><h3>Tiền cọc</h3><div className="mg-form-grid mg-contract-grid-two">
@@ -497,7 +520,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               {moneyField('total_amount', 'Tổng tiền thuê và phí khác (VNĐ)', true)}
               <div className="mg-field"><label htmlFor="contract-amount-due">Tổng cần thu gồm cọc (VNĐ)</label><input id="contract-amount-due" readOnly value={formatMoneyInput(String((Number(draft.deposit_amount)||0)+(Number(draft.total_amount)||0)))}/><small>Gồm cọc + tiền thuê + phí khác. Đây là số cần thu, chưa phải tiền đã nhận.</small></div>
             </div>
-            <p className="mg-composer-hint">Bấm Lưu chính thức để chia số tiền đã nhận vào từng tài khoản/tiền mặt. Có thể ghi nhận cọc trước, thu nhiều lần hoặc để lại phần chưa thu.</p>
+            <p className="mg-composer-hint">Bấm Hoàn tất & thanh toán để xác nhận tiền đã nhận, chọn tài khoản/tiền mặt và lưu hợp đồng. Có thể ghi nhận đã thanh toán đủ, thu một phần hoặc chưa thu.</p>
           </>)}
           {panel('signing', 'Ký kết & Ghi chú', <div className="mg-form-grid mg-contract-grid-two">
             <div className="mg-field mg-field-wide"><label htmlFor="contract-collateral_description">Tài sản thế chấp / Đặt cọc tài sản</label><textarea id="contract-collateral_description" rows={3} value={draft.collateral_description} onChange={event => change('collateral_description', event.target.value)} placeholder="Chi tiết giấy tờ hoặc tài sản đặt cọc" /></div>
@@ -512,11 +535,11 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
           </div>
           </fieldset>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}{profileMessage && <p className="mg-payment-success" role="status">{profileMessage}</p>}
         </div>
-        <div className="mg-dialog-footer"><span className="mg-form-note">{canSaveDraft ? 'Lưu vận hành trước; bổ sung hồ sơ khi in' : '* Theo yêu cầu hồ sơ khi in'}</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
-          {canSaveDraft && <button type="submit" value="draft" className="mg-button mg-button-primary" disabled={saving || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
-          {canSaveDraft && source === 'api' && canSaveContractDrafts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || staffLoading || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Kiểm tra đủ thông tin, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Lưu chính thức'}</button>}
+        <div className="mg-dialog-footer"><span className="mg-form-note">{canSaveDraft ? 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
+          {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
+          {canSaveDraft && source === 'api' && canSaveContractDrafts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || staffLoading || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
           {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || staffLoading || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
-          {row && !canSaveDraft && source === 'api' && <button type="button" className="mg-button" disabled={saving || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
+          {row && !canSaveDraft && source === 'api' && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || staffLoading || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>
     </Dialog>

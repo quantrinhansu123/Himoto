@@ -176,6 +176,7 @@ export function validateCustomer(customer: CustomerDetails, source: 'demo' | 'ap
   if (!customer.address.trim()) errors.address = 'Nhập địa chỉ khách hàng.';
   if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) errors.email = 'Email chưa đúng định dạng.';
   if (!validIdentityIssueDate(customer.id_card_issued_on)) errors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
+  if (!validIdentityIssueDate(customer.driver_license_issued_on)) errors.driver_license_issued_on = 'Ngày cấp GPLX không hợp lệ.';
   if (customer.id_card_issued_by.length > 255) errors.id_card_issued_by = 'Nơi cấp CCCD/CMND tối đa 255 ký tự.';
   return errors;
 }

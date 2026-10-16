@@ -75,7 +75,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     const update = (key: number, patch: Partial<CollectionRow>) => setState({...state,rows:state.rows.map(row=>row.key===key ? {...row,...patch} : row)});
     return <fieldset className="mg-finalize-receipt" data-purpose={purpose}><legend>{label}: {money(amount)}</legend>
       <p className="mg-composer-hint">Đã ghi nhận trước: {money(amount-due)} · Còn phải thu: {money(due)}</p>
-      {due>0 && <><label className="mg-checkbox"><input type="checkbox" checked={state.collect} onChange={event=>setState({...state,collect:event.target.checked})} />Ghi nhận các khoản đã nhận</label>
+      {due>0 && <><label className="mg-checkbox"><input type="checkbox" checked={state.collect} onChange={event=>setState({...state,collect:event.target.checked})} />{purpose === 'deposit' ? 'Đã nhận tiền cọc' : 'Khách đã thanh toán tiền thuê / phí'}</label>
         {state.collect && <>
           {state.rows.map((row,index)=><div className="mg-collection-row" key={row.key}>
             <div className="mg-collection-row-heading"><strong>Khoản {index+1}{row.label ? ` · ${row.label}` : ''}</strong><button type="button" className="mg-icon-button" aria-label={`Bỏ khoản ${label.toLowerCase()} ${index+1}`} onClick={()=>setState({...state,rows:state.rows.filter(item=>item.key!==row.key)})}><Trash2 size={15}/></button></div>
@@ -91,9 +91,10 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
         </>}
         {!state.collect && <small>Chưa nhận tiền: giữ nguyên số còn phải thu, không ghi nhận vào tài khoản.</small>}
       </>}
+      {due > 0 && <p className="mg-payment-state" role="status">{collected(state) === due ? 'Đã thanh toán đủ' : collected(state) > 0 ? 'Thanh toán một phần' : 'Chưa thanh toán'}</p>}
     </fieldset>;
   }
-  return <Dialog title={`${reservation ? 'Xác nhận cọc giữ xe' : 'Xác nhận thu tiền'} · ${code}`} onClose={saving ? ()=>{} : onClose}>
+  return <Dialog title={`${reservation ? 'Xác nhận cọc giữ xe' : 'Xác nhận thanh toán'} · ${code}`} onClose={saving ? ()=>{} : onClose}>
     <form onSubmit={submit}><div className="mg-dialog-body mg-finalize-dialog">
       <p className="mg-composer-hint">{reservation ? 'Nhập đúng tiền giữ xe đã nhận (ví dụ 100.000 hoặc 200.000 đ), thời điểm và tài khoản nhận. Khoản này trừ vào tiền thuê, tạo phiếu Thu ngay; xe ở trạng thái chờ giao, chưa Đang thuê.' : 'Ghi đúng từng khoản tiền đã nhận và tài khoản nhận. Cọc trước ghi ngày nhận trước đó; mỗi lần chuyển khoản hoặc nhận tiền mặt thêm một dòng. Sau xác nhận, hợp đồng được phát hành và xe chuyển sang Đang thuê.'}</p>
       {charges.length>0 && <p className="mg-composer-hint">Phí khác trong hợp đồng: {charges.filter(item=>Number(item.amount)>0).map(item=>`${item.name}: ${money(Number(item.amount))}`).join(' · ')}</p>}

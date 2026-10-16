@@ -210,7 +210,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
   if (!name || !incomplete && !address || !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || (idCard ? !/^\d{9}$|^\d{12}$/.test(idCard) : !incomplete) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
-      (driverLicenseIssuedOn && !/^\d{4}-\d{2}-\d{2}$/.test(driverLicenseIssuedOn)) || driverLicenseNumber.length > 100 ||
+      !validIdentityIssueDate(driverLicenseIssuedOn) || driverLicenseNumber.length > 100 ||
       (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
     return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, điện thoại, CCCD/CMND, địa chỉ và email.' }, { status: 400 });
   }
@@ -304,7 +304,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
   if (!name || !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || (idCard && !/^\d{9}$|^\d{12}$/.test(idCard)) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
-      (driverLicenseIssuedOn && !/^\d{4}-\d{2}-\d{2}$/.test(driverLicenseIssuedOn)) || driverLicenseNumber.length > 100 ||
+      !validIdentityIssueDate(driverLicenseIssuedOn) || driverLicenseNumber.length > 100 ||
       (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
     return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, số điện thoại, giấy tờ, email, cơ sở và trạng thái hồ sơ.' }, { status: 400 });
   }

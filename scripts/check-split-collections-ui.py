@@ -32,6 +32,9 @@ def mock(route):
     req = route.request
     parsed = urlparse(req.url)
     endpoint = parsed.path
+    if endpoint.startswith('/api/auth/record-photos/') and req.method == 'GET':
+        route.fulfill(json={'status': 'success', 'data': []})
+        return
     if req.method not in ('GET', 'HEAD'):
         body = req.post_data_json
         writes.append(dict(path=endpoint, body=body))
@@ -47,7 +50,7 @@ def mock(route):
             contracts[0].update(status='renting', contract_number='261011-QA-0001', total=250000, paid_amount=250000,
                 deposit_amount=2000000, deposit_paid=2000000, collections=collections)
             route.fulfill(json={'status': 'success', 'data': dict(order_id=901, code='261011-QA-0001', total_amount=250000,
-                deposit_amount=2000000, paid_amount=2250000, transaction_ids=[1, 2, 3])})
+                deposit_amount=2000000, paid_amount=2250000, transaction_ids=[1, 2, 3, 4])})
         else:
             raise AssertionError(f'Unexpected write {endpoint}')
         return
@@ -83,6 +86,7 @@ with sync_playwright() as p:
     tab('Khách hàng')
     form.locator('#contract-id-card').fill(customer['phone'])
     expect(form.locator('#contract-customer-name')).to_have_value(customer['name'])
+    form.locator('#contract-store').select_option('32')
     form.locator('#contract-staff').fill(staff[0]['full_name'])
     tab('Phương tiện')
     form.locator('#contract-vehicle-0').click()
@@ -109,8 +113,8 @@ with sync_playwright() as p:
     expect(method).not_to_have_attribute('open', '')
     form.screenshot(path=str(out / 'named-fees-1440.png'))
     checks.append('named ship fee is included in 250k rental/fees and 2.25m quote; adding/removing fees recalculates; no quote is labelled as money collected')
-    form.get_by_role('button', name='Lưu chính thức', exact=True).click()
-    receipt = page.get_by_role('dialog').filter(has_text='Xác nhận thu tiền')
+    form.get_by_role('button', name='Hoàn tất & thanh toán', exact=True).click()
+    receipt = page.get_by_role('dialog').filter(has_text='Xác nhận thanh toán')
     expect(receipt.locator('#deposit-collection-0-amount')).to_be_visible(timeout=20000)
     expect(receipt.locator('#deposit-collection-0-amount')).to_have_value('')
     expect(receipt.locator('#deposit-collection-1-amount')).to_have_value('')
@@ -120,14 +124,15 @@ with sync_playwright() as p:
     expect(receipt.locator('#deposit-collection-1-account')).to_have_value('7')
     yesterday = (datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')) - timedelta(days=1)).strftime('%Y-%m-%d')
     receipt.locator('#deposit-collection-0-paid-at').fill(yesterday)
-    expect(receipt.locator('#rental-collection-0-amount')).to_have_value('250.000')
-    receipt.locator('#rental-collection-0-amount').fill('250001')
+    expect(receipt.locator('#rental-collection-0-amount')).to_have_value('200.000')
+    expect(receipt.locator('#rental-collection-1-amount')).to_have_value('50.000')
+    receipt.locator('#rental-collection-0-amount').fill('200001')
     receipt.get_by_role('button', name='Xác nhận lưu chính thức', exact=True).click()
     expect(receipt.get_by_role('alert')).to_contain_text('vượt số còn phải thu')
     assert not any(w['path'].endswith('/finalize') for w in writes)
-    receipt.locator('#rental-collection-0-amount').fill('100000')
+    receipt.locator('#rental-collection-0-amount').fill('50000')
     expect(receipt.locator('[data-purpose=rental]')).to_contain_text('150.000 đ')
-    receipt.locator('#rental-collection-0-amount').fill('250000')
+    receipt.locator('#rental-collection-0-amount').fill('200000')
     receipt.get_by_role('button', name='Thêm khoản thu cọc', exact=True).click()
     expect(receipt.locator('#deposit-collection-2-amount')).to_be_visible()
     receipt.get_by_role('button', name='Bỏ khoản tiền cọc 3', exact=True).click()
@@ -141,10 +146,10 @@ with sync_playwright() as p:
     expect(form).to_have_count(0)
     allocation = writes[-1]['body']['receipts']
     assert [(r['purpose'], r['amount'], r['account_id']) for r in allocation] == [
-        ('deposit', '200000', 6), ('deposit', '1800000', 7), ('rental', '250000', 5)]
+        ('deposit', '200000', 6), ('deposit', '1800000', 7), ('rental', '200000', 5), ('rental', '50000', 5)]
     assert allocation[0]['paid_at'].startswith(yesterday)
     assert writes[0]['body']['draft']['paid_amount'] == '0'
-    assert writes[0]['body']['draft']['extra_charges'] == [dict(name='Phí ship', amount='50000')]
+    assert writes[0]['body']['draft']['extra_charges'] == [dict(name='Phí ship', amount='50000', method='cash')]
     checks.append('request sends exactly 200k personal advance, 1.8m company deposit and 250k cash fees, with actual dates; draft money received remains zero')
     page.goto(args.url + '/contracts', wait_until='domcontentloaded')
     page.get_by_role('button', name='Thao tác 261011-QA-0001', exact=True).click()

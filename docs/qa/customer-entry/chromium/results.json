@@ -1,0 +1,10 @@
+{
+  "passed": 3,
+  "checks": [
+    "375px new customer: normal default, direct numeric dates, impossible dates blocked, front/back captures compressed and saved; failed upload retries without creating another customer",
+    "customer detail reopens both saved CCCD images through authenticated endpoints",
+    "contract captures plate before saving; completion opens payment confirmation with full/partial/unpaid states, exact receipts and no 375px/landscape/desktop overflow"
+  ],
+  "errors": [],
+  "realBusinessWrites": 0
+}

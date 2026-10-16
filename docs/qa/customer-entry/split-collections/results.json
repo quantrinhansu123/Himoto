@@ -1,0 +1,11 @@
+{
+  "passed": 4,
+  "checks": [
+    "named ship fee is included in 250k rental/fees and 2.25m quote; adding/removing fees recalculates; no quote is labelled as money collected",
+    "multiple selected methods require explicit allocation; rows support distinct accounts/dates and adding/removing; overcollection is blocked and partial payment leaves debt; 375px mobile fits",
+    "request sends exactly 200k personal advance, 1.8m company deposit and 250k cash fees, with actual dates; draft money received remains zero",
+    "reopened contract prints actual 250k fees separately from 2m deposit on the contract page, without a fee/receipt appendix; actual PDF has one page"
+  ],
+  "errors": [],
+  "realBusinessWrites": 0
+}

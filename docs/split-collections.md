@@ -2,7 +2,7 @@
 
 Trong bước **Chi phí**, tiền thuê xe tính theo ngày/đơn giá. Thêm các khoản phí bằng **Tên khoản phí + Số tiền**, ví dụ phí ship 50.000 đ. Tổng tiền thuê/phí bao gồm các khoản này; tổng cần thu còn cộng tiền cọc. Hai tổng này không được coi là tiền đã nhận.
 
-Bấm **Lưu chính thức** để mở bước xác nhận thu tiền. Mỗi dòng ghi loại tiền (cọc hoặc thuê/phí), số tiền thực nhận, hình thức, tài khoản nhận và thời điểm nhận theo giờ Việt Nam 24h. Có thể thêm nhiều dòng cho tiền mặt, tài khoản cá nhân và tài khoản công ty. Chọn nhiều hình thức dự kiến yêu cầu điền số tiền từng dòng. Bỏ chọn ghi nhận để phát hành khi chưa thu; nhập ít hơn số phải thu để giữ phần còn thiếu.
+Bấm **Hoàn tất & thanh toán** để mở bước xác nhận thanh toán. Mỗi dòng ghi loại tiền (cọc hoặc thuê/phí), số tiền thực nhận, hình thức, tài khoản nhận và thời điểm nhận theo giờ Việt Nam 24h. Có thể thêm nhiều dòng cho tiền mặt, tài khoản cá nhân và tài khoản công ty. Chọn nhiều hình thức dự kiến yêu cầu điền số tiền từng dòng. Bỏ chọn ghi nhận để phát hành khi chưa thu; nhập ít hơn số phải thu để giữ phần còn thiếu.
 
 Ví dụ cọc 2 triệu + thuê 200.000 + ship 50.000, tổng cần thu 2.250.000 đ:
 

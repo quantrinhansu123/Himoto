@@ -31,6 +31,7 @@
     "test:customer-import": "node scripts/check-customer-import.cjs",
     "test:customer-stores": "node scripts/check-customer-store-import.cjs",
     "test:customer-search": "node scripts/check-customer-global-search.cjs",
+    "test:customer-entry": "node scripts/check-customer-entry.cjs",
     "test:cross-branch-rentals": "node scripts/check-cross-branch-rentals.cjs",
     "test:customer-blacklist": "node scripts/check-customer-blacklist.cjs",
     "test:customer-source": "node scripts/check-customer-order-excel.cjs",

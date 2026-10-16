@@ -45,4 +45,6 @@ npm.cmd run build
 
 Fixture còn trong source để kiểm tra tự động; chúng không được chọn làm nguồn dữ liệu của ứng dụng. Các tài liệu/ảnh QA demo cũ là lịch sử kiểm tra trước lần kết nối này.
 
+[Nhập khách hàng, ảnh hồ sơ và thanh toán](docs/customer-entry.md): nhập trực tiếp ngày cấp CCCD/GPLX, mặc định Bình thường, chụp CCCD/biển số và xác nhận tiền đã nhận khi hoàn tất hợp đồng.
+
 Xem [cấu hình Supabase](docs/supabase-local.md), [đăng nhập](docs/login.md) và [triển khai Vercel](docs/deployment.md).

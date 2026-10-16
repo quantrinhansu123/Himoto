@@ -2,11 +2,14 @@ import { CONTRACT_TYPES } from './config';
 import { ContractDraft, contractStaffStoreId } from './contract-document';
 import { ContractEdits, ManagementDataset, ManagementRow } from './types';
 import { chargeErrors } from './contract-charges';
+import { validIdentityIssueDate } from './customer-identity';
 
 // Drafts may be incomplete. Validate values that were entered, without applying
 // the requirements for printing or issuing an operational rental contract.
 export function validateDraftSave(draft: ContractDraft, dataset: ManagementDataset) {
   const errors: Record<string, string> = {};
+  if (!validIdentityIssueDate(draft.customer.id_card_issued_on)) errors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
+  if (!validIdentityIssueDate(draft.customer.driver_license_issued_on)) errors.driver_license_issued_on = 'Ngày cấp GPLX không hợp lệ.';
   Object.assign(errors,chargeErrors(draft.extra_charges,false));
   if (draft.store_id && !dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Cơ sở đã chọn không còn tồn tại.';
   if (draft.vehicle_store_id && !dataset.stores.some(row => String(row.id) === draft.vehicle_store_id)) errors.vehicle_store_id = 'Cửa hàng xe đã chọn không còn tồn tại.';

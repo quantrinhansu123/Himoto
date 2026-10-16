@@ -37,6 +37,9 @@ def mock_api(route):
     url = urlparse(request.url)
     path = url.path.rstrip('/')
     query = parse_qs(url.query)
+    if path.startswith('/api/auth/record-photos/') and request.method == 'GET':
+        route.fulfill(json=dict(status='success', data=[]))
+        return
     if request.method == 'POST' and path == '/api/auth/customers':
         payload = request.post_data_json
         new_customers.append(payload)
@@ -157,8 +160,8 @@ with sync_playwright() as p:
     form.locator('#contract-deposit_amount').fill('3000000')
     form.get_by_role('button', name='Xem mẫu in', exact=True).click()
     expect(form).to_contain_text('Chưa thể tạo bản in')
-    form.get_by_role('button', name='Lưu chính thức', exact=True).click()
-    finalize = page.get_by_role('dialog', name=re.compile('Xác nhận thu tiền'))
+    form.get_by_role('button', name='Hoàn tất & thanh toán', exact=True).click()
+    finalize = page.get_by_role('dialog', name=re.compile('Xác nhận thanh toán'))
     expect(finalize.locator('.mg-collection-total strong')).to_have_text('3.200.000 đ')
     assert saves[-1]['draft']['customer']['id_card'] == '' and saves[-1]['draft']['relatives'][0]['name'] == ''
     assert saves[-1]['draft']['sales_staff_id'] == '10' and not saves[-1]['draft'].get('tls_staff_id')
@@ -212,6 +215,8 @@ with sync_playwright() as p:
     create = page.get_by_role('dialog', name='Thêm khách hàng tại chỗ')
     create.locator('#new-customer-name').fill('Khách nhập tạm mới QA')
     create.locator('#new-customer-phone').fill('0900000078')
+    expect(create.get_by_label('Trạng thái hồ sơ', exact=False)).to_have_value('active')
+    create.get_by_label('Trạng thái hồ sơ', exact=False).select_option('draft')
     create.get_by_role('button', name='Lưu khách hàng', exact=True).click()
     expect(create).not_to_be_visible()
     expect(form.locator('#contract-customer-name')).to_have_value('Khách nhập tạm mới QA')

@@ -9,6 +9,7 @@ import { Dialog } from './Dialog';
 import { ContractRelative, relativesFromRow, formatRelatives } from '@/lib/management/contract-document';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { CustomerRelativesFields } from '@/components/contracts/CustomerRelativesFields';
+import { IssueDateInput } from './IssueDateInput';
 
 export function EntityForm({ config, row, onClose }: { config: ManagementConfig; row: ManagementRow | null; onClose: () => void }) {
   const { dataset, selectedStore, source, save, updateCustomer } = useManagement();
@@ -47,6 +48,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
     if (config.kind === 'customers' && draft.status === 'warning' && !String(draft.warning_note || '').trim()) nextErrors.warning_note = 'Nhập ghi chú cho hồ sơ cần lưu ý.';
     if (config.kind === 'customers' && String(draft.id_card || '').trim() && !/^\d{9}$|^\d{12}$/.test(String(draft.id_card).replace(/\s+/g, ''))) nextErrors.id_card = 'CCCD/CMND phải có 9 hoặc 12 chữ số.';
     if (config.kind === 'customers' && !validIdentityIssueDate(String(draft.id_card_issued_on || ''))) nextErrors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
+    if (config.kind === 'customers' && !validIdentityIssueDate(String(draft.driver_license_issued_on || ''))) nextErrors.driver_license_issued_on = 'Ngày cấp GPLX không hợp lệ.';
     if (config.kind === 'customers' && String(draft.id_card_issued_by || '').length > 255) nextErrors.id_card_issued_by = 'Nơi cấp CCCD/CMND tối đa 255 ký tự.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
@@ -87,7 +89,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
             setErrors(current => ({ ...current, [field.key]: '' }));
           } };
         return <div key={field.key} className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`}><label htmlFor={id}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
-          {field.type === 'select' ? <select {...props} required={field.required}>{field.storeOptions && <option value="">Chọn cơ sở</option>}{options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+          {config.kind === 'customers' && field.type === 'date' ? <IssueDateInput {...props} value={String(draft[field.key] || '')} onValueChange={value => { setDraft(current => ({ ...current, [field.key]: value })); setErrors(current => ({ ...current, [field.key]: '' })); }} /> : field.type === 'select' ? <select {...props} required={field.required}>{field.storeOptions && <option value="">Chọn cơ sở</option>}{options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
             : field.type === 'textarea' ? <textarea {...props} rows={3} /> : <input {...props} type={field.type || 'text'} required={field.required} min={field.type === 'number' ? 0 : undefined} step={field.type === 'number' ? 1 : undefined} />}
           {field.hint && <small id={`${id}-hint`}>{field.hint}</small>}{errors[field.key] && <p id={`${id}-error`} className="mg-field-error">{errors[field.key]}</p>}
         </div>;

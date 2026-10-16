@@ -13,6 +13,8 @@ import { ManagementRow } from '@/lib/management/types';
 import { MANAGEMENT_CONFIG, optionLabel } from '@/lib/management/config';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
 import { MobileDetailsCard } from './MobileDetailsCard';
+import { SavedRecordPhotos } from './RecordPhotoFields';
+import { CUSTOMER_PHOTO_SLOTS } from '@/lib/management/record-photos';
 
 const SECTIONS = [
   { id: 'vehicle', label: 'Thông tin phương tiện' },
@@ -205,6 +207,10 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         {historyState(!history?.cashflow.length, 'Chưa có phiếu thu / chi nào cho hợp đồng này.')}
         {history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow} />}
       </>)}
+    {source === 'api' && (section === 'vehicle' || section === 'customer') && <>
+      {section === 'vehicle' && <SavedRecordPhotos entity="contracts" recordId={row.id} slots={draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))} title="Ảnh biển số xe" />}
+      {section === 'customer' && draft.customer_id && <SavedRecordPhotos entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Ảnh CCCD" />}
+    </>}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
       {canOperateRental && <>
@@ -212,7 +218,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         {!row.billing_plan_json && <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>}
         <button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>
       </>}
-      {row.status !== 'draft' && onPayment && <button type="button" className="mg-button" onClick={onPayment}><Wallet size={15} />Thu chi / Lịch sử</button>}
+      {!['draft', 'cancelled'].includes(row.status) && onPayment && <button type="button" className="mg-button" onClick={onPayment}><Wallet size={15} />Xác nhận thanh toán</button>}
       <button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
   </Dialog>;
 }

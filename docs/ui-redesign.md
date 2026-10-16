@@ -144,7 +144,7 @@ Trong hợp đồng chọn riêng **NVKD ghi nhận doanh số** và **Nhân vi�
 - **TLS:** tiền thuê gốc trên hợp đồng mở mới đầu tiên, ghi nhận trong kỳ bắt đầu thuê; không phụ thuộc đã thu, không tính thuê sở hữu, khách quay lại hoặc gia hạn.
 - Lần thuê đầu xét toàn hệ thống trước khi lọc ngày/cơ sở; bỏ nháp, giữ xe và hủy. Phí ban đầu có trong snapshot được trừ khỏi các phiếu thu thuê/phí theo thứ tự thu, không trừ lặp khi đổi tháng báo cáo. Hợp đồng cũ thiếu phân công nhân viên cần gán lại; không suy đoán từ tên nguồn khách.
 
-**Lưu chính thức** dùng thông tin vận hành: khách/điện thoại, cửa hàng, xe, thời gian và tiền. Người thân, CCCD, địa chỉ, đại diện có thể bổ sung sau. **Yêu cầu hồ sơ khi in hợp đồng** cho chọn các trường cần hoàn tất và số người thân 0/1/2; lựa chọn lưu riêng theo từng hợp đồng. Không hạ kiểm tra tiền, tài khoản hoặc xe khi thiếu hồ sơ.
+**Hoàn tất & thanh toán** dùng thông tin vận hành: khách/điện thoại, cửa hàng, xe, thời gian và tiền. Người thân, CCCD, địa chỉ, đại diện có thể bổ sung sau. **Yêu cầu hồ sơ khi in hợp đồng** cho chọn các trường cần hoàn tất và số người thân 0/1/2; lựa chọn lưu riêng theo từng hợp đồng. Không hạ kiểm tra tiền, tài khoản hoặc xe khi thiếu hồ sơ.
 
 **Lưu hồ sơ hợp đồng** bổ sung thông tin và phân công nhân viên cho hợp đồng đã phát hành. API chỉ nhận các trường hồ sơ cho phép, kiểm tra phiên bản, vai trò nhân viên; giữ khách liên kết, ngày thuê/trả, công nợ, kho xe và phiếu thu đã ghi.
 

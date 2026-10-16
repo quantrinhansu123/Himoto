@@ -27,6 +27,9 @@ contracts = [legacy]
 def mock_api(route):
     request = route.request
     parsed = urlparse(request.url)
+    if parsed.path.startswith('/api/auth/record-photos/') and request.method == 'GET':
+        route.fulfill(json=dict(status='success', data=[]))
+        return
     path = parsed.path.rstrip('/')
     query = parse_qs(parsed.query)
     if request.method in ['POST', 'PUT'] and path.startswith('/api/auth/order/car-rental') and not path.endswith('/finalize'):
@@ -148,8 +151,8 @@ with sync_playwright() as p:
         deposit.locator('summary').click()
         expect(deposit.get_by_label('Tiền mặt', exact=True)).to_be_checked()
         deposit.locator('summary').click()
-        form.get_by_role('button', name='Lưu chính thức', exact=True).click()
-        confirm = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Xác nhận thu tiền', exact=False))
+        form.get_by_role('button', name='Hoàn tất & thanh toán', exact=True).click()
+        confirm = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Xác nhận thanh toán', exact=False))
         expect(confirm.locator('#deposit-collection-0-method')).to_have_value('cash')
         expect(confirm.locator('#rental-collection-0-method')).to_have_value('cash')
         expect(confirm.locator('#rental-collection-1-method')).to_have_value('company_transfer')
