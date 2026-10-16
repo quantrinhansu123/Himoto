@@ -2284,6 +2284,8 @@
   text-align: right;
 }
 
+.mg-collateral-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.mg-collateral-options .mg-button { min-height: 44px; min-width: 64px; }
 .mg-contract-step-actions {
   display: flex;
   flex-wrap: wrap;
