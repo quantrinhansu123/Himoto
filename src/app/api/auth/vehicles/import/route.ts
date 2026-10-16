@@ -1,10 +1,11 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest, SESSION_COOKIE, verifySession } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { importDatabaseVehicles, readVehicleRequestBody, vehicleImportRequest, VehicleImportError } from '@/lib/server/vehicle-import';
 
 export const runtime = 'nodejs';
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request); if (denied) return denied;
   let client;
   try {
@@ -25,3 +26,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', message: 'Chưa xác nhận được kết quả nhập. Làm mới và kiểm tra dữ liệu trước khi thử lại.' }, { status: 500 });
   } finally { client?.release(); }
 }
+
+export const POST = withAccessRequest(POSTHandler);

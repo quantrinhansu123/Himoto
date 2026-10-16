@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
@@ -23,7 +24,7 @@ async function readImportBody(request: NextRequest) {
   } finally { reader.releaseLock(); }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   let client;
@@ -43,3 +44,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', message: 'Không xác nhận được kết quả nhập. Kiểm tra lại file với hệ thống trước khi thử nhập lại.' }, { status: 500 });
   } finally { client?.release(); }
 }
+
+export const POST = withAccessRequest(POSTHandler);

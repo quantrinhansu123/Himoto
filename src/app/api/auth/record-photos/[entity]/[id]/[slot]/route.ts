@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
@@ -60,5 +61,8 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
     return NextResponse.json({ status: 'error', message: error instanceof RecordPhotoError ? error.message : writing ? 'Không lưu được ảnh. Giữ form và thử lưu lại.' : 'Không tải được ảnh.' }, { status: error instanceof RecordPhotoError ? error.status : 500 });
   } finally { client?.release(); }
 }
-export const GET = (request: NextRequest, params: Params) => handle(request, params, false);
-export const PUT = (request: NextRequest, params: Params) => handle(request, params, true);
+const GETHandler = (request: NextRequest, params: Params) => handle(request, params, false);
+const PUTHandler = (request: NextRequest, params: Params) => handle(request, params, true);
+
+export const GET = withAccessRequest(GETHandler);
+export const PUT = withAccessRequest(PUTHandler);

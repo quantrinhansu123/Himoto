@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
@@ -6,7 +7,7 @@ import { ContractHistoryError, readContractHistory } from '@/lib/server/contract
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(request: NextRequest, { params }: Params) {
+async function GETHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   let client;
@@ -25,3 +26,5 @@ export async function GET(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'error', message: 'Không tải được lịch sử hợp đồng.' }, { status: 500 });
   } finally { client?.release(); }
 }
+
+export const GET = withAccessRequest(GETHandler);

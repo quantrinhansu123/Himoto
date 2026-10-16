@@ -22,7 +22,7 @@ type VehicleSection = (typeof SECTIONS)[number]['id'];
 const ACTION_TONE: Record<VehicleEventAction, string> = { rent: 'blue', return: 'green', transfer: 'amber', repair: 'red', status: 'gray', swap: 'amber', note: 'gray', create: 'green', edit:'gray' };
 
 export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction }: { row: ManagementRow; config: ManagementConfig; canEdit: boolean; onEdit: () => void; onClose: () => void; onAction: (mode: VehicleActionMode) => void }) {
-  const { source } = useManagement();
+  const { source,can } = useManagement();
   const [section, setSection] = useState<VehicleSection>('details');
   const [events, setEvents] = useState<VehicleEvent[] | null>(null);
   const [action, setAction] = useState<VehicleEventAction | ''>('');
@@ -93,10 +93,10 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
       </>)}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
-      {canEdit&&source==='api'&&row.status==='in_transit'&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onAction('receive')}><Check size={16}/>Nhận xe</button>}
-      {canEdit && source === 'api' && <>
-        {row.status!=='in_transit'&&<button type="button" className="mg-button" onClick={() => onAction('transfer')}><ArrowLeftRight size={16} />Chuyển xe</button>}
-        <button type="button" className="mg-button" onClick={() => onAction('status')}><RefreshCw size={16} />Đổi trạng thái</button></>}
+      {can('vehicles.receive')&&source==='api'&&row.status==='in_transit'&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onAction('receive')}><Check size={16}/>Nhận xe</button>}
+      {source === 'api' && <>
+        {can('vehicles.transfer')&&row.status!=='in_transit'&&<button type="button" className="mg-button" onClick={() => onAction('transfer')}><ArrowLeftRight size={16} />Chuyển xe</button>}
+        {can('vehicles.write')&&<button type="button" className="mg-button" onClick={() => onAction('status')}><RefreshCw size={16} />Đổi trạng thái</button>}</>}
       {canEdit && <button type="button" className="mg-button mg-button-primary" onClick={onEdit}>Chỉnh sửa thông tin</button>}</div>
   </Dialog>;
 }

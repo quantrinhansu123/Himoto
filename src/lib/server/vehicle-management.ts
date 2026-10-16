@@ -35,6 +35,7 @@ export function parseVehicleValues(body: unknown): VehicleValues {
 // An actual open contract still owns vehicle status and prevents branch changes.
 async function checkVehicle(client: Client, values: VehicleValues, id: number | null, currentStoreId?: unknown, currentStatus?: string) {
   if (id !== null) {
+    if(currentStatus==='in_transit'&&(values.status!=='in_transit'||String(values.store_id)!==String(currentStoreId)))throw new VehicleSaveError('Xe đang Chờ luân chuyển. Dùng Xác nhận nhận xe tại cơ sở đích trước khi đổi trạng thái hoặc cơ sở.',409);
     const open = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
       WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
         AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [id]);

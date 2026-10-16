@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest, SESSION_COOKIE, verifySession } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
@@ -24,5 +25,8 @@ async function handle(request: NextRequest, remove: boolean) {
     return NextResponse.json({ status: 'error', message: 'Không xác nhận được kết quả. Làm mới danh sách xe trước khi thử lại.' }, { status: 500 });
   } finally { client?.release(); }
 }
-export const GET = (request: NextRequest) => handle(request, false);
-export const DELETE = (request: NextRequest) => handle(request, true);
+const GETHandler = (request: NextRequest) => handle(request, false);
+const DELETEHandler = (request: NextRequest) => handle(request, true);
+
+export const GET = withAccessRequest(GETHandler);
+export const DELETE = withAccessRequest(DELETEHandler);

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     const body: unknown = await request.json();
     if (!body || typeof body !== 'object' || !('email' in body) || !('password' in body) || typeof body.email !== 'string' || typeof body.password !== 'string') throw new LoginError('Vui lòng nhập email và mật khẩu.', 400);
     const email = body.email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || !body.password || body.password.length > 256) throw new LoginError('Kiểm tra email và mật khẩu đã nhập.', 400);
+    if (!/^[a-zA-Z0-9._@+-]{3,254}$/.test(email) || !body.password || body.password.length > 256) throw new LoginError('Kiểm tra tài khoản và mật khẩu đã nhập.', 400);
     checkLoginLimit(email);
     const user = await authenticateAccount(email, body.password);
     clearLoginLimit(email);

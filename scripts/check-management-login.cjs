@@ -1,20 +1,9 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
-const ts = require('typescript');
 const bcrypt = require('bcryptjs');
 const { NextRequest } = require('next/server');
 const root = path.resolve(__dirname, '../src');
-const cache = new Map();
-function load(filename) {
-  const file = filename.endsWith('.ts') ? filename : `${filename}.ts`;
-  if (cache.has(file)) return cache.get(file).exports;
-  const module = { exports: {} }; cache.set(file, module);
-  const javascript = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const localRequire = name => name === 'server-only' ? {} : name.startsWith('@/') ? load(path.join(root, name.slice(2))) : name.startsWith('.') ? load(path.resolve(path.dirname(file), name)) : require(name);
-  new Function('require', 'module', 'exports', javascript)(localRequire, module, module.exports);
-  return module.exports;
-}
+const {load} = require('./lib/load-typescript.cjs');
 
 async function run() {
   const session = load(path.join(root, 'lib/server/management-session'));
@@ -36,7 +25,8 @@ async function run() {
   let row = account;
   const queries = [];
   const database = { query: async (sql, values) => { queries.push({ sql, values }); return { rows: row ? [row] : [] }; } };
-  assert.deepEqual(await session.authenticateAccount(account.email, password, database), { id: 7, name: account.name, email: account.email, role: 'admin', role_slug: 'quan-tri-vien' });
+  const expectedUser={id:7,name:account.name,email:account.email,role:'admin',role_slug:'quan-tri-vien',access_role:'admin',permissions:[...load(path.join(root,'lib/management/permissions')).ACCESS_PERMISSIONS],store_id:null,scope_all:true};
+  assert.deepEqual(await session.authenticateAccount(account.email, password, database), expectedUser);
   assert.deepEqual(queries[0].values, [account.email]);
   assert(queries.every(query => query.sql.startsWith('SELECT')));
   await assert.rejects(session.authenticateAccount(account.email, 'wrong', database), error => error.status === 401);
@@ -47,6 +37,13 @@ async function run() {
   row = { ...account, role_id: '3', role: 'nhan-vien', role_slug: 'nhan-vien' };
   await assert.rejects(session.authenticateAccount(account.email, password, database), error => error.status === 403);
   checks.push('existing Laravel bcrypt hashes work; invalid, missing, inactive, and non-admin accounts are rejected without writes');
+  row={...account,access_role:'branch_staff',permissions:['contracts.read'],access_store_id:'23',scope_all:false,access_enabled:true};
+  const branch=await session.authenticateAccount('nv.qa',password,database);
+  assert.equal(branch.store_id,23);assert.equal(branch.scope_all,false);assert.equal(branch.access_role,'branch_staff');
+  assert(!branch.permissions.includes('accounts.manage'));
+  row={...row,access_enabled:false};
+  await assert.rejects(session.authenticateAccount('nv.qa',password,database),error=>error.status===403);
+  checks.push('Explicit branch access overrides the legacy admin role; disabled managed accounts cannot sign in');
 
   const previousKey = process.env.MANAGEMENT_SESSION_SECRET;
   process.env.MANAGEMENT_SESSION_SECRET = key;
@@ -99,7 +96,10 @@ async function run() {
     assert.equal(session.sameOrigin(new NextRequest('http://localhost/api/session', { method: 'POST', headers: { Origin: 'http://localhost' } })), true);
     assert.equal(session.sameOrigin(new NextRequest('http://127.0.0.1:3000/api/session', { method: 'POST', headers: { Host: '127.0.0.1:3000', Origin: 'http://127.0.0.1:3000' } })), true);
     assert.equal(session.sameOrigin(new NextRequest('http://127.0.0.1:3000/api/session', { method: 'POST', headers: { Host: '127.0.0.1:3000', Origin: 'http://localhost:3000' } })), false);
-    const pool = load(path.join(root, 'lib/server/himoto-database')).himotoPool;
+    const dbModule=load(path.join(root,'lib/server/himoto-database'));
+    const pool=dbModule.himotoPool;
+    const ownerDescriptor=Object.getOwnPropertyDescriptor(dbModule.ownerDatabase,'query');
+    Object.defineProperty(dbModule.ownerDatabase,'query',{configurable:true,value:database.query});
     const queryDescriptor = Object.getOwnPropertyDescriptor(pool, 'query');
     Object.defineProperty(pool, 'query', { configurable: true, value: database.query });
     try {
@@ -107,7 +107,7 @@ async function run() {
       row = account;
       const response = await handler.POST(new NextRequest('http://127.0.0.1:3000/api/session', { method: 'POST', headers: { Host: '127.0.0.1:3000', Origin: 'http://127.0.0.1:3000', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account.email, password }) }));
       assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), { user: { id: 7, name: account.name, email: account.email, role: 'admin', role_slug: 'quan-tri-vien' } });
+      assert.deepEqual(await response.json(), { user: expectedUser });
       const cookie = response.headers.get('set-cookie');
       assert.match(cookie, /HttpOnly/i); assert.match(cookie, /SameSite=strict/i); assert.match(cookie, /Max-Age=28800/i);
       const authenticated = new NextRequest('http://127.0.0.1:3000/api/session', { headers: { Cookie: cookie.split(';')[0] } });
@@ -141,11 +141,11 @@ async function run() {
         assert.equal((await send(customer)).status, 201);
         const insert = writes.find(write => write.sql.includes('INSERT INTO himoto.customers'));
         assert.match(insert.sql, /store_id, warning/);
-        assert.deepEqual(insert.values.slice(5), [1, 2, 'QA warning']);
+        assert.deepEqual(insert.values.slice(5,8), [1, 2, 'QA warning']);
         assert.equal(writes.at(-1).sql, 'COMMIT');
         writes.length = 0;
         assert.equal((await send({ ...customer, status: 'blacklist', warning_note: '' })).status, 201);
-        assert.deepEqual(writes.find(write => write.sql.includes('INSERT INTO himoto.customers')).values.slice(5), [2, 2, 'Blacklist']);
+        assert.deepEqual(writes.find(write => write.sql.includes('INSERT INTO himoto.customers')).values.slice(5,8), [2, 2, 'Blacklist']);
         writes.length = 0;
         assert.equal((await send({ ...customer, warning_note: '' })).status, 400);
         assert.equal((await send({}, ['hr', 'staff', 'refill-branches'])).status, 404);
@@ -153,7 +153,7 @@ async function run() {
       } finally { Object.defineProperty(pool, 'connect', connectDescriptor); }
       checks.push('customer API binds branch/status/warning correctly; invalid warnings and removed bulk staff writes never open a transaction (mock database only)');
       checks.push('login handler issues an HttpOnly cookie without password data; session lookup and logout work');
-    } finally { Object.defineProperty(pool, 'query', queryDescriptor); }
+    } finally { Object.defineProperty(pool, 'query', queryDescriptor); Object.defineProperty(dbModule.ownerDatabase,'query',ownerDescriptor); }
   } finally { for (const [name, value] of Object.entries(previousEnv)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; } }
   checks.push('missing configuration, anonymous and cross-origin requests are rejected; production authentication stays enabled');
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

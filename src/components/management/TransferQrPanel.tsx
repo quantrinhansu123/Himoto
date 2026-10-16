@@ -18,7 +18,7 @@ export function TransferQrPanel({ account, input, qr, confirmed, onConfirm }: {
     {failed && <p role="alert">Không tải được QR. <button type="button" className="mg-button" onClick={() => { setFailed(false); setAttempt(value => value + 1); }}>Tải lại QR</button> Có thể chuyển theo thông tin tài khoản bên dưới.</p>}
     <dl><div><dt>Ngân hàng</dt><dd>{account.bank_name}</dd></div><div><dt>Số tài khoản</dt><dd>{account.account_number}</dd></div><div><dt>Chủ tài khoản</dt><dd>{account.owner_name}</dd></div><div><dt>Số tiền chuyển</dt><dd>{formatMoney(Number(input.amount))}</dd></div><div><dt>Nội dung trên QR</dt><dd>{qr.content}</dd></div></dl>
     <a href={qr.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">Mở ảnh QR</a>
-    <p>Mở QR chưa ghi nhận thanh toán hoặc gia hạn. Hệ thống chưa tự kiểm tra tiền vào ngân hàng.</p>
+    <p>Mở QR chưa ghi nhận thanh toán hoặc gia hạn. Chỉ xác nhận thủ công sau khi đã kiểm tra tiền thực nhận.</p>
     <label className="mg-transfer-confirm"><input type="checkbox" checked={confirmed} onChange={event => onConfirm(event.target.checked)} required />Tôi đã kiểm tra tài khoản và nhận đủ {formatMoney(Number(input.amount))}.</label>
   </section>;
 }

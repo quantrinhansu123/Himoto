@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { readPhotoBody } from '@/lib/server/photo-body';
@@ -6,7 +7,7 @@ import { PhotoOcrError, ocrKind, limitPhotoOcr, extractPhoto } from '@/lib/serve
 
 export const runtime = 'nodejs';
 export const maxDuration = 45;
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request); if (denied) return denied;
   try {
     const kind = ocrKind(request.headers.get('x-photo-kind'));
@@ -21,3 +22,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', message: known ? error.message : 'Không đọc được ảnh. Thử lại hoặc nhập tay.' }, { status: known ? error.status : 500, headers: { 'Cache-Control': 'private, no-store' } });
   }
 }
+
+export const POST = withAccessRequest(POSTHandler);

@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
@@ -6,7 +7,7 @@ import { STORE_SELECT_SQL, StoreSaveError, createDatabaseStore, parseStoreCreati
 export const runtime = 'nodejs';
 const headers = { 'Cache-Control': 'no-store' };
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   try {
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   let client;
@@ -37,3 +38,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', message: 'Chưa xác nhận được cơ sở mới. Nhấn Làm mới để kiểm tra trước khi tạo lại.' }, { status: 500, headers });
   } finally { client?.release(); }
 }
+
+export const GET = withAccessRequest(GETHandler);
+export const POST = withAccessRequest(POSTHandler);

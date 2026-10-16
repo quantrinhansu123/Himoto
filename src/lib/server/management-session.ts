@@ -3,13 +3,13 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { compare } from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-import { canRecordContractPayment, isAdminAccount } from '@/lib/management/permissions';
-import { himotoPool } from './himoto-database';
+import { ACCESS_PERMISSIONS, canRecordContractPayment, isAdminAccount } from '@/lib/management/permissions';
+import { himotoPool, ownerDatabase } from './himoto-database';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
-export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string };
-type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null };
+export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; scope_all?:boolean };
+type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null; access_role?:string; permissions?:string[]; access_store_id?:string|number|null; scope_all?:boolean; access_enabled?:boolean };
 type Database = Pick<typeof himotoPool, 'query'>;
 export { canRecordContractPayment, isAdminAccount };
 
@@ -48,25 +48,29 @@ export function verifySession(token: string | undefined, key = sessionKey(), now
 }
 
 function allowedAccount(account: Account) {
-  // Workspace sign-in: admin + accounting (payment). Other roles stay blocked until access is expanded.
-  return account.status === 'active' && canRecordContractPayment(account);
+  // Managed accounts require an enabled scope; preserve existing admin/accounting access.
+  return account.status === 'active' && (account.access_role ? account.access_enabled===true && (account.scope_all===true || Number(account.access_store_id)>0) : canRecordContractPayment(account));
 }
 function safeUser(account: Account): SessionUser {
-  return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || '') };
+  const admin=isAdminAccount(account);
+  return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
+    access_role:account.access_role||(admin?'admin':'accounting'),permissions:admin?[...ACCESS_PERMISSIONS]:account.permissions||['contracts.read','finance.read','finance.write'],
+    store_id:account.access_store_id==null?null:Number(account.access_store_id),scope_all:admin||(!account.access_role)||account.scope_all===true };
 }
-const accountFields = 'u.id, u.name, u.email, u.status, u.role, u.role_id, r.slug AS role_slug';
+const accountFields = 'u.id, u.name, u.email, u.status, u.role, u.role_id, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,a.enabled AS access_enabled';
+const accountJoin='LEFT JOIN himoto.roles r ON r.id=u.role_id LEFT JOIN himoto.management_account_access a ON a.user_id=u.id';
 export class LoginError extends Error {
   constructor(message: string, public status = 401) { super(message); }
 }
 
-export async function authenticateAccount(email: string, password: string, database: Database = himotoPool): Promise<SessionUser> {
-  const result = await database.query(`SELECT ${accountFields}, u.password FROM himoto.users u LEFT JOIN himoto.roles r ON r.id=u.role_id WHERE lower(u.email)=lower($1) AND u.deleted_at IS NULL LIMIT 1`, [email]);
+export async function authenticateAccount(email: string, password: string, database: Database = ownerDatabase): Promise<SessionUser> {
+  const result = await database.query(`SELECT ${accountFields}, u.password FROM himoto.users u ${accountJoin} WHERE (lower(u.email)=lower($1) OR lower(a.login_name)=lower($1)) AND u.deleted_at IS NULL LIMIT 1`, [email]);
   const account = result.rows[0] as Account | undefined;
   // A missing user still performs bcrypt work; never return a password hash.
   const hash = account?.password?.replace(/^\$2y\$/, '$2b$') || '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
   const matches = await compare(password, hash);
   if (!account || !matches || account.status !== 'active') throw new LoginError('Email hoặc mật khẩu không chính xác.');
-  if (!allowedAccount(account)) throw new LoginError('Tài khoản chưa có quyền truy cập trang quản lý này. Vui lòng dùng tài khoản quản trị.', 403);
+  if (!allowedAccount(account)) throw new LoginError('Tài khoản chưa được cấp quyền truy cập. Liên hệ quản trị viên.', 403);
   return safeUser(account);
 }
 
@@ -80,10 +84,10 @@ export function checkLoginLimit(email: string, now = Date.now()) {
 }
 export function clearLoginLimit(email: string) { globalSession.managementLoginAttempts?.delete(email.toLowerCase()); }
 
-export async function userFromSession(token: string | undefined, database: Database = himotoPool): Promise<SessionUser | null> {
+export async function userFromSession(token: string | undefined, database: Database = ownerDatabase): Promise<SessionUser | null> {
   const id = verifySession(token);
   if (id === null) return null;
-  const result = await database.query(`SELECT ${accountFields} FROM himoto.users u LEFT JOIN himoto.roles r ON r.id=u.role_id WHERE u.id=$1 AND u.deleted_at IS NULL LIMIT 1`, [id]);
+  const result = await database.query(`SELECT ${accountFields} FROM himoto.users u ${accountJoin} WHERE u.id=$1 AND u.deleted_at IS NULL LIMIT 1`, [id]);
   const account = result.rows[0] as Account | undefined;
   return account && allowedAccount(account) ? safeUser(account) : null;
 }

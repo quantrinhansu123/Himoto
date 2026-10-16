@@ -1,5 +1,6 @@
 import { ComponentType, Fragment, ReactNode } from 'react';
 import { LegacyContractDocument } from '@/lib/management/contract-document';
+import { ContractPaymentQr } from '@/components/management/ContractPaymentQr';
 
 function PaymentMethod({ value }: { value: string }) {
   const text = value.toLowerCase();
@@ -8,7 +9,7 @@ function PaymentMethod({ value }: { value: string }) {
 }
 
 // Preserve the legacy legal template.
-export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContractDocument; pageWrapper?: ComponentType<{ children: ReactNode }> }) {
+export function ContractPrintDocument({ doc, pageWrapper,contractId }: { doc: LegacyContractDocument; pageWrapper?: ComponentType<{ children: ReactNode }>;contractId?:number }) {
   const Page = pageWrapper || Fragment;
   const representativeNameA = doc.lessor.representative_name || doc.lessor.authorization.party_name || doc.signers.signer_a_name || '................................';
   const primaryVehicle = doc.primary_vehicle || doc.vehicles[0];
@@ -245,6 +246,7 @@ export function ContractPrintDocument({ doc, pageWrapper }: { doc: LegacyContrac
 							</table>
 						</div>
 					</div>
+					{contractId&&<ContractPaymentQr id={contractId} compact/>}
 				</div>
 			</div>
 		</div></Page>

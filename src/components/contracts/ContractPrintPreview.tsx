@@ -67,6 +67,7 @@ export function PrintPreviewDialog({ title, subtitle, printTitle, printLabel, la
       if (!source) throw new Error('Chưa tải xong mẫu in.');
       if (typeof window.print !== 'function') throw new Error('Trình duyệt này không hỗ trợ in trực tiếp. Hãy mở trang bằng Chrome, Edge hoặc Firefox trên máy tính rồi thử lại.');
       clearPrint();
+      if(source.querySelector('[data-payment-qr-loading]'))throw new Error('Đang tải mã QR thanh toán. Chờ mã hiện rồi bấm in lại.');
       const root = document.createElement('div'); printRoot.current = root;
       root.className = 'himoto-print-root';
       const printable = source.cloneNode(true) as HTMLElement;
@@ -82,6 +83,11 @@ export function PrintPreviewDialog({ title, subtitle, printTitle, printLabel, la
       document.documentElement.classList.add('himoto-printing');
       pageTitle.current = document.title; document.title = printTitle;
       await document.fonts.ready;
+      await Promise.all(Array.from(printable.querySelectorAll<HTMLImageElement>('img')).map(img=>new Promise<void>((resolve,reject)=>{
+        if(img.complete){if(img.naturalWidth)resolve();else reject(new Error('Ảnh trong hợp đồng chưa tải được. Kiểm tra kết nối rồi in lại.'));return;}
+        const timer=setTimeout(()=>reject(new Error('Ảnh QR chưa tải xong. Chờ mã hiện rồi in lại.')),10000);
+        img.addEventListener('load',()=>{clearTimeout(timer);resolve();},{once:true});img.addEventListener('error',()=>{clearTimeout(timer);reject(new Error('Không tải được ảnh QR để in.'));},{once:true});
+      })));
       // Printing from a script-created iframe makes Chrome offer only "Save as PDF", so the page itself is printed.
       window.addEventListener('afterprint', () => { if (printRoot.current === root) clearPrint(); }, { once: true });
       window.print();
@@ -109,8 +115,8 @@ export function PrintPreviewDialog({ title, subtitle, printTitle, printLabel, la
   </Dialog>;
 }
 
-export function ContractPrintPreview({ doc, onClose }: { doc: LegacyContractDocument; onClose: () => void }) {
+export function ContractPrintPreview({ doc, onClose,contractId }: { doc: LegacyContractDocument; onClose: () => void;contractId?:number }) {
   return <PrintPreviewDialog title="Xem trước mẫu in hợp đồng" subtitle="Mẫu cũ · A4 ngang · Bản nháp chưa phát hành" printTitle={`HIMOTO - ${doc.contract_number}`} printLabel="In hợp đồng" layoutKey={doc} onClose={onClose}>
-    <ContractPrintDocument doc={doc} pageWrapper={PreviewPage} />
+    <ContractPrintDocument doc={doc} pageWrapper={PreviewPage} contractId={contractId}/>
   </PrintPreviewDialog>;
 }

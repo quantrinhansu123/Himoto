@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
@@ -6,7 +7,7 @@ import { BulkDeleteError, bulkDelete, parseBulkDelete } from '@/lib/server/bulk-
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ kind: string }> };
 
-export async function DELETE(request: NextRequest, { params }: Params) {
+async function DELETEHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   let client;
@@ -25,3 +26,5 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'error', message: 'Không xóa được. Chưa có thay đổi nào được ghi.' }, { status: 500 });
   } finally { client?.release(); }
 }
+
+export const DELETE = withAccessRequest(DELETEHandler);

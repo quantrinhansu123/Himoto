@@ -483,3 +483,6 @@
 .contract-print-wrapper .table th, .contract-print-wrapper .table td { border: 1px solid #dee2e6; padding: 4px; }
 .contract-print-wrapper p { margin-top: 0; }
 .contract-print-wrapper .text-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contract-print-wrapper .contract-payment-qr { display: flex; gap: 10px; margin: 10px 0 0; align-items: center; break-inside: avoid; font-size: 10px; line-height: 1.4; }
+.contract-print-wrapper .contract-payment-qr img { width: 96px; height: 96px; flex: 0 0 96px; }
+.contract-print-wrapper .contract-payment-qr span,.contract-print-wrapper .contract-payment-qr strong { display: block; overflow-wrap: anywhere; }

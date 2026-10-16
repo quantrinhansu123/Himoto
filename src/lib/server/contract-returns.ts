@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { ReturnableContractItem, ReturnInput, ReturnResult } from '@/lib/management/contract-returns';
 import { dailyPriceSql, depositLateral, rentalPaid, rentalPaidSql } from './contract-deposits';
 import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
+import { dataAccess } from './access-context';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractReturnError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -157,7 +158,8 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   if (plan && !remainingItems) await client.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(draft_payload::jsonb,
     '{management_composer,installment_plan,stopped_at}',to_jsonb($2::text),true)::json WHERE id=$1`, [item.order_id,input.returned_at < plan.end ? input.returned_at : plan.end]);
   const vehicleOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
-  if (!vehicleOpen.rowCount) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
+  const foreignOpen=dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
+  if (!vehicleOpen.rowCount&&!foreignOpen) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
   return { item_id: input.item_id, contract_code: String(item.contract_code), returned_at: actual, scheduled_return_at: toIso(item.return_at)!,
     late_minutes: lateMinutes, chargeable_hours: chargeableHours, hourly_rate: hourlyRate, fee, total_amount: nextTotal, status: nextStatus };
 }
@@ -179,7 +181,7 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
       AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [input.vehicle_id]);
-  if (openRental.rowCount) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
+  if (openRental.rowCount || dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[input.vehicle_id])).rows[0]?.blocked) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
   const duplicate = await client.query(`SELECT 1 FROM himoto.order_vehicle_details
     WHERE order_id=$1 AND vehicle_id=$2 AND id<>$3 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.order_id,input.vehicle_id,input.item_id]);
   if (duplicate.rowCount) throw new ContractReturnError('Xe mới đã nằm trong hợp đồng này.', 409);
@@ -188,7 +190,8 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   await client.query(`INSERT INTO himoto.management_contract_vehicle_swaps(order_id,order_item_id,from_vehicle_id,to_vehicle_id,actor_id)
     VALUES ($1,$2,$3,$4,$5)`, [item.order_id,input.item_id,item.vehicle_id,input.vehicle_id,actorId]);
   const oldOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
-  if (!oldOpen.rowCount) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
+  const foreignOldOpen=dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
+  if (!oldOpen.rowCount&&!foreignOldOpen) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
   await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=$1`, [input.vehicle_id]);
 
   // Keep printed/contract draft vehicle fields in sync with the live rental line.

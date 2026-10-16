@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
@@ -5,7 +6,7 @@ import { ContractReturnError, replaceContractVehicle } from '@/lib/server/contra
 
 export const runtime = 'nodejs';
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
@@ -31,3 +32,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', message: 'Không đổi được xe trên hợp đồng.' }, { status: 500 });
   } finally { client?.release(); }
 }
+
+export const POST = withAccessRequest(POSTHandler);

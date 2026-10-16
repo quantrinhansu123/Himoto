@@ -21,7 +21,7 @@ export function LoginForm({ connected }: { connected: boolean }) {
     if (pending.current) return;
     setError(''); setInvalid(null);
     if (!connected) { setError('Hệ thống chưa được cấu hình kết nối dữ liệu. Vui lòng liên hệ quản trị viên.'); return; }
-    if (!emailInput.current?.validity.valid || !email.trim()) { setError('Vui lòng nhập email hợp lệ.'); setInvalid('email'); emailInput.current?.focus(); return; }
+    if (!emailInput.current?.validity.valid || !email.trim()) { setError('Vui lòng nhập tài khoản hoặc email.'); setInvalid('email'); emailInput.current?.focus(); return; }
     if (!password) { setError('Vui lòng nhập mật khẩu.'); setInvalid('password'); passwordInput.current?.focus(); return; }
     pending.current = true; setBusy(true);
     try {
@@ -29,7 +29,8 @@ export function LoginForm({ connected }: { connected: boolean }) {
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.user) throw new Error(result?.message || 'Không đăng nhập được. Vui lòng thử lại.');
       setPassword('');
-      router.replace(window.matchMedia('(max-width: 767px)').matches ? '/operations' : '/vehicles'); router.refresh();
+      const role=result.user.access_role;
+      router.replace(role==='hr'?'/staff':role==='accounting'?'/cashbook':role?.startsWith('ownership_')?'/contracts/ownership':window.matchMedia('(max-width: 767px)').matches?'/operations':'/vehicles'); router.refresh();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không kết nối được hệ thống. Vui lòng thử lại.'); }
     finally { pending.current = false; setBusy(false); }
   }
@@ -49,8 +50,8 @@ export function LoginForm({ connected }: { connected: boolean }) {
           {!connected && <p className="hm-login-error" role="alert">Hệ thống chưa được cấu hình kết nối dữ liệu. Vui lòng liên hệ quản trị viên.</p>}
           {error && <p id="login-error" className="hm-login-error" role="alert">{error}</p>}
           <form onSubmit={submit} noValidate aria-busy={busy}>
-            <label htmlFor="login-email">Email</label>
-            <input ref={emailInput} id="login-email" name="email" type="email" value={email} onChange={event => { setEmail(event.target.value); if (invalid === 'email') { setInvalid(null); setError(''); } }} placeholder="Nhập email của bạn" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={254} required disabled={busy || !connected} aria-invalid={invalid === 'email'} aria-describedby={invalid === 'email' ? 'login-error' : undefined} />
+            <label htmlFor="login-email">Tài khoản / Email</label>
+            <input ref={emailInput} id="login-email" name="email" type="text" value={email} onChange={event => { setEmail(event.target.value); if (invalid === 'email') { setInvalid(null); setError(''); } }} placeholder="Nhập email của bạn" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={254} required disabled={busy || !connected} aria-invalid={invalid === 'email'} aria-describedby={invalid === 'email' ? 'login-error' : undefined} />
             <label htmlFor="login-password">Mật khẩu</label>
             <div className="hm-login-password">
               <input ref={passwordInput} id="login-password" name="password" type={visible ? 'text' : 'password'} value={password} onChange={event => { setPassword(event.target.value); if (invalid === 'password') { setInvalid(null); setError(''); } }} placeholder="Nhập mật khẩu" autoComplete="current-password" maxLength={256} required disabled={busy || !connected} aria-invalid={invalid === 'password'} aria-describedby={invalid === 'password' ? 'login-error' : undefined} />

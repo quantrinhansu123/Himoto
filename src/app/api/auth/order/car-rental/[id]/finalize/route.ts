@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
@@ -6,7 +7,7 @@ import { ContractFinalizeError, finalizeContractDraft, parseFinalizeInput } from
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
 
-export async function POST(request: NextRequest, { params }: Params) {
+async function POSTHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
@@ -30,3 +31,5 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'error', message: 'Không lưu chính thức được hợp đồng. Chưa có thay đổi nào được ghi.' }, { status: 500 });
   } finally { client?.release(); }
 }
+
+export const POST = withAccessRequest(POSTHandler);

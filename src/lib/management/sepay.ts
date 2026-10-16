@@ -1,0 +1,18 @@
+import { bankBin } from './transfer-qr';
+export interface ContractQrData {
+  id:number;code:string;configured:boolean;mode:'test'|'live';amount:number;total:number|null;paid:number|null;
+  bank:{bank_code:string;account_number:string;account_name:string}|null;
+  memo:string;qr_url:string|null;received_demo:number;event_version:number;
+}
+export const plainBankText=(text:string)=>text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D');
+export const contractTransferMemo=(code:string)=>`Thanh toán cho hợp đồng ${code}`;
+export function contractVietQr(bank:{bank_code:string;account_number:string;account_name:string},amount:number,code:string){
+  const bin=bankBin(bank.bank_code);
+  if(!bin||!/^[A-Za-z0-9]{1,32}$/.test(bank.account_number)||!bank.account_name.trim()||!Number.isSafeInteger(amount)||amount<=0)throw Error('Thông tin tạo QR chưa hợp lệ.');
+  const memo=plainBankText(contractTransferMemo(code));if(memo.length>200)throw Error('Mã hợp đồng quá dài để tạo QR.');
+  return 'https://vietqr.app/img?'+new URLSearchParams({acc:bank.account_number,bank:bin,amount:String(amount),des:memo,template:'qronly',holder:plainBankText(bank.account_name)});
+}
+export async function loadContractQr(id:number,amount?:number,signal?:AbortSignal):Promise<ContractQrData>{
+  const response=await fetch(`/api/auth/order/car-rental/${id}/payment-qr${amount===undefined?'':`?amount=${amount}`}`,{cache:'no-store',credentials:'same-origin',signal});
+  const body=await response.json().catch(()=>null);if(!response.ok||body?.status!=='success')throw Error(body?.message||'Không tải được thông tin chuyển khoản.');return body.data;
+}

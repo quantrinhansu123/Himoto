@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { canRecordContractPayment, protectDatabaseRequest, userFromSession, SESSION_COOKIE } from '@/lib/server/management-session';
@@ -31,5 +32,8 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
     return NextResponse.json({ status: 'error', message: writing ? 'Chưa xác nhận được thanh toán. Tải lại lịch sử để kiểm tra; khi thử lại, hệ thống giữ mã lần thu để tránh ghi trùng.' : 'Không tải được thông tin thanh toán.' }, { status: 500 });
   } finally { client?.release(); }
 }
-export const GET = (request: NextRequest, params: Params) => handle(request, params, false);
-export const POST = (request: NextRequest, params: Params) => handle(request, params, true);
+const GETHandler = (request: NextRequest, params: Params) => handle(request, params, false);
+const POSTHandler = (request: NextRequest, params: Params) => handle(request, params, true);
+
+export const GET = withAccessRequest(GETHandler);
+export const POST = withAccessRequest(POSTHandler);

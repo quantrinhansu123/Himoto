@@ -6,6 +6,7 @@ import type { ManagementRow } from '@/lib/management/types';
 import { saveDatabaseDraft } from './contract-drafts';
 import { vehicleRevision, writeVehicleAudit } from './vehicle-audit';
 import { readPendingVehicleTransfer } from './vehicle-transfers';
+import { dataAccess } from './access-context';
 
 type Client = Pick<PoolClient, 'query'>;
 export interface VehicleActionCustomer { id: number; name: string; created: boolean; matched_by: string }
@@ -92,7 +93,11 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
     FROM himoto.vehicles v WHERE v.id=$1 FOR UPDATE`, [vehicleId]);
   const vehicle = found.rows[0];
   if (!vehicle) throw new VehicleActionError('Không tìm thấy xe. Nhấn Làm mới để kiểm tra.', 404);
+  const scope=dataAccess.getStore();
+  if(scope&&!scope.scope_all&&Number(vehicle.store_id)!==scope.store_id)throw new VehicleActionError('Chỉ được thao tác xe tại cơ sở được phân quyền.',403);
   if (input.revision && input.revision !== vehicle.revision) throw new VehicleActionError('Thông tin xe đã thay đổi. Nhấn Làm mới rồi thao tác lại.', 409);
+  if(vehicle.status==='in_transit'&&input.action==='status')throw new VehicleActionError('Xe đang Chờ luân chuyển. Cơ sở đích cần dùng Xác nhận nhận xe trước khi đổi trạng thái.',409);
+  if(scope&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[vehicleId])).rows[0]?.blocked)throw new VehicleActionError('Xe đang thuộc hợp đồng mở. Trả xe trước khi thao tác.',409);
   const open = await client.query(`SELECT COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) AS code
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
@@ -102,6 +107,7 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
     if(vehicle.status!=='in_transit')throw new VehicleActionError('Xe không còn Chờ luân chuyển hoặc đã được nhận. Nhấn Làm mới để kiểm tra.',409);
     const transfer=await readPendingVehicleTransfer(client,vehicleId);
     if(!transfer||Number(transfer.id)!==input.transfer_event_id||Number(transfer.to_store_id)!==Number(vehicle.store_id))throw new VehicleActionError('Lần chuyển xe đã thay đổi hoặc không khớp cơ sở hiện tại. Nhấn Làm mới rồi kiểm tra lịch sử.',409);
+    if(Number(transfer.created_by)===actorId)throw new VehicleActionError('Người chuyển xe không được xác nhận nhận cùng lượt chuyển. Cần người nhận tại cơ sở đích xác nhận.',403);
     if(!Number(transfer.receivable))throw new VehicleActionError('Lần chuyển xe này đã được nhận hoặc thuộc phiếu điều chuyển của hệ thống cũ. Kiểm tra lại lịch sử.',409);
     if(!(await client.query('SELECT id FROM himoto.stores WHERE id=$1 FOR SHARE',[vehicle.store_id])).rowCount)throw new VehicleActionError('Cơ sở nhận xe không còn tồn tại. Kiểm tra lại trước khi nhận.',409);
     await client.query("UPDATE himoto.vehicles SET status='ready',updated_at=now() WHERE id=$1",[vehicleId]);
@@ -118,6 +124,7 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
   if (input.action === 'transfer') {
     if (current !== 'ready') throw new VehicleActionError('Chỉ chuyển xe đang Lưu kho. Kiểm tra trạng thái xe rồi thao tác lại.', 409);
     if (String(vehicle.store_id) === String(input.to_store_id)) throw new VehicleActionError('Xe đang ở cơ sở này. Chọn cơ sở khác để chuyển.');
+    if(scope)await client.query("SELECT set_config('himoto.transfer_vehicle_id',$1,true)",[String(vehicleId)]);
     await client.query("UPDATE himoto.vehicles SET current_store_id=$2,status='in_transit',updated_at=now() WHERE id=$1", [vehicleId, input.to_store_id]);
   } else {
     if (current === input.status) throw new VehicleActionError(`Xe đang ở trạng thái ${statusLabel(current)}.`);

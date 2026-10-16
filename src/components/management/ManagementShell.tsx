@@ -6,9 +6,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
-import { canRecordContractPayment } from '@/lib/management/permissions';
+import { canRecordContractPayment,hasPermission,type AccessPermission } from '@/lib/management/permissions';
 import { ContractTypesProvider } from '@/components/contracts/ContractTypesProvider';
 import type { SessionUser } from '@/lib/server/management-session';
+import { SePayNotifications } from './SePayNotifications';
 
 const navigation = [
   {href:'/operations',label:'Thao tác nhanh',kind:'operations' as const,icon:House},
@@ -28,13 +29,17 @@ const navigation = [
   { href: '/vehicles', label: 'Danh sách xe', kind: 'vehicles' as const, icon: Bike },
   { href: '/vehicles/transfers', label: 'Lịch sử luân chuyển', kind: 'vehicle-transfers' as const, icon: History },
   { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook' as const, icon: Wallet },
+  { href: '/accounts', label: 'Tài khoản & Phân quyền', kind: 'accounts' as const, icon: UsersRound },
 ];
+const navigationPermission=(kind:string):AccessPermission=>kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts } = useManagement();
   const pathname = usePathname();
   const router = useRouter();
   const active = navigation.find(n => pathname === n.href) || navigation.find(n => n.kind === 'vehicles')!;
+  const visibleNavigation=navigation.filter(item=>hasPermission(user,navigationPermission(item.kind)));
+  const pageAllowed=hasPermission(user,navigationPermission(active.kind));
   const writableCustomers = source === 'api' && active.kind === 'customers';
   const writableStores = source === 'api' && active.kind === 'stores';
   const writableDuties = source === 'api' && active.kind === 'duty-roster';
@@ -89,7 +94,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     </Link>
     <div className="mg-workspace"><span className="mg-workspace-symbol"><Building2 size={19} /></span><div><strong>HIMOTO Workspace</strong><small>Quản lý vận hành</small></div></div>
     <p className="mg-nav-caption">DANH MỤC QUẢN LÝ</p>
-    <nav aria-label="Điều hướng quản lý">{navigation.map(item => <Link key={item.href} href={item.href}
+    <nav aria-label="Điều hướng quản lý">{visibleNavigation.map(item => <Link key={item.href} href={item.href}
       className={`mg-nav-link ${active.href === item.href ? 'is-active' : ''}`} aria-current={active.href === item.href ? 'page' : undefined}
       title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
       <item.icon size={19} strokeWidth={1.8} /><span>{item.label}</span>{active.href === item.href && <ChevronRight className="mg-nav-arrow" size={15} />}
@@ -108,22 +113,23 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
           <button type="button" className="mg-icon-button mg-mobile-toggle" aria-label="Mở menu" onClick={() => setMobileOpen(true)}><Menu size={21} /></button>
           <span>Quản lý</span><ChevronRight size={14} /><strong>{active.label}</strong></div>
         <div className="mg-topbar-right"><label className="mg-branch-select"><Building2 size={16} /><span className="mg-sr-only">Cơ sở đang xem</span><select aria-label="Cơ sở đang xem" value={selectedStore} onChange={event => selectStore(event.target.value)}>
-          <option value="all">Tất cả cơ sở</option>{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+          {user?.scope_all&&<option value="all">Tất cả cơ sở</option>}{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
           <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{writableDrafts ? 'Lưu nháp' : writableVehicles ? 'Đồng bộ xe' : writableCustomers || writableStores || writableDuties || writableBattery ? 'Có thể sửa' : 'Chỉ đọc'}</span>
           <details className="mg-user-menu" ref={menuRef}><summary aria-label="Menu người dùng"><span className="mg-user-avatar">QT</span><div><strong>{user?.name || 'Quản trị viên'}</strong><small>{user ? 'Đã đăng nhập' : writableCustomers ? 'Supabase' : 'Phiên tra cứu'}</small></div><ChevronDown size={14} /></summary>
             <div className="mg-popover"><strong>{writableBattery ? 'Hợp đồng thuê pin kết nối Supabase' : writableDuties ? 'Quản lý lịch trực' : writableCustomers ? 'Khách hàng kết nối Supabase' : writableStores ? 'Cơ sở kết nối Supabase' : writableVehicles ? 'Xe kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{writableBattery ? 'Tạo, sửa, xóa và in hợp đồng thuê pin; dữ liệu lưu trực tiếp vào Supabase.' : writableDuties ? 'Thêm, sửa hoặc xóa ca; hệ thống kiểm tra trùng giờ của cùng nhân viên.' : writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : writableStores ? 'Thêm và sửa cơ sở; xóa cơ sở có dữ liệu liên quan sẽ bị chặn để giữ lịch sử.' : writableVehicles ? 'Đồng bộ Excel có sao lưu. Xóa hết bị chặn khi xe có dữ liệu liên quan.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>
-              <Link href="/contracts/drafts"><FilePenLine size={16} />Mở hợp đồng nháp</Link>
+              <SePayNotifications/>
+              {hasPermission(user,'contracts.draft')&&<Link href="/contracts/drafts"><FilePenLine size={16} />Mở hợp đồng nháp</Link>}
               {<button type="button" disabled={signingOut} onClick={signOut}><LogOut size={16} />{signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>}
               {signOutError && <p role="alert">{signOutError}</p>}</div></details>
         </div>
       </header>
-      <main id="management-main" className="mg-content" tabIndex={-1}>{children}</main>
+      <main id="management-main" className="mg-content" tabIndex={-1}>{pageAllowed?children:<section className="mg-page"><h1>Không có quyền truy cập</h1><p>Tài khoản chưa được phân quyền cho chức năng này.</p><Link className="mg-button" href={visibleNavigation[0]?.href||'/login'}>Mở chức năng được phân quyền</Link></section>}</main>
       <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{writableBattery ? 'Hợp đồng thuê pin · Ghi trực tiếp vào Supabase' : writableDuties ? 'Lịch trực theo tuần' : writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : writableStores ? 'Cơ sở · Ghi trực tiếp vào Supabase' : writableVehicles ? 'Xe · Đồng bộ có sao lưu' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
-      <nav className="mg-mobile-bottom-nav" aria-label="Thao tác chính trên điện thoại">{navigation.filter(item=>['/operations','/contracts','/vehicles','/cashbook'].includes(item.href)).map(item=><Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined}><item.icon size={20}/><span>{item.href === '/operations' ? 'Thao tác' : item.href === '/contracts' ? 'Hợp đồng' : item.href === '/vehicles' ? 'Xe' : 'Sổ quỹ'}</span></Link>)}</nav>
+      <nav className="mg-mobile-bottom-nav" aria-label="Thao tác chính trên điện thoại">{visibleNavigation.filter(item=>['/operations','/contracts','/vehicles','/cashbook','/staff'].includes(item.href)).slice(0,4).map(item=><Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined}><item.icon size={20}/><span>{item.href === '/operations' ? 'Thao tác' : item.href === '/contracts' ? 'Hợp đồng' : item.href === '/vehicles' ? 'Xe' : 'Sổ quỹ'}</span></Link>)}</nav>
     </div>
   </div>;
 }
 
 export function ManagementShell({ children, user = null }: { children: ReactNode; user?: SessionUser | null }) {
-  return <ManagementProvider canPayContracts={canRecordContractPayment(user)}><ContractTypesProvider canManage={canRecordContractPayment(user)}><Shell user={user}>{children}</Shell></ContractTypesProvider></ManagementProvider>;
+  return <ManagementProvider user={user} canPayContracts={canRecordContractPayment(user)}><ContractTypesProvider canManage={hasPermission(user,'settings.write')}><Shell user={user}>{children}</Shell></ContractTypesProvider></ManagementProvider>;
 }

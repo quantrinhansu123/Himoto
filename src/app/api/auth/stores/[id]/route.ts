@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
@@ -29,5 +30,8 @@ async function mutate(request: NextRequest, params: Params['params'], remove: bo
     return NextResponse.json({ status: 'error', message: 'Không cập nhật được cơ sở. Nhấn Làm mới để kiểm tra dữ liệu trước khi thử lại.' }, { status: 500 });
   } finally { client?.release(); }
 }
-export async function PATCH(request: NextRequest, { params }: Params) { return mutate(request, params, false); }
-export async function DELETE(request: NextRequest, { params }: Params) { return mutate(request, params, true); }
+async function PATCHHandler(request: NextRequest, { params }: Params) { return mutate(request, params, false); }
+async function DELETEHandler(request: NextRequest, { params }: Params) { return mutate(request, params, true); }
+
+export const PATCH = withAccessRequest(PATCHHandler);
+export const DELETE = withAccessRequest(DELETEHandler);

@@ -184,7 +184,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
   return applyInstallmentBilling(mapped);
 }
 
-export function createApiRepository(baseUrl = '/api', options: { drafts?: boolean } = {}): ManagementRepository {
+export function createApiRepository(baseUrl = '/api', options: { drafts?: boolean; staffDirectory?:boolean } = {}): ManagementRepository {
   let loaded: ManagementDataset | null = null;
   async function read(kind: ManagementKind, query = ''): Promise<ManagementRow[]> {
     const records: ManagementRow[] = [];
@@ -192,7 +192,8 @@ export function createApiRepository(baseUrl = '/api', options: { drafts?: boolea
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') || localStorage.getItem('jwt_token') : null;
       const params = new URLSearchParams({ page: String(page), limit: '100' });
       if (query) for (const [key, value] of new URLSearchParams(query)) params.set(key, value);
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}${READ_ENDPOINTS[kind]}?${params}`, {
+      const endpoint=kind==='staff'&&options.staffDirectory?'/auth/contract-staff':READ_ENDPOINTS[kind];
+      const response = await fetch(`${baseUrl.replace(/\/$/, '')}${endpoint}?${params}`, {
         method: 'GET', cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!response.ok) throw new Error(`Không tải được ${kind} (HTTP ${response.status}). Kiểm tra kết nối và phiên đăng nhập.`);
@@ -253,6 +254,6 @@ export function createApiRepository(baseUrl = '/api', options: { drafts?: boolea
   };
 }
 
-export function createManagementRepository(): ManagementRepository {
-  return createApiRepository('/api', { drafts: true });
+export function createManagementRepository(options:{staffDirectory?:boolean}={}): ManagementRepository {
+  return createApiRepository('/api', { drafts: true,...options });
 }

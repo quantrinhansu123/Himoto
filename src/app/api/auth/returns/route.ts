@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
@@ -5,7 +6,7 @@ import { ContractReturnError, loadContractReturnableItems, parseReturnBatch, rec
 
 export const runtime = 'nodejs';
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   try {
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
@@ -43,3 +44,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', message: 'Chưa ghi nhận được lần trả xe. Tải lại danh sách để kiểm tra.' }, { status: 500 });
   } finally { client?.release(); }
 }
+
+export const GET = withAccessRequest(GETHandler);
+export const POST = withAccessRequest(POSTHandler);

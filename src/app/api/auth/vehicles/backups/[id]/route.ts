@@ -1,9 +1,10 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
 
 export const runtime = 'nodejs';
-export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+async function GETHandler(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const denied = await protectDatabaseRequest(request); if (denied) return denied;
   const { id } = await context.params;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return NextResponse.json({ status: 'error', message: 'Mã sao lưu không hợp lệ.' }, { status: 400 });
@@ -15,3 +16,5 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     return NextResponse.json({ status: 'error', message: 'Không đọc được bản sao lưu.' }, { status: 500 });
   }
 }
+
+export const GET = withAccessRequest(GETHandler);

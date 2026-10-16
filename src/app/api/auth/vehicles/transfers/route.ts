@@ -1,10 +1,11 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { readTransferHistory, TransferHistoryError } from '@/lib/server/vehicle-transfer-history';
 
 export const runtime = 'nodejs';
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   try {
@@ -15,3 +16,5 @@ export async function GET(request: NextRequest) {
       { status: error instanceof TransferHistoryError ? 400 : 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }
+
+export const GET = withAccessRequest(GETHandler);

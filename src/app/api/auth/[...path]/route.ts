@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { CONTRACT_LIST_SQL, DraftSaveError, contractListScopeClause, saveDatabaseDraft } from '@/lib/server/contract-drafts';
@@ -12,6 +13,8 @@ import { CASHBOOK_LIST_SQL, CashbookQueryError, listCashbook } from '@/lib/serve
 import { ManagementTableError, readManagementTable } from '@/lib/server/management-table';
 import { PageSummaryError, readOperationsSummary, readSalesSummary } from '@/lib/server/page-summaries';
 import { VEHICLE_TRANSFER_JOIN_SQL } from '@/lib/server/vehicle-transfers';
+import { dataAccess } from '@/lib/server/access-context';
+import { hasPermission } from '@/lib/management/permissions';
 
 export const runtime = 'nodejs';
 
@@ -140,7 +143,7 @@ async function writeDraft(request: NextRequest, id: number | null) {
   } finally { client?.release(); }
 }
 
-export async function GET(request: NextRequest, { params }: Params) {
+async function GETHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
 
@@ -192,7 +195,8 @@ export async function GET(request: NextRequest, { params }: Params) {
       if (!/^\d+$/.test(storeId) || !Number.isSafeInteger(Number(storeId)) || Number(storeId) <= 0) {
         return NextResponse.json({ status: 'error', message: 'Mã cơ sở không hợp lệ.' }, { status: 400 });
       }
-      return await readAll({ sql: query.sql.replace('ORDER BY p.id DESC', 'WHERE p.store_id=$1 ORDER BY p.id DESC'), values: [Number(storeId)] });
+      const staffSql=hasPermission(dataAccess.getStore(),'hr.read')?query.sql:'SELECT p.id,p.full_name,p.position,p.status,p.store_id FROM himoto.staff_profiles p ORDER BY p.id DESC';
+      return await readAll({ sql: staffSql.replace('ORDER BY p.id DESC', 'WHERE p.store_id=$1 ORDER BY p.id DESC'), values: [Number(storeId)] });
     }
     if (key === 'order/car-rental') {
       const customerId = request.nextUrl.searchParams.get('customer_id');
@@ -223,7 +227,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-export async function POST(request: NextRequest, { params }: Params) {
+async function POSTHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const { path } = await params;
@@ -311,7 +315,7 @@ async function getCustomerId(params: Params['params']) {
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
-export async function PUT(request: NextRequest, { params }: Params) {
+async function PUTHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const { path } = await params;
@@ -319,7 +323,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   return writeDraft(request, Number(path[2]));
 }
 
-export async function PATCH(request: NextRequest, { params }: Params) {
+async function PATCHHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const patchPath = (await params).path;
@@ -405,7 +409,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: Params) {
+async function DELETEHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const account = parseAccountPath((await params).path);
@@ -437,3 +441,9 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     client.release();
   }
 }
+
+export const GET = withAccessRequest(GETHandler);
+export const POST = withAccessRequest(POSTHandler);
+export const PUT = withAccessRequest(PUTHandler);
+export const PATCH = withAccessRequest(PATCHHandler);
+export const DELETE = withAccessRequest(DELETEHandler);

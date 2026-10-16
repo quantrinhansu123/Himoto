@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
@@ -5,7 +6,7 @@ import { changeCustomerBlacklist, CustomerBlacklistError, parseBlacklistChange }
 
 export const runtime = 'nodejs';
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function PATCHHandler(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   let client;
@@ -26,3 +27,5 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ status: 'error', message: 'Chưa xác nhận được thay đổi Blacklist. Nhấn Làm mới để kiểm tra trước khi thử lại.' }, { status: 500 });
   } finally { client?.release(); }
 }
+
+export const PATCH = withAccessRequest(PATCHHandler);

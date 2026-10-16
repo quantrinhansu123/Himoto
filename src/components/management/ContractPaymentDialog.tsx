@@ -12,9 +12,11 @@ import { PAYABLE_STATUSES, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentAccount, 
 import { transferQr } from '@/lib/management/transfer-qr';
 import { bulkDelete } from '@/lib/management/bulk-delete';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
+import { ContractPaymentQr } from './ContractPaymentQr';
+import { contractTransferMemo } from '@/lib/management/sepay';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-const defaultNote = (purpose: PaymentPurpose, code: string) => purpose === 'extra' ? `Thu thêm hợp đồng_${code}` : purpose === 'deposit_refund' ? `Trả cọc hợp đồng_${code}` : purpose === 'debt' ? `Thu tiền thuê hợp đồng_${code}` : `Gia hạn hợp đồng_${code}`;
+const defaultNote = (purpose: PaymentPurpose, code: string) => purpose === 'extra' ? `Thu thêm hợp đồng_${code}` : purpose === 'deposit_refund' ? `Trả cọc hợp đồng_${code}` : purpose === 'debt' ? contractTransferMemo(code) : `Gia hạn hợp đồng_${code}`;
 const vietnamLocal = (ms: number) => new Date(ms + 7 * 3_600_000).toISOString().slice(0, 16);
 const vietnamText = (value: string) => formatDateTime(value);
 
@@ -207,7 +209,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
           {context.billing && <p className="mg-composer-hint">Thuê sở hữu · Lịch gồm {context.billing.period_count} kỳ, tổng tiền thuê {money(context.billing.expected_total)} (cọc riêng). Đã đóng đủ {context.billing.paid_periods} kỳ. {context.billing.stopped_at ? `Đã dừng phát sinh kỳ mới từ ${vietnamText(`${context.billing.stopped_at}:00+07:00`)}.` : context.billing.next_due_at ? `Ngày hẹn tiếp theo: ${vietnamText(`${context.billing.next_due_at}:00+07:00`)}.` : 'Đã đóng đủ tiền thuê theo lịch.'} Chỉ thu các khoản đã đến hạn.</p>}
           {(!transferReview || pending) && <dl className="mg-payment-totals"><div><dt>{context.billing ? 'Tiền thuê và phí đã đến hạn' : 'Tiền thuê hợp đồng'}</dt><dd>{money(context.total_amount)}</dd></div><div><dt>Đã thu tiền thuê</dt><dd>{money(context.paid_amount)}</dd></div><div><dt>Còn thiếu (không trừ cọc)</dt><dd>{money(context.remaining)}</dd></div>
             <div><dt>Tiền cọc đã thu</dt><dd>{formatMoney(context.deposit_paid)}</dd></div><div><dt>Đã trả cọc</dt><dd>{formatMoney(context.deposit_refunded)}</dd></div><div><dt>Cọc đang giữ</dt><dd>{formatMoney(context.deposit_held)}</dd></div></dl>}
-          {transferReview && !pending ? <TransferQrPanel account={transferReview.account} input={transferReview.input} qr={transferReview.qr} confirmed={transferConfirmed} onConfirm={setTransferConfirmed} /> : <>
+          {transferReview && !pending ? <><TransferQrPanel account={transferReview.account} input={transferReview.input} qr={transferReview.qr} confirmed={transferConfirmed} onConfirm={setTransferConfirmed} />{purpose==='debt'&&<ContractPaymentQr id={id} statusOnly accountNumber={transferReview.account.account_number} onUpdated={()=>{setTransferReview(null);setTransferConfirmed(false);void refresh();onPaymentSaved?.();}}/>}</> : <>
           {(payable || renewable || extraAllowed || refundAllowed || pending) && <label className="mg-payment-purpose">Nghiệp vụ<select aria-label="Nghiệp vụ" value={purpose} disabled={locked || loading} onChange={event => choosePurpose(event.target.value as PaymentPurpose)}><option value="debt" disabled={!payable}>Thu công nợ còn thiếu</option><option value="renewal" disabled={!renewable}>Thu tiền gia hạn</option><option value="extra" disabled={!extraAllowed}>Thêm phiếu thu (thu khác)</option><option value="deposit_refund" disabled={!refundAllowed}>Phiếu chi: Trả cọc cho khách</option></select></label>}
           {(canCollect || pending) ? <fieldset className="mg-payment-fields" disabled={locked || loading}>
             <label className="mg-field-wide">Loại phiếu<select aria-label="Loại phiếu" value={refund ? 'out' : 'in'} disabled={locked || loading}

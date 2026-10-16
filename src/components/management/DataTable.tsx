@@ -6,6 +6,7 @@ import { optionLabel, statusTone, OWNERSHIP_CONTRACT_TYPES } from '@/lib/managem
 import { formatValue } from '@/lib/management/table-utils';
 import { RowAction, RowActionsMenu } from './RowActionsMenu';
 import { ManagementMobileList } from './ManagementMobileList';
+import { useManagement } from './ManagementProvider';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
@@ -30,6 +31,7 @@ interface Props {
   onDelete?: (row: ManagementRow) => void;
   onPrint?: (row: ManagementRow) => void;
   onPayment?: (row: ManagementRow) => void;
+  onQr?: (row: ManagementRow) => void;
   onHandover?: (row: ManagementRow) => void;
   onReturn?: (row: ManagementRow) => void;
   onRenew?: (row: ManagementRow) => void;
@@ -53,7 +55,8 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment, onHandover, onReturn, onRenew, onVehicleChange, onBatteryRent, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr, onHandover, onReturn, onRenew, onVehicleChange, onBatteryRent, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+  const {can}=useManagement();
   const selectable = Boolean(selectedIds && onSelectionChange);
   const columnCount = columns.length + (selectable ? 3 : 2);
   const pageIds = rows.map(row => row.id);
@@ -62,12 +65,13 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     const isContract = config.kind === 'contracts';
     const isActiveContract = isContract && ['renting', 'overdue', 'wait_payment'].includes(row.status);
     const actions: RowAction[] = [{ key: 'view', label: 'Xem chi tiết', icon: <Eye size={16} />, onSelect: () => onView(row) }];
-    if (config.kind === 'vehicles' && onVehicleAction) actions.push(
-      { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') },
-      { key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') },
-    );
-    if(config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction)actions.splice(1,0,{key:'receive',label:'Nhận xe',icon:<Bike size={16}/>,onSelect:()=>onVehicleAction(row,'receive')});
+    if (config.kind === 'vehicles' && onVehicleAction){
+      if(can('vehicles.transfer'))actions.push({ key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') });
+      if(can('vehicles.write'))actions.push({ key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') });
+    }
+    if(config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive'))actions.splice(1,0,{key:'receive',label:'Nhận xe',icon:<Bike size={16}/>,onSelect:()=>onVehicleAction(row,'receive')});
     if (isContract && onPrint) actions.push({ key: 'print', label: 'Điền và in hợp đồng', icon: <Printer size={16} />, onSelect: () => onPrint(row) });
+    if(isContract&&onQr&&!['draft','cancelled'].includes(row.status))actions.push({key:'qr',label:'Nhập phiếu chi',icon:<Wallet size={16}/>,onSelect:()=>onQr(row)});
     if (isContract && onPayment && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'payment', label: 'Thanh toán', icon: <Wallet size={16} />, onSelect: () => onPayment(row) });
     if (isContract && onHandover && row.status === 'deposit_contract') actions.push({key:'handover',label:'Giao xe',icon:<Bike size={16}/>,onSelect:()=>onHandover(row)});
     if (isActiveContract && onReturn) actions.push({ key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
@@ -105,7 +109,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : rows.map((row, index) => <tr key={row.id} className={selectedIds?.has(row.id) ? 'is-selected' : undefined}>{selectable && <td className="mg-select-column"><input type="checkbox" aria-label={`Chọn ${row.code || row.name || `#${row.id}`}`}
           checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}<td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} className={`${column.align === 'right' ? 'mg-align-right' : ''}${column.key === 'code' ? ' mg-record-code' : ''}`}><Cell row={row} column={column} config={config} /></td>)}
           <td className="mg-actions-column"><div className="mg-row-actions">
-            {config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onVehicleAction(row,'receive')}>Nhận xe</button>}
+            {config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive')&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onVehicleAction(row,'receive')}>Nhận xe</button>}
             <RowActionsMenu label={`Thao tác ${row.license || row.code || row.name || ''}`.trim()} actions={rowActions(row)} busy={cloningId === row.id || blacklistBusyId === row.id} />
           </div></td></tr>)}</tbody>
     </table>

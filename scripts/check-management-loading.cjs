@@ -121,6 +121,8 @@ async function run() {
   const queries = [];
   cache.set(path.join(root, 'lib/server/himoto-database.ts'), { exports: { himotoPool: { query: async (sql, values) => { queries.push({ sql, values }); return { rows: [] }; } } } });
   cache.set(path.join(root, 'lib/server/management-session.ts'), { exports: { protectDatabaseRequest: async () => null } });
+  // This suite isolates loading/filter SQL; authentication and RLS have separate integration suites.
+  cache.set(path.join(root, 'lib/server/access-request.ts'), { exports: { withAccessRequest: handler => handler } });
   cache.set(path.join(root, 'lib/server/contract-drafts.ts'), { exports: { CONTRACT_LIST_SQL: 'SELECT * FROM himoto.orders o WHERE o.deleted_at IS NULL' } });
   const { NextRequest } = require('next/server');
   const { GET } = load(path.join(root, 'app/api/auth/[...path]/route'));

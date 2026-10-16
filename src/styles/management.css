@@ -3496,6 +3496,17 @@
 .mg-transfer-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; font-size: 13px; }
 .mg-transfer-pagination > div { display: flex; gap: 8px; }
 .mg-vehicle-flow-actions { display: flex; gap: 8px; }
+.mg-account-permissions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.mg-account-permissions label { display: flex; gap: 8px; align-items: center; min-height: 32px; overflow-wrap: anywhere; }
+.mg-contract-payment-qr { display: grid; gap: 14px; }
+.mg-contract-payment-qr h3,.mg-contract-payment-qr p { margin: 0; }
+.mg-contract-qr-image { display: block; width: min(240px,100%); height: auto; margin: 0 auto; background: white; }
+.mg-qr-bank-info { display: grid; gap: 10px; margin: 0; }
+.mg-qr-bank-info > div { display: grid; grid-template-columns: minmax(110px,1fr) minmax(0,2fr); gap: 8px; }
+.mg-qr-bank-info dt { color: var(--mg-slate-500); font-size: 13px; }
+.mg-qr-bank-info dd { margin: 0; overflow-wrap: anywhere; }
+.mg-sepay-sound { font-size: 12px; }
+@media(max-width:767px){.mg-sepay-sound { padding: 8px; max-width: 110px; font-size: 11px; }}
 @media (max-width: 1100px) { .mg-transfer-filters { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 767px) {
   .mg-transfer-filters { gap: 12px; padding: 16px 12px; }

@@ -20,6 +20,8 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
   const router = useRouter();
   const vehicles = useMemo(() => dataset?.vehicles || [], [dataset]);
   const stores = dataset?.stores || [];
+  const [destinations,setDestinations]=useState<{id:number;name:string}[]>([]);
+  useEffect(()=>{if(mode!=='transfer')return;const controller=new AbortController();void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok||body.status!=='success')throw Error('Không tải được cơ sở chuyển đến.');setDestinations(body.data.map((row:{id:string|number;store_name:string})=>({id:Number(row.id),name:row.store_name})));}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được cơ sở chuyển đến.');});return()=>controller.abort();},[mode]);
   const [picked, setPicked] = useState(vehicle ? vehicleOption(vehicle) : '');
   const selected = vehicle || vehicles.find(row => vehicleOption(row) === picked) || null;
   const statusOf = (row: ManagementRow | null) => row ? (String(row.status) === 'rent' ? 'using' : String(row.status)) : '';
@@ -105,7 +107,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <div className="mg-field"><label htmlFor="vehicle-action-from">Cơ sở hiện tại</label><input id="vehicle-action-from" value={String(selected?.store_name || '')} readOnly disabled /></div>
         <div className="mg-field"><label htmlFor="vehicle-action-to">Chuyển đến cơ sở<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-to" value={storeId} disabled={saving} onChange={event => setStoreId(event.target.value)}>
-            <option value="">Chọn cơ sở</option>{stores.filter(store => String(store.id) !== String(selected?.store_id)).map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
+            <option value="">Chọn cơ sở</option>{(destinations.length?destinations:stores).filter(store => String(store.id) !== String(selected?.store_id)).map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
         <p className="mg-composer-hint mg-field-wide">Khi lưu, xe chuyển sang Chờ luân chuyển tại cơ sở đích. Khi xe đến nơi, bấm Nhận xe để xác nhận. Mỗi thao tác đều được ghi vào Lịch sử.</p>
       </> : <>
         <div className="mg-field"><label htmlFor="vehicle-action-status">Trạng thái<span aria-hidden="true"> *</span></label>

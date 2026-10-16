@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
@@ -22,6 +23,10 @@ async function handle(request: NextRequest) {
     return NextResponse.json({status:'error',message:duplicate ? 'Tên loại hợp đồng đã có. Dùng lại hoặc đổi tên khác.' : error instanceof ContractTypeError ? error.message : 'Không tải hoặc lưu được loại hợp đồng.'},{status:duplicate ? 409 : error instanceof ContractTypeError ? error.status : error instanceof SyntaxError ? 400 : 500});
   } finally { client?.release(); }
 }
-export const GET = handle;
-export const POST = handle;
-export const PATCH = handle;
+const GETHandler = handle;
+const POSTHandler = handle;
+const PATCHHandler = handle;
+
+export const GET = withAccessRequest(GETHandler);
+export const POST = withAccessRequest(POSTHandler);
+export const PATCH = withAccessRequest(PATCHHandler);

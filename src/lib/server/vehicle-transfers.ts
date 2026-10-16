@@ -1,7 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 
-const SELECT_TRANSFER = `SELECT e.id,e.event_type,e.from_store_id,e.to_store_id,
+const SELECT_TRANSFER = `SELECT e.id,e.event_type,e.from_store_id,e.to_store_id,e.created_by,
   COALESCE(NULLIF(e.audit_snapshot->>'from_store_name',''),fs.store_name,'') AS from_store_name,
   COALESCE(NULLIF(e.audit_snapshot->>'to_store_name',''),ts.store_name,'') AS to_store_name,
   CASE WHEN e.event_type='manual_transfer' AND NOT EXISTS (

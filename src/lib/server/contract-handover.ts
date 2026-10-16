@@ -2,6 +2,7 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import { ContractFinalizeError } from './contract-finalize';
 import { readPaymentContext } from './contract-payments';
+import { dataAccess } from './access-context';
 
 type Database = Pick<PoolClient, 'query'>;
 export function parseHandoverInput(body: unknown): { revision: string } {
@@ -28,6 +29,7 @@ export async function handoverReservation(client: Database, id: number, actorId:
     WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
       AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')`,[vehicleIds,id]);
   if (conflicts.rowCount) throw new ContractFinalizeError('Xe đang thuộc đơn khác. Kiểm tra lại trước khi giao.',409);
+  if(dataAccess.getStore()&&(await client.query('SELECT EXISTS(SELECT 1 FROM unnest($1::bigint[]) AS v(id) WHERE himoto.vehicle_has_other_rental(v.id,$2)) AS blocked',[vehicleIds,id])).rows[0]?.blocked)throw new ContractFinalizeError('Xe đang thuộc đơn khác. Kiểm tra lại trước khi giao.',409);
   const payload = order.draft_payload || {}, composer = payload.management_composer || {};
   const next = {...payload,management_composer:{...composer,draft:{...composer.draft,reservation:false},handover:{at:new Date().toISOString(),actor_id:actorId}}};
   await client.query(`UPDATE himoto.orders SET order_status='renting',draft_payload=$2,updated_at=now() WHERE id=$1`,[id,JSON.stringify(next)]);

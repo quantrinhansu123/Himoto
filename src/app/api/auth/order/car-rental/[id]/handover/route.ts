@@ -1,3 +1,4 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
@@ -5,7 +6,7 @@ import { ContractFinalizeError } from '@/lib/server/contract-finalize';
 import { handoverReservation, parseHandoverInput } from '@/lib/server/contract-handover';
 
 export const runtime = 'nodejs';
-export async function POST(request: NextRequest, {params}: {params: Promise<{id:string}>}) {
+async function POSTHandler(request: NextRequest, {params}: {params: Promise<{id:string}>}) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
@@ -27,3 +28,5 @@ export async function POST(request: NextRequest, {params}: {params: Promise<{id:
     return NextResponse.json({status:'error',message:'Chưa xác nhận được giao xe. Tải lại để kiểm tra trạng thái.'},{status:500});
   } finally {client?.release();}
 }
+
+export const POST = withAccessRequest(POSTHandler);

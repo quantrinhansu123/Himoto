@@ -5,6 +5,7 @@ import type { FinalizeInput, FinalizeReceipt, FinalizeCollection, FinalizeResult
 import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { readPaymentContext } from './contract-payments';
 import { staffRoles } from '@/lib/management/staff-positions';
+import { dataAccess } from './access-context';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractFinalizeError extends Error {
@@ -118,6 +119,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.completed_at IS NULL AND d.deleted_at IS NULL
       AND o.deleted_at IS NULL AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
   if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(row => `xe ${row.license} đang thuộc hợp đồng ${row.code}`).join('; ')} chưa trả xe.`, 409);
+  if(dataAccess.getStore()&&(await client.query('SELECT EXISTS(SELECT 1 FROM unnest($1::bigint[]) AS v(id) WHERE himoto.vehicle_has_other_rental(v.id,$2)) AS blocked',[vehicleIds,id])).rows[0]?.blocked)throw new ContractFinalizeError('Có xe đang thuộc hợp đồng mở. Cần trả xe trước khi phát hành hợp đồng mới.',409);
   const notStored = vehicles.rows.filter(row => !(reservation ? ['ready'] : ['ready','using','rent']).includes(row.status));
   if (notStored.length) throw new ContractFinalizeError(`Xe không sẵn sàng cho thuê: ${notStored.map(row => row.license).join(', ')} đang ở trạng thái khác.`, 409);
   // An inventory checkout may precede contract entry. Attach it once, preserving
@@ -163,7 +165,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (!code) {
     const day = (await client.query(`SELECT to_char(now() AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYMMDD') AS day`)).rows[0].day as string;
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`contract-number:${day}`]);
-    const last = await client.query(`SELECT COALESCE(max(substring(contract_number from 8)::int), 0) AS last FROM himoto.orders WHERE contract_number ~ ('^' || $1 || '-[0-9]{4}$')`, [day]);
+    const last = dataAccess.getStore()?await client.query('SELECT himoto.contract_day_last($1) AS last',[day]):await client.query(`SELECT COALESCE(max(substring(contract_number from 8)::int), 0) AS last FROM himoto.orders WHERE contract_number ~ ('^' || $1 || '-[0-9]{4}$')`, [day]);
     code = `${day}-${String(Number(last.rows[0].last) + 1).padStart(4, '0')}`;
   }
 

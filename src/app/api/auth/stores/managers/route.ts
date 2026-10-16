@@ -1,9 +1,10 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 
 export const runtime = 'nodejs';
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   try {
@@ -13,3 +14,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: 'error', message: 'Không tải được danh sách người phụ trách.' }, { status: 500 });
   }
 }
+
+export const GET = withAccessRequest(GETHandler);

@@ -1,10 +1,11 @@
+import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { RecordPhotoError } from '@/lib/server/record-photos';
 import { signPhotoUpload } from '@/lib/server/cloudinary-photos';
 
 export const runtime = 'nodejs';
-export async function POST(request: NextRequest) {
+async function POSTHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request); if (denied) return denied;
   try {
     if (Number(request.headers.get('content-length')) > 1024) throw new RecordPhotoError('Yêu cầu tải ảnh không hợp lệ.');
@@ -18,3 +19,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', message: error instanceof RecordPhotoError ? error.message : 'Không khởi tạo được tải ảnh Cloudinary.' }, { status: error instanceof RecordPhotoError ? error.status : 500, headers: { 'Cache-Control': 'private, no-store' } });
   }
 }
+
+export const POST = withAccessRequest(POSTHandler);

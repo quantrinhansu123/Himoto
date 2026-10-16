@@ -12,6 +12,7 @@ import { createStoreRecord, deleteStoreRecord, updateStoreRecord } from '@/lib/m
 import { updateCustomerBlacklist } from '@/lib/management/customer-blacklist';
 import { CUSTOMER_STATUSES } from '@/lib/management/config';
 import type { PaymentContext } from '@/lib/management/contract-payments';
+import { hasPermission,type AccessPermission,type PermissionAccount } from '@/lib/management/permissions';
 
 interface ManagementContextValue {
   dataset: ManagementDataset | null;
@@ -23,6 +24,9 @@ interface ManagementContextValue {
   canSaveContractDrafts: boolean;
   /** Thanh toán HĐ / điền sổ quỹ: chỉ kế toán và admin. */
   canPayContracts: boolean;
+  canFinalizeContracts:boolean;
+  can:(permission:AccessPermission)=>boolean;
+  accessUser:PermissionAccount|null;
   selectedStore: string;
   selectStore: (id: string) => void;
   reload: (kinds?: readonly ManagementKind[]) => Promise<void>;
@@ -46,8 +50,9 @@ interface ManagementContextValue {
 }
 const ManagementContext = createContext<ManagementContextValue | null>(null);
 
-export function ManagementProvider({ children, canPayContracts = false }: { children: ReactNode; canPayContracts?: boolean }) {
-  const [repository] = useState<ManagementRepository>(createManagementRepository);
+export function ManagementProvider({ children, canPayContracts = false,user=null }: { children: ReactNode; canPayContracts?: boolean;user?:PermissionAccount|null }) {
+  const can=useCallback((permission:AccessPermission)=>hasPermission(user,permission),[user]);
+  const [repository] = useState<ManagementRepository>(()=>createManagementRepository({staffDirectory:!hasPermission(user,'hr.read')}));
   const [loader] = useState(() => createManagementDataLoader(repository));
   const { dataset, resources } = useSyncExternalStore(loader.subscribe, loader.getSnapshot, loader.getSnapshot);
   const pathname = usePathname();
@@ -57,7 +62,8 @@ export function ManagementProvider({ children, canPayContracts = false }: { chil
   const refreshing = requiredKinds.some(kind => resources[kind].loaded && resources[kind].loading);
   const error = requiredKinds.map(kind => resources[kind].error).filter(Boolean).join(' ');
   const contractAutofill = useMemo(() => createApiAutofillRepository('/api'), []);
-  const [selectedStore, selectStore] = useState('all');
+  const [selectedStore, setSelectedStore] = useState(user&&!user.scope_all&&user.store_id?String(user.store_id):'all');
+  const selectStore=useCallback((id:string)=>setSelectedStore(user&&!user.scope_all&&user.store_id?String(user.store_id):id),[user]);
   const [notification, notify] = useState('');
 
   const ensureData = useCallback((kinds: readonly ManagementKind[], force = false) => {
@@ -161,7 +167,7 @@ export function ManagementProvider({ children, canPayContracts = false }: { chil
       end_date: context.end_date ?? undefined,
       company_paid_amount: context.company_paid_amount, company_payment_count: context.company_payment_count } : row));
   };
-  return <ManagementContext.Provider value={{ dataset, resources, loading, refreshing, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), canPayContracts, selectedStore, selectStore, reload, ensureData, invalidateData, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft, acceptContractPayment }}>
+  return <ManagementContext.Provider value={{ dataset, resources, loading, refreshing, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts)&&can('contracts.draft'), canPayContracts,canFinalizeContracts:can('contracts.finalize'),can,accessUser:user, selectedStore, selectStore, reload, ensureData, invalidateData, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft, acceptContractPayment }}>
     {children}
     {notification && <div className="mg-toast" role="status"><span>{notification}</span><button type="button" onClick={() => notify('')} aria-label="Đóng thông báo">×</button></div>}
   </ManagementContext.Provider>;

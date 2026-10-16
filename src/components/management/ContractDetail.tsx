@@ -46,8 +46,8 @@ function rentalDays(start: unknown, end: unknown) {
 
 export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
 
-export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onPrint: () => void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
-  const { dataset, source } = useManagement();
+export function ContractDetail({ row, onClose, onQr,onPrint, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onPrint: () => void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
+  const { dataset, source, can } = useManagement();
   const [section, setSection] = useState<DetailSection>('vehicle');
   const [viewingVersion, setViewingVersion] = useState('');
   const [history, setHistory] = useState<ContractHistory | null>(null);
@@ -75,7 +75,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
   const representative = dataset?.staff.find(person => String(person.id) === draft.staff_id);
   const store = dataset?.stores.find(store => String(store.id) === draft.store_id);
   const canOperateRental = ['renting', 'overdue', 'wait_payment'].includes(row.status);
-  const canRentBattery = Boolean(onBatteryRent) && !['draft', 'cancelled'].includes(row.status);
+  const canRentBattery = can('contracts.draft') && Boolean(onBatteryRent) && !['draft', 'cancelled'].includes(row.status);
   const canPay = row.status !== 'draft' && row.status !== 'cancelled' && Boolean(onPayment);
   const depositHeld = Math.max((Number(row.deposit_paid) || 0) - (Number(row.deposit_refunded) || 0), 0);
   const remaining = row.total_amount == null || row.paid_amount == null ? null : Math.max(Number(row.total_amount) - Number(row.paid_amount), 0);
@@ -230,12 +230,12 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
       {canOperateRental && <>
-        <button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15} />Trả xe</button>
-        {!row.billing_plan_json && <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>}
-        <button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>
+        {can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15} />Trả xe</button>}
+        {can('contracts.renew')&&onRenew&&!row.billing_plan_json && <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>}
+        {can('contracts.return')&&onVehicleChange&&<button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>}
       </>}
       {canRentBattery && <button type="button" className="mg-button" onClick={onBatteryRent}><BatteryCharging size={15} />Thuê pin / sạc</button>}
       {canPay && <button type="button" className="mg-button" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : depositHeld > 0 ? 'deposit_refund' : 'extra')}><Wallet size={15} />Điền sổ quỹ</button>}
-      <button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
+      {onQr&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={onQr}>Nhập phiếu chi</button>}<button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
   </Dialog>;
 }
