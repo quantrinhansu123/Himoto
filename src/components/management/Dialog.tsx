@@ -48,7 +48,11 @@ export function Dialog({ title, subtitle, children, onClose, className = '' }: {
     dialog?.addEventListener('focusin', keepFocusVisible);
     return () => { releaseFocus(); dialog?.removeEventListener('focusin', keepFocusVisible); dialog?.close(); unlockScroll(); previousFocus?.focus(); };
   }, []);
-  return <dialog ref={ref} className={`mg-dialog ${className}`} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }}
+  return <dialog ref={ref} className={`mg-dialog ${className}`} aria-labelledby={titleId} onCancel={event => {
+    // File-input cancellation bubbles too. Only dismiss for this dialog's own cancel event.
+    if (event.target !== event.currentTarget || event.defaultPrevented) return;
+    event.preventDefault(); event.stopPropagation(); onClose();
+  }}
     onClick={event => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose(); } }}>
     <div className="mg-dialog-header"><div><h2 id={titleId}>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>
       <button className="mg-icon-button" type="button" onClick={onClose} aria-label="Đóng hộp thoại"><X size={20} /></button></div>

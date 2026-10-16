@@ -1,0 +1,16 @@
+{
+  "passed": 8,
+  "checks": [
+    "Canceling camera/library on either CCCD side keeps the customer form and typed values, without starting OCR/uploads",
+    "Front OCR replaces the pre-entered identity without matching warnings, leaves current address blank and preserves edits made while AI was reading",
+    "back OCR fills issue date and issuer from the second image; 0-prefixed identity, manual phone/name and normal profile status remain intact",
+    "Canceling photo replacement retains both previews, OCR results and manually entered current address",
+    "photo replacement ignores stale OCR; provider errors preserve inputs/photos and allow manual entry without retrying automatically",
+    "Canceling photo pickers in the nested customer dialog preserves child and parent; explicit dialog cancellation still closes only that dialog",
+    "Concurrent CCCD/plate reads preserve fields/photos and handwritten current address; new identity uses ordinary customer lookup/blacklist, and selected rented vehicle uses its existing overdue warning",
+    "manual vehicle selection during OCR is preserved; mobile and desktop camera/status layouts fit without overflow"
+  ],
+  "errors": [],
+  "realBusinessWrites": 0,
+  "realProviderCalls": 0
+}

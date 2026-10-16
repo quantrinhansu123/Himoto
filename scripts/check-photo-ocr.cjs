@@ -14,7 +14,9 @@ async function main() {
   const originalFetch = global.fetch, checks = [];
   const jpeg = Buffer.from([255, 216, 255, 217]);
   try {
-    assert.deepEqual(shared.cleanOcrFields({ id_card: '001234567890', name: 'Tên QA', id_card_issued_on: '2024-02-31', phone: '0900000000' }, 'cccd_front'), { id_card: '001234567890', name: 'Tên QA' });
+    assert.deepEqual(shared.cleanOcrFields({ id_card: '001234567890', name: 'Tên QA', address:'Địa chỉ trên CCCD không phải nơi ở hiện tại', id_card_issued_on: '2024-02-31', phone: '0900000000' }, 'cccd_front'), { id_card: '001234567890', name: 'Tên QA' });
+    assert.deepEqual(shared.OCR_CUSTOMER_KEYS,['id_card','name','id_card_issued_on','id_card_issued_by']);
+    for (const date of ['2024-02-29','29/02/2024','29-2-2024','29022024']) assert.equal(shared.cleanOcrFields({id_card_issued_on:date},'cccd_back').id_card_issued_on,'2024-02-29');
     assert.deepEqual(shared.cleanOcrFields({ license: '29B1-123.45', id_card: '001234567890' }, 'plate'), { license: '29B1-123.45' });
     assert.deepEqual(shared.cleanOcrFields({ license: 'cannot read' }, 'plate'), {});
     const before = document.customerDetails();
@@ -23,8 +25,14 @@ async function main() {
     assert.equal(result.customer.name, 'Tên gõ tay'); assert.equal(result.customer.id_card, '001234567890');
     const corrected = shared.mergeOcrCustomer({ ...before, name: 'Tên AI cũ' }, { name: 'Tên AI mới' }, { ...before, name: 'Tên AI cũ' }, { name: 'Tên AI cũ' });
     assert.equal(corrected.customer.name, 'Tên AI mới');
-    assert.throws(() => shared.mergeOcrCustomer({ ...before, id_card: '009876543210' }, { id_card: '001234567890', name: 'Không điền' }, before, {}));
-    checks.push('allowlisted fields and real date/identity/plate validation; leading zeroes preserved; manual edits and a different person\'s identity are never overwritten');
+    const entered={...before,id_card:'009876543210',name:'Tên nhập trước',address:'Nơi ở hiện tại nhập tay',phone:'0900000000'};
+    const fresh=shared.mergeOcrCustomer(entered,{id_card:'001234567890',name:'Tên AI mới',id_card_issued_on:'2024-10-12',id_card_issued_by:'Cơ quan cấp QA',address:'Không lấy địa chỉ CCCD'},entered,{});
+    assert.equal(fresh.customer.id_card,'001234567890');assert.equal(fresh.customer.name,'Tên AI mới');
+    assert.equal(fresh.customer.address,entered.address);assert.equal(fresh.customer.phone,entered.phone);
+    assert.equal(fresh.customer.id_card_issued_on,'2024-10-12');assert.equal(fresh.customer.id_card_issued_by,'Cơ quan cấp QA');
+    const editedIdentity=shared.mergeOcrCustomer({...before,id_card:'009876543210'}, {id_card:'001234567890',id_card_issued_on:'2024-10-12'},before,{});
+    assert.equal(editedIdentity.customer.id_card,'009876543210');assert.equal(editedIdentity.customer.id_card_issued_on,'2024-10-12');
+    checks.push('Only four identity fields; fresh photos replace pre-entered CCCD/name without matching checks; current address/phone stay manual, in-flight edits survive and issue dates normalize');
 
     process.env.GEMINI_API_KEY = 'unit-test-gemini-key'; delete process.env.GOOGLE_API_KEY; delete process.env.GEMINI_OCR_MODEL;
     const response = fields => Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(fields) }] } }] });
@@ -34,9 +42,12 @@ async function main() {
       const body = JSON.parse(init.body), image = body.contents[0].parts[1].inlineData;
       assert.equal(image.data, jpeg.toString('base64')); assert.equal(image.mimeType, 'image/jpeg');
       assert.equal(body.generationConfig.responseMimeType, 'application/json'); assert.ok(!init.body.includes('fileData'));
-      return response({ id_card_issued_on: '2024-10-12', id_card_issued_by: 'Cơ quan QA' });
+      assert.deepEqual(Object.keys(body.generationConfig.responseJsonSchema.properties),shared.OCR_CUSTOMER_KEYS);
+      assert.match(body.contents[0].parts[0].text,/NGÀY CẤP/);assert.match(body.contents[0].parts[0].text,/không lấy tên người ký/);
+      return response({ id_card:'009999999999',id_card_issued_on: '12/10/2024', id_card_issued_by: 'Cơ quan QA',address:'Không cho vào dữ liệu form' });
     });
     assert.equal(extracted.fields.id_card_issued_on, '2024-10-12');
+    assert.equal(extracted.fields.id_card_issued_by,'Cơ quan QA');assert.equal(extracted.fields.address,undefined);
     await assert.rejects(server.extractPhoto('plate', 'image/jpeg', jpeg, undefined, async () => Response.json({ candidates: [{ finishReason: 'MAX_TOKENS' }] })), error => error.status === 422);
     await assert.rejects(server.extractPhoto('plate', 'image/jpeg', jpeg, undefined, async () => Response.json({ message: 'provider secret details' }, { status: 429 })), error => error.status === 503 && !error.message.includes('provider secret'));
     delete process.env.GEMINI_API_KEY;

@@ -27,7 +27,7 @@ import { addRentalMonths, billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } 
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/management/record-photos';
 import { usePhotoOcr } from '@/components/management/usePhotoOcr';
-import { mergeOcrCustomer, plateKey, type OcrFields } from '@/lib/management/photo-ocr';
+import { mergeOcrCustomer, OCR_CUSTOMER_KEYS, plateKey, type OcrFields } from '@/lib/management/photo-ocr';
 import { useContractTypes } from './ContractTypesProvider';
 import { ContractTypeManager } from './ContractTypeManager';
 import type { ContractType } from '@/lib/management/contract-types';
@@ -97,6 +97,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [photoVersion, setPhotoVersion] = useState(0);
   const draftRef = useRef(draft); draftRef.current = draft;
   const previousCustomerAi = useRef<OcrFields>({});
+  const photoIdentityLookup = useRef('');
   const customerOcr = usePhotoOcr({
     kind: slot => slot === 'id_front' ? 'cccd_front' : 'cccd_back',
     snapshot: () => ({ ...draftRef.current.customer }),
@@ -104,9 +105,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       const current = draftRef.current;
       const merged = mergeOcrCustomer(current.customer, result.fields, before, previousCustomerAi.current);
       previousCustomerAi.current = { ...previousCustomerAi.current, ...merged.applied };
-      const next = { ...current, customer: merged.customer, vehicles: current.vehicles.map(vehicle => ({ ...vehicle,
+      const identityChanged = Boolean(merged.applied.id_card && normalizeIdCard(merged.applied.id_card) !== normalizeIdCard(current.customer.id_card));
+      const next = { ...current, ...(identityChanged ? {customer_id:null} : {}), customer: merged.customer, vehicles: current.vehicles.map(vehicle => ({ ...vehicle,
         ...(merged.applied.name && (!vehicle.driver_name || vehicle.driver_name === current.customer.name) ? { driver_name: merged.customer.name } : {}) })) };
       draftRef.current = next; setDraft(next);
+      if (identityChanged) {
+        // Reuse ordinary customer lookup/status rules for the newly read identity.
+        photoIdentityLookup.current = merged.customer.id_card;
+        preserveCustomer.current = false; setSelectedCustomer(null); setCustomerMatches([]); setLookupState('idle'); setLookupError('');
+        setIdInput(merged.customer.id_card); setLookupRetry(value=>value+1);
+      }
       setErrors(current => Object.fromEntries(Object.entries(current).filter(([key]) => !Object.hasOwn(merged.applied, key))));
       return Object.keys(merged.applied).length ? 'Đã điền thông tin từ CCCD. Kiểm tra lại trước khi lưu.' : 'Đã đọc ảnh; giữ nguyên thông tin đang có.';
     },
@@ -188,7 +196,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
 
   function withCustomer(previous: ContractDraft, customer: ManagementRow): ContractDraft {
     const relatives = relativesFromRow(customer);
-    const details = customerDetails(customer);
+    const stored = customerDetails(customer);
+    const keepPhotoIdentity = photoIdentityLookup.current === stored.id_card && previous.customer.id_card === stored.id_card;
+    const details = keepPhotoIdentity ? { ...stored, ...Object.fromEntries(OCR_CUSTOMER_KEYS.map(key=>[key,previous.customer[key] || stored[key]])),
+      address:previous.customer.address || stored.address } : stored;
     const sourceStoreId = customer.store_id ? String(customer.store_id) : '';
     return { ...previous, vehicle_store_id: contractStaffStoreId(previous), ...(sourceStoreId ? { store_id:sourceStoreId, customer_source_url:String(customer.store_name || '') } : {}),
       customer_id: customer.id, relatives, customer: { ...details, relatives_text: formatRelatives(relatives) },
@@ -262,6 +273,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       <PaymentMethodPicker label={label} value={draft[key]} onChange={value=>change(key,value)} /></div>;
   }
   function changeIdentity(value: string) {
+    photoIdentityLookup.current = '';
     previousCustomerAi.current = {}; customerOcr.cancel('id_front'); customerOcr.cancel('id_back');
     setCustomerPhotos({});
     preserveCustomer.current = false;
@@ -275,12 +287,14 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     setErrors(previous => ({ ...previous, id_card: '' }));
   }
   function selectCustomer(customer: ManagementRow) {
+    photoIdentityLookup.current = '';
     preserveCustomer.current = true;
     setCustomerMatches([]); setLookupState('found'); setLookupError('');
     setSelectedCustomer(customer);
     setDraft(previous => withCustomer(previous, customer));
   }
   function customerCreated(customer: ManagementRow) {
+    photoIdentityLookup.current = '';
     previousCustomerAi.current = {}; customerOcr.cancel('id_front'); customerOcr.cancel('id_back');
     setCustomerPhotos({});
     preserveCustomer.current = true;

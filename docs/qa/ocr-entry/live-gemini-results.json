@@ -1,0 +1,25 @@
+{
+  "checks": [
+    "front synthetic fixture extracted successfully",
+    "back synthetic fixture extracted successfully"
+  ],
+  "results": [
+    {
+      "side": "front",
+      "fields": {
+        "id_card": "001234567890",
+        "name": "NGUYEN VAN QA"
+      }
+    },
+    {
+      "side": "back",
+      "fields": {
+        "id_card_issued_on": "2022-01-31",
+        "id_card_issued_by": "CUC CANH SAT QUAN LY HANH CHINH VE TRAT TU XA HOI"
+      }
+    }
+  ],
+  "realProviderCalls": 2,
+  "realBusinessWrites": 0,
+  "note": "Synthetic text fixtures only; no user CCCD image submitted."
+}

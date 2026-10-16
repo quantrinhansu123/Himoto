@@ -1,0 +1,10 @@
+﻿{
+  "passed": 5,
+  "checks": [
+    "Only four identity fields; fresh photos replace pre-entered CCCD/name without matching checks; current address/phone stay manual, in-flight edits survive and issue dates normalize",
+    "Gemini receives the original inline bytes and a strict JSON schema, never a Cloudinary URL; key stays in server headers; missing config, rate limits, quota errors and truncated results fail explicitly",
+    "Cloudinary signed uploads use authenticated delivery; server checks ownership and response signatures; forged versions, foreign owners and arbitrary URLs are rejected; reads use short-lived private URLs",
+    "delayed Cloudinary upload and OCR start independently; OCR completes before upload; saving later attaches the verified receipt without uploading the image again",
+    "PostgreSQL TEMP: Cloudinary receipts persist without image bytes; legacy replacements clear Cloudinary references; storage remains readable for both providers"
+  ]
+}
