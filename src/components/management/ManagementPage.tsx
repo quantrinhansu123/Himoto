@@ -8,8 +8,8 @@ import { ManagementDataBoundary } from './ManagementDataBoundary';
 import { ArrowDownToLine, ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, ListFilter, Plus, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { RowActionsMenu } from './RowActionsMenu';
 import type { VehicleActionMode } from './VehicleActionDialog';
-import { MANAGEMENT_CONFIG, OWNERSHIP_CONTRACT_TYPES, optionLabel, statusTone } from '@/lib/management/config';
-import { EMPTY_QUERY, OVERDUE_COMPARE_OPTIONS, TableQuery, csvCell, filterRows, formatValue, sortContractRows, sortRows } from '@/lib/management/table-utils';
+import { MANAGEMENT_CONFIG, optionLabel, statusTone } from '@/lib/management/config';
+import { EMPTY_QUERY, OVERDUE_COMPARE_OPTIONS, TableQuery, csvCell, filterRows, formatValue, sortRows } from '@/lib/management/table-utils';
 import { ManagementColumn, ManagementKind, ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
 import { DataTable } from './DataTable';
@@ -21,9 +21,10 @@ import { cashbookPaymentPath, type PaymentPurpose } from '@/lib/management/contr
 import { batteryPrefillFromVehicleContract } from '@/lib/management/battery-from-contract';
 import type { BatteryContract } from '@/lib/management/battery-contracts';
 import { staffPositionSuggestions } from '@/lib/management/staff-positions';
-import { applyInstallmentBilling } from '@/lib/management/contract-billing';
 import { ResponsiveDataActions } from './ResponsiveDataActions';
 import { useContractTypes } from '@/components/contracts/ContractTypesProvider';
+import { useManagementTable } from './useManagementTable';
+import type { ManagementTableInput } from '@/lib/management/management-table';
 
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
@@ -71,7 +72,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const baseConfig = paymentDueOnly ? { ...configured, title: 'Đến hạn đóng tiền', description: 'Khoản thuê sở hữu đã đến hẹn và chưa đóng đủ. Liên hệ khách để thu tiền theo lịch.', columns: [...configured.columns,
     { key: 'billing_next_due_at', label: 'Ngày hẹn đóng tiền', format: 'date' as const }, { key: 'billing_due_amount', label: 'Tiền đến hạn còn thiếu', format: 'money' as const, align: 'right' as const }] } : configured;
   const config = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : overdueOnly ? { ...baseConfig, title: 'Hợp đồng quá hạn', description: 'Hợp đồng đang thuê đã quá ngày hẹn trả xe. Liên hệ khách, gia hạn hoặc nhận trả xe.', columns: [baseConfig.columns[0], overdueDaysColumn, ...baseConfig.columns.slice(1)] } : ownershipOnly ? { ...baseConfig, title: 'Hợp đồng thuê sở hữu', description: 'Hợp đồng thuộc cơ sở thuê sở hữu hoặc loại Thuê sở hữu / Thuê sở hữu( cd). Bản nháp và loại sở hữu được ưu tiên lên đầu danh sách.', columns: baseConfig.columns.map(column => column.key === 'contract_type_name' ? { ...column, hidden: false } : column) } : baseConfig;
-  const { dataset, loading, refreshing, error, source, canSaveContractDrafts, canPayContracts, selectedStore, selectStore, reload, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
+  const { dataset, loading:datasetLoading, refreshing:datasetRefreshing, error:datasetError, resources, source, canSaveContractDrafts, canPayContracts, selectedStore, selectStore, reload:reloadDataset, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
+  const paged = kind === 'contracts' || kind === 'customers';
   const router = useRouter();
   const searchParams = useSearchParams();
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
@@ -90,6 +92,14 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [pageSize, setPageSize] = useState(10);
   const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' }>(overdueOnly ? { key: 'overdue_days', direction: 'desc' } : { key: 'code', direction: 'asc' });
   const [openedAt, setOpenedAt] = useState(() => Date.now());
+  const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => store.kind === 'lease_to_own').map(store => store.id)), [dataset?.stores]);
+  const tableInput:ManagementTableInput={kind:kind==='customers'?'customers':'contracts',query,store:selectedStore,scope:draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'',page,size:pageSize,sort:sort.key,direction:sort.direction};
+  const table=useManagementTable(tableInput,paged,resources[kind],[...ownershipStoreIds]);
+  const renewable=useManagementTable({...tableInput,query:{...EMPTY_QUERY,search:renewSearch},scope:'renewable',page:1,size:30},renewPicker,resources.contracts,[...ownershipStoreIds]);
+  const loading=datasetLoading || paged && table.loading && !table.data;
+  const refreshing=datasetRefreshing || paged && table.loading && Boolean(table.data);
+  const error=datasetError || (paged?table.error:'');
+  async function reload(kinds?:readonly ManagementKind[]) { if(paged)table.refresh(); await reloadDataset(kinds); }
   useEffect(() => {
     if (kind !== 'contracts') return;
     const timer = window.setInterval(() => setOpenedAt(Date.now()), 60_000);
@@ -145,47 +155,34 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', escape); };
   }, []);
 
-  const allRows = dataset?.[kind] || EMPTY_ROWS;
-  const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => store.kind === 'lease_to_own').map(store => store.id)), [dataset?.stores]);
-  const rows = useMemo(() => {
-    const billed = kind === 'contracts' ? allRows.map(row => applyInstallmentBilling(row, openedAt)) : allRows;
-    if (paymentDueOnly) return billed.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0);
-    if (draftsOnly) return billed.filter(row => row.status === 'draft');
-    if (vatOnly) return billed.filter(row => Number(row.company_payment_count) > 0);
-    if (overdueOnly) return billed.filter(row => row.status === 'overdue').map(row => ({ ...row, overdue_days: overdueDays(row.end_date, openedAt) }));
-    if (ownershipOnly) return billed.filter(row => (typeof row.store_id === 'number' && ownershipStoreIds.has(row.store_id)) || OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type || '')));
-    if (kind === 'vehicles') return billed.map(row => ({ ...row, overdue_days: vehicleOverdueDays(row, openedAt) }));
-    return billed;
-  }, [allRows, kind, draftsOnly, vatOnly, overdueOnly, ownershipOnly, paymentDueOnly, ownershipStoreIds, openedAt]);
+  const allRows = paged ? table.data?.rows || EMPTY_ROWS : dataset?.[kind] || EMPTY_ROWS;
+  const rows:ManagementRow[] = useMemo(() => kind === 'vehicles' ? allRows.map(row => ({...row,overdue_days:vehicleOverdueDays(row,openedAt)})) : allRows,[allRows,kind,openedAt]);
   const scopedRows = useMemo(() => filterRows(rows, EMPTY_QUERY, selectedStore), [rows, selectedStore]);
-  const dueCount = scopedRows.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0).length;
-  const filteredRows = useMemo(() => {
-    const filtered = filterRows(scopedRows, query, 'all');
-    if (kind !== 'contracts' || overdueOnly || paymentDueOnly) return sortRows(filtered, sort.key, sort.direction);
-    return sortContractRows(filtered, sort.key, sort.direction, {
-      pinDrafts: true,
-      pinOwnershipTypes: ownershipOnly,
-    });
-  }, [scopedRows, query, sort, kind, overdueOnly, ownershipOnly, paymentDueOnly]);
+  const dueCount = paged ? table.data?.dueCount || 0 : scopedRows.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0).length;
+  const filteredRows = useMemo(() => paged ? rows : sortRows(filterRows(scopedRows,query,'all'),sort.key,sort.direction),[paged,rows,scopedRows,query,sort]);
   const tabRows = useMemo(() => filterRows(scopedRows, { ...query, status: '' }, 'all'), [scopedRows, query]);
-  const statusCounts = useMemo(() => { const counts = new Map<string, number>(); for (const row of tabRows) counts.set(row.status, (counts.get(row.status) || 0) + 1); return counts; }, [tabRows]);
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const safePage = Math.min(page, pageCount);
+  const statusCounts = useMemo(() => { if(paged)return new Map(table.data?.statusCounts || []); const counts = new Map<string, number>(); for (const row of tabRows) counts.set(row.status, (counts.get(row.status) || 0) + 1); return counts; }, [tabRows,paged,table.data]);
+  const resultCount=paged ? table.data?.total || 0 : filteredRows.length;
+  const scopeCount=paged ? table.data?.scopeCount || 0 : scopedRows.length;
+  const tabCount=paged ? table.data?.tabCount || 0 : tabRows.length;
+  const pageCount = paged ? table.data?.pages || 1 : Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const safePage = paged ? table.data?.page || 1 : Math.min(page, pageCount);
   const offset = (safePage - 1) * pageSize;
   const columns = config.columns.filter(c => visibleKeys.includes(c.key));
-  const statusOptions = [...config.statuses, ...Array.from(new Set(rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
+  const statusOptions = [...config.statuses, ...Array.from(new Set(paged?table.data?.statuses || []:rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || query.overdueDays.trim() || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
   const canEdit = kind === 'customers' || kind === 'stores' || kind === 'vehicles';
   const canDelete = source === 'api' && (kind === 'customers' || kind === 'stores' || kind === 'vehicles');
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
   const canBulkDelete = source === 'api' && kind !== 'contracts';
   useEffect(() => {
+    if(paged)return;
     setSelectedIds(current => {
       const present = new Set(rows.map(row => row.id));
       const next = new Set([...current].filter(id => present.has(id)));
       return next.size === current.size ? current : next;
     });
-  }, [rows]);
+  }, [rows,paged]);
   function changeSelection(ids: number[], selected: boolean) {
     setSelectedIds(current => { const next = new Set(current); for (const id of ids) if (selected) next.add(id); else next.delete(id); return next; });
   }
@@ -196,7 +193,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       const deleted = await bulkDelete(kind, [...selectedIds]);
       setSelectedIds(new Set()); setBulkDeleteOpen(false);
       notify(`Đã xóa ${deleted.length} ${config.singular}.`);
-      await ensureData([kind], true).catch(() => {});
+      if(paged)table.refresh();else await ensureData([kind], true).catch(() => {});
     } catch (cause) { setBulkDeleteError(cause instanceof Error ? cause.message : `Không xóa được ${config.singular}.`); }
     finally { setBulkDeleteBusy(false); }
   }
@@ -213,13 +210,15 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     setQuery(EMPTY_QUERY); setPage(1); selectStore('all');
     if (customerId || contractId) router.replace(contractPath);
   }
-  function exportCsv() {
+  async function exportCsv() {
     if (!filteredRows.length) return;
-    const csv = [columns.map(column => csvCell(column.label)).join(','), ...filteredRows.map(row => columns.map(column => csvCell(optionLabel(config, column.key, formatValue(row[column.key], column.format)))).join(','))].join('\r\n');
+    let exportRows=filteredRows;
+    try {if(paged)exportRows=(await table.exportAll()).rows;} catch(cause){notify(cause instanceof Error?cause.message:'Không xuất được danh sách.');return;}
+    const csv = [columns.map(column => csvCell(column.label)).join(','), ...exportRows.map(row => columns.map(column => csvCell(optionLabel(config, column.key, formatValue(row[column.key], column.format)))).join(','))].join('\r\n');
     const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a'); link.href = url; link.download = `himoto-${kind}-${source}.csv`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify(`Đã xuất ${filteredRows.length} bản ghi.`);
+    notify(`Đã xuất ${exportRows.length} bản ghi.`);
   }
   function view(row: ManagementRow) {
     setViewing(row);
@@ -232,7 +231,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
 
   return <section className={`mg-page mg-page-${kind}`} aria-label={config.title}>
     <div className="mg-page-content">
-      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1></div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopedRows.length}</span></h1><p>{config.description}</p></div>}
+      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1></div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopeCount}</span></h1><p>{config.description}</p></div>}
         <div className="mg-heading-actions">{kind !== 'contracts' && <ResponsiveDataActions>{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
           {kind === 'customers' && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}
@@ -255,7 +254,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       {kind === 'staff' && <StaffOrganizationChart />}
 
       <div className="mg-data-panel">
-        <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!query.status ? 'is-active' : ''} aria-pressed={!query.status} onClick={() => updateQuery({ status: '' })}>Tất cả<span>{tabRows.length}</span></button>
+        <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!query.status ? 'is-active' : ''} aria-pressed={!query.status} onClick={() => updateQuery({ status: '' })}>Tất cả<span>{tabCount}</span></button>
           {statusOptions.filter(option => (kind === 'contracts' && !overdueOnly && option.value === 'draft') || statusCounts.has(option.value) || query.status === option.value).map(option => <button type="button" key={option.value} className={query.status === option.value ? 'is-active' : ''} aria-pressed={query.status === option.value} onClick={() => updateQuery({ status: option.value })}>{option.label}<span>{statusCounts.get(option.value) || 0}</span></button>)}</div>
         <div className="mg-toolbar"><label className="mg-search"><Search size={17} /><span className="mg-sr-only">Tìm kiếm {config.title.toLowerCase()}</span><input type="search" placeholder={config.searchPlaceholder} value={query.search} onChange={event => updateQuery({ search: event.target.value })} />{query.search && <button type="button" aria-label="Xóa từ khóa" onClick={() => updateQuery({ search: '' })}><X size={15} /></button>}</label>
           <div className="mg-filter-controls mg-list-filters"><span className="mg-filter-icon"><ListFilter size={16} /></span>{config.filters.map(filter => <label className="mg-sr-label" key={filter.key}><span className="mg-sr-only">{filter.label}</span><select aria-label={filter.label} value={query.filters[filter.key] || ''} onChange={event => updateQuery({ filters: { ...query.filters, [filter.key]: event.target.value } })}><option value="">{filter.label}</option>{(kind === 'staff' && filter.key === 'position' ? staffPositionSuggestions(allRows.map(row => row.position)).map(label => ({ value: label, label })) : filter.storeOptions ? (dataset?.stores || EMPTY_ROWS).map(store => ({ value: String(store.id), label: store.name || `Cơ sở #${store.id}` })) : filter.options).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
@@ -275,11 +274,11 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         </div>}
         {kind === 'contracts' && <div className="mg-date-filters mg-date-range-inline"><span>Ngày bắt đầu thuê</span><label><span className="mg-sr-only">Từ ngày</span><input type="date" aria-label="Từ ngày" value={query.startDate} onChange={event => updateQuery({ startDate: event.target.value })} aria-invalid={invalidDate} /></label><span className="mg-date-divider">—</span><label><span className="mg-sr-only">Đến ngày</span><input type="date" aria-label="Đến ngày" value={query.endDate} onChange={event => updateQuery({ endDate: event.target.value })} aria-invalid={invalidDate} /></label>{invalidDate && <span className="mg-field-error" role="alert">Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.</span>}
           {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}{contractId && <span className="mg-active-filter">Hợp đồng #{contractId}<button type="button" aria-label="Bỏ lọc hợp đồng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}</div>}
-        {isFiltered && <div className="mg-filter-summary"><span><strong>{filteredRows.length}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
+        {isFiltered && <div className="mg-filter-summary"><span><strong>{resultCount}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
         {kind === 'contracts' && !loading && !error && dueCount > 0 && <div className="mg-billing-reminder" role="status"><p><strong>{dueCount} hợp đồng thuê sở hữu đến hạn đóng tiền.</strong> Khoản chưa đóng đủ tiếp tục hiện để kế toán giục nợ.</p>{!paymentDueOnly && <button className="mg-button" type="button" onClick={() => router.push('/contracts/due')}>Xem khoản đến hạn</button>}</div>}
-        {kind === 'contracts' && <ContractSummary rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset} />}
+        {kind === 'contracts' && <ContractSummary values={paged?table.data?.summary:undefined} rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset} />}
         {kind === 'customers' && blacklistError && <p className="mg-blacklist-error" role="alert">{blacklistError}</p>}
-        <DataTable config={config} columns={columns} rows={filteredRows.slice(offset, offset + pageSize)} offset={offset} sortKey={sort.key} sortDirection={sort.direction}
+        <DataTable config={config} columns={columns} rows={paged ? filteredRows : filteredRows.slice(offset, offset + pageSize)} offset={offset} sortKey={sort.key} sortDirection={sort.direction}
           onSort={key => { setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }} onView={view} onEdit={row => { if (kind === 'contracts') { setPrintRow(row); setComposerMode(row.status === 'draft' ? 'draft' : 'edit'); setComposerOpen(true); } else { setEditing(row); setFormOpen(true); } }}
           onDelete={canDelete ? row => { setDeleteTarget(row); setDeleteError(''); } : undefined} canDelete={canDelete}
           blacklistBusyId={blacklistBusyId} onBlacklist={kind === 'customers' ? async row => {
@@ -302,7 +301,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           canEditDraft={kind === 'contracts' && canSaveContractDrafts}
           canEdit={canEdit} loading={loading} error={error} isFiltered={isFiltered} onReset={clearFilters} onRetry={() => void reload()}
           selectedIds={canBulkDelete ? selectedIds : undefined} onSelectionChange={canBulkDelete ? changeSelection : undefined} />
-        <div className="mg-pagination"><div className="mg-result-range" aria-live="polite">Hiển thị <strong>{filteredRows.length ? offset + 1 : 0}–{Math.min(offset + pageSize, filteredRows.length)}</strong> trong <strong>{filteredRows.length}</strong> {config.singular}</div>
+        <div className="mg-pagination"><div className="mg-result-range" aria-live="polite">Hiển thị <strong>{resultCount ? offset + 1 : 0}–{Math.min(offset + pageSize, resultCount)}</strong> trong <strong>{resultCount}</strong> {config.singular}</div>
           <div className="mg-pagination-controls"><label>Số dòng<select aria-label="Số dòng mỗi trang" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}>{[10, 20, 50].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
             <div className="mg-page-buttons"><button type="button" className="mg-icon-button" aria-label="Trang đầu" disabled={safePage === 1 || loading} onClick={() => setPage(1)}><ChevronsLeft size={16} /></button><button type="button" className="mg-icon-button" aria-label="Trang trước" disabled={safePage === 1 || loading} onClick={() => setPage(safePage - 1)}><ChevronLeft size={16} /></button>
               <span className="mg-current-page">{safePage}</span><span className="mg-page-total">/ {pageCount}</span><button type="button" className="mg-icon-button" aria-label="Trang sau" disabled={safePage === pageCount || loading} onClick={() => setPage(safePage + 1)}><ChevronRight size={16} /></button><button type="button" className="mg-icon-button" aria-label="Trang cuối" disabled={safePage === pageCount || loading} onClick={() => setPage(pageCount)}><ChevronsRight size={16} /></button></div>
@@ -336,7 +335,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     </Dialog>}
     {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} onClose={() => setReturnTarget(null)} />}
     {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} onClose={() => setRenewTarget(null)} />}
-    {renewPicker && <Dialog title="Chọn hợp đồng gia hạn" onClose={()=>setRenewPicker(false)}><div className="mg-dialog-body"><label className="mg-field">Tìm hợp đồng cần gia hạn<input type="search" autoFocus value={renewSearch} placeholder="Mã hợp đồng, khách, SĐT hoặc biển số" onChange={event=>setRenewSearch(event.target.value)}/></label><ul className="mg-operation-picks">{filterRows((dataset?.contracts || []).filter(row=>['renting','overdue'].includes(row.status) && !row.billing_plan_json),{...EMPTY_QUERY,search:renewSearch},selectedStore).slice(0,30).map(row=><li key={row.id}><button type="button" onClick={()=>{setRenewPicker(false);setRenewTarget(row);}}><strong>{row.code} · {row.customer_name}</strong><span>{row.license} · {row.customer_phone}</span></button></li>)}</ul></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setRenewPicker(false)}>Đóng</button></div></Dialog>}
+    {renewPicker && <Dialog title="Chọn hợp đồng gia hạn" onClose={()=>setRenewPicker(false)}><div className="mg-dialog-body"><label className="mg-field">Tìm hợp đồng cần gia hạn<input type="search" autoFocus value={renewSearch} placeholder="Mã hợp đồng, khách, SĐT hoặc biển số" onChange={event=>setRenewSearch(event.target.value)}/></label><ul className="mg-operation-picks">{(renewable.data?.rows || []).map(row=><li key={row.id}><button type="button" onClick={()=>{setRenewPicker(false);setRenewTarget(row);}}><strong>{row.code} · {row.customer_name}</strong><span>{row.license} · {row.customer_phone}</span></button></li>)}</ul></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setRenewPicker(false)}>Đóng</button></div></Dialog>}
     {vehicleTarget && kind === 'contracts' && <ManagementDataBoundary kinds={VEHICLE_DATA_KINDS} title="Đổi xe" onClose={() => setVehicleTarget(null)}><ContractVehicleSwapDialog orderId={vehicleTarget.orderId} contractCode={vehicleTarget.code} onClose={() => setVehicleTarget(null)} /></ManagementDataBoundary>}
     {batteryRentTarget && kind === 'contracts' && dataset && <ManagementDataBoundary kinds={['staff'] as const} title="Thuê pin / sạc" onClose={() => setBatteryRentTarget(null)}>
       <BatteryContractForm key={`from-${batteryRentTarget.id}`} row={null} storeId={selectedStore}
@@ -358,7 +357,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       onFinalized={result => {
         notify(`${result.status === 'deposit_contract' ? 'Đã nhận cọc giữ xe, chờ giao xe' : 'Đã lưu chính thức hợp đồng'} ${result.code}${result.transaction_ids.length ? ` và ghi ${result.transaction_ids.length} phiếu thu vào Sổ quỹ` : ''}.`);
         invalidateData(['vehicles', 'customers']);
-        void ensureData(['contracts'], true).catch(() => {});
+        if(paged)table.refresh();else void ensureData(['contracts'], true).catch(() => {});
         setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); router.push(`/contracts?contract_id=${result.order_id}`);
       }} /></ManagementDataBoundary>}
     {viewing && kind === 'customers' && <CustomerDetail row={viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }} />}

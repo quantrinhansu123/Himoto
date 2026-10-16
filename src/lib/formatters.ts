@@ -12,16 +12,14 @@ export function formatMoney(amount: number | string | null | undefined): string 
 export const formatCurrency = formatMoney;
 
 const VN_TZ = 'Asia/Ho_Chi_Minh';
+const vietnamDateFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:VN_TZ,year:'numeric',month:'2-digit',day:'2-digit'});
+const vietnamDateTimeFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:VN_TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 
 /** Always 24h (never SA/CH / AM/PM). */
 function vietnamParts(input: string | Date, withTime: boolean) {
   const date = input instanceof Date ? input : new Date(input);
   if (!Number.isFinite(date.getTime())) return null;
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: VN_TZ,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    ...(withTime ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' as const } : {}),
-  }).formatToParts(date);
+  const parts = (withTime?vietnamDateTimeFormatter:vietnamDateFormatter).formatToParts(date);
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value || '';
   return { day: get('day'), month: get('month'), year: get('year'), hour: get('hour'), minute: get('minute') };
 }

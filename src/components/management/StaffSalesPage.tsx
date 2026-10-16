@@ -1,9 +1,9 @@
 'use client';
-import { useEffect,useMemo,useState } from 'react';
+import { useEffect,useState } from 'react';
 import { ArrowDownToLine,CalendarRange,FilterX,Receipt,RotateCcw,TrendingUp,TriangleAlert,Wallet } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { SalesCharts } from './SalesCharts';
-import { loadStaffSales,type StaffSalesReport } from '@/lib/management/staff-sales';
+import { loadSalesSummary,loadStaffSales,type StaffSalesReport,type SalesSummaryReport } from '@/lib/management/staff-sales';
 import { summarizeBySalesStaff,summarizeByStore,summarizeSalesKpis,type SalesKpis,type SourceSalesSummary } from '@/lib/management/source-sales';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { csvCell } from '@/lib/management/table-utils';
@@ -51,17 +51,15 @@ function SummaryTable({title,description,column,unit,summary,filename,loading,er
   </div>;
 }
 export function StaffSalesPage() {
-  const {selectedStore,dataset,loading:contractsLoading,error:contractsError,reload}=useManagement();const today=vietnamDate();
+  const {selectedStore,dataset,error:datasetError,resources,reload}=useManagement();const today=vietnamDate();
   const [from,setFrom]=useState(`${today.slice(0,7)}-01`),[to,setTo]=useState(today),[department,setDepartment]=useState('');
   const [report,setReport]=useState<StaffSalesReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(setReport).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[from,to,selectedStore,retry]);
   const rows=(report?.rows || []).filter(row=>!department || row.department === department);
-  const contracts=dataset?.contracts;
+  const [summary,setSummary]=useState<SalesSummaryReport|null>(null),[summaryLoading,setSummaryLoading]=useState(true),[summaryError,setSummaryError]=useState('');
   const staff=dataset?.staff;
-  const sources=useMemo(()=>summarizeBySalesStaff(contracts || [],from,to,selectedStore,staff),[contracts,from,to,selectedStore,staff]);
-  const stores=useMemo(()=>summarizeByStore(contracts || [],from,to,selectedStore),[contracts,from,to,selectedStore]);
-  const kpis=useMemo(()=>summarizeSalesKpis(contracts || [],from,to,selectedStore),[contracts,from,to,selectedStore]);
-  const summaryLoading=contractsLoading && !contracts?.length;
+  useEffect(()=>{const controller=new AbortController();setSummaryLoading(true);setSummaryError('');loadSalesSummary(from,to,selectedStore,staff||[],controller.signal).then(value=>{if(!controller.signal.aborted)setSummary(value);}).catch(cause=>{if(!controller.signal.aborted)setSummaryError(cause instanceof Error?cause.message:'Không tải được thống kê.');}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});return()=>controller.abort();},[from,to,selectedStore,staff,retry,resources.contracts]);
+  const sources=summary?.sources||summarizeBySalesStaff([],from,to,selectedStore),stores=summary?.stores||summarizeByStore([],from,to,selectedStore),kpis=summary?.kpis||summarizeSalesKpis([],from,to,selectedStore),contractsError=summaryError||datasetError;
   const activePreset=PRESETS.find(preset=>{const [start,end]=presetRange(preset.id,today);return start===from && end===to;})?.id;
   const periodDays=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;
   const storeName=selectedStore==='all' ? 'Tất cả cơ sở' : dataset?.stores.find(store=>String(store.id)===selectedStore)?.name || `Cơ sở #${selectedStore}`;

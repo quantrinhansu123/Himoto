@@ -60,7 +60,9 @@ async function run() {
   const snapshot = { ...draft, contract_number: 'NHAP-9000' };
   const raw = { id: 9000, draft_reference: 'NHAP-9000', status: 'draft', draft_revision: '100', draft_payload: { management_composer: { version: 1, ...edits, draft: snapshot } } };
   const mapped = mapApiRow('contracts', raw);
-  assert.deepEqual(createContractDraft(before, 'all', mapped), snapshot);
+  const {contract_type_id,contract_type_name,contract_type_months,...reopenedSnapshot}=createContractDraft(before,'all',mapped);
+  assert.deepEqual(reopenedSnapshot,snapshot);
+  assert.equal(contract_type_id,'daily');assert.equal(contract_type_name,'Thuê theo ngày');assert.equal(contract_type_months,'');
   assert.equal(mapped.draft_revision, '100'); assert.equal(mapped.total_amount, undefined);
   const legacy = mapApiRow('contracts', { id: 1, draft_reference: 'OLD-DRAFT', order_status: 'draft', store_id: 1,
     draft_payload: { order_items: [{ vehicle_id: before.vehicles[0].id, driver_name: 'Người lái cũ', borrow_hats: 2, borrow_raincoats: 1 }] } });

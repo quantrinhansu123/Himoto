@@ -1,14 +1,14 @@
 'use client';
 
 import { useMemo } from 'react';
-import { summarizeContracts } from '@/lib/management/contract-summary';
+import { summarizeContracts, type ContractSummary as ContractSummaryValues } from '@/lib/management/contract-summary';
 import { formatValue } from '@/lib/management/table-utils';
 import type { ManagementRow } from '@/lib/management/types';
 
-export function ContractSummary({ rows, customers, loading, unavailable }: {
-  rows: ManagementRow[]; customers: ManagementRow[]; loading: boolean; unavailable: boolean;
+export function ContractSummary({ rows, customers, loading, unavailable, values }: {
+  rows: ManagementRow[]; customers: ManagementRow[]; loading: boolean; unavailable: boolean; values?:ContractSummaryValues|null;
 }) {
-  const summary = useMemo(() => summarizeContracts(rows, customers), [rows, customers]);
+  const summary = useMemo(() => values || summarizeContracts(rows, customers), [rows, customers, values]);
   const ready = !loading && !unavailable;
   const metrics = [
     { label: 'Số hợp đồng', value: summary.contractCount, hint: 'Toàn bộ kết quả lọc, gồm nháp', money: false },

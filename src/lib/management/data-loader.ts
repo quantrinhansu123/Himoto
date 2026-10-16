@@ -1,13 +1,13 @@
 import type { ManagementDataset, ManagementKind, ManagementRepository, ManagementRow } from './types';
 
 export const MANAGEMENT_KINDS: readonly ManagementKind[] = ['staff', 'customers', 'contracts', 'stores', 'vehicles'];
-export const CONTRACT_DATA_KINDS: readonly ManagementKind[] = ['stores', 'customers', 'vehicles'];
+export const CONTRACT_DATA_KINDS: readonly ManagementKind[] = ['stores', 'vehicles'];
 export const VEHICLE_DATA_KINDS: readonly ManagementKind[] = ['vehicles'];
 const STORE_KINDS: readonly ManagementKind[] = ['stores'];
 const PAGE_KINDS: Record<string, readonly ManagementKind[]> = {
-  staff: ['stores', 'staff'], customers: ['stores', 'customers'], contracts: ['stores', 'contracts'],
+  staff: ['stores', 'staff'], customers: STORE_KINDS, contracts: STORE_KINDS,
   stores: STORE_KINDS, vehicles: ['stores', 'vehicles'], 'duty-roster': ['stores', 'staff'], cashbook: STORE_KINDS,
-  operations: ['stores','contracts'], 'staff-sales': ['stores','staff','contracts'],
+  operations: STORE_KINDS, 'staff-sales': ['stores','staff'],
 };
 
 export function managementKindsForPath(pathname: string): readonly ManagementKind[] {

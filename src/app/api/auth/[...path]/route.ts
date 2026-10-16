@@ -9,6 +9,8 @@ import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { validIdentityIssueDate } from '@/lib/management/customer-identity';
 import { CUSTOMER_PROFILE_SQL, CUSTOMER_SEARCH_SQL } from '@/lib/server/customer-search';
 import { CASHBOOK_LIST_SQL, CashbookQueryError, listCashbook } from '@/lib/server/cashbook-list';
+import { ManagementTableError, readManagementTable } from '@/lib/server/management-table';
+import { PageSummaryError, readOperationsSummary, readSalesSummary } from '@/lib/server/page-summaries';
 
 export const runtime = 'nodejs';
 
@@ -140,6 +142,22 @@ export async function GET(request: NextRequest, { params }: Params) {
   const { path } = await params;
   const key = path.join('/');
   try {
+    if (key==='order/car-rental' && request.nextUrl.searchParams.get('summary')==='operations') {
+      return NextResponse.json({status:'success',data:await readOperationsSummary(himotoPool)},{headers:{'Cache-Control':'no-store'}});
+    }
+    if (key==='order/car-rental' && request.nextUrl.searchParams.get('summary')==='sales') {
+      return NextResponse.json({status:'success',data:await readSalesSummary(himotoPool,request.nextUrl.searchParams)},{headers:{'Cache-Control':'no-store'}});
+    }
+    if (request.nextUrl.searchParams.get('table')==='1' && ['customers','order/car-rental'].includes(key)) {
+      const client=await himotoPool.connect();
+      try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+        const data=await readManagementTable(client,key==='customers'?'customers':'contracts',request.nextUrl.searchParams);
+        await client.query('COMMIT');
+        return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'no-store'}});
+      } catch(error) { await client.query('ROLLBACK');throw error; }
+      finally { client.release(); }
+    }
     if (key === 'cashbook/vouchers') {
       const data = await listCashbook(request.nextUrl.searchParams);
       return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
@@ -194,7 +212,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
     return await readAll(query);
   } catch (error) {
-    if (error instanceof CashbookQueryError) return NextResponse.json({ status: 'error', message: error.message }, { status: 400 });
+    if (error instanceof CashbookQueryError || error instanceof ManagementTableError || error instanceof PageSummaryError) return NextResponse.json({ status: 'error', message: error.message }, { status: 400 });
     console.error('Supabase read failed:', error instanceof Error ? error.name : 'Unknown database error');
     return NextResponse.json({ status: 'error', message: 'Không tải được dữ liệu từ Supabase.' }, { status: 500 });
   }

@@ -1,8 +1,12 @@
 import type { Metadata } from 'next';
-import '@fontsource/roboto/400.css';
-import '@fontsource/roboto/500.css';
-import '@fontsource/roboto/700.css';
-import '@fontsource/roboto/900.css';
+import '@fontsource/roboto/latin-400.css';
+import '@fontsource/roboto/vietnamese-400.css';
+import '@fontsource/roboto/latin-500.css';
+import '@fontsource/roboto/vietnamese-500.css';
+import '@fontsource/roboto/latin-700.css';
+import '@fontsource/roboto/vietnamese-700.css';
+import '@fontsource/roboto/latin-900.css';
+import '@fontsource/roboto/vietnamese-900.css';
 import '@/styles/base.css';
 
 export const metadata: Metadata = {

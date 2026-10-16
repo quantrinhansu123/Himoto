@@ -68,7 +68,7 @@ export const READ_ENDPOINTS: Record<ManagementKind, string> = {
   vehicles: '/auth/vehicle/vehicles', contracts: '/auth/order/car-rental',
 };
 type ApiRow = Record<string, unknown>;
-const text = (value: unknown): string => value == null ? '' : String(value);
+const text = (value: unknown): string => value == null ? '' : value instanceof Date ? value.toISOString() : String(value);
 const number = (value: unknown): number | undefined => value == null || value === '' || !Number.isFinite(Number(value)) ? undefined : Number(value);
 const object = (value: unknown): ApiRow => value && typeof value === 'object' && !Array.isArray(value) ? value as ApiRow : {};
 function relativeRows(value: unknown) {

@@ -10,7 +10,8 @@ const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number
 // Rank complete rental history before branch/date filters. Allocate known
 // initial fees first when collecting combined rent/fee receipts, as billing does.
 const SALES_CTE = `WITH eligible AS (
-  SELECT o.*, row_number() OVER(PARTITION BY o.customer_id ORDER BY COALESCE(o.rent_at,o.created_at),o.id) AS rental_number,
+  SELECT o.id,o.customer_id,o.store_id,o.rent_at,o.created_at,o.draft_payload,
+    row_number() OVER(PARTITION BY o.customer_id ORDER BY COALESCE(o.rent_at,o.created_at),o.id) AS rental_number,
     (COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type,'')='ownership'
       OR COALESCE(o.draft_payload #>> '{management_composer,draft,ownership}','false')='true'
       OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL) AS ownership,
@@ -58,24 +59,29 @@ export const STAFF_SALES_SQL = `${SALES_CTE}
 SELECT a.*,COALESCE(NULLIF(a.saved_name,''),s.full_name,'Nhân viên #' || a.staff_id::text) AS name
 FROM attributed a LEFT JOIN himoto.staff_profiles s ON s.id=a.staff_id
 WHERE a.started_in_range OR a.revenue <> 0`;
+const STAFF_SALES_REPORT_SQL=`${SALES_CTE}
+SELECT COALESCE((SELECT jsonb_agg(to_jsonb(a)||jsonb_build_object('name',COALESCE(NULLIF(a.saved_name,''),s.full_name,'Nhân viên #'||a.staff_id::text)))
+  FROM attributed a LEFT JOIN himoto.staff_profiles s ON s.id=a.staff_id WHERE a.started_in_range OR a.revenue<>0),'[]'::jsonb) AS items,
+  missing.revenue,missing.contracts
+FROM (SELECT COALESCE(SUM(r.revenue),0) AS revenue,count(DISTINCT o.id)::int AS contracts
+  FROM receipts r JOIN eligible o ON o.id=r.order_id WHERE r.revenue<>0
+    AND COALESCE(o.draft_payload #>> '{management_composer,profile,sales_staff_id}',o.draft_payload #>> '{management_composer,draft,sales_staff_id}','') !~ '^[1-9][0-9]{0,14}$'
+    AND ($3::bigint IS NULL OR o.store_id=$3)) missing`;
 
 export async function staffSales(client: Pick<PoolClient, 'query'>, from: string, to: string, store?: number): Promise<StaffSalesReport> {
   if (!validDate(from) || !validDate(to) || from > to || store !== undefined && (!Number.isSafeInteger(store) || store <= 0)) throw new StaffSalesError('Kiểm tra khoảng ngày và cơ sở của báo cáo.');
   const params = [from, to, store ?? null];
-  const result = await client.query(STAFF_SALES_SQL, params);
+  const result = await client.query(STAFF_SALES_REPORT_SQL, params);
+  const report=result.rows[0];
   const grouped = new Map<string, { row: StaffSalesRow; customers: Set<number>; newCustomers: Set<number> }>();
-  for (const item of result.rows) {
+  for (const item of report.items) {
     const key = `${item.department}:${item.staff_id}`;
     const entry = grouped.get(key) ?? { row: { staff_id: Number(item.staff_id), department: item.department, name: String(item.name), contracts: 0, customers: 0, new_customers: 0, revenue: 0 }, customers: new Set<number>(), newCustomers: new Set<number>() };
     entry.row.revenue += Number(item.revenue); entry.row.contracts += 1; entry.customers.add(Number(item.customer_id));
     if (Number(item.rental_number) === 1 && item.started_in_range) entry.newCustomers.add(Number(item.customer_id));
     grouped.set(key, entry);
   }
-  const missing = await client.query(`${SALES_CTE} SELECT COALESCE(SUM(r.revenue),0) AS revenue,count(DISTINCT o.id)::int AS contracts
-    FROM receipts r JOIN eligible o ON o.id=r.order_id WHERE r.revenue<>0
-      AND COALESCE(o.draft_payload #>> '{management_composer,profile,sales_staff_id}',o.draft_payload #>> '{management_composer,draft,sales_staff_id}','') !~ '^[1-9][0-9]{0,14}$'
-      AND ($3::bigint IS NULL OR o.store_id=$3)`, params);
   const rows = [...grouped.values()].map(entry => ({ ...entry.row, customers: entry.customers.size, new_customers: entry.newCustomers.size })).sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name, 'vi'));
-  if (rows.some(row => !Number.isSafeInteger(row.revenue)) || !Number.isSafeInteger(Number(missing.rows[0].revenue))) throw new StaffSalesError('Doanh số vượt giới hạn hiển thị; cần đối chiếu.', 409);
-  return { rows, unassigned_revenue: Number(missing.rows[0].revenue), unassigned_contracts: Number(missing.rows[0].contracts) };
+  if (rows.some(row => !Number.isSafeInteger(row.revenue)) || !Number.isSafeInteger(Number(report.revenue))) throw new StaffSalesError('Doanh số vượt giới hạn hiển thị; cần đối chiếu.', 409);
+  return { rows, unassigned_revenue: Number(report.revenue), unassigned_contracts: Number(report.contracts) };
 }

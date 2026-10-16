@@ -5,7 +5,7 @@ import type { PoolClient } from 'pg';
 import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } from '@/lib/management/contract-document';
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
-import { depositLateral, rentalPaidSql } from './contract-deposits';
+import { rentalPaidSql } from './contract-deposits';
 import { chargeTotal } from '@/lib/management/contract-charges';
 import { CONTRACT_TYPES } from '@/lib/management/config';
 import { ContractTypeError, resolveDraftContractType, validContractTypeId } from './contract-types';
@@ -14,7 +14,7 @@ import type { ContractDraft } from '@/lib/management/contract-document';
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
 /** List/detail projection: omit per-row payment history (collections) and full draft blob for issued contracts. */
-export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_reference,
+function contractListSql(compact = false) { return `SELECT o.id, o.contract_number, o.draft_reference,
   COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
   o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
   o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
@@ -43,12 +43,11 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   staff.id AS staff_id, staff.full_name AS staff_name,
   COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),
     staff.full_name,
-    (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.id::text = o.draft_payload->'management_composer'->'draft'->>'staff_id'),
-    (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id ORDER BY p.id LIMIT 1)) AS representative_name,
+    saved_staff.full_name, fallback_staff.full_name) AS representative_name,
   CASE WHEN o.order_status='draft' THEN jsonb_build_object(
       'management_composer', o.draft_payload->'management_composer',
-      'order_items', o.draft_payload->'order_items')
-    ELSE jsonb_build_object('order_items', o.draft_payload->'order_items') END AS draft_payload,
+      'order_items', ${compact ? "'[]'::jsonb" : "o.draft_payload->'order_items'"})
+    ELSE ${compact ? "'{}'::jsonb" : "jsonb_build_object('order_items', o.draft_payload->'order_items')"} END AS draft_payload,
   o.contract_signed_on AS signed_on, o.contract_authorization_date AS authorization_date,
 
   o.contract_collateral_description AS collateral_description, o.customer_source, o.customer_source_url,
@@ -61,27 +60,41 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
     FROM himoto.transactions WHERE type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
     GROUP BY order_id
   ) company ON company.order_id=o.id
-  ${depositLateral()}
-  LEFT JOIN LATERAL (
-    SELECT p.id, p.full_name FROM himoto.staff_profiles p
-    WHERE p.user_id = o.contract_responsible_user_id
-      AND p.store_id = CASE
+  LEFT JOIN (
+    SELECT t.order_id,
+      SUM(t.value) FILTER (WHERE t.type IN ('in','addon') AND (t.name='order:deposit' OR t.name LIKE 'order:deposit:%')) AS paid,
+      SUM(t.value) FILTER (WHERE t.type='out' AND (t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%')) AS refunded
+    FROM himoto.transactions t WHERE t.status='approved' GROUP BY t.order_id
+  ) deposit_totals ON deposit_totals.order_id=o.id
+  CROSS JOIN LATERAL (SELECT COALESCE(deposit_totals.paid,0) AS paid,COALESCE(deposit_totals.refunded,0) AS refunded) dep
+  LEFT JOIN (
+    SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_profiles ORDER BY user_id,store_id,id
+  ) staff ON staff.user_id=o.contract_responsible_user_id AND staff.store_id=CASE
         WHEN COALESCE(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id','') ~ '^[0-9]+$'
         THEN (o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id')::bigint
         ELSE o.store_id END
-    ORDER BY p.id LIMIT 1
-  ) staff ON true
-  LEFT JOIN LATERAL (
-    SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
+  LEFT JOIN himoto.staff_profiles saved_staff ON saved_staff.id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'
+  LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_profiles ORDER BY user_id,id) fallback_staff ON fallback_staff.user_id=o.contract_responsible_user_id
+  LEFT JOIN (
+    SELECT d.order_id,json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license${compact ? '' : `,
       'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,
       'driver_license_issued_on', d.driver_license_issued_on, 'borrow_hats', d.borrow_hats,
-      'borrow_raincoats', d.borrow_raincoats, 'rent_at', d.rent_at, 'return_at', d.return_at, 'completed_at', d.completed_at) ORDER BY d.id) AS vehicles,
+      'borrow_raincoats', d.borrow_raincoats, 'rent_at', d.rent_at, 'return_at', d.return_at, 'completed_at', d.completed_at`} ) ORDER BY d.id) AS vehicles,
       min(d.rent_at) AS start_date, max(d.return_at) AS end_date
     FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
-    WHERE d.order_id = o.id AND d.deleted_at IS NULL
-  ) ov ON true
-  WHERE o.deleted_at IS NULL`;
+    WHERE d.deleted_at IS NULL GROUP BY d.order_id
+  ) ov ON ov.order_id=o.id
+  WHERE o.deleted_at IS NULL`; }
+
+export const CONTRACT_LIST_SQL = contractListSql();
+/** Filtering/summary fields only. Full document/customer/vehicle details are hydrated for the selected page. */
+export function contractTableSql(scopeClause: string) {
+  return `SELECT id,contract_number,draft_reference,rental_type,contract_type_id,contract_type_name,contract_type_months,
+    status,customer_id,customer_status,customer_name,customer_phone,store_id,store_name,store_kind,start_date,end_date,
+    total_amount,paid_amount,deposit_amount,return_adjustment_amount,company_paid_amount,company_payment_count,representative_name,draft_payload,vehicles
+    FROM (${contractListSql(true)}${scopeClause}) listing`;
+}
 
 export function contractListScopeClause(scope: string | null): string {
   switch (scope) {

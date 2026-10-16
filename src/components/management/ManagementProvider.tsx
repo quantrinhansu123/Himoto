@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState, useMemo, u
 import { usePathname } from 'next/navigation';
 import { createManagementRepository } from '@/lib/management/repository';
 import { ContractEdits, CustomerAssignment, EditableKind, ManagementDataset, ManagementKind, ManagementRepository, ManagementRow } from '@/lib/management/types';
-import { contractsQueryForPath, createManagementDataLoader, managementKindsForPath, ResourceState } from '@/lib/management/data-loader';
+import { createManagementDataLoader, managementKindsForPath, ResourceState } from '@/lib/management/data-loader';
 import { ContractAutofillRepository, createApiAutofillRepository } from '@/lib/management/contract-autofill';
 import { CustomerDetails } from '@/lib/management/contract-document';
 import { StoreCreation, StoreEdits } from '@/lib/management/store-management';
@@ -52,6 +52,7 @@ export function ManagementProvider({ children, canPayContracts = false }: { chil
   const { dataset, resources } = useSyncExternalStore(loader.subscribe, loader.getSnapshot, loader.getSnapshot);
   const pathname = usePathname();
   const requiredKinds = managementKindsForPath(pathname);
+  const pagedKind=pathname==='/customers'?'customers':pathname.startsWith('/contracts')&&!pathname.startsWith('/contracts/battery')&&!pathname.startsWith('/contracts/types')?'contracts':null;
   const loading = requiredKinds.some(kind => !resources[kind].loaded && !resources[kind].error);
   const refreshing = requiredKinds.some(kind => resources[kind].loaded && resources[kind].loading);
   const error = requiredKinds.map(kind => resources[kind].error).filter(Boolean).join(' ');
@@ -59,14 +60,18 @@ export function ManagementProvider({ children, canPayContracts = false }: { chil
   const [selectedStore, selectStore] = useState('all');
   const [notification, notify] = useState('');
 
-  const ensureData = useCallback((kinds: readonly ManagementKind[], force = false) => loader.ensure(kinds, force), [loader]);
+  const ensureData = useCallback((kinds: readonly ManagementKind[], force = false) => {
+    if(force&&pagedKind&&kinds.includes(pagedKind)){loader.invalidate([pagedKind]);return loader.ensure(kinds.filter(kind=>kind!==pagedKind),force);}
+    return loader.ensure(kinds, force);
+  }, [loader,pagedKind]);
   const invalidateData = useCallback((kinds: readonly ManagementKind[]) => loader.invalidate(kinds), [loader]);
   const reload = useCallback(async (kinds?: readonly ManagementKind[]) => {
-    const targets = kinds || requiredKinds.filter(kind => kind !== 'stores' || requiredKinds.length === 1 || !loader.getSnapshot().resources.stores.loaded || loader.getSnapshot().resources.stores.error);
+    if(pagedKind&&(!kinds||kinds.includes(pagedKind)))loader.invalidate([pagedKind]);
+    const targets = (kinds || requiredKinds.filter(kind => kind !== 'stores' || requiredKinds.length === 1 || !loader.getSnapshot().resources.stores.loaded || loader.getSnapshot().resources.stores.error)).filter(kind=>kind!==pagedKind);
     try { await loader.ensure(targets, true); } catch { /* Each failed resource exposes its own error and retry. */ }
-  }, [loader, requiredKinds]);
+  }, [loader, requiredKinds,pagedKind]);
   useEffect(() => {
-    if (pathname.startsWith('/contracts') && !pathname.startsWith('/contracts/battery')) loader.setContractsQuery(contractsQueryForPath(pathname));
+    loader.setContractsQuery('');
   }, [loader, pathname]);
   useEffect(() => { void ensureData(requiredKinds).catch(() => {}); }, [ensureData, requiredKinds, pathname]);
   useEffect(() => {
