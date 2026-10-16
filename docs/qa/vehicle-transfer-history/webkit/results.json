@@ -1,0 +1,13 @@
+{
+  "passed": 5,
+  "checks": [
+    "Today opens all vehicle transfers and receipts with time, actor and visible branch direction, without per-vehicle/fleet API calls",
+    "Pagination fetches the next server slice; applying origin/destination/action filters resets to the first page",
+    "Search and global branch selection reach the history API, preserving active date/action filters",
+    "Invalid ranges are blocked, empty results are distinct from load failures, and retry preserves user filters",
+    "At 320px cards retain full direction and audit changes without horizontal page overflow"
+  ],
+  "errors": [],
+  "requests": 8,
+  "realBusinessWrites": 0
+}

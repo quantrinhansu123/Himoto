@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { CONTRACT_DATA_KINDS, VEHICLE_DATA_KINDS } from '@/lib/management/data-loader';
 import { ManagementDataBoundary } from './ManagementDataBoundary';
 import { ArrowDownToLine, ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, ListFilter, Plus, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
@@ -236,7 +237,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           {kind === 'customers' && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}
           </ResponsiveDataActions>}
-          {kind === 'vehicles' && <button type="button" className="mg-button mg-mobile-status-action" disabled={loading || Boolean(error)} onClick={()=>setVehicleAction({mode:'status',vehicle:null})}><RefreshCw size={16}/>Đổi trạng thái xe</button>}
+          {kind === 'vehicles' && <><div className="mg-vehicle-flow-actions"><Link href="/vehicles/transfers" className="mg-button"><ArrowLeftRight size={16}/>Lịch sử luân chuyển</Link>
+            <button type="button" className="mg-button" disabled={loading || Boolean(error)} onClick={()=>setVehicleAction({mode:'transfer',vehicle:null})}><ArrowLeftRight size={16}/>Chuyển xe</button></div>
+            <button type="button" className="mg-button mg-mobile-status-action" disabled={loading || Boolean(error)} onClick={()=>setVehicleAction({mode:'status',vehicle:null})}><RefreshCw size={16}/>Đổi trạng thái xe</button></>}
           {kind === 'vehicles' && source === 'api' && <RowActionsMenu label="Hành động xe" triggerLabel={<>Hành động xe<ChevronDown size={16} /></>} disabled={loading || Boolean(error) || !dataset} actions={[
             { key: 'create', label: 'Nhập xe', icon: <Plus size={16} />, onSelect: () => { setEditing(null); setFormOpen(true); } },
             { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => setVehicleAction({ mode: 'transfer', vehicle: null }) },

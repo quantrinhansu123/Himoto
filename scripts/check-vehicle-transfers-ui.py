@@ -117,12 +117,17 @@ with sync_playwright() as p:
             expect(dialog.locator('tbody tr').first).to_be_visible()
         return dialog
 
-    action('Chuyển xe')
+    page.get_by_role('button', name='Chuyển xe', exact=True).click()
     dialog = page.get_by_role('dialog', name='Chuyển xe', exact=True)
+    dialog.locator('#vehicle-action-vehicle').fill('QA-701 — Xe chuyển QA')
+    expect(dialog.locator('#vehicle-action-from')).to_have_value('Cơ sở đi QA')
+    expect(dialog.locator('#vehicle-action-at')).to_have_attribute('readonly', '')
+    expect(dialog.locator('#vehicle-action-actor')).to_have_attribute('readonly', '')
     expect(dialog.get_by_text('Khi lưu, xe chuyển sang Chờ luân chuyển tại cơ sở đích.', exact=False)).to_be_visible()
     expect(dialog.locator('#vehicle-action-to option[value="31"]')).to_have_count(0)
     dialog.locator('#vehicle-action-to').select_option('32')
     dialog.locator('#vehicle-action-note').fill('Giao xe theo yêu cầu QA')
+    dialog.screenshot(path=str(out / 'transfer-popup.png'))
     dialog.get_by_role('button', name='Chuyển xe', exact=True).click()
     expect(dialog.get_by_role('alert')).to_have_text('Không lưu được thao tác xe QA.')
     expect(dialog.locator('#vehicle-action-to')).to_have_value('32')

@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, House, KeyRound, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
+import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
 import { canRecordContractPayment } from '@/lib/management/permissions';
@@ -26,6 +26,7 @@ const navigation = [
   { href: '/contracts/types', label: 'Loại hợp đồng', kind: 'contract-types' as const, icon: Files },
   { href: '/stores', label: 'Cơ sở', kind: 'stores' as const, icon: Building2 },
   { href: '/vehicles', label: 'Danh sách xe', kind: 'vehicles' as const, icon: Bike },
+  { href: '/vehicles/transfers', label: 'Lịch sử luân chuyển', kind: 'vehicle-transfers' as const, icon: History },
   { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook' as const, icon: Wallet },
 ];
 
