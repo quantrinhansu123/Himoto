@@ -46,11 +46,13 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
     setStatus(reset.status); setStoreId(reset.storeId); setError('');
   }
   const rented = (() => { try { return JSON.parse(String(selected?.rentals_json || '[]')).length > 0; } catch { return false; } })();
+  const transferBlocked = mode === 'transfer' && Boolean(selected) && currentStatus !== 'ready';
   const title = mode === 'transfer' ? 'Chuyển xe' : 'Đổi trạng thái';
 
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy.current) return;
     if (!selected) return setError('Chọn xe cần thao tác.');
+    if (transferBlocked) return setError('Chỉ chuyển xe đang Lưu kho. Kiểm tra trạng thái xe rồi thao tác lại.');
     if (mode === 'transfer' && !storeId) return setError('Chọn cơ sở chuyển đến.');
     if (mode === 'transfer' && storeId === String(selected.store_id)) return setError('Xe đang ở cơ sở này. Chọn cơ sở khác.');
     if (mode === 'status' && status !== 'ready' && status !== 'using') return setError('Chọn trạng thái Đang thuê hoặc Lưu kho.');
@@ -59,10 +61,11 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
     if (mode === 'status' && status === 'using' && (!customer.name.trim() || !customer.phone.trim() || !customer.idCard.trim())) return setError('Nhập tên, số điện thoại và CCCD của khách thuê.');
     busy.current = true; setSaving(true); setError('');
     try {
-      const saved = await applyVehicleAction(selected.id, mode === 'transfer' ? { action: 'transfer', to_store_id: storeId, note }
-        : { action: 'status', status: status as 'ready' | 'using', beneficiary_store_id: storeId, customer_name: customer.name, customer_phone: customer.phone, customer_id_card: customer.idCard, note });
+      const revision=selected.vehicle_revision ? String(selected.vehicle_revision) : undefined;
+      const saved = await applyVehicleAction(selected.id, mode === 'transfer' ? { action: 'transfer', to_store_id: storeId, note, revision }
+        : { action: 'status', status: status as 'ready' | 'using', beneficiary_store_id: storeId, customer_name: customer.name, customer_phone: customer.phone, customer_id_card: customer.idCard, note, revision });
       await ensureData(saved.customer ? ['vehicles', 'customers', 'contracts'] : ['vehicles'], true).catch(() => {});
-      notify(mode === 'transfer' ? `Đã chuyển xe ${selected.license}.` : `Đã đổi trạng thái xe ${selected.license}.`);
+      notify(mode === 'transfer' ? `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${stores.find(store=>String(store.id)===storeId)?.name || 'cơ sở đích'}. Đã lưu lịch sử.` : `Đã đổi trạng thái xe ${selected.license}.`);
       if (saved.draft) setResult(saved); else onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được thao tác xe.'); }
     finally { busy.current = false; setSaving(false); }
@@ -86,12 +89,14 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <input id="vehicle-action-vehicle" list="vehicle-action-options" value={picked} disabled={saving || Boolean(vehicle)} placeholder="Nhập biển số hoặc tên xe…" onChange={event => pick(event.target.value)} />
         <datalist id="vehicle-action-options">{vehicles.map(row => <option key={row.id} value={vehicleOption(row)} />)}</datalist>
         {selected && <small>Hiện tại: {optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)} · {String(selected.store_name || '—')}</small>}
-        {rented && <small className="mg-field-error">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng trước khi {mode === 'transfer' ? 'chuyển xe' : 'đổi trạng thái'}.</small>}</div>
+        {rented && <small className="mg-field-error">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng trước khi {mode === 'transfer' ? 'chuyển xe' : 'đổi trạng thái'}.</small>}
+        {transferBlocked && !rented && <small className="mg-field-error">Chỉ chuyển xe đang Lưu kho.</small>}</div>
       {mode === 'transfer' ? <>
         <div className="mg-field"><label htmlFor="vehicle-action-from">Cơ sở hiện tại</label><input id="vehicle-action-from" value={String(selected?.store_name || '')} readOnly disabled /></div>
         <div className="mg-field"><label htmlFor="vehicle-action-to">Chuyển đến cơ sở<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-to" value={storeId} disabled={saving} onChange={event => setStoreId(event.target.value)}>
             <option value="">Chọn cơ sở</option>{stores.filter(store => String(store.id) !== String(selected?.store_id)).map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
+        <p className="mg-composer-hint mg-field-wide">Khi lưu, xe chuyển sang Chờ luân chuyển tại cơ sở đích. Khi nhận xe, dùng Đổi trạng thái → Lưu kho. Mỗi thao tác đều được ghi vào Lịch sử.</p>
       </> : <>
         <div className="mg-field"><label htmlFor="vehicle-action-status">Trạng thái<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-status" value={status} disabled={saving || !selected} onChange={event => setStatus(event.target.value)}>
@@ -113,7 +118,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <textarea id="vehicle-action-note" value={note} maxLength={500} disabled={saving} onChange={event => setNote(event.target.value)} /></div>
     </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
       <div className="mg-dialog-footer"><span className="mg-form-note">Ngày giờ và người nhập được ghi tự động khi lưu.</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
-        <button type="submit" className="mg-button mg-button-primary" disabled={saving || !selected || rented}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : title}</button></div>
+        <button type="submit" className="mg-button mg-button-primary" disabled={saving || !selected || rented || transferBlocked}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : title}</button></div>
     </form>
   </Dialog>;
 }

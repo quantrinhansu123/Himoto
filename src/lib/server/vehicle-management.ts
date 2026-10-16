@@ -1,10 +1,11 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import { VEHICLE_STATUSES, VEHICLE_TYPES } from '@/lib/management/config';
+import { vehicleRevision, writeVehicleAudit } from './vehicle-audit';
 
 type Client = Pick<PoolClient, 'query'>;
 export class VehicleSaveError extends Error { constructor(message: string, public status = 400) { super(message); } }
-export interface VehicleValues { name: string; license: string; brand: string; type: string; year: number; store_id: number; status: string; color: string; chassis: string; engine: string; odometer: number | null; note: string }
+export interface VehicleValues { name: string; license: string; brand: string; type: string; year: number; store_id: number; status: string; color: string; chassis: string; engine: string; odometer: number | null; note: string; revision?: string }
 
 const text = (value: unknown, label: string, max: number, required = false) => {
   const result = typeof value === 'string' ? value.trim() : value == null ? '' : null;
@@ -17,6 +18,8 @@ const integer = (value: unknown) => value == null || value === '' ? null : Numbe
 export function parseVehicleValues(body: unknown): VehicleValues {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new VehicleSaveError('Thông tin xe không hợp lệ.');
   const raw = body as Record<string, unknown>;
+  let revision: string | undefined;
+  try { revision=vehicleRevision(raw.revision); } catch { throw new VehicleSaveError('Phiên bản thông tin xe không hợp lệ.'); }
   const type = String(raw.type || ''), status = String(raw.status || '');
   if (!VEHICLE_TYPES.some(option => option.value === type)) throw new VehicleSaveError('Chọn loại xe hợp lệ.');
   if (!VEHICLE_STATUSES.some(option => option.value === status)) throw new VehicleSaveError('Chọn trạng thái xe hợp lệ.');
@@ -25,7 +28,7 @@ export function parseVehicleValues(body: unknown): VehicleValues {
   if (storeId === null || Number.isNaN(storeId) || storeId <= 0) throw new VehicleSaveError('Chọn cơ sở cho xe.');
   if (Number.isNaN(odometer) || (odometer !== null && odometer < 0)) throw new VehicleSaveError('Số km phải là số nguyên không âm.');
   return { name: text(raw.name, 'Tên xe', 255, true), license: text(raw.license, 'Biển số', 25, true).toUpperCase(), brand: text(raw.brand, 'Hãng xe', 255, true),
-    type, year, store_id: storeId, status, color: text(raw.color, 'Màu sắc', 255), chassis: text(raw.chassis, 'Số khung', 255), engine: text(raw.engine, 'Số máy', 255), odometer, note: text(raw.note, 'Ghi chú', 500) };
+    type, year, store_id: storeId, status, color: text(raw.color, 'Màu sắc', 255), chassis: text(raw.chassis, 'Số khung', 255), engine: text(raw.engine, 'Số máy', 255), odometer, note: text(raw.note, 'Ghi chú', 500), ...(revision?{revision}:{}) };
 }
 
 // Inventory may record a checkout before the source branch enters the contract.
@@ -38,7 +41,7 @@ async function checkVehicle(client: Client, values: VehicleValues, id: number | 
     if (open.rowCount && values.status !== (currentStatus === 'rent' ? 'using' : currentStatus)) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng để đổi trạng thái.');
     if (open.rowCount && String(values.store_id) !== String(currentStoreId)) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở, không được đổi cơ sở quản lý xe.');
   }
-  const store = await client.query('SELECT 1 FROM himoto.stores WHERE id=$1', [values.store_id]);
+  const store = await client.query('SELECT 1 FROM himoto.stores WHERE id=$1 FOR SHARE', [values.store_id]);
   if (!store.rowCount) throw new VehicleSaveError('Cơ sở đã chọn không còn tồn tại.');
   const duplicate = await client.query('SELECT id FROM himoto.vehicles WHERE upper(btrim(license))=$1 AND ($2::bigint IS NULL OR id<>$2) LIMIT 1', [values.license, id]);
   if (duplicate.rowCount) throw new VehicleSaveError(`Biển số ${values.license} đã có trong danh sách xe.`, 409);
@@ -52,35 +55,23 @@ export async function createDatabaseVehicle(client: Client, values: VehicleValue
     VALUES ($1,$2,$3,$4,$5,$5,$6,NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,$11,0,$12,now(),now()) RETURNING id`,
     [values.name, values.brand, values.type, values.year, values.store_id, values.license, values.color, values.chassis, values.engine, values.status, values.odometer, actorId]);
   const id = Number(result.rows[0].id);
-  if (values.note) await logVehicleEvent(client, { vehicleId: id, fromStoreId: values.store_id, toStoreId: values.store_id, type: 'note', refType: null, odometer: values.odometer, notes: values.note, actorId });
+  if (values.note) await writeVehicleAudit(client, {vehicleId:id,before:{...values},after:{...values},type:'note',note:values.note,actorId});
   return { id };
-}
-
-const statusLabel = (value: string) => VEHICLE_STATUSES.find(option => option.value === value)?.label || value;
-
-// vehicle_location_events.created_at is a local (Asia/Ho_Chi_Minh) timestamp, as written by the legacy app.
-async function logVehicleEvent(client: Client, event: { vehicleId: number; fromStoreId: unknown; toStoreId: unknown; type: string; refType: string | null; odometer: number | null; notes: string; actorId: number }) {
-  await client.query(`INSERT INTO himoto.vehicle_location_events (vehicle_id,from_store_id,to_store_id,event_type,ref_type,odometer,notes,created_by,created_at,updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,now() AT TIME ZONE 'Asia/Ho_Chi_Minh',now() AT TIME ZONE 'Asia/Ho_Chi_Minh')`,
-    [event.vehicleId, event.fromStoreId ?? null, event.toStoreId ?? null, event.type, event.refType, event.odometer, event.notes, event.actorId]);
 }
 
 // Cơ sở on the list is where the vehicle is now (current_store_id); the original store_id is kept.
 export async function updateDatabaseVehicle(client: Client, id: number, values: VehicleValues, actorId: number) {
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query('LOCK TABLE himoto.vehicles IN SHARE ROW EXCLUSIVE MODE');
-  const current = await client.query('SELECT status, COALESCE(current_store_id,store_id) AS store_id FROM himoto.vehicles WHERE id=$1 FOR UPDATE', [id]);
+  const current = await client.query('SELECT v.*, COALESCE(v.current_store_id,v.store_id) AS store_id,v.xmin::text AS revision FROM himoto.vehicles v WHERE v.id=$1 FOR UPDATE', [id]);
   if (!current.rowCount) throw new VehicleSaveError('Không tìm thấy xe. Nhấn Làm mới để kiểm tra.', 404);
+  if(values.revision&&values.revision!==current.rows[0].revision)throw new VehicleSaveError('Thông tin xe đã thay đổi. Nhấn Làm mới rồi mở lại form chỉnh sửa.',409);
   await checkVehicle(client, values, id, current.rows[0].store_id, String(current.rows[0].status));
   await client.query(`UPDATE himoto.vehicles SET name=$2, brand=$3, type=$4, year=$5, current_store_id=$6, license=$7, color=NULLIF($8,''), chassis=NULLIF($9,''),
     engine=NULLIF($10,''), status=$11, odometer=$12, updated_at=now() WHERE id=$1`,
     [id, values.name, values.brand, values.type, values.year, values.store_id, values.license, values.color, values.chassis, values.engine, values.status, values.odometer]);
-  const before = current.rows[0], oldStatus = String(before.status);
-  const storeChanged = String(before.store_id) !== String(values.store_id), statusChanged = oldStatus !== values.status;
-  const base = { vehicleId: id, fromStoreId: before.store_id, toStoreId: values.store_id, odometer: values.odometer, actorId };
-  if (storeChanged) await logVehicleEvent(client, { ...base, type: 'manual_transfer', refType: null, notes: statusChanged ? '' : values.note });
-  if (statusChanged) await logVehicleEvent(client, { ...base, fromStoreId: values.store_id, type: 'status_change', refType: values.status,
-    notes: [`${statusLabel(oldStatus)} → ${statusLabel(values.status)}`, values.note].filter(Boolean).join(' · ') });
-  if (!storeChanged && !statusChanged && values.note) await logVehicleEvent(client, { ...base, type: 'note', refType: null, notes: values.note });
+  const before=current.rows[0],statusChanged=String(before.status)!==values.status;
+  await writeVehicleAudit(client,{vehicleId:id,before,after:{...before,...values},actorId,note:values.note,
+    type:statusChanged?'status_change':'vehicle_edit',refType:statusChanged?values.status:null});
   return { id };
 }

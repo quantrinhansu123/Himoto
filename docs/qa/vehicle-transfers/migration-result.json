@@ -1,0 +1,13 @@
+{
+  "appliedAt": "2026-10-16T12:47:31.577Z",
+  "migration": "2026-10-16-vehicle-audit.sql",
+  "sha256": "34dc1f13fe51c6053411869ddb3b4c909b60f135adc4341c895e4e78df5a4b6b",
+  "column": {
+    "data_type": "jsonb",
+    "is_nullable": "YES"
+  },
+  "historyRowsBefore": 66,
+  "historyRowsAfter": 66,
+  "businessUpdateStatements": 0,
+  "legacyWritersCompatible": true
+}

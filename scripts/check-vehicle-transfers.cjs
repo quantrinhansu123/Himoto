@@ -1,0 +1,117 @@
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+require('@next/env').loadEnvConfig(path.resolve(__dirname,'..'),false,{info(){},error(){}});
+const {load,root}=require('./lib/load-typescript.cjs');
+const {applyVehicleAction,parseVehicleAction,VehicleActionError}=load(path.join(root,'lib/server/vehicle-actions'));
+const {updateDatabaseVehicle,parseVehicleValues,VehicleSaveError}=load(path.join(root,'lib/server/vehicle-management'));
+const {readVehicleHistory}=load(path.join(root,'lib/server/vehicle-history'));
+const pool=load(path.join(root,'lib/server/himoto-database')).himotoPool;
+const checks=[];
+async function main(){
+  const c=await pool.connect();
+  const tables=['vehicles','vehicle_location_events','stores','users','customers','orders','order_vehicle_details','staff_profiles','transactions','vehicle_transfers','activity_logs','management_contract_vehicle_swaps'];
+  let failAudit=false;
+  const proxy={query(sql,params){
+    let query=sql;for(const table of tables)query=query.replaceAll(`himoto.${table}`,`pg_temp.qa_transfer_${table}`);
+    assert(!query.includes('himoto.'),'Every business query must target TEMP tables');
+    if(query.includes('pg_advisory_xact_lock'))return c.query('SELECT 1'); // Isolated TEMP fixtures need no shared production advisory lock.
+    if(failAudit&&query.startsWith('INSERT INTO pg_temp.qa_transfer_vehicle_location_events'))throw Error('Simulated audit write failure');
+    return c.query(query,params);
+  }};
+  const attempt=async work=>{await c.query('SAVEPOINT transfer_case');try{const result=await work();await c.query('RELEASE SAVEPOINT transfer_case');return result;}catch(error){await c.query('ROLLBACK TO SAVEPOINT transfer_case');await c.query('RELEASE SAVEPOINT transfer_case');throw error;}};
+  const vehicle=async id=>(await c.query('SELECT *,xmin::text AS revision FROM qa_transfer_vehicles WHERE id=$1',[id])).rows[0];
+  const count=async()=>Number((await c.query('SELECT count(*) AS n FROM qa_transfer_vehicle_location_events')).rows[0].n);
+  try{
+    await c.query('BEGIN');
+    await c.query('CREATE TEMP TABLE qa_transfer_migration (id bigint,notes text) ON COMMIT DROP');
+    await c.query("INSERT INTO qa_transfer_migration(id,notes) VALUES(1,'Lịch sử giữ nguyên QA')");
+    const migration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-16-vehicle-audit.sql'),'utf8')
+      .replaceAll('himoto.vehicle_location_events','pg_temp.qa_transfer_migration').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
+    await c.query(migration);await c.query(migration);
+    assert.equal((await c.query('SELECT audit_snapshot FROM qa_transfer_migration WHERE id=1')).rows[0].audit_snapshot,null);
+    assert.equal((await c.query('SELECT notes FROM qa_transfer_migration WHERE id=1')).rows[0].notes,'Lịch sử giữ nguyên QA');
+    checks.push('Additive audit migration is idempotent and leaves legacy history intact with NULL snapshots');
+    for(const table of tables){
+      if(!(await c.query('SELECT to_regclass($1) IS NOT NULL AS ready',[`himoto.${table}`])).rows[0].ready)continue;
+      await c.query(`CREATE TEMP TABLE qa_transfer_${table} (LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS) ON COMMIT DROP`);
+      const serial=(await c.query("SELECT 1 FROM information_schema.columns WHERE table_schema='himoto' AND table_name=$1 AND column_name='id' AND column_default LIKE 'nextval%'",[table])).rowCount;
+      // Never consume a real sequence through copied defaults.
+      if(serial){await c.query(`CREATE TEMP SEQUENCE qa_transfer_${table}_seq START 10000`);await c.query(`ALTER TABLE qa_transfer_${table} ALTER COLUMN id SET DEFAULT nextval('pg_temp.qa_transfer_${table}_seq')`);}
+    }
+    await c.query('ALTER TABLE qa_transfer_vehicle_location_events ADD COLUMN IF NOT EXISTS audit_snapshot jsonb');
+    await c.query("INSERT INTO qa_transfer_users(id,name,email,password,role_id) VALUES(143,'Người thao tác QA','qa-transfer@example.invalid','unused',1)");
+    await c.query("INSERT INTO qa_transfer_stores(id,store_name) VALUES(31,'Cơ sở đi QA'),(32,'Cơ sở đến QA'),(33,'Cơ sở khác QA')");
+    for(const [id,status]of [[101,'ready'],[102,'ready'],[103,'ready'],[104,'repairing'],[105,'using'],[106,'sold'],[107,'ready']]){
+      await c.query(`INSERT INTO qa_transfer_vehicles(id,name,brand,type,year,store_id,current_store_id,license,color,status,odometer,created_by,created_at)
+        VALUES($1,'Xe QA','Honda','xeso',2024,31,31,$2,'Đỏ',$3,1000,143,now())`,[id,`QA-${id}`,status]);
+    }
+    const before=await vehicle(101);
+    const result=await attempt(()=>applyVehicleAction(proxy,101,parseVehicleAction({action:'transfer',to_store_id:32,note:'Chuyển theo yêu cầu QA',revision:before.revision,created_by:999}),143));
+    const after=await vehicle(101),event=(await c.query('SELECT * FROM qa_transfer_vehicle_location_events WHERE id=$1',[result.event_id])).rows[0];
+    assert.equal(after.status,'in_transit');assert.equal(Number(after.current_store_id),32);assert.equal(Number(after.store_id),31);
+    assert.equal(Number(event.from_store_id),31);assert.equal(Number(event.to_store_id),32);assert.equal(Number(event.created_by),143);assert(event.created_at);
+    assert.equal(event.audit_snapshot.actor_name,'Người thao tác QA');assert.equal(event.notes,'Chuyển theo yêu cầu QA');
+    const changes=event.audit_snapshot.changes;
+    assert.deepEqual(changes.find(change=>change.field==='status'),{field:'status',label:'Trạng thái',from:'Lưu kho',to:'Chờ luân chuyển',from_value:'ready',to_value:'in_transit'});
+    assert.equal(changes.find(change=>change.field==='store_id').from,'Cơ sở đi QA');assert.equal(changes.find(change=>change.field==='store_id').to,'Cơ sở đến QA');
+    checks.push('Transfer atomically changes current branch and ready → in_transit, preserves original owner, and stores authenticated actor/time plus structured old/new values');
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,{action:'transfer',to_store_id:33,note:'',revision:before.revision},143)),e=>e instanceof VehicleActionError&&e.status===409);
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,{action:'transfer',to_store_id:33,note:''},143)),e=>e instanceof VehicleActionError&&e.status===409);
+    assert.equal(await count(),1);assert.equal(Number((await vehicle(101)).current_store_id),32);
+    for(const [id,target]of [[102,31],[102,999],[999,32],[104,32],[105,32],[106,32]])await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,id,{action:'transfer',to_store_id:target,note:''},143)),VehicleActionError);
+    assert.equal(await count(),1);
+    checks.push('Duplicate/stale transfers, same/missing destination, missing vehicle and non-stock states produce no extra history or state change');
+    const clean=await vehicle(102),oldCount=await count();failAudit=true;
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,102,{action:'transfer',to_store_id:32,note:''},143)),/Simulated audit/);
+    failAudit=false;assert.equal((await vehicle(102)).status,clean.status);assert.equal((await vehicle(102)).current_store_id,clean.current_store_id);assert.equal(await count(),oldCount);
+    checks.push('A failed audit insert rolls back the transfer, destination and status together');
+    await c.query("INSERT INTO qa_transfer_orders(id,store_id,order_status,order_mode,pid) VALUES(201,31,'renting','standard',0)");
+    await c.query('INSERT INTO qa_transfer_order_vehicle_details(id,order_id,vehicle_id) VALUES(301,201,103)');
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,103,{action:'transfer',to_store_id:32,note:''},143)),e=>e instanceof VehicleActionError&&e.status===409);
+    assert.equal((await vehicle(103)).status,'ready');assert.equal(await count(),oldCount);
+    checks.push('An open rental blocks transfer even if an old inventory status still says ready');
+    const ready={action:'status',status:'ready',beneficiary_store_id:32,customer_name:'',customer_phone:'',customer_id_card:'',note:'Đã nhận xe QA',revision:(await vehicle(101)).revision};
+    await attempt(()=>applyVehicleAction(proxy,101,ready,143));assert.equal((await vehicle(101)).status,'ready');
+    const received=(await c.query('SELECT audit_snapshot FROM qa_transfer_vehicle_location_events ORDER BY id DESC LIMIT 1')).rows[0].audit_snapshot;
+    assert.equal(received.changes.find(change=>change.field==='status').from,'Chờ luân chuyển');assert.equal(received.changes.find(change=>change.field==='status').to,'Lưu kho');
+    checks.push('Marking the received vehicle as ready retains the destination and logs pending transfer → stock');
+    const edit=parseVehicleValues({name:'Xe đã sửa QA',brand:'Honda mới',license:'qa-new-101',type:'xega',year:2025,store_id:32,status:'ready',color:'Xanh',chassis:'Khung QA',engine:'Máy QA',odometer:1500,note:'Ghi chú sửa QA',revision:(await vehicle(101)).revision});
+    await attempt(()=>updateDatabaseVehicle(proxy,101,edit,143));
+    const edited=(await c.query('SELECT * FROM qa_transfer_vehicle_location_events ORDER BY id DESC LIMIT 1')).rows[0];
+    assert.equal(edited.event_type,'vehicle_edit');
+    assert.deepEqual(edited.audit_snapshot.changes.map(change=>change.field).sort(),['name','brand','license','type','year','color','chassis','engine','odometer'].sort());
+    assert.equal(edited.audit_snapshot.changes.find(change=>change.field==='odometer').from,'1000');assert.equal(edited.audit_snapshot.changes.find(change=>change.field==='odometer').to,'1500');
+    const editCount=await count();
+    await assert.rejects(()=>attempt(()=>updateDatabaseVehicle(proxy,101,edit,143)),e=>e instanceof VehicleSaveError&&e.status===409);assert.equal(await count(),editCount);
+    checks.push('Editing vehicle fields logs every changed value in one record; stale forms cannot overwrite a newer edit');
+    failAudit=true;
+    await assert.rejects(()=>attempt(()=>updateDatabaseVehicle(proxy,101,{...edit,color:'Trắng',revision:undefined},143)),/Simulated audit/);
+    failAudit=false;assert.equal((await vehicle(101)).color,'Xanh');assert.equal(await count(),editCount);
+    await c.query("UPDATE qa_transfer_users SET name='Tên mới QA' WHERE id=143");
+    await c.query("UPDATE qa_transfer_stores SET store_name='Cơ sở đã đổi tên QA' WHERE id=32");
+    const history=await readVehicleHistory(proxy,101),transfer=history.find(row=>row.key===`event-${result.event_id}`);
+    assert.equal(transfer.actor,'Người thao tác QA');assert.equal(transfer.beneficiary_store,'Cơ sở đến QA');assert.equal(transfer.license,'QA-101');assert.equal(transfer.vehicle_name,'Xe QA');
+    assert.equal(history.find(row=>row.key===`event-${edited.id}`).action,'edit');
+    await c.query("INSERT INTO qa_transfer_vehicle_location_events(vehicle_id,event_type,from_store_id,to_store_id,notes,created_by,created_at) VALUES(101,'manual_transfer',31,32,'Lịch sử cũ QA',143,now() AT TIME ZONE 'Asia/Ho_Chi_Minh')");
+    const legacy=(await readVehicleHistory(proxy,101)).find(row=>row.note==='Lịch sử cũ QA');assert(legacy);assert.equal(legacy.changes,undefined);
+    checks.push('Edit audit failure rolls back changes; history keeps original actor/branch/plate names after later edits and preserves legacy entries without inventing old values');
+    const checkout={action:'status',status:'using',beneficiary_store_id:32,customer_name:'Khách trạng thái QA',customer_phone:'0900000077',customer_id_card:'001234567877',note:'Giao xe QA'};
+    const checked=await attempt(()=>applyVehicleAction(proxy,102,parseVehicleAction(checkout),143));
+    assert(checked.customer.created&&checked.draft.id);assert.equal((await vehicle(102)).status,'using');
+    const checkedLog=(await c.query('SELECT audit_snapshot,ref_id FROM qa_transfer_vehicle_location_events WHERE id=$1',[checked.event_id])).rows[0];
+    assert.equal(Number(checkedLog.ref_id),checked.draft.id);assert.equal(checkedLog.audit_snapshot.changes.find(change=>change.field==='beneficiary_store_id').to,'Cơ sở đã đổi tên QA');
+    const customersBefore=(await c.query('SELECT count(*) AS n FROM qa_transfer_customers')).rows[0].n;
+    const draftsBefore=(await c.query('SELECT count(*) AS n FROM qa_transfer_orders')).rows[0].n;
+    failAudit=true;
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,107,parseVehicleAction({...checkout,customer_phone:'0900000078',customer_id_card:'001234567878'}),143)),/Simulated audit/);
+    failAudit=false;
+    assert.equal((await vehicle(107)).status,'ready');
+    assert.equal((await c.query('SELECT count(*) AS n FROM qa_transfer_customers')).rows[0].n,customersBefore);
+    assert.equal((await c.query('SELECT count(*) AS n FROM qa_transfer_orders')).rows[0].n,draftsBefore);
+    checks.push('Existing checkout still creates its customer/draft and records beneficiary changes; audit failure rolls back the vehicle, new customer and draft together');
+    assert.throws(()=>parseVehicleAction({action:'transfer',to_store_id:32,revision:123}),VehicleActionError);
+    assert.throws(()=>parseVehicleValues({...edit,revision:'invalid'}),VehicleSaveError);
+    await c.query('ROLLBACK');
+  }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
+  console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0},null,2));
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

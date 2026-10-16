@@ -19,7 +19,7 @@ const SECTIONS = [
   { id: 'history', label: 'Lịch sử' },
 ] as const;
 type VehicleSection = (typeof SECTIONS)[number]['id'];
-const ACTION_TONE: Record<VehicleEventAction, string> = { rent: 'blue', return: 'green', transfer: 'amber', repair: 'red', status: 'gray', swap: 'amber', note: 'gray', create: 'green' };
+const ACTION_TONE: Record<VehicleEventAction, string> = { rent: 'blue', return: 'green', transfer: 'amber', repair: 'red', status: 'gray', swap: 'amber', note: 'gray', create: 'green', edit:'gray' };
 
 export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction }: { row: ManagementRow; config: ManagementConfig; canEdit: boolean; onEdit: () => void; onClose: () => void; onAction: (mode: VehicleActionMode) => void }) {
   const { source } = useManagement();
@@ -46,6 +46,11 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
   }
   const shown = (events || []).filter(event => !action || event.action === action);
   const dash = (value: string) => value || '—';
+  const content = (event:VehicleEvent) => <div className="mg-vehicle-audit-content">
+    {Boolean(event.changes?.length) && <ul>{event.changes!.map(change=><li key={change.field}><strong>{change.label}: </strong><span>{dash(change.from)}</span><span aria-label="thành"> → </span><span>{dash(change.to)}</span></li>)}</ul>}
+    {event.note && <p>{event.order_id ? <Link href={`/contracts?contract_id=${event.order_id}`} onClick={onClose}>{event.note}</Link> : event.note}</p>}
+    {!event.changes?.length && !event.note && (event.action==='edit'?'Không có trường thay đổi.':'—')}
+  </div>;
 
   return <Dialog title={String(row.name)} subtitle={`${row.license || row.code} · ${config.title}`} className="mg-customer-detail mg-vehicle-detail" onClose={onClose}>
     <div className="mg-dialog-body">
@@ -57,7 +62,7 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
           {config.fields.filter(field => !config.columns.some(column => column.key === field.key) && field.key !== 'store_id').map(field => <div key={field.key}><dt>{field.label}</dt><dd>{row[field.key] || '—'}</dd></div>)}</dl>
       </>)}
       {panel('history', <>
-        <div className="mg-contract-history-toolbar"><p>Thuê, trả xe, chuyển kho, sửa chữa và thay đổi trạng thái của xe.</p>
+        <div className="mg-contract-history-toolbar"><p>Ngày giờ, người thao tác và các trường đã đổi từ giá trị cũ → mới. Lịch sử cũ giữ nội dung đã ghi nhận.</p>
           <div className="mg-vehicle-history-actions">
             <select aria-label="Lọc hành động" value={action} onChange={event => setAction(event.target.value as VehicleEventAction | '')}>
               <option value="">Tất cả hành động</option>{VEHICLE_EVENT_ACTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
@@ -69,9 +74,9 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
         {events && shown.length > 0 && <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{shown.map(event => <MobileDetailsCard key={event.key} title={event.label}
           summary={<><span>{formatDateTime(event.at || '')}</span><span>{dash(event.location)}</span></>}
           fields={[["Tên xe", dash(event.vehicle_name)], ["Biển số", dash(event.license)], ["Vị trí", dash(event.location)], ["Cơ sở phụ trách", dash(event.responsible_store)], ["Cơ sở sử dụng xe", dash(event.beneficiary_store)],
-            ["Ghi chú", event.order_id ? <Link href={`/contracts?contract_id=${event.order_id}`} onClick={onClose}>{dash(event.note)}</Link> : dash(event.note)], ["Ngày giờ", formatDateTime(event.at || '')], ["Người tạo", dash(event.actor)]]} />)}</ul></div>}
+            ["Nội dung thao tác", content(event)], ["Ngày giờ", formatDateTime(event.at || '')], ["Người thao tác", dash(event.actor)]]} />)}</ul></div>}
         {events && (shown.length ? <div className="mg-table-scroll mg-desktop-records"><table className="mg-table mg-vehicle-history-table">
-          <thead><tr><th>Hành động</th><th>Tên xe</th><th>Biển số</th><th>Vị trí</th><th>Cơ sở phụ trách</th><th>Cơ sở sử dụng xe</th><th>Ghi chú</th><th>Ngày giờ</th><th>Người tạo</th></tr></thead>
+          <thead><tr><th>Hành động</th><th>Tên xe</th><th>Biển số</th><th>Vị trí</th><th>Cơ sở phụ trách</th><th>Cơ sở sử dụng xe</th><th>Nội dung thao tác</th><th>Ngày giờ</th><th>Người thao tác</th></tr></thead>
           <tbody>{shown.map(event => <tr key={event.key}>
             <td><span className={`mg-status mg-status-${ACTION_TONE[event.action]}`}><span />{event.label}</span></td>
             <td>{dash(event.vehicle_name)}</td>
@@ -79,7 +84,7 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
             <td>{dash(event.location)}</td>
             <td>{dash(event.responsible_store)}</td>
             <td>{dash(event.beneficiary_store)}</td>
-            <td className="mg-vehicle-history-note">{event.order_id ? <Link href={`/contracts?contract_id=${event.order_id}`} onClick={onClose}>{dash(event.note)}</Link> : dash(event.note)}</td>
+            <td className="mg-vehicle-history-note">{content(event)}</td>
             <td>{formatDateTime(event.at || '')}</td>
             <td>{dash(event.actor)}</td>
           </tr>)}</tbody></table></div> : <p className="mg-contract-history-state">{action ? 'Không có hành động nào khớp bộ lọc.' : 'Xe chưa có lịch sử.'}</p>)}

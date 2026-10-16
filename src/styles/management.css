@@ -3475,6 +3475,10 @@
 }
 .mg-vehicle-history-table { min-width: 1180px; }
 .mg-vehicle-history-note { white-space: normal; min-width: 220px; max-width: 320px; }
+.mg-vehicle-audit-content { overflow-wrap: anywhere; }
+.mg-vehicle-audit-content ul { margin: 0; padding-left: 16px; }
+.mg-vehicle-audit-content li + li { margin-top: 5px; }
+.mg-vehicle-audit-content p { margin: 6px 0 0; }
 .mg-vehicle-history-actions { display: flex; gap: 8px; align-items: center; }
 .mg-vehicle-history-actions select { height: 36px; padding: 0 10px; border: 1px solid var(--mg-line); border-radius: 8px; background: #fff; font: inherit; font-size: 13px; }
 .mg-document-requirements { margin: 16px 0; padding: 12px; border: 1px solid var(--mg-line); border-radius: 10px; }

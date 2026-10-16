@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { VehicleEvent, VehicleEventAction } from '@/lib/management/vehicle-history';
 import { VEHICLE_STATUSES } from '@/lib/management/config';
 import { formatMoney } from '@/lib/formatters';
+import { readVehicleAudit } from './vehicle-audit';
 
 type Database = Pick<PoolClient, 'query'>;
 export class VehicleHistoryError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -21,7 +22,7 @@ export async function readVehicleHistory(client: Database, vehicleId: number): P
   const vehicle = found.rows[0];
   if (!vehicle) throw new VehicleHistoryError('Không tìm thấy xe.', 404);
   const events: VehicleEvent[] = [];
-  const push = (event: Omit<VehicleEvent, 'vehicle_name' | 'license'>) => events.push({ ...event, vehicle_name: text(vehicle.name), license: text(vehicle.license) });
+  const push = (event: Omit<VehicleEvent, 'vehicle_name' | 'license'> & Partial<Pick<VehicleEvent,'vehicle_name'|'license'>>) => events.push({ vehicle_name: text(vehicle.name), license: text(vehicle.license), ...event });
   if (vehicle.created_at) push({ key: 'create', action: 'create', label: 'Nhập xe', location: text(vehicle.store_name), responsible_store: text(vehicle.store_name),
     beneficiary_store: '', note: '', at: iso(vehicle.created_at), actor: text(vehicle.actor), order_id: null });
 
@@ -62,7 +63,7 @@ export async function readVehicleHistory(client: Database, vehicleId: number): P
   }
 
   const located = await client.query(`SELECT e.id,e.event_type,e.ref_type,e.ref_id,e.notes,(e.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AS at,
-      e.customer_name,e.customer_phone,e.customer_id_card,
+      e.customer_name,e.customer_phone,e.customer_id_card,e.audit_snapshot,
       fs.store_name AS from_store,ts.store_name AS to_store,u.name AS actor,t.transfer_code,t.reason
     FROM himoto.vehicle_location_events e
     LEFT JOIN himoto.stores fs ON fs.id=e.from_store_id
@@ -71,16 +72,18 @@ export async function readVehicleHistory(client: Database, vehicleId: number): P
     LEFT JOIN himoto.vehicle_transfers t ON e.ref_type='vehicle_transfers' AND t.id=e.ref_id
     WHERE e.vehicle_id=$1 ORDER BY e.id DESC LIMIT 500`, [vehicleId]);
   for (const row of located.rows) {
-    const type = text(row.event_type), from = text(row.from_store), to = text(row.to_store);
+    const audit=readVehicleAudit(row.audit_snapshot);
+    const type = text(row.event_type), from = audit?.from_store ?? text(row.from_store), to = audit?.to_store ?? text(row.to_store);
     const [action, label]: [VehicleEventAction, string] = type === 'status_change' ? STATUS_ACTION[text(row.ref_type)] || ['status', `Đổi trạng thái: ${statusLabel(text(row.ref_type))}`]
-      : type === 'note' ? ['note', 'Ghi chú'] : ['transfer', TRANSFER_LABELS[type] || 'Chuyển kho'];
+      : type === 'note' ? ['note', 'Ghi chú'] : type === 'vehicle_edit' ? ['edit','Chỉnh sửa thông tin xe'] : ['transfer', TRANSFER_LABELS[type] || 'Chuyển kho'];
     const customer = text(row.customer_name), rented = type === 'status_change' && text(row.ref_type) === 'using';
     push({ key: `event-${row.id}`, action, label,
       location: type === 'transfer_dispatch' ? 'Đang điều chuyển' : rented && customer ? `Khách: ${customer}` : action === 'transfer' ? to || from : from || to,
       responsible_store: from, beneficiary_store: action === 'note' ? '' : to,
       note: [text(row.transfer_code), text(row.reason), text(row.notes), !rented && customer ? `Khách: ${customer}` : '',
         row.customer_phone ? `SĐT ${text(row.customer_phone)}` : '', row.customer_id_card ? `CCCD ${text(row.customer_id_card)}` : ''].filter(Boolean).join(' · '),
-      at: iso(row.at), actor: text(row.actor), order_id: type === 'status_change' && Number(row.ref_id) > 0 ? Number(row.ref_id) : null });
+      at: iso(row.at), actor: audit?.actor ?? text(row.actor), order_id: type === 'status_change' && Number(row.ref_id) > 0 ? Number(row.ref_id) : null,
+      ...(audit?{changes:audit.changes,vehicle_name:audit.vehicle_name,license:audit.license}:{}) });
   }
 
   const swapTable = await client.query("SELECT to_regclass('himoto.management_contract_vehicle_swaps') IS NOT NULL AS ready");

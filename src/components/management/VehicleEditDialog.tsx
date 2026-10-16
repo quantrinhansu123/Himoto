@@ -45,7 +45,7 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
     if (Object.keys(next).length) { requestAnimationFrame(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return; }
     busy.current = true; setSaving(true);
     try {
-      await saveVehicleRecord(row?.id ?? null, draft);
+      await saveVehicleRecord(row?.id ?? null, draft, value('vehicle_revision') || undefined);
       await ensureData(['vehicles'], true).catch(() => {});
       notify(row ? `Đã cập nhật xe ${license}.` : `Đã thêm xe ${license}.`);
       onClose();
@@ -70,7 +70,7 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
         <input id={`vehicle-${field.key}`} type={field.type || 'text'} min={field.type ? 0 : undefined} step={field.type ? 1 : undefined} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
       <div className="mg-field mg-field-wide"><label htmlFor="vehicle-note">Ghi chú</label>
         <textarea id="vehicle-note" value={draft.note} maxLength={500} disabled={saving} placeholder="VD: đưa xe đi sửa phanh, chuyển xe sang cơ sở khác…" onChange={event => change('note', event.target.value)} />
-        <small>Lưu vào tab Lịch sử của xe cùng thay đổi cơ sở / trạng thái.</small></div>
+        <small>Mọi trường thay đổi được ghi giá trị cũ → mới trong tab Lịch sử, cùng ngày giờ và người thao tác.</small></div>
     </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
       <div className="mg-dialog-footer"><span className="mg-form-note">* Thông tin bắt buộc</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
         <button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : row ? 'Lưu xe' : 'Thêm xe'}</button></div>

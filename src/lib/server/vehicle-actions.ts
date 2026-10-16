@@ -4,14 +4,15 @@ import { VEHICLE_STATUSES } from '@/lib/management/config';
 import { createContractDraft, customerDetails, vehicleDetails } from '@/lib/management/contract-document';
 import type { ManagementRow } from '@/lib/management/types';
 import { saveDatabaseDraft } from './contract-drafts';
+import { vehicleRevision, writeVehicleAudit } from './vehicle-audit';
 
 type Client = Pick<PoolClient, 'query'>;
 export interface VehicleActionCustomer { id: number; name: string; created: boolean; matched_by: string }
 export interface VehicleActionResult { id: number; event_id: number; customer?: VehicleActionCustomer; draft?: { id: number; code: string } }
 export class VehicleActionError extends Error { constructor(message: string, public status = 400) { super(message); } }
-export type VehicleActionInput =
+export type VehicleActionInput = (
   | { action: 'transfer'; to_store_id: number; note: string }
-  | { action: 'status'; status: 'ready' | 'using'; beneficiary_store_id: number; customer_name: string; customer_phone: string; customer_id_card: string; note: string };
+  | { action: 'status'; status: 'ready' | 'using'; beneficiary_store_id: number; customer_name: string; customer_phone: string; customer_id_card: string; note: string }) & { revision?: string };
 
 const text = (value: unknown, label: string, max: number) => {
   const result = typeof value === 'string' ? value.trim() : value == null ? '' : null;
@@ -28,8 +29,10 @@ const statusLabel = (value: string) => VEHICLE_STATUSES.find(option => option.va
 export function parseVehicleAction(body: unknown): VehicleActionInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new VehicleActionError('Thông tin thao tác không hợp lệ.');
   const raw = body as Record<string, unknown>;
+  let revision: string | undefined;
+  try { revision = vehicleRevision(raw.revision); } catch { throw new VehicleActionError('Phiên bản thông tin xe không hợp lệ.'); }
   const note = text(raw.note, 'Ghi chú', 500);
-  if (raw.action === 'transfer') return { action: 'transfer', to_store_id: storeId(raw.to_store_id, 'cơ sở chuyển đến'), note };
+  if (raw.action === 'transfer') return { action: 'transfer', to_store_id: storeId(raw.to_store_id, 'cơ sở chuyển đến'), note, ...(revision ? {revision} : {}) };
   if (raw.action !== 'status') throw new VehicleActionError('Thao tác không hợp lệ.');
   if (raw.status !== 'ready' && raw.status !== 'using') throw new VehicleActionError('Chọn trạng thái Đang thuê hoặc Lưu kho.');
   const name = text(raw.customer_name, 'Tên khách', 191), phone = text(raw.customer_phone, 'Số điện thoại', 32).replace(/[\s.-]/g, ''), idCard = text(raw.customer_id_card, 'CCCD', 32).replace(/\s/g, '');
@@ -38,7 +41,7 @@ export function parseVehicleAction(body: unknown): VehicleActionInput {
   if (raw.status === 'using' && !idCard) throw new VehicleActionError('Nhập CCCD của khách để kiểm tra và tạo hợp đồng nháp.');
   if (phone && !/^\+?\d{8,15}$/.test(phone)) throw new VehicleActionError('Số điện thoại không hợp lệ.');
   if (idCard && !/^\d{9}$|^\d{12}$/.test(idCard)) throw new VehicleActionError('CCCD phải gồm 9 hoặc 12 chữ số.');
-  return { action: 'status', status: raw.status, beneficiary_store_id: storeId(raw.beneficiary_store_id, 'cơ sở sử dụng xe'), customer_name: name, customer_phone: phone, customer_id_card: idCard, note };
+  return { action: 'status', status: raw.status, beneficiary_store_id: storeId(raw.beneficiary_store_id, 'cơ sở sử dụng xe'), customer_name: name, customer_phone: phone, customer_id_card: idCard, note, ...(revision ? {revision} : {}) };
 }
 
 // Phone and CCCD must point at the same profile; a match on either reuses it instead of creating a duplicate.
@@ -80,22 +83,27 @@ async function createRentalDraft(client: PoolClient, vehicleId: number, storeId:
 // vehicle_location_events.created_at is a local (Asia/Ho_Chi_Minh) timestamp, as written by the legacy app.
 export async function applyVehicleAction(client: PoolClient, vehicleId: number, input: VehicleActionInput, actorId: number): Promise<VehicleActionResult> {
   await client.query("SET LOCAL lock_timeout = '5s'");
-  const found = await client.query('SELECT status, COALESCE(current_store_id,store_id) AS store_id, odometer FROM himoto.vehicles WHERE id=$1 FOR UPDATE', [vehicleId]);
+  const found = await client.query(`SELECT v.name,v.license,v.status,COALESCE(v.current_store_id,v.store_id) AS store_id,v.odometer,v.xmin::text AS revision,
+    COALESCE(CASE WHEN v.status IN ('using','rent') THEN (SELECT e.to_store_id FROM himoto.vehicle_location_events e
+      WHERE e.vehicle_id=v.id AND e.event_type='status_change' ORDER BY e.created_at DESC,e.id DESC LIMIT 1) END,v.current_store_id,v.store_id) AS beneficiary_store_id
+    FROM himoto.vehicles v WHERE v.id=$1 FOR UPDATE`, [vehicleId]);
   const vehicle = found.rows[0];
   if (!vehicle) throw new VehicleActionError('Không tìm thấy xe. Nhấn Làm mới để kiểm tra.', 404);
+  if (input.revision && input.revision !== vehicle.revision) throw new VehicleActionError('Thông tin xe đã thay đổi. Nhấn Làm mới rồi thao tác lại.', 409);
   const open = await client.query(`SELECT COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) AS code
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
       AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [vehicleId]);
   if (open.rowCount) throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}. Trả xe trên hợp đồng trước khi ${input.action === 'transfer' ? 'chuyển xe' : 'đổi trạng thái'}.`, 409);
   const target = input.action === 'transfer' ? input.to_store_id : input.beneficiary_store_id;
-  if (!(await client.query('SELECT 1 FROM himoto.stores WHERE id=$1', [target])).rowCount) throw new VehicleActionError('Cơ sở đã chọn không còn tồn tại.', 409);
+  if (!(await client.query('SELECT 1 FROM himoto.stores WHERE id=$1 FOR SHARE', [target])).rowCount) throw new VehicleActionError('Cơ sở đã chọn không còn tồn tại.', 409);
   const current = String(vehicle.status) === 'rent' ? 'using' : String(vehicle.status);
 
   let customer: VehicleActionCustomer | undefined, draft: VehicleActionResult['draft'];
   if (input.action === 'transfer') {
+    if (current !== 'ready') throw new VehicleActionError('Chỉ chuyển xe đang Lưu kho. Kiểm tra trạng thái xe rồi thao tác lại.', 409);
     if (String(vehicle.store_id) === String(input.to_store_id)) throw new VehicleActionError('Xe đang ở cơ sở này. Chọn cơ sở khác để chuyển.');
-    await client.query('UPDATE himoto.vehicles SET current_store_id=$2, updated_at=now() WHERE id=$1', [vehicleId, input.to_store_id]);
+    await client.query("UPDATE himoto.vehicles SET current_store_id=$2,status='in_transit',updated_at=now() WHERE id=$1", [vehicleId, input.to_store_id]);
   } else {
     if (current === input.status) throw new VehicleActionError(`Xe đang ở trạng thái ${statusLabel(current)}.`);
     if (input.status === 'using') {
@@ -105,12 +113,11 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
     }
     await client.query('UPDATE himoto.vehicles SET status=$2, updated_at=now() WHERE id=$1', [vehicleId, input.status]);
   }
-  const notes = input.action === 'transfer' ? input.note
-    : [`${statusLabel(current)} → ${statusLabel(input.status)}`, draft ? `HĐ nháp ${draft.code}` : '', input.note].filter(Boolean).join(' · ');
-  const inserted = await client.query(`INSERT INTO himoto.vehicle_location_events
-      (vehicle_id,from_store_id,to_store_id,event_type,ref_type,ref_id,odometer,notes,customer_name,customer_phone,customer_id_card,created_by,created_at,updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,now() AT TIME ZONE 'Asia/Ho_Chi_Minh',now() AT TIME ZONE 'Asia/Ho_Chi_Minh') RETURNING id`,
-    [vehicleId, vehicle.store_id, target, input.action === 'transfer' ? 'manual_transfer' : 'status_change', input.action === 'transfer' ? null : input.status, draft?.id ?? null,
-      vehicle.odometer ?? null, notes, input.action === 'status' ? input.customer_name : '', input.action === 'status' ? input.customer_phone : '', input.action === 'status' ? input.customer_id_card : '', actorId]);
-  return { id: vehicleId, event_id: Number(inserted.rows[0].id), ...(customer ? { customer } : {}), ...(draft ? { draft } : {}) };
+  const after = input.action === 'transfer' ? {...vehicle,store_id:target,status:'in_transit',beneficiary_store_id:target}
+    : {...vehicle,status:input.status,beneficiary_store_id:input.status==='using'?target:vehicle.store_id};
+  const eventId = await writeVehicleAudit(client, {vehicleId,before:vehicle,after,actorId,toStoreId:input.action==='transfer'||input.status==='using'?target:vehicle.store_id,
+    type:input.action==='transfer'?'manual_transfer':'status_change',refType:input.action==='status'?input.status:null,refId:draft?.id,
+    note:[draft ? `HĐ nháp ${draft.code}` : '',input.note].filter(Boolean).join(' · '),
+    ...(input.action==='status'?{customer:{name:input.customer_name,phone:input.customer_phone,idCard:input.customer_id_card}}:{})});
+  return { id: vehicleId, event_id: eventId, ...(customer ? { customer } : {}), ...(draft ? { draft } : {}) };
 }

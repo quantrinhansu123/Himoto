@@ -110,7 +110,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     birthday: text(raw.birthday || raw.date_of_birth), relatives_text: text(raw.relatives_text) || relativesText(raw.relatives), relatives_json: relativesJson(raw.relatives),
     customer_revision: text(raw.customer_revision), contract_count: number(raw.contract_count), status: ['blacklist', 'bad_debt'].includes(base.status) ? 'blacklist' : ['draft', '0'].includes(base.status) ? 'draft' : raw.warning || raw.warning_note ? 'warning' :
       (({ '1': 'active', '0': 'draft' } as Record<string, string>)[base.status] || base.status) };
-  if (kind === 'vehicles') return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type),
+  if (kind === 'vehicles') return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type), vehicle_revision: text(raw.vehicle_revision),
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
     rentals_json: Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
     beneficiary_store_id: number(raw.beneficiary_store_id ?? raw.current_store_id ?? raw.store_id), beneficiary_store_name: text(raw.beneficiary_store_name || raw.store_name),

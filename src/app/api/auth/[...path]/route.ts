@@ -33,7 +33,7 @@ const listQueries: Record<string, QueryConfig> = {
   },
   'vehicle/vehicles': {
     sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
-                 v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name,
+                 v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, v.xmin::text AS vehicle_revision,
                  r.rentals, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  gps.has_device AS gps_has_device,
                  gps.normalized_status AS gps_normalized_status,

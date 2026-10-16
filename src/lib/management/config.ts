@@ -9,7 +9,7 @@ export const STORE_STATUSES: Option[] = [{ value: 'active', label: 'Hoạt độ
 export const VEHICLE_STATUSES: Option[] = [
   { value: 'ready', label: 'Lưu kho' }, { value: 'using', label: 'Đang thuê' }, { value: 'repairing', label: 'Bảo dưỡng' },
   { value: 'pending', label: 'Đặt trước' }, { value: 'sold', label: 'Đã bán' }, { value: 'bad_debt', label: 'Nợ xấu' },
-  { value: 'broken', label: 'Hỏng' }, { value: 'in_transit', label: 'Đang điều chuyển' },
+  { value: 'broken', label: 'Hỏng' }, { value: 'in_transit', label: 'Chờ luân chuyển' },
 ];
 /** GPS tracker connection: green / yellow / red dots on the vehicles list. */
 export const LOCATION_STATUSES: Option[] = [
