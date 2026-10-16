@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
-import { CONTRACT_LIST_SQL, DraftSaveError, saveDatabaseDraft } from '@/lib/server/contract-drafts';
+import { CONTRACT_LIST_SQL, DraftSaveError, contractListScopeClause, saveDatabaseDraft } from '@/lib/server/contract-drafts';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { STORE_SELECT_SQL } from '@/lib/server/store-management';
 import { createAccount, deleteAccount, listAccountTransactions, parseAccountCollectionPath, parseAccountPath, updateAccount } from '@/lib/server/cashbook-accounts';
@@ -32,7 +32,10 @@ const listQueries: Record<string, QueryConfig> = {
   'vehicle/vehicles': {
     sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name,
-                 r.rentals, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name
+                 r.rentals, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
+                 gps.has_device AS gps_has_device,
+                 gps.normalized_status AS gps_normalized_status,
+                 gps.last_at AS gps_last_at
           FROM himoto.vehicles v
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
           LEFT JOIN LATERAL (
@@ -56,6 +59,21 @@ const listQueries: Record<string, QueryConfig> = {
             SELECT COALESCE(r.store_id, CASE WHEN v.status = 'using' AND ev.ref_type = 'using' THEN ev.to_store_id END, v.current_store_id, v.store_id) AS beneficiary_store_id
           ) b
           LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
+          LEFT JOIN LATERAL (
+            SELECT true AS has_device, p.normalized_status,
+                   COALESCE(p.provider_recorded_at, p.received_at, p.created_at, d.last_sync_at) AS last_at
+            FROM himoto.gps_devices d
+            LEFT JOIN LATERAL (
+              SELECT normalized_status, provider_recorded_at, received_at, created_at
+              FROM himoto.gps_positions
+              WHERE gps_device_id = d.id
+              ORDER BY COALESCE(provider_recorded_at, received_at, created_at) DESC NULLS LAST
+              LIMIT 1
+            ) p ON true
+            WHERE d.vehicle_id = v.id
+            ORDER BY d.id DESC
+            LIMIT 1
+          ) gps ON true
           ORDER BY v.id DESC`,
   },
   'order/car-rental': {
@@ -161,7 +179,18 @@ export async function GET(request: NextRequest, { params }: Params) {
         }
         return await readAll({ sql: `${CONTRACT_LIST_SQL} AND o.customer_id=$1 AND o.order_status <> 'draft' ORDER BY o.id DESC`, values: [Number(customerId)] });
       }
-      return await readAll({ sql: query.sql });
+      const scope = request.nextUrl.searchParams.get('scope');
+      if (scope !== null && !['drafts', 'overdue', 'vat', 'ownership'].includes(scope)) {
+        return NextResponse.json({ status: 'error', message: 'Phạm vi danh sách hợp đồng không hợp lệ.' }, { status: 400 });
+      }
+      const orderBy = scope === 'ownership'
+        ? ` ORDER BY CASE WHEN o.order_status='draft' THEN 0 ELSE 1 END,
+            CASE COALESCE(NULLIF(o.order_type,''), o.draft_payload->'management_composer'->>'rental_type')
+              WHEN 'ownership_cd' THEN 0 WHEN 'ownership' THEN 1 ELSE 2 END,
+            o.id DESC`
+        : scope === 'drafts' ? ' ORDER BY o.id DESC'
+        : ` ORDER BY CASE WHEN o.order_status='draft' THEN 0 ELSE 1 END, o.id DESC`;
+      return await readAll({ sql: `${CONTRACT_LIST_SQL}${contractListScopeClause(scope)}${orderBy}` });
     }
     return await readAll(query);
   } catch (error) {

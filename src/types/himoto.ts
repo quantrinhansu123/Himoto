@@ -97,7 +97,7 @@ export interface VehicleItem {
 }
 
 // 5. Danh sách hợp đồng (Contract)
-export type ContractRentalType = 'daily' | 'monthly' | 'tour';
+export type ContractRentalType = 'daily' | 'monthly' | 'rental' | 'tour' | 'ownership' | 'ownership_cd';
 export type ContractStatus = 'renting' | 'completed' | 'pending' | 'overdue' | 'cancelled';
 
 export interface ContractItem {

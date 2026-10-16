@@ -7,7 +7,7 @@ import { formatValue } from '@/lib/management/table-utils';
 import { RowAction, RowActionsMenu } from './RowActionsMenu';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
-  vehicles: ['license', 'store_name', 'daily_price'],
+  vehicles: ['overdue_days', 'license', 'store_name', 'daily_price'],
   contracts: ['code', 'customer_phone', 'license', 'end_date'],
   customers: ['phone', 'id_card', 'store_name'],
   staff: ['phone', 'position', 'store_name'],
@@ -71,6 +71,7 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
               <strong>Còn thiếu đến hạn: {formatValue(row.billing_due_amount, 'money')}</strong>
             </span>}
             <span className="mg-mobile-card-footer"><span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
+              {config.kind === 'vehicles' && row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
               {summary[2] && <span className="mg-mobile-card-extra" title={`${summary[2].label}: ${summary[2].value}`}>{summary[2].value}{summary[3] && ` · ${summary[3].value}`}</span>}
             </span>
           </button>

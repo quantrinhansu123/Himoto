@@ -1,15 +1,35 @@
 import { CellValue, ManagementRow } from './types';
 import { staffRoles } from './staff-positions';
 
+export type OverdueCompare = 'gt' | 'lt' | 'eq';
 export interface TableQuery {
   search: string;
   status: string;
   filters: Record<string, string>;
   startDate: string;
   endDate: string;
+  /** Days value for overdue_days comparison filter; empty disables the filter. */
+  overdueDays: string;
+  /** gt = trên, lt = dưới, eq = bằng. Defaults to eq when days are set. */
+  overdueCompare: OverdueCompare | '';
 }
-export const EMPTY_QUERY: TableQuery = { search: '', status: '', filters: {}, startDate: '', endDate: '' };
+export const EMPTY_QUERY: TableQuery = { search: '', status: '', filters: {}, startDate: '', endDate: '', overdueDays: '', overdueCompare: 'eq' };
+export const OVERDUE_COMPARE_OPTIONS: { value: OverdueCompare; label: string }[] = [
+  { value: 'gt', label: 'Trên' }, { value: 'lt', label: 'Dưới' }, { value: 'eq', label: 'Bằng' },
+];
 export const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().trim();
+
+function matchesOverdueDays(row: ManagementRow, daysText: string, compare: OverdueCompare | ''): boolean {
+  if (!daysText.trim()) return true;
+  if (!/^\d{1,5}$/.test(daysText.trim())) return true;
+  const target = Number(daysText.trim());
+  const actual = row.overdue_days == null || row.overdue_days === '' ? 0 : Number(row.overdue_days);
+  if (!Number.isFinite(actual)) return false;
+  const op = compare || 'eq';
+  if (op === 'gt') return actual > target;
+  if (op === 'lt') return actual < target;
+  return actual === target;
+}
 
 export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: string): ManagementRow[] {
   const needle = normalize(query.search);
@@ -20,6 +40,7 @@ export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: st
     const date = String(row.start_date ?? '').slice(0, 10);
     if (query.startDate && (!date || date < query.startDate)) return false;
     if (query.endDate && (!date || date > query.endDate)) return false;
+    if (!matchesOverdueDays(row, query.overdueDays || '', query.overdueCompare || '')) return false;
     const searchable = ['code', 'name', 'phone', 'id_card', 'address', 'license', 'customer_name', 'customer_phone', 'vehicle_name'];
     return !needle || searchable.some(key => normalize(String(row[key] ?? '')).includes(needle));
   });
@@ -33,6 +54,31 @@ export function sortRows(rows: ManagementRow[], key: string, direction: 'asc' | 
     if (right === undefined || right === '') return -1;
     const result = typeof left === 'number' && typeof right === 'number' ? left - right : collator.compare(String(left), String(right));
     return direction === 'asc' ? result : -result;
+  });
+}
+
+const ownershipTypeRank = (type: unknown) => type === 'ownership_cd' ? 0 : type === 'ownership' ? 1 : 2;
+
+/** Keep drafts and ownership contract types pinned above the active column sort. */
+export function sortContractRows(
+  rows: ManagementRow[],
+  key: string,
+  direction: 'asc' | 'desc',
+  options: { pinDrafts?: boolean; pinOwnershipTypes?: boolean } = {},
+): ManagementRow[] {
+  const sorted = sortRows(rows, key, direction);
+  if (!options.pinDrafts && !options.pinOwnershipTypes) return sorted;
+  return sorted.sort((a, b) => {
+    if (options.pinDrafts) {
+      const draftRank = (row: ManagementRow) => row.status === 'draft' ? 0 : 1;
+      const byDraft = draftRank(a) - draftRank(b);
+      if (byDraft) return byDraft;
+    }
+    if (options.pinOwnershipTypes) {
+      const byType = ownershipTypeRank(a.rental_type) - ownershipTypeRank(b.rental_type);
+      if (byType) return byType;
+    }
+    return 0;
   });
 }
 

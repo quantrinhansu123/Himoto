@@ -11,24 +11,39 @@ export function formatMoney(amount: number | string | null | undefined): string 
 
 export const formatCurrency = formatMoney;
 
+const VN_TZ = 'Asia/Ho_Chi_Minh';
+
+/** Always 24h (never SA/CH / AM/PM). */
+function vietnamParts(input: string | Date, withTime: boolean) {
+  const date = input instanceof Date ? input : new Date(input);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: VN_TZ,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    ...(withTime ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' as const } : {}),
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value || '';
+  return { day: get('day'), month: get('month'), year: get('year'), hour: get('hour'), minute: get('minute') };
+}
 
 /**
- * Định dạng ngày giờ: YYYY-MM-DD HH:mm -> DD/MM/YYYY HH:mm
+ * Định dạng ngày giờ: DD/MM/YYYY HH:mm (hệ 24h, múi giờ Việt Nam)
  */
 export function formatDateTime(dateStr: string | null | undefined): string {
   if (!dateStr) return '--';
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    return `${day}/${month}/${year} ${hours}:${minutes}`;
-  } catch {
-    return dateStr;
-  }
+  const parts = vietnamParts(dateStr, true);
+  if (!parts) return dateStr;
+  return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
+}
+
+/**
+ * Chỉ giờ phút hệ 24h: HH:mm
+ */
+export function formatTime24(dateStr: string | null | undefined): string {
+  if (!dateStr) return '--';
+  const parts = vietnamParts(dateStr, true);
+  if (!parts) return dateStr;
+  return `${parts.hour}:${parts.minute}`;
 }
 
 /**
@@ -36,16 +51,9 @@ export function formatDateTime(dateStr: string | null | undefined): string {
  */
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '--';
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
-  } catch {
-    return dateStr;
-  }
+  const parts = vietnamParts(dateStr, false);
+  if (!parts) return dateStr;
+  return `${parts.day}/${parts.month}/${parts.year}`;
 }
 
 /**

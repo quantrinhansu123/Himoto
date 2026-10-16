@@ -15,6 +15,12 @@ export function batteryPaymentAccounts<T extends BatteryPaymentAccount>(accounts
     : method === 'transfer' && account.kind === 'bank' && account.owner_type !== 'company' && Number(account.store_id) === storeId));
 }
 export const DEFAULT_BATTERY_NAME = 'Pin xe điện 2.4 của Vinfast';
+export const DEFAULT_CHARGER_NAME = 'Sạc xe điện Vinfast';
+export const BATTERY_PRODUCT_PRESETS = [
+  { value: 'battery', label: 'Pin', name: DEFAULT_BATTERY_NAME },
+  { value: 'charger', label: 'Sạc', name: DEFAULT_CHARGER_NAME },
+] as const;
+export type BatteryProductKind = (typeof BATTERY_PRODUCT_PRESETS)[number]['value'];
 
 export interface BatteryContractFields {
   store_id: number; customer_id: number | null; status: BatteryStatus; staff_name: string; signed_on: string; signed_place: string;
@@ -28,6 +34,8 @@ export interface BatteryContractFields {
   deposit_account_type?: BatteryCollectionMethod; deposit_account_id?: number | null;
   collected_at?: string;
 }
+/** Prefill payload when opening thuê pin/sạc from a vehicle rental contract. */
+export type BatteryContractPrefill = Partial<BatteryContractFields> & { store_id?: number };
 export interface BatteryContractInput extends BatteryContractFields { revision?: string; request_id?: string }
 export interface BatteryContract extends BatteryContractFields {
   id: number; code: string; store_name: string; store_address: string; store_phone: string; created_at: string; revision: string;
@@ -42,4 +50,11 @@ export async function batteryRequest<T>(url: string, method = 'GET', body?: unkn
   if (!response.ok) throw new BatteryRequestError(result?.message || 'Không tải hoặc lưu được hợp đồng thuê pin. Tải lại trang để kiểm tra.', response.status);
   if (result?.status !== 'success' || !('data' in result)) throw new BatteryRequestError('Kết quả hợp đồng thuê pin chưa hợp lệ. Tải lại trang để kiểm tra.');
   return result.data as T;
+}
+
+export function batteryProductKind(name: string): BatteryProductKind | null {
+  const trimmed = name.trim();
+  if (trimmed === DEFAULT_BATTERY_NAME || /^pin\b/i.test(trimmed)) return 'battery';
+  if (trimmed === DEFAULT_CHARGER_NAME || /^sạc\b/i.test(trimmed)) return 'charger';
+  return null;
 }

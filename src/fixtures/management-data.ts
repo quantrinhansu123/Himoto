@@ -41,6 +41,7 @@ export function createDemoDataset(): ManagementDataset {
     const store = stores[i % stores.length];
     return { ...source, id: i + 1, code: `XE-${pad(i + 1)}`, license: `DEMO-${pad(i + 1)}`,
       status: vehicleStatus[source.status] || source.status, type: vehicleType[source.type] || source.type,
+      location_status: (['online', 'warning', 'offline', 'none'] as const)[i % 4],
       store_id: store.id, store_name: store.name, created_at: '2026-09-01' };
   });
   const contracts: ManagementRow[] = Array.from({ length: 32 }, (_, i) => {

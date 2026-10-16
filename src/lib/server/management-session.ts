@@ -3,13 +3,15 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { compare } from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
+import { canRecordContractPayment, isAdminAccount } from '@/lib/management/permissions';
 import { himotoPool } from './himoto-database';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
-export type SessionUser = { id: number; name: string; email: string };
+export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string };
 type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null };
 type Database = Pick<typeof himotoPool, 'query'>;
+export { canRecordContractPayment, isAdminAccount };
 
 // Missing server configuration must never expose an unauthenticated dashboard.
 export function isManagementConfigured() {
@@ -46,9 +48,12 @@ export function verifySession(token: string | undefined, key = sessionKey(), now
 }
 
 function allowedAccount(account: Account) {
-  return account.status === 'active' && (Number(account.role_id) === 1 || account.role === 'admin' || account.role_slug === 'quan-tri-vien');
+  // Workspace sign-in: admin + accounting (payment). Other roles stay blocked until access is expanded.
+  return account.status === 'active' && canRecordContractPayment(account);
 }
-function safeUser(account: Account): SessionUser { return { id: Number(account.id), name: account.name, email: account.email }; }
+function safeUser(account: Account): SessionUser {
+  return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || '') };
+}
 const accountFields = 'u.id, u.name, u.email, u.status, u.role, u.role_id, r.slug AS role_slug';
 export class LoginError extends Error {
   constructor(message: string, public status = 401) { super(message); }

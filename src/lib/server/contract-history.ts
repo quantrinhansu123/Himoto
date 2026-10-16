@@ -1,15 +1,17 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { ContractCashflow, ContractChange, ContractHistory } from '@/lib/management/contract-history';
-import { formatMoney } from '@/lib/formatters';
+import { formatDateTime, formatMoney } from '@/lib/formatters';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractHistoryError extends Error { constructor(message: string, public status = 400) { super(message); } }
 
 const iso = (value: unknown) => value instanceof Date ? value.toISOString() : value == null ? '' : String(value);
 const vietnamTime = (value: unknown) => {
-  const date = new Date(iso(value));
-  return Number.isFinite(date.getTime()) ? date.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
+  const raw = iso(value);
+  if (!raw) return '—';
+  const formatted = formatDateTime(raw);
+  return formatted === '--' ? '—' : formatted;
 };
 const amountOrNull = (value: unknown) => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
 const STATUS_LABELS: Record<string, string> = { approved: 'Đã duyệt', pending: 'Chờ duyệt', rejected: 'Từ chối', cancelled: 'Đã hủy' };

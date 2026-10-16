@@ -127,17 +127,23 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   const customer = { ...customerDetails(sourceCustomer), relatives_text: formatRelatives(relatives) || value(sourceCustomer?.relatives_text) };
   const items: Record<string, unknown>[] = row?.legacy_items_json ? JSON.parse(String(row.legacy_items_json)) : [];
   const apiVehicles: Record<string, unknown>[] = row?.vehicles_json ? JSON.parse(String(row.vehicles_json)) : [];
-  const sourceVehicles = items.length ? items : apiVehicles;
+  // Issued contracts keep live rental lines in vehicles_json; prefer those over stale order_items after a swap.
+  const sourceVehicles = row && row.status !== 'draft' && apiVehicles.length ? apiVehicles : items.length ? items : apiVehicles;
   const vehicles = sourceVehicles.map(item => {
     const id = value(item.vehicle_id ?? item.id);
     const master = dataset.vehicles.find(vehicle => String(vehicle.id) === id);
-    const embedded = { ...apiVehicles.find(vehicle => value(vehicle.id) === id), ...item };
+    const legacy = items.find(line => value(line.vehicle_id ?? line.id) === id) || {};
+    const embedded = { ...legacy, ...apiVehicles.find(vehicle => value(vehicle.id) === id), ...item };
     const details = master ? vehicleDetails(master, customer) : { ...emptyVehicle(), id, name: value(embedded.name), license: value(embedded.license),
       brand: value(embedded.brand), color: value(embedded.color), year: value(embedded.year),
       type_text: VEHICLE_TYPES.find(type => type.value === (embedded.type === 'electric' ? 'xe_dien' : embedded.type))?.label || value(embedded.type),
       driver_name: customer.name, driver_license_number: customer.driver_license_number, driver_license_issued_on: customer.driver_license_issued_on };
-    for (const key of ['driver_name', 'driver_license_number', 'borrow_hats', 'borrow_raincoats'] as const) if (item[key] != null) details[key] = value(item[key]);
-    if (item.driver_license_issued_on) details.driver_license_issued_on = dateInput(item.driver_license_issued_on);
+    for (const key of ['driver_name', 'driver_license_number', 'borrow_hats', 'borrow_raincoats'] as const) {
+      const from = embedded[key] ?? item[key] ?? legacy[key];
+      if (from != null) details[key] = value(from);
+    }
+    const issuedOn = embedded.driver_license_issued_on ?? item.driver_license_issued_on ?? legacy.driver_license_issued_on;
+    if (issuedOn) details.driver_license_issued_on = dateInput(issuedOn);
     return details;
   });
   const vehicle = row ? dataset.vehicles.find(item => item.id === row.vehicle_id) : null;

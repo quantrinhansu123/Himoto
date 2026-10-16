@@ -7,11 +7,14 @@ import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
 import { depositLateral, rentalPaidSql } from './contract-deposits';
 import { chargeTotal } from '@/lib/management/contract-charges';
+import { CONTRACT_TYPES } from '@/lib/management/config';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
+/** List/detail projection: omit per-row payment history (collections) and full draft blob for issued contracts. */
 export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_reference,
-  COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''),o.order_type) AS rental_type,
+  COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
+
   CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
   o.customer_id, c.status AS customer_status,
   COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
@@ -20,9 +23,9 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   c.id_card_issued_on, c.id_card_issued_by,
   c.driver_license_number AS customer_driver_license_number, c.driver_license_issued_on::text AS customer_driver_license_issued_on,
   c.relatives, c.warning AS warning_note,
-  o.store_id, s.store_name, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
+  o.store_id, s.store_name, s.kind AS store_kind, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
   o.total AS total_amount, ${rentalPaidSql()} AS paid_amount, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded,
-  COALESCE(collections.rows,'[]'::json) AS collections,
+  '[]'::json AS collections,
   NULLIF(o.draft_payload->'management_composer'->'draft'->>'unit_price','')::numeric AS unit_price,
   o.draft_payload->'management_composer'->'draft'->>'package_name' AS package_name,
   o.draft_payload->'management_composer'->'draft'->>'payment_method' AS payment_method,
@@ -32,14 +35,17 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
        ELSE COALESCE(o.first_deposit_amount, 0) + COALESCE(o.additional_deposit_amount, 0) END AS deposit_amount,
   ${CONTRACT_RETURN_ADJUSTMENT_SQL} AS return_adjustment_amount,
   o.note AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
-  (SELECT p.id FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id
-    AND p.store_id::text = COALESCE(NULLIF(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id',''),o.store_id::text) ORDER BY p.id LIMIT 1) AS staff_id,
-  (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id
-    AND p.store_id::text = COALESCE(NULLIF(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id',''),o.store_id::text) ORDER BY p.id LIMIT 1) AS staff_name,
+  staff.id AS staff_id, staff.full_name AS staff_name,
   COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),
+    staff.full_name,
     (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.id::text = o.draft_payload->'management_composer'->'draft'->>'staff_id'),
     (SELECT p.full_name FROM himoto.staff_profiles p WHERE p.user_id = o.contract_responsible_user_id ORDER BY p.id LIMIT 1)) AS representative_name,
-  o.draft_payload, o.contract_signed_on AS signed_on, o.contract_authorization_date AS authorization_date,
+  CASE WHEN o.order_status='draft' THEN jsonb_build_object(
+      'management_composer', o.draft_payload->'management_composer',
+      'order_items', o.draft_payload->'order_items')
+    ELSE jsonb_build_object('order_items', o.draft_payload->'order_items') END AS draft_payload,
+  o.contract_signed_on AS signed_on, o.contract_authorization_date AS authorization_date,
+
   o.contract_collateral_description AS collateral_description, o.customer_source, o.customer_source_url,
   COALESCE(ov.vehicles, '[]'::json) AS vehicles
   FROM himoto.orders o
@@ -52,14 +58,14 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
   ) company ON company.order_id=o.id
   ${depositLateral()}
   LEFT JOIN LATERAL (
-    SELECT json_agg(json_build_object('purpose',CASE WHEN t.name='order:deposit' OR t.name LIKE 'order:deposit:%' THEN 'deposit' ELSE 'rental' END,
-      'amount',t.value,'paid_at',to_char(t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD"T"HH24:MI'),
-      'method',CASE WHEN t.cash_id IS NOT NULL THEN 'Tiền mặt' WHEN t.bank_owner_type='company' THEN 'CK tk công ty' ELSE 'CK tk cá nhân' END,
-      'account',CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(ca.name,''),'Két tiền mặt #'||t.cash_id::text)
-        ELSE concat_ws(' · ',b.bank_name,b.owner_name,b.account_number) END) ORDER BY t.created_at,t.id) AS rows
-    FROM himoto.transactions t LEFT JOIN himoto.banks b ON b.id=t.bank_id LEFT JOIN himoto.cash ca ON ca.id=t.cash_id
-    WHERE t.order_id=o.id AND t.type IN ('in','addon') AND t.status='approved'
-  ) collections ON true
+    SELECT p.id, p.full_name FROM himoto.staff_profiles p
+    WHERE p.user_id = o.contract_responsible_user_id
+      AND p.store_id = CASE
+        WHEN COALESCE(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id','') ~ '^[0-9]+$'
+        THEN (o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id')::bigint
+        ELSE o.store_id END
+    ORDER BY p.id LIMIT 1
+  ) staff ON true
   LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
       'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
@@ -71,6 +77,16 @@ export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_refere
     WHERE d.order_id = o.id AND d.deleted_at IS NULL
   ) ov ON true
   WHERE o.deleted_at IS NULL`;
+
+export function contractListScopeClause(scope: string | null): string {
+  switch (scope) {
+    case 'drafts': return ` AND o.order_status='draft'`;
+    case 'overdue': return ` AND o.order_status='renting' AND COALESCE(o.return_at, ov.end_date) < now()`;
+    case 'vat': return ` AND EXISTS (SELECT 1 FROM himoto.transactions t WHERE t.order_id=o.id AND t.type IN ('in','addon') AND t.status='approved' AND t.bank_owner_type='company')`;
+    case 'ownership': return ` AND (s.kind='lease_to_own' OR COALESCE(NULLIF(o.order_type,''), o.draft_payload->'management_composer'->>'rental_type') IN ('ownership','ownership_cd'))`;
+    default: return '';
+  }
+}
 export class DraftSaveError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
@@ -116,6 +132,7 @@ export function parseDraftEdits(input: unknown): ContractEdits {
     for (const key of ['stock_store_id','stock_store_name'] as const) if (vehicle[key] !== undefined && (typeof vehicle[key] !== 'string' || vehicle[key]!.length > 255)) throw new DraftSaveError('Thông tin cơ sở xe không hợp lệ.');
   }
   if (edits.status !== 'draft' || typeof edits.rental_type !== 'string' || typeof edits.notes !== 'string' || edits.notes.length > 4000 || draft.contract_number.length > 32) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
+  if (!CONTRACT_TYPES.some(option => option.value === edits.rental_type)) throw new DraftSaveError('Loại hợp đồng không hợp lệ.');
   if (edits.revision !== undefined && (typeof edits.revision !== 'string' || !/^\d+$/.test(edits.revision))) throw new DraftSaveError('Phiên bản bản nháp không hợp lệ.');
   return { draft: { ...structuredClone(draft), ...(edits.rental_type === 'ownership' || draft.ownership !== undefined ? {ownership: edits.rental_type === 'ownership'} : {}) }, status: 'draft', rental_type: edits.rental_type, notes: edits.notes,
     ...(edits.revision ? { revision: edits.revision } : {}) };
@@ -197,20 +214,20 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     nullable(edits.draft.customer.address), nullable(edits.draft.customer.id_card), nullable(edits.notes),
     localTimestamp(edits.draft.start_date), localTimestamp(edits.draft.end_date), JSON.stringify(payload), reference,
     staff.rows[0]?.user_id ?? null, nullable(edits.draft.signed_on), nullable(edits.draft.authorization_date),
-    nullable(edits.draft.collateral_description), nullable(edits.draft.customer_source), nullable(edits.draft.customer_source_url)];
+    nullable(edits.draft.collateral_description), nullable(edits.draft.customer_source), nullable(edits.draft.customer_source_url), edits.rental_type];
   let savedId = id;
   if (id === null) {
     const inserted = await client.query(`INSERT INTO himoto.orders (store_id, customer_id, customer_name, customer_phone, customer_address,
       customer_idnumber, note, rent_at, return_at, draft_payload, draft_reference, contract_responsible_user_id, contract_signed_on,
-      contract_authorization_date, contract_collateral_description, customer_source, customer_source_url, order_status, order_mode, created_at, updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'draft','draft',now(),now()) RETURNING id`, values);
+      contract_authorization_date, contract_collateral_description, customer_source, customer_source_url, order_type, order_status, order_mode, created_at, updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'draft','draft',now(),now()) RETURNING id`, values);
     savedId = Number(inserted.rows[0].id);
     if (!reference) await client.query("UPDATE himoto.orders SET draft_reference = 'NHAP-' || id::text WHERE id = $1", [savedId]);
   } else {
     await client.query(`UPDATE himoto.orders SET store_id=$1, customer_id=$2, customer_name=$3, customer_phone=$4, customer_address=$5,
       customer_idnumber=$6, note=$7, rent_at=$8, return_at=$9, draft_payload=$10, draft_reference=$11, contract_responsible_user_id=$12,
       contract_signed_on=$13, contract_authorization_date=$14, contract_collateral_description=$15, customer_source=$16,
-      customer_source_url=$17, updated_at=now() WHERE id=$18 AND order_status='draft'`, [...values, id]);
+      customer_source_url=$17, order_type=$18, updated_at=now() WHERE id=$19 AND order_status='draft'`, [...values, id]);
   }
   const result = await client.query(`${CONTRACT_LIST_SQL} AND o.id = $1`, [savedId]);
   return result.rows[0];

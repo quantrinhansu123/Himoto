@@ -3,13 +3,20 @@ import { ORDER_STATUS } from '@/lib/formatters';
 import { STAFF_POSITIONS } from './staff-positions';
 import { OWNERSHIP_TERMS } from './contract-billing';
 
-export const STAFF_STATUSES: Option[] = [{ value: 'active', label: 'Đang làm việc' }, { value: 'inactive', label: 'Tạm nghỉ' }, { value: 'leave', label: 'Đã nghỉ việc' }];
+export const STAFF_STATUSES: Option[] = [{ value: 'active', label: 'Bình thường' }, { value: 'inactive', label: 'Tạm nghỉ' }, { value: 'leave', label: 'Đã nghỉ việc' }];
 export const CUSTOMER_STATUSES: Option[] = [{ value: 'active', label: 'Bình thường' }, { value: 'warning', label: 'Cần lưu ý' }, { value: 'blacklist', label: 'Blacklist (khách nợ xấu)' }, { value: 'draft', label: 'Chưa hoàn tất' }];
 export const STORE_STATUSES: Option[] = [{ value: 'active', label: 'Hoạt động' }, { value: 'inactive', label: 'Tạm ngừng' }];
 export const VEHICLE_STATUSES: Option[] = [
   { value: 'ready', label: 'Lưu kho' }, { value: 'using', label: 'Đang thuê' }, { value: 'repairing', label: 'Bảo dưỡng' },
   { value: 'pending', label: 'Đặt trước' }, { value: 'sold', label: 'Đã bán' }, { value: 'bad_debt', label: 'Nợ xấu' },
   { value: 'broken', label: 'Hỏng' }, { value: 'in_transit', label: 'Đang điều chuyển' },
+];
+/** GPS tracker connection: green / yellow / red dots on the vehicles list. */
+export const LOCATION_STATUSES: Option[] = [
+  { value: 'online', label: 'Có tín hiệu' },
+  { value: 'warning', label: 'Cảnh báo' },
+  { value: 'offline', label: 'Mất liên lạc' },
+  { value: 'none', label: 'Chưa gắn GPS' },
 ];
 export const VEHICLE_TYPES: Option[] = [{ value: 'xega', label: 'Xe ga' }, { value: 'xeso', label: 'Xe số' }, { value: 'xecon', label: 'Xe côn tay' }, { value: 'xesh', label: 'Xe SH' }, { value: 'xe_dien', label: 'Xe điện' }];
 export const POSITIONS: Option[] = STAFF_POSITIONS.map(label => ({ value: label, label }));
@@ -21,7 +28,19 @@ export const CONTRACT_STATUSES: Option[] = [
   { value: 'deposit_contract', label: 'Đã cọc, chờ nhận xe' },
   { value: 'cancel_pending_settlement', label: 'Chờ tất toán hủy' },
 ];
-export const CONTRACT_TYPES: Option[] = [{ value: 'daily', label: 'Thuê theo ngày' }, { value: 'monthly', label: 'Thuê theo tháng' }, { value: 'monthly_3', label: 'Thuê 3 tháng' }, { value: 'monthly_6', label: 'Thuê 6 tháng' }, { value: 'monthly_12', label: 'Thuê 12 tháng' }, { value: 'ownership', label: 'Thuê sở hữu' }, { value: 'rental', label: 'Thuê xe' }, { value: 'tour', label: 'Tour / phượt' }];
+export const CONTRACT_TYPES: Option[] = [
+  { value: 'daily', label: 'Thuê theo ngày' },
+  { value: 'monthly', label: 'Thuê theo tháng' },
+  { value: 'monthly_3', label: 'Thuê 3 tháng' },
+  { value: 'monthly_6', label: 'Thuê 6 tháng' },
+  { value: 'monthly_12', label: 'Thuê 12 tháng' },
+  { value: 'rental', label: 'Thuê xe' },
+  { value: 'tour', label: 'Tour / phượt' },
+  { value: 'ownership', label: 'Thuê sở hữu' },
+  { value: 'ownership_cd', label: 'Thuê sở hữu( cd)' },
+];
+export const OWNERSHIP_CONTRACT_TYPES = new Set(['ownership', 'ownership_cd']);
+
 const branchField = { key: 'store_id', label: 'Cơ sở', type: 'select' as const, storeOptions: true, required: true };
 const codeColumn = { key: 'code', label: 'Mã', format: 'code' as const };
 const statusColumn = { key: 'status', label: 'Trạng thái', format: 'status' as const };
@@ -90,10 +109,13 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     description: 'Theo dõi thông tin, tình trạng và cơ sở hiện tại của từng xe.',
     searchPlaceholder: 'Tìm mã xe, tên xe hoặc biển số…', statuses: VEHICLE_STATUSES,
     filters: [{ key: 'type', label: 'Tất cả loại xe', options: VEHICLE_TYPES }, { key: 'beneficiary_store_id', label: 'Tất cả cơ sở thụ hưởng', options: [], storeOptions: true }],
-    columns: [codeColumn, { key: 'name', label: 'Tên xe', format: 'vehicle', secondary: 'brand' }, { key: 'license', label: 'Biển số' },
+    columns: [codeColumn, { key: 'overdue_days', label: 'Số ngày quá hạn', format: 'number', align: 'right' },
+      { key: 'name', label: 'Tên xe', format: 'vehicle', secondary: 'brand' }, { key: 'license', label: 'Biển số' },
       { key: 'color', label: 'Màu sắc' }, { key: 'type', label: 'Loại xe' }, branchColumn, { key: 'beneficiary_store_name', label: 'Cơ sở thụ hưởng', hidden: true },
+
       { key: 'daily_price', label: 'Giá thuê / ngày', format: 'money', align: 'right' },
       { key: 'odometer', label: 'Số km', format: 'number', align: 'right' }, statusColumn,
+      { key: 'location_status', label: 'Trạng thái định vị', format: 'status' },
       { key: 'year', label: 'Năm sản xuất', hidden: true }, { key: 'chassis', label: 'Số khung', hidden: true }, { key: 'engine', label: 'Số máy', hidden: true },
       { key: 'monthly_price', label: 'Đơn giá / tháng', format: 'money', align: 'right' }],
     fields: [{ key: 'name', label: 'Tên / dòng xe', required: true }, { key: 'license', label: 'Biển số', required: true },
@@ -105,14 +127,39 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
 };
 
 export function optionLabel(config: ManagementConfig, key: string, value: string): string {
+  if (key === 'location_status') return LOCATION_STATUSES.find(o => o.value === value)?.label || value || '—';
   const options = key === 'status' ? config.statuses : config.filters.find(f => f.key === key)?.options;
   return options?.find(o => o.value === value)?.label || (config.kind === 'contracts' && key === 'status' ? ORDER_STATUS.find(o => o.value === value)?.label : undefined) || value || '—';
 }
 
 export function statusTone(status: string): string {
-  if (['active', 'ready', 'completed'].includes(status)) return 'green';
+  if (['online', 'active', 'ready', 'completed'].includes(status)) return 'green';
   if (['using', 'renting', 'in_transit'].includes(status)) return 'blue';
-  if (['warning', 'repairing', 'pending', 'draft'].includes(status)) return 'amber';
-  if (['overdue', 'bad_debt', 'blacklist', 'broken'].includes(status)) return 'red';
+  if (['warning', 'repairing', 'pending', 'draft'].includes(status)) return 'yellow';
+  if (['offline', 'overdue', 'bad_debt', 'blacklist', 'broken'].includes(status)) return 'red';
   return 'gray';
+}
+
+/** Map provider/raw GPS status strings onto online | warning | offline | none. */
+export function normalizeLocationStatus(raw: unknown, hasDevice: boolean): string {
+  if (!hasDevice) return 'none';
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value) return 'offline';
+  if (['online', 'on', 'active', 'moving', 'running', 'idle', 'parked', 'parking', 'stop', 'stopped', 'có tín hiệu', 'co tin hieu'].includes(value)) return 'online';
+  if (['warning', 'warn', 'weak', 'satellite_lost', 'no_gps', 'low_signal', 'cảnh báo', 'canh bao', 'mất vệ tinh', 'mat ve tinh'].includes(value)) return 'warning';
+  if (['offline', 'off', 'lost', 'disconnected', 'dead', 'mất liên lạc', 'mat lien lac'].includes(value)) return 'offline';
+  if (['none', 'unmapped', 'chưa gắn', 'chua gan'].includes(value)) return 'none';
+  return 'warning';
+}
+
+export function resolveLocationStatus(input: { hasDevice: boolean; normalizedStatus?: unknown; lastAt?: unknown }): string {
+  if (!input.hasDevice) return 'none';
+  const mapped = normalizeLocationStatus(input.normalizedStatus, true);
+  if (mapped !== 'offline' || input.normalizedStatus) return mapped;
+  const at = input.lastAt == null || input.lastAt === '' ? NaN : Date.parse(String(input.lastAt));
+  if (!Number.isFinite(at)) return 'offline';
+  const ageMs = Date.now() - at;
+  if (ageMs <= 30 * 60_000) return 'online';
+  if (ageMs <= 24 * 60 * 60_000) return 'warning';
+  return 'offline';
 }

@@ -27,7 +27,9 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
   const { dataset } = useManagement();
   const creating = mode === 'create' || !row;
   const [draft, setDraft] = useState({ name: String(row?.name || ''), phone: String(row?.phone || ''), email: String(row?.email || ''), position: normalizeStaffPosition(row?.position),
-    store_id: row ? row.store_id == null ? '' : String(row.store_id) : defaultStoreId, status: row?.status || 'active', joined_at: '' });
+    store_id: row ? row.store_id == null ? '' : String(row.store_id) : defaultStoreId,
+    // New staff always starts as Bình thường (active).
+    status: creating ? 'active' : String(row?.status || 'active'), joined_at: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -69,7 +71,7 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
       {field('name', 'Họ và tên', 'text', true)}{field('phone', 'Số điện thoại', 'tel', true)}{field('email', 'Email', 'email')}
       <div className="mg-field"><label htmlFor="staff-position">Chức vụ</label><SuggestionInput id="staff-position" value={draft.position} suggestions={positions} searchAliases={STAFF_POSITION_SEARCH_ALIASES} disabled={saving} placeholder="Chọn gợi ý hoặc gõ chức vụ mới" onChange={value => change('position', value)} /><small>NVKD (Nhân viên kinh doanh), PT, TPKD, QL PTKD… dùng chung cách viết cho mọi cơ sở. Kiêm nhiệm: ngăn cách bằng dấu /.</small></div>
       <div className="mg-field"><label htmlFor="staff-store">Cơ sở</label><select id="staff-store" value={draft.store_id} disabled={saving} onChange={event => change('store_id', event.target.value)}><option value="">Chưa phân bổ</option>{stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select></div>
-      <div className="mg-field"><label htmlFor="staff-status">Trạng thái</label><select id="staff-status" value={draft.status} disabled={saving} onChange={event => change('status', event.target.value)}>{STAFF_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+      <div className="mg-field"><label htmlFor="staff-status">Trạng thái</label><select id="staff-status" value={draft.status || 'active'} disabled={saving} onChange={event => change('status', event.target.value)} aria-describedby={creating ? 'staff-status-hint' : undefined}>{STAFF_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{creating && <small id="staff-status-hint">Mặc định: Bình thường.</small>}</div>
       {creating && <div className="mg-field"><label htmlFor="staff-joined-at">Ngày vào làm</label><input id="staff-joined-at" type="date" value={draft.joined_at} disabled={saving} onChange={event => change('joined_at', event.target.value)} /></div>}
     </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button><button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : creating ? 'Thêm nhân sự' : 'Lưu nhân sự'}</button></div></form>}

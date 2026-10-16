@@ -15,6 +15,15 @@ export function managementKindsForPath(pathname: string): readonly ManagementKin
   return PAGE_KINDS[pathname.split('/')[1]] || STORE_KINDS;
 }
 
+/** Server-side contract list slices so subpages do not download the full table. */
+export function contractsQueryForPath(pathname: string): string {
+  if (pathname.startsWith('/contracts/drafts')) return 'scope=drafts';
+  if (pathname.startsWith('/contracts/vat')) return 'scope=vat';
+  if (pathname.startsWith('/contracts/overdue')) return 'scope=overdue';
+  if (pathname.startsWith('/contracts/ownership')) return 'scope=ownership';
+  return '';
+}
+
 export interface ResourceState { loaded: boolean; loading: boolean; error: string; updatedAt: number }
 export interface ManagementDataState {
   dataset: ManagementDataset;
@@ -30,6 +39,7 @@ export function createManagementDataLoader(repository: Pick<ManagementRepository
   const listeners = new Set<() => void>();
   const pending = new Map<ManagementKind, Promise<void>>();
   const versions = new Map<ManagementKind, number>();
+  let contractsQuery = '';
   function publish(next: ManagementDataState) { state = next; listeners.forEach(listener => listener()); }
   function resource(kind: ManagementKind, changes: Partial<ResourceState>) {
     publish({ ...state, resources: { ...state.resources, [kind]: { ...state.resources[kind], ...changes } } });
@@ -40,8 +50,9 @@ export function createManagementDataLoader(repository: Pick<ManagementRepository
     const current = state.resources[kind];
     if (!force && current.loaded && !current.error && current.updatedAt > 0 && now() - current.updatedAt < maxAge) return Promise.resolve();
     const version = versions.get(kind) || 0;
+    const query = kind === 'contracts' ? contractsQuery : '';
     resource(kind, { loading: true, error: '' });
-    const request = Promise.resolve().then(() => repository.loadKind(kind)).then(rows => {
+    const request = Promise.resolve().then(() => repository.loadKind(kind, query)).then(rows => {
       // A read started before a successful edit must not undo that edit.
       if ((versions.get(kind) || 0) !== version) return;
       publish({ dataset: { ...state.dataset, [kind]: rows }, resources: {
@@ -57,6 +68,12 @@ export function createManagementDataLoader(repository: Pick<ManagementRepository
   return {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    setContractsQuery(query: string) {
+      if (contractsQuery === query) return;
+      contractsQuery = query;
+      versions.set('contracts', (versions.get('contracts') || 0) + 1);
+      resource('contracts', { updatedAt: 0, loaded: false, error: '' });
+    },
     async ensure(kinds: readonly ManagementKind[], force = false) { await Promise.all([...new Set(kinds)].map(kind => load(kind, force))); },
     update(kind: ManagementKind, transform: (rows: ManagementRow[]) => ManagementRow[]) {
       versions.set(kind, (versions.get(kind) || 0) + 1);

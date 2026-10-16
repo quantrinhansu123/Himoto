@@ -60,7 +60,7 @@ export function StaffOrganizationChart() {
     {loading ? <p role="status">Đang tải sơ đồ nhân sự…</p> : error ? <p role="alert">Không tải được sơ đồ nhân sự. Vui lòng thử lại.</p> : <div className="mg-org-scroll" tabIndex={0} role="region" aria-label="Sơ đồ nhân sự">
       <div className="mg-org-chart">
         <div className="mg-org-root"><span className="mg-org-root-icon" aria-hidden="true"><Network size={22} /></span><div><strong>HIMOTO</strong><small>Hệ thống cơ sở và nhân sự</small></div>
-          <dl className="mg-org-kpis"><div><dt><Building2 size={13} />Cơ sở</dt><dd>{stores.length}</dd></div><div><dt><Users size={13} />Nhân sự</dt><dd>{shown.length}</dd></div><div><dt>Đang làm việc</dt><dd>{working}</dd></div></dl></div>
+          <dl className="mg-org-kpis"><div><dt><Building2 size={13} />Cơ sở</dt><dd>{stores.length}</dd></div><div><dt><Users size={13} />Nhân sự</dt><dd>{shown.length}</dd></div><div><dt>Bình thường</dt><dd>{working}</dd></div></dl></div>
         {departments.length > 0 && <div className="mg-org-tier"><h3 className="mg-org-tier-title">Bộ phận trụ sở công ty<span>{departments.length}</span></h3>
           <div className="mg-org-grid">{departments.map((department, index) => <article className={`mg-org-card mg-org-tone-${index % 6}`} key={department.role}>
             <header><h3>{department.label}</h3><span>{department.people.length} nhân sự</span></header><div className="mg-org-people">{department.people.map(person => <PersonCard key={person.id} person={person}

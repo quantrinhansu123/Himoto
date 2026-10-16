@@ -3,9 +3,10 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, House, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
+import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, House, KeyRound, LogOut, Menu, PanelLeftClose, ReceiptText, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
+import { canRecordContractPayment } from '@/lib/management/permissions';
 import type { SessionUser } from '@/lib/server/management-session';
 
 const navigation = [
@@ -19,7 +20,8 @@ const navigation = [
   { href: '/contracts/vat', label: 'Hợp đồng VAT', kind: 'contracts' as const, icon: ReceiptText },
   { href: '/contracts/overdue', label: 'Hợp đồng quá hạn', kind: 'contracts' as const, icon: AlarmClock },
   { href: '/contracts/due', label: 'Đến hạn đóng tiền', kind: 'contracts' as const, icon: CalendarDays },
-  { href: '/contracts/battery', label: 'Hợp đồng thuê pin', kind: 'battery-contracts' as const, icon: BatteryCharging },
+  { href: '/contracts/ownership', label: 'Hợp đồng thuê sở hữu', kind: 'contracts' as const, icon: KeyRound },
+  { href: '/contracts/battery', label: 'Hợp đồng thuê pin / sạc', kind: 'battery-contracts' as const, icon: BatteryCharging },
   { href: '/stores', label: 'Cơ sở', kind: 'stores' as const, icon: Building2 },
   { href: '/vehicles', label: 'Danh sách xe', kind: 'vehicles' as const, icon: Bike },
   { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook' as const, icon: Wallet },
@@ -120,5 +122,5 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
 }
 
 export function ManagementShell({ children, user = null }: { children: ReactNode; user?: SessionUser | null }) {
-  return <ManagementProvider><Shell user={user}>{children}</Shell></ManagementProvider>;
+  return <ManagementProvider canPayContracts={canRecordContractPayment(user)}><Shell user={user}>{children}</Shell></ManagementProvider>;
 }

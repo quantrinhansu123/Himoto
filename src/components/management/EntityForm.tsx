@@ -9,7 +9,7 @@ import { Dialog } from './Dialog';
 import { ContractRelative, relativesFromRow, formatRelatives } from '@/lib/management/contract-document';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { CustomerRelativesFields } from '@/components/contracts/CustomerRelativesFields';
-import { IssueDateInput } from './IssueDateInput';
+import { VietnamDateField } from '@/components/contracts/VietnamDateField';
 
 export function EntityForm({ config, row, onClose }: { config: ManagementConfig; row: ManagementRow | null; onClose: () => void }) {
   const { dataset, selectedStore, source, save, updateCustomer } = useManagement();
@@ -88,9 +88,16 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
             setDraft(current => ({ ...current, [field.key]: event.target.value }));
             setErrors(current => ({ ...current, [field.key]: '' }));
           } };
+        const setValue = (next: string) => {
+          setDraft(current => ({ ...current, [field.key]: next }));
+          setErrors(current => ({ ...current, [field.key]: '' }));
+        };
         return <div key={field.key} className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`}><label htmlFor={id}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
-          {config.kind === 'customers' && field.type === 'date' ? <IssueDateInput {...props} value={String(draft[field.key] || '')} onValueChange={value => { setDraft(current => ({ ...current, [field.key]: value })); setErrors(current => ({ ...current, [field.key]: '' })); }} /> : field.type === 'select' ? <select {...props} required={field.required}>{field.storeOptions && <option value="">Chọn cơ sở</option>}{options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
-            : field.type === 'textarea' ? <textarea {...props} rows={3} /> : <input {...props} type={field.type || 'text'} required={field.required} min={field.type === 'number' ? 0 : undefined} step={field.type === 'number' ? 1 : undefined} />}
+          {field.type === 'select' ? <select {...props} required={field.required}>{field.storeOptions && <option value="">Chọn cơ sở</option>}{options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+            : field.type === 'textarea' ? <textarea {...props} rows={3} />
+            : field.type === 'date' ? <VietnamDateField id={id} value={String(draft[field.key] ?? '')} disabled={saving} invalid={Boolean(errors[field.key])}
+                describedBy={errors[field.key] ? `${id}-error` : field.hint ? `${id}-hint` : undefined} onChange={setValue} />
+            : <input {...props} type={field.type || 'text'} required={field.required} min={field.type === 'number' ? 0 : undefined} step={field.type === 'number' ? 1 : undefined} />}
           {field.hint && <small id={`${id}-hint`}>{field.hint}</small>}{errors[field.key] && <p id={`${id}-error`} className="mg-field-error">{errors[field.key]}</p>}
         </div>;
       })}{config.kind === 'customers' && <CustomerRelativesFields prefix="edit-customer" relatives={relatives} disabled={saving} onChange={setRelatives} />}</div>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}</div>

@@ -776,6 +776,25 @@
   outline: none;
 }
 .mg-date-divider { color: var(--mg-slate-400); }
+.mg-overdue-filters { gap: 10px; }
+.mg-overdue-filters .mg-overdue-compare select,
+.mg-overdue-filters .mg-overdue-days input {
+  border: 1px solid var(--mg-line-strong);
+  background: #fff;
+  border-radius: var(--mg-radius);
+  height: 32px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  color: var(--mg-slate-700);
+}
+.mg-overdue-filters .mg-overdue-compare select { min-width: 96px; padding-right: 24px; }
+.mg-overdue-filters .mg-overdue-days input { width: 110px; }
+.mg-overdue-filters .mg-overdue-compare select:focus,
+.mg-overdue-filters .mg-overdue-days input:focus {
+  border-color: var(--mg-brand-500);
+  outline: none;
+  box-shadow: var(--mg-focus-ring);
+}
 .mg-active-filter {
   display: inline-flex;
   align-items: center;
@@ -1046,7 +1065,8 @@
   background: var(--mg-blue-bg);
   border-color: var(--mg-blue-border);
 }
-.mg-status-amber {
+.mg-status-amber,
+.mg-status-yellow {
   color: var(--mg-amber-text);
   background: var(--mg-amber-bg);
   border-color: var(--mg-amber-border);
@@ -2060,6 +2080,39 @@
 .mg-time24 { display: flex; align-items: center; gap: 4px; }
 .mg-time24 select { min-width: 0; flex: 1 1 0; padding: 8px 4px 8px 10px !important; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .mg-datetime24 { grid-template-columns: minmax(0, 1fr); } .mg-time24 { width: 164px; } }
+.mg-vietnam-date { position: relative; display: grid; }
+.mg-vietnam-date > input[type='text'] {
+  width: 100%;
+  min-height: 38px;
+  padding-right: 40px;
+  font-variant-numeric: tabular-nums;
+}
+.mg-vietnam-date-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.mg-vietnam-date-picker {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--mg-radius);
+  background: transparent;
+  color: var(--mg-slate-500);
+  cursor: pointer;
+}
+.mg-vietnam-date-picker:hover:not(:disabled) { background: var(--mg-slate-100, #f1f5f9); color: var(--mg-brand-700); }
+.mg-vietnam-date-picker:disabled { opacity: 0.45; cursor: not-allowed; }
 .mg-method-picker summary {
   min-height: 38px;
   padding: 8px 11px;
@@ -2354,6 +2407,24 @@
 .mg-payment-delete-confirm > div { display: flex; justify-content: flex-end; gap: 8px; }
 .mg-payment-history-empty { margin: 0; color: var(--mg-slate-500); font-size: 12.5px; }
 .mg-payment-history-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.mg-cashbook-autofill-actions, .mg-cashbook-followup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.mg-cashbook-followup {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: var(--mg-radius);
+  background: var(--mg-surface-muted, #f3f5f7);
+}
+.mg-cashbook-followup > p { margin: 0; }
+.mg-cashbook-followup > p + p { color: var(--mg-slate-600); font-size: 13px; }
+.mg-cashbook-followup > .mg-button { margin-top: 4px; }
+.mg-cashbook-followup > .mg-button + .mg-button { margin-top: 0; }
 
 .mg-contract-detail .mg-contract-tabs, .mg-customer-detail .mg-contract-tabs {
   grid-template-columns: none;

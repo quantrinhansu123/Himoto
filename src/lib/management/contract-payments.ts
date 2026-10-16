@@ -9,7 +9,13 @@ export const PAYABLE_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt
 export const RENEWABLE_STATUSES = ['renting', 'overdue'];
 export const MAX_PAYMENT_AMOUNT = 9_999_999_999_999;
 export const canAddExtraReceipt = (status: string) => !['draft', 'cancelled'].includes(status);
-export type PaymentPurpose = 'debt' | 'renewal' | 'extra' | 'deposit_refund';
+export type PaymentPurpose = 'debt' | 'renewal' | 'extra' | 'deposit_refund';export const PAYMENT_PURPOSES: PaymentPurpose[] = ['debt', 'renewal', 'extra', 'deposit_refund'];
+export function cashbookPaymentPath(contractId: number, purpose: PaymentPurpose = 'debt') {
+  return `/cashbook?contract_id=${contractId}&purpose=${purpose}`;
+}
+export function parsePaymentPurpose(value: string | null | undefined): PaymentPurpose {
+  return PAYMENT_PURPOSES.includes(value as PaymentPurpose) ? value as PaymentPurpose : 'debt';
+}
 export interface PaymentAccount { id: number; label: string; kind: 'cash' | 'bank'; store_id: number; owner_type: string; bank_name?: string; account_number?: string; owner_name?: string }
 export interface ContractPayment {
   id: number; type: 'in' | 'out'; deposit: boolean; amount: number; paid_at: string; method: string; account: string;

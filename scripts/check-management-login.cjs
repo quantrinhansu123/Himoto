@@ -36,7 +36,7 @@ async function run() {
   let row = account;
   const queries = [];
   const database = { query: async (sql, values) => { queries.push({ sql, values }); return { rows: row ? [row] : [] }; } };
-  assert.deepEqual(await session.authenticateAccount(account.email, password, database), { id: 7, name: account.name, email: account.email });
+  assert.deepEqual(await session.authenticateAccount(account.email, password, database), { id: 7, name: account.name, email: account.email, role: 'admin', role_slug: 'quan-tri-vien' });
   assert.deepEqual(queries[0].values, [account.email]);
   assert(queries.every(query => query.sql.startsWith('SELECT')));
   await assert.rejects(session.authenticateAccount(account.email, 'wrong', database), error => error.status === 401);
@@ -107,7 +107,7 @@ async function run() {
       row = account;
       const response = await handler.POST(new NextRequest('http://127.0.0.1:3000/api/session', { method: 'POST', headers: { Host: '127.0.0.1:3000', Origin: 'http://127.0.0.1:3000', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account.email, password }) }));
       assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), { user: { id: 7, name: account.name, email: account.email } });
+      assert.deepEqual(await response.json(), { user: { id: 7, name: account.name, email: account.email, role: 'admin', role_slug: 'quan-tri-vien' } });
       const cookie = response.headers.get('set-cookie');
       assert.match(cookie, /HttpOnly/i); assert.match(cookie, /SameSite=strict/i); assert.match(cookie, /Max-Age=28800/i);
       const authenticated = new NextRequest('http://127.0.0.1:3000/api/session', { headers: { Cookie: cookie.split(';')[0] } });

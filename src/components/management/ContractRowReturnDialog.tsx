@@ -1,11 +1,14 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { LoaderCircle, RotateCcw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { LoaderCircle, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
+import { cashbookPaymentPath } from '@/lib/management/contract-payments';
 import { loadContractReturnableItems, ReturnableContractItem, ReturnInput, returnContractItems, searchReturnableItems } from '@/lib/management/contract-returns';
+import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 
 const localNow = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 16);
 const localMillis = (value: string) => new Date(`${value}:00+07:00`).getTime();
@@ -31,7 +34,8 @@ function lateText(minutes: number, hours: number) {
 }
 
 export function ContractRowReturnDialog({ contractId, contractCode = '', onClose }: { contractId?: number; contractCode?: string; onClose: () => void }) {
-  const { notify, reload, invalidateData } = useManagement();
+  const { notify, reload, invalidateData, canPayContracts } = useManagement();
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState(contractCode);
   const [rows, setRows] = useState<ReturnableContractItem[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
@@ -41,6 +45,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [done, setDone] = useState<{ orderId: number; code: string; due: number | null; depositHeld: number; closes: boolean } | null>(null);
 
   const accept = useCallback((result: ReturnableContractItem[]) => {
     setRows(result);
@@ -114,12 +119,25 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
       const results = await returnContractItems(items);
       const net = results.reduce((sum, result) => sum + result.fee, 0);
       const code = results[0]?.contract_code || contractCode;
+      const orderId = lines[0]?.row.order_id ?? contractId;
       notify(`${code}: đã trả ${results.length} xe${net > 0 ? `, cộng ${formatMoney(net)} phí trả muộn` : net < 0 ? `, giảm ${formatMoney(-net)} doanh thu do trả sớm` : ''}.`);
       invalidateData(['vehicles', 'customers']);
       await reload(['contracts']);
-      onClose();
+      if (orderId) setDone({
+        orderId, code,
+        due: summary?.due ?? null,
+        depositHeld: summary?.depositHeld ?? 0,
+        closes: summary?.closes ?? false,
+      });
+      else onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không ghi nhận được trả xe.'); }
     finally { setSaving(false); }
+  }
+
+  function openCashbook(purpose: 'debt' | 'extra' | 'deposit_refund') {
+    if (!done) return;
+    onClose();
+    router.push(cashbookPaymentPath(done.orderId, purpose));
   }
 
   const invalid = lines.some(line => line.override !== undefined && !/^\d{1,13}$/.test(line.override));
@@ -128,13 +146,22 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
   return <Dialog title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={() => { if (!saving) onClose(); }}>
     <form onSubmit={event => { if (lines.length) void submit(event); else void search(event); }}>
       <div className="mg-dialog-body">
+        {done ? <div className="mg-cashbook-followup" role="status">
+          <p>Đã trả xe hợp đồng {done.code}{done.due !== null && done.due > 0 ? ` · còn thiếu ${formatMoney(done.due)}` : ''}{done.depositHeld > 0 ? ` · cọc đang giữ ${formatMoney(done.depositHeld)}` : ''}.</p>
+          {canPayContracts ? <>
+            <p>Bấm nút bên dưới để mở phiếu thu/chi Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng.</p>
+            {(done.due === null || done.due > 0) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
+            {done.due !== null && done.due <= 0 && <button type="button" className="mg-button" onClick={() => openCashbook('extra')}><Wallet size={16} />Điền phiếu thu thêm vào sổ quỹ</button>}
+            {done.depositHeld > 0 && <button type="button" className="mg-button" onClick={() => openCashbook('deposit_refund')}><Wallet size={16} />Điền chi trả cọc vào sổ quỹ</button>}
+          </> : <p>Chỉ kế toán hoặc quản trị viên mới điền được phiếu thu/chi vào sổ quỹ.</p>}
+        </div> : <>
         {!contractCode && <div className="mg-return-search"><label className="mg-sr-only" htmlFor="contract-return-search">Mã hợp đồng, CCCD, biển số hoặc SĐT khách</label><input id="contract-return-search" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void loadItems(searchTerm); } }} placeholder="Mã HĐ, CCCD, biển số hoặc SĐT khách" /><button className="mg-button" type="button" disabled={loading || !searchTerm.trim()} onClick={() => void loadItems(searchTerm)}>{loading ? <LoaderCircle size={15} className="mg-spin" /> : null}Tìm</button></div>}
         {contractCode && !rows.length && loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && rows.length === 0 && !error && (searchTerm ? <p>{contractCode ? 'Hợp đồng này không có xe trong danh sách chi tiết để trả.' : 'Không tìm thấy xe khớp mã hợp đồng, CCCD, biển số hoặc SĐT khách.'}</p> : <p>Nhập mã hợp đồng, CCCD, biển số hoặc SĐT khách để tra cứu xe cần trả.</p>)}
         {rows.length > 0 && !openRows.length && <div className="mg-return-estimate"><span>Tất cả xe trong hợp đồng đã được trả; hợp đồng không còn xe đang thuê.</span></div>}
         {openRows.length > 0 && <>
           <div className="mg-form-grid mg-contract-grid-two">
-            <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ trả thực tế</label><input id="contract-returned-at" type="datetime-local" required value={returnedAt} onChange={event => { setReturnedAt(event.target.value); setOverrides({}); }} /></div>
+            <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ trả thực tế (24h)</label><DateTime24Controls id="contract-returned-at" label="Ngày giờ trả thực tế" value={returnedAt} onChange={value => { setReturnedAt(value); setOverrides({}); }} /></div>
             <div className="mg-field"><label htmlFor="contract-return-hourly-rate">Đơn giá trễ / giờ (VNĐ)</label><input id="contract-return-hourly-rate" type="number" min={0} max={5000000} step={1000} required value={hourlyRate} onChange={event => { setHourlyRate(event.target.value); setOverrides({}); }} /></div>
           </div>
           <div className="mg-return-lines" role="group" aria-label="Xe cần trả">
@@ -162,11 +189,12 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
             <div><dt>{summary.due !== null && summary.due < 0 ? 'Thu thừa' : 'Còn thiếu (không trừ cọc)'}</dt><dd>{summary.due === null ? '—' : formatMoney(Math.abs(summary.due))}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(summary.depositHeld)}</dd></div>
           </dl>}
-          <p className="mg-composer-hint">{summary?.closes ? 'Trả hết xe sẽ đóng hợp đồng (còn nợ tiền thuê thì chuyển Chờ thanh toán) và đưa xe về Lưu kho. ' : 'Xe được trả sẽ về Lưu kho. '}Trả sớm được nhập số tiền giảm doanh thu (âm); trả muộn cộng phí theo giờ. Tiền cọc hoàn qua Thanh toán → Trả cọc.</p>
+          <p className="mg-composer-hint">{summary?.closes ? 'Trả hết xe sẽ đóng hợp đồng (còn nợ tiền thuê thì chuyển Chờ thanh toán) và đưa xe về Lưu kho. ' : 'Xe được trả sẽ về Lưu kho. '}Sau khi xác nhận, dùng nút điền sổ quỹ để ghi phiếu Thu/Chi theo đúng cấu trúc.</p>
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
+        </>}
       </div>
-      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>{openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !lines.length || invalid}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !lines.length || invalid}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
     </form>
   </Dialog>;
 }

@@ -1,14 +1,14 @@
 'use client';
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
-import { Bike, CalendarPlus, Eye, LoaderCircle, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
+import { BatteryCharging, Bike, CalendarPlus, Eye, LoaderCircle, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { CashflowColumns, cashflowTotals } from './CashflowColumns';
 import { useManagement } from './ManagementProvider';
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
 import { contractStaffStoreId, createContractDraft } from '@/lib/management/contract-document';
 import { CHANGE_LABELS, ContractHistory, loadContractHistory } from '@/lib/management/contract-history';
-import { paymentMethodLabel } from '@/lib/management/contract-payments';
+import { paymentMethodLabel, type PaymentPurpose } from '@/lib/management/contract-payments';
 import { ManagementRow } from '@/lib/management/types';
 import { MANAGEMENT_CONFIG, optionLabel } from '@/lib/management/config';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
@@ -44,7 +44,7 @@ function rentalDays(start: unknown, end: unknown) {
 
 export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
 
-export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange }: { row: ManagementRow; onClose: () => void; onPrint: () => void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: () => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void }) {
+export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onPrint: () => void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
   const { dataset, source } = useManagement();
   const [section, setSection] = useState<DetailSection>('vehicle');
   const [viewingVersion, setViewingVersion] = useState('');
@@ -68,10 +68,15 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
   const savedDraft = Boolean(row.draft_json);
   const pricing = savedDraft ? draft : row;
   const legacyVehicles = JSON.parse(String(row.legacy_items_json || '[]')) as Record<string, unknown>[];
-  const sourceVehicles = legacyVehicles.length ? legacyVehicles : JSON.parse(String(row.vehicles_json || '[]')) as Record<string, unknown>[];
+  const liveVehicles = JSON.parse(String(row.vehicles_json || '[]')) as Record<string, unknown>[];
+  const sourceVehicles = row.status !== 'draft' && liveVehicles.length ? liveVehicles : legacyVehicles.length ? legacyVehicles : liveVehicles;
   const representative = dataset?.staff.find(person => String(person.id) === draft.staff_id);
   const store = dataset?.stores.find(store => String(store.id) === draft.store_id);
   const canOperateRental = ['renting', 'overdue', 'wait_payment'].includes(row.status);
+  const canRentBattery = Boolean(onBatteryRent) && !['draft', 'cancelled'].includes(row.status);
+  const canPay = row.status !== 'draft' && row.status !== 'cancelled' && Boolean(onPayment);
+  const depositHeld = Math.max((Number(row.deposit_paid) || 0) - (Number(row.deposit_refunded) || 0), 0);
+  const remaining = row.total_amount == null || row.paid_amount == null ? null : Math.max(Number(row.total_amount) - Number(row.paid_amount), 0);
   function fields(values: [string, ReactNode][]) {
     return <dl className="mg-contract-detail-grid">{values.map(([label, value]) => <div key={label}
       className={['Địa chỉ thường trú / tạm trú', 'Thông tin người thân', 'Ghi chú hợp đồng', 'Cảnh báo', 'Tài sản thế chấp / Đặt cọc tài sản'].includes(label) ? 'mg-field-wide' : undefined}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
@@ -168,7 +173,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         <div className="mg-contract-history-toolbar"><p>Ghi nhận tạo hợp đồng, gia hạn, thu thêm, đổi xe và trả xe.</p>{refreshButton}</div>
         {historyState(!history?.changes.length, 'Chưa có lần chỉnh sửa nào.')}
         {history && history.changes.length > 0 && <ol className="mg-contract-changes">{history.changes.map(change => {
-          const printable = change.kind === 'created' || Boolean(change.version);
+          const printable = change.kind === 'created' || change.kind === 'swap' || Boolean(change.version);
           const version: ContractVersionPrint = change.version
             ? { end_date: change.version.return_at, total_amount: change.version.total, paid_amount: change.version.paid }
             : { end_date: null, total_amount: null, paid_amount: null };
@@ -192,16 +197,22 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
               </div>}
             </div>
             {printable && <div className="mg-contract-change-actions">
-              <button type="button" className="mg-button" aria-expanded={open} onClick={() => setViewingVersion(open ? '' : change.id)}><Eye size={14} />{open ? 'Ẩn' : 'Xem'}</button>
+              {change.kind !== 'swap' && <button type="button" className="mg-button" aria-expanded={open} onClick={() => setViewingVersion(open ? '' : change.id)}><Eye size={14} />{open ? 'Ẩn' : 'Xem'}</button>}
               <button type="button" className="mg-button" onClick={() => change.version && onPrintVersion ? onPrintVersion(version) : onPrint()}><Printer size={14} />In</button>
             </div>}
           </li>;
         })}</ol>}
       </>)}
       {panel('cashflow', 'Lịch sử thu chi', <>
-        <div className="mg-contract-history-toolbar"><p>Tất cả phiếu thu / chi gắn với hợp đồng trong Sổ quỹ / Sổ két.</p><div>
-          {row.status !== 'draft' && row.status !== 'cancelled' && onPayment && <button type="button" className="mg-button mg-button-primary" onClick={onPayment}><Plus size={15} />Thêm phiếu thu</button>}
+        <div className="mg-contract-history-toolbar"><p>Tất cả phiếu thu / chi gắn với hợp đồng trong Sổ quỹ / Sổ két. Nút điền sổ quỹ mở phiếu đã gắn hợp đồng, nghiệp vụ và số tiền theo cấu trúc.</p><div>
+          {canPay && <button type="button" className="mg-button mg-button-primary" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : 'extra')}><Plus size={15} />Điền phiếu thu</button>}
           {refreshButton}</div></div>
+        {canPay && <div className="mg-cashbook-autofill-actions">
+          <button type="button" className="mg-button" disabled={remaining === 0} onClick={() => onPayment?.('debt')}><Wallet size={15} />Thu công nợ{remaining && remaining > 0 ? ` (${formatMoney(remaining)})` : ''}</button>
+          {canOperateRental && <button type="button" className="mg-button" onClick={() => onPayment?.('renewal')}><Wallet size={15} />Thu gia hạn</button>}
+          <button type="button" className="mg-button" onClick={() => onPayment?.('extra')}><Wallet size={15} />Thu thêm</button>
+          <button type="button" className="mg-button" disabled={depositHeld <= 0} onClick={() => onPayment?.('deposit_refund')}><Wallet size={15} />Trả cọc{depositHeld > 0 ? ` (${formatMoney(depositHeld)})` : ''}</button>
+        </div>}
         {history && history.cashflow.length > 0 && <dl className="mg-payment-totals"><div><dt>Tổng thu (đã duyệt)</dt><dd>{formatMoney(incomeTotal)}</dd></div>
           <div><dt>Tổng chi (đã duyệt)</dt><dd>{formatMoney(expenseTotal)}</dd></div><div><dt>Chênh lệch</dt><dd>{formatMoney(incomeTotal - expenseTotal)}</dd></div></dl>}
         {historyState(!history?.cashflow.length, 'Chưa có phiếu thu / chi nào cho hợp đồng này.')}
@@ -218,7 +229,8 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         {!row.billing_plan_json && <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>}
         <button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>
       </>}
-      {!['draft', 'cancelled'].includes(row.status) && onPayment && <button type="button" className="mg-button" onClick={onPayment}><Wallet size={15} />Xác nhận thanh toán</button>}
+      {canRentBattery && <button type="button" className="mg-button" onClick={onBatteryRent}><BatteryCharging size={15} />Thuê pin / sạc</button>}
+      {canPay && <button type="button" className="mg-button" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : depositHeld > 0 ? 'deposit_refund' : 'extra')}><Wallet size={15} />Điền sổ quỹ</button>}
       <button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
   </Dialog>;
 }

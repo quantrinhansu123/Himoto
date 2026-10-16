@@ -10,10 +10,10 @@ import { useManagement } from './ManagementProvider';
 import { CashbookAccounts } from './CashbookAccounts';
 import { CashbookTable } from './CashbookTable';
 import { ContractPaymentDialog } from './ContractPaymentDialog';
-import type { PaymentPurpose } from '@/lib/management/contract-payments';
+import { parsePaymentPurpose, type PaymentPurpose } from '@/lib/management/contract-payments';
 
 export function CashbookPage() {
-  const { source, selectedStore, selectStore, notify } = useManagement();
+  const { source, selectedStore, selectStore, notify, canPayContracts } = useManagement();
   const [result, setResult] = useState<CashbookListResult | null>(null);
   const [incomePagination, setIncomePagination] = useState<CashbookPagination>(DEFAULT_CASHBOOK_PAGINATION);
   const [expensePagination, setExpensePagination] = useState<CashbookPagination>(DEFAULT_CASHBOOK_PAGINATION);
@@ -32,8 +32,13 @@ export function CashbookPage() {
     const params = new URLSearchParams(window.location.search);
     const rawId = params.get('contract_id'), purpose = params.get('purpose');
     if (!rawId || !/^\d+$/.test(rawId)) return;
-    setPaymentTarget({ id: Number(rawId), purpose: purpose === 'renewal' || purpose === 'extra' ? purpose : 'debt' });
-  }, []);
+    if (!canPayContracts) {
+      window.history.replaceState({}, '', '/cashbook');
+      notify('Chỉ kế toán hoặc quản trị viên mới thanh toán được hợp đồng.');
+      return;
+    }
+    setPaymentTarget({ id: Number(rawId), purpose: parsePaymentPurpose(purpose) });
+  }, [canPayContracts, notify]);
   function closePayment() {
     setPaymentTarget(null);
     window.history.replaceState({}, '', '/cashbook');

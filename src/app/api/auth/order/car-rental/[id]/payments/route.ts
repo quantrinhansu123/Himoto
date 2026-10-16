@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
-import { protectDatabaseRequest, userFromSession, SESSION_COOKIE } from '@/lib/server/management-session';
+import { canRecordContractPayment, protectDatabaseRequest, userFromSession, SESSION_COOKIE } from '@/lib/server/management-session';
 import { ContractPaymentError, parseContractPayment, readPaymentContext, recordContractPayment } from '@/lib/server/contract-payments';
 
 export const runtime = 'nodejs';
@@ -15,6 +15,9 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
     const input = writing ? parseContractPayment(await request.json()) : null;
     const user = writing ? await userFromSession(request.cookies.get(SESSION_COOKIE)?.value) : null;
     if (writing && !user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
+    if (writing && user && !canRecordContractPayment(user)) {
+      return NextResponse.json({ status: 'error', message: 'Chỉ kế toán hoặc quản trị viên mới thanh toán được hợp đồng.' }, { status: 403 });
+    }
     client = await himotoPool.connect();
     await client.query(writing ? 'BEGIN' : 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const data = input && user ? await recordContractPayment(client, Number(id), user.id, input) : await readPaymentContext(client, Number(id));

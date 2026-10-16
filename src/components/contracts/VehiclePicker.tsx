@@ -3,6 +3,7 @@
 import { KeyboardEvent, useMemo, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { VEHICLE_STATUSES } from '@/lib/management/config';
+import { formatDateTime } from '@/lib/formatters';
 import { normalize } from '@/lib/management/table-utils';
 import type { ManagementRow } from '@/lib/management/types';
 
@@ -20,9 +21,7 @@ const MAX_OPTIONS = 60;
 function rentalsOf(vehicle: ManagementRow): VehicleRental[] {
   try { return vehicle.rentals_json ? JSON.parse(String(vehicle.rentals_json)) as VehicleRental[] : []; } catch { return []; }
 }
-const formatReturn = (value: string | null) => value
-  ? new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-  : 'chưa có ngày trả';
+const formatReturn = (value: string | null) => value ? formatDateTime(value) : 'chưa có ngày trả';
 
 export function vehicleAvailability(vehicle: ManagementRow, ownOrderId?: number): VehicleAvailability {
   const all = rentalsOf(vehicle);

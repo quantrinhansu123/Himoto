@@ -3,11 +3,13 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, RotateCcw, Pencil, Trash2 } from 'lucide-react';
 import { addDays, DutyInput, dutyRequest, DutyRequestError, DutySchedule, localDutyTime, vietnamDate, weekStart } from '@/lib/management/duty-roster';
+import { formatTime24 } from '@/lib/formatters';
+import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 
 const dateLabel=(date:string)=>new Date(`${date}T00:00:00+07:00`).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',weekday:'long',day:'2-digit',month:'2-digit'});
-const timeLabel=(date:string)=>new Date(date).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit'});
+const timeLabel=(date:string)=>formatTime24(date);
 
 export function DutyRosterPage() {
   const {dataset,selectedStore,selectStore,loading:datasetLoading,error:datasetError,notify}=useManagement();
@@ -82,7 +84,8 @@ function DutyForm({row,week,storeId,onClose,onSaved,onRefresh}:{row:DutySchedule
   return <Dialog title={row?'Sửa ca trực':'Thêm ca trực'} onClose={()=>{if(!busy.current)onClose();}}><form onSubmit={submit}><div className="mg-dialog-body"><fieldset className="mg-payment-fields" disabled={saving||uncertain}><legend>Thông tin ca trực</legend>
     <label className="mg-field-wide">Cơ sở<select aria-label="Cơ sở của ca trực" required value={form.store_id} onChange={event=>update('store_id',event.target.value)}><option value="">Chọn cơ sở</option>{dataset?.stores.filter(store=>['active','opening'].includes(store.status)).map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
     <label className="mg-field-wide">Nhân viên<select aria-label="Nhân viên của ca trực" required value={form.staff_id} onChange={event=>update('staff_id',event.target.value)}><option value="">Chọn nhân viên</option>{dataset?.staff.filter(person=>person.status==='active').map(person=><option key={person.id} value={person.id}>{person.name}{person.store_name?` · ${person.store_name}`:''}</option>)}</select></label>
-    <label>Bắt đầu<input aria-label="Bắt đầu ca trực" type="datetime-local" required value={form.starts_at} onChange={event=>update('starts_at',event.target.value)}/></label><label>Kết thúc<input aria-label="Kết thúc ca trực" type="datetime-local" required value={form.ends_at} onChange={event=>update('ends_at',event.target.value)}/></label>
+    <label className="mg-field-wide">Bắt đầu (24h)<DateTime24Controls id="duty-starts-at" label="Bắt đầu ca trực" value={form.starts_at} onChange={value=>update('starts_at',value)}/></label>
+    <label className="mg-field-wide">Kết thúc (24h)<DateTime24Controls id="duty-ends-at" label="Kết thúc ca trực" value={form.ends_at} onChange={value=>update('ends_at',value)}/></label>
     <p className="mg-field-wide">Ca qua đêm: chọn ngày kết thúc kế tiếp. Có thể phân nhân viên trực cơ sở khác; hồ sơ nhân viên giữ nguyên.</p>
     <label>Tên ca<input aria-label="Tên ca trực" required maxLength={80} value={form.shift_name} onChange={event=>update('shift_name',event.target.value)}/></label><label>Vai trò<input aria-label="Vai trò trong ca" required maxLength={100} value={form.role_in_shift} onChange={event=>update('role_in_shift',event.target.value)}/></label>
     <label className="mg-field-wide">Ghi chú<textarea aria-label="Ghi chú ca trực" maxLength={2000} rows={3} value={form.notes} onChange={event=>update('notes',event.target.value)}/></label>

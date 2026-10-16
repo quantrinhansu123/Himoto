@@ -38,9 +38,9 @@ export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { 
     setSaving(true); setError('');
     try {
       const result = await changeContractVehicle({ item_id: selected.item_id, item_revision: selected.item_revision, vehicle_id: Number(vehicleId) });
-      notify(`${selected.contract_code}: đã đổi xe ${result.old_license} → ${result.new_license}; hợp đồng được giữ nguyên.`);
+      notify(`${selected.contract_code}: đã đổi xe ${result.old_license} → ${result.new_license}; trạng thái xe và thông tin xe trên hợp đồng đã cập nhật.`);
       invalidateData(['vehicles', 'customers']);
-      await reload(['contracts']);
+      await reload(['contracts', 'vehicles']);
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không đổi được xe trong hợp đồng.'); }
     finally { setSaving(false); }
@@ -54,7 +54,7 @@ export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { 
         {rows.length > 1 && <div className="mg-field"><label htmlFor="contract-swap-item">Xe trong hợp đồng</label><select id="contract-swap-item" value={itemId} onChange={event => { setItemId(event.target.value); setVehicleId(''); }}><option value="">Chọn xe cần đổi</option>{rows.map(row => <option key={row.item_id} value={row.item_id}>{row.vehicle_name} · {row.license}</option>)}</select></div>}
         {selected && <>
           <div className="mg-field"><label htmlFor="contract-swap-replacement">Xe thay thế · tất cả cơ sở</label><select id="contract-swap-replacement" required value={vehicleId} onChange={event => setVehicleId(event.target.value)}><option value="">Chọn xe sẵn sàng</option>{replacements.map(vehicle => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.license} · {vehicle.store_name}</option>)}</select></div>
-          <p className="mg-composer-hint">Chỉ thay xe và biển số. Khách hàng, thời hạn, giá thuê và các thông tin khác được giữ nguyên. Hạn trả hiện tại: {formatDateTime(selected.scheduled_return_at)}.</p>
+          <p className="mg-composer-hint">Xe cũ về Lưu kho, xe mới sang Đang thuê; phần xe trên hợp đồng (tên, biển số…) đổi theo xe mới. Khách hàng, thời hạn và giá thuê giữ nguyên. Hạn trả hiện tại: {formatDateTime(selected.scheduled_return_at)}.</p>
           {!replacements.length && <p className="mg-field-error">Không có xe sẵn sàng tại cơ sở này.</p>}
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}

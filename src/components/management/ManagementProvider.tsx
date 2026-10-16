@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState, useMemo, u
 import { usePathname } from 'next/navigation';
 import { createManagementRepository } from '@/lib/management/repository';
 import { ContractEdits, CustomerAssignment, EditableKind, ManagementDataset, ManagementKind, ManagementRepository, ManagementRow } from '@/lib/management/types';
-import { createManagementDataLoader, managementKindsForPath, ResourceState } from '@/lib/management/data-loader';
+import { contractsQueryForPath, createManagementDataLoader, managementKindsForPath, ResourceState } from '@/lib/management/data-loader';
 import { ContractAutofillRepository, createApiAutofillRepository } from '@/lib/management/contract-autofill';
 import { CustomerDetails } from '@/lib/management/contract-document';
 import { StoreCreation, StoreEdits } from '@/lib/management/store-management';
@@ -21,6 +21,8 @@ interface ManagementContextValue {
   resources: Record<ManagementKind, ResourceState>;
   source: 'api';
   canSaveContractDrafts: boolean;
+  /** Thanh toán HĐ / điền sổ quỹ: chỉ kế toán và admin. */
+  canPayContracts: boolean;
   selectedStore: string;
   selectStore: (id: string) => void;
   reload: (kinds?: readonly ManagementKind[]) => Promise<void>;
@@ -44,7 +46,7 @@ interface ManagementContextValue {
 }
 const ManagementContext = createContext<ManagementContextValue | null>(null);
 
-export function ManagementProvider({ children }: { children: ReactNode }) {
+export function ManagementProvider({ children, canPayContracts = false }: { children: ReactNode; canPayContracts?: boolean }) {
   const [repository] = useState<ManagementRepository>(createManagementRepository);
   const [loader] = useState(() => createManagementDataLoader(repository));
   const { dataset, resources } = useSyncExternalStore(loader.subscribe, loader.getSnapshot, loader.getSnapshot);
@@ -63,6 +65,9 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
     const targets = kinds || requiredKinds.filter(kind => kind !== 'stores' || requiredKinds.length === 1 || !loader.getSnapshot().resources.stores.loaded || loader.getSnapshot().resources.stores.error);
     try { await loader.ensure(targets, true); } catch { /* Each failed resource exposes its own error and retry. */ }
   }, [loader, requiredKinds]);
+  useEffect(() => {
+    if (pathname.startsWith('/contracts') && !pathname.startsWith('/contracts/battery')) loader.setContractsQuery(contractsQueryForPath(pathname));
+  }, [loader, pathname]);
   useEffect(() => { void ensureData(requiredKinds).catch(() => {}); }, [ensureData, requiredKinds, pathname]);
   useEffect(() => {
     if (!notification) return;
@@ -151,7 +156,7 @@ export function ManagementProvider({ children }: { children: ReactNode }) {
       end_date: context.end_date ?? undefined,
       company_paid_amount: context.company_paid_amount, company_payment_count: context.company_payment_count } : row));
   };
-  return <ManagementContext.Provider value={{ dataset, resources, loading, refreshing, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), selectedStore, selectStore, reload, ensureData, invalidateData, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft, acceptContractPayment }}>
+  return <ManagementContext.Provider value={{ dataset, resources, loading, refreshing, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts), canPayContracts, selectedStore, selectStore, reload, ensureData, invalidateData, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft, acceptContractPayment }}>
     {children}
     {notification && <div className="mg-toast" role="status"><span>{notification}</span><button type="button" onClick={() => notify('')} aria-label="Đóng thông báo">×</button></div>}
   </ManagementContext.Provider>;

@@ -1,4 +1,5 @@
 import { createDemoDataset, reconcileDataset } from '@/fixtures/management-data';
+import { resolveLocationStatus } from '@/lib/management/config';
 import { EditableKind, ManagementDataset, ManagementKind, ManagementRepository, ManagementRow } from './types';
 import { cloneContractRecord, updateContractRecord } from './contract-record';
 import { DraftStorage, readDemoDrafts, saveDraftRecord, writeDemoDrafts, DEMO_DRAFT_STORAGE_KEY } from './contract-drafts';
@@ -27,7 +28,7 @@ export function createDemoRepository(draftStorage?: DraftStorage): ManagementRep
   return {
     source: 'demo',
     async load() { initialize(); return structuredClone(dataset); },
-    async loadKind(kind) { initialize(); return structuredClone(dataset[kind]); },
+    async loadKind(kind, _query = '') { initialize(); return structuredClone(dataset[kind]); },
     async save(kind: EditableKind, row: ManagementRow) {
       if (!['staff', 'customers', 'stores', 'vehicles'].includes(kind)) throw new Error('Danh sách hợp đồng chỉ đọc.');
       const records = dataset[kind];
@@ -114,7 +115,16 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     rentals_json: Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
     beneficiary_store_id: number(raw.beneficiary_store_id ?? raw.current_store_id ?? raw.store_id), beneficiary_store_name: text(raw.beneficiary_store_name || raw.store_name),
     odometer: number(raw.odometer), daily_price: number(raw.daily_price), monthly_price: number(raw.monthly_price), year: text(raw.year),
-    status: ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[base.status] || base.status };
+    status: ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[base.status] || base.status,
+    location_status: (() => {
+      const preset = String(raw.location_status || '');
+      if (raw.gps_has_device == null && raw.gps_normalized_status == null && ['online', 'warning', 'offline', 'none'].includes(preset)) return preset;
+      return resolveLocationStatus({
+        hasDevice: Boolean(raw.gps_has_device),
+        normalizedStatus: raw.gps_normalized_status,
+        lastAt: raw.gps_last_at,
+      });
+    })() };
   const customer = object(raw.customer);
   const vehicles = Array.isArray(raw.vehicles) ? raw.vehicles.map(object) : [];
   const store = object(raw.store);
@@ -127,6 +137,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
   const mapped: ManagementRow = { ...base, code, name: code,
     sales_staff_id: /^[1-9]\d{0,14}$/.test(salesStaffId) ? Number(salesStaffId) : undefined, sales_staff_name: text(salesAttribution.name),
     store_id: base.store_id ?? number(store.id), store_name: base.store_name || text(store.store_name || store.name),
+    store_kind: text(raw.store_kind),
     staff_id: number(raw.staff_id ?? raw.contract_responsible_user_id),
     staff_name: text(raw.staff_name), representative_name: text(raw.representative_name || raw.staff_name),
     customer_id: number(raw.customer_id), customer_name: text(raw.customer_name || customer.name),
@@ -170,11 +181,13 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
 
 export function createApiRepository(baseUrl = '/api', options: { drafts?: boolean } = {}): ManagementRepository {
   let loaded: ManagementDataset | null = null;
-  async function read(kind: ManagementKind): Promise<ManagementRow[]> {
+  async function read(kind: ManagementKind, query = ''): Promise<ManagementRow[]> {
     const records: ManagementRow[] = [];
     for (let page = 1; page <= 1000; page++) {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') || localStorage.getItem('jwt_token') : null;
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}${READ_ENDPOINTS[kind]}?page=${page}&limit=100`, {
+      const params = new URLSearchParams({ page: String(page), limit: '100' });
+      if (query) for (const [key, value] of new URLSearchParams(query)) params.set(key, value);
+      const response = await fetch(`${baseUrl.replace(/\/$/, '')}${READ_ENDPOINTS[kind]}?${params}`, {
         method: 'GET', cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!response.ok) throw new Error(`Không tải được ${kind} (HTTP ${response.status}). Kiểm tra kết nối và phiên đăng nhập.`);
@@ -197,14 +210,14 @@ export function createApiRepository(baseUrl = '/api', options: { drafts?: boolea
   return {
     source: 'api',
     supportsContractDrafts: Boolean(options.drafts),
-    async loadKind(kind) {
-      const rows = await read(kind);
+    async loadKind(kind, query = '') {
+      const rows = await read(kind, query);
       loaded = { ...(loaded || { staff: [], customers: [], contracts: [], stores: [], vehicles: [] }), [kind]: rows };
       return rows;
     },
     async load() {
       const kinds: ManagementKind[] = ['staff', 'customers', 'contracts', 'stores', 'vehicles'];
-      const values = await Promise.all(kinds.map(read));
+      const values = await Promise.all(kinds.map(kind => read(kind)));
       const dataset = Object.fromEntries(kinds.map((kind, i) => [kind, values[i]])) as ManagementDataset;
       // Only resolve labels; API aggregates and contract values are never fabricated.
       for (const kind of ['staff', 'customers', 'vehicles', 'contracts'] as const) {

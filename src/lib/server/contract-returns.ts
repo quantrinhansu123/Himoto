@@ -164,7 +164,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
 
 export async function replaceContractVehicle(client: Database, actorId: number, input: { item_id: number; item_revision: string; vehicle_id: number }) {
   await client.query("SET LOCAL lock_timeout = '5s'");
-  const result = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.xmin::text AS item_revision,o.store_id
+  const result = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.xmin::text AS item_revision,o.store_id,o.draft_payload
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
       AND o.order_status IN ('renting','overdue','wait_payment') FOR UPDATE OF d,o`, [input.item_id]);
@@ -172,8 +172,9 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   if (!item) throw new ContractReturnError('Không tìm thấy xe đang thuê cần đổi.', 404);
   if (String(item.item_revision) !== input.item_revision) throw new ContractReturnError('Chi tiết xe đã thay đổi. Tải lại danh sách trước khi đổi.', 409);
   if (Number(item.vehicle_id) === input.vehicle_id) throw new ContractReturnError('Biển số xe đang chọn không thay đổi.');
-  const newVehicle = await client.query(`SELECT id,license FROM himoto.vehicles
-    WHERE id=$1 AND status='ready' FOR UPDATE`, [input.vehicle_id]);
+  const newVehicle = await client.query(`SELECT v.id,v.name,v.license,v.brand,v.type,v.color,v.year,v.store_id,s.store_name
+    FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=v.store_id
+    WHERE v.id=$1 AND v.status='ready' FOR UPDATE OF v`, [input.vehicle_id]);
   if (!newVehicle.rowCount) throw new ContractReturnError('Xe mới phải đang Lưu kho.', 409);
   const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
@@ -189,5 +190,38 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   const oldOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
   if (!oldOpen.rowCount) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
   await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=$1`, [input.vehicle_id]);
-  return { item_id: input.item_id, old_license: String(oldVehicle.rows[0]?.license || ''), new_license: String(newVehicle.rows[0].license || '') };
+
+  // Keep printed/contract draft vehicle fields in sync with the live rental line.
+  const next = newVehicle.rows[0];
+  const nextId = String(next.id);
+  const oldId = String(item.vehicle_id);
+  const typeCode = String(next.type) === 'electric' ? 'xe_dien' : String(next.type || '');
+  const typeLabel = ({ xega: 'Xe ga', xeso: 'Xe số', xecon: 'Xe côn tay', xesh: 'Xe SH', xe_dien: 'Xe điện' } as Record<string, string>)[typeCode] || typeCode;
+  const payload = item.draft_payload && typeof item.draft_payload === 'object' && !Array.isArray(item.draft_payload)
+    ? structuredClone(item.draft_payload) as Record<string, unknown> : {};
+  const orderItems = Array.isArray(payload.order_items) ? payload.order_items as Record<string, unknown>[] : [];
+  if (orderItems.length) {
+    payload.order_items = orderItems.map(line => String(line.vehicle_id) === oldId
+      ? { ...line, vehicle_id: Number(next.id) } : line);
+  }
+  const composer = payload.management_composer && typeof payload.management_composer === 'object' && !Array.isArray(payload.management_composer)
+    ? payload.management_composer as Record<string, unknown> : null;
+  const draft = composer?.draft && typeof composer.draft === 'object' && !Array.isArray(composer.draft)
+    ? composer.draft as Record<string, unknown> : null;
+  const draftVehicles = Array.isArray(draft?.vehicles) ? draft.vehicles as Record<string, unknown>[] : [];
+  if (draft && draftVehicles.length) {
+    draft.vehicles = draftVehicles.map(vehicle => String(vehicle.id) === oldId ? {
+      ...vehicle, id: nextId, name: String(next.name || ''), license: String(next.license || ''),
+      brand: String(next.brand || ''), type_text: typeLabel, color: String(next.color || ''), year: String(next.year || ''),
+      stock_store_id: next.store_id == null ? vehicle.stock_store_id : String(next.store_id),
+      stock_store_name: next.store_name == null ? vehicle.stock_store_name : String(next.store_name || ''),
+    } : vehicle);
+    payload.management_composer = { ...composer, draft };
+  }
+  if (orderItems.length || (draft && draftVehicles.length)) {
+    await client.query('UPDATE himoto.orders SET draft_payload=$2::json,updated_at=now() WHERE id=$1',
+      [item.order_id, JSON.stringify(payload)]);
+  }
+
+  return { item_id: input.item_id, old_license: String(oldVehicle.rows[0]?.license || ''), new_license: String(next.license || '') };
 }

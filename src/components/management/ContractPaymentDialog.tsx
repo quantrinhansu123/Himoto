@@ -7,15 +7,16 @@ import { LoaderCircle, Plus, RotateCcw, Trash2, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { TransferQrPanel } from './TransferQrPanel';
 import { useManagement } from './ManagementProvider';
-import { formatMoney } from '@/lib/formatters';
+import { formatDateTime, formatMoney } from '@/lib/formatters';
 import { PAYABLE_STATUSES, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentAccount, PaymentContext, PaymentInput, PaymentMethod, PaymentPurpose, PaymentRequestError, RenewalItem, canAddExtraReceipt, loadPaymentContext, paymentAccounts, saveContractPayment, vietnamPaymentTime } from '@/lib/management/contract-payments';
 import { transferQr } from '@/lib/management/transfer-qr';
 import { bulkDelete } from '@/lib/management/bulk-delete';
+import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const defaultNote = (purpose: PaymentPurpose, code: string) => purpose === 'extra' ? `Thu thêm hợp đồng_${code}` : purpose === 'deposit_refund' ? `Trả cọc hợp đồng_${code}` : purpose === 'debt' ? `Thu tiền thuê hợp đồng_${code}` : `Gia hạn hợp đồng_${code}`;
 const vietnamLocal = (ms: number) => new Date(ms + 7 * 3_600_000).toISOString().slice(0, 16);
-const vietnamText = (value: string) => new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+const vietnamText = (value: string) => formatDateTime(value);
 
 export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, onPaymentSaved }: { id: number; initialPurpose?: PaymentPurpose; onClose: () => void; onPaymentSaved?: () => void }) {
   const { acceptContractPayment, notify, selectStore } = useManagement();
@@ -61,7 +62,11 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
       const renewableNow = !fresh.billing && RENEWABLE_STATUSES.includes(fresh.status) && fresh.items.length > 0;
       let next = initialPurpose;
       if (next === 'debt' && !payableNow && !fresh.billing) next = renewableNow && fresh.remaining === 0 ? 'renewal' : canAddExtraReceipt(fresh.status) && fresh.remaining !== null ? 'extra' : next;
+      if (next === 'deposit_refund' && !(canAddExtraReceipt(fresh.status) && fresh.deposit_held > 0)) next = payableNow ? 'debt' : renewableNow ? 'renewal' : next;
       setPurpose(next); setNote(defaultNote(next, fresh.code));
+      if (next === 'debt' && fresh.remaining !== null && fresh.remaining > 0) setAmount(String(fresh.remaining));
+      else if (next === 'deposit_refund' && fresh.deposit_held > 0) setAmount(String(fresh.deposit_held));
+      else setAmount('');
     }).catch(cause => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được thanh toán.');
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -108,7 +113,9 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
   function choosePurpose(next: PaymentPurpose) {
     setPurpose(next); setError(''); setSuccess('');
     if (next === 'deposit_refund' && context) setAmount(String(context.deposit_held));
-    if (context && (['debt', 'extra', 'deposit_refund'] as const).some(kind => note === defaultNote(kind, context.code)) || !note.trim()) setNote(defaultNote(next, context?.code || ''));
+    else if (next === 'debt' && context?.remaining !== null && context.remaining > 0) setAmount(String(context.remaining));
+    else if (next === 'extra' || next === 'renewal') setAmount('');
+    if (context && (['debt', 'extra', 'deposit_refund', 'renewal'] as const).some(kind => note === defaultNote(kind, context.code)) || !note.trim()) setNote(defaultNote(next, context?.code || ''));
   }
   const locked = saving || Boolean(pending) || Boolean(transferReview);
   const money = (value: number | null) => value === null ? 'Chưa đối chiếu' : formatMoney(value);
@@ -232,7 +239,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
               if (event.key === 'Backspace' && input.value[position - 1] === '.') input.setSelectionRange(position - 1, position - 1);
               if (event.key === 'Delete' && input.value[position] === '.') input.setSelectionRange(position + 1, position + 1);
             }} placeholder="Nhập số tiền" /></label>}
-            <label>{refund ? 'Ngày giờ chi' : 'Ngày giờ thu'}<input aria-label="Ngày giờ thu" type="datetime-local" required value={paidAt} onChange={event => setPaidAt(event.target.value)} /></label>
+            <label className="mg-field-wide">{refund ? 'Ngày giờ chi (24h)' : 'Ngày giờ thu (24h)'}<DateTime24Controls id="payment-paid-at" label={refund ? 'Ngày giờ chi' : 'Ngày giờ thu'} value={paidAt} onChange={setPaidAt} /></label>
             <label className="mg-field-wide">Hình thức thanh toán<select aria-label="Hình thức thanh toán" value={method} onChange={event => { setMethod(event.target.value as PaymentMethod); setAccountId(''); }}>
               {PAYMENT_METHODS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select></label>

@@ -1,10 +1,13 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, LoaderCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { CalendarPlus, LoaderCircle, Wallet } from 'lucide-react';
 import { loadContractReturnableItems, ReturnableContractItem } from '@/lib/management/contract-returns';
 import { overdueParts, saveContractRenewal } from '@/lib/management/contract-renewals';
+import { cashbookPaymentPath } from '@/lib/management/contract-payments';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
+import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 
@@ -18,7 +21,8 @@ function defaultRate(row: ReturnableContractItem | null, unit: 'day' | 'hour', f
 }
 
 export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClose }: { orderId: number; contractCode: string; unitPrice?: number; onClose: () => void }) {
-  const { notify, reload } = useManagement();
+  const { notify, reload, canPayContracts } = useManagement();
+  const router = useRouter();
   const [rows, setRows] = useState<ReturnableContractItem[]>([]);
   const [itemId, setItemId] = useState('');
   const [unit, setUnit] = useState<'day' | 'hour'>('day');
@@ -31,6 +35,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -79,16 +84,30 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     try {
       const result = await saveContractRenewal(orderId, { item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
         return_at: returnAt, amount: amount || '0', note: note.trim() });
+      const remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
       notify(`${result.code}: đã tạo phiên bản v${result.version} — hẹn trả ${formatDateTime(result.return_at)}${result.total_amount !== null ? `, tiền hợp đồng ${formatMoney(result.total_amount)}` : ''}.`);
       await reload();
-      onClose();
+      setDone({ code: result.code, fee, remaining });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được gia hạn hợp đồng.'); }
     finally { setSaving(false); }
+  }
+
+  function openCashbook(purpose: 'debt' | 'renewal' = 'debt') {
+    onClose();
+    router.push(cashbookPaymentPath(orderId, purpose));
   }
 
   return <Dialog title={`Gia hạn · ${contractCode}`} subtitle="Lưu sẽ tạo phiên bản hợp đồng mới với ngày trả và tiền hợp đồng mới" className="mg-renewal-dialog" onClose={() => { if (!saving) onClose(); }}>
     <form onSubmit={submit}>
       <div className="mg-dialog-body">
+        {done ? <div className="mg-cashbook-followup" role="status">
+          <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí ${formatMoney(done.fee)}` : ''}.</p>
+          {canPayContracts ? <>
+            <p>Bấm nút bên dưới để mở phiếu thu Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng (nội dung, số tiền còn thiếu).</p>
+            {(done.remaining === null || done.remaining > 0 || done.fee > 0) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
+            <button type="button" className="mg-button" onClick={() => openCashbook('renewal')}><Wallet size={16} />Điền thu gia hạn vào sổ quỹ</button>
+          </> : <p>Chỉ kế toán hoặc quản trị viên mới điền được phiếu thu vào sổ quỹ.</p>}
+        </div> : <>
         {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && !rows.length && !error && <p>Hợp đồng này không còn xe đang thuê để gia hạn.</p>}
         {rows.length > 1 && <div className="mg-field"><label htmlFor="renewal-item">Xe cần gia hạn</label><select id="renewal-item" value={itemId} onChange={event => { setItemId(event.target.value); setAmountTouched(false); setAmount(''); setRateInput(defaultRate(rows.find(row => String(row.item_id) === event.target.value) || null, unit, unitPrice)); }}><option value="">Chọn xe</option>{rows.map(row => <option key={row.item_id} value={row.item_id}>{row.vehicle_name} · {row.license}</option>)}</select></div>}
@@ -106,7 +125,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
             <label>{unit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}<input type="number" min={1} max={maxCount} value={count} onChange={event => setCount(event.target.value)} /></label>
             <label>{unit === 'day' ? 'Đơn giá / ngày (VNĐ)' : 'Đơn giá / giờ (VNĐ)'}<input inputMode="numeric" value={groupAmount(rateInput)} placeholder={unit === 'day' ? 'Nhập đơn giá/ngày' : 'Nhập đơn giá/giờ'}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,9}$/.test(raw)) { setRateInput(raw); setAmountTouched(false); } }} /></label>
-            <label>Ngày trả mới<input type="datetime-local" required value={returnAt} onChange={event => setReturnAt(event.target.value)} aria-invalid={Boolean(returnAt) && !validReturn} /></label>
+            <label className="mg-field-wide">Ngày trả mới (24h)<DateTime24Controls id="renewal-return-at" label="Ngày trả mới" value={returnAt} onChange={setReturnAt} error={Boolean(returnAt) && !validReturn} /></label>
             <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn"
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
               <small>{rate ? `Gợi ý: ${formatMoney(rate)} × ${unitCount || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(rate * (unitCount || 0))}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
@@ -120,12 +139,13 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
             <div><dt>Tiền cọc đã thu</dt><dd>{formatMoney(selected?.deposit_paid ?? 0)}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(selected?.deposit_held ?? 0)}</dd></div>
           </dl>
-          <p className="mg-composer-hint">Chi phí gia hạn được cộng vào tiền hợp đồng (khách thanh toán sau bằng nút Thanh toán). Phiên bản mới được ghi vào Lịch sử chỉnh sửa và dùng khi in hợp đồng.</p>
+          <p className="mg-composer-hint">Chi phí gia hạn được cộng vào tiền hợp đồng. Sau khi lưu, dùng nút điền sổ quỹ để ghi phiếu Thu theo đúng cấu trúc.</p>
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
+        </>}
       </div>
-      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
-        {selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !validReturn}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : 'Lưu gia hạn'}</button>}</div>
+      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>
+        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !validReturn}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : 'Lưu gia hạn'}</button>}</div>
     </form>
   </Dialog>;
 }

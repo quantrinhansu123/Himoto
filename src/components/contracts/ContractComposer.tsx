@@ -20,10 +20,10 @@ import { chargeTotal, type ContractCharge } from '@/lib/management/contract-char
 import { PAYMENT_METHODS, paymentMethodLabel, type PaymentMethod } from '@/lib/management/contract-payments';
 import { CONTRACT_FORM_SECTIONS, ContractSection, ContractSectionTabs } from './ContractSectionTabs';
 import { DateTime24Field } from './DateTime24Field';
+import { VietnamDateField } from './VietnamDateField';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
 import { addRentalMonths, billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } from '@/lib/management/contract-billing';
-import { IssueDateInput } from '@/components/management/IssueDateInput';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/management/record-photos';
 
@@ -385,17 +385,18 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     finally{busy.current=false;setSaving(false);}
   }
   function customerField(item: (typeof customerFields)[number]) {
-    const update = (value: string) => {
-      setDraft(previous => ({ ...previous, customer: { ...previous.customer, [item.key]: value } }));
+    const fieldId = `contract-customer-${item.key}`;
+    const setCustomerValue = (next: string) => {
+      setDraft(previous => ({ ...previous, customer: { ...previous.customer, [item.key]: next } }));
       setErrors(previous => ({ ...previous, [item.key]: '' })); setSaveError('');
     };
     return <div className={`mg-field ${item.wide ? 'mg-field-wide' : ''}`} key={item.key}>
-      <label htmlFor={`contract-customer-${item.key}`}>{item.label}</label>
-      {item.type === 'date' ? <IssueDateInput id={`contract-customer-${item.key}`} value={draft.customer[item.key] || ''} disabled={lookupState !== 'found'} aria-invalid={Boolean(errors[item.key])} onValueChange={update} /> : <input id={`contract-customer-${item.key}`} type={item.type || 'text'} value={draft.customer[item.key]}
-        disabled={lookupState !== 'found'} aria-invalid={Boolean(errors[item.key])}
-        onChange={event => {
-          update(event.target.value);
-        }} />}
+      <label htmlFor={fieldId}>{item.label}</label>
+      {item.type === 'date' ? <VietnamDateField id={fieldId} value={draft.customer[item.key]} disabled={lookupState !== 'found'}
+        invalid={Boolean(errors[item.key])} onChange={setCustomerValue} />
+        : <input id={fieldId} type={item.type || 'text'} value={draft.customer[item.key]}
+          disabled={lookupState !== 'found'} readOnly={item.key === 'id_card'} aria-invalid={Boolean(errors[item.key])}
+          onChange={event => setCustomerValue(event.target.value)} />}
       {item.hint && <small>{item.hint}</small>}
       {errors[item.key] && <p className="mg-field-error">{errors[item.key]}</p>}
     </div>;
@@ -489,7 +490,13 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               {vehicle.id && <div className="mg-composer-vehicle-summary">{vehicle.license} · {vehicle.brand} · {vehicle.type_text} · {vehicle.year || 'Chưa có năm sản xuất'}<br />Cơ sở quản lý xe: {vehicle.stock_store_name || allVehicles.find(item=>String(item.id)===vehicle.id)?.store_name || 'Chưa xác định'} · Doanh thu: {branchName || 'Chưa chọn nguồn khách'}</div>}
               <div className="mg-form-grid mg-contract-grid-three">{(['driver_name', 'driver_license_number', 'driver_license_issued_on', 'borrow_hats', 'borrow_raincoats', 'color'] as const).map(key => {
                 const labels = { color: 'Màu xe', driver_name: 'Tên người lái', driver_license_number: 'Số giấy phép lái xe', driver_license_issued_on: 'Ngày cấp GPLX', borrow_hats: 'Số mũ mượn', borrow_raincoats: 'Số áo mưa' };
-                return <div className="mg-field" key={key}><label htmlFor={`contract-vehicle-${index}-${key}`}>{labels[key]}</label><input id={`contract-vehicle-${index}-${key}`} type={key === 'driver_license_issued_on' ? 'date' : 'text'} inputMode={key.startsWith('borrow_') ? 'numeric' : undefined} maxLength={key.startsWith('borrow_') ? 2 : undefined} value={vehicle[key]} aria-invalid={Boolean(errors[`vehicle_${index}_${key}`])} onChange={event => change('vehicles', draft.vehicles.map((item, i) => i === index ? { ...item, [key]: key.startsWith('borrow_') ? event.target.value.replace(/\D/g, '').slice(0, 2) : event.target.value } : item))} />{errors[`vehicle_${index}_${key}`] && <p className="mg-field-error">{errors[`vehicle_${index}_${key}`]}</p>}</div>;
+                const fieldId = `contract-vehicle-${index}-${key}`;
+                const setVehicleValue = (next: string) => change('vehicles', draft.vehicles.map((item, i) => i === index ? { ...item, [key]: next } : item));
+                return <div className="mg-field" key={key}><label htmlFor={fieldId}>{labels[key]}</label>
+                  {key === 'driver_license_issued_on'
+                    ? <VietnamDateField id={fieldId} value={vehicle[key]} invalid={Boolean(errors[`vehicle_${index}_${key}`])} onChange={setVehicleValue} />
+                    : <input id={fieldId} type="text" inputMode={key.startsWith('borrow_') ? 'numeric' : undefined} maxLength={key.startsWith('borrow_') ? 2 : undefined} value={vehicle[key]} aria-invalid={Boolean(errors[`vehicle_${index}_${key}`])} onChange={event => setVehicleValue(key.startsWith('borrow_') ? event.target.value.replace(/\D/g, '').slice(0, 2) : event.target.value)} />}
+                  {errors[`vehicle_${index}_${key}`] && <p className="mg-field-error">{errors[`vehicle_${index}_${key}`]}</p>}</div>;
               })}</div>
             </div>;
             })}
