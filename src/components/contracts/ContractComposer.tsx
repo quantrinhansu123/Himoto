@@ -434,7 +434,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     };
     return <div className={`mg-field ${item.wide ? 'mg-field-wide' : ''}`} key={item.key}>
       <label htmlFor={fieldId}>{item.label}</label>
-      {item.type === 'date' ? <VietnamDateField id={fieldId} value={draft.customer[item.key] || ''} disabled={lookupState !== 'found'}
+      {item.type === 'date' ? <VietnamDateField id={fieldId} label={item.label} value={draft.customer[item.key] || ''} disabled={lookupState !== 'found'}
         invalid={Boolean(errors[item.key])} onChange={setCustomerValue} />
         : <input id={fieldId} type={item.type || 'text'} value={draft.customer[item.key]}
           disabled={lookupState !== 'found'} readOnly={item.key === 'id_card'} aria-invalid={Boolean(errors[item.key])}
@@ -536,7 +536,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
                 const setVehicleValue = (next: string) => change('vehicles', draft.vehicles.map((item, i) => i === index ? { ...item, [key]: next } : item));
                 return <div className="mg-field" key={key}><label htmlFor={fieldId}>{labels[key]}</label>
                   {key === 'driver_license_issued_on'
-                    ? <VietnamDateField id={fieldId} value={vehicle[key]} invalid={Boolean(errors[`vehicle_${index}_${key}`])} onChange={setVehicleValue} />
+                    ? <VietnamDateField id={fieldId} label={labels[key]} value={vehicle[key]} invalid={Boolean(errors[`vehicle_${index}_${key}`])} onChange={setVehicleValue} />
                     : <input id={fieldId} type="text" inputMode={key.startsWith('borrow_') ? 'numeric' : undefined} maxLength={key.startsWith('borrow_') ? 2 : undefined} value={vehicle[key]} aria-invalid={Boolean(errors[`vehicle_${index}_${key}`])} onChange={event => setVehicleValue(key.startsWith('borrow_') ? event.target.value.replace(/\D/g, '').slice(0, 2) : event.target.value)} />}
                   {errors[`vehicle_${index}_${key}`] && <p className="mg-field-error">{errors[`vehicle_${index}_${key}`]}</p>}</div>;
               })}</div>

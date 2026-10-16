@@ -2080,13 +2080,37 @@
 .mg-time24 { display: flex; align-items: center; gap: 4px; }
 .mg-time24 select { min-width: 0; flex: 1 1 0; padding: 8px 4px 8px 10px !important; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .mg-datetime24 { grid-template-columns: minmax(0, 1fr); } .mg-time24 { width: 164px; } }
-.mg-vietnam-date { position: relative; display: grid; }
-.mg-vietnam-date > input[type='text'] {
+.mg-vietnam-date {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   width: 100%;
+  min-width: 0;
   min-height: 38px;
-  padding-right: 40px;
+  padding: 0 4px;
+  border: 1px solid var(--mg-line-strong);
+  border-radius: var(--mg-radius);
+  background: #fff;
+}
+.mg-vietnam-date:focus-within { border-color: var(--mg-brand-500); box-shadow: var(--mg-focus-ring); }
+.mg-vietnam-date[data-invalid='true'] { border-color: #ef4444; }
+.mg-vietnam-date[data-disabled='true'] { opacity: 0.6; }
+.mg-vietnam-date > input.mg-vietnam-date-segment {
+  flex: 0 1 44px;
+  width: 44px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
+.mg-vietnam-date > input.mg-vietnam-date-year { flex-basis: 64px; width: 64px; }
+.mg-vietnam-date > input.mg-vietnam-date-segment:focus { box-shadow: none; background: var(--mg-slate-100, #f1f5f7); outline: none; }
+.mg-vietnam-date-divider { color: var(--mg-slate-500); user-select: none; }
 .mg-vietnam-date-native {
   position: absolute;
   width: 1px;
@@ -2096,11 +2120,9 @@
   overflow: hidden;
 }
 .mg-vietnam-date-picker {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  transform: translateY(-50%);
   display: inline-flex;
+  flex: 0 0 32px;
+  margin-left: auto;
   align-items: center;
   justify-content: center;
   width: 32px;
@@ -2113,6 +2135,9 @@
 }
 .mg-vietnam-date-picker:hover:not(:disabled) { background: var(--mg-slate-100, #f1f5f9); color: var(--mg-brand-700); }
 .mg-vietnam-date-picker:disabled { opacity: 0.45; cursor: not-allowed; }
+@media (max-width: 600px) {
+  .mg-vietnam-date > input.mg-vietnam-date-segment { min-height: 42px; font-size: 16px; }
+}
 .mg-method-picker summary {
   min-height: 38px;
   padding: 8px 11px;

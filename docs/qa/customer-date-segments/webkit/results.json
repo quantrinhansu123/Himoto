@@ -1,0 +1,11 @@
+{
+  "passed": 4,
+  "checks": [
+    "segmented dd/mm/yyyy: typing advances day to month to year; incomplete/impossible dates cannot save; Backspace, Tab, single-digit padding, independent edits and full-date paste work",
+    "375px new customer: normal default, segmented dates serialize to ISO, front/back captures compressed and saved; failed upload retries without creating another customer",
+    "customer detail reopens both saved CCCD images through authenticated endpoints",
+    "contract captures plate before saving; completion opens payment confirmation with full/partial/unpaid states, exact receipts and no 375px/landscape/desktop overflow"
+  ],
+  "errors": [],
+  "realBusinessWrites": 0
+}

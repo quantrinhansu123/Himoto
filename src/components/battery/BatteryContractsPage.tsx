@@ -235,7 +235,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
         {text('customer_phone', 'Điện thoại', { type: 'tel', maxLength: 32 })}
         {text('customer_address', 'Địa chỉ', { wide: true, maxLength: 500 })}
         {text('customer_id_card', 'Số CCCD', { maxLength: 32 })}
-        <label>Cấp ngày<VietnamDateField id="battery-id-card-issued-on" value={form.id_card_issued_on} onChange={next => update('id_card_issued_on', next)} /></label>
+        <div className="mg-field"><label htmlFor="battery-id-card-issued-on">Cấp ngày</label><VietnamDateField id="battery-id-card-issued-on" label="Cấp ngày" value={form.id_card_issued_on} onChange={next => update('id_card_issued_on', next)} /></div>
         {text('id_card_issued_by', 'Nơi cấp', { wide: true, maxLength: 255, placeholder: 'Mặc định: Cục cảnh sát' })}
       </fieldset>
       <fieldset className="mg-payment-fields" disabled={saving || uncertain}><legend>Điều 1 · Pin / sạc và xe của khách</legend>
