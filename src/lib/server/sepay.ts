@@ -51,12 +51,13 @@ export function memoMatchesContract(content:string,code:string){
 }
 export async function readContractQr(client:Database,id:number,requestedAmount?:number):Promise<ContractQrData>{
   const context=await readPaymentContext(client,id),config=sepayConfig();
-  if(['draft','cancelled'].includes(context.status))throw new SePayError('Hợp đồng chưa phát hành hoặc đã hủy nên chưa tạo mã thanh toán.',409);
-  const amount=requestedAmount??context.remaining??0;
-  if(!Number.isSafeInteger(amount)||amount<0||amount>MAX_PAYMENT_AMOUNT||context.remaining!==null&&amount>context.remaining)throw new SePayError('Số tiền QR vượt phần còn phải thu của hợp đồng.');
+  if(context.status==='cancelled')throw new SePayError('Hợp đồng đã hủy nên không tạo mã thanh toán.',409);
+  const defaultAmount=context.remaining??0;
+  const amount=requestedAmount!==undefined?requestedAmount:defaultAmount;
+  if(!Number.isSafeInteger(amount)||amount<0||amount>MAX_PAYMENT_AMOUNT||(context.remaining!==null&&context.remaining>0&&amount>context.remaining))throw new SePayError('Số tiền QR vượt phần còn phải thu của hợp đồng.');
   const events=await client.query(`SELECT COALESCE(sum(amount) FILTER(WHERE mode='test' AND status='simulated'),0)::bigint AS demo,COALESCE(max(id),0)::bigint AS version FROM himoto.management_sepay_events WHERE order_id=$1`,[id]);
   return {id,code:context.code,configured:config.configured,mode:config.mode,amount,total:context.total_amount,paid:context.paid_amount,
-    bank:config.configured?config.bank:null,memo:contractTransferMemo(context.code),qr_url:config.configured&&amount>0?contractVietQr(config.bank,amount,context.code):null,
+    bank:config.configured?config.bank:null,memo:contractTransferMemo(context.code),qr_url:config.configured?contractVietQr(config.bank,amount,context.code):null,
     received_demo:Number(events.rows[0].demo),event_version:Number(events.rows[0].version)};
 }
 /** Caller owns one transaction; provider ID dedupe, receipt and event are committed together. */

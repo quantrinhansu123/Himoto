@@ -210,6 +210,7 @@ export function ContractDetail({ row, onClose, onQr,onPrint, onPrintVersion, onP
       </>)}
       {panel('cashflow', 'Lịch sử thu chi', <>
         <div className="mg-contract-history-toolbar"><p>Tất cả phiếu thu / chi gắn với hợp đồng trong Sổ quỹ / Sổ két. Nút điền sổ quỹ mở phiếu đã gắn hợp đồng, nghiệp vụ và số tiền theo cấu trúc.</p><div>
+          {onQr && row.status !== 'cancelled' && <button type="button" className="mg-button" onClick={onQr}><Wallet size={15} />Nhập phiếu chi</button>}
           {canPay && <button type="button" className="mg-button mg-button-primary" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : 'extra')}><Plus size={15} />Điền phiếu thu</button>}
           {refreshButton}</div></div>
         {canPay && <div className="mg-cashbook-autofill-actions">
@@ -236,6 +237,7 @@ export function ContractDetail({ row, onClose, onQr,onPrint, onPrintVersion, onP
       </>}
       {canRentBattery && <button type="button" className="mg-button" onClick={onBatteryRent}><BatteryCharging size={15} />Thuê pin / sạc</button>}
       {canPay && <button type="button" className="mg-button" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : depositHeld > 0 ? 'deposit_refund' : 'extra')}><Wallet size={15} />Điền sổ quỹ</button>}
-      {onQr&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={onQr}>Nhập phiếu chi</button>}<button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
+      {onQr && row.status !== 'cancelled' && <button type="button" className="mg-button" onClick={onQr}><Wallet size={15} />Nhập phiếu chi</button>}
+      <button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
   </Dialog>;
 }
