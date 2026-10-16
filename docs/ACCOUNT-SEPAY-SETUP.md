@@ -48,6 +48,7 @@ Tài khoản ngân hàng demo hiện có loại chủ tài khoản **chưa xác 
 - Phương thức: POST; thông báo tiền vào đúng tài khoản đã cấu hình.
 - Bảo mật: **API Key**, dùng cùng giá trị `SEPAY_WEBHOOK_SECRET`. SePay gửi header `Authorization: Apikey <giá trị>`.
 - Thành công trả HTTP 200 và `{"success":true}`. Gửi lại cùng giao dịch không thu trùng.
+- Nút **Gửi thử** dùng dữ liệu mẫu (`id=0`): HIMOTO xác thực API key rồi trả thành công, không mở kết nối ghi sổ và không cập nhật hợp đồng. Đây là kiểm tra kết nối; để thử thông báo thanh toán, dùng giao dịch mô phỏng trong Test mode SePay.
 - Tài liệu chính thức: [Webhook](https://docs.sepay.vn/tich-hop-webhooks.html), [mô phỏng giao dịch](https://developer.sepay.vn/vi/tien-ich-khac/test-mode/mo-phong-tao-ma-vietqr).
 
 `SEPAY_MODE=test` chỉ ngăn HIMOTO ghi tiền thật; nó không biến số tài khoản ngân hàng thật thành tài khoản giả lập. Dùng Test mode và nút mô phỏng giao dịch trên SePay. QR luôn chứa số tài khoản đã cấu hình.

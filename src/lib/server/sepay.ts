@@ -20,6 +20,15 @@ export function validSePayAuthorization(header:string|null,secret:string){
   return a.length===b.length&&timingSafeEqual(a,b);
 }
 export interface SePayPayload {id:string;amount:number;direction:'in'|'out';account:string;gateway:string;content:string;reference:string;at:string;fingerprint:string}
+/** SePay's dashboard send-test uses a mock ID and sample account, not a bank transaction. */
+export function isSePayConnectivityTest(raw:unknown):boolean {
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const body=raw as Record<string,unknown>;
+  if(body.id!==0&&body.id!=='0')return false;
+  const amount=typeof body.transferAmount==='number'?body.transferAmount:typeof body.transferAmount==='string'&&/^\d+$/.test(body.transferAmount)?Number(body.transferAmount):NaN;
+  return ['gateway','transactionDate','accountNumber'].every(key=>typeof body[key]==='string'&&String(body[key]).trim().length>0&&String(body[key]).length<=100)
+    &&['in','out'].includes(String(body.transferType))&&Number.isSafeInteger(amount)&&amount>=0&&amount<=MAX_PAYMENT_AMOUNT;
+}
 export function parseSePayPayload(raw:unknown):SePayPayload {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new SePayError('Dữ liệu webhook không hợp lệ.');
   const body=raw as Record<string,unknown>,id=String(body.id??''),amount=typeof body.transferAmount==='number'?body.transferAmount:/^\d+$/.test(String(body.transferAmount))?Number(body.transferAmount):NaN;
@@ -28,7 +37,7 @@ export function parseSePayPayload(raw:unknown):SePayPayload {
   const gateway=typeof body.gateway==='string'?body.gateway.trim():'';
   if(!gateway||gateway.length>100)throw new SePayError('Thiếu ngân hàng giao dịch.');
   const date=typeof body.transactionDate==='string'?body.transactionDate:'';
-  if(!/^\d{1,20}$/.test(id)||typeof body.id==='number'&&!Number.isSafeInteger(body.id)||!Number.isSafeInteger(amount)||amount<=0||amount>MAX_PAYMENT_AMOUNT||!['in','out'].includes(String(direction))||!account||account.length>100||content.length>2000||reference.length>200||!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(date))throw new SePayError('Thiếu hoặc sai thông tin giao dịch SePay.');
+  if(!/^[1-9]\d{0,19}$/.test(id)||typeof body.id==='number'&&!Number.isSafeInteger(body.id)||!Number.isSafeInteger(amount)||amount<=0||amount>MAX_PAYMENT_AMOUNT||!['in','out'].includes(String(direction))||!account||account.length>100||content.length>2000||reference.length>200||!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(date))throw new SePayError('Thiếu hoặc sai thông tin giao dịch SePay.');
   const at=`${date.replace(' ','T')}+07:00`,time=Date.parse(at);
   if(!Number.isFinite(time)||new Date(time+7*3600000).toISOString().slice(0,19)!==date.replace(' ','T'))throw new SePayError('Thời gian giao dịch không hợp lệ.');
   const fingerprint=createHash('sha256').update(JSON.stringify([id,amount,direction,account,bankBin(gateway)||gateway,content,reference,at])).digest('hex');

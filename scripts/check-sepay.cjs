@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
 const {load}=require('./check-contract-payments.cjs'),root=path.resolve(__dirname,'../src');
-const {parseSePayPayload,validSePayAuthorization,processSePayEvent,readContractQr,memoMatchesContract}=load(path.join(root,'lib/server/sepay'));
+const {isSePayConnectivityTest,parseSePayPayload,validSePayAuthorization,processSePayEvent,readContractQr,memoMatchesContract}=load(path.join(root,'lib/server/sepay'));
 const {contractVietQr}=load(path.join(root,'lib/management/sepay'));
 const pool=load(path.join(root,'lib/server/himoto-database')).ownerDatabase;
 const checks=[];
@@ -12,6 +12,23 @@ async function main(){
   assert(!memoMatchesContract('Thanh toan cho hop dong QA-1A','QA-1'));assert(memoMatchesContract('BANK: Thanh toan cho hop dong QA-1. REF 123','QA-1'));
   const config={mode:'live',configured:true,bank:{bank_code:'VPBank',account_number:'000000000000',account_name:'QA ONLY'},bankId:3,actorId:143,secret:'qa-webhook-secret-value'};
   const raw={id:1,gateway:'VPBank',transactionDate:'2026-01-02 10:01:00',accountNumber:config.bank.account_number,content:'Thanh toán cho hợp đồng QA-1',transferType:'in',transferAmount:300,referenceCode:'QA-REF-1'};
+  const probe={...raw,id:0,gateway:'Vietcombank',accountNumber:'123456789',transferAmount:0,transactionDate:'sample date'};
+  assert(isSePayConnectivityTest(probe));assert(isSePayConnectivityTest({...probe,id:'0'}));assert(!isSePayConnectivityTest(raw));
+  for(const invalid of [{id:0},{...probe,transferAmount:-1},{...probe,gateway:''},{...probe,transferType:'other'}])assert(!isSePayConnectivityTest(invalid));
+  assert.throws(()=>parseSePayPayload({...raw,id:0}));
+  const {NextRequest}=require('next/server'),handler=load(path.join(root,'app/api/webhooks/sepay/route'));
+  const descriptor=Object.getOwnPropertyDescriptor(pool,'connect'),oldSecret=process.env.SEPAY_WEBHOOK_SECRET,oldMode=process.env.SEPAY_MODE;
+  let connections=0;
+  Object.defineProperty(pool,'connect',{configurable:true,value:async()=>{connections++;throw new Error('Financial processing must never run for a connectivity test');}});
+  const send=(body,secret=config.secret)=>handler.POST(new NextRequest('https://himoto.example/api/webhooks/sepay',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Apikey '+secret},body:JSON.stringify(body)}));
+  try {
+    process.env.SEPAY_WEBHOOK_SECRET=config.secret;
+    for(const mode of ['test','live']){process.env.SEPAY_MODE=mode;for(const id of [0,'0']){const response=await send({...probe,id});assert.equal(response.status,200);assert.deepEqual(await response.json(),{success:true});}}
+    assert.equal((await send(probe,'wrong-secret-value')).status,401);
+    assert.equal((await send({id:0})).status,400);assert.equal((await send({})).status,400);assert.equal(connections,0);
+    assert.equal((await send(raw)).status,500);assert.equal(connections,1);
+  }finally{Object.defineProperty(pool,'connect',descriptor);for(const [key,value]of [['SEPAY_WEBHOOK_SECRET',oldSecret],['SEPAY_MODE',oldMode]]){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
+  checks.push('Authenticated dashboard connection tests accept sample bank/account data in test and live modes without opening a database connection; genuine events still use financial validation');
   for(const patch of [{transferAmount:0},{transferAmount:1.5},{transferType:'unknown'},{transactionDate:'2026-02-30 10:01:00'},{id:1.5},{accountNumber:''}])assert.throws(()=>parseSePayPayload({...raw,...patch}));
   const qr=new URL(contractVietQr(config.bank,300,'QA-1'));assert.equal(qr.hostname,'vietqr.app');assert.equal(qr.searchParams.get('amount'),'300');assert.equal(qr.searchParams.get('des'),'Thanh toan cho hop dong QA-1');
   checks.push('API-key authentication, strict payload validation, exact standardized memo matching and VietQR amount/account/content');
@@ -19,7 +36,7 @@ async function main(){
   const tables=['orders','transactions','banks','cash','order_vehicle_details','vehicles','users','management_contract_payments','management_sepay_events'];
   const proxy={query(sql,params){for(const table of tables)sql=sql.replaceAll(`himoto.${table}`,`pg_temp.qa_sepay_${table}`);assert(!sql.includes('himoto.'),'Every business query must use TEMP');if(sql.includes('pg_advisory_xact_lock'))return c.query('SELECT 1');if(failIncome&&sql.startsWith('UPDATE pg_temp.qa_sepay_orders'))throw Error('Simulated income failure');return c.query(sql,params);}};
   const attempt=async work=>{await c.query('SAVEPOINT sepay_case');try{const result=await work();await c.query('RELEASE SAVEPOINT sepay_case');return result;}catch(error){await c.query('ROLLBACK TO SAVEPOINT sepay_case');throw error;}};
-  const process=(patch={},settings=config)=>attempt(()=>processSePayEvent(proxy,parseSePayPayload({...raw,...patch}),settings));
+  const deliver=(patch={},settings=config)=>attempt(()=>processSePayEvent(proxy,parseSePayPayload({...raw,...patch}),settings));
   const paid=async()=>Number((await c.query('SELECT pid FROM qa_sepay_orders WHERE id=1')).rows[0].pid);
   const count=async table=>Number((await c.query(`SELECT count(*) n FROM qa_sepay_${table}`)).rows[0].n);
   try{
@@ -30,24 +47,24 @@ async function main(){
     await c.query("INSERT INTO qa_sepay_users(id,name,email,password,role_id,status) VALUES(143,'SePay QA','qa-sepay@example.invalid','unused',6,'active')");
     await c.query("INSERT INTO qa_sepay_orders(id,contract_number,order_status,store_id,total,pid,created_at,contract_issued_at) VALUES(1,'QA-1','renting',23,'1000',0,'2026-01-01T00:00:00Z','2026-01-01 07:00:00')");
     await c.query("INSERT INTO qa_sepay_banks(id,store_id,bank_name,account_number,owner_name,account_type,owner_type,status) VALUES(3,0,'VPBank','000000000000','QA ONLY',1,'company','Active')");
-    const first=await process();assert.equal(first.status,'matched');assert.equal(await paid(),300);assert.equal(await count('transactions'),1);
-    const replay=await process();assert.equal(replay.replayed,true);assert.equal(await count('transactions'),1);
-    await assert.rejects(()=>process({transferAmount:301}),error=>error.status===409);assert.equal(await paid(),300);
-    await process({id:2,transferAmount:200});assert.equal(await paid(),500);
+    const first=await deliver();assert.equal(first.status,'matched');assert.equal(await paid(),300);assert.equal(await count('transactions'),1);
+    const replay=await deliver();assert.equal(replay.replayed,true);assert.equal(await count('transactions'),1);
+    await assert.rejects(()=>deliver({transferAmount:301}),error=>error.status===409);assert.equal(await paid(),300);
+    await deliver({id:2,transferAmount:200});assert.equal(await paid(),500);
     checks.push('Live incoming payments post approved receipts and paid totals atomically; provider retries do not double post and changed replay data is rejected');
-    assert.equal((await process({id:3,transferType:'out'})).status,'ignored');
-    assert.equal((await process({id:4,content:'Thanh toán cho hợp đồng NOT-FOUND'})).status,'unmatched');
-    assert.equal((await process({id:5,transferAmount:600})).status,'review');
-    await assert.rejects(()=>process({id:6,accountNumber:'WRONG'}),error=>error.status===400);
-    await assert.rejects(()=>process({id:6,gateway:'Vietcombank'}),error=>error.status===400);
+    assert.equal((await deliver({id:3,transferType:'out'})).status,'ignored');
+    assert.equal((await deliver({id:4,content:'Thanh toán cho hợp đồng NOT-FOUND'})).status,'unmatched');
+    assert.equal((await deliver({id:5,transferAmount:600})).status,'review');
+    await assert.rejects(()=>deliver({id:6,accountNumber:'WRONG'}),error=>error.status===400);
+    await assert.rejects(()=>deliver({id:6,gateway:'Vietcombank'}),error=>error.status===400);
     assert.equal(await paid(),500);assert.equal(await count('transactions'),2);
     checks.push('Outgoing, unmatched, excess and wrong-bank transfers cannot mark a contract paid; reviewable events are retained');
-    assert.equal((await process({id:7,transferAmount:100},{...config,mode:'test'})).status,'simulated');assert.equal(await paid(),500);assert.equal(await count('transactions'),2);
+    assert.equal((await deliver({id:7,transferAmount:100},{...config,mode:'test'})).status,'simulated');assert.equal(await paid(),500);assert.equal(await count('transactions'),2);
     checks.push('Demo mode acknowledges matched transactions while keeping actual balances and cashbook receipts unchanged');
     const eventCount=await count('management_sepay_events');failIncome=true;
-    await assert.rejects(()=>process({id:8,transferAmount:100}),/Simulated income failure/);failIncome=false;
+    await assert.rejects(()=>deliver({id:8,transferAmount:100}),/Simulated income failure/);failIncome=false;
     assert.equal(await paid(),500);assert.equal(await count('transactions'),2);assert.equal(await count('management_sepay_events'),eventCount);
-    await process({id:8,transferAmount:100});assert.equal(await paid(),600);assert.equal(await count('transactions'),3);
+    await deliver({id:8,transferAmount:100});assert.equal(await paid(),600);assert.equal(await count('transactions'),3);
     const receipts=(await c.query('SELECT type,user_id,bank_id,note FROM qa_sepay_transactions')).rows;
     assert(receipts.every(row=>row.type==='in'&&Number(row.user_id)===143&&Number(row.bank_id)===3&&row.note==='Thanh toán cho hợp đồng QA-1'));
     assert.equal((await c.query('SELECT total FROM qa_sepay_orders WHERE id=1')).rows[0].total,'1000');
