@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {randomUUID} = require('node:crypto');
+const fs = require('node:fs');
 require('@next/env').loadEnvConfig(path.resolve(__dirname,'..'),false,{info(){},error(){}});
 const {load,root} = require('./lib/load-typescript.cjs');
 const api = load(path.join(root,'lib/management/battery-contracts'));
@@ -30,6 +31,10 @@ assert.throws(()=>server.parseBatteryInput({...input(),paid_account_id:null}),/C
 assert.throws(()=>server.parseBatteryInput({...input(),paid_account_type:'company_transfer'}),/chưa khớp/);
 assert.throws(()=>server.parseBatteryInput({...input(),collected_at:'2026-02-30T09:30'}),/Thời điểm nhận/);
 checks.push('positive rent/deposit require valid accounts, consistent CK/TM methods and a real receipt timestamp');
+assert.equal(api.batteryProductKind(api.DEFAULT_BATTERY_CHARGER_NAME),'battery_charger');
+assert.equal(server.parseBatteryInput({...input(),vehicle_contract_id:901}).vehicle_contract_id,901);
+assert.throws(()=>server.parseBatteryInput({...input(),vehicle_contract_id:-1}));
+checks.push('Pin + charger preset and strict linked vehicle contract IDs');
 async function live() {
   const pool=load(path.join(root,'lib/server/himoto-database')).himotoPool;
   const c=await pool.connect();
@@ -40,6 +45,8 @@ async function live() {
   try {
     await c.query('BEGIN');
     for(const table of tables) await c.query(`CREATE TEMP TABLE qa_pin_${table} (LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS) ON COMMIT DROP`);
+    await c.query('ALTER TABLE qa_pin_orders ADD PRIMARY KEY(id)');
+    await proxy.query(fs.readFileSync(path.join(__dirname,'../docs/sql/2026-10-16-battery-contract-links.sql'),'utf8').replace(/^BEGIN;\s*/,'').replace(/COMMIT;\s*$/,''));
     await c.query('CREATE TEMP SEQUENCE qa_pin_seq START 99000');
     for(const table of ['battery_contracts','transactions']) await c.query(`ALTER TABLE qa_pin_${table} ALTER COLUMN id SET DEFAULT nextval('qa_pin_seq')`);
     await c.query("INSERT INTO qa_pin_stores(id,store_name,status) VALUES(35,'CS Thuê sở hữu QA','opening')");
@@ -83,6 +90,18 @@ async function live() {
     await server.deleteBatteryContract(proxy,row.id,afterDelete.revision,143);
     assert.equal(Number((await c.query('SELECT count(*) AS n FROM qa_pin_transactions WHERE object_id=$1',[row.id])).rows[0].n),2);
     checks.push('TEMP: explicit cashbook receipt deletion reconciles battery totals; removing a contract preserves existing financial receipts');
+    await c.query("INSERT INTO qa_pin_orders(id,store_id,customer_id,order_status,contract_number) VALUES(901,35,NULL,'renting','QA-901'),(902,36,NULL,'renting','QA-902'),(903,35,NULL,'draft',NULL),(904,35,77,'renting','QA-904'),(905,35,NULL,'cancelled','QA-905')");
+    const linked=await attempt(()=>server.saveBatteryContract(proxy,143,{...input(),vehicle_contract_id:901,battery_name:api.DEFAULT_BATTERY_CHARGER_NAME}));
+    assert.equal(linked.vehicle_contract_id,901);assert.equal(linked.vehicle_contract_code,'QA-901');
+    assert.deepEqual((await server.listBatteryContracts(proxy,undefined,901)).map(r=>r.id),[linked.id]);
+    assert.equal((await server.listBatteryContracts(proxy,36,901)).length,0);
+    const linkedReceipts=(await c.query('SELECT order_id,object_type FROM qa_pin_transactions WHERE object_id=$1',[linked.id])).rows;
+    assert.equal(linkedReceipts.length,2);assert(linkedReceipts.every(r=>r.order_id===null && r.object_type==='battery_contract'));
+    const edited=await attempt(()=>server.saveBatteryContract(proxy,143,edit(linked,{notes:'Linked edit'}),linked.id));
+    assert.equal(edited.vehicle_contract_id,901);
+    await assert.rejects(()=>attempt(()=>server.saveBatteryContract(proxy,143,edit(edited,{vehicle_contract_id:null}),linked.id)),/Giữ nguyên/);
+    for(const source of [902,903,904,905,999])await assert.rejects(()=>attempt(()=>server.saveBatteryContract(proxy,143,{...input(),vehicle_contract_id:source})),server.BatteryContractError);
+    checks.push('TEMP: source FK, Pin + charger, reverse filtering and edit persistence work; invalid sources rejected and receipts stay separate from vehicle contracts');
   } finally {await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
 }
 (async()=>{if(process.argv.includes('--live-temp'))await live();console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));})().catch(e=>{console.error(e);process.exitCode=1;});

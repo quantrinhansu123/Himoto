@@ -1,0 +1,11 @@
+{
+  "checks": [
+    "Anonymous catalog read: 401",
+    "Authenticated catalog read: three initial active types",
+    "Cross-origin catalog mutation: 403",
+    "Malformed catalog input: 400, no catalog write",
+    "Accounting account reaches catalog input validation: 400, no catalog write",
+    "Invalid source vehicle contract filter: 400"
+  ],
+  "permanentBusinessWrites": 0
+}

@@ -13,7 +13,7 @@ const TEXT_LIMITS = {
   battery_name: 255, vehicle_license: 32, vehicle_brand: 120, vehicle_type: 120, vehicle_color: 60, vehicle_year: 10, price_unit: 30, package_name: 120, deposit_note: 500, notes: 2000,
 } as const;
 const MONEY_FIELDS = ['rent_price', 'paid_amount', 'deposit_amount'] as const;
-const FIELDS = ['store_id', 'customer_id', 'status', 'signed_on', 'id_card_issued_on', 'starts_at', 'ends_at', 'paid_method', 'deposit_method', 'paid_account_type','paid_account_id','deposit_account_type','deposit_account_id','collected_at', ...Object.keys(TEXT_LIMITS), ...MONEY_FIELDS];
+const FIELDS = ['store_id', 'customer_id', 'vehicle_contract_id', 'status', 'signed_on', 'id_card_issued_on', 'starts_at', 'ends_at', 'paid_method', 'deposit_method', 'paid_account_type','paid_account_id','deposit_account_type','deposit_account_id','collected_at', ...Object.keys(TEXT_LIMITS), ...MONEY_FIELDS];
 
 export function parseBatteryInput(body: unknown, editing = false): BatteryContractInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BatteryContractError('Thông tin hợp đồng thuê pin không hợp lệ.');
@@ -33,6 +33,7 @@ export function parseBatteryInput(body: unknown, editing = false): BatteryContra
   }
   if (!Number.isSafeInteger(value.store_id) || Number(value.store_id) <= 0) throw new BatteryContractError('Chọn cơ sở cho thuê pin.');
   if (value.customer_id !== null && (!Number.isSafeInteger(value.customer_id) || Number(value.customer_id) <= 0)) throw new BatteryContractError('Khách hàng đã chọn không hợp lệ.');
+  if (value.vehicle_contract_id !== undefined && value.vehicle_contract_id !== null && (!Number.isSafeInteger(value.vehicle_contract_id) || Number(value.vehicle_contract_id) <= 0)) throw new BatteryContractError('Hợp đồng xe liên kết không hợp lệ.');
   if (!BATTERY_STATUSES.some(option => option.value === value.status)) throw new BatteryContractError('Trạng thái hợp đồng không hợp lệ.');
   if (!BATTERY_PAYMENT_METHODS.includes(value.paid_method as never) || !BATTERY_PAYMENT_METHODS.includes(value.deposit_method as never)) throw new BatteryContractError('Hình thức thanh toán chỉ nhận CK hoặc TM.');
   if (typeof value.signed_on !== 'string' || !validDate(value.signed_on)) throw new BatteryContractError('Nhập ngày ký hợp đồng hợp lệ.');
@@ -63,14 +64,17 @@ export function parseBatteryInput(body: unknown, editing = false): BatteryContra
     status: value.status as BatteryContractInput['status'], signed_on: value.signed_on, id_card_issued_on: value.id_card_issued_on,
     starts_at: value.starts_at, ends_at: value.ends_at, paid_method: value.paid_method as BatteryContractInput['paid_method'], deposit_method: value.deposit_method as BatteryContractInput['deposit_method'],
     ...(editing ? { revision: String(value.revision) } : { request_id: String(value.request_id).toLowerCase() }),
+    ...(value.vehicle_contract_id !== undefined ? { vehicle_contract_id: value.vehicle_contract_id === null ? null : Number(value.vehicle_contract_id) } : {}),
   };
 }
 
 const SELECT = `SELECT b.*, b.signed_on::text AS signed_on_text, b.id_card_issued_on::text AS id_card_issued_on_text, b.xmin::text AS revision,
   s.store_name, s.store_address, s.store_phone,
+  COALESCE(NULLIF(vo.contract_number,''),NULLIF(vo.draft_reference,''),'#' || vo.id::text) AS vehicle_contract_code,
   rp.account_id AS paid_account_id,rp.method AS paid_account_type,dp.account_id AS deposit_account_id,dp.method AS deposit_account_type,
   GREATEST(rp.collected_at,dp.collected_at) AS collection_at
   FROM himoto.battery_contracts b LEFT JOIN himoto.stores s ON s.id=b.store_id
+  LEFT JOIN himoto.orders vo ON vo.id=b.vehicle_contract_id
   LEFT JOIN LATERAL (SELECT COALESCE(t.cash_id,t.bank_id) AS account_id,
     CASE WHEN t.cash_id IS NOT NULL THEN 'cash' WHEN t.bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method,t.created_at AS collected_at
     FROM himoto.transactions t WHERE t.object_type='battery_contract' AND t.object_id=b.id AND t.name='battery:rental' AND t.status='approved' ORDER BY t.id DESC LIMIT 1) rp ON true
@@ -84,6 +88,7 @@ function map(row: Record<string, unknown>): BatteryContract {
   return {
     id: Number(row.id), code: text(row.code), store_id: Number(row.store_id), store_name: text(row.store_name), store_address: text(row.store_address), store_phone: text(row.store_phone),
     customer_id: row.customer_id == null ? null : Number(row.customer_id), status: text(row.status) as BatteryContract['status'], staff_name: text(row.staff_name),
+    vehicle_contract_id: row.vehicle_contract_id == null ? null : Number(row.vehicle_contract_id), vehicle_contract_code: text(row.vehicle_contract_code),
     signed_on: text(row.signed_on_text), signed_place: text(row.signed_place), customer_name: text(row.customer_name), customer_phone: text(row.customer_phone),
     customer_address: text(row.customer_address), customer_id_card: text(row.customer_id_card), id_card_issued_on: text(row.id_card_issued_on_text), id_card_issued_by: text(row.id_card_issued_by),
     battery_name: text(row.battery_name), vehicle_license: text(row.vehicle_license), vehicle_brand: text(row.vehicle_brand), vehicle_type: text(row.vehicle_type),
@@ -98,9 +103,10 @@ function map(row: Record<string, unknown>): BatteryContract {
   };
 }
 
-export async function listBatteryContracts(client: Database, storeId?: number) {
+export async function listBatteryContracts(client: Database, storeId?: number, vehicleContractId?: number) {
   if (storeId !== undefined && (!Number.isSafeInteger(storeId) || storeId <= 0)) throw new BatteryContractError('Cơ sở không hợp lệ.');
-  const result = await client.query(`${SELECT} WHERE b.deleted_at IS NULL AND ($1::bigint IS NULL OR b.store_id=$1) ORDER BY b.starts_at DESC, b.id DESC LIMIT 5000`, [storeId ?? null]);
+  if (vehicleContractId !== undefined && (!Number.isSafeInteger(vehicleContractId) || vehicleContractId <= 0)) throw new BatteryContractError('Hợp đồng xe liên kết không hợp lệ.');
+  const result = await client.query(`${SELECT} WHERE b.deleted_at IS NULL AND ($1::bigint IS NULL OR b.store_id=$1) AND ($2::bigint IS NULL OR b.vehicle_contract_id=$2) ORDER BY b.starts_at DESC, b.id DESC LIMIT 5000`, [storeId ?? null, vehicleContractId ?? null]);
   return result.rows.map(map);
 }
 async function lock(client: Database) {
@@ -132,16 +138,24 @@ export async function saveBatteryContract(client: Database, actorId: number, raw
   } else {
     const previous = await readOne(client,id);
     if (previous.revision !== input.revision) throw new BatteryContractError('Hợp đồng đã được người khác cập nhật. Tải lại trang và mở lại để sửa.', 409);
+    if (previous.vehicle_contract_id && input.vehicle_contract_id !== undefined && input.vehicle_contract_id !== previous.vehicle_contract_id) throw new BatteryContractError('Giữ nguyên hợp đồng xe đã liên kết để lịch sử thuê pin / sạc chính xác.',409);
+    if (input.vehicle_contract_id === undefined) input.vehicle_contract_id = previous.vehicle_contract_id ?? null;
     if (previous.store_id !== input.store_id && (previous.paid_account_id || previous.deposit_account_id)) throw new BatteryContractError('Hợp đồng đã có phiếu thu; giữ cơ sở để số dư và lịch sử đúng.',409);
   }
   const store = await client.query("SELECT id FROM himoto.stores WHERE id=$1 AND status IN ('opening','active') FOR SHARE", [input.store_id]);
   if (!store.rowCount) throw new BatteryContractError('Cơ sở không tồn tại hoặc đã ngừng hoạt động.', 409);
   if (input.customer_id !== null && !(await client.query('SELECT id FROM himoto.customers WHERE id=$1 FOR SHARE', [input.customer_id])).rowCount) throw new BatteryContractError('Khách hàng đã chọn không còn tồn tại. Tra cứu lại khách hàng.', 409);
+  if (input.vehicle_contract_id) {
+    const source = await client.query('SELECT id,store_id,customer_id,order_status FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR SHARE',[input.vehicle_contract_id]);
+    const order = source.rows[0];
+    if (!order || ['draft','cancelled'].includes(String(order.order_status))) throw new BatteryContractError('Chỉ liên kết hợp đồng xe đã phát hành và chưa hủy.',409);
+    if (Number(order.store_id)!==input.store_id || order.customer_id != null && Number(order.customer_id)!==input.customer_id) throw new BatteryContractError('Hợp đồng pin / sạc phải cùng khách hàng và cơ sở nguồn với hợp đồng xe liên kết.',409);
+  }
   const values = [input.store_id, input.customer_id, input.status, input.staff_name, input.signed_on, input.signed_place, input.customer_name, input.customer_phone,
     input.customer_address, input.customer_id_card, input.id_card_issued_on || null, input.id_card_issued_by, input.battery_name, input.vehicle_license, input.vehicle_brand,
     input.vehicle_type, input.vehicle_color, input.vehicle_year, `${input.starts_at}:00+07:00`, input.ends_at ? `${input.ends_at}:00+07:00` : null, input.rent_price,
-    input.price_unit, input.package_name, input.paid_amount, input.paid_method, input.deposit_amount, input.deposit_note, input.deposit_method, input.notes, actorId];
-  const columns = 'store_id,customer_id,status,staff_name,signed_on,signed_place,customer_name,customer_phone,customer_address,customer_id_card,id_card_issued_on,id_card_issued_by,battery_name,vehicle_license,vehicle_brand,vehicle_type,vehicle_color,vehicle_year,starts_at,ends_at,rent_price,price_unit,package_name,paid_amount,paid_method,deposit_amount,deposit_note,deposit_method,notes';
+    input.price_unit, input.package_name, input.paid_amount, input.paid_method, input.deposit_amount, input.deposit_note, input.deposit_method, input.notes, input.vehicle_contract_id ?? null, actorId];
+  const columns = 'store_id,customer_id,status,staff_name,signed_on,signed_place,customer_name,customer_phone,customer_address,customer_id_card,id_card_issued_on,id_card_issued_by,battery_name,vehicle_license,vehicle_brand,vehicle_type,vehicle_color,vehicle_year,starts_at,ends_at,rent_price,price_unit,package_name,paid_amount,paid_method,deposit_amount,deposit_note,deposit_method,notes,vehicle_contract_id';
   if (id !== undefined) {
     await client.query(`UPDATE himoto.battery_contracts SET (${columns},updated_by,updated_at) = (${values.map((_, index) => `$${index + 1}`).join(',')},now()) WHERE id=$${values.length + 1}`, [...values, id]);
   } else {

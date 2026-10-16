@@ -1,4 +1,5 @@
 """Synthetic OCR concurrency and form-edit QA; all business/provider APIs are intercepted."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import base64
 import json
@@ -28,6 +29,7 @@ def fulfill_ocr(route, fields):
     route.fulfill(json=dict(status='success', data=dict(fields=fields)))
 
 def mock(route):
+    if mock_contract_type_read(route): return
     req = route.request
     path = urlparse(req.url).path
     if path == '/api/auth/photo-uploads/sign':

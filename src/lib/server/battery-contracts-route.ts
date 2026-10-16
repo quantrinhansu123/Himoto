@@ -16,9 +16,11 @@ export async function handleBatteryContractRequest(request: NextRequest, method:
     const input = method === 'POST' || method === 'PATCH' ? parseBatteryInput(raw, method === 'PATCH') : null;
     if (method === 'DELETE' && (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => key !== 'revision') || typeof raw.revision !== 'string')) throw new BatteryContractError('Phiên bản hợp đồng không hợp lệ.');
     const store = request.nextUrl.searchParams.get('store_id');
+    const vehicleContract = request.nextUrl.searchParams.get('vehicle_contract_id');
     if (method === 'GET' && store !== null && !/^[1-9]\d*$/.test(store)) throw new BatteryContractError('Cơ sở không hợp lệ.');
+    if (method === 'GET' && vehicleContract !== null && !/^[1-9]\d*$/.test(vehicleContract)) throw new BatteryContractError('Hợp đồng xe liên kết không hợp lệ.');
     client = await himotoPool.connect(); await client.query(method === 'GET' ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
-    const data = method === 'GET' ? await listBatteryContracts(client, store === null ? undefined : Number(store))
+    const data = method === 'GET' ? await listBatteryContracts(client, store === null ? undefined : Number(store), vehicleContract === null ? undefined : Number(vehicleContract))
       : method === 'DELETE' ? await deleteBatteryContract(client, id!, raw.revision, user!.id) : await saveBatteryContract(client, user!.id, input!, id);
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });

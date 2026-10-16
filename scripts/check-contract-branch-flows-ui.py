@@ -1,4 +1,5 @@
 """Synthetic API QA: vehicle staff branch, payment choices and return lookup. No real business writes."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import copy
 import json
@@ -25,6 +26,7 @@ legacy = dict(id=900, contract_number='OLD-QA-900', status='renting', store_id=1
 contracts = [legacy]
 
 def mock_api(route):
+    if mock_contract_type_read(route): return
     request = route.request
     parsed = urlparse(request.url)
     if parsed.path.startswith('/api/auth/record-photos/') and request.method == 'GET':

@@ -11,6 +11,7 @@ const PAGE_KINDS: Record<string, readonly ManagementKind[]> = {
 };
 
 export function managementKindsForPath(pathname: string): readonly ManagementKind[] {
+  if (pathname.startsWith('/contracts/types')) return STORE_KINDS;
   if (pathname.startsWith('/contracts/battery')) return ['stores', 'staff'];
   return PAGE_KINDS[pathname.split('/')[1]] || STORE_KINDS;
 }

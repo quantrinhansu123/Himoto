@@ -1,4 +1,5 @@
 """Reservation -> handover -> remaining rent, synthetic API only."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import copy
 import json
@@ -28,6 +29,7 @@ def payment_context():
         items=[dict(id=201, vehicle_id=101, name=vehicle['name'], license='QA-101', daily_price=300000, return_at='2026-12-01T09:00:00+07:00', renewal_amount=0, revision='1')], end_date=None)
 
 def mock_api(route):
+    if mock_contract_type_read(route): return
     req = route.request
     path = urlparse(req.url).path.rstrip('/')
     query = parse_qs(urlparse(req.url).query)

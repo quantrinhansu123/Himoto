@@ -1,4 +1,5 @@
 """Synthetic payment UI QA. Every /api/** request is intercepted; zero business writes."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import copy
 import json
@@ -37,6 +38,7 @@ def context_for(number):
         items=items[number],end_date=max(item['return_at'] for item in items[number]))
 
 def mock_api(route):
+    if mock_contract_type_read(route): return
     request = route.request
     endpoint = urlparse(request.url).path
     match = re.fullmatch(r'/api/auth/order/car-rental/(\d+)/payments', endpoint)

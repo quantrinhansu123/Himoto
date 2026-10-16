@@ -17,6 +17,9 @@ export interface VehicleDetails {
   borrow_hats: string; borrow_raincoats: string; rent_at: string; return_at: string;
 }
 export interface ContractDraft {
+  contract_type_id?: string;
+  contract_type_name?: string;
+  contract_type_months?: string;
   // Vehicle selection and contract staff branch; store_id remains the revenue branch.
   vehicle_store_id?: string;
   reservation?: boolean;
@@ -108,7 +111,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
       ...(row.total_amount != null ? { total_amount: value(row.billing_base_total ?? row.total_amount) } : {}),
     } : {};
     const collections = row.collections_json ? JSON.parse(String(row.collections_json)) as ContractCollection[] : snapshot.collections;
-    return { ...structuredClone(snapshot), ...live,
+    return { ...(row.contract_type_id ? {contract_type_id:value(row.contract_type_id),contract_type_name:value(row.contract_type_name),contract_type_months:value(row.contract_type_months)} : {}), ...structuredClone(snapshot), ...live,
       ...(row.paid_amount != null ? {paid_amount:value(row.paid_amount)} : {}),
       ...(row.deposit_paid != null ? {deposit_paid_amount:value(row.deposit_paid)} : {}),
       ...(collections ? {collections} : {}),
@@ -150,6 +153,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   const startDate = row ? dateTimeInput(row.start_date) : vietnamRentalTime();
   const collections = row?.collections_json ? JSON.parse(String(row.collections_json)) as ContractCollection[] : undefined;
   return { contract_number: row?.code || '', signed_on: dateInput(row?.signed_on || row?.created_at) || nowDate(),
+    ...(row?.contract_type_id ? { contract_type_id: value(row.contract_type_id), contract_type_name: value(row.contract_type_name), contract_type_months: value(row.contract_type_months) } : {}),
     store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId),
     vehicle_store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: value(row?.staff_name),
     customer_id: row?.customer_id ? Number(row.customer_id) : null, customer,

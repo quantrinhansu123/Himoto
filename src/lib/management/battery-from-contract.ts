@@ -13,6 +13,7 @@ export function batteryPrefillFromVehicleContract(dataset: ManagementDataset, ro
     const vehicle = draft.vehicles[0];
     const storeId = Number(draft.store_id || row.store_id);
     return {
+      vehicle_contract_id: row.id,
       store_id: Number.isSafeInteger(storeId) && storeId > 0 ? storeId : undefined,
       customer_id: draft.customer_id,
       status: 'renting',
@@ -46,6 +47,7 @@ export function batteryPrefillFromVehicleContract(dataset: ManagementDataset, ro
   } catch {
     const storeId = Number(row.store_id);
     return {
+      vehicle_contract_id: row.id,
       store_id: Number.isSafeInteger(storeId) && storeId > 0 ? storeId : undefined,
       customer_id: row.customer_id ? Number(row.customer_id) : null,
       status: 'renting',

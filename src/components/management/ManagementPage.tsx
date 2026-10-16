@@ -23,6 +23,7 @@ import type { BatteryContract } from '@/lib/management/battery-contracts';
 import { staffPositionSuggestions } from '@/lib/management/staff-positions';
 import { applyInstallmentBilling } from '@/lib/management/contract-billing';
 import { ResponsiveDataActions } from './ResponsiveDataActions';
+import { useContractTypes } from '@/components/contracts/ContractTypesProvider';
 
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
@@ -61,10 +62,15 @@ function vehicleOverdueDays(row: ManagementRow, now: number) {
 }
 
 function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false, ownershipOnly = false, paymentDueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean; ownershipOnly?: boolean; paymentDueOnly?: boolean }) {
+  const catalog = useContractTypes(kind === 'contracts');
+  const configured = kind === 'contracts' ? { ...MANAGEMENT_CONFIG.contracts,
+    filters: MANAGEMENT_CONFIG.contracts.filters.map(filter=>filter.key === 'rental_type' ? {...filter,key:'contract_type_id',options:catalog.types.map(type=>({value:type.id,label:`${type.label}${!type.active ? ' (đã ẩn)' : ''}`}))} : filter),
+    columns: MANAGEMENT_CONFIG.contracts.columns.map(column=>column.key === 'rental_type' ? {...column,key:'contract_type_name'} : column),
+  } : MANAGEMENT_CONFIG[kind];
   const overdueDaysColumn: ManagementColumn = { key: 'overdue_days', label: 'Số ngày quá hạn', format: 'number', align: 'right' };
-  const baseConfig = paymentDueOnly ? { ...MANAGEMENT_CONFIG[kind], title: 'Đến hạn đóng tiền', description: 'Khoản thuê sở hữu đã đến hẹn và chưa đóng đủ. Liên hệ khách để thu tiền theo lịch.', columns: [...MANAGEMENT_CONFIG[kind].columns,
-    { key: 'billing_next_due_at', label: 'Ngày hẹn đóng tiền', format: 'date' as const }, { key: 'billing_due_amount', label: 'Tiền đến hạn còn thiếu', format: 'money' as const, align: 'right' as const }] } : MANAGEMENT_CONFIG[kind];
-  const config = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : overdueOnly ? { ...baseConfig, title: 'Hợp đồng quá hạn', description: 'Hợp đồng đang thuê đã quá ngày hẹn trả xe. Liên hệ khách, gia hạn hoặc nhận trả xe.', columns: [baseConfig.columns[0], overdueDaysColumn, ...baseConfig.columns.slice(1)] } : ownershipOnly ? { ...baseConfig, title: 'Hợp đồng thuê sở hữu', description: 'Hợp đồng thuộc cơ sở thuê sở hữu hoặc loại Thuê sở hữu / Thuê sở hữu( cd). Bản nháp và loại sở hữu được ưu tiên lên đầu danh sách.', columns: baseConfig.columns.map(column => column.key === 'rental_type' ? { ...column, hidden: false } : column) } : baseConfig;
+  const baseConfig = paymentDueOnly ? { ...configured, title: 'Đến hạn đóng tiền', description: 'Khoản thuê sở hữu đã đến hẹn và chưa đóng đủ. Liên hệ khách để thu tiền theo lịch.', columns: [...configured.columns,
+    { key: 'billing_next_due_at', label: 'Ngày hẹn đóng tiền', format: 'date' as const }, { key: 'billing_due_amount', label: 'Tiền đến hạn còn thiếu', format: 'money' as const, align: 'right' as const }] } : configured;
+  const config = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : overdueOnly ? { ...baseConfig, title: 'Hợp đồng quá hạn', description: 'Hợp đồng đang thuê đã quá ngày hẹn trả xe. Liên hệ khách, gia hạn hoặc nhận trả xe.', columns: [baseConfig.columns[0], overdueDaysColumn, ...baseConfig.columns.slice(1)] } : ownershipOnly ? { ...baseConfig, title: 'Hợp đồng thuê sở hữu', description: 'Hợp đồng thuộc cơ sở thuê sở hữu hoặc loại Thuê sở hữu / Thuê sở hữu( cd). Bản nháp và loại sở hữu được ưu tiên lên đầu danh sách.', columns: baseConfig.columns.map(column => column.key === 'contract_type_name' ? { ...column, hidden: false } : column) } : baseConfig;
   const { dataset, loading, refreshing, error, source, canSaveContractDrafts, canPayContracts, selectedStore, selectStore, reload, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
   const router = useRouter();
   const searchParams = useSearchParams();

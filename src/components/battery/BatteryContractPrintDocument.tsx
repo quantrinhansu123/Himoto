@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
-import type { BatteryContractFields, BatteryPaymentMethod } from '@/lib/management/battery-contracts';
+import { batteryProductKind, type BatteryContractFields, type BatteryPaymentMethod } from '@/lib/management/battery-contracts';
 
 export interface BatteryPrintData extends BatteryContractFields { code: string; store_address: string; store_phone: string }
 
@@ -23,7 +23,7 @@ export function BatteryContractPrintDocument({ doc, pageWrapper: PageWrapper }: 
       <div className="battery-nation"><strong>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</strong><em>Độc lập – Tự do – Hạnh phúc</em></div>
       <div className="battery-number"><span>Số: {blank(doc.code, '……………….')}/HĐTX</span><em>NV: {blank(doc.staff_name, '………………')}</em></div>
     </header>
-    <h1>HỢP ĐỒNG THUÊ PIN</h1>
+    <h1>{batteryProductKind(doc.battery_name) === 'battery_charger' ? 'HỢP ĐỒNG THUÊ PIN VÀ SẠC' : batteryProductKind(doc.battery_name) === 'charger' ? 'HỢP ĐỒNG THUÊ SẠC' : 'HỢP ĐỒNG THUÊ PIN'}</h1>
     <ul className="battery-legal">
       <li>Căn cứ Bộ luật Dân sự số 91/2015/QH13 đã được Quốc hội ban hành ngày 24/11/2015;</li>
       <li>Căn cứ Luật Thương mại số 36/2005/QH11 đã được Quốc hội thông qua ngày 14/06/2005;</li>

@@ -1,5 +1,6 @@
 """Request-scope QA with intercepted APIs. Never writes business records."""
 import argparse
+from lib.contract_type_fixtures import contract_type_data
 import asyncio
 import json
 from pathlib import Path
@@ -29,6 +30,10 @@ endpoints = {'/api/auth/stores': stores, '/api/auth/vehicle/vehicles': vehicles,
 async def mock_api(route):
     parsed = urlparse(route.request.url)
     endpoint = parsed.path
+    if endpoint == '/api/auth/contract-types':
+        assert route.request.method == 'GET'
+        await route.fulfill(json=dict(status='success', data=contract_type_data()))
+        return
     requests.append((endpoint, parsed.query, route.request.method))
     if route.request.method == 'POST' and endpoint in ['/api/auth/returns', '/api/auth/returns/vehicle']:
         data = {'contract_code': 'HD-QA-77', 'fee': 0} if endpoint == '/api/auth/returns' else {'item_id': 701, 'old_license': 'QA-101', 'new_license': 'QA-102'}

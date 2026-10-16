@@ -15,12 +15,14 @@ import { formatDateTime, formatMoney } from '@/lib/formatters';
 import { MobileDetailsCard } from './MobileDetailsCard';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS } from '@/lib/management/record-photos';
+import { ContractBatteryLinks } from './ContractBatteryLinks';
 
 const SECTIONS = [
   { id: 'vehicle', label: 'Thông tin phương tiện' },
   { id: 'contract', label: 'Hợp đồng' },
   { id: 'customer', label: 'Khách hàng (Bên B)' },
   { id: 'payment', label: 'Chi phí' },
+  { id: 'battery', label: 'Pin / sạc' },
   { id: 'signing', label: 'Ký kết & ghi chú' },
   { id: 'changes', label: 'Lịch sử chỉnh sửa' },
   { id: 'cashflow', label: 'Lịch sử thu chi' },
@@ -115,7 +117,7 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
       </>)}
       {panel('contract', 'Thông tin hợp đồng & Pháp lý', fields([
         ['Mã hợp đồng / Số HĐ giấy', row.code], ['Trạng thái hợp đồng', optionLabel(MANAGEMENT_CONFIG.contracts, 'status', row.status)],
-        ['Loại hợp đồng', row.rental_type ? optionLabel(MANAGEMENT_CONFIG.contracts, 'rental_type', String(row.rental_type)) : '—'],
+        ['Loại hợp đồng', draft.contract_type_name || String(row.contract_type_name || '') || (row.rental_type ? optionLabel(MANAGEMENT_CONFIG.contracts, 'rental_type', String(row.rental_type)) : '—')],
         ...(row.rental_type === 'ownership' ? [['Thời hạn sở hữu',optionLabel(MANAGEMENT_CONFIG.contracts,'ownership_term_months',String(row.ownership_term_months || 'custom'))] as [string,string]] : []),
         ['Ngày ký hợp đồng', date(draft.signed_on)], ['Ngày tạo hợp đồng', date(draft.created_on || String(row.created_at || ''))],
         ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
@@ -164,6 +166,9 @@ export function ContractDetail({ row, onClose, onPrint, onPrintVersion, onPaymen
         ])}</div>}
         {draft.extra_charges && draft.extra_charges.length>0 && <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng (đã tính trong tổng phí)</h3>{fields(draft.extra_charges.filter(item=>Number(item.amount)>0).map(item=>[item.name,item.method ? `${money(item.amount)} · ${paymentMethodLabel(item.method)}` : money(item.amount)]))}</div>}
       </>)}
+      {panel('battery', 'Hợp đồng pin / sạc liên kết', section === 'battery' && (source === 'api' && row.status !== 'draft'
+        ? <ContractBatteryLinks orderId={row.id} onCreate={canRentBattery ? onBatteryRent : undefined} />
+        : <p>Phát hành hợp đồng xe trước khi liên kết hợp đồng pin / sạc.</p>))}
       {panel('signing', 'Ký kết & Ghi chú', fields([
         ['Tài sản thế chấp / Đặt cọc tài sản', text(draft.collateral_description)],
         ['Người ký Bên A (Himoto)', text(draft.staff_name || representative?.name || row.staff_name)], ['Người ký Bên B (Khách thuê)', text(draft.customer.name)],

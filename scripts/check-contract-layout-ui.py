@@ -1,4 +1,5 @@
 """Contract layout and PDF QA. Synthetic APIs intercept every business request."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import json
 import re
@@ -40,6 +41,7 @@ state = {'fail_save': True}
 
 
 def mock_api(route):
+    if mock_contract_type_read(route): return
     request = route.request
     url = urlparse(request.url)
     endpoint = url.path.rstrip('/')

@@ -1,6 +1,8 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { FileSearch, LoaderCircle, Pencil, Plus, Printer, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { BATTERY_COLLECTION_METHODS, BATTERY_PRODUCT_PRESETS, BATTERY_STATUSES, BatteryContract, BatteryContractInput, BatteryContractPrefill, batteryPaymentAccounts, batteryProductKind, batteryRequest, BatteryRequestError, batteryStatusLabel, DEFAULT_BATTERY_NAME, type BatteryCollectionMethod } from '@/lib/management/battery-contracts';
 import { loadCashbookAccounts, type CashbookAccount } from '@/lib/management/cashbook-repository';
@@ -25,6 +27,8 @@ const STATUS_TONE: Record<BatteryContract['status'], string> = { renting: 'blue'
 const fold = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
 
 export function BatteryContractsPage() {
+  const searchParams = useSearchParams();
+  const vehicleContractId = searchParams.get('vehicle_contract_id');
   const { dataset, selectedStore, selectStore, loading: datasetLoading, error: datasetError, notify } = useManagement();
   const [rows, setRows] = useState<BatteryContract[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,16 +45,17 @@ export function BatteryContractsPage() {
   useEffect(() => {
     const controller = new AbortController(); let current = true;
     setLoading(true); setError('');
-    const params = new URLSearchParams(); if (selectedStore !== 'all') params.set('store_id', selectedStore);
+    const params = new URLSearchParams(); if (selectedStore !== 'all' && !vehicleContractId) params.set('store_id', selectedStore);
+    if (vehicleContractId) params.set('vehicle_contract_id',vehicleContractId);
     batteryRequest<BatteryContract[]>(`/api/auth/battery-contracts?${params}`, 'GET', undefined, controller.signal).then(data => {
       if (!Array.isArray(data) || data.some(row => !Number.isSafeInteger(row.id) || typeof row.revision !== 'string')) throw new Error('Kết quả hợp đồng thuê pin chưa hợp lệ.');
       if (current) setRows(data);
     }).catch(cause => { if (current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được hợp đồng thuê pin.'); }).finally(() => { if (current) setLoading(false); });
     return () => { current = false; controller.abort(); };
-  }, [selectedStore, reload]);
+  }, [selectedStore, reload, vehicleContractId]);
   const visible = useMemo(() => {
     const term = fold(search.trim());
-    return rows.filter(row => (!status || row.status === status) && (!term || fold([row.code, row.customer_name, row.customer_phone, row.customer_id_card, row.vehicle_license, row.staff_name].join(' ')).includes(term)));
+    return rows.filter(row => (!status || row.status === status) && (!term || fold([row.code, row.vehicle_contract_code, row.customer_name, row.customer_phone, row.customer_id_card, row.vehicle_license, row.staff_name].join(' ')).includes(term)));
   }, [rows, search, status]);
   const unavailable = datasetLoading || Boolean(datasetError);
   const refresh = () => setReload(value => value + 1);
@@ -66,17 +71,18 @@ export function BatteryContractsPage() {
     <div className="mg-page-heading"><div><div className="mg-eyebrow">HỢP ĐỒNG <span>/</span> THUÊ PIN / SẠC</div><h1>Hợp đồng thuê pin / sạc<span className="mg-title-count">{loading || error ? '—' : visible.length}</span></h1><p>Lập, lưu và in hợp đồng thuê pin hoặc sạc xe điện theo mẫu HIMOTO. Có thể mở sẵn từ hợp đồng thuê xe.</p></div>
       <div className="mg-heading-actions"><button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button></div></div>
     <div className="mg-data-panel">
+      {vehicleContractId && <p className="mg-composer-hint">Pin / sạc của hợp đồng xe #{vehicleContractId}. <Link href="/contracts/battery">Bỏ lọc hợp đồng xe</Link></p>}
       <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!status ? 'is-active' : ''} aria-pressed={!status} onClick={() => setStatus('')}>Tất cả<span>{rows.length}</span></button>
         {BATTERY_STATUSES.map(option => <button type="button" key={option.value} className={status === option.value ? 'is-active' : ''} aria-pressed={status === option.value} onClick={() => setStatus(option.value)}>{option.label}<span>{rows.filter(row => row.status === option.value).length}</span></button>)}</div>
       <div className="mg-toolbar"><label className="mg-search"><Search size={17} /><span className="mg-sr-only">Tìm hợp đồng thuê pin</span><input type="search" placeholder="Tìm mã HĐ, khách hàng, SĐT, CCCD, biển số…" value={search} onChange={event => setSearch(event.target.value)} />{search && <button type="button" aria-label="Xóa từ khóa" onClick={() => setSearch('')}><X size={15} /></button>}</label>
-        <div className="mg-filter-controls"><label className="mg-sr-label"><span className="mg-sr-only">Cơ sở</span><select aria-label="Cơ sở" value={selectedStore} onChange={event => selectStore(event.target.value)}><option value="all">Tất cả cơ sở</option>{dataset?.stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label></div></div>
+        <div className="mg-filter-controls"><label className="mg-sr-label"><span className="mg-sr-only">Cơ sở</span><select aria-label="Cơ sở" value={vehicleContractId ? 'all' : selectedStore} disabled={Boolean(vehicleContractId)} onChange={event => selectStore(event.target.value)}><option value="all">Tất cả cơ sở</option>{dataset?.stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label></div></div>
       <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Bảng hợp đồng thuê pin, cuộn ngang để xem thêm cột">
         <table className="mg-table mg-table-battery" aria-busy={loading}>
           <thead><tr><th scope="col" className="mg-index">STT</th><th scope="col">Mã HĐ</th><th scope="col">Khách hàng</th><th scope="col">Biển số</th><th scope="col">Pin</th><th scope="col">Bắt đầu</th><th scope="col">Kết thúc</th><th scope="col" className="mg-align-right">Giá thuê</th><th scope="col">Cơ sở</th><th scope="col">Trạng thái</th><th scope="col" className="mg-actions-column">Thao tác</th></tr></thead>
           <tbody>{loading ? <tr><td colSpan={11}><div className="mg-table-state" role="status"><LoaderCircle className="mg-spin" size={26} /><strong>Đang tải danh sách…</strong></div></td></tr>
             : error ? <tr><td colSpan={11}><div className="mg-table-state mg-table-error" role="alert"><FileSearch size={30} /><strong>Không tải được dữ liệu</strong><p>{error}</p><button type="button" className="mg-button" onClick={refresh}><RotateCcw size={15} />Thử lại</button></div></td></tr>
             : visible.length === 0 ? <tr><td colSpan={11}><div className="mg-table-state"><FileSearch size={32} /><strong>{filtered ? 'Không tìm thấy kết quả' : 'Chưa có hợp đồng thuê pin'}</strong>{filtered ? <button type="button" className="mg-button" onClick={() => { setSearch(''); setStatus(''); }}>Xóa bộ lọc</button> : <p>Bấm “Tạo hợp đồng thuê pin” để lập hợp đồng đầu tiên.</p>}</div></td></tr>
-            : visible.map((row, index) => <tr key={row.id}><td className="mg-index">{index + 1}</td><td className="mg-record-code">{row.code}</td>
+            : visible.map((row, index) => <tr key={row.id}><td className="mg-index">{index + 1}</td><td className="mg-record-code">{row.code}{row.vehicle_contract_id && <div className="mg-cell-sub"><Link href={`/contracts?contract_id=${row.vehicle_contract_id}`}>HĐ xe {row.vehicle_contract_code || `#${row.vehicle_contract_id}`}</Link></div>}</td>
               <td><strong>{row.customer_name}</strong>{row.customer_phone && <div className="mg-cell-sub">{row.customer_phone}</div>}</td><td>{row.vehicle_license || '—'}</td><td>{row.battery_name}</td>
               <td>{moment(row.starts_at)}</td><td>{moment(row.ends_at)}</td><td className="mg-align-right">{money(row.rent_price)}{row.price_unit && <div className="mg-cell-sub">/ {row.price_unit}</div>}</td><td>{row.store_name}</td>
               <td><span className={`mg-status mg-status-${STATUS_TONE[row.status]}`}><span />{batteryStatusLabel(row.status)}</span></td>
@@ -107,6 +113,7 @@ type LookupState = 'idle' | 'loading' | 'found' | 'matches' | 'missing' | 'error
 function emptyForm(storeId: string, prefill?: BatteryContractPrefill): FormState {
   return {
     store_id: prefill?.store_id ? String(prefill.store_id) : storeId === 'all' ? '' : storeId,
+    vehicle_contract_id: prefill?.vehicle_contract_id ?? null,
     customer_id: prefill?.customer_id ?? null, status: prefill?.status || 'renting', staff_name: prefill?.staff_name || '',
     signed_on: prefill?.signed_on || vietnamDate(), signed_place: prefill?.signed_place || '',
     customer_name: prefill?.customer_name || '', customer_phone: prefill?.customer_phone || '', customer_address: prefill?.customer_address || '',
@@ -123,7 +130,7 @@ function emptyForm(storeId: string, prefill?: BatteryContractPrefill): FormState
 }
 function formFromRow(row: BatteryContract): FormState {
   const fields: Record<string, unknown> = { ...row, store_id: String(row.store_id) };
-  for (const key of ['id', 'code', 'store_name', 'store_address', 'store_phone', 'created_at', 'revision']) delete fields[key];
+  for (const key of ['id', 'code', 'store_name', 'store_address', 'store_phone', 'created_at', 'revision', 'vehicle_contract_code']) delete fields[key];
   return fields as FormState;
 }
 
@@ -218,7 +225,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
   const dialogTitle = row ? `Sửa hợp đồng thuê pin ${row.code}` : sourceLabel ? `Thuê pin / sạc · ${sourceLabel}` : 'Tạo hợp đồng thuê pin';
   return <>
     <Dialog title={dialogTitle} className="mg-battery-dialog" onClose={() => { if (!busy.current) onClose(); }}><form onSubmit={submit}><div className="mg-dialog-body">
-      {sourceLabel && <p className="mg-composer-hint">Đã điền khách hàng, xe và thời hạn từ hợp đồng thuê xe {sourceLabel}. Chọn Pin hoặc Sạc, kiểm tra giá rồi lưu.</p>}
+      {(sourceLabel || row?.vehicle_contract_id) && <p className="mg-composer-hint">Liên kết hợp đồng xe {sourceLabel || row?.vehicle_contract_code || `#${row?.vehicle_contract_id}`}. Chọn Pin, Sạc hoặc Pin + Sạc, kiểm tra giá rồi lưu.</p>}
       <fieldset className="mg-payment-fields" disabled={saving || uncertain}><legend>Thông tin chung</legend>
         <label>Cơ sở cho thuê *<select required value={form.store_id} onChange={event => update('store_id', event.target.value)}><option value="">Chọn cơ sở</option>{stores.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label>Trạng thái<select value={form.status} onChange={event => update('status', event.target.value as FormState['status'])}>{BATTERY_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>

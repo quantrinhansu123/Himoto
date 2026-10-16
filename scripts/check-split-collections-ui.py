@@ -1,4 +1,5 @@
 """Synthetic fee/collection QA; all business APIs are intercepted."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import json
 from datetime import datetime, timedelta
@@ -32,6 +33,7 @@ accounts = [dict(id=5, label='Tiền mặt Láng QA', kind='cash', store_id=31, 
     dict(id=7, label='TK công ty Láng QA', kind='bank', store_id=31, owner_type='company')]
 
 def mock(route):
+    if mock_contract_type_read(route): return
     req = route.request
     parsed = urlparse(req.url)
     endpoint = parsed.path

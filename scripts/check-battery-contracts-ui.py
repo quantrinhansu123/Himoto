@@ -1,4 +1,5 @@
 """Battery form/payment/portrait PDF/mobile preview QA; all business APIs are mocked."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import json
 import re
@@ -24,6 +25,7 @@ accounts = [
 ]
 
 def mock(route):
+    if mock_contract_type_read(route): return
     request = route.request
     endpoint = urlparse(request.url).path.rstrip('/')
     if endpoint.startswith('/api/auth/battery-contracts') and request.method in ['POST', 'PATCH']:

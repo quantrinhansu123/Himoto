@@ -1,4 +1,5 @@
 """Synthetic mobile customer entry, photos and payment QA. Business APIs are intercepted."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import base64
 import json
@@ -30,6 +31,7 @@ accounts = [dict(id=5, label='Tiền mặt QA', kind='cash', store_id=31, owner_
 image_bytes = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6S8AAAAASUVORK5CYII=')
 
 def mock(route):
+    if mock_contract_type_read(route): return
     global fail_customer_photo, fail_plate_photo
     req = route.request
     parsed = urlparse(req.url)

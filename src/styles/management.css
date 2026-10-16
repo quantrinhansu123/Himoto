@@ -2285,6 +2285,12 @@
 }
 
 .mg-collateral-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.mg-contract-type-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mg-contract-type-form { border: 1px solid var(--mg-line-strong); border-radius: var(--mg-radius); padding: 16px; margin: 16px 0; }
+.mg-contract-type-form legend { font-weight: 600; padding: 0 6px; }
+.mg-contract-type-list { list-style: none; padding: 0; margin: 16px 0; }
+.mg-contract-type-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--mg-line); }
+.mg-contract-type-list small { display: block; color: var(--mg-slate-500); margin-top: 4px; }
 .mg-collateral-options .mg-button { min-height: 44px; min-width: 64px; }
 .mg-contract-step-actions {
   display: flex;

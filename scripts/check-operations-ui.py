@@ -1,4 +1,5 @@
 """Phone operations, employee attribution and incomplete paperwork; synthetic APIs only."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import copy
 import json
@@ -33,6 +34,7 @@ returnable = dict(item_id=201, order_id=900, contract_code='HD-QA-900', order_st
 
 
 def mock_api(route):
+    if mock_contract_type_read(route): return
     request = route.request
     url = urlparse(request.url)
     path = url.path.rstrip('/')

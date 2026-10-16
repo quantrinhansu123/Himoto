@@ -28,6 +28,9 @@ import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/management/record-photos';
 import { usePhotoOcr } from '@/components/management/usePhotoOcr';
 import { mergeOcrCustomer, plateKey, type OcrFields } from '@/lib/management/photo-ocr';
+import { useContractTypes } from './ContractTypesProvider';
+import { ContractTypeManager } from './ContractTypeManager';
+import type { ContractType } from '@/lib/management/contract-types';
 
 type LookupState = 'idle' | 'loading' | 'found' | 'matches' | 'missing' | 'error';
 function rentalTermMonths(rentalType: string) {
@@ -52,6 +55,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [finalizeTarget, setFinalizeTarget] = useState<{ id: number; revision: string; code: string } | null>(null);
   const editingDraft = mode === 'draft' || mode === 'reservation' || row?.status === 'draft';
   const canSaveDraft = !row || row.status === 'draft';
+  const catalog = useContractTypes();
+  const [typeManagerOpen, setTypeManagerOpen] = useState(false);
   const [draft, setDraft] = useState<ContractDraft>(() => {
     const initial = createContractDraft(dataset!, selectedStore, row);
     if (mode === 'reservation' && !row) {
@@ -73,6 +78,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [lookupState, setLookupState] = useState<LookupState>(row && draft.customer_id && draft.customer.name.trim() ? 'found' : 'idle');
   const [status, setStatus] = useState(row?.status || 'pending');
   const [rentalType, setRentalType] = useState(String(row?.rental_type || 'daily'));
+  useEffect(() => {
+    if (row || !catalog.loaded || draft.contract_type_id) return;
+    const type = catalog.types.find(type => type.active && type.rental_type === 'daily') || catalog.types.find(type => type.active);
+    if (!type) return;
+    setDraft(previous => previous.contract_type_id ? previous : { ...previous, contract_type_id: type.id, contract_type_name: type.label,
+      contract_type_months: type.term_months === null ? '' : String(type.term_months), ownership: type.rental_type === 'ownership',
+      package_name: type.rental_type === 'daily' ? 'Theo ngày' : 'Theo tháng',
+      ...(type.term_months ? {end_date:addRentalMonths(previous.start_date,type.term_months)} : {}) });
+    setRentalType(previous => previous === 'daily' ? type.rental_type : previous);
+  }, [catalog.loaded, catalog.types, row, draft.contract_type_id]);
   const [notes, setNotes] = useState(String(row?.notes || ''));
   const [saving, setSaving] = useState(false);
   const [customerPhotos, setCustomerPhotos] = useState<PendingPhotos>({});
@@ -201,15 +216,19 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       ...(contractStaffStoreId(previous) !== storeId ? { staff_id: '', staff_name: '' } : {}) }));
     setErrors(previous => ({ ...previous, vehicle_store_id: '', staff_id: '', store_id: '' })); setSaveError('');
   }
-  function changeRentalType(next: string) {
-    const months = rentalTermMonths(next), end = months ? addRentalMonths(draft.start_date, months) : '';
+  function changeRentalType(type: ContractType) {
+    const next = type.rental_type;
+    const months = type.term_months || rentalTermMonths(next), end = months ? addRentalMonths(draft.start_date, months) : '';
     setRentalType(next);
     if (end) { setAutoReturn(false); setRentalDays(rentalDayCount(draft.start_date, end)); }
-    setDraft(previous => ({ ...previous, ownership: next === 'ownership', ...(end ? {end_date:end} : {}), ...(next === 'ownership' ? {tls_staff_id:''} : {package_name:next.startsWith('monthly') ? 'Theo tháng' : 'Theo ngày'}) }));
+    setDraft(previous => ({ ...previous, contract_type_id:type.id, contract_type_name:type.label, contract_type_months:months ? String(months) : '',
+      ownership: next === 'ownership', ...(end ? {end_date:end} : {}), package_name: next.startsWith('monthly') || next === 'ownership' ? 'Theo tháng' : 'Theo ngày',
+      ...(next === 'ownership' ? {tls_staff_id:'', ...(months && [6,12,24].includes(months) ? {ownership_term_months:String(months) as ContractDraft['ownership_term_months']} : {})} : {}) }));
     if (end) setErrors(previous=>({...previous,end_date:'',rental_days:''}));
   }
   function changeRentalStart(value: string) {
-    const termEnd = rentalTermMonths(rentalType) ? addRentalMonths(value, rentalTermMonths(rentalType)) : '';
+    const months = Number(draft.contract_type_months) || rentalTermMonths(rentalType);
+    const termEnd = months ? addRentalMonths(value, months) : '';
     if (termEnd) { setRentalDays(rentalDayCount(value,termEnd)); setDraft(previous=>({...previous,start_date:value,end_date:termEnd})); setErrors(previous=>({...previous,start_date:'',end_date:'',rental_days:''})); setSaveError(''); return; }
     if (!autoReturn) setRentalDays(rentalDayCount(value,draft.end_date));
     setDraft(previous=>{
@@ -283,6 +302,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     const savingDraft = !finalizing && (action === 'draft' || (editingDraft && action !== 'preview'));
     const savingRecord = mode === 'edit' && action !== 'preview';
     const next = savingDraft ? validateDraftSave(draft, { ...dataset, staff }) : finalizing ? reserving ? validateReservationDraft(draft,dataset,staff,source) : validateOperationalDraft(draft,dataset,staff,source) : validateContractDraft(draft,dataset,staff,source);
+    if (canSaveDraft && (!row && !draft.contract_type_id || draft.contract_type_id && !catalog.types.some(type => type.id === draft.contract_type_id && (type.active || row && (row.contract_type_id || row.rental_type) === type.id)))) next.contract_type_id = catalog.error || 'Chọn loại hợp đồng đang dùng, hoặc thêm loại mới.';
     if (rentalDays && (!/^\d+$/.test(rentalDays) || !Number.isSafeInteger(Number(rentalDays)) || Number(rentalDays) < 1 || (draft.start_date && !addRentalDays(draft.start_date,rentalDays)))) next.rental_days = 'Nhập số ngày nguyên lớn hơn 0 và ngày thuê hợp lệ.';
     if (!savingDraft && lookupState !== 'found') next.id_card = 'Tra cứu hoặc tạo khách hàng trước khi lưu / in.';
     setErrors(next); setSaveError('');
@@ -355,6 +375,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const pricingVehicle = allVehicles.find(vehicle => String(vehicle.id) === draft.vehicles[0]?.id);
   const monthlyPackage = draft.package_name === 'Theo tháng';
   const ownership = rentalType === 'ownership';
+  const selectedTypeId = draft.contract_type_id || rentalType;
+  const typeOptions = catalog.types.filter(type => type.active || type.id === selectedTypeId).map(type => ({...type,
+    label: type.id === selectedTypeId && draft.contract_type_name ? draft.contract_type_name : type.label}));
+  if (!typeOptions.some(type => type.id === selectedTypeId) && row) typeOptions.push({id:selectedTypeId,label:draft.contract_type_name || CONTRACT_TYPES.find(type=>type.value===rentalType)?.label || rentalType,rental_type:rentalType,term_months:null,active:false,revision:''});
   const requirements = documentRequirements(draft.document_requirements);
   const otherFees = chargeTotal(draft.extra_charges) ?? 0;
   useEffect(() => {
@@ -458,7 +482,13 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
           <ContractSectionTabs prefix="contract-composer" active={section} onChange={setSection} />
           {panel('contract', 'Thông tin hợp đồng & Pháp lý', <>
             <div className="mg-form-grid mg-contract-grid-two">
-              <div className={`mg-field${ownership ? '' : ' mg-field-wide'}`}><label htmlFor="contract-record-type">Loại hợp đồng</label><select id="contract-record-type" value={rentalType} onChange={event => changeRentalType(event.target.value)}>{CONTRACT_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+              <div className={`mg-field${ownership ? '' : ' mg-field-wide'}`}><label htmlFor="contract-record-type">Loại hợp đồng</label><select id="contract-record-type" value={selectedTypeId} disabled={!canSaveDraft || catalog.loading} aria-invalid={Boolean(errors.contract_type_id)} onChange={event => { const type = catalog.types.find(type=>type.id===event.target.value); if (type) {changeRentalType(type);setErrors(previous=>({...previous,contract_type_id:''}));} }}>
+                {!typeOptions.length && <option value="">{catalog.loading ? 'Đang tải loại hợp đồng…' : 'Thêm loại hợp đồng để chọn'}</option>}{typeOptions.map(type => <option key={type.id} value={type.id}>{type.label}{!type.active ? ' (đã ẩn)' : ''}</option>)}</select>
+                {errors.contract_type_id && <p className="mg-field-error">{errors.contract_type_id}</p>}
+                {catalog.error && <p role="alert" className="mg-field-error">{catalog.error} <button type="button" className="mg-button" onClick={()=>void catalog.load(true)}>Thử lại</button></p>}
+                {canSaveDraft && catalog.canManage && <div className="mg-contract-type-actions"><button type="button" className="mg-button" onClick={()=>setTypeManagerOpen(true)}><Plus size={16}/>Thêm / quản lý loại hợp đồng</button></div>}
+              </div>
+              {ownership && canSaveDraft && <p className="mg-composer-hint mg-field-wide">Kiểm tra thông tin rồi bấm Hoàn tất & thanh toán để duyệt và phát hành hợp đồng thuê sở hữu.</p>}
               {ownership && <div className="mg-field"><label htmlFor="contract-ownership-term">Phân loại thuê sở hữu</label><select id="contract-ownership-term" value={draft.ownership_term_months || 'custom'} onChange={event=>change('ownership_term_months',event.target.value as ContractDraft['ownership_term_months'])}>{OWNERSHIP_TERMS.map(term=><option key={term.value} value={term.value}>{term.label}</option>)}</select></div>}
               {field('contract_number', 'Mã hợp đồng / Số HĐ giấy')}
               {field('signed_on', 'Ngày ký hợp đồng', 'date', !reserving)}
@@ -550,7 +580,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               {moneyField('deposit_amount', 'Số tiền đặt cọc (VNĐ)')}{paymentMethodField('deposit_payment_method', 'Hình thức dự kiến nhận cọc')}
             </div></div>}
             <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3><div className="mg-form-grid mg-contract-grid-two">
-              <div className="mg-field"><label htmlFor="contract-package_name">Gói thuê</label><select id="contract-package_name" value={draft.package_name} onChange={event => { const next = event.target.value; change('package_name', next); if (!ownership && !(next === 'Theo tháng' && rentalType.startsWith('monthly'))) setRentalType(next === 'Theo tháng' ? 'monthly' : 'daily'); }}><option value="Theo ngày">Theo ngày</option><option value="Theo tuần">Theo tuần</option><option value="Theo tháng">Theo tháng</option></select></div>
+              <div className="mg-field"><label htmlFor="contract-package_name">Gói thuê</label><select id="contract-package_name" value={draft.package_name} onChange={event => change('package_name',event.target.value)}>{['Theo ngày','Theo tuần','Theo tháng'].filter(value=>!canSaveDraft || ownership || (rentalType.startsWith('monthly') ? value === 'Theo tháng' : value !== 'Theo tháng')).map(value=><option key={value} value={value}>{value}</option>)}</select></div>
               {moneyField('unit_price', 'Đơn giá áp dụng (VNĐ)')}
               <div className="mg-field"><label htmlFor="contract-rental-base">Tiền thuê xe (VNĐ)</label><input id="contract-rental-base" readOnly value={formatMoneyInput(String(Math.max((Number(draft.total_amount)||0)-otherFees,0)))}/></div>
               {paymentMethodField('payment_method', 'Hình thức dự kiến thu thuê/phí')}
@@ -596,6 +626,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     </Dialog>
     {customerModal && <CustomerCreateDialog allowIncomplete idCard={/^\d{9}$|^\d{12}$/.test(normalizeIdCard(idInput)) ? normalizeIdCard(idInput) : ''} storeId={draft.store_id} onCreated={customerCreated} onClose={() => setCustomerModal(false)} />}
     {document && <ContractPrintPreview doc={document} onClose={() => setDocument(null)} />}
+    {typeManagerOpen && <ContractTypeManager onClose={()=>setTypeManagerOpen(false)} onCreated={type=>{changeRentalType(type);setTypeManagerOpen(false);}} />}
     {finalizeTarget && <ContractFinalizeDialog orderId={finalizeTarget.id} revision={finalizeTarget.revision} code={finalizeTarget.code}
       total={Number(draft.total_amount) || 0} deposit={Number(draft.deposit_amount) || 0} reservation={reserving}
       depositMethods={draftPaymentMethods(draft.deposit_payment_method)} rentalMethods={draftPaymentMethods(draft.payment_method)} charges={draft.extra_charges}

@@ -1,0 +1,11 @@
+{
+  "browser": "chromium",
+  "checks": [
+    "Inline add selects custom type; 24-month leap-day end date, monthly package and saved snapshot are correct",
+    "Rename/hide persists after reload; new forms exclude hidden types; existing draft keeps original label and opens current finalization flow",
+    "Pin + charger inherits customer/vehicle, saves source ID, appears under source detail, filters and links back, and survives editing"
+  ],
+  "mockedWrites": 6,
+  "pageErrors": [],
+  "permanentBusinessWrites": 0
+}

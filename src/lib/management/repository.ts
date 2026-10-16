@@ -1,5 +1,5 @@
 import { createDemoDataset, reconcileDataset } from '@/fixtures/management-data';
-import { resolveLocationStatus } from '@/lib/management/config';
+import { CONTRACT_TYPES, resolveLocationStatus } from '@/lib/management/config';
 import { EditableKind, ManagementDataset, ManagementKind, ManagementRepository, ManagementRow } from './types';
 import { cloneContractRecord, updateContractRecord } from './contract-record';
 import { DraftStorage, readDemoDrafts, saveDraftRecord, writeDemoDrafts, DEMO_DRAFT_STORAGE_KEY } from './contract-drafts';
@@ -158,6 +158,9 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     payment_method: text(raw.payment_method), deposit_payment_method: text(raw.deposit_payment_method),
     company_paid_amount: number(raw.company_paid_amount), company_payment_count: number(raw.company_payment_count),
     rental_type: text(raw.rental_type), notes: text(raw.notes ?? raw.note),
+    contract_type_id: text(raw.contract_type_id || snapshot.contract_type_id || raw.rental_type || saved.rental_type),
+    contract_type_name: text(raw.contract_type_name || snapshot.contract_type_name) || CONTRACT_TYPES.find(type=>type.value===text(raw.rental_type || saved.rental_type))?.label || text(raw.rental_type || saved.rental_type),
+    contract_type_months: text(raw.contract_type_months ?? snapshot.contract_type_months ?? /^monthly_(\d+)$/.exec(text(raw.rental_type || saved.rental_type))?.[1]),
     ownership_term_months: [raw.rental_type,saved.rental_type].includes('ownership') ? text(object(saved.profile).ownership_term_months ?? snapshot.ownership_term_months) || 'custom' : '',
     signed_on: text(raw.signed_on), authorization_date: text(raw.authorization_date), collateral_description: text(raw.collateral_description),
     customer_source: text(raw.customer_source), customer_source_url: text(raw.customer_source_url),

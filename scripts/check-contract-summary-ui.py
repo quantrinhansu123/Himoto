@@ -1,4 +1,5 @@
 """Synthetic API QA for filter summaries and quick Blacklist; no operational writes."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import copy
 import json
@@ -36,6 +37,7 @@ records = [contract(number) for number in range(1, 15)] + [
     contract(20, store_id=31, status='wait_payment', total_amount='1200', paid_amount='200')]
 
 def mock_api(route):
+    if mock_contract_type_read(route): return
     request = route.request
     endpoint = urlparse(request.url).path
     if mode['read_error'] and endpoint == '/api/auth/order/car-rental':

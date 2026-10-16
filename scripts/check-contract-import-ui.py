@@ -1,4 +1,5 @@
 """Resume an imported draft using synthetic APIs; no business request reaches DB."""
+from lib.contract_type_fixtures import mock_contract_type_read
 import argparse
 import copy
 import json
@@ -34,6 +35,7 @@ record = dict(id=901, draft_reference='EXCEL-QA-901', status='draft', store_id=2
 
 
 def mock_api(route):
+    if mock_contract_type_read(route): return
     request = route.request
     endpoint = urlparse(request.url).path.rstrip('/')
     if request.method == 'PUT' and endpoint == '/api/auth/order/car-rental/901':

@@ -8,12 +8,17 @@ import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/managemen
 import { depositLateral, rentalPaidSql } from './contract-deposits';
 import { chargeTotal } from '@/lib/management/contract-charges';
 import { CONTRACT_TYPES } from '@/lib/management/config';
+import { ContractTypeError, resolveDraftContractType, validContractTypeId } from './contract-types';
+import type { ContractDraft } from '@/lib/management/contract-document';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
 /** List/detail projection: omit per-row payment history (collections) and full draft blob for issued contracts. */
 export const CONTRACT_LIST_SQL = `SELECT o.id, o.contract_number, o.draft_reference,
   COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
+  o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
+  o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
+  o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
 
   CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
   o.customer_id, c.status AS customer_status,
@@ -114,6 +119,10 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (draft.vehicle_store_id !== undefined && typeof draft.vehicle_store_id !== 'string') throw new DraftSaveError('Cửa hàng xe không hợp lệ.');
   if (draft.reservation !== undefined && typeof draft.reservation !== 'boolean') throw new DraftSaveError('Thông tin giữ xe không hợp lệ.');
   if (draft.ownership !== undefined && typeof draft.ownership !== 'boolean') throw new DraftSaveError('Thông tin thuê sở hữu không hợp lệ.');
+  if (draft.contract_type_id !== undefined && !validContractTypeId(draft.contract_type_id)) throw new DraftSaveError('Loại hợp đồng không hợp lệ.');
+  if (draft.contract_type_name !== undefined && (typeof draft.contract_type_name !== 'string' || draft.contract_type_name.length > 80)) throw new DraftSaveError('Tên loại hợp đồng không hợp lệ.');
+  if (draft.contract_type_months !== undefined && (typeof draft.contract_type_months !== 'string' || draft.contract_type_months !== '' && (!/^\d{1,3}$/.test(draft.contract_type_months) || Number(draft.contract_type_months) < 1 || Number(draft.contract_type_months) > 120))) throw new DraftSaveError('Thời hạn loại hợp đồng không hợp lệ.');
+  if (!draft.contract_type_id && (draft.contract_type_name || draft.contract_type_months)) throw new DraftSaveError('Chọn loại hợp đồng cho tên và thời hạn đã nhập.');
   if (draft.document_requirements !== undefined && !validDocumentRequirements(draft.document_requirements)) throw new DraftSaveError('Yêu cầu hồ sơ để in chưa hợp lệ.');
   for (const key of ['sales_staff_id','tls_staff_id'] as const) if (draft[key] !== undefined && (typeof draft[key] !== 'string' || draft[key] && (!/^[1-9]\d*$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key]))))) throw new DraftSaveError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
   if (draft.ownership_term_months !== undefined && !['6','12','24','custom'].includes(draft.ownership_term_months)) throw new DraftSaveError('Thời hạn thuê sở hữu không hợp lệ.');
@@ -154,6 +163,16 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     if (previous.order_status !== 'draft') throw new DraftSaveError('Chỉ được cập nhật hợp đồng đang lưu nháp.', 409);
     if (!edits.revision || previous.draft_revision !== edits.revision) throw new DraftSaveError('Bản nháp đã được người khác cập nhật. Đóng form và nhấn Làm mới trước khi sửa tiếp.', 409);
   }
+  const priorComposer = (previous?.draft_payload as {management_composer?: {draft?: ContractDraft; rental_type?: string}} | undefined)?.management_composer;
+  const priorDraft = priorComposer?.draft;
+  const priorRentalType = priorComposer?.rental_type || String(previous?.order_type || '');
+  try {
+    await resolveDraftContractType(client, edits.draft, edits.rental_type, previous ? {
+      contract_type_id: priorDraft?.contract_type_id || priorRentalType,
+      contract_type_name: priorDraft?.contract_type_name || CONTRACT_TYPES.find(type => type.value === priorRentalType)?.label,
+      contract_type_months: priorDraft?.contract_type_months ?? /^monthly_(\d+)$/.exec(priorRentalType)?.[1] ?? '',
+    } : undefined);
+  } catch (cause) { if (cause instanceof ContractTypeError) throw new DraftSaveError(cause.message, cause.status); throw cause; }
   const stores = await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.store_id || null]);
   const vehicleStores = edits.draft.vehicle_store_id && edits.draft.vehicle_store_id !== edits.draft.store_id
     ? await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.vehicle_store_id]) : stores;
