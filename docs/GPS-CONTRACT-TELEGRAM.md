@@ -105,7 +105,7 @@ node scripts/configure-contract-telegram.cjs --status
 
 Migration `docs/sql/2026-10-18-contract-telegram-controls.sql` chạy lại được, giữ nguyên cấu hình bot/nhóm, chế độ SePay và lịch GPS.
 
-Mỗi giao dịch chỉ tạo một thông báo. Chưa có bot/nhóm thì hiện **Chờ cấu hình**; các thông báo này không tự gửi lại khi bổ sung bot, tránh phát tán lịch sử ngoài ý muốn. Nếu gửi gặp lỗi mạng sau khi gọi Telegram, trạng thái **Chưa xác định / cần đối chiếu** không tự thử lại để tránh gửi trùng. **Đang gửi / cần kiểm tra** kéo dài cũng cần đối chiếu thủ công. Tiến trình nền xử lý tối đa 2 thông báo mỗi lượt; ảnh chia nhóm tối đa 10 ảnh theo Telegram.
+Mỗi giao dịch chỉ tạo một thông báo tự động; bản cập nhật gửi thủ công được chống trùng theo nội dung và ảnh. Chưa có bot/nhóm thì hiện **Chờ cấu hình**; các thông báo này không tự gửi lại khi bổ sung bot, tránh phát tán lịch sử ngoài ý muốn. Nếu gửi gặp lỗi mạng sau khi gọi Telegram, trạng thái **Chưa xác định / cần đối chiếu** không tự thử lại để tránh gửi trùng. **Đang gửi / cần kiểm tra** kéo dài cũng cần đối chiếu thủ công. Tiến trình nền xử lý tối đa 2 thông báo mỗi lượt; ảnh chia nhóm tối đa 10 ảnh theo Telegram.
 
 ## Triển khai và kiểm tra
 
