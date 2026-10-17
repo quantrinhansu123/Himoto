@@ -21,17 +21,21 @@ export async function syncGpsEventHistory(limit=6,budgetMs=18000,database=ownerD
   };
   try {
     await processWaitingGpsWebhooks(database);
-    await database.query(`INSERT INTO himoto.management_gps_history_cursors(gps_device_id,stream,account_id,coverage_started_at,covered_until)
+    await database.query(`INSERT INTO himoto.management_gps_history_cursors AS cursor(gps_device_id,stream,account_id,coverage_started_at,covered_until)
       SELECT d.id,x.stream,a.id,now()-interval '1 hour',now()-interval '1 hour'
       FROM himoto.gps_devices d JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id AND a.enabled
       JOIN himoto.management_gps_event_channels c ON c.account_id=a.id CROSS JOIN (VALUES('motion'),('alarms')) x(stream)
       WHERE (x.stream='motion' AND c.motion_enabled OR x.stream='alarms' AND c.alarms_enabled)
         AND (a.provider<>'protrack' OR d.provider_device_id IS NOT NULL)
-      ON CONFLICT DO NOTHING`);
+        AND d.provider_status IS DISTINCT FROM 'not_visible_in_account'
+      ON CONFLICT(gps_device_id,stream) DO UPDATE SET account_id=EXCLUDED.account_id
+        WHERE cursor.account_id IS DISTINCT FROM EXCLUDED.account_id`);
     while(attempted<Math.min(Math.max(limit,1),30)&&Date.now()<deadline-500) {
       const row=(await database.query(`WITH candidate AS (
         SELECT c.gps_device_id,c.stream FROM himoto.management_gps_history_cursors c
         JOIN himoto.management_gps_accounts a ON a.id=c.account_id AND a.enabled
+        JOIN himoto.gps_devices d ON d.id=c.gps_device_id AND d.source_account_id=c.account_id
+          AND d.provider_status IS DISTINCT FROM 'not_visible_in_account'
         JOIN himoto.management_gps_event_channels s ON s.account_id=a.id
         WHERE c.next_attempt_at<=now() AND a.session_cipher IS NOT NULL AND a.session_expires_at>now()+interval '10 seconds'
           AND a.last_success_at>now()-interval '5 minutes'

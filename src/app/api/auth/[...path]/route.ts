@@ -70,8 +70,8 @@ const listQueries: Record<string, QueryConfig> = {
           ) b
           LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
           LEFT JOIN LATERAL (
-            SELECT true AS has_device,CASE WHEN COALESCE(a.last_success_at,d.sync_received_at)<now()-interval '10 minutes' THEN 'stale' ELSE COALESCE(d.management_status,p.normalized_status) END AS normalized_status,
-                   d.last_latitude AS latitude,d.last_longitude AS longitude,COALESCE(a.last_success_at,d.sync_received_at) AS synced_at,d.provider,
+            SELECT true AS has_device,CASE WHEN d.provider_status='not_visible_in_account' THEN 'unavailable' WHEN COALESCE(a.last_success_at,d.sync_received_at)<now()-interval '10 minutes' THEN 'stale' ELSE COALESCE(d.management_status,p.normalized_status) END AS normalized_status,
+                   d.last_latitude AS latitude,d.last_longitude AS longitude,CASE WHEN d.provider_status='not_visible_in_account' THEN d.sync_received_at ELSE COALESCE(a.last_success_at,d.sync_received_at) END AS synced_at,d.provider,
                    COALESCE(p.provider_recorded_at, p.received_at, p.created_at, d.last_sync_at) AS last_at
             FROM himoto.gps_devices d
             LEFT JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id
@@ -83,7 +83,7 @@ const listQueries: Record<string, QueryConfig> = {
               LIMIT 1
             ) p ON true
             WHERE d.vehicle_id = v.id
-            ORDER BY d.heartbeat_at DESC NULLS LAST,d.sync_received_at DESC NULLS LAST,d.id DESC
+            ORDER BY (d.provider_status IS DISTINCT FROM 'not_visible_in_account') DESC,d.heartbeat_at DESC NULLS LAST,d.sync_received_at DESC NULLS LAST,d.id DESC
             LIMIT 1
           ) gps ON true
           ORDER BY v.id DESC`,

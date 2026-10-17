@@ -18,6 +18,7 @@ export const LOCATION_STATUSES: Option[] = [
   { value: 'warning', label: 'Cảnh báo' },
   { value: 'offline', label: 'OFF · Mất kết nối' },
   { value: 'stale', label: 'Chưa cập nhật' },
+  { value: 'unavailable', label: 'Không còn trong tài khoản GPS' },
   { value: 'none', label: 'Chưa gắn GPS' },
 ];
 export const VEHICLE_TYPES: Option[] = [{ value: 'xega', label: 'Xe ga' }, { value: 'xeso', label: 'Xe số' }, { value: 'xecon', label: 'Xe côn tay' }, { value: 'xesh', label: 'Xe SH' }, { value: 'xe_dien', label: 'Xe điện' }];
@@ -149,6 +150,7 @@ export function normalizeLocationStatus(raw: unknown, hasDevice: boolean): strin
   if (!value) return 'offline';
   if(['idle','parked','parking','stop','stopped'].includes(value))return 'stopped';
   if(value==='stale')return 'stale';
+  if(value==='unavailable')return 'unavailable';
   if (['online', 'on', 'active', 'moving', 'running', 'có tín hiệu', 'co tin hieu'].includes(value)) return 'online';
   if (['warning', 'warn', 'weak', 'satellite_lost', 'no_gps', 'low_signal', 'cảnh báo', 'canh bao', 'mất vệ tinh', 'mat ve tinh'].includes(value)) return 'warning';
   if (['offline', 'off', 'lost', 'disconnected', 'dead', 'mất liên lạc', 'mat lien lac'].includes(value)) return 'offline';

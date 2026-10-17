@@ -18,6 +18,8 @@ export async function readIntegrationSettings() {
     ownerDatabase.query(`SELECT count(*)::int AS streams,count(*) FILTER(WHERE last_success_at IS NOT NULL)::int AS completed_streams,
       count(*) FILTER(WHERE last_error IS NOT NULL)::int AS failed_streams,
       count(*) FILTER(WHERE covered_until<now()-interval '15 minutes')::int AS behind_streams,
+      (SELECT count(*)::int FROM himoto.management_gps_history_cursors blocked JOIN himoto.gps_devices d ON d.id=blocked.gps_device_id
+        WHERE d.provider_status='not_visible_in_account') AS inaccessible_streams,
       min(covered_until) AS covered_until,max(last_success_at) AS last_success_at,
       (SELECT count(*)::int FROM himoto.management_gps_status_events WHERE source='history') AS history_events,
       (SELECT count(*)::int FROM himoto.management_gps_status_events WHERE source='webhook') AS webhook_events,

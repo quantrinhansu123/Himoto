@@ -10,11 +10,11 @@ export const GET=withAccessRequest(async(request:NextRequest)=>{
   const source=request.nextUrl.searchParams.get('event_source')||'all',device=request.nextUrl.searchParams.get('event_device')||'';
   if(!['all','poll','history','webhook'].includes(source)||device&&!/^[1-9]\d{0,14}$/.test(device))return NextResponse.json({status:'error',message:'Bộ lọc nhật ký không hợp lệ.'},{status:400});
   try{
-    const rows=await himotoPool.query(`SELECT d.id,d.vehicle_id,d.provider,d.external_device_id,d.provider_device_name,d.mapping_status,d.management_status,COALESCE(a.last_success_at,d.sync_received_at) AS sync_received_at,d.heartbeat_at,d.last_latitude,d.last_longitude,d.last_speed,
+    const rows=await himotoPool.query(`SELECT d.id,d.vehicle_id,d.provider,d.external_device_id,d.provider_device_name,d.mapping_status,CASE WHEN d.provider_status='not_visible_in_account' THEN 'unavailable' ELSE d.management_status END AS management_status,CASE WHEN d.provider_status='not_visible_in_account' THEN d.sync_received_at ELSE COALESCE(a.last_success_at,d.sync_received_at) END AS sync_received_at,d.heartbeat_at,d.last_latitude,d.last_longitude,d.last_speed,
       v.license,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name
       FROM himoto.gps_devices d LEFT JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id
       LEFT JOIN himoto.vehicles v ON v.id=d.vehicle_id LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
-      WHERE ($1::bigint IS NULL OR COALESCE(v.current_store_id,v.store_id)=$1) ORDER BY COALESCE(a.last_success_at,d.sync_received_at) DESC NULLS LAST,d.id DESC LIMIT 2000`,[store==='all'?null:Number(store)]);
+      WHERE ($1::bigint IS NULL OR COALESCE(v.current_store_id,v.store_id)=$1) ORDER BY CASE WHEN d.provider_status='not_visible_in_account' THEN d.sync_received_at ELSE COALESCE(a.last_success_at,d.sync_received_at) END DESC NULLS LAST,d.id DESC LIMIT 2000`,[store==='all'?null:Number(store)]);
     const events=await himotoPool.query(`SELECT e.id,e.vehicle_id,e.from_status,e.to_status,e.observed_at,e.event_kind,e.source,
       CASE WHEN e.source='poll' THEN e.observed_at ELSE COALESCE(e.provider_recorded_at,e.observed_at) END AS event_at,
       COALESCE(v.license,d.provider_device_name,d.external_device_id) AS license

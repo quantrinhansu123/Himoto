@@ -57,6 +57,11 @@ export async function persistGpsObservations(client:Database,provider:GpsProvide
         WHERE himoto.gps_positions.normalized_status IS DISTINCT FROM EXCLUDED.normalized_status`,[provider,JSON.stringify(rows),accountId]);
   if(accountId)await client.query(`INSERT INTO himoto.management_gps_account_devices(account_id,gps_device_id)
     SELECT $1,id FROM himoto.gps_devices WHERE provider=$2 AND external_device_id=ANY($3::text[]) ON CONFLICT DO NOTHING`,[accountId,provider,rows.map(row=>row.external_id)]);
+  // A missing device is an access change, not an OFF/movement transition. Keep its journal and mapping.
+  // Only a complete successful provider list reaches this function.
+  if(accountId)await client.query(`UPDATE himoto.gps_devices SET provider_status='not_visible_in_account',updated_at=now() AT TIME ZONE 'UTC'
+    WHERE source_account_id=$1 AND provider=$2 AND NOT(external_device_id=ANY($3::text[]))
+      AND provider_status IS DISTINCT FROM 'not_visible_in_account'`,[accountId,provider,rows.map(row=>row.external_id)]);
   return {devices:rows.length,mapped:rows.filter(row=>row.vehicle_id!==null).length};
 }
 export async function claimGpsAccounts(database:Database,lease:string) {

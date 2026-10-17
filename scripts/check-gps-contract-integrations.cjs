@@ -73,6 +73,7 @@ async function main(){
     await c.query(`UPDATE ${schema}.management_gps_accounts SET last_attempt_at=clock_timestamp()-interval '10 seconds'`);assert.equal((await claimGpsAccounts(db,leaseA)).length,0);
     await c.query(`UPDATE ${schema}.management_gps_accounts SET next_attempt_at=clock_timestamp()-interval '1 second'`);assert.equal((await claimGpsAccounts(db,leaseA)).length,1);await finishGpsAccount(db,accountId,leaseA,1);
     checks.push('Five-second pacing prevents overlapping account reads, rejects stale lease completions, backs off provider failures and avoids rewriting unchanged GPS rows');
+    checks.push(await require('./lib/check-gps-device-visibility.cjs')(db,c,schema,accountId,observation));
     await assert.rejects(()=>requireContractPhotoSlot(db,'contracts',2,'return-1001-1'),e=>e.status===404);
     const photo=Buffer.from([255,216,255,224,1,2]);
     await c.query(`INSERT INTO ${schema}.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,'rental-1','image/jpeg',$1,143),('contracts',1,'rental-2','image/jpeg',$1,143)`,[photo]);
