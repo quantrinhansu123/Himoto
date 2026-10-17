@@ -14,7 +14,7 @@ async function POSTHandler(request: NextRequest) {
     const input = JSON.parse(body);
     const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
     if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
-    if(!(['customers.write','contracts.draft','contracts.finalize','contracts.return'] as const).some(permission=>hasPermission(user,permission)))throw new RecordPhotoError('Tài khoản chưa được phép tải ảnh.',403);
+    if(!(['customers.write','contracts.draft','contracts.finalize','contracts.return','contracts.renew'] as const).some(permission=>hasPermission(user,permission)))throw new RecordPhotoError('Tài khoản chưa được phép tải ảnh.',403);
     const data = signPhotoUpload(user.id, input?.upload_id);
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {

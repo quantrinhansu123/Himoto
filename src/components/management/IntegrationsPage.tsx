@@ -3,12 +3,13 @@ import { useEffect,useState,type FormEvent } from 'react';
 import { Settings,Plus } from 'lucide-react';
 import { integrationRequest } from '@/lib/management/integrations';
 import { formatDateTime } from '@/lib/formatters';
+import { CONTRACT_EVENT_LABELS, NOTICE_STATUS_LABELS, type ContractEventType } from '@/lib/management/contract-telegram';
 type Account={id:string;provider:string;label:string;username:string;enabled:boolean;last_success_at:string|null;last_error:string|null;device_count:number};
 type Group={store_id:number|string;store_name:string;chat_id:string|null;thread_id:number|string|null;enabled:boolean};
 type Notice={id:string;code:string;event_type:string;status:string;photos:number;created_at:string;error_code:string|null};
 type HistoryChannel={id:string;provider:string;label:string;motion_enabled:boolean;alarms_enabled:boolean;webhook_enabled:boolean;last_webhook_at:string|null;last_error:string|null};
 type SettingsData={accounts:Account[];telegram_configured:boolean;groups:Group[];notifications:Notice[];scheduler:{enabled:boolean;last_response_at:string|null;last_http_status:number|null;last_error_code:string|null}|null;gps_history?:{channels:HistoryChannel[];streams:number;completed_streams:number;failed_streams:number;behind_streams:number;covered_until:string|null;last_success_at:string|null;history_events:number;webhook_events:number;waiting_webhooks:number}};
-const noticeLabels:Record<string,string>={pending:'Chờ gửi',awaiting_config:'Chờ cấu hình nhóm/bot',sending:'Đang gửi / cần kiểm tra',sent:'Đã gửi Telegram',failed:'Gửi lỗi',unknown:'Chưa xác định / cần đối chiếu'};
+const noticeLabels=NOTICE_STATUS_LABELS;
 export function IntegrationsPage() {
   const [data,setData]=useState<SettingsData|null>(null),[groups,setGroups]=useState<Group[]>([]),[token,setToken]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState(''),[saving,setSaving]=useState(false),[version,setVersion]=useState(0);
   const [account,setAccount]=useState({provider:'protrack',label:'',username:'',password:''});
@@ -38,6 +39,6 @@ export function IntegrationsPage() {
         <button className="mg-button mg-button-primary" disabled={saving}>{saving?'Đang lưu…':'Lưu cấu hình Telegram'}</button>
       </form>
     </section>
-    <section className="mg-integration-section"><h2>Thông báo hợp đồng gần nhất</h2>{!data?.notifications.length?<p>Chưa có thông báo. Khi hoàn tất thuê, giao xe hoặc trả xe, hệ thống tự lưu thông báo và ảnh của giao dịch.</p>:<ul className="mg-notification-list">{data.notifications.map(row=><li key={row.id}><strong>{row.code}</strong> · {row.event_type} · {noticeLabels[row.status]||row.status}<p>{row.photos} ảnh · {formatDateTime(row.created_at)}{row.error_code?` · ${row.error_code}`:''}</p></li>)}</ul>}</section>
+    <section className="mg-integration-section"><h2>Thông báo hợp đồng gần nhất</h2>{!data?.notifications.length?<p>Chưa có thông báo. Khi hoàn tất thuê, giao xe hoặc trả xe, hệ thống tự lưu thông báo và ảnh của giao dịch.</p>:<ul className="mg-notification-list">{data.notifications.map(row=><li key={row.id}><strong>{row.code}</strong> · {CONTRACT_EVENT_LABELS[row.event_type as ContractEventType]||row.event_type} · {noticeLabels[row.status]||row.status}<p>{row.photos} ảnh · {formatDateTime(row.created_at)}{row.error_code?` · ${row.error_code}`:''}</p></li>)}</ul>}</section>
   </div></section>;
 }

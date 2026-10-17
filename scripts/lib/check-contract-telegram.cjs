@@ -1,0 +1,68 @@
+// Runs inside the integration suite's isolated PostgreSQL schema and rollback.
+const assert=require('node:assert/strict'),path=require('node:path'),{randomUUID}=require('node:crypto');
+const {load,root}=require('./load-typescript.cjs');
+const content=load(path.join(root,'lib/server/contract-notification-content'));
+const telegram=load(path.join(root,'lib/server/contract-telegram'));
+module.exports=async function checkContractTelegram(db,c,schema,notices){
+  const admin={access_role:'admin'},reader={permissions:['contracts.read']};
+  const fixture={code:'HD-QA',customer:'Bùi Đinh Thành Phát',phone:'',store:'PGD QA',actor:'QA',vehicles:'22B2-374.48',vehicle_names:'Airblade',total:'200000',at:'2026-10-17T14:00:00Z',photos:[],rental_fee:200000,days:1,deposit:1000000,grand_total:1200000,method:'CK TK cá nhân',deposit_method:'CK TK cá nhân'};
+  const rental=content.contractNotificationText('rental',fixture);
+  for(const line of ['Khách thuê xe: Bùi Đinh Thành Phát','Bsx: 22B2-374.48','Loại xe: Airblade','Tiền thuê xe: 200.000','Số ngày thuê: 1','Tiền cọc: 1.000.000','Tổng tiền: 1.200.000','Hình thức thanh toán: CK TK cá nhân'])assert(rental.includes(line),line);
+  const returned=content.contractNotificationText('return',{...fixture,customer:'Trần Nhật Nam',vehicles:'66G1-729.63',vehicle_names:'Vision',deposit:450000,refunded:450000,method:'Tiền mặt'});
+  for(const line of ['Khách trả xe: Trần Nhật Nam','Tổng hoàn: 450.000','Hình thức thanh toán: Tiền mặt'])assert(returned.includes(line));
+  const renewal={version:2,amount:1500000,before_return_at:'2026-11-01T10:00:00+07:00',return_at:'2026-12-01T10:00:00+07:00',license:'20H1.573.02',vehicle_name:'Wave'};
+  const renewed=content.contractNotificationText('renewal',{...fixture,customer:'Đoàn Văn Dũng',renewal});
+  for(const line of ['Khách gia hạn: Đoàn Văn Dũng','Loại xe: Wave','Bsx: 20H1.573.02','01/11/2026 - 01/12/2026','Phí gia hạn: 1.500.000 đ'])assert(renewed.includes(line),line);
+  assert.equal(content.notificationHash('rental',fixture),content.notificationHash('rental',Object.fromEntries(Object.entries({...fixture,at:new Date().toISOString(),actor:'Other sender'}).reverse())));
+  await c.query(`UPDATE ${schema}.orders SET total='200000',total_rental_fees=200000,first_deposit_amount=1000000,rent_at='2026-11-01T10:00:00+07:00',return_at='2026-11-02T10:00:00+07:00',draft_payload=$1 WHERE id=1`,[JSON.stringify({management_composer:{finalized:{contract_number:'HD-QA-1'},versions:[{...renewal,kind:'renewal'}]}})]);
+  await c.query(`INSERT INTO ${schema}.transactions(id,order_id,name,type,value,status,user_id,store_id,cash_id,bank_id,payment_method,bank_owner_type,note) VALUES
+    (9001,1,'order:rental_fees','in',200000,'approved',143,23,NULL,99,2,'personal','QA'),
+    (9002,1,'order:deposit','in',1000000,'approved',143,23,NULL,99,2,'personal','QA'),
+    (9003,1,'order:deposit_refund','out',450000,'approved',143,23,99,NULL,1,NULL,'QA'),
+    (9004,1,'order:deposit_refund','out',999999,'pending',143,23,99,NULL,1,NULL,'QA')`);
+  const snapshot=await content.notificationPayload(db,1,'rental',143,['rental']);
+  assert.equal(snapshot.grand_total,1200000);assert.equal(snapshot.days,1);assert.equal(snapshot.method,'CK TK cá nhân');
+  const refund=await content.notificationPayload(db,1,'return',143,['return-1001']);assert.equal(refund.refunded,450000);assert.equal(refund.method,'Tiền mặt');
+  assert.equal((await content.notificationPayload(db,1,'renewal',143,['renewal-2'],renewal)).method,'');
+  await telegram.saveContractTelegram(db,1,143,admin,{action:'auto',enabled:false});
+  await notices.queueContractNotification(db,1,'renewal','renewal:1:2',143,'renewal-2',renewal);
+  assert.equal((await c.query(`SELECT status FROM ${schema}.management_contract_notifications WHERE event_key='renewal:1:2'`)).rows[0].status,'manual');
+  let state=(await telegram.readContractTelegram(db,1,143,admin)).state;
+  let event=state.events.find(e=>e.key==='renewal:1:2');assert(event.can_send);assert(!state.auto_enabled);
+  assert(!event.text.includes('Hình thức thanh toán: CK TK cá nhân'));assert(event.text.includes('Chưa ghi nhận thanh toán'));
+  await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,reader,{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()}),e=>e.status===403);
+  await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,admin,{action:'send',event_key:event.key,hash:'0'.repeat(64),request_id:randomUUID()}),e=>e.status===409);
+  const photo=Buffer.from([255,216,255,224,7]);
+  for(let i=1;i<=5;i++)await c.query(`INSERT INTO ${schema}.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,$1,'image/jpeg',$2,143)`,[`renewal-2-${i}`,photo]);
+  const stale=event;
+  event=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key===stale.key);assert.equal(event.photo_count,5);assert.notEqual(event.hash,stale.hash);
+  await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,admin,{action:'send',event_key:stale.key,hash:stale.hash,request_id:randomUUID()}),e=>e.status===409);
+  const command={action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()};
+  await telegram.saveContractTelegram(db,1,143,admin,command);await telegram.saveContractTelegram(db,1,143,admin,command);
+  assert.equal((await c.query(`SELECT id FROM ${schema}.management_contract_notifications WHERE root_event_key='renewal:1:2' AND delivery_mode='manual'`)).rowCount,1);
+  // Change the live photo after queuing. The immutable outbox must keep the previous bytes and five-photo album.
+  await c.query(`UPDATE ${schema}.management_record_photos SET data=$1 WHERE slot='renewal-2-1'`,[Buffer.from([255,216,255,9])]);
+  const calls=[];
+  const fake=async(url,options)=>{const method=new URL(url).pathname.split('/').at(-1);calls.push(method);
+    assert.equal(method,'sendMediaGroup');const media=JSON.parse(options.body.get('media'));assert.equal(media.length,5);assert(media[0].caption.includes('Phí gia hạn: 1.500.000 đ'));
+    assert.deepEqual(Buffer.from(await options.body.get('photo0').arrayBuffer()),photo);
+    return Response.json({ok:true,result:media.map((_,i)=>({message_id:i+10}))});};
+  await notices.dispatchContractNotifications(fake,5,db);assert.deepEqual(calls,['sendMediaGroup']);
+  event=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');assert(event.can_send); // changed photo
+  await telegram.saveContractTelegram(db,1,143,admin,{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()});
+  await notices.dispatchContractNotifications(async()=>{throw Error('Connection ended after request');},5,db);
+  event=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');assert(!event.can_send);assert.equal(event.status,'unknown');
+  await telegram.saveContractTelegram(db,1,143,admin,{action:'auto',enabled:true});
+  await notices.queueContractNotification(db,1,'rental','qa-detailed-rental',143,'rental');
+  await notices.dispatchContractNotifications(async()=>Response.json({ok:true,result:[{message_id:20},{message_id:21}]}),5,db);
+  const same=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');assert(same.unchanged);assert(!same.can_send);
+  // Preferences are scoped and read-only accounts cannot change them through the service.
+  await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,reader,{action:'auto',enabled:false}),e=>e.status===403);
+  const {parsePhotoTarget,requireContractPhotoSlot}=load(path.join(root,'lib/server/record-photos'));
+  assert.equal(parsePhotoTarget('contracts','1','renewal-2-5').slot,'renewal-2-5');
+  await requireContractPhotoSlot(db,'contracts',1,'renewal-2-5');
+  await assert.rejects(()=>requireContractPhotoSlot(db,'contracts',1,'renewal-999-1'),e=>e.status===404);
+  return ['Rental, return and renewal templates match requested figures; only approved receipts identify payment/refund methods',
+    'Manual mode holds automatic events; five saved photos form one immutable album with caption; stale previews, duplicate clicks and ambiguous deliveries are blocked',
+    'Content hashes survive JSONB key ordering; completed automatic content cannot be manually duplicated; renewal photo ownership and read-only permissions enforced'];
+};

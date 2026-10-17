@@ -82,7 +82,28 @@ Cấu hình bot và nhóm được lưu trong cơ sở dữ liệu, xem trạng 
 3. Nhập bot token, chat ID âm của nhóm tương ứng từng cơ sở, mã chủ đề nếu nhóm dùng topic; bật nhận tại cơ sở cần dùng rồi lưu. Để trống token khi muốn giữ token đã lưu.
 4. Sau cấu hình, nghiệm thu với một giao dịch được chủ cơ sở chọn: đúng nhóm, đúng hợp đồng và đủ ảnh. Phân biệt kết quả gửi tin/ảnh mẫu với nghiệm thu một giao dịch thật.
 
-Thông báo được ghi cùng transaction khi hoàn tất thuê, nhận cọc giữ xe, giao xe hoặc trả xe. Chỉ gửi sau khi transaction thành công. Cơ sở của hợp đồng quyết định nhóm nhận. Nội dung gồm mã hợp đồng, khách/SĐT, xe, tổng hợp đồng, người thực hiện, thời gian và bản chụp ảnh tại lúc hoàn tất.
+Thông báo được ghi cùng transaction khi hoàn tất thuê, nhận cọc giữ xe, giao xe, trả xe hoặc gia hạn (cả gia hạn phiên bản mới và gia hạn kèm phiếu thu). Chỉ gửi sau khi transaction thành công. Cơ sở của hợp đồng quyết định nhóm nhận.
+
+- **Thuê:** khách thuê, biển số, loại xe, tiền thuê, số ngày, tiền cọc, tổng tiền gồm phí hợp đồng và cọc, hình thức thanh toán. Phí khác được ghi riêng khi có.
+- **Trả:** khách trả, biển số, loại xe, cọc đã thu, tổng hoàn đã có phiếu được duyệt trên hợp đồng và hình thức hoàn. Không xem việc trả xe là đã hoàn cọc.
+- **Gia hạn:** khách, xe, khoảng ngày cũ–mới, phí gia hạn, hình thức thanh toán. Lưu ngày/phí gia hạn chưa phải là thu tiền; chưa có phiếu thu gắn lần gia hạn sẽ hiện **Chưa ghi nhận thanh toán**. Chuyển khoản chưa rõ chủ tài khoản không tự ghi là tài khoản cá nhân.
+- Các tin đều kèm cơ sở, mã hợp đồng, nhân viên và thời gian. Ảnh được chụp bất biến khi xếp hàng gửi. Từ 2–10 ảnh gửi chung một album, nội dung nằm trong chú thích ảnh đầu nếu đủ giới hạn 1.024 ký tự; nội dung dài hơn hoặc nhiều hơn 10 ảnh được tách theo giới hạn Telegram.
+
+### Gửi thủ công và chờ đủ ảnh
+
+1. Mở hợp đồng → **Gửi Telegram** (hoặc thẻ **Telegram**).
+2. Tự gửi mặc định bật. Nếu muốn chờ 4–5 ảnh, tắt **Tự gửi Telegram khi hoàn tất giao dịch mới** trước khi hoàn tất. Công tắc cũng có tại phần ảnh trong hộp hoàn tất/gia hạn/trả xe; chỉ tài khoản có quyền phát hành hợp đồng được đổi. Công tắc áp dụng cho những giao dịch tiếp theo, không hủy tin đã vào hàng đợi.
+3. Chọn giao dịch đã hoàn tất, bổ sung ảnh (6 ảnh mỗi xe/lần gia hạn), bấm **Lưu ảnh**. Kiểm tra bản xem trước rồi **Gửi Telegram**. Khi ảnh chưa lưu, nút gửi khóa. Có thể gửi thủ công cả khi tự gửi đang bật.
+4. Nội dung giống hệt đã gửi/đang gửi bị chặn lặp. Bổ sung/thay ảnh hoặc cập nhật phiếu thanh toán rồi làm mới mới tạo bản cập nhật. Tin không rõ kết quả/đang gửi phải đối chiếu trước, không tự thử lại. Trạng thái **Telegram đã nhận tin và ảnh** nghĩa là API Telegram xác nhận, không chứng minh từng thành viên đã đọc.
+
+Áp dụng migration trước khi triển khai bản ứng dụng có các điều khiển này:
+
+```powershell
+node scripts/configure-contract-telegram.cjs --prepare
+node scripts/configure-contract-telegram.cjs --status
+```
+
+Migration `docs/sql/2026-10-18-contract-telegram-controls.sql` chạy lại được, giữ nguyên cấu hình bot/nhóm, chế độ SePay và lịch GPS.
 
 Mỗi giao dịch chỉ tạo một thông báo. Chưa có bot/nhóm thì hiện **Chờ cấu hình**; các thông báo này không tự gửi lại khi bổ sung bot, tránh phát tán lịch sử ngoài ý muốn. Nếu gửi gặp lỗi mạng sau khi gọi Telegram, trạng thái **Chưa xác định / cần đối chiếu** không tự thử lại để tránh gửi trùng. **Đang gửi / cần kiểm tra** kéo dài cũng cần đối chiếu thủ công. Tiến trình nền xử lý tối đa 2 thông báo mỗi lượt; ảnh chia nhóm tối đa 10 ảnh theo Telegram.
 

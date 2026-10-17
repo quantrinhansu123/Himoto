@@ -1,14 +1,19 @@
 'use client';
-import { useEffect,useMemo,useState } from 'react';
+import { useEffect,useMemo,useRef,useState } from 'react';
 import { Camera } from 'lucide-react';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { contractPhotoSlots,contractPhotoLabel,isContractTransactionPhoto,type ContractPhotoPhase } from '@/lib/management/contract-photos';
 import { photoEndpoint,type SavedPhoto } from '@/lib/management/record-photos';
 import { useManagement } from './ManagementProvider';
+import { ContractTelegramAuto } from './ContractTelegramPanel';
 
 export function ContractTransactionPhotos({id,phase,title,onPendingChange}:{id:number;phase:ContractPhotoPhase;title:string;onPendingChange?:(pending:boolean)=>void}) {
   const slots=useMemo(()=>contractPhotoSlots(phase),[phase]);
-  return <details className="mg-transaction-photos"><summary><Camera size={16} aria-hidden="true"/>{title}</summary><p>Ảnh không bắt buộc. Chọn/chụp rồi bấm Lưu ảnh trước khi hoàn tất giao dịch để đưa ảnh vào thông báo.</p><SavedRecordPhotos entity="contracts" recordId={id} slots={slots} title={title} onPendingChange={onPendingChange}/></details>;
+  const [modePending,setModePending]=useState(false),[photosPending,setPhotosPending]=useState(false);
+  const callback=useRef(onPendingChange);callback.current=onPendingChange;
+  useEffect(()=>{callback.current?.(modePending||photosPending);},[modePending,photosPending]);
+  useEffect(()=>()=>callback.current?.(false),[]);
+  return <div><ContractTelegramAuto id={id} onBusyChange={setModePending}/><details className="mg-transaction-photos"><summary><Camera size={16} aria-hidden="true"/>{title}</summary><p>Ảnh không bắt buộc. Chọn/chụp rồi bấm Lưu ảnh trước khi hoàn tất giao dịch để đưa ảnh vào thông báo.</p><SavedRecordPhotos entity="contracts" recordId={id} slots={slots} title={title} onPendingChange={setPhotosPending}/></details></div>;
 }
 export function ContractPhotoGallery({id}:{id:number}) {
   const {can}=useManagement();const [photos,setPhotos]=useState<SavedPhoto[]>([]),[error,setError]=useState(''),[version,setVersion]=useState(0);

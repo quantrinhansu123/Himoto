@@ -10,6 +10,9 @@ import { formatDateTime, formatMoney } from '@/lib/formatters';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
+import { ContractTransactionPhotos } from './ContractTransactionPhotos';
+import { ContractTelegramPanel } from './ContractTelegramPanel';
+import { contractTelegramRequest } from '@/lib/management/contract-telegram';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const vietnamInput = (ms: number) => new Date(ms + 7 * 3_600_000).toISOString().slice(0, 16);
@@ -35,6 +38,9 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [renewalVersion,setRenewalVersion]=useState<number|null>(null);
+  const [photosPending,setPhotosPending]=useState(false);
+  useEffect(()=>{const controller=new AbortController();void contractTelegramRequest(orderId,undefined,controller.signal).then(data=>setRenewalVersion(data.next_renewal_version)).catch(()=>{});return()=>controller.abort();},[orderId]);
   const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null } | null>(null);
 
   useEffect(() => {
@@ -77,7 +83,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!selected || saving) return;
+    if (!selected || saving || photosPending) return;
     if (!validReturn) { setError('Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
     setSaving(true); setError('');
@@ -102,6 +108,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí ${formatMoney(done.fee)}` : ''}.</p>
+          <ContractTelegramPanel id={orderId}/>
           {canPayContracts ? <>
             <p>Bấm nút bên dưới để mở phiếu thu Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng (nội dung, số tiền còn thiếu).</p>
             {(done.remaining === null || done.remaining > 0 || done.fee > 0) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
@@ -140,12 +147,13 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(selected?.deposit_held ?? 0)}</dd></div>
           </dl>
           <p className="mg-composer-hint">Chi phí gia hạn được cộng vào tiền hợp đồng. Sau khi lưu, dùng nút điền sổ quỹ để ghi phiếu Thu theo đúng cấu trúc.</p>
+          {renewalVersion&&<ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending}/>}
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>
-        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !validReturn}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : 'Lưu gia hạn'}</button>}</div>
+        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : 'Lưu gia hạn'}</button>}</div>
     </form>
   </Dialog>;
 }
