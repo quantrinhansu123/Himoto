@@ -1,11 +1,12 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import { MAX_PHOTO_BYTES, type PhotoEntity } from '@/lib/management/record-photos';
+import { isContractTransactionPhoto } from '@/lib/management/contract-photos';
 
 export class RecordPhotoError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export function parsePhotoTarget(entity: string, id: string, slot?: string): { entity: PhotoEntity; id: number; slot?: string } {
   if (!['customers', 'contracts'].includes(entity) || !/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new RecordPhotoError('Hồ sơ không hợp lệ.');
-  if (slot !== undefined && !(entity === 'customers' ? ['id_front', 'id_back'].includes(slot) : /^plate-[1-9]\d{0,14}$/.test(slot))) throw new RecordPhotoError('Loại ảnh không hợp lệ.');
+  if (slot !== undefined && !(entity === 'customers' ? ['id_front', 'id_back'].includes(slot) : /^plate-[1-9]\d{0,14}$/.test(slot)||isContractTransactionPhoto(slot))) throw new RecordPhotoError('Loại ảnh không hợp lệ.');
   return { entity: entity as PhotoEntity, id: Number(id), slot };
 }
 export function validatePhotoBytes(type: string, data: Buffer) {
@@ -19,6 +20,10 @@ export async function requirePhotoRecord(client: Pick<PoolClient, 'query'>, enti
   const table = entity === 'customers' ? 'customers' : 'orders';
   const result = await client.query(`SELECT id FROM himoto.${table} WHERE id=$1${entity === 'contracts' ? ' AND deleted_at IS NULL' : ''} FOR SHARE`, [id]);
   if (!result.rowCount) throw new RecordPhotoError('Không tìm thấy hồ sơ.', 404);
+}
+export async function requireContractPhotoSlot(client:Pick<PoolClient,'query'>,entity:PhotoEntity,id:number,slot:string) {
+  const item=entity==='contracts'?slot.match(/^return-([1-9]\d*)-[1-6]$/):null;
+  if(item&&!(await client.query('SELECT id FROM himoto.order_vehicle_details WHERE id=$1 AND order_id=$2 AND deleted_at IS NULL',[Number(item[1]),id])).rowCount)throw new RecordPhotoError('Xe trả không thuộc hợp đồng.',404);
 }
 export async function readRecordPhotos(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number) {
   await requirePhotoRecord(client, entity, id);

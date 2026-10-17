@@ -7,6 +7,7 @@ import { PAYMENT_METHODS, PaymentContext, PaymentMethod, loadPaymentContext, pay
 import { FinalizeCollection, FinalizeResult, balanceCollectionAmounts, finalizeContract } from '@/lib/management/contract-finalize';
 import type { ContractCharge } from '@/lib/management/contract-charges';
 import { DateTime24Field } from './DateTime24Field';
+import { ContractTransactionPhotos } from '@/components/management/ContractTransactionPhotos';
 
 const money = (value: number) => `${value.toLocaleString('vi-VN')} đ`;
 const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
@@ -21,6 +22,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   const [depositState,setDepositState] = useState<CollectionState>({collect:false,rows:[]});
   const [rentalState,setRentalState] = useState<CollectionState>({collect:false,rows:[]});
   const [error,setError] = useState(''), [saving,setSaving] = useState(false);
+  const [photosPending,setPhotosPending]=useState(false);
   const busy = useRef(false), nextKey = useRef(0);
   const initialMethods = useRef({deposit:depositMethods,rental:rentalMethods,charges});
   const depositDue = Math.max(deposit-(context?.deposit_paid || 0),0), rentalDue = Math.max(total-(context?.paid_amount || 0),0);
@@ -61,7 +63,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     });
   }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if(busy.current || !context)return; setError('');
+    event.preventDefault(); if(busy.current || !context||photosPending)return; setError('');
     let receipts: FinalizeCollection[];
     try {receipts=[...collections(depositState,'deposit',depositDue),...collections(rentalState,'rental',rentalDue)]; if (reservation && !receipts.length) throw new Error('Nhập khoản tiền giữ xe đã nhận.');}
     catch(cause){setError(cause instanceof Error ? cause.message : 'Kiểm tra các khoản đã nhận.');return;}
@@ -108,7 +110,9 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
         {section('rental',reservation ? 'Tiền thuê dự kiến' : 'Tiền thuê và phí khác',total,rentalDue,rentalState,setRentalState)}
         <p className="mg-collection-total">{reservation ? 'Tiền giữ xe đã nhận' : 'Tổng nhận thêm'}: <strong>{money(collected(depositState)+collected(rentalState))}</strong>{!reservation && <><br/>Cọc: {money(collected(depositState))} · Thuê/phí: {money(collected(rentalState))}</>}</p>
       </>}
+      <ContractTransactionPhotos id={orderId} phase="rental" title="Ảnh xe lúc thuê / lập hợp đồng" onPendingChange={setPhotosPending}/>
+      {photosPending&&<p role="status">Lưu ảnh đang chọn trước khi hoàn tất hợp đồng.</p>}
       {error && <p className="mg-field-error" role="alert">{error}</p>}
-    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>
+    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context||photosPending}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>
   </Dialog>;
 }

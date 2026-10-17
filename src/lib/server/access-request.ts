@@ -9,11 +9,14 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';
   if(path==='/api/auth/store-directory')return null;
   if(path==='/api/auth/contract-staff')return 'contracts.read';
+  if(path.startsWith('/api/auth/integrations'))return 'settings.write';
+  if(path.startsWith('/api/auth/gps'))return path.endsWith('/refresh')||read?'vehicles.read':'settings.write';
   if(path==='/api/auth/debt-reminders'||path.endsWith('/debt-reminder'))return 'contracts.read';
   if(path.includes('/sepay/settings'))return read?'finance.read':'settings.write';
   if(path.includes('/payment-intents')||path.includes('/payment-events'))return read?'contracts.read':'contracts.draft';
-  if(path.includes('/photo-ocr')||path.includes('/photo-uploads'))return 'customers.write';
-  if(path.includes('/record-photos/'))return path.includes('/customers/')?(read?'customers.read':'customers.write'):(read?'contracts.read':'contracts.draft');
+  if(path.includes('/photo-uploads'))return null;
+  if(path.includes('/photo-ocr'))return 'customers.write';
+  if(path.includes('/record-photos/'))return path.includes('/customers/')?(read?'customers.read':'customers.write'):read?'contracts.read':/\/return-\d+-\d$/.test(path)?'contracts.return':/\/handover-\d$/.test(path)?'contracts.finalize':'contracts.draft';
   if(path.includes('/bulk-delete/')||path.includes('/import')||path.includes('/match-stores')||path.includes('/backups')||path.includes('/reset')||path.includes('/contract-types'))return read?'contracts.read':'settings.write';
   if(path.includes('/stores/managers'))return 'contracts.read';
   if(path.includes('/stores'))return read?'contracts.read':'settings.write';

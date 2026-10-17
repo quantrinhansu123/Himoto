@@ -44,7 +44,7 @@ const listQueries: Record<string, QueryConfig> = {
                  r.rentals, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  gps.has_device AS gps_has_device,
                  gps.normalized_status AS gps_normalized_status,
-                 gps.last_at AS gps_last_at
+                 gps.last_at AS gps_last_at,gps.latitude AS gps_latitude,gps.longitude AS gps_longitude,gps.synced_at AS gps_last_sync,gps.provider AS gps_provider
           FROM himoto.vehicles v
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
           ${VEHICLE_TRANSFER_JOIN_SQL}
@@ -70,7 +70,8 @@ const listQueries: Record<string, QueryConfig> = {
           ) b
           LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
           LEFT JOIN LATERAL (
-            SELECT true AS has_device, p.normalized_status,
+            SELECT true AS has_device,CASE WHEN d.sync_received_at<now()-interval '10 minutes' THEN 'stale' ELSE COALESCE(d.management_status,p.normalized_status) END AS normalized_status,
+                   d.last_latitude AS latitude,d.last_longitude AS longitude,d.sync_received_at AS synced_at,d.provider,
                    COALESCE(p.provider_recorded_at, p.received_at, p.created_at, d.last_sync_at) AS last_at
             FROM himoto.gps_devices d
             LEFT JOIN LATERAL (
@@ -81,7 +82,7 @@ const listQueries: Record<string, QueryConfig> = {
               LIMIT 1
             ) p ON true
             WHERE d.vehicle_id = v.id
-            ORDER BY d.id DESC
+            ORDER BY d.heartbeat_at DESC NULLS LAST,d.sync_received_at DESC NULLS LAST,d.id DESC
             LIMIT 1
           ) gps ON true
           ORDER BY v.id DESC`,

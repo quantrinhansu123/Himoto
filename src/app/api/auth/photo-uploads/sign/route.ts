@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { RecordPhotoError } from '@/lib/server/record-photos';
 import { signPhotoUpload } from '@/lib/server/cloudinary-photos';
+import { hasPermission } from '@/lib/management/permissions';
 
 export const runtime = 'nodejs';
 async function POSTHandler(request: NextRequest) {
@@ -13,6 +14,7 @@ async function POSTHandler(request: NextRequest) {
     const input = JSON.parse(body);
     const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
     if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
+    if(!(['customers.write','contracts.draft','contracts.finalize','contracts.return'] as const).some(permission=>hasPermission(user,permission)))throw new RecordPhotoError('Tài khoản chưa được phép tải ảnh.',403);
     const data = signPhotoUpload(user.id, input?.upload_id);
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {

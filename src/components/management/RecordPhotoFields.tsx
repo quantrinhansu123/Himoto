@@ -91,9 +91,12 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
   </fieldset>;
 }
 
-export function SavedRecordPhotos({ entity, recordId, slots, title }: { entity: PhotoEntity; recordId: number; slots: PhotoSlot[]; title?: string }) {
+export function SavedRecordPhotos({ entity, recordId, slots, title,onPendingChange }: { entity: PhotoEntity; recordId: number; slots: PhotoSlot[]; title?: string;onPendingChange?:(pending:boolean)=>void }) {
   const [photos, setPhotos] = useState<PendingPhotos>({}), [busy, setBusy] = useState(false), [processing, setProcessing] = useState(false);
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [version, setVersion] = useState(0);
+  const callback=useRef(onPendingChange);callback.current=onPendingChange;
+  useEffect(()=>{callback.current?.(busy||processing||Object.keys(photos).length>0);},[busy,processing,photos]);
+  useEffect(()=>()=>callback.current?.(false),[]);
   return <div className="mg-saved-photos">
     <RecordPhotoFields key={version} entity={entity} recordId={recordId} slots={slots} title={title} value={photos} onChange={value => { setPhotos(value); setMessage(''); }} disabled={busy} onBusyChange={setProcessing} />
     {Object.keys(photos).length > 0 && <button type="button" className="mg-button mg-button-primary" disabled={busy || processing} onClick={async () => {

@@ -120,13 +120,13 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     status: ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[base.status] || base.status,
     location_status: (() => {
       const preset = String(raw.location_status || '');
-      if (raw.gps_has_device == null && raw.gps_normalized_status == null && ['online', 'warning', 'offline', 'none'].includes(preset)) return preset;
+      if (raw.gps_has_device == null && raw.gps_normalized_status == null && ['online','stopped','stale','warning', 'offline', 'none'].includes(preset)) return preset;
       return resolveLocationStatus({
         hasDevice: Boolean(raw.gps_has_device),
         normalizedStatus: raw.gps_normalized_status,
         lastAt: raw.gps_last_at,
       });
-    })() };
+    })(),gps_latitude:number(raw.gps_latitude),gps_longitude:number(raw.gps_longitude),gps_last_sync:text(raw.gps_last_sync),gps_provider:text(raw.gps_provider) };
   const customer = object(raw.customer);
   const vehicles = Array.isArray(raw.vehicles) ? raw.vehicles.map(object) : [];
   const store = object(raw.store);

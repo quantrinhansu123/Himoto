@@ -9,6 +9,7 @@ import { formatDateTime, formatMoney } from '@/lib/formatters';
 import { cashbookPaymentPath } from '@/lib/management/contract-payments';
 import { loadContractReturnableItems, ReturnableContractItem, ReturnInput, returnContractItems, searchReturnableItems } from '@/lib/management/contract-returns';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
+import { ContractTransactionPhotos } from './ContractTransactionPhotos';
 
 const localNow = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 16);
 const localMillis = (value: string) => new Date(`${value}:00+07:00`).getTime();
@@ -44,6 +45,8 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
   const [hourlyRate, setHourlyRate] = useState('20000');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [photoPending,setPhotoPending]=useState<Record<number,boolean>>({});
+  const photosPending=Object.values(photoPending).some(Boolean);
   const [error, setError] = useState('');
   const [done, setDone] = useState<{ orderId: number; code: string; due: number | null; depositHeld: number; closes: boolean } | null>(null);
 
@@ -108,7 +111,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!lines.length || saving) return;
+    if (!lines.length || saving||photosPending) return;
     setSaving(true); setError('');
     try {
       const items: ReturnInput[] = lines.map(({ row, estimate, override, amount }) => ({
@@ -178,6 +181,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
                   {(estimate.late || estimate.early) && <label>{estimate.late ? 'Phí trả muộn (+)' : 'Giảm doanh thu (−)'}
                     <input type="text" inputMode="numeric" value={value === '' ? '' : formatMoney(Number(value))} onChange={event => setOverrides(current => ({ ...current, [id]: digits(event.target.value) }))} /></label>}
                 </div>}
+                {line&&<ContractTransactionPhotos id={row.order_id} phase={`return-${row.item_id}`} title={`Ảnh nhận lại ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})}/>}
               </div>;
             })}
             {doneRows.map(row => <div key={row.item_id} className="mg-return-line is-done"><span><strong>{row.vehicle_name} · {row.license}</strong> · Đã trả {formatDateTime(row.completed_at)}</span></div>)}
@@ -194,7 +198,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '', onClose
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !lines.length || invalid}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer">{photosPending&&<span role="status">Lưu ảnh đang chọn trước khi trả xe.</span>}<button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending||!lines.length || invalid}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
     </form>
   </Dialog>;
 }

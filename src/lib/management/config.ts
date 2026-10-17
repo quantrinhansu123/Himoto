@@ -13,9 +13,11 @@ export const VEHICLE_STATUSES: Option[] = [
 ];
 /** GPS tracker connection: green / yellow / red dots on the vehicles list. */
 export const LOCATION_STATUSES: Option[] = [
-  { value: 'online', label: 'Có tín hiệu' },
+  { value: 'online', label: 'ON · Đang di chuyển' },
+  { value: 'stopped', label: 'Dừng' },
   { value: 'warning', label: 'Cảnh báo' },
-  { value: 'offline', label: 'Mất liên lạc' },
+  { value: 'offline', label: 'OFF · Mất kết nối' },
+  { value: 'stale', label: 'Chưa cập nhật' },
   { value: 'none', label: 'Chưa gắn GPS' },
 ];
 export const VEHICLE_TYPES: Option[] = [{ value: 'xega', label: 'Xe ga' }, { value: 'xeso', label: 'Xe số' }, { value: 'xecon', label: 'Xe côn tay' }, { value: 'xesh', label: 'Xe SH' }, { value: 'xe_dien', label: 'Xe điện' }];
@@ -135,7 +137,7 @@ export function optionLabel(config: ManagementConfig, key: string, value: string
 export function statusTone(status: string): string {
   if (['online', 'active', 'ready', 'completed'].includes(status)) return 'green';
   if (['using', 'renting', 'in_transit'].includes(status)) return 'blue';
-  if (['warning', 'repairing', 'pending', 'draft'].includes(status)) return 'yellow';
+  if (['warning', 'stopped','stale','repairing', 'pending', 'draft'].includes(status)) return 'yellow';
   if (['offline', 'overdue', 'bad_debt', 'blacklist', 'broken'].includes(status)) return 'red';
   return 'gray';
 }
@@ -145,7 +147,9 @@ export function normalizeLocationStatus(raw: unknown, hasDevice: boolean): strin
   if (!hasDevice) return 'none';
   const value = String(raw || '').trim().toLowerCase();
   if (!value) return 'offline';
-  if (['online', 'on', 'active', 'moving', 'running', 'idle', 'parked', 'parking', 'stop', 'stopped', 'có tín hiệu', 'co tin hieu'].includes(value)) return 'online';
+  if(['idle','parked','parking','stop','stopped'].includes(value))return 'stopped';
+  if(value==='stale')return 'stale';
+  if (['online', 'on', 'active', 'moving', 'running', 'có tín hiệu', 'co tin hieu'].includes(value)) return 'online';
   if (['warning', 'warn', 'weak', 'satellite_lost', 'no_gps', 'low_signal', 'cảnh báo', 'canh bao', 'mất vệ tinh', 'mat ve tinh'].includes(value)) return 'warning';
   if (['offline', 'off', 'lost', 'disconnected', 'dead', 'mất liên lạc', 'mat lien lac'].includes(value)) return 'offline';
   if (['none', 'unmapped', 'chưa gắn', 'chua gan'].includes(value)) return 'none';

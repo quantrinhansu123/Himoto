@@ -2,7 +2,7 @@ import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
-import { RecordPhotoError, parsePhotoTarget, requirePhotoRecord, writeRecordPhoto } from '@/lib/server/record-photos';
+import { RecordPhotoError, parsePhotoTarget, requirePhotoRecord,requireContractPhotoSlot, writeRecordPhoto } from '@/lib/server/record-photos';
 import { MAX_PHOTO_BYTES } from '@/lib/management/record-photos';
 import { verifyPhotoReceipt, writeCloudinaryPhoto, readCloudinaryPhoto, type CloudPhotoReceipt } from '@/lib/server/cloudinary-photos';
 
@@ -37,6 +37,7 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
     const receipt: CloudPhotoReceipt | undefined = writing && !data && user ? verifyPhotoReceipt(receiptBody, user.id) : undefined;
     client = await himotoPool.connect();
     await client.query('BEGIN');
+    if(writing)await requireContractPhotoSlot(client,target.entity,target.id,raw.slot);
     let response: NextResponse;
     if (user && (data || receipt)) {
       if (receipt) { await requirePhotoRecord(client, target.entity, target.id); await writeCloudinaryPhoto(client, target.entity, target.id, raw.slot, user.id, receipt); }

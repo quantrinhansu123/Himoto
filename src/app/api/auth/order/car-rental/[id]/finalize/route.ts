@@ -1,5 +1,6 @@
 import { withAccessRequest } from '@/lib/server/access-request';
-import { NextRequest, NextResponse } from 'next/server';
+import { after,NextRequest, NextResponse } from 'next/server';
+import { queueContractNotification,dispatchContractNotifications } from '@/lib/server/contract-notifications';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { ContractFinalizeError, finalizeContractDraft, parseFinalizeInput } from '@/lib/server/contract-finalize';
@@ -20,7 +21,9 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     client = await himotoPool.connect();
     await client.query('BEGIN');
     const data = await finalizeContractDraft(client, Number(id), user.id, input);
+    await queueContractNotification(client,Number(id),data.status==='deposit_contract'?'reservation':'rental',`finalize:${id}:${data.code}`,user.id,'rental');
     await client.query('COMMIT');
+    after(async()=>{try{await dispatchContractNotifications();}catch{console.error('Contract notification dispatch failed.');}});
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});

@@ -17,6 +17,7 @@ import { MobileDetailsCard } from './MobileDetailsCard';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS } from '@/lib/management/record-photos';
 import { ContractBatteryLinks } from './ContractBatteryLinks';
+import { ContractPhotoGallery } from './ContractTransactionPhotos';
 
 const SECTIONS = [
   { id: 'vehicle', label: 'Thông tin phương tiện' },
@@ -27,6 +28,7 @@ const SECTIONS = [
   { id: 'signing', label: 'Ký kết & ghi chú' },
   { id: 'changes', label: 'Lịch sử chỉnh sửa' },
   { id: 'cashflow', label: 'Lịch sử thu chi' },
+  { id: 'photos', label: 'Ảnh thuê / trả xe' },
 ] as const;
 type DetailSection = (typeof SECTIONS)[number]['id'];
 const text = (value: unknown) => value == null || value === '' ? '—' : String(value);
@@ -225,6 +227,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint, onPrintV
         {historyState(!history?.cashflow.length, 'Chưa có phiếu thu / chi nào cho hợp đồng này.')}
         {history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow} />}
       </>)}
+    {panel('photos','Ảnh thuê / trả xe',section==='photos'&&<ContractPhotoGallery id={row.id}/>)}
     {source === 'api' && (section === 'vehicle' || section === 'customer') && <>
       {section === 'vehicle' && <SavedRecordPhotos entity="contracts" recordId={row.id} slots={draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))} title="Ảnh biển số xe" />}
       {section === 'customer' && draft.customer_id && <SavedRecordPhotos entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Ảnh CCCD" />}

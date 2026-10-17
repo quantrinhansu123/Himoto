@@ -1,5 +1,6 @@
 import { withAccessRequest } from '@/lib/server/access-request';
-import { NextRequest, NextResponse } from 'next/server';
+import { after,NextRequest, NextResponse } from 'next/server';
+import { queueContractNotification,dispatchContractNotifications } from '@/lib/server/contract-notifications';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { ContractReturnError, loadContractReturnableItems, parseReturnBatch, recordVehicleReturn, searchReturnableItems } from '@/lib/server/contract-returns';
@@ -33,7 +34,11 @@ async function POSTHandler(request: NextRequest) {
     await client.query('BEGIN');
     const results = [];
     for (const input of inputs) results.push(await recordVehicleReturn(client, user.id, input));
+    const returned=(await client.query('SELECT id,order_id FROM himoto.order_vehicle_details WHERE id=ANY($1::bigint[])',[inputs.map(input=>input.item_id)])).rows;
+    const byOrder=new Map<number,number[]>();for(const row of returned){const orderId=Number(row.order_id);byOrder.set(orderId,[...(byOrder.get(orderId)||[]),Number(row.id)]);}
+    for(const [orderId,items] of byOrder){items.sort((a,b)=>a-b);await queueContractNotification(client,orderId,'return',`return:${orderId}:${items.join(',')}`,user.id,items.map(item=>`return-${item}`));}
     await client.query('COMMIT');
+    after(async()=>{try{await dispatchContractNotifications();}catch{console.error('Contract notification dispatch failed.');}});
     const data = body && typeof body === 'object' && 'items' in body ? results : results[0];
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
