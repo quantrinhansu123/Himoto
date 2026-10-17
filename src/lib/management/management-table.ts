@@ -4,6 +4,7 @@ import { applyInstallmentBilling } from './contract-billing';
 import { OWNERSHIP_CONTRACT_TYPES } from './config';
 import { mapApiRow, READ_ENDPOINTS } from './repository';
 import type { ManagementRow } from './types';
+import { isRemindableContract } from './debt-reminders';
 
 export type TableKind = 'contracts' | 'customers';
 export interface ManagementTableInput {
@@ -33,6 +34,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if (input.scope === 'ownership') rows=rows.filter(row=>row.store_kind==='lease_to_own' || ownershipStores.includes(Number(row.store_id)) || OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type)));
   if (input.scope === 'due') rows=rows.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0);
   if (input.scope === 'renewable') rows=rows.filter(row=>['renting','overdue'].includes(row.status)&&!row.billing_plan_json);
+  if (input.scope === 'remindable') rows=rows.filter(isRemindableContract);
   if (input.scope === 'overdue') rows=rows.filter(row=>row.status==='overdue').map(row=>({...row,overdue_days:overdueDays(row.end_date,now)}));
   const scoped=filterRows(rows,EMPTY_QUERY,input.store),tabRows=filterRows(scoped,{...input.query,status:''},'all');
   const counts=new Map<string,number>();for(const row of tabRows)counts.set(row.status,(counts.get(row.status)||0)+1);

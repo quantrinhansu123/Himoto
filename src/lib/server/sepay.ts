@@ -2,7 +2,7 @@ import 'server-only';
 import { createHash,randomUUID,timingSafeEqual } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { bankBin } from '@/lib/management/transfer-qr';
-import { contractTransferMemo,contractVietQr,plainBankText,type ContractQrData } from '@/lib/management/sepay';
+import { branchQrAccounts,defaultBranchQrAccount,contractTransferMemo,contractVietQr,plainBankText,type ContractQrData } from '@/lib/management/sepay';
 import { MAX_PAYMENT_AMOUNT,PAYABLE_STATUSES } from '@/lib/management/contract-payments';
 import { readPaymentContext,recordContractPayment } from './contract-payments';
 type Database=Pick<PoolClient,'query'>;
@@ -49,26 +49,28 @@ export function memoMatchesContract(content:string,code:string){
   const prefix='THANHTOANCHOHOPDONG'.split('').join('[^A-Z0-9]*');
   return new RegExp(prefix+'[^A-Z0-9]*'+key.split('').join('[^A-Z0-9]*')+'(?=$|[^A-Z0-9])').test(plainBankText(content).toUpperCase());
 }
-export async function readContractQr(client:Database,id:number,requestedAmount?:number):Promise<ContractQrData>{
+export async function readContractQr(client:Database,id:number,requestedAmount?:number,accountId?:number):Promise<ContractQrData>{
   const context=await readPaymentContext(client,id),config=sepayConfig();
   if(context.status==='cancelled')throw new SePayError('Hợp đồng đã hủy nên không tạo mã thanh toán.',409);
   const defaultAmount=context.remaining??0;
   const amount=requestedAmount!==undefined?requestedAmount:defaultAmount;
   if(!Number.isSafeInteger(amount)||amount<0||amount>MAX_PAYMENT_AMOUNT||(context.remaining!==null&&context.remaining>0&&amount>context.remaining))throw new SePayError('Số tiền QR vượt phần còn phải thu của hợp đồng.');
   const events=await client.query(`SELECT COALESCE(sum(amount) FILTER(WHERE mode='test' AND status='simulated'),0)::bigint AS demo,COALESCE(max(id),0)::bigint AS version FROM himoto.management_sepay_events WHERE order_id=$1`,[id]);
-  return {id,code:context.code,configured:config.configured,mode:config.mode,amount,total:context.total_amount,paid:context.paid_amount,
-    bank:config.configured?config.bank:null,memo:contractTransferMemo(context.code),qr_url:config.configured?contractVietQr(config.bank,amount,context.code):null,
+  const accounts=branchQrAccounts(context.accounts,context.store_id),bank=accountId===undefined?defaultBranchQrAccount(accounts):accounts.find(account=>account.id===accountId);
+  if(accountId!==undefined&&!bank)throw new SePayError('Tài khoản nhận không hoạt động hoặc không thuộc cơ sở hợp đồng.',409);
+  return {id,code:context.code,configured:Boolean(bank),mode:config.mode,amount,total:context.total_amount,paid:context.paid_amount,
+    accounts,bank_id:bank?.id??null,configuration_message:accounts.length?'Chọn tài khoản nhận của cơ sở hợp đồng.':'Cơ sở hợp đồng chưa có tài khoản ngân hàng hợp lệ đang sử dụng. Cập nhật tại Sổ quỹ → Tài khoản thu chi.',
+    bank:bank||null,memo:contractTransferMemo(context.code),qr_url:bank?contractVietQr(bank,amount,context.code):null,
     received_demo:Number(events.rows[0].demo),event_version:Number(events.rows[0].version)};
 }
 /** Caller owns one transaction; provider ID dedupe, receipt and event are committed together. */
 export async function processSePayEvent(client:Database,input:SePayPayload,config=sepayConfig()){
-  if(!config.configured)throw new SePayError('Chưa cấu hình ngân hàng SePay.',503);
-  if(input.account!==config.bank.account_number)throw new SePayError('Tài khoản nhận không khớp cấu hình webhook.',400);
-  if(bankBin(input.gateway)!==bankBin(config.bank.bank_code))throw new SePayError('Ngân hàng giao dịch không khớp cấu hình webhook.',400);
   await client.query("SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='20s'");
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`sepay:${config.mode}:${input.id}`]);
   const previous=(await client.query('SELECT id,fingerprint,status FROM himoto.management_sepay_events WHERE mode=$1 AND external_id=$2',[config.mode,input.id])).rows[0];
   if(previous){if(previous.fingerprint!==input.fingerprint)throw new SePayError('Mã giao dịch đã được dùng cho dữ liệu khác.',409);return {replayed:true,status:previous.status};}
+  const registered=await client.query(`SELECT id,store_id,bank_name FROM himoto.banks WHERE lower(status)='active' AND account_type IN(0,1) AND regexp_replace(account_number,'\\s','','g')=$1`,[input.account]);
+  if(!bankBin(input.gateway)||!registered.rows.some(row=>bankBin(row.bank_name||'')===bankBin(input.gateway)))throw new SePayError('Tài khoản hoặc ngân hàng nhận chưa được khai báo hoạt động trong HIMOTO.',400);
   const event=(await client.query(`INSERT INTO himoto.management_sepay_events(external_id,mode,fingerprint,transfer_type,amount,account_number,content,reference_code,transaction_at,status)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'received') RETURNING id`,[input.id,config.mode,input.fingerprint,input.direction,input.amount,input.account,input.content,input.reference,input.at])).rows[0];
   const finish=async(status:string,message:string,order?:{id:number|string;store_id:number|string},transactionId?:number)=>{
@@ -87,17 +89,21 @@ export async function processSePayEvent(client:Database,input:SePayPayload,confi
     await client.query('LOCK TABLE himoto.orders IN ROW EXCLUSIVE MODE');
     await client.query('SELECT id FROM himoto.orders WHERE id=$1 FOR UPDATE',[order.id]);
   }
-  const context=await readPaymentContext(client,Number(order.id));
+  let context=await readPaymentContext(client,Number(order.id));
+  const matching=branchQrAccounts(context.accounts,context.store_id).filter(bank=>bank.account_number===input.account&&bankBin(bank.bank_code)===bankBin(input.gateway));
+  if(matching.length!==1)return finish('review','Tài khoản nhận không thuộc cơ sở hợp đồng hoặc chưa xác định duy nhất tài khoản ghi sổ.',order);
+  const bank=matching[0];
   const issued=order.issued_at||order.created_at;
   if(issued&&Date.parse(input.at)+60000<new Date(issued).getTime())return finish('review','Giao dịch có trước thời điểm phát hành hợp đồng.',order);
   if(!PAYABLE_STATUSES.includes(context.status)||context.remaining===null||input.amount>context.remaining)return finish('review','Cần đối chiếu trạng thái hoặc số tiền; chưa tự ghi nhận.',order);
   if(config.mode==='test')return finish('simulated','Đã nhận giao dịch demo; không thay đổi công nợ thật.',order);
-  if(!Number.isSafeInteger(config.bankId)||config.bankId<1||!Number.isSafeInteger(config.actorId)||config.actorId<1)throw new SePayError('Chưa cấu hình tài khoản ghi sổ SePay.',503);
-  const bank=context.accounts.find(account=>account.kind==='bank'&&account.id===config.bankId&&account.account_number===config.bank.account_number);
-  if(!bank)return finish('review','Tài khoản ghi sổ không hoạt động hoặc không thuộc cơ sở hợp đồng.',order);
+  if(!Number.isSafeInteger(config.actorId)||config.actorId<1)throw new SePayError('Chưa cấu hình người ghi sổ SePay.',503);
+  await client.query('SELECT id FROM himoto.banks WHERE id=$1 FOR SHARE',[bank.id]);
+  context=await readPaymentContext(client,Number(order.id));
+  if(!branchQrAccounts(context.accounts,context.store_id).some(current=>current.id===bank.id&&current.account_number===input.account&&bankBin(current.bank_code)===bankBin(input.gateway)&&current.owner_type===bank.owner_type))return finish('review','Tài khoản nhận đã thay đổi; cần đối chiếu trước khi ghi sổ.',order);
   const actor=await client.query("SELECT id FROM himoto.users WHERE id=$1 AND deleted_at IS NULL AND status='active'",[config.actorId]);
   if(!actor.rowCount)throw new SePayError('Tài khoản ghi nhận SePay chưa hoạt động.',503);
   const paidAt=new Date(Date.parse(input.at)+7*3600000).toISOString().slice(0,16);
-  const result=await recordContractPayment(client,Number(order.id),config.actorId,{request_id:randomUUID(),revision:context.revision,amount:String(input.amount),method:bank.owner_type==='company'?'company_transfer':'transfer',account_id:config.bankId,paid_at:paidAt,note:contractTransferMemo(context.code)});
+  const result=await recordContractPayment(client,Number(order.id),config.actorId,{request_id:randomUUID(),revision:context.revision,amount:String(input.amount),method:bank.owner_type==='company'?'company_transfer':'transfer',account_id:bank.id,paid_at:paidAt,note:contractTransferMemo(context.code)});
   return finish('matched','Đã tự động ghi nhận thu tiền hợp đồng.',order,result.transaction_id);
 }

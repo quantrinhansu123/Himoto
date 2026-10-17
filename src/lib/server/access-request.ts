@@ -9,6 +9,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';
   if(path==='/api/auth/store-directory')return null;
   if(path==='/api/auth/contract-staff')return 'contracts.read';
+  if(path==='/api/auth/debt-reminders'||path.endsWith('/debt-reminder'))return 'contracts.read';
   if(path.includes('/sepay/settings'))return read?'finance.read':'settings.write';
   if(path.includes('/payment-intents')||path.includes('/payment-events'))return read?'contracts.read':'contracts.draft';
   if(path.includes('/photo-ocr')||path.includes('/photo-uploads'))return 'customers.write';

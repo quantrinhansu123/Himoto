@@ -49,6 +49,7 @@ const VehicleDetail = dynamic(() => import('./VehicleDetail').then(module => mod
 const StoreDetail = dynamic(() => import('./StoreDetail').then(module => module.StoreDetail), { ssr: false, loading: FeatureLoading });
 const StaffDialog = dynamic(() => import('./StaffDialogs').then(module => module.StaffDialog), { ssr: false, loading: FeatureLoading });
 const ContractQrDialog=dynamic(()=>import('./ContractPaymentQr').then(module=>module.ContractQrDialog),{ssr:false,loading:FeatureLoading});
+const DebtReminderDialog=dynamic(()=>import('./DebtReminderDialog').then(module=>module.DebtReminderDialog),{ssr:false,loading:FeatureLoading});
 
 const EMPTY_ROWS: ManagementRow[] = [];
 const overdueDays = (returnAt: unknown, now: number) => { const due = Date.parse(String(returnAt ?? '')); return Number.isFinite(due) ? Math.max(0, Math.floor((now - due) / 86_400_000)) : undefined; };
@@ -110,6 +111,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [visibleKeys, setVisibleKeys] = useState<string[]>(config.columns.filter(c => !c.hidden).map(c => c.key));
   const [viewing, setViewing] = useState<ManagementRow | null>(null);
   const [qrTarget,setQrTarget]=useState<number|null>(null);
+  const [reminderTarget,setReminderTarget]=useState<number|null>(null);
   const [editing, setEditing] = useState<ManagementRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
@@ -296,6 +298,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onPrint={kind === 'contracts' ? row => { setPrintRow(row); setComposerMode('print'); setComposerOpen(true); } : undefined}
           onPayment={kind === 'contracts' && source === 'api' && canPayContracts ? row => router.push(cashbookPaymentPath(row.id, 'debt')) : undefined}
           onQr={kind==='contracts'?row=>setQrTarget(row.id):undefined}
+          onReminder={kind==='contracts'&&(can('contracts.draft')||canPayContracts)?row=>setReminderTarget(row.id):undefined}
           onHandover={can('contracts.finalize') && kind === 'contracts' && source === 'api' ? row=>setHandoverId(row.id) : undefined}
           onReturn={can('contracts.return') && kind === 'contracts' && source === 'api' ? row => setReturnTarget({ orderId: row.id, code: row.code }) : undefined}
           onRenew={can('contracts.renew') && kind === 'contracts' && source === 'api' ? row => setRenewTarget(row) : undefined}
@@ -359,8 +362,10 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {batteryPrinting && <BatteryPrintPreview doc={batteryPrinting} onClose={() => setBatteryPrinting(null)} />}
     {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onBatteryRent={() => { setBatteryRentTarget(viewing); setViewing(null); }} onPayment={canPayContracts ? (purpose?: PaymentPurpose) => { router.push(cashbookPaymentPath(viewing.id, purpose || 'debt')); setViewing(null); } : undefined} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }}
       onQr={()=>{setQrTarget(viewing.id);setViewing(null);}}
+      onReminder={can('contracts.draft')||canPayContracts?()=>{setReminderTarget(viewing.id);setViewing(null);}:undefined}
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
     {qrTarget!==null&&<ContractQrDialog id={qrTarget} onClose={()=>setQrTarget(null)}/>}
+    {reminderTarget!==null&&<DebtReminderDialog orderId={reminderTarget} onClose={()=>setReminderTarget(null)}/>}
     {composerOpen && dataset && <ManagementDataBoundary kinds={CONTRACT_DATA_KINDS} title="Mở hợp đồng" onClose={() => setComposerOpen(false)}><ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} onClose={() => setComposerOpen(false)} onDraftSaved={() => { setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); router.push('/contracts/drafts'); }}
       onFinalized={result => {
         notify(`${result.status === 'deposit_contract' ? 'Đã nhận cọc giữ xe, chờ giao xe' : 'Đã lưu chính thức hợp đồng'} ${result.code}${result.transaction_ids.length ? ` và ghi ${result.transaction_ids.length} phiếu thu vào Sổ quỹ` : ''}.`);

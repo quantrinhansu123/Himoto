@@ -33,10 +33,10 @@ Quản trị mở **Tài khoản & phân quyền** để tạo, khóa, đổi m�
 | Biến | Nội dung |
 | --- | --- |
 | `SEPAY_WEBHOOK_SECRET` | Chuỗi bí mật trùng API Key trong cấu hình webhook SePay |
-| `SEPAY_BANK_CODE` | Mã ngân hàng/BIN tương ứng tài khoản nhận, ví dụ `VPB` |
-| `SEPAY_ACCOUNT_NUMBER` | Số tài khoản nhận đúng với SePay |
-| `SEPAY_ACCOUNT_NAME` | Tên chủ tài khoản |
-| `SEPAY_BANK_ID` | ID ngân hàng ghi sổ HIMOTO; tài khoản demo đã tạo là `33` |
+| `SEPAY_BANK_CODE` | Cấu hình demo cũ; QR hiện lấy ngân hàng từ tài khoản của cơ sở hợp đồng |
+| `SEPAY_ACCOUNT_NUMBER` | Cấu hình demo cũ; không dùng làm tài khoản nhận chung cho các hợp đồng |
+| `SEPAY_ACCOUNT_NAME` | Tên chủ tài khoản demo cũ |
+| `SEPAY_BANK_ID` | ID cấu hình demo cũ; webhook ghi sổ bằng tài khoản thực tế khớp đúng cơ sở hợp đồng |
 | `SEPAY_SERVICE_USER_ID` | ID người ghi nhận tự động; đã tạo là `150`, không được đăng nhập tương tác |
 | `SEPAY_MODE` | `test` để thử; chỉ bật `live` khi tài khoản ghi sổ đã được đối chiếu |
 
@@ -51,7 +51,30 @@ Tài khoản ngân hàng demo hiện có loại chủ tài khoản **chưa xác 
 - Nút **Gửi thử** dùng dữ liệu mẫu (`id=0`): HIMOTO xác thực API key rồi trả thành công, không mở kết nối ghi sổ và không cập nhật hợp đồng. Đây là kiểm tra kết nối; để thử thông báo thanh toán, dùng giao dịch mô phỏng trong Test mode SePay.
 - Tài liệu chính thức: [Webhook](https://docs.sepay.vn/tich-hop-webhooks.html), [mô phỏng giao dịch](https://developer.sepay.vn/vi/tien-ich-khac/test-mode/mo-phong-tao-ma-vietqr).
 
-`SEPAY_MODE=test` chỉ ngăn HIMOTO ghi tiền thật; nó không biến số tài khoản ngân hàng thật thành tài khoản giả lập. Dùng Test mode và nút mô phỏng giao dịch trên SePay. QR luôn chứa số tài khoản đã cấu hình.
+`SEPAY_MODE=test` chỉ ngăn HIMOTO ghi tiền thật; nó không biến số tài khoản ngân hàng thật thành tài khoản giả lập. Dùng Test mode và nút mô phỏng giao dịch trên SePay. QR chứa tài khoản ngân hàng thật thuộc cơ sở hợp đồng.
+
+## Tài khoản nhận theo cơ sở
+
+- Cơ sở được xác định từ `orders.store_id`, độc lập với bộ lọc cơ sở đang xem và cơ sở quản lý xe.
+- Chỉ lấy tài khoản ngân hàng đang sử dụng, có ngân hàng/BIN, số tài khoản và chủ tài khoản hợp lệ, thuộc đúng cơ sở hợp đồng.
+- Mặc định chọn tài khoản thường duy nhất; nếu cơ sở chỉ có một tài khoản công ty thì dùng tài khoản đó. Form QR có ô chọn các tài khoản của cơ sở, gồm tài khoản công ty.
+- Nếu có nhiều tài khoản thường, cần chọn rõ trên form. Bản in dùng lựa chọn mặc định; khi chưa xác định duy nhất thì không chèn một tài khoản tùy ý.
+- Không dùng tài khoản chung `store_id=0`, tài khoản cơ sở khác hoặc biến `SEPAY_ACCOUNT_*` làm dự phòng khi cơ sở thiếu tài khoản.
+- Webhook đối chiếu số tài khoản + ngân hàng với tài khoản đang sử dụng và cơ sở hợp đồng. Tiền vào sai cơ sở được giữ để đối chiếu. Loại chủ tài khoản được giữ nguyên, không tự coi tài khoản thường là tài khoản công ty/VAT.
+- Trong SePay, cần đăng ký webhook cho từng tài khoản ngân hàng cần theo dõi. HIMOTO không tự đăng ký tài khoản tại SePay.
+
+## Gửi nhắc nợ Zalo
+
+1. Mở **Gửi nhắc nợ → Tạo mới** để tìm hợp đồng còn khoản cần thu, hoặc mở **Nhắc nợ** trong menu/chi tiết hợp đồng.
+2. Form lấy số di động từ hồ sơ khách của hợp đồng, tự điền khách, mã hợp đồng, cơ sở, số còn thiếu và thông tin tài khoản đúng cơ sở. Có thể sửa nội dung trước khi gửi. Muốn đổi số thì cập nhật hồ sơ khách.
+3. Hợp đồng thuê sở hữu chỉ nhắc phần đã đến hạn; không nhắc khoản của kỳ tương lai. Hợp đồng nháp/hủy/đã thu đủ không gửi được.
+4. Nhấn **Gửi Zalo**. Server gửi `application/x-www-form-urlencoded` với đúng hai trường `phone`, `message` như form HTML được cung cấp. URL webhook chỉ lưu phía server.
+5. Lịch sử lưu nội dung, số điện thoại, số tiền tại thời điểm gửi, người gửi, cơ sở và kết quả. **Webhook đã tiếp nhận** chưa xác nhận tin đã tới khách hoặc được đọc; cần đối chiếu tại hệ thống gửi Zalo.
+6. Mỗi lần gửi dùng UUID chống lặp. Cùng UUID không gọi webhook lại, kể cả timeout; hai lần gửi mới cho cùng hợp đồng cách nhau ít nhất 60 giây nếu lần trước đang xử lý/được tiếp nhận/chưa xác định. Khi mạng lỗi, kiểm tra lịch sử và Zalo trước khi tạo lần mới.
+
+Nhân viên có quyền lập hợp đồng hoặc xác nhận thu/chi, đồng thời có quyền xem hợp đồng, được gửi nhắc. Lịch sử và hợp đồng được giới hạn bằng API và PostgreSQL RLS theo cơ sở.
+
+Migration bổ sung: `docs/sql/2026-10-17-debt-reminders.sql`. Bảng `management_zalo_settings` chỉ cho tài khoản database owner phía server đọc; lưu URL webhook lấy từ form bằng truy vấn tham số, không ghi URL vào Git/log. Có thể đặt biến server `ZALO_REMINDER_WEBHOOK_URL` để ghi đè cấu hình DB. Tính năng không cần đổi biến môi trường Vercel khi đã có cấu hình trong DB.
 
 ## Test thanh toán
 
@@ -72,6 +95,7 @@ npm.cmd run test:login
 npm.cmd run test:account-scope
 npm.cmd run test:scoped-pool
 npm.cmd run test:sepay
+npm.cmd run test:debt-reminders
 npm.cmd run test:vehicle-transfers
 npm.cmd run lint
 npm.cmd run typecheck

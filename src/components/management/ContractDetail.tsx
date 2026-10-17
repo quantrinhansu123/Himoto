@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
-import { BatteryCharging, Bike, CalendarPlus, Eye, LoaderCircle, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
+import { BatteryCharging, Bike, CalendarPlus, Eye, LoaderCircle, MessageCircle, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { CashflowColumns, cashflowTotals } from './CashflowColumns';
 import { useManagement } from './ManagementProvider';
@@ -12,6 +12,7 @@ import { paymentMethodLabel, type PaymentPurpose } from '@/lib/management/contra
 import { ManagementRow } from '@/lib/management/types';
 import { MANAGEMENT_CONFIG, optionLabel } from '@/lib/management/config';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
+import { isRemindableContract } from '@/lib/management/debt-reminders';
 import { MobileDetailsCard } from './MobileDetailsCard';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS } from '@/lib/management/record-photos';
@@ -46,7 +47,7 @@ function rentalDays(start: unknown, end: unknown) {
 
 export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
 
-export function ContractDetail({ row, onClose, onQr,onPrint, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onPrint: () => void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
+export function ContractDetail({ row, onClose, onQr,onReminder,onPrint, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
   const { dataset, source, can } = useManagement();
   const [section, setSection] = useState<DetailSection>('vehicle');
   const [viewingVersion, setViewingVersion] = useState('');
@@ -230,6 +231,7 @@ export function ContractDetail({ row, onClose, onQr,onPrint, onPrintVersion, onP
     </>}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
+      {onReminder&&isRemindableContract(row)&&<button type="button" className="mg-button" onClick={onReminder}><MessageCircle size={15}/>Nhắc nợ</button>}
       {canOperateRental && <>
         {can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15} />Trả xe</button>}
         {can('contracts.renew')&&onRenew&&!row.billing_plan_json && <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>}

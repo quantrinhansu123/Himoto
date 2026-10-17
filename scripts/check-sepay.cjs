@@ -46,7 +46,7 @@ async function main(){
       CREATE TEMP TABLE qa_sepay_management_sepay_events(id bigint GENERATED ALWAYS AS IDENTITY,external_id text,mode text,fingerprint text,transfer_type text,amount bigint,account_number text,content text,reference_code text,transaction_at timestamptz,status text,order_id bigint,store_id bigint,transaction_id bigint,message text,UNIQUE(mode,external_id)) ON COMMIT DROP`);
     await c.query("INSERT INTO qa_sepay_users(id,name,email,password,role_id,status) VALUES(143,'SePay QA','qa-sepay@example.invalid','unused',6,'active')");
     await c.query("INSERT INTO qa_sepay_orders(id,contract_number,order_status,store_id,total,pid,created_at,contract_issued_at) VALUES(1,'QA-1','renting',23,'1000',0,'2026-01-01T00:00:00Z','2026-01-01 07:00:00')");
-    await c.query("INSERT INTO qa_sepay_banks(id,store_id,bank_name,account_number,owner_name,account_type,owner_type,status) VALUES(3,0,'VPBank','000000000000','QA ONLY',1,'company','Active')");
+    await c.query("INSERT INTO qa_sepay_banks(id,store_id,bank_name,account_number,owner_name,account_type,owner_type,status) VALUES(3,23,'VPBank','000000000000','QA ONLY',1,'company','Active')");
     const first=await deliver();assert.equal(first.status,'matched');assert.equal(await paid(),300);assert.equal(await count('transactions'),1);
     const replay=await deliver();assert.equal(replay.replayed,true);assert.equal(await count('transactions'),1);
     await assert.rejects(()=>deliver({transferAmount:301}),error=>error.status===409);assert.equal(await paid(),300);
@@ -69,6 +69,24 @@ async function main(){
     assert(receipts.every(row=>row.type==='in'&&Number(row.user_id)===143&&Number(row.bank_id)===3&&row.note==='Thanh toán cho hợp đồng QA-1'));
     assert.equal((await c.query('SELECT total FROM qa_sepay_orders WHERE id=1')).rows[0].total,'1000');
     checks.push('Failures roll back provider event, income and paid update together; retry posts once with the system actor and standardized memo');
+    await c.query("INSERT INTO qa_sepay_orders(id,contract_number,order_status,store_id,total,pid,created_at,contract_issued_at) VALUES(2,'QA-2','renting',31,'1000',0,'2026-01-01T00:00:00Z','2026-01-01 07:00:00')");
+    await c.query("INSERT INTO qa_sepay_banks(id,store_id,bank_name,account_number,owner_name,account_type,owner_type,status) VALUES(4,31,'Vietcombank','000000000002','BRANCH B QA',1,'unknown','Active'),(5,0,'VPBank','000000000003','SHARED QA',1,'company','Active')");
+    const firstQr=await readContractQr(proxy,1),secondQr=await readContractQr(proxy,2);
+    assert.equal(firstQr.bank.account_number,raw.accountNumber);assert.equal(firstQr.bank_id,3);assert.deepEqual(firstQr.accounts.map(a=>a.id),[3]);
+    assert.equal(secondQr.bank.account_number,'000000000002');assert.equal(secondQr.bank_id,4);assert.equal(new URL(secondQr.qr_url).searchParams.get('acc'),'000000000002');
+    await assert.rejects(()=>readContractQr(proxy,1,undefined,4),e=>e.status===409);await assert.rejects(()=>readContractQr(proxy,1,undefined,5),e=>e.status===409);
+    assert.equal((await deliver({id:9,accountNumber:'000000000002',gateway:'Vietcombank',transferAmount:100})).status,'review');assert.equal(await paid(),600);
+    const branchPayment=await deliver({id:10,accountNumber:'000000000002',gateway:'Vietcombank',content:'Thanh toán cho hợp đồng QA-2',transferAmount:100});assert.equal(branchPayment.status,'matched');
+    assert.equal(Number((await c.query('SELECT bank_id FROM qa_sepay_transactions WHERE order_id=2')).rows[0].bank_id),4);
+    assert.equal((await c.query('SELECT bank_owner_type FROM qa_sepay_transactions WHERE order_id=2')).rows[0].bank_owner_type,'unknown');
+    checks.push('Each contract QR uses its own branch account; shared and foreign branch accounts are excluded; incoming money on the wrong branch is held for review, and correct branch receipts use the actual bank ID');
+    await c.query("INSERT INTO qa_sepay_banks(id,store_id,bank_name,account_number,owner_name,account_type,owner_type,status) VALUES(6,23,'VPBank','000000000004','ORDINARY QA',1,'unknown','Active')");
+    assert.equal((await readContractQr(proxy,1)).bank_id,6);assert.equal((await readContractQr(proxy,1,undefined,3)).bank_id,3);
+    await c.query("INSERT INTO qa_sepay_banks(id,store_id,bank_name,account_number,owner_name,account_type,owner_type,status) VALUES(7,23,'VPBank','000000000005','SECOND ORDINARY QA',1,'unknown','Active')");
+    assert.equal((await readContractQr(proxy,1)).configured,false);assert.equal((await readContractQr(proxy,1,undefined,7)).bank_id,7);
+    await c.query("UPDATE qa_sepay_banks SET status='Inactive' WHERE store_id=31");assert.equal((await readContractQr(proxy,2)).configured,false);
+    assert.equal((await deliver({id:10,accountNumber:'000000000002',gateway:'Vietcombank',content:'Thanh toán cho hợp đồng QA-2',transferAmount:100})).replayed,true);
+    checks.push('Ordinary branch account is preferred; company account remains selectable; ambiguous or missing active accounts never fall back to another branch or shared environment configuration');
     await c.query('ROLLBACK');
   }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
   console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0},null,2));

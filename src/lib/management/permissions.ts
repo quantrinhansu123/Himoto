@@ -43,3 +43,7 @@ export function canRecordContractPayment(account: PermissionAccount | null | und
   if (!account) return false;
   return hasPermission(account,'finance.write');
 }
+
+export function canSendDebtReminder(account:PermissionAccount|null|undefined) {
+  return hasPermission(account,'contracts.read')&&(hasPermission(account,'contracts.draft')||hasPermission(account,'finance.write'));
+}

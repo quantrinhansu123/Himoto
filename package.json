@@ -31,6 +31,7 @@
     "test:account-scope": "node scripts/check-account-scope.cjs",
     "test:scoped-pool": "node scripts/check-scoped-pool.cjs",
     "test:sepay": "node scripts/check-sepay.cjs",
+    "test:debt-reminders": "node scripts/check-debt-reminders.cjs",
     "test:cashbook": "node scripts/check-cashbook-data.cjs",
     "test:cashbook-pagination": "node scripts/check-cashbook-pagination.cjs",
     "test:customer-import": "node scripts/check-customer-import.cjs",
