@@ -4,7 +4,7 @@ import type { PoolClient } from 'pg';
 import { matchingGpsVehicles,type GpsObservation,type GpsProvider } from '@/lib/management/gps';
 import { ownerDatabase } from './himoto-database';
 import { openIntegrationSecret,sealIntegrationSecret } from './integration-secrets';
-import { GpsProviderError,loginGps,readGpsDevices,type GpsSession } from './gps-providers';
+import { GpsProviderError,loginGps,readGpsDevices,shouldRefreshGpsSession,type GpsSession } from './gps-providers';
 
 type Database=Pick<PoolClient,'query'>;
 export async function persistGpsObservations(client:Database,provider:GpsProvider,observations:GpsObservation[],accountId:string|null=null) {
@@ -81,7 +81,7 @@ export async function syncGpsAccounts() {
       let observations:GpsObservation[];
       try {observations=await readGpsDevices(account.provider,session);}
       catch(error){
-        if(!(error instanceof GpsProviderError)||!/^PROTRACK_READ_(10002|10003|10010|10011|10012|INVALID)$|^IOPGPS_READ_INVALID$/.test(error.code))throw error;
+        if(!shouldRefreshGpsSession(error))throw error;
         session=await loginGps(account.provider,account.username,credentials.password);
         await remember();
         observations=await readGpsDevices(account.provider,session);

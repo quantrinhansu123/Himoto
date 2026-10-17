@@ -14,6 +14,7 @@ const checks=[];
 async function main(){
   const now=Date.now(),raw={imei:'QA-GPS-1',devicename:'29B1-123.45',carnumber:'',hearttime:now,gpstime:now,lat:21,lng:105,speed:30,accstatus:1};
   assert.equal(shared.GPS_POLL_INTERVAL_MS,5000);
+  assert(providers.shouldRefreshGpsSession(new providers.GpsProviderError('HTTP_401')));assert(providers.shouldRefreshGpsSession(new providers.GpsProviderError('INVALID_RESPONSE')));assert(!providers.shouldRefreshGpsSession(new providers.GpsProviderError('HTTP_429')));assert(!providers.shouldRefreshGpsSession(new providers.GpsProviderError('PROTRACK_READ_10009')));
   assert.equal(providers.normalizeProtrackDevice(raw,now).state,'online');assert.equal(providers.normalizeProtrackDevice({...raw,speed:0},now).state,'stopped');assert.equal(providers.normalizeProtrackDevice({...raw,hearttime:now-360000},now).state,'offline');assert.equal(providers.normalizeProtrackDevice({...raw,block:true},now).state,'warning');
   assert.equal(providers.normalizeIopDevice({imei:'QA',deviceStatusBean:{status:1,speed:0}}).state,'stopped');assert.equal(providers.normalizeIopDevice({imei:'QA',deviceStatusBean:{status:0,speed:30}}).state,'offline');assert.equal(providers.normalizeIopDevice({imei:'QA'}).state,'warning');
   assert.equal(providers.normalizeProtrackDevice({...raw,gpstime:1e100,hearttime:'invalid'},now).recorded_at,null);

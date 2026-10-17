@@ -5,6 +5,9 @@ import type { GpsObservation,GpsProvider,GpsState } from '@/lib/management/gps';
 type Json=Record<string,unknown>;
 export interface GpsSession {token:string;accountId:string}
 export class GpsProviderError extends Error {constructor(public code:string){super(`Không đọc được dữ liệu GPS (${code}).`);}}
+export function shouldRefreshGpsSession(error:unknown) {
+  return error instanceof GpsProviderError&&/^(HTTP_401|INVALID_RESPONSE|PROTRACK_READ_(10002|10003|10010|10011|10012|INVALID)|IOPGPS_READ_INVALID)$/.test(error.code);
+}
 const agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36';
 const md5=(value:string)=>createHash('md5').update(value).digest('hex');
 const iso=(value:unknown)=>{const n=Number(value);if(!Number.isFinite(n)||n<=0)return null;const date=new Date(n<1e12?n*1000:n);return Number.isFinite(date.getTime())?date.toISOString():null;};
