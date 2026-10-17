@@ -1,5 +1,6 @@
 export type GpsProvider='protrack'|'iopgps';
 export type GpsState='online'|'stopped'|'offline'|'warning';
+export const GPS_POLL_INTERVAL_MS=5000;
 export const GPS_STATE_LABELS:Record<GpsState|string,string>={online:'ON · Đang di chuyển',stopped:'Dừng',offline:'OFF · Mất kết nối',warning:'Cần kiểm tra',stale:'Chưa cập nhật',none:'Chưa gắn GPS'};
 export interface GpsObservation {
   external_id:string;name:string;license:string;state:GpsState;provider_status:string;

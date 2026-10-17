@@ -12,4 +12,4 @@ const quoted=value=>String(value).replace(/"/g,'""');
 const command=`"${process.execPath}" "${path.join(project,'scripts','run-integration-sync.cjs')}"`;
 const vbs=`Set runner = CreateObject("WScript.Shell")\r\nrunner.CurrentDirectory = "${quoted(project)}"\r\nrunner.Run "${quoted(command)}", 0, False\r\n`;
 fs.writeFileSync(startup,vbs);
-console.log(JSON.stringify({startupInstalled:true,startupFile:startup,intervalSeconds:30,credentialsInStartupFile:false}));
+console.log(JSON.stringify({startupInstalled:true,startupFile:startup,intervalSeconds:5,credentialsInStartupFile:false}));

@@ -5,13 +5,14 @@ import { sealIntegrationSecret } from './integration-secrets';
 export class IntegrationSettingsError extends Error {constructor(message:string,public status=400){super(message);}}
 const text=(value:unknown,max:number)=>typeof value==='string'&&value.trim().length<=max?value.trim():'';
 export async function readIntegrationSettings() {
-  const [accounts,bot,groups,notifications]=await Promise.all([
+  const [accounts,bot,groups,notifications,scheduler]=await Promise.all([
     ownerDatabase.query('SELECT id,provider,label,username,enabled,last_attempt_at,last_success_at,last_error,device_count FROM himoto.management_gps_accounts ORDER BY provider,label'),
     ownerDatabase.query('SELECT bot_cipher IS NOT NULL AS configured FROM himoto.management_telegram_settings WHERE singleton=true'),
     ownerDatabase.query('SELECT s.id AS store_id,s.store_name,g.chat_id,g.thread_id,COALESCE(g.enabled,false) AS enabled FROM himoto.stores s LEFT JOIN himoto.management_store_telegram g ON g.store_id=s.id ORDER BY s.id'),
     ownerDatabase.query("SELECT id,order_id,event_type,status,created_at,sent_at,error_code,payload->>'code' AS code,jsonb_array_length(photo_slots) AS photos FROM himoto.management_contract_notifications ORDER BY created_at DESC LIMIT 30"),
+    ownerDatabase.query('SELECT enabled,last_dispatched_at,last_response_at,last_http_status,last_error_code FROM himoto.management_integration_schedule WHERE singleton=true'),
   ]);
-  return {accounts:accounts.rows,telegram_configured:bot.rows[0]?.configured===true,groups:groups.rows,notifications:notifications.rows};
+  return {accounts:accounts.rows,telegram_configured:bot.rows[0]?.configured===true,groups:groups.rows,notifications:notifications.rows,scheduler:scheduler.rows[0]||null};
 }
 export async function saveIntegrationSettings(raw:unknown) {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new IntegrationSettingsError('Cấu hình không hợp lệ.');

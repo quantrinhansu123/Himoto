@@ -70,10 +70,11 @@ const listQueries: Record<string, QueryConfig> = {
           ) b
           LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
           LEFT JOIN LATERAL (
-            SELECT true AS has_device,CASE WHEN d.sync_received_at<now()-interval '10 minutes' THEN 'stale' ELSE COALESCE(d.management_status,p.normalized_status) END AS normalized_status,
-                   d.last_latitude AS latitude,d.last_longitude AS longitude,d.sync_received_at AS synced_at,d.provider,
+            SELECT true AS has_device,CASE WHEN COALESCE(a.last_success_at,d.sync_received_at)<now()-interval '10 minutes' THEN 'stale' ELSE COALESCE(d.management_status,p.normalized_status) END AS normalized_status,
+                   d.last_latitude AS latitude,d.last_longitude AS longitude,COALESCE(a.last_success_at,d.sync_received_at) AS synced_at,d.provider,
                    COALESCE(p.provider_recorded_at, p.received_at, p.created_at, d.last_sync_at) AS last_at
             FROM himoto.gps_devices d
+            LEFT JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id
             LEFT JOIN LATERAL (
               SELECT normalized_status, provider_recorded_at, received_at, created_at
               FROM himoto.gps_positions

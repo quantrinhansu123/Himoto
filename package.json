@@ -33,6 +33,7 @@
     "test:sepay": "node scripts/check-sepay.cjs",
     "test:debt-reminders": "node scripts/check-debt-reminders.cjs",
     "test:gps-contract-integrations": "node scripts/check-gps-contract-integrations.cjs",
+    "test:cloud-integration-sync": "node scripts/check-cloud-integration-sync.cjs",
     "test:cashbook": "node scripts/check-cashbook-data.cjs",
     "test:cashbook-pagination": "node scripts/check-cashbook-pagination.cjs",
     "test:customer-import": "node scripts/check-customer-import.cjs",

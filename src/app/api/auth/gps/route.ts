@@ -8,10 +8,11 @@ export const GET=withAccessRequest(async(request:NextRequest)=>{
   const store=request.nextUrl.searchParams.get('store')||'all';
   if(store!=='all'&&!/^[1-9]\d{0,14}$/.test(store))return NextResponse.json({status:'error',message:'Cơ sở không hợp lệ.'},{status:400});
   try{
-    const rows=await himotoPool.query(`SELECT d.id,d.vehicle_id,d.provider,d.external_device_id,d.provider_device_name,d.mapping_status,d.management_status,d.sync_received_at,d.heartbeat_at,d.last_latitude,d.last_longitude,d.last_speed,
+    const rows=await himotoPool.query(`SELECT d.id,d.vehicle_id,d.provider,d.external_device_id,d.provider_device_name,d.mapping_status,d.management_status,COALESCE(a.last_success_at,d.sync_received_at) AS sync_received_at,d.heartbeat_at,d.last_latitude,d.last_longitude,d.last_speed,
       v.license,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name
-      FROM himoto.gps_devices d LEFT JOIN himoto.vehicles v ON v.id=d.vehicle_id LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
-      WHERE ($1::bigint IS NULL OR COALESCE(v.current_store_id,v.store_id)=$1) ORDER BY d.sync_received_at DESC NULLS LAST,d.id DESC LIMIT 2000`,[store==='all'?null:Number(store)]);
+      FROM himoto.gps_devices d LEFT JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id
+      LEFT JOIN himoto.vehicles v ON v.id=d.vehicle_id LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
+      WHERE ($1::bigint IS NULL OR COALESCE(v.current_store_id,v.store_id)=$1) ORDER BY COALESCE(a.last_success_at,d.sync_received_at) DESC NULLS LAST,d.id DESC LIMIT 2000`,[store==='all'?null:Number(store)]);
     const events=await himotoPool.query(`SELECT e.id,e.vehicle_id,e.from_status,e.to_status,e.observed_at,v.license FROM himoto.management_gps_status_events e JOIN himoto.vehicles v ON v.id=e.vehicle_id
       WHERE ($1::bigint IS NULL OR COALESCE(v.current_store_id,v.store_id)=$1) ORDER BY e.id DESC LIMIT 50`,[store==='all'?null:Number(store)]);
     return NextResponse.json({status:'success',data:{devices:rows.rows.map(row=>({...row,id:Number(row.id),vehicle_id:row.vehicle_id===null?null:Number(row.vehicle_id),store_id:row.store_id===null?null:Number(row.store_id),last_latitude:row.last_latitude===null?null:Number(row.last_latitude),last_longitude:row.last_longitude===null?null:Number(row.last_longitude),last_speed:row.last_speed===null?null:Number(row.last_speed)})),events:events.rows}},{headers:{'Cache-Control':'no-store'}});

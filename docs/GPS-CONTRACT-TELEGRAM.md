@@ -12,18 +12,33 @@ Không cần extension. Server đọc dữ liệu bằng các endpoint mà trang
 
 ## Đồng bộ tự động
 
-Khi phần mềm đang mở và tab hiển thị, trình duyệt yêu cầu đồng bộ mỗi 30 giây. Server giới hạn mỗi tài khoản một lượt bắt đầu trong 25 giây.
+Nhịp mục tiêu là **5 giây/lượt**. Trạng thái/vị trí mới vẫn phụ thuộc chu kỳ truyền của thiết bị, mạng và nhà cung cấp; không phải cam kết trễ tối đa 5 giây. Nếu lượt trước chưa xong, lượt mới chờ để tránh chồng yêu cầu. Lỗi nhà cung cấp được giãn lần thử lại ít nhất 30 giây. Dữ liệu không thay đổi không bị ghi lại mỗi lượt; lịch sử điểm vị trí giữ nhịp tối đa khoảng 30 giây, còn vị trí hiện tại và các lần đổi trạng thái quan sát được cập nhật ở nhịp 5 giây.
 
-Để tiếp tục đồng bộ khi đóng trình duyệt trên máy Windows hiện tại:
+**Lịch chính chạy trên Supabase Cron**, gọi API xử lý trên Vercel mỗi 5 giây qua `pg_net`; tiếp tục chạy khi đóng trình duyệt, tắt máy hoặc đăng xuất Windows. Khóa gọi API được lưu trong Supabase Vault. Chỉ có một yêu cầu cloud đang chờ tại một thời điểm; lỗi xác thực tự tắt lịch, lỗi mạng/nhà cung cấp giãn lần thử để tránh dồn tải. Lịch sử job của chính tích hợp này được dọn sau 1 ngày; không xóa lịch sử GPS/hợp đồng.
+
+Quản trị xem trạng thái lịch, HTTP gần nhất và từng tài khoản tại **Tích hợp GPS & Telegram**. Người triển khai dùng các lệnh sau; không in token vào log:
+
+```powershell
+node scripts/configure-cloud-integration-sync.cjs --prepare
+node scripts/configure-cloud-integration-sync.cjs --enable
+node scripts/configure-cloud-integration-sync.cjs --status
+node scripts/configure-cloud-integration-sync.cjs --disable
+```
+
+`--prepare` áp dụng hai migration bổ sung và chuẩn bị lịch ở trạng thái tắt; `--enable` bật lịch sau khi ứng dụng tương ứng đã triển khai. `--disable` dừng lịch cloud. Supabase và Vercel phải hoạt động bình thường; tần suất 5 giây tăng số lượt gọi API so với 30 giây.
+
+Khi trang GPS hoặc danh sách xe đang hiển thị, trình duyệt làm mới mỗi 5 giây và có thể yêu cầu đồng bộ; server chống trùng với lượt cloud. Nút **Đồng bộ ngay** vẫn dùng được.
+
+Worker Windows cũ chỉ còn là phương án dự phòng nếu chủ động tắt lịch cloud. Để cài lại phương án dự phòng:
 
 ```powershell
 node scripts/install-integration-worker.cjs
 Start-Process -FilePath (Get-Command node).Source -ArgumentList 'scripts/run-integration-sync.cjs' -WorkingDirectory (Get-Location).Path -WindowStyle Hidden
 ```
 
-Trình cài tạo `Himoto-integrations.vbs` trong thư mục Startup của người dùng Windows. Tiến trình chỉ gọi `/api/cron/integrations` bằng khóa riêng cho đồng bộ, không lưu mật khẩu GPS tại Startup. Cấu hình và kết quả gần nhất ở `.backups/integration-worker/`, được Git bỏ qua. Khóa không được in ra log.
+Trình cài dự phòng tạo `Himoto-integrations.vbs` trong thư mục Startup của người dùng Windows. Tiến trình chỉ gọi `/api/cron/integrations` bằng khóa riêng cho đồng bộ, không lưu mật khẩu GPS tại Startup. Cấu hình và kết quả gần nhất ở `.backups/integration-worker/`, được Git bỏ qua. Khóa không được in ra log.
 
-**Máy phải bật và đăng nhập Windows** để tiến trình nền chạy; sẽ chạy lại khi đăng nhập Windows. Nếu chuyển sang máy khác, cài trình đồng bộ ở máy đó hoặc dùng bộ lập lịch server gọi endpoint với Bearer token tương ứng. Tránh chạy nhiều tiến trình; worker có khóa PID chống mở trùng.
+**Chỉ phương án Windows dự phòng** cần máy bật và đăng nhập; lịch Supabase không phụ thuộc máy này. Sau khi nghiệm thu lịch cloud, dừng đúng tiến trình Windows và chuyển tệp Startup vào thư mục sao lưu để không chạy hai bộ hẹn giờ.
 
 Gỡ tự chạy: xóa đúng tệp `Himoto-integrations.vbs` trong Startup. Dừng tiến trình Node có PID trong `.backups/integration-worker/worker.lock` sau khi đối chiếu đường dẫn tiến trình. Không dừng toàn bộ Node đang chạy.
 
@@ -49,7 +64,7 @@ Mỗi giao dịch chỉ tạo một thông báo. Chưa có bot/nhóm thì hiện
 
 ## Triển khai và kiểm tra
 
-- Áp dụng `docs/sql/2026-10-17-gps-contract-telegram.sql` trước bản ứng dụng này. Migration có thể chạy lại, bổ sung bảng tích hợp và cột GPS; không sửa tiền hay trạng thái thuê.
+- Áp dụng `docs/sql/2026-10-17-gps-contract-telegram.sql`, sau đó `2026-10-17-gps-five-second-poll.sql` và `2026-10-17-cloud-integration-scheduler.sql` trước bản ứng dụng này. Hai migration sau được áp dụng bởi lệnh `--prepare`. Migration có thể chạy lại; không sửa tiền hay trạng thái thuê.
 - Cần `DATABASE_URL` và `MANAGEMENT_SESSION_SECRET` tối thiểu 32 ký tự. Không đổi khóa phiên mà chưa có kế hoạch mã hóa lại thông tin tích hợp; sau khi đổi cần nhập lại mật khẩu GPS/bot token và chạy lại trình cài worker.
-- Kiểm tra: `npm run test:gps-contract-integrations`, `npm run test:photo-ocr`, `npm run test:account-scope`, `npm run typecheck`, `npm run lint`, `npm run build`.
+- Kiểm tra: `npm run test:gps-contract-integrations`, `npm run test:cloud-integration-sync`, `npm run test:photo-ocr`, `npm run test:account-scope`, `npm run typecheck`, `npm run lint`, `npm run build`.
 - Kiểm tra GPS/nhắc Telegram dùng schema QA rollback và API giả cho Telegram; không tạo hợp đồng thật hoặc chuyển tiền để thử.

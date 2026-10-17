@@ -15,7 +15,7 @@ try{fs.writeFileSync(lock,String(process.pid),{flag:'wx'});}catch{process.exit(0
 process.on('exit',()=>{try{if(fs.readFileSync(lock,'utf8')===String(process.pid))fs.unlinkSync(lock);}catch{}});
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>process.exit(0));
 async function tick(){
-  const state={checkedAt:new Date().toISOString(),ok:false};
+  const started=Date.now(),state={checkedAt:new Date().toISOString(),ok:false};
   try{
     const response=await fetch(config.url,{method:'POST',headers:{Authorization:'Bearer '+config.token},signal:AbortSignal.timeout(55000),redirect:'error',cache:'no-store'});
     state.httpStatus=response.status;
@@ -23,6 +23,6 @@ async function tick(){
     if(state.ok){state.gps=body.gps;state.telegram=body.telegram;}
   }catch(error){state.error=error.name;}
   fs.writeFileSync(path.join(dir,'last-result.json'),JSON.stringify(state,null,2));
-  setTimeout(()=>void tick(),30000);
+  setTimeout(()=>void tick(),state.ok?Math.max(1000,5000-(Date.now()-started)):30000);
 }
 void tick();
