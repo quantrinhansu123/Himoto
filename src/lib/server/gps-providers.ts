@@ -40,7 +40,7 @@ export function normalizeProtrackDevice(raw:Json,serverTime=Date.now()):GpsObser
   const heartbeat=iso(raw.hearttime),speed=number(raw.speed);
   const connected=heartbeat!==null&&serverTime-Date.parse(heartbeat)<=5*60_000;
   const state:GpsState=raw.block===true||raw.validate===false?'warning':!connected?'offline':speed===null?'warning':speed>0?'online':'stopped';
-  return {external_id:String(raw.imei||raw.deviceid||''),name:String(raw.devicename||''),license:String(raw.carnumber||''),state,
+  return {external_id:String(raw.imei||raw.deviceid||''),provider_device_id:String(raw.deviceid||''),name:String(raw.devicename||''),license:String(raw.carnumber||''),state,
     provider_status:raw.block===true?'blocked':raw.validate===false?'invalid':!heartbeat?'never_online':connected?'connected':'offline',
     latitude:coordinate(raw.lat,90),longitude:coordinate(raw.lng,180),speed,ignition:Number(raw.accstatus)===-1?null:Number(raw.accstatus)===1,
     recorded_at:iso(raw.gpstime),heartbeat_at:heartbeat};

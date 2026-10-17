@@ -29,6 +29,29 @@ node scripts/configure-cloud-integration-sync.cjs --disable
 
 Khi trang GPS hoặc danh sách xe đang hiển thị, trình duyệt làm mới mỗi 5 giây và có thể yêu cầu đồng bộ; server chống trùng với lượt cloud. Nút **Đồng bộ ngay** vẫn dùng được.
 
+## Nhật ký sự kiện và đọc bù
+
+- Luồng 5 giây lấy trạng thái hiện tại. Một worker riêng chạy bằng `after()` sau phản hồi HTTP để đọc lịch sử chuyển động và cảnh báo theo từng thiết bị; không kéo dài lượt lấy trạng thái hiện tại.
+- Mỗi luồng có mốc đọc riêng, ban đầu từ một giờ trước khi bật. Mỗi lần đọc tối đa 30 phút, chồng lại hai phút để lấy bản ghi đến trễ. Chỉ tiến mốc sau khi toàn bộ dữ liệu của khoảng đó đã được kiểm tra và lưu thành công; lỗi hoặc dữ liệu thiếu trang giữ nguyên mốc để thử lại. Lượt quét lịch sử toàn bộ thiết bị hoàn thành dần, không cam kết trong 5 giây.
+- Protrack dùng ID thiết bị nội bộ khác IMEI. Bộ đọc lưu riêng ID này từ danh sách giám sát đã xác thực. API công khai có thể chưa được cấp quyền; bộ đọc lịch sử web chỉ dùng quyền đọc sẵn có của tài khoản, báo lỗi khi nhà cung cấp từ chối.
+- IOPGPS có webhook cho bản ghi sự kiện. Endpoint HTTPS riêng từng tài khoản kiểm tra khóa 256 bit được mã hóa trên server, kiểm tra thiết bị thuộc tài khoản rồi mới ghi nhật ký. Khóa không trả về giao diện. Bản ghi thiết bị chưa đối chiếu được được giữ chờ, không tự gán xe.
+- Khi cấu hình IOPGPS, tạo bảy quy tắc riêng cho Moving, Online, Offline timeout, Ignition on/off, Running và Stop Moving. Mỗi quy tắc chỉ gửi webhook, không gửi lệnh điều khiển xe, email hay thông báo ứng dụng. Tên quy tắc do HIMOTO quản lý giúp chạy cấu hình lại không tạo trùng.
+- Đọc bù cả nhật ký quy tắc IOPGPS để khôi phục callback bị gián đoạn; dùng cùng mã sự kiện để chống ghi lại khi webhook đến sau. Lịch sử chuyển động/cảnh báo cũng chống lặp khi đọc chồng khoảng thời gian. Nhật ký cũ không ghi đè vị trí, trạng thái GPS hiện tại, trạng thái thuê hay tiền hợp đồng.
+- **Lịch sử đổi trạng thái gần nhất** hiển thị thời điểm gốc và nguồn: **Lấy mẫu**, **Đọc bù lịch sử**, **Sự kiện trực tiếp**. Thiết bị kết nối trở lại không đồng nghĩa xe đang di chuyển; sự kiện khóa điện được ghi riêng.
+- Quản trị xem tiến độ, luồng lỗi/chậm và số sự kiện tại **Tích hợp GPS & Telegram → Nhật ký sự kiện GPS**. Chỉ có thể khôi phục dữ liệu nhà cung cấp thực sự đã lưu; dữ liệu đến trễ ngoài cửa sổ đọc chồng cần chạy đối chiếu khoảng lịch sử tương ứng, không tự suy đoán.
+
+Triển khai migration trước ứng dụng, không dùng lệnh `configure-cloud-integration-sync --prepare` để tránh tắt lịch đang chạy:
+
+```powershell
+node scripts/configure-gps-event-sync.cjs --prepare
+# Triển khai ứng dụng; chờ lượt đồng bộ mới ghi ID thiết bị nội bộ.
+node scripts/configure-gps-event-sync.cjs --enable-history
+node scripts/configure-gps-event-sync.cjs --configure-iop-webhooks
+node scripts/configure-gps-event-sync.cjs --status
+```
+
+Endpoint IOPGPS: `POST /api/webhooks/gps/iopgps/<account_id>`; khóa đi trong Bearer header hoặc tham số `key` trong URL cấu hình riêng của nhà cung cấp. Không đưa URL có khóa vào Git, log hay ảnh chụp. GET có khóa hợp lệ hỗ trợ kiểm tra endpoint. Sai khóa trả 401; JSON sai trả 400; dữ liệu chỉ được xác nhận sau khi lưu bền vững. Cấu hình webhook chỉ đánh dấu thành công sau khi kiểm tra lại các quy tắc tại IOPGPS. Chưa có giao thức push Protrack được xác nhận nên không bật webhook Protrack.
+
 Worker Windows cũ chỉ còn là phương án dự phòng nếu chủ động tắt lịch cloud. Để cài lại phương án dự phòng:
 
 ```powershell
@@ -51,12 +74,12 @@ Gỡ tự chạy: xóa đúng tệp `Himoto-integrations.vbs` trong Startup. D�
 
 ## Telegram — cấu hình khi có bot
 
-Hiện chưa cấu hình bot và nhóm; không gửi thông tin hợp đồng ra Telegram.
+Cấu hình bot và nhóm được lưu trong cơ sở dữ liệu, xem trạng thái thực tế tại trang **Tích hợp GPS & Telegram**.
 
 1. Tạo bot bằng BotFather, lấy token, thêm bot vào từng nhóm PGD và cho phép gửi tin/ảnh.
 2. Đăng nhập quản trị, mở **Tích hợp GPS & Telegram**.
 3. Nhập bot token, chat ID âm của nhóm tương ứng từng cơ sở, mã chủ đề nếu nhóm dùng topic; bật nhận tại cơ sở cần dùng rồi lưu. Để trống token khi muốn giữ token đã lưu.
-4. Sau cấu hình, nghiệm thu với một giao dịch được chủ cơ sở chọn: đúng nhóm, đúng hợp đồng và đủ ảnh. Chưa có bot nên chưa thể xác nhận giao tin Telegram thật.
+4. Sau cấu hình, nghiệm thu với một giao dịch được chủ cơ sở chọn: đúng nhóm, đúng hợp đồng và đủ ảnh. Phân biệt kết quả gửi tin/ảnh mẫu với nghiệm thu một giao dịch thật.
 
 Thông báo được ghi cùng transaction khi hoàn tất thuê, nhận cọc giữ xe, giao xe hoặc trả xe. Chỉ gửi sau khi transaction thành công. Cơ sở của hợp đồng quyết định nhóm nhận. Nội dung gồm mã hợp đồng, khách/SĐT, xe, tổng hợp đồng, người thực hiện, thời gian và bản chụp ảnh tại lúc hoàn tất.
 
@@ -66,5 +89,5 @@ Mỗi giao dịch chỉ tạo một thông báo. Chưa có bot/nhóm thì hiện
 
 - Áp dụng `docs/sql/2026-10-17-gps-contract-telegram.sql`, sau đó `2026-10-17-gps-five-second-poll.sql` và `2026-10-17-cloud-integration-scheduler.sql` trước bản ứng dụng này. Hai migration sau được áp dụng bởi lệnh `--prepare`. Migration có thể chạy lại; không sửa tiền hay trạng thái thuê.
 - Cần `DATABASE_URL` và `MANAGEMENT_SESSION_SECRET` tối thiểu 32 ký tự. Không đổi khóa phiên mà chưa có kế hoạch mã hóa lại thông tin tích hợp; sau khi đổi cần nhập lại mật khẩu GPS/bot token và chạy lại trình cài worker.
-- Kiểm tra: `npm run test:gps-contract-integrations`, `npm run test:cloud-integration-sync`, `npm run test:photo-ocr`, `npm run test:account-scope`, `npm run typecheck`, `npm run lint`, `npm run build`.
+- Kiểm tra: `npm run test:gps-events`, `npm run test:gps-contract-integrations`, `npm run test:cloud-integration-sync`, `npm run test:photo-ocr`, `npm run test:account-scope`, `npm run typecheck`, `npm run lint`, `npm run build`.
 - Kiểm tra GPS/nhắc Telegram dùng schema QA rollback và API giả cho Telegram; không tạo hợp đồng thật hoặc chuyển tiền để thử.
