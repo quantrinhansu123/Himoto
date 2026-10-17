@@ -5,8 +5,7 @@ import { openIntegrationSecret } from './integration-secrets';
 import { GpsProviderError,type GpsSession } from './gps-providers';
 import { readGpsAlarmHistory,readGpsMotionHistory } from './gps-history-providers';
 import { persistGpsMotionHistory,persistGpsProviderEvents } from './gps-event-records';
-import { processWaitingGpsWebhooks,receiveIopGpsWebhook } from './gps-webhooks';
-import { readIopManagedEventLog } from './gps-iop-webhook-registration';
+import { processWaitingGpsWebhooks } from './gps-webhooks';
 import type { GpsProvider } from '@/lib/management/gps';
 
 /** History uses a separate lease and runs after the live HTTP response. It never writes current vehicle/GPS state. */
@@ -22,21 +21,6 @@ export async function syncGpsEventHistory(limit=6,budgetMs=18000,database=ownerD
   };
   try {
     await processWaitingGpsWebhooks(database);
-    const channel=(await database.query(`UPDATE himoto.management_gps_event_channels c SET webhook_log_attempt_at=now()
-      FROM himoto.management_gps_accounts a WHERE c.account_id=a.id AND a.enabled AND a.provider='iopgps' AND c.webhook_enabled
-        AND a.session_expires_at>now()+interval '10 seconds' AND a.last_success_at>now()-interval '5 minutes'
-        AND (c.webhook_log_attempt_at IS NULL OR c.webhook_log_attempt_at<now()-interval '60 seconds')
-      RETURNING c.account_id,c.webhook_covered_until,a.session_cipher`)).rows;
-    for(const account of channel) {
-      try {
-        const covered=account.webhook_covered_until?new Date(account.webhook_covered_until).getTime():Date.now()-60_000;
-        const end=Math.min(covered+30*60_000,Date.now()-30_000),start=covered-120_000;
-        if(end<=start)continue;
-        const rows=await readIopManagedEventLog(account.account_id,openIntegrationSecret<GpsSession>(account.session_cipher),start,end,boundedFetch);
-        for(const row of rows){if(Date.now()>deadline-500)throw new GpsProviderError('HISTORY_BUDGET');await receiveIopGpsWebhook(account.account_id,row,database,'history');}
-        await database.query('UPDATE himoto.management_gps_event_channels SET webhook_covered_until=$2,webhook_log_success_at=now(),webhook_log_error=NULL WHERE account_id=$1',[account.account_id,new Date(end).toISOString()]);
-      }catch(error){const code=error instanceof Error&&/^[A-Z0-9_]+$/.test(error.message)?error.message:'IOPGPS_EVENT_LOG_FAILED';await database.query('UPDATE himoto.management_gps_event_channels SET webhook_log_error=$2 WHERE account_id=$1',[account.account_id,code]);}
-    }
     await database.query(`INSERT INTO himoto.management_gps_history_cursors(gps_device_id,stream,account_id,coverage_started_at,covered_until)
       SELECT d.id,x.stream,a.id,now()-interval '1 hour',now()-interval '1 hour'
       FROM himoto.gps_devices d JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id AND a.enabled
@@ -51,6 +35,9 @@ export async function syncGpsEventHistory(limit=6,budgetMs=18000,database=ownerD
         JOIN himoto.management_gps_event_channels s ON s.account_id=a.id
         WHERE c.next_attempt_at<=now() AND a.session_cipher IS NOT NULL AND a.session_expires_at>now()+interval '10 seconds'
           AND a.last_success_at>now()-interval '5 minutes'
+          AND (s.history_pause_until IS NULL OR s.history_pause_until<=now())
+          AND NOT EXISTS(SELECT 1 FROM himoto.management_gps_history_cursors recent
+            WHERE recent.account_id=c.account_id AND recent.stream=c.stream AND recent.last_attempt_at>now()-interval '5 seconds')
           AND (c.stream='motion' AND s.motion_enabled OR c.stream='alarms' AND s.alarms_enabled)
         ORDER BY c.covered_until,c.gps_device_id,c.stream FOR UPDATE OF c SKIP LOCKED LIMIT 1
       ), claimed AS (
@@ -74,11 +61,13 @@ export async function syncGpsEventHistory(limit=6,budgetMs=18000,database=ownerD
           await client.query(`UPDATE himoto.management_gps_history_cursors SET covered_until=GREATEST(covered_until,$3),last_success_at=now(),last_error=NULL,
             records_received=records_received+$4,next_attempt_at=CASE WHEN $3::timestamptz<now()-interval '2 minutes' THEN now() ELSE now()+interval '60 seconds' END
             WHERE gps_device_id=$1 AND stream=$2`,[deviceId,row.stream,new Date(end).toISOString(),values.length]);
+          await client.query("UPDATE himoto.management_gps_event_channels SET last_error=NULL,history_pause_until=NULL WHERE account_id=$1 AND last_error LIKE 'HISTORY_%'",[row.account_id]);
           await client.query('COMMIT');succeeded++;inserted+=added;
         }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
       }catch(error) {
         const code=error instanceof GpsProviderError?error.code:error instanceof Error&&/^GPS_|^HISTORY_/.test(error.message)?error.message:'HISTORY_READ_FAILED';
         await database.query("UPDATE himoto.management_gps_history_cursors SET last_error=$3,next_attempt_at=now()+interval '2 minutes' WHERE gps_device_id=$1 AND stream=$2",[deviceId,row.stream,code]);
+        if(/HTTP_429|10009/.test(code))await database.query("UPDATE himoto.management_gps_event_channels SET history_pause_until=now()+interval '60 seconds',last_error=$2 WHERE account_id=$1",[row.account_id,code]);
         if(/HTTP_429|10009|HISTORY_BUDGET/.test(code))break;
       }
     }

@@ -13,7 +13,7 @@ export async function readIntegrationSettings() {
     ownerDatabase.query('SELECT enabled,last_dispatched_at,last_response_at,last_http_status,last_error_code FROM himoto.management_integration_schedule WHERE singleton=true'),
     ownerDatabase.query(`SELECT a.id,a.provider,a.label,COALESCE(c.motion_enabled,false) AS motion_enabled,
       COALESCE(c.alarms_enabled,false) AS alarms_enabled,COALESCE(c.webhook_enabled,false) AS webhook_enabled,c.last_webhook_at,
-      COALESCE(c.webhook_log_error,c.last_error) AS last_error,c.webhook_covered_until,c.webhook_log_success_at
+      c.last_error
       FROM himoto.management_gps_accounts a LEFT JOIN himoto.management_gps_event_channels c ON c.account_id=a.id ORDER BY a.provider,a.label`),
     ownerDatabase.query(`SELECT count(*)::int AS streams,count(*) FILTER(WHERE last_success_at IS NOT NULL)::int AS completed_streams,
       count(*) FILTER(WHERE last_error IS NOT NULL)::int AS failed_streams,

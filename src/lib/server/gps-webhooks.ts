@@ -13,15 +13,18 @@ export async function validGpsWebhookKey(accountId:string,supplied:string|null,d
   return typeof secret.key==='string'&&secret.key.length===64&&timingSafeEqual(Buffer.from(secret.key),Buffer.from(supplied));
 }
 export async function processIopWebhookReceipt(database:GpsEventDatabase,accountId:string,record:IopWebhookRecord,source:'history'|'webhook'='webhook') {
+  // Provider endpoint inspection posts a vibration sample; retain it without
+  // creating a GPS transition or leaving an irrelevant unknown device queued.
+  const types=[...new Set(record.triggerConditions.map(condition=>condition.alarmType))];
+  if(types.length!==1)throw new Error('GPS_WEBHOOK_AMBIGUOUS');
+  const event=gpsAlarmEvent('iopgps',types[0],record.triggerTime,record.id);
+  if(!event){await database.query("UPDATE himoto.management_gps_webhook_receipts SET status='unsupported',processed_at=now() WHERE account_id=$1 AND event_id=$2",[accountId,record.id]);return {status:'unsupported',inserted:0};}
   const device=(await database.query(`SELECT d.id FROM himoto.management_gps_account_devices m
     JOIN himoto.gps_devices d ON d.id=m.gps_device_id WHERE m.account_id=$1 AND d.provider='iopgps' AND d.external_device_id=$2`,[accountId,record.imei])).rows[0];
   if(!device){await database.query("UPDATE himoto.management_gps_webhook_receipts SET status='awaiting_device',next_attempt_at=now()+interval '60 seconds' WHERE account_id=$1 AND event_id=$2",[accountId,record.id]);return {status:'awaiting_device',inserted:0};}
   // A rule is registered per alarm type, so no ambiguous OR condition can invent events.
-  const types=[...new Set(record.triggerConditions.map(condition=>condition.alarmType))];
-  if(types.length!==1)throw new Error('GPS_WEBHOOK_AMBIGUOUS');
-  const event=gpsAlarmEvent('iopgps',types[0],record.triggerTime,record.id);
-  const inserted=event?await persistGpsProviderEvents(database,Number(device.id),[event],source):0;
-  const status=event?'processed':'unsupported';
+  const inserted=await persistGpsProviderEvents(database,Number(device.id),[event],source);
+  const status='processed';
   await database.query('UPDATE himoto.management_gps_webhook_receipts SET status=$3,processed_at=now() WHERE account_id=$1 AND event_id=$2',[accountId,record.id,status]);
   return {status,inserted};
 }

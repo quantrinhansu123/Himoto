@@ -32,9 +32,12 @@ async function main(){
   checks.push('Verified provider formats, zero-speed stops, native Protrack IDs, inclusive pagination, missing/truncated response rejection and online-versus-motion semantics');
   const failQueries=[];let claimed=false;
   const fakeClient={async query(sql){return {rows:sql.includes('FOR UPDATE SKIP LOCKED LIMIT 20')?[]:[],rowCount:0};},release(){}};
-  const fakeDb={async connect(){return fakeClient;},async query(sql,params){failQueries.push({sql,params});if(sql.includes('SET lease_token=$1,lease_until='))return {rowCount:1,rows:[{}]};if(sql.startsWith('WITH candidate')){if(claimed)return {rows:[]};claimed=true;return {rows:[{gps_device_id:1,stream:'motion',covered_until:new Date(start),coverage_started_at:new Date(start),external_device_id:device.external_device_id,provider_device_id:'1234',provider:'iopgps',session_cipher:sealIntegrationSecret(session)}]};}return {rows:[],rowCount:1};}};
+  const fakeDb={async connect(){return fakeClient;},async query(sql,params){failQueries.push({sql,params});if(sql.includes('SET lease_token=$1,lease_until='))return {rowCount:1,rows:[{}]};if(sql.startsWith('WITH candidate')){if(claimed)return {rows:[]};claimed=true;return {rows:[{gps_device_id:1,account_id:'00000000-0000-4000-8000-000000000099',stream:'motion',covered_until:new Date(start),coverage_started_at:new Date(start),external_device_id:device.external_device_id,provider_device_id:'1234',provider:'iopgps',session_cipher:sealIntegrationSecret(session)}]};}return {rows:[],rowCount:1};}};
   const failed=await syncGpsEventHistory(1,5000,fakeDb,async()=>{throw Error('network lost');});assert.equal(failed.succeeded,0);
   assert.ok(failQueries.some(row=>row.sql.includes('SET last_error=$3')));assert.ok(!failQueries.some(row=>row.sql.includes('covered_until=GREATEST')));
+  claimed=false;failQueries.length=0;await syncGpsEventHistory(1,5000,fakeDb,async()=>new Response('',{status:429}));
+  assert.ok(failQueries.some(row=>row.sql.includes("history_pause_until=now()+interval '60 seconds'")));assert.ok(!failQueries.some(row=>row.sql.includes('covered_until=GREATEST')));
+  assert.equal(failQueries.find(row=>row.sql.includes("history_pause_until=now()+interval '60 seconds'")).params[0],'00000000-0000-4000-8000-000000000099');
   checks.push('A failed history request retains its checkpoint, records a retryable error and releases the worker lease');
   const managed=new Map(),configurationWrites=[];let savedRules={};
   const configureAccount='00000000-0000-4000-8000-000000000099';
@@ -88,6 +91,9 @@ async function main(){
     assert.equal((await hooks.processIopWebhookReceipt(db,account,record)).inserted,1);assert.equal((await hooks.processIopWebhookReceipt(db,account,record)).inserted,0);
     const unknown=makeRecord('qa-unknown','990000000000002');await c.query(`INSERT INTO ${schema}.management_gps_webhook_receipts(account_id,event_id,payload) VALUES($1,$2,$3)`,[account,unknown.id,JSON.stringify(unknown)]);
     assert.equal((await hooks.processIopWebhookReceipt(db,account,unknown)).status,'awaiting_device');
+    const probe=records.parseIopWebhookRecord({...unknown,id:'qa-inspection',triggerConditions:[{alarmType:3}]});
+    await c.query(`INSERT INTO ${schema}.management_gps_webhook_receipts(account_id,event_id,payload) VALUES($1,$2,$3)`,[account,probe.id,JSON.stringify(probe)]);
+    assert.equal((await hooks.processIopWebhookReceipt(db,account,probe)).status,'unsupported');
     assert.equal((await c.query(`SELECT count(*)::int AS count FROM ${schema}.management_gps_status_events WHERE gps_device_id=2`)).rows[0].count,0);
     await c.query('SAVEPOINT gps_event_rollback');await records.persistGpsProviderEvents(db,1,[records.gpsAlarmEvent('iopgps',44,(at+5000)/1000,'qa-rollback')],'webhook');await c.query('ROLLBACK TO SAVEPOINT gps_event_rollback');
     assert.equal((await c.query(`SELECT count(*)::int AS count FROM ${schema}.management_gps_status_events`)).rows[0].count,4);

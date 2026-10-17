@@ -33,7 +33,8 @@ ALTER TABLE himoto.management_gps_event_channels
   ADD COLUMN IF NOT EXISTS webhook_covered_until timestamptz,
   ADD COLUMN IF NOT EXISTS webhook_log_attempt_at timestamptz,
   ADD COLUMN IF NOT EXISTS webhook_log_success_at timestamptz,
-  ADD COLUMN IF NOT EXISTS webhook_log_error text;
+  ADD COLUMN IF NOT EXISTS webhook_log_error text,
+  ADD COLUMN IF NOT EXISTS history_pause_until timestamptz;
 
 CREATE TABLE IF NOT EXISTS himoto.management_gps_history_cursors (
   gps_device_id bigint NOT NULL REFERENCES himoto.gps_devices(id),stream text NOT NULL CHECK(stream IN('motion','alarms')),
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS himoto.management_gps_history_cursors (
   PRIMARY KEY(gps_device_id,stream)
 );
 CREATE INDEX IF NOT EXISTS management_gps_history_due_idx ON himoto.management_gps_history_cursors(next_attempt_at,covered_until);
+CREATE INDEX IF NOT EXISTS management_gps_history_account_rate_idx ON himoto.management_gps_history_cursors(account_id,stream,last_attempt_at DESC);
 
 CREATE TABLE IF NOT EXISTS himoto.management_gps_event_worker (
   singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),lease_token uuid,lease_until timestamptz

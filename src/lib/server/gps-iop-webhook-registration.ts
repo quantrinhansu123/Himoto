@@ -32,7 +32,6 @@ export async function configureIopGpsWebhooks(accountId:string,send:typeof fetch
     if(!Array.isArray(list.data))throw new Error('IOPGPS_EVENT_LIST_INVALID');
     existing.push(...list.data);if(list.data.length<100)break;if(page===10)throw new Error('IOPGPS_EVENT_LIST_LIMIT');
   }
-  await database.query("UPDATE himoto.management_gps_event_channels SET webhook_covered_until=COALESCE(webhook_covered_until,now()-interval '1 minute') WHERE account_id=$1",[accountId]);
   const rules={...account.webhook_rules} as Record<string,string>;
   const schedule=Object.fromEntries(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(day=>[day,[{start:0,end:86400}]]));
   for(const type of types) {
@@ -60,20 +59,4 @@ export async function configureIopGpsWebhooks(accountId:string,send:typeof fetch
   }
   await database.query('UPDATE himoto.management_gps_event_channels SET webhook_enabled=true,rules_updated_at=now(),last_error=NULL,updated_at=now() WHERE account_id=$1',[accountId]);
   return {rules:types.length,devices:devices.length};
-}
-
-export async function readIopManagedEventLog(accountId:string,session:GpsSession,start:number,end:number,send:typeof fetch=fetch) {
-  const rows:Record<string,unknown>[]=[];
-  for(let page=1;page<=10;page++) {
-    const query=new URLSearchParams({currentPage:String(page),pageSize:'100',accountId:session.accountId,eventName:iopManagedEventPrefix(accountId),startTime:String(Math.floor(start/1000)),endTime:String(Math.floor(end/1000))});
-    const result=await iopCall(session,'/rest/event/log/list?'+query.toString(),undefined,send);
-    if(!Array.isArray(result.data))throw new Error('IOPGPS_EVENT_LOG_INVALID');
-    for(const row of result.data as Record<string,unknown>[]) {
-      const name=row.associatedEventName||row.eventName;
-      if(typeof name!=='string')throw new Error('IOPGPS_EVENT_LOG_SCHEMA');
-      if(name.startsWith(iopManagedEventPrefix(accountId)))rows.push(row);
-    }
-    if(result.data.length<100)return rows;
-  }
-  throw new Error('IOPGPS_EVENT_LOG_INCOMPLETE');
 }
