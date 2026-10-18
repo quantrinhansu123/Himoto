@@ -9,6 +9,8 @@
 
 Migration: `docs/sql/2026-10-18-international-customers-contract-media.sql` (bổ sung cột, mở rộng slot/MIME, không sửa dữ liệu nghiệp vụ).
 
+Kiểm tra trùng dùng `docs/sql/2026-10-18-customer-duplicate-lookup.sql`: hàm chỉ trả ID trùng giấy tờ/SĐT trên cùng kết nối đang giữ khóa ghi; không mượn thêm kết nối từ pool và không mở rộng quyền đọc/sửa hồ sơ cơ sở khác.
+
 Kiểm tra: `npm.cmd run test:international-media`; `node scripts/check-customer-global-search.cjs --live-temp`; `node scripts/check-photo-ocr.cjs --live-temp`; `npm.cmd run test:gps-contract-integrations`; `npm.cmd run test:account-scope`; `npm.cmd run typecheck`; `npm.cmd run lint`; `npm.cmd run build`.
 
 Kiểm thử UI dùng Chromium 1440px và WebKit 390px với API ghi giả: khách nước ngoài không có SĐT, hộ chiếu/GPLX, chọn 15 ảnh + 1 video, lưu tệp trước thanh toán. Video mẫu được tải và đọc riêng tư trên Cloudinary thật (HTTP 206), sau đó xóa đúng tài nguyên kiểm thử. Telegram được kiểm tra qua mock API, không gửi thử vào nhóm thật.

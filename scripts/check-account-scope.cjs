@@ -11,6 +11,8 @@ async function main(){const c=await pool.connect();try{
   let migration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-17-account-access.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('SCHEMA himoto','SCHEMA qa_access_scope').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   for(const key of ['scope_all','store_id','actor_id','operation','transfer_vehicle_id'])migration=migration.replaceAll(`qa_access_scope.${key}'`,`himoto.${key}'`);
   await c.query(migration);await c.query(migration);
+  const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
+  await c.query(duplicates);await c.query(duplicates);
   // Every generated ID belongs to this rollback-only schema, never a production sequence.
   for(const table of tables){
     if(!(await c.query("SELECT 1 FROM information_schema.columns WHERE table_schema='qa_access_scope' AND table_name=$1 AND column_name='id'",[table])).rowCount)continue;
@@ -28,6 +30,9 @@ async function main(){const c=await pool.connect();try{
   await c.query("SELECT set_config('himoto.scope_all','false',true),set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true),set_config('himoto.operation','',true)");
   await c.query('SET LOCAL ROLE himoto_scoped');
   assert.deepEqual((await c.query('SELECT id::int FROM qa_access_scope.customers ORDER BY id')).rows,[{id:90001}]);
+  assert.equal((await c.query('SELECT id FROM qa_access_scope.customers WHERE id=90002')).rowCount,0);
+  assert.equal(Number((await c.query("SELECT qa_access_scope.find_customer_duplicate('001234567802','',NULL) AS id")).rows[0].id),90002);
+  assert.equal((await c.query("SELECT qa_access_scope.find_customer_duplicate('001234567802','',90002) AS id")).rows[0].id,null);
   assert.equal((await c.query('SELECT id FROM qa_access_scope.customers WHERE id=90002')).rowCount,0);
   assert.equal((await c.query("UPDATE qa_access_scope.customers SET name='Forbidden' WHERE id=90002")).rowCount,0);
   checks.push('Branch scope filters lists and guessed IDs and blocks cross-branch writes, even alongside a broad PUBLIC read policy');

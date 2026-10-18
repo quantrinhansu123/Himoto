@@ -291,10 +291,8 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     await client.query("SET LOCAL lock_timeout = '5s'");
     await client.query('LOCK TABLE himoto.customers IN SHARE ROW EXCLUSIVE MODE');
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [idCard]);
-    const duplicate = await ownerDatabase.query(
-      `SELECT id FROM himoto.customers
-       WHERE ($1 <> '' AND upper(regexp_replace(COALESCE(id_card, ''), '\\s+', '', 'g')) = $1)
-         OR ($1 = '' AND $2 <> '' AND regexp_replace(COALESCE(phone,''),'[^0-9]','','g') = $2) LIMIT 1`,
+    const duplicate = await client.query(
+      'SELECT id FROM himoto.find_customer_duplicate($1,$2,NULL) AS id WHERE id IS NOT NULL',
       [idCard,phone.replace(/\D/g,'')],
     );
     if (duplicate.rowCount) {
@@ -390,8 +388,8 @@ async function PATCHHandler(request: NextRequest, { params }: Params) {
     await client.query("SET LOCAL lock_timeout = '5s'");
     await client.query('LOCK TABLE himoto.customers IN SHARE ROW EXCLUSIVE MODE');
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`customer:${idCard || `id:${id}`}`]);
-    const duplicate = idCard ? await ownerDatabase.query(
-      `SELECT id FROM himoto.customers WHERE id <> $1 AND upper(regexp_replace(COALESCE(id_card, ''), '\\s+', '', 'g')) = $2 LIMIT 1`, [id, idCard],
+    const duplicate = idCard ? await client.query(
+      'SELECT id FROM himoto.find_customer_duplicate($2,\'\',$1) AS id WHERE id IS NOT NULL', [id, idCard],
     ) : { rowCount: 0 };
     if (duplicate.rowCount) {
       await client.query('ROLLBACK');
