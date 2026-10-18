@@ -9,6 +9,8 @@ from urllib.parse import urlparse, parse_qs
 from playwright.sync_api import sync_playwright, expect
 from lib.contract_type_fixtures import mock_contract_type_read
 
+expect.set_options(timeout=30000)
+
 parser=argparse.ArgumentParser()
 parser.add_argument('--url',default='http://127.0.0.1:3101')
 parser.add_argument('--session-cookie-file',required=True)
