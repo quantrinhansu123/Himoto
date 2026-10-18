@@ -40,6 +40,7 @@
     "test:customer-import": "node scripts/check-customer-import.cjs",
     "test:customer-stores": "node scripts/check-customer-store-import.cjs",
     "test:customer-search": "node scripts/check-customer-global-search.cjs",
+    "test:international-media": "node scripts/check-international-media.cjs",
     "test:customer-entry": "node scripts/check-customer-entry.cjs",
     "test:photo-ocr": "node scripts/check-photo-ocr.cjs",
     "test:cross-branch-rentals": "node scripts/check-cross-branch-rentals.cjs",

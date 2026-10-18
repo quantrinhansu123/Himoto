@@ -2,6 +2,7 @@
 
 import { FormEvent, Fragment, useRef, useState } from 'react';
 import { Check, LoaderCircle } from 'lucide-react';
+import { CustomerInternationalFields } from './CustomerInternationalFields';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { ContractRelative, CustomerDetails, customerDetails, pairRelatives, formatRelatives, validateCustomer, validateOperationalCustomer } from '@/lib/management/contract-document';
@@ -15,23 +16,25 @@ import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/man
 import { usePhotoOcr } from '@/components/management/usePhotoOcr';
 import { mergeOcrCustomer, type OcrFields } from '@/lib/management/photo-ocr';
 
-export function CustomerCreateDialog({ idCard, storeId, allowIncomplete = false, onCreated, onClose }: { idCard: string; storeId?: string; allowIncomplete?: boolean; onCreated: (row: ManagementRow) => void; onClose: () => void }) {
+export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowIncomplete = false, onCreated, onClose }: { idCard: string; storeId?: string; foreign?:boolean; allowIncomplete?: boolean; onCreated: (row: ManagementRow) => void; onClose: () => void }) {
   const { source, dataset, selectedStore, createCustomer } = useManagement();
   const [branch, setBranch] = useState(storeId || (selectedStore !== 'all' ? selectedStore : String(dataset?.stores[0]?.id || '')));
   const [status, setStatus] = useState('active');
   const incomplete = allowIncomplete && status === 'draft';
-  const [customer, setCustomer] = useState<CustomerDetails>(() => ({ ...customerDetails(), id_card: idCard }));
+  const [customer, setCustomer] = useState<CustomerDetails>(() => ({ ...customerDetails(), customer_type:foreign?'foreign':'vietnam', id_card: idCard }));
   const [relatives, setRelatives] = useState<[ContractRelative, ContractRelative]>(() => pairRelatives(null));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [photos, setPhotos] = useState<PendingPhotos>({});
   const [processingPhoto, setProcessingPhoto] = useState(false);
+  const photoJobs=useRef(new Set<string>());
+  const photoBusy=(slot:string,busy:boolean)=>{if(busy)photoJobs.current.add(slot);else photoJobs.current.delete(slot);setProcessingPhoto(photoJobs.current.size>0);};
   const [savedCustomer, setSavedCustomer] = useState<ManagementRow | null>(null);
   const customerRef = useRef(customer); customerRef.current = customer;
   const previousAi = useRef<OcrFields>({});
   const customerOcr = usePhotoOcr({
-    kind: slot => slot === 'id_front' ? 'cccd_front' : 'cccd_back',
+    kind: slot => slot==='driver_license'?'driver_license':customerRef.current.customer_type==='foreign'?'passport':slot === 'id_front' ? 'cccd_front' : 'cccd_back',
     snapshot: () => ({ ...customerRef.current }),
     apply: (_slot, result, before) => {
       const merged = mergeOcrCustomer(customerRef.current, result.fields, before, previousAi.current);
@@ -76,12 +79,14 @@ export function CustomerCreateDialog({ idCard, storeId, allowIncomplete = false,
   const fieldsDisabled = saving || Boolean(savedCustomer);
   return <Dialog title="Thêm khách hàng tại chỗ" onClose={() => { if (!busy.current) onClose(); }}>
     <form ref={form} noValidate onSubmit={submit}>
-      <div className="mg-dialog-body">{incomplete && <p className="mg-composer-hint">Hồ sơ tạm: cần tên và số điện thoại để nhận diện khách. CCCD, địa chỉ và người thân có thể bổ sung sau.</p>}<div className="mg-form-grid">{fields.map(field => {
+      <div className="mg-dialog-body">{incomplete && <p className="mg-composer-hint">Hồ sơ tạm: cần tên và số điện thoại để nhận diện khách. CCCD, địa chỉ và người thân có thể bổ sung sau.</p>}<div className="mg-form-grid"><CustomerInternationalFields prefix="new-customer" value={customer} onChange={next=>{setCustomer(next);setErrors({});}} disabled={fieldsDisabled} errors={errors}/>{fields.map(field => {
         const fieldId = `new-customer-${field.key}`;
         const setValue = (next: string) => { setCustomer(current => ({ ...current, [field.key]: next })); setErrors(current => ({ ...current, [field.key]: '' })); };
-        const required = field.required && !(incomplete && ['id_card', 'address'].includes(field.key));
+        const foreign=customer.customer_type==='foreign';
+        const label=foreign?field.key==='id_card'?'Hộ chiếu / Giấy tờ quốc tế':field.key==='phone'?'Số điện thoại quốc tế (nếu có)':field.label.replace('CCCD / CMND','giấy tờ'):field.label;
+        const required = field.required && !(foreign&&['phone','address'].includes(field.key)) && !(incomplete && ['id_card', 'address'].includes(field.key));
         return <Fragment key={field.key}><div className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`}>
-        <label htmlFor={fieldId}>{field.label}{required && <span aria-hidden="true"> *</span>}</label>
+        <label htmlFor={fieldId}>{label}{required && <span aria-hidden="true"> *</span>}</label>
         {field.type === 'date'
           ? <VietnamDateField id={fieldId} label={field.label} value={customer[field.key] || ''} disabled={fieldsDisabled} invalid={Boolean(errors[field.key])}
               describedBy={errors[field.key] ? `${fieldId}-error` : undefined} onChange={setValue} />
@@ -90,7 +95,7 @@ export function CustomerCreateDialog({ idCard, storeId, allowIncomplete = false,
               onChange={event => setValue(event.target.value)} />}
         {field.hint && <small>{field.hint}</small>}
         {errors[field.key] && <p className="mg-field-error" id={`${fieldId}-error`}>{errors[field.key]}</p>}
-      </div>{field.key === 'id_card' && <div className="mg-field-wide"><RecordPhotoFields entity="customers" slots={CUSTOMER_PHOTO_SLOTS} title="Chụp CCCD · Tự điền bằng AI" value={photos} onChange={setPhotos} disabled={saving} onBusyChange={setProcessingPhoto} ocr={fieldsDisabled ? undefined : customerOcr} /></div>}</Fragment>;
+      </div>{field.key === 'id_card' && <div className="mg-field-wide"><RecordPhotoFields entity="customers" slots={foreign?[{key:'id_front',label:'Trang hộ chiếu / giấy tờ'},{key:'id_back',label:'Trang bổ sung (nếu có)'}]:CUSTOMER_PHOTO_SLOTS} title={foreign?'Chụp hộ chiếu · Tự điền bằng AI':'Chụp CCCD · Tự điền bằng AI'} value={photos} onChange={setPhotos} disabled={saving} onBusyChange={busy=>photoBusy('identity',busy)} ocr={fieldsDisabled ? undefined : customerOcr} /></div>}{field.key==='driver_license_number'&&<div className="mg-field-wide"><RecordPhotoFields entity="customers" slots={[{key:'driver_license',label:'Giấy phép lái xe'}]} title="Chụp GPLX · Tự điền bằng AI" value={photos} onChange={setPhotos} disabled={saving} onBusyChange={busy=>photoBusy('license',busy)} ocr={fieldsDisabled?undefined:customerOcr}/></div>}</Fragment>;
       })}{<>
         <div className="mg-field"><label htmlFor="new-customer-store">Cơ sở nguồn khách *</label><select id="new-customer-store" value={branch} disabled={fieldsDisabled} aria-invalid={Boolean(errors.store_id)} aria-describedby={errors.store_id ? 'new-customer-store-error' : undefined} onChange={event => { setBranch(event.target.value); setErrors(current => ({ ...current, store_id: '' })); }}>
           <option value="">Chọn cơ sở</option>{dataset?.stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select>{errors.store_id && <p id="new-customer-store-error" className="mg-field-error">{errors.store_id}</p>}</div>

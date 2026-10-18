@@ -103,7 +103,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     user_id: number(raw.user_id), kind: text(raw.kind), store_revision: text(raw.store_revision),
     vehicle_count: number(raw.vehicle_count), staff_count: number(raw.staff_count),
     status: ({ '1': 'active', '0': 'inactive', opening: 'active' } as Record<string, string>)[base.status] || base.status };
-  if (kind === 'customers') return { ...base, code: text(raw.code) || `KH-${String(id).padStart(3, '0')}`, id_card: text(raw.id_card || raw.identity_card), warning_note: text(raw.warning || raw.warning_note),
+  if (kind === 'customers') return { ...base, customer_type:text(raw.customer_type)||'vietnam', nationality:text(raw.nationality),contact_channel:text(raw.contact_channel),contact_detail:text(raw.contact_detail), code: text(raw.code) || `KH-${String(id).padStart(3, '0')}`, id_card: text(raw.id_card || raw.identity_card), warning_note: text(raw.warning || raw.warning_note),
     first_rental_store_id: number(raw.first_rental_store_id), first_rental_store_name: text(raw.first_rental_store_name), first_rented_at: text(raw.first_rented_at),
     id_card_issued_on: text(raw.id_card_issued_on || raw.id_card_date).slice(0, 10), id_card_issued_by: text(raw.id_card_issued_by || raw.id_card_place),
     driver_license_number: text(raw.driver_license_number), driver_license_issued_on: text(raw.driver_license_issued_on).slice(0, 10),
@@ -144,7 +144,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     staff_name: text(raw.staff_name), representative_name: text(raw.representative_name || raw.staff_name),
     customer_id: number(raw.customer_id), customer_name: text(raw.customer_name || customer.name),
     customer_status: raw.customer_status == null ? undefined : ['2', 'blacklist', 'bad_debt'].includes(text(raw.customer_status)) ? 'blacklist' : text(raw.customer_status),
-    customer_phone: text(raw.customer_phone || customer.phone),
+    customer_phone: text(raw.customer_phone || customer.phone), customer_type:text(raw.customer_type || customer.customer_type),nationality:text(raw.nationality || customer.nationality),contact_channel:text(raw.contact_channel || customer.contact_channel),contact_detail:text(raw.contact_detail || customer.contact_detail),
     customer_id_card: text(raw.customer_id_card || customer.id_card),
     customer_address: text(raw.customer_address || customer.address), customer_email: text(raw.customer_email || customer.email),
     customer_driver_license_number: text(raw.customer_driver_license_number), customer_driver_license_issued_on: text(raw.customer_driver_license_issued_on),

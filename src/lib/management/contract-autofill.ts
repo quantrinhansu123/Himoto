@@ -1,4 +1,4 @@
-import { CustomerDetails, normalizeIdCard, staffMatchesStore, validateCustomer, validateOperationalCustomer, pairRelatives, relativesFromRow } from './contract-document';
+import { normalizeCustomerLookup,validCustomerLookup, CustomerDetails, normalizeIdCard, staffMatchesStore, validateCustomer, validateOperationalCustomer, pairRelatives, relativesFromRow } from './contract-document';
 import { mapApiRow, READ_ENDPOINTS } from './repository';
 import { CustomerAssignment, ManagementRepository, ManagementRow } from './types';
 import { CUSTOMER_STATUSES } from './config';
@@ -24,9 +24,9 @@ export function createDemoAutofillRepository(repository: ManagementRepository): 
     async searchCustomers(query, signal) {
       signal?.throwIfAborted();
       const dataset = await repository.load(); signal?.throwIfAborted();
-      const phone = query.replace(/\D/g, '');
-      if (!/^\d{9,13}$/.test(phone)) return [];
-      return dataset.customers.filter(row => String(row.id_card || '').replace(/\D/g, '') === phone || String(row.phone || '').replace(/\D/g, '') === phone);
+      const phone = normalizeCustomerLookup(query);
+      if (!validCustomerLookup(phone)) return [];
+      return dataset.customers.filter(row => ['id_card','phone','contact_detail'].some(key=>normalizeCustomerLookup(String(row[key]||''))===phone));
     },
     async loadStaff(storeId, signal) { signal?.throwIfAborted(); return staffMatchesStore((await repository.load()).staff, storeId); },
     async createCustomer(customer, assignment) {
@@ -79,12 +79,12 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       return row;
     },
     async searchCustomers(query, signal) {
-      const normalized = query.replace(/\D/g, '');
-      if (!/^\d{9,13}$/.test(normalized)) return [];
+      const normalized = normalizeCustomerLookup(query);
+      if (!validCustomerLookup(normalized)) return [];
       const payload = await request(`${READ_ENDPOINTS.customers}/search?${new URLSearchParams({ query: normalized })}`, { method: 'GET', signal });
       if (!Array.isArray(payload) || !payload.every(object)) throw new Error('API tra cứu trả về danh sách chưa được hỗ trợ.');
       const rows = payload.map(row => mapApiRow('customers', row));
-      if (rows.some(row => String(row.id_card || '').replace(/\D/g, '') !== normalized && String(row.phone || '').replace(/\D/g, '') !== normalized)) throw new Error('API trả về khách hàng không khớp CCCD/CMND hoặc SĐT đã nhập.');
+      if (rows.some(row => normalizeCustomerLookup(String(row.id_card || '')) !== normalized && normalizeCustomerLookup(String(row.phone || '')) !== normalized && normalizeCustomerLookup(String(row.contact_detail || '')) !== normalized)) throw new Error('API trả về khách hàng không khớp CCCD/CMND hoặc SĐT đã nhập.');
       return rows;
     },
     async loadStaff(storeId, signal) {
@@ -110,6 +110,7 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       if (customer.id_card ? await this.lookupCustomer(customer.id_card) : (await this.searchCustomers(customer.phone.replace(/\D/g,''))).length) throw new Error('Khách hàng này đã có. Hãy tra cứu thay vì tạo thêm.');
       // The Supabase adapter stores branch and profile status on customer creation.
       const payload = await request(READ_ENDPOINTS.customers, { method: 'POST', body: JSON.stringify({
+        customer_type:customer.customer_type||'vietnam',nationality:customer.nationality||'',contact_channel:customer.contact_channel||'',contact_detail:customer.contact_detail||'',
         name: customer.name.trim(), phone: customer.phone.trim(), address: customer.address.trim(), id_card: normalizeIdCard(customer.id_card), warning_note: customer.warning_note.trim(),
         driver_license_number: customer.driver_license_number.trim(), driver_license_issued_on: customer.driver_license_issued_on,
         id_card_issued_on: customer.id_card_issued_on, id_card_issued_by: customer.id_card_issued_by.trim(),
@@ -125,6 +126,7 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
     },
     async updateCustomer(customer) {
       const payload = await request(`${READ_ENDPOINTS.customers}/${customer.id}`, { method: 'PATCH', body: JSON.stringify({
+        customer_type:customer.customer_type||'vietnam',nationality:customer.nationality||'',contact_channel:customer.contact_channel||'',contact_detail:customer.contact_detail||'',
         name: String(customer.name || '').trim(), phone: String(customer.phone || '').trim(),
         address: String(customer.address || '').trim(), id_card: normalizeIdCard(String(customer.id_card || '')),
         status: customer.status, warning_note: String(customer.warning_note || '').trim(), store_id: customer.store_id ?? null,

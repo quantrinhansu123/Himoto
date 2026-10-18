@@ -6,7 +6,7 @@ import { chargeErrors, chargeTotal, type ContractCharge, type ContractCollection
 import { billingUnitLabel, type CustomInstallment, type OwnershipTerm } from './contract-billing';
 import { documentRequirements, type ContractDocumentRequirements } from './contract-requirements';
 
-export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'driver_license_number', 'driver_license_issued_on', 'birthday', 'relatives_text', 'warning_note'] as const;
+export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'driver_license_number', 'driver_license_issued_on', 'birthday', 'relatives_text', 'warning_note', 'customer_type', 'nationality', 'contact_channel', 'contact_detail'] as const;
 export type CustomerDetails = Record<(typeof CUSTOMER_FIELDS)[number], string> & { relatives_json?: string };
 export interface ContractRelative { name: string; relationship: string; phone: string }
 export function emptyRelative(): ContractRelative { return { name: '', relationship: '', phone: '' }; }
@@ -103,6 +103,7 @@ function collectionMethods(collections: ContractCollection[] | undefined, purpos
 }
 export function createContractDraft(dataset: ManagementDataset, storeId: string, row?: ManagementRow | null): ContractDraft {
   const profile = row?.profile_json ? JSON.parse(String(row.profile_json)) as Partial<ContractDraft> : {};
+  if(profile.customer)profile.customer={...customerDetails(profile.customer as unknown as ManagementRow),...profile.customer};
   if (row?.draft_json) {
     const snapshot = JSON.parse(String(row.draft_json)) as ContractDraft;
     if (!snapshot.customer || !Array.isArray(snapshot.vehicles) || !snapshot.vehicles.length) throw new Error('Thông tin hợp đồng đã lưu không hợp lệ.');
@@ -169,6 +170,8 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     ...profile,
     ...(row?.deposit_paid != null ? {deposit_paid_amount:value(row.deposit_paid)} : {}), };
 }
+export function normalizeCustomerLookup(input:string) { return /^[+\d\s.()-]+$/.test(input) ? input.replace(/\D/g,'') : input.trim().replace(/\s/g,'').toUpperCase(); }
+export function validCustomerLookup(input:string) { const value=normalizeCustomerLookup(input);return /^\d{6,15}$/.test(value)||value.length>=4&&value.length<=100&&/[A-Z]/.test(value); }
 export function normalizeIdCard(input: string) { return input.trim().replace(/\s/g, '').toUpperCase(); }
 export function validIdCard(input: string, source: 'demo' | 'api') {
   const normalized = normalizeIdCard(input);
@@ -188,6 +191,12 @@ export function validateCustomer(customer: CustomerDetails, source: 'demo' | 'ap
   if (!validIdentityIssueDate(customer.id_card_issued_on)) errors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
   if (!validIdentityIssueDate(customer.driver_license_issued_on)) errors.driver_license_issued_on = 'Ngày cấp GPLX không hợp lệ.';
   if (customer.id_card_issued_by.length > 255) errors.id_card_issued_by = 'Nơi cấp CCCD/CMND tối đa 255 ký tự.';
+  if (customer.customer_type === 'foreign') {
+    delete errors.phone; delete errors.id_card; delete errors.address;
+    if (!customer.id_card.trim() || customer.id_card.length > 100) errors.id_card = 'Nhập hộ chiếu / giấy tờ quốc tế (tối đa 100 ký tự).';
+    if (!customer.phone.trim() && !customer.contact_detail?.trim()) errors.contact_detail = 'Nhập số quốc tế, WhatsApp, Facebook hoặc kênh liên hệ của khách.';
+    for (const key of ['phone', 'nationality', 'contact_channel', 'contact_detail'] as const) if ((customer[key] || '').length > 1000) errors[key] = 'Thông tin tối đa 1.000 ký tự.';
+  } else if (customer.customer_type && customer.customer_type !== 'vietnam') errors.customer_type = 'Loại khách hàng không hợp lệ.';
   return errors;
 }
 export function validateContractCustomer(customer: CustomerDetails, source: 'demo' | 'api') {
@@ -212,7 +221,7 @@ export function validateContractDraft(draft: ContractDraft, dataset: ManagementD
   Object.assign(errors, validateContractCustomer(draft.customer, source));
   for (const key of ['phone','id_card','address'] as const) if (!requirements[key] && !draft.customer[key].trim()) delete errors[key];
   const relatives = pairRelatives(draft.relatives, draft.customer.relatives_text);
-  relatives.slice(0,requirements.relatives).forEach((relative, index) => {
+  relatives.slice(0,draft.customer.customer_type === 'foreign' ? 0 : requirements.relatives).forEach((relative, index) => {
     if (!relative.name.trim()) errors[`relative_${index}_name`] = `Nhập họ tên người thân ${index + 1}.`;
     if (!relative.relationship.trim()) errors[`relative_${index}_relationship`] = `Nhập quan hệ người thân ${index + 1}.`;
     if (!/^\+?\d{9,13}$/.test(relative.phone.replace(/[\s.()-]/g, ''))) errors[`relative_${index}_phone`] = `Nhập số điện thoại người thân ${index + 1} từ 9 đến 13 chữ số.`;
@@ -270,7 +279,7 @@ export function buildContractDocument(draft: ContractDraft, store: ManagementRow
       representative_name: staff.name, representative_title: value(staff.position),
       authorization: { date: printedDate(draft.authorization_date), party_name: staff.name } },
     relatives: pairRelatives(draft.relatives, draft.customer.relatives_text),
-    customer: { ...draft.customer, relatives_text: formatRelatives(pairRelatives(draft.relatives, draft.customer.relatives_text)), id_card_issued_on: printedDate(draft.customer.id_card_issued_on) },
+    customer: { ...draft.customer, phone:draft.customer.phone||(draft.customer.customer_type==='foreign'?[draft.customer.contact_channel,draft.customer.contact_detail].filter(Boolean).join(': '):''), relatives_text: formatRelatives(pairRelatives(draft.relatives, draft.customer.relatives_text)), id_card_issued_on: printedDate(draft.customer.id_card_issued_on) },
     customer_source: { name: draft.customer_source, url: draft.customer_source_url },
     vehicles, vehicles_count: vehicles.length, primary_vehicle: vehicles[0],
     rent_time: { start: timeParts(draft.start_date), end: timeParts(draft.end_date) },

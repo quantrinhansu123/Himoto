@@ -115,7 +115,7 @@ async function run() {
     const saved = await api.createCustomer(details); assert.equal(saved.id, 99);
     const writes = requests.filter(request => request.method === 'POST');
     assert.equal(writes.length, 1); assert.equal(writes[0].url, '/api/auth/customers');
-    assert.deepEqual(Object.keys(JSON.parse(writes[0].body)).sort(), ['address', 'driver_license_issued_on', 'driver_license_number', 'id_card', 'id_card_issued_by', 'id_card_issued_on', 'name', 'phone', 'relatives', 'warning_note']);
+    assert.deepEqual(Object.keys(JSON.parse(writes[0].body)).sort(), ['address','contact_channel','contact_detail','customer_type', 'driver_license_issued_on', 'driver_license_number', 'id_card', 'id_card_issued_by', 'id_card_issued_on', 'name','nationality', 'phone', 'relatives', 'warning_note']);
     const family = [{ name: 'Người thân mẫu', relationship: 'Mẹ', phone: '0900000011' }];
     const assigned = await api.createCustomer({ ...details, driver_license_number: '0012345678', driver_license_issued_on: '2021-02-03', relatives_json: JSON.stringify(family), warning_note: 'Cần đối chiếu hồ sơ' }, { status: 'warning', store_id: 2 });
     assert.equal(assigned.store_id, 2); assert.equal(assigned.status, 'warning');

@@ -1,5 +1,7 @@
 # Nhập khách hàng, ảnh hồ sơ và thanh toán
 
+Khách nước ngoài có chế độ riêng cho hộ chiếu, quốc tịch, số quốc tế/Facebook/WhatsApp; phần GPLX có nút chụp và AI tự điền. Xem [khách nước ngoài và tài liệu hợp đồng](international-customers-contract-media.md).
+
 - Khách mới mặc định **Bình thường**, kể cả thêm tại chỗ từ hợp đồng. Chọn **Chưa hoàn tất** nếu cần lưu hồ sơ tạm thiếu CCCD/địa chỉ trong luồng hợp đồng.
 - Ngày cấp CCCD và GPLX chia sẵn ba ô `dd / mm / yyyy`. Gõ đủ 2 số ngày tự chuyển sang tháng, đủ 2 số tháng tự chuyển sang năm; hỗ trợ Tab, dấu `/`, Backspace quay lại ô trước và dán ngày đầy đủ. Dữ liệu gửi API vẫn là `yyyy-mm-dd`; ngày không tồn tại hoặc chưa nhập đủ bị chặn.
 - Form khách mới và phần Khách hàng trong hợp đồng có **Chụp CCCD** mặt trước/mặt sau. Phần Phương tiện có **Chụp biển số xe**, riêng từng xe. Có nút chụp bằng camera sau và chọn ảnh thư viện; trình duyệt quyết định giao diện camera trên thiết bị. [Gemini tự điền và tải Cloudinary song song](photo-ocr.md) đọc CCCD và hỗ trợ chọn xe theo biển số ngay sau khi chụp.

@@ -1,5 +1,7 @@
 # GPS, ảnh giao dịch và Telegram
 
+Cập nhật 18/10/2026: hợp đồng nhận tối đa **15 ảnh + 3 video mỗi giao dịch**, có khu vực chọn nhiều tệp ngay bước 5. Video lưu riêng tư trên Cloudinary và gửi qua Telegram theo album tối đa 10 tệp. Xem [khách nước ngoài, GPLX và video](international-customers-contract-media.md).
+
 ## Định vị GPS
 
 - Mở **Định vị GPS** để xem thiết bị Protrack/IOPGPS, lọc cơ sở, tìm biển số/IMEI, mở bản đồ và xem lịch sử đổi trạng thái.

@@ -4,8 +4,9 @@ import { v2 as cloudinary } from 'cloudinary';
 import { RecordPhotoError } from './record-photos';
 import type { PoolClient } from 'pg';
 import type { PhotoEntity } from '@/lib/management/record-photos';
+import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
 
-export interface CloudPhotoReceipt { public_id: string; version: number; signature: string }
+export interface CloudPhotoReceipt { public_id: string; version: number; signature: string; resource_type?: 'video' }
 function config() {
   let fromUrl: URL | undefined;
   if (process.env.CLOUDINARY_URL) { try { fromUrl = new URL(process.env.CLOUDINARY_URL); } catch { throw new RecordPhotoError('Cấu hình Cloudinary chưa hợp lệ.', 503); } }
@@ -15,31 +16,39 @@ function config() {
   if (!cloud_name || !/^[a-z0-9_-]+$/i.test(cloud_name) || !api_key || !api_secret) throw new RecordPhotoError('Chưa cấu hình Cloudinary. Ảnh vẫn được giữ trong form; thêm cấu hình rồi thử tải lại.', 503);
   return { cloud_name, api_key, api_secret };
 }
-export function signPhotoUpload(actorId: number, uploadId: unknown, now = Date.now()) {
+export function signPhotoUpload(actorId: number, uploadId: unknown, now = Date.now(), video = false) {
   if (typeof uploadId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new RecordPhotoError('Mã tải ảnh không hợp lệ.');
   const settings = config();
-  const params = { public_id: `himoto/management/${actorId}/${uploadId}`, timestamp: Math.floor(now / 1000), type: 'authenticated', overwrite: false, format: 'jpg', allowed_formats: 'jpg,png,webp' };
+  const params = { public_id: `himoto/${video?'management-video':'management'}/${actorId}/${uploadId}`, timestamp: Math.floor(now / 1000), type: 'authenticated', overwrite: false, format: video?'mp4':'jpg', allowed_formats: video?'mp4,mov,webm':'jpg,png,webp', ...(video?{transformation:'c_limit,w_1280,h_1280,vc_h264,ac_aac'}:{}) };
   return { cloud_name: settings.cloud_name, api_key: settings.api_key, params, signature: cloudinary.utils.api_sign_request(params, settings.api_secret) };
 }
 export function verifyPhotoReceipt(value: unknown, actorId: number): CloudPhotoReceipt {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new RecordPhotoError('Thông tin ảnh Cloudinary không hợp lệ.');
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['public_id', 'version', 'signature'].includes(key)) || typeof input.public_id !== 'string' || !new RegExp(`^himoto/management/${actorId}/[0-9a-f-]{36}$`, 'i').test(input.public_id) || !Number.isSafeInteger(input.version) || Number(input.version) <= 0 || typeof input.signature !== 'string' || !/^[a-f0-9]{40}$/i.test(input.signature)) throw new RecordPhotoError('Thông tin ảnh Cloudinary không hợp lệ.');
+  const video=input.resource_type==='video';
+  if (Object.keys(input).some(key => !['public_id', 'version', 'signature', 'resource_type'].includes(key)) || input.resource_type!==undefined&&!video || typeof input.public_id !== 'string' || !new RegExp(`^himoto/${video?'management-video':'management'}/${actorId}/[0-9a-f-]{36}$`, 'i').test(input.public_id) || !Number.isSafeInteger(input.version) || Number(input.version) <= 0 || typeof input.signature !== 'string' || !/^[a-f0-9]{40}$/i.test(input.signature)) throw new RecordPhotoError('Thông tin ảnh Cloudinary không hợp lệ.');
   const expected = cloudinary.utils.api_sign_request({ public_id: input.public_id, version: input.version }, config().api_secret);
   if (!timingSafeEqual(Buffer.from(expected), Buffer.from(input.signature.toLowerCase()))) throw new RecordPhotoError('Chữ ký ảnh Cloudinary không hợp lệ.');
-  return { public_id: input.public_id, version: Number(input.version), signature: input.signature };
+  return { public_id: input.public_id, version: Number(input.version), signature: input.signature, ...(video?{resource_type:'video' as const}:{}) };
 }
 export async function writeCloudinaryPhoto(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, slot: string, actor: number, receipt: CloudPhotoReceipt) {
+  const video=receipt.resource_type==='video';
+  if(video) {
+    if(entity!=='contracts'||!/-video-[1-3]$/.test(slot))throw new RecordPhotoError('Video chỉ lưu ở ô video hợp đồng.');
+    const asset=await cloudinary.api.resource(receipt.public_id,{...config(),resource_type:'video',type:'authenticated',media_metadata:true});
+    if(asset.resource_type!=='video'||asset.format!=='mp4'||Number(asset.version)!==receipt.version||!asset.bytes||asset.bytes>MAX_VIDEO_BYTES||!asset.duration||asset.duration>60)throw new RecordPhotoError('Video cần là MP4 tối đa 45 MB và 60 giây.');
+  } else if(/-video-[1-3]$/.test(slot))throw new RecordPhotoError('Chọn video cho ô này.');
   await client.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version)
-    VALUES($1,$2,$3,'image/jpeg',NULL,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,slot)
+    VALUES($1,$2,$3,$8,NULL,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,slot)
     DO UPDATE SET mime_type=EXCLUDED.mime_type,data=NULL,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=EXCLUDED.cloudinary_public_id,cloudinary_cloud_name=EXCLUDED.cloudinary_cloud_name,cloudinary_version=EXCLUDED.cloudinary_version`,
-  [entity, id, slot, actor, receipt.public_id, config().cloud_name, receipt.version]);
+  [entity, id, slot, actor, receipt.public_id, config().cloud_name, receipt.version,video?'video/mp4':'image/jpeg']);
 }
-export async function readCloudinaryPhoto(photo: { cloudinary_public_id: string; cloudinary_cloud_name: string; cloudinary_version: number }) {
+export async function readCloudinaryPhoto(photo: { cloudinary_public_id: string; cloudinary_cloud_name: string; cloudinary_version: number; mime_type?: string }, range?:string|null) {
   const settings = config();
   if (settings.cloud_name !== photo.cloudinary_cloud_name) throw new RecordPhotoError('Cấu hình Cloudinary không khớp nơi lưu ảnh.', 503);
-  const url = cloudinary.utils.private_download_url(photo.cloudinary_public_id, 'jpg', { ...settings, type: 'authenticated', expires_at: Math.floor(Date.now() / 1000) + 60 });
-  const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+  const video=photo.mime_type==='video/mp4';
+  const url = cloudinary.utils.private_download_url(photo.cloudinary_public_id, video?'mp4':'jpg', { ...settings, resource_type:video?'video':'image', type: 'authenticated', expires_at: Math.floor(Date.now() / 1000) + 300 });
+  const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(video?45_000:15_000), ...(range?{headers:{Range:range}}:{}) });
   if (!response.ok) throw new RecordPhotoError('Không tải được ảnh Cloudinary. Thử lại sau.', 502);
   return response;
 }

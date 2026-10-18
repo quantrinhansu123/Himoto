@@ -3661,6 +3661,12 @@
 .mg-photo-slot { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
 .mg-photo-slot > a { display: block; width: 100%; }
 .mg-photo-slot img { display: block; width: 100%; max-height: 220px; object-fit: contain; border-radius: 8px; background: #f3f5f6; }
+.mg-photo-slot video, .mg-transaction-photo-gallery video { display:block; width:100%; max-height:300px; background:#15191d; border-radius:8px; }
+.mg-customer-mode { display:flex; align-items:center; gap:10px; min-height:44px; font-weight:600; }
+.mg-customer-mode input[type="checkbox"] { width:22px; height:22px; flex:none; }
+.mg-international-customer { margin-block:12px; padding:12px; border:1px solid var(--mg-border); border-radius:8px; }
+.mg-international-customer p, .mg-media-upload-toolbar p { margin:8px 0 12px; overflow-wrap:anywhere; }
+.mg-media-upload-toolbar { margin-bottom:16px; }
 .mg-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .mg-photo-actions .mg-button { min-height: 44px; }
 .mg-photo-slot small { color: var(--mg-text-muted, #60707a); }

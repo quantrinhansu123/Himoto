@@ -15,7 +15,8 @@ async function POSTHandler(request: NextRequest) {
     const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
     if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
     if(!(['customers.write','contracts.draft','contracts.finalize','contracts.return','contracts.renew'] as const).some(permission=>hasPermission(user,permission)))throw new RecordPhotoError('Tài khoản chưa được phép tải ảnh.',403);
-    const data = signPhotoUpload(user.id, input?.upload_id);
+    if(input.resource_type!==undefined&&input.resource_type!=='video')throw new RecordPhotoError('Loại tệp không hợp lệ.');
+    const data = signPhotoUpload(user.id, input?.upload_id, Date.now(), input.resource_type==='video');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     return NextResponse.json({ status: 'error', message: error instanceof RecordPhotoError ? error.message : 'Không khởi tạo được tải ảnh Cloudinary.' }, { status: error instanceof RecordPhotoError ? error.status : 500, headers: { 'Cache-Control': 'private, no-store' } });

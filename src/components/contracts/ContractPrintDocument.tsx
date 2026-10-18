@@ -83,7 +83,7 @@ export function ContractPrintDocument({ doc, pageWrapper,contractId }: { doc: Le
 						</div>
 						<div className="party-row">- Địa chỉ: {doc.customer.address || '...................................................................................................................................................................'}</div>
 						<div className="party-row d-flex justify-content-between">
-							<span>- Số CCCD: <strong>{doc.customer.id_card || '................................'}</strong></span>
+							<span>- {doc.customer.customer_type==='foreign'?'Hộ chiếu / Giấy tờ':'Số CCCD'}: <strong>{doc.customer.id_card || '................................'}</strong></span>
 							<span>Cấp ngày: {doc.customer.id_card_issued_on || '....../....../..........'}</span>
 							<span className="text-truncate">Tại: {doc.customer.id_card_issued_by || '................................'}</span>
 						</div>

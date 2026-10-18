@@ -52,7 +52,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const unresolved=related.find(n=>['unknown','sending','pending'].includes(n.status));
     const latest=same||unresolved||related[0];
     result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`,phases:event.phases,
-      text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.length,status:latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
+      text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
       can_send:canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same)});
   }
   return {state:result,payloads,store_id:Number(o.store_id)};

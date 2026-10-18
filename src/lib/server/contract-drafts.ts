@@ -22,7 +22,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
 
   CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
-  o.customer_id, c.status AS customer_status,
+  o.customer_id, c.status AS customer_status, c.customer_type, c.nationality, c.contact_channel, c.contact_detail,
   COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
   COALESCE(c.id_card, o.customer_idnumber) AS customer_id_card,
   COALESCE(c.address, o.customer_address) AS customer_address, c.email AS customer_email,

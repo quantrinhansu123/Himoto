@@ -24,6 +24,8 @@ export async function changeCustomerBlacklist(client: Pick<PoolClient, 'query'>,
   if (!result.rowCount) throw new CustomerBlacklistError('Không tìm thấy khách hàng.', 404);
   if (result.rows[0].customer_revision !== input.revision) throw new CustomerBlacklistError('Hồ sơ đã được người khác thay đổi. Nhấn Làm mới trước khi đổi Blacklist.', 409);
   const updated = await client.query(`UPDATE himoto.customers SET status = CASE WHEN $2::boolean THEN 2
+      WHEN customer_type='foreign' AND NULLIF(BTRIM(name),'') IS NOT NULL AND NULLIF(BTRIM(id_card),'') IS NOT NULL
+        AND (NULLIF(BTRIM(phone),'') IS NOT NULL OR NULLIF(BTRIM(contact_detail),'') IS NOT NULL) THEN 1
       WHEN NULLIF(BTRIM(name), '') IS NOT NULL AND NULLIF(BTRIM(address), '') IS NOT NULL
         AND regexp_replace(COALESCE(id_card, ''), '\\s+', '', 'g') ~ '^(\\d{9}|\\d{12})$'
         AND regexp_replace(COALESCE(phone, ''), '[[:space:].()-]+', '', 'g') ~ '^\\+?\\d{9,13}$' THEN 1 ELSE 0 END,

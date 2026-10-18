@@ -1,9 +1,9 @@
 import 'server-only';
-import { cleanOcrFields, OCR_CUSTOMER_KEYS, type OcrKind, type OcrResult } from '@/lib/management/photo-ocr';
+import { cleanOcrFields, type OcrKind, type OcrResult } from '@/lib/management/photo-ocr';
 
 export class PhotoOcrError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export function ocrKind(value: string | null): OcrKind {
-  if (!['cccd_front', 'cccd_back', 'plate'].includes(value || '')) throw new PhotoOcrError('Loại ảnh cần đọc không hợp lệ.');
+  if (!['cccd_front', 'cccd_back', 'plate', 'passport', 'driver_license'].includes(value || '')) throw new PhotoOcrError('Loại ảnh cần đọc không hợp lệ.');
   return value as OcrKind;
 }
 const limits = new Map<number, { count: number; expires: number }>();
@@ -18,9 +18,11 @@ export async function extractPhoto(kind: OcrKind, mimeType: string, data: Buffer
   if (!apiKey) throw new PhotoOcrError('Chưa cấu hình Gemini API key. Vẫn có thể lưu ảnh và nhập thông tin bằng tay.', 503);
   const model = process.env.GEMINI_OCR_MODEL || 'gemini-3.5-flash-lite';
   if (!/^gemini-[a-z0-9.-]+$/.test(model)) throw new PhotoOcrError('Cấu hình model Gemini chưa hợp lệ.', 503);
-  const keys = kind === 'plate' ? ['license'] : [...OCR_CUSTOMER_KEYS];
+  const keys = kind === 'plate' ? ['license'] : kind === 'driver_license' ? ['driver_license_number','driver_license_issued_on'] : ['id_card','name','id_card_issued_on','id_card_issued_by'];
   const schema = { type: 'object', properties: Object.fromEntries(keys.map(key => [key, { type: 'string' }])), required: keys, additionalProperties: false };
-  const prompt = kind === 'plate'
+  const prompt = kind === 'driver_license' ? 'Đọc số giấy phép lái xe (driver_license_number) và NGÀY CẤP (driver_license_issued_on, YYYY-MM-DD) trên giấy phép Việt Nam hoặc quốc tế. Không lấy ngày sinh, ngày hết hạn hay số định danh cá nhân. Chỉ chép dữ liệu đọc rõ; trường không rõ trả chuỗi rỗng.'
+    : kind === 'passport' ? 'Đọc hộ chiếu quốc tế: id_card phải là PASSPORT NO / số hộ chiếu, tuyệt đối không lấy Personal No / số cá nhân; name là họ tên người mang hộ chiếu bằng chữ Latin; id_card_issued_on là ngày cấp YYYY-MM-DD, id_card_issued_by là cơ quan cấp. Không lấy ngày sinh hay ngày hết hạn. Trường không xuất hiện hoặc không đọc rõ trả chuỗi rỗng.'
+    : kind === 'plate'
     ? 'Đọc đúng biển số xe Việt Nam trong ảnh, giữ chữ/số và số 0 đầu. Nếu không rõ hoặc có nhiều biển số không xác định được biển chính, trả license rỗng.'
     : `Đọc ${kind === 'cccd_front' ? 'mặt trước' : 'mặt sau'} CCCD/CMND/căn cước Việt Nam, gồm cả chữ nhỏ và phần thông tin cấp thẻ. Chỉ trích xuất 4 trường: id_card là số CCCD/CMND của chủ thẻ; name là họ tên CHỦ THẺ, không lấy tên người ký hoặc người có chức vụ cấp thẻ; id_card_issued_on là NGÀY CẤP, có thể ghi "Ngày, tháng, năm / Date, month, year", định dạng YYYY-MM-DD, không lấy ngày sinh hoặc ngày hết hạn; id_card_issued_by là đầy đủ tên cơ quan cấp in trên thẻ, kể cả khi in thành nhiều dòng, không lấy tên cá nhân ký bên dưới. Trên CCCD gắn chip, ngày cấp và cơ quan cấp thường nằm ở phần trên mặt sau; thẻ khác có thể ghi ở mặt trước. Chỉ chép nội dung rõ ràng trong ảnh; không suy đoán theo mẫu thẻ. Giữ dấu tiếng Việt và số 0 đầu. Không đọc địa chỉ, quê quán, nơi thường trú, số điện thoại. Trường không xuất hiện hoặc không đọc rõ trả chuỗi rỗng.`;
   let response: Response;

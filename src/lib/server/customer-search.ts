@@ -2,7 +2,7 @@ import 'server-only';
 
 // Ownership comes from the customer profile. The first rental comes from actual
 // rental history, excluding drafts, reservations, cancellations and deleted orders.
-export const CUSTOMER_PROFILE_SQL = `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card,
+export const CUSTOMER_PROFILE_SQL = `SELECT c.id, c.name, c.email, c.phone, c.address, c.id_card, c.customer_type, c.nationality, c.contact_channel, c.contact_detail,
   c.driver_license_number, c.driver_license_issued_on::text AS driver_license_issued_on,
   CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
        WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
@@ -29,6 +29,9 @@ export const CUSTOMER_PROFILE_SQL = `SELECT c.id, c.name, c.email, c.phone, c.ad
   LEFT JOIN himoto.stores first_store ON first_store.id = first_rental.store_id`;
 
 export const CUSTOMER_SEARCH_SQL = `${CUSTOMER_PROFILE_SQL}
-  WHERE regexp_replace(COALESCE(c.id_card, ''), '\\D', '', 'g') = $1
-     OR regexp_replace(COALESCE(c.phone, ''), '\\D', '', 'g') = $1
+  WHERE upper(regexp_replace(COALESCE(c.id_card, ''), '[[:space:]]', '', 'g')) = $1
+     OR ($1 ~ '^[0-9]{6,15}$' AND regexp_replace(COALESCE(c.phone, ''), '\\D', '', 'g') = $1)
+     OR (c.customer_type='foreign' AND CASE WHEN c.contact_detail ~ '^[+0-9[:space:].()-]+$'
+       THEN regexp_replace(c.contact_detail, '\\D', '', 'g')
+       ELSE upper(regexp_replace(c.contact_detail, '[[:space:]]', '', 'g')) END=$1)
   ORDER BY c.id DESC`;

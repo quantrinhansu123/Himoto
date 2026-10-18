@@ -9,6 +9,7 @@ export class ContractProfileError extends Error {constructor(message:string,publ
 export function parseContractProfile(body:unknown):{revision:string;profile:ContractProfile} {
   if(!body || typeof body !== 'object' || Array.isArray(body))throw new ContractProfileError('Hồ sơ hợp đồng chưa hợp lệ.');
   const value=body as Record<string,unknown>, profile=value.profile as ContractProfile;
+  if(profile?.customer&&typeof profile.customer==='object'&&!Array.isArray(profile.customer))for(const key of ['customer_type','nationality','contact_channel','contact_detail'] as const)if(profile.customer[key]===undefined)profile.customer[key]='';
   if(Object.keys(value).some(key=>!['revision','profile'].includes(key)) || typeof value.revision !== 'string' || !/^\d{1,20}$/.test(value.revision) || !profile || typeof profile !== 'object' || Array.isArray(profile) || Object.keys(profile).some(key=>!PROFILE_KEYS.includes(key as never)))throw new ContractProfileError('Chỉ cập nhật thông tin hồ sơ, không thay đổi tiền hoặc kho xe.');
   if(!profile.customer || typeof profile.customer !== 'object' || Array.isArray(profile.customer) || Object.keys(profile.customer).some(key=>![...CUSTOMER_FIELDS,'relatives_json'].includes(key as never)) || CUSTOMER_FIELDS.some(key=>typeof profile.customer[key] !== 'string' || profile.customer[key].length>4000))throw new ContractProfileError('Thông tin khách hàng chưa hợp lệ.');
   const errors=validateOperationalCustomer(profile.customer,'api');

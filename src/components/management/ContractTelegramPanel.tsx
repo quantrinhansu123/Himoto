@@ -34,23 +34,23 @@ export function ContractTelegramPanel({id}:{id:number}) {
   useEffect(()=>{if(!active||busy)return;const controller=new AbortController();const timer=setTimeout(()=>void refresh(controller.signal),3000);return()=>{clearTimeout(timer);controller.abort();};},[active,busy,data,refresh]);
   const photosPending=Object.values(pending).some(Boolean);
   return <section className="mg-contract-telegram">
-    <p>Thông tin và ảnh đã lưu sẽ gửi vào nhóm PGD của hợp đồng. Chọn giao dịch, lưu đủ ảnh rồi kiểm tra nội dung trước khi gửi.</p>
+    <p>Thông tin, ảnh và video đã lưu sẽ gửi vào nhóm PGD của hợp đồng. Chọn giao dịch, lưu đủ ảnh/video rồi kiểm tra nội dung trước khi gửi.</p>
     <ContractTelegramAuto id={id}/>
     <div className="mg-contract-history-toolbar"><button className="mg-button" type="button" disabled={loading||busy||photosPending} onClick={()=>void refresh()}>{loading?<LoaderCircle size={15} className="mg-spin"/>:null}Làm mới nội dung và ảnh</button></div>
     {data&&!data.events.length&&<p>Chưa có giao dịch hoàn tất. Có thể tắt tự gửi ở trên trước khi xác nhận giao dịch.</p>}
-    {Boolean(data?.events.length)&&<label className="mg-telegram-event-label">Giao dịch cần gửi<select aria-label="Giao dịch cần gửi Telegram" value={selected} disabled={busy||photosPending} onChange={e=>{setSelected(e.target.value);setPending({});setMessage('');}}>{data?.events.map(e=><option key={e.key} value={e.key}>{e.label} · {e.photo_count} ảnh · {e.status?NOTICE_STATUS_LABELS[e.status]:'Chưa gửi'}</option>)}</select></label>}
+    {Boolean(data?.events.length)&&<label className="mg-telegram-event-label">Giao dịch cần gửi<select aria-label="Giao dịch cần gửi Telegram" value={selected} disabled={busy||photosPending} onChange={e=>{setSelected(e.target.value);setPending({});setMessage('');}}>{data?.events.map(e=><option key={e.key} value={e.key}>{e.label} · {e.photo_count} ảnh · {e.video_count||0} video · {e.status?NOTICE_STATUS_LABELS[e.status]:'Chưa gửi'}</option>)}</select></label>}
     {event&&<div key={event.key}>
       <pre className="mg-telegram-preview">{event.text}</pre>
-      <p role="status">{event.photo_count} ảnh đã lưu · {event.status?NOTICE_STATUS_LABELS[event.status]:'Chưa gửi'}{event.sent_at?` · ${new Date(event.sent_at).toLocaleString('vi-VN')}`:''}</p>
+      <p role="status">{event.photo_count} ảnh · {event.video_count||0} video đã lưu · {event.status?NOTICE_STATUS_LABELS[event.status]:'Chưa gửi'}{event.sent_at?` · ${new Date(event.sent_at).toLocaleString('vi-VN')}`:''}</p>
       {event.unchanged&&<p>Nội dung và ảnh này đã được gửi hoặc đang gửi. Bổ sung ảnh rồi làm mới nếu cần gửi bản cập nhật.</p>}
       {event.phases.map(phase=><SavedRecordPhotos key={phase} entity="contracts" recordId={id} slots={contractPhotoSlots(phase as ContractPhotoPhase)} title={`Ảnh ${event.label}`} readOnly={!can(phase.startsWith('renewal-')?'contracts.renew':phase.startsWith('return-')?'contracts.return':phase==='handover'?'contracts.finalize':'contracts.draft')}
         onPendingChange={value=>setPending(old=>old[phase]===value?old:{...old,[phase]:value})} onSaved={()=>void refresh()}/>)}
-      {photosPending&&<p role="status">Lưu hết ảnh đang chọn trước khi gửi Telegram.</p>}
+      {photosPending&&<p role="status">Lưu hết ảnh/video đang chọn trước khi gửi Telegram.</p>}
       <button type="button" className="mg-button mg-button-primary" disabled={!event.can_send||busy||loading||photosPending} onClick={async()=>{
         setBusy(true);setError('');setMessage('');
         try{const state=await contractTelegramRequest(id,{action:'send',event_key:event.key,hash:event.hash,request_id:crypto.randomUUID()});setData(state);setMessage('Đã xếp thông báo vào hàng đợi. Trạng thái bên trên cập nhật sau khi Telegram trả kết quả.');}
         catch(cause){setError(cause instanceof Error?cause.message:'Chưa gửi được Telegram.');}finally{setBusy(false);}
-      }}>{busy?<LoaderCircle size={16} className="mg-spin"/>:<Send size={16}/>}Gửi Telegram · {event.photo_count} ảnh</button>
+      }}>{busy?<LoaderCircle size={16} className="mg-spin"/>:<Send size={16}/>}Gửi Telegram · {event.photo_count} ảnh · {event.video_count||0} video</button>
     </div>}
     {message&&<p role="status">{message}</p>}{error&&<p className="mg-field-error" role="alert">{error}</p>}
   </section>;

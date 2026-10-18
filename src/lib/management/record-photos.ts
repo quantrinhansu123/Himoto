@@ -1,10 +1,12 @@
 export type PhotoEntity = 'customers' | 'contracts';
 export interface PhotoSlot { key: string; label: string }
-export interface SavedPhoto { slot: string; updated_at: string }
+export interface SavedPhoto { slot: string; updated_at: string; mime_type?: string }
 export type PendingPhotos = Record<string, File>;
 export const CUSTOMER_PHOTO_SLOTS: PhotoSlot[] = [{ key: 'id_front', label: 'CCCD mặt trước' }, { key: 'id_back', label: 'CCCD mặt sau' }];
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
-export interface CloudUploadReceipt { public_id: string; version: number; signature: string }
+export const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
+export const isVideoSlot = (slot:string) => /-video-[1-3]$/.test(slot);
+export interface CloudUploadReceipt { public_id: string; version: number; signature: string; resource_type?: 'video' }
 const uploads = new WeakMap<File, { id: string; promise: Promise<CloudUploadReceipt> }>();
 
 export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploadReceipt> {
@@ -12,7 +14,8 @@ export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploa
   if (previous && !retry) return previous.promise;
   const id = retry ? crypto.randomUUID() : previous?.id || crypto.randomUUID();
   const promise = (async () => {
-    const signed = await fetch('/api/auth/photo-uploads/sign', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ upload_id: id }) });
+    const video=file.type.startsWith('video/');
+    const signed = await fetch('/api/auth/photo-uploads/sign', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ upload_id: id, ...(video?{resource_type:'video'}:{}) }) });
     const envelope = await signed.json().catch(() => null);
     if (!signed.ok || envelope?.status !== 'success') throw new Error(envelope?.message || 'Không khởi tạo được tải ảnh.');
     const settings = envelope.data;
@@ -20,10 +23,10 @@ export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploa
     const body = new FormData(); body.append('file', file);
     for (const [key, value] of Object.entries(settings.params)) body.append(key, String(value));
     body.append('api_key', settings.api_key); body.append('signature', settings.signature);
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${settings.cloud_name}/image/upload`, { method: 'POST', body, signal: AbortSignal.timeout(60_000) });
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${settings.cloud_name}/${video?'video':'image'}/upload`, { method: 'POST', body, signal: AbortSignal.timeout(video?180_000:60_000) });
     const result = await response.json().catch(() => null);
     if (!response.ok || result?.public_id !== settings.params.public_id || !Number.isSafeInteger(result?.version) || typeof result?.signature !== 'string') throw new Error('Chưa tải được ảnh lên Cloudinary. Ảnh vẫn được giữ trong form để thử lại.');
-    return { public_id: result.public_id, version: result.version, signature: result.signature };
+    return { public_id: result.public_id, version: result.version, signature: result.signature, ...(video?{resource_type:'video' as const}:{}) };
   })();
   uploads.set(file, { id, promise }); void promise.catch(() => {});
   return promise;
@@ -35,7 +38,7 @@ export function photoEndpoint(entity: PhotoEntity, id: number, slot?: string) {
 export async function saveRecordPhotos(entity: PhotoEntity, id: number, photos: PendingPhotos) {
   for (const [slot, photo] of Object.entries(photos)) {
     let receipt: CloudUploadReceipt | undefined;
-    if (uploads.has(photo)) {
+    if (uploads.has(photo) || photo.type.startsWith('video/')) {
       try { receipt = await uploadRecordPhoto(photo); }
       catch { receipt = await uploadRecordPhoto(photo, true); }
     }
@@ -45,6 +48,19 @@ export async function saveRecordPhotos(entity: PhotoEntity, id: number, photos: 
       throw new Error(result?.message || 'Chưa lưu được ảnh. Giữ form và bấm lưu lại để thử lại.');
     }
   }
+}
+
+export async function prepareRecordVideo(file:File):Promise<File> {
+  if(!file.type.startsWith('video/')||file.size>MAX_VIDEO_BYTES||!file.size)throw new Error('Chọn video MP4/MOV/WebM, tối đa 45 MB.');
+  const url=URL.createObjectURL(file);
+  try {
+    const video=document.createElement('video');video.preload='metadata';
+    // iPhone HEVC/MOV can be uploaded even when this browser cannot decode it.
+    // Cloudinary converts it to H.264; the server verifies the real duration.
+    const duration=await new Promise<number>(resolve=>{const timer=setTimeout(()=>resolve(NaN),10000);video.onloadedmetadata=()=>{clearTimeout(timer);resolve(video.duration);};video.onerror=()=>{clearTimeout(timer);resolve(NaN);};video.src=url;});
+    if(Number.isFinite(duration)&&(duration<=0||duration>60))throw new Error('Mỗi video tối đa 60 giây; nên quay 10–30 giây.');
+    video.onloadedmetadata=null;video.onerror=null;video.removeAttribute('src');video.load();return file;
+  } finally {URL.revokeObjectURL(url);}
 }
 
 // A camera photo can exceed the hosting request limit. Resize locally before uploading.

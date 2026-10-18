@@ -5,7 +5,7 @@ import { syncGpsAccounts } from '@/lib/server/gps-sync';
 import { dispatchContractNotifications } from '@/lib/server/contract-notifications';
 import { syncGpsEventHistory } from '@/lib/server/gps-history-sync';
 export const runtime='nodejs';
-export const maxDuration=60;
+export const maxDuration=300;
 export async function POST(request:NextRequest) {
   const authorization=request.headers.get('authorization');
   if(!validIntegrationWorker(authorization))return NextResponse.json({status:'error'},{status:401});

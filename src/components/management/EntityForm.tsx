@@ -6,7 +6,8 @@ import { Check, LoaderCircle } from 'lucide-react';
 import { ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
-import { ContractRelative, relativesFromRow, formatRelatives } from '@/lib/management/contract-document';
+import { ContractRelative, relativesFromRow, formatRelatives, customerDetails,validateOperationalCustomer } from '@/lib/management/contract-document';
+import { CustomerInternationalFields } from '@/components/contracts/CustomerInternationalFields';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { CustomerRelativesFields } from '@/components/contracts/CustomerRelativesFields';
 import { VietnamDateField } from '@/components/contracts/VietnamDateField';
@@ -50,6 +51,10 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
     if (config.kind === 'customers' && !validIdentityIssueDate(String(draft.id_card_issued_on || ''))) nextErrors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
     if (config.kind === 'customers' && !validIdentityIssueDate(String(draft.driver_license_issued_on || ''))) nextErrors.driver_license_issued_on = 'Ngày cấp GPLX không hợp lệ.';
     if (config.kind === 'customers' && String(draft.id_card_issued_by || '').length > 255) nextErrors.id_card_issued_by = 'Nơi cấp CCCD/CMND tối đa 255 ký tự.';
+    if(config.kind==='customers'&&draft.customer_type==='foreign'){
+      delete nextErrors.phone;delete nextErrors.id_card;delete nextErrors.address;
+      Object.assign(nextErrors,validateOperationalCustomer(customerDetails(draft),source));
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
       requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
@@ -79,9 +84,10 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
 
   return <Dialog title={`${row ? 'Chỉnh sửa' : 'Thêm'} ${config.singular}`} subtitle={`${draft.code} · ${'Lưu trực tiếp vào Supabase'}`} onClose={() => { if (!saving) onClose(); }}>
     <form ref={formRef} onSubmit={submit} noValidate>
-      <div className="mg-dialog-body"><div className="mg-form-grid">{config.fields.filter(field => config.kind !== 'customers' || field.key !== 'relatives_text').map(field => {
+      <div className="mg-dialog-body"><div className="mg-form-grid">{config.kind==='customers'&&<CustomerInternationalFields prefix="edit-customer" value={customerDetails(draft)} onChange={customer=>{setDraft(previous=>({...previous,...customer}));setErrors({});}} disabled={saving} errors={errors}/>} {config.fields.filter(field => config.kind !== 'customers' || field.key !== 'relatives_text').map(field => {
         const options = field.storeOptions ? (dataset?.stores || []).map(store => ({ value: String(store.id), label: store.name })) : field.options;
         const id = `field-${field.key}`;
+        const fieldLabel=config.kind==='customers'&&draft.customer_type==='foreign'?(field.key==='id_card'?'Hộ chiếu / Giấy tờ quốc tế':field.key==='phone'?'SĐT quốc tế (nếu có)':field.label):field.label;
         const props = { id, name: field.key, value: draft[field.key] ?? '', disabled: saving,
           'aria-invalid': Boolean(errors[field.key]), 'aria-describedby': errors[field.key] ? `${id}-error` : field.hint ? `${id}-hint` : undefined,
           onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -92,7 +98,7 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
           setDraft(current => ({ ...current, [field.key]: next }));
           setErrors(current => ({ ...current, [field.key]: '' }));
         };
-        return <div key={field.key} className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`}><label htmlFor={id}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
+        return <div key={field.key} className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`}><label htmlFor={id}>{fieldLabel}{field.required && !(config.kind==='customers'&&draft.customer_type==='foreign'&&['phone','address'].includes(field.key)) && <span aria-hidden="true"> *</span>}</label>
           {field.type === 'select' ? <select {...props} required={field.required}>{field.storeOptions && <option value="">Chọn cơ sở</option>}{options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
             : field.type === 'textarea' ? <textarea {...props} rows={3} />
             : field.type === 'date' ? <VietnamDateField id={id} label={field.label} value={String(draft[field.key] ?? '')} disabled={saving} invalid={Boolean(errors[field.key])}

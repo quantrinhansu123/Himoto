@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
+import { FormEvent, Fragment, ReactNode, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ChevronLeft, ChevronRight, LoaderCircle, Plus, Printer, Save, Search, Trash2, UserPlus } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
@@ -24,6 +24,9 @@ import { VietnamDateField } from './VietnamDateField';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
 import { addRentalMonths, billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } from '@/lib/management/contract-billing';
+import { CustomerInternationalFields } from './CustomerInternationalFields';
+import { contractPhotoSlots } from '@/lib/management/contract-photos';
+import { normalizeCustomerLookup,validCustomerLookup } from '@/lib/management/contract-document';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/management/record-photos';
 import { usePhotoOcr } from '@/components/management/usePhotoOcr';
@@ -91,6 +94,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [notes, setNotes] = useState(String(row?.notes || ''));
   const [saving, setSaving] = useState(false);
   const [customerPhotos, setCustomerPhotos] = useState<PendingPhotos>({});
+  const [transactionMedia,setTransactionMedia]=useState<PendingPhotos>({});
+  const [licensePhotos,setLicensePhotos]=useState<PendingPhotos>({});
+  const [processingLicense,setProcessingLicense]=useState(false);
+  const [processingMedia,setProcessingMedia]=useState(false);
   const [platePhotos, setPlatePhotos] = useState<PendingPhotos>({});
   const [processingCustomerPhoto, setProcessingCustomerPhoto] = useState(false);
   const [processingPlatePhoto, setProcessingPlatePhoto] = useState(false);
@@ -99,7 +106,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const previousCustomerAi = useRef<OcrFields>({});
   const photoIdentityLookup = useRef('');
   const customerOcr = usePhotoOcr({
-    kind: slot => slot === 'id_front' ? 'cccd_front' : 'cccd_back',
+    kind: slot => ['driver_license','driver-license'].includes(slot)?'driver_license':draftRef.current.customer.customer_type==='foreign'?'passport':slot === 'id_front' ? 'cccd_front' : 'cccd_back',
     snapshot: () => ({ ...draftRef.current.customer }),
     apply: (_slot, result, before) => {
       const current = draftRef.current;
@@ -107,6 +114,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       previousCustomerAi.current = { ...previousCustomerAi.current, ...merged.applied };
       const identityChanged = Boolean(merged.applied.id_card && normalizeIdCard(merged.applied.id_card) !== normalizeIdCard(current.customer.id_card));
       const next = { ...current, ...(identityChanged ? {customer_id:null} : {}), customer: merged.customer, vehicles: current.vehicles.map(vehicle => ({ ...vehicle,
+        ...(merged.applied.driver_license_number&&(!vehicle.driver_license_number||vehicle.driver_license_number===current.customer.driver_license_number)?{driver_license_number:merged.customer.driver_license_number}:{}),
+        ...(merged.applied.driver_license_issued_on&&(!vehicle.driver_license_issued_on||vehicle.driver_license_issued_on===current.customer.driver_license_issued_on)?{driver_license_issued_on:merged.customer.driver_license_issued_on}:{}),
         ...(merged.applied.name && (!vehicle.driver_name || vehicle.driver_name === current.customer.name) ? { driver_name: merged.customer.name } : {}) })) };
       draftRef.current = next; setDraft(next);
       if (identityChanged) {
@@ -145,6 +154,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [lookupRetry, setLookupRetry] = useState(0);
   const [customerMatches, setCustomerMatches] = useState<ManagementRow[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<ManagementRow | null>(() => dataset?.customers.find(customer => customer.id === draft.customer_id) || null);
+  const permittedStores=useRef(dataset?.stores);permittedStores.current=dataset?.stores;
   const selectedCustomerStatus = customerStatusLabel(selectedCustomer?.status);
   const [staff, setStaff] = useState<ManagementRow[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
@@ -169,8 +179,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     if (preserveCustomer.current) return;
     const controller = new AbortController(); let current = true;
     setLookupError('');
-    const lookupDigits = String(idInput ?? '').replace(/\D/g, '');
-    if (lookupDigits.length < 9 || lookupDigits.length > 13) { setLookupState('idle'); setCustomerMatches([]); return; }
+    const lookupDigits = normalizeCustomerLookup(String(idInput ?? ''));
+    if (!validCustomerLookup(lookupDigits)) { setLookupState('idle'); setCustomerMatches([]); return; }
     setLookupState('loading');
     const timer = setTimeout(() => {
       const lookup = contractAutofill.searchCustomers(lookupDigits, controller.signal);
@@ -201,7 +211,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     const details = keepPhotoIdentity ? { ...stored, ...Object.fromEntries(OCR_CUSTOMER_KEYS.map(key=>[key,previous.customer[key] || stored[key]])),
       address:previous.customer.address || stored.address } : stored;
     const sourceStoreId = customer.store_id ? String(customer.store_id) : '';
-    return { ...previous, vehicle_store_id: contractStaffStoreId(previous), ...(sourceStoreId ? { store_id:sourceStoreId, customer_source_url:String(customer.store_name || '') } : {}),
+    return { ...previous, vehicle_store_id: contractStaffStoreId(previous), ...(!previous.store_id && sourceStoreId && permittedStores.current?.some(store=>String(store.id)===sourceStoreId) ? { store_id:sourceStoreId, customer_source_url:String(customer.store_name || '') } : {}),
       customer_id: customer.id, relatives, customer: { ...details, relatives_text: formatRelatives(relatives) },
       vehicles: previous.vehicles.map(vehicle => ({ ...vehicle, driver_name: customer.name,
         driver_license_number: details.driver_license_number,
@@ -282,7 +292,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     setCustomerMatches([]);
     const normalized = normalizeIdCard(value);
     const idCard = /^\d{9}$|^\d{12}$/.test(normalized) ? normalized : '';
-    setDraft(previous => ({ ...previous, customer_id: null, customer: { ...customerDetails(), id_card: idCard }, relatives: pairRelatives(null),
+    setDraft(previous => ({ ...previous, customer_id: null, customer: { ...customerDetails(), customer_type:previous.customer.customer_type, id_card: previous.customer.customer_type==='foreign'?normalized:idCard }, relatives: pairRelatives(null),
       vehicles: previous.vehicles.map(vehicle => ({ ...vehicle, driver_name: '', driver_license_number: '', driver_license_issued_on: '' })) }));
     setErrors(previous => ({ ...previous, id_card: '' }));
   }
@@ -309,7 +319,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!dataset || busy.current || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending) return;
+    if (!dataset || busy.current || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending) return;
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const action = submitter instanceof HTMLButtonElement ? submitter.value : '';
     const finalizing = action === 'finalize' && canSaveDraft;
@@ -433,8 +443,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     setSaveError('');
   }
   const representative = branchStaff.find(person => String(person.id) === draft.staff_id) || (draft.staff_name.trim() ? { id: -1, code: '', status: 'active', name: draft.staff_name.trim(), position: '' } : undefined);
-  const canSearchCustomer = /^\d{9,13}$/.test(String(idInput ?? '').replace(/\D/g, ''));
-  const lookupText = lookupState === 'loading' ? 'Đang tra cứu khách hàng trên toàn hệ thống…' : lookupState === 'found' ? `Đã tìm thấy khách hàng #${draft.customer_id} · Thông tin đã tự động điền` : lookupState === 'matches' ? `Tìm thấy ${customerMatches.length} hồ sơ. Chọn đúng khách hàng bên dưới.` : lookupState === 'missing' ? 'Chưa có khách hàng mang giấy tờ hoặc số điện thoại này trên toàn hệ thống.' : 'Nhập CCCD/CMND hoặc số điện thoại (9–13 số) để tra cứu tất cả cơ sở.';
+  const canSearchCustomer = validCustomerLookup(String(idInput ?? ''));
+  const lookupText = lookupState === 'loading' ? 'Đang tra cứu khách hàng trên toàn hệ thống…' : lookupState === 'found' ? `Đã tìm thấy khách hàng #${draft.customer_id} · Thông tin đã tự động điền` : lookupState === 'matches' ? `Tìm thấy ${customerMatches.length} hồ sơ. Chọn đúng khách hàng bên dưới.` : lookupState === 'missing' ? 'Chưa có khách hàng mang giấy tờ hoặc số điện thoại này trên toàn hệ thống.' : 'Nhập CCCD, hộ chiếu, số quốc tế hoặc liên hệ để tra cứu tất cả cơ sở.';
   const ownerStoreName = (customer: ManagementRow) => customer.store_name || dataset?.stores.find(store => store.id === customer.store_id)?.name || 'Chưa xác định';
   const firstRentalStoreName = (customer: ManagementRow) => customer.first_rental_store_name || (customer.first_rented_at ? 'Chưa xác định cơ sở' : 'Chưa có lịch sử thuê');
   function field(key: keyof Omit<ContractDraft, 'customer' | 'vehicles' | 'customer_id'>, label: string, type = 'text', required = false) {
@@ -445,8 +455,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
       {errors[key] && <p id={`contract-${key}-error`} className="mg-field-error">{errors[key]}</p>}</div>;
   }
   const customerFields: { key: keyof CustomerDetails; label: string; type?: string; wide?: boolean; hint?: string }[] = [
-    { key: 'name', label: 'Tên khách hàng' }, { key: 'phone', label: 'SĐT', type: 'tel' },
-    { key: 'id_card', label: 'Số CMTND/CCCD' },
+    { key: 'name', label: 'Tên khách hàng' }, { key: 'phone', label: draft.customer.customer_type==='foreign'?'SĐT quốc tế (nếu có)':'SĐT', type: 'tel' },
+    { key: 'id_card', label: draft.customer.customer_type==='foreign'?'Hộ chiếu / Giấy tờ quốc tế':'Số CMTND/CCCD' },
     { key: 'id_card_issued_on', label: 'Ngày cấp CCCD', type: 'date' }, { key: 'id_card_issued_by', label: 'Nơi cấp CCCD' },
     { key: 'driver_license_number', label: 'Số giấy phép lái xe' }, { key: 'driver_license_issued_on', label: 'Ngày cấp GPLX', type: 'date' },
     { key: 'address', label: 'Nơi ở hiện tại', wide: true, hint: 'Ghi số nhà, phường/xã, quận/huyện.' },
@@ -456,10 +466,12 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     if (draft.customer_id) await saveRecordPhotos('customers', draft.customer_id, customerPhotos);
     const selectedPlates = Object.fromEntries(Object.entries(platePhotos).filter(([slot]) => draft.vehicles.some(vehicle => slot === `plate-${vehicle.id}`)));
     await saveRecordPhotos('contracts', contractId, selectedPlates);
+    await saveRecordPhotos('contracts',contractId,licensePhotos);setLicensePhotos({});
+    await saveRecordPhotos('contracts',contractId,transactionMedia);setTransactionMedia({});
     setCustomerPhotos({}); setPlatePhotos({}); setPhotoVersion(current => current + 1);
   }
   async function persistProfile() {
-    if(!row || !profileRevision || busy.current || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
+    if(!row || !profileRevision || busy.current || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
     try{const result=await saveContractProfile(row.id,profileRevision,contractProfile(draft));setProfileRevision(result.revision);await savePhotos(row.id);setProfileMessage('Đã lưu hồ sơ, ảnh và yêu cầu khi in. Tiền, công nợ và kho xe giữ theo giao dịch đã ghi.');void ensureData(['contracts'],true).catch(()=>{});}
     catch(cause){setSaveError(cause instanceof Error ? cause.message : 'Không lưu được hồ sơ.');}
     finally{busy.current=false;setSaving(false);}
@@ -534,7 +546,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
                 {errors.staff_id && <p className="mg-field-error">{errors.staff_id}</p>}{staffError ? <div className="mg-field-error" role="alert">{staffError}<button className="mg-inline-button" type="button" onClick={() => setStaffRetry(value => value + 1)}>Thử lại</button></div> : <small id="contract-staff-help">{staffStoreId && !staffLoading ? `${branchStaff.filter(staffIsAvailable).length} nhân sự tại cửa hàng xe. Có thể chọn gợi ý hoặc nhập tên mới.` : 'Chọn cửa hàng xe để tải gợi ý nhân viên làm hợp đồng.'}</small>}</div>
             </div>
             <div className="mg-contract-customer-toolbar">
-              <div className="mg-field mg-contract-lookup"><label htmlFor="contract-id-card">Tra cứu theo CCCD / CMND hoặc SĐT *</label><div className="mg-lookup-controls"><input id="contract-id-card" autoComplete="off" value={idInput} aria-invalid={Boolean(errors.id_card)} aria-describedby="contract-lookup-status" placeholder="CCCD/CMND hoặc SĐT · Tất cả cơ sở" onChange={event => changeIdentity(event.target.value)} />
+              <div className="mg-field mg-contract-lookup"><label htmlFor="contract-id-card">Tra cứu theo CCCD / hộ chiếu / SĐT / liên hệ *</label><div className="mg-lookup-controls"><input id="contract-id-card" autoComplete="off" value={idInput} aria-invalid={Boolean(errors.id_card)} aria-describedby="contract-lookup-status" placeholder="CCCD, hộ chiếu, SĐT hoặc liên hệ" onChange={event => changeIdentity(event.target.value)} />
                 <button className="mg-button" type="button" disabled={!canSearchCustomer || lookupState === 'loading'} onClick={() => { preserveCustomer.current = false; setLookupRetry(value => value + 1); }}>{lookupState === 'loading' ? <LoaderCircle size={16} className="mg-spin" /> : <Search size={16} />}Tra cứu</button></div>
                 <div id="contract-lookup-status" className={`mg-lookup-status is-${lookupState}`} role={lookupState === 'error' ? 'alert' : 'status'}>{lookupState === 'error' ? lookupError : lookupText}</div>{lookupState === 'found' && <span className={`mg-customer-status ${selectedCustomerStatus.includes('Cảnh báo') ? 'is-blocked' : selectedCustomerStatus === 'Có cảnh báo' ? 'is-warning' : selectedCustomerStatus === 'Đang hoạt động' ? 'is-active' : ''}`}>{selectedCustomerStatus}</span>}
                 {lookupState === 'found' && selectedCustomer && <div className="mg-customer-origin">
@@ -546,9 +558,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               </div>
               <button className="mg-button" type="button" disabled={!draft.store_id} onClick={openCustomerCreate}><UserPlus size={16} />Thêm mới</button>
             </div>
+            <CustomerInternationalFields prefix="contract-customer" value={draft.customer} onChange={customer=>{setDraft(previous=>({...previous,customer}));setErrors({});}} disabled={saving} errors={errors}/>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(0, 2).map(customerField)}</div>
-            <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(customerField)}</div>
-            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${photoVersion}`} entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Chụp CCCD · Tự điền bằng AI" value={customerPhotos} onChange={setCustomerPhotos} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
+            <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(item=><Fragment key={item.key}>{customerField(item)}{item.key==='driver_license_number'&&source==='api'&&draft.customer_id&&<div className="mg-field-wide"><RecordPhotoFields entity="contracts" recordId={savedDraft?.id||row?.id} slots={[{key:'driver-license',label:'Giấy phép lái xe'}]} title="Chụp GPLX · Tự điền bằng AI" value={licensePhotos} onChange={setLicensePhotos} disabled={saving} onBusyChange={setProcessingLicense} ocr={customerOcr}/></div>}</Fragment>)}</div>
+            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${photoVersion}`} entity="customers" recordId={draft.customer_id} slots={draft.customer.customer_type==='foreign'?[{key:'id_front',label:'Trang hộ chiếu / giấy tờ'},{key:'id_back',label:'Trang bổ sung (nếu có)'}]:CUSTOMER_PHOTO_SLOTS} title={draft.customer.customer_type==='foreign'?'Chụp hộ chiếu · Tự điền bằng AI':'Chụp CCCD · Tự điền bằng AI'} value={customerPhotos} onChange={setCustomerPhotos} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
             <div className="mg-contract-relatives">{draft.relatives.map((relative, index) => <div className="mg-contract-relative" key={index}>
               <strong>Người thân {index + 1}</strong>
               <div className="mg-form-grid mg-contract-grid-three">{(['name', 'relationship', 'phone'] as const).map(key => {
@@ -622,6 +635,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             <div className="mg-field"><label htmlFor="contract-signer-a">Người ký Bên A (Himoto)</label><input id="contract-signer-a" value={representative?.name || ''} readOnly placeholder="Theo đại diện đã chọn" /></div>
             <div className="mg-field"><label htmlFor="contract-signer-b">Người ký Bên B (Khách thuê)</label><input id="contract-signer-b" value={draft.customer.name} readOnly placeholder="Theo khách hàng đã chọn" /></div>
             <div className="mg-field mg-field-wide"><label htmlFor="contract-record-notes">Ghi chú hợp đồng</label><textarea id="contract-record-notes" rows={3} value={notes} onChange={event => setNotes(event.target.value)} /></div>
+            <div className="mg-field mg-field-wide"><RecordPhotoFields key={`transaction-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractPhotoSlots('rental')} title="Ảnh hồ sơ & video tình trạng xe" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setProcessingMedia}/><p>Ảnh/video sẽ được lưu cùng bản nháp trước bước xác nhận thanh toán và được đính kèm thông báo Telegram khi giao dịch hoàn tất.</p></div>
             <div className="mg-field mg-field-wide"><label htmlFor="contract-customer-warning_note">Cảnh báo</label><textarea id="contract-customer-warning_note" rows={2} value={draft.customer.warning_note} disabled={lookupState !== 'found'} onChange={event => setDraft(previous => ({ ...previous, customer: { ...previous.customer, warning_note: event.target.value } }))} /></div>
           </div>)}
           <div className="mg-contract-step-actions"><span>Phần {sectionIndex + 1} / {CONTRACT_FORM_SECTIONS.length}</span>
@@ -631,14 +645,14 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
           </fieldset>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}{profileMessage && <p className="mg-payment-success" role="status">{profileMessage}</p>}
         </div>
         <div className="mg-dialog-footer"><span className="mg-form-note">{canSaveDraft ? 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
-          {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
-          {canSaveDraft && source === 'api' && canSaveContractDrafts && canFinalizeContracts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending || staffLoading || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
+          {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
+          {canSaveDraft && source === 'api' && canSaveContractDrafts && canFinalizeContracts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || staffLoading || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
           {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || staffLoading || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
-          {row && !canSaveDraft && source === 'api' && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
+          {row && !canSaveDraft && source === 'api' && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || staffLoading || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>
     </Dialog>
-    {customerModal && <CustomerCreateDialog allowIncomplete idCard={/^\d{9}$|^\d{12}$/.test(normalizeIdCard(idInput)) ? normalizeIdCard(idInput) : ''} storeId={draft.store_id} onCreated={customerCreated} onClose={() => setCustomerModal(false)} />}
+    {customerModal && <CustomerCreateDialog allowIncomplete foreign={draft.customer.customer_type==='foreign'} idCard={draft.customer.customer_type==='foreign'?normalizeIdCard(idInput):/^\d{9}$|^\d{12}$/.test(normalizeIdCard(idInput)) ? normalizeIdCard(idInput) : ''} storeId={draft.store_id} onCreated={customerCreated} onClose={() => setCustomerModal(false)} />}
     {document && <ContractPrintPreview doc={document} contractId={savedDraft?.id || row?.id} onClose={() => setDocument(null)} />}
     {typeManagerOpen && <ContractTypeManager onClose={()=>setTypeManagerOpen(false)} onCreated={type=>{changeRentalType(type);setTypeManagerOpen(false);}} />}
     {finalizeTarget && <ContractFinalizeDialog orderId={finalizeTarget.id} revision={finalizeTarget.revision} code={finalizeTarget.code}

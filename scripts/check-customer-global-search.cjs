@@ -98,6 +98,16 @@ async function run() {
           assert.equal(payload.data[1].first_rental_store_name, 'CS QA first');
         }
         checks.push('PostgreSQL TEMP: actual GET handler returns the same complete global results with no branch or either branch selected');
+        await c.query("INSERT INTO qa_global_customers(id,name,phone,id_card,status,store_id,customer_type,contact_channel,contact_detail) VALUES(11,'International QA','','QAP123456',1,31,'foreign','Facebook','qa.international'),(12,'International numeric QA','','1726617',1,34,'foreign','WhatsApp','+82 10 1234 5678')");
+        for(const query of ['QAP123456','qa.international','1726617','821012345678']){
+          const payload=await(await search(`query=${encodeURIComponent(query)}&store_id=23`)).json();
+          assert.equal(payload.data.length,1);assert.equal(payload.data[0].customer_type,'foreign');assert.equal(payload.data[0].phone,'');
+        }
+        await c.query('UPDATE qa_global_customers SET status=2 WHERE id=11');
+        const foreignRevision=(await c.query('SELECT xmin::text AS revision FROM qa_global_customers WHERE id=11')).rows[0].revision;
+        const blacklist=load(path.join(root,'lib/server/customer-blacklist'));
+        assert.equal((await blacklist.changeCustomerBlacklist(proxy,11,{revision:foreignRevision,blacklisted:false})).status,'active');
+        checks.push('PostgreSQL TEMP: real global API finds foreign passports, short international document numbers and Facebook/WhatsApp contacts across branches without a phone');
 
         const dataset = { stores: [{id:23}], staff: [{id:700,store_id:23}], vehicles: [{id:100,store_id:23,name:'Vehicle QA',license:'QA-100'}], customers: [], contracts: [] };
         async function rent(id, vehicleId) {
@@ -123,6 +133,10 @@ async function run() {
         assert.equal(Number((await searchRows('0900000011')).find(row=>Number(row.id)===7).first_rental_store_id),34);
         await rent(10,101);
         assert.equal(Number((await searchRows('0900000013'))[0].first_rental_store_id),23);
+        await c.query("INSERT INTO qa_global_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES(102,'International vehicle QA','Honda','xeso',2026,23,23,'QA-102','ready',143)");
+        await rent(11,102);
+        assert.equal((await customer(11)).customer_type,'foreign');
+        assert.equal((await customer(11)).contact_detail,'qa.international');
         checks.push('PostgreSQL TEMP: save and finalize cross-branch rentals preserve customer ID and ownership; drafts do not become first rentals; a first issued rental records its actual branch');
       } finally { await c.query('ROLLBACK'); c.release(); }
     }

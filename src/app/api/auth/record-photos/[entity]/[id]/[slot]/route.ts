@@ -50,8 +50,10 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
       await client.query('COMMIT'); client.release(); client = undefined;
       const photo = result.rows[0];
       if (photo.cloudinary_public_id) {
-        const remote = await readCloudinaryPhoto(photo);
-        response = new NextResponse(remote.body, { headers: { 'Content-Type': 'image/jpeg', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline; filename="anh-ho-so.jpg"' } });
+        const remote = await readCloudinaryPhoto(photo,request.headers.get('range'));
+        const headers:Record<string,string>={'Content-Type':photo.mime_type,'X-Content-Type-Options':'nosniff','Content-Disposition':`inline; filename="${photo.mime_type==='video/mp4'?'video-hop-dong.mp4':'anh-ho-so.jpg'}"`};
+        for(const key of ['Content-Length','Content-Range','Accept-Ranges']){const value=remote.headers.get(key);if(value)headers[key]=value;}
+        response = new NextResponse(remote.body, {status:remote.status,headers});
       } else response = new NextResponse(new Uint8Array(photo.data), { headers: { 'Content-Type': photo.mime_type, 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline; filename="anh-ho-so"' } });
     }
     if (client) await client.query('COMMIT');
