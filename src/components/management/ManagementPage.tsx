@@ -83,7 +83,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const contractId = kind === 'contracts' ? searchParams.get('contract_id') : null;
   const contractPath = paymentDueOnly ? '/contracts/due' : vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : overdueOnly ? '/contracts/overdue' : ownershipOnly ? '/contracts/ownership' : '/contracts';
   const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
-  const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string } | null>(null);
+  const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string;query?:string } | null>(null);
   const [renewTarget, setRenewTarget] = useState<ManagementRow | null>(null);
   const [renewPicker, setRenewPicker] = useState(false);
   const [renewSearch, setRenewSearch] = useState('');
@@ -138,7 +138,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     if (loading || error || !dataset || handledAction.current === action) return;
     handledAction.current = action;
     if (kind === 'contracts' && action === 'new') {setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}
-    else if (kind === 'contracts' && action === 'return') setReturnTarget({orderId:null,code:''});
+    else if (kind === 'contracts' && action === 'return') setReturnTarget({orderId:null,code:'',query:searchParams.get('query')||''});
     else if (kind === 'contracts' && action === 'renew') setRenewPicker(true);
     else if (kind === 'vehicles' && action === 'status') setVehicleAction({mode:'status',vehicle:null});
     router.replace(contractPath === '/contracts' && kind !== 'contracts' ? '/vehicles' : contractPath,{scroll:false});
@@ -342,7 +342,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       <div className="mg-dialog-body"><p>{bulkDeleteNote[kind]}</p>{bulkDeleteError && <p className="mg-error-message" role="alert">{bulkDeleteError}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={bulkDeleteBusy} onClick={() => setBulkDeleteOpen(false)}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={bulkDeleteBusy} onClick={() => void deleteSelected()}>{bulkDeleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa {selectedIds.size} {config.singular}</>}</button></div>
     </Dialog>}
-    {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} onClose={() => setReturnTarget(null)} />}
+    {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} initialQuery={returnTarget.query} onClose={() => setReturnTarget(null)} />}
     {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} onClose={() => setRenewTarget(null)} />}
     {renewPicker && <Dialog title="Chọn hợp đồng gia hạn" onClose={()=>setRenewPicker(false)}><div className="mg-dialog-body"><label className="mg-field">Tìm hợp đồng cần gia hạn<input type="search" autoFocus value={renewSearch} placeholder="Mã hợp đồng, khách, SĐT hoặc biển số" onChange={event=>setRenewSearch(event.target.value)}/></label><ul className="mg-operation-picks">{(renewable.data?.rows || []).map(row=><li key={row.id}><button type="button" onClick={()=>{setRenewPicker(false);setRenewTarget(row);}}><strong>{row.code} · {row.customer_name}</strong><span>{row.license} · {row.customer_phone}</span></button></li>)}</ul></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setRenewPicker(false)}>Đóng</button></div></Dialog>}
     {vehicleTarget && kind === 'contracts' && <ManagementDataBoundary kinds={VEHICLE_DATA_KINDS} title="Đổi xe" onClose={() => setVehicleTarget(null)}><ContractVehicleSwapDialog orderId={vehicleTarget.orderId} contractCode={vehicleTarget.code} onClose={() => setVehicleTarget(null)} /></ManagementDataBoundary>}

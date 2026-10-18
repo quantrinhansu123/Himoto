@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { LoaderCircle, Send } from 'lucide-react';
 import { contractTelegramRequest, NOTICE_STATUS_LABELS, type ContractTelegramState } from '@/lib/management/contract-telegram';
-import { contractPhotoSlots, type ContractPhotoPhase } from '@/lib/management/contract-photos';
+import { contractPhotoSlots,contractDocumentSlots, type ContractPhotoPhase } from '@/lib/management/contract-photos';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { useManagement } from './ManagementProvider';
 
@@ -43,7 +43,7 @@ export function ContractTelegramPanel({id}:{id:number}) {
       <pre className="mg-telegram-preview">{event.text}</pre>
       <p role="status">{event.photo_count} ảnh · {event.video_count||0} video đã lưu · {event.status?NOTICE_STATUS_LABELS[event.status]:'Chưa gửi'}{event.sent_at?` · ${new Date(event.sent_at).toLocaleString('vi-VN')}`:''}</p>
       {event.unchanged&&<p>Nội dung và ảnh này đã được gửi hoặc đang gửi. Bổ sung ảnh rồi làm mới nếu cần gửi bản cập nhật.</p>}
-      {event.phases.map(phase=><SavedRecordPhotos key={phase} entity="contracts" recordId={id} slots={contractPhotoSlots(phase as ContractPhotoPhase)} title={`Ảnh ${event.label}`} readOnly={!can(phase.startsWith('renewal-')?'contracts.renew':phase.startsWith('return-')?'contracts.return':phase==='handover'?'contracts.finalize':'contracts.draft')}
+      {event.phases.map(phase=><SavedRecordPhotos key={phase} entity="contracts" recordId={id} slots={[...contractPhotoSlots(phase as ContractPhotoPhase),...contractDocumentSlots(phase as ContractPhotoPhase)]} title={`Ảnh ${event.label}`} readOnly={!can(phase.startsWith('renewal-')||phase.startsWith('battery-swap-')?'contracts.renew':phase.startsWith('return-')?'contracts.return':phase==='handover'?'contracts.finalize':'contracts.draft')}
         onPendingChange={value=>setPending(old=>old[phase]===value?old:{...old,[phase]:value})} onSaved={()=>void refresh()}/>)}
       {photosPending&&<p role="status">Lưu hết ảnh/video đang chọn trước khi gửi Telegram.</p>}
       <button type="button" className="mg-button mg-button-primary" disabled={!event.can_send||busy||loading||photosPending} onClick={async()=>{

@@ -98,11 +98,18 @@ async function run(){
       assert.equal(context.company_paid_amount,1800000);
       const {CONTRACT_LIST_SQL}=load(path.join(root,'lib/server/contract-drafts'));
       const current=(await proxy.query(`${CONTRACT_LIST_SQL} AND o.id=$1`,[first.id])).rows[0];
-      assert.equal(current.collections.length,3);
-      const print=doc.buildContractDocument(doc.createContractDraft(dataset,'all',mapApiRow('contracts',current)),dataset.stores[0],{id:700,name:'Staff QA'});
+      // List rows intentionally omit receipt history; hydrate from the actual
+      // payment context before checking detailed document receipts.
+      assert.equal(current.collections.length,0);assert.equal(context.history.length,3);
+      const snapshot=(await c.query('SELECT draft_payload FROM qa_split_orders WHERE id=$1',[first.id])).rows[0].draft_payload;
+      const detailed={...current,draft_payload:snapshot,collections:context.history.filter(row=>row.type==='in').map(row=>({purpose:row.deposit?'deposit':'rental',amount:row.amount,method:row.method,paid_at:row.paid_at,account:row.account}))};
+      assert.equal((await c.query('SELECT bank_owner_type FROM qa_split_transactions WHERE bank_id=6')).rows[0].bank_owner_type,'personal');
+      const printableDraft=doc.createContractDraft(dataset,'all',mapApiRow('contracts',detailed));
+      assert.deepEqual(printableDraft.extra_charges,[{name:'Phí ship',amount:'50000'}]);assert.equal(printableDraft.collections.length,3);
+      const print=doc.buildContractDocument(printableDraft,dataset.stores[0],{id:700,name:'Staff QA'});
       assert.equal(print.pricing.paid_amount_formatted,'250.000 đ');assert.equal(print.deposit.paid_amount_formatted,'2.000.000 đ');
-      assert.deepEqual(print.extra_charges,[{name:'Phí ship',amount:'50.000 đ'}]);assert.equal(print.collections.length,3);
-      checks.push('PostgreSQL TEMP: 200k personal advance + 1.8m company deposit + 250k cash fees match each account, retain actual dates, keep deposit separate from revenue and print named ship fee + actual receipts');
+      assert.match(print.pricing.calculation_text,/250\.000/);assert.deepEqual(new Set(print.deposit.payment_method.split(', ')),new Set(['CK tài khoản cá nhân','CK tài khoản công ty']));
+      checks.push('PostgreSQL TEMP: 200k personal advance + 1.8m company deposit + 250k cash fees match each account and date; detailed drafts retain named fees and receipts, with deposit separate from rental on print');
       const second=await save(101);
       await server.finalizeContractDraft(proxy,Number(second.id),143,{revision:second.draft_revision,receipts:[
         receipt('deposit','200000','transfer',6,earlier),receipt('deposit','1500000','cash',5),receipt('deposit','300000','company_transfer',7),receipt('rental','250000','company_transfer',7),

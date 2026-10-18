@@ -106,7 +106,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const previousCustomerAi = useRef<OcrFields>({});
   const photoIdentityLookup = useRef('');
   const customerOcr = usePhotoOcr({
-    kind: slot => ['driver_license','driver-license'].includes(slot)?'driver_license':draftRef.current.customer.customer_type==='foreign'?'passport':slot === 'id_front' ? 'cccd_front' : 'cccd_back',
+    kind: slot => ['driver_license','driver-license'].includes(slot)?'driver_license':draftRef.current.customer.customer_type==='foreign'?'passport':slot === 'id_front' ? 'customer_documents' : 'cccd_back',
     snapshot: () => ({ ...draftRef.current.customer }),
     apply: (_slot, result, before) => {
       const current = draftRef.current;

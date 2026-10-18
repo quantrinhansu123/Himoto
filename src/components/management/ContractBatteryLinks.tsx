@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { batteryRequest, batteryStatusLabel, type BatteryContract } from '@/lib/management/battery-contracts';
+import { BatterySwapPanel } from './BatterySwapPanel';
 
 export function ContractBatteryLinks({ orderId, onCreate }: { orderId: number; onCreate?: () => void }) {
   const [rows, setRows] = useState<BatteryContract[]>([]);
@@ -22,6 +23,7 @@ export function ContractBatteryLinks({ orderId, onCreate }: { orderId: number; o
     return () => controller.abort();
   }, [orderId, reload]);
   return <>
+    <BatterySwapPanel orderId={orderId}/>
     {loading ? <p role="status">Đang tải hợp đồng pin / sạc…</p> : error ? <p role="alert">{error} <button type="button" className="mg-button" onClick={() => setReload(value => value + 1)}>Thử lại</button></p>
       : rows.length ? <dl className="mg-contract-detail-grid">{rows.map(row => <div className="mg-field-wide" key={row.id}><dt>{row.code} · {batteryStatusLabel(row.status)}</dt><dd>{row.battery_name} · {row.vehicle_license || 'Chưa ghi biển số'}</dd></div>)}</dl> : <p>Chưa có hợp đồng thuê pin / sạc liên kết.</p>}
     <div className="mg-contract-type-actions">

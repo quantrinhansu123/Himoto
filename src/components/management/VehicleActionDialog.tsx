@@ -10,6 +10,7 @@ import { formatDateTime } from '@/lib/formatters';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
+import Link from 'next/link';
 
 export type VehicleActionMode = 'transfer' | 'status' | 'receive';
 const STATUS_CHOICES = [{ value: 'using', label: 'Đang thuê' }, { value: 'ready', label: 'Lưu kho' }] as const;
@@ -96,6 +97,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <datalist id="vehicle-action-options">{vehicles.map(row => <option key={row.id} value={vehicleOption(row)} />)}</datalist>
         {selected && <small>Hiện tại: {optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)} · {String(selected.store_name || '—')}</small>}
         {rented && <small className="mg-field-error">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng trước khi {mode === 'transfer' ? 'chuyển xe' : 'đổi trạng thái'}.</small>}
+        {selected&&(rented||['using','rent'].includes(currentStatus))&&<Link className="mg-button" href={`/contracts?action=return&query=${encodeURIComponent(String(selected.license||''))}`} onClick={onClose}>Tìm hợp đồng đang thuê · Trả xe & hoàn cọc</Link>}
         {transferBlocked && !rented && <small className="mg-field-error">Chỉ chuyển xe đang Lưu kho.</small>}</div>
       {mode==='receive'?<>
         <p className="mg-transfer-direction mg-field-wide">{selected?vehicleTransferRoute(selected):''}</p>

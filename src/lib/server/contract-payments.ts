@@ -75,7 +75,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     UNION ALL SELECT id, 'cash' AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,COALESCE(NULLIF(name,''),'Két tiền mặt #' || id::text) AS label
     FROM himoto.cash WHERE lower(status)='active' AND store_id=$1 ORDER BY kind,id`, [order.store_id]);
   const history = await client.query(`SELECT t.id,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,
-      CASE WHEN t.cash_id IS NOT NULL THEN 'Tiền mặt' WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty'
+      CASE WHEN t.cash_id IS NOT NULL THEN 'Tiền mặt' WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty' WHEN t.bank_owner_type='personal' THEN 'CK tài khoản cá nhân'
         WHEN t.bank_id IS NOT NULL THEN 'Chuyển khoản' ELSE 'Chưa xác định' END AS method,
       CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name,''),'Két tiền mặt #' || t.cash_id::text)
         ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account,
@@ -171,7 +171,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
     VALUES ($1,$2,now(),$11,$15,$3,$4,'approved',$5,$6,$7,$8,$9,$10,$12,$13,$14) RETURNING id`,
     [id, `${input.paid_at}:00+07:00`, amount, input.note || (refund ? `Trả cọc hợp đồng_${context.code}` : `Gia hạn hợp đồng_${context.code}`), actorId, context.store_id,
       account.kind === 'bank' ? account.id : null, account.kind === 'cash' ? account.id : null,
-      account.kind === 'cash' ? 1 : 2, account.kind === 'bank' ? account.owner_type : null,
+      account.kind === 'cash' ? 1 : 2, account.kind === 'bank' ? (input.method==='company_transfer'?'company':'personal') : null,
       renewal ? 'order:renewal' : extra ? 'order:extra' : refund ? DEPOSIT_REFUND_NAME : 'order:payment',
       singleItem ? 'line_item_id' : 'order', singleItem ?? id, singleItem, refund ? 'out' : 'in']);
   const transactionId = Number(transaction.rows[0].id);

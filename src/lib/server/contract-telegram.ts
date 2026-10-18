@@ -9,7 +9,7 @@ type Database=Pick<PoolClient,'query'>;
 interface Event {key:string;kind:ContractEventType;phases:string[];payload?:NotificationPayload;renewal?:RenewalNotice}
 export class ContractTelegramError extends Error {constructor(message:string,public status=400){super(message);}}
 export function canSendContractEvent(user:PermissionAccount,kind:ContractEventType) {
-  return hasPermission(user,kind==='renewal'?'contracts.renew':kind==='return'?'contracts.return':kind==='rental'||kind==='reservation'?'contracts.draft':'contracts.finalize');
+  return hasPermission(user,kind==='renewal'||kind==='battery_swap'?'contracts.renew':kind==='return'?'contracts.return':kind==='rental'||kind==='reservation'?'contracts.draft':'contracts.finalize');
 }
 export async function readContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount) {
   const o=(await db.query('SELECT store_id,order_status,contract_number,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL',[id])).rows[0];
@@ -29,7 +29,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     for(const v of versions)if(v.kind==='renewal')add({key:`renewal:${id}:${v.version}`,kind:'renewal',phases:[`renewal-${v.version}`],renewal:v});
     const receipts=(await db.query('SELECT transaction_id,renewal_payload FROM himoto.management_contract_payments WHERE order_id=$1 AND renewal_payload IS NOT NULL',[id])).rows;
     for(const receipt of receipts)add({key:`renewal-receipt:${id}:${receipt.transaction_id}`,kind:'renewal',phases:[`renewal-receipt-${receipt.transaction_id}`],renewal:{...receipt.renewal_payload,transaction_id:Number(receipt.transaction_id)}});
-    const returned=(await db.query('SELECT id FROM himoto.order_vehicle_details WHERE order_id=$1 AND completed_at IS NOT NULL AND deleted_at IS NULL ORDER BY id DESC',[id])).rows;
+    const returned=composer.reservation_no_show?[]:(await db.query('SELECT id FROM himoto.order_vehicle_details WHERE order_id=$1 AND completed_at IS NOT NULL AND deleted_at IS NULL ORDER BY id DESC',[id])).rows;
     for(const item of returned)if(!events.some(e=>e.kind==='return'&&(e.phases.includes(`return-${item.id}`)||e.key.split(':').at(-1)?.split('-').includes(String(item.id)))))add({key:`return:${id}:${item.id}`,kind:'return',phases:[`return-${item.id}`]});
   }
   const preference=(await db.query('SELECT auto_enabled FROM himoto.management_contract_telegram_preferences WHERE order_id=$1',[id])).rows[0];
@@ -40,7 +40,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     if(!event.phases.length)event.phases=event.kind==='return'?event.key.split(':').at(-1)!.split('-').map(n=>`return-${n}`):[event.kind==='handover'?'handover':'rental'];
     const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal);void _store;
     const payload=event.payload?{...event.payload,photos:await notificationPhotos(db,id,event.phases),method:fresh.method,deposit_method:fresh.deposit_method,
-      ...(event.kind==='return'?{refunded:fresh.refunded,deposit:fresh.deposit}:{}),
+      ...(event.kind==='return'?{refunded:fresh.refunded,deposit:fresh.deposit,...(fresh.return_fees?{return_fees:fresh.return_fees}:{}),...(fresh.refund_recipient?{refund_recipient:fresh.refund_recipient}:{})}:{}),
       // Legacy payloads predate the detailed templates.
       ...(!('rental_fee' in event.payload)?{vehicle_names:fresh.vehicle_names,days:fresh.days,rental_fee:fresh.rental_fee,deposit:fresh.deposit,grand_total:fresh.grand_total}:{}),
     }:fresh;

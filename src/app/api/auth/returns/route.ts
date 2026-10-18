@@ -3,7 +3,9 @@ import { after,NextRequest, NextResponse } from 'next/server';
 import { queueContractNotification,dispatchContractNotifications } from '@/lib/server/contract-notifications';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
-import { ContractReturnError, loadContractReturnableItems, parseReturnBatch, recordVehicleReturn, searchReturnableItems } from '@/lib/server/contract-returns';
+import { ContractReturnError, loadContractReturnableItems, parseReturnBatch, searchReturnableItems } from '@/lib/server/contract-returns';
+import { parseReturnSettlements,completeReturnBatch } from '@/lib/server/return-settlements';
+import { ContractPaymentError } from '@/lib/server/contract-payments';
 
 export const runtime = 'nodejs';
 
@@ -30,10 +32,10 @@ async function POSTHandler(request: NextRequest) {
   try {
     const body = await request.json();
     const inputs = parseReturnBatch(body);
+    const settlements=parseReturnSettlements(body?.settlements);
     client = await himotoPool.connect();
     await client.query('BEGIN');
-    const results = [];
-    for (const input of inputs) results.push(await recordVehicleReturn(client, user.id, input));
+    const results = await completeReturnBatch(client,user.id,inputs,settlements);
     const returned=(await client.query('SELECT id,order_id FROM himoto.order_vehicle_details WHERE id=ANY($1::bigint[])',[inputs.map(input=>input.item_id)])).rows;
     const byOrder=new Map<number,number[]>();for(const row of returned){const orderId=Number(row.order_id);byOrder.set(orderId,[...(byOrder.get(orderId)||[]),Number(row.id)]);}
     for(const [orderId,items] of byOrder){items.sort((a,b)=>a-b);await queueContractNotification(client,orderId,'return',`return:${orderId}:${items.join(',')}`,user.id,items.map(item=>`return-${item}`));}
@@ -43,7 +45,7 @@ async function POSTHandler(request: NextRequest) {
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    if (error instanceof ContractReturnError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    if (error instanceof ContractReturnError||error instanceof ContractPaymentError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin trả xe không hợp lệ.' }, { status: 400 });
     console.error('Contract return failed:', error instanceof Error ? error.name : 'Unknown database error');
     return NextResponse.json({ status: 'error', message: 'Chưa ghi nhận được lần trả xe. Tải lại danh sách để kiểm tra.' }, { status: 500 });

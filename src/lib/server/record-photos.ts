@@ -22,6 +22,8 @@ export async function requirePhotoRecord(client: Pick<PoolClient, 'query'>, enti
   if (!result.rowCount) throw new RecordPhotoError('Không tìm thấy hồ sơ.', 404);
 }
 export async function requireContractPhotoSlot(client:Pick<PoolClient,'query'>,entity:PhotoEntity,id:number,slot:string) {
+  const swap=entity==='contracts'?slot.match(/^battery-swap-([1-9]\d*)-/):null;
+  if(swap&&!(await client.query('SELECT id FROM himoto.management_contract_battery_swaps WHERE id=$1 AND order_id=$2',[Number(swap[1]),id])).rowCount)throw new RecordPhotoError('Lượt đổi pin không thuộc hợp đồng.',404);
   const item=entity==='contracts'?slot.match(/^return-([1-9]\d*)-(?:[1-9]|1[0-5]|video-[1-3]|document-(?:[1-9]|1[0-5]))$/):null;
   if(item&&!(await client.query('SELECT id FROM himoto.order_vehicle_details WHERE id=$1 AND order_id=$2 AND deleted_at IS NULL',[Number(item[1]),id])).rowCount)throw new RecordPhotoError('Xe trả không thuộc hợp đồng.',404);
   const renewal=entity==='contracts'?slot.match(/^renewal-([1-9]\d*)-(?:[1-9]|1[0-5]|video-[1-3]|document-(?:[1-9]|1[0-5]))$/):null;

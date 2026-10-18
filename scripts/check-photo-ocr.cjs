@@ -31,7 +31,8 @@ async function main() {
     assert.equal(fresh.customer.address,entered.address);assert.equal(fresh.customer.phone,entered.phone);
     assert.equal(fresh.customer.id_card_issued_on,'2024-10-12');assert.equal(fresh.customer.id_card_issued_by,'Cơ quan cấp QA');
     const editedIdentity=shared.mergeOcrCustomer({...before,id_card:'009876543210'}, {id_card:'001234567890',id_card_issued_on:'2024-10-12'},before,{});
-    assert.equal(editedIdentity.customer.id_card,'009876543210');assert.equal(editedIdentity.customer.id_card_issued_on,'2024-10-12');
+    assert.equal(editedIdentity.customer.id_card,'009876543210');assert.equal(editedIdentity.customer.id_card_issued_on,before.id_card_issued_on);
+    assert.equal(shared.cleanOcrFields({name:'Tên người ký cấp thẻ',id_card:'001234567890'},'cccd_back').name,undefined);
     checks.push('Only four identity fields; fresh photos replace pre-entered CCCD/name without matching checks; current address/phone stay manual, in-flight edits survive and issue dates normalize');
 
     process.env.GEMINI_API_KEY = 'unit-test-gemini-key'; delete process.env.GOOGLE_API_KEY; delete process.env.GEMINI_OCR_MODEL;

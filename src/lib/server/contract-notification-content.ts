@@ -10,6 +10,9 @@ export interface NotificationPayload {
   code:string;customer:string;phone:string;store:string;actor:string;vehicles:string;total:string;at:string;photos:Attachment[];
   vehicle_names?:string;days?:number|null;deposit?:number|null;rental_fee?:number|null;grand_total?:number|null;
   refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
+  return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
+  refund_recipient?:{bank?:string;account?:string;name?:string};
+  battery_swap?:{percentage:number;fee:number;collected:number;license:string;vehicle_name:string};
 }
 type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
@@ -17,7 +20,10 @@ const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',
 export function contractNotificationText(kind:ContractEventType,p:NotificationPayload) {
   const method=p.method||'Chưa ghi nhận thanh toán';
   const vehicle=[`Bsx: ${p.renewal?.license||p.vehicles||'—'}`,`Loại xe: ${p.renewal?.vehicle_name||p.vehicle_names||'—'}`];
-  const lines=kind==='return'?[`Khách trả xe: ${p.customer}`,...vehicle,`Tiền cọc: ${money(p.deposit)}`,`Tổng hoàn: ${money(p.refunded)}`,`Hình thức thanh toán: ${p.method||'Chưa ghi nhận phiếu hoàn'}`]
+  const lines=kind==='battery_swap'?[`Khách đổi pin: ${p.customer}`,`Bsx: ${p.battery_swap?.license||p.vehicles}`,`Loại xe: ${p.battery_swap?.vehicle_name||p.vehicle_names||'—'}`,`Pin lúc nhận: ${p.battery_swap?.percentage??'—'}%`,`Phí pin dưới 20%: ${money(p.battery_swap?.fee)}`,`Đã thu: ${money(p.battery_swap?.collected)}`,`Hình thức thu: ${method}`]:kind==='return'?[`Khách trả xe: ${p.customer}`,...vehicle,
+    ...(p.return_fees?[...(p.return_fees.returned_at?[`Bàn giao thực tế: ${new Date(p.return_fees.returned_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`]:[]),`Phí quá hạn: ${money(p.return_fees.late)}`,`Phí sửa chữa: ${money(p.return_fees.repair)}`,...(p.return_fees.early_discount?[`Giảm tiền thuê trả sớm: ${money(p.return_fees.early_discount)}`]:[]),`Đã thu phí / công nợ: ${money(p.return_fees.collected)}`,...(p.return_fees.method?[`Hình thức thu: ${p.return_fees.method}`]:[])]:[]),
+    `Tiền cọc: ${money(p.deposit)}`,`Tổng hoàn cọc: ${money(p.refunded)}`,`Hình thức thanh toán: ${p.method||'Chưa ghi nhận phiếu hoàn'}`,
+    ...(p.refund_recipient?.account?[`Khách nhận hoàn: ${p.refund_recipient.bank} · ${p.refund_recipient.account} · ${p.refund_recipient.name}`]:[])]
     :kind==='renewal'?[`Khách gia hạn: ${p.customer}`,...vehicle,
       ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${day(item.before_return_at)} - ${day(item.return_at)}`):[`Gia hạn: ${day(p.renewal?.before_return_at||null)} - ${day(p.renewal?.return_at||null)}`]),
       `Phí gia hạn: ${money(p.renewal?.amount)} đ`,`Hình thức thanh toán: ${method}`]
@@ -47,6 +53,9 @@ export async function notificationPhotos(db:Database,orderId:number,phases:strin
 }
 export async function notificationPayload(db:Database,orderId:number,kind:ContractEventType,actorId:number,phases:string[],renewal?:RenewalNotice):Promise<NotificationPayload&{store_id:number}> {
   const returnIds=kind==='return'?phases.map(phase=>phase.match(/^return-([1-9]\d*)$/)?.[1]).filter(Boolean):[];
+  const swapId=kind==='battery_swap'?phases[0]?.match(/^battery-swap-([1-9]\d*)$/)?.[1]:undefined;
+  const swap=swapId?(await db.query(`SELECT s.*,v.license,v.name AS vehicle_name FROM himoto.management_contract_battery_swaps s JOIN himoto.vehicles v ON v.id=s.vehicle_id WHERE s.id=$1 AND s.order_id=$2 AND s.status='confirmed'`,[swapId,orderId])).rows[0]:undefined;
+  if(kind==='battery_swap'&&!swap)throw Error('Không tìm thấy lượt đổi pin đã xác nhận.');
   const o=(await db.query(`SELECT o.store_id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
     COALESCE(NULLIF(c.name,''),o.customer_name,'') AS customer,COALESCE(NULLIF(c.phone,''),o.customer_phone,'') AS phone,
     s.store_name AS store,u.name AS actor,o.total::text,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
@@ -60,13 +69,18 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       WHEN t.bank_owner_type='personal' THEN 'CK TK cá nhân' WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản (chưa phân loại TK)' ELSE 'Chưa xác định' END AS method
     FROM himoto.transactions t LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id WHERE t.order_id=$1 AND t.status='approved' ORDER BY t.created_at,t.id`,[orderId])).rows;
   const draft=o.draft_payload?.management_composer?.draft;
+  const composer=o.draft_payload?.management_composer;
   const depositTx=tx.filter(t=>['in','addon'].includes(t.type)&&/^order:deposit(?::|$)/.test(t.name));
   const refunds=tx.filter(t=>t.type==='out'&&/^(order:deposit_refund$|order:complete:)/.test(t.name));
+  const settlement=kind==='return'&&Array.isArray(composer?.return_settlements)?composer.return_settlements.findLast((entry:{item_ids:number[]})=>Array.isArray(entry.item_ids)&&entry.item_ids.length===returnIds.length&&entry.item_ids.every(id=>returnIds.includes(String(id)))):undefined;
+  const eventRefunds=settlement?refunds.filter(t=>Number(t.id)===Number(settlement.refund_transaction_id)):refunds;
+  const feeReceipts=settlement?tx.filter(t=>t.type!=='out'&&settlement.transaction_ids?.includes(Number(t.id))):[];
+  const adjustments=kind==='return'&&Array.isArray(composer?.return_adjustments)?composer.return_adjustments.filter((entry:{item_id:number})=>returnIds.includes(String(entry.item_id))):[];
   const rental=tx.filter(t=>['in','addon'].includes(t.type)&&!/^order:deposit(?::|$)/.test(t.name));
   // Date changes are not receipts. Only an explicitly associated renewal receipt supplies a payment method.
   const renewalTx=renewal?tx.filter(t=>Number(t.id)===renewal.transaction_id || t.renewal_payload && (
     t.renewal_payload.return_at===renewal.return_at && t.renewal_payload.license===renewal.license)):[];
-  const selected=kind==='return'?refunds:kind==='renewal'?renewalTx:rental;
+  const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?eventRefunds:kind==='renewal'?renewalTx:rental;
   const methods=(rows:typeof tx)=>[...new Set(rows.map(t=>String(t.method)))].sort().join(', ');
   const fee=o.total_rental_fees==null?null:Number(o.total_rental_fees);
   const deposit=o.first_deposit_amount==null&&o.additional_deposit_amount==null?null:Number(o.first_deposit_amount||0)+Number(o.additional_deposit_amount||0);
@@ -78,5 +92,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,
-    refunded:refunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{})};
+    refunded:eventRefunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{}),
+    ...(adjustments.length?{return_fees:{returned_at:adjustments.map((entry:{actual_return_at:string})=>entry.actual_return_at).sort().at(-1),late:adjustments.reduce((sum:number,entry:{late_fee?:number;fee:number;repair_fee?:number;early_discount?:number})=>sum+Number(entry.late_fee??Math.max(entry.fee+(entry.early_discount||0)-(entry.repair_fee||0),0)),0),repair:adjustments.reduce((sum:number,entry:{repair_fee?:number})=>sum+Number(entry.repair_fee||0),0),early_discount:adjustments.reduce((sum:number,entry:{early_discount?:number})=>sum+Number(entry.early_discount||0),0),collected:feeReceipts.reduce((sum,t)=>sum+Number(t.value),0),method:methods(feeReceipts)}}:{}),...(settlement?.recipient?.account?{refund_recipient:settlement.recipient}:{}),
+    ...(swap?{battery_swap:{percentage:Number(swap.battery_percent),fee:Number(swap.fee),collected:selected.reduce((sum,t)=>sum+Number(t.value),0),license:swap.license,vehicle_name:swap.vehicle_name}}:{})};
 }

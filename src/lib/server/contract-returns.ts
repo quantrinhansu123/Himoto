@@ -17,7 +17,7 @@ function toIso(value: unknown): string | null {
 
 export function parseReturnBatch(body: unknown): ReturnInput[] {
   if (body && typeof body === 'object' && !Array.isArray(body) && 'items' in body) {
-    const { items, ...rest } = body as Record<string, unknown>;
+    const { items, settlements: _settlements, ...rest } = body as Record<string, unknown>;void _settlements;
     if (Object.keys(rest).length || !Array.isArray(items) || !items.length || items.length > 20) throw new ContractReturnError('Chọn từ 1 đến 20 xe cần trả.');
     const parsed = items.map(parseReturnInput);
     if (new Set(parsed.map(item => item.item_id)).size !== parsed.length) throw new ContractReturnError('Mỗi xe chỉ được trả một lần.');
@@ -29,8 +29,11 @@ export function parseReturnBatch(body: unknown): ReturnInput[] {
 export function parseReturnInput(body: unknown): ReturnInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractReturnError('Thông tin trả xe không hợp lệ.');
   const input = body as Record<string, unknown>;
+  if(input.repair_fee!==undefined&&(typeof input.repair_fee!=='string'||!/^\d{1,13}$/.test(input.repair_fee)||Number(input.repair_fee)>MAX_MONEY))throw new ContractReturnError('Tiền sửa chữa phải là số nguyên VNĐ không âm.');
+  if(input.repair_note!==undefined&&(typeof input.repair_note!=='string'||input.repair_note.trim().length>1000))throw new ContractReturnError('Nội dung sửa chữa tối đa 1.000 ký tự.');
+  if(Number(input.repair_fee)>0&&!(typeof input.repair_note==='string'&&input.repair_note.trim()))throw new ContractReturnError('Ghi rõ hư hỏng / nội dung thu phí sửa chữa.');
   if (input.early_discount !== undefined && (typeof input.early_discount !== 'string' || !/^\d{1,13}$/.test(input.early_discount) || Number(input.early_discount) > MAX_MONEY)) throw new ContractReturnError('Số tiền giảm doanh thu khi trả sớm không hợp lệ.');
-  if (Object.keys(input).some(key => !['item_id', 'item_revision', 'returned_at', 'hourly_rate', 'fee_override', 'early_discount'].includes(key)) ||
+  if (Object.keys(input).some(key => !['item_id', 'item_revision', 'returned_at', 'hourly_rate', 'fee_override', 'early_discount','repair_fee','repair_note'].includes(key)) ||
       !Number.isSafeInteger(input.item_id) || Number(input.item_id) <= 0 || typeof input.item_revision !== 'string' || !/^\d{1,20}$/.test(input.item_revision) ||
       typeof input.returned_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.returned_at) ||
       typeof input.hourly_rate !== 'string' || !/^\d{1,7}$/.test(input.hourly_rate) || Number(input.hourly_rate) > MAX_RETURN_RATE ||
@@ -40,7 +43,7 @@ export function parseReturnInput(body: unknown): ReturnInput {
   if (returned.getTime() > Date.now() + 5 * 60_000) throw new ContractReturnError('Thời gian trả xe không được nằm trong tương lai.');
   return { item_id: Number(input.item_id), item_revision: input.item_revision, returned_at: input.returned_at, hourly_rate: input.hourly_rate,
     ...(input.fee_override === undefined ? {} : { fee_override: input.fee_override as string }),
-    ...(input.early_discount === undefined ? {} : { early_discount: input.early_discount as string }) };
+    ...(input.early_discount === undefined ? {} : { early_discount: input.early_discount as string }),...(input.repair_fee===undefined?{}:{repair_fee:input.repair_fee as string,repair_note:String(input.repair_note||'').trim()}) };
 }
 
 const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
@@ -91,7 +94,7 @@ export async function searchReturnableItems(client: Database, query: string): Pr
       OR ($2 <> '' AND regexp_replace(COALESCE(NULLIF(c.phone,''),o.customer_phone,''),'\\D','','g')=$2)
       OR v.license ILIKE $1 ESCAPE '\\'
       OR ($3 <> '' AND regexp_replace(upper(COALESCE(v.license,'')),'[^A-Z0-9]','','g') LIKE '%'||$3||'%'))
-    ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id LIMIT 100`, [pattern, digits, plate]);
+    ORDER BY (d.completed_at IS NULL) DESC,d.rent_at DESC NULLS LAST,d.id DESC LIMIT 100`, [pattern, digits, plate]);
   return mapReturnableRows(result.rows);
 }
 
@@ -104,7 +107,7 @@ export async function loadContractReturnableItems(client: Database, orderId: num
 export async function recordVehicleReturn(client: Database, actorId: number, input: ReturnInput): Promise<ReturnResult> {
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
-  const itemResult = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.return_at,d.xmin::text AS item_revision,
+  const itemResult = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.rent_at,d.return_at,d.xmin::text AS item_revision,
       o.order_status,o.total,o.pid,o.draft_payload,o.xmin::text AS order_revision,
       COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS contract_code
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
@@ -119,12 +122,15 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   const lateMinutes = Math.max(0, Math.ceil((returnedMs - scheduledMs) / 60_000));
   const chargeableHours = Math.ceil(lateMinutes / 60);
   const hourlyRate = Number(input.hourly_rate);
+  if(item.rent_at&&returnedMs<new Date(toIso(item.rent_at)!).getTime())throw new ContractReturnError('Giờ bàn giao thực tế không được trước giờ nhận xe.');
   if (input.fee_override !== undefined && chargeableHours === 0) throw new ContractReturnError('Chỉ có thể điều chỉnh phí khi xe trả trễ hạn.');
   const earlyDiscount = input.early_discount === undefined ? 0 : Number(input.early_discount);
   if (earlyDiscount && returnedMs >= scheduledMs) throw new ContractReturnError('Chỉ giảm doanh thu khi xe trả sớm hơn hạn.');
   const lateFee = input.fee_override === undefined ? chargeableHours * hourlyRate : Number(input.fee_override);
   if (!Number.isSafeInteger(lateFee) || lateFee > MAX_MONEY) throw new ContractReturnError('Tiền trả muộn vượt giới hạn lưu trữ.');
-  const fee = lateFee - earlyDiscount;
+  const repairFee=Number(input.repair_fee||0);
+  const fee = lateFee + repairFee - earlyDiscount;
+  if(!Number.isSafeInteger(fee)||Math.abs(fee)>MAX_MONEY)throw new ContractReturnError('Tổng phí trả xe vượt giới hạn lưu trữ.');
   const baseTotal = item.total == null || item.total === '' ? null : Number(item.total);
   const planValue = item.draft_payload?.management_composer?.installment_plan;
   const plan = planValue ? parseInstallmentPlan(planValue) : null;
@@ -147,7 +153,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
     : nextTotal !== null && nextTotal > paid ? 'wait_payment' : 'completed';
   const returnAdjustment = { item_id: input.item_id, vehicle_id: Number(item.vehicle_id), scheduled_return_at: toIso(item.return_at),
     actual_return_at: actual, late_minutes: lateMinutes, chargeable_hours: chargeableHours, hourly_rate: hourlyRate, fee,
-    ...(earlyDiscount ? { early_discount: earlyDiscount } : {}), actor_id: actorId };
+    late_fee:lateFee,repair_fee:repairFee,...(repairFee?{repair_note:input.repair_note}:{}),...(earlyDiscount ? { early_discount: earlyDiscount } : {}), actor_id: actorId };
   await client.query(`UPDATE himoto.orders SET
       total=CASE WHEN $2::bigint=0 THEN total ELSE ($3::numeric)::text END,
       draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer}',
@@ -161,7 +167,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   const foreignOpen=dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
   if (!vehicleOpen.rowCount&&!foreignOpen) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
   return { item_id: input.item_id, contract_code: String(item.contract_code), returned_at: actual, scheduled_return_at: toIso(item.return_at)!,
-    late_minutes: lateMinutes, chargeable_hours: chargeableHours, hourly_rate: hourlyRate, fee, total_amount: nextTotal, status: nextStatus };
+    late_minutes: lateMinutes, chargeable_hours: chargeableHours, hourly_rate: hourlyRate, fee,late_fee:lateFee,repair_fee:repairFee, total_amount: nextTotal, status: nextStatus };
 }
 
 export async function replaceContractVehicle(client: Database, actorId: number, input: { item_id: number; item_revision: string; vehicle_id: number }) {

@@ -19,6 +19,7 @@ import { CUSTOMER_PHOTO_SLOTS } from '@/lib/management/record-photos';
 import { ContractBatteryLinks } from './ContractBatteryLinks';
 import { ContractPhotoGallery } from './ContractTransactionPhotos';
 import { ContractTelegramPanel } from './ContractTelegramPanel';
+import { ReservationNoShowDialog } from './ReservationNoShowDialog';
 
 const SECTIONS = [
   { id: 'vehicle', label: 'Thông tin phương tiện' },
@@ -81,6 +82,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint, onPrintV
   const store = dataset?.stores.find(store => String(store.id) === draft.store_id);
   const canOperateRental = ['renting', 'overdue', 'wait_payment'].includes(row.status);
   const canRentBattery = can('contracts.draft') && Boolean(onBatteryRent) && !['draft', 'cancelled'].includes(row.status);
+  const [noShow,setNoShow]=useState(false);
   const canPay = row.status !== 'draft' && row.status !== 'cancelled' && Boolean(onPayment);
   const depositHeld = Math.max((Number(row.deposit_paid) || 0) - (Number(row.deposit_refunded) || 0), 0);
   const remaining = row.total_amount == null || row.paid_amount == null ? null : Math.max(Number(row.total_amount) - Number(row.paid_amount), 0);
@@ -236,7 +238,8 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint, onPrintV
       {section === 'customer' && draft.customer_id && <SavedRecordPhotos entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Ảnh CCCD" />}
     </>}
     </div>
-    <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
+    {noShow&&<ReservationNoShowDialog orderId={row.id} onClose={()=>setNoShow(false)} onDone={onClose}/>}
+    <div className="mg-dialog-footer">{row.status==='deposit_contract'&&can('contracts.finalize')&&<button type="button" className="mg-button" onClick={()=>setNoShow(true)}>Khách không đến nhận xe</button>}<button type="button" className="mg-button" onClick={onClose}>Đóng</button>
       {source==='api'&&<button type="button" className="mg-button" onClick={()=>setSection('telegram')}><MessageCircle size={15}/>Gửi Telegram</button>}
       {onReminder&&isRemindableContract(row)&&<button type="button" className="mg-button" onClick={onReminder}><MessageCircle size={15}/>Nhắc nợ</button>}
       {canOperateRental && <>

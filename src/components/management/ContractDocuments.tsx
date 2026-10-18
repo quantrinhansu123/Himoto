@@ -3,8 +3,9 @@ import { useEffect,useMemo,useRef,useState } from 'react';
 import { contractDocumentSlots,CONTRACT_CUSTOMER_PHOTO_SLOTS,type ContractPhotoPhase } from '@/lib/management/contract-photos';
 import { copyCustomerPhotosToContract,photoEndpoint,type SavedPhoto } from '@/lib/management/record-photos';
 import { SavedRecordPhotos } from './RecordPhotoFields';
+import { ContractWorkflowGuide,type ContractWorkflow } from './ContractWorkflowGuide';
 
-export function ContractDocuments({id,phase,onPendingChange}:{id:number;phase:ContractPhotoPhase;onPendingChange?:(pending:boolean)=>void}) {
+export function ContractDocuments({id,phase,onPendingChange,workflow}:{id:number;phase:ContractPhotoPhase;workflow?:ContractWorkflow;onPendingChange?:(pending:boolean)=>void}) {
   const slots=useMemo(()=>contractDocumentSlots(phase),[phase]);
   const [importing,setImporting]=useState(phase==='rental'),[pending,setPending]=useState(false),[error,setError]=useState(''),[version,setVersion]=useState(0),[photos,setPhotos]=useState<SavedPhoto[]>([]);
   const callback=useRef(onPendingChange);callback.current=onPendingChange;
@@ -34,14 +35,7 @@ export function ContractDocuments({id,phase,onPendingChange}:{id:number;phase:Co
       </>}
       {error&&<p className="mg-field-error" role="alert">{error}</p>}
     </div>}
-    <details><summary>Danh mục hồ sơ theo từng trường hợp</summary><ul>
-      <li>Hợp đồng: ảnh đủ thông tin, chữ ký, không tẩy xóa.</li>
-      <li>Thanh toán: ảnh biên nhận chuyển khoản hoặc tiền mặt thực nhận. CK công ty: họ tên khách + mã hợp đồng + ngày ký; CK cá nhân: họ tên khách chuyển tiền.</li>
-      <li>Bàn giao: xe 4 góc, video, khách nhận xe thấy rõ biển số, chìa khóa và mũ bảo hiểm.</li>
-      <li>Giấy tờ điện tử: các trang CCCD và GPLX trên VNeID, nếu khách cung cấp.</li>
-      <li>Giấy tờ bản cứng: CCCD 2 mặt / hộ chiếu và GPLX khi dùng thay giấy tờ điện tử; thẻ sinh viên hoặc vé máy bay khứ hồi nếu áp dụng giảm giá.</li>
-      <li>Thông tin bổ sung theo hồ sơ khách cung cấp: liên hệ, địa chỉ hiện tại, đơn giao hàng, tài khoản mạng xã hội hoặc tài liệu khác nếu cần.</li>
-    </ul></details>
+    <ContractWorkflowGuide workflow={workflow||(phase.startsWith('return-')?'return':phase.startsWith('renewal-')?'renewal':phase==='handover'?'handover':'rental')}/>
     <SavedRecordPhotos entity="contracts" recordId={id} slots={slots} title="Ảnh hồ sơ bổ sung · riêng với ảnh xe" onPendingChange={setPending} bulkImageLabel="Tải thêm loạt ảnh hồ sơ hợp đồng" bulkPosition="bottom"/>
   </section>;
 }

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { readPhotoWithAi, type OcrKind, type OcrResult } from '@/lib/management/photo-ocr';
 
 interface OcrState { phase: 'reading' | 'done' | 'error'; message: string }
-export interface PhotoOcrController { states: Record<string, OcrState>; pending: boolean; read: (slot: string, file?: File) => void; cancel: (slot: string) => void }
+export interface PhotoOcrController { states: Record<string, OcrState>; pending: boolean; read: (slot: string, file?: File) => void;readMany:(slot:string,files:File[])=>void; cancel: (slot: string) => void }
 export function usePhotoOcr<Snapshot>({ kind, snapshot, apply }: {
   kind: (slot: string) => OcrKind; snapshot: (slot: string) => Snapshot;
   apply: (slot: string, result: OcrResult, before: Snapshot, file: File) => string;
@@ -19,17 +19,25 @@ export function usePhotoOcr<Snapshot>({ kind, snapshot, apply }: {
   }
   function read(slot: string, file?: File) {
     cancel(slot); if (!file) return;
+    start(slot,file,callbacks.current.kind(slot));
+  }
+  function readMany(slot:string,files:File[]){
+    for(const key of [...jobs.current.keys()])cancel(key);
+    setStates({});if(files.length)start(slot,files,'customer_documents');
+  }
+  function start(slot:string,input:File|File[],kind:OcrKind) {
     const controller = new AbortController(); jobs.current.set(slot, controller);
     const before = callbacks.current.snapshot(slot);
     setStates(current => ({ ...current, [slot]: { phase: 'reading', message: 'AI đang đọc ảnh…' } }));
-    void readPhotoWithAi(callbacks.current.kind(slot), file, controller.signal).then(result => {
+    const expected=kind==='cccd_back'&&before&&typeof before==='object'&&'id_card' in before?String(before.id_card||''):'';
+    void readPhotoWithAi(kind, input, controller.signal,expected).then(result => {
       if (controller.signal.aborted || jobs.current.get(slot) !== controller) return;
       if (!Object.keys(result.fields).length) throw new Error('Chưa đọc được thông tin rõ ràng. Chụp lại ảnh hoặc nhập tay.');
-      const message = callbacks.current.apply(slot, result, before, file);
-      setStates(current => ({ ...current, [slot]: { phase: 'done', message } }));
+      const message = callbacks.current.apply(slot, result, before, Array.isArray(input)?input[0]:input);
+      setStates(current => ({ ...current, [slot]: { phase: 'done', message:[message,...(result.warnings||[])].join(' ') } }));
     }).catch(cause => {
       if (!controller.signal.aborted && jobs.current.get(slot) === controller) setStates(current => ({ ...current, [slot]: { phase: 'error', message: cause instanceof Error ? cause.message : 'Không đọc được ảnh. Thử lại hoặc nhập tay.' } }));
     }).finally(() => { if (jobs.current.get(slot) === controller) jobs.current.delete(slot); });
   }
-  return { states, pending: Object.values(states).some(state => state.phase === 'reading'), read, cancel };
+  return { states, pending: Object.values(states).some(state => state.phase === 'reading'), read,readMany, cancel };
 }

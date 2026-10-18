@@ -110,7 +110,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
         {section('rental',reservation ? 'Tiền thuê dự kiến' : 'Tiền thuê và phí khác',total,rentalDue,rentalState,setRentalState)}
         <p className="mg-collection-total">{reservation ? 'Tiền giữ xe đã nhận' : 'Tổng nhận thêm'}: <strong>{money(collected(depositState)+collected(rentalState))}</strong>{!reservation && <><br/>Cọc: {money(collected(depositState))} · Thuê/phí: {money(collected(rentalState))}</>}</p>
       </>}
-      <ContractTransactionPhotos id={orderId} phase="rental" title="Ảnh xe lúc thuê / lập hợp đồng" onPendingChange={setPhotosPending}/>
+      <ContractTransactionPhotos id={orderId} phase="rental" workflow={reservation?'reservation':'rental'} title="Ảnh xe lúc thuê / lập hợp đồng" onPendingChange={setPhotosPending}/>
       {photosPending&&<p role="status">Lưu ảnh đang chọn trước khi hoàn tất hợp đồng.</p>}
       {error && <p className="mg-field-error" role="alert">{error}</p>}
     </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context||photosPending}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>

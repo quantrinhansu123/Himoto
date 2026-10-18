@@ -188,18 +188,18 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   }
 
   const transactionIds: number[] = [];
-  async function receipt(found: Awaited<ReturnType<typeof account>>, amount: number, name: string, note: string, paidAt: string) {
+  async function receipt(found: Awaited<ReturnType<typeof account>>, amount: number, name: string, note: string, paidAt: string,method:FinalizeCollection['method']) {
     if (!found || amount <= 0) return 0;
     const row = await client.query(`INSERT INTO himoto.transactions
       (order_id,created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id)
       VALUES ($1,$2,now(),$3,'in',$4,$5,'approved',$6,$7,$8,$9,$10,$11,'order',$1) RETURNING id`,
     [id, `${paidAt}:00+07:00`, name, amount, note, actorId, storeId, found.kind === 'bank' ? found.id : null, found.kind === 'cash' ? found.id : null,
-      found.kind === 'cash' ? 1 : 2, found.kind === 'bank' ? found.owner_type : null]);
+      found.kind === 'cash' ? 1 : 2, found.kind === 'bank' ? (method==='company_transfer'?'company':'personal') : null]);
     transactionIds.push(Number(row.rows[0].id));
     return amount;
   }
   for (const [index,row] of receipts.entries()) await receipt(accounts[index],Number(row.amount),row.purpose==='deposit' ? 'order:deposit' : 'order:rental_fees',
-    `Thu ${reservation ? 'tiền giữ xe (trừ tiền thuê)' : row.purpose==='deposit' ? 'tiền cọc' : 'tiền thuê và phí khác'} hợp đồng ${code}`,row.paid_at);
+    `Thu ${reservation ? 'tiền giữ xe (trừ tiền thuê)' : row.purpose==='deposit' ? 'tiền cọc' : 'tiền thuê và phí khác'} hợp đồng ${code}`,row.paid_at,row.method);
   const paid = previousPaid+depositCollected+rentalCollected;
   const methodLabels = {cash:'Tiền mặt',transfer:'CK tk cá nhân',company_transfer:'CK tk công ty'};
   const actualMethods = (purpose: 'deposit'|'rental') => [...new Set([

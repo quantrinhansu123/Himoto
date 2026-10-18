@@ -5,8 +5,10 @@ export interface ReturnableContractItem {
   total_amount: number | null; paid_amount: number | null; overdue: boolean; daily_price: number | null;
   deposit_paid: number; deposit_held: number;
 }
-export interface ReturnInput { item_id: number; item_revision: string; returned_at: string; hourly_rate: string; fee_override?: string; early_discount?: string }
-export interface ReturnResult { item_id: number; contract_code: string; returned_at: string; scheduled_return_at: string; late_minutes: number; chargeable_hours: number; hourly_rate: number; fee: number; total_amount: number | null; status: string }
+export interface ReturnInput { item_id: number; item_revision: string; returned_at: string; hourly_rate: string; fee_override?: string; early_discount?: string;repair_fee?:string;repair_note?:string }
+export interface ReturnResult { item_id: number; contract_code: string; returned_at: string; scheduled_return_at: string; late_minutes: number; chargeable_hours: number; hourly_rate: number; fee: number;late_fee?:number;repair_fee?:number; total_amount: number | null; status: string }
+export interface ReturnReceipt {kind:'late_fee'|'repair_fee'|'rental_debt';request_id:string;amount:string;method:import('./contract-payments').PaymentMethod;account_id:number;paid_at:string}
+export interface ReturnSettlement {order_id:number;revision:string;receipts:ReturnReceipt[];refund?:Omit<ReturnReceipt,'kind'>&{recipient_bank?:string;recipient_account?:string;recipient_name?:string}}
 export class ContractReturnRequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
@@ -26,8 +28,8 @@ export function loadContractReturnableItems(orderId: number, signal?: AbortSigna
 export function returnContractItem(input: ReturnInput) {
   return returnRequest<ReturnResult>('/api/auth/returns', input);
 }
-export function returnContractItems(items: ReturnInput[]) {
-  return returnRequest<ReturnResult[]>('/api/auth/returns', { items });
+export function returnContractItems(items: ReturnInput[],settlements?:ReturnSettlement[]) {
+  return returnRequest<ReturnResult[]>('/api/auth/returns', { items,...(settlements?.length?{settlements}:{}) });
 }
 export function changeContractVehicle(input: { item_id: number; item_revision: string; vehicle_id: number }) {
   return returnRequest<{ item_id: number; old_license: string; new_license: string }>('/api/auth/returns/vehicle', input);

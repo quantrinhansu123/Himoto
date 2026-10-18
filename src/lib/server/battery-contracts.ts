@@ -196,7 +196,7 @@ async function collectBatteryPayments(client: Database,id: number,actorId: numbe
     await client.query(`INSERT INTO himoto.transactions(created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id)
       VALUES($1,now(),$2,'in',$3,$4,'approved',$5,$6,$7,$8,$9,$10,'battery_contract',$11)`,
       [`${input.collected_at}:00+07:00`,name,delta,`${purpose === 'paid' ? 'Thu tiền thuê pin' : 'Thu cọc thuê pin'}_${code}`,actorId,input.store_id,
-        cash ? null : accountId,cash ? accountId : null,cash ? 1 : 2,cash ? null : account.owner_type,id]);
+        cash ? null : accountId,cash ? accountId : null,cash ? 1 : 2,cash ? null : method==='company_transfer'?'company':'personal',id]);
   }
 }
 
