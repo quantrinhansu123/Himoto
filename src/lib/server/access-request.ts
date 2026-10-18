@@ -16,7 +16,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/payment-intents')||path.includes('/payment-events'))return read?'contracts.read':'contracts.draft';
   if(path.includes('/photo-uploads'))return null;
   if(path.includes('/photo-ocr'))return 'customers.write';
-  if(path.endsWith('/telegram'))return 'contracts.read'; // Mutation checks the selected transaction's operation permission inside the handler.
+  if(path.endsWith('/telegram'))return path.includes('/vehicles/')?'vehicles.read':'contracts.read'; // Mutation checks the selected operation permission inside the handler.
   if(path.endsWith('/battery-swaps'))return read?'contracts.read':'contracts.renew';
   if(path.endsWith('/reservation-no-show'))return 'contracts.finalize';
   if(path.includes('/record-photos/contracts/')&&/\/battery-swap-\d+-/.test(path))return read?'contracts.read':'contracts.renew';

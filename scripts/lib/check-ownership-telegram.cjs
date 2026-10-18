@@ -39,7 +39,7 @@ module.exports=async function checkOwnershipTelegram(db,c,schema,notices){
       assert.equal(state.auto_enabled,false);
       for(const event of state.events){
         const renewal=event.kind==='renewal',expected=item.route?renewal?groups[1]:groups[0]:{chat_id:'-100000000001',thread_id:null};
-        assert.equal(event.destination_label,item.route?`Thuê sở hữu · ${renewal?'Gia hạn':'Hợp đồng mới'}`:'Nhóm cơ sở Branch A QA');
+        assert.equal(event.destination_label,item.route?renewal?'Thuê sở hữu · Gia hạn':'Thuê sở hữu · Ký mới, trả xe & điều chuyển':'Nhóm cơ sở Branch A QA');
         await service.saveContractTelegram(db,item.id,143,{access_role:'admin'},{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()});
         const calls=[];
         assert.equal((await notices.dispatchContractNotifications(async(url,options)=>{
@@ -50,14 +50,15 @@ module.exports=async function checkOwnershipTelegram(db,c,schema,notices){
       }
       const same=(await service.readContractTelegram(db,item.id,143,{access_role:'admin'})).state;assert(same.events.every(event=>event.unchanged&&!event.can_send));
     }
-    // Deposits and handovers belong to the new-contract group; returns/swaps keep branch routing.
+    // Returns belong to the main ownership group; swaps keep branch routing.
     for(const kind of ['reservation','handover','return','battery_swap']){
       const id=randomUUID(),key=`ownership-route:${id}`;
       await c.query(`INSERT INTO ${schema}.management_contract_notifications(id,order_id,store_id,event_key,root_event_key,event_type,payload,delivery_mode,status)
         SELECT $1,900002,23,$2,$2,$3,payload,'manual','pending' FROM ${schema}.management_contract_notifications WHERE order_id=900002 AND delivery_mode='manual' LIMIT 1`,[id,key,kind]);
-      const chat=['reservation','handover'].includes(kind)?groups[0].chat_id:'-100000000001';
+      const chat=['reservation','handover','return'].includes(kind)?groups[0].chat_id:'-100000000001';
       assert.equal((await notices.dispatchContractNotifications(async(_url,options)=>{assert.equal(JSON.parse(options.body).chat_id,chat);return Response.json({ok:true,result:{message_id:901}});},1,db,[900002])).sent,1);
     }
+    const transferChecks=await require('./check-vehicle-transfer-telegram.cjs')(db,c,schema,notices);
     // A missing/disabled ownership route never falls back to the physical branch or the other ownership group.
     await save([{...groups[1],enabled:false}]);
     const waitId=randomUUID();
@@ -67,7 +68,7 @@ module.exports=async function checkOwnershipTelegram(db,c,schema,notices){
     assert.equal((await c.query(`SELECT status FROM ${schema}.management_contract_notifications WHERE id=$1`,[waitId])).rows[0].status,'awaiting_config');
     await save(groups);assert.equal((await notices.dispatchContractNotifications(async()=>{throw Error('Configuration change must not replay waiting history');},1,db,[900002])).sent,0);
     const same=(await service.readContractTelegram(db,900003,143,{access_role:'admin'})).state;assert(same.events.every(event=>event.unchanged&&!event.can_send));
-    return ['Ownership rental/reservation/handover and renewal receipts route to two distinct groups/topics, including ownership_cd, ownership branches and legacy drafts; ordinary rentals and return/swap routing stay scoped',
-      'Settings validate ownership routes, reject duplicate destinations atomically and preserve them for older clients; disabled/missing routes wait without fallback or automatic replay; sent content remains deduplicated'];
+    return ['Ownership rental/reservation/handover/return and renewals route to two distinct groups/topics, including ownership_cd, ownership branches and legacy drafts; ordinary rentals and battery swaps stay scoped',
+      'Settings validate ownership routes, reject duplicate destinations atomically and preserve them for older clients; disabled/missing routes wait without fallback or automatic replay; sent content remains deduplicated',...transferChecks];
   }finally{Object.defineProperties(owner,descriptors);await c.query('ROLLBACK TO SAVEPOINT ownership_telegram_cases');await c.query('RELEASE SAVEPOINT ownership_telegram_cases');}
 };

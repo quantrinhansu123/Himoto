@@ -4,6 +4,7 @@ export interface VehicleEvent {
   key: string; action: VehicleEventAction; label: string; vehicle_name: string; license: string; location: string;
   responsible_store: string; beneficiary_store: string; note: string; at: string | null; actor: string; order_id: number | null;
   changes?: VehicleChange[];
+  telegram_event_id?:number;
 }
 /** Transfer direction stays visible without expanding a mobile history card. */
 export function vehicleEventRoute(event:VehicleEvent) {

@@ -38,7 +38,7 @@ export async function readTransferHistory(client: Pick<PoolClient, 'query'>, par
   if (input.search) filters.push(`strpos(lower(concat_ws(' ',license,vehicle_name,from_store,to_store,actor,note)),lower(${bind(input.search)}))>0`);
   const offset = bind((input.page - 1) * TRANSFER_HISTORY_SIZE);
   const result = await client.query(`WITH listed AS (
-    SELECT e.id,e.vehicle_id,e.audit_snapshot,
+    SELECT e.id,e.vehicle_id,e.audit_snapshot,e.event_type,
       COALESCE(NULLIF(e.audit_snapshot->>'vehicle_name',''),v.name,'') AS vehicle_name,
       COALESCE(NULLIF(e.audit_snapshot->>'license',''),v.license,'') AS license,
       COALESCE(original.from_store_id,e.from_store_id) AS from_store_id,e.to_store_id,
@@ -72,6 +72,7 @@ export async function readTransferHistory(client: Pick<PoolClient, 'query'>, par
   const row = result.rows[0];
   return { total: Number(row.total), page: input.page, size: TRANSFER_HISTORY_SIZE,
     rows: row.rows.map((event: Record<string, unknown>) => ({ id: Number(event.id), vehicle_id: Number(event.vehicle_id),
+      ...(['manual_transfer','manual_transfer_receive'].includes(String(event.event_type))?{telegram_event_id:Number(event.id)}:{}),
       vehicle_name: String(event.vehicle_name), license: String(event.license), from_store_id: event.from_store_id == null ? null : Number(event.from_store_id),
       to_store_id: event.to_store_id == null ? null : Number(event.to_store_id), from_store: String(event.from_store), to_store: String(event.to_store),
       action: event.action === 'transfer' ? 'transfer' : 'receive', label: event.action === 'transfer' ? 'Chuyển xe' : 'Nhận xe',

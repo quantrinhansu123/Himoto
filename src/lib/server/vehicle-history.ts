@@ -78,6 +78,7 @@ export async function readVehicleHistory(client: Database, vehicleId: number): P
       : type === 'note' ? ['note', 'Ghi chú'] : type === 'vehicle_edit' ? ['edit','Chỉnh sửa thông tin xe'] : ['transfer', TRANSFER_LABELS[type] || 'Chuyển kho'];
     const customer = text(row.customer_name), rented = type === 'status_change' && text(row.ref_type) === 'using';
     push({ key: `event-${row.id}`, action, label,
+      ...(['manual_transfer','manual_transfer_receive'].includes(type)?{telegram_event_id:Number(row.id)}:{}),
       location: type === 'transfer_dispatch' ? 'Đang điều chuyển' : rented && customer ? `Khách: ${customer}` : action === 'transfer' ? to || from : from || to,
       responsible_store: from, beneficiary_store: action === 'note' ? '' : to,
       note: [text(row.transfer_code), text(row.reason), text(row.notes), !rented && customer ? `Khách: ${customer}` : '',

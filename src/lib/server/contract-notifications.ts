@@ -27,7 +27,7 @@ async function telegramCall(token:string,method:string,body:FormData|Record<stri
   return result.result;
 }
 /** Claims are committed before calling Telegram. An uncertain send is never retried automatically. */
-export async function dispatchContractNotifications(send:typeof fetch=fetch,limit=5,database:Database=ownerDatabase,orderIds?:number[]) {
+export async function dispatchContractNotifications(send:typeof fetch=fetch,limit=5,database:Database=ownerDatabase,orderIds?:number[],vehicleEventIds?:number[]) {
   const settings=(await database.query('SELECT bot_cipher FROM himoto.management_telegram_settings WHERE singleton=true')).rows[0];
   if(!settings?.bot_cipher){await database.query("UPDATE himoto.management_contract_notifications SET status='awaiting_config' WHERE status='pending' AND delivery_mode='manual'");return {sent:0,configured:false};}
   const {token}=openIntegrationSecret<{token:string}>(settings.bot_cipher);let sent=0;
@@ -46,6 +46,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
           WHERE route=${CONTRACT_TELEGRAM_ROUTE_SQL} AND enabled
       ) g ON true
       WHERE n.status='pending' AND n.delivery_mode='manual' AND ($1::bigint[] IS NULL OR n.order_id=ANY($1))
+        AND ($3::bigint[] IS NULL OR n.vehicle_event_id=ANY($3))
         AND (g.chat_id IS NULL OR NOT EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases l
           WHERE l.chat_id=g.chat_id AND l.thread_id=COALESCE(g.thread_id,0) AND l.expires_at>clock_timestamp()))
       ORDER BY n.created_at,n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1
@@ -55,7 +56,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       ON CONFLICT(chat_id,thread_id) DO UPDATE SET lease_id=EXCLUDED.lease_id,notice_id=EXCLUDED.notice_id,expires_at=EXCLUDED.expires_at
       WHERE management_telegram_delivery_leases.expires_at<=clock_timestamp() RETURNING lease_id
     ) UPDATE himoto.management_contract_notifications n SET status='sending' FROM candidate c
-      WHERE n.id=c.id AND (c.chat_id IS NULL OR EXISTS(SELECT 1 FROM lease)) RETURNING n.*,c.chat_id,c.thread_id`,[orderIds||null,leaseId])).rows[0];
+      WHERE n.id=c.id AND (c.chat_id IS NULL OR EXISTS(SELECT 1 FROM lease)) RETURNING n.*,c.chat_id,c.thread_id`,[orderIds||null,leaseId,vehicleEventIds||null])).rows[0];
     if(!row)break;
     if(!row.chat_id){await database.query("UPDATE himoto.management_contract_notifications SET status='awaiting_config' WHERE id=$1",[row.id]);continue;}
     const payload=row.payload as NotificationPayload,ids:number[]=[];

@@ -13,11 +13,13 @@ export interface NotificationPayload {
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
   refund_recipient?:{bank?:string;account?:string;name?:string};
   battery_swap?:{percentage:number;fee:number;collected:number;license:string;vehicle_name:string};
+  transfer?:{from:string;to:string;note:string;received:boolean};
 }
 type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
 const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
-export function contractNotificationText(kind:ContractEventType,p:NotificationPayload) {
+export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive',p:NotificationPayload) {
+  if(kind==='vehicle_transfer'||kind==='vehicle_receive')return [kind==='vehicle_receive'?'ĐÃ NHẬN XE SỞ HỮU':'ĐIỀU CHUYỂN XE SỞ HỮU',`Bsx: ${p.vehicles}`,`Loại xe: ${p.vehicle_names||'—'}`,`Cơ sở chuyển đi: ${p.transfer?.from||'—'}`,`Cơ sở nhận: ${p.transfer?.to||'—'}`,`Trạng thái: ${kind==='vehicle_receive'?'Đã nhận · Lưu kho':'Chờ cơ sở đích xác nhận nhận xe'}`,`Người thực hiện: ${p.actor}`,`Mã lượt: ${p.code}`,...(p.transfer?.note?[`Ghi chú: ${p.transfer.note}`]:[]),`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
   const method=p.method||'Chưa ghi nhận thanh toán';
   const vehicle=[`Bsx: ${p.renewal?.license||p.vehicles||'—'}`,`Loại xe: ${p.renewal?.vehicle_name||p.vehicle_names||'—'}`];
   const lines=kind==='battery_swap'?[`Khách đổi pin: ${p.customer}`,`Bsx: ${p.battery_swap?.license||p.vehicles}`,`Loại xe: ${p.battery_swap?.vehicle_name||p.vehicle_names||'—'}`,`Pin lúc nhận: ${p.battery_swap?.percentage??'—'}%`,`Phí pin dưới 20%: ${money(p.battery_swap?.fee)}`,`Đã thu: ${money(p.battery_swap?.collected)}`,`Hình thức thu: ${method}`]:kind==='return'?[`Khách trả xe: ${p.customer}`,...vehicle,

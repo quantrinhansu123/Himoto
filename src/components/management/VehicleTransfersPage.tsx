@@ -8,11 +8,13 @@ import { formatDateTime } from '@/lib/formatters';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { useManagement } from './ManagementProvider';
 import { MobileDetailsCard } from './MobileDetailsCard';
+import { Dialog } from './Dialog';
+import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
 
 const dash = (value: string) => value || '—';
 const direction = (row: TransferHistoryRow) => `${row.from_store || 'Chưa rõ cơ sở đi'} → ${row.to_store || 'Chưa rõ cơ sở đến'}`;
-function Changes({ row }: { row: TransferHistoryRow }) {
-  return <div className="mg-vehicle-audit-content">{row.changes.length > 0 && <ul>{row.changes.map(change => <li key={change.field}>
+function Changes({ row,onTelegram }: { row: TransferHistoryRow;onTelegram:()=>void }) {
+  return <div className="mg-vehicle-audit-content">{row.telegram_event_id&&<button type="button" className="mg-button" onClick={onTelegram}>Telegram lượt chuyển/nhận</button>}{row.changes.length > 0 && <ul>{row.changes.map(change => <li key={change.field}>
     <strong>{change.label}:</strong> {dash(change.from)} → {dash(change.to)}</li>)}</ul>}{row.note && <p>{row.note}</p>}{!row.changes.length && !row.note && '—'}</div>;
 }
 
@@ -21,6 +23,7 @@ export function VehicleTransfersPage() {
   const [filters, setFilters] = useState(defaultTransferHistoryQuery);
   const [query, setQuery] = useState(defaultTransferHistoryQuery);
   const [report, setReport] = useState<TransferHistoryResult | null>(null);
+  const [telegramRow,setTelegramRow]=useState<TransferHistoryRow|null>(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   const invalidDates = !filters.from || !filters.to || filters.from > filters.to;
   useEffect(() => {
@@ -43,6 +46,7 @@ export function VehicleTransfersPage() {
   function change(key: keyof TransferHistoryQuery, value: string) { setFilters(current => ({ ...current, [key]: value })); }
   const stores = dataset?.stores || [], rows = report?.rows || [], pages = Math.max(1, Math.ceil((report?.total || 0) / (report?.size || 25)));
   return <section className="mg-page mg-page-vehicle-transfers" aria-label="Lịch sử luân chuyển">
+    {telegramRow?.telegram_event_id&&<Dialog title="Telegram · Điều chuyển xe" onClose={()=>setTelegramRow(null)}><div className="mg-dialog-body"><VehicleTransferTelegramPanel vehicleId={telegramRow.vehicle_id} eventId={telegramRow.telegram_event_id}/></div><div className="mg-dialog-footer"><button className="mg-button" type="button" onClick={()=>setTelegramRow(null)}>Đóng</button></div></Dialog>}
     <div className="mg-page-content">
       <div className="mg-page-heading"><div><h1>Lịch sử luân chuyển<span className="mg-title-count">{loading || error ? '—' : report?.total || 0}</span></h1>
         <p>Xem xe chuyển từ cơ sở nào sang cơ sở nào trong ngày. Mỗi dòng là một lần chuyển hoặc nhận xe.</p></div>
@@ -67,11 +71,11 @@ export function VehicleTransfersPage() {
             <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{rows.map(row => <MobileDetailsCard key={row.id} title={`${row.label} · ${row.license || row.vehicle_name}`}
               summary={<><span>{formatDateTime(row.at)}</span><span>{dash(row.actor)}</span></>} preview={direction(row)}
               fields={[["Tên xe", dash(row.vehicle_name)], ["Biển số", dash(row.license)], ["Cơ sở chuyển đi", dash(row.from_store)], ["Cơ sở nhận", dash(row.to_store)],
-                ["Ngày giờ", formatDateTime(row.at)], ["Người thao tác", dash(row.actor)], ["Nội dung thao tác", <Changes key="changes" row={row}/>]]}/>)}</ul></div>
+                ["Ngày giờ", formatDateTime(row.at)], ["Người thao tác", dash(row.actor)], ["Nội dung thao tác", <Changes key="changes" row={row} onTelegram={()=>setTelegramRow(row)}/>]]}/>)}</ul></div>
             <div className="mg-table-scroll mg-desktop-records" tabIndex={0} role="region" aria-label="Bảng lịch sử luân chuyển"><table className="mg-table mg-transfer-history-table">
               <thead><tr>{['Ngày giờ','Thao tác','Biển số / Tên xe','Cơ sở chuyển đi','Cơ sở nhận','Người thao tác','Nội dung thao tác'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
               <tbody>{rows.map(row => <tr key={row.id}><td>{formatDateTime(row.at)}</td><td><span className={`mg-status mg-status-${row.action === 'receive' ? 'green' : 'blue'}`}>{row.label}</span></td>
-                <td><strong>{dash(row.license)}</strong><small className="mg-transfer-vehicle-name">{row.vehicle_name}</small></td><td>{dash(row.from_store)}</td><td>{dash(row.to_store)}</td><td>{dash(row.actor)}</td><td><Changes row={row}/></td></tr>)}</tbody>
+                <td><strong>{dash(row.license)}</strong><small className="mg-transfer-vehicle-name">{row.vehicle_name}</small></td><td>{dash(row.from_store)}</td><td>{dash(row.to_store)}</td><td>{dash(row.actor)}</td><td><Changes row={row} onTelegram={()=>setTelegramRow(row)}/></td></tr>)}</tbody>
             </table></div>
           </>}
         {!loading && !error && report && report.total > 0 && <div className="mg-transfer-pagination"><span>{report.total} thao tác · Trang {report.page}/{pages}</span>

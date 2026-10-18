@@ -1,6 +1,8 @@
 import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
-import { himotoPool } from '@/lib/server/himoto-database';
+import { himotoPool,ownerDatabase } from '@/lib/server/himoto-database';
+import { dataAccess } from '@/lib/server/access-context';
+import { readVehicleTransferTelegram } from '@/lib/server/vehicle-transfer-telegram';
 import { protectDatabaseRequest, SESSION_COOKIE, verifySession } from '@/lib/server/management-session';
 import { applyVehicleAction, parseVehicleAction, VehicleActionError } from '@/lib/server/vehicle-actions';
 
@@ -21,6 +23,11 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     await client.query('BEGIN');
     const data = await applyVehicleAction(client, Number(id), input, actorId);
     await client.query('COMMIT');
+    if(input.action==='transfer'||input.action==='receive'){
+      // A preview failure cannot turn a committed stock operation into a retryable error.
+      try{if((await readVehicleTransferTelegram(ownerDatabase,Number(id),data.event_id,dataAccess.getStore()!)).state.eligible)data.telegram_event_id=data.event_id;}
+      catch{data.telegram_event_id=data.event_id;}
+    }
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});

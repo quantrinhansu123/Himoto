@@ -11,6 +11,7 @@ export interface TransferHistoryRow {
   from_store_id: number | null; to_store_id: number | null; from_store: string; to_store: string;
   action: 'transfer' | 'receive'; label: string; at: string | null; actor: string; note: string;
   changes: VehicleChange[];
+  telegram_event_id?:number;
 }
 export interface TransferHistoryResult { rows: TransferHistoryRow[]; total: number; page: number; size: number }
 export const TRANSFER_HISTORY_SIZE = 25;

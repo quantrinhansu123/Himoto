@@ -13,6 +13,7 @@ import { formatValue } from '@/lib/management/table-utils';
 import { ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { formatDateTime } from '@/lib/formatters';
 import { MobileDetailsCard } from './MobileDetailsCard';
+import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
 
 const SECTIONS = [
   { id: 'details', label: 'Thông tin xe' },
@@ -28,6 +29,7 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
   const [action, setAction] = useState<VehicleEventAction | ''>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [telegramEvent,setTelegramEvent]=useState<number|null>(null);
   const fetchHistory = useCallback((signal?: AbortSignal) => {
     setLoading(true); setError('');
     loadVehicleHistory(row.id, signal).then(value => { if (!signal?.aborted) setEvents(value); }).catch(cause => {
@@ -47,11 +49,13 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
   const shown = (events || []).filter(event => !action || event.action === action);
   const dash = (value: string) => value || '—';
   const content = (event:VehicleEvent) => <div className="mg-vehicle-audit-content">
+    {event.telegram_event_id&&source==='api'&&<button type="button" className="mg-button" onClick={()=>setTelegramEvent(event.telegram_event_id!)}>Telegram lượt chuyển/nhận</button>}
     {Boolean(event.changes?.length) && <ul>{event.changes!.map(change=><li key={change.field}><strong>{change.label}: </strong><span>{dash(change.from)}</span><span aria-label="thành"> → </span><span>{dash(change.to)}</span></li>)}</ul>}
     {event.note && <p>{event.order_id ? <Link href={`/contracts?contract_id=${event.order_id}`} onClick={onClose}>{event.note}</Link> : event.note}</p>}
     {!event.changes?.length && !event.note && (event.action==='edit'?'Không có trường thay đổi.':'—')}
   </div>;
 
+  if(telegramEvent)return <Dialog title="Telegram · Điều chuyển xe" onClose={()=>setTelegramEvent(null)}><div className="mg-dialog-body"><VehicleTransferTelegramPanel vehicleId={row.id} eventId={telegramEvent}/></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setTelegramEvent(null)}>Quay lại lịch sử xe</button></div></Dialog>;
   return <Dialog title={String(row.name)} subtitle={`${row.license || row.code} · ${config.title}`} className="mg-customer-detail mg-vehicle-detail" onClose={onClose}>
     <div className="mg-dialog-body">
       <ContractSectionTabs prefix="vehicle-detail" sections={SECTIONS} active={section} onChange={setSection} />

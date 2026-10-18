@@ -10,7 +10,7 @@ import { dataAccess } from './access-context';
 
 type Client = Pick<PoolClient, 'query'>;
 export interface VehicleActionCustomer { id: number; name: string; created: boolean; matched_by: string }
-export interface VehicleActionResult { id: number; event_id: number; customer?: VehicleActionCustomer; draft?: { id: number; code: string } }
+export interface VehicleActionResult { id: number; event_id: number; telegram_event_id?:number; customer?: VehicleActionCustomer; draft?: { id: number; code: string } }
 export class VehicleActionError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export type VehicleActionInput = (
   | { action: 'transfer'; to_store_id: number; note: string }

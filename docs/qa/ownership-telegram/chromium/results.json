@@ -1,9 +1,10 @@
 {
-  "passed": 2,
+  "passed": 3,
   "browser": "chromium",
   "checks": [
     "Admin sees separate ownership-new/renewal destinations, saves both without changing branch routing or the stored bot, and fits 390/1440px",
-    "Final preview changes the destination with the selected event; opening/refreshing sends nothing, and one explicit renewal submit locks duplicate sends"
+    "Final preview changes the destination with the selected event; opening/refreshing sends nothing, and one explicit renewal submit locks duplicate sends",
+    "Ownership stock transfer retains the required receipt step, opens a main-group preview after saving, and only sends once after explicit Telegram submit"
   ],
   "javascriptErrors": [],
   "unexpectedRequests": [],
