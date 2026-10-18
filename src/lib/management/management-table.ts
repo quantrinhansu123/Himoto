@@ -40,7 +40,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   const counts=new Map<string,number>();for(const row of tabRows)counts.set(row.status,(counts.get(row.status)||0)+1);
   const filtered=filterRows(scoped,input.query,'all');
   const sorted=input.kind==='contracts' && !['overdue','due'].includes(input.scope)
-    ? sortContractRows(filtered,input.sort,input.direction,{pinDrafts:true,pinOwnershipTypes:input.scope==='ownership'}) : sortRows(filtered,input.sort,input.direction);
+    ? sortContractRows(filtered,input.sort,input.direction,{pinDrafts:true,pinOwnershipTypes:input.scope==='ownership',pinActiveRentals:!input.scope&&Boolean(input.query.search.trim())}) : sortRows(filtered,input.sort,input.direction);
   const pages=Math.max(1,Math.ceil(sorted.length/input.size)),page=Math.min(input.page,pages),offset=(page-1)*input.size;
   return {rows:all ? sorted : sorted.slice(offset,offset+input.size),total:sorted.length,scopeCount:scoped.length,tabCount:tabRows.length,page,pages,
     statusCounts:[...counts].sort(([a],[b])=>a.localeCompare(b)),statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:scoped.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0).length,

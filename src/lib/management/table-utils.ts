@@ -60,16 +60,25 @@ export function sortRows(rows: ManagementRow[], key: string, direction: 'asc' | 
 
 const ownershipTypeRank = (type: unknown) => type === 'ownership_cd' ? 0 : type === 'ownership' ? 1 : 2;
 
-/** Keep drafts and ownership contract types pinned above the active column sort. */
+/** Search may pin current rentals before drafts and the selected column sort. */
 export function sortContractRows(
   rows: ManagementRow[],
   key: string,
   direction: 'asc' | 'desc',
-  options: { pinDrafts?: boolean; pinOwnershipTypes?: boolean } = {},
+  options: { pinDrafts?: boolean; pinOwnershipTypes?: boolean; pinActiveRentals?: boolean } = {},
 ): ManagementRow[] {
   const sorted = sortRows(rows, key, direction);
-  if (!options.pinDrafts && !options.pinOwnershipTypes) return sorted;
+  if (!options.pinDrafts && !options.pinOwnershipTypes && !options.pinActiveRentals) return sorted;
   return sorted.sort((a, b) => {
+    if (options.pinActiveRentals) {
+      const active = (row: ManagementRow) => ['renting','overdue'].includes(row.status);
+      const byActive = Number(active(b)) - Number(active(a));
+      if (byActive) return byActive;
+      if (active(a)) {
+        const started = (row: ManagementRow) => Date.parse(String(row.start_date || '')) || 0;
+        return started(b) - started(a) || b.id - a.id;
+      }
+    }
     if (options.pinDrafts) {
       const draftRank = (row: ManagementRow) => row.status === 'draft' ? 0 : 1;
       const byDraft = draftRank(a) - draftRank(b);

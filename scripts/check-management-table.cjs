@@ -26,6 +26,26 @@ async function main(){
   const overdue=shared.projectManagementTable([{...rows[0],status:'overdue',end_date:'2026-10-15T13:00:00Z'}],{...base,scope:'overdue'},false,Date.parse('2026-10-16T12:59:00Z'));
   assert.equal(overdue.rows[0].overdue_days,0);
   checks.push('Accent-insensitive search, combined store/status filters, status tabs, VAT/draft scopes, full export and floor-based overdue days preserve existing behavior');
+  const plateRows=[
+    ...Array.from({length:25},(_,i)=>({...rows[0],id:100+i,code:`QA-${i}`,status:'completed',license:'QA-123.45',start_date:'2026-10-17T09:00:00Z'})),
+    {...rows[0],id:130,code:'000001',status:'draft',license:'QA-123.45',start_date:'2026-10-20T09:00:00Z'},
+    {...rows[0],id:131,code:'QA-999',status:'overdue',license:'QA-123.45',start_date:'2026-10-14T09:00:00Z'},
+    {...rows[0],id:132,code:'QA-998',status:'renting',license:'QA-123.45',start_date:'2026-10-16T09:00:00Z'},
+    {...rows[0],id:133,code:'QA-997',status:'overdue',license:'QA-123.45',start_date:'2026-10-16T09:00:00Z'},
+    {...rows[0],id:134,code:'QA-996',status:'overdue',license:'QA-999.99',start_date:'2026-10-18T09:00:00Z',store_id:2},
+  ];
+  const plateInput={...base,query:{...EMPTY_QUERY,search:'123.45'},size:2,store:'1'};
+  const plate=shared.projectManagementTable(plateRows,plateInput),plateNext=shared.projectManagementTable(plateRows,{...plateInput,page:2});
+  assert.equal(plate.total,29);assert.deepEqual(plate.rows.map(row=>row.id),[133,132]);assert.deepEqual(plateNext.rows.map(row=>row.id),[131,130]);
+  assert.deepEqual(shared.projectManagementTable(plateRows,{...plateInput,direction:'desc'}).rows.map(row=>row.id),[133,132]);
+  assert.deepEqual(shared.projectManagementTable(plateRows,{...plateInput,sort:'start_date'}).rows.map(row=>row.id),[133,132]);
+  assert.equal(shared.projectManagementTable(plateRows,{...base,store:'1'}).rows[0].id,130);
+  assert.equal(shared.projectManagementTable(plateRows,{...plateInput,query:{...plateInput.query,status:'completed'}}).total,25);
+  assert.equal(shared.projectManagementTable(plateRows,{...plateInput,scope:'drafts'}).rows[0].id,130);
+  const exported=shared.projectManagementTable(plateRows,plateInput,true);
+  assert.equal(exported.rows.length,29);assert.deepEqual(exported.rows.slice(0,4).map(row=>row.id),[133,132,131,130]);
+  assert.deepEqual(plate.summary,summarizeContracts(plateRows.filter(row=>row.store_id===1),[]));
+  checks.push('All-contract search pins renting/overdue newest-first before drafts and 25 completed rentals, including stable ties, pagination and export; store/status filters and draft-only/default lists stay scoped');
   assert.deepEqual(server.parseManagementTable('contracts',shared.managementTableQuery(base)),base);
   for(const query of ['size=51','page=0','page=NaN','direction=x','scope=x','sort=sql','filter_unknown=x','store=0','overdue_compare=x','all=0'])assert.throws(()=>server.parseManagementTable('contracts',new URLSearchParams(query)),server.ManagementTableError);
   let called=false;await assert.rejects(()=>server.readManagementTable({query(){called=true;}},'contracts',new URLSearchParams('size=999')),server.ManagementTableError);assert.equal(called,false);
@@ -45,7 +65,7 @@ async function main(){
         const paged=await server.readManagementTable(c,'contracts',shared.managementTableQuery({...base,scope}));
         assert(isDeepStrictEqual(paged,legacy),`Contract compact projection mismatch: ${scope||'all'}`);
       }
-      for(const change of [{page:2},{sort:'vehicle_name',direction:'desc'},{store:'31'},{query:{...EMPTY_QUERY,status:'completed',search:'honda'}}]){
+      for(const change of [{page:2},{sort:'vehicle_name',direction:'desc'},{store:'31'},{query:{...EMPTY_QUERY,status:'completed',search:'honda'}},{query:{...EMPTY_QUERY,search:'188.94'}},{query:{...EMPTY_QUERY,search:'188.94'},page:2},{query:{...EMPTY_QUERY,search:'188.94'},direction:'desc'}]){
         const input={...base,...change};
         assert(isDeepStrictEqual(await server.readManagementTable(c,'contracts',shared.managementTableQuery(input)),shared.projectManagementTable(old,input)),`Contract filter/sort mismatch: ${JSON.stringify(change)}`);
       }
