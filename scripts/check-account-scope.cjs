@@ -13,6 +13,8 @@ async function main(){const c=await pool.connect();try{
   await c.query(migration);await c.query(migration);
   const numbering=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-paper-contract-number.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(numbering);await c.query(numbering);
+  const inventoryMigration=fs.readFileSync('docs/sql/2026-10-18-shared-vehicle-inventory.sql','utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
+  await c.query(inventoryMigration);await c.query(inventoryMigration);
   const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   await c.query(duplicates);await c.query(duplicates);
   // Every generated ID belongs to this rollback-only schema, never a production sequence.
@@ -31,6 +33,14 @@ async function main(){const c=await pool.connect();try{
   await c.query('CREATE POLICY qa_public_read ON qa_access_scope.customers FOR SELECT TO PUBLIC USING (true)');
   await c.query("SELECT set_config('himoto.scope_all','false',true),set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true),set_config('himoto.operation','',true)");
   await c.query('SET LOCAL ROLE himoto_scoped');
+  const inventory=(await c.query('SELECT * FROM qa_access_scope.vehicle_inventory()')).rows;
+  assert.equal(inventory.length,2);assert(inventory.some(row=>Number(row.store_id)===80002&&row.available));
+  assert.deepEqual(Object.keys(inventory[0]).sort(),['id','name','license','type','status','store_id','store_name','from_store_name','to_store_name','available'].sort());
+  assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91002')).rowCount,0);
+  assert.equal((await c.query("UPDATE qa_access_scope.vehicles SET status='using' WHERE id=91002")).rowCount,0);
+  checks.push('Shared stock exposes only vehicle/branch/availability metadata; foreign vehicle records, customers, contracts and write access remain restricted');
+  await require('./lib/check-shared-inventory-api.cjs')(c,'qa_access_scope');
+  checks.push('Actual shared-inventory GET allows authorized branch stock readers, returns no customer/financial fields, disables cache and rejects missing/insufficient authorization');
   assert.deepEqual((await c.query('SELECT id::int FROM qa_access_scope.customers ORDER BY id')).rows,[{id:90001}]);
   assert.equal((await c.query('SELECT id FROM qa_access_scope.customers WHERE id=90002')).rowCount,0);
   assert.equal(Number((await c.query("SELECT qa_access_scope.find_customer_duplicate('001234567802','',NULL) AS id")).rows[0].id),90002);
@@ -73,6 +83,8 @@ async function main(){const c=await pool.connect();try{
   assert.equal((await c.query('SELECT status FROM qa_access_scope.vehicles WHERE id=91001')).rows[0].status,'ready');
   checks.push('Actual finalization, cash receipt, renewal and return services work under branch RLS in the rollback-only schema');
   const actions=load(path.join(root,'lib/server/vehicle-actions')).applyVehicleAction;
+  await assert.rejects(()=>dataAccess.run(scope,()=>actions(proxy,91001,{action:'transfer',to_store_id:80001,note:'QA debt blocks transfer'},70002)),e=>e.status===409);
+  await c.query("UPDATE qa_access_scope.orders SET order_status='completed' WHERE id=92001"); // explicitly closed prior contract fixture
   await c.query("SELECT set_config('himoto.operation','transfer',true)");
   const transferred=await dataAccess.run({...scope,operation:'transfer'},()=>actions(proxy,91001,{action:'transfer',to_store_id:80001,note:'QA transfer'},70002));
   await c.query("SELECT set_config('himoto.transfer_vehicle_id','',true),set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true),set_config('himoto.operation','receive',true)");

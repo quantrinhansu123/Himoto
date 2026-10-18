@@ -51,6 +51,7 @@ async function main(){
     const mediaMigration=fs.readFileSync(path.resolve('docs/sql/2026-10-18-international-customers-contract-media.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(mediaMigration);await c.query(mediaMigration);
     const documentMigration=fs.readFileSync(path.resolve('docs/sql/2026-10-18-contract-document-photos.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(documentMigration);await c.query(documentMigration);
     const finalSubmit=fs.readFileSync('docs/sql/2026-10-18-contract-telegram-final-submit.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(finalSubmit);await c.query(finalSubmit);
+    const mediaFirst=fs.readFileSync('docs/sql/2026-10-18-telegram-media-first.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(mediaFirst);await c.query(mediaFirst);
     const pacing=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-five-second-poll.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(pacing);await c.query(pacing);
     const history=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-history-webhooks.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(history);await c.query(history);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name) VALUES(23,'Branch A QA'),(31,'Branch B QA')`);
@@ -93,14 +94,15 @@ async function main(){
     const service=load(path.join(root,'lib/server/contract-telegram')),admin={access_role:'admin'};
     const confirm=async key=>{const event=(await service.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key===key);await service.saveContractTelegram(db,1,143,admin,{action:'send',event_key:key,hash:event.hash,request_id:require('node:crypto').randomUUID()});};
     await confirm('qa-ready');
-    const delivered=await notices.dispatchContractNotifications(telegram,5,db);assert.equal(delivered.sent,1);assert.deepEqual(calls,['sendMediaGroup']);
+    const delivered=await notices.dispatchContractNotifications(telegram,5,db);assert.equal(delivered.sent,1);assert.deepEqual(calls,['sendMediaGroup','sendMessage']);
     assert.equal((await c.query(`SELECT status FROM ${schema}.management_contract_notifications WHERE event_key='qa-no-bot'`)).rows[0].status,'manual');
-    await notices.dispatchContractNotifications(telegram,5,db);assert.equal(calls.length,1);
+    await notices.dispatchContractNotifications(telegram,5,db);assert.equal(calls.length,2);
     await notices.queueContractNotification(db,1,'rental','qa-uncertain',143,'rental');await c.query(`UPDATE ${schema}.management_record_photos SET data=data||decode('04','hex') WHERE entity_type='contracts' AND entity_id=1 AND slot='rental-1'`);await confirm('qa-uncertain');let attempts=0;await notices.dispatchContractNotifications(async()=>{attempts++;throw Error('Network uncertainty');},5,db);await notices.dispatchContractNotifications(telegram,5,db);assert.equal(attempts,1);assert.equal((await c.query(`SELECT status FROM ${schema}.management_contract_notifications WHERE root_event_key='qa-uncertain' AND delivery_mode='manual'`)).rows[0].status,'unknown');
     checks.push('Notification outbox deduplicates events, waits without a bot, sends text and immutable photos to the correct branch, and never auto retries uncertain sends or historical waiting messages');
     await c.query('SAVEPOINT rollback_event');await notices.queueContractNotification(db,1,'return','qa-rolled-back',143,'return-1001');await c.query('ROLLBACK TO SAVEPOINT rollback_event');assert.equal((await c.query(`SELECT id FROM ${schema}.management_contract_notifications WHERE event_key='qa-rolled-back'`)).rowCount,0);
     checks.push(...await require('./lib/check-contract-telegram.cjs')(db,c,schema,notices));
     checks.push(...await require('./check-contract-documents.cjs')(db,c,schema,notices));
+    checks.push(...await require('./lib/check-telegram-media-first.cjs')(db,c,schema,notices));
     await c.query(`ALTER TABLE ${schema}.vehicles ENABLE ROW LEVEL SECURITY; CREATE POLICY qa_vehicle_read ON ${schema}.vehicles FOR SELECT TO himoto_scoped USING(himoto.access_store(COALESCE(current_store_id,store_id)))`);
     await c.query(`GRANT USAGE ON SCHEMA ${schema} TO himoto_scoped; GRANT SELECT ON ${schema}.vehicles,${schema}.orders,${schema}.gps_devices TO himoto_scoped; GRANT UPDATE ON ${schema}.orders TO himoto_scoped`);
     await c.query(`GRANT SELECT ON ${schema}.management_contract_payments,${schema}.order_vehicle_details,${schema}.transactions,${schema}.stores,${schema}.customers,${schema}.management_record_photos,${schema}.staff_profiles TO himoto_scoped;GRANT SELECT(id,name) ON ${schema}.users TO himoto_scoped`);

@@ -23,11 +23,11 @@ export async function handoverReservation(client: Database, id: number, actorId:
   if (order.order_status !== 'deposit_contract' || order.revision !== revision) throw new ContractFinalizeError('Đơn đã thay đổi hoặc đã giao xe. Tải lại trước khi xác nhận.',409);
   const items = await client.query(`SELECT d.id,d.vehicle_id,v.status FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id
     WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY v.id FOR UPDATE OF d,v`,[id]);
-  if (!items.rowCount || items.rows.some(row=>!['ready','using','rent'].includes(row.status))) throw new ContractFinalizeError('Xe không còn sẵn sàng để giao. Kiểm tra lại kho xe.',409);
+  if (!items.rowCount || items.rows.some(row=>row.status!=='ready')) throw new ContractFinalizeError('Xe phải đang Lưu kho và đã được cơ sở nhận xác nhận trước khi giao.',409);
   const vehicleIds = items.rows.map(row=>Number(row.vehicle_id));
   const conflicts = await client.query(`SELECT d.id FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-    WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
-      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')`,[vehicleIds,id]);
+    WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND o.deleted_at IS NULL
+      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt')`,[vehicleIds,id]);
   if (conflicts.rowCount) throw new ContractFinalizeError('Xe đang thuộc đơn khác. Kiểm tra lại trước khi giao.',409);
   if(dataAccess.getStore()&&(await client.query('SELECT EXISTS(SELECT 1 FROM unnest($1::bigint[]) AS v(id) WHERE himoto.vehicle_has_other_rental(v.id,$2)) AS blocked',[vehicleIds,id])).rows[0]?.blocked)throw new ContractFinalizeError('Xe đang thuộc đơn khác. Kiểm tra lại trước khi giao.',409);
   const payload = order.draft_payload || {}, composer = payload.management_composer || {};

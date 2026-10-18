@@ -20,7 +20,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.endsWith('/battery-swaps'))return read?'contracts.read':'contracts.renew';
   if(path.endsWith('/reservation-no-show'))return 'contracts.finalize';
   if(path.includes('/record-photos/contracts/')&&/\/battery-swap-\d+-/.test(path))return read?'contracts.read':'contracts.renew';
-  if(path.includes('/record-photos/'))return path.includes('/customers/')?(read?'customers.read':'customers.write'):read?'contracts.read':/\/renewal-(?:receipt-)?\d+-(?:[1-9]|1[0-5]|video-[1-3]|document-(?:[1-9]|1[0-5]))$/.test(path)?'contracts.renew':/\/return-\d+-(?:[1-9]|1[0-5]|video-[1-3]|document-(?:[1-9]|1[0-5]))$/.test(path)?'contracts.return':/\/handover-(?:[1-9]|1[0-5]|video-[1-3]|document-(?:[1-9]|1[0-5]))$/.test(path)?'contracts.finalize':'contracts.draft';
+  if(path.includes('/record-photos/'))return path.includes('/customers/')?(read?'customers.read':'customers.write'):read?'contracts.read':/\/renewal-(?:receipt-)?\d+-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.renew':/\/return-\d+-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.return':/\/handover-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.finalize':'contracts.draft';
   if(path.includes('/bulk-delete/')||path.includes('/import')||path.includes('/match-stores')||path.includes('/backups')||path.includes('/reset')||path.includes('/contract-types'))return read?'contracts.read':'settings.write';
   if(path.includes('/stores/managers'))return 'contracts.read';
   if(path.includes('/stores'))return read?'contracts.read':'settings.write';

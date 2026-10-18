@@ -48,10 +48,11 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   await c.query(`UPDATE ${schema}.management_record_photos SET data=$1 WHERE slot='renewal-2-1'`,[Buffer.from([255,216,255,9])]);
   const calls=[];
   const fake=async(url,options)=>{const method=new URL(url).pathname.split('/').at(-1);calls.push(method);
-    assert.equal(method,'sendMediaGroup');const media=JSON.parse(options.body.get('media'));assert.equal(media.length,5);assert(media[0].caption.includes('Phí gia hạn: 1.500.000 đ'));
+    if(method==='sendMessage'){assert.equal(calls.at(-2),'sendMediaGroup');assert(JSON.parse(options.body).text.includes('Phí gia hạn: 1.500.000 đ'));return Response.json({ok:true,result:{message_id:99}});}
+    assert.equal(method,'sendMediaGroup');const media=JSON.parse(options.body.get('media'));assert.equal(media.length,5);assert(!media.some(item=>item.caption));
     assert.deepEqual(Buffer.from(await options.body.get('photo0').arrayBuffer()),photo);
     return Response.json({ok:true,result:media.map((_,i)=>({message_id:i+10}))});};
-  await notices.dispatchContractNotifications(fake,5,db);assert.deepEqual(calls,['sendMediaGroup']);
+  await notices.dispatchContractNotifications(fake,5,db);assert.deepEqual(calls,['sendMediaGroup','sendMessage']);
   event=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');assert(event.can_send); // changed photo
   await telegram.saveContractTelegram(db,1,143,admin,{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()});
   await notices.dispatchContractNotifications(async()=>{throw Error('Connection ended after request');},5,db);
@@ -67,13 +68,13 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   assert.equal((await c.query(`SELECT jsonb_array_length(delivery_review) AS n,status FROM ${schema}.management_contract_notifications WHERE id=$1`,[event.notice_id])).rows[0].n,1);
   assert.equal((await c.query(`SELECT count(*)::int AS n FROM ${schema}.management_contract_notifications WHERE event_key=$1`,[`manual:1:${retry.request_id}`])).rows[0].n,1);
   assert.equal((await notices.dispatchContractNotifications(fake,1,db,[2])).sent,0);
-  await notices.dispatchContractNotifications(async(url,options)=>{const media=JSON.parse(options.body.get('media'));assert.equal(media.length,5);assert.deepEqual(Buffer.from(await options.body.get('photo0').arrayBuffer()),Buffer.from([255,216,255,9]));return Response.json({ok:true,result:media.map((_,i)=>({message_id:i+100}))});},1,db,[1]);
+  await notices.dispatchContractNotifications(async(url,options)=>{if(new URL(url).pathname.endsWith('/sendMessage'))return Response.json({ok:true,result:{message_id:199}});const media=JSON.parse(options.body.get('media'));assert.equal(media.length,5);assert.deepEqual(Buffer.from(await options.body.get('photo0').arrayBuffer()),Buffer.from([255,216,255,9]));return Response.json({ok:true,result:media.map((_,i)=>({message_id:i+100}))});},1,db,[1]);
   event=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');assert.equal(event.status,'sent');assert(!event.can_send);assert(!event.can_retry_confirmed_absent);
   await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,admin,{action:'auto',enabled:true}),e=>e.status===400);
   await notices.queueContractNotification(db,1,'rental','qa-detailed-rental',143,'rental');
   const detailed=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');
   await telegram.saveContractTelegram(db,1,143,admin,{action:'send',event_key:detailed.key,hash:detailed.hash,request_id:randomUUID()});
-  await notices.dispatchContractNotifications(async()=>Response.json({ok:true,result:[{message_id:20},{message_id:21}]}),5,db);
+  await notices.dispatchContractNotifications(async(url)=>Response.json({ok:true,result:new URL(url).pathname.endsWith('/sendMessage')?{message_id:22}:[{message_id:20},{message_id:21}]}),5,db);
   const same=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');assert(same.unchanged);assert(!same.can_send);
   await c.query(`UPDATE ${schema}.orders SET contract_number='000867' WHERE id=1`);
   const paperEvent=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');
@@ -86,7 +87,7 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   await requireContractPhotoSlot(db,'contracts',1,'renewal-2-5');
   await assert.rejects(()=>requireContractPhotoSlot(db,'contracts',1,'renewal-999-1'),e=>e.status===404);
   return ['Rental, return and renewal templates match requested figures; only approved receipts identify payment/refund methods',
-    'Manual mode holds automatic events; five saved photos form one immutable album with caption; stale previews, duplicate clicks and ambiguous deliveries are blocked',
+    'Manual mode holds automatic events; five saved photos form one immutable album followed by one summary; stale previews, duplicate clicks and ambiguous deliveries are blocked',
     'Content hashes survive JSONB key ordering; completed automatic content cannot be manually duplicated; renewal photo ownership and read-only permissions enforced',
     'Confirmed-absent retry records the operator review, rejects unconfirmed/unauthorized/partial sends, queues once and dispatches only the selected contract',
     'Telegram previews use the current paper contract number after correction while sent snapshots and delivery history remain immutable'];

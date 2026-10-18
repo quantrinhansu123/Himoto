@@ -11,6 +11,9 @@ module.exports=async function checkDocuments(db,c,schema,notices){
   for(const slot of ['rental-document-50','handover-document-100','return-1001-document-15','renewal-2-document-1','renewal-receipt-9001-document-15','customer-id-front','customer-id-back','customer-driver-license'])parsePhotoTarget('contracts','1',slot);
   for(const slot of ['rental-document-0','rental-document-00','return-0-document-1','return-1001-document-00'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-1001-document-15','PUT'),'contracts.return');
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-1001-document-50','PUT'),'contracts.return');
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-50','PUT'),'contracts.finalize');
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/renewal-2-document-50','PUT'),'contracts.renew');
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-document-1','PUT'),'contracts.finalize');
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/renewal-receipt-9001-document-15','PUT'),'contracts.renew');
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1','POST'),'contracts.draft');
@@ -56,14 +59,15 @@ module.exports=async function checkDocuments(db,c,schema,notices){
   const {randomUUID}=require('node:crypto'),service=load(path.join(root,'lib/server/contract-telegram')),admin={access_role:'admin'};
   const event=(await service.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-documents');
   await service.saveContractTelegram(db,1,143,admin,{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()});
-  const batches=[];
+  const batches=[],methods=[];
   await notices.dispatchContractNotifications(async(url,options)=>{
-    const method=new URL(url).pathname.split('/').at(-1);if(method==='sendPhoto'){batches.push(1);return Response.json({ok:true,result:{message_id:299}});}assert.equal(method,'sendMediaGroup');
+    const method=new URL(url).pathname.split('/').at(-1);methods.push(method);if(method==='sendMessage'){assert.equal(batches.reduce((sum,n)=>sum+n,0),event.photo_count);return Response.json({ok:true,result:{message_id:300}});}if(method==='sendPhoto'){batches.push(1);return Response.json({ok:true,result:{message_id:299}});}assert.equal(method,'sendMediaGroup');
     const media=JSON.parse(options.body.get('media'));batches.push(media.length);
-    assert(media.length>=2&&media.length<=10);
+    assert(media.length>=2&&media.length<=10);assert(media.every(item=>!item.caption));
     return Response.json({ok:true,result:media.map((_,i)=>({message_id:200+i}))});
   },5,db);
   assert.equal(batches.reduce((sum,n)=>sum+n,0),event.photo_count);
+  assert.equal(methods.at(-1),'sendMessage');assert.equal(methods.filter(method=>method==='sendMessage').length,1);
   assert.equal(queued.photos.length,42); // 3 vehicle + 35 additional + 1 plate + 3 identity
   const database=load(path.join(root,'lib/server/himoto-database')).himotoPool;
   const session=load(path.join(root,'lib/server/management-session')),savedUser=session.userFromSession,descriptor=Object.getOwnPropertyDescriptor(database,'connect');

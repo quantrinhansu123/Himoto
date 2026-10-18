@@ -89,6 +89,14 @@ async function main() {
 
       await c.query("UPDATE qa_fin_vehicles SET status='ready' WHERE id=101");
       await c.query("UPDATE qa_fin_order_vehicle_details SET completed_at=now() WHERE order_id=1 AND vehicle_id=101");
+      await assert.rejects(finalize(6,{deposit:null,rental:null}),error=>error.status===409);
+      await c.query("UPDATE qa_fin_orders SET order_status='wait_payment' WHERE id=1");
+      await assert.rejects(finalize(6,{deposit:null,rental:null}),error=>error.status===409);
+      await c.query("UPDATE qa_fin_orders SET order_status='completed' WHERE id=1");
+      await c.query("UPDATE qa_fin_vehicles SET status='using' WHERE id=101");
+      await assert.rejects(finalize(6,{deposit:null,rental:null}),error=>error.status===409);
+      await c.query("UPDATE qa_fin_vehicles SET status='ready' WHERE id=101");
+      checks.push('A returned vehicle still tied to an unclosed/debt contract cannot be issued again, and an orphan using status cannot bypass stock checkout; only closed prior contract plus ready stock succeeds');
       const later = await finalize(6, { deposit: null, rental: null });
       assert.equal(later.code, `${day}-0009`); assert.equal(later.paid_amount, 0); assert.deepEqual(later.transaction_ids, []);
       const debt = (await c.query('SELECT total,pid,created_without_collect_deposit,created_without_collect_rental_fees,first_deposit_amount FROM qa_fin_orders WHERE id=6')).rows[0];

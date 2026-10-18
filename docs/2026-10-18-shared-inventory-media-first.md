@@ -1,0 +1,16 @@
+# Kho xe chung, điều kiện phát hành và thứ tự Telegram
+
+- Telegram: gửi hết ảnh/video theo album tối đa 10 tệp, không chèn cú pháp/caption ở album đầu. Sau album cuối mới gửi một tin tổng hợp. Lỗi khi gửi ảnh thì không gửi tin tổng hợp. Mã tin nhận được vẫn được lưu; không tự gửi lại trạng thái unknown/gửi một phần.
+- Các lượt gửi vào cùng nhóm/chủ đề dùng lease nguyên tử để không xen album và cú pháp của hai hợp đồng. Lease được gia hạn trong lúc gửi; hết hạn sau 6 phút nếu tiến trình dừng. Bảng lease chỉ dành cho máy chủ gửi, không mở quyền đọc cho tài khoản cơ sở.
+- **Xe → Kho xe toàn hệ thống**: tra cứu biển số/tên xe, cơ sở quản lý/chờ nhận, trạng thái, hướng chuyển và khả năng điều chuyển. Bộ lọc kho chung độc lập với cơ sở đang chọn trên thanh đầu trang. Chỉ trả metadata xe; không trả khách hàng, hợp đồng, tiền, giấy tờ hay lịch sử nội bộ của cơ sở khác.
+- Quyền ghi xe không thay đổi: bên nguồn tạo chuyển xe, xe ở Chờ luân chuyển, người khác ở cơ sở đích xác nhận nhận thì mới Lưu kho. Xem kho chung không cho chuyển/nhận/sửa xe của cơ sở khác. RLS của bảng xe và hợp đồng giữ nguyên; chỉ có hàm danh mục đọc chung theo danh sách cột cụ thể.
+- Phát hành hợp đồng/giao xe chỉ nhận xe `ready` (Lưu kho), đồng thời không có hợp đồng cũ chưa đóng. Hợp đồng Chờ thanh toán/Nợ xấu vẫn chặn kể cả dòng xe đã ghi trả. Giữ quyền lưu nháp để chuẩn bị hồ sơ; không tạo giao dịch tiền hay đánh dấu Đang thuê chỉ vì lập nháp.
+- Thao tác từ kho tạo nháp vẫn giữ xe Lưu kho; chỉ phát hành mới chuyển Đang thuê. Danh sách chọn xe mới bỏ ngoại lệ xe Đang thuê chưa có hợp đồng và bỏ hướng dẫn cũ “không cần đổi về Lưu kho”. Xe Chờ luân chuyển chưa được nhận không thể phát hành hoặc giao.
+- Trả xe: mục toàn cảnh, đầu, đuôi, trái, phải, đồng hồ/phụ kiện và video luôn hiện trực tiếp, không nằm trong phần có thể thu gọn. Ảnh bổ sung tách bên dưới, không thay thế ảnh xe. Sửa nhận diện quyền upload ảnh số 16+ theo đúng nghiệp vụ trả/giao/gia hạn, không yêu cầu nhầm quyền lập nháp.
+- Các ảnh người dùng gửi còn có dòng “Tối đa 15 ảnh” và hướng dẫn gửi cũ. Sau triển khai cần lưu nháp/lưu ảnh đang chọn trước khi tải lại tab cũ; không tự tải lại làm mất tệp chưa lưu.
+
+Migration: `sql/2026-10-18-shared-vehicle-inventory.sql`, `sql/2026-10-18-telegram-media-first.sql`. Chỉ thêm hàm đọc chung/lease và siết hàm kiểm tra hợp đồng mở; không sửa xe, hợp đồng, phiếu tiền hoặc ảnh thật. Backup định nghĩa hàm trước đổi tại `.backups/shared-inventory/before-migration.json` (không commit).
+
+Kiểm tra: `test:gps-contract-integrations` (album → cú pháp, khóa nhóm, lỗi gửi một phần), `test:account-scope` (RLS và API kho chung), `test:contract-finalize -- --live-temp` (xe dùng/đã trả nhưng hợp đồng chưa đóng), `test:vehicle-transfers` (hai phía và tạo nháp giữ kho), typecheck/lint/build. UI giả lập tại `scripts/check-shared-inventory-return-ui.py`; không gửi Telegram thật trong kiểm thử.
+
+Kết quả: Chromium và WebKit đạt tại 390/1440px; kho riêng vẫn giới hạn cơ sở, kho chung tìm được xe cơ sở khác, bộ chọn bỏ xe chưa Lưu kho. Màn hình trả xe hiện đủ góc ảnh/video và lưu 18 ảnh. Bằng chứng ở `qa/shared-inventory-return/`; toàn bộ API ghi và tải tệp trong kiểm thử trình duyệt được giả lập. Bộ `test:counter-workflow` cũng đạt, không tạo phiếu tiền hoặc thay đổi dữ liệu kinh doanh thật.

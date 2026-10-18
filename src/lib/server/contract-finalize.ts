@@ -14,7 +14,7 @@ export class ContractFinalizeError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 
-const OPEN_STATUSES = ['renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract'];
+const OPEN_STATUSES = ['renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract', 'bad_debt'];
 const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 const validLocal = (value: unknown): value is string => {
   if (typeof value !== 'string' || !LOCAL_DATE_TIME.test(value)) return false;
@@ -118,14 +118,12 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (vehicles.rowCount !== vehicleIds.length) throw new ContractFinalizeError('Có xe trong bản nháp không còn tồn tại.', 409);
   const conflicts = await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
-    WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.completed_at IS NULL AND d.deleted_at IS NULL
+    WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.deleted_at IS NULL
       AND o.deleted_at IS NULL AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
-  if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(row => `xe ${row.license} đang thuộc hợp đồng ${row.code}`).join('; ')} chưa trả xe.`, 409);
-  if(dataAccess.getStore()&&(await client.query('SELECT EXISTS(SELECT 1 FROM unnest($1::bigint[]) AS v(id) WHERE himoto.vehicle_has_other_rental(v.id,$2)) AS blocked',[vehicleIds,id])).rows[0]?.blocked)throw new ContractFinalizeError('Có xe đang thuộc hợp đồng mở. Cần trả xe trước khi phát hành hợp đồng mới.',409);
-  const notStored = vehicles.rows.filter(row => !(reservation ? ['ready'] : ['ready','using','rent']).includes(row.status));
-  if (notStored.length) throw new ContractFinalizeError(`Xe không sẵn sàng cho thuê: ${notStored.map(row => row.license).join(', ')} đang ở trạng thái khác.`, 409);
-  // An inventory checkout may precede contract entry. Attach it once, preserving
-  // its stock branch; the locked open-contract check above prevents double rental.
+  if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(row => `xe ${row.license} đang thuộc hợp đồng ${row.code}`).join('; ')} chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.`, 409);
+  if(dataAccess.getStore()&&(await client.query('SELECT EXISTS(SELECT 1 FROM unnest($1::bigint[]) AS v(id) WHERE himoto.vehicle_has_other_rental(v.id,$2)) AS blocked',[vehicleIds,id])).rows[0]?.blocked)throw new ContractFinalizeError('Có xe đang thuộc hợp đồng chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.',409);
+  const notStored = vehicles.rows.filter(row => row.status!=='ready');
+  if (notStored.length) throw new ContractFinalizeError(`Xe ${notStored.map(row => row.license).join(', ')} phải ở trạng thái Lưu kho. Đóng hợp đồng cũ và xác nhận nhận xe trước khi phát hành hợp đồng mới.`, 409);
   for (const line of lines) {
     const stock = vehicles.rows.find(vehicle=>String(vehicle.id)===String(line.id))!;
     line.stock_store_id=String(stock.store_id); line.stock_store_name=String(stock.store_name || '');

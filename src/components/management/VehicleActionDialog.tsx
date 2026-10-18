@@ -13,7 +13,7 @@ import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
 import Link from 'next/link';
 
 export type VehicleActionMode = 'transfer' | 'status' | 'receive';
-const STATUS_CHOICES = [{ value: 'using', label: 'Đang thuê' }, { value: 'ready', label: 'Lưu kho' }] as const;
+const STATUS_CHOICES = [{ value: 'using', label: 'Lập hợp đồng nháp' }, { value: 'ready', label: 'Lưu kho' }] as const;
 const vehicleOption = (row: ManagementRow) => `${row.license || row.code} — ${row.name}`;
 
 export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleActionMode; vehicle: ManagementRow | null; onClose: () => void }) {
@@ -72,15 +72,15 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         : mode==='receive'?{action:'receive',transfer_event_id:String(selected.transfer_event_id),note,revision}
         : { action: 'status', status: status as 'ready' | 'using', beneficiary_store_id: storeId, customer_name: customer.name, customer_phone: customer.phone, customer_id_card: customer.idCard, note, revision });
       await ensureData(saved.customer ? ['vehicles', 'customers', 'contracts'] : mode==='transfer'||mode==='receive'?['vehicles','stores']:['vehicles'], true).catch(() => {});
-      notify(mode === 'transfer' ? `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${stores.find(store=>String(store.id)===storeId)?.name || 'cơ sở đích'}. Đã lưu lịch sử.` : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho. Đã lưu lịch sử.`:`Đã đổi trạng thái xe ${selected.license}.`);
+      notify(mode === 'transfer' ? `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${stores.find(store=>String(store.id)===storeId)?.name || 'cơ sở đích'}. Đã lưu lịch sử.` : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho. Đã lưu lịch sử.`:saved.draft?'Đã tạo hợp đồng nháp. Xe vẫn Lưu kho đến khi phát hành hợp đồng.':`Đã đổi trạng thái xe ${selected.license}.`);
       if (saved.draft) setResult(saved); else onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được thao tác xe.'); }
     finally { busy.current = false; setSaving(false); }
   }
 
-  if (result?.draft) return <Dialog title="Đã đổi trạng thái" subtitle={selected ? vehicleOption(selected) : ''} onClose={onClose}>
+  if (result?.draft) return <Dialog title="Đã tạo hợp đồng nháp" subtitle={selected ? vehicleOption(selected) : ''} onClose={onClose}>
     <div className="mg-dialog-body"><ul className="mg-vehicle-action-result">
-      <li><Check size={16} />Xe chuyển sang <strong>Đang thuê</strong>.</li>
+      <li><Check size={16} />Xe vẫn <strong>Lưu kho</strong>. Chỉ chuyển sang Đang thuê sau khi phát hành hợp đồng.</li>
       {result.customer && <li className={result.customer.created ? undefined : 'is-warning'}>{result.customer.created ? <Check size={16} /> : <TriangleAlert size={16} />}
         {result.customer.created ? <>Đã thêm khách hàng mới <strong>{result.customer.name}</strong> (#{result.customer.id}).</>
           : <>Khách hàng đã tồn tại: <strong>{result.customer.name}</strong> (#{result.customer.id}), trùng {result.customer.matched_by}. Hợp đồng dùng hồ sơ có sẵn.</>}</li>}

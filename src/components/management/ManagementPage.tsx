@@ -46,6 +46,7 @@ const BatteryPrintPreview = dynamic(() => import('@/components/battery/BatteryCo
 const CustomerDetail = dynamic(() => import('./CustomerDetail').then(module => module.CustomerDetail), { ssr: false, loading: FeatureLoading });
 const VehicleActionDialog = dynamic(() => import('./VehicleActionDialog').then(module => module.VehicleActionDialog), { ssr: false, loading: FeatureLoading });
 const VehicleDetail = dynamic(() => import('./VehicleDetail').then(module => module.VehicleDetail), { ssr: false, loading: FeatureLoading });
+const SharedVehicleInventory = dynamic(() => import('./SharedVehicleInventory').then(module => module.SharedVehicleInventory), { ssr: false, loading: FeatureLoading });
 const StoreDetail = dynamic(() => import('./StoreDetail').then(module => module.StoreDetail), { ssr: false, loading: FeatureLoading });
 const StaffDialog = dynamic(() => import('./StaffDialogs').then(module => module.StaffDialog), { ssr: false, loading: FeatureLoading });
 const ContractQrDialog=dynamic(()=>import('./ContractPaymentQr').then(module=>module.ContractQrDialog),{ssr:false,loading:FeatureLoading});
@@ -84,6 +85,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const searchFromUrl = kind === 'contracts' ? searchParams.get('search') || '' : '';
   const contractPath = paymentDueOnly ? '/contracts/due' : vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : overdueOnly ? '/contracts/overdue' : ownershipOnly ? '/contracts/ownership' : '/contracts';
   const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
+  const [inventoryOpen,setInventoryOpen]=useState(false);
   const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string;query?:string } | null>(null);
   const [renewTarget, setRenewTarget] = useState<ManagementRow | null>(null);
   const [renewPicker, setRenewPicker] = useState(false);
@@ -237,13 +239,14 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   }
 
   return <section className={`mg-page mg-page-${kind}`} aria-label={config.title}>
+    {inventoryOpen&&<SharedVehicleInventory onClose={()=>setInventoryOpen(false)}/>}
     <div className="mg-page-content">
       <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1></div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopeCount}</span></h1><p>{config.description}</p></div>}
         <div className="mg-heading-actions">{kind !== 'contracts' && <ResponsiveDataActions>{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
           {kind === 'customers' && can('settings.write') && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && can('settings.write') && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}
           </ResponsiveDataActions>}
-          {kind === 'vehicles' && <><div className="mg-vehicle-flow-actions"><Link href="/vehicles/transfers" className="mg-button"><ArrowLeftRight size={16}/>Lịch sử luân chuyển</Link>
+          {kind === 'vehicles' && <><div className="mg-vehicle-flow-actions">{source==='api'&&can('vehicles.read')&&<button type="button" className="mg-button" onClick={()=>setInventoryOpen(true)}>Kho xe toàn hệ thống</button>}<Link href="/vehicles/transfers" className="mg-button"><ArrowLeftRight size={16}/>Lịch sử luân chuyển</Link>
             {can('vehicles.transfer')&&<button type="button" className="mg-button" disabled={loading || Boolean(error)} onClick={()=>setVehicleAction({mode:'transfer',vehicle:null})}><ArrowLeftRight size={16}/>Chuyển xe</button>}</div>
             {can('vehicles.write')&&<button type="button" className="mg-button mg-mobile-status-action" disabled={loading || Boolean(error)} onClick={()=>setVehicleAction({mode:'status',vehicle:null})}><RefreshCw size={16}/>Đổi trạng thái xe</button>}</>}
           {kind === 'vehicles' && source === 'api' && can('vehicles.write') && <RowActionsMenu label="Hành động xe" triggerLabel={<>Hành động xe<ChevronDown size={16} /></>} disabled={loading || Boolean(error) || !dataset} actions={[

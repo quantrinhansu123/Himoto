@@ -113,7 +113,7 @@ async function main(){
     checks.push('Edit audit failure rolls back changes; history keeps original actor/branch/plate names after later edits and preserves legacy entries without inventing old values');
     const checkout={action:'status',status:'using',beneficiary_store_id:32,customer_name:'Khách trạng thái QA',customer_phone:'0900000077',customer_id_card:'001234567877',note:'Giao xe QA'};
     const checked=await attempt(()=>applyVehicleAction(proxy,102,parseVehicleAction(checkout),143));
-    assert(checked.customer.created&&checked.draft.id);assert.equal((await vehicle(102)).status,'using');
+    assert(checked.customer.created&&checked.draft.id);assert.equal((await vehicle(102)).status,'ready');
     const checkedLog=(await c.query('SELECT audit_snapshot,ref_id FROM qa_transfer_vehicle_location_events WHERE id=$1',[checked.event_id])).rows[0];
     assert.equal(Number(checkedLog.ref_id),checked.draft.id);assert.equal(checkedLog.audit_snapshot.changes.find(change=>change.field==='beneficiary_store_id').to,'Cơ sở đã đổi tên QA');
     const customersBefore=(await c.query('SELECT count(*) AS n FROM qa_transfer_customers')).rows[0].n;
@@ -124,7 +124,7 @@ async function main(){
     assert.equal((await vehicle(107)).status,'ready');
     assert.equal((await c.query('SELECT count(*) AS n FROM qa_transfer_customers')).rows[0].n,customersBefore);
     assert.equal((await c.query('SELECT count(*) AS n FROM qa_transfer_orders')).rows[0].n,draftsBefore);
-    checks.push('Existing checkout still creates its customer/draft and records beneficiary changes; audit failure rolls back the vehicle, new customer and draft together');
+    checks.push('Draft checkout preserves stock status and still creates its customer/draft and records beneficiary changes; audit failure rolls back the vehicle, new customer and draft together');
     assert.throws(()=>parseVehicleAction({action:'transfer',to_store_id:32,revision:123}),VehicleActionError);
     assert.throws(()=>parseVehicleAction({action:'receive',transfer_event_id:0}),VehicleActionError);
     assert.throws(()=>parseVehicleValues({...edit,revision:'invalid'}),VehicleSaveError);

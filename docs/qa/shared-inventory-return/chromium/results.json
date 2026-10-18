@@ -1,0 +1,13 @@
+{
+  "passed": 3,
+  "browser": "chromium",
+  "checks": [
+    "Own stock stays scoped; shared stock finds vehicles in other branches, filters availability/transfers and exposes no edit/send/receive controls at 390/1440px",
+    "New-contract picker excludes a using vehicle even when it has no linked open rental; stock vehicle remains selectable",
+    "Return shows every vehicle angle and video without a collapsed section; 18 photos save without Telegram or a real return/financial transaction"
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequests": [],
+  "realBusinessWrites": 0,
+  "realTelegramRequests": 0
+}

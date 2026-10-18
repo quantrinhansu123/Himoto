@@ -21,7 +21,7 @@ customer = dict(id=7,name='Khách Láng QA',phone='0900000011',id_card='00123456
 staff = [dict(id=700,full_name='Nhân sự Láng QA',staff_code='QA700',position='PT',status='active',store_id=31)]
 vehicles = [dict(id=i,name=f'Xe QA {i}',license=f'QA-{i}',brand='Honda',type='xeso',year=2026,store_id=store,current_store_id=store,store_name=next(s['store_name'] for s in stores if s['id']==store),status=status,daily_price=150000,monthly_price=3000000,
     rentals=[dict(order_id=900,code='HD-QA-900',status='renting',customer='Khách khác QA',return_at='2026-10-12T08:00:00+07:00')] if i==103 else [])
-    for i,store,status in [(100,32,'using'),(101,34,'ready'),(102,32,'repairing'),(103,32,'ready')]]
+    for i,store,status in [(100,32,'ready'),(101,34,'ready'),(102,32,'repairing'),(103,32,'ready')]]
 
 def mock(route):
     req = route.request
@@ -104,7 +104,7 @@ with sync_playwright() as p:
     picker.click()
     expect(form.locator('#contract-vehicle-0-options [role=option]')).to_have_count(1)
     form.locator('#contract-vehicle-0-options-100').click()
-    expect(form.locator('.mg-vehicle-warning')).to_contain_text('không cần đổi về Lưu kho')
+    expect(form.locator('.mg-vehicle-warning')).to_have_count(0)
     expect(form.locator('.mg-composer-vehicle-summary')).to_contain_text('Cơ sở quản lý xe: CS Nguyễn Hoàng')
     expect(form.locator('.mg-composer-vehicle-summary')).to_contain_text('Doanh thu: CS Láng')
     form.screenshot(path=str(out/'time-and-inventory-1440.png'))
@@ -116,7 +116,7 @@ with sync_playwright() as p:
     tab('Khách hàng')
     form.locator('#contract-store').select_option('31')
     form.locator('#contract-staff').fill(staff[0]['full_name'])
-    checks.append('stock filter works independently of source; NH manual checkout is selectable, repairs and occupied vehicles are excluded, changing source preserves the vehicle and updates revenue')
+    checks.append('stock filter works independently of source; ready stock is selectable, repairs and occupied vehicles are excluded, changing source preserves the vehicle and updates revenue')
     tab('Chi phí')
     method = form.locator('details.mg-method-picker').nth(1)
     method.locator('summary').click()
