@@ -90,6 +90,8 @@ async function main(){const c=await pool.connect();try{
     .replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope')
     .replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   await c.query(customerMigration);await c.query(customerMigration);
+  const documentsMigration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-contract-document-photos.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
+  await c.query(documentsMigration);await c.query(documentsMigration);
   await c.query("INSERT INTO qa_access_scope.staff_profiles(id,staff_code,full_name,phone,store_id,user_id,status) VALUES(94001,'QA94001','Nhân sự A QA','0900000091',80001,70001,'active')");
   await c.query("INSERT INTO qa_access_scope.vehicles(id,name,brand,type,year,store_id,current_store_id,license,color,status,odometer,created_by) VALUES(91003,'Xe C QA','Honda','xeso',2024,80001,80001,'QA-C','Đỏ','ready',1000,70001)");
   await c.query("INSERT INTO qa_access_scope.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('customers',90002,'id_front','image/jpeg',$1,70002)",[Buffer.from([255,216,255,217])]);
@@ -108,6 +110,19 @@ async function main(){const c=await pool.connect();try{
   const crossSaved=await dataAccess.run(branchA,()=>saveDatabaseDraft(proxy,null,{draft:crossDraft,status:'draft',rental_type:'daily',notes:'QA cross-branch customer'}));
   assert.equal(Number(crossSaved.customer_id),90002);assert.equal(Number(crossSaved.store_id),80001);
   assert.equal((await c.query('SELECT name FROM qa_access_scope.customers WHERE id=90002')).rows[0].name,'Khách B QA');
+  const {copyContractCustomerPhotos}=load(path.join(root,'lib/server/contract-customer-photos'));
+  assert.equal((await copyContractCustomerPhotos(proxy,Number(crossSaved.id),70001)).copied,1);
+  assert.equal((await copyContractCustomerPhotos(proxy,Number(crossSaved.id),70001)).copied,0);
+  assert.equal((await c.query("SELECT slot FROM qa_access_scope.management_record_photos WHERE entity_type='contracts' AND entity_id=$1",[crossSaved.id])).rows[0].slot,'customer-id-front');
+  await assert.rejects(()=>copyContractCustomerPhotos(proxy,92002,70001),e=>e.status===404);
+  checks.push('Customer identity photos copy to an own-branch contract through RLS, repeated imports are idempotent, and hidden other-branch contracts cannot be targeted');
+  crossDraft.contract_number=String(crossSaved.draft_reference);
+  await c.query("INSERT INTO qa_access_scope.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',$1,'rental-document-1','image/jpeg',$2,70001)",[crossSaved.id,Buffer.from([255,216,255,217])]);
+  const switched=await dataAccess.run(branchA,()=>saveDatabaseDraft(proxy,Number(crossSaved.id),{draft:{...crossDraft,customer_id:90001,customer:customerDetails({id:90001,name:'Khách A QA',phone:'0900000001',id_card:'001234567801',address:'Địa chỉ QA',store_id:80001})},revision:crossSaved.draft_revision,status:'draft',rental_type:'daily',notes:'QA changed customer'}));
+  assert.equal((await c.query("SELECT slot FROM qa_access_scope.management_record_photos WHERE entity_type='contracts' AND entity_id=$1",[crossSaved.id])).rowCount,0);
+  await dataAccess.run(branchA,()=>saveDatabaseDraft(proxy,Number(crossSaved.id),{draft:crossDraft,revision:switched.draft_revision,status:'draft',rental_type:'daily',notes:'QA restored customer'}));
+  assert.equal((await copyContractCustomerPhotos(proxy,Number(crossSaved.id),70001)).copied,1);
+  checks.push('Switching the customer of an existing draft clears imported identity photos, driving licence and supplemental documents before another customer can be finalized');
   const crossFinal=await dataAccess.run(branchA,()=>finalize(proxy,Number(crossSaved.id),70001,{revision:crossSaved.draft_revision,paid_at:paidAt,deposit:null,rental:null}));
   assert.equal(crossFinal.transaction_ids.length,0);
   assert.equal((await c.query("UPDATE qa_access_scope.customers SET name='Forbidden' WHERE id=90002")).rowCount,0);

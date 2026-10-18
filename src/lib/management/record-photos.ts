@@ -34,6 +34,12 @@ export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploa
 export function photoEndpoint(entity: PhotoEntity, id: number, slot?: string) {
   return `/api/auth/record-photos/${entity}/${id}${slot ? `/${encodeURIComponent(slot)}` : ''}`;
 }
+export async function copyCustomerPhotosToContract(id:number) {
+  const response=await fetch(photoEndpoint('contracts',id),{method:'POST',credentials:'same-origin'});
+  const body=await response.json();
+  if(!response.ok||body.status!=='success')throw new Error(body.message||'Không lấy được giấy tờ từ hồ sơ khách.');
+  return body.data as {copied:number};
+}
 
 export async function saveRecordPhotos(entity: PhotoEntity, id: number, photos: PendingPhotos) {
   for (const [slot, photo] of Object.entries(photos)) {

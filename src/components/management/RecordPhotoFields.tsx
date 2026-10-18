@@ -43,18 +43,21 @@ function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange }: 
   </div>;
 }
 
-export function RecordPhotoFields({ entity, recordId, slots, value, onChange, disabled = false, onBusyChange, title = 'Ảnh hồ sơ', ocr }: {
+export function RecordPhotoFields({ entity, recordId, slots, value, onChange, disabled = false, onBusyChange, title = 'Ảnh hồ sơ', ocr,bulkImageLabel='Chọn nhiều ảnh',bulkPosition='top' }: {
   entity: PhotoEntity; recordId?: number; slots: PhotoSlot[]; value: PendingPhotos; onChange: (value: PendingPhotos) => void;
-  disabled?: boolean; onBusyChange?: (busy: boolean) => void; title?: string; ocr?: PhotoOcrController;
+  disabled?: boolean; onBusyChange?: (busy: boolean) => void; title?: string; ocr?: PhotoOcrController;bulkImageLabel?:string;bulkPosition?:'top'|'bottom';
 }) {
   const [saved, setSaved] = useState<SavedPhoto[]>([]), [error, setError] = useState(''), [retry, setRetry] = useState(0);
+  const [savedReady,setSavedReady]=useState(!recordId);
   const busySlots = useRef(new Set<string>());
   const latestValue = useRef(value); latestValue.current = value;
   const [uploadStates, setUploadStates] = useState<Record<string, { loading: boolean; error?: string }>>({});
   const imagePicker=useRef<HTMLInputElement>(null),videoPicker=useRef<HTMLInputElement>(null);
   const [batchBusy,setBatchBusy]=useState(false);
   const bulk=entity==='contracts'&&slots.length>6;
+  const imageCount=slots.filter(slot=>!isVideoSlot(slot.key)).length,videoCount=slots.length-imageCount;
   async function chooseMany(files:File[],video:boolean) {
+    if(disabled||batchBusy||!savedReady)return;
     const available=slots.filter(slot=>isVideoSlot(slot.key)===video&&!latestValue.current[slot.key]&&!saved.some(photo=>photo.slot===slot.key));
     if(files.length>available.length){setError(`Còn ${available.length} ô ${video?'video':'ảnh'}. Chọn tối đa số tệp này.`);return;}
     setError('');setBatchBusy(true);busySlots.current.add('__batch');onBusyChange?.(true);
@@ -73,28 +76,29 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
     });
   }
   useEffect(() => {
-    setSaved([]); setError('');
+    setSaved([]); setError('');setSavedReady(!recordId);
     if (!recordId) return;
     const controller = new AbortController();
     fetch(photoEndpoint(entity, recordId), { signal: controller.signal, cache: 'no-store' }).then(async response => {
       const result = await response.json();
       if (!response.ok || result.status !== 'success') throw new Error(result.message || 'Không tải được ảnh đã lưu.');
-      if (!controller.signal.aborted) setSaved(result.data);
+      if (!controller.signal.aborted) {setSaved(result.data);setSavedReady(true);}
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được ảnh đã lưu.'); });
     return () => controller.abort();
   }, [entity, recordId, retry]);
+  const toolbar=bulk&&<div className="mg-media-upload-toolbar"><p>Tối đa {imageCount} ảnh{videoCount>0?` và ${videoCount} video mỗi giao dịch. Video tối đa 60 giây / 45 MB, nên quay 10–30 giây.`:'. Chọn cùng lúc nhiều ảnh đã chụp trong thư viện.'}</p>
+    <input hidden ref={imagePicker} type="file" accept="image/*" multiple aria-label={bulkImageLabel==='Chọn nhiều ảnh'?'Chọn nhiều ảnh hồ sơ':bulkImageLabel} disabled={disabled||batchBusy||!savedReady} onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void chooseMany(files,false);}}/>
+    {videoCount>0&&<input hidden ref={videoPicker} type="file" accept="video/mp4,video/quicktime,video/webm" multiple aria-label="Chọn nhiều video tình trạng xe" disabled={disabled||batchBusy} onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void chooseMany(files,true);}}/>}
+    <button className="mg-button" type="button" disabled={disabled||batchBusy||!savedReady} onClick={()=>imagePicker.current?.click()}><ImagePlus size={16}/>{bulkImageLabel}</button> {videoCount>0&&<button className="mg-button" type="button" disabled={disabled||batchBusy||!savedReady} onClick={()=>videoPicker.current?.click()}>Chọn video</button>}
+    <p role="status">{batchBusy?'Đang xử lý tệp…':`${slots.filter(slot=>!isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} / ${imageCount} ảnh${videoCount>0?` · ${slots.filter(slot=>isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} / ${videoCount} video`:''}`}</p>
+  </div>;
   return <fieldset className="mg-record-photos"><legend>{title}</legend>
-    {bulk&&<div className="mg-media-upload-toolbar"><p>Tối đa 15 ảnh và 3 video mỗi giao dịch. Video tối đa 60 giây / 45 MB, nên quay 10–30 giây. Chọn nhiều tệp từ hồ sơ đã chụp.</p>
-      <input hidden ref={imagePicker} type="file" accept="image/*" multiple aria-label="Chọn nhiều ảnh hồ sơ" onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void chooseMany(files,false);}}/>
-      <input hidden ref={videoPicker} type="file" accept="video/mp4,video/quicktime,video/webm" multiple aria-label="Chọn nhiều video tình trạng xe" onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void chooseMany(files,true);}}/>
-      <button className="mg-button" type="button" disabled={disabled||batchBusy} onClick={()=>imagePicker.current?.click()}>Chọn nhiều ảnh</button> <button className="mg-button" type="button" disabled={disabled||batchBusy} onClick={()=>videoPicker.current?.click()}>Chọn video</button>
-      <p role="status">{batchBusy?'Đang xử lý tệp…':`${slots.filter(slot=>!isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} / 15 ảnh · ${slots.filter(slot=>isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} / 3 video`}</p>
-    </div>}
+    {bulkPosition==='top'&&toolbar}
     {error && <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={() => setRetry(current => current + 1)}>Thử lại</button></p>}
     <div className="mg-photo-grid">{slots.filter(slot=>!bulk||value[slot.key]||saved.some(p=>p.slot===slot.key)||slots.find(s=>isVideoSlot(s.key)===isVideoSlot(slot.key)&&!value[s.key]&&!saved.some(p=>p.slot===s.key))?.key===slot.key).map(slot => {
       const photo = saved.find(photo => photo.slot === slot.key);
       const state = ocr?.states[slot.key], uploadState = uploadStates[slot.key];
-      return <div key={slot.key}><PhotoField slot={slot} file={value[slot.key]} disabled={disabled||batchBusy}
+      return <div key={slot.key}><PhotoField slot={slot} file={value[slot.key]} disabled={disabled||batchBusy||!savedReady}
         savedUrl={photo && recordId ? `${photoEndpoint(entity, recordId, slot.key)}?v=${encodeURIComponent(photo.updated_at)}` : undefined}
         onBusyChange={busy => { if (busy) busySlots.current.add(slot.key); else busySlots.current.delete(slot.key); onBusyChange?.(busySlots.current.size > 0); }}
         onChange={file => {
@@ -109,17 +113,18 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
         </div>}
       </div>;
     })}</div>
+    {bulkPosition==='bottom'&&toolbar}
   </fieldset>;
 }
 
-export function SavedRecordPhotos({ entity, recordId, slots, title,onPendingChange,onSaved,readOnly=false }: { entity: PhotoEntity; recordId: number; slots: PhotoSlot[]; title?: string;onPendingChange?:(pending:boolean)=>void;onSaved?:()=>void;readOnly?:boolean }) {
+export function SavedRecordPhotos({ entity, recordId, slots, title,onPendingChange,onSaved,readOnly=false,bulkImageLabel,bulkPosition }: { entity: PhotoEntity; recordId: number; slots: PhotoSlot[]; title?: string;onPendingChange?:(pending:boolean)=>void;onSaved?:()=>void;readOnly?:boolean;bulkImageLabel?:string;bulkPosition?:'top'|'bottom' }) {
   const [photos, setPhotos] = useState<PendingPhotos>({}), [busy, setBusy] = useState(false), [processing, setProcessing] = useState(false);
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [version, setVersion] = useState(0);
   const callback=useRef(onPendingChange);callback.current=onPendingChange;
   useEffect(()=>{callback.current?.(busy||processing||Object.keys(photos).length>0);},[busy,processing,photos]);
   useEffect(()=>()=>callback.current?.(false),[]);
   return <div className="mg-saved-photos">
-    <RecordPhotoFields key={version} entity={entity} recordId={recordId} slots={slots} title={title} value={photos} onChange={value => { setPhotos(value); setMessage(''); }} disabled={busy||readOnly} onBusyChange={setProcessing} />
+    <RecordPhotoFields key={version} entity={entity} recordId={recordId} slots={slots} title={title} value={photos} onChange={value => { setPhotos(value); setMessage(''); }} disabled={busy||readOnly} onBusyChange={setProcessing} bulkImageLabel={bulkImageLabel} bulkPosition={bulkPosition}/>
     {Object.keys(photos).length > 0 && <button type="button" className="mg-button mg-button-primary" disabled={busy || processing} onClick={async () => {
       setBusy(true); setError('');
       try { await saveRecordPhotos(entity, recordId, photos); setPhotos({}); setVersion(current => current + 1); setMessage('Đã lưu ảnh.'); onSaved?.(); }

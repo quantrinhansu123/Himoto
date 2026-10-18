@@ -2,7 +2,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { ContractEventType } from '@/lib/management/contract-telegram';
-import { contractPhotoSlots,type ContractPhotoPhase } from '@/lib/management/contract-photos';
+import { contractPhotoSlots,contractDocumentSlots,CONTRACT_CUSTOMER_PHOTO_SLOTS,type ContractPhotoPhase } from '@/lib/management/contract-photos';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null}
 export interface RenewalNotice {version?:number;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;items?:RenewalNotice[]}
@@ -36,11 +36,14 @@ export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
   return createHash('sha256').update(JSON.stringify(canonical({kind,...content}))).digest('hex');
 }
 export async function notificationPhotos(db:Database,orderId:number,phases:string[]):Promise<Attachment[]> {
-  const slots=phases.flatMap(phase=>contractPhotoSlots(phase as ContractPhotoPhase).map(slot=>slot.key));
+  const slots=[...new Set(phases.flatMap(phase=>[...contractPhotoSlots(phase as ContractPhotoPhase),...contractDocumentSlots(phase as ContractPhotoPhase),...(phase==='rental'?[...CONTRACT_CUSTOMER_PHOTO_SLOTS,{key:'driver-license'}]:[])].map(slot=>slot.key)))];
   const result=await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
     FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND slot=ANY($2::text[]) ORDER BY slot`,
     [orderId,slots]);
-  return result.rows.sort((a,b)=>slots.indexOf(a.slot)-slots.indexOf(b.slot));
+  const photos=result.rows.sort((a,b)=>slots.indexOf(a.slot)-slots.indexOf(b.slot)) as Attachment[];
+  const licence=photos.find(photo=>photo.slot==='driver-license');
+  // A licence captured again in the composer may reuse the profile upload.
+  return photos.filter(photo=>!(licence&&photo.slot==='customer-driver-license'&&(photo.cloudinary_public_id?photo.cloudinary_public_id===licence.cloudinary_public_id&&photo.cloudinary_version===licence.cloudinary_version:photo.bytes&&photo.bytes===licence.bytes)));
 }
 export async function notificationPayload(db:Database,orderId:number,kind:ContractEventType,actorId:number,phases:string[],renewal?:RenewalNotice):Promise<NotificationPayload&{store_id:number}> {
   const returnIds=kind==='return'?phases.map(phase=>phase.match(/^return-([1-9]\d*)$/)?.[1]).filter(Boolean):[];

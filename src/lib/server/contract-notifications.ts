@@ -5,6 +5,7 @@ import { ownerDatabase } from './himoto-database';
 import { openIntegrationSecret } from './integration-secrets';
 import { readCloudinaryPhoto } from './cloudinary-photos';
 import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
+import { copyContractCustomerPhotos } from './contract-customer-photos';
 
 import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
@@ -12,6 +13,7 @@ export { contractNotificationText } from './contract-notification-content';
 type Database=Pick<PoolClient,'query'>;
 export async function queueContractNotification(client:Database,orderId:number,kind:ContractEventType,eventKey:string,actorId:number,phase:string|string[],renewal?:RenewalNotice) {
   const phases=Array.isArray(phase)?phase:[phase];
+  if(phases.includes('rental'))await copyContractCustomerPhotos(client,orderId,actorId);
   const {store_id,...payload}=await notificationPayload(client,orderId,kind,actorId,phases,renewal);
   const preference=(await client.query('SELECT auto_enabled FROM himoto.management_contract_telegram_preferences WHERE order_id=$1',[orderId])).rows[0];
   await client.query(`INSERT INTO himoto.management_contract_notifications(id,order_id,store_id,event_key,root_event_key,event_type,payload,photo_slots,photo_phases,content_hash,status)

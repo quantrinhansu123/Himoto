@@ -3667,6 +3667,13 @@
 .mg-international-customer { margin-block:12px; padding:12px; border:1px solid var(--mg-border); border-radius:8px; }
 .mg-international-customer p, .mg-media-upload-toolbar p { margin:8px 0 12px; overflow-wrap:anywhere; }
 .mg-media-upload-toolbar { margin-bottom:16px; }
+.mg-contract-documents { margin-top:20px; padding:16px; border:1px solid var(--mg-border, #dce2e6); border-radius:10px; min-width:0; }
+.mg-contract-documents h3 { margin:0 0 12px; font-size:1rem; }
+.mg-contract-documents p, .mg-contract-documents li { overflow-wrap:anywhere; }
+.mg-contract-documents details { margin:16px 0; }
+.mg-contract-documents summary { cursor:pointer; font-weight:600; }
+.mg-contract-documents li { margin:8px 0; }
+.mg-contract-documents .mg-media-upload-toolbar .mg-button { white-space:normal; text-align:left; }
 .mg-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .mg-photo-actions .mg-button { min-height: 44px; }
 .mg-photo-slot small { color: var(--mg-text-muted, #60707a); }

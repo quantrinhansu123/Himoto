@@ -48,6 +48,7 @@ async function main(){
     let migration=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-contract-telegram.sql'),'utf8').replaceAll('himoto.',schema+'.').replaceAll(schema+'.access_store','himoto.access_store').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(migration);await c.query(migration);
     const controls=fs.readFileSync(path.resolve('docs/sql/2026-10-18-contract-telegram-controls.sql'),'utf8').replaceAll('himoto.',schema+'.').replaceAll(schema+'.access_store','himoto.access_store').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(controls);await c.query(controls);
     const mediaMigration=fs.readFileSync(path.resolve('docs/sql/2026-10-18-international-customers-contract-media.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(mediaMigration);await c.query(mediaMigration);
+    const documentMigration=fs.readFileSync(path.resolve('docs/sql/2026-10-18-contract-document-photos.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(documentMigration);await c.query(documentMigration);
     const pacing=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-five-second-poll.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(pacing);await c.query(pacing);
     const history=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-history-webhooks.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(history);await c.query(history);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name) VALUES(23,'Branch A QA'),(31,'Branch B QA')`);
@@ -91,6 +92,7 @@ async function main(){
     checks.push('Notification outbox deduplicates events, waits without a bot, sends text and immutable photos to the correct branch, and never auto retries uncertain sends or historical waiting messages');
     await c.query('SAVEPOINT rollback_event');await notices.queueContractNotification(db,1,'return','qa-rolled-back',143,'return-1001');await c.query('ROLLBACK TO SAVEPOINT rollback_event');assert.equal((await c.query(`SELECT id FROM ${schema}.management_contract_notifications WHERE event_key='qa-rolled-back'`)).rowCount,0);
     checks.push(...await require('./lib/check-contract-telegram.cjs')(db,c,schema,notices));
+    checks.push(...await require('./check-contract-documents.cjs')(db,c,schema,notices));
     await c.query(`ALTER TABLE ${schema}.vehicles ENABLE ROW LEVEL SECURITY; CREATE POLICY qa_vehicle_read ON ${schema}.vehicles FOR SELECT TO himoto_scoped USING(himoto.access_store(COALESCE(current_store_id,store_id)))`);
     await c.query(`GRANT USAGE ON SCHEMA ${schema} TO himoto_scoped; GRANT SELECT ON ${schema}.vehicles,${schema}.orders TO himoto_scoped`);
     await notices.queueContractNotification(db,2,'rental','qa-foreign',143,'rental');

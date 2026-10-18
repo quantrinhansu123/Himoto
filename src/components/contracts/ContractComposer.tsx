@@ -28,7 +28,7 @@ import { CustomerInternationalFields } from './CustomerInternationalFields';
 import { contractPhotoSlots } from '@/lib/management/contract-photos';
 import { normalizeCustomerLookup,validCustomerLookup } from '@/lib/management/contract-document';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
-import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/management/record-photos';
+import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos,copyCustomerPhotosToContract } from '@/lib/management/record-photos';
 import { usePhotoOcr } from '@/components/management/usePhotoOcr';
 import { mergeOcrCustomer, OCR_CUSTOMER_KEYS, plateKey, type OcrFields } from '@/lib/management/photo-ocr';
 import { useContractTypes } from './ContractTypesProvider';
@@ -119,6 +119,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
         ...(merged.applied.name && (!vehicle.driver_name || vehicle.driver_name === current.customer.name) ? { driver_name: merged.customer.name } : {}) })) };
       draftRef.current = next; setDraft(next);
       if (identityChanged) {
+        setLicensePhotos({});customerOcr.cancel('driver-license');
         // Reuse ordinary customer lookup/status rules for the newly read identity.
         photoIdentityLookup.current = merged.customer.id_card;
         preserveCustomer.current = false; setSelectedCustomer(null); setCustomerMatches([]); setLookupState('idle'); setLookupError('');
@@ -286,6 +287,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     photoIdentityLookup.current = '';
     previousCustomerAi.current = {}; customerOcr.cancel('id_front'); customerOcr.cancel('id_back');
     setCustomerPhotos({});
+    setLicensePhotos({});customerOcr.cancel('driver-license');
     preserveCustomer.current = false;
     setSelectedCustomer(null);
     setIdInput(value); setLookupState('idle'); setLookupError(''); setDocument(null); setSaveError('');
@@ -297,6 +299,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     setErrors(previous => ({ ...previous, id_card: '' }));
   }
   function selectCustomer(customer: ManagementRow) {
+    if(draft.customer_id!==customer.id){setCustomerPhotos({});setLicensePhotos({});customerOcr.cancel('driver-license');}
     photoIdentityLookup.current = '';
     preserveCustomer.current = true;
     setCustomerMatches([]); setLookupState('found'); setLookupError('');
@@ -307,6 +310,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     photoIdentityLookup.current = '';
     previousCustomerAi.current = {}; customerOcr.cancel('id_front'); customerOcr.cancel('id_back');
     setCustomerPhotos({});
+    setLicensePhotos({});customerOcr.cancel('driver-license');
     preserveCustomer.current = true;
     setSelectedCustomer(customer);
     setDraft(previous => withCustomer(previous, customer));
@@ -468,6 +472,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     await saveRecordPhotos('contracts', contractId, selectedPlates);
     await saveRecordPhotos('contracts',contractId,licensePhotos);setLicensePhotos({});
     await saveRecordPhotos('contracts',contractId,transactionMedia);setTransactionMedia({});
+    await copyCustomerPhotosToContract(contractId);
     setCustomerPhotos({}); setPlatePhotos({}); setPhotoVersion(current => current + 1);
   }
   async function persistProfile() {
