@@ -6,6 +6,7 @@ import { ContractTelegramError, readContractTelegram, saveContractTelegram } fro
 import { dispatchContractNotifications } from '@/lib/server/contract-notifications';
 
 export const runtime='nodejs';
+export const maxDuration=300;
 type Params={params:Promise<{id:string}>};
 async function handle(request:NextRequest,{params}:Params,writing:boolean) {
   let client;
@@ -21,7 +22,7 @@ async function handle(request:NextRequest,{params}:Params,writing:boolean) {
     }
     const {state}=await readContractTelegram(client,Number(id),user.id,user);
     await client.query('COMMIT');
-    if(writing)after(async()=>{await dispatchContractNotifications();});
+    if(writing)after(async()=>{await dispatchContractNotifications(undefined,1,undefined,[Number(id)]);});
     return NextResponse.json({status:'success',data:state},{headers:{'Cache-Control':'private, no-store'}});
   }catch(error) {
     if(client)await client.query('ROLLBACK').catch(()=>{});

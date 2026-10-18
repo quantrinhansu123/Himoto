@@ -6,6 +6,7 @@ import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/s
 import { ContractFinalizeError, finalizeContractDraft, parseFinalizeInput } from '@/lib/server/contract-finalize';
 
 export const runtime = 'nodejs';
+export const maxDuration=300;
 type Params = { params: Promise<{ id: string }> };
 
 async function POSTHandler(request: NextRequest, { params }: Params) {
@@ -23,7 +24,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     const data = await finalizeContractDraft(client, Number(id), user.id, input);
     await queueContractNotification(client,Number(id),data.status==='deposit_contract'?'reservation':'rental',`finalize:${id}:${data.code}`,user.id,'rental');
     await client.query('COMMIT');
-    after(async()=>{try{await dispatchContractNotifications();}catch{console.error('Contract notification dispatch failed.');}});
+    after(async()=>{try{await dispatchContractNotifications(undefined,1,undefined,[Number(id)]);}catch{console.error('Contract notification dispatch failed.');}});
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});

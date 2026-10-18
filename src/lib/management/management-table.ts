@@ -38,7 +38,10 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if (input.scope === 'overdue') rows=rows.filter(row=>row.status==='overdue').map(row=>({...row,overdue_days:overdueDays(row.end_date,now)}));
   const scoped=filterRows(rows,EMPTY_QUERY,input.store),tabRows=filterRows(scoped,{...input.query,status:''},'all');
   const counts=new Map<string,number>();for(const row of tabRows)counts.set(row.status,(counts.get(row.status)||0)+1);
-  const filtered=filterRows(scoped,input.query,'all');
+  // Overdue vehicles are still on rent until the actual handover is recorded.
+  if(input.kind==='contracts'&&counts.has('overdue'))counts.set('renting',(counts.get('renting')||0)+counts.get('overdue')!);
+  const filtered=input.kind==='contracts'&&input.query.status==='renting'
+    ? filterRows(scoped,{...input.query,status:''},'all').filter(row=>['renting','overdue'].includes(row.status)) : filterRows(scoped,input.query,'all');
   const sorted=input.kind==='contracts' && !['overdue','due'].includes(input.scope)
     ? sortContractRows(filtered,input.sort,input.direction,{pinDrafts:true,pinOwnershipTypes:input.scope==='ownership',pinActiveRentals:!input.scope&&Boolean(input.query.search.trim())}) : sortRows(filtered,input.sort,input.direction);
   const pages=Math.max(1,Math.ceil(sorted.length/input.size)),page=Math.min(input.page,pages),offset=(page-1)*input.size;

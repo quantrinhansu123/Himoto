@@ -21,19 +21,19 @@ export async function queueContractNotification(client:Database,orderId:number,k
 }
 async function telegramCall(token:string,method:string,body:FormData|Record<string,unknown>,send:typeof fetch) {
   const form=body instanceof FormData;
-  const response=await send(`https://api.telegram.org/bot${token}/${method}`,{method:'POST',...(form?{}:{headers:{'Content-Type':'application/json'}}),body:form?body:JSON.stringify(body),signal:AbortSignal.timeout(60000),redirect:'error',cache:'no-store'});
+  let response:Response;try{response=await send(`https://api.telegram.org/bot${token}/${method}`,{method:'POST',...(form?{}:{headers:{'Content-Type':'application/json'}}),body:form?body:JSON.stringify(body),signal:AbortSignal.timeout(60000),redirect:'error',cache:'no-store'});}catch(error){throw new Error(error instanceof Error&&['TimeoutError','AbortError'].includes(error.name)?'TELEGRAM_TIMEOUT':'TELEGRAM_NETWORK');}
   const result=await response.json().catch(()=>null);
   if(!response.ok||result?.ok!==true)throw new Error(`TELEGRAM_${result?.error_code||response.status}`);
   return result.result;
 }
 /** Claims are committed before calling Telegram. An uncertain send is never retried automatically. */
-export async function dispatchContractNotifications(send:typeof fetch=fetch,limit=5,database:Database=ownerDatabase) {
+export async function dispatchContractNotifications(send:typeof fetch=fetch,limit=5,database:Database=ownerDatabase,orderIds?:number[]) {
   const settings=(await database.query('SELECT bot_cipher FROM himoto.management_telegram_settings WHERE singleton=true')).rows[0];
   if(!settings?.bot_cipher){await database.query("UPDATE himoto.management_contract_notifications SET status='awaiting_config' WHERE status='pending'");return {sent:0,configured:false};}
   const {token}=openIntegrationSecret<{token:string}>(settings.bot_cipher);let sent=0;
   for(let index=0;index<limit;index++) {
     const row=(await database.query(`UPDATE himoto.management_contract_notifications SET status='sending'
-      WHERE id=(SELECT id FROM himoto.management_contract_notifications WHERE status='pending' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`)).rows[0];
+      WHERE id=(SELECT id FROM himoto.management_contract_notifications WHERE status='pending' AND ($1::bigint[] IS NULL OR order_id=ANY($1)) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`,[orderIds||null])).rows[0];
     if(!row)break;
     const group=(await database.query('SELECT chat_id,thread_id FROM himoto.management_store_telegram WHERE store_id=$1 AND enabled',[row.store_id])).rows[0];
     if(!group){await database.query("UPDATE himoto.management_contract_notifications SET status='awaiting_config' WHERE id=$1",[row.id]);continue;}
@@ -42,11 +42,11 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
     let contacted=false;
     try {
       const files=[];
-      for(const photo of payload.photos||[]) {
+      for(let offset=0;offset<(payload.photos||[]).length;offset+=3)files.push(...await Promise.all(payload.photos.slice(offset,offset+3).map(async photo=>{
         const data=photo.cloudinary_public_id?Buffer.from(await(await readCloudinaryPhoto({cloudinary_public_id:photo.cloudinary_public_id,cloudinary_cloud_name:photo.cloudinary_cloud_name!,cloudinary_version:Number(photo.cloudinary_version),mime_type:photo.mime_type})).arrayBuffer()):Buffer.from(photo.bytes||'','base64');
         if(!data.length||data.length>(photo.mime_type==='video/mp4'?MAX_VIDEO_BYTES:2*1024*1024))throw new Error('PHOTO_SIZE');
-        files.push({data,type:photo.mime_type});
-      }
+        return {data,type:photo.mime_type};
+      })));
       contacted=true;
       const text=contractNotificationText(row.event_type,payload);
       const caption=files.length&&text.length<=1024?text:null;
@@ -64,7 +64,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
         await database.query('UPDATE himoto.management_contract_notifications SET message_ids=$2 WHERE id=$1',[row.id,JSON.stringify(ids)]);
       }
       await database.query("UPDATE himoto.management_contract_notifications SET status='sent',message_ids=$2,sent_at=now(),error_code=NULL WHERE id=$1",[row.id,JSON.stringify(ids)]);sent++;
-    }catch(error){const known=error instanceof Error&&/^TELEGRAM_\d+$|^PHOTO_SIZE$/.test(error.message);await database.query('UPDATE himoto.management_contract_notifications SET status=$2,message_ids=$3,error_code=$4 WHERE id=$1',[row.id,contacted&&!known||ids.length?'unknown':'failed',JSON.stringify(ids),known?(error as Error).message:'SEND_UNCERTAIN']);}
+    }catch(error){const known=error instanceof Error&&/^TELEGRAM_\d+$|^PHOTO_SIZE$/.test(error.message),network=error instanceof Error&&/^TELEGRAM_(TIMEOUT|NETWORK)$/.test(error.message);await database.query('UPDATE himoto.management_contract_notifications SET status=$2,message_ids=$3,error_code=$4 WHERE id=$1',[row.id,contacted&&!known||ids.length?'unknown':'failed',JSON.stringify(ids),known||network?(error as Error).message:contacted?'SEND_UNCERTAIN':'MEDIA_FETCH_FAILED']);}
   }
   return {sent,configured:true};
 }

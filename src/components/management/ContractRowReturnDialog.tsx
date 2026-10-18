@@ -11,12 +11,14 @@ import { loadContractReturnableItems, ReturnableContractItem, ReturnInput, retur
 import { ReturnSettlementFields } from './ReturnSettlementFields';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { ContractTransactionPhotos } from './ContractTransactionPhotos';
+import { DEFAULT_LATE_HOURLY_RATE,lateReturnFee } from '@/lib/management/return-fees';
+import { SelectedVehicleGps,useSelectedVehicleGps } from './SelectedVehicleGps';
 
 const localNow = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 16);
 const localMillis = (value: string) => new Date(`${value}:00+07:00`).getTime();
 const digits = (value: string) => value.replace(/\D/g, '').slice(0, 13);
 
-interface Estimate { late: boolean; early: boolean; minutes: number; hours: number; unusedDays: number; suggested: number }
+interface Estimate { late: boolean; early: boolean; minutes: number; hours: number; unusedDays: number; suggested: number;lateDays?:number;missingDayPrice?:boolean }
 
 function estimateFor(row: ReturnableContractItem, returnedAt: string, hourlyRate: string): Estimate {
   const scheduled = row.scheduled_return_at ? new Date(row.scheduled_return_at).getTime() : NaN;
@@ -24,15 +26,15 @@ function estimateFor(row: ReturnableContractItem, returnedAt: string, hourlyRate
   if (!Number.isFinite(scheduled) || !Number.isFinite(returned)) return { late: false, early: false, minutes: 0, hours: 0, unusedDays: 0, suggested: 0 };
   if (returned > scheduled) {
     const minutes = Math.ceil((returned - scheduled) / 60_000);
-    const hours = Math.ceil(minutes / 60);
-    return { late: true, early: false, minutes, hours, unusedDays: 0, suggested: /^\d+$/.test(hourlyRate) ? hours * Number(hourlyRate) : 0 };
+    const fee=lateReturnFee(minutes,Number(hourlyRate||DEFAULT_LATE_HOURLY_RATE),row.daily_price);
+    return { late: true, early: false, minutes, hours:fee.hours,lateDays:fee.days,missingDayPrice:fee.amount===null,unusedDays:0,suggested:fee.amount??0 };
   }
   const unusedDays = Math.floor((scheduled - returned) / 86_400_000);
   return { late: false, early: returned < scheduled, minutes: 0, hours: 0, unusedDays, suggested: unusedDays * (row.daily_price || 0) };
 }
 
-function lateText(minutes: number, hours: number) {
-  return `Quá hạn ${Math.floor(minutes / 1440)} ngày ${Math.floor((minutes % 1440) / 60)} giờ ${minutes % 60} phút · tính phí ${hours} giờ`;
+function lateText(minutes: number, hours: number,days=0) {
+  return `Quá hạn ${Math.floor(minutes / 1440)} ngày ${Math.floor((minutes % 1440) / 60)} giờ ${minutes % 60} phút · tính phí ${days?`${days} ngày${hours?' + ':''}`:''}${hours?`${hours} giờ`:''}`;
 }
 
 export function ContractRowReturnDialog({ contractId, contractCode = '',initialQuery='', onClose }: { contractId?: number; contractCode?: string;initialQuery?:string; onClose: () => void }) {
@@ -46,7 +48,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const [settlements,setSettlements]=useState<Record<number,ReturnSettlement|undefined>>({});
   const searchGeneration=useRef(0);
   const [returnedAt, setReturnedAt] = useState(localNow);
-  const [hourlyRate, setHourlyRate] = useState('20000');
+  const [hourlyRate, setHourlyRate] = useState(String(DEFAULT_LATE_HOURLY_RATE));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [photoPending,setPhotoPending]=useState<Record<number,boolean>>({});
@@ -98,6 +100,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     const repair=repairs[String(row.item_id)];
     return { row, estimate, override, amount,repairFee:Number(repair?.amount||0),repairNote:repair?.note||'', adjustment: (estimate.late ? amount : estimate.early ? -amount : 0)+Number(repair?.amount||0) };
   }), [rows, picked, overrides, repairs,returnedAt, hourlyRate]);
+  const selectedGps=useSelectedVehicleGps(lines.map(line=>line.row.vehicle_id));
 
   const orderIds = new Set(lines.map(line => line.row.order_id));
   const summary = orderIds.size === 1 ? (() => {
@@ -124,7 +127,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     setSaving(true); setError('');
     try {
       const items: ReturnInput[] = lines.map(({ row, estimate, override, amount,repairFee,repairNote }) => ({
-        item_id: row.item_id, item_revision: row.item_revision, returned_at: returnedAt, hourly_rate: hourlyRate,
+        item_id: row.item_id, item_revision: row.item_revision, returned_at: returnedAt, hourly_rate: hourlyRate||String(DEFAULT_LATE_HOURLY_RATE),
         ...(estimate.late && override !== undefined ? { fee_override: String(amount) } : {}),
         ...(estimate.early && amount > 0 ? { early_discount: String(amount) } : {}),
         ...(repairFee?{repair_fee:String(repairFee),repair_note:repairNote}:{}),
@@ -154,7 +157,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     router.push(cashbookPaymentPath(done.orderId, purpose));
   }
 
-  const invalid = lines.some(line => line.override !== undefined && !/^\d{1,13}$/.test(line.override));
+  const invalid = lines.some(line => line.override !== undefined && !/^\d{1,13}$/.test(line.override)||line.estimate.missingDayPrice&&line.override===undefined);
   const subtitle = rows[0] ? `${rows[0].contract_code} · ${rows[0].customer_name}` : contractId !== undefined ? 'Đang tải xe trực tiếp từ hợp đồng đã chọn' : 'Tìm theo mã hợp đồng, CCCD, biển số hoặc SĐT khách để trả xe';
 
   return <Dialog title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={() => { if (!saving) onClose(); }}>
@@ -176,7 +179,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {openRows.length > 0 && <>
           <h3>1. Nhận xe & kiểm tra phí</h3><p>Nhập giờ khách thực tế bàn giao xe cho công ty để tính quá hạn. Nếu không bố trí được người đến lấy, hướng dẫn khách mang xe đến cơ sở.</p><div className="mg-form-grid mg-contract-grid-two">
             <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ trả thực tế (24h)</label><DateTime24Controls id="contract-returned-at" label="Ngày giờ trả thực tế" value={returnedAt} onChange={value => { setReturnedAt(value); setOverrides({}); }} /></div>
-            <div className="mg-field"><label htmlFor="contract-return-hourly-rate">Đơn giá trễ / giờ (VNĐ)</label><input id="contract-return-hourly-rate" type="number" min={0} max={5000000} step={1000} required value={hourlyRate} onChange={event => { setHourlyRate(event.target.value); setOverrides({}); }} /></div>
+            <div className="mg-field"><label htmlFor="contract-return-hourly-rate">Đơn giá trễ / giờ (VNĐ)</label><input id="contract-return-hourly-rate" type="number" min={0} max={5000000} step={1000} placeholder="20000" value={hourlyRate} onBlur={()=>{if(!hourlyRate)setHourlyRate(String(DEFAULT_LATE_HOURLY_RATE));}} onChange={event => { setHourlyRate(event.target.value); setOverrides({}); }} /><small>Gợi ý 20.000đ/giờ. Mỗi 24 giờ tính một ngày; phần lẻ quá 8 giờ tính thêm một ngày theo giá thuê của hợp đồng.</small></div>
           </div>
           <div className="mg-return-lines" role="group" aria-label="Xe cần trả">
             {openRows.map(row => {
@@ -187,8 +190,10 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
               return <div key={id} className={`mg-return-line${estimate.late ? ' is-late' : ''}${line ? '' : ' is-off'}`}>
                 <label className="mg-return-line-head"><input type="checkbox" checked={Boolean(line)} onChange={() => toggle(id)} /><strong>{row.vehicle_name} · {row.license}</strong>{orderIds.size > 1 || contractCode === '' ? <span>{row.contract_code}</span> : null}</label>
                 <span className="mg-return-line-time">Thuê {formatDateTime(row.scheduled_start_at)} → hạn {formatDateTime(row.scheduled_return_at)}</span>
+                {line&&<SelectedVehicleGps vehicleId={row.vehicle_id} data={selectedGps}/>}
                 {line && <div className="mg-return-line-adjust">
-                  <span>{estimate.late ? lateText(estimate.minutes, estimate.hours) : estimate.early ? `Trả sớm${estimate.unusedDays ? ` ${estimate.unusedDays} ngày` : ' (dưới 1 ngày)'}${row.daily_price ? ` · ${formatMoney(row.daily_price)}/ngày` : ''}` : 'Trả đúng hạn · không điều chỉnh'}</span>
+                  <span>{estimate.late ? lateText(estimate.minutes, estimate.hours,estimate.lateDays) : estimate.early ? `Trả sớm${estimate.unusedDays ? ` ${estimate.unusedDays} ngày` : ' (dưới 1 ngày)'}${row.daily_price ? ` · ${formatMoney(row.daily_price)}/ngày` : ''}` : 'Trả đúng hạn · không điều chỉnh'}</span>
+                  {estimate.late&&row.daily_price&&<small>Giá thuê ngày: {formatMoney(row.daily_price)}</small>}{estimate.missingDayPrice&&<p className="mg-field-error">Chưa xác định giá thuê ngày. Nhập phí trả muộn đã đối chiếu.</p>}
                   {(estimate.late || estimate.early) && <label>{estimate.late ? 'Phí trả muộn (+)' : 'Giảm doanh thu (−)'}
                     <input type="text" inputMode="numeric" value={value === '' ? '' : formatMoney(Number(value))} onChange={event => setOverrides(current => ({ ...current, [id]: digits(event.target.value) }))} /></label>}
                 </div>}

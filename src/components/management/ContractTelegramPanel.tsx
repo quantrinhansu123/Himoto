@@ -22,6 +22,7 @@ export function ContractTelegramPanel({id}:{id:number}) {
   const {can}=useManagement();
   const [data,setData]=useState<ContractTelegramState|null>(null),[selected,setSelected]=useState(''),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
   const [pending,setPending]=useState<Record<string,boolean>>({});
+  const [confirmedAbsent,setConfirmedAbsent]=useState(false);
   const refresh=useCallback(async(signal?:AbortSignal)=>{
     setLoading(true);setError('');
     try{const state=await contractTelegramRequest(id,undefined,signal);if(!signal?.aborted){setData(state);setSelected(old=>state.events.some(e=>e.key===old)?old:state.events[0]?.key||'');}}
@@ -30,6 +31,7 @@ export function ContractTelegramPanel({id}:{id:number}) {
   },[id]);
   useEffect(()=>{const controller=new AbortController();void refresh(controller.signal);return()=>controller.abort();},[refresh]);
   const event=data?.events.find(e=>e.key===selected);
+  useEffect(()=>setConfirmedAbsent(false),[selected,event?.notice_id]);
   const active=data?.events.some(e=>e.status==='pending'||e.status==='sending');
   useEffect(()=>{if(!active||busy)return;const controller=new AbortController();const timer=setTimeout(()=>void refresh(controller.signal),3000);return()=>{clearTimeout(timer);controller.abort();};},[active,busy,data,refresh]);
   const photosPending=Object.values(pending).some(Boolean);
@@ -42,6 +44,7 @@ export function ContractTelegramPanel({id}:{id:number}) {
     {event&&<div key={event.key}>
       <pre className="mg-telegram-preview">{event.text}</pre>
       <p role="status">{event.photo_count} ảnh · {event.video_count||0} video đã lưu · {event.status?NOTICE_STATUS_LABELS[event.status]:'Chưa gửi'}{event.sent_at?` · ${new Date(event.sent_at).toLocaleString('vi-VN')}`:''}</p>
+      {event.status==='unknown'&&<div className="mg-billing-reminder" role="alert"><p>Lần gửi bị mất phản hồi{event.delivery_error?` (${event.delivery_error})`:''}. Kiểm tra nhóm bằng mã hợp đồng trước khi xử lý.</p>{event.can_retry_confirmed_absent?<><label className="mg-checkbox"><input type="checkbox" checked={confirmedAbsent} onChange={e=>setConfirmedAbsent(e.target.checked)}/>Đã kiểm tra nhóm, chưa có tin và ảnh của giao dịch này</label><button type="button" className="mg-button" disabled={!confirmedAbsent||busy||photosPending||loading} onClick={async()=>{setBusy(true);setError('');try{const value=await contractTelegramRequest(id,{action:'retry_confirmed_absent',event_key:event.key,hash:event.hash,notice_id:event.notice_id,confirmed_absent:true,request_id:crypto.randomUUID()});setData(value);setConfirmedAbsent(false);setMessage('Đã ghi nhận đối chiếu và xếp gửi lại. Chờ Telegram xác nhận.');}catch(cause){setError(cause instanceof Error?cause.message:'Không gửi lại được.');}finally{setBusy(false);}}}>Gửi lại sau khi đối chiếu</button></>:<p>Đã có mã tin gửi một phần; cần đối chiếu các ảnh còn thiếu trước khi xử lý tiếp.</p>}</div>}
       {event.unchanged&&<p>Nội dung và ảnh này đã được gửi hoặc đang gửi. Bổ sung ảnh rồi làm mới nếu cần gửi bản cập nhật.</p>}
       {event.phases.map(phase=><SavedRecordPhotos key={phase} entity="contracts" recordId={id} slots={[...contractPhotoSlots(phase as ContractPhotoPhase),...contractDocumentSlots(phase as ContractPhotoPhase)]} title={`Ảnh ${event.label}`} readOnly={!can(phase.startsWith('renewal-')||phase.startsWith('battery-swap-')?'contracts.renew':phase.startsWith('return-')?'contracts.return':phase==='handover'?'contracts.finalize':'contracts.draft')}
         onPendingChange={value=>setPending(old=>old[phase]===value?old:{...old,[phase]:value})} onSaved={()=>void refresh()}/>)}

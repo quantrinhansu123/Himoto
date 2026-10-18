@@ -34,6 +34,7 @@ import { mergeOcrCustomer, OCR_CUSTOMER_KEYS, plateKey, type OcrFields } from '@
 import { useContractTypes } from './ContractTypesProvider';
 import { ContractTypeManager } from './ContractTypeManager';
 import type { ContractType } from '@/lib/management/contract-types';
+import { SelectedVehicleGps,useSelectedVehicleGps } from '@/components/management/SelectedVehicleGps';
 
 type LookupState = 'idle' | 'loading' | 'found' | 'matches' | 'missing' | 'error';
 function rentalTermMonths(rentalType: string) {
@@ -68,6 +69,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     return initial;
   });
   const [salesText, setSalesText] = useState<string | null>(null);
+  const selectedGps=useSelectedVehicleGps(draft.vehicles.map(vehicle=>vehicle.id));
   // NVKD mirrors "Nguồn khách" until the user picks or types an NVKD directly.
   const salesFollowsSource = useRef(!draft.sales_staff_id);
   const reserving = canSaveDraft && Boolean(draft.reservation);
@@ -592,6 +594,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
                   ownOrderId={row?.id} takenIds={draft.vehicles.map(item => item.id).filter(Boolean)} disabled={false} invalid={Boolean(errors[`vehicle_${index}`])} onChange={id => chooseVehicle(index, id)} />
                 {errors[`vehicle_${index}`] && <p className="mg-field-error">{errors[`vehicle_${index}`]}</p>}</div>
               {vehicle.id && <div className="mg-composer-vehicle-summary">{vehicle.license} · {vehicle.brand} · {vehicle.type_text} · {vehicle.year || 'Chưa có năm sản xuất'}<br />Cơ sở quản lý xe: {vehicle.stock_store_name || allVehicles.find(item=>String(item.id)===vehicle.id)?.store_name || 'Chưa xác định'} · Doanh thu: {branchName || 'Chưa chọn nguồn khách'}</div>}
+              {vehicle.id&&<SelectedVehicleGps vehicleId={vehicle.id} data={selectedGps}/>}
               <div className="mg-form-grid mg-contract-grid-three">{(['driver_name', 'driver_license_number', 'driver_license_issued_on', 'borrow_hats', 'borrow_raincoats', 'color'] as const).map(key => {
                 const labels = { color: 'Màu xe', driver_name: 'Tên người lái', driver_license_number: 'Số giấy phép lái xe', driver_license_issued_on: 'Ngày cấp GPLX', borrow_hats: 'Số mũ mượn', borrow_raincoats: 'Số áo mưa' };
                 const fieldId = `contract-vehicle-${index}-${key}`;

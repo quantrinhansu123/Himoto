@@ -4,6 +4,7 @@ import type { ReturnableContractItem, ReturnInput, ReturnResult } from '@/lib/ma
 import { dailyPriceSql, depositLateral, rentalPaid, rentalPaidSql } from './contract-deposits';
 import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { dataAccess } from './access-context';
+import { lateReturnFee } from '@/lib/management/return-fees';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractReturnError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -108,7 +109,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
   const itemResult = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.rent_at,d.return_at,d.xmin::text AS item_revision,
-      o.order_status,o.total,o.pid,o.draft_payload,o.xmin::text AS order_revision,
+      o.order_status,o.total,o.pid,o.draft_payload,o.xmin::text AS order_revision,${dailyPriceSql()} AS daily_price,
       COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS contract_code
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
@@ -126,7 +127,9 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   if (input.fee_override !== undefined && chargeableHours === 0) throw new ContractReturnError('Chỉ có thể điều chỉnh phí khi xe trả trễ hạn.');
   const earlyDiscount = input.early_discount === undefined ? 0 : Number(input.early_discount);
   if (earlyDiscount && returnedMs >= scheduledMs) throw new ContractReturnError('Chỉ giảm doanh thu khi xe trả sớm hơn hạn.');
-  const lateFee = input.fee_override === undefined ? chargeableHours * hourlyRate : Number(input.fee_override);
+  const suggested=lateReturnFee(lateMinutes,hourlyRate,Number(item.daily_price)>0?Number(item.daily_price):null);
+  if(input.fee_override===undefined&&suggested.amount===null)throw new ContractReturnError('Chưa xác định giá thuê ngày của xe. Nhập phí trả muộn đã đối chiếu trước khi xác nhận.',409);
+  const lateFee = input.fee_override === undefined ? suggested.amount! : Number(input.fee_override);
   if (!Number.isSafeInteger(lateFee) || lateFee > MAX_MONEY) throw new ContractReturnError('Tiền trả muộn vượt giới hạn lưu trữ.');
   const repairFee=Number(input.repair_fee||0);
   const fee = lateFee + repairFee - earlyDiscount;
@@ -153,7 +156,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
     : nextTotal !== null && nextTotal > paid ? 'wait_payment' : 'completed';
   const returnAdjustment = { item_id: input.item_id, vehicle_id: Number(item.vehicle_id), scheduled_return_at: toIso(item.return_at),
     actual_return_at: actual, late_minutes: lateMinutes, chargeable_hours: chargeableHours, hourly_rate: hourlyRate, fee,
-    late_fee:lateFee,repair_fee:repairFee,...(repairFee?{repair_note:input.repair_note}:{}),...(earlyDiscount ? { early_discount: earlyDiscount } : {}), actor_id: actorId };
+    late_fee:lateFee,late_days:suggested.days,late_hours:suggested.hours,daily_price:item.daily_price==null?null:Number(item.daily_price),fee_overridden:input.fee_override!==undefined,repair_fee:repairFee,...(repairFee?{repair_note:input.repair_note}:{}),...(earlyDiscount ? { early_discount: earlyDiscount } : {}), actor_id: actorId };
   await client.query(`UPDATE himoto.orders SET
       total=CASE WHEN $2::bigint=0 THEN total ELSE ($3::numeric)::text END,
       draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer}',

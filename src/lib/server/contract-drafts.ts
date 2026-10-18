@@ -100,7 +100,7 @@ export function contractTableSql(scopeClause: string) {
 export function contractListScopeClause(scope: string | null): string {
   switch (scope) {
     case 'drafts': return ` AND o.order_status='draft'`;
-    case 'overdue': return ` AND o.order_status='renting' AND COALESCE(o.return_at, ov.end_date) < now()`;
+    case 'overdue': return ` AND (o.order_status='overdue' OR o.order_status='renting' AND COALESCE(o.return_at, ov.end_date) < now())`;
     case 'vat': return ` AND EXISTS (SELECT 1 FROM himoto.transactions t WHERE t.order_id=o.id AND t.type IN ('in','addon') AND t.status='approved' AND t.bank_owner_type='company')`;
     case 'ownership': return ` AND (s.kind='lease_to_own' OR COALESCE(NULLIF(o.order_type,''), o.draft_payload->'management_composer'->>'rental_type') IN ('ownership','ownership_cd'))`;
     default: return '';

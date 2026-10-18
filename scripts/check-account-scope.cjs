@@ -141,7 +141,7 @@ async function main(){const c=await pool.connect();try{
   checks.push('Battery swap creation/confirmation works under branch RLS; other branches cannot read the swap or target its media');
   const returnedItem=(await c.query('SELECT id::int,xmin::text AS revision FROM qa_access_scope.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL',[crossSaved.id])).rows[0];
   const {completeReturnBatch}=load(path.join(root,'lib/server/return-settlements'));
-  const settled=await dataAccess.run(branchA,()=>completeReturnBatch(proxy,70001,[{item_id:returnedItem.id,item_revision:returnedItem.revision,returned_at:paidAt,hourly_rate:'0',repair_fee:'100000',repair_note:'QA sửa chữa'}],[{order_id:Number(crossSaved.id),revision:crossSaved.draft_revision,receipts:[{kind:'repair_fee',amount:'100000',method:'cash',account_id:93002,paid_at:paidAt,request_id:require('node:crypto').randomUUID()}]}]));
+  const settled=await dataAccess.run(branchA,()=>completeReturnBatch(proxy,70001,[{item_id:returnedItem.id,item_revision:returnedItem.revision,returned_at:paidAt,hourly_rate:'0',fee_override:'0',repair_fee:'100000',repair_note:'QA sửa chữa'}],[{order_id:Number(crossSaved.id),revision:crossSaved.draft_revision,receipts:[{kind:'repair_fee',amount:'100000',method:'cash',account_id:93002,paid_at:paidAt,request_id:require('node:crypto').randomUUID()}]}]));
   assert.equal(settled[0].status,'completed');
   assert.equal((await c.query("SELECT name FROM qa_access_scope.transactions WHERE order_id=$1",[crossSaved.id])).rows[0].name,'order:return_repair');
   checks.push('Branch staff with contracts.return settle an own-branch repair receipt and complete the return under real RLS without granting generic finance.write');

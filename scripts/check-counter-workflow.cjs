@@ -14,6 +14,10 @@ async function main(){
  const multipart=count=>{const form=new FormData();for(let i=0;i<count;i++)form.append('photos',new File([Buffer.from([255,216,255,217])],'qa.jpg',{type:'image/jpeg'}));return new NextRequest('http://localhost/api/auth/photo-ocr',{method:'POST',body:form});};
  assert.equal((await readPhotoBatchBody(multipart(3))).length,3);await assert.rejects(()=>readPhotoBatchBody(multipart(4)),e=>e.status===400);
  const {requestPermission}=load(path.join(root,'lib/server/access-request'));
+ const {lateReturnFee}=load(path.join(root,'lib/management/return-fees'));
+ for(const [minutes,days,hours,amount] of [[0,0,0,0],[1,0,1,20000],[480,0,8,160000],[481,1,0,150000],[1440,1,0,150000],[1441,1,1,170000],[1920,1,8,310000],[1921,2,0,300000],[4562,3,5,550000]])assert.deepEqual(lateReturnFee(minutes,20000,150000),{days,hours,amount});
+ assert.equal(lateReturnFee(481,20000,null).amount,null);assert.equal(lateReturnFee(480,20000,null).amount,160000);
+ checks.push('Late fee boundary: 8h stays hourly, 8h01 becomes one day, full 24h and multi-day remainders use the original daily price; unknown daily prices are not invented');
  assert.equal(requestPermission('/api/auth/order/car-rental/1/battery-swaps','POST'),'contracts.renew');assert.equal(requestPermission('/api/auth/record-photos/contracts/1/battery-swap-1-video-1','PUT'),'contracts.renew');assert.equal(requestPermission('/api/auth/order/car-rental/1/reservation-no-show','POST'),'contracts.finalize');
  const db=load(path.join(root,'lib/server/himoto-database')).ownerDatabase,c=await db.connect(),schema='qa_counter_workflow';
  const {parseReturnInput}=load(path.join(root,'lib/server/contract-returns')),{parseReturnSettlements,completeReturnBatch}=load(path.join(root,'lib/server/return-settlements')),{notificationPayload}=load(path.join(root,'lib/server/contract-notification-content'));
@@ -31,6 +35,13 @@ async function main(){
  await c.query(`INSERT INTO ${schema}.transactions(id,order_id,name,type,value,status,store_id,cash_id,bank_id,bank_owner_type,payment_method,note,user_id) VALUES(501,1,'order:deposit','in',1000000,'approved',23,NULL,15,'unknown',2,'QA',143),(502,1,'order:rental_fees','in',150000,'approved',23,99,NULL,NULL,1,'QA',143)`);
  const revision=(await c.query(`SELECT xmin::text AS r FROM ${schema}.orders WHERE id=1`)).rows[0].r,itemRevision=(await c.query(`SELECT xmin::text AS r FROM ${schema}.order_vehicle_details WHERE id=1001`)).rows[0].r;
  const item={item_id:1001,item_revision:itemRevision,returned_at:paidAt,hourly_rate:'20000',repair_fee:'200000',repair_note:'Hỏng tay phanh QA'};assert.throws(()=>parseReturnInput({...item,repair_note:''}));
+ const {recordVehicleReturn}=load(path.join(root,'lib/server/contract-returns'));
+ for(const minutes of [480,481,1440,1441,1920,1921,4562]){
+  await c.query('SAVEPOINT fee_boundary');
+  const changed=(await c.query(`UPDATE ${schema}.order_vehicle_details SET rent_at=$1,return_at=$2 WHERE id=1001 RETURNING xmin::text AS revision`,[new Date(actual.getTime()-10*86400000),new Date(actual.getTime()-minutes*60000)])).rows[0];
+  const returned=await recordVehicleReturn(proxy,143,{...item,item_revision:changed.revision,repair_fee:'0',repair_note:''});assert.equal(returned.late_fee,lateReturnFee(minutes,20000,150000).amount);
+  await c.query('ROLLBACK TO SAVEPOINT fee_boundary');
+ }
  const receipt=(kind,amount,method='cash',account_id=99)=>({kind,amount,request_id:randomUUID(),method,account_id,paid_at:paidAt});
  const settlement={order_id:1,revision,receipts:[receipt('late_fee','40000'),receipt('repair_fee','200000','transfer',15)],refund:{request_id:randomUUID(),amount:'1000000',method:'transfer',account_id:15,paid_at:paidAt,recipient_bank:'QA bank',recipient_account:'000123',recipient_name:'Khách QA'}};
  const run=(value=settlement)=>completeReturnBatch(proxy,143,[parseReturnInput(item)],parseReturnSettlements([value]));

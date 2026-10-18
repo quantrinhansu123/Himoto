@@ -8,6 +8,7 @@ import { parseReturnSettlements,completeReturnBatch } from '@/lib/server/return-
 import { ContractPaymentError } from '@/lib/server/contract-payments';
 
 export const runtime = 'nodejs';
+export const maxDuration=300;
 
 async function GETHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
@@ -40,7 +41,7 @@ async function POSTHandler(request: NextRequest) {
     const byOrder=new Map<number,number[]>();for(const row of returned){const orderId=Number(row.order_id);byOrder.set(orderId,[...(byOrder.get(orderId)||[]),Number(row.id)]);}
     for(const [orderId,items] of byOrder){items.sort((a,b)=>a-b);await queueContractNotification(client,orderId,'return',`return:${orderId}:${items.join(',')}`,user.id,items.map(item=>`return-${item}`));}
     await client.query('COMMIT');
-    after(async()=>{try{await dispatchContractNotifications();}catch{console.error('Contract notification dispatch failed.');}});
+    after(async()=>{try{await dispatchContractNotifications(undefined,byOrder.size,undefined,[...byOrder.keys()]);}catch{console.error('Contract notification dispatch failed.');}});
     const data = body && typeof body === 'object' && 'items' in body ? results : results[0];
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

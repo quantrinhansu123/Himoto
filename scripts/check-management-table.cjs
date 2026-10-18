@@ -42,6 +42,9 @@ async function main(){
   assert.equal(shared.projectManagementTable(plateRows,{...base,store:'1'}).rows[0].id,130);
   assert.equal(shared.projectManagementTable(plateRows,{...plateInput,query:{...plateInput.query,status:'completed'}}).total,25);
   assert.equal(shared.projectManagementTable(plateRows,{...plateInput,scope:'drafts'}).rows[0].id,130);
+  const onRent=shared.projectManagementTable(plateRows,{...plateInput,query:{...plateInput.query,status:'renting'}},true);
+  assert.deepEqual(onRent.rows.map(row=>row.id),[133,132,131]);assert.equal(new Map(onRent.statusCounts).get('renting'),3);assert.equal(new Map(onRent.statusCounts).get('overdue'),2);
+  assert.equal(shared.projectManagementTable(plateRows,{...plateInput,scope:'overdue'},true).rows.length,2);
   const exported=shared.projectManagementTable(plateRows,plateInput,true);
   assert.equal(exported.rows.length,29);assert.deepEqual(exported.rows.slice(0,4).map(row=>row.id),[133,132,131,130]);
   assert.deepEqual(plate.summary,summarizeContracts(plateRows.filter(row=>row.store_id===1),[]));

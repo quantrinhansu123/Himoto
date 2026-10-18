@@ -3,8 +3,13 @@ import { withAccessRequest } from '@/lib/server/access-request';
 import { himotoPool,ownerDatabase } from '@/lib/server/himoto-database';
 import { dataAccess } from '@/lib/server/access-context';
 import { isAdminAccount } from '@/lib/management/permissions';
+import { readSelectedVehicleGps,selectedVehicleIds } from '@/lib/server/selected-vehicle-gps';
 export const runtime='nodejs';
 export const GET=withAccessRequest(async(request:NextRequest)=>{
+  if(request.nextUrl.searchParams.has('vehicle_ids')){
+    let ids:number[];try{ids=selectedVehicleIds(request.nextUrl.searchParams.get('vehicle_ids')||'');}catch{return NextResponse.json({status:'error',message:'Chọn từ 1 đến 20 xe hợp lệ.'},{status:400});}
+    try{return NextResponse.json({status:'success',data:{selected_vehicles:await readSelectedVehicleGps(himotoPool,ids)}},{headers:{'Cache-Control':'private, no-store'}});}catch{return NextResponse.json({status:'error',message:'Chưa tải được GPS của xe.'},{status:500});}
+  }
   const store=request.nextUrl.searchParams.get('store')||'all';
   if(store!=='all'&&!/^[1-9]\d{0,14}$/.test(store))return NextResponse.json({status:'error',message:'Cơ sở không hợp lệ.'},{status:400});
   const source=request.nextUrl.searchParams.get('event_source')||'all',device=request.nextUrl.searchParams.get('event_device')||'';

@@ -371,7 +371,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {reminderTarget!==null&&<DebtReminderDialog orderId={reminderTarget} onClose={()=>setReminderTarget(null)}/>}
     {composerOpen && dataset && <ManagementDataBoundary kinds={CONTRACT_DATA_KINDS} title="Mở hợp đồng" onClose={() => setComposerOpen(false)}><ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} onClose={() => setComposerOpen(false)} onDraftSaved={() => { setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); router.push('/contracts/drafts'); }}
       onFinalized={result => {
-        notify(`${result.status === 'deposit_contract' ? 'Đã nhận cọc giữ xe, chờ giao xe' : 'Đã lưu chính thức hợp đồng'} ${result.code}${result.transaction_ids.length ? ` và ghi ${result.transaction_ids.length} phiếu thu vào Sổ quỹ` : ''}.`);
+        notify(`${result.status === 'deposit_contract' ? 'Đã nhận cọc giữ xe, chờ giao xe' : 'Đã lưu chính thức hợp đồng'} ${result.code}${result.transaction_ids.length ? ` và ghi ${result.transaction_ids.length} phiếu thu vào Sổ quỹ` : ''}. Xem trạng thái gửi tin tại thẻ Telegram của hợp đồng.`);
         invalidateData(['vehicles', 'customers']);
         if(paged)table.refresh();else void ensureData(['contracts'], true).catch(() => {});
         setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); router.push(`/contracts?contract_id=${result.order_id}`);

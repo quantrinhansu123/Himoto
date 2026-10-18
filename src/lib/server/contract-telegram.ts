@@ -15,7 +15,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
   const o=(await db.query('SELECT store_id,order_status,contract_number,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL',[id])).rows[0];
   if(!o)throw new ContractTelegramError('Không tìm thấy hợp đồng.',404);
   const notices=(await db.query(`SELECT id,event_key,root_event_key,event_type,photo_phases,photo_slots,payload,content_hash,status,sent_at,delivery_mode
-    FROM himoto.management_contract_notifications WHERE order_id=$1 ORDER BY created_at DESC,id`,[id])).rows;
+    ,error_code,message_ids FROM himoto.management_contract_notifications WHERE order_id=$1 ORDER BY created_at DESC,id`,[id])).rows;
   const composer=o.draft_payload?.management_composer||{};
   const versions=Array.isArray(composer.versions)?composer.versions:[];
   const events:Event[]=notices.filter(n=>n.delivery_mode==='auto').map(n=>({key:n.event_key,kind:n.event_type,payload:n.payload,
@@ -47,13 +47,14 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     payloads.set(event.key,payload);
     const hash=notificationHash(event.kind,payload);
     const related=notices.filter(n=>(n.root_event_key||n.event_key)===event.key);
-    const same=related.find(n=>(n.content_hash||notificationHash(n.event_type,n.payload))===hash&& !['manual','awaiting_config','failed'].includes(n.status));
+    const same=related.find(n=>(n.content_hash||notificationHash(n.event_type,n.payload))===hash&& !['manual','awaiting_config','failed','unknown'].includes(n.status));
     // An unresolved send for this transaction must be reconciled before a new variant is sent.
     const unresolved=related.find(n=>['unknown','sending','pending'].includes(n.status));
     const latest=same||unresolved||related[0];
     result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`,phases:event.phases,
       text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
-      can_send:canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same)});
+      can_send:canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
+      can_retry_confirmed_absent:canSendContractEvent(user,event.kind)&&latest?.status==='unknown'&&!latest?.message_ids?.length});
   }
   return {state:result,payloads,store_id:Number(o.store_id)};
 }
@@ -69,7 +70,8 @@ export async function saveContractTelegram(db:Database,id:number,actorId:number,
       ON CONFLICT(order_id) DO UPDATE SET auto_enabled=EXCLUDED.auto_enabled,updated_by=EXCLUDED.updated_by,updated_at=now()`,[id,order.store_id,body.enabled,actorId]);
     return;
   }
-  if(body.action!=='send'||Object.keys(body).some(k=>!['action','event_key','hash','request_id'].includes(k))||typeof body.event_key!=='string'||body.event_key.length>256||typeof body.hash!=='string'||!/^[0-9a-f]{64}$/.test(body.hash)||typeof body.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id))throw new ContractTelegramError('Yêu cầu gửi không hợp lệ.');
+  const retry=body.action==='retry_confirmed_absent';
+  if(!['send','retry_confirmed_absent'].includes(String(body.action))||Object.keys(body).some(k=>!['action','event_key','hash','request_id',...(retry?['notice_id','confirmed_absent']:[])].includes(k))||typeof body.event_key!=='string'||body.event_key.length>256||typeof body.hash!=='string'||!/^[0-9a-f]{64}$/.test(body.hash)||typeof body.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id)||retry&&(typeof body.notice_id!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.notice_id)||body.confirmed_absent!==true))throw new ContractTelegramError('Yêu cầu gửi không hợp lệ.');
   // Serialize Send and automatic completion on the same contract. The outbox is committed before delivery.
   await db.query('SELECT id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id]);
   const read=await readContractTelegram(db,id,actorId,user);
@@ -77,6 +79,16 @@ export async function saveContractTelegram(db:Database,id:number,actorId:number,
   if(!event)throw new ContractTelegramError('Không tìm thấy giao dịch đã hoàn tất.',404);
   if(!canSendContractEvent(user,event.kind))throw new ContractTelegramError('Tài khoản chưa được phép gửi giao dịch này.',403);
   if(event.hash!==body.hash)throw new ContractTelegramError('Nội dung hoặc ảnh đã thay đổi. Bấm Làm mới để kiểm tra trước khi gửi.',409);
+  if(retry){
+    const old=(await db.query('SELECT root_event_key,content_hash FROM himoto.management_contract_notifications WHERE order_id=$1 AND event_key=$2',[id,`manual:${id}:${body.request_id}`])).rows[0];
+    if(old){if(old.root_event_key!==event.key||old.content_hash!==event.hash)throw new ContractTelegramError('Mã gửi lại đã dùng cho nội dung khác.',409);return;}
+    if(!event.can_retry_confirmed_absent||event.notice_id!==body.notice_id)throw new ContractTelegramError('Chỉ xác nhận gửi lại lần mất phản hồi chưa có mã tin; tải lại để đối chiếu.',409);
+    const review={actor_id:actorId,at:new Date().toISOString(),outcome:'confirmed_absent',prior_status:'unknown',prior_error:event.delivery_error,request_id:body.request_id};
+    const changed=await db.query(`UPDATE himoto.management_contract_notifications SET status='failed',error_code='OPERATOR_CONFIRMED_ABSENT',delivery_review=delivery_review||$3::jsonb
+      WHERE id=$1 AND order_id=$2 AND status='unknown' AND jsonb_array_length(message_ids::jsonb)=0`,[body.notice_id,id,JSON.stringify([review])]);
+    if(!changed.rowCount)throw new ContractTelegramError('Lần gửi đã thay đổi; tải lại để kiểm tra.',409);
+    return saveContractTelegram(db,id,actorId,user,{action:'send',event_key:event.key,hash:event.hash,request_id:body.request_id});
+  }
   if(event.unchanged)return; // A double click or retried request never sends identical content twice.
   if(!event.can_send)throw new ContractTelegramError('Giao dịch đang gửi hoặc chưa xác định kết quả. Kiểm tra nhóm trước khi gửi lại.',409);
   const payload=read.payloads.get(event.key)!;
