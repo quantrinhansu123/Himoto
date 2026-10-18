@@ -23,7 +23,7 @@ export function ContractDocuments({id,phase,onPendingChange,workflow}:{id:number
   },[id,phase,version]);
   return <section className="mg-contract-documents" aria-label="Hồ sơ hợp đồng bổ sung">
     <h3>Hồ sơ hợp đồng & giấy tờ khách hàng</h3>
-    <p>Có thể bỏ qua các giấy tờ không áp dụng cho khách này. Ảnh hồ sơ được gửi Telegram cùng ảnh/video của giao dịch sau khi lưu.</p>
+    <p>Có thể bỏ qua giấy tờ không áp dụng. CCCD, GPLX và ảnh xe đã có không cần tải lại. Không giới hạn ảnh bổ sung; chỉ gửi cả bộ khi bấm Gửi toàn bộ Telegram ở bước cuối.</p>
     {phase==='rental'&&<div>
       {importing?<p role="status">Đang lấy ảnh CCCD / hộ chiếu / GPLX đã lưu ở hồ sơ khách…</p>:<>
         <p role="status">{photos.filter(photo=>CONTRACT_CUSTOMER_PHOTO_SLOTS.some(slot=>slot.key===photo.slot)||photo.slot==='driver-license').length} ảnh giấy tờ đã gắn với hợp đồng.</p>

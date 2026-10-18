@@ -41,7 +41,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const [renewalVersion,setRenewalVersion]=useState<number|null>(null);
   const [photosPending,setPhotosPending]=useState(false);
   useEffect(()=>{const controller=new AbortController();void contractTelegramRequest(orderId,undefined,controller.signal).then(data=>setRenewalVersion(data.next_renewal_version)).catch(()=>{});return()=>controller.abort();},[orderId]);
-  const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null } | null>(null);
+  const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null; version:number } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -93,7 +93,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
       const remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
       notify(`${result.code}: đã tạo phiên bản v${result.version} — hẹn trả ${formatDateTime(result.return_at)}${result.total_amount !== null ? `, tiền hợp đồng ${formatMoney(result.total_amount)}` : ''}.`);
       await reload();
-      setDone({ code: result.code, fee, remaining });
+      setDone({ code: result.code, fee, remaining, version:result.version });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được gia hạn hợp đồng.'); }
     finally { setSaving(false); }
   }
@@ -108,7 +108,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí ${formatMoney(done.fee)}` : ''}.</p>
-          <ContractTelegramPanel id={orderId}/>
+          <ContractTelegramPanel id={orderId} eventKey={`renewal:${orderId}:${done.version}`}/>
           {canPayContracts ? <>
             <p>Bấm nút bên dưới để mở phiếu thu Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng (nội dung, số tiền còn thiếu).</p>
             {(done.remaining === null || done.remaining > 0 || done.fee > 0) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}

@@ -14,14 +14,18 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   const renewed=content.contractNotificationText('renewal',{...fixture,customer:'Đoàn Văn Dũng',renewal});
   for(const line of ['Khách gia hạn: Đoàn Văn Dũng','Loại xe: Wave','Bsx: 20H1.573.02','01/11/2026 - 01/12/2026','Phí gia hạn: 1.500.000 đ'])assert(renewed.includes(line),line);
   assert.equal(content.notificationHash('rental',fixture),content.notificationHash('rental',Object.fromEntries(Object.entries({...fixture,at:new Date().toISOString(),actor:'Other sender'}).reverse())));
-  await c.query(`UPDATE ${schema}.orders SET total='200000',total_rental_fees=200000,first_deposit_amount=1000000,rent_at='2026-11-01T10:00:00+07:00',return_at='2026-11-02T10:00:00+07:00',draft_payload=$1 WHERE id=1`,[JSON.stringify({management_composer:{finalized:{contract_number:'HD-QA-1'},versions:[{...renewal,kind:'renewal'}]}})]);
+  await c.query(`UPDATE ${schema}.orders SET total='200000',total_rental_fees=200000,first_deposit_amount=1000000,rent_at='2026-11-01T10:00:00+07:00',return_at='2026-11-02T10:00:00+07:00',draft_payload=$1 WHERE id=1`,[JSON.stringify({management_composer:{finalized:{contract_number:'HD-QA-1'},draft:{staff_name:'Named QA employee'},versions:[{...renewal,kind:'renewal'}]}})]);
   await c.query(`INSERT INTO ${schema}.transactions(id,order_id,name,type,value,status,user_id,store_id,cash_id,bank_id,payment_method,bank_owner_type,note) VALUES
     (9001,1,'order:rental_fees','in',200000,'approved',143,23,NULL,99,2,'personal','QA'),
     (9002,1,'order:deposit','in',1000000,'approved',143,23,NULL,99,2,'personal','QA'),
     (9003,1,'order:deposit_refund','out',450000,'approved',143,23,99,NULL,1,NULL,'QA'),
     (9004,1,'order:deposit_refund','out',999999,'pending',143,23,99,NULL,1,NULL,'QA')`);
   const snapshot=await content.notificationPayload(db,1,'rental',143,['rental']);
-  assert.equal(snapshot.grand_total,1200000);assert.equal(snapshot.days,1);assert.equal(snapshot.method,'CK TK cá nhân');
+  assert.equal(snapshot.contract_staff,'Named QA employee');assert(content.contractNotificationText('rental',snapshot).includes('Named QA employee'));assert(!content.contractNotificationText('rental',snapshot).includes('Actor QA'));assert.equal(snapshot.grand_total,1200000);assert.equal(snapshot.days,1);assert.equal(snapshot.method,'CK TK cá nhân');
+  await c.query(`INSERT INTO ${schema}.staff_profiles(id,staff_code,full_name,phone,store_id,user_id,status) VALUES(990101,'QA990101','Selected employee QA','0900000091',23,143,'active')`);
+  await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,draft}','{"staff_id":"990101","staff_name":""}')::json WHERE id=1`);
+  const selectedStaff=await content.notificationPayload(db,1,'rental',143,['rental']);
+  assert.equal(selectedStaff.contract_staff,'Selected employee QA');assert.equal(selectedStaff.actor,'Actor QA');
   const refund=await content.notificationPayload(db,1,'return',143,['return-1001']);assert.equal(refund.refunded,450000);assert.equal(refund.method,'Tiền mặt');
   assert.equal((await content.notificationPayload(db,1,'renewal',143,['renewal-2'],renewal)).method,'');
   await telegram.saveContractTelegram(db,1,143,admin,{action:'auto',enabled:false});
@@ -32,8 +36,8 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   assert(!event.text.includes('Hình thức thanh toán: CK TK cá nhân'));assert(event.text.includes('Chưa ghi nhận thanh toán'));
   await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,reader,{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()}),e=>e.status===403);
   await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,admin,{action:'send',event_key:event.key,hash:'0'.repeat(64),request_id:randomUUID()}),e=>e.status===409);
-  const photo=Buffer.from([255,216,255,224,7]);
-  for(let i=1;i<=5;i++)await c.query(`INSERT INTO ${schema}.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,$1,'image/jpeg',$2,143)`,[`renewal-2-${i}`,photo]);
+  const photo=Buffer.from([255,216,255,224,7,1]);
+  for(let i=1;i<=5;i++)await c.query(`INSERT INTO ${schema}.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,$1,'image/jpeg',$2,143)`,[`renewal-2-${i}`,Buffer.from([255,216,255,224,7,i])]);
   const stale=event;
   event=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key===stale.key);assert.equal(event.photo_count,5);assert.notEqual(event.hash,stale.hash);
   await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,admin,{action:'send',event_key:stale.key,hash:stale.hash,request_id:randomUUID()}),e=>e.status===409);
@@ -65,8 +69,10 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   assert.equal((await notices.dispatchContractNotifications(fake,1,db,[2])).sent,0);
   await notices.dispatchContractNotifications(async(url,options)=>{const media=JSON.parse(options.body.get('media'));assert.equal(media.length,5);assert.deepEqual(Buffer.from(await options.body.get('photo0').arrayBuffer()),Buffer.from([255,216,255,9]));return Response.json({ok:true,result:media.map((_,i)=>({message_id:i+100}))});},1,db,[1]);
   event=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');assert.equal(event.status,'sent');assert(!event.can_send);assert(!event.can_retry_confirmed_absent);
-  await telegram.saveContractTelegram(db,1,143,admin,{action:'auto',enabled:true});
+  await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,admin,{action:'auto',enabled:true}),e=>e.status===400);
   await notices.queueContractNotification(db,1,'rental','qa-detailed-rental',143,'rental');
+  const detailed=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');
+  await telegram.saveContractTelegram(db,1,143,admin,{action:'send',event_key:detailed.key,hash:detailed.hash,request_id:randomUUID()});
   await notices.dispatchContractNotifications(async()=>Response.json({ok:true,result:[{message_id:20},{message_id:21}]}),5,db);
   const same=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');assert(same.unchanged);assert(!same.can_send);
   await c.query(`UPDATE ${schema}.orders SET contract_number='000867' WHERE id=1`);

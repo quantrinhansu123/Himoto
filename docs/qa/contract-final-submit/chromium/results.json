@@ -1,0 +1,15 @@
+{
+  "passed": 5,
+  "browser": "chromium",
+  "checks": [
+    "Vehicle step visibly restores all six photo categories and panoramic video",
+    "22 photos can be selected in one batch and survive without any Telegram send",
+    "Final confirmation reuses 22 saved vehicle photos and 3 customer documents; uploading and draft save send nothing",
+    "Saving the official contract opens one final read-only preview of every file and the selected employee; no send before explicit click",
+    "One explicit final click sends the whole set once; confirmed content is locked against duplicate sends"
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequests": [],
+  "realBusinessWrites": 0,
+  "realTelegramRequests": 0
+}

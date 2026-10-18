@@ -8,6 +8,7 @@ import { FinalizeCollection, FinalizeResult, balanceCollectionAmounts, finalizeC
 import type { ContractCharge } from '@/lib/management/contract-charges';
 import { DateTime24Field } from './DateTime24Field';
 import { ContractTransactionPhotos } from '@/components/management/ContractTransactionPhotos';
+import { ContractTelegramPanel } from '@/components/management/ContractTelegramPanel';
 
 const money = (value: number) => `${value.toLocaleString('vi-VN')} đ`;
 const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
@@ -23,6 +24,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   const [rentalState,setRentalState] = useState<CollectionState>({collect:false,rows:[]});
   const [error,setError] = useState(''), [saving,setSaving] = useState(false);
   const [photosPending,setPhotosPending]=useState(false);
+  const [completed,setCompleted]=useState<FinalizeResult|null>(null);
   const busy = useRef(false), nextKey = useRef(0);
   const initialMethods = useRef({deposit:depositMethods,rental:rentalMethods,charges});
   const depositDue = Math.max(deposit-(context?.deposit_paid || 0),0), rentalDue = Math.max(total-(context?.paid_amount || 0),0);
@@ -63,12 +65,12 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     });
   }
   async function submit(event: FormEvent) {
-    event.preventDefault(); if(busy.current || !context||photosPending)return; setError('');
+    event.preventDefault(); if(busy.current || completed || !context||photosPending)return; setError('');
     let receipts: FinalizeCollection[];
     try {receipts=[...collections(depositState,'deposit',depositDue),...collections(rentalState,'rental',rentalDue)]; if (reservation && !receipts.length) throw new Error('Nhập khoản tiền giữ xe đã nhận.');}
     catch(cause){setError(cause instanceof Error ? cause.message : 'Kiểm tra các khoản đã nhận.');return;}
     busy.current=true;setSaving(true);
-    try{onDone(await finalizeContract(orderId,{revision,receipts,...(reservation ? {reservation:true as const} : {})}));}
+    try{setCompleted(await finalizeContract(orderId,{revision,receipts,...(reservation ? {reservation:true as const} : {})}));}
     catch(cause){setError(cause instanceof Error ? cause.message : 'Không lưu chính thức được hợp đồng.');}
     finally{busy.current=false;setSaving(false);}
   }
@@ -101,6 +103,10 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       {due > 0 && <p className="mg-payment-state" role="status">{collected(state) === due ? 'Đã thanh toán đủ' : collected(state) > 0 ? 'Thanh toán một phần' : 'Chưa thanh toán'}</p>}
     </fieldset>;
   }
+  if(completed)return <Dialog title={`Kiểm tra & gửi Telegram · ${completed.code}`} onClose={()=>onDone(completed)}>
+    <div className="mg-dialog-body"><p role="status">Đã lưu chính thức hợp đồng {completed.code}. Kiểm tra ảnh và trạng thái gửi bên dưới; bấm Gửi toàn bộ Telegram để gửi cả bộ.</p><ContractTelegramPanel id={orderId} eventKind={reservation?'reservation':'rental'}/></div>
+    <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>onDone(completed)}>Đóng</button></div>
+  </Dialog>;
   return <Dialog title={`${reservation ? 'Xác nhận cọc giữ xe' : 'Xác nhận thanh toán'} · ${code}`} onClose={saving ? ()=>{} : onClose}>
     <form onSubmit={submit}><div className="mg-dialog-body mg-finalize-dialog">
       <p className="mg-composer-hint">{reservation ? 'Nhập đúng tiền giữ xe đã nhận (ví dụ 100.000 hoặc 200.000 đ), thời điểm và tài khoản nhận. Khoản này trừ vào tiền thuê, tạo phiếu Thu ngay; xe ở trạng thái chờ giao, chưa Đang thuê.' : 'Ghi đúng từng khoản tiền đã nhận và tài khoản nhận. Cọc trước ghi ngày nhận trước đó; mỗi lần chuyển khoản hoặc nhận tiền mặt thêm một dòng. Sau xác nhận, hợp đồng được phát hành và xe chuyển sang Đang thuê.'}</p>

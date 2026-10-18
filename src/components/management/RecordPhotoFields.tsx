@@ -5,6 +5,7 @@ import { Camera, ImagePlus, LoaderCircle, X } from 'lucide-react';
 import { PendingPhotos, PhotoEntity, PhotoSlot, SavedPhoto, photoEndpoint, prepareRecordPhoto, saveRecordPhotos, uploadRecordPhoto } from '@/lib/management/record-photos';
 import type { PhotoOcrController } from './usePhotoOcr';
 import { isVideoSlot,prepareRecordVideo } from '@/lib/management/record-photos';
+import { expandContractPhotoSlots,expandablePhotoPrefix } from '@/lib/management/contract-photos';
 
 function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange }: { slot: PhotoSlot; file?: File; savedUrl?: string; disabled: boolean; onChange: (file?: File) => void; onBusyChange: (busy: boolean) => void }) {
   const camera = useRef<HTMLInputElement>(null), library = useRef<HTMLInputElement>(null);
@@ -54,11 +55,20 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
   const [uploadStates, setUploadStates] = useState<Record<string, { loading: boolean; error?: string }>>({});
   const imagePicker=useRef<HTMLInputElement>(null),videoPicker=useRef<HTMLInputElement>(null);
   const [batchBusy,setBatchBusy]=useState(false);
+  slots=entity==='contracts'?expandContractPhotoSlots(slots,[...saved.map(photo=>photo.slot),...Object.keys(value)]):slots;
+  const imagePrefix=entity==='contracts'?expandablePhotoPrefix(slots):undefined;
   const bulk=entity==='contracts'&&slots.length>6;
   const imageCount=slots.filter(slot=>!isVideoSlot(slot.key)).length,videoCount=slots.length-imageCount;
   async function chooseMany(files:File[],video:boolean) {
     if(disabled||batchBusy||!savedReady)return;
     const available=slots.filter(slot=>isVideoSlot(slot.key)===video&&!latestValue.current[slot.key]&&!saved.some(photo=>photo.slot===slot.key));
+    if(!video&&imagePrefix){
+      let index=1;
+      while(available.length<files.length){
+        const key=`${imagePrefix}${index++}`;
+        if(!slots.some(slot=>slot.key===key)&&!latestValue.current[key]&&!saved.some(photo=>photo.slot===key))available.push({key,label:`Ảnh bổ sung ${index-1}`});
+      }
+    }
     if(files.length>available.length){setError(`Còn ${available.length} ô ${video?'video':'ảnh'}. Chọn tối đa số tệp này.`);return;}
     setError('');setBatchBusy(true);busySlots.current.add('__batch');onBusyChange?.(true);
     try{for(let i=0;i<files.length;i++){
@@ -86,16 +96,16 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được ảnh đã lưu.'); });
     return () => controller.abort();
   }, [entity, recordId, retry]);
-  const toolbar=bulk&&<div className="mg-media-upload-toolbar"><p>Tối đa {imageCount} ảnh{videoCount>0?` và ${videoCount} video mỗi giao dịch. Video tối đa 60 giây / 45 MB, nên quay 10–30 giây.`:'. Chọn cùng lúc nhiều ảnh đã chụp trong thư viện.'}</p>
+  const toolbar=bulk&&<div className="mg-media-upload-toolbar"><p>{imagePrefix?'Không giới hạn số ảnh. Có thể tải thêm nhiều đợt.':`Tối đa ${imageCount} ảnh.`}{videoCount>0?` Tối đa ${videoCount} video; mỗi video tối đa 60 giây / 45 MB.`:' Chọn nhiều ảnh từ thư viện.'} Chỉ gửi Telegram khi bấm Gửi toàn bộ ở bước cuối.</p>
     <input hidden ref={imagePicker} type="file" accept="image/*" multiple aria-label={bulkImageLabel==='Chọn nhiều ảnh'?'Chọn nhiều ảnh hồ sơ':bulkImageLabel} disabled={disabled||batchBusy||!savedReady} onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void chooseMany(files,false);}}/>
     {videoCount>0&&<input hidden ref={videoPicker} type="file" accept="video/mp4,video/quicktime,video/webm" multiple aria-label="Chọn nhiều video tình trạng xe" disabled={disabled||batchBusy} onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void chooseMany(files,true);}}/>}
     <button className="mg-button" type="button" disabled={disabled||batchBusy||!savedReady} onClick={()=>imagePicker.current?.click()}><ImagePlus size={16}/>{bulkImageLabel}</button> {videoCount>0&&<button className="mg-button" type="button" disabled={disabled||batchBusy||!savedReady} onClick={()=>videoPicker.current?.click()}>Chọn video</button>}
-    <p role="status">{batchBusy?'Đang xử lý tệp…':`${slots.filter(slot=>!isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} / ${imageCount} ảnh${videoCount>0?` · ${slots.filter(slot=>isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} / ${videoCount} video`:''}`}</p>
+    <p role="status">{batchBusy?'Đang xử lý tệp…':`${slots.filter(slot=>!isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} ảnh${videoCount>0?` · ${slots.filter(slot=>isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} / ${videoCount} video`:''}`}</p>
   </div>;
   return <fieldset className="mg-record-photos"><legend>{title}</legend>
     {bulkPosition==='top'&&toolbar}
     {error && <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={() => setRetry(current => current + 1)}>Thử lại</button></p>}
-    <div className="mg-photo-grid">{slots.filter(slot=>!bulk||value[slot.key]||saved.some(p=>p.slot===slot.key)||slots.find(s=>isVideoSlot(s.key)===isVideoSlot(slot.key)&&!value[s.key]&&!saved.some(p=>p.slot===s.key))?.key===slot.key).map(slot => {
+    <div className="mg-photo-grid">{slots.filter(slot=>!bulk||value[slot.key]||saved.some(p=>p.slot===slot.key)||(!slot.key.includes('-document-')&&/-(?:[1-6]|video-1)$/.test(slot.key))||slots.find(s=>isVideoSlot(s.key)===isVideoSlot(slot.key)&&!value[s.key]&&!saved.some(p=>p.slot===s.key))?.key===slot.key).map(slot => {
       const photo = saved.find(photo => photo.slot === slot.key);
       const state = ocr?.states[slot.key], uploadState = uploadStates[slot.key];
       return <div key={slot.key}><PhotoField slot={slot} file={value[slot.key]} disabled={disabled||batchBusy||!savedReady}

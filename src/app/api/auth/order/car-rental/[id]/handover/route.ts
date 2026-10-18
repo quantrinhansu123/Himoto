@@ -1,6 +1,6 @@
 import { withAccessRequest } from '@/lib/server/access-request';
-import { after,NextRequest, NextResponse } from 'next/server';
-import { queueContractNotification,dispatchContractNotifications } from '@/lib/server/contract-notifications';
+import { NextRequest, NextResponse } from 'next/server';
+import { queueContractNotification } from '@/lib/server/contract-notifications';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { ContractFinalizeError } from '@/lib/server/contract-finalize';
@@ -21,7 +21,6 @@ async function POSTHandler(request: NextRequest, {params}: {params: Promise<{id:
     const data = await handoverReservation(client,Number(id),user.id,input.revision);
     await queueContractNotification(client,Number(id),'handover',`handover:${id}`,user.id,'handover');
     await client.query('COMMIT');
-    after(async()=>{try{await dispatchContractNotifications();}catch{console.error('Contract notification dispatch failed.');}});
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'no-store'}});
   } catch(error) {
     if (client) await client.query('ROLLBACK').catch(()=>{});

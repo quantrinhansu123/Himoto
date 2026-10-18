@@ -1,0 +1,15 @@
+# Gom ảnh và xác nhận gửi Telegram ở bước cuối
+
+- Chụp/chọn ảnh, lưu ảnh, lưu nháp, phát hành hợp đồng, giao/trả xe, gia hạn, thu tiền gia hạn và đổi pin chỉ lưu hồ sơ. Những thao tác này không gửi Telegram.
+- Sau khi xác nhận giao dịch, màn hình cuối hiển thị nội dung và toàn bộ tệp đã lưu. Nhấn **Gửi toàn bộ Telegram** mới tạo yêu cầu gửi. Đóng mà chưa gửi vẫn giữ hồ sơ; có thể mở lại trong chi tiết hợp đồng → Gửi Telegram.
+- Khi thuê: gom ảnh xe/video, ảnh biển số xe còn thuộc hợp đồng, CCCD/hộ chiếu/GPLX đã sao chép từ hồ sơ khách, GPLX chụp khi nhập hợp đồng và ảnh bổ sung. Các bước dùng lại cùng ảnh đã lưu, không yêu cầu tải lại.
+- Bỏ trần 15 ảnh cho ảnh xe và ảnh hồ sơ bổ sung ở cả giao diện, API, truy vấn Telegram và ràng buộc DB. Chọn nhiều ảnh hoặc tải thêm nhiều đợt; mở lại vẫn thấy ảnh từ số 16 trở đi. Mỗi ảnh sau xử lý tối đa 2 MB. Giới hạn video giữ nguyên: tối đa 3 video tình trạng xe, mỗi video 60 giây / 45 MB; đổi pin có một video riêng.
+- **15 trước đây không phải tổng mọi ảnh:** 15 ảnh xe và 15 ảnh bổ sung là hai nhóm riêng; CCCD/GPLX là tệp riêng nữa. Hiện không còn trần số ảnh. Tổng ảnh/video ở bước gửi là toàn bộ tệp thực sự sẽ gửi, sau khi loại bản trùng cùng tham chiếu hoặc cùng dữ liệu binary.
+- Ảnh xe được đưa về phần **Phương tiện**, hiện sẵn toàn cảnh, đầu, đuôi, trái, phải, đồng hồ/phụ kiện và video. Trước đó giao diện chỉ hiện ô trống đầu tiên, làm các góc còn lại bị ẩn; thay đổi này không xóa dữ liệu ảnh.
+- Telegram hiển thị **Nhân viên làm hợp đồng** đã chọn/nhập trong hồ sơ, không lấy tên tài khoản chung của cơ sở thay cho nhân viên. Tên được chốt vào bản nháp khi chọn nhân sự có sẵn. Các giao dịch giao/trả/gia hạn vẫn có dòng riêng cho người thực hiện thao tác.
+- Danh mục bổ sung nhắc hợp đồng đủ chữ ký, bill theo loại thanh toán, ảnh bàn giao/chìa khóa/mũ, 3 trang CCCD VNeID + GPLX hoặc giấy tờ bản cứng, giấy tờ giảm giá và thông tin tùy khách theo biểu mẫu. Không bắt tải lại giấy tờ đã có.
+- Một lần bấm có thể tạo nhiều album Telegram, mỗi album tối đa 10 tệp. Máy chủ tải lần lượt từng album để không giữ tất cả tệp lớn trong bộ nhớ. Lưu mã tin sau mỗi album; trạng thái gửi một phần/mất phản hồi tiếp tục chặn gửi lại tự động. Chỉ mở lại lượt unknown chưa có mã tin sau khi nhân viên xác nhận đã đối chiếu nhóm.
+
+Migration: `sql/2026-10-18-contract-telegram-final-submit.sql` mở rộng slot ảnh, tắt chế độ tự gửi, giữ thông báo tự động chưa gửi ở trạng thái chờ và thêm trigger để bản triển khai cũ cũng không xếp gửi tự động. Giữ nguyên lịch sử sent/unknown, ảnh và giao dịch tiền. Backup trạng thái cũ ở `.backups/telegram-final-submit/before-migration.json` (không commit).
+
+Kiểm tra: `test:gps-contract-integrations` gồm 42 ảnh trong một yêu cầu xác nhận và phân album 10 tệp, trùng ảnh, ảnh biển số, tên nhân viên, snapshot hàng đợi, phân quyền và đối chiếu unknown; `test:counter-workflow`, `test:account-scope`, `test:drafts`, `test:contract-finalize`; UI tổng hợp tại `scripts/check-contract-final-submit-ui.py`. Kiểm thử dùng schema rollback hoặc API/tệp giả, không gửi Telegram thật.

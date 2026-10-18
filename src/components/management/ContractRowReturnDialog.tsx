@@ -11,6 +11,7 @@ import { loadContractReturnableItems, ReturnableContractItem, ReturnInput, retur
 import { ReturnSettlementFields } from './ReturnSettlementFields';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { ContractTransactionPhotos } from './ContractTransactionPhotos';
+import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { DEFAULT_LATE_HOURLY_RATE,lateReturnFee } from '@/lib/management/return-fees';
 import { SelectedVehicleGps,useSelectedVehicleGps } from './SelectedVehicleGps';
 
@@ -54,7 +55,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const [photoPending,setPhotoPending]=useState<Record<number,boolean>>({});
   const photosPending=Object.values(photoPending).some(Boolean);
   const [error, setError] = useState('');
-  const [done, setDone] = useState<{ orderId: number; code: string; due: number | null; depositHeld: number; closes: boolean } | null>(null);
+  const [done, setDone] = useState<{ orderId: number; telegramEvents: {orderId:number;key:string}[]; code: string; due: number | null; depositHeld: number; closes: boolean } | null>(null);
 
   const accept = useCallback((result: ReturnableContractItem[]) => {
     setRows(result);
@@ -141,7 +142,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
       invalidateData(['vehicles', 'customers']);
       await reload(['contracts']);
       if (orderId) setDone({
-        orderId, code,
+        orderId, code, telegramEvents:[...new Set(lines.map(line=>line.row.order_id))].map(id=>({orderId:id,key:`return:${id}:${lines.filter(line=>line.row.order_id===id).map(line=>line.row.item_id).sort((a,b)=>a-b).join(',')}`})),
         due: summary?.due===null||summary?.due===undefined?null:summary.due-chosen.flatMap(row=>row.receipts).reduce((sum,row)=>sum+Number(row.amount),0),
         depositHeld: Math.max((summary?.depositHeld ?? 0)-chosen.reduce((sum,row)=>sum+Number(row.refund?.amount||0),0),0),
         closes: summary?.closes ?? false,
@@ -165,6 +166,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã trả xe hợp đồng {done.code}{done.due !== null && done.due > 0 ? ` · còn thiếu ${formatMoney(done.due)}` : ''}{done.depositHeld > 0 ? ` · cọc đang giữ ${formatMoney(done.depositHeld)}` : ''}.</p>
+          {done.telegramEvents.map(event=><ContractTelegramPanel key={event.key} id={event.orderId} eventKey={event.key}/>)}
           {done.due!==null&&done.due<=0&&done.depositHeld===0?<p>Đã ghi nhận đủ các khoản thu và hoàn cọc đã chọn trong lượt trả xe.</p>:canPayContracts ? <>
             <p>Bấm nút bên dưới để mở phiếu thu/chi Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng.</p>
             {(done.due === null || done.due > 0) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}

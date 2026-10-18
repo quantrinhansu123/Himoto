@@ -2,12 +2,12 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { ContractEventType } from '@/lib/management/contract-telegram';
-import { contractPhotoSlots,contractDocumentSlots,CONTRACT_CUSTOMER_PHOTO_SLOTS,type ContractPhotoPhase } from '@/lib/management/contract-photos';
+import { CONTRACT_CUSTOMER_PHOTO_SLOTS,isContractTransactionPhoto } from '@/lib/management/contract-photos';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null}
 export interface RenewalNotice {version?:number;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;items?:RenewalNotice[]}
 export interface NotificationPayload {
-  code:string;customer:string;phone:string;store:string;actor:string;vehicles:string;total:string;at:string;photos:Attachment[];
+  code:string;customer:string;phone:string;store:string;actor:string;vehicles:string;total:string;at:string;photos:Attachment[];contract_staff?:string;
   vehicle_names?:string;days?:number|null;deposit?:number|null;rental_fee?:number|null;grand_total?:number|null;
   refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
@@ -32,7 +32,7 @@ export function contractNotificationText(kind:ContractEventType,p:NotificationPa
       ...(p.rental_fee!=null&&p.total!=null&&Number(p.total)!==p.rental_fee?[`Phí khác / điều chỉnh: ${money(Number(p.total)-p.rental_fee)}`]:[]),
       `Tổng tiền: ${money(p.grand_total)}`,`Hình thức thanh toán: ${method}`,
       ...(p.deposit_method&&p.deposit_method!==p.method?[`Hình thức thanh toán cọc: ${p.deposit_method}`]:[])];
-  return [...lines,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,`Người thực hiện: ${p.actor}`,`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
+  return [...lines,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,`Nhân viên làm hợp đồng: ${p.contract_staff||'Chưa ghi nhận'}`,...(!['rental','reservation'].includes(kind)?[`Người thực hiện: ${p.actor}`]:[]),`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
 }
 export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
   // Delivery timestamps and the operator clicking Send do not make identical content a new message.
@@ -42,14 +42,21 @@ export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
   return createHash('sha256').update(JSON.stringify(canonical({kind,...content}))).digest('hex');
 }
 export async function notificationPhotos(db:Database,orderId:number,phases:string[]):Promise<Attachment[]> {
-  const slots=[...new Set(phases.flatMap(phase=>[...contractPhotoSlots(phase as ContractPhotoPhase),...contractDocumentSlots(phase as ContractPhotoPhase),...(phase==='rental'?[...CONTRACT_CUSTOMER_PHOTO_SLOTS,{key:'driver-license'}]:[])].map(slot=>slot.key)))];
   const result=await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
-    FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND slot=ANY($2::text[]) ORDER BY slot`,
-    [orderId,slots]);
-  const photos=result.rows.sort((a,b)=>slots.indexOf(a.slot)-slots.indexOf(b.slot)) as Attachment[];
-  const licence=photos.find(photo=>photo.slot==='driver-license');
-  // A licence captured again in the composer may reuse the profile upload.
-  return photos.filter(photo=>!(licence&&photo.slot==='customer-driver-license'&&(photo.cloudinary_public_id?photo.cloudinary_public_id===licence.cloudinary_public_id&&photo.cloudinary_version===licence.cloudinary_version:photo.bytes&&photo.bytes===licence.bytes)));
+    FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND
+      (slot ~ ANY($2::text[]) OR ($3 AND slot ~ '^plate-[1-9][0-9]{0,14}$' AND EXISTS
+        (SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.vehicle_id::text=substring(slot from 7) AND d.deleted_at IS NULL))) ORDER BY slot`,
+    [orderId,phases.map(phase=>`^${phase}-(?:[1-9][0-9]{0,14}|video-[1-3]|document-[1-9][0-9]{0,14})$`).concat(phases.includes('rental')?['^(driver-license|customer-id-front|customer-id-back|customer-driver-license)$']:[]),phases.includes('rental')]);
+  const photos=(result.rows as Attachment[]).filter(photo=>photo.slot.startsWith('plate-')||isContractTransactionPhoto(photo.slot));
+  photos.sort((a,b)=>{
+    const rank=(slot:string)=>slot==='driver-license'?1000:CONTRACT_CUSTOMER_PHOTO_SLOTS.some(p=>p.key===slot)?1001:slot.startsWith('plate-')?999:phases.findIndex(phase=>slot.startsWith(`${phase}-`));
+    return rank(a.slot)-rank(b.slot)||a.slot.localeCompare(b.slot,'en',{numeric:true});
+  });
+  const seen=new Set<string>();
+  return photos.filter(photo=>{
+    const key=photo.mime_type+':'+(photo.cloudinary_public_id?`${photo.cloudinary_cloud_name}/${photo.cloudinary_public_id}/${photo.cloudinary_version}`:createHash('sha256').update(photo.bytes||'').digest('hex'));
+    if(seen.has(key))return false;seen.add(key);return true;
+  });
 }
 export async function notificationPayload(db:Database,orderId:number,kind:ContractEventType,actorId:number,phases:string[],renewal?:RenewalNotice):Promise<NotificationPayload&{store_id:number}> {
   const returnIds=kind==='return'?phases.map(phase=>phase.match(/^return-([1-9]\d*)$/)?.[1]).filter(Boolean):[];
@@ -58,7 +65,11 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   if(kind==='battery_swap'&&!swap)throw Error('Không tìm thấy lượt đổi pin đã xác nhận.');
   const o=(await db.query(`SELECT o.store_id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
     COALESCE(NULLIF(c.name,''),o.customer_name,'') AS customer,COALESCE(NULLIF(c.phone,''),o.customer_phone,'') AS phone,
-    s.store_name AS store,u.name AS actor,o.total::text,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
+    s.store_name AS store,u.name AS actor,
+    COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),
+      (SELECT full_name FROM himoto.staff_profiles WHERE id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'),
+      (SELECT full_name FROM himoto.staff_profiles WHERE user_id=o.contract_responsible_user_id ORDER BY CASE WHEN store_id=o.store_id THEN 0 ELSE 1 END,id LIMIT 1)) AS contract_staff,
+    o.total::text,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
     (SELECT string_agg(DISTINCT COALESCE(NULLIF(v.license,''),v.name),', ') FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicles,
     (SELECT string_agg(DISTINCT v.name,', ') FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicle_names
     FROM himoto.orders o LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id LEFT JOIN himoto.users u ON u.id=$2
@@ -89,7 +100,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const end=draft?.end_date?`${draft.end_date}:00+07:00`:o.return_at;
   const duration=start&&end?Math.ceil((new Date(end).getTime()-new Date(start).getTime())/86400000):NaN;
   const effectiveDeposit=kind==='return'?depositTx.reduce((sum,t)=>sum+Number(t.value),0):deposit;
-  return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
+  return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,
     refunded:eventRefunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{}),

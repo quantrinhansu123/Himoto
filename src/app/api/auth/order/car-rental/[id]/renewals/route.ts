@@ -3,8 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { ContractRenewalError, parseRenewalInput, recordContractRenewal } from '@/lib/server/contract-renewals';
-import { after } from 'next/server';
-import { queueContractNotification, dispatchContractNotifications } from '@/lib/server/contract-notifications';
+import { queueContractNotification } from '@/lib/server/contract-notifications';
 
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
@@ -25,7 +24,6 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     const version=(await client.query('SELECT draft_payload FROM himoto.orders WHERE id=$1',[Number(id)])).rows[0].draft_payload.management_composer.versions.at(-1);
     await queueContractNotification(client,Number(id),'renewal',`renewal:${id}:${data.version}`,user.id,`renewal-${data.version}`,version);
     await client.query('COMMIT');
-    after(async()=>{await dispatchContractNotifications();});
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});

@@ -194,7 +194,8 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   const stores = await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.store_id || null]);
   const vehicleStores = edits.draft.vehicle_store_id && edits.draft.vehicle_store_id !== edits.draft.store_id
     ? await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.vehicle_store_id]) : stores;
-  const staff = await client.query('SELECT id, store_id, user_id FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id || null]);
+  const staff = await client.query('SELECT id, store_id, user_id, full_name FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id || null]);
+  if(staff.rows[0])edits.draft.staff_name=staff.rows[0].full_name;
   for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
     if (!edits.draft[key]) continue;
     const attributed = await client.query('SELECT id,position,status FROM himoto.staff_profiles WHERE id=$1 FOR SHARE',[edits.draft[key]]);

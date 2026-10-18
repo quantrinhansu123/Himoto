@@ -33,12 +33,40 @@ def mock_api(route):
     req = route.request
     path = urlparse(req.url).path.rstrip('/')
     query = parse_qs(urlparse(req.url).query)
+    if path.startswith('/api/auth/record-photos/'):
+        if req.method=='POST':data=dict(copied=0)
+        elif req.method=='GET':data=[]
+        else:raise AssertionError('Unexpected photo write')
+        route.fulfill(json=dict(status='success',data=data))
+        return
+    if path.endswith('/telegram'):
+        assert req.method=='GET', 'No Telegram send is authorized in this regression'
+        route.fulfill(json=dict(status='success',data=dict(auto_enabled=False,next_renewal_version=2,events=[])))
+        return
+    if path in ['/api/auth/gps','/api/auth/payment-events']:
+        route.fulfill(json=dict(status='success',data=[]))
+        return
+    if path=='/api/auth/order/car-rental' and query.get('table')==['1']:
+        raw=state.get('record')
+        rows=[]
+        if raw:
+            draft=raw['draft_payload']['management_composer']['draft']
+            code=raw.get('contract_number') or raw['draft_reference']
+            rows=[dict(raw,code=code,name=code,customer_id=77,store_name='CS nguồn khách QA',vehicle_id=101,
+                vehicle_name=vehicle['name'],license='QA-101',vehicles_json=json.dumps([vehicle]),draft_json=json.dumps(draft),
+                start_date=draft['start_date'],end_date=draft['end_date'],rental_type='daily')]
+        statuses=[state.get('status','draft')] if rows else []
+        data=dict(rows=rows,total=len(rows),scopeCount=len(rows),tabCount=len(rows),page=1,pages=1,
+            statusCounts=[[s,len(rows)] for s in statuses],statuses=statuses,dueCount=0,
+            summary=dict(contractCount=len(rows),blacklistCount=0,totalAmount=300000,receivableAmount=300000-state.get('paid',0),badDebtAmount=0))
+        route.fulfill(json=dict(status='success',data=data))
+        return
     if req.method in ['POST', 'PUT']:
         body = req.post_data_json
         writes.append(dict(path=path, body=copy.deepcopy(body)))
         if path in ['/api/auth/order/car-rental', '/api/auth/order/car-rental/901']:
             assert body['draft']['reservation'] is True
-            assert body['draft']['store_id'] == '1' and body['draft']['vehicle_store_id'] == '2' and body['draft']['staff_id'] == '8'
+            assert body['draft']['store_id'] == '1' and body['draft']['vehicle_store_id'] == '2' and body['draft']['staff_id'] == '8', {key:body['draft'].get(key) for key in ['store_id','vehicle_store_id','staff_id','staff_name']}
             state['revision'] = state.get('revision', 0)+1
             state['record'] = dict(id=901, draft_reference='NHAP-QA-901', status='draft', store_id=1, draft_revision=str(state['revision']),
                 draft_payload=dict(management_composer=dict(version=1, **body)))
@@ -86,6 +114,9 @@ def mock_api(route):
     elif path == '/api/auth/transactions':
         data = [dict(id=h['id'], type='in', status='approved', created_at=h['paid_at'], amount=h['amount'], user_name='QA', order_id=901,
             contract_code='HD-QA-901', payment_method='Tiền mặt', account='Két QA', store_id=1, store_name='CS nguồn khách QA', note=h['note']) for h in state.get('history', [])]
+    elif path=='/api/auth/cashbook/vouchers':
+        rows=[dict(id=h['id'],type='in',created_at=h['paid_at'],amount=h['amount'],user_name='QA',order_id=901,contract_code='HD-QA-901',payment_method='Tiền mặt',account='Két QA',store_id=1,store_name='CS nguồn khách QA',content=h['note'],reason='Thanh toán hợp đồng') for h in state.get('history',[])]
+        data=dict(total=len(rows),income=dict(total=len(rows),amount=sum(row['amount'] for row in rows),page=1,pageSize=5,rows=rows),expense=dict(total=0,amount=0,page=1,pageSize=5,rows=[]),actors=[['id:80','QA']])
     elif path in ['/api/session', '/api/auth/me']:
         route.fulfill(json=dict(user=dict(id=80, name='QA')))
         return
@@ -121,6 +152,9 @@ with sync_playwright() as p:
         form.locator('#contract-id-card').fill(customer['phone'])
         expect(form.locator('#contract-customer-name')).to_have_value(customer['name'])
         expect(form.locator('#contract-store')).to_have_value('2')
+        # The source is an explicit choice; selecting a customer preserves an existing source.
+        form.get_by_role('tab',name='Hợp đồng & pháp lý',exact=False).click()
+        form.locator('#contract-customer-source-store').select_option('CS nguồn khách QA')
         form.get_by_role('tab', name='Phương tiện', exact=False).click()
         if width == 320:
             form.locator('#contract-vehicle-store-filter').select_option('')
@@ -130,6 +164,7 @@ with sync_playwright() as p:
         if width == 320:
             form.get_by_role('tab', name='Khách hàng', exact=False).click()
             expect(form.locator('#contract-staff-options option')).to_have_attribute('value', staff[0]['full_name'])
+            expect(form.locator('#contract-staff')).to_be_enabled()
             form.locator('#contract-staff').fill(staff[0]['full_name'])
         form.get_by_role('tab', name='Chi phí', exact=False).click()
         expect(form.locator('#contract-total_amount')).to_have_value('300.000')
@@ -147,11 +182,14 @@ with sync_playwright() as p:
         if width in [375, 1440]:
             confirm.screenshot(path=str(out/f'advance-{width}.png'))
         confirm.get_by_role('button', name='Xác nhận đã nhận cọc giữ xe', exact=True).click()
+        final=page.get_by_role('dialog',name='Kiểm tra & gửi Telegram · HD-QA-901')
+        expect(final).to_be_visible()
+        final.get_by_role('button',name='Đóng',exact=True).click()
         expect(form).to_have_count(0)
         expect(page).to_have_url(args.url+'/contracts?contract_id=901')
         page.wait_for_load_state('networkidle')
-        page.reload(wait_until='networkidle')
-        page.get_by_role('button', name='Thao tác HD-QA-901', exact=True).click()
+        page.goto(args.url+'/contracts',wait_until='networkidle')
+        page.get_by_label('Thao tác HD-QA-901', exact=True).click()
         expect(page.get_by_role('menuitem', name='Trả xe', exact=True)).to_have_count(0)
         page.get_by_role('menuitem', name='Giao xe', exact=True).click()
         delivery = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Giao xe đã đặt cọc', exact=True))
@@ -161,6 +199,9 @@ with sync_playwright() as p:
         if width == 375:
             delivery.screenshot(path=str(out/'handover-375.png'))
         delivery.get_by_role('button', name='Xác nhận giao xe', exact=True).click()
+        final=page.get_by_role('dialog',name='Kiểm tra & gửi Telegram · Giao xe')
+        expect(final).to_be_visible()
+        final.get_by_role('button',name='Đóng',exact=True).click()
         expect(page).to_have_url(args.url+'/cashbook?contract_id=901&purpose=debt')
         pay = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Thanh toán hợp đồng HD-QA-901', exact=True))
         expect(pay).to_contain_text('200.000')
@@ -176,12 +217,15 @@ with sync_playwright() as p:
     state['record'].update(status='deposit_contract', draft_revision='5')
     page.set_viewport_size(dict(width=375, height=812))
     page.goto(args.url+'/contracts', wait_until='networkidle')
-    page.get_by_role('button', name='Thao tác HD-QA-901', exact=True).click()
+    page.get_by_label('Thao tác HD-QA-901', exact=True).click()
     page.get_by_role('menuitem', name='Giao xe', exact=True).click()
     delivery = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Giao xe đã đặt cọc', exact=True))
     expect(delivery).to_contain_text('300.000 đ')
     writes_before_prepaid_delivery = len(writes)
     delivery.get_by_role('button', name='Xác nhận giao xe', exact=True).click()
+    final=page.get_by_role('dialog',name='Kiểm tra & gửi Telegram · Giao xe')
+    expect(final).to_be_visible()
+    final.get_by_role('button',name='Đóng',exact=True).click()
     expect(delivery).to_have_count(0)
     page.wait_for_load_state('networkidle')
     expect(page).to_have_url(args.url+'/contracts')

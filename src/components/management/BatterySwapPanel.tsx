@@ -5,6 +5,7 @@ import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 import { ContractWorkflowGuide } from './ContractWorkflowGuide';
 import { ContractTransactionPhotos } from './ContractTransactionPhotos';
+import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { loadPaymentContext,paymentAccounts,PAYMENT_METHODS,type PaymentContext,type PaymentMethod,vietnamPaymentTime } from '@/lib/management/contract-payments';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { formatDateTime,formatMoney } from '@/lib/formatters';
@@ -32,12 +33,14 @@ export function BatterySwapPanel({orderId}:{orderId:number}){
 }
 function BatterySwapDialog({orderId,swap,onClose}:{orderId:number;swap:Swap;onClose:()=>void}){
  const {invalidateData,notify}=useManagement();const [context,setContext]=useState<PaymentContext>(),[percent,setPercent]=useState(''),[note,setNote]=useState(''),[collect,setCollect]=useState(false),[method,setMethod]=useState<PaymentMethod>('cash'),[account,setAccount]=useState(''),[paidAt,setPaidAt]=useState(vietnamPaymentTime),[pending,setPending]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0);
+ const [completed,setCompleted]=useState(false);
  const receiptId=useRef(crypto.randomUUID()),busy=useRef(false);
  useEffect(()=>{const controller=new AbortController();void loadPaymentContext(orderId,controller.signal).then(setContext).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được số tiền hợp đồng.');});return()=>controller.abort();},[orderId,retry]);
  const valid=/^\d{1,3}$/.test(percent)&&Number(percent)<=100,fee=valid&&Number(percent)<20?100000:0,accounts=context?paymentAccounts(context,method):[],chosen=accounts.find(row=>String(row.id)===account)||accounts[0];
+ if(completed)return <Dialog title="Kiểm tra & gửi Telegram · Đổi pin" onClose={onClose}><div className="mg-dialog-body"><p role="status">Đã ghi nhận đổi pin. Kiểm tra ảnh rồi gửi cả bộ.</p><ContractTelegramPanel id={orderId} eventKey={`battery-swap:${orderId}:${swap.id}`}/></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button></div></Dialog>;
  return <Dialog title={`Đổi pin · lượt #${swap.id}`} onClose={()=>{if(!saving)onClose();}}><form onSubmit={async event=>{event.preventDefault();if(busy.current||pending||!context||!valid)return;busy.current=true;setSaving(true);setError('');try{
   await request(orderId,{action:'confirm',id:swap.id,revision:swap.revision,order_revision:context.revision,battery_percent:Number(percent),note,...(fee&&collect?{receipt:{request_id:receiptId.current,method,account_id:chosen?.id,paid_at:paidAt}}:{})});
-  invalidateData(['contracts']);notify(`Đã ghi nhận đổi pin${fee?` · phí ${formatMoney(fee)}${collect?' đã thu':' chưa thu'}`:''}.`);onClose();
+  invalidateData(['contracts']);notify(`Đã ghi nhận đổi pin${fee?` · phí ${formatMoney(fee)}${collect?' đã thu':' chưa thu'}`:''}.`);setCompleted(true);
  }catch(cause){setError(cause instanceof Error?cause.message:'Chưa ghi nhận được đổi pin.');}finally{busy.current=false;setSaving(false);}}}>
   <div className="mg-dialog-body"><ContractWorkflowGuide workflow="battery_swap"/>
    <div className="mg-field"><label htmlFor="swap-battery-percent">Phần trăm pin lúc nhận (%)</label><input id="swap-battery-percent" type="number" min={0} max={100} value={percent} onChange={event=>setPercent(event.target.value)} required/></div>
