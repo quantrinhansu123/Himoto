@@ -1,8 +1,9 @@
 {
-  "passed": 2,
+  "passed": 3,
   "browser": "chromium",
   "checks": [
     "Vehicle cards show connected/stopped separately from OFF/stale/unavailable/unmapped; a failed refresh still reads status on the five-second cycle",
+    "An open vehicle detail follows new GPS reads from ON to OFF and back without reopening; ignition remains independent",
     "GPS detail shows independent sync/heartbeat/old-position times and never renders seven-day-old 12 km/h as current speed at 390/1440px"
   ],
   "javascriptErrors": [],

@@ -47,6 +47,15 @@ with sync_playwright() as p:
     assert len(refreshes)>=3 and len(reads)>=initial+2,(refreshes,reads)
     assert all(b-a>=3.8 for a,b in zip(refreshes,refreshes[1:])),refreshes
     checks.append('Vehicle cards show connected/stopped separately from OFF/stale/unavailable/unmapped; a failed refresh still reads status on the five-second cycle')
+    target.locator('.mg-mobile-card-main').click();dialog=page.locator('dialog.mg-vehicle-detail')
+    expect(dialog).to_contain_text('ON · Đang dừng');expect(dialog).to_contain_text('Khóa điện: Tắt')
+    vehicles[0]['gps_normalized_status']='offline'
+    expect(dialog.get_by_text('OFF · Mất kết nối',exact=True)).to_be_visible(timeout=12000)
+    dialog.screenshot(path=str(out/'open-vehicle-updated-offline-390.png'))
+    vehicles[0]['gps_normalized_status']='stopped'
+    expect(dialog.get_by_text('ON · Đang dừng',exact=True)).to_be_visible(timeout=12000)
+    dialog.locator('.mg-dialog-footer').get_by_role('button',name='Đóng',exact=True).click()
+    checks.append('An open vehicle detail follows new GPS reads from ON to OFF and back without reopening; ignition remains independent')
     for width in [390,1440]:
         page.set_viewport_size(dict(width=width,height=900));page.wait_for_function('document.documentElement.scrollWidth<=innerWidth')
         if width==390:target.evaluate("el=>el.scrollIntoView({block:'center'})")

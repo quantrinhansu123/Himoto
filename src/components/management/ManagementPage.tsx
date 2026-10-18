@@ -381,7 +381,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       }} /></ManagementDataBoundary>}
     {viewing && kind === 'customers' && <CustomerDetail row={viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }} />}
     {viewing && kind === 'stores' && <StoreDetail row={viewing} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }} />}
-    {viewing && kind === 'vehicles' && <VehicleDetail row={viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }}
+    {viewing && kind === 'vehicles' && <VehicleDetail row={dataset?.vehicles.find(item=>item.id===viewing.id)||viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }}
       onAction={mode => { setVehicleAction({ mode, vehicle: viewing }); setViewing(null); }} />}
     {vehicleAction && <VehicleActionDialog mode={vehicleAction.mode} vehicle={vehicleAction.vehicle} onClose={() => setVehicleAction(null)} />}
     {handoverId && <ContractHandoverDialog id={handoverId} onClose={()=>setHandoverId(null)} onDone={context=>{setHandoverId(null);invalidateData(['contracts','vehicles']);notify(`Đã giao xe đơn ${context.code}. Tiền thuê trả trước được giữ nguyên.`);if (canPayContracts && context.remaining !== null && context.remaining > 0) router.push(cashbookPaymentPath(context.id, 'debt'));else void ensureData(['contracts','vehicles'],true).catch(()=>{});}} />}

@@ -15,6 +15,7 @@ Sửa:
 - Danh sách và chọn xe dùng chung SQL chọn thiết bị: ưu tiên thiết bị còn trong tài khoản, đồng bộ mới hơn rồi heartbeat/id. Không dùng trạng thái của vị trí lịch sử thay cho trạng thái lấy mẫu hiện tại.
 - Lưu riêng thời điểm tín hiệu, bản tin và vị trí; heartbeat đổi được lưu dù tọa độ không đổi. Không gán thời điểm vị trí mới khi tọa độ thiếu/không hợp lệ và vẫn giữ tọa độ trước đó.
 - Hiện mốc **HIMOTO đọc**, **Tín hiệu thiết bị**, **Vị trí GPS**, đánh dấu vị trí cũ. Refresh lỗi vẫn đọc DB để cập nhật nhãn cũ; giữ nhịp 5 giây, chống yêu cầu chồng nhau và dừng polling khi tab ẩn.
+- Cửa sổ chi tiết xe theo dữ liệu đọc mới trong lúc đang mở, không giữ nhãn GPS tại thời điểm mở cửa sổ. Kiểm tra ON → OFF → ON ngay trong cửa sổ.
 
 Nguồn đối chiếu chính: mã monitor hiện hành của [Protrack](https://real.gpscenter.xyz/V2/dist/static/js/0.588b9178a51d20f36f48.js), đọc lại ngày 18/10/2026, khớp bản asset đang được nhà cung cấp phục vụ. Đối chiếu trực tiếp 343 thiết bị từ hai tài khoản Protrack: 343/343 khớp, tại mẫu kiểm tra có 39 phân loại thay đổi so với thuật toán cũ. Không gọi lệnh thiết bị hoặc liên hệ nhà cung cấp.
 
@@ -22,4 +23,6 @@ Migration cộng thêm `sql/2026-10-18-gps-status-evidence.sql`: 3 cột thời 
 
 Kiểm tra: `test:gps-contract-integrations` gồm ranh giới 25 phút/35 giây, tốc độ thấp, timestamp giây/mili giây, timestamp lỗi/tương lai, chọn thiết bị và dữ liệu cũ; `test:gps-events`, `test:account-scope`, typecheck/lint/build. UI giả lập tại `scripts/check-gps-status-ui.py`: 390/1440px, nhịp 5 giây khi lỗi refresh, nhãn ON/OFF/cũ và không hiển thị tốc độ lưu cũ như tốc độ hiện tại. Nhật ký và số liệu đọc thực tế ở `.backups/gps-status-debug/`.
 
-Kết quả trước triển khai: 23 kiểm tra tích hợp, 4 kiểm tra sự kiện GPS, 17 kiểm tra phân quyền đạt; build (gồm lint/typecheck) đạt. Chromium và WebKit đều đạt 2 luồng UI tại 390/1440px, không lỗi JavaScript hoặc request ngoài fixture. Ảnh và JSON tại `qa/gps-status-parity/`. Trường hợp tọa độ thiếu một phía giữ nguyên cả cặp tọa độ trước và mốc vị trí, vẫn cập nhật heartbeat mới. QA không ghi giao dịch thật hoặc gửi Telegram thật.
+Kết quả trước triển khai: 23 kiểm tra tích hợp, 4 kiểm tra sự kiện GPS, 17 kiểm tra phân quyền đạt; build (gồm lint/typecheck) đạt. Chromium và WebKit đều đạt 3 luồng UI tại 390/1440px, gồm chuyển ON → OFF → ON trong cửa sổ chi tiết đang mở, không lỗi JavaScript hoặc request ngoài fixture. Ảnh và JSON tại `qa/gps-status-parity/`. Trường hợp tọa độ thiếu một phía giữ nguyên cả cặp tọa độ trước và mốc vị trí, vẫn cập nhật heartbeat mới. QA không ghi giao dịch thật hoặc gửi Telegram thật.
+
+Kiểm tra chỉ đọc bản triển khai `c779f36` lúc 23:18 ngày 18/10/2026: 369/369 xe khớp trạng thái giữa API danh sách và chọn xe lập/trả hợp đồng; riêng 092.33 khớp cả trang GPS, hiện `stopped`, khóa điện tắt, giữ mốc vị trí thực ngày 11/10. Cả 4 tài khoản tiếp tục đồng bộ, scheduler HTTP 200; phân quyền cơ sở và chặn chưa đăng nhập đạt. Chromium và WebKit đọc dữ liệu thật đều xác nhận nhãn ON · Đang dừng và không hiện 12 km/h cũ. Bằng chứng riêng ở `.backups/gps-status-debug/live-verification.json` và `live-ui/` (không commit).
