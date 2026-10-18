@@ -4,10 +4,12 @@
 - Một kết quả tự điền hồ sơ, CCCD ngày/nơi cấp, GPLX, địa chỉ và người thân. Trùng SĐT trả đủ hồ sơ để chọn; mỗi lựa chọn có cơ sở quản lý và cơ sở thuê lần đầu. Lỗi kết nối không hiển thị thành “chưa có khách”.
 - Hiển thị **Cơ sở nguồn khách (hồ sơ)** từ `customers.store_id` và **Thuê lần đầu tại** từ cơ sở nguồn/doanh thu của hợp đồng thuê sớm nhất. Loại bản nháp, đặt trước, đơn hủy và đơn đã xóa. Sắp xếp theo thời gian thuê của đơn/dòng xe; dữ liệu cũ thiếu cả hai dùng thời điểm tạo đơn, cuối cùng dùng ID để phân định. Chưa có lịch sử thuê thì ghi rõ, không suy ra từ cơ sở nguồn.
 - Đổi cơ sở nguồn/doanh thu giữ khách đã chọn. Lưu nháp, phát hành và nhập hợp đồng Excel cho phép dùng khách thuộc cơ sở khác, giữ nguyên ID và `customers.store_id`. Nhân sự gợi ý và tài khoản thu theo cơ sở nguồn/doanh thu; xe chọn toàn hệ thống, kho xe giữ nguyên. Xem `docs/cross-branch-rentals.md`.
+- Với tài khoản nhân viên giới hạn cơ sở, hai API tra cứu chính xác dùng kết nối đọc toàn hệ thống sau khi xác thực và kiểm tra quyền `customers.read`. Danh sách, hợp đồng và thu/chi vẫn dùng kết nối có RLS. Migration `docs/sql/2026-10-18-cross-branch-customer-lookup.sql` cho phép khóa ID khách khi lưu nháp và đọc hồ sơ khách có hợp đồng tại cơ sở mình; không cho sửa/xóa hồ sơ hoặc ảnh CCCD thuộc cơ sở khác, không chuyển chủ hồ sơ. Không cấp `scope_all` cho tài khoản cơ sở.
 - Chức vụ cho gõ mới và chọn gợi ý: PT, TPKD, QL PTKD, QTPGD… Gõ “Nhân viên kinh doanh” gợi ý **NVKD**; lưu thống nhất NVKD. Gõ QL hoặc Quản lý có gợi ý chức vụ quản lý; không tự đoán chức vụ của một giá trị mới.
 
 ## Kiểm tra
 
+- Bản sửa phân quyền 18/10/2026: `node scripts/check-customer-global-search.cjs --live-temp` (4 nhóm), `npm.cmd run test:account-scope` (10 nhóm, gồm lưu/phát hành khách khác cơ sở và chặn sửa hồ sơ/ảnh CCCD), `npm.cmd run test:scoped-pool` (3 nhóm). Dữ liệu kiểm thử nằm trong TEMP/schema riêng và được rollback, không tạo hợp đồng hoặc phiếu thu/chi vận hành.
 - `npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd run build`.
 - `npm.cmd run test:contracts`: 13 nhóm, có tra SĐT toàn cơ sở và lỗi API.
 - `node scripts/check-customer-global-search.cjs --live-temp`: 4 nhóm; SQL và GET thật chạy trên bảng PostgreSQL TEMP, lưu và phát hành hợp đồng khác cơ sở giữ chủ hồ sơ, rollback toàn bộ. Sequence của bảng TEMP tách khỏi dữ liệu vận hành.

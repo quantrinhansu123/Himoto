@@ -1,6 +1,6 @@
 import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
-import { himotoPool } from '@/lib/server/himoto-database';
+import { himotoPool, ownerDatabase } from '@/lib/server/himoto-database';
 import { CONTRACT_LIST_SQL, DraftSaveError, contractListScopeClause, saveDatabaseDraft } from '@/lib/server/contract-drafts';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { STORE_SELECT_SQL } from '@/lib/server/store-management';
@@ -176,7 +176,10 @@ async function GETHandler(request: NextRequest, { params }: Params) {
     if (accountTx) return await listAccountTransactions(accountTx.kind, accountTx.id, request.nextUrl.searchParams);
     if (key === 'customers/search-by-id-card') {
       const idCard = request.nextUrl.searchParams.get('id_card')?.replace(/\s+/g, '') || '';
-      const result = await himotoPool.query(
+      if (!/^(?:\d{9}|\d{12})$/.test(idCard)) return NextResponse.json({ status: 'success', data: null }, { headers: { 'Cache-Control': 'no-store' } });
+      // Exact identity lookup is shared across branches. Keep list/detail reads
+      // and every mutation on the scoped pool.
+      const result = await ownerDatabase.query(
         `${CUSTOMER_PROFILE_SQL}
          WHERE regexp_replace(COALESCE(c.id_card, ''), '\\s+', '', 'g') = $1 LIMIT 2`,
         [idCard],
@@ -187,7 +190,7 @@ async function GETHandler(request: NextRequest, { params }: Params) {
     if (key === 'customers/search') {
       const query = request.nextUrl.searchParams.get('query')?.replace(/\D/g, '') || '';
       if (query.length < 9 || query.length > 13) return NextResponse.json({ status: 'success', data: [] }, { headers: { 'Cache-Control': 'no-store' } });
-      const result = await himotoPool.query(CUSTOMER_SEARCH_SQL, [query]);
+      const result = await ownerDatabase.query(CUSTOMER_SEARCH_SQL, [query]);
       return NextResponse.json({ status: 'success', data: result.rows }, { headers: { 'Cache-Control': 'no-store' } });
     }
     const query = listQueries[key];

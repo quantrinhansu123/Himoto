@@ -10,6 +10,7 @@ import { chargeTotal } from '@/lib/management/contract-charges';
 import { CONTRACT_TYPES } from '@/lib/management/config';
 import { ContractTypeError, resolveDraftContractType, validContractTypeId } from './contract-types';
 import type { ContractDraft } from '@/lib/management/contract-document';
+import { dataAccess } from './access-context';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
@@ -199,8 +200,13 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   const vehicles = await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id) WHERE v.id = ANY($1::bigint[])`, [ids]);
   if (edits.draft.customer_id) {
-    const customers = await client.query('SELECT id FROM himoto.customers WHERE id = $1 FOR SHARE', [edits.draft.customer_id]);
-    if (!customers.rowCount) throw new DraftSaveError('Không tìm thấy hồ sơ khách hàng. Hãy tra cứu lại.');
+    const scope = dataAccess.getStore();
+    // A branch may rent to a customer found by global lookup without acquiring
+    // permission to edit that customer's source profile.
+    const customers = await client.query(scope && scope.access_role !== 'admin' && !scope.scope_all
+      ? 'SELECT himoto.lock_customer_for_rental($1) AS id'
+      : 'SELECT id FROM himoto.customers WHERE id = $1 FOR SHARE', [edits.draft.customer_id]);
+    if (!customers.rows[0]?.id) throw new DraftSaveError('Không tìm thấy hồ sơ khách hàng. Hãy tra cứu lại.');
   }
   const existingCode = previous ? String(previous.contract_number || previous.draft_reference || `#${id}`) : '';
   const dataset: ManagementDataset = {

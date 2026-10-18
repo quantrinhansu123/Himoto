@@ -32,6 +32,7 @@ async function main() {
   const { NextRequest, NextResponse } = require('next/server');
   const session = load(path.join(root, 'lib/server/management-session'));
   const originalProtection = session.protectDatabaseRequest;
+  const originalUserFromSession = session.userFromSession;
   const imageRoute = load(path.join(root, 'app/api/auth/record-photos/[entity]/[id]/[slot]/route'));
   const listRoute = load(path.join(root, 'app/api/auth/record-photos/[entity]/[id]/route'));
   const params = { params: Promise.resolve({ entity: 'customers', id: '1', slot: 'id_front' }) };
@@ -42,11 +43,12 @@ async function main() {
     assert.equal((await imageRoute.PUT(request, params)).status, 401);
     assert.equal((await listRoute.GET(request, params)).status, 401);
     session.protectDatabaseRequest = async () => null;
-    const oversized = new NextRequest(request.url, { method: 'PUT', body: Buffer.alloc(2 * 1024 * 1024 + 1), headers: { 'Content-Type': 'image/jpeg' } });
+    session.userFromSession = async () => ({ id: 7, access_role: 'admin', scope_all: true });
+    const oversized = new NextRequest(request.url, { method: 'PUT', body: Buffer.alloc(2 * 1024 * 1024 + 1), headers: { 'Content-Type': 'image/jpeg', Origin: 'http://localhost' } });
     assert.equal((await imageRoute.PUT(oversized, params)).status, 413);
-    const declaredSize = new NextRequest(request.url, { method: 'PUT', body: jpeg, headers: { 'Content-Length': String(2 * 1024 * 1024 + 1) } });
+    const declaredSize = new NextRequest(request.url, { method: 'PUT', body: jpeg, headers: { 'Content-Length': String(2 * 1024 * 1024 + 1), Origin: 'http://localhost' } });
     assert.equal((await imageRoute.PUT(declaredSize, params)).status, 413);
-  } finally { session.protectDatabaseRequest = originalProtection; }
+  } finally { session.protectDatabaseRequest = originalProtection; session.userFromSession = originalUserFromSession; }
   checks.push('image reads, metadata and writes all enforce session protection; streamed and declared oversize uploads stop before database access');
 
   if (process.argv.includes('--live-temp')) {

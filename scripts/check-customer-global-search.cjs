@@ -10,27 +10,38 @@ async function run() {
   const { createContractDraft, customerDetails, vehicleDetails } = load(path.join(root, 'lib/management/contract-document'));
   const { mapApiRow } = load(path.join(root, 'lib/management/repository'));
   const session = load(path.join(root, 'lib/server/management-session'));
-  const db = load(path.join(root, 'lib/server/himoto-database')).himotoPool;
-  const descriptors = Object.getOwnPropertyDescriptors(db), auth = session.protectDatabaseRequest;
+  const { himotoPool: db, ownerDatabase } = load(path.join(root, 'lib/server/himoto-database'));
+  const descriptors = Object.getOwnPropertyDescriptors(db), ownerDescriptors = Object.getOwnPropertyDescriptors(ownerDatabase);
+  const auth = session.protectDatabaseRequest, userFromSession = session.userFromSession;
+  const branchUser = { id: 151, access_role: 'branch_staff', store_id: 23, scope_all: false, permissions: ['customers.read'] };
   const checks = [], queries = [];
   try {
     session.protectDatabaseRequest = async () => null;
-    Object.defineProperty(db, 'query', { configurable: true, value: async (sql, values) => { queries.push({ sql, values }); return { rows: [] }; } });
+    session.userFromSession = async token => token === 'qa-session' ? branchUser : null;
+    Object.defineProperty(db, 'query', { configurable: true, value: async () => { throw Error('Exact customer lookup must not use the branch-scoped pool'); } });
+    Object.defineProperty(ownerDatabase, 'query', { configurable: true, value: async (sql, values) => { queries.push({ sql, values }); return { rows: [] }; } });
     const route = load(path.join(root, 'app/api/auth/[...path]/route'));
-    const search = query => route.GET(new NextRequest(`http://localhost/api/auth/customers/search?${query}`), { params: Promise.resolve({ path: ['customers','search'] }) });
+    const search = (query, token = 'qa-session') => route.GET(new NextRequest(`http://localhost/api/auth/customers/search?${query}`, { headers: { Cookie: `himoto_management_session=${token}` } }), { params: Promise.resolve({ path: ['customers','search'] }) });
     for (const suffix of ['', '&store_id=23', '&store_id=31']) {
       const response = await search(`query=090.000.0011${suffix}`);
       assert.equal(response.status, 200); assert.deepEqual(queries.at(-1).values, ['0900000011']);
       assert.equal(queries.at(-1).sql, CUSTOMER_SEARCH_SQL);
     }
+    const identitySearch = query => route.GET(new NextRequest(`http://localhost/api/auth/customers/search-by-id-card?${query}`, { headers: { Cookie: 'himoto_management_session=qa-session' } }), { params: Promise.resolve({ path: ['customers','search-by-id-card'] }) });
+    assert.equal((await identitySearch('id_card=001234567890')).status, 200);
+    assert.deepEqual(queries.at(-1).values, ['001234567890']);
     const count = queries.length;
+    assert.equal((await (await identitySearch('id_card=')).json()).data, null); assert.equal(queries.length, count);
     assert.deepEqual((await (await search('query=123')).json()).data, []); assert.equal(queries.length, count);
-    session.protectDatabaseRequest = auth;
-    assert.equal((await search('query=0900000011')).status, 401); assert.equal(queries.length, count);
-    checks.push('authenticated lookup works without a branch, ignores legacy branch filters, rejects short queries and still requires login');
+    assert.equal((await search('query=0900000011', '')).status, 401); assert.equal(queries.length, count);
+    branchUser.permissions = [];
+    assert.equal((await search('query=0900000011')).status, 403); assert.equal(queries.length, count);
+    branchUser.permissions = ['customers.read'];
+    checks.push('real access wrapper authenticates branch staff, requires customers.read, ignores branch filters and uses the global connection only for exact lookup');
 
     if (process.argv.includes('--live-temp')) {
       Object.defineProperties(db, descriptors);
+      Object.defineProperties(ownerDatabase, ownerDescriptors);
       const c = await db.connect();
       const tables = ['customers','orders','order_vehicle_details','stores','staff_profiles','vehicles','transactions','users','banks','cash','management_contract_payments'];
       const proxy = { query: (sql, values) => {
@@ -80,6 +91,7 @@ async function run() {
 
         session.protectDatabaseRequest = async () => null;
         Object.defineProperty(db, 'query', { configurable: true, value: proxy.query });
+        Object.defineProperty(ownerDatabase, 'query', { configurable: true, value: proxy.query });
         for (const suffix of ['', '&store_id=23', '&store_id=31']) {
           const payload = await (await search(`query=0900000011${suffix}`)).json();
           assert.deepEqual(payload.data.map(row => Number(row.id)), [8,7]);
@@ -114,7 +126,7 @@ async function run() {
         checks.push('PostgreSQL TEMP: save and finalize cross-branch rentals preserve customer ID and ownership; drafts do not become first rentals; a first issued rental records its actual branch');
       } finally { await c.query('ROLLBACK'); c.release(); }
     }
-  } finally { session.protectDatabaseRequest = auth; Object.defineProperties(db, descriptors); }
+  } finally { session.protectDatabaseRequest = auth; session.userFromSession = userFromSession; Object.defineProperties(db, descriptors); Object.defineProperties(ownerDatabase, ownerDescriptors); }
   console.log(JSON.stringify({ passed:checks.length, checks },null,2));
 }
 run().then(()=>process.exit(0)).catch(error=>{ console.error(error.message); process.exit(1); });
