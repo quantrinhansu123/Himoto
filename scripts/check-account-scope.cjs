@@ -11,6 +11,8 @@ async function main(){const c=await pool.connect();try{
   let migration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-17-account-access.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('SCHEMA himoto','SCHEMA qa_access_scope').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   for(const key of ['scope_all','store_id','actor_id','operation','transfer_vehicle_id'])migration=migration.replaceAll(`qa_access_scope.${key}'`,`himoto.${key}'`);
   await c.query(migration);await c.query(migration);
+  const numbering=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-paper-contract-number.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
+  await c.query(numbering);await c.query(numbering);
   const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   await c.query(duplicates);await c.query(duplicates);
   // Every generated ID belongs to this rollback-only schema, never a production sequence.
@@ -83,6 +85,9 @@ async function main(){const c=await pool.connect();try{
   await c.query("INSERT INTO qa_access_scope.orders(id,store_id,customer_id,order_status,order_mode,pid,total,draft_reference,draft_payload) VALUES(92003,80001,90001,'draft','draft',0,'0','NHAP-QA-3',$1)",[JSON.stringify(draft)]);
   await c.query("SELECT set_config('himoto.operation','',true)");await c.query('SET LOCAL ROLE himoto_scoped');
   assert.equal((await c.query('SELECT id FROM qa_access_scope.orders WHERE id=92002')).rowCount,0);
+  assert.equal((await c.query("SELECT qa_access_scope.contract_number_available('QA-PRIVATE-B',92003) AS available")).rows[0].available,false);
+  assert.equal((await c.query('SELECT id FROM qa_access_scope.orders WHERE id=92002')).rowCount,0);
+  checks.push('Paper contract numbers detect duplicates in hidden branches using a boolean-only function without exposing other-branch records');
   await assert.rejects(dataAccess.run({...scope,id:70001,store_id:80001},async()=>finalize(proxy,92003,70001,{revision:await revision('orders',92003),paid_at:paidAt,deposit:null,rental:null})),e=>e.status===409&&!e.message.includes('QA-PRIVATE-B'));
   checks.push('A hidden other-branch open contract still prevents double rental without exposing its code or customer');
   await c.query('RESET ROLE');
@@ -105,6 +110,7 @@ async function main(){const c=await pool.connect();try{
   const {saveDatabaseDraft}=load(path.join(root,'lib/server/contract-drafts'));
   const dataset={stores:[{id:80001,name:'Cơ sở A QA'}],staff:[{id:94001,store_id:80001}],vehicles:[{id:91003,name:'Xe C QA',license:'QA-C',store_id:80001}],customers:[],contracts:[]};
   const crossDraft=createContractDraft(dataset,'80001');
+  crossDraft.contract_number='0000867';
   crossDraft.customer_id=90002;crossDraft.customer=customerDetails({id:90002,name:'Khách B QA',phone:'0900000002',id_card:'001234567802',address:'Địa chỉ QA',store_id:80002});
   crossDraft.staff_id='94001';crossDraft.vehicles=[vehicleDetails(dataset.vehicles[0],crossDraft.customer)];
   crossDraft.start_date='2026-10-11T08:00';crossDraft.end_date='2026-10-13T08:00';crossDraft.unit_price='0';crossDraft.total_amount='0';crossDraft.deposit_amount='0';
@@ -127,6 +133,7 @@ async function main(){const c=await pool.connect();try{
   assert.equal((await copyContractCustomerPhotos(proxy,Number(crossSaved.id),70001)).copied,1);
   checks.push('Switching the customer of an existing draft clears imported identity photos, driving licence and supplemental documents before another customer can be finalized');
   const crossFinal=await dataAccess.run(branchA,()=>finalize(proxy,Number(crossSaved.id),70001,{revision:crossSaved.draft_revision,paid_at:paidAt,deposit:null,rental:null}));
+  assert.equal(crossFinal.code,'0000867');
   assert.equal(crossFinal.transaction_ids.length,0);
   await c.query("INSERT INTO qa_access_scope.cash(id,store_id,opening_balance,status) VALUES(93002,80001,0,'Active')");
   await c.query("UPDATE qa_access_scope.vehicles SET type='electric' WHERE id=91003");

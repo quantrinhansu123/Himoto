@@ -11,6 +11,8 @@ import { CONTRACT_TYPES } from '@/lib/management/config';
 import { ContractTypeError, resolveDraftContractType, validContractTypeId } from './contract-types';
 import type { ContractDraft } from '@/lib/management/contract-document';
 import { dataAccess } from './access-context';
+import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
+import { contractNumberAvailable } from './contract-number';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
@@ -168,6 +170,8 @@ const localTimestamp = (value: string) => value ? `${value}:00+07:00` : null;
 // No payment, deposit, vehicle state, or order_vehicle_details is written.
 export async function saveDatabaseDraft(client: PoolClient, id: number | null, input: unknown) {
   const edits = parseDraftEdits(input);
+  const numberError = contractNumberError(edits.draft.contract_number);
+  if (numberError) throw new DraftSaveError(numberError);
   let previous: Record<string, unknown> | undefined;
   if (id !== null) {
     if (!Number.isSafeInteger(id) || id <= 0) throw new DraftSaveError('ID bản nháp không hợp lệ.');
@@ -209,6 +213,7 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     if (!customers.rows[0]?.id) throw new DraftSaveError('Không tìm thấy hồ sơ khách hàng. Hãy tra cứu lại.');
   }
   const existingCode = previous ? String(previous.contract_number || previous.draft_reference || `#${id}`) : '';
+  if (previous?.contract_number && edits.draft.contract_number.trim() !== String(previous.contract_number)) throw new DraftSaveError('Số hợp đồng đã cấp không thể thay đổi trong bản nháp.',409);
   const dataset: ManagementDataset = {
     stores: [...stores.rows, ...vehicleStores.rows].map(row => ({ ...row, id: Number(row.id) })) as ManagementRow[],
     staff: staff.rows.map(row => ({ ...row, id: Number(row.id) })) as ManagementRow[],
@@ -230,9 +235,11 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     if (stock) { line.stock_store_id=String(stock.store_id); line.stock_store_name=String(stock.store_name || ''); }
   }
   if (!edits.draft.customer_source_url && stores.rows[0]?.store_name) edits.draft.customer_source_url=String(stores.rows[0].store_name);
-  const reference = previous ? nullable(String(previous.draft_reference || '')) : nullable(edits.draft.contract_number.trim());
-  const duplicate = reference ? await client.query('SELECT id FROM himoto.orders WHERE (draft_reference = $1 OR contract_number = $1) AND ($2::bigint IS NULL OR id <> $2)', [reference, id]) : null;
-  if (duplicate?.rowCount) throw new DraftSaveError('Mã bản nháp đã được sử dụng.', 409);
+  const requested = paperContractNumber(edits.draft.contract_number);
+  const importReference = /^EXCEL-/i.test(String(previous?.draft_reference || edits.draft.contract_number)) ? String(previous?.draft_reference || edits.draft.contract_number).trim() : '';
+  const reference = previous?.contract_number ? nullable(String(previous.draft_reference || '')) : requested || importReference || (id === null ? null : `NHAP-${id}`);
+  if ((requested || importReference) && reference && !previous?.contract_number && !await contractNumberAvailable(client,reference,id)) throw new DraftSaveError('Số hợp đồng đã được sử dụng. Kiểm tra số HĐ giấy trước khi lưu.',409);
+  edits.draft.contract_number = previous?.contract_number ? String(previous.contract_number) : requested;
   const oldPayload = previous?.draft_payload && typeof previous.draft_payload === 'object' ? previous.draft_payload as Record<string, unknown> : {};
   const oldItems = Array.isArray(oldPayload.order_items) ? oldPayload.order_items as Record<string, unknown>[] : [];
   const previousTime = (value: unknown) => dateTimeInput(value instanceof Date ? value.toISOString() : value);

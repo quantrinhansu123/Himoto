@@ -6,6 +6,8 @@ import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management
 import { readPaymentContext } from './contract-payments';
 import { staffRoles } from '@/lib/management/staff-positions';
 import { dataAccess } from './access-context';
+import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
+import { contractNumberAvailable } from './contract-number';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractFinalizeError extends Error {
@@ -161,13 +163,20 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   const accounts = [];
   for (const row of receipts) accounts.push(await account(row,row.purpose==='deposit' ? 'tiền cọc' : 'tiền thuê/phí'));
 
-  let code = String(order.contract_number || '').trim();
+  let code = String(order.contract_number || '').trim() || paperContractNumber(draft.contract_number) || paperContractNumber(order.draft_reference);
+  if (code && contractNumberError(code)) throw new ContractFinalizeError(contractNumberError(code)!,409);
+  if (code && !await contractNumberAvailable(client,code,id)) throw new ContractFinalizeError('Số hợp đồng đã được sử dụng. Kiểm tra số HĐ giấy trước khi lưu chính thức.',409);
   if (!code) {
     const day = (await client.query(`SELECT to_char(now() AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYMMDD') AS day`)).rows[0].day as string;
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`contract-number:${day}`]);
     const last = dataAccess.getStore()?await client.query('SELECT himoto.contract_day_last($1) AS last',[day]):await client.query(`SELECT COALESCE(max(substring(contract_number from 8)::int), 0) AS last FROM himoto.orders WHERE contract_number ~ ('^' || $1 || '-[0-9]{4}$')`, [day]);
-    code = `${day}-${String(Number(last.rows[0].last) + 1).padStart(4, '0')}`;
+    let sequence = Number(last.rows[0].last);
+    do {
+      if (++sequence > 9999) throw new ContractFinalizeError('Đã hết dãy số tự động trong ngày. Nhập số HĐ giấy để tiếp tục.',409);
+      code = `${day}-${String(sequence).padStart(4, '0')}`;
+    } while (!await contractNumberAvailable(client,code,id));
   }
+  draft.contract_number = code;
 
   const startAt = `${start}:00+07:00`, endAt = `${end}:00+07:00`;
   const type = draft.package_name === 'Theo tháng' ? 'month' : draft.package_name === 'Theo tuần' ? 'week' : 'day';

@@ -144,6 +144,21 @@ async function main() {
       assert.equal(await receiptCount(), receiptsBefore - 1);
       assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_fin_management_contract_payments')).rows[0].n, 0);
       checks.push('PostgreSQL TEMP: bulk voucher delete is hard and all-or-nothing; it takes receipts back out of the contract pid (and out of total for renewal/extra) and drops the payment-ledger rows');
+      await c.query(`INSERT INTO qa_fin_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES
+        (106,'Paper QA','Honda','xeso',2026,23,23,'QA-PAPER','ready',143),(107,'Auto QA','Honda','xeso',2026,23,23,'QA-AUTO','ready',143)`);
+      await c.query(`INSERT INTO qa_fin_orders(id,order_status,order_mode,store_id,customer_id,total,pid,draft_reference,draft_payload) VALUES
+        (20,'draft','draft',23,9,'0',0,'000867',$1),(21,'draft','draft',23,9,'0',0,'NHAP-21',$2),(22,'draft','draft',23,9,'0',0,'EXCEL-22',$3)`,
+        [draft([106],{contract_number:'000867'}),draft([107],{contract_number:'000867'}),draft([107],{contract_number:'EXCEL-22'})]);
+      const paper=await finalize(20,{rental:null});assert.equal(paper.code,'000867');
+      const issuedPaper=(await c.query('SELECT contract_number,draft_payload FROM qa_fin_orders WHERE id=20')).rows[0];
+      assert.equal(issuedPaper.contract_number,'000867');assert.equal(issuedPaper.draft_payload.management_composer.draft.contract_number,'000867');
+      assert((await c.query('SELECT note FROM qa_fin_transactions WHERE order_id=20')).rows.every(row=>row.note.includes('000867')));
+      const moneyBefore=Number((await c.query('SELECT count(*) AS n FROM qa_fin_transactions')).rows[0].n);
+      await assert.rejects(finalize(21,{deposit:null,rental:null}),error=>error.status===409&&/Số hợp đồng đã được sử dụng/.test(error.message));
+      assert.equal(Number((await c.query('SELECT count(*) AS n FROM qa_fin_transactions')).rows[0].n),moneyBefore);
+      await c.query('UPDATE qa_fin_orders SET draft_reference=$1 WHERE id=21',[`${day}-0011`]);
+      const auto=await finalize(22,{deposit:null,rental:null});assert.equal(auto.code,`${day}-0012`);
+      checks.push('PostgreSQL TEMP: paper numbers retain leading zeros in issued contracts, snapshots and receipts; duplicate numbers change no money; automatic numbering skips a number reserved by another draft');
     } finally { await c.query('ROLLBACK'); c.release(); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

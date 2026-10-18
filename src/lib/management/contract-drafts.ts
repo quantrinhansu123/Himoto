@@ -3,11 +3,14 @@ import { ContractDraft, contractStaffStoreId } from './contract-document';
 import { ContractEdits, ManagementDataset, ManagementRow } from './types';
 import { chargeErrors } from './contract-charges';
 import { validIdentityIssueDate } from './customer-identity';
+import { contractNumberError, paperContractNumber } from './contract-number';
 
 // Drafts may be incomplete. Validate values that were entered, without applying
 // the requirements for printing or issuing an operational rental contract.
 export function validateDraftSave(draft: ContractDraft, dataset: ManagementDataset) {
   const errors: Record<string, string> = {};
+  const numberError = contractNumberError(draft.contract_number);
+  if (numberError) errors.contract_number = numberError;
   if (!validIdentityIssueDate(draft.customer.id_card_issued_on)) errors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
   if (!validIdentityIssueDate(draft.customer.driver_license_issued_on)) errors.driver_license_issued_on = 'Ngày cấp GPLX không hợp lệ.';
   Object.assign(errors,chargeErrors(draft.extra_charges,false));
@@ -39,10 +42,11 @@ export function saveDraftRecord(dataset: ManagementDataset, id: number | null, e
   if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
   if (!CONTRACT_TYPES.some(option => option.value === edits.rental_type)) throw new Error('Loại hợp đồng không hợp lệ.');
   const recordId = existing?.id ?? Math.max(0, ...dataset.contracts.map(row => row.id)) + 1;
-  const code = existing?.code || edits.draft.contract_number.trim() || `NHAP-${String(recordId).padStart(4, '0')}`;
+  const requested = paperContractNumber(edits.draft.contract_number);
+  const importReference = /^EXCEL-/i.test(existing?.code || edits.draft.contract_number) ? (existing?.code || edits.draft.contract_number).trim() : '';
+  const code = requested || importReference || `NHAP-${String(recordId).padStart(4, '0')}`;
   if (dataset.contracts.some(row => row.id !== recordId && row.code === code)) throw new Error('Số hợp đồng đã được sử dụng.');
-  if (existing && edits.draft.contract_number !== existing.code) throw new Error('Mã bản nháp đã được cấp, không thể thay đổi.');
-  const draft = { ...structuredClone(edits.draft), contract_number: code };
+  const draft = { ...structuredClone(edits.draft), contract_number: requested };
   const amount = (input: string) => input === '' ? undefined : Number(input);
   return { ...existing, id: recordId, code, name: code, status: 'draft', rental_type: edits.rental_type, notes: edits.notes,
     created_at: existing?.created_at || new Date().toISOString(), updated_at: new Date().toISOString(),

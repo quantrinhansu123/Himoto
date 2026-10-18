@@ -353,7 +353,6 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
         const saved = await saveContractDraft(savedDraft?.id ?? row?.id ?? null, { draft: { ...draft, customer_lookup: idInput }, status: 'draft', rental_type: rentalType, notes,
           ...(source === 'api' && revision ? { revision } : {}) });
         setSavedDraft({ id: saved.id, revision: String(saved.draft_revision) });
-        setDraft(previous => ({ ...previous, contract_number: saved.code }));
         await savePhotos(saved.id);
         if (finalizing) {
           setFinalizeTarget({ id: saved.id, revision: String(saved.draft_revision), code: saved.code });
@@ -456,8 +455,10 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   function field(key: keyof Omit<ContractDraft, 'customer' | 'vehicles' | 'customer_id'>, label: string, type = 'text', required = false) {
     return <div className="mg-field" key={key}><label htmlFor={`contract-${key}`}>{label}{required && <span aria-hidden="true"> *</span>}</label>
       <input id={`contract-${key}`} name={key} type={type} value={String(draft[key])} required={required} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 1 : undefined}
-        readOnly={(Boolean(savedDraft) || Boolean(row) && (mode === 'edit' || editingDraft)) && key === 'contract_number'}
+        readOnly={Boolean(row) && mode === 'edit' && !editingDraft && key === 'contract_number'}
+        maxLength={key === 'contract_number' ? 32 : undefined}
         aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `contract-${key}-error` : undefined} onChange={event => change(key, event.target.value)} />
+      {key === 'contract_number' && canSaveDraft && <small>Nhập đúng số HĐ giấy. Khi hoàn tất, hệ thống và Telegram dùng số này, giữ nguyên số 0 đầu. Để trống để cấp số tự động.</small>}
       {errors[key] && <p id={`contract-${key}-error`} className="mg-field-error">{errors[key]}</p>}</div>;
   }
   const customerFields: { key: keyof CustomerDetails; label: string; type?: string; wide?: boolean; hint?: string }[] = [
@@ -507,7 +508,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     </section>;
   }
   return <>
-    <Dialog title={reserving ? 'Nhận cọc giữ xe' : editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}` : 'Bản nháp · Chưa cấp số hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
+    <Dialog title={reserving ? 'Nhận cọc giữ xe' : editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}` : 'Bản nháp · Chưa phát hành hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
       <form ref={form} noValidate onSubmit={submit}>
         <div className="mg-dialog-body mg-composer-body">
           <div className="mg-composer-notice">{reserving ? 'Chọn khách, cơ sở giữ xe, xe và ngày dự kiến nhận. Tiền giữ xe được trừ vào tiền thuê; chỉ vào Sổ quỹ sau khi xác nhận khoản đã nhận. Lưu nháp chưa ghi tiền.' : canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Hợp đồng nháp để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách; bản in là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>

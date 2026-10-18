@@ -69,6 +69,10 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   await notices.queueContractNotification(db,1,'rental','qa-detailed-rental',143,'rental');
   await notices.dispatchContractNotifications(async()=>Response.json({ok:true,result:[{message_id:20},{message_id:21}]}),5,db);
   const same=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');assert(same.unchanged);assert(!same.can_send);
+  await c.query(`UPDATE ${schema}.orders SET contract_number='000867' WHERE id=1`);
+  const paperEvent=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');
+  assert(paperEvent.text.includes('Hợp đồng: 000867\n'));assert(paperEvent.can_send);assert(!paperEvent.unchanged);assert.equal(paperEvent.delivery_contract_code,'HD-QA-1');
+  assert.equal((await c.query(`SELECT payload->>'code' AS code FROM ${schema}.management_contract_notifications WHERE event_key='qa-detailed-rental'`)).rows[0].code,'HD-QA-1');
   // Preferences are scoped and read-only accounts cannot change them through the service.
   await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,reader,{action:'auto',enabled:false}),e=>e.status===403);
   const {parsePhotoTarget,requireContractPhotoSlot}=load(path.join(root,'lib/server/record-photos'));
@@ -78,5 +82,6 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   return ['Rental, return and renewal templates match requested figures; only approved receipts identify payment/refund methods',
     'Manual mode holds automatic events; five saved photos form one immutable album with caption; stale previews, duplicate clicks and ambiguous deliveries are blocked',
     'Content hashes survive JSONB key ordering; completed automatic content cannot be manually duplicated; renewal photo ownership and read-only permissions enforced',
-    'Confirmed-absent retry records the operator review, rejects unconfirmed/unauthorized/partial sends, queues once and dispatches only the selected contract'];
+    'Confirmed-absent retry records the operator review, rejects unconfirmed/unauthorized/partial sends, queues once and dispatches only the selected contract',
+    'Telegram previews use the current paper contract number after correction while sent snapshots and delivery history remain immutable'];
 };

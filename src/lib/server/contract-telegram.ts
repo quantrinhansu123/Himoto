@@ -39,7 +39,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
   for(const event of events) {
     if(!event.phases.length)event.phases=event.kind==='return'?event.key.split(':').at(-1)!.split('-').map(n=>`return-${n}`):[event.kind==='handover'?'handover':'rental'];
     const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal);void _store;
-    const payload=event.payload?{...event.payload,photos:await notificationPhotos(db,id,event.phases),method:fresh.method,deposit_method:fresh.deposit_method,
+    const payload=event.payload?{...event.payload,code:fresh.code,photos:await notificationPhotos(db,id,event.phases),method:fresh.method,deposit_method:fresh.deposit_method,
       ...(event.kind==='return'?{refunded:fresh.refunded,deposit:fresh.deposit,...(fresh.return_fees?{return_fees:fresh.return_fees}:{}),...(fresh.refund_recipient?{refund_recipient:fresh.refund_recipient}:{})}:{}),
       // Legacy payloads predate the detailed templates.
       ...(!('rental_fee' in event.payload)?{vehicle_names:fresh.vehicle_names,days:fresh.days,rental_fee:fresh.rental_fee,deposit:fresh.deposit,grand_total:fresh.grand_total}:{}),
@@ -54,6 +54,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`,phases:event.phases,
       text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
       can_send:canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
+      delivery_contract_code:latest?.payload?.code,
       can_retry_confirmed_absent:canSendContractEvent(user,event.kind)&&latest?.status==='unknown'&&!latest?.message_ids?.length});
   }
   return {state:result,payloads,store_id:Number(o.store_id)};

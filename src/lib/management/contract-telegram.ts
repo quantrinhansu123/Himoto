@@ -5,6 +5,7 @@ export interface ContractTelegramEvent {
   key:string;kind:ContractEventType;label:string;phases:string[];text:string;hash:string;photo_count:number;video_count?:number;
   status:string|null;sent_at:string|null;can_send:boolean;unchanged:boolean;
   notice_id?:string;delivery_error?:string|null;can_retry_confirmed_absent?:boolean;delivery_message_count?:number;
+  delivery_contract_code?:string;
 }
 export interface ContractTelegramState {auto_enabled:boolean;events:ContractTelegramEvent[];next_renewal_version:number}
 export async function contractTelegramRequest(id:number,body?:Record<string,unknown>,signal?:AbortSignal):Promise<ContractTelegramState> {

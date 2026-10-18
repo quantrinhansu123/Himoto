@@ -43,10 +43,18 @@ async function run() {
   await assert.rejects(fresh.saveContractDraft(before.contracts[0].id, edits), /Chỉ cập nhật bản nháp/);
   await assert.rejects(fresh.saveContractDraft(null, { ...edits, draft: { ...draft, total_amount: '-1' } }), /số tiền/);
   await assert.rejects(fresh.saveContractDraft(null, { ...edits, draft: { ...draft, store_id: '99999' } }), /Cơ sở/);
-  await assert.rejects(fresh.saveContractDraft(null, { ...edits, draft: { ...draft, contract_number: saved.row.code } }), /đã được sử dụng/);
+  assert.equal(reopened.contract_number,'');
+  const paper=await fresh.saveContractDraft(saved.row.id,{...edits,draft:{...reopened,contract_number:'000867'}});
+  assert.equal(paper.row.code,'000867');assert.equal(createContractDraft(paper.dataset,'all',paper.row).contract_number,'000867');
+  await assert.rejects(fresh.saveContractDraft(null,{...edits,draft:{...draft,contract_number:'000867'}}),/đã được sử dụng/);
+  const corrected=await fresh.saveContractDraft(saved.row.id,{...edits,draft:{...reopened,contract_number:'007180'}});
+  assert.equal(corrected.row.code,'007180');assert.equal(corrected.row.id,saved.row.id);
+  const automatic=await fresh.saveContractDraft(saved.row.id,{...edits,draft:{...reopened,contract_number:''}});
+  assert.match(automatic.row.code,/^NHAP-/);assert.equal(createContractDraft(automatic.dataset,'all',automatic.row).contract_number,'');
+  await assert.rejects(fresh.saveContractDraft(null,{...edits,draft:{...draft,contract_number:'A\nB'}}),/ký tự/);
   assert(CONTRACT_STATUSES.some(option => option.value === 'draft' && option.label === 'Lưu nháp'));
   assert.equal(optionLabel(MANAGEMENT_CONFIG.contracts, 'status', 'bad_debt'), 'Nợ xấu');
-  checks.push('updates preserve ID/code; issued contracts, invalid values, and duplicate numbers are rejected; statuses are Vietnamese');
+  checks.push('Draft paper numbers can be added/corrected/cleared before issue, preserve leading zeros, reject duplicates and control characters; issued contracts stay protected');
   const broken = createDemoRepository({ ...storage, setItem: () => { throw new Error('Quota exceeded'); } });
   const unchanged = await broken.load();
   await assert.rejects(broken.saveContractDraft(null, edits), /Không lưu được/);
@@ -61,7 +69,7 @@ async function run() {
   const raw = { id: 9000, draft_reference: 'NHAP-9000', status: 'draft', draft_revision: '100', draft_payload: { management_composer: { version: 1, ...edits, draft: snapshot } } };
   const mapped = mapApiRow('contracts', raw);
   const {contract_type_id,contract_type_name,contract_type_months,...reopenedSnapshot}=createContractDraft(before,'all',mapped);
-  assert.deepEqual(reopenedSnapshot,snapshot);
+  assert.deepEqual(reopenedSnapshot,{...snapshot,contract_number:''});
   assert.equal(contract_type_id,'daily');assert.equal(contract_type_name,'Thuê theo ngày');assert.equal(contract_type_months,'');
   assert.equal(mapped.draft_revision, '100'); assert.equal(mapped.total_amount, undefined);
   const legacy = mapApiRow('contracts', { id: 1, draft_reference: 'OLD-DRAFT', order_status: 'draft', store_id: 1,

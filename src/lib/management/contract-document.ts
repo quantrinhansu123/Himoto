@@ -1,6 +1,7 @@
 import { ManagementDataset, ManagementRow } from './types';
 import { VEHICLE_TYPES } from './config';
 import { validIdentityIssueDate } from './customer-identity';
+import { contractNumberError, paperContractNumber } from './contract-number';
 import { addRentalDays, vietnamRentalTime } from './rental-time';
 import { chargeErrors, chargeTotal, type ContractCharge, type ContractCollection } from './contract-charges';
 import { billingUnitLabel, type CustomInstallment, type OwnershipTerm } from './contract-billing';
@@ -120,7 +121,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
         payment_method:collectionMethods(collections, 'rental', snapshot.payment_method),
         deposit_payment_method:collectionMethods(collections, 'deposit', snapshot.deposit_payment_method),
       } : {}), staff_name: snapshot.staff_name || '', customer: { ...customerDetails(snapshot.customer as unknown as ManagementRow), ...snapshot.customer },
-      vehicles: snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })), contract_number: row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
+      vehicles: snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })), contract_number: row.status === 'draft' ? paperContractNumber(snapshot.contract_number) : row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
       created_on: dateInput(snapshot.created_on) || dateInput(row.created_at) || nowDate(), ...profile };
   }
   const sourceCustomer = row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
@@ -153,7 +154,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   const vehicle = row ? dataset.vehicles.find(item => item.id === row.vehicle_id) : null;
   const startDate = row ? dateTimeInput(row.start_date) : vietnamRentalTime();
   const collections = row?.collections_json ? JSON.parse(String(row.collections_json)) as ContractCollection[] : undefined;
-  return { contract_number: row?.code || '', signed_on: dateInput(row?.signed_on || row?.created_at) || nowDate(),
+  return { contract_number: row?.status === 'draft' ? paperContractNumber(row.code) : row?.code || '', signed_on: dateInput(row?.signed_on || row?.created_at) || nowDate(),
     ...(row?.contract_type_id ? { contract_type_id: value(row.contract_type_id), contract_type_name: value(row.contract_type_name), contract_type_months: value(row.contract_type_months) } : {}),
     store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId),
     vehicle_store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: value(row?.staff_name),
@@ -212,6 +213,8 @@ export function validateOperationalCustomer(customer: CustomerDetails,source: 'd
 }
 export function validateContractDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
   const errors: Record<string, string> = {};
+  const numberError = contractNumberError(draft.contract_number);
+  if (numberError) errors.contract_number = numberError;
   const requirements = documentRequirements(draft.document_requirements);
   Object.assign(errors,chargeErrors(draft.extra_charges,true));
   if (contractStaffStoreId(draft) && !dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở nguồn khách / ghi nhận doanh thu.';
