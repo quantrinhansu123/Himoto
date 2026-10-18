@@ -6,6 +6,7 @@ import { openIntegrationSecret } from './integration-secrets';
 import { readCloudinaryPhoto } from './cloudinary-photos';
 import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
 import { copyContractCustomerPhotos } from './contract-customer-photos';
+import { CONTRACT_TELEGRAM_ROUTE_SQL } from './contract-telegram-routing';
 
 import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
@@ -35,7 +36,15 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
     // An atomic lease serializes complete media + summary blocks in the same Telegram topic.
     const row=(await database.query(`WITH candidate AS MATERIALIZED (
       SELECT n.id,g.chat_id,g.thread_id FROM himoto.management_contract_notifications n
-      LEFT JOIN himoto.management_store_telegram g ON g.store_id=n.store_id AND g.enabled
+      LEFT JOIN himoto.orders o ON o.id=n.order_id
+      LEFT JOIN himoto.stores s ON s.id=o.store_id
+      LEFT JOIN LATERAL (
+        SELECT chat_id,thread_id FROM himoto.management_store_telegram
+          WHERE ${CONTRACT_TELEGRAM_ROUTE_SQL}='store' AND store_id=n.store_id AND enabled
+        UNION ALL
+        SELECT chat_id,thread_id FROM himoto.management_ownership_telegram
+          WHERE route=${CONTRACT_TELEGRAM_ROUTE_SQL} AND enabled
+      ) g ON true
       WHERE n.status='pending' AND n.delivery_mode='manual' AND ($1::bigint[] IS NULL OR n.order_id=ANY($1))
         AND (g.chat_id IS NULL OR NOT EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases l
           WHERE l.chat_id=g.chat_id AND l.thread_id=COALESCE(g.thread_id,0) AND l.expires_at>clock_timestamp()))

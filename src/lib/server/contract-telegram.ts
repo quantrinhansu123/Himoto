@@ -5,6 +5,7 @@ import { CONTRACT_EVENT_LABELS, type ContractEventType, type ContractTelegramSta
 import { hasPermission, type PermissionAccount } from '@/lib/management/permissions';
 import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
 import { contractPhotoLabel } from '@/lib/management/contract-photos';
+import { OWNERSHIP_ORDER_SQL,contractTelegramDestination } from './contract-telegram-routing';
 
 type Database=Pick<PoolClient,'query'>;
 interface Event {key:string;kind:ContractEventType;phases:string[];payload?:NotificationPayload;renewal?:RenewalNotice}
@@ -13,7 +14,8 @@ export function canSendContractEvent(user:PermissionAccount,kind:ContractEventTy
   return hasPermission(user,kind==='renewal'||kind==='battery_swap'?'contracts.renew':kind==='return'?'contracts.return':kind==='rental'||kind==='reservation'?'contracts.draft':'contracts.finalize');
 }
 export async function readContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount) {
-  const o=(await db.query('SELECT store_id,order_status,contract_number,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL',[id])).rows[0];
+  const o=(await db.query(`SELECT o.store_id,o.order_status,o.contract_number,o.draft_payload,s.store_name,${OWNERSHIP_ORDER_SQL} AS ownership
+    FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL`,[id])).rows[0];
   if(!o)throw new ContractTelegramError('Không tìm thấy hợp đồng.',404);
   const notices=(await db.query(`SELECT id,event_key,root_event_key,event_type,photo_phases,photo_slots,payload,content_hash,status,sent_at,delivery_mode
     ,error_code,message_ids FROM himoto.management_contract_notifications WHERE order_id=$1 ORDER BY created_at DESC,id`,[id])).rows;
@@ -52,6 +54,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const unresolved=related.find(n=>['unknown','sending','pending'].includes(n.status));
     const latest=same||unresolved||related[0];
     result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`,phases:event.phases,
+      destination_label:contractTelegramDestination(event.kind,o.ownership===true,o.store_name),
       text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
       attachments:payload.photos.map(photo=>({slot:photo.slot,mime_type:photo.mime_type,label:contractPhotoLabel(photo.slot)})),
       can_send:canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,

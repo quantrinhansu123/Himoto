@@ -2,10 +2,11 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { ownerDatabase } from './himoto-database';
 import { sealIntegrationSecret } from './integration-secrets';
+import { OWNERSHIP_TELEGRAM_DESTINATIONS } from '@/lib/management/telegram-destinations';
 export class IntegrationSettingsError extends Error {constructor(message:string,public status=400){super(message);}}
 const text=(value:unknown,max:number)=>typeof value==='string'&&value.trim().length<=max?value.trim():'';
 export async function readIntegrationSettings() {
-  const [accounts,bot,groups,notifications,scheduler,channels,history]=await Promise.all([
+  const [accounts,bot,groups,notifications,scheduler,channels,history,ownershipGroups]=await Promise.all([
     ownerDatabase.query('SELECT id,provider,label,username,enabled,last_attempt_at,last_success_at,last_error,device_count FROM himoto.management_gps_accounts ORDER BY provider,label'),
     ownerDatabase.query('SELECT bot_cipher IS NOT NULL AS configured FROM himoto.management_telegram_settings WHERE singleton=true'),
     ownerDatabase.query('SELECT s.id AS store_id,s.store_name,g.chat_id,g.thread_id,COALESCE(g.enabled,false) AS enabled FROM himoto.stores s LEFT JOIN himoto.management_store_telegram g ON g.store_id=s.id ORDER BY s.id'),
@@ -25,8 +26,11 @@ export async function readIntegrationSettings() {
       (SELECT count(*)::int FROM himoto.management_gps_status_events WHERE source='webhook') AS webhook_events,
       (SELECT count(*)::int FROM himoto.management_gps_webhook_receipts WHERE status IN('pending','awaiting_device')) AS waiting_webhooks
       FROM himoto.management_gps_history_cursors`),
+    ownerDatabase.query('SELECT route,chat_id,thread_id,enabled FROM himoto.management_ownership_telegram ORDER BY route'),
   ]);
-  return {accounts:accounts.rows,telegram_configured:bot.rows[0]?.configured===true,groups:groups.rows,notifications:notifications.rows,scheduler:scheduler.rows[0]||null,gps_history:{channels:channels.rows,...history.rows[0]}};
+  return {accounts:accounts.rows,telegram_configured:bot.rows[0]?.configured===true,groups:groups.rows,
+    ownership_groups:OWNERSHIP_TELEGRAM_DESTINATIONS.map(item=>({...item,chat_id:null,thread_id:null,enabled:false,...ownershipGroups.rows.find(row=>row.route===item.route)})),
+    notifications:notifications.rows,scheduler:scheduler.rows[0]||null,gps_history:{channels:channels.rows,...history.rows[0]}};
 }
 export async function saveIntegrationSettings(raw:unknown) {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new IntegrationSettingsError('Cấu hình không hợp lệ.');
@@ -53,15 +57,30 @@ export async function saveIntegrationSettings(raw:unknown) {
     return {storeId,chatId,thread,enabled:row.enabled};
   });
   if(new Set(parsed.map(group=>group.storeId)).size!==parsed.length)throw new IntegrationSettingsError('Mỗi cơ sở chỉ cấu hình một nhóm.');
+  // Older clients omit this field; saving branch groups must preserve the ownership routes.
+  const ownership=body.ownership_groups;
+  if(ownership!==undefined&&(!Array.isArray(ownership)||ownership.length>2))throw new IntegrationSettingsError('Thuê sở hữu có hai nhóm: hợp đồng mới và gia hạn.');
+  const parsedOwnership=(ownership as unknown[]|undefined)?.map(item=>{
+    if(!item||typeof item!=='object'||Array.isArray(item))throw new IntegrationSettingsError('Cấu hình nhóm thuê sở hữu không hợp lệ.');
+    const row=item as Record<string,unknown>,route=String(row.route),chatId=text(row.chat_id,40),thread=row.thread_id==null||row.thread_id===''?null:Number(row.thread_id);
+    if(!OWNERSHIP_TELEGRAM_DESTINATIONS.some(item=>item.route===route)||typeof row.enabled!=='boolean'||chatId&&!/^-\d{5,18}$/.test(chatId)||row.enabled&&!chatId||thread!==null&&(!Number.isSafeInteger(thread)||thread<1||thread>2147483647))throw new IntegrationSettingsError('Kiểm tra nhóm ký mới / gia hạn sở hữu, chat_id và mã chủ đề Telegram.');
+    return {route,chatId,thread,enabled:row.enabled};
+  });
+  if(parsedOwnership&&new Set(parsedOwnership.map(group=>group.route)).size!==parsedOwnership.length)throw new IntegrationSettingsError('Mỗi nghiệp vụ sở hữu chỉ cấu hình một nhóm.');
   const client=await ownerDatabase.connect();
   try {
     await client.query('BEGIN');
+    if(parsedOwnership)await client.query('LOCK TABLE himoto.management_ownership_telegram IN SHARE ROW EXCLUSIVE MODE');
     const stores=await client.query('SELECT id FROM himoto.stores WHERE id=ANY($1::bigint[])',[parsed.map(group=>group.storeId)]);
     if(stores.rowCount!==parsed.length)throw new IntegrationSettingsError('Cơ sở đã chọn không còn tồn tại.');
     if(token)await client.query('UPDATE himoto.management_telegram_settings SET bot_cipher=$1,updated_at=now() WHERE singleton=true',[sealIntegrationSecret({token})]);
     for(const group of parsed){if(!group.chatId){await client.query('DELETE FROM himoto.management_store_telegram WHERE store_id=$1',[group.storeId]);continue;}
       await client.query(`INSERT INTO himoto.management_store_telegram(store_id,chat_id,thread_id,enabled) VALUES($1,$2,$3,$4)
         ON CONFLICT(store_id) DO UPDATE SET chat_id=EXCLUDED.chat_id,thread_id=EXCLUDED.thread_id,enabled=EXCLUDED.enabled,updated_at=now()`,[group.storeId,group.chatId,group.thread,group.enabled]);}
+    for(const group of parsedOwnership||[]){if(!group.chatId){await client.query('DELETE FROM himoto.management_ownership_telegram WHERE route=$1',[group.route]);continue;}
+      await client.query(`INSERT INTO himoto.management_ownership_telegram(route,chat_id,thread_id,enabled) VALUES($1,$2,$3,$4)
+        ON CONFLICT(route) DO UPDATE SET chat_id=EXCLUDED.chat_id,thread_id=EXCLUDED.thread_id,enabled=EXCLUDED.enabled,updated_at=now()`,[group.route,group.chatId,group.thread,group.enabled]);}
+    if(parsedOwnership&&(await client.query('SELECT 1 FROM himoto.management_ownership_telegram WHERE enabled GROUP BY chat_id HAVING count(*)>1')).rowCount)throw new IntegrationSettingsError('Nhóm hợp đồng sở hữu mới và nhóm gia hạn phải khác nhau.');
     await client.query('COMMIT');
   }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
 }

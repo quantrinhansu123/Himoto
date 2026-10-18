@@ -20,11 +20,12 @@ export function ContractTelegramPanel({id,eventKind,eventKey}:{id:number;eventKi
   const active=data?.events.some(e=>e.status==='pending'||e.status==='sending');
   useEffect(()=>{if(!active||busy)return;const controller=new AbortController();const timer=setTimeout(()=>void refresh(controller.signal),3000);return()=>{clearTimeout(timer);controller.abort();};},[active,busy,data,refresh]);
   return <section className="mg-contract-telegram">
-    <p>Bước cuối · Kiểm tra toàn bộ thông tin, ảnh và video đã lưu từ các bước trước. Chỉ nút Gửi toàn bộ bên dưới mới gửi vào nhóm PGD. Không cần tải lại ảnh đã có.</p>
+    <p>Bước cuối · Kiểm tra toàn bộ thông tin, ảnh và video đã lưu từ các bước trước. Chỉ nút Gửi toàn bộ bên dưới mới gửi vào nhóm nhận của giao dịch. Không cần tải lại ảnh đã có.</p>
     <div className="mg-contract-history-toolbar"><button className="mg-button" type="button" disabled={loading||busy} onClick={()=>void refresh()}>{loading?<LoaderCircle size={15} className="mg-spin"/>:null}Làm mới nội dung và ảnh</button></div>
     {data&&!data.events.length&&<p>Chưa có giao dịch hoàn tất. Ảnh đã lưu sẽ tập hợp tại đây sau khi xác nhận giao dịch.</p>}
     {Boolean(data?.events.length)&&<label className="mg-telegram-event-label">Giao dịch cần gửi<select aria-label="Giao dịch cần gửi Telegram" value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value);setMessage('');}}>{data?.events.map(e=><option key={e.key} value={e.key}>{e.label} · {e.photo_count} ảnh · {e.video_count||0} video · {e.status?NOTICE_STATUS_LABELS[e.status]:'Chưa gửi'}</option>)}</select></label>}
     {event&&<div key={event.key}>
+      {event.destination_label&&<p><strong>Nơi nhận: {event.destination_label}</strong></p>}
       <pre className="mg-telegram-preview">{event.text}</pre>
       {event.delivery_contract_code&&!event.text.includes(`Hợp đồng: ${event.delivery_contract_code}\n`)&&<p>Lần gửi trước dùng mã hợp đồng {event.delivery_contract_code}. Bản cập nhật bên trên dùng số hợp đồng hiện tại.</p>}
       <p role="status">{event.photo_count} ảnh · {event.video_count||0} video đã lưu · {event.status?NOTICE_STATUS_LABELS[event.status]:'Chưa gửi'}{event.sent_at?` · ${new Date(event.sent_at).toLocaleString('vi-VN')}`:''}</p>

@@ -50,8 +50,10 @@ async function main(){
     const deliveryReview=fs.readFileSync(path.resolve('docs/sql/2026-10-18-telegram-delivery-review.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(deliveryReview);await c.query(deliveryReview);
     const mediaMigration=fs.readFileSync(path.resolve('docs/sql/2026-10-18-international-customers-contract-media.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(mediaMigration);await c.query(mediaMigration);
     const documentMigration=fs.readFileSync(path.resolve('docs/sql/2026-10-18-contract-document-photos.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(documentMigration);await c.query(documentMigration);
+    const batteryMigration=fs.readFileSync('docs/sql/2026-10-18-battery-swap-workflow.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(batteryMigration);
     const finalSubmit=fs.readFileSync('docs/sql/2026-10-18-contract-telegram-final-submit.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(finalSubmit);await c.query(finalSubmit);
     const mediaFirst=fs.readFileSync('docs/sql/2026-10-18-telegram-media-first.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(mediaFirst);await c.query(mediaFirst);
+    const ownershipGroups=fs.readFileSync('docs/sql/2026-10-18-ownership-telegram-groups.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(ownershipGroups);await c.query(ownershipGroups);
     const pacing=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-five-second-poll.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(pacing);await c.query(pacing);
     const history=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-history-webhooks.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(history);await c.query(history);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name) VALUES(23,'Branch A QA'),(31,'Branch B QA')`);
@@ -103,6 +105,7 @@ async function main(){
     checks.push(...await require('./lib/check-contract-telegram.cjs')(db,c,schema,notices));
     checks.push(...await require('./check-contract-documents.cjs')(db,c,schema,notices));
     checks.push(...await require('./lib/check-telegram-media-first.cjs')(db,c,schema,notices));
+    checks.push(...await require('./lib/check-ownership-telegram.cjs')(db,c,schema,notices));
     await c.query(`ALTER TABLE ${schema}.vehicles ENABLE ROW LEVEL SECURITY; CREATE POLICY qa_vehicle_read ON ${schema}.vehicles FOR SELECT TO himoto_scoped USING(himoto.access_store(COALESCE(current_store_id,store_id)))`);
     await c.query(`GRANT USAGE ON SCHEMA ${schema} TO himoto_scoped; GRANT SELECT ON ${schema}.vehicles,${schema}.orders,${schema}.gps_devices TO himoto_scoped; GRANT UPDATE ON ${schema}.orders TO himoto_scoped`);
     await c.query(`GRANT SELECT ON ${schema}.management_contract_payments,${schema}.order_vehicle_details,${schema}.transactions,${schema}.stores,${schema}.customers,${schema}.management_record_photos,${schema}.staff_profiles TO himoto_scoped;GRANT SELECT(id,name) ON ${schema}.users TO himoto_scoped`);

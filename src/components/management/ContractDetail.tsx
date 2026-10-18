@@ -232,7 +232,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint, onPrintV
         {history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow} />}
       </>)}
     {panel('photos','Ảnh thuê / trả xe',section==='photos'&&<ContractPhotoGallery id={row.id}/>)}
-    {panel('telegram','Gửi thông tin và ảnh vào nhóm PGD',section==='telegram'&&source==='api'&&<ContractTelegramPanel id={row.id}/>)}
+    {panel('telegram','Gửi thông tin và ảnh vào nhóm Telegram',section==='telegram'&&source==='api'&&<ContractTelegramPanel id={row.id}/>)}
     {source === 'api' && (section === 'vehicle' || section === 'customer') && <>
       {section === 'vehicle' && <SavedRecordPhotos entity="contracts" recordId={row.id} slots={draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))} title="Ảnh biển số xe" />}
       {section === 'customer' && draft.customer_id && <SavedRecordPhotos entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Ảnh CCCD" />}

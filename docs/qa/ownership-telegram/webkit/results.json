@@ -1,0 +1,12 @@
+{
+  "passed": 2,
+  "browser": "webkit",
+  "checks": [
+    "Admin sees separate ownership-new/renewal destinations, saves both without changing branch routing or the stored bot, and fits 390/1440px",
+    "Final preview changes the destination with the selected event; opening/refreshing sends nothing, and one explicit renewal submit locks duplicate sends"
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequests": [],
+  "realBusinessWrites": 0,
+  "realTelegramRequests": 0
+}
