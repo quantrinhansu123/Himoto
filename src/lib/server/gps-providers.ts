@@ -53,10 +53,12 @@ export function normalizeProtrackDevice(raw:Json,serverTime=Date.now()):GpsObser
 }
 export function normalizeIopDevice(raw:Json):GpsObservation {
   const data=(raw.deviceStatusBean||{}) as Json,status=number(data.status),speed=number(data.speed);
-  const state:GpsState=status===0?'offline':status===1?(speed===null?'warning':speed>0?'online':'stopped'):'warning';
+  // IOPGPS reports motion directly: 0 static, 1 moving, 10 offline.
+  // Stored speed may belong to an older fix; sleep/unused/unknown are not OFF.
+  const state:GpsState=status===0?'stopped':status===1?'online':status===10?'offline':'warning';
   return {external_id:String(raw.imei||''),name:String(raw.name||''),license:String(raw.licenseNumber||raw.plateNumber||''),state,
     provider_status:status===null?'no_location':String(status),latitude:coordinate(data.lat,90),longitude:coordinate(data.lng,180),speed,
-    ignition:typeof data.accStatus==='boolean'?data.accStatus:null,recorded_at:iso(data.gpsTime),heartbeat_at:iso(data.heartTime)};
+    ignition:typeof data.accStatus==='boolean'?data.accStatus:null,recorded_at:iso(data.gpsTime),heartbeat_at:iso(data.heartTime),reported_at:iso(data.sysTime)};
 }
 export async function readGpsDevices(provider:GpsProvider,session:GpsSession,send:typeof fetch=fetch):Promise<GpsObservation[]> {
   if(provider==='protrack') {
