@@ -13,6 +13,7 @@ import { CASHBOOK_LIST_SQL, CashbookQueryError, listCashbook } from '@/lib/serve
 import { ManagementTableError, readManagementTable } from '@/lib/server/management-table';
 import { PageSummaryError, readOperationsSummary, readSalesSummary } from '@/lib/server/page-summaries';
 import { VEHICLE_TRANSFER_JOIN_SQL } from '@/lib/server/vehicle-transfers';
+import { VEHICLE_GPS_JOIN_SQL } from '@/lib/server/vehicle-gps-query';
 import { normalizeCustomerLookup, validCustomerLookup } from '@/lib/management/contract-document';
 import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
@@ -46,7 +47,8 @@ const listQueries: Record<string, QueryConfig> = {
                  r.rentals, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  gps.has_device AS gps_has_device,
                  gps.normalized_status AS gps_normalized_status,
-                 gps.last_at AS gps_last_at,gps.latitude AS gps_latitude,gps.longitude AS gps_longitude,gps.synced_at AS gps_last_sync,gps.provider AS gps_provider
+                 gps.last_at AS gps_last_at,gps.latitude AS gps_latitude,gps.longitude AS gps_longitude,gps.synced_at AS gps_last_sync,gps.provider AS gps_provider,
+                 gps.heartbeat_at AS gps_heartbeat_at,gps.position_recorded_at AS gps_position_at,gps.provider_reported_at AS gps_reported_at,gps.last_ignition AS gps_ignition
           FROM himoto.vehicles v
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
           ${VEHICLE_TRANSFER_JOIN_SQL}
@@ -71,23 +73,7 @@ const listQueries: Record<string, QueryConfig> = {
             SELECT COALESCE(r.store_id, CASE WHEN v.status = 'using' AND ev.ref_type = 'using' THEN ev.to_store_id END, v.current_store_id, v.store_id) AS beneficiary_store_id
           ) b
           LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
-          LEFT JOIN LATERAL (
-            SELECT true AS has_device,CASE WHEN d.provider_status='not_visible_in_account' THEN 'unavailable' WHEN COALESCE(a.last_success_at,d.sync_received_at)<now()-interval '10 minutes' THEN 'stale' ELSE COALESCE(d.management_status,p.normalized_status) END AS normalized_status,
-                   d.last_latitude AS latitude,d.last_longitude AS longitude,CASE WHEN d.provider_status='not_visible_in_account' THEN d.sync_received_at ELSE COALESCE(a.last_success_at,d.sync_received_at) END AS synced_at,d.provider,
-                   COALESCE(p.provider_recorded_at, p.received_at, p.created_at, d.last_sync_at) AS last_at
-            FROM himoto.gps_devices d
-            LEFT JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id
-            LEFT JOIN LATERAL (
-              SELECT normalized_status, provider_recorded_at, received_at, created_at
-              FROM himoto.gps_positions
-              WHERE gps_device_id = d.id
-              ORDER BY COALESCE(provider_recorded_at, received_at, created_at) DESC NULLS LAST
-              LIMIT 1
-            ) p ON true
-            WHERE d.vehicle_id = v.id
-            ORDER BY (d.provider_status IS DISTINCT FROM 'not_visible_in_account') DESC,d.heartbeat_at DESC NULLS LAST,d.sync_received_at DESC NULLS LAST,d.id DESC
-            LIMIT 1
-          ) gps ON true
+          ${VEHICLE_GPS_JOIN_SQL}
           ORDER BY v.id DESC`,
   },
   'order/car-rental': {

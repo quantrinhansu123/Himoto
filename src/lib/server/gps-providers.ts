@@ -37,13 +37,19 @@ export async function loginGps(provider:GpsProvider,username:string,password:str
   return {token,accountId:String(body.accountId)};
 }
 export function normalizeProtrackDevice(raw:Json,serverTime=Date.now()):GpsObservation {
-  const heartbeat=iso(raw.hearttime),speed=number(raw.speed);
-  const connected=heartbeat!==null&&serverTime-Date.parse(heartbeat)<=5*60_000;
-  const state:GpsState=raw.block===true||raw.validate===false?'warning':!connected?'offline':speed===null?'warning':speed>0?'online':'stopped';
+  const heartbeat=iso(raw.hearttime),speed=number(raw.speed),reported=iso(raw.systime)||iso(raw.gpstime);
+  const clock=iso(serverTime),at=clock?Date.parse(clock):NaN,heartAge=heartbeat?at-Date.parse(heartbeat):NaN,reportAge=reported?at-Date.parse(reported):NaN;
+  // Match Protrack's monitoring client: OFF after 25 minutes without heartbeat;
+  // movement needs a packet within 35 seconds (old stored speed is not movement).
+  const invalid=raw.block===true||raw.validate===false||speed===-9;
+  const badClock=!Number.isFinite(heartAge)||heartAge < -60_000;
+  const connected=!invalid&&!badClock&&heartAge<=25*60_000;
+  const moving=Number.isFinite(reportAge)&&reportAge>=-60_000&&reportAge<=35_000&&speed!==null&&speed>0&&(speed>=5||Number(raw.icontype)===33);
+  const state:GpsState=invalid||badClock?'warning':!connected?'offline':speed===null||speed<0||!reported||reportAge < -60_000?'warning':moving?'online':'stopped';
   return {external_id:String(raw.imei||raw.deviceid||''),provider_device_id:String(raw.deviceid||''),name:String(raw.devicename||''),license:String(raw.carnumber||''),state,
-    provider_status:raw.block===true?'blocked':raw.validate===false?'invalid':!heartbeat?'never_online':connected?'connected':'offline',
-    latitude:coordinate(raw.lat,90),longitude:coordinate(raw.lng,180),speed,ignition:Number(raw.accstatus)===-1?null:Number(raw.accstatus)===1,
-    recorded_at:iso(raw.gpstime),heartbeat_at:heartbeat};
+    provider_status:raw.block===true?'blocked':raw.validate===false?'invalid':speed===-9?'unactivated':badClock?'invalid_heartbeat':connected?'connected':'offline',
+    latitude:coordinate(raw.lat,90),longitude:coordinate(raw.lng,180),speed,ignition:[0,1].includes(number(raw.accstatus)??-1)?Number(raw.accstatus)===1:null,
+    recorded_at:iso(raw.gpstime),heartbeat_at:heartbeat,reported_at:reported};
 }
 export function normalizeIopDevice(raw:Json):GpsObservation {
   const data=(raw.deviceStatusBean||{}) as Json,status=number(data.status),speed=number(data.speed);

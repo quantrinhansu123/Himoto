@@ -6,6 +6,7 @@ import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
 import { RowAction, RowActionsMenu } from './RowActionsMenu';
 import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
+import { GpsEvidence } from './GpsEvidence';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
   vehicles: ['overdue_days', 'license', 'store_name', 'daily_price'],
@@ -77,6 +78,7 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
               {summary[2] && <span className="mg-mobile-card-extra" title={`${summary[2].label}: ${summary[2].value}`}>{summary[2].value}{summary[3] && ` · ${summary[3].value}`}</span>}
             </span>
             {receive&&vehicleTransferRoute(row)&&<span className="mg-transfer-direction">{vehicleTransferRoute(row)}</span>}
+            {config.kind==='vehicles'&&<GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/>}
           </button>
           {receive&&<button type="button" className="mg-button mg-button-primary mg-mobile-receive" disabled={busyId===row.id} onClick={receive.onSelect}>Nhận xe</button>}
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId === row.id} /></div>

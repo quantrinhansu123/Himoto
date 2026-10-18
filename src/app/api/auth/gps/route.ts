@@ -15,7 +15,7 @@ export const GET=withAccessRequest(async(request:NextRequest)=>{
   const source=request.nextUrl.searchParams.get('event_source')||'all',device=request.nextUrl.searchParams.get('event_device')||'';
   if(!['all','poll','history','webhook'].includes(source)||device&&!/^[1-9]\d{0,14}$/.test(device))return NextResponse.json({status:'error',message:'Bộ lọc nhật ký không hợp lệ.'},{status:400});
   try{
-    const rows=await himotoPool.query(`SELECT d.id,d.vehicle_id,d.provider,d.external_device_id,d.provider_device_name,d.mapping_status,CASE WHEN d.provider_status='not_visible_in_account' THEN 'unavailable' ELSE d.management_status END AS management_status,CASE WHEN d.provider_status='not_visible_in_account' THEN d.sync_received_at ELSE COALESCE(a.last_success_at,d.sync_received_at) END AS sync_received_at,d.heartbeat_at,d.last_latitude,d.last_longitude,d.last_speed,
+    const rows=await himotoPool.query(`SELECT d.id,d.vehicle_id,d.provider,d.external_device_id,d.provider_device_name,d.mapping_status,CASE WHEN d.provider_status='not_visible_in_account' THEN 'unavailable' ELSE d.management_status END AS management_status,CASE WHEN d.provider_status='not_visible_in_account' THEN d.sync_received_at ELSE COALESCE(a.last_success_at,d.sync_received_at) END AS sync_received_at,d.heartbeat_at,d.last_latitude,d.last_longitude,d.last_speed,d.provider_reported_at,d.position_recorded_at,d.last_ignition,
       v.license,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name
       FROM himoto.gps_devices d LEFT JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id
       LEFT JOIN himoto.vehicles v ON v.id=d.vehicle_id LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)

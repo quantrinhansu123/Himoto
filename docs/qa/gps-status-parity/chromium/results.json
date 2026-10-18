@@ -1,0 +1,12 @@
+{
+  "passed": 2,
+  "browser": "chromium",
+  "checks": [
+    "Vehicle cards show connected/stopped separately from OFF/stale/unavailable/unmapped; a failed refresh still reads status on the five-second cycle",
+    "GPS detail shows independent sync/heartbeat/old-position times and never renders seven-day-old 12 km/h as current speed at 390/1440px"
+  ],
+  "javascriptErrors": [],
+  "unexpectedRequests": [],
+  "realBusinessWrites": 0,
+  "realProviderRequests": 0
+}

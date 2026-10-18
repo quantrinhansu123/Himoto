@@ -3706,6 +3706,7 @@
 .mg-reminder-card p { margin: 8px 0; }
 .mg-reminder-pagination { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
 .mg-transaction-photos { margin: 16px 0; padding: 14px; border: 1px solid var(--mg-line); border-radius: 8px; }
+.mg-gps-evidence { display:block;margin-top:6px;color:var(--mg-muted);font-size:12px;line-height:1.6;white-space:normal;overflow-wrap:anywhere; }
 .mg-transaction-photos > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; min-height: 36px; }
 .mg-transaction-photos > p { font-size: 13px; line-height: 1.6; color: var(--mg-muted); }
 .mg-transaction-photos > h3 { display:flex;align-items:center;gap:8px;font-size:16px; }

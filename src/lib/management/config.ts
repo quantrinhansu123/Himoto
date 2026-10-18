@@ -14,7 +14,7 @@ export const VEHICLE_STATUSES: Option[] = [
 /** GPS tracker connection: green / yellow / red dots on the vehicles list. */
 export const LOCATION_STATUSES: Option[] = [
   { value: 'online', label: 'ON · Đang di chuyển' },
-  { value: 'stopped', label: 'Dừng' },
+  { value: 'stopped', label: 'ON · Đang dừng' },
   { value: 'warning', label: 'Cảnh báo' },
   { value: 'offline', label: 'OFF · Mất kết nối' },
   { value: 'stale', label: 'Chưa cập nhật' },

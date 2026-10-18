@@ -14,6 +14,7 @@ import { ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { formatDateTime } from '@/lib/formatters';
 import { MobileDetailsCard } from './MobileDetailsCard';
 import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
+import { GpsEvidence } from './GpsEvidence';
 
 const SECTIONS = [
   { id: 'details', label: 'Thông tin xe' },
@@ -64,6 +65,8 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
         {row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
         {row.gps_last_sync&&<p>Đồng bộ GPS: {formatDateTime(String(row.gps_last_sync))} · {row.gps_provider}</p>}
+        <GpsEvidence syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/>
+        {[0,1].includes(Number(row.gps_ignition))&&row.gps_ignition!==''&&<p>Khóa điện: {row.gps_ignition?'Bật':'Tắt'} · độc lập với kết nối GPS</p>}
         {typeof row.gps_latitude==='number'&&typeof row.gps_longitude==='number'&&<a className="mg-button" href={`https://www.google.com/maps?q=${row.gps_latitude},${row.gps_longitude}`} target="_blank" rel="noopener noreferrer">Mở vị trí GPS</a>}
         <dl className="mg-detail-grid">{config.columns.filter(column => column.key !== 'name' && column.key !== 'status' && column.key !== 'location_status').map(column => <div key={column.key}><dt>{column.label}</dt><dd>{optionLabel(config, column.key, formatValue(row[column.key], column.format))}</dd></div>)}
           {config.fields.filter(field => !config.columns.some(column => column.key === field.key) && field.key !== 'store_id').map(field => <div key={field.key}><dt>{field.label}</dt><dd>{row[field.key] || '—'}</dd></div>)}</dl>

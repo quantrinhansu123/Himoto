@@ -126,7 +126,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
         normalizedStatus: raw.gps_normalized_status,
         lastAt: raw.gps_last_at,
       });
-    })(),gps_latitude:number(raw.gps_latitude),gps_longitude:number(raw.gps_longitude),gps_last_sync:text(raw.gps_last_sync),gps_provider:text(raw.gps_provider) };
+    })(),gps_latitude:number(raw.gps_latitude),gps_longitude:number(raw.gps_longitude),gps_last_sync:text(raw.gps_last_sync),gps_provider:text(raw.gps_provider),gps_heartbeat_at:text(raw.gps_heartbeat_at),gps_position_at:text(raw.gps_position_at),gps_reported_at:text(raw.gps_reported_at),gps_ignition:typeof raw.gps_ignition==='boolean'?Number(raw.gps_ignition):'' };
   const customer = object(raw.customer);
   const vehicles = Array.isArray(raw.vehicles) ? raw.vehicles.map(object) : [];
   const store = object(raw.store);

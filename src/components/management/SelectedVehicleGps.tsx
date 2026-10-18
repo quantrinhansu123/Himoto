@@ -2,8 +2,8 @@
 import { useEffect,useState } from 'react';
 import { GPS_POLL_INTERVAL_MS,GPS_STATE_LABELS } from '@/lib/management/gps';
 import { statusTone } from '@/lib/management/config';
-import { formatDateTime } from '@/lib/formatters';
-interface VehicleGps {vehicle_id:number;status:string;synced_at:string|null}
+import { GpsEvidence } from './GpsEvidence';
+interface VehicleGps {vehicle_id:number;status:string;synced_at:string|null;heartbeat_at?:string|null;position_at?:string|null}
 export function useSelectedVehicleGps(values:(string|number)[]){
   const ids=[...new Set(values.map(Number).filter(id=>Number.isSafeInteger(id)&&id>0))].sort((a,b)=>a-b).slice(0,20).join(',');
   const [state,setState]=useState<{ids:string;rows:VehicleGps[];error:boolean}>({ids:'',rows:[],error:false});
@@ -20,5 +20,5 @@ export function useSelectedVehicleGps(values:(string|number)[]){
 }
 export function SelectedVehicleGps({vehicleId,data}:{vehicleId:string|number;data:ReturnType<typeof useSelectedVehicleGps>}){
   const row=data.rows.find(row=>row.vehicle_id===Number(vehicleId)),status=row?.status||'stale';
-  return <div className="mg-composer-vehicle-summary" role="status" aria-label="Trạng thái định vị xe"><span className={`mg-status mg-status-${statusTone(status)}`}><span/>{row?`GPS: ${status==='stopped'?'ON · Đang dừng':GPS_STATE_LABELS[status]||status}`:data.error?'Chưa tải được GPS':'Đang kiểm tra GPS…'}</span>{row?.synced_at&&<small> · Cập nhật {formatDateTime(row.synced_at)}</small>}</div>;
+  return <div className="mg-composer-vehicle-summary" role="status" aria-label="Trạng thái định vị xe"><span className={`mg-status mg-status-${statusTone(status)}`}><span/>{row?`GPS: ${GPS_STATE_LABELS[status]||status}`:data.error?'Chưa tải được GPS':'Đang kiểm tra GPS…'}</span>{row&&<GpsEvidence syncedAt={row.synced_at} heartbeatAt={row.heartbeat_at} positionAt={row.position_at}/>}</div>;
 }
