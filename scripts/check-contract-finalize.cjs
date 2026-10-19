@@ -19,7 +19,9 @@ async function main() {
   assert.equal(shared.draftPaymentMethod('CK tài khoản cá nhân'), 'transfer');
   assert.equal(shared.draftPaymentMethod('Chuyển khoản'), 'transfer');
   assert.equal(shared.draftPaymentMethods('CK tài khoản công ty')[0], 'company_transfer');
-  assert.equal(shared.draftPaymentMethod(''), 'cash');
+  assert.equal(shared.draftPaymentMethod(''), 'transfer');
+  assert.deepEqual(shared.draftPaymentMethods(''), []);
+  assert.deepEqual(shared.PAYMENT_METHOD_FALLBACK, ['transfer', 'company_transfer', 'cash']);
   checks.push('strict finalize input (revision, Vietnam time not in the future, allowlisted receipt fields); draft payment labels map to methods');
 
   if (process.argv.includes('--live-temp')) {

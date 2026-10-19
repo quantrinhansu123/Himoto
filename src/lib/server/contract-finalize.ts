@@ -1,6 +1,6 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
-import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, paymentAccounts } from '@/lib/management/contract-payments';
+import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, findPaymentAccount, paymentAccountMatchesMethod } from '@/lib/management/contract-payments';
 import { draftPaymentMethod, PAYMENT_METHOD_LABELS, type FinalizeInput, type FinalizeReceipt, type FinalizeCollection, type FinalizeResult } from '@/lib/management/contract-finalize';
 import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { readPaymentContext } from './contract-payments';
@@ -153,9 +153,12 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (previousPaid === null || previousPaid+depositCollected+rentalCollected>MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Tổng đã thu không hợp lệ hoặc vượt giới hạn.',409);
   async function account(receipt: FinalizeReceipt | null, label: string) {
     if (!receipt) return null;
-    await client.query(`SELECT id FROM himoto.${receipt.method === 'cash' ? 'cash' : 'banks'} WHERE id=$1 FOR SHARE`, [receipt.account_id]);
-    const found = paymentAccounts(context, receipt.method).find(row => row.id === receipt.account_id);
-    if (!found) throw new ContractFinalizeError(`Tài khoản nhận ${label} không hoạt động hoặc không thuộc cơ sở.`, 409);
+    const table = receipt.method === 'cash' ? 'cash' : 'banks';
+    await client.query(`SELECT id FROM himoto.${table} WHERE id=$1 FOR SHARE`, [receipt.account_id]);
+    const found = findPaymentAccount(context, receipt.method, receipt.account_id);
+    if (!found || !paymentAccountMatchesMethod(found, receipt.method)) {
+      throw new ContractFinalizeError(`Tài khoản nhận ${label} không khớp hình thức (Tiền mặt = két; CK cá nhân / CK công ty = ngân hàng).`, 409);
+    }
     return found;
   }
   const accounts = [];
@@ -197,11 +200,13 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   const transactionIds: number[] = [];
   async function receipt(found: Awaited<ReturnType<typeof account>>, amount: number, name: string, note: string, paidAt: string,method:FinalizeCollection['method']) {
     if (!found || amount <= 0) return 0;
+    // Method is the source of truth; never infer cash vs bank only from overlapping numeric ids.
+    const cash = method === 'cash';
     const row = await client.query(`INSERT INTO himoto.transactions
       (order_id,created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id)
       VALUES ($1,$2,now(),$3,'in',$4,$5,'approved',$6,$7,$8,$9,$10,$11,'order',$1) RETURNING id`,
-    [id, `${paidAt}:00+07:00`, name, amount, note, actorId, storeId, found.kind === 'bank' ? found.id : null, found.kind === 'cash' ? found.id : null,
-      found.kind === 'cash' ? 1 : 2, found.kind === 'bank' ? (method==='company_transfer'?'company':'personal') : null]);
+    [id, `${paidAt}:00+07:00`, name, amount, note, actorId, storeId, cash ? null : found.id, cash ? found.id : null,
+      cash ? 1 : 2, cash ? null : (method === 'company_transfer' ? 'company' : 'personal')]);
     transactionIds.push(Number(row.rows[0].id));
     return amount;
   }

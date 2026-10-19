@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { dailyPriceSql, DEPOSIT_REFUND_NAME, depositLateral, rentalPaidSql } from './contract-deposits';
 import { legacyContractReviewMessage } from './contract-legacy-review';
-import { MAX_PAYMENT_AMOUNT, PAYABLE_STATUSES, canAddExtraReceipt, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, paymentAccounts } from '@/lib/management/contract-payments';
+import { MAX_PAYMENT_AMOUNT, PAYABLE_STATUSES, canAddExtraReceipt, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, findPaymentAccount, paymentAccountMatchesMethod, paymentAccounts } from '@/lib/management/contract-payments';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractPaymentError extends Error {
@@ -73,10 +73,10 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   const total = billing ? billing.accrued_total : baseTotal;
   const depositPaid = money(order.deposit_paid) ?? 0, depositRefunded = money(order.deposit_refunded) ?? 0;
   // Store banks/cash must match cơ sở nguồn; company banks are usable from every store (Cashbook may attach them to a display branch).
-  const accounts = await client.query(`SELECT id, 'bank' AS kind, store_id, owner_type,bank_name,account_number,owner_name,
-      bank_name || ' · ' || owner_name || ' · ' || account_number AS label
+  const accounts = await client.query(`SELECT id, 'bank'::text AS kind, store_id, owner_type,bank_name,account_number,owner_name,
+      CASE WHEN owner_type='company' THEN 'CK công ty · ' ELSE 'CK cá nhân · ' END || bank_name || ' · ' || owner_name || ' · ' || account_number AS label
     FROM himoto.banks WHERE lower(status) = 'active' AND account_type IN (0,1) AND (store_id=$1 OR owner_type='company')
-    UNION ALL SELECT id, 'cash' AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,COALESCE(NULLIF(name,''),'Két tiền mặt #' || id::text) AS label
+    UNION ALL SELECT id, 'cash'::text AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,'Két tiền mặt · ' || COALESCE(NULLIF(name,''),'#' || id::text) AS label
     FROM himoto.cash WHERE lower(status)='active' AND store_id=$1 ORDER BY kind,id`, [order.store_id]);
   const history = await client.query(`SELECT t.id,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,
       CASE WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK tài khoản công ty'
@@ -168,16 +168,17 @@ export async function recordContractPayment(client: Database, id: number, actorI
   const accountTable = input.method === 'cash' ? 'cash' : 'banks';
   await client.query(`SELECT id FROM himoto.${accountTable} WHERE id=$1 FOR SHARE`, [input.account_id]);
   const refreshed = await readPaymentContext(client, id);
-  const account = paymentAccounts(refreshed, input.method).find(row => row.id === input.account_id);
-  if (!account) throw new ContractPaymentError('Tài khoản nhận không hoạt động, sai cơ sở hoặc chưa được xác định là tài khoản công ty.', 409);
+  const account = findPaymentAccount(refreshed, input.method, input.account_id);
+  if (!account || !paymentAccountMatchesMethod(account, input.method)) throw new ContractPaymentError('Tài khoản nhận không khớp hình thức (Tiền mặt = két; CK cá nhân / CK công ty = ngân hàng).', 409);
   const company = input.method === 'company_transfer';
+  const cash = input.method === 'cash';
   const singleItem = lines.length === 1 ? lines[0].item_id : null;
   const transaction = await client.query(`INSERT INTO himoto.transactions
     (order_id,created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id,order_item_id)
     VALUES ($1,$2,now(),$11,$15,$3,$4,'approved',$5,$6,$7,$8,$9,$10,$12,$13,$14) RETURNING id`,
     [id, `${input.paid_at}:00+07:00`, amount, input.note || (refund ? `Trả cọc hợp đồng_${context.code}` : `Gia hạn hợp đồng_${context.code}`), actorId, context.store_id,
-      account.kind === 'bank' ? account.id : null, account.kind === 'cash' ? account.id : null,
-      account.kind === 'cash' ? 1 : 2, account.kind === 'bank' ? (input.method==='company_transfer'?'company':'personal') : null,
+      cash ? null : account.id, cash ? account.id : null,
+      cash ? 1 : 2, cash ? null : (input.method === 'company_transfer' ? 'company' : 'personal'),
       renewal ? 'order:renewal' : extra ? 'order:extra' : refund ? DEPOSIT_REFUND_NAME : 'order:payment',
       singleItem ? 'line_item_id' : 'order', singleItem ?? id, singleItem, refund ? 'out' : 'in']);
   const transactionId = Number(transaction.rows[0].id);

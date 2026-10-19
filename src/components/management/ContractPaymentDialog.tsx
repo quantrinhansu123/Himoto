@@ -8,7 +8,7 @@ import { Dialog } from './Dialog';
 import { TransferQrPanel } from './TransferQrPanel';
 import { useManagement } from './ManagementProvider';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
-import { PAYABLE_STATUSES, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentAccount, PaymentContext, PaymentInput, PaymentMethod, PaymentPurpose, PaymentRequestError, RenewalItem, canAddExtraReceipt, loadPaymentContext, paymentAccounts, saveContractPayment, vietnamPaymentTime } from '@/lib/management/contract-payments';
+import { PAYABLE_STATUSES, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentAccount, PaymentContext, PaymentInput, PaymentMethod, PaymentPurpose, PaymentRequestError, RenewalItem, canAddExtraReceipt, loadPaymentContext, paymentAccountKey, paymentAccounts, saveContractPayment, vietnamPaymentTime } from '@/lib/management/contract-payments';
 import { transferQr } from '@/lib/management/transfer-qr';
 import { bulkDelete } from '@/lib/management/bulk-delete';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
@@ -50,7 +50,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
       const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null') as PaymentInput | null;
       if (saved && typeof saved.request_id === 'string' && typeof saved.amount === 'string' && PAYMENT_METHODS.some(item => item.value === saved.method)) {
         restored = true;
-        setPending(saved); setAmount(saved.amount); setMethod(saved.method); setAccountId(String(saved.account_id)); setPaidAt(saved.paid_at); setNote(saved.note);
+        setPending(saved); setAmount(saved.amount); setMethod(saved.method); setAccountId(paymentAccountKey({ kind: saved.method === 'cash' ? 'cash' : 'bank', id: saved.account_id })); setPaidAt(saved.paid_at); setNote(saved.note);
         setPurpose(saved.purpose === 'renewal' || saved.purpose === 'extra' || saved.purpose === 'deposit_refund' ? saved.purpose : 'debt');
         setPicks(Object.fromEntries((saved.items || (saved.item_id ? [{ item_id: saved.item_id, amount: saved.amount }] : [])).map(item => [String(item.item_id), item.amount])));
         setError('Có lần thu chưa xác nhận. Thử lại lần thu này để kiểm tra và tránh ghi trùng.');
@@ -76,7 +76,8 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
   }, [id, storageKey, initialPurpose]);
 
   const accounts = context ? paymentAccounts(context, method) : [];
-  const effectiveAccount = accountId || (accounts.length === 1 ? String(accounts[0].id) : '');
+  const effectiveAccount = accountId || (accounts.length === 1 ? paymentAccountKey(accounts[0]) : '');
+  const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
   const payable = Boolean(context && PAYABLE_STATUSES.includes(context.status) && context.remaining !== null && context.remaining > 0);
   const renewable = Boolean(context && !context.billing && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
   const days = /^\d+$/.test(renewalDays) && Number(renewalDays) >= 1 && Number(renewalDays) <= 365 ? Number(renewalDays) : 0;
@@ -158,7 +159,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy.current || !context) return;
-    const input: PaymentInput = pending || transferReview?.input || { request_id: crypto.randomUUID(), revision: context.revision, amount: effectiveAmount, method, account_id: Number(effectiveAccount), paid_at: paidAt, note: note.trim(),
+    const input: PaymentInput = pending || transferReview?.input || { request_id: crypto.randomUUID(), revision: context.revision, amount: effectiveAmount, method, account_id: effectiveAccountId, paid_at: paidAt, note: note.trim(),
       ...(purpose === 'renewal' ? { purpose: 'renewal', items: renewalLines.map(line => ({ item_id: line.item.id, item_revision: line.item.revision, return_at: line.return_at, amount: line.amount || '0' })) }
         : purpose === 'extra' ? { purpose: 'extra' } : refund ? { purpose: 'deposit_refund' } : {}) };
     if (!pending && purpose === 'renewal' && (!renewalLines.length || !days || renewalLines.some(line => !line.return_at || !/^\d{1,13}$/.test(line.amount || '0')))) { setError('Chọn ít nhất một xe, số ngày gia hạn và tiền gia hạn từng xe.'); return; }
@@ -246,7 +247,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
               {PAYMENT_METHODS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select></label>
             <label className="mg-field-wide">{refund ? 'Tài khoản chi' : 'Tài khoản nhận'}<select aria-label="Tài khoản nhận" required value={effectiveAccount} onChange={event => setAccountId(event.target.value)}>
-              <option value="">{refund ? 'Chọn tài khoản chi' : 'Chọn tài khoản nhận'}</option>{accounts.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}
+              <option value="">{refund ? 'Chọn tài khoản chi' : 'Chọn tài khoản nhận'}</option>{accounts.map(account => <option key={paymentAccountKey(account)} value={paymentAccountKey(account)}>{account.label}</option>)}
             </select></label>
             {!accounts.length && <p className="mg-field-wide mg-field-error">{method === 'company_transfer' ? 'Chưa có tài khoản công ty đang hoạt động. Đổi hình thức hoặc thêm TK công ty trong Sổ quỹ.' : 'Chưa có tài khoản nhận đúng cơ sở hợp đồng cho hình thức này (Tiền mặt = két; Chuyển khoản = ngân hàng cơ sở). Đổi Hình thức hoặc chọn TK đúng cơ sở nguồn.'}</p>}
             <label className="mg-field-wide">{refund ? 'Nội dung chi' : 'Nội dung thu / chuyển khoản'}<textarea aria-label="Nội dung thu / chuyển khoản" maxLength={2000} required={purpose === 'extra'} value={note} onChange={event => setNote(event.target.value)} rows={2} /></label>

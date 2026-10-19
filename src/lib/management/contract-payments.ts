@@ -17,6 +17,19 @@ export function parsePaymentPurpose(value: string | null | undefined): PaymentPu
   return PAYMENT_PURPOSES.includes(value as PaymentPurpose) ? value as PaymentPurpose : 'debt';
 }
 export interface PaymentAccount { id: number; label: string; kind: 'cash' | 'bank'; store_id: number; owner_type: string; bank_name?: string; account_number?: string; owner_name?: string }
+/** Cash and bank tables reuse numeric ids; UI/API keys must stay kind-scoped. */
+export function paymentAccountKey(account: Pick<PaymentAccount, 'kind' | 'id'>) {
+  return `${account.kind}:${account.id}`;
+}
+export function parsePaymentAccountKey(value: string): { kind: 'cash' | 'bank'; id: number } | null {
+  const match = /^(cash|bank):([1-9]\d{0,17})$/.exec(String(value || '').trim());
+  return match ? { kind: match[1] as 'cash' | 'bank', id: Number(match[2]) } : null;
+}
+export function paymentAccountMatchesMethod(account: Pick<PaymentAccount, 'kind' | 'owner_type'>, method: PaymentMethod) {
+  if (method === 'cash') return account.kind === 'cash';
+  if (account.kind !== 'bank') return false;
+  return method === 'company_transfer' ? account.owner_type === 'company' : account.owner_type !== 'company';
+}
 export interface ContractPayment {
   id: number; type: 'in' | 'out'; deposit: boolean; amount: number; paid_at: string; method: string; account: string;
   note: string; actor: string;
@@ -46,9 +59,14 @@ export class PaymentRequestError extends Error {
   constructor(message: string, public status = 0) { super(message); }
 }
 export function paymentAccounts(context: PaymentContext, method: PaymentMethod) {
-  return context.accounts.filter(account => method === 'cash' ? account.kind === 'cash' && Number(account.store_id) === Number(context.store_id)
-    : method === 'company_transfer' ? account.kind === 'bank' && account.owner_type === 'company'
-      : account.kind === 'bank' && account.owner_type !== 'company' && Number(account.store_id) === Number(context.store_id));
+  return context.accounts.filter(account => {
+    if (!paymentAccountMatchesMethod(account, method)) return false;
+    if (method === 'company_transfer') return true;
+    return Number(account.store_id) === Number(context.store_id);
+  });
+}
+export function findPaymentAccount(context: PaymentContext, method: PaymentMethod, accountId: number) {
+  return paymentAccounts(context, method).find(account => account.id === accountId);
 }
 export function vietnamPaymentTime(now = new Date()) {
   return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);

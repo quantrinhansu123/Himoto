@@ -3,7 +3,8 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
-import { PAYMENT_METHODS, PaymentContext, PaymentMethod, loadPaymentContext, paymentAccounts, paymentMethodLabel, vietnamPaymentTime } from '@/lib/management/contract-payments';
+import { PAYMENT_METHODS, PaymentContext, PaymentMethod, loadPaymentContext, paymentAccountKey, paymentAccountMatchesMethod, paymentAccounts, paymentMethodLabel, vietnamPaymentTime } from '@/lib/management/contract-payments';
+import { PAYMENT_METHOD_FALLBACK } from '@/lib/management/contract-finalize';
 import { FinalizeCollection, FinalizeResult, balanceCollectionAmounts, finalizeContract } from '@/lib/management/contract-finalize';
 import type { ContractCharge } from '@/lib/management/contract-charges';
 import { DateTime24Field } from './DateTime24Field';
@@ -39,8 +40,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       const withAccounts = (methods: PaymentMethod[]) => {
         const matched = methods.filter(usable);
         if (matched.length) return matched;
-        const fallback = (['cash', 'transfer', 'company_transfer'] as PaymentMethod[]).find(usable);
-        return fallback ? [fallback] : methods.length ? methods : ['cash' as PaymentMethod];
+        const fallback = PAYMENT_METHOD_FALLBACK.find(usable);
+        return fallback ? [fallback] : methods.length ? methods : ['transfer' as PaymentMethod];
       };
       const row = (method: PaymentMethod, amount: string, label?: string): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime(),label});
       const seed = (due: number, methods: PaymentMethod[], label?: string) => {
@@ -64,11 +65,11 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   },[orderId,deposit,total,reservation]);
 
   const accountsFor = (row: CollectionRow) => context ? paymentAccounts(context,row.method) : [];
-  const chosenAccount = (row: CollectionRow) => accountsFor(row).find(account=>String(account.id)===row.account) || accountsFor(row)[0];
+  const chosenAccount = (row: CollectionRow) => accountsFor(row).find(account => paymentAccountKey(account) === row.account) || accountsFor(row)[0];
   const collected = (state: CollectionState) => state.collect ? state.rows.reduce((sum,row)=>sum+(Number(row.amount)||0),0) : 0;
   const accountGap = (state: CollectionState) => state.collect && state.rows.some(row => !(row.automatic && row.amount === '0') && !accountsFor(row).length);
   const missingAccounts = Boolean(context) && ((depositState.collect && accountGap(depositState)) || (rentalState.collect && accountGap(rentalState)));
-  const noAccountMessage = 'Sổ quỹ có thể đã có TK ở cơ sở khác, nhưng phiếu thu chỉ nhận tài khoản đúng cơ sở nguồn khách của hợp đồng + đúng hình thức (Tiền mặt = két; Chuyển khoản = ngân hàng cơ sở; CK công ty = TK công ty). Đổi Hình thức hoặc chọn đúng cơ sở nguồn khách.';
+  const noAccountMessage = 'Sổ quỹ có thể đã có TK ở cơ sở khác, nhưng phiếu thu chỉ nhận tài khoản đúng cơ sở nguồn khách của hợp đồng + đúng hình thức (Tiền mặt = két; CK tài khoản cá nhân = ngân hàng cơ sở; CK công ty = TK công ty). Đổi Hình thức rồi chọn lại Tài khoản nhận.';
   function collections(state: CollectionState, purpose: FinalizeCollection['purpose'], due: number): FinalizeCollection[] {
     if (!state.collect || !due) return [];
     if (!state.rows.length) throw new Error('Thêm khoản tiền đã nhận, hoặc bỏ chọn thu tiền để ghi nhận chưa thu.');
@@ -76,7 +77,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     return state.rows.filter(row=>!(row.automatic && row.amount==='0')).map(row=>{
       if (!/^[1-9]\d{0,12}$/.test(row.amount) || !Number.isSafeInteger(Number(row.amount))) throw new Error('Nhập số tiền lớn hơn 0 cho từng khoản thu.');
       const account = chosenAccount(row);
-      if (!account) throw new Error(noAccountMessage);
+      if (!account || !paymentAccountMatchesMethod(account, row.method)) throw new Error(noAccountMessage);
+      if (row.method === 'transfer' && account.kind !== 'bank') throw new Error('CK tài khoản cá nhân phải chọn ngân hàng cơ sở, không phải két tiền mặt.');
       if (!row.paid_at) throw new Error('Nhập thời điểm thực tế đã nhận tiền.');
       return {purpose,amount:row.amount,method:row.method,account_id:account.id,paid_at:row.paid_at};
     });
@@ -96,8 +98,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     const update = (key: number, patch: Partial<CollectionRow>) => setState({...state,rows:balanceCollectionAmounts(state.rows.map(row=>row.key===key ? {...row,...patch,...(patch.amount!==undefined ? {automatic:false} : {})} : row),due)});
     const add = () => {
       const hasAutomatic = state.rows.some(row=>row.automatic);
-      const preferred = (['cash', 'transfer', 'company_transfer'] as PaymentMethod[]).find(method => context && paymentAccounts(context, method).length)
-        || state.rows[0]?.method || 'cash';
+      const preferred = PAYMENT_METHOD_FALLBACK.find(method => context && paymentAccounts(context, method).length)
+        || state.rows[0]?.method || 'transfer';
       const added = {...newRow(preferred,hasAutomatic ? '' : String(Math.max(due-collected(state),0))),automatic:!reservation && !hasAutomatic};
       setState({...state,rows:balanceCollectionAmounts([...state.rows,added],due)});
     };
@@ -110,7 +112,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
             <div className="mg-form-grid mg-contract-grid-two">
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-amount`}>Số tiền đã nhận (VNĐ)</label><input id={`${purpose}-collection-${index}-amount`} inputMode="numeric" value={formatInput(row.amount)} onChange={event=>update(row.key,{amount:event.target.value.replace(/\D/g,'')})}/>{row.automatic && <small>Tự tính phần còn lại. Có thể sửa theo số tiền thực nhận.</small>}</div>
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-method`}>Hình thức</label><select id={`${purpose}-collection-${index}-method`} value={row.method} onChange={event=>update(row.key,{method:event.target.value as PaymentMethod,account:''})}>{PAYMENT_METHODS.map(method=><option key={method.value} value={method.value}>{paymentMethodLabel(method.value)}</option>)}</select></div>
-              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-account`}>Tài khoản nhận</label><select id={`${purpose}-collection-${index}-account`} value={chosenAccount(row)?.id || ''} disabled={!accountsFor(row).length} aria-invalid={!accountsFor(row).length || undefined} onChange={event=>update(row.key,{account:event.target.value})}>{accountsFor(row).length ? accountsFor(row).map(account=><option key={account.id} value={account.id}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select>
+              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-account`}>Tài khoản nhận</label><select id={`${purpose}-collection-${index}-account`} value={chosenAccount(row) ? paymentAccountKey(chosenAccount(row)!) : ''} disabled={!accountsFor(row).length} aria-invalid={!accountsFor(row).length || undefined} onChange={event=>update(row.key,{account:event.target.value})}>{accountsFor(row).length ? accountsFor(row).map(account=><option key={paymentAccountKey(account)} value={paymentAccountKey(account)}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select>
+                {row.method === 'transfer' && <small>Phải hiện dòng bắt đầu bằng “CK cá nhân · …”. Nếu chỉ thấy két tiền mặt thì đang chọn nhầm Hình thức Tiền mặt.</small>}
                 {!accountsFor(row).length && <p className="mg-field-error">{noAccountMessage}</p>}</div>
               <DateTime24Field id={`${purpose}-collection-${index}-paid-at`} label="Thời điểm nhận" value={row.paid_at} onChange={value=>update(row.key,{paid_at:value})}/>
             </div>

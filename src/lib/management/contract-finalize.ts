@@ -32,13 +32,14 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   transfer: 'CK tk cá nhân',
   company_transfer: 'CK tk công ty',
 };
+/** Prefer bank transfer before cash so empty drafts do not silently book everything as Tiền mặt. */
+export const PAYMENT_METHOD_FALLBACK: PaymentMethod[] = ['transfer', 'company_transfer', 'cash'];
 export function draftPaymentMethod(value: string): PaymentMethod {
   const first = value.split(',').map(item => item.trim()).find(item => METHOD_BY_LABEL[item]);
-  return first ? METHOD_BY_LABEL[first] : 'cash';
+  return first ? METHOD_BY_LABEL[first] : 'transfer';
 }
 export function draftPaymentMethods(value: string): PaymentMethod[] {
-  const methods = [...new Set(value.split(',').map(item => METHOD_BY_LABEL[item.trim()]).filter(Boolean))];
-  return methods.length ? methods : ['cash'];
+  return [...new Set(value.split(',').map(item => METHOD_BY_LABEL[item.trim()]).filter(Boolean))];
 }
 
 export async function finalizeContract(orderId: number, input: FinalizeInput): Promise<FinalizeResult> {
