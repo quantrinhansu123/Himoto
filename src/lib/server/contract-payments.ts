@@ -2,8 +2,9 @@ import 'server-only';
 import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import type { RenewalVersion } from '@/lib/management/contract-renewals';
 import { dailyPriceSql, DEPOSIT_REFUND_NAME, depositLateral, rentalPaidSql } from './contract-deposits';
-import { MAX_PAYMENT_AMOUNT, PAYABLE_STATUSES, canAddExtraReceipt, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, findPaymentAccount, paymentAccountMatchesMethod, paymentAccounts } from '@/lib/management/contract-payments';
+import { MAX_PAYMENT_AMOUNT, PAYABLE_STATUSES, canAddExtraReceipt, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, findPaymentAccount, paymentAccountMatchesMethod } from '@/lib/management/contract-payments';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractPaymentError extends Error {
@@ -17,7 +18,7 @@ function money(value: unknown): number | null {
 export function parseContractPayment(body: unknown): PaymentInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractPaymentError('Thông tin thanh toán không hợp lệ.');
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['request_id', 'revision', 'amount', 'method', 'account_id', 'paid_at', 'note', 'purpose', 'item_id', 'item_revision', 'return_at', 'items'].includes(key)) ||
+  if (Object.keys(input).some(key => !['request_id', 'revision', 'amount', 'method', 'account_id', 'paid_at', 'note', 'purpose', 'item_id', 'item_revision', 'return_at', 'items', 'renewal_version'].includes(key)) ||
       typeof input.request_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.request_id) ||
       typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision) ||
       typeof input.amount !== 'string' || !/^[1-9]\d{0,12}$/.test(input.amount) || money(input.amount) === null ||
@@ -28,6 +29,7 @@ export function parseContractPayment(body: unknown): PaymentInput {
   if (!Number.isFinite(date.getTime()) || new Date(date.getTime() + 7 * 3600000).toISOString().slice(0, 16) !== input.paid_at || date.getTime() > Date.now() + 5 * 60000) throw new ContractPaymentError('Ngày giờ thu tiền không hợp lệ hoặc nằm trong tương lai.');
   const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', refund = input.purpose === 'deposit_refund';
   if (input.purpose !== undefined && !renewal && !extra && !refund) throw new ContractPaymentError('Nghiệp vụ thanh toán không hợp lệ.');
+  if ('renewal_version' in input && (input.purpose !== undefined || !Number.isSafeInteger(input.renewal_version) || Number(input.renewal_version) < 2)) throw new ContractPaymentError('Chọn phiên bản gia hạn đã lưu để ghi nhận phiếu thu.');
   if (!renewal && ['item_id', 'item_revision', 'return_at', 'items'].some(key => key in input)) throw new ContractPaymentError('Chỉ truyền xe và ngày hẹn trả khi thu tiền gia hạn.');
   if (extra && !input.note.trim()) throw new ContractPaymentError('Nhập nội dung cho phiếu thu thêm.');
   const base = { request_id: input.request_id.toLowerCase(), revision: input.revision, amount: input.amount, method: input.method as PaymentInput['method'], account_id: Number(input.account_id), paid_at: input.paid_at, note: input.note.trim() };
@@ -50,7 +52,7 @@ export function parseContractPayment(body: unknown): PaymentInput {
     if (!validItem(input)) throw new ContractPaymentError('Chọn xe, phiên bản chi tiết xe và ngày hẹn trả mới hợp lệ.');
     return { ...base, purpose: 'renewal', item_id: Number(input.item_id), item_revision: String(input.item_revision), return_at: String(input.return_at) };
   }
-  return { ...base, ...(extra ? { purpose: 'extra' as const } : refund ? { purpose: 'deposit_refund' as const } : {}) };
+  return { ...base, ...(extra ? { purpose: 'extra' as const } : refund ? { purpose: 'deposit_refund' as const } : {}), ...('renewal_version' in input ? { renewal_version: Number(input.renewal_version) } : {}) };
 }
 const renewalLines = (input: PaymentInput) => input.items
   ?? (input.item_id ? [{ item_id: input.item_id, item_revision: String(input.item_revision), return_at: String(input.return_at), amount: input.amount }] : []);
@@ -111,6 +113,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractPaymentError('Hợp đồng hoặc người thực hiện không hợp lệ.');
   const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', refund = input.purpose === 'deposit_refund';
   const fingerprint = createHash('sha256').update(JSON.stringify({ id, actorId, amount: input.amount, method: input.method, account_id: input.account_id, paid_at: input.paid_at, note: input.note,
+    ...(input.renewal_version !== undefined ? { renewal_version: input.renewal_version } : {}),
     ...(renewal ? { purpose: input.purpose, ...(input.items ? { items: input.items.map(item => [item.item_id, item.return_at, item.amount]) } : { item_id: input.item_id, return_at: input.return_at }) }
       : extra || refund ? { purpose: input.purpose } : {}) })).digest('hex');
   await client.query("SET LOCAL lock_timeout = '5s'");
@@ -122,7 +125,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
     return { context: await readPaymentContext(client, id), transaction_id: Number(receipt.rows[0].transaction_id), replayed: true, company_transfer: input.method === 'company_transfer' };
   }
   await client.query('LOCK TABLE himoto.orders IN ROW EXCLUSIVE MODE');
-  const locked = await client.query('SELECT xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [id]);
+  const locked = await client.query('SELECT xmin::text AS revision,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [id]);
   if (!locked.rowCount) throw new ContractPaymentError('Không tìm thấy hợp đồng.', 404);
   if (locked.rows[0].revision !== input.revision) throw new ContractPaymentError('Hợp đồng hoặc tổng đã thu đã thay đổi. Tải lại thông tin trước khi thanh toán.', 409);
   const context = await readPaymentContext(client, id);
@@ -139,6 +142,17 @@ export async function recordContractPayment(client: Database, id: number, actorI
   }
   const lines = renewal ? renewalLines(input) : [];
   let renewalPayload: Record<string, unknown> | null = null;
+  let linkedRenewal: RenewalVersion | undefined;
+  if (input.renewal_version !== undefined) {
+    const versions = locked.rows[0].draft_payload?.management_composer?.versions;
+    linkedRenewal = Array.isArray(versions) ? versions.find((version: RenewalVersion) => version.kind === 'renewal' && Number(version.version) === input.renewal_version) : undefined;
+    if (!linkedRenewal || !Number.isSafeInteger(linkedRenewal.amount) || linkedRenewal.amount <= 0) throw new ContractPaymentError('Không tìm thấy phí của phiên bản gia hạn đã chọn.', 409);
+    const collected = await client.query(`SELECT COALESCE(SUM(t.value),0) AS amount FROM himoto.management_contract_payments r
+      JOIN himoto.transactions t ON t.id=r.transaction_id AND t.order_id=r.order_id
+      WHERE r.order_id=$1 AND r.renewal_payload->>'version'=$2 AND t.status='approved' AND t.type='in'`, [id, String(input.renewal_version)]);
+    if (Number(collected.rows[0].amount) + amount > linkedRenewal.amount) throw new ContractPaymentError('Số tiền thu vượt phí còn thiếu của lần gia hạn này.', 409);
+    renewalPayload = { ...linkedRenewal, collected_amount: amount };
+  }
   if (renewal) {
     if (context.billing) throw new ContractPaymentError('Thuê sở hữu thu tiền theo lịch đã lập. Không cộng kỳ đóng tiền thành phí gia hạn hoặc đổi ngày kết thúc hợp đồng.', 409);
     if (!RENEWABLE_STATUSES.includes(context.status)) throw new ContractPaymentError('Chỉ gia hạn hợp đồng đang thuê hoặc quá hạn.', 409);
@@ -169,7 +183,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
   if (!account || !paymentAccountMatchesMethod(account, input.method)) throw new ContractPaymentError('Tài khoản nhận không khớp hình thức (Tiền mặt = két; CK cá nhân / CK công ty = ngân hàng).', 409);
   const company = input.method === 'company_transfer';
   const cash = input.method === 'cash';
-  const singleItem = lines.length === 1 ? lines[0].item_id : null;
+  const singleItem = linkedRenewal?.item_id ?? (lines.length === 1 ? lines[0].item_id : null);
   const transaction = await client.query(`INSERT INTO himoto.transactions
     (order_id,created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id,order_item_id)
     VALUES ($1,$2,now(),$11,$15,$3,$4,'approved',$5,$6,$7,$8,$9,$10,$12,$13,$14) RETURNING id`,

@@ -47,6 +47,8 @@ async function live() {
     for(const table of tables) await c.query(`CREATE TEMP TABLE qa_pin_${table} (LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS) ON COMMIT DROP`);
     await c.query('ALTER TABLE qa_pin_orders ADD PRIMARY KEY(id)');
     await proxy.query(fs.readFileSync(path.join(__dirname,'../docs/sql/2026-10-16-battery-contract-links.sql'),'utf8').replace(/^BEGIN;\s*/,'').replace(/COMMIT;\s*$/,''));
+    const legacyMigration=fs.readFileSync(path.join(__dirname,'../docs/sql/2026-10-19-battery-legacy-import.sql'),'utf8').replace(/^BEGIN;\s*/,'').replace(/COMMIT;\s*$/,'');
+    await proxy.query(legacyMigration);await proxy.query(legacyMigration);
     await c.query('CREATE TEMP SEQUENCE qa_pin_seq START 99000');
     for(const table of ['battery_contracts','transactions']) await c.query(`ALTER TABLE qa_pin_${table} ALTER COLUMN id SET DEFAULT nextval('qa_pin_seq')`);
     await c.query("INSERT INTO qa_pin_stores(id,store_name,status) VALUES(35,'CS Thuê sở hữu QA','opening')");
@@ -102,6 +104,23 @@ async function live() {
     await assert.rejects(()=>attempt(()=>server.saveBatteryContract(proxy,143,edit(edited,{vehicle_contract_id:null}),linked.id)),/Giữ nguyên/);
     for(const source of [902,903,904,905,999])await assert.rejects(()=>attempt(()=>server.saveBatteryContract(proxy,143,{...input(),vehicle_contract_id:source})),server.BatteryContractError);
     checks.push('TEMP: source FK, Pin + charger, reverse filtering and edit persistence work; invalid sources rejected and receipts stay separate from vehicle contracts');
+    const sourceInput=input();delete sourceInput.request_id;
+    const fields=['store_id','customer_id','status','staff_name','signed_on','signed_place','customer_name','customer_phone','customer_address','customer_id_card','id_card_issued_on','id_card_issued_by','battery_name','vehicle_license','vehicle_brand','vehicle_type','vehicle_color','vehicle_year','starts_at','ends_at','rent_price','price_unit','package_name','paid_amount','paid_method','deposit_amount','deposit_note','deposit_method','notes'];
+    const sourceValues=fields.map(key=>key==='id_card_issued_on'?null:key==='starts_at'||key==='ends_at'?sourceInput[key]+':00+07:00':sourceInput[key]);
+    const legacyId=Number((await c.query(`INSERT INTO qa_pin_battery_contracts(${fields.join(',')},code,legacy_source_order_id,legacy_paid_amount,legacy_deposit_amount) VALUES(${fields.map((_,i)=>'$'+(i+1)).join(',')},'PIN-VPS-QA',9901,300000,3000000) RETURNING id`,sourceValues)).rows[0].id);
+    const imported=(await server.listBatteryContracts(proxy,35)).find(r=>r.id===legacyId);
+    await c.query(`INSERT INTO qa_pin_transactions(created_at,name,type,value,note,status,user_id,store_id,object_type,object_id,payment_method) VALUES
+      (now(),'battery:legacy:rental','in',300000,'Phiếu gốc app cũ','approved',143,35,'battery_contract',$1,1),
+      (now(),'battery:legacy:deposit','in',3000000,'Phiếu cọc gốc app cũ','approved',143,35,'battery_contract',$1,1)`,[legacyId]);
+    const historical=edit(imported,{paid_account_id:null,deposit_account_id:null,notes:'Chỉ sửa hồ sơ'});
+    const countBefore=Number((await c.query('SELECT count(*) n FROM qa_pin_transactions')).rows[0].n);
+    const updated=await attempt(()=>server.saveBatteryContract(proxy,143,historical,legacyId));
+    assert.equal(Number((await c.query('SELECT count(*) n FROM qa_pin_transactions')).rows[0].n),countBefore);
+    await assert.rejects(()=>attempt(()=>server.saveBatteryContract(proxy,143,edit(updated,{paid_amount:299999,paid_account_id:null,deposit_account_id:null}),legacyId)),/thấp hơn phiếu thu/);
+    await assert.rejects(()=>attempt(()=>server.saveBatteryContract(proxy,143,edit(updated,{paid_amount:350000,paid_account_id:null,deposit_account_id:null}),legacyId)),/Chọn tài khoản/);
+    await attempt(()=>server.saveBatteryContract(proxy,143,edit(updated,{paid_amount:350000,paid_account_type:'transfer',paid_method:'CK',paid_account_id:11,deposit_account_id:null}),legacyId));
+    assert.deepEqual((await c.query("SELECT value FROM qa_pin_transactions WHERE object_id=$1 AND name='battery:rental'",[legacyId])).rows.map(r=>Number(r.value)),[50000]);
+    checks.push('TEMP: legacy import migration is repeatable; historical rent/deposit need no new account or receipt; only a 50k increase is collected and source baselines cannot be reduced');
   } finally {await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
 }
 (async()=>{if(process.argv.includes('--live-temp'))await live();console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));})().catch(e=>{console.error(e);process.exitCode=1;});

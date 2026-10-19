@@ -32,7 +32,10 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     if(composer.handover)add({key:`handover:${id}`,kind:'handover',phases:['handover']});
     for(const v of versions)if(v.kind==='renewal')add({key:`renewal:${id}:${v.version}`,kind:'renewal',phases:[`renewal-${v.version}`],renewal:v});
     const receipts=(await db.query('SELECT transaction_id,renewal_payload FROM himoto.management_contract_payments WHERE order_id=$1 AND renewal_payload IS NOT NULL',[id])).rows;
-    for(const receipt of receipts)add({key:`renewal-receipt:${id}:${receipt.transaction_id}`,kind:'renewal',phases:[`renewal-receipt-${receipt.transaction_id}`],renewal:{...receipt.renewal_payload,transaction_id:Number(receipt.transaction_id)}});
+    for(const receipt of receipts) {
+      if(receipt.renewal_payload.version!==undefined&&versions.some((v:{kind:string;version:number})=>v.kind==='renewal'&&Number(v.version)===Number(receipt.renewal_payload.version)))continue;
+      add({key:`renewal-receipt:${id}:${receipt.transaction_id}`,kind:'renewal',phases:[`renewal-receipt-${receipt.transaction_id}`],renewal:{...receipt.renewal_payload,transaction_id:Number(receipt.transaction_id)}});
+    }
     const returned=composer.reservation_no_show?[]:(await db.query('SELECT id FROM himoto.order_vehicle_details WHERE order_id=$1 AND completed_at IS NOT NULL AND deleted_at IS NULL ORDER BY id DESC',[id])).rows;
     for(const item of returned)if(!events.some(e=>e.kind==='return'&&(e.phases.includes(`return-${item.id}`)||e.key.split(':').at(-1)?.split('-').includes(String(item.id)))))add({key:`return:${id}:${item.id}`,kind:'return',phases:[`return-${item.id}`]});
   }

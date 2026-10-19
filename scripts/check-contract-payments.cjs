@@ -26,6 +26,8 @@ async function main() {
   checks.push('VietQR: verified bank aliases, exact receiving account/amount/content, safe URL encoding; missing/unknown account and unsupported amounts/content blocked');
   const base = { request_id: randomUUID(), revision: '123', amount: '300', method: 'cash', account_id: 1, paid_at: '2026-01-01T10:01', note: ' QA ' };
   assert.equal(server.parseContractPayment(base).note, 'QA');
+  assert.equal(server.parseContractPayment({ ...base, renewal_version: 2 }).renewal_version, 2);
+  for (const patch of [{ renewal_version: 1 }, { renewal_version: '2' }, { renewal_version: 2, purpose: 'extra' }, { renewal_version: 2, purpose: 'renewal' }]) assert.throws(() => server.parseContractPayment({ ...base, ...patch }));
   for (const patch of [{ amount: '0' }, { amount: '-1' }, { amount: '1.2' }, { amount: '1e3' }, { amount: 300 }, { amount: '10000000000000' }, { revision: '' }, { request_id: 'anything' }, { method: 'split' }, { account_id: '1' }, { account_id: -1 }, { paid_at: '2026-02-30T12:00' }, { paid_at: '2099-01-01T10:00' }, { pid: '999' }, { user_id: 1 }, { note: 'a'.repeat(2001) }]) assert.throws(() => server.parseContractPayment({ ...base, ...patch }));
   for (const input of [null, [], {}, 'cash']) assert.throws(() => server.parseContractPayment(input));
   const renewalInput = { ...base,purpose:'renewal',item_id:101,item_revision:'1',return_at:'2026-01-20T10:01' };
@@ -44,7 +46,7 @@ async function main() {
   ] };
   assert.deepEqual(shared.paymentAccounts(context, 'cash').map(a => a.id), [1]);
   assert.deepEqual(shared.paymentAccounts(context, 'transfer').map(a => a.id), [1]);
-  assert.deepEqual(shared.paymentAccounts(context, 'company_transfer').map(a => a.id), [4, 5]);
+  assert.deepEqual(shared.paymentAccounts(context, 'company_transfer').map(a => a.id), [3, 4, 5]);
   assert.equal(shared.vietnamPaymentTime(new Date('2026-01-01T20:30:00Z')), '2026-01-02T03:30');
   checks.push('cash and ordinary transfers scoped by contract branch; company accounts explicit; no inference from unknown ownership');
   const originalFetch = global.fetch;
@@ -171,6 +173,25 @@ async function main() {
       for(const status of ['draft','cancelled']){await c.query('UPDATE qa_payment_orders SET order_status=$1 WHERE id=4',[status]);await assert.rejects(pay({purpose:'extra',amount:'150',note:'Phụ thu QA'},4),e=>e.status===409);}
       assert.equal(await count('transactions'),extraCount);
       checks.push('PostgreSQL TEMP: extra receipt on a completed contract writes an approved cashbook income, raises total and paid equally and keeps debt; draft/cancelled rejected');
+      await c.query('SAVEPOINT saved_renewal_receipts');
+      const renewals = load(path.join(root, 'lib/server/contract-renewals'));
+      const state = (await c.query(`SELECT o.xmin::text AS order_revision,d.xmin::text AS item_revision FROM qa_payment_orders o JOIN qa_payment_order_vehicle_details d ON d.order_id=o.id WHERE d.id=101`)).rows[0];
+      const version = await renewals.recordContractRenewal(proxy, 1, 143, { item_id:101, ...state, return_at:'2026-04-01T10:01', amount:'300', note:'' });
+      const beforeCollection = await server.readPaymentContext(proxy,1);
+      const linkedRequest = randomUUID();
+      const linked = await pay({ request_id:linkedRequest, amount:'100', method:'transfer', renewal_version:version.version });
+      const linkedPayload = (await c.query('SELECT renewal_payload FROM qa_payment_management_contract_payments WHERE transaction_id=$1',[linked.transaction_id])).rows[0].renewal_payload;
+      assert.equal(linkedPayload.version,version.version);assert.equal(linkedPayload.license,'QA-A');assert.equal(linkedPayload.collected_amount,100);
+      assert.equal(linked.context.total_amount,beforeCollection.total_amount);assert.deepEqual(linked.context.items,beforeCollection.items);
+      assert.equal(linked.context.paid_amount,beforeCollection.paid_amount+100);
+      assert.equal((await pay({request_id:linkedRequest,revision:'0',amount:'100',method:'transfer',renewal_version:version.version})).replayed,true);
+      await assert.rejects(pay({amount:'1',renewal_version:999}),e=>e.status===409);
+      await assert.rejects(pay({amount:'201',renewal_version:version.version}),e=>e.status===409);
+      await pay({amount:'100',method:'cash',renewal_version:version.version});
+      await pay({amount:'100',method:'company_transfer',account_id:3,renewal_version:version.version});
+      await assert.rejects(pay({amount:'1',renewal_version:version.version}),e=>e.status===409);
+      await c.query('ROLLBACK TO SAVEPOINT saved_renewal_receipts');
+      checks.push('PostgreSQL TEMP: saved renewal receipts link the exact version for personal/company/cash payments, preserve dates and fee, replay once and reject missing versions or overcollection');
     } finally { await c.query('ROLLBACK'); c.release(); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

@@ -130,7 +130,7 @@ function emptyForm(storeId: string, prefill?: BatteryContractPrefill): FormState
 }
 function formFromRow(row: BatteryContract): FormState {
   const fields: Record<string, unknown> = { ...row, store_id: String(row.store_id) };
-  for (const key of ['id', 'code', 'store_name', 'store_address', 'store_phone', 'created_at', 'revision', 'vehicle_contract_code']) delete fields[key];
+  for (const key of ['id', 'code', 'store_name', 'store_address', 'store_phone', 'created_at', 'revision', 'vehicle_contract_code', 'legacy_paid_amount', 'legacy_deposit_amount']) delete fields[key];
   return fields as FormState;
 }
 
@@ -197,7 +197,8 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
     if (form.ends_at && Date.parse(`${form.ends_at}+07:00`) <= Date.parse(`${form.starts_at}+07:00`)) { setError('Thời điểm kết thúc phải sau thời điểm bắt đầu.'); return; }
     for (const purpose of ['paid','deposit'] as const) {
       const amount = purpose === 'paid' ? form.paid_amount : form.deposit_amount;
-      if (Number(amount) > 0 && !batteryPaymentAccounts(accounts,Number(form.store_id),form[`${purpose}_account_type`] || '').some(account=>Number(account.id) === form[`${purpose}_account_id`])) { setError('Chọn hình thức và tài khoản nhận cho từng khoản tiền thuê / cọc đã thu.');return; }
+      const baseline = purpose === 'paid' ? row?.legacy_paid_amount : row?.legacy_deposit_amount;
+      if (Number(amount) > Number(baseline || 0) && !batteryPaymentAccounts(accounts,Number(form.store_id),form[`${purpose}_account_type`] || '').some(account=>Number(account.id) === form[`${purpose}_account_id`])) { setError('Chọn hình thức và tài khoản nhận cho từng khoản tiền thuê / cọc đã thu.');return; }
     }
     const input: BatteryContractInput = { ...form, store_id: Number(form.store_id), ...(row ? { revision: row.revision } : { request_id: requestId.current }) };
     busy.current = true; setSaving(true); setError('');
@@ -218,7 +219,8 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
   const method = (purpose: 'paid' | 'deposit', label: string) => {
     const type = form[`${purpose}_account_type`] || '';
     const available = batteryPaymentAccounts(accounts, Number(form.store_id), type);
-    const positive = Number(purpose === 'paid' ? form.paid_amount : form.deposit_amount) > 0;
+    const baseline = purpose === 'paid' ? row?.legacy_paid_amount : row?.legacy_deposit_amount;
+    const positive = Number(purpose === 'paid' ? form.paid_amount : form.deposit_amount) > Number(baseline || 0);
     return <><label>{label}<select aria-label={label} required={positive} value={type} onChange={event => setForm(current => ({ ...current, [`${purpose}_account_type`]: event.target.value as BatteryCollectionMethod, [`${purpose}_account_id`]: null, [`${purpose}_method`]: event.target.value === 'cash' ? 'TM' : event.target.value ? 'CK' : '' }))}>{BATTERY_COLLECTION_METHODS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       {type && <label>{purpose === 'paid' ? 'Tài khoản nhận tiền thuê' : 'Tài khoản nhận tiền cọc'}<select aria-label={purpose === 'paid' ? 'Tài khoản nhận tiền thuê' : 'Tài khoản nhận tiền cọc'} required={positive} disabled={accountsLoading} value={form[`${purpose}_account_id`] || ''} onChange={event => update(`${purpose}_account_id`, event.target.value ? Number(event.target.value) : null)}><option value="">Chọn tài khoản nhận</option>{available.map(account => <option key={account.key} value={account.id}>{account.label}</option>)}</select>{!accountsLoading && !available.length && <small className="mg-field-error">Không có tài khoản đang hoạt động phù hợp với cơ sở đã chọn.</small>}</label>}</>;
   };
@@ -268,6 +270,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
         {text('package_name', 'Gói thuê', { wide: true, maxLength: 120 })}
         {amount('deposit_amount', 'Tiền cọc đã nhận (đ)')}
         {method('deposit', 'Hình thức đặt cọc')}
+        {Boolean(row?.legacy_paid_amount || row?.legacy_deposit_amount) && <p className="mg-field-wide mg-composer-hint">Đã thu trên app cũ: tiền thuê {money(row?.legacy_paid_amount || 0)}, tiền cọc {money(row?.legacy_deposit_amount || 0)}. Chỉ chọn tài khoản nhận khi thu thêm.</p>}
         <DateTime24Field id="battery-collected" label="Thời điểm nhận tiền" value={form.collected_at || vietnamNow()} onChange={value=>update('collected_at',value)} />
         <p className="mg-field-wide mg-composer-hint">Tiền thuê đã thanh toán và tiền cọc được ghi thành phiếu thu riêng vào tài khoản đã chọn. Khi sửa, chỉ phần tăng thêm được ghi phiếu mới; không thu lại số đã nhận.</p>
         {accountsError && <p className="mg-field-wide mg-field-error" role="alert">{accountsError}</p>}

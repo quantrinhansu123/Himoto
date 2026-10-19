@@ -53,6 +53,7 @@ export interface PaymentContext {
 export interface PaymentInput {
   request_id: string; revision: string; amount: string; method: PaymentMethod; account_id: number; paid_at: string; note: string;
   purpose?: 'renewal' | 'extra' | 'deposit_refund'; item_id?: number; item_revision?: string; return_at?: string; items?: RenewalLine[];
+  renewal_version?: number;
 }
 export interface PaymentResult { context: PaymentContext; transaction_id: number; replayed: boolean; company_transfer: boolean }
 export class PaymentRequestError extends Error {

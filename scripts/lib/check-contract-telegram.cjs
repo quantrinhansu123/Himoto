@@ -28,6 +28,17 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   assert.equal(selectedStaff.contract_staff,'Selected employee QA');assert.equal(selectedStaff.actor,'Actor QA');
   const refund=await content.notificationPayload(db,1,'return',143,['return-1001']);assert.equal(refund.refunded,450000);assert.equal(refund.method,'Tiền mặt');
   assert.equal((await content.notificationPayload(db,1,'renewal',143,['renewal-2'],renewal)).method,'');
+  await c.query('SAVEPOINT linked_renewal_telegram');
+  await c.query(`INSERT INTO ${schema}.transactions(id,order_id,name,type,value,status,user_id,store_id,bank_id,payment_method,bank_owner_type,note) VALUES
+    (9010,1,'order:payment','in',1500000,'approved',143,23,99,2,'personal','Gia hạn hợp đồng_HD-QA-1'),
+    (9011,1,'order:payment','in',1500000,'pending',143,23,99,2,'company','QA')`);
+  for(const [id,payload] of [[9010,{...renewal,kind:'renewal'}],[9011,{...renewal,kind:'renewal'}]]) await c.query(`INSERT INTO ${schema}.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload) VALUES($1,1,$2,143,$3,$4)`,[randomUUID(),id,'a'.repeat(64),JSON.stringify(payload)]);
+  const paidRenewal=await content.notificationPayload(db,1,'renewal',143,['renewal-2'],renewal);
+  assert.equal(paidRenewal.method,'CK TK cá nhân');assert(content.contractNotificationText('renewal',paidRenewal).includes('Hình thức thanh toán: CK TK cá nhân'));
+  assert.equal((await content.notificationPayload(db,1,'renewal',143,['renewal-3'],{...renewal,version:3})).method,'');
+  const linkedEvents=(await telegram.readContractTelegram(db,1,143,admin)).state.events.filter(e=>e.kind==='renewal');
+  assert.equal(linkedEvents.length,1);assert.equal(linkedEvents[0].key,'renewal:1:2');assert(linkedEvents[0].text.includes('CK TK cá nhân'));
+  await c.query('ROLLBACK TO SAVEPOINT linked_renewal_telegram');
   await telegram.saveContractTelegram(db,1,143,admin,{action:'auto',enabled:false});
   await notices.queueContractNotification(db,1,'renewal','renewal:1:2',143,'renewal-2',renewal);
   assert.equal((await c.query(`SELECT status FROM ${schema}.management_contract_notifications WHERE event_key='renewal:1:2'`)).rows[0].status,'manual');

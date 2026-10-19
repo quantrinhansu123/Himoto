@@ -92,8 +92,11 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const adjustments=kind==='return'&&Array.isArray(composer?.return_adjustments)?composer.return_adjustments.filter((entry:{item_id:number})=>returnIds.includes(String(entry.item_id))):[];
   const rental=tx.filter(t=>['in','addon'].includes(t.type)&&!/^order:deposit(?::|$)/.test(t.name));
   // Date changes are not receipts. Only an explicitly associated renewal receipt supplies a payment method.
-  const renewalTx=renewal?tx.filter(t=>Number(t.id)===renewal.transaction_id || t.renewal_payload && (
-    t.renewal_payload.return_at===renewal.return_at && t.renewal_payload.license===renewal.license)):[];
+  const renewalTx=renewal?tx.filter(t=>['in','addon'].includes(t.type)&&Number(t.value)>0&&(
+    renewal.transaction_id!==undefined?Number(t.id)===Number(renewal.transaction_id)
+      :renewal.version!==undefined?Number(t.renewal_payload?.version)===Number(renewal.version)
+        :t.renewal_payload&&t.renewal_payload.version===undefined&&
+          new Date(t.renewal_payload.return_at).getTime()===new Date(renewal.return_at).getTime()&&t.renewal_payload.license===renewal.license)):[];
   // Rental/handover telegrams include cọc + thuê; reservation is deposit-only. Never drop CK cọc and show only a cash rental fee.
   const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?eventRefunds:kind==='renewal'?renewalTx
     :kind==='reservation'?depositTx:[...depositTx,...rental];

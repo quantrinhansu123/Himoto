@@ -2,7 +2,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from './himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from './management-session';
-import { BatteryContractError, deleteBatteryContract, listBatteryContracts, parseBatteryInput, saveBatteryContract } from './battery-contracts';
+import { BatteryContractError, deleteBatteryContract, listBatteryContracts, saveBatteryContract } from './battery-contracts';
 
 export async function handleBatteryContractRequest(request: NextRequest, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', rawId?: string) {
   const denied = await protectDatabaseRequest(request); if (denied) return denied;
@@ -13,7 +13,6 @@ export async function handleBatteryContractRequest(request: NextRequest, method:
     const user = method === 'GET' ? null : await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
     if (method !== 'GET' && !user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
     const raw = method === 'GET' ? null : await request.json();
-    const input = method === 'POST' || method === 'PATCH' ? parseBatteryInput(raw, method === 'PATCH') : null;
     if (method === 'DELETE' && (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => key !== 'revision') || typeof raw.revision !== 'string')) throw new BatteryContractError('Phiên bản hợp đồng không hợp lệ.');
     const store = request.nextUrl.searchParams.get('store_id');
     const vehicleContract = request.nextUrl.searchParams.get('vehicle_contract_id');
@@ -21,7 +20,7 @@ export async function handleBatteryContractRequest(request: NextRequest, method:
     if (method === 'GET' && vehicleContract !== null && !/^[1-9]\d*$/.test(vehicleContract)) throw new BatteryContractError('Hợp đồng xe liên kết không hợp lệ.');
     client = await himotoPool.connect(); await client.query(method === 'GET' ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
     const data = method === 'GET' ? await listBatteryContracts(client, store === null ? undefined : Number(store), vehicleContract === null ? undefined : Number(vehicleContract))
-      : method === 'DELETE' ? await deleteBatteryContract(client, id!, raw.revision, user!.id) : await saveBatteryContract(client, user!.id, input!, id);
+      : method === 'DELETE' ? await deleteBatteryContract(client, id!, raw.revision, user!.id) : await saveBatteryContract(client, user!.id, raw, id);
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

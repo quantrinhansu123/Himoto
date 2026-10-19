@@ -41,6 +41,7 @@ export interface BatteryContractFields {
 export type BatteryContractPrefill = Partial<BatteryContractFields> & { store_id?: number };
 export interface BatteryContractInput extends BatteryContractFields { revision?: string; request_id?: string }
 export interface BatteryContract extends BatteryContractFields {
+  legacy_paid_amount?: number; legacy_deposit_amount?: number;
   vehicle_contract_code?: string;
   id: number; code: string; store_name: string; store_address: string; store_phone: string; created_at: string; revision: string;
 }

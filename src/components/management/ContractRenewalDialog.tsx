@@ -150,6 +150,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
             request_id: crypto.randomUUID(),
             revision: fresh.revision,
             amount: String(fee),
+            renewal_version: result.version,
             method,
             account_id: effectiveAccountId,
             paid_at: paidAt,
