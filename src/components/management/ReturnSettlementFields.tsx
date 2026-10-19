@@ -65,8 +65,9 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
         ...(accountValue?{recipient_account:accountValue}:{}),
         ...(nameValue?{recipient_name:nameValue}:{}),
       }:{})}:undefined;
-    change.current(receipts.length||refund||refundDeferred?{order_id:orderId,revision:context.revision,receipts,...(refund?{refund}:{}),...(refundDeferred?{refund_deferred:true as const}:{})}:undefined);
-    block.current?.(refundDecisionMissing||Boolean(refundRow?.enabled && !refundReady));
+    const pendingRecipient={...(bankValue?{bank:bankValue}:{}),...(accountValue?{account:accountValue}:{}),...(nameValue?{name:nameValue}:{})};
+    change.current(receipts.length||refund||refundDeferred?{order_id:orderId,revision:context.revision,receipts,...(refund?{refund}:{}),...(refundDeferred?{refund_deferred:true as const,...(Object.keys(pendingRecipient).length?{refund_recipient:pendingRecipient}:{})}:{})}:undefined);
+    block.current?.(refundDecisionMissing||Boolean(refundRow?.enabled && !refundReady)||Boolean(refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account)));
   },[context,rows,recipient,refundAllowed,refundReady,refundDecisionMissing,refundDeferred,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr]);
   function update(kind:Kind,patch:Partial<Row>){
     const old=rows[kind];const method=patch.method||old?.method||'transfer';
@@ -86,25 +87,29 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
         {kind==='refund'&&<>
           <label className="mg-checkbox"><input type="radio" name={`return-${orderId}-refund-decision`} checked={refundDeferred} onChange={()=>{setRefundDeferred(true);update('refund',{enabled:false});}}/>Chưa hoàn cọc — tiếp tục ghi nhận cọc đang giữ</label>
           {refundDecisionMissing&&<p role="status">Chọn đã hoàn hoặc chưa hoàn cọc trước khi xác nhận. Nhập STK hay lưu ảnh QR chưa tạo phiếu chi hoàn cọc.</p>}
-          {refundDeferred&&<p role="status">Lượt này không tạo phiếu hoàn. Cọc vẫn được ghi nhận đang giữ và Telegram sẽ báo chưa có phiếu hoàn.</p>}
+          {refundDeferred&&<p role="status">Gửi QR hoặc STK bên dưới lên Telegram để kế toán hoàn cọc sau. Lượt này lưu thông tin nhận hoàn và giữ cọc đang chờ hoàn; khi đã chuyển tiền mới ghi phiếu chi.</p>}
         </>}
-        {row?.enabled&&!blocked&&<div className="mg-form-grid mg-contract-grid-two">
+        {(row?.enabled&&!blocked||kind==='refund'&&refundDeferred)&&<div className="mg-form-grid mg-contract-grid-two">
+          {row?.enabled&&!blocked&&<>
           <div className="mg-field"><label htmlFor={`return-${orderId}-${kind}-amount`}>Số tiền thực tế (VNĐ)</label><input id={`return-${orderId}-${kind}-amount`} inputMode="numeric" value={amount(kind)} onChange={event=>update(kind,{amount:event.target.value.replace(/\D/g,'').slice(0,13)})}/></div>
           <div className="mg-field"><label htmlFor={`return-${orderId}-${kind}-method`}>{kind==='refund'?'Hình thức hoàn':'Hình thức thu'}</label><select id={`return-${orderId}-${kind}-method`} value={method} onChange={event=>update(kind,{method:event.target.value as PaymentMethod})}>{PAYMENT_METHODS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
           <div className="mg-field mg-field-wide"><label htmlFor={`return-${orderId}-${kind}-account`}>{kind==='refund'?'Tài khoản / két chi hoàn':'Tài khoản / két nhận tiền'}</label><select id={`return-${orderId}-${kind}-account`} value={row.account_id} onChange={event=>update(kind,{account_id:event.target.value})}>{!accounts.length&&<option value="">Chưa có tài khoản phù hợp</option>}{accounts.map(account=><option key={account.id} value={account.id}>{account.label}</option>)}</select></div>
-          {kind==='refund'&&method!=='cash'&&<>
-            <p className="mg-composer-hint mg-field-wide">{hasRefundQr
+          </>}
+          {kind==='refund'&&(refundDeferred||method!=='cash')&&<>
+            <p className="mg-composer-hint mg-field-wide">{refundDeferred
+              ? 'Các ô dưới đây là thông tin để kế toán nhận và xử lý. Có QR đã lưu thì để trống; khách chỉ cung cấp STK thì nhập tại đây. Không cần chọn tài khoản chi khi chưa hoàn tiền.'
+              : hasRefundQr
               ? 'Đã có ảnh QR / số TK trong hồ sơ trả xe — có thể bỏ trống ngân hàng, số TK và tên chủ TK.'
               : 'Hoàn CK: nhập đủ ngân hàng + số TK + tên chủ TK, hoặc lưu ảnh «QR / Số tài khoản khách nhận hoàn» ở mục Hồ sơ hợp đồng bên trên rồi bấm Lưu ảnh / video.'}</p>
-            {hasRefundQr&&<p className="mg-field-wide" role="status">Đã nhận ảnh hồ sơ hoàn cọc — đủ để xác nhận chuyển khoản.</p>}
+            {hasRefundQr&&<p className="mg-field-wide" role="status">{refundDeferred?'Đã có ảnh QR / thông tin nhận hoàn để gửi cùng hồ sơ Telegram.':'Đã nhận ảnh hồ sơ hoàn cọc — đủ để xác nhận chuyển khoản.'}</p>}
             {([
-              ['recipient_bank',hasRefundQr?'Ngân hàng nhận của khách (tuỳ chọn)':'Ngân hàng nhận của khách *'],
-              ['recipient_account',hasRefundQr?'Số tài khoản khách nhận (tuỳ chọn)':'Số tài khoản khách nhận *'],
-              ['recipient_name',hasRefundQr?'Tên chủ tài khoản nhận (tuỳ chọn)':'Tên chủ tài khoản nhận *'],
+              ['recipient_bank',hasRefundQr||refundDeferred?'Ngân hàng nhận của khách (tuỳ chọn)':'Ngân hàng nhận của khách *'],
+              ['recipient_account',hasRefundQr||refundDeferred?'Số tài khoản khách nhận (tuỳ chọn)':'Số tài khoản khách nhận *'],
+              ['recipient_name',hasRefundQr||refundDeferred?'Tên chủ tài khoản nhận (tuỳ chọn)':'Tên chủ tài khoản nhận *'],
             ] as const).map(([key,label])=>{
               const value=recipient[key];
               // With QR evidence, typed fields are optional; without QR, all three are required.
-              const invalid=hasRefundQr
+              const invalid=hasRefundQr||refundDeferred
                 ? key==='recipient_account' && Boolean(value.trim()) && !validRefundAccount(value)
                 : key==='recipient_account' ? !validRefundAccount(value||' ') : !value.trim();
               return <div className="mg-field" key={key}><label htmlFor={`return-${orderId}-${key}`}>{label}</label>

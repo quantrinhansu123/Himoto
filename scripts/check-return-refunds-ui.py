@@ -11,7 +11,7 @@ out=Path(a.output);out.mkdir(parents=True,exist_ok=True);expect.set_options(time
 state={};posts=[];errors=[];unexpected=[];checks=[]
 now=datetime.now(timezone(timedelta(hours=7)));start=(now-timedelta(days=1)).isoformat();end=(now+timedelta(hours=1)).isoformat()
 accounts=[dict(id=15,kind='bank',store_id=32,owner_type='personal',label='TK cá nhân chi hoàn QA'),dict(id=5,kind='cash',store_id=32,owner_type='',label='Két chi hoàn QA')]
-def payment():return dict(id=901,code='QA-RETURN',status='renting',store_id=32,revision='1',total_amount=420000,paid_amount=420000,remaining=0,deposit_paid=1000000,deposit_refunded=0,deposit_held=1000000,company_paid_amount=0,company_payment_count=0,accounts=accounts,history=[],items=[])
+def payment():return dict(id=901,code='QA-RETURN',status='renting',store_id=32,revision='1',total_amount=420000,paid_amount=420000,remaining=0,deposit_paid=1000000,deposit_refunded=0,deposit_held=1000000,company_paid_amount=0,company_payment_count=0,accounts=[] if state['case'].startswith('deferred-') else accounts,history=[],items=[])
 def photos():return [dict(slot='return-101-document-2',mime_type='image/jpeg',updated_at=now.isoformat())] if state['qr'] else []
 def mock(route):
     if mock_contract_type_read(route):return
@@ -20,7 +20,9 @@ def mock(route):
         assert path=='/api/auth/returns',path
         body=req.post_data_json;posts.append(body)
         s=body['settlements'][0];assert len(body['items'])==1 and s['order_id']==901
-        if state['case']=='deferred':assert s['refund_deferred'] and 'refund' not in s
+        if state['case'].startswith('deferred'):
+            assert s['refund_deferred'] and 'refund' not in s
+            if state['case'] in ['deferred-typed','deferred-account-only']:assert s['refund_recipient']['account']=='000123456'
         else:
             r=s['refund'];assert r['amount']=='1000000' and r['account_id']==15 and r['method']=='transfer'
             if state['case'] in ['typed','formatted-qr']:assert r['recipient_account']=='000123456'
@@ -47,15 +49,21 @@ with sync_playwright() as pw:
         ctx.add_init_script("""const qaFetch=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(url.pathname==='/api/auth/payment-events')return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return qaFetch.call(this,input,options);};""")
         ctx.add_cookies([dict(name='himoto_management_session',value=Path(a.branch_cookie_file).read_text().strip(),url=a.url,httpOnly=True,sameSite='Strict')]);ctx.route('**/api/**',mock)
         page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
-        for case in ['typed','qr-only','partial-qr','formatted-qr','invalid-qr','missing-recipient','deferred','load-error']:
-            state.clear();state.update(case=case,qr=case in ['qr-only','partial-qr','formatted-qr','invalid-qr'])
+        for case in ['typed','qr-only','partial-qr','formatted-qr','invalid-qr','missing-recipient','deferred','deferred-typed','deferred-account-only','deferred-qr','load-error']:
+            state.clear();state.update(case=case,qr=case in ['qr-only','partial-qr','formatted-qr','invalid-qr','deferred-qr'])
             before=len(posts);page.goto(a.url+'/contracts?action=return&query=QA-358.49',wait_until='networkidle',timeout=90000)
             dialog=page.get_by_role('dialog',name='Trả xe',exact=True);section=dialog.get_by_role('region',name='Thu phí và hoàn cọc',exact=True)
             submit=dialog.get_by_role('button',name='Xác nhận trả 1 xe',exact=True)
             submit.click();expect(dialog.get_by_role('alert',exact=False).filter(has_text='Hoàn tất mục')).to_be_visible();assert len(posts)==before
             if case=='load-error':
                 expect(dialog).to_contain_text('QA không tải được khoản hoàn');dialog.get_by_role('button',name='Hủy',exact=True).click();checks.append(dict(browser=name,case=case,blocked=True));continue
-            if case=='deferred':section.get_by_label('Chưa hoàn cọc',exact=False).check()
+            if case.startswith('deferred'):
+                section.get_by_label('Chưa hoàn cọc',exact=False).check()
+                expect(section.get_by_label('Tài khoản / két chi hoàn',exact=True)).to_have_count(0)
+                if case in ['deferred-typed','deferred-account-only']:section.locator('#return-901-recipient_account').fill('000.123 456')
+                if case=='deferred-typed':
+                    section.locator('#return-901-recipient_bank').fill('QA bank');section.locator('#return-901-recipient_name').fill('Khách QA')
+                if case=='deferred-qr':expect(section).to_contain_text('Đã có ảnh QR / thông tin nhận hoàn để gửi')
             else:
                 section.get_by_label('Đã hoàn cọc cho khách',exact=True).check()
                 if state['qr']:expect(section).to_contain_text('Đã nhận ảnh hồ sơ hoàn cọc')
@@ -75,7 +83,7 @@ with sync_playwright() as pw:
                 dialog.get_by_role('button',name='Hủy',exact=True).click()
             else:
                 expect(dialog).to_contain_text('Đã trả xe hợp đồng QA-RETURN');assert len(posts)==before+1
-                if case=='deferred':expect(dialog).to_contain_text('Chưa ghi nhận hoàn hết cọc')
+                if case.startswith('deferred'):expect(dialog).to_contain_text('Chưa ghi nhận hoàn hết cọc')
                 dialog.get_by_role('button',name='Đóng',exact=True).click()
             checks.append(dict(browser=name,case=case,blocked=case in ['invalid-qr','missing-recipient']))
         ctx.unroute_all(behavior='wait');ctx.close();browser.close()

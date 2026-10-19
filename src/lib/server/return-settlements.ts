@@ -12,8 +12,16 @@ export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
   const result=value.map(raw=>{
     if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new ContractReturnError('Thông tin quyết toán trả xe chưa hợp lệ.');
     const row=raw as Record<string,unknown>;
-    if(Object.keys(row).some(key=>!['order_id','revision','receipts','refund','refund_deferred'].includes(key))||!Number.isSafeInteger(row.order_id)||Number(row.order_id)<=0||typeof row.revision!=='string'||!/^\d{1,20}$/.test(row.revision)||!Array.isArray(row.receipts)||row.receipts.length>20)throw new ContractReturnError('Chọn đúng hợp đồng, phiên bản và các khoản đã thu.');
+    if(Object.keys(row).some(key=>!['order_id','revision','receipts','refund','refund_deferred','refund_recipient'].includes(key))||!Number.isSafeInteger(row.order_id)||Number(row.order_id)<=0||typeof row.revision!=='string'||!/^\d{1,20}$/.test(row.revision)||!Array.isArray(row.receipts)||row.receipts.length>20)throw new ContractReturnError('Chọn đúng hợp đồng, phiên bản và các khoản đã thu.');
     if(row.refund_deferred!==undefined&&(row.refund_deferred!==true||row.refund!==undefined))throw new ContractReturnError('Chọn đã hoàn cọc hoặc chưa hoàn cọc, không chọn cả hai.');
+    let pendingRecipient:ReturnSettlement['refund_recipient'];
+    if(row.refund_recipient!==undefined){
+      const r=row.refund_recipient;
+      if(row.refund_deferred!==true||!r||typeof r!=='object'||Array.isArray(r)||Object.entries(r).some(([k,v])=>!['bank','account','name'].includes(k)||typeof v!=='string'||v.length>150))throw new ContractReturnError('Thông tin khách chờ nhận hoàn cọc chưa hợp lệ.');
+      const raw=r as Record<string,string>,account=normalizeRefundAccount(raw.account||'');
+      if(raw.account?.trim()&&!validRefundAccount(raw.account))throw new ContractReturnError('Số tài khoản khách chờ nhận hoàn cọc chưa hợp lệ.');
+      pendingRecipient={...(raw.bank?.trim()?{bank:raw.bank.trim()}:{}),...(account?{account}:{}),...(raw.name?.trim()?{name:raw.name.trim()}: {})};
+    }
     const parse=(input:unknown,refund=false)=>{
       if(!input||typeof input!=='object'||Array.isArray(input))throw new ContractReturnError('Khoản thu / hoàn chưa hợp lệ.');
       const receipt=input as Record<string,unknown>;
@@ -40,7 +48,7 @@ export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
     }
     const ids=[...receipts.map(receipt=>receipt.request_id),...(refund?[refund.request_id]:[])];
     if(new Set(ids).size!==ids.length)throw new ContractReturnError('Mỗi khoản thu / hoàn cần một mã giao dịch riêng.');
-    return {order_id:Number(row.order_id),revision:row.revision,receipts,...(refund?{refund}:{}),...(row.refund_deferred===true?{refund_deferred:true as const}:{})};
+    return {order_id:Number(row.order_id),revision:row.revision,receipts,...(refund?{refund}:{}),...(row.refund_deferred===true?{refund_deferred:true as const}:{}),...(pendingRecipient?{refund_recipient:pendingRecipient}:{})};
   });
   if(new Set(result.map(row=>row.order_id)).size!==result.length)throw new ContractReturnError('Mỗi hợp đồng chỉ quyết toán một lần trong lượt trả.');
   return result;
@@ -92,7 +100,7 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
       const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account||'QR',refund.recipient_name].filter(Boolean).join(' · ')}`:' · theo ảnh QR'}`});
       context=paid.context;refundId=paid.transaction_id;
     }
-    const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(settlement.refund_deferred?{refund_deferred:true}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
+    const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(settlement.refund_deferred?{refund_deferred:true,refund_pending_amount:context.deposit_held,...(settlement.refund_recipient?{recipient:settlement.refund_recipient}:{})}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
     await db.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer}',
       COALESCE(draft_payload::jsonb->'management_composer','{}'::jsonb)||jsonb_build_object('return_settlements',COALESCE(draft_payload::jsonb #> '{management_composer,return_settlements}','[]'::jsonb)||$2::jsonb),true)::json,
       order_status=CASE WHEN $3 THEN order_status WHEN $4 THEN 'completed' ELSE 'wait_payment' END,updated_at=now() WHERE id=$1`,[settlement.order_id,JSON.stringify([snapshot]),context.items.length>0,context.remaining===0]);

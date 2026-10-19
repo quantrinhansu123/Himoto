@@ -2,7 +2,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),{randomUUID
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
 const {load,root}=require('./lib/load-typescript.cjs');
 const {parseReturnSettlements,completeReturnBatch}=load(path.join(root,'lib/server/return-settlements'));
-const {readPaymentContext}=load(path.join(root,'lib/server/contract-payments'));
+const {readPaymentContext,recordContractPayment}=load(path.join(root,'lib/server/contract-payments'));
 const {notificationPayload,contractNotificationText}=load(path.join(root,'lib/server/contract-notification-content'));
 const pool=load(path.join(root,'lib/server/himoto-database')).ownerDatabase;
 global.fetch=async()=>{throw Error('Real network writes are forbidden in QA');};
@@ -48,7 +48,22 @@ checks.push('Missing QR/incomplete recipient and invalid accounts never save the
 const deferred={order_id:1,revision:(await revisions()).order_revision,receipts:[],refund_deferred:true};
 await completeReturnBatch(db,153,[item],parseReturnSettlements([deferred]));assert.equal((await readPaymentContext(db,1)).deposit_held,1000000);assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.transactions')).rows[0].n,2);
 const saved=(await db.query('SELECT draft_payload FROM himoto.orders WHERE id=1')).rows[0].draft_payload.management_composer.return_settlements[0];assert.equal(saved.refund_deferred,true);assert.equal(saved.refund_transaction_id,null);
+const missingInfo=await notificationPayload(db,1,'return',153,['return-101']);assert(contractNotificationText('return',missingInfo).includes('Chưa có QR/STK'));
 checks.push('Explicit not-refunded choice is audited, keeps the deposit and creates no fictitious voucher');
+await c.query('ROLLBACK TO SAVEPOINT baseline');
+for(const [name,recipient,qr] of [['pending-typed',{bank:'QA bank',account:'000.123 456',name:'Khách QA'},false],['pending-account-only',{account:'000123456'},false],['pending-qr',undefined,true]]){
+ const f=await fixture();
+ if(qr)await db.query("INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,'return-101-document-2','image/jpeg',$1,153)",[Buffer.from([255,216,255,217])]);
+ const parsed=parseReturnSettlements([{order_id:1,revision:f.settlement.revision,receipts:[],refund_deferred:true,...(recipient?{refund_recipient:recipient}:{})}]);
+ await completeReturnBatch(db,153,[f.item],parsed);const ctx=await readPaymentContext(db,1);assert.equal(ctx.deposit_held,1000000);assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.transactions')).rows[0].n,2);
+ const notice=await notificationPayload(db,1,'return',153,['return-101']);assert.equal(notice.refunded,0);assert.equal(notice.method,'');assert.equal(notice.refund_pending.amount,1000000);
+ const text=contractNotificationText('return',notice);assert(text.includes('Chờ kế toán hoàn cọc: 1.000.000'));assert(!text.includes('Hình thức hoàn cọc:'));if(recipient)assert.equal(notice.refund_pending.account,'000123456');if(qr)assert(notice.photos.some(p=>p.slot==='return-101-document-2'));
+ await recordContractPayment(db,1,153,{request_id:randomUUID(),revision:ctx.revision,amount:'1000000',method:'transfer',account_id:15,paid_at:paidAt,purpose:'deposit_refund',note:'QA hoàn sau khi đã gửi thông tin'});
+ const after=await notificationPayload(db,1,'return',153,['return-101']);assert.equal(after.refund_pending,undefined);assert.equal(after.refunded,1000000);assert.equal(after.method,'CK TK cá nhân');assert.equal((await readPaymentContext(db,1)).deposit_held,0);
+ checks.push(name+': recipient/QR survives return into Telegram without a voucher/source account, then a real refund clears pending');await c.query('ROLLBACK TO SAVEPOINT baseline');
+}
+for(const r of [{account:'bad/#'},{account:'. . .'},{account:'000123456',amount:'1'},{account_id:15}])assert.throws(()=>parseReturnSettlements([{...deferred,refund_recipient:r}]));
+assert.throws(()=>parseReturnSettlements([{...settlement,refund_recipient:{account:'000123456'}}]));
 }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
 console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,productionSequenceChanges:0,realTelegramRequests:0},null,2));}
 main().catch(e=>{console.error(e.name,e.code||'',e.message);process.exitCode=1;});

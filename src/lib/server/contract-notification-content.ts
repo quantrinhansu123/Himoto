@@ -12,6 +12,7 @@ export interface NotificationPayload {
   refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
   refund_recipient?:{bank?:string;account?:string;name?:string};
+  refund_pending?:{amount:number;bank?:string;account?:string;name?:string};
   battery_swap?:{percentage:number;fee:number;collected:number;license:string;vehicle_name:string};
   transfer?:{from:string;to:string;note:string;received:boolean};
 }
@@ -24,6 +25,8 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
   const vehicle=[`Bsx: ${p.renewal?.license||p.vehicles||'—'}`,`Loại xe: ${p.renewal?.vehicle_name||p.vehicle_names||'—'}`];
   const refundedAmount=Number(p.refunded||0);
   const depositAmount=Number(p.deposit||0);
+  const pendingRecipient=[p.refund_pending?.bank,p.refund_pending?.account,p.refund_pending?.name].filter(Boolean).join(' · ')
+    ||((p.photos||[]).some(photo=>/^return-[1-9]\d*-document-[1-9]\d*$/.test(photo.slot))?'Theo ảnh QR / hồ sơ đính kèm':'Chưa có QR/STK — cần bổ sung trước khi hoàn');
   const lines=kind==='battery_swap'?[`Khách đổi pin: ${p.customer}`,`Bsx: ${p.battery_swap?.license||p.vehicles}`,`Loại xe: ${p.battery_swap?.vehicle_name||p.vehicle_names||'—'}`,`Pin lúc nhận: ${p.battery_swap?.percentage??'—'}%`,`Phí pin dưới 20%: ${money(p.battery_swap?.fee)}`,`Đã thu: ${money(p.battery_swap?.collected)}`,`Hình thức thu: ${method}`]:kind==='return'?[`Khách trả xe: ${p.customer}`,...vehicle,
     ...(p.return_fees?[...(p.return_fees.returned_at?[`Bàn giao thực tế: ${new Date(p.return_fees.returned_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`]:[]),`Phí quá hạn: ${money(p.return_fees.late)}`,`Phí sửa chữa: ${money(p.return_fees.repair)}`,...(p.return_fees.early_discount?[`Giảm tiền thuê trả sớm: ${money(p.return_fees.early_discount)}`]:[]),`Đã thu phí / công nợ: ${money(p.return_fees.collected)}`,...(p.return_fees.method?[`Hình thức thu: ${p.return_fees.method}`]:[])]:[]),
     `Tiền cọc: ${money(p.deposit)}`,
@@ -31,10 +34,11 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
     `Tổng hoàn cọc: ${money(p.refunded)}`,
     ...(refundedAmount>0
       ?[`Hình thức hoàn cọc: ${p.method||'Chưa xác định'}`]
-      :depositAmount>0
+      :!p.refund_pending&&depositAmount>0
         ?['Hoàn cọc: chưa ghi nhận phiếu hoàn — tick «Đã hoàn cọc» khi trả xe hoặc ghi phiếu chi sổ quỹ']
         :[]),
-    ...(p.refund_recipient?.account?[`Khách nhận hoàn: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[])]
+    ...(p.refund_pending?[`Chờ kế toán hoàn cọc: ${money(p.refund_pending.amount)}`,`Thông tin nhận hoàn: ${pendingRecipient}`]:[]),
+    ...(!p.refund_pending&&p.refund_recipient?.account?[`Khách nhận hoàn: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[])]
     :kind==='renewal'?[`Khách gia hạn: ${p.customer}`,...vehicle,
       ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${day(item.before_return_at)} - ${day(item.return_at)}`):[`Gia hạn: ${day(p.renewal?.before_return_at||null)} - ${day(p.renewal?.return_at||null)}`]),
       `Phí gia hạn: ${money(p.renewal?.amount)} đ`,`Hình thức thanh toán: ${method}`]
@@ -120,10 +124,13 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const end=draft?.end_date?`${draft.end_date}:00+07:00`:o.return_at;
   const duration=start&&end?Math.ceil((new Date(end).getTime()-new Date(start).getTime())/86400000):NaN;
   const effectiveDeposit=kind==='return'?depositTx.reduce((sum,t)=>sum+Number(t.value),0):deposit;
+  const heldDeposit=Math.max(Number(effectiveDeposit||0)-refunds.reduce((sum,t)=>sum+Number(t.value),0),0);
+  const pendingRefund=kind==='return'&&settlement?.refund_deferred&&heldDeposit>0
+    ?{...(settlement.recipient||{}),amount:Math.min(Number(settlement.refund_pending_amount)||heldDeposit,heldDeposit)}:undefined;
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,
-    refunded:eventRefunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{}),
+    refunded:eventRefunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{}),...(pendingRefund?{refund_pending:pendingRefund}:{}),
     ...(adjustments.length?{return_fees:{returned_at:adjustments.map((entry:{actual_return_at:string})=>entry.actual_return_at).sort().at(-1),late:adjustments.reduce((sum:number,entry:{late_fee?:number;fee:number;repair_fee?:number;early_discount?:number})=>sum+Number(entry.late_fee??Math.max(entry.fee+(entry.early_discount||0)-(entry.repair_fee||0),0)),0),repair:adjustments.reduce((sum:number,entry:{repair_fee?:number})=>sum+Number(entry.repair_fee||0),0),early_discount:adjustments.reduce((sum:number,entry:{early_discount?:number})=>sum+Number(entry.early_discount||0),0),collected:feeReceipts.reduce((sum,t)=>sum+Number(t.value),0),method:methods(feeReceipts)}}:{}),...(settlement?.recipient?.account?{refund_recipient:settlement.recipient}:{}),
     ...(swap?{battery_swap:{percentage:Number(swap.battery_percent),fee:Number(swap.fee),collected:selected.reduce((sum,t)=>sum+Number(t.value),0),license:swap.license,vehicle_name:swap.vehicle_name}}:{})};
 }
