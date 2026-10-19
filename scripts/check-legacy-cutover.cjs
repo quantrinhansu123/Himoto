@@ -34,6 +34,29 @@ async function main(){
    assert.equal(rows[1].paid,null);
    assert.equal(await deposits.rentalPaid({query:(sql,values)=>c.query(sql.replaceAll('himoto.','pg_temp.'),values)},1,300),200);
    console.log('PASS: PostgreSQL preserves legacy additional deposits as deposits, excludes cancelled vouchers and leaves unverified paid balances unknown.');
+   await c.query('ALTER TABLE pg_temp.orders ADD COLUMN total_rental_fees numeric');
+   await c.query(`CREATE TEMP TABLE order_vehicle_details(id bigint,order_id bigint,type text,hiring_fee numeric,substitute_unit_price numeric,total_renewal_amount numeric,rent_at timestamptz,return_at timestamptz,deleted_at timestamptz) ON COMMIT DROP`);
+   await c.query(`INSERT INTO pg_temp.orders(id,draft_payload) VALUES
+     (3,'{"legacy_migration":{}}'),(4,'{}'),(5,'{"legacy_migration":{},"management_composer":{"installment_plan":{}}}')`);
+   await c.query(`INSERT INTO pg_temp.order_vehicle_details VALUES
+     (1,3,'day',420000,0,0,'2026-10-18 13:02:34+07','2026-10-21 13:02:34+07',NULL),
+     (2,3,'day',875000,125000,19500000,'2026-10-01+07','2026-10-19+07',NULL),
+     (3,3,'day',420000,0,420000,'2026-10-01+07','2026-10-19+07',NULL),
+     (4,4,'day',140000,0,0,'2026-10-18+07','2026-10-21+07',NULL),
+     (5,3,'total',3000000,3000000,0,'2026-10-18+07','2026-10-21+07',NULL),
+     (6,3,'day',430000,0,0,'2026-10-18 13:00+07','2026-10-21 15:00+07',NULL),
+     (7,5,'day',420000,140000,0,'2026-10-18+07','2026-10-21+07',NULL)`);
+   const rates=(await c.query(`SELECT d.id,${deposits.dailyPriceSql().replaceAll('himoto.','pg_temp.')} AS rate FROM pg_temp.order_vehicle_details d JOIN pg_temp.orders o ON o.id=d.order_id ORDER BY d.id`)).rows;
+   assert.deepEqual(rates.map(r=>r.rate==null?null:Number(r.rate)),[140000,125000,null,140000,null,null,null]);
+   console.log('PASS: legacy period totals are not daily prices; explicit legacy rates and native rates remain valid, ambiguous renewals/hourly terms and installment plans require confirmation.');
+   await c.query('CREATE TEMP TABLE stores(id bigint,store_name text) ON COMMIT DROP');
+   await c.query('CREATE TEMP TABLE vehicle_location_events(id bigint,vehicle_id bigint,event_type text,from_store_id bigint,to_store_id bigint,created_by bigint,audit_snapshot jsonb,ref_type text,ref_id bigint) ON COMMIT DROP');
+   await c.query(`INSERT INTO pg_temp.vehicle_location_events VALUES(1,10,'manual_transfer',1,2,143,NULL,NULL,NULL),(2,11,'manual_transfer',1,2,143,'{"reconciliation":{"superseded":true}}',NULL,NULL)`);
+   const transfers=load(path.join(root,'lib/server/vehicle-transfers'));
+   const query={query:(sql,values)=>c.query(sql.replaceAll('himoto.','pg_temp.'),values)};
+   assert.equal(Number((await transfers.readPendingVehicleTransfer(query,10)).receivable),1);
+   assert.equal(Number((await transfers.readPendingVehicleTransfer(query,11)).receivable),0);
+   console.log('PASS: reconciliation voids a stale transfer request without recording receipt or weakening ordinary destination acceptance.');
   }finally{await c.query('ROLLBACK');c.release();}
  }
  console.log('PASS: unresolved source contracts reject money, return and swap operations before any write; ordinary and reviewed contracts retain their workflow.');

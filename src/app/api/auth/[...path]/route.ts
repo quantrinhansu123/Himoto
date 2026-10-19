@@ -74,6 +74,7 @@ const listQueries: Record<string, QueryConfig> = {
           ) b
           LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
           ${VEHICLE_GPS_JOIN_SQL}
+          WHERE COALESCE(v.current_store_id,v.store_id)>0
           ORDER BY v.id DESC`,
   },
   'order/car-rental': {
