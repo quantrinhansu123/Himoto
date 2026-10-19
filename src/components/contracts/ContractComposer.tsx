@@ -78,9 +78,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     }
     return initial;
   });
-  const [salesText, setSalesText] = useState<string | null>(null);
   const selectedGps=useSelectedVehicleGps(draft.vehicles.map(vehicle=>vehicle.id));
-  // NVKD mirrors "Nguồn khách" until the user picks or types an NVKD directly.
+  // NVKD/TPKD mirrors "Nguồn khách" until the user picks a sales person directly.
   const salesFollowsSource = useRef(!draft.sales_staff_id);
   const reserving = canSaveDraft && Boolean(draft.reservation);
   const [rentalDays, setRentalDays] = useState(() => rentalDayCount(draft.start_date,draft.end_date));
@@ -426,6 +425,9 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     const roles = staffRoles(person.position);
     if (roles.includes('TPKD')) return true;
     return roles.includes('NVKD') && String(person.store_id) === staffStoreId;
+  }).sort((a, b) => {
+    const rank = (person: ManagementRow) => staffRoles(person.position).includes('TPKD') ? 0 : 1;
+    return rank(a) - rank(b) || String(a.name || '').localeCompare(String(b.name || ''), 'vi');
   });
   const tlsStaff = salesDirectory.filter(person => staffIsAvailable(person) && staffRoles(person.position).includes('TLS'));
   const tpkdStaff = salesDirectory.filter(person => staffIsAvailable(person) && staffRoles(person.position).includes('TPKD'));
@@ -434,35 +436,23 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     for (const person of [...branchStaff.filter(staffIsAvailable), ...tlsStaff, ...tpkdStaff]) byId.set(person.id, person);
     return [...byId.values()];
   })();
-  const nameKey = (value: unknown) => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
-  const salesOption = (person: ManagementRow) => salesStaff.filter(item => nameKey(item.name) === nameKey(person.name)).length > 1 ? `${person.name} · ${person.code}` : String(person.name || '');
+  const nameKey = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('vi');
   const findSalesStaff = (text: string) => {
     const needle = nameKey(text);
     if (!needle) return undefined;
-    const exact = salesStaff.filter(person => nameKey(salesOption(person)) === needle || nameKey(person.name) === needle);
+    const exact = salesStaff.filter(person => nameKey(person.name) === needle);
     if (exact.length === 1) return exact[0];
     if (exact.length > 1) return undefined;
-    // Unique partial: "Vui" → Nguyễn Thị Vui when only one TPKD/NVKD matches.
     const partial = salesStaff.filter(person => {
       const name = nameKey(person.name);
       return name.includes(needle) || name.split(/\s+/).includes(needle) || nameKey(person.code).includes(needle);
     });
     return partial.length === 1 ? partial[0] : undefined;
   };
-  const assignedSales = salesDirectory.find(person => String(person.id) === draft.sales_staff_id && hasSalesCommissionRole(person.position));
-  const salesValue = salesText ?? (assignedSales ? salesOption(assignedSales) : '');
-  const salesUnmatched = Boolean(salesText?.trim()) && !draft.sales_staff_id;
   function changeSource(value: string) {
     change('customer_source', value);
     if (!salesFollowsSource.current) return;
     const person = findSalesStaff(value);
-    setSalesText(null);
-    change('sales_staff_id', person ? String(person.id) : '');
-  }
-  function changeSales(value: string) {
-    const person = findSalesStaff(value);
-    salesFollowsSource.current = !value.trim();
-    setSalesText(value);
     change('sales_staff_id', person ? String(person.id) : '');
   }
   const allVehicles = dataset?.vehicles || [];
@@ -609,9 +599,12 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" value={draft.customer_source} placeholder="Chọn hoặc nhập tên nhân sự" onChange={event => changeSource(event.target.value)} />
                 <datalist id="contract-source-staff-options">{sourceStaff.map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
                 <small>Nhân sự cửa hàng xe + toàn bộ TLS/TPKD.</small></div>
-              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD ghi nhận doanh số</label><input id="contract-sales_staff_id" list="contract-sales-staff-options" value={salesValue} placeholder="Chọn hoặc nhập tên NVKD/TPKD" aria-invalid={salesUnmatched} onChange={event=>changeSales(event.target.value)} onBlur={()=>{if(draft.sales_staff_id)setSalesText(null);}} />
-                <datalist id="contract-sales-staff-options">{salesStaff.map(person=><option key={person.id} value={salesOption(person)}>{person.code}</option>)}</datalist>
-                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không có NVKD/TPKD tên này. Chọn trong danh sách gợi ý; để trống là chưa phân công.</p> : <small>NVKD theo cửa hàng xe; TPKD gợi ý toàn công ty. Tự điền theo Nguồn khách nếu khớp. Tiền thuê thực thu gồm gia hạn; không gồm cọc.</small>}</div>
+              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD / TPKD ghi nhận doanh số</label>
+                <select id="contract-sales_staff_id" value={draft.sales_staff_id || ''} disabled={Boolean(attributionError)} onChange={event=>{salesFollowsSource.current=!event.target.value;change('sales_staff_id',event.target.value);}}>
+                  <option value="">Chưa phân công</option>
+                  {salesStaff.map(person=><option key={person.id} value={person.id}>{person.name} · {person.code}{staffRoles(person.position).includes('TPKD')?' · TPKD':''}</option>)}
+                </select>
+                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : <small>NVKD theo cửa hàng xe; TPKD (vd. Nguyễn Thị Vui) hiện toàn công ty. Tự điền theo Nguồn khách nếu khớp. Tiền thuê thực thu gồm gia hạn; không gồm cọc.</small>}</div>
               {!ownership && <div className="mg-field"><label htmlFor="contract-tls_staff_id">Nhân viên TLS giới thiệu khách</label><select id="contract-tls_staff_id" value={draft.tls_staff_id || ''} onChange={event=>change('tls_staff_id',event.target.value)}><option value="">Chưa phân công</option>{tlsStaff.map(person=><option key={person.id} value={person.id}>{person.name} · {person.code}</option>)}</select><small>Gợi ý toàn bộ TLS (không lọc cơ sở). Tiền thuê HĐ mở mới đầu tiên; không tính khách quay lại và gia hạn.</small></div>}
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
