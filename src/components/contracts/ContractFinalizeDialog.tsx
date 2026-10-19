@@ -35,14 +35,28 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     loadPaymentContext(orderId,controller.signal).then(value=>{
       if (controller.signal.aborted) return;
       setContext(value);
+      const usable = (method: PaymentMethod) => paymentAccounts(value, method).length > 0;
+      const withAccounts = (methods: PaymentMethod[]) => {
+        const matched = methods.filter(usable);
+        if (matched.length) return matched;
+        const fallback = (['cash', 'transfer', 'company_transfer'] as PaymentMethod[]).find(usable);
+        return fallback ? [fallback] : methods.length ? methods : ['cash' as PaymentMethod];
+      };
       const row = (method: PaymentMethod, amount: string, label?: string): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime(),label});
-      const seed = (due: number, methods: PaymentMethod[], label?: string) => due>0 ? methods.map((method,index)=>({...row(method,methods.length===1 ? String(due) : '',label),automatic:!reservation && methods.length>1 && index===methods.length-1})) : [];
+      const seed = (due: number, methods: PaymentMethod[], label?: string) => {
+        const usableMethods = withAccounts(methods);
+        return due>0 ? usableMethods.map((method,index)=>({...row(method,usableMethods.length===1 ? String(due) : '',label),automatic:!reservation && usableMethods.length>1 && index===usableMethods.length-1})) : [];
+      };
       const depositDue = Math.max(deposit-value.deposit_paid,0), rentalDue = Math.max(total-(value.paid_amount || 0),0);
       const fees = initialMethods.current.charges.filter(item=>item.name.trim() && Number(item.amount)>0);
       const feeTotal = fees.reduce((sum,item)=>sum+Number(item.amount),0);
+      const rentalMethods = withAccounts(initialMethods.current.rental);
       const rentalRows = feeTotal && feeTotal<=rentalDue
-        ? [...seed(rentalDue-feeTotal,initialMethods.current.rental,'Tiền thuê xe'),...fees.map(item=>row(item.method || initialMethods.current.rental[0],item.amount,item.name.trim()))]
-        : seed(rentalDue,initialMethods.current.rental);
+        ? [...seed(rentalDue-feeTotal,rentalMethods,'Tiền thuê xe'),...fees.map(item=>{
+            const method = item.method && usable(item.method) ? item.method : rentalMethods[0];
+            return row(method,item.amount,item.name.trim());
+          })]
+        : seed(rentalDue,rentalMethods);
       setDepositState(reservation ? {collect:false,rows:[]} : {collect:depositDue>0,rows:seed(depositDue,initialMethods.current.deposit)});
       setRentalState({collect:rentalDue>0,rows:reservation ? rentalRows.map(item=>({...item,amount:''})) : rentalRows});
     }).catch(cause=>{if(!controller.signal.aborted)setLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');});
@@ -52,6 +66,9 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   const accountsFor = (row: CollectionRow) => context ? paymentAccounts(context,row.method) : [];
   const chosenAccount = (row: CollectionRow) => accountsFor(row).find(account=>String(account.id)===row.account) || accountsFor(row)[0];
   const collected = (state: CollectionState) => state.collect ? state.rows.reduce((sum,row)=>sum+(Number(row.amount)||0),0) : 0;
+  const accountGap = (state: CollectionState) => state.collect && state.rows.some(row => !(row.automatic && row.amount === '0') && !accountsFor(row).length);
+  const missingAccounts = Boolean(context) && ((depositState.collect && accountGap(depositState)) || (rentalState.collect && accountGap(rentalState)));
+  const noAccountMessage = 'Sổ quỹ có thể đã có TK ở cơ sở khác, nhưng phiếu thu chỉ nhận tài khoản đúng cơ sở nguồn khách của hợp đồng + đúng hình thức (Tiền mặt = két; Chuyển khoản = ngân hàng cơ sở; CK công ty = TK công ty). Đổi Hình thức hoặc chọn đúng cơ sở nguồn khách.';
   function collections(state: CollectionState, purpose: FinalizeCollection['purpose'], due: number): FinalizeCollection[] {
     if (!state.collect || !due) return [];
     if (!state.rows.length) throw new Error('Thêm khoản tiền đã nhận, hoặc bỏ chọn thu tiền để ghi nhận chưa thu.');
@@ -59,7 +76,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     return state.rows.filter(row=>!(row.automatic && row.amount==='0')).map(row=>{
       if (!/^[1-9]\d{0,12}$/.test(row.amount) || !Number.isSafeInteger(Number(row.amount))) throw new Error('Nhập số tiền lớn hơn 0 cho từng khoản thu.');
       const account = chosenAccount(row);
-      if (!account) throw new Error('Chọn tài khoản nhận tiền đang hoạt động tại cơ sở nguồn khách.');
+      if (!account) throw new Error(noAccountMessage);
       if (!row.paid_at) throw new Error('Nhập thời điểm thực tế đã nhận tiền.');
       return {purpose,amount:row.amount,method:row.method,account_id:account.id,paid_at:row.paid_at};
     });
@@ -79,7 +96,9 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     const update = (key: number, patch: Partial<CollectionRow>) => setState({...state,rows:balanceCollectionAmounts(state.rows.map(row=>row.key===key ? {...row,...patch,...(patch.amount!==undefined ? {automatic:false} : {})} : row),due)});
     const add = () => {
       const hasAutomatic = state.rows.some(row=>row.automatic);
-      const added = {...newRow('cash',hasAutomatic ? '' : String(Math.max(due-collected(state),0))),automatic:!reservation && !hasAutomatic};
+      const preferred = (['cash', 'transfer', 'company_transfer'] as PaymentMethod[]).find(method => context && paymentAccounts(context, method).length)
+        || state.rows[0]?.method || 'cash';
+      const added = {...newRow(preferred,hasAutomatic ? '' : String(Math.max(due-collected(state),0))),automatic:!reservation && !hasAutomatic};
       setState({...state,rows:balanceCollectionAmounts([...state.rows,added],due)});
     };
     return <fieldset className="mg-finalize-receipt" data-purpose={purpose}><legend>{label}: {money(amount)}</legend>
@@ -91,7 +110,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
             <div className="mg-form-grid mg-contract-grid-two">
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-amount`}>Số tiền đã nhận (VNĐ)</label><input id={`${purpose}-collection-${index}-amount`} inputMode="numeric" value={formatInput(row.amount)} onChange={event=>update(row.key,{amount:event.target.value.replace(/\D/g,'')})}/>{row.automatic && <small>Tự tính phần còn lại. Có thể sửa theo số tiền thực nhận.</small>}</div>
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-method`}>Hình thức</label><select id={`${purpose}-collection-${index}-method`} value={row.method} onChange={event=>update(row.key,{method:event.target.value as PaymentMethod,account:''})}>{PAYMENT_METHODS.map(method=><option key={method.value} value={method.value}>{paymentMethodLabel(method.value)}</option>)}</select></div>
-              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-account`}>Tài khoản nhận</label><select id={`${purpose}-collection-${index}-account`} value={chosenAccount(row)?.id || ''} disabled={!accountsFor(row).length} onChange={event=>update(row.key,{account:event.target.value})}>{accountsFor(row).length ? accountsFor(row).map(account=><option key={account.id} value={account.id}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select></div>
+              <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-account`}>Tài khoản nhận</label><select id={`${purpose}-collection-${index}-account`} value={chosenAccount(row)?.id || ''} disabled={!accountsFor(row).length} aria-invalid={!accountsFor(row).length || undefined} onChange={event=>update(row.key,{account:event.target.value})}>{accountsFor(row).length ? accountsFor(row).map(account=><option key={account.id} value={account.id}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select>
+                {!accountsFor(row).length && <p className="mg-field-error">{noAccountMessage}</p>}</div>
               <DateTime24Field id={`${purpose}-collection-${index}-paid-at`} label="Thời điểm nhận" value={row.paid_at} onChange={value=>update(row.key,{paid_at:value})}/>
             </div>
           </div>)}
@@ -118,7 +138,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       </>}
       <ContractTransactionPhotos id={orderId} phase="rental" workflow={reservation?'reservation':'rental'} title="Ảnh xe lúc thuê / lập hợp đồng" onPendingChange={setPhotosPending}/>
       {photosPending&&<p role="status">Lưu ảnh đang chọn trước khi hoàn tất hợp đồng.</p>}
+      {missingAccounts && <p className="mg-field-error" role="alert">{noAccountMessage}</p>}
       {error && <p className="mg-field-error" role="alert">{error}</p>}
-    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context||photosPending}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>
+    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context||photosPending||missingAccounts}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>
   </Dialog>;
 }

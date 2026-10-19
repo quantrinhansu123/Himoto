@@ -190,7 +190,7 @@ async function collectBatteryPayments(client: Database,id: number,actorId: numbe
     const result = await client.query(`SELECT id,store_id,${cash ? "''::text" : 'owner_type'} AS owner_type FROM himoto.${cash ? 'cash' : 'banks'}
       WHERE id=$1 AND lower(status)='active' FOR SHARE`,[accountId]);
     const account = result.rows[0];
-    if (!account || (method === 'company_transfer' ? account.owner_type !== 'company' || ![0,input.store_id].includes(Number(account.store_id))
+    if (!account || (method === 'company_transfer' ? account.owner_type !== 'company'
       : Number(account.store_id) !== input.store_id || !cash && account.owner_type === 'company')) throw new BatteryContractError('Tài khoản nhận không hoạt động hoặc không khớp hình thức / cơ sở thuê pin.',409);
     const code = (await client.query('SELECT code FROM himoto.battery_contracts WHERE id=$1',[id])).rows[0].code;
     await client.query(`INSERT INTO himoto.transactions(created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id)

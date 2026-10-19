@@ -46,9 +46,9 @@ export class PaymentRequestError extends Error {
   constructor(message: string, public status = 0) { super(message); }
 }
 export function paymentAccounts(context: PaymentContext, method: PaymentMethod) {
-  return context.accounts.filter(account => method === 'cash' ? account.kind === 'cash' && account.store_id === context.store_id
-    : method === 'company_transfer' ? account.kind === 'bank' && account.owner_type === 'company' && (account.store_id === 0 || account.store_id === context.store_id)
-      : account.kind === 'bank' && account.owner_type !== 'company' && account.store_id === context.store_id);
+  return context.accounts.filter(account => method === 'cash' ? account.kind === 'cash' && Number(account.store_id) === Number(context.store_id)
+    : method === 'company_transfer' ? account.kind === 'bank' && account.owner_type === 'company'
+      : account.kind === 'bank' && account.owner_type !== 'company' && Number(account.store_id) === Number(context.store_id));
 }
 export function vietnamPaymentTime(now = new Date()) {
   return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);

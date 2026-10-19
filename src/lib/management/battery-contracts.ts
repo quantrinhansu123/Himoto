@@ -11,7 +11,7 @@ export const BATTERY_COLLECTION_METHODS = [{value:'',label:'Chưa chọn'}, {val
 export interface BatteryPaymentAccount { id: number | string; kind: string; store_id?: number | string; owner_type: string; status: string; label: string }
 export function batteryPaymentAccounts<T extends BatteryPaymentAccount>(accounts: T[], storeId: number, method: BatteryCollectionMethod): T[] {
   return accounts.filter(account => account.status.toLowerCase() === 'active' && (method === 'cash' ? account.kind === 'cash' && Number(account.store_id) === storeId
-    : method === 'company_transfer' ? account.kind === 'bank' && account.owner_type === 'company' && (!Number(account.store_id) || Number(account.store_id) === storeId)
+    : method === 'company_transfer' ? account.kind === 'bank' && account.owner_type === 'company'
     : method === 'transfer' && account.kind === 'bank' && account.owner_type !== 'company' && Number(account.store_id) === storeId));
 }
 export const DEFAULT_BATTERY_NAME = 'Pin xe điện 2.4 của Vinfast';
