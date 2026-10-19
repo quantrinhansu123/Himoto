@@ -8,7 +8,7 @@ export interface ContractAutofillRepository {
   lookupCustomer(idCard: string, signal?: AbortSignal): Promise<ManagementRow | null>;
   searchCustomers(query: string, signal?: AbortSignal): Promise<ManagementRow[]>;
   loadStaff(storeId: string, signal?: AbortSignal): Promise<ManagementRow[]>;
-  /** Company-wide staff directory for commission pickers (NVKD filtered by store in UI; TLS shown all). */
+  /** Company-wide staff directory for commission pickers (NVKD by store in UI; TPKD/TLS shown all). */
   loadSalesStaff(signal?: AbortSignal): Promise<ManagementRow[]>;
   createCustomer(customer: CustomerDetails, assignment?: CustomerAssignment): Promise<ManagementRow>;
   updateCustomer(customer: ManagementRow): Promise<ManagementRow>;
