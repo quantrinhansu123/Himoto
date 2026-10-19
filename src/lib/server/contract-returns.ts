@@ -1,4 +1,5 @@
 import 'server-only';
+import { legacyContractReviewMessage } from './contract-legacy-review';
 import type { PoolClient } from 'pg';
 import type { ReturnableContractItem, ReturnInput, ReturnResult } from '@/lib/management/contract-returns';
 import { dailyPriceSql, depositLateral, rentalPaid, rentalPaidSql } from './contract-deposits';
@@ -116,6 +117,8 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
       AND o.order_status IN ('renting','overdue','wait_payment') FOR UPDATE OF d,o`, [input.item_id]);
   const item = itemResult.rows[0];
   if (!item) throw new ContractReturnError('Không tìm thấy xe đang thuê cần trả.', 404);
+  const review = legacyContractReviewMessage(item.draft_payload);
+  if (review) throw new ContractReturnError(review, 409);
   if (String(item.item_revision) !== input.item_revision) throw new ContractReturnError('Chi tiết xe đã thay đổi. Tải lại danh sách trước khi trả.', 409);
   if (!item.return_at) throw new ContractReturnError('Hợp đồng chưa có hạn trả xe. Cập nhật hợp đồng trước khi ghi nhận trả xe.', 409);
   const scheduledMs = new Date(toIso(item.return_at)!).getTime();
@@ -181,6 +184,8 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
       AND o.order_status IN ('renting','overdue','wait_payment') FOR UPDATE OF d,o`, [input.item_id]);
   const item = result.rows[0];
   if (!item) throw new ContractReturnError('Không tìm thấy xe đang thuê cần đổi.', 404);
+  const review = legacyContractReviewMessage(item.draft_payload);
+  if (review) throw new ContractReturnError(review, 409);
   if (String(item.item_revision) !== input.item_revision) throw new ContractReturnError('Chi tiết xe đã thay đổi. Tải lại danh sách trước khi đổi.', 409);
   if (Number(item.vehicle_id) === input.vehicle_id) throw new ContractReturnError('Biển số xe đang chọn không thay đổi.');
   const newVehicle = await client.query(`SELECT v.id,v.name,v.license,v.brand,v.type,v.color,v.year,v.store_id,s.store_name

@@ -55,9 +55,19 @@ async function main() {
         (8,'in',999,1,'2026-10-02T09:00:00Z',700,NULL,'100%_literal',42)`);
       await client.query(`INSERT INTO pg_temp.transactions(id,type,user_id,store_id,created_at,value,name,note,order_id)
         SELECT 100+g,'in',7,1,'2026-10-02T10:00:00Z'::timestamptz+g*interval '1 minute',g*100,'order:payment','Thu QA',42 FROM generate_series(1,12) g`);
+      await client.query("UPDATE pg_temp.transactions SET status='approved'");
+      await client.query("INSERT INTO pg_temp.users(id,name) VALUES (9,'Người lập phiếu hủy')");
+      await client.query(`INSERT INTO pg_temp.transactions(id,type,user_id,store_id,created_at,value,name,note,order_id,status) VALUES
+        (900,'in',9,1,'2026-10-02T10:00:00Z',99999999,'order:payment','Phiếu thử đã hủy',42,'cancelled'),
+        (901,'out',9,1,'2026-10-02T10:00:00Z',88888888,'Chi thử','Chờ duyệt',42,'pending')`);
       // All application SQL is redirected to these disposable copies; no real writes or sequences.
       const database = { query: (sql, values) => client.query(sql.replaceAll('himoto.', 'pg_temp.'), values) };
       const full = JSON.parse(JSON.stringify(await listCashbook(new URLSearchParams('mode=all'), database))).map(mapCashbookRow);
+      assert.equal(full.length,20);
+      assert(!full.some(row=>['900','901'].includes(row.id)));
+      const approved = await listCashbook(new URLSearchParams(), database);
+      assert(!approved.actors.some(([id])=>id==='id:9'));
+      checks.push('cancelled/test and pending vouchers do not affect cashbook rows, totals, exports, selection IDs or creator filters');
       for (const [filters, store] of [
         [EMPTY_CASHBOOK_FILTERS, 'all'],
         [{ ...EMPTY_CASHBOOK_FILTERS, startDate: '2026-10-02', endDate: '2026-10-02' }, '1'],

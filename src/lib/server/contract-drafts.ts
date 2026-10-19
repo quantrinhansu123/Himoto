@@ -5,7 +5,7 @@ import type { PoolClient } from 'pg';
 import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } from '@/lib/management/contract-document';
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
-import { rentalPaidSql } from './contract-deposits';
+import { depositReceiptSql, rentalPaidSql } from './contract-deposits';
 import { chargeTotal } from '@/lib/management/contract-charges';
 import { CONTRACT_TYPES } from '@/lib/management/config';
 import { ContractTypeError, resolveDraftContractType, validContractTypeId } from './contract-types';
@@ -42,7 +42,9 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
        ELSE COALESCE(o.first_deposit_amount, 0) + COALESCE(o.additional_deposit_amount, 0) END AS deposit_amount,
   ${CONTRACT_RETURN_ADJUSTMENT_SQL} AS return_adjustment_amount,
-  o.note AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
+  CASE WHEN o.draft_payload::jsonb #> '{legacy_migration,cutover,reviewRequired}'='true'::jsonb
+    THEN concat_ws(E'\\n',NULLIF(o.note,''),NULLIF(o.draft_payload::jsonb #>> '{legacy_migration,cutover,reviewNotice}',''))
+    ELSE o.note END AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
   staff.id AS staff_id, staff.full_name AS staff_name,
   COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),
     staff.full_name,
@@ -65,7 +67,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   ) company ON company.order_id=o.id
   LEFT JOIN (
     SELECT t.order_id,
-      SUM(t.value) FILTER (WHERE t.type IN ('in','addon') AND (t.name='order:deposit' OR t.name LIKE 'order:deposit:%')) AS paid,
+      SUM(t.value) FILTER (WHERE t.type IN ('in','addon') AND ${depositReceiptSql()}) AS paid,
       SUM(t.value) FILTER (WHERE t.type='out' AND (t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%')) AS refunded
     FROM himoto.transactions t WHERE t.status='approved' GROUP BY t.order_id
   ) deposit_totals ON deposit_totals.order_id=o.id

@@ -21,7 +21,8 @@ export const CASHBOOK_LIST_SQL = `SELECT t.id, t.created_at, t.type, t.user_id, 
   LEFT JOIN himoto.orders o ON o.id=t.order_id
   LEFT JOIN himoto.battery_contracts bc ON t.object_type='battery_contract' AND bc.id=t.object_id
   LEFT JOIN himoto.stores s ON s.id=t.store_id
-  LEFT JOIN himoto.banks b ON b.id=t.bank_id`;
+  LEFT JOIN himoto.banks b ON b.id=t.bank_id
+  WHERE t.status='approved'`;
 
 export class CashbookQueryError extends Error {}
 const invalid = () => new CashbookQueryError('Bộ lọc hoặc phân trang sổ quỹ không hợp lệ.');
@@ -89,7 +90,7 @@ export async function listCashbook(params: URLSearchParams, database: Pick<Pool,
     count(*) FILTER (WHERE v.type='out')::int AS expense_count,
     COALESCE(sum(v.amount) FILTER (WHERE v.type IN ('in','addon')),0) AS income_amount,
     COALESCE(sum(v.amount) FILTER (WHERE v.type='out'),0) AS expense_amount,
-    (SELECT count(*)::int FROM himoto.transactions) AS total
+    (SELECT count(*)::int FROM himoto.transactions WHERE status='approved' AND type IN ('in','addon','out')) AS total
     FROM matched v`;
   const pageSql = (kind: 'income' | 'expense', config: typeof income) => {
     const limit = bind(config.pageSize), requestedPage = bind(config.page);
@@ -102,7 +103,7 @@ export async function listCashbook(params: URLSearchParams, database: Pick<Pool,
     matched AS MATERIALIZED (SELECT v.id,v.type,v.amount FROM vouchers v WHERE ${condition}),
     summary AS (${summarySql}), income_page AS (${incomeSql}), expense_page AS (${expenseSql}),
     actors AS (SELECT DISTINCT t.user_id AS id,u.name FROM himoto.transactions t JOIN himoto.users u ON u.id=t.user_id
-      WHERE t.type IN ('in','addon','out') AND NULLIF(u.name,'') IS NOT NULL${actorStore} ORDER BY u.name,t.user_id)
+      WHERE t.status='approved' AND t.type IN ('in','addon','out') AND NULLIF(u.name,'') IS NOT NULL${actorStore} ORDER BY u.name,t.user_id)
     SELECT summary.*,
       COALESCE((SELECT json_agg(v) FROM income_page v),'[]'::json) AS income_rows,
       COALESCE((SELECT json_agg(v) FROM expense_page v),'[]'::json) AS expense_rows,
