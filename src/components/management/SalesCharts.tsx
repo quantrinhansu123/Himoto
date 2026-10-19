@@ -21,19 +21,29 @@ function leaderStory(lines: { name: string; progress: number[] }[], days: string
   return leader < 0 ? null : { name: lines[leader].name, since, changes };
 }
 
+function seriesColor(key: string, rows: SourceSalesSummary['rows']) {
+  const index = rows.filter(row => row.key).findIndex(row => row.key === key);
+  return index >= 0 ? COLORS[index % COLORS.length] : '#94a3b8';
+}
+
 function ComparisonBars({ summary, unit }: { summary: SourceSalesSummary; unit: string }) {
   const max = Math.max(...summary.rows.map(row => row.rent), 1);
   const top = summary.rows.find(row => row.key)?.rent ?? 0;
+  const keyed = summary.rows.filter(row => row.key);
   return <figure className="mg-sales-chart"><figcaption>So sánh tiền thuê theo {unit}</figcaption>
-    <ol className="mg-sales-bars">{summary.rows.map((row, index) => <li key={row.key || 'none'} className={row.key ? undefined : 'is-muted'}>
+    <ol className="mg-sales-bars">{summary.rows.map((row, index) => {
+      const color = seriesColor(row.key, summary.rows);
+      return <li key={row.key || 'none'} className={row.key ? undefined : 'is-muted'}>
       <div className="mg-sales-bar-label"><span>{row.key ? `#${index + 1}` : '—'}</span><strong title={row.name}>{row.name}</strong></div>
       <div className="mg-sales-bar-track" role="img" aria-label={`${row.name}: tiền thuê ${money(row.rent)}, đã thu ${money(row.paid)}`}>
-        <span className="mg-sales-bar-rent" style={{ width: `${(row.rent / max) * 100}%` }} />
-        <span className="mg-sales-bar-paid" style={{ width: `${(Math.min(row.paid, row.rent) / max) * 100}%` }} />
+        <span className="mg-sales-bar-rent" style={{ width: `${(row.rent / max) * 100}%`, background: color, opacity: 0.28 }} />
+        <span className="mg-sales-bar-paid" style={{ width: `${(Math.min(row.paid, row.rent) / max) * 100}%`, background: color }} />
       </div>
       <div className="mg-sales-bar-value"><b>{compact(row.rent)}</b>{row.key && index > 0 && top > row.rent && <small>kém #1 {compact(top - row.rent)}</small>}</div>
-    </li>)}</ol>
-    <p className="mg-sales-chart-legend"><span className="mg-sales-swatch is-rent" />Tiền thuê <span className="mg-sales-swatch is-paid" />Đã thu tiền thuê</p>
+    </li>;
+    })}</ol>
+    <ul className="mg-sales-race-legend">{keyed.map(row => <li key={row.key}><span className="mg-sales-swatch" style={{ background: seriesColor(row.key, summary.rows) }} />{row.name}</li>)}</ul>
+    <p className="mg-sales-chart-legend">Thanh đậm: đã thu tiền thuê · thanh nhạt: tiền thuê</p>
   </figure>;
 }
 
@@ -54,12 +64,12 @@ function RaceChart({ summary, unit }: { summary: SourceSalesSummary; unit: strin
     <svg className="mg-sales-race" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Tiến trình cộng dồn tiền thuê của ${lines.map(line => line.name).join(', ')}`}>
       {ticks.map(tick => <g key={tick}><line x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} className="mg-sales-grid" /><text x={left - 6} y={y(tick) + 4} textAnchor="end" className="mg-sales-axis">{compact(Math.round(tick))}</text></g>)}
       {labels.map(index => <text key={index} x={x(index)} y={height - 8} textAnchor={index === 0 && days.length > 1 ? 'start' : index === days.length - 1 && days.length > 1 ? 'end' : 'middle'} className="mg-sales-axis">{dayLabel(days[index])}</text>)}
-      {lines.map((line, index) => <g key={line.key} style={{ color: COLORS[index] }}>
+      {lines.map(line => <g key={line.key} style={{ color: seriesColor(line.key, summary.rows) }}>
         <polyline points={line.progress.map((value, day) => `${x(day)},${y(value)}`).join(' ')} className="mg-sales-line" />
         <circle cx={x(days.length - 1)} cy={y(line.progress[days.length - 1])} r={4} className="mg-sales-dot"><title>{`${line.name}: ${money(line.progress[days.length - 1])}`}</title></circle>
       </g>)}
     </svg>
-    <ul className="mg-sales-race-legend">{lines.map((line, index) => <li key={line.key}><span className="mg-sales-swatch" style={{ background: COLORS[index] }} />{line.name}<b>{compact(line.rent)}</b></li>)}</ul>
+    <ul className="mg-sales-race-legend">{lines.map(line => <li key={line.key}><span className="mg-sales-swatch" style={{ background: seriesColor(line.key, summary.rows) }} />{line.name}<b>{compact(line.rent)}</b></li>)}</ul>
   </figure>;
 }
 
