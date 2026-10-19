@@ -16,6 +16,9 @@ async function main() {
   }
   assert.throws(() => server.parseFinalizeInput({ revision: '1', paid_at: paidAt, deposit: null }));
   assert.equal(shared.draftPaymentMethod('CK tk công ty, Tiền mặt'), 'company_transfer');
+  assert.equal(shared.draftPaymentMethod('CK tài khoản cá nhân'), 'transfer');
+  assert.equal(shared.draftPaymentMethod('Chuyển khoản'), 'transfer');
+  assert.equal(shared.draftPaymentMethods('CK tài khoản công ty')[0], 'company_transfer');
   assert.equal(shared.draftPaymentMethod(''), 'cash');
   checks.push('strict finalize input (revision, Vietnam time not in the future, allowlisted receipt fields); draft payment labels map to methods');
 

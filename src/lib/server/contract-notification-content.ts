@@ -32,8 +32,7 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
     :[`${kind==='reservation'?'Khách đặt cọc giữ xe':kind==='handover'?'Khách nhận xe':'Khách thuê xe'}: ${p.customer}`,...vehicle,
       `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,`Tiền cọc: ${money(p.deposit)}`,
       ...(p.rental_fee!=null&&p.total!=null&&Number(p.total)!==p.rental_fee?[`Phí khác / điều chỉnh: ${money(Number(p.total)-p.rental_fee)}`]:[]),
-      `Tổng tiền: ${money(p.grand_total)}`,`Hình thức thanh toán: ${method}`,
-      ...(p.deposit_method&&p.deposit_method!==p.method?[`Hình thức thanh toán cọc: ${p.deposit_method}`]:[])];
+      `Tổng tiền: ${money(p.grand_total)}`,`Hình thức thanh toán: ${method}`];
   return [...lines,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,`Nhân viên làm hợp đồng: ${p.contract_staff||'Chưa ghi nhận'}`,...(!['rental','reservation'].includes(kind)?[`Người thực hiện: ${p.actor}`]:[]),`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
 }
 export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
@@ -78,8 +77,10 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     WHERE o.id=$1 AND o.deleted_at IS NULL`,[orderId,actorId,returnIds.length?returnIds:null])).rows[0];
   if(!o)throw Error('Không tạo được thông báo hợp đồng.');
   const tx=(await db.query(`SELECT t.id,t.name,t.type,t.value,t.created_at,t.order_item_id,r.renewal_payload,
-    CASE WHEN t.cash_id IS NOT NULL THEN 'Tiền mặt' WHEN t.bank_owner_type='company' THEN 'CK TK công ty'
-      WHEN t.bank_owner_type='personal' THEN 'CK TK cá nhân' WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản (chưa phân loại TK)' ELSE 'Chưa xác định' END AS method
+    CASE WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK TK công ty'
+      WHEN t.bank_id IS NOT NULL THEN 'CK TK cá nhân'
+      WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
+      WHEN t.payment_method=2 THEN 'Chuyển khoản (chưa phân loại TK)' ELSE 'Chưa xác định' END AS method
     FROM himoto.transactions t LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id WHERE t.order_id=$1 AND t.status='approved' ORDER BY t.created_at,t.id`,[orderId])).rows;
   const draft=o.draft_payload?.management_composer?.draft;
   const composer=o.draft_payload?.management_composer;
@@ -93,8 +94,10 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   // Date changes are not receipts. Only an explicitly associated renewal receipt supplies a payment method.
   const renewalTx=renewal?tx.filter(t=>Number(t.id)===renewal.transaction_id || t.renewal_payload && (
     t.renewal_payload.return_at===renewal.return_at && t.renewal_payload.license===renewal.license)):[];
-  const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?eventRefunds:kind==='renewal'?renewalTx:rental;
-  const methods=(rows:typeof tx)=>[...new Set(rows.map(t=>String(t.method)))].sort().join(', ');
+  // Rental/handover telegrams include cọc + thuê; reservation is deposit-only. Never drop CK cọc and show only a cash rental fee.
+  const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?eventRefunds:kind==='renewal'?renewalTx
+    :kind==='reservation'?depositTx:[...depositTx,...rental];
+  const methods=(rows:typeof tx)=>[...new Set(rows.map(t=>String(t.method)).filter(method=>method&&method!=='Chưa xác định'))].sort().join(', ');
   const fee=o.total_rental_fees==null?null:Number(o.total_rental_fees);
   const deposit=o.first_deposit_amount==null&&o.additional_deposit_amount==null?null:Number(o.first_deposit_amount||0)+Number(o.additional_deposit_amount||0);
   const rentalFee=fee??(o.total==null?null:Number(o.total));

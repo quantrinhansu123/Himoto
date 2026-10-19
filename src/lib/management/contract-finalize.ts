@@ -15,13 +15,29 @@ export function balanceCollectionAmounts<T extends { amount: string; automatic?:
   return rows.map((row, index) => index === target ? { ...row, amount } : row);
 }
 
-const METHOD_BY_LABEL: Record<string, PaymentMethod> = { 'Tiền mặt': 'cash', 'CK tk cá nhân': 'transfer', 'CK tk công ty': 'company_transfer' };
+/** Picker labels plus SQL/history aliases so CK never collapses to cash. */
+const METHOD_BY_LABEL: Record<string, PaymentMethod> = {
+  'Tiền mặt': 'cash',
+  'CK tk cá nhân': 'transfer',
+  'CK TK cá nhân': 'transfer',
+  'CK tài khoản cá nhân': 'transfer',
+  'Chuyển khoản': 'transfer',
+  'Chuyển khoản (chưa phân loại TK)': 'transfer',
+  'CK tk công ty': 'company_transfer',
+  'CK TK công ty': 'company_transfer',
+  'CK tài khoản công ty': 'company_transfer',
+};
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cash: 'Tiền mặt',
+  transfer: 'CK tk cá nhân',
+  company_transfer: 'CK tk công ty',
+};
 export function draftPaymentMethod(value: string): PaymentMethod {
   const first = value.split(',').map(item => item.trim()).find(item => METHOD_BY_LABEL[item]);
   return first ? METHOD_BY_LABEL[first] : 'cash';
 }
 export function draftPaymentMethods(value: string): PaymentMethod[] {
-  const methods = [...new Set(value.split(',').map(item=>METHOD_BY_LABEL[item.trim()]).filter(Boolean))];
+  const methods = [...new Set(value.split(',').map(item => METHOD_BY_LABEL[item.trim()]).filter(Boolean))];
   return methods.length ? methods : ['cash'];
 }
 

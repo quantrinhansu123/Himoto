@@ -79,8 +79,10 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     UNION ALL SELECT id, 'cash' AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,COALESCE(NULLIF(name,''),'Két tiền mặt #' || id::text) AS label
     FROM himoto.cash WHERE lower(status)='active' AND store_id=$1 ORDER BY kind,id`, [order.store_id]);
   const history = await client.query(`SELECT t.id,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,
-      CASE WHEN t.cash_id IS NOT NULL THEN 'Tiền mặt' WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty' WHEN t.bank_owner_type='personal' THEN 'CK tài khoản cá nhân'
-        WHEN t.bank_id IS NOT NULL THEN 'Chuyển khoản' ELSE 'Chưa xác định' END AS method,
+      CASE WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK tài khoản công ty'
+        WHEN t.bank_id IS NOT NULL THEN 'CK tài khoản cá nhân'
+        WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
+        WHEN t.payment_method=2 THEN 'Chuyển khoản' ELSE 'Chưa xác định' END AS method,
       CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name,''),'Két tiền mặt #' || t.cash_id::text)
         ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account,
       t.bank_owner_type,r.renewal_payload

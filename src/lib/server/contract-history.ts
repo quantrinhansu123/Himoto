@@ -23,8 +23,10 @@ const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.val
       WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách'
       WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc'
       WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
-    CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản' WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
-      WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty' WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản' END AS method,
+    CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'
+      WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK tài khoản công ty'
+      WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản'
+      WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt' END AS method,
     CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name,''),'Két tiền mặt #' || t.cash_id::text) ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account,
     r.renewal_payload
   FROM himoto.transactions t

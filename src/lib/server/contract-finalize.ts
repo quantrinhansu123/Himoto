@@ -1,7 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, paymentAccounts } from '@/lib/management/contract-payments';
-import type { FinalizeInput, FinalizeReceipt, FinalizeCollection, FinalizeResult } from '@/lib/management/contract-finalize';
+import { draftPaymentMethod, PAYMENT_METHOD_LABELS, type FinalizeInput, type FinalizeReceipt, type FinalizeCollection, type FinalizeResult } from '@/lib/management/contract-finalize';
 import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { readPaymentContext } from './contract-payments';
 import { staffRoles } from '@/lib/management/staff-positions';
@@ -208,10 +208,9 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   for (const [index,row] of receipts.entries()) await receipt(accounts[index],Number(row.amount),row.purpose==='deposit' ? 'order:deposit' : 'order:rental_fees',
     `Thu ${reservation ? 'tiền giữ xe (trừ tiền thuê)' : row.purpose==='deposit' ? 'tiền cọc' : 'tiền thuê và phí khác'} hợp đồng ${code}`,row.paid_at,row.method);
   const paid = previousPaid+depositCollected+rentalCollected;
-  const methodLabels = {cash:'Tiền mặt',transfer:'CK tk cá nhân',company_transfer:'CK tk công ty'};
   const actualMethods = (purpose: 'deposit'|'rental') => [...new Set([
-    ...context.history.filter(row=>row.type==='in' && row.deposit===(purpose==='deposit')).map(row=>row.method),
-    ...receipts.filter(row=>row.purpose===purpose).map(row=>methodLabels[row.method]),
+    ...context.history.filter(row=>row.type==='in' && row.deposit===(purpose==='deposit')).map(row=>PAYMENT_METHOD_LABELS[draftPaymentMethod(row.method)]),
+    ...receipts.filter(row=>row.purpose===purpose).map(row=>PAYMENT_METHOD_LABELS[row.method]),
   ])].join(', ');
   draft.paid_amount=String(oldRentalPaid+rentalCollected); draft.deposit_paid_amount=String(oldDepositPaid+depositCollected);
   draft.payment_method=actualMethods('rental') || draft.payment_method; draft.deposit_payment_method=actualMethods('deposit') || draft.deposit_payment_method;

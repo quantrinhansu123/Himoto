@@ -10,9 +10,9 @@ export const CASHBOOK_LIST_SQL = `SELECT t.id, t.created_at, t.type, t.user_id, 
   COALESCE(t."desc", t.note) AS content, t.value AS amount, t.order_id,
   COALESCE(o.contract_number,o.draft_reference,bc.code,'#' || t.order_id::text) AS contract_code,
   CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'
-       WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
-       WHEN t.bank_owner_type='company' THEN 'CK tài khoản công ty'
-       WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản' END AS payment_method,
+       WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK tài khoản công ty'
+       WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản'
+       WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt' END AS payment_method,
   CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name, ''), 'Két tiền mặt #' || t.cash_id::text)
        ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account
   FROM himoto.transactions t
