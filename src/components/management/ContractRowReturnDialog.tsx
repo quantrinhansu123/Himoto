@@ -58,7 +58,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const photosPending=Object.values(photoPending).some(Boolean);
   const wasPhotosPending=useRef(false);
   useEffect(()=>{
-    if(wasPhotosPending.current&&!photosPending)setPhotoVersion(value=>value+1);
+    if(wasPhotosPending.current&&!photosPending){setPhotoVersion(value=>value+1);setError('');}
     wasPhotosPending.current=photosPending;
   },[photosPending]);
   const [error, setError] = useState('');
@@ -131,7 +131,19 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!lines.length || saving||photosPending) return;
+    if (!lines.length || saving) return;
+    if(photosPending){
+      const reason='Ảnh/video vừa chọn chưa lưu vào hồ sơ. Cuộn lên bấm «Lưu ảnh / video», đợi «Đã lưu ảnh», rồi xác nhận trả xe.';
+      setError(reason);notify(reason);return;
+    }
+    if(settlementBlocked){
+      const reason='Chưa đủ thông tin hoàn cọc: chọn tài khoản chi hoàn, hoặc nhập đủ ngân hàng + số TK + tên chủ TK, hoặc đã lưu ảnh QR / số TK ở hồ sơ trả xe.';
+      setError(reason);notify(reason);return;
+    }
+    if(invalid){
+      const reason='Kiểm tra lại phí trả muộn / giảm doanh thu: nhập số tiền hợp lệ trước khi xác nhận.';
+      setError(reason);notify(reason);return;
+    }
     setSaving(true); setError('');
     try {
       const items: ReturnInput[] = lines.map(({ row, estimate, override, amount,repairFee,repairNote }) => ({
@@ -224,7 +236,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer">{photosPending&&<span className="mg-field-error" role="status">Đang gắn ảnh/video vừa chọn vào hồ sơ — chờ xong rồi xác nhận trả xe.</span>}{settlementBlocked&&!photosPending&&<span className="mg-field-error" role="status">Chưa đủ hoàn cọc: chọn tài khoản chi hoàn, hoặc nhập đủ ngân hàng + số TK + tên chủ TK, hoặc lưu ảnh QR / số TK ở hồ sơ trả xe.</span>}<button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending||!lines.length || invalid || settlementBlocked}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer">{photosPending&&<span className="mg-field-error" role="status">Chưa xác nhận được: ảnh/video mới chỉ đang chọn — bấm «Lưu ảnh / video» phía trên để gắn vào hồ sơ.</span>}{settlementBlocked&&!photosPending&&<span className="mg-field-error" role="status">Chưa xác nhận được: thiếu hoàn cọc (tài khoản chi, hoặc ngân hàng + số TK + tên chủ TK, hoặc ảnh QR / số TK đã lưu).</span>}<button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !lines.length}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
     </form>
   </Dialog>;
 }

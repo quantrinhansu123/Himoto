@@ -3730,6 +3730,16 @@
 .mg-payment-state { font-weight: 600; }
 .mg-photo-feedback { margin: 10px 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .mg-photo-feedback p { margin: 0 0 8px; }
+.mg-saved-photos-commit {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 4px;
+  padding: 12px;
+  border: 1px solid var(--mg-brand-200, #ffc9c9);
+  border-radius: 10px;
+  background: var(--mg-brand-50, #fff5f5);
+}
+.mg-saved-photos-commit .mg-button { min-height: 44px; width: 100%; }
 .mg-debt-reminder-dialog { max-width: 680px; }
 .mg-debt-reminder-dialog .mg-field { margin-bottom: 14px; }
 .mg-debt-reminder-dialog textarea { min-height: 220px; resize: vertical; }
