@@ -1,7 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
-import type { RenewalInput, RenewalResult, RenewalVersion } from '@/lib/management/contract-renewals';
+import { nextRenewalVersion, type RenewalInput, type RenewalResult, type RenewalVersion } from '@/lib/management/contract-renewals';
 import { rentalPaid } from './contract-deposits';
 
 type Database = Pick<PoolClient, 'query'>;
@@ -55,7 +55,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   const overdueMinutes = beforeReturn ? Math.max(0, Math.floor((Date.now() - new Date(beforeReturn).getTime()) / 60_000)) : 0;
   const total = beforeTotal === null ? null : beforeTotal + amount;
   const paid = await rentalPaid(client, orderId, item.pid);
-  const version: RenewalVersion = { version: versions.length + 2, kind: 'renewal', created_at: new Date().toISOString(), actor_id: actorId,
+  const version: RenewalVersion = { version: nextRenewalVersion(versions), kind: 'renewal', created_at: new Date().toISOString(), actor_id: actorId,
     item_id: input.item_id, vehicle_id: Number(item.vehicle_id), vehicle_name: String(item.vehicle_name || ''), license: String(item.license || ''),
     rent_at: iso(item.rent_at), before_return_at: beforeReturn, return_at: newReturn, overdue_minutes: overdueMinutes,
     amount, before_total: beforeTotal, total, paid, note: input.note };

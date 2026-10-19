@@ -1,5 +1,6 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
+import { hasRenewalVersion, nextRenewalVersion } from '@/lib/management/contract-renewals';
 import { MAX_PHOTO_BYTES, type PhotoEntity } from '@/lib/management/record-photos';
 import { isContractTransactionPhoto } from '@/lib/management/contract-photos';
 
@@ -29,9 +30,12 @@ export async function requireContractPhotoSlot(client:Pick<PoolClient,'query'>,e
   const renewal=entity==='contracts'?slot.match(/^renewal-([1-9]\d*)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/):null;
   if(renewal) {
     const row=(await client.query('SELECT draft_payload,order_status FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL',[id])).rows[0];
-    const versions=row?.draft_payload?.management_composer?.versions||[];
+    if(!row)throw new RecordPhotoError('Lần gia hạn không thuộc hợp đồng.',404);
+    const versions=row.draft_payload?.management_composer?.versions;
     const version=Number(renewal[1]);
-    if(!versions.some((v:{kind:string;version:number})=>v.kind==='renewal'&&v.version===version)&&!(version===versions.length+2&&['renting','overdue','wait_payment'].includes(row?.order_status)))throw new RecordPhotoError('Lần gia hạn không thuộc hợp đồng.',404);
+    // Allow the next renewal slot on any issued contract so biên nhận can be saved before "Lưu gia hạn".
+    const open=!['draft','cancelled'].includes(String(row.order_status||''));
+    if(!hasRenewalVersion(versions,version)&&!(version===nextRenewalVersion(versions)&&open))throw new RecordPhotoError('Lần gia hạn không thuộc hợp đồng.',404);
   }
   const receipt=entity==='contracts'?slot.match(/^renewal-receipt-([1-9]\d*)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/):null;
   if(receipt&&!(await client.query('SELECT transaction_id FROM himoto.management_contract_payments WHERE transaction_id=$1 AND order_id=$2 AND renewal_payload IS NOT NULL',[Number(receipt[1]),id])).rowCount)throw new RecordPhotoError('Phiếu gia hạn không thuộc hợp đồng.',404);

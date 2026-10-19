@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation';
 import { CalendarPlus, LoaderCircle, Wallet } from 'lucide-react';
 import { loadContractReturnableItems, ReturnableContractItem } from '@/lib/management/contract-returns';
 import { overdueParts, saveContractRenewal } from '@/lib/management/contract-renewals';
-import { cashbookPaymentPath } from '@/lib/management/contract-payments';
+import {
+  cashbookPaymentPath, loadPaymentContext, PAYMENT_METHODS, paymentAccountKey, paymentAccounts,
+  paymentMethodLabel, PaymentContext, PaymentMethod, saveContractPayment, vietnamPaymentTime,
+} from '@/lib/management/contract-payments';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { useManagement } from './ManagementProvider';
@@ -24,7 +27,7 @@ function defaultRate(row: ReturnableContractItem | null, unit: 'day' | 'hour', f
 }
 
 export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClose }: { orderId: number; contractCode: string; unitPrice?: number; onClose: () => void }) {
-  const { notify, reload, canPayContracts } = useManagement();
+  const { notify, reload, canPayContracts, acceptContractPayment, selectStore } = useManagement();
   const router = useRouter();
   const [rows, setRows] = useState<ReturnableContractItem[]>([]);
   const [itemId, setItemId] = useState('');
@@ -38,10 +41,20 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [renewalVersion,setRenewalVersion]=useState<number|null>(null);
-  const [photosPending,setPhotosPending]=useState(false);
-  useEffect(()=>{const controller=new AbortController();void contractTelegramRequest(orderId,undefined,controller.signal).then(data=>setRenewalVersion(data.next_renewal_version)).catch(()=>{});return()=>controller.abort();},[orderId]);
-  const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null; version:number } | null>(null);
+  const [renewalVersion, setRenewalVersion] = useState<number | null>(null);
+  const [photosPending, setPhotosPending] = useState(false);
+  const [paymentContext, setPaymentContext] = useState<PaymentContext | null>(null);
+  const [paymentLoadError, setPaymentLoadError] = useState('');
+  const [collect, setCollect] = useState(false);
+  const [method, setMethod] = useState<PaymentMethod>('cash');
+  const [accountId, setAccountId] = useState('');
+  const [paidAt, setPaidAt] = useState(vietnamPaymentTime);
+  useEffect(() => {
+    const controller = new AbortController();
+    void contractTelegramRequest(orderId, undefined, controller.signal).then(data => setRenewalVersion(data.next_renewal_version)).catch(() => {});
+    return () => controller.abort();
+  }, [orderId]);
+  const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null; version: number; collected: boolean } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -55,12 +68,35 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     return () => controller.abort();
   }, [orderId, unitPrice]);
 
+  useEffect(() => {
+    if (!canPayContracts) return;
+    const controller = new AbortController();
+    setPaymentLoadError('');
+    void loadPaymentContext(orderId, controller.signal).then(context => {
+      if (controller.signal.aborted) return;
+      setPaymentContext(context);
+      setCollect(true);
+      const preferred = (['cash', 'transfer', 'company_transfer'] as const).find(value => paymentAccounts(context, value).length) || 'cash';
+      setMethod(preferred);
+      const accounts = paymentAccounts(context, preferred);
+      setAccountId(accounts.length === 1 ? paymentAccountKey(accounts[0]) : '');
+    }).catch(cause => {
+      if (!controller.signal.aborted) setPaymentLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');
+    });
+    return () => controller.abort();
+  }, [orderId, canPayContracts]);
+
   const selected = rows.find(row => String(row.item_id) === itemId) || null;
   const overdue = useMemo(() => overdueParts(selected?.scheduled_return_at ?? null), [selected?.scheduled_return_at]);
   const dueMs = selected?.scheduled_return_at ? new Date(selected.scheduled_return_at).getTime() : NaN;
   const maxCount = unit === 'day' ? 365 : 720;
   const unitCount = /^\d+$/.test(count) ? Number(count) : 0;
   const rate = /^\d{1,9}$/.test(rateInput) ? Number(rateInput) : 0;
+  const accounts = paymentContext ? paymentAccounts(paymentContext, method) : [];
+  const effectiveAccount = accountId || (accounts.length === 1 ? paymentAccountKey(accounts[0]) : '');
+  const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
+  const canCollect = canPayContracts && feeReady(amount) > 0;
+  const collecting = canCollect && collect;
 
   useEffect(() => {
     if (!selected || !Number.isFinite(dueMs) || unitCount < 1 || unitCount > maxCount) return;
@@ -73,27 +109,75 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     setRateInput(defaultRate(selected, next, unitPrice));
   }
 
-  const fee = /^\d+$/.test(amount) ? Number(amount) : 0;
+  function changeMethod(next: PaymentMethod) {
+    setMethod(next);
+    const nextAccounts = paymentContext ? paymentAccounts(paymentContext, next) : [];
+    setAccountId(nextAccounts.length === 1 ? paymentAccountKey(nextAccounts[0]) : '');
+  }
+
+  const fee = feeReady(amount);
   const total = selected?.total_amount ?? null;
   const paid = selected?.paid_amount ?? null;
   const nextTotal = total === null ? null : total + fee;
   const returnMs = returnAt ? new Date(`${returnAt}:00+07:00`).getTime() : NaN;
   const validReturn = Number.isFinite(returnMs) && (!Number.isFinite(dueMs) || returnMs > dueMs);
   const stillOverdue = validReturn && returnMs < Date.now();
+  const previewPaid = collecting ? (paid === null ? null : paid + fee) : paid;
+  const previewRemaining = nextTotal === null || previewPaid === null ? null : Math.max(nextTotal - previewPaid, 0);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!selected || saving || photosPending) return;
     if (!validReturn) { setError('Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
+    if (collecting) {
+      if (!paymentContext) { setError(paymentLoadError || 'Đang tải tài khoản nhận tiền.'); return; }
+      if (!accounts.some(account => account.id === effectiveAccountId)) { setError('Chọn tài khoản nhận tiền gia hạn.'); return; }
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt)) { setError('Ngày giờ thu tiền gia hạn không hợp lệ.'); return; }
+    }
     setSaving(true); setError('');
     try {
-      const result = await saveContractRenewal(orderId, { item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
-        return_at: returnAt, amount: amount || '0', note: note.trim() });
-      const remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
-      notify(`${result.code}: đã tạo phiên bản v${result.version} — hẹn trả ${formatDateTime(result.return_at)}${result.total_amount !== null ? `, tiền hợp đồng ${formatMoney(result.total_amount)}` : ''}.`);
-      await reload();
-      setDone({ code: result.code, fee, remaining, version:result.version });
+      const result = await saveContractRenewal(orderId, {
+        item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
+        return_at: returnAt, amount: amount || '0', note: note.trim(),
+      });
+      let remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
+      let collected = false;
+      if (collecting) {
+        try {
+          const fresh = await loadPaymentContext(orderId);
+          const payment = await saveContractPayment(orderId, {
+            request_id: crypto.randomUUID(),
+            revision: fresh.revision,
+            amount: String(fee),
+            method,
+            account_id: effectiveAccountId,
+            paid_at: paidAt,
+            note: note.trim() || `Gia hạn hợp đồng_${result.code}`,
+          });
+          acceptContractPayment(payment.context);
+          remaining = payment.context.remaining;
+          collected = true;
+          notify(`${result.code}: đã tạo phiên bản v${result.version} và ghi phiếu Thu #${payment.transaction_id} · ${formatMoney(fee)}.`);
+          await reload();
+          if (payment.company_transfer) {
+            selectStore('all');
+            onClose();
+            router.push(`/contracts/vat?contract_id=${orderId}`);
+            return;
+          }
+        } catch (cause) {
+          notify(`${result.code}: đã tạo phiên bản v${result.version}, nhưng chưa ghi được phiếu Thu — dùng nút điền sổ quỹ.`);
+          await reload();
+          setDone({ code: result.code, fee, remaining, version: result.version, collected: false });
+          setError(cause instanceof Error ? cause.message : 'Gia hạn đã lưu nhưng chưa ghi được phiếu Thu.');
+          return;
+        }
+      } else {
+        notify(`${result.code}: đã tạo phiên bản v${result.version} — hẹn trả ${formatDateTime(result.return_at)}${result.total_amount !== null ? `, tiền hợp đồng ${formatMoney(result.total_amount)}` : ''}.`);
+        await reload();
+      }
+      setDone({ code: result.code, fee, remaining, version: result.version, collected });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được gia hạn hợp đồng.'); }
     finally { setSaving(false); }
   }
@@ -107,13 +191,15 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     <form onSubmit={submit}>
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
-          <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí ${formatMoney(done.fee)}` : ''}.</p>
+          <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí ${formatMoney(done.fee)}` : ''}{done.collected ? ' · đã ghi phiếu Thu vào sổ quỹ.' : '.'}</p>
+          {error && <p className="mg-error-message" role="alert">{error}</p>}
           <ContractTelegramPanel id={orderId} eventKey={`renewal:${orderId}:${done.version}`}/>
-          {canPayContracts ? <>
-            <p>Bấm nút bên dưới để mở phiếu thu Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng (nội dung, số tiền còn thiếu).</p>
-            {(done.remaining === null || done.remaining > 0 || done.fee > 0) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
-            <button type="button" className="mg-button" onClick={() => openCashbook('renewal')}><Wallet size={16} />Điền thu gia hạn vào sổ quỹ</button>
-          </> : <p>Chỉ kế toán hoặc quản trị viên mới điền được phiếu thu vào sổ quỹ.</p>}
+          {done.collected && (done.remaining === null || done.remaining <= 0) ? <p>Đã thu phí gia hạn trong lượt này.</p>
+            : canPayContracts ? <>
+              <p>Bấm nút bên dưới để mở phiếu thu Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng (nội dung, số tiền còn thiếu).</p>
+              {(done.remaining === null || done.remaining > 0 || (!done.collected && done.fee > 0)) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
+              {!done.collected && <button type="button" className="mg-button" onClick={() => openCashbook('renewal')}><Wallet size={16} />Điền thu gia hạn vào sổ quỹ</button>}
+            </> : <p>Chỉ kế toán hoặc quản trị viên mới điền được phiếu thu vào sổ quỹ.</p>}
         </div> : <>
         {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && !rows.length && !error && <p>Hợp đồng này không còn xe đang thuê để gia hạn.</p>}
@@ -136,24 +222,50 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
             <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn"
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
               <small>{rate ? `Gợi ý: ${formatMoney(rate)} × ${unitCount || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(rate * (unitCount || 0))}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
+            {canCollect && <>
+              <label className="mg-field-wide mg-checkbox"><input type="checkbox" checked={collect} onChange={event => setCollect(event.target.checked)} />Đã thu tiền gia hạn vào sổ quỹ</label>
+              {collect && <>
+                {paymentLoadError && !paymentContext && <p className="mg-field-wide mg-field-error">{paymentLoadError}</p>}
+                {!paymentContext && !paymentLoadError && <p className="mg-field-wide" role="status"><LoaderCircle size={15} className="mg-spin" /> Đang tải tài khoản nhận tiền…</p>}
+                {paymentContext && <>
+                  <label className="mg-field-wide">Hình thức thanh toán<select aria-label="Hình thức thanh toán" value={method} onChange={event => changeMethod(event.target.value as PaymentMethod)}>
+                    {PAYMENT_METHODS.map(item => <option key={item.value} value={item.value}>{paymentMethodLabel(item.value)}</option>)}
+                  </select></label>
+                  <label className="mg-field-wide">Tài khoản nhận<select aria-label="Tài khoản nhận" required value={effectiveAccount} onChange={event => setAccountId(event.target.value)}>
+                    <option value="">Chọn tài khoản nhận</option>
+                    {accounts.map(account => <option key={paymentAccountKey(account)} value={paymentAccountKey(account)}>{account.label}</option>)}
+                  </select></label>
+                  {!accounts.length && <p className="mg-field-wide mg-field-error">{method === 'company_transfer'
+                    ? 'Chưa có tài khoản công ty đang hoạt động. Đổi hình thức hoặc thêm TK công ty trong Sổ quỹ.'
+                    : 'Chưa có tài khoản nhận đúng cơ sở hợp đồng cho hình thức này (Tiền mặt = két; Chuyển khoản = ngân hàng cơ sở). Đổi Hình thức hoặc chọn TK đúng cơ sở nguồn.'}</p>}
+                  <label className="mg-field-wide">Ngày giờ thu (24h)<DateTime24Controls id="renewal-paid-at" label="Ngày giờ thu" value={paidAt} onChange={setPaidAt} /></label>
+                </>}
+              </>}
+            </>}
             <label className="mg-field-wide">Ghi chú<textarea rows={2} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} placeholder="Lý do gia hạn, thỏa thuận với khách…" /></label>
           </fieldset>
           {stillOverdue && <p className="mg-field-error">Ngày trả mới vẫn ở quá khứ, hợp đồng sẽ tiếp tục quá hạn.</p>}
           <dl className="mg-payment-totals">
             <div><dt>Tiền thuê hợp đồng</dt><dd>{total === null ? 'Chưa đối chiếu' : formatMoney(total)}{fee > 0 && nextTotal !== null && <> → <strong>{formatMoney(nextTotal)}</strong></>}</dd></div>
-            <div><dt>Đã thu tiền thuê</dt><dd>{paid === null ? '—' : formatMoney(paid)}</dd></div>
-            <div><dt>Còn thiếu sau gia hạn (không trừ cọc)</dt><dd>{nextTotal === null || paid === null ? '—' : formatMoney(Math.max(nextTotal - paid, 0))}</dd></div>
+            <div><dt>Đã thu tiền thuê</dt><dd>{paid === null ? '—' : formatMoney(paid)}{collecting && fee > 0 && previewPaid !== null && <> → <strong>{formatMoney(previewPaid)}</strong></>}</dd></div>
+            <div><dt>Còn thiếu sau gia hạn (không trừ cọc)</dt><dd>{previewRemaining === null ? '—' : formatMoney(previewRemaining)}</dd></div>
             <div><dt>Tiền cọc đã thu</dt><dd>{formatMoney(selected?.deposit_paid ?? 0)}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(selected?.deposit_held ?? 0)}</dd></div>
           </dl>
-          <p className="mg-composer-hint">Chi phí gia hạn được cộng vào tiền hợp đồng. Sau khi lưu, dùng nút điền sổ quỹ để ghi phiếu Thu theo đúng cấu trúc.</p>
-          {renewalVersion&&<ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending}/>}
+          <p className="mg-composer-hint">{collecting
+            ? 'Chi phí gia hạn được cộng vào tiền hợp đồng và ghi phiếu Thu ngay khi lưu.'
+            : 'Chi phí gia hạn được cộng vào tiền hợp đồng. Bỏ trống thu tiền nếu chưa nhận; sau khi lưu có thể điền sổ quỹ.'}</p>
+          {renewalVersion && <ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending}/>}
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>
-        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : 'Lưu gia hạn'}</button>}</div>
+        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn || (collecting && (!paymentContext || !accounts.length))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : collecting ? 'Lưu gia hạn và thu tiền' : 'Lưu gia hạn'}</button>}</div>
     </form>
   </Dialog>;
+}
+
+function feeReady(amount: string) {
+  return /^\d+$/.test(amount) ? Number(amount) : 0;
 }

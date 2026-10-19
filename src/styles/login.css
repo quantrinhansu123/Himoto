@@ -1,31 +1,31 @@
-.hm-login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(480px, 1fr); min-height: 100vh; min-height: 100dvh; background: #f8fafc; color: #0f172a; font-family: 'Roboto', -apple-system, BlinkMacSystemFont, Arial, sans-serif; }
-.hm-login-art { display: flex; align-items: center; justify-content: center; background: #f1f5f9; overflow: hidden; border-right: 1px solid #e2e8f0; }
+.hm-login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(480px, 1fr); min-height: 100vh; min-height: 100dvh; background: #ffffff; color: #171717; font-family: 'Roboto', -apple-system, BlinkMacSystemFont, Arial, sans-serif; }
+.hm-login-art { display: flex; align-items: center; justify-content: center; background: #fff5f5; overflow: hidden; border-right: 1px solid #ffc9c9; }
 .hm-login-art img { display: block; width: 100%; height: auto; max-height: 100vh; max-height: 100dvh; object-fit: contain; }
 .hm-login-main { position: relative; display: flex; align-items: center; justify-content: center; padding: 80px 40px 40px; }
-.hm-login-language { position: absolute; top: 28px; right: 32px; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #64748b; }
+.hm-login-language { position: absolute; top: 28px; right: 32px; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #737373; }
 .hm-login-content { width: 100%; max-width: 440px; }
 .hm-login-logo { display: block; width: 184px; height: 38px; object-fit: contain; margin: 0 auto 28px; }
-.hm-login-card { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; padding: 34px 32px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06); }
-.hm-login-eyebrow { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: #b45309; text-transform: uppercase; }
-.hm-login h1 { margin: 0; font-size: clamp(22px, 2vw, 26px); line-height: 1.25; font-weight: 700; color: #0f172a; }
-.hm-login-description { margin: 10px 0 24px; color: #64748b; font-size: 14px; line-height: 1.5; }
-.hm-login label { display: block; margin: 18px 0 6px; font-size: 13px; font-weight: 600; color: #334155; }
-.hm-login input { display: block; width: 100%; min-width: 0; height: 44px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0 12px; font-size: 14.5px; color: #0f172a; background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
-.hm-login input::placeholder { color: #64748b; }
-.hm-login :focus-visible { outline: 2px solid #f59e0b; outline-offset: 2px; }
-.hm-login input:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2); outline: none; }
-.hm-login input[aria-invalid='true'] { border-color: #ef4444; }
+.hm-login-card { border: 1px solid #ececec; border-radius: 12px; background: #fff; padding: 34px 32px; box-shadow: 0 4px 12px rgba(227, 38, 46, 0.06); }
+.hm-login-eyebrow { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: #d32f2f; text-transform: uppercase; }
+.hm-login h1 { margin: 0; font-size: clamp(22px, 2vw, 26px); line-height: 1.25; font-weight: 700; color: #171717; }
+.hm-login-description { margin: 10px 0 24px; color: #737373; font-size: 14px; line-height: 1.5; }
+.hm-login label { display: block; margin: 18px 0 6px; font-size: 13px; font-weight: 600; color: #404040; }
+.hm-login input { display: block; width: 100%; min-width: 0; height: 44px; border: 1px solid #d6d6d6; border-radius: 6px; padding: 0 12px; font-size: 14.5px; color: #171717; background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
+.hm-login input::placeholder { color: #737373; }
+.hm-login :focus-visible { outline: 2px solid #e3262e; outline-offset: 2px; }
+.hm-login input:focus { border-color: #e3262e; box-shadow: 0 0 0 3px rgba(227, 38, 46, 0.2); outline: none; }
+.hm-login input[aria-invalid='true'] { border-color: #e3262e; }
 .hm-login-password { position: relative; }
 .hm-login-password input { padding-right: 48px; }
-.hm-login-password button { position: absolute; right: 2px; top: 2px; display: grid; place-items: center; height: 40px; width: 40px; padding: 0; border: 0; border-radius: 6px; color: #64748b; background: transparent; cursor: pointer; }
-.hm-login-password button:hover { color: #0f172a; }
-.hm-login-submit { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 24px; padding: 10px 16px; background: #f59e0b; border: 1px solid #d97706; border-radius: 6px; color: #1e293b; font-size: 14.5px; font-weight: 600; cursor: pointer; text-decoration: none; transition: background 0.15s, color 0.15s; }
-.hm-login-submit:hover:not(:disabled) { background: #d97706; border-color: #b45309; color: #1e293b; }
+.hm-login-password button { position: absolute; right: 2px; top: 2px; display: grid; place-items: center; height: 40px; width: 40px; padding: 0; border: 0; border-radius: 6px; color: #737373; background: transparent; cursor: pointer; }
+.hm-login-password button:hover { color: #171717; }
+.hm-login-submit { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 24px; padding: 10px 16px; background: #e3262e; border: 1px solid #d32f2f; border-radius: 6px; color: #ffffff; font-size: 14.5px; font-weight: 600; cursor: pointer; text-decoration: none; transition: background 0.15s, color 0.15s; }
+.hm-login-submit:hover:not(:disabled) { background: #d32f2f; border-color: #b71c1c; color: #ffffff; }
 .hm-login :disabled { cursor: not-allowed; }
-.hm-login input:disabled { background: #f1f5f9; color: #94a3b8; }
-.hm-login-submit:disabled { background: #f1f5f9; border-color: #e2e8f0; color: #94a3b8; }
-.hm-login-error { padding: 10px 14px; margin: 16px 0; border: 1px solid #fecaca; border-radius: 6px; background: #fef2f2; font-size: 13px; line-height: 1.5; color: #991b1b; }
-.hm-login-footer { margin: 24px 0 0; color: #64748b; text-align: center; font-size: 12px; }
+.hm-login input:disabled { background: #f5f5f5; color: #a3a3a3; }
+.hm-login-submit:disabled { background: #f5f5f5; border-color: #ececec; color: #a3a3a3; }
+.hm-login-error { padding: 10px 14px; margin: 16px 0; border: 1px solid #ffc9c9; border-radius: 6px; background: #fff5f5; font-size: 13px; line-height: 1.5; color: #8f1414; }
+.hm-login-footer { margin: 24px 0 0; color: #737373; text-align: center; font-size: 12px; }
 .hm-login-spinner { animation: hm-login-spin .8s linear infinite; }
 @keyframes hm-login-spin { to { transform: rotate(360deg); } }
 @media (max-width: 900px) { .hm-login { grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr); } .hm-login-main { padding: 70px 24px 30px; } .hm-login-card { padding: 28px 24px; } }

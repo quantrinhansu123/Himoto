@@ -1,6 +1,7 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { nextRenewalVersion } from '@/lib/management/contract-renewals';
 import { CONTRACT_EVENT_LABELS, type ContractEventType, type ContractTelegramState } from '@/lib/management/contract-telegram';
 import { hasPermission, type PermissionAccount } from '@/lib/management/permissions';
 import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
@@ -36,7 +37,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     for(const item of returned)if(!events.some(e=>e.kind==='return'&&(e.phases.includes(`return-${item.id}`)||e.key.split(':').at(-1)?.split('-').includes(String(item.id)))))add({key:`return:${id}:${item.id}`,kind:'return',phases:[`return-${item.id}`]});
   }
   const payloads=new Map<string,NotificationPayload>();
-  const result:ContractTelegramState={auto_enabled:false,next_renewal_version:versions.length+2,events:[]};
+  const result:ContractTelegramState={auto_enabled:false,next_renewal_version:nextRenewalVersion(versions),events:[]};
   // Snapshot business facts for an existing transaction; refresh saved photos and verified payment/refund receipts.
   for(const event of events) {
     if(!event.phases.length)event.phases=event.kind==='return'?event.key.split(':').at(-1)!.split('-').map(n=>`return-${n}`):[event.kind==='handover'?'handover':'rental'];

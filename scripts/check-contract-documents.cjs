@@ -21,6 +21,13 @@ module.exports=async function checkDocuments(db,c,schema,notices){
   await assert.rejects(()=>requireContractPhotoSlot(db,'contracts',2,'return-1001-document-15'),e=>e.status===404);
   await assert.rejects(()=>requireContractPhotoSlot(db,'contracts',1,'renewal-999-document-15'),e=>e.status===404);
   await assert.rejects(()=>requireContractPhotoSlot(db,'contracts',1,'renewal-receipt-999-document-15'),e=>e.status===404);
+  const {nextRenewalVersion,hasRenewalVersion}=load(path.join(root,'lib/management/contract-renewals'));
+  assert.equal(nextRenewalVersion(null),2);
+  assert.equal(nextRenewalVersion([{kind:'renewal',version:'2'},{kind:'other',version:9}]),3);
+  assert.equal(nextRenewalVersion([{kind:'renewal',version:2},{kind:'renewal',version:5}]),6);
+  assert(hasRenewalVersion([{kind:'renewal',version:'4'}],4));
+  assert(!hasRenewalVersion([{kind:'renewal',version:4}],5));
+  await requireContractPhotoSlot(db,'contracts',1,'renewal-2-document-1');
   await c.query(`INSERT INTO ${schema}.customers(id,name,phone,id_card) VALUES(990001,'Document QA','0900000000','QA-PASS')`);
   await c.query(`UPDATE ${schema}.orders SET customer_id=990001 WHERE id=1`);
   const source=Buffer.from([255,216,255,224,33]),changed=Buffer.from([255,216,255,224,44]);

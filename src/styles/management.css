@@ -1,28 +1,40 @@
-/* Scoped to the management shell and its screens. Enterprise grade, data-dense design. */
+/* Scoped to the management shell and its screens. Palette: red · yellow · white. */
 :root, .mg-app {
-  /* Brand: HIMOTO Amber / Gold */
-  --mg-brand-50: #fffbeb;
-  --mg-brand-100: #fef3c7;
-  --mg-brand-200: #fde68a;
-  --mg-brand-300: #fcd34d;
-  --mg-brand-400: #fbbf24;
-  --mg-brand-500: #f59e0b;
-  --mg-brand-600: #d97706;
-  --mg-brand-700: #b45309;
-  --mg-brand-800: #92400e;
-  --mg-brand-900: #78350f;
+  /* Brand primary: HIMOTO Red */
+  --mg-brand-50: #fff5f5;
+  --mg-brand-100: #ffe3e3;
+  --mg-brand-200: #ffc9c9;
+  --mg-brand-300: #ffa8a8;
+  --mg-brand-400: #ff6b6b;
+  --mg-brand-500: #e3262e;
+  --mg-brand-600: #d32f2f;
+  --mg-brand-700: #b71c1c;
+  --mg-brand-800: #8f1414;
+  --mg-brand-900: #6b0f0f;
 
-  /* Neutrals: Cool Slate & Crisp Whites */
-  --mg-slate-50: #f8fafc;
-  --mg-slate-100: #f1f5f9;
-  --mg-slate-200: #e2e8f0;
-  --mg-slate-300: #cbd5e1;
-  --mg-slate-400: #94a3b8;
-  --mg-slate-500: #64748b;
-  --mg-slate-600: #475569;
-  --mg-slate-700: #334155;
-  --mg-slate-800: #1e293b;
-  --mg-slate-900: #0f172a;
+  /* Accent: Yellow / Gold */
+  --mg-yellow-50: #fffbeb;
+  --mg-yellow-100: #fef3c7;
+  --mg-yellow-200: #fde68a;
+  --mg-yellow-300: #fcd34d;
+  --mg-yellow-400: #fbbf24;
+  --mg-yellow-500: #f59e0b;
+  --mg-yellow-600: #d97706;
+  --mg-yellow-700: #b45309;
+  --mg-yellow-800: #92400e;
+  --mg-yellow-900: #78350f;
+
+  /* Neutrals on white */
+  --mg-slate-50: #fafafa;
+  --mg-slate-100: #f5f5f5;
+  --mg-slate-200: #ececec;
+  --mg-slate-300: #d6d6d6;
+  --mg-slate-400: #a3a3a3;
+  --mg-slate-500: #737373;
+  --mg-slate-600: #525252;
+  --mg-slate-700: #404040;
+  --mg-slate-800: #262626;
+  --mg-slate-900: #171717;
 
   /* Semantic UI Tokens */
   --mg-ink: var(--mg-slate-800);
@@ -32,42 +44,42 @@
   --mg-line-subtle: var(--mg-slate-100);
   --mg-line-strong: var(--mg-slate-300);
 
-  --mg-page: #f8fafc;
+  --mg-page: #ffffff;
   --mg-card: #ffffff;
   --mg-sidebar-bg: #ffffff;
   --mg-topbar-bg: #ffffff;
 
-  /* Brand Accents */
-  --mg-gold: var(--mg-brand-600);
-  --mg-gold-soft: var(--mg-brand-100);
-  --mg-gold-border: var(--mg-brand-200);
-  --mg-gold-dark: var(--mg-brand-800);
+  /* Yellow accent aliases (highlights, soft chips) */
+  --mg-gold: var(--mg-yellow-600);
+  --mg-gold-soft: var(--mg-yellow-100);
+  --mg-gold-border: var(--mg-yellow-200);
+  --mg-gold-dark: var(--mg-yellow-800);
 
-  /* Semantic Status Tokens */
-  --mg-green-bg: #ecfdf5;
-  --mg-green-text: #065f46;
-  --mg-green-border: #a7f3d0;
-  --mg-green-dot: #10b981;
+  /* Status tokens remapped into red / yellow / white (distinct within palette) */
+  --mg-green-bg: var(--mg-yellow-100);
+  --mg-green-text: var(--mg-yellow-800);
+  --mg-green-border: var(--mg-yellow-300);
+  --mg-green-dot: var(--mg-yellow-400);
 
-  --mg-blue-bg: #eff6ff;
-  --mg-blue-text: #1e40af;
-  --mg-blue-border: #bfdbfe;
-  --mg-blue-dot: #3b82f6;
+  --mg-blue-bg: var(--mg-brand-50);
+  --mg-blue-text: var(--mg-brand-700);
+  --mg-blue-border: var(--mg-brand-200);
+  --mg-blue-dot: var(--mg-brand-500);
 
-  --mg-amber-bg: #fffbeb;
-  --mg-amber-text: #92400e;
-  --mg-amber-border: #fde68a;
-  --mg-amber-dot: #f59e0b;
+  --mg-amber-bg: var(--mg-yellow-50);
+  --mg-amber-text: var(--mg-yellow-900);
+  --mg-amber-border: var(--mg-yellow-400);
+  --mg-amber-dot: var(--mg-yellow-600);
 
-  --mg-red-bg: #fef2f2;
-  --mg-red-text: #991b1b;
-  --mg-red-border: #fecaca;
-  --mg-red-dot: #ef4444;
+  --mg-red-bg: var(--mg-brand-50);
+  --mg-red-text: var(--mg-brand-800);
+  --mg-red-border: var(--mg-brand-300);
+  --mg-red-dot: var(--mg-brand-600);
 
-  --mg-gray-bg: #f1f5f9;
-  --mg-gray-text: #475569;
-  --mg-gray-border: #e2e8f0;
-  --mg-gray-dot: #94a3b8;
+  --mg-gray-bg: #f5f5f5;
+  --mg-gray-text: #525252;
+  --mg-gray-border: #ececec;
+  --mg-gray-dot: #a3a3a3;
 
   /* Typography */
   --mg-font: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
@@ -82,14 +94,14 @@
   --mg-radius-full: 9999px;
 
   /* Shadows */
-  --mg-shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
-  --mg-shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
-  --mg-shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.03);
-  --mg-shadow-dialog: 0 24px 64px rgba(15, 23, 42, 0.18), 0 8px 24px rgba(15, 23, 42, 0.08);
-  --mg-shadow-popover: 0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 4px 8px -2px rgba(15, 23, 42, 0.06);
+  --mg-shadow-sm: 0 1px 3px 0 rgba(23, 23, 23, 0.06), 0 1px 2px -1px rgba(23, 23, 23, 0.04);
+  --mg-shadow-md: 0 4px 6px -1px rgba(23, 23, 23, 0.07), 0 2px 4px -2px rgba(23, 23, 23, 0.04);
+  --mg-shadow-lg: 0 10px 15px -3px rgba(23, 23, 23, 0.08), 0 4px 6px -4px rgba(23, 23, 23, 0.03);
+  --mg-shadow-dialog: 0 24px 64px rgba(23, 23, 23, 0.16), 0 8px 24px rgba(227, 38, 46, 0.08);
+  --mg-shadow-popover: 0 12px 28px -4px rgba(23, 23, 23, 0.12), 0 4px 8px -2px rgba(23, 23, 23, 0.06);
 
   /* Focus Ring */
-  --mg-focus-ring: 0 0 0 3px rgba(217, 119, 6, 0.22);
+  --mg-focus-ring: 0 0 0 3px rgba(227, 38, 46, 0.22);
 }
 
 .mg-app {
@@ -236,8 +248,8 @@
 }
 .mg-nav-link:hover > svg { color: var(--mg-slate-700); }
 .mg-nav-link.is-active {
-  background: var(--mg-brand-100);
-  color: var(--mg-brand-900) !important;
+  background: var(--mg-yellow-100);
+  color: var(--mg-brand-800) !important;
   font-weight: 600;
 }
 .mg-nav-link.is-active > svg { color: var(--mg-brand-700); }
@@ -552,24 +564,24 @@
 .mg-button-primary {
   border-color: var(--mg-brand-600);
   background: var(--mg-brand-500);
-  color: #1e293b !important;
+  color: #ffffff !important;
   font-weight: 600;
 }
 .mg-button-primary:hover:not(:disabled) {
   background: var(--mg-brand-600);
   border-color: var(--mg-brand-700);
-  color: #1e293b !important;
+  color: #ffffff !important;
 }
 
 .mg-button-danger {
-  border-color: #b91c1c;
-  background: #dc2626;
+  border-color: var(--mg-brand-700);
+  background: var(--mg-brand-600);
   color: #fff !important;
   font-weight: 600;
 }
 .mg-button-danger:hover:not(:disabled) {
-  background: #b91c1c;
-  border-color: #991b1b;
+  background: var(--mg-brand-700);
+  border-color: var(--mg-brand-800);
 }
 
 .mg-icon-button {
@@ -641,13 +653,13 @@
   color: var(--mg-slate-900);
 }
 .mg-status-tabs > button.is-active {
-  color: var(--mg-brand-900);
+  color: var(--mg-brand-700);
   font-weight: 600;
-  border-bottom-color: var(--mg-brand-600);
+  border-bottom-color: var(--mg-brand-500);
 }
 .mg-status-tabs > button.is-active span {
-  background: var(--mg-brand-100);
-  color: var(--mg-brand-800);
+  background: var(--mg-yellow-100);
+  color: var(--mg-brand-700);
 }
 
 .mg-toolbar {
@@ -1312,7 +1324,7 @@
   margin-bottom: 6px;
   color: var(--mg-slate-700);
 }
-.mg-field > label span { color: #dc2626; }
+.mg-field > label span { color: var(--mg-brand-500); }
 .mg-field input, .mg-field select, .mg-field textarea {
   width: 100%;
   min-height: 38px;
@@ -2759,9 +2771,9 @@
   gap: 14px 22px;
   padding: 16px 20px;
   border-radius: var(--mg-radius-lg);
-  background: linear-gradient(135deg, #1e3a8a, #1d4ed8);
+  background: linear-gradient(135deg, #b71c1c, #e3262e);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(30, 58, 138, 0.22);
+  box-shadow: 0 6px 18px rgba(227, 38, 46, 0.22);
 }
 .mg-org-root-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: rgba(255,255,255,0.16); }
 .mg-org-root strong { display: block; font-size: 20px; letter-spacing: 0.04em; line-height: 1.2; }
@@ -2783,13 +2795,13 @@
 
 /* Cards */
 .mg-org-card {
-  --org-accent: #64748b;
+  --org-accent: #737373;
   overflow: hidden;
   border: 1px solid var(--mg-line);
   border-top: 4px solid var(--org-accent);
   border-radius: var(--mg-radius);
   background: #fff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 1px 2px rgba(23, 23, 23, 0.05);
 }
 .mg-org-card > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; background: color-mix(in srgb, var(--org-accent) 8%, white); }
 .mg-org-card > header h3 { margin: 0; color: var(--mg-slate-900); font-size: 14px; font-weight: 700; line-height: 1.3; }
@@ -2825,7 +2837,7 @@
 }
 .mg-org-actions .mg-icon-button { width: 32px; height: 32px; min-width: 32px; min-height: 32px; color: var(--mg-slate-500); }
 .mg-org-actions .mg-icon-button:hover { background: var(--mg-slate-100, #f1f5f9); color: var(--mg-brand-700); }
-.mg-org-actions .mg-icon-button.is-danger:hover { background: #fee2e2; color: #b91c1c; }
+.mg-org-actions .mg-icon-button.is-danger:hover { background: var(--mg-brand-50); color: var(--mg-brand-700); }
 @media (max-width: 760px) {
   .mg-org-actions .mg-icon-button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .mg-org-section { padding: 16px; }
@@ -2834,13 +2846,13 @@
   .mg-org-grid { grid-template-columns: 1fr; }
 }
 
-.mg-org-tone-0 { --org-accent: #0284c7; }
-.mg-org-tone-1 { --org-accent: #059669; }
-.mg-org-tone-2 { --org-accent: #d97706; }
-.mg-org-tone-3 { --org-accent: #e11d48; }
-.mg-org-tone-4 { --org-accent: #7c3aed; }
-.mg-org-tone-5 { --org-accent: #0d9488; }
-.mg-org-tone-unassigned { --org-accent: #64748b; }
+.mg-org-tone-0 { --org-accent: #e3262e; }
+.mg-org-tone-1 { --org-accent: #f59e0b; }
+.mg-org-tone-2 { --org-accent: #d32f2f; }
+.mg-org-tone-3 { --org-accent: #d97706; }
+.mg-org-tone-4 { --org-accent: #b71c1c; }
+.mg-org-tone-5 { --org-accent: #fbbf24; }
+.mg-org-tone-unassigned { --org-accent: #737373; }
 
 /* ==========================================================================
    Import Excel Actions
@@ -3626,8 +3638,8 @@
 .mg-sales-bar-label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .mg-sales-bar-track { position: relative; height: 14px; border-radius: 7px; background: var(--mg-slate-100); overflow: hidden; }
 .mg-sales-bar-track span { position: absolute; inset: 0 auto 0 0; border-radius: 7px; }
-.mg-sales-bar-rent, .mg-sales-swatch.is-rent { background: #93c5fd; }
-.mg-sales-bar-paid, .mg-sales-swatch.is-paid { background: #2563eb; }
+.mg-sales-bar-rent, .mg-sales-swatch.is-rent { background: #fde68a; }
+.mg-sales-bar-paid, .mg-sales-swatch.is-paid { background: #e3262e; }
 .mg-sales-bar-value { display: grid; justify-items: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mg-sales-bar-value small { color: var(--mg-red-text); font-size: 11px; }
 .mg-sales-chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 0; font-size: 12px; color: var(--mg-slate-600); }
@@ -3697,11 +3709,11 @@
 .mg-reminder-picker span { min-width: 0; }
 .mg-reminder-picker strong,.mg-reminder-picker small { display: block; overflow-wrap: anywhere; }
 .mg-reminder-message { max-width: 320px; }
-.mg-reminder-message summary { cursor: pointer; color: var(--mg-blue-700,#1d4ed8); }
+.mg-reminder-message summary { cursor: pointer; color: var(--mg-brand-600); }
 .mg-reminder-message p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
 .mg-reminder-status { display: inline-block; padding: 5px 9px; background: #fffbeb; color: #78350f; border-radius: 6px; font-size: 12px; font-weight: 600; }
-.mg-reminder-status.is-accepted { background: #ecfdf5; color: #065f46; }
-.mg-reminder-status.is-failed { background: #fef2f2; color: #991b1b; }
+.mg-reminder-status.is-accepted { background: #fef3c7; color: #92400e; }
+.mg-reminder-status.is-failed { background: #fff5f5; color: #8f1414; }
 .mg-reminder-card { padding: 16px; border: 1px solid var(--mg-line); border-radius: 10px; background: white; overflow-wrap: anywhere; }
 .mg-reminder-card p { margin: 8px 0; }
 .mg-reminder-pagination { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }

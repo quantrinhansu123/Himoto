@@ -1,7 +1,7 @@
 'use client';
 import type { SourceSalesSummary } from '@/lib/management/source-sales';
 
-const COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
+const COLORS = ['#e3262e', '#f59e0b', '#d32f2f', '#d97706', '#b71c1c', '#fbbf24'];
 const RACE_LIMIT = COLORS.length;
 const money = (value: number) => `${value.toLocaleString('vi-VN')} đ`;
 const compact = (value: number) => value >= 1e9 ? `${(value / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ`

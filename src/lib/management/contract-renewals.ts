@@ -10,6 +10,23 @@ export interface RenewalVersion {
 }
 export interface RenewalResult { order_id: number; code: string; version: number; return_at: string; total_amount: number | null; amount: number }
 
+/** Original contract is v1; renewals start at v2. Ignore non-renewal junk and coerce string version ids from older payloads. */
+export function nextRenewalVersion(versions: unknown): number {
+  const list = Array.isArray(versions) ? versions : [];
+  let max = 1;
+  for (const item of list) {
+    if (!item || typeof item !== 'object' || (item as { kind?: unknown }).kind !== 'renewal') continue;
+    const n = Number((item as { version?: unknown }).version);
+    if (Number.isSafeInteger(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+export function hasRenewalVersion(versions: unknown, version: number): boolean {
+  if (!Array.isArray(versions) || !Number.isSafeInteger(version) || version < 2) return false;
+  return versions.some(item => item && typeof item === 'object' && (item as { kind?: unknown }).kind === 'renewal'
+    && Number((item as { version?: unknown }).version) === version);
+}
+
 export function overdueParts(returnAt: string | null, now = Date.now()) {
   const due = returnAt ? new Date(returnAt).getTime() : NaN;
   const minutes = Number.isFinite(due) ? Math.max(0, Math.floor((now - due) / 60_000)) : 0;
