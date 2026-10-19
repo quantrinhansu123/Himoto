@@ -3393,6 +3393,23 @@
 .mg-suggestion-row > .mg-suggestion-remove { flex: 0 0 44px; display: grid; place-items: center; color: #b42318; }
 .mg-org-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .mg-org-heading-actions label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.mg-org-staff-search { position: relative; min-width: min(100%, 320px); flex: 1 1 280px; max-width: 420px; }
+.mg-org-staff-search .mg-search { width: 100%; max-width: none; }
+.mg-org-search-popup {
+  position: absolute; inset: calc(100% + 4px) 0 auto; z-index: 30;
+  max-height: 320px; overflow: auto; padding: 4px;
+  background: var(--mg-card); border: 1px solid var(--mg-line); border-radius: var(--mg-radius-md);
+  box-shadow: var(--mg-shadow-popover);
+}
+.mg-org-search-popup > button {
+  display: grid; gap: 2px; width: 100%; padding: 10px 12px; border: 0; border-radius: var(--mg-radius);
+  background: transparent; color: inherit; text-align: left; cursor: pointer;
+}
+.mg-org-search-popup > button strong { font-size: 13.5px; color: var(--mg-heading); }
+.mg-org-search-popup > button span { font-size: 12px; color: var(--mg-muted); overflow-wrap: anywhere; }
+.mg-org-search-popup > button.is-active,
+.mg-org-search-popup > button:hover { background: var(--mg-yellow-100); }
+.mg-org-search-empty { margin: 0; padding: 12px; font-size: 13px; color: var(--mg-muted); }
 
 /* ==========================================================================
    Motion and Accessibility

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Building2, Eye, Network, Pencil, Phone, RotateCcw, Trash2, Users } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
+import { Building2, Eye, Network, Pencil, Phone, RotateCcw, Search, Trash2, Users, X } from 'lucide-react';
 import { ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
 import { StaffDialog, StaffDialogMode } from './StaffDialogs';
@@ -17,6 +17,12 @@ function staffGroups(staff: ManagementRow[], branch = false) {
 }
 const initials = (name: string) => name.trim().split(/\s+/).slice(-2).map(part => part[0] || '').join('').toUpperCase() || '?';
 const INACTIVE_LABEL: Record<string, string> = { inactive: 'Tạm nghỉ', leave: 'Đã nghỉ việc' };
+const searchKey = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase();
+const staffHaystack = (person: ManagementRow) => [person.name, person.code, person.phone, person.email, person.position, person.store_name].map(part => String(part || '')).join(' ');
+const matchesStaff = (person: ManagementRow, query: string) => {
+  const needle = searchKey(query.trim());
+  return !needle || searchKey(staffHaystack(person)).includes(needle);
+};
 
 interface PersonProps { person: ManagementRow; position?: string; onAction: (person: ManagementRow, mode: StaffDialogMode) => void }
 function PersonCard({ person, position = normalizeStaffPosition(person.position), onAction }: PersonProps) {
@@ -44,8 +50,24 @@ export function StaffOrganizationChart() {
   const { dataset, selectedStore, reload, loading, refreshing, error } = useManagement();
   const [target, setTarget] = useState<{ person: ManagementRow; mode: StaffDialogMode } | null>(null);
   const [showDeparted, setShowDeparted] = useState(false);
+  const [search, setSearch] = useState('');
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [activeSuggest, setActiveSuggest] = useState(-1);
+  const listId = useId();
   const allStores = dataset?.stores || [];
-  const staff = (dataset?.staff || []).filter(person => showDeparted || person.status !== 'leave');
+  const allStaff = dataset?.staff || [];
+  const scopedStaff = useMemo(() => allStaff.filter(person => {
+    if (selectedStore !== 'all' && String(person.store_id || '') !== selectedStore) return false;
+    return showDeparted || person.status !== 'leave' || (search.trim() !== '' && matchesStaff(person, search));
+  }), [allStaff, selectedStore, showDeparted, search]);
+  const suggestions = useMemo(() => {
+    const needle = search.trim();
+    if (!needle) return [];
+    return scopedStaff.filter(person => matchesStaff(person, needle))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'))
+      .slice(0, 12);
+  }, [scopedStaff, search]);
+  const staff = useMemo(() => search.trim() ? scopedStaff.filter(person => matchesStaff(person, search)) : scopedStaff, [scopedStaff, search]);
   const stores = allStores.filter(store => selectedStore === 'all' || String(store.id) === selectedStore);
   const departments = selectedStore === 'all' ? STAFF_DEPARTMENTS.map(department => ({ ...department,
     people: staff.filter(person => staffRoles(person.position).includes(department.role) && (department.role !== 'NVKD' || !person.store_id)),
@@ -54,9 +76,47 @@ export function StaffOrganizationChart() {
   const shown = staff.filter(person => unassigned.includes(person) || departments.some(department => department.people.includes(person)) || stores.some(store => store.id === person.store_id));
   const working = shown.filter(person => !INACTIVE_LABEL[person.status]).length;
   const onAction: PersonProps['onAction'] = (person, mode) => setTarget({ person, mode });
+  function pickStaff(person: ManagementRow) {
+    setSearch(String(person.name || person.code || ''));
+    setSuggestOpen(false);
+    setActiveSuggest(-1);
+    if (person.status === 'leave') setShowDeparted(true);
+    setTarget({ person, mode: 'view' });
+  }
   return <section className="mg-org-section" aria-labelledby="staff-org-title">
     <div className="mg-org-heading"><div><span className="mg-eyebrow">CƠ CẤU TỔ CHỨC</span><h2 id="staff-org-title">Sơ đồ nhân sự</h2><p>Nhân sự và cơ sở theo dữ liệu hiện tại trên hệ thống. Xem, sửa hoặc xóa trực tiếp trên từng thẻ nhân sự.</p></div>
-      <div className="mg-org-heading-actions"><label><input type="checkbox" checked={showDeparted} onChange={event => setShowDeparted(event.target.checked)} />Hiện nhân sự đã nghỉ việc</label><button type="button" className="mg-button" disabled={loading || refreshing} onClick={() => void reload()}><RotateCcw size={16} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button></div></div>
+      <div className="mg-org-heading-actions">
+        <div className="mg-org-staff-search" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) { setSuggestOpen(false); setActiveSuggest(-1); } }}>
+          <label className="mg-search" htmlFor="staff-org-search"><Search size={17} /><span className="mg-sr-only">Tìm nhân sự</span>
+            <input id="staff-org-search" type="search" role="combobox" aria-expanded={suggestOpen} aria-controls={listId} aria-autocomplete="list"
+              aria-activedescendant={suggestOpen && suggestions[activeSuggest] ? `${listId}-${activeSuggest}` : undefined}
+              placeholder="Tìm mã, tên hoặc số điện thoại…" value={search} autoComplete="off"
+              onFocus={() => setSuggestOpen(true)}
+              onChange={event => { setSearch(event.target.value); setSuggestOpen(true); setActiveSuggest(-1); }}
+              onKeyDown={event => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault(); setSuggestOpen(true);
+                  setActiveSuggest(current => !suggestions.length ? -1 : current < 0 ? (event.key === 'ArrowDown' ? 0 : suggestions.length - 1) : (current + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length);
+                } else if (event.key === 'Enter' && suggestOpen && suggestions[activeSuggest]) { event.preventDefault(); pickStaff(suggestions[activeSuggest]); }
+                else if (event.key === 'Escape' && suggestOpen) { event.preventDefault(); setSuggestOpen(false); setActiveSuggest(-1); }
+              }} />
+            {search && <button type="button" aria-label="Xóa từ khóa" onClick={() => { setSearch(''); setSuggestOpen(false); setActiveSuggest(-1); }}><X size={15} /></button>}
+          </label>
+          {suggestOpen && search.trim() && <div className="mg-org-search-popup" id={listId} role="listbox" aria-label="Gợi ý nhân sự">
+            {suggestions.length ? suggestions.map((person, index) => {
+              const name = person.name || '—';
+              const meta = [person.code, normalizeStaffPosition(person.position) || person.position, person.store_name || 'Trụ sở công ty', person.phone].filter(Boolean).join(' · ');
+              return <button type="button" role="option" id={`${listId}-${index}`} key={person.id} className={activeSuggest === index ? 'is-active' : ''}
+                aria-selected={activeSuggest === index} onMouseDown={event => event.preventDefault()} onClick={() => pickStaff(person)}>
+                <strong>{name}</strong><span>{meta}</span>
+              </button>;
+            }) : <p className="mg-org-search-empty">Không tìm thấy nhân sự phù hợp.</p>}
+          </div>}
+        </div>
+        <label><input type="checkbox" checked={showDeparted} onChange={event => setShowDeparted(event.target.checked)} />Hiện nhân sự đã nghỉ việc</label>
+        <button type="button" className="mg-button" disabled={loading || refreshing} onClick={() => void reload()}><RotateCcw size={16} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>
+      </div>
+    </div>
     {loading ? <p role="status">Đang tải sơ đồ nhân sự…</p> : error ? <p role="alert">Không tải được sơ đồ nhân sự. Vui lòng thử lại.</p> : <div className="mg-org-scroll" tabIndex={0} role="region" aria-label="Sơ đồ nhân sự">
       <div className="mg-org-chart">
         <div className="mg-org-root"><span className="mg-org-root-icon" aria-hidden="true"><Network size={22} /></span><div><strong>HIMOTO</strong><small>Hệ thống cơ sở và nhân sự</small></div>
@@ -72,7 +132,7 @@ export function StaffOrganizationChart() {
           <div className="mg-org-grid">{stores.map((store, index) => {
             const people = staff.filter(person => person.store_id === store.id);
             return <article className={`mg-org-card mg-org-tone-${index % 6}`} key={store.id}><header><h3>{store.name}</h3><span>{people.length} nhân sự</span></header>
-              {people.length ? <Groups people={people} onAction={onAction} /> : <p className="mg-org-empty">Chưa có nhân sự được phân bổ.</p>}</article>;
+              {people.length ? <Groups people={people} onAction={onAction} /> : <p className="mg-org-empty">{search.trim() ? 'Không có nhân sự khớp tìm kiếm.' : 'Chưa có nhân sự được phân bổ.'}</p>}</article>;
           })}</div></div>
       </div>
     </div>}
