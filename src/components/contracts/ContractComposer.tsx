@@ -80,10 +80,9 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     return initial;
   });
   const [salesText, setSalesText] = useState<string | null>(null);
-  const [tlsText, setTlsText] = useState<string | null>(null);
   const selectedGps=useSelectedVehicleGps(draft.vehicles.map(vehicle=>vehicle.id));
-  // NVKD/TPKD mirrors "Nguồn khách" until the user picks a sales person directly.
-  const salesFollowsSource = useRef(!draft.sales_staff_id);
+  // Commission picker mirrors "Nguồn khách" until the user picks someone directly.
+  const salesFollowsSource = useRef(!draft.sales_staff_id && !draft.tls_staff_id);
   const reserving = canSaveDraft && Boolean(draft.reservation);
   const [rentalDays, setRentalDays] = useState(() => rentalDayCount(draft.start_date,draft.end_date));
   const [autoReturn, setAutoReturn] = useState(!row);
@@ -421,7 +420,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     }
   }
   const branchStaff = staffMatchesStore(staff, staffStoreId);
-  // NVKD: cửa hàng xe / nguồn khách (+ HQ). TPKD + TLS: mọi cơ sở (company-wide).
+  // One picker: NVKD by store, TPKD + TLS company-wide. TLS-only → tls_staff_id; NVKD/TPKD → sales_staff_id.
   const salesStoreId = staffStoreId || draft.store_id;
   const commissionPool = (() => {
     const byId = new Map<number, ManagementRow>();
@@ -429,79 +428,79 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     return [...byId.values()];
   })();
   const salesStaff = commissionPool.filter(person => {
-    if (!staffIsAvailable(person) || !hasSalesCommissionRole(person.position)) return false;
-    if (String(person.id) === draft.sales_staff_id) return true;
+    if (!staffIsAvailable(person)) return false;
+    if (String(person.id) === draft.sales_staff_id || String(person.id) === draft.tls_staff_id) return true;
     const roles = staffRoles(person.position);
-    if (roles.includes('TPKD')) return true;
+    if (roles.includes('TPKD') || roles.includes('TLS')) return true;
     if (!roles.includes('NVKD')) return false;
     if (!person.store_id) return true;
     return Boolean(salesStoreId) && String(person.store_id) === salesStoreId;
   }).sort((a, b) => {
-    const rank = (person: ManagementRow) => staffRoles(person.position).includes('TPKD') ? 0 : 1;
+    const rank = (person: ManagementRow) => {
+      const roles = staffRoles(person.position);
+      if (roles.includes('TLS')) return 0;
+      if (roles.includes('TPKD')) return 1;
+      return 2;
+    };
     return rank(a) - rank(b) || String(a.name || '').localeCompare(String(b.name || ''), 'vi');
   });
-  const tlsStaff = commissionPool.filter(person => staffIsAvailable(person) && staffRoles(person.position).includes('TLS'))
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'));
-  const tpkdStaff = commissionPool.filter(person => staffIsAvailable(person) && staffRoles(person.position).includes('TPKD'));
   const sourceBranchStaff = staffMatchesStore(staff.length ? staff : commissionPool, salesStoreId);
   const sourceStaff = (() => {
     const byId = new Map<number, ManagementRow>();
-    for (const person of [...branchStaff.filter(staffIsAvailable), ...sourceBranchStaff.filter(staffIsAvailable), ...tlsStaff, ...tpkdStaff]) byId.set(person.id, person);
+    for (const person of [...branchStaff.filter(staffIsAvailable), ...sourceBranchStaff.filter(staffIsAvailable), ...salesStaff]) byId.set(person.id, person);
     return [...byId.values()];
   })();
   const nameKey = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/\s+/g, ' ').trim().toLocaleLowerCase('vi');
   const salesOption = (person: ManagementRow) => {
+    const roles = staffRoles(person.position);
     const base = salesStaff.filter(item => nameKey(item.name) === nameKey(person.name)).length > 1
       ? `${person.name} · ${person.code}` : String(person.name || '');
-    return staffRoles(person.position).includes('TPKD') ? `${base} · TPKD` : base;
+    if (roles.includes('TLS') && !roles.includes('NVKD') && !roles.includes('TPKD')) return `${base} · TLS`;
+    if (roles.includes('TPKD')) return `${base} · TPKD`;
+    if (roles.includes('TLS')) return `${base} · TLS`;
+    return base;
   };
-  const tlsOption = (person: ManagementRow) => tlsStaff.filter(item => nameKey(item.name) === nameKey(person.name)).length > 1
-    ? `${person.name} · ${person.code} · TLS` : `${person.name} · TLS`;
-  const matchStaff = (list: ManagementRow[], text: string, optionOf: (person: ManagementRow) => string) => {
+  const findSalesStaff = (text: string) => {
     const needle = nameKey(text);
     if (!needle) return undefined;
-    const exact = list.filter(person => nameKey(optionOf(person)) === needle || nameKey(person.name) === needle);
+    const exact = salesStaff.filter(person => nameKey(salesOption(person)) === needle || nameKey(person.name) === needle);
     if (exact.length === 1) return exact[0];
     if (exact.length > 1) return undefined;
-    const partial = list.filter(person => {
+    const partial = salesStaff.filter(person => {
       const name = nameKey(person.name);
-      const option = nameKey(optionOf(person));
+      const option = nameKey(salesOption(person));
       return name.includes(needle) || option.includes(needle) || name.split(/\s+/).includes(needle) || nameKey(person.code).includes(needle);
     });
     return partial.length === 1 ? partial[0] : undefined;
   };
-  const findSalesStaff = (text: string) => matchStaff(salesStaff, text, salesOption);
-  const findTlsStaff = (text: string) => matchStaff(tlsStaff, text, tlsOption);
-  const assignedSales = salesDirectory.find(person => String(person.id) === draft.sales_staff_id && hasSalesCommissionRole(person.position));
-  const assignedTls = tlsStaff.find(person => String(person.id) === draft.tls_staff_id);
-  const salesValue = salesText ?? (assignedSales ? salesOption(assignedSales) : '');
-  const tlsValue = tlsText ?? (assignedTls ? tlsOption(assignedTls) : '');
-  const salesUnmatched = Boolean(salesText?.trim()) && !draft.sales_staff_id;
-  const tlsUnmatched = Boolean(tlsText?.trim()) && !draft.tls_staff_id;
+  function applyCommissionPick(person: ManagementRow | undefined) {
+    setSalesText(null);
+    if (!person) { change('sales_staff_id', ''); change('tls_staff_id', ''); return; }
+    const roles = staffRoles(person.position);
+    const salesOk = hasSalesCommissionRole(person.position);
+    // Dual TLS/NVKD → NVKD credit; pure TLS → tls_staff_id (server rejects TLS on sales_staff_id).
+    if (salesOk) { change('sales_staff_id', String(person.id)); change('tls_staff_id', ''); }
+    else if (roles.includes('TLS')) { change('sales_staff_id', ''); change('tls_staff_id', String(person.id)); }
+    else { change('sales_staff_id', ''); change('tls_staff_id', ''); }
+  }
+  const assignedSales = commissionPool.find(person => String(person.id) === draft.sales_staff_id && hasSalesCommissionRole(person.position));
+  const assignedTls = commissionPool.find(person => String(person.id) === draft.tls_staff_id && staffRoles(person.position).includes('TLS'));
+  const assignedCommission = assignedSales || assignedTls;
+  const salesValue = salesText ?? (assignedCommission ? salesOption(assignedCommission) : '');
+  const salesUnmatched = Boolean(salesText?.trim()) && !draft.sales_staff_id && !draft.tls_staff_id;
   function changeSource(value: string) {
     change('customer_source', value);
     if (!salesFollowsSource.current) return;
-    const person = findSalesStaff(value);
-    setSalesText(null);
-    change('sales_staff_id', person ? String(person.id) : '');
-    const tls = findTlsStaff(value);
-    if (tls) { setTlsText(null); change('tls_staff_id', String(tls.id)); }
+    applyCommissionPick(findSalesStaff(value));
   }
   function changeSales(value: string) {
     salesFollowsSource.current = !value.trim();
     const needle = nameKey(value);
-    if (!needle) { setSalesText(null); change('sales_staff_id', ''); return; }
+    if (!needle) { applyCommissionPick(undefined); return; }
     const exact = salesStaff.filter(person => nameKey(salesOption(person)) === needle || nameKey(person.name) === needle);
-    if (exact.length === 1) { setSalesText(null); change('sales_staff_id', String(exact[0].id)); return; }
+    if (exact.length === 1) { applyCommissionPick(exact[0]); return; }
     setSalesText(value);
     change('sales_staff_id', '');
-  }
-  function changeTls(value: string) {
-    const needle = nameKey(value);
-    if (!needle) { setTlsText(null); change('tls_staff_id', ''); return; }
-    const exact = tlsStaff.filter(person => nameKey(tlsOption(person)) === needle || nameKey(person.name) === needle);
-    if (exact.length === 1) { setTlsText(null); change('tls_staff_id', String(exact[0].id)); return; }
-    setTlsText(value);
     change('tls_staff_id', '');
   }
   const allVehicles = dataset?.vehicles || [];
@@ -648,12 +647,9 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" value={draft.customer_source} placeholder="Chọn hoặc nhập tên nhân sự" onChange={event => changeSource(event.target.value)} />
                 <datalist id="contract-source-staff-options">{sourceStaff.map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
                 <small>Nhân sự cửa hàng xe + toàn bộ TLS/TPKD.</small></div>
-              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD / TPKD ghi nhận doanh số</label>
-                <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(salesOption)} disabled={Boolean(attributionError)} placeholder="Gõ tên hoặc chọn NVKD/TPKD" onChange={changeSales} />
-                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không khớp NVKD/TPKD. Gõ để lọc gợi ý hoặc chọn trong danh sách; để trống là chưa phân công.</p> : <small>Gõ để lọc gợi ý. NVKD theo cửa hàng xe hoặc cơ sở nguồn khách (+ NVKD trụ sở); TPKD toàn công ty.</small>}</div>
-              {!ownership && <div className="mg-field"><label htmlFor="contract-tls_staff_id">TLS giới thiệu khách</label>
-                <SuggestionInput id="contract-tls_staff_id" value={tlsValue} suggestions={tlsStaff.map(tlsOption)} disabled={Boolean(attributionError)} placeholder="Gõ tên hoặc chọn TLS — mọi cơ sở" onChange={changeTls} />
-                {tlsUnmatched ? <p className="mg-field-error">Không khớp TLS. Gõ để lọc gợi ý (vd. Huệ, Trang); để trống là chưa phân công.</p> : <small>Hiện toàn bộ TLS mọi cơ sở ({tlsStaff.length} người), không lọc theo cửa hàng. Tiền thuê HĐ mở mới đầu tiên; không tính khách quay lại và gia hạn.</small>}</div>}
+              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD / TPKD / TLS ghi nhận doanh số</label>
+                <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(salesOption)} disabled={Boolean(attributionError)} placeholder="Gõ tên hoặc chọn NVKD / TPKD / TLS" onChange={changeSales} />
+                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không khớp NVKD/TPKD/TLS. Gõ để lọc gợi ý hoặc chọn trong danh sách; để trống là chưa phân công.</p> : <small>Gõ để lọc. NVKD theo cửa hàng xe / nguồn khách; TPKD và TLS hiện mọi cơ sở.</small>}</div>
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
             <div className="mg-contract-record-status">{canSaveDraft ? <><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></> : mode === 'edit' ? <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div> : null}</div>
