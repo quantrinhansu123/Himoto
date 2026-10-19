@@ -420,13 +420,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     }
   }
   const branchStaff = staffMatchesStore(staff, staffStoreId);
-  // NVKD: vehicle store only. TPKD + TLS: company-wide. Keep a prior sales pick visible.
+  // NVKD: cửa hàng xe, else cơ sở nguồn khách; HQ (no store) always. TPKD company-wide.
+  const salesStoreId = staffStoreId || draft.store_id;
   const salesStaff = salesDirectory.filter(person => {
     if (!staffIsAvailable(person) || !hasSalesCommissionRole(person.position)) return false;
     if (String(person.id) === draft.sales_staff_id) return true;
     const roles = staffRoles(person.position);
     if (roles.includes('TPKD')) return true;
-    return roles.includes('NVKD') && String(person.store_id) === staffStoreId;
+    if (!roles.includes('NVKD')) return false;
+    if (!person.store_id) return true;
+    return Boolean(salesStoreId) && String(person.store_id) === salesStoreId;
   }).sort((a, b) => {
     const rank = (person: ManagementRow) => staffRoles(person.position).includes('TPKD') ? 0 : 1;
     return rank(a) - rank(b) || String(a.name || '').localeCompare(String(b.name || ''), 'vi');
@@ -622,7 +625,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
                 <small>Nhân sự cửa hàng xe + toàn bộ TLS/TPKD.</small></div>
               <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD / TPKD ghi nhận doanh số</label>
                 <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(salesOption)} disabled={Boolean(attributionError)} placeholder="Gõ tên hoặc chọn NVKD/TPKD" onChange={changeSales} />
-                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không khớp NVKD/TPKD. Gõ để lọc gợi ý hoặc chọn trong danh sách; để trống là chưa phân công.</p> : <small>Gõ để lọc gợi ý (vd. Vui). NVKD theo cửa hàng xe; TPKD hiện toàn công ty. Tự điền theo Nguồn khách nếu khớp.</small>}</div>
+                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không khớp NVKD/TPKD. Gõ để lọc gợi ý hoặc chọn trong danh sách; để trống là chưa phân công.</p> : <small>Gõ để lọc gợi ý. NVKD theo cửa hàng xe hoặc cơ sở nguồn khách (+ NVKD trụ sở); TPKD toàn công ty.</small>}</div>
               {!ownership && <div className="mg-field"><label htmlFor="contract-tls_staff_id">Nhân viên TLS giới thiệu khách</label><select id="contract-tls_staff_id" value={draft.tls_staff_id || ''} onChange={event=>change('tls_staff_id',event.target.value)}><option value="">Chưa phân công</option>{tlsStaff.map(person=><option key={person.id} value={person.id}>{person.name} · {person.code}</option>)}</select><small>Gợi ý toàn bộ TLS (không lọc cơ sở). Tiền thuê HĐ mở mới đầu tiên; không tính khách quay lại và gia hạn.</small></div>}
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
