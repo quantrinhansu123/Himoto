@@ -199,7 +199,7 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   if(staff.rows[0])edits.draft.staff_name=staff.rows[0].full_name;
   for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
     if (!edits.draft[key]) continue;
-    if (!(await loadCommissionStaff(edits.draft[key], role))) throw new DraftSaveError(`Chọn nhân viên ${role} đang làm việc để ghi nhận doanh số.`,409);
+    if (!(await loadCommissionStaff(edits.draft[key], role))) throw new DraftSaveError(`Chọn nhân viên ${role === 'NVKD' ? 'NVKD hoặc TPKD' : role} đang làm việc để ghi nhận doanh số.`,409);
   }
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
   const vehicles = await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name

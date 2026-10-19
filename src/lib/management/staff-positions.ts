@@ -38,6 +38,13 @@ export const STAFF_DEPARTMENTS = [
 ];
 
 export const staffRoles = (position: unknown) => normalizeStaffPosition(position).split(' / ').filter(Boolean);
+/** Positions allowed on the contract "NVKD ghi nhận doanh số" field (company-wide). */
+export function hasSalesCommissionRole(position: unknown) {
+  return staffRoles(position).some(role => role === 'NVKD' || role === 'TPKD');
+}
+export function matchesCommissionRole(position: unknown, role: 'NVKD' | 'TLS') {
+  return role === 'NVKD' ? hasSalesCommissionRole(position) : staffRoles(position).includes(role);
+}
 export function branchStaffPosition(position: unknown): string {
   const roles = staffRoles(position).filter(role => !['HCNS', 'QLCN', 'KT', 'BPSC', 'TLS'].includes(role));
   return roles.join(' / ') || normalizeStaffPosition(position);

@@ -36,7 +36,7 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
   for(const [key,department] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const){
     if(profile[key]){
       const employee=await loadCommissionStaff(profile[key], department);
-      if(!employee)throw new ContractProfileError(`Chọn nhân viên ${department} đang hoạt động.`,409);
+      if(!employee)throw new ContractProfileError(`Chọn nhân viên ${department === 'NVKD' ? 'NVKD hoặc TPKD' : department} đang hoạt động.`,409);
       attribution[department]=employee;
     }
   }
