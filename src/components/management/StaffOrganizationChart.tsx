@@ -71,11 +71,13 @@ export function StaffOrganizationChart() {
   }, [scopedStaff, search]);
   const staff = useMemo(() => search.trim() ? scopedStaff.filter(person => matchesStaff(person, search)) : scopedStaff, [scopedStaff, search]);
   const stores = allStores.filter(store => selectedStore === 'all' || String(store.id) === selectedStore);
-  const departments = selectedStore === 'all' ? STAFF_DEPARTMENTS.map(department => ({ ...department,
+  // TLS stays company-wide: always list that department, even when a store filter is on.
+  const departmentDefs = selectedStore === 'all' ? STAFF_DEPARTMENTS : STAFF_DEPARTMENTS.filter(department => department.role === 'TLS');
+  const departments = departmentDefs.map(department => ({ ...department,
     people: staff.filter(person => staffRoles(person.position).includes(department.role) && (department.role !== 'NVKD' || !person.store_id)),
-  })).filter(department => department.people.length) : [];
+  })).filter(department => department.people.length);
   const unassigned = selectedStore === 'all' ? staff.filter(person => !allStores.some(store => store.id === person.store_id) && !departments.some(department => department.people.includes(person))) : [];
-  const shown = staff.filter(person => unassigned.includes(person) || departments.some(department => department.people.includes(person)) || stores.some(store => store.id === person.store_id));
+  const shown = staff.filter(person => unassigned.includes(person) || departments.some(department => department.people.includes(person)) || stores.some(store => store.id === person.store_id) || staffRoles(person.position).includes('TLS'));
   const working = shown.filter(person => !INACTIVE_LABEL[person.status]).length;
   const onAction: PersonProps['onAction'] = (person, mode) => setTarget({ person, mode });
   function pickStaff(person: ManagementRow) {

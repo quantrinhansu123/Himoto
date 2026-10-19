@@ -454,13 +454,9 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   })();
   const nameKey = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/\s+/g, ' ').trim().toLocaleLowerCase('vi');
   const salesOption = (person: ManagementRow) => {
-    const roles = staffRoles(person.position);
-    const base = salesStaff.filter(item => nameKey(item.name) === nameKey(person.name)).length > 1
+    // Show person name only — no "· TLS/TPKD" department tag in the list.
+    return salesStaff.filter(item => nameKey(item.name) === nameKey(person.name)).length > 1
       ? `${person.name} · ${person.code}` : String(person.name || '');
-    if (roles.includes('TLS') && !roles.includes('NVKD') && !roles.includes('TPKD')) return `${base} · TLS`;
-    if (roles.includes('TPKD')) return `${base} · TPKD`;
-    if (roles.includes('TLS')) return `${base} · TLS`;
-    return base;
   };
   const findSalesStaff = (text: string) => {
     const needle = nameKey(text);
@@ -649,9 +645,9 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" value={draft.customer_source} placeholder="Chọn hoặc nhập tên nhân sự" onChange={event => changeSource(event.target.value)} />
                 <datalist id="contract-source-staff-options">{sourceStaff.map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
                 <small>Nhân sự cửa hàng xe + toàn bộ TLS/TPKD.</small></div>
-              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD / TPKD / TLS ghi nhận doanh số</label>
-                <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(salesOption)} disabled={Boolean(attributionError)} placeholder="Gõ tên hoặc chọn NVKD / TPKD / TLS" onChange={changeSales} />
-                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không khớp NVKD/TPKD/TLS. Gõ để lọc gợi ý hoặc chọn trong danh sách; để trống là chưa phân công.</p> : <small>Gõ để lọc. NVKD theo cửa hàng xe / nguồn khách; TPKD và TLS hiện mọi cơ sở.</small>}</div>
+              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD ghi nhận doanh số</label>
+                <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(salesOption)} disabled={Boolean(attributionError)} placeholder="Gõ tên hoặc chọn nhân viên" onChange={changeSales} />
+                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không khớp nhân viên. Gõ để lọc gợi ý hoặc chọn trong danh sách; để trống là chưa phân công.</p> : <small>Gõ để lọc. NVKD theo cửa hàng / nguồn khách; TPKD và TLS (vd. Huệ, Trang) hiện mọi cơ sở — chỉ hiện tên, không ghi bộ phận.</small>}</div>
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
             <div className="mg-contract-record-status">{canSaveDraft ? <><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></> : mode === 'edit' ? <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div> : null}</div>
