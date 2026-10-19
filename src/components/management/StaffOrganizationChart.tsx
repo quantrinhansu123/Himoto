@@ -57,7 +57,9 @@ export function StaffOrganizationChart() {
   const allStores = dataset?.stores || [];
   const allStaff = dataset?.staff || [];
   const scopedStaff = useMemo(() => allStaff.filter(person => {
-    if (selectedStore !== 'all' && String(person.store_id || '') !== selectedStore) return false;
+    // TLS is company-wide: keep visible when filtering any store.
+    const companyTls = staffRoles(person.position).includes('TLS');
+    if (selectedStore !== 'all' && String(person.store_id || '') !== selectedStore && !companyTls) return false;
     return showDeparted || person.status !== 'leave' || (search.trim() !== '' && matchesStaff(person, search));
   }), [allStaff, selectedStore, showDeparted, search]);
   const suggestions = useMemo(() => {
