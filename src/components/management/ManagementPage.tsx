@@ -180,14 +180,15 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const columns = config.columns.filter(c => visibleKeys.includes(c.key));
   const statusOptions = [...config.statuses, ...Array.from(new Set(paged?table.data?.statuses || []:rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || query.overdueDays.trim() || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
-  const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : kind === 'staff' ? can('hr.write') : false;
+  const canManageStaff = can('hr.write') || can('settings.write');
+  const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : kind === 'staff' ? canManageStaff : false;
   const canDelete = source === 'api' && (
-    (kind === 'staff' && can('hr.write'))
+    (kind === 'staff' && canManageStaff)
     || (can('settings.write') && (kind === 'customers' || kind === 'stores' || kind === 'vehicles'))
   );
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
   const canBulkDelete = source === 'api' && (
-    (kind === 'staff' && can('hr.write'))
+    (kind === 'staff' && canManageStaff)
     || (can('settings.write') && kind !== 'contracts' && kind !== 'staff')
   );
   useEffect(() => {

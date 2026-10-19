@@ -1,7 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { ReturnInput,ReturnReceipt,ReturnResult,ReturnSettlement } from '@/lib/management/contract-returns';
-import { returnRefundQrSlot } from '@/lib/management/contract-photos';
+import { returnRefundEvidenceSlots } from '@/lib/management/contract-photos';
 import { ContractReturnError,recordVehicleReturn } from './contract-returns';
 import { parseContractPayment,readPaymentContext,recordContractPayment } from './contract-payments';
 type Database=Pick<PoolClient,'query'>;
@@ -81,13 +81,11 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
       if(context.remaining===null||context.remaining>0)throw new ContractReturnError('Cần thu đủ phí quá hạn, sửa chữa và công nợ trước khi hoàn cọc.',409);
       const refund=settlement.refund;
       if(refund.method!=='cash'&&(!refund.recipient_bank||!refund.recipient_name||!refund.recipient_account)){
-        const qrSlots=selected.map(returnRefundQrSlot);
+        const qrSlots=selected.flatMap(returnRefundEvidenceSlots);
         const hasQr=(await db.query(`SELECT 1 FROM himoto.management_record_photos
           WHERE entity_type='contracts' AND entity_id=$1 AND slot=ANY($2::text[]) LIMIT 1`,[settlement.order_id,qrSlots])).rowCount;
-        if(!hasQr)throw new ContractReturnError('Thiếu thông tin nhận hoàn cọc và chưa có ảnh QR / Số tài khoản khách nhận hoàn. Nhập đủ hoặc lưu ảnh QR rồi thử lại.',409);
-        if(refund.recipient_bank||refund.recipient_name||refund.recipient_account){
-          if(!refund.recipient_bank||!refund.recipient_name)throw new ContractReturnError('Khi nhập tay thông tin nhận hoàn, cần đủ ngân hàng và tên chủ TK (số TK có thể thay bằng ảnh QR).',409);
-        }
+        // QR / số TK photo alone is enough; ignore incomplete typed recipient fields when evidence exists.
+        if(!hasQr)throw new ContractReturnError('Thiếu thông tin nhận hoàn cọc và chưa có ảnh QR / Số tài khoản khách nhận hoàn. Nhập đủ ngân hàng + số TK + tên chủ TK, hoặc lưu ảnh QR hồ sơ trả xe rồi thử lại.',409);
       }
       const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account||'QR',refund.recipient_name].filter(Boolean).join(' · ')}`:' · theo ảnh QR'}`});
       context=paid.context;refundId=paid.transaction_id;

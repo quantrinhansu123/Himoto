@@ -603,6 +603,12 @@
   background: var(--mg-slate-100);
   border-color: var(--mg-line);
 }
+.mg-icon-button.is-danger { color: var(--mg-brand-600, #d32f2f) !important; }
+.mg-icon-button.is-danger:hover:not(:disabled) {
+  color: var(--mg-brand-700, #b71c1c) !important;
+  background: var(--mg-brand-50, #fff5f5);
+  border-color: var(--mg-brand-200, #ffc9c9);
+}
 
 .mg-mobile-toggle { display: none; }
 

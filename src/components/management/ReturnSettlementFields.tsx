@@ -3,7 +3,7 @@ import { useEffect,useMemo,useRef,useState } from 'react';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { loadPaymentContext,paymentAccounts,PAYMENT_METHODS,type PaymentContext,type PaymentMethod } from '@/lib/management/contract-payments';
 import type { ReturnReceipt,ReturnSettlement } from '@/lib/management/contract-returns';
-import { returnRefundQrSlot } from '@/lib/management/contract-photos';
+import { returnRefundEvidenceSlots } from '@/lib/management/contract-photos';
 import { photoEndpoint,type SavedPhoto } from '@/lib/management/record-photos';
 import { formatMoney } from '@/lib/formatters';
 import { ContractWorkflowGuide } from './ContractWorkflowGuide';
@@ -21,7 +21,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const change=useRef(onChange);change.current=onChange;
   const block=useRef(onBlockChange);block.current=onBlockChange;
   const itemKey=itemIds.join(',');
-  const qrSlots=useMemo(()=>itemKey?itemKey.split(',').map(id=>returnRefundQrSlot(Number(id))):[],[itemKey]);
+  const qrSlots=useMemo(()=>itemKey?itemKey.split(',').flatMap(id=>returnRefundEvidenceSlots(Number(id))):[],[itemKey]);
   useEffect(()=>{
     const controller=new AbortController();setContext(undefined);setError('');setRows({});
     void loadPaymentContext(orderId,controller.signal).then(value=>{if(!controller.signal.aborted)setContext(value);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được tài khoản thu / hoàn.');});
@@ -47,10 +47,9 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const accountValue=recipient.recipient_account.trim().replace(/\s/g,'');
   const bankValue=recipient.recipient_bank.trim();
   const nameValue=recipient.recipient_name.trim();
-  // Saved return QR photo can stand in for typed bank / account / owner fields.
-  const refundRecipientReady=refundMethod==='cash'
-    || hasRefundQr
-    || (Boolean(bankValue) && Boolean(nameValue) && accountOk(accountValue));
+  // Saved return hồ sơ (QR / số TK) or a complete typed recipient stands in for transfer refunds.
+  const typedRecipientReady=Boolean(bankValue) && Boolean(nameValue) && accountOk(accountValue);
+  const refundRecipientReady=refundMethod==='cash' || hasRefundQr || typedRecipientReady;
   const refundReady=!refundRow?.enabled || (refundAllowed && Boolean(Number(refundRow.account_id)) && /^\d{1,13}$/.test(refundRow.amount||'') && Number(refundRow.amount)>0 && refundRecipientReady);
   useEffect(()=>{
     if(!context){change.current(undefined);block.current?.(false);return;}
@@ -88,22 +87,23 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
           <div className="mg-field mg-field-wide"><label htmlFor={`return-${orderId}-${kind}-account`}>{kind==='refund'?'Tài khoản / két chi hoàn':'Tài khoản / két nhận tiền'}</label><select id={`return-${orderId}-${kind}-account`} value={row.account_id} onChange={event=>update(kind,{account_id:event.target.value})}>{!accounts.length&&<option value="">Chưa có tài khoản phù hợp</option>}{accounts.map(account=><option key={account.id} value={account.id}>{account.label}</option>)}</select></div>
           {kind==='refund'&&method!=='cash'&&<>
             <p className="mg-composer-hint mg-field-wide">{hasRefundQr
-              ? 'Đã có ảnh QR / Số tài khoản khách nhận hoàn — có thể bỏ trống ngân hàng, số TK và tên chủ TK.'
-              : 'Hoàn CK: nhập ngân hàng / số TK / tên chủ TK, hoặc lưu ảnh QR / Số tài khoản khách nhận hoàn ở hồ sơ trả xe.'}</p>
-            {hasRefundQr&&<p className="mg-field-wide" role="status">Đã nhận ảnh QR hồ sơ trả xe — đủ để xác nhận hoàn cọc chuyển khoản.</p>}
+              ? 'Đã có ảnh QR / số TK trong hồ sơ trả xe — có thể bỏ trống ngân hàng, số TK và tên chủ TK.'
+              : 'Hoàn CK: nhập đủ ngân hàng + số TK + tên chủ TK, hoặc lưu ảnh «QR / Số tài khoản khách nhận hoàn» ở mục Hồ sơ hợp đồng bên trên rồi bấm Lưu ảnh / video.'}</p>
+            {hasRefundQr&&<p className="mg-field-wide" role="status">Đã nhận ảnh hồ sơ hoàn cọc — đủ để xác nhận chuyển khoản.</p>}
             {([
               ['recipient_bank',hasRefundQr?'Ngân hàng nhận của khách (tuỳ chọn)':'Ngân hàng nhận của khách *'],
               ['recipient_account',hasRefundQr?'Số tài khoản khách nhận (tuỳ chọn)':'Số tài khoản khách nhận *'],
               ['recipient_name',hasRefundQr?'Tên chủ tài khoản nhận (tuỳ chọn)':'Tên chủ tài khoản nhận *'],
             ] as const).map(([key,label])=>{
               const value=recipient[key];
-              const invalid=key==='recipient_account'
-                ? Boolean(value.trim()) && !accountOk(value)
-                : !hasRefundQr && !value.trim();
+              // With QR evidence, typed fields are optional; without QR, all three are required.
+              const invalid=hasRefundQr
+                ? key==='recipient_account' && Boolean(value.trim()) && !accountOk(value)
+                : key==='recipient_account' ? !accountOk(value||' ') : !value.trim();
               return <div className="mg-field" key={key}><label htmlFor={`return-${orderId}-${key}`}>{label}</label>
                 <input id={`return-${orderId}-${key}`} value={value} maxLength={key==='recipient_account'?34:150} aria-invalid={invalid||undefined}
                   onChange={event=>setRecipient(current=>({...current,[key]:event.target.value}))}/>
-                {invalid&&<p className="mg-field-error">{key==='recipient_name'?'Nhập tên chủ tài khoản khách nhận tiền hoặc lưu ảnh QR.':key==='recipient_bank'?'Nhập ngân hàng khách nhận hoặc lưu ảnh QR.':'Nhập số tài khoản khách (3–34 ký tự) hoặc lưu ảnh QR.'}</p>}
+                {invalid&&<p className="mg-field-error">{key==='recipient_name'?'Nhập tên chủ tài khoản khách nhận tiền hoặc lưu ảnh QR hồ sơ trả xe.':key==='recipient_bank'?'Nhập ngân hàng khách nhận hoặc lưu ảnh QR hồ sơ trả xe.':'Nhập số tài khoản khách (3–34 ký tự) hoặc lưu ảnh QR hồ sơ trả xe.'}</p>}
               </div>;
             })}
           </>}

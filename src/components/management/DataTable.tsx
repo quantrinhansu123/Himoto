@@ -115,6 +115,8 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
           checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}<td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} className={`${column.align === 'right' ? 'mg-align-right' : ''}${column.key === 'code' ? ' mg-record-code' : ''}`}><Cell row={row} column={column} config={config} /></td>)}
           <td className="mg-actions-column"><div className="mg-row-actions">
             {config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive')&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onVehicleAction(row,'receive')}>Nhận xe</button>}
+            {config.kind==='staff'&&canEdit&&<button type="button" className="mg-icon-button" title="Chỉnh sửa" aria-label={`Chỉnh sửa ${row.name || row.code || ''}`} onClick={()=>onEdit(row)}><Pencil size={16} /></button>}
+            {config.kind==='staff'&&canDelete&&onDelete&&<button type="button" className="mg-icon-button is-danger" title="Xóa nhân sự" aria-label={`Xóa ${row.name || row.code || ''}`} onClick={()=>onDelete(row)}><Trash2 size={16} /></button>}
             <RowActionsMenu label={`Thao tác ${row.license || row.code || row.name || ''}`.trim()} actions={rowActions(row)} busy={cloningId === row.id || blacklistBusyId === row.id} />
           </div></td></tr>)}</tbody>
     </table>

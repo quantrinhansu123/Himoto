@@ -39,7 +39,7 @@ function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange }: 
     <div className="mg-photo-actions"><button type="button" className="mg-button" disabled={disabled || busy} onClick={() => camera.current?.click()}>{busy ? <LoaderCircle size={16} className="mg-spin" /> : <Camera size={16} />}{video?'Quay video':'Chụp ảnh'}</button>
       <button type="button" className="mg-button" disabled={disabled || busy} onClick={() => library.current?.click()}><ImagePlus size={16} />{video?'Chọn video':'Chọn ảnh'}</button>
       {file && <button type="button" className="mg-icon-button" disabled={disabled || busy} aria-label={`Bỏ ảnh mới ${slot.label}`} onClick={() => onChange()}><X size={16} /></button>}</div>
-    {busy && <small role="status">Đang xử lý tệp…</small>}{file && <small>Tệp mới · lưu cùng hồ sơ</small>}
+    {busy && <small role="status">Đang xử lý tệp…</small>}{file && <small>Tệp mới · sẽ tự gắn vào hồ sơ</small>}
     {error && <p className="mg-field-error" role="alert">{error}</p>}
   </div>;
 }
@@ -117,7 +117,7 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
           else setUploadStates(current => { const next = { ...current }; delete next[slot.key]; return next; });
           ocr?.read(slot.key, file);
         }} />
-        {uploadState && value[slot.key] && <p className={uploadState.error ? 'mg-field-error' : 'mg-photo-feedback'} role={uploadState.error ? 'alert' : 'status'}>{uploadState.loading ? 'Đang tải ảnh…' : uploadState.error || 'Đã tải ảnh.'}{uploadState.error && <button type="button" className="mg-button" disabled={disabled} onClick={() => upload(slot.key, value[slot.key], true)}>Tải ảnh lại</button>}</p>}
+        {uploadState && value[slot.key] && <p className={uploadState.error ? 'mg-field-error' : 'mg-photo-feedback'} role={uploadState.error ? 'alert' : 'status'}>{uploadState.loading ? 'Đang tải ảnh…' : uploadState.error || 'Đã tải lên · đang gắn vào hồ sơ…'}{uploadState.error && <button type="button" className="mg-button" disabled={disabled} onClick={() => upload(slot.key, value[slot.key], true)}>Tải ảnh lại</button>}</p>}
         {state && <div className="mg-photo-feedback"><p role={state.phase === 'error' ? 'alert' : 'status'} className={state.phase === 'error' ? 'mg-field-error' : undefined}>{state.message}</p>
           {state.phase === 'reading' ? <button type="button" className="mg-button" disabled={disabled} onClick={() => ocr?.cancel(slot.key)}>Bỏ qua AI</button> : value[slot.key] && <button type="button" className="mg-button" disabled={disabled} onClick={() => ocr?.read(slot.key, value[slot.key])}>Đọc lại ảnh</button>}
         </div>}
@@ -131,16 +131,37 @@ export function SavedRecordPhotos({ entity, recordId, slots, title,onPendingChan
   const [photos, setPhotos] = useState<PendingPhotos>({}), [busy, setBusy] = useState(false), [processing, setProcessing] = useState(false);
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [version, setVersion] = useState(0);
   const callback=useRef(onPendingChange);callback.current=onPendingChange;
+  const photosRef=useRef(photos);photosRef.current=photos;
+  const onSavedRef=useRef(onSaved);onSavedRef.current=onSaved;
   useEffect(()=>{callback.current?.(busy||processing||Object.keys(photos).length>0);},[busy,processing,photos]);
   useEffect(()=>()=>callback.current?.(false),[]);
+  async function commit(current:PendingPhotos){
+    if(readOnly||!Object.keys(current).length)return;
+    setBusy(true);setError('');
+    try{
+      await saveRecordPhotos(entity,recordId,current);
+      setPhotos(prev=>{
+        const next={...prev};
+        for(const key of Object.keys(current))if(next[key]===current[key])delete next[key];
+        return next;
+      });
+      setVersion(value=>value+1);
+      setMessage('Đã lưu ảnh.');
+      onSavedRef.current?.();
+    }catch(cause){setError(cause instanceof Error?cause.message:'Không lưu được ảnh.');}
+    finally{setBusy(false);}
+  }
+  // Staff often miss the save button after “Đã tải ảnh”; commit once processing settles.
+  useEffect(()=>{
+    if(readOnly||busy||processing||error||!Object.keys(photos).length)return;
+    const timer=window.setTimeout(()=>{void commit(photosRef.current);},700);
+    return()=>window.clearTimeout(timer);
+  },[photos,processing,busy,readOnly,error,entity,recordId]);
   return <div className="mg-saved-photos">
-    <RecordPhotoFields key={version} entity={entity} recordId={recordId} slots={slots} title={title} value={photos} onChange={value => { setPhotos(value); setMessage(''); }} disabled={busy||readOnly} onBusyChange={setProcessing} bulkImageLabel={bulkImageLabel} bulkPosition={bulkPosition}/>
-    {Object.keys(photos).length > 0 && <button type="button" className="mg-button mg-button-primary" disabled={busy || processing} onClick={async () => {
-      setBusy(true); setError('');
-      try { await saveRecordPhotos(entity, recordId, photos); setPhotos({}); setVersion(current => current + 1); setMessage('Đã lưu ảnh.'); onSaved?.(); }
-      catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được ảnh.'); }
-      finally { setBusy(false); }
-    }}>{busy ? 'Đang lưu tệp…' : slots.some(slot=>isVideoSlot(slot.key))?'Lưu ảnh / video':'Lưu ảnh'}</button>}
+    <RecordPhotoFields key={version} entity={entity} recordId={recordId} slots={slots} title={title} value={photos} onChange={value => { setPhotos(value); setMessage(''); setError(''); }} disabled={busy||readOnly} onBusyChange={setProcessing} bulkImageLabel={bulkImageLabel} bulkPosition={bulkPosition}/>
+    {Object.keys(photos).length > 0 && <button type="button" className="mg-button mg-button-primary" disabled={busy || processing} onClick={()=>void commit(photos)}>
+      {busy ? 'Đang lưu tệp…' : error ? (slots.some(slot=>isVideoSlot(slot.key))?'Thử lưu ảnh / video lại':'Thử lưu ảnh lại') : slots.some(slot=>isVideoSlot(slot.key))?'Lưu ảnh / video ngay':'Lưu ảnh ngay'}
+    </button>}
     {error && <p className="mg-field-error" role="alert">{error}</p>}{message && <p role="status">{message}</p>}
   </div>;
 }
