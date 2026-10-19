@@ -22,9 +22,18 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
   if(kind==='vehicle_transfer'||kind==='vehicle_receive')return [kind==='vehicle_receive'?'ĐÃ NHẬN XE SỞ HỮU':'ĐIỀU CHUYỂN XE SỞ HỮU',`Bsx: ${p.vehicles}`,`Loại xe: ${p.vehicle_names||'—'}`,`Cơ sở chuyển đi: ${p.transfer?.from||'—'}`,`Cơ sở nhận: ${p.transfer?.to||'—'}`,`Trạng thái: ${kind==='vehicle_receive'?'Đã nhận · Lưu kho':'Chờ cơ sở đích xác nhận nhận xe'}`,`Người thực hiện: ${p.actor}`,`Mã lượt: ${p.code}`,...(p.transfer?.note?[`Ghi chú: ${p.transfer.note}`]:[]),`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
   const method=p.method||'Chưa ghi nhận thanh toán';
   const vehicle=[`Bsx: ${p.renewal?.license||p.vehicles||'—'}`,`Loại xe: ${p.renewal?.vehicle_name||p.vehicle_names||'—'}`];
+  const refundedAmount=Number(p.refunded||0);
+  const depositAmount=Number(p.deposit||0);
   const lines=kind==='battery_swap'?[`Khách đổi pin: ${p.customer}`,`Bsx: ${p.battery_swap?.license||p.vehicles}`,`Loại xe: ${p.battery_swap?.vehicle_name||p.vehicle_names||'—'}`,`Pin lúc nhận: ${p.battery_swap?.percentage??'—'}%`,`Phí pin dưới 20%: ${money(p.battery_swap?.fee)}`,`Đã thu: ${money(p.battery_swap?.collected)}`,`Hình thức thu: ${method}`]:kind==='return'?[`Khách trả xe: ${p.customer}`,...vehicle,
     ...(p.return_fees?[...(p.return_fees.returned_at?[`Bàn giao thực tế: ${new Date(p.return_fees.returned_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`]:[]),`Phí quá hạn: ${money(p.return_fees.late)}`,`Phí sửa chữa: ${money(p.return_fees.repair)}`,...(p.return_fees.early_discount?[`Giảm tiền thuê trả sớm: ${money(p.return_fees.early_discount)}`]:[]),`Đã thu phí / công nợ: ${money(p.return_fees.collected)}`,...(p.return_fees.method?[`Hình thức thu: ${p.return_fees.method}`]:[])]:[]),
-    `Tiền cọc: ${money(p.deposit)}`,`Tổng hoàn cọc: ${money(p.refunded)}`,`Hình thức thanh toán: ${p.method||'Chưa ghi nhận phiếu hoàn'}`,
+    `Tiền cọc: ${money(p.deposit)}`,
+    ...(p.deposit_method?[`Hình thức thu cọc: ${p.deposit_method}`]:[]),
+    `Tổng hoàn cọc: ${money(p.refunded)}`,
+    ...(refundedAmount>0
+      ?[`Hình thức hoàn cọc: ${p.method||'Chưa xác định'}`]
+      :depositAmount>0
+        ?['Hoàn cọc: chưa ghi nhận phiếu hoàn — tick «Đã hoàn cọc» khi trả xe hoặc ghi phiếu chi sổ quỹ']
+        :[]),
     ...(p.refund_recipient?.account?[`Khách nhận hoàn: ${p.refund_recipient.bank} · ${p.refund_recipient.account} · ${p.refund_recipient.name}`]:[])]
     :kind==='renewal'?[`Khách gia hạn: ${p.customer}`,...vehicle,
       ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${day(item.before_return_at)} - ${day(item.return_at)}`):[`Gia hạn: ${day(p.renewal?.before_return_at||null)} - ${day(p.renewal?.return_at||null)}`]),
@@ -87,7 +96,10 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const depositTx=tx.filter(t=>['in','addon'].includes(t.type)&&/^order:deposit(?::|$)/.test(t.name));
   const refunds=tx.filter(t=>t.type==='out'&&/^(order:deposit_refund$|order:complete:)/.test(t.name));
   const settlement=kind==='return'&&Array.isArray(composer?.return_settlements)?composer.return_settlements.findLast((entry:{item_ids:number[]})=>Array.isArray(entry.item_ids)&&entry.item_ids.length===returnIds.length&&entry.item_ids.every(id=>returnIds.includes(String(id)))):undefined;
-  const eventRefunds=settlement?refunds.filter(t=>Number(t.id)===Number(settlement.refund_transaction_id)):refunds;
+  // Prefer the settlement-linked refund voucher; otherwise include any deposit refund on the order (e.g. cashbook after return).
+  const eventRefunds=settlement?.refund_transaction_id!=null
+    ?refunds.filter(t=>Number(t.id)===Number(settlement.refund_transaction_id))
+    :refunds;
   const feeReceipts=settlement?tx.filter(t=>t.type!=='out'&&settlement.transaction_ids?.includes(Number(t.id))):[];
   const adjustments=kind==='return'&&Array.isArray(composer?.return_adjustments)?composer.return_adjustments.filter((entry:{item_id:number})=>returnIds.includes(String(entry.item_id))):[];
   const rental=tx.filter(t=>['in','addon'].includes(t.type)&&!/^order:deposit(?::|$)/.test(t.name));
