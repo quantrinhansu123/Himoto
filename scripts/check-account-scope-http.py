@@ -31,7 +31,8 @@ for login_name,store in [('nv.giapbat',23),('nv.lang',31),('nv.nguyenhoang',32),
     status,data,_=request('/api/auth/vehicle/vehicles',cookie);assert status==200,(login_name,status,data.get('message'));assert all(int(r.get('current_store_id') or r['store_id'])==store for r in data['data'])
     status,data,_=request('/api/auth/customers',cookie);assert status==200;assert all(int(r['store_id'])==store for r in data['data'])
     status,data,_=request('/api/auth/order/car-rental?table=1&store=all',cookie);assert status==200,(login_name,status,data.get('message'));assert all(int(r['store_id'])==store for r in data['data']['rows'])
-    status,directory,_=request('/api/auth/contract-staff',cookie);assert status==200;assert all(int(r['store_id'])==store for r in directory['data']);assert all(not any(k in r for k in ['phone','email','notes','password']) for r in directory['data'])
+    # Commission directory is company-wide (other stores / HQ), lean columns only — not branch RLS.
+    status,directory,_=request('/api/auth/contract-staff',cookie);assert status==200;assert directory['data'];assert all(not any(k in r for k in ['phone','email','notes','password']) for r in directory['data']);assert any(r.get('store_id') is None or int(r['store_id'])!=store for r in directory['data'])
     assert request('/api/auth/payment-events',cookie)[0]==200
     foreign=next(v for v in vehicles if int(v.get('current_store_id') or v['store_id'])!=store)
     assert request('/api/auth/vehicles/'+str(foreign['id'])+'/history',cookie)[0]==404

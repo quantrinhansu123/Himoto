@@ -1,7 +1,7 @@
 import 'server-only';
 import { validDocumentRequirements } from '@/lib/management/contract-requirements';
-import { staffRoles } from '@/lib/management/staff-positions';
 import type { PoolClient } from 'pg';
+import { loadCommissionStaff } from './commission-staff';
 import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } from '@/lib/management/contract-document';
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
@@ -199,8 +199,7 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   if(staff.rows[0])edits.draft.staff_name=staff.rows[0].full_name;
   for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
     if (!edits.draft[key]) continue;
-    const attributed = await client.query('SELECT id,position,status FROM himoto.staff_profiles WHERE id=$1 FOR SHARE',[edits.draft[key]]);
-    if (!attributed.rowCount || !['active','1'].includes(String(attributed.rows[0].status)) || !staffRoles(attributed.rows[0].position).includes(role)) throw new DraftSaveError(`Chọn nhân viên ${role} đang làm việc để ghi nhận doanh số.`,409);
+    if (!(await loadCommissionStaff(edits.draft[key], role))) throw new DraftSaveError(`Chọn nhân viên ${role} đang làm việc để ghi nhận doanh số.`,409);
   }
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
   const vehicles = await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name

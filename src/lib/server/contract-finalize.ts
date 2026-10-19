@@ -4,8 +4,8 @@ import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, findPaymentAccount, paymentAccount
 import { draftPaymentMethod, PAYMENT_METHOD_LABELS, type FinalizeInput, type FinalizeReceipt, type FinalizeCollection, type FinalizeResult } from '@/lib/management/contract-finalize';
 import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { readPaymentContext } from './contract-payments';
-import { staffRoles } from '@/lib/management/staff-positions';
 import { dataAccess } from './access-context';
+import { loadCommissionStaff } from './commission-staff';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
@@ -85,9 +85,9 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
     if (!draft[key]) continue;
     if (typeof draft[key] !== 'string' || !/^[1-9]\d{0,14}$/.test(String(draft[key]))) throw new ContractFinalizeError('Nhân viên ghi nhận doanh số chưa hợp lệ.',409);
-    const person=await client.query('SELECT id,full_name AS name,position,status FROM himoto.staff_profiles WHERE id=$1 FOR SHARE',[draft[key]]);
-    if (!person.rowCount || !['active','1'].includes(String(person.rows[0].status)) || !staffRoles(person.rows[0].position).includes(role)) throw new ContractFinalizeError(`Nhân viên ${role} đã thay đổi; chọn lại trước khi lưu.`,409);
-    attribution[role]={staff_id:Number(person.rows[0].id),name:String(person.rows[0].name)};
+    const person=await loadCommissionStaff(String(draft[key]), role);
+    if (!person) throw new ContractFinalizeError(`Nhân viên ${role} đã thay đổi; chọn lại trước khi lưu.`,409);
+    attribution[role]=person;
   }
   if (Object.keys(attribution).length) composer.sales_attribution=attribution;
   const storeId = Number(order.store_id), customerId = Number(order.customer_id);

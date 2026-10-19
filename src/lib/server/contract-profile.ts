@@ -4,7 +4,7 @@ import { PROFILE_KEYS,type ContractProfile } from '@/lib/management/contract-pro
 import { CUSTOMER_FIELDS,validateOperationalCustomer } from '@/lib/management/contract-document';
 import { validDocumentRequirements } from '@/lib/management/contract-requirements';
 import { validIdentityIssueDate } from '@/lib/management/customer-identity';
-import { staffRoles } from '@/lib/management/staff-positions';
+import { loadCommissionStaff } from './commission-staff';
 export class ContractProfileError extends Error {constructor(message:string,public status=400){super(message);}}
 export function parseContractProfile(body:unknown):{revision:string;profile:ContractProfile} {
   if(!body || typeof body !== 'object' || Array.isArray(body))throw new ContractProfileError('Hồ sơ hợp đồng chưa hợp lệ.');
@@ -35,9 +35,9 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
   const attribution:Record<string,{staff_id:number;name:string}>={};
   for(const [key,department] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const){
     if(profile[key]){
-      const employee=(await client.query('SELECT id,full_name AS name,position,status FROM himoto.staff_profiles WHERE id=$1 FOR SHARE',[profile[key]])).rows[0];
-      if(!employee || !['active','1'].includes(String(employee.status).toLowerCase()) || !staffRoles(employee.position).includes(department))throw new ContractProfileError(`Chọn nhân viên ${department} đang hoạt động.`,409);
-      attribution[department]={staff_id:Number(employee.id),name:String(employee.name)};
+      const employee=await loadCommissionStaff(profile[key], department);
+      if(!employee)throw new ContractProfileError(`Chọn nhân viên ${department} đang hoạt động.`,409);
+      attribution[department]=employee;
     }
   }
   const result=await client.query(`UPDATE himoto.orders SET customer_name=$2,customer_phone=$3,customer_address=NULLIF($4,''),customer_idnumber=NULLIF($5,''),
