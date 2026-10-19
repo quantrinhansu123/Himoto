@@ -36,7 +36,10 @@ with sync_playwright() as pw:
         page.set_default_timeout(60000)
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(a.url+'/contracts/ownership', wait_until='domcontentloaded', timeout=90000)
-        expect(page.locator('.mg-table-contracts')).to_have_attribute('aria-busy', 'false')
+        page.wait_for_function("""() => {
+            const tables = document.querySelectorAll('.mg-table-contracts');
+            return tables.length === 1 && tables[0].getAttribute('aria-busy') === 'false';
+        }""", timeout=60000)
         page.get_by_role('searchbox').fill('Lê Văn Ninh')
         expect(page.get_by_role('searchbox')).to_have_value('Lê Văn Ninh')
         expect(page.locator('.mg-table-contracts tbody tr')).to_have_count(1)
