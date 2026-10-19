@@ -56,6 +56,7 @@ async function main(){
     const mediaFirst=fs.readFileSync('docs/sql/2026-10-18-telegram-media-first.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(mediaFirst);await c.query(mediaFirst);
     const ownershipGroups=fs.readFileSync('docs/sql/2026-10-18-ownership-telegram-groups.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(ownershipGroups);await c.query(ownershipGroups);
     const ownershipTransfers=fs.readFileSync('docs/sql/2026-10-18-ownership-transfer-telegram.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(ownershipTransfers);await c.query(ownershipTransfers);
+    const dualTransferTelegram=fs.readFileSync('docs/sql/2026-10-19-transfer-telegram-dual-groups.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(dualTransferTelegram);await c.query(dualTransferTelegram);
     const pacing=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-five-second-poll.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(pacing);await c.query(pacing);
     const history=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-history-webhooks.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(history);await c.query(history);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name) VALUES(23,'Branch A QA'),(31,'Branch B QA')`);
