@@ -1,14 +1,19 @@
+import type { PaymentMethod, PaymentResult } from './contract-payments';
+
 export interface RenewalInput {
   item_id: number; item_revision: string; order_revision: string;
   return_at: string; amount: string; note: string;
+  request_id?: string;
+  receipt?: { method: PaymentMethod; account_id: number; paid_at: string };
 }
 export interface RenewalVersion {
   version: number; kind: 'renewal'; created_at: string; actor_id: number;
   item_id: number; vehicle_id: number; vehicle_name: string; license: string;
   rent_at: string | null; before_return_at: string | null; return_at: string; overdue_minutes: number;
   amount: number; before_total: number | null; total: number | null; paid: number | null; note: string;
+  request_id?: string; request_hash?: string;
 }
-export interface RenewalResult { order_id: number; code: string; version: number; return_at: string; total_amount: number | null; amount: number }
+export interface RenewalResult { order_id: number; code: string; version: number; return_at: string; total_amount: number | null; amount: number; payment?: PaymentResult; replayed?: boolean }
 
 /** Original contract is v1; renewals start at v2. Ignore non-renewal junk and coerce string version ids from older payloads. */
 export function nextRenewalVersion(versions: unknown): number {

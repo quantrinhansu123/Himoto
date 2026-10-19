@@ -110,7 +110,10 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
         </div>}
       </fieldset>;
     })}
-    {!refundAllowed&&context.deposit_held>0&&<p>Chỉ hoàn cọc trong lượt này sau khi đã nhận đủ xe và thu đủ các khoản còn thiếu.</p>}
+    {!refundAllowed&&context.deposit_held>0&&<p role="status">{!closes
+      ? 'Chưa thể hoàn cọc vì hợp đồng còn xe chưa nhận lại.'
+      : due===null ? 'Chưa thể hoàn cọc: cần đối chiếu tiền hợp đồng.'
+      : `Chưa thể hoàn cọc: còn ${formatMoney(Math.max(due-collected,0))} chưa ghi nhận thu. Công nợ tiền thuê có thể gồm phí gia hạn; gia hạn ngày trả không đồng nghĩa đã thu tiền. Nếu đã nhận, chọn khoản thu và đúng tài khoản ở trên.`}</p>}
     {refundRow?.enabled&&!refundReady&&<p className="mg-field-error" role="alert">Chưa đủ thông tin hoàn cọc: chọn tài khoản chi hoàn, hoặc nhập đủ ngân hàng / số TK / tên chủ TK, hoặc lưu ảnh QR.</p>}
     <p role="status">Đã chọn thu: {formatMoney(collected)} · Còn phải thu sau lượt này: {due===null?'Chưa đối chiếu':formatMoney(Math.max(due-collected,0))}</p>
     <p>Chuyển khoản hoàn cọc: đối chiếu QR / số tài khoản khách trong ảnh hồ sơ. Ứng dụng ghi nhận khoản đã hoàn, không tự chuyển tiền ngân hàng.</p>

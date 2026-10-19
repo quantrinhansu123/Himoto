@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
 import { nextRenewalVersion, type RenewalInput, type RenewalResult, type RenewalVersion } from '@/lib/management/contract-renewals';
 import { rentalPaid } from './contract-deposits';
+import { parseContractPayment, ContractPaymentError } from './contract-payments';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractRenewalError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -13,7 +14,7 @@ const iso = (value: unknown) => value instanceof Date ? value.toISOString() : va
 export function parseRenewalInput(body: unknown): RenewalInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractRenewalError('Thông tin gia hạn không hợp lệ.');
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['item_id', 'item_revision', 'order_revision', 'return_at', 'amount', 'note'].includes(key)) ||
+  if (Object.keys(input).some(key => !['item_id', 'item_revision', 'order_revision', 'return_at', 'amount', 'note', 'request_id', 'receipt'].includes(key)) ||
       !Number.isSafeInteger(input.item_id) || Number(input.item_id) <= 0 ||
       typeof input.item_revision !== 'string' || !/^\d{1,20}$/.test(input.item_revision) ||
       typeof input.order_revision !== 'string' || !/^\d{1,20}$/.test(input.order_revision) ||
@@ -22,7 +23,20 @@ export function parseRenewalInput(body: unknown): RenewalInput {
       typeof input.note !== 'string' || input.note.trim().length > 2000) throw new ContractRenewalError('Kiểm tra xe, ngày trả mới và chi phí gia hạn.');
   const returnAt = new Date(`${input.return_at}:00+07:00`);
   if (!Number.isFinite(returnAt.getTime()) || new Date(returnAt.getTime() + 7 * 3_600_000).toISOString().slice(0, 16) !== input.return_at) throw new ContractRenewalError('Ngày trả mới không hợp lệ.');
-  return { item_id: Number(input.item_id), item_revision: input.item_revision, order_revision: input.order_revision, return_at: input.return_at, amount: input.amount, note: input.note.trim() };
+  const result: RenewalInput = { item_id: Number(input.item_id), item_revision: input.item_revision, order_revision: input.order_revision, return_at: input.return_at, amount: input.amount, note: input.note.trim() };
+  if (input.request_id !== undefined) {
+    if (typeof input.request_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.request_id)) throw new ContractRenewalError('Mã lần gia hạn không hợp lệ.');
+    result.request_id = input.request_id.toLowerCase();
+  }
+  if (input.receipt !== undefined) {
+    const receipt = input.receipt as Record<string, unknown>;
+    if (!result.request_id || !receipt || typeof receipt !== 'object' || Array.isArray(receipt) || Object.keys(receipt).some(key => !['method','account_id','paid_at'].includes(key))) throw new ContractRenewalError('Khoản thu gia hạn không hợp lệ.');
+    try {
+      const parsed = parseContractPayment({...receipt,request_id:result.request_id,revision:result.order_revision,amount:result.amount,note:result.note});
+      result.receipt = {method:parsed.method,account_id:parsed.account_id,paid_at:parsed.paid_at};
+    } catch (error) { if (error instanceof ContractPaymentError) throw new ContractRenewalError(error.message,error.status); throw error; }
+  }
+  return result;
 }
 
 // Caller owns BEGIN/COMMIT. Return date, renewal fee, contract total and the version record change together.

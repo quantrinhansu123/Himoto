@@ -2,7 +2,9 @@ import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
-import { ContractRenewalError, parseRenewalInput, recordContractRenewal } from '@/lib/server/contract-renewals';
+import { ContractRenewalError, parseRenewalInput } from '@/lib/server/contract-renewals';
+import { renewContractAndCollect } from '@/lib/server/contract-renewal-collection';
+import { ContractPaymentError } from '@/lib/server/contract-payments';
 import { queueContractNotification } from '@/lib/server/contract-notifications';
 
 export const runtime = 'nodejs';
@@ -20,14 +22,16 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     const input = parseRenewalInput(await request.json());
     client = await himotoPool.connect();
     await client.query('BEGIN');
-    const data = await recordContractRenewal(client, Number(id), user.id, input);
-    const version=(await client.query('SELECT draft_payload FROM himoto.orders WHERE id=$1',[Number(id)])).rows[0].draft_payload.management_composer.versions.at(-1);
-    await queueContractNotification(client,Number(id),'renewal',`renewal:${id}:${data.version}`,user.id,`renewal-${data.version}`,version);
+    const data = await renewContractAndCollect(client, Number(id), user.id, input);
+    if (!data.replayed) {
+      const versions=(await client.query('SELECT draft_payload FROM himoto.orders WHERE id=$1',[Number(id)])).rows[0].draft_payload.management_composer.versions;
+      await queueContractNotification(client,Number(id),'renewal',`renewal:${id}:${data.version}`,user.id,`renewal-${data.version}`,versions.find((v:{version:number})=>v.version===data.version));
+    }
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    if (error instanceof ContractRenewalError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    if (error instanceof ContractRenewalError || error instanceof ContractPaymentError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin gia hạn không hợp lệ.' }, { status: 400 });
     console.error('Contract renewal failed:', error instanceof Error ? error.name : 'Unknown database error');
     return NextResponse.json({ status: 'error', message: 'Không lưu được gia hạn hợp đồng.' }, { status: 500 });

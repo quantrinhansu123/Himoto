@@ -1,13 +1,13 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarPlus, LoaderCircle, Wallet } from 'lucide-react';
 import { loadContractReturnableItems, ReturnableContractItem } from '@/lib/management/contract-returns';
 import { overdueParts, saveContractRenewal } from '@/lib/management/contract-renewals';
 import {
   cashbookPaymentPath, loadPaymentContext, PAYMENT_METHODS, paymentAccountKey, paymentAccounts,
-  paymentMethodLabel, PaymentContext, PaymentMethod, saveContractPayment, vietnamPaymentTime,
+  paymentMethodLabel, PaymentContext, PaymentMethod, vietnamPaymentTime,
 } from '@/lib/management/contract-payments';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
@@ -27,7 +27,9 @@ function defaultRate(row: ReturnableContractItem | null, unit: 'day' | 'hour', f
 }
 
 export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClose }: { orderId: number; contractCode: string; unitPrice?: number; onClose: () => void }) {
-  const { notify, reload, canPayContracts, acceptContractPayment, selectStore } = useManagement();
+  const { notify, reload, canPayContracts, can, acceptContractPayment, selectStore } = useManagement();
+  const canReceiveRenewal = can('contracts.renew');
+  const requestId = useRef<string | null>(null);
   const router = useRouter();
   const [rows, setRows] = useState<ReturnableContractItem[]>([]);
   const [itemId, setItemId] = useState('');
@@ -45,7 +47,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const [photosPending, setPhotosPending] = useState(false);
   const [paymentContext, setPaymentContext] = useState<PaymentContext | null>(null);
   const [paymentLoadError, setPaymentLoadError] = useState('');
-  const [collect, setCollect] = useState(false);
+  const [collectionChoice, setCollectionChoice] = useState<'' | 'received' | 'unpaid'>('');
+  const collect = collectionChoice === 'received';
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [accountId, setAccountId] = useState('');
   const [paidAt, setPaidAt] = useState(vietnamPaymentTime);
@@ -69,13 +72,12 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   }, [orderId, unitPrice]);
 
   useEffect(() => {
-    if (!canPayContracts) return;
+    if (!canReceiveRenewal) return;
     const controller = new AbortController();
     setPaymentLoadError('');
     void loadPaymentContext(orderId, controller.signal).then(context => {
       if (controller.signal.aborted) return;
       setPaymentContext(context);
-      setCollect(true);
       const preferred = (['cash', 'transfer', 'company_transfer'] as const).find(value => paymentAccounts(context, value).length) || 'cash';
       setMethod(preferred);
       const accounts = paymentAccounts(context, preferred);
@@ -84,7 +86,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
       if (!controller.signal.aborted) setPaymentLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');
     });
     return () => controller.abort();
-  }, [orderId, canPayContracts]);
+  }, [orderId, canReceiveRenewal]);
 
   const selected = rows.find(row => String(row.item_id) === itemId) || null;
   const overdue = useMemo(() => overdueParts(selected?.scheduled_return_at ?? null), [selected?.scheduled_return_at]);
@@ -95,7 +97,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const accounts = paymentContext ? paymentAccounts(paymentContext, method) : [];
   const effectiveAccount = accountId || (accounts.length === 1 ? paymentAccountKey(accounts[0]) : '');
   const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
-  const canCollect = canPayContracts && feeReady(amount) > 0;
+  const canCollect = canReceiveRenewal && feeReady(amount) > 0;
   const collecting = canCollect && collect;
 
   useEffect(() => {
@@ -130,6 +132,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     if (!selected || saving || photosPending) return;
     if (!validReturn) { setError('Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
+    if (canCollect && !collectionChoice) { setError('Chọn đã nhận tiền hoặc chưa nhận tiền gia hạn.'); return; }
     if (collecting) {
       if (!paymentContext) { setError(paymentLoadError || 'Đang tải tài khoản nhận tiền.'); return; }
       if (!accounts.some(account => account.id === effectiveAccountId)) { setError('Chọn tài khoản nhận tiền gia hạn.'); return; }
@@ -138,40 +141,25 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     setSaving(true); setError('');
     try {
       const result = await saveContractRenewal(orderId, {
+        request_id: requestId.current ??= crypto.randomUUID(),
         item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
         return_at: returnAt, amount: amount || '0', note: note.trim(),
+        ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:paidAt}} : {}),
       });
       let remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
       let collected = false;
       if (collecting) {
-        try {
-          const fresh = await loadPaymentContext(orderId);
-          const payment = await saveContractPayment(orderId, {
-            request_id: crypto.randomUUID(),
-            revision: fresh.revision,
-            amount: String(fee),
-            renewal_version: result.version,
-            method,
-            account_id: effectiveAccountId,
-            paid_at: paidAt,
-            note: note.trim() || `Gia hạn hợp đồng_${result.code}`,
-          });
-          acceptContractPayment(payment.context);
-          remaining = payment.context.remaining;
-          collected = true;
-          notify(`${result.code}: đã tạo phiên bản v${result.version} và ghi phiếu Thu #${payment.transaction_id} · ${formatMoney(fee)}.`);
-          await reload();
-          if (payment.company_transfer) {
-            selectStore('all');
-            onClose();
-            router.push(`/contracts/vat?contract_id=${orderId}`);
-            return;
-          }
-        } catch (cause) {
-          notify(`${result.code}: đã tạo phiên bản v${result.version}, nhưng chưa ghi được phiếu Thu — dùng nút điền sổ quỹ.`);
-          await reload();
-          setDone({ code: result.code, fee, remaining, version: result.version, collected: false });
-          setError(cause instanceof Error ? cause.message : 'Gia hạn đã lưu nhưng chưa ghi được phiếu Thu.');
+        const payment = result.payment;
+        if (!payment) throw new Error('Chưa xác nhận được phiếu thu gia hạn. Tải lại hợp đồng để kiểm tra trước khi thử lại.');
+        acceptContractPayment(payment.context);
+        remaining = payment.context.remaining;
+        collected = true;
+        notify(`${result.code}: đã tạo phiên bản v${result.version} và ghi phiếu Thu #${payment.transaction_id} · ${formatMoney(fee)}.`);
+        await reload();
+        if (payment.company_transfer) {
+          selectStore('all');
+          onClose();
+          router.push(`/contracts/vat?contract_id=${orderId}`);
           return;
         }
       } else {
@@ -193,6 +181,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí ${formatMoney(done.fee)}` : ''}{done.collected ? ' · đã ghi phiếu Thu vào sổ quỹ.' : '.'}</p>
+          {!done.collected&&done.fee>0&&<p role="alert">Đã dời hạn trả nhưng chưa ghi nhận thu {formatMoney(done.fee)} phí gia hạn. Khoản này còn trong công nợ và cần thu trước khi hoàn cọc.</p>}
           {error && <p className="mg-error-message" role="alert">{error}</p>}
           <ContractTelegramPanel id={orderId} eventKey={`renewal:${orderId}:${done.version}`}/>
           {done.collected && (done.remaining === null || done.remaining <= 0) ? <p>Đã thu phí gia hạn trong lượt này.</p>
@@ -200,7 +189,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
               <p>Bấm nút bên dưới để mở phiếu thu Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng (nội dung, số tiền còn thiếu).</p>
               {(done.remaining === null || done.remaining > 0 || (!done.collected && done.fee > 0)) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
               {!done.collected && <button type="button" className="mg-button" onClick={() => openCashbook('renewal')}><Wallet size={16} />Điền thu gia hạn vào sổ quỹ</button>}
-            </> : <p>Chỉ kế toán hoặc quản trị viên mới điền được phiếu thu vào sổ quỹ.</p>}
+            </> : <p>Chưa ghi nhận thu phí gia hạn. Khi đã nhận tiền, cơ sở cần ghi nhận phiếu thu trước khi hoàn cọc.</p>}
         </div> : <>
         {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && !rows.length && !error && <p>Hợp đồng này không còn xe đang thuê để gia hạn.</p>}
@@ -224,7 +213,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
               <small>{rate ? `Gợi ý: ${formatMoney(rate)} × ${unitCount || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(rate * (unitCount || 0))}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
             {canCollect && <>
-              <label className="mg-field-wide mg-checkbox"><input type="checkbox" checked={collect} onChange={event => setCollect(event.target.checked)} />Đã thu tiền gia hạn vào sổ quỹ</label>
+              <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='received'} onChange={()=>setCollectionChoice('received')} />Đã thực nhận tiền gia hạn — ghi phiếu thu cùng lúc lưu</label>
+              <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='unpaid'} onChange={()=>setCollectionChoice('unpaid')} />Chưa nhận tiền — ghi công nợ gia hạn</label>
               {collect && <>
                 {paymentLoadError && !paymentContext && <p className="mg-field-wide mg-field-error">{paymentLoadError}</p>}
                 {!paymentContext && !paymentLoadError && <p className="mg-field-wide" role="status"><LoaderCircle size={15} className="mg-spin" /> Đang tải tài khoản nhận tiền…</p>}
@@ -255,7 +245,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
           </dl>
           <p className="mg-composer-hint">{collecting
             ? 'Chi phí gia hạn được cộng vào tiền hợp đồng và ghi phiếu Thu ngay khi lưu.'
-            : 'Chi phí gia hạn được cộng vào tiền hợp đồng. Bỏ trống thu tiền nếu chưa nhận; sau khi lưu có thể điền sổ quỹ.'}</p>
+            : 'Chi phí gia hạn được cộng vào tiền hợp đồng. Chỉ chọn đã thực nhận khi tiền đã vào đúng tài khoản hoặc két.'}</p>
           {renewalVersion && <ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending}/>}
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
