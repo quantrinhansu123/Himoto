@@ -42,9 +42,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
        ELSE COALESCE(o.first_deposit_amount, 0) + COALESCE(o.additional_deposit_amount, 0) END AS deposit_amount,
   ${CONTRACT_RETURN_ADJUSTMENT_SQL} AS return_adjustment_amount,
-  CASE WHEN o.draft_payload::jsonb #> '{legacy_migration,cutover,reviewRequired}'='true'::jsonb
-    THEN concat_ws(E'\\n',NULLIF(o.note,''),NULLIF(o.draft_payload::jsonb #>> '{legacy_migration,cutover,reviewNotice}',''))
-    ELSE o.note END AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
+  o.note AS notes, o.created_at, o.updated_at, o.xmin::text AS draft_revision,
   staff.id AS staff_id, staff.full_name AS staff_name,
   COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),
     staff.full_name,

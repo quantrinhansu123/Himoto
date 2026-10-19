@@ -3,7 +3,6 @@ import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contr
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { dailyPriceSql, DEPOSIT_REFUND_NAME, depositLateral, rentalPaidSql } from './contract-deposits';
-import { legacyContractReviewMessage } from './contract-legacy-review';
 import { MAX_PAYMENT_AMOUNT, PAYABLE_STATUSES, canAddExtraReceipt, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, findPaymentAccount, paymentAccountMatchesMethod, paymentAccounts } from '@/lib/management/contract-payments';
 
 type Database = Pick<PoolClient, 'query'>;
@@ -64,8 +63,6 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     FROM himoto.orders o ${depositLateral()} WHERE o.id=$1 AND o.deleted_at IS NULL`, [id]);
   if (!result.rowCount) throw new ContractPaymentError('Không tìm thấy hợp đồng.', 404);
   const order = result.rows[0], baseTotal = money(order.total), paid = money(order.rental_paid);
-  const review = legacyContractReviewMessage(order.draft_payload);
-  if (review) throw new ContractPaymentError(review, 409);
   const planValue = order.draft_payload?.management_composer?.installment_plan;
   const plan = planValue ? parseInstallmentPlan(planValue) : null;
   if (planValue && !plan) throw new ContractPaymentError('Lịch đóng tiền thuê sở hữu chưa hợp lệ. Cần đối chiếu trước khi thanh toán.', 409);

@@ -11,8 +11,7 @@ export const depositLateral = (order = 'o') => `LEFT JOIN LATERAL (
     FROM himoto.transactions t WHERE t.order_id=${order}.id AND t.status='approved'
   ) dep ON true`;
 
-export const rentalPaidSql = (order = 'o') => `CASE WHEN ${order}.draft_payload::jsonb #> '{legacy_migration,cutover,reviewRequired}' = 'true'::jsonb
-  OR NULLIF(${order}.pid::text,'') IS NULL THEN NULL ELSE GREATEST(${order}.pid::numeric - dep.paid, 0) END`;
+export const rentalPaidSql = (order = 'o') => `CASE WHEN NULLIF(${order}.pid::text,'') IS NULL THEN NULL ELSE GREATEST(${order}.pid::numeric - dep.paid, 0) END`;
 
 // Native lines store a daily price in hiring_fee. Legacy lines store the whole original
 // period there; use their explicit unit price, or a whole-day period with no renewals.
