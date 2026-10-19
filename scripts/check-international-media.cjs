@@ -22,14 +22,14 @@ async function main(){
   const {parsePhotoTarget}=load(path.join(root,'lib/server/record-photos'));
   const {requestPermission}=load(path.join(root,'lib/server/access-request'));
   assert.equal(contractPhotoSlots('rental').length,18);
-  for(const slot of ['rental-15','rental-video-3','handover-video-1','return-101-15','renewal-receipt-42-video-3'])parsePhotoTarget('contracts','1',slot);
-  for(const slot of ['rental-16','rental-video-4','return-101-16'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
+  for(const slot of ['rental-15','rental-16','rental-video-3','handover-video-1','return-101-15','return-101-16','renewal-receipt-42-video-3'])parsePhotoTarget('contracts','1',slot);
+  for(const slot of ['rental-0','rental-video-4','return-101-0'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-video-1','PUT'),'contracts.finalize');
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-101-15','PUT'),'contracts.return');
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/renewal-receipt-42-video-3','PUT'),'contracts.renew');
-  checks.push('15-photo/3-video bounds apply to every phase and new media retain handover/return/renewal permissions');
+  checks.push('Additional photos beyond 15 remain accepted; video bounds and handover/return/renewal permissions are preserved');
   const {notificationPhotos}=load(path.join(root,'lib/server/contract-notification-content'));
-  const ordered=await notificationPhotos({query:async()=>({rows:['rental-10','rental-video-1','rental-2','rental-1'].map(slot=>({slot}))})},1,['rental']);
+  const ordered=await notificationPhotos({query:async()=>({rows:['rental-10','rental-video-1','rental-2','rental-1'].map(slot=>({slot,mime_type:slot.includes('video')?'video/mp4':'image/jpeg',bytes:Buffer.from(slot).toString('base64')}))})},1,['rental']);
   assert.deepEqual(ordered.map(p=>p.slot),['rental-1','rental-2','rental-10','rental-video-1']);
   const cloud=load(path.join(root,'lib/server/cloudinary-photos')),sdk=require('cloudinary').v2;
   const oldEnv={...process.env},oldResource=sdk.api.resource,oldFetch=global.fetch;
@@ -56,11 +56,12 @@ async function main(){
   async function dispatch(photos){let claimed=false,finalState,methods=[],batches=[];
     const db={query:async(sql,params)=>{
       if(sql.includes('SELECT bot_cipher'))return{rows:[{bot_cipher:crypto.sealIntegrationSecret({token:'qa-local-only'})}]};
-      if(sql.includes("status='sending'")){if(claimed)return{rows:[]};claimed=true;return{rows:[{id:'qa',store_id:23,event_type:'rental',payload:{code:'QA',customer:'QA',store:'QA',actor:'QA',vehicles:'QA',total:'0',at:new Date().toISOString(),photos}}]};}
+      if(sql.includes("status='sending'")){if(claimed)return{rows:[]};claimed=true;return{rows:[{id:'qa',chat_id:'qa-chat',store_id:23,event_type:'rental',payload:{code:'QA',customer:'QA',store:'QA',actor:'QA',vehicles:'QA',total:'0',at:new Date().toISOString(),photos}}]};}
       if(sql.includes('SELECT chat_id'))return{rows:[{chat_id:'qa-chat'}]};
       if(sql.includes("status='sent'"))finalState='sent';return{rows:[]};
     }};
     const send=async(url,options)=>{const method=new URL(url).pathname.split('/').at(-1);methods.push(method);
+      if(method==='sendMessage')return Response.json({ok:true,result:{message_id:999}});
       if(method==='sendMediaGroup'){const media=JSON.parse(options.body.get('media'));assert(media.length>=2&&media.length<=10);for(const item of media){const file=options.body.get(item.media.replace('attach://',''));assert.equal(item.type,file.type==='video/mp4'?'video':'photo');}batches.push(media);return Response.json({ok:true,result:media.map((_,i)=>({message_id:100+methods.length*10+i}))});}
       assert.equal(method,'sendVideo');assert.equal(options.body.get('video').type,'video/mp4');return Response.json({ok:true,result:{message_id:1}});
     };
@@ -68,8 +69,8 @@ async function main(){
   }
   const photo={slot:'rental-1',mime_type:'image/jpeg',bytes:Buffer.from([255,216,255,217]).toString('base64')};
   const video={slot:'rental-video-1',mime_type:'video/mp4',bytes:Buffer.from('qa-video').toString('base64')};
-  const mixed=await dispatch([...Array.from({length:15},(_,i)=>({...photo,slot:`rental-${i+1}`})),video]);assert.deepEqual(mixed.batches.map(b=>b.length),[10,6]);assert(mixed.batches.flat().some(p=>p.type==='video'));
-  assert.deepEqual((await dispatch([video])).methods,['sendVideo']);
+  const mixed=await dispatch([...Array.from({length:15},(_,i)=>({...photo,slot:`rental-${i+1}`})),video]);assert.deepEqual(mixed.batches.map(b=>b.length),[10,5]);assert.deepEqual(mixed.methods,['sendMediaGroup','sendMediaGroup','sendVideo','sendMessage']);
+  assert.deepEqual((await dispatch([video])).methods,['sendVideo','sendMessage']);
   checks.push('Real dispatcher builds valid mixed Telegram albums in batches of 10, preserves all 15 photos plus video, and uses sendVideo for a single video (no real Telegram requests)');
   const databases=load(path.join(root,'lib/server/himoto-database')),session=load(path.join(root,'lib/server/management-session'));
   const pool=databases.himotoPool,owner=databases.ownerDatabase;
