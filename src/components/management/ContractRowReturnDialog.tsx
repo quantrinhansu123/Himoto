@@ -54,7 +54,13 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [photoPending,setPhotoPending]=useState<Record<number,boolean>>({});
+  const [photoVersion,setPhotoVersion]=useState(0);
   const photosPending=Object.values(photoPending).some(Boolean);
+  const wasPhotosPending=useRef(false);
+  useEffect(()=>{
+    if(wasPhotosPending.current&&!photosPending)setPhotoVersion(value=>value+1);
+    wasPhotosPending.current=photosPending;
+  },[photosPending]);
   const [error, setError] = useState('');
   const [done, setDone] = useState<{ orderId: number; telegramEvents: {orderId:number;key:string}[]; code: string; due: number | null; depositHeld: number; closes: boolean } | null>(null);
 
@@ -212,7 +218,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
             <div><dt>{summary.due !== null && summary.due < 0 ? 'Thu thừa' : 'Còn thiếu (không trừ cọc)'}</dt><dd>{summary.due === null ? '—' : formatMoney(Math.abs(summary.due))}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(summary.depositHeld)}</dd></div>
           </dl>}
-          {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={setSettlementBlocked} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
+          {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={setSettlementBlocked} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
           <p className="mg-composer-hint">Trả đủ xe và thu đủ tiền sẽ đóng hợp đồng; còn nợ chuyển Chờ thanh toán. Xe trả về Lưu kho. Các khoản đã chọn thu / hoàn được lưu cùng lượt xác nhận; khoản chưa chọn không tạo phiếu tiền.</p>
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
