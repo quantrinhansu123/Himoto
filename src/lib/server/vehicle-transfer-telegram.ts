@@ -31,7 +31,10 @@ export async function readVehicleTransferTelegram(db:Database,vehicleId:number,e
   if(!all&&![Number(e.from_store_id),Number(e.to_store_id)].includes(Number(user.store_id)))throw new VehicleTransferTelegramError('Không có quyền xem lượt chuyển xe của cơ sở khác.',403);
   const received=e.event_type==='manual_transfer_receive',storeId=Number(received?e.to_store_id:e.from_store_id);
   const allowed=hasPermission(user,received?'vehicles.receive':'vehicles.transfer')&&(all||storeId===Number(user.store_id));
-  const payload:NotificationPayload={code:`DC-${e.id}`,customer:'',phone:'',store:e.from_name,actor:e.actor||'Chưa ghi nhận',vehicles:e.license||'',vehicle_names:e.vehicle_name||'',total:'0',at:new Date(e.at).toISOString(),photos:[],transfer:{from:e.from_name||'',to:e.to_name||'',note:e.notes||'',received}};
+  const photoSlot=`${received?'receive':'transfer'}-${e.id}-1`;
+  const photos=(await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
+    FROM himoto.management_record_photos WHERE entity_type='vehicles' AND entity_id=$1 AND slot=$2`,[vehicleId,photoSlot])).rows;
+  const payload:NotificationPayload={code:`DC-${e.id}`,customer:'',phone:'',store:e.from_name,actor:e.actor||'Chưa ghi nhận',vehicles:e.license||'',vehicle_names:e.vehicle_name||'',total:'0',at:new Date(e.at).toISOString(),photos,transfer:{from:e.from_name||'',to:e.to_name||'',note:e.notes||'',received}};
   const notice=(await db.query('SELECT status,message_ids FROM himoto.management_contract_notifications WHERE vehicle_event_id=$1',[eventId])).rows[0];
   const state:VehicleTransferTelegramState={eligible:e.ownership===true,event_id:eventId,vehicle_id:vehicleId,destination_label:OWNERSHIP_TELEGRAM_DESTINATIONS[0].label,
     text:contractNotificationText(received?'vehicle_receive':'vehicle_transfer',payload),status:notice?.status||null,message_count:notice?.message_ids?.length||0,

@@ -5,9 +5,12 @@ import { MAX_PHOTO_BYTES, type PhotoEntity } from '@/lib/management/record-photo
 import { isContractTransactionPhoto } from '@/lib/management/contract-photos';
 
 export class RecordPhotoError extends Error { constructor(message: string, public status = 400) { super(message); } }
+const isVehicleTransferPhoto = (slot: string) => /^(transfer|receive)-[1-9]\d{0,14}-1$/.test(slot);
 export function parsePhotoTarget(entity: string, id: string, slot?: string): { entity: PhotoEntity; id: number; slot?: string } {
-  if (!['customers', 'contracts'].includes(entity) || !/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new RecordPhotoError('Hồ sơ không hợp lệ.');
-  if (slot !== undefined && !(entity === 'customers' ? ['id_front', 'id_back', 'driver_license'].includes(slot) : /^plate-[1-9]\d{0,14}$/.test(slot)||isContractTransactionPhoto(slot))) throw new RecordPhotoError('Loại ảnh không hợp lệ.');
+  if (!['customers', 'contracts', 'vehicles'].includes(entity) || !/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new RecordPhotoError('Hồ sơ không hợp lệ.');
+  if (slot !== undefined && !(entity === 'customers' ? ['id_front', 'id_back', 'driver_license'].includes(slot)
+    : entity === 'vehicles' ? isVehicleTransferPhoto(slot)
+    : /^plate-[1-9]\d{0,14}$/.test(slot) || isContractTransactionPhoto(slot))) throw new RecordPhotoError('Loại ảnh không hợp lệ.');
   return { entity: entity as PhotoEntity, id: Number(id), slot };
 }
 export function validatePhotoBytes(type: string, data: Buffer) {
@@ -18,13 +21,25 @@ export function validatePhotoBytes(type: string, data: Buffer) {
   if (!jpeg && !png && !webp) throw new RecordPhotoError('Chỉ nhận ảnh JPEG, PNG hoặc WebP hợp lệ.');
 }
 export async function requirePhotoRecord(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number) {
-  const table = entity === 'customers' ? 'customers' : 'orders';
+  if (entity === 'vehicles') {
+    // Keep source-store access for in-transit transfer photos after the vehicle already moved.
+    await client.query("SELECT set_config('himoto.transfer_vehicle_id',$1,true),set_config('himoto.operation','transfer',true)", [String(id)]);
+  }
+  const table = entity === 'customers' ? 'customers' : entity === 'vehicles' ? 'vehicles' : 'orders';
   const result = await client.query(`SELECT id FROM himoto.${table} WHERE id=$1${entity === 'contracts' ? ' AND deleted_at IS NULL' : ''} FOR SHARE`, [id]);
   if (!result.rowCount) throw new RecordPhotoError('Không tìm thấy hồ sơ.', 404);
 }
 export async function requireContractPhotoSlot(client:Pick<PoolClient,'query'>,entity:PhotoEntity,id:number,slot:string) {
+  const transfer=entity==='vehicles'?slot.match(/^(transfer|receive)-([1-9]\d*)-1$/):null;
+  if(transfer) {
+    const type=transfer[1]==='receive'?'manual_transfer_receive':'manual_transfer';
+    if(!(await client.query('SELECT id FROM himoto.vehicle_location_events WHERE id=$1 AND vehicle_id=$2 AND event_type=$3',[Number(transfer[2]),id,type])).rowCount)
+      throw new RecordPhotoError('Ảnh không thuộc lượt chuyển/nhận xe này.',404);
+  }
   const swap=entity==='contracts'?slot.match(/^battery-swap-([1-9]\d*)-/):null;
   if(swap&&!(await client.query('SELECT id FROM himoto.management_contract_battery_swaps WHERE id=$1 AND order_id=$2',[Number(swap[1]),id])).rowCount)throw new RecordPhotoError('Lượt đổi pin không thuộc hợp đồng.',404);
+  const vehicleSwap=entity==='contracts'?slot.match(/^vehicle-swap-([1-9]\d*)-1$/):null;
+  if(vehicleSwap&&!(await client.query('SELECT id FROM himoto.management_contract_vehicle_swaps WHERE id=$1 AND order_id=$2',[Number(vehicleSwap[1]),id])).rowCount)throw new RecordPhotoError('Lượt đổi xe không thuộc hợp đồng.',404);
   const item=entity==='contracts'?slot.match(/^return-([1-9]\d*)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/):null;
   if(item&&!(await client.query('SELECT id FROM himoto.order_vehicle_details WHERE id=$1 AND order_id=$2 AND deleted_at IS NULL',[Number(item[1]),id])).rowCount)throw new RecordPhotoError('Xe trả không thuộc hợp đồng.',404);
   const renewal=entity==='contracts'?slot.match(/^renewal-([1-9]\d*)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/):null;

@@ -6,12 +6,14 @@ import { Check, FileText, LoaderCircle, TriangleAlert } from 'lucide-react';
 import { ManagementRow } from '@/lib/management/types';
 import { optionLabel, MANAGEMENT_CONFIG } from '@/lib/management/config';
 import { applyVehicleAction, loadSessionUserName, VehicleActionResult } from '@/lib/management/vehicle-repository';
+import { vehicleTransferPhotoSlots } from '@/lib/management/record-photos';
 import { formatDateTime } from '@/lib/formatters';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
 import Link from 'next/link';
 import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
+import { SavedRecordPhotos } from './RecordPhotoFields';
 
 export type VehicleActionMode = 'transfer' | 'status' | 'receive';
 const STATUS_CHOICES = [{ value: 'using', label: 'Lập hợp đồng nháp' }, { value: 'ready', label: 'Lưu kho' }] as const;
@@ -39,8 +41,9 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
   const [actor, setActor] = useState('');
   const [openedAt] = useState(() => new Date().toISOString());
   const [error, setError] = useState('');
-  const [result, setResult] = useState<VehicleActionResult | null>(null);
+  const [result, setResult] = useState<(VehicleActionResult & { mode: VehicleActionMode }) | null>(null);
   const [saving, setSaving] = useState(false);
+  const [photosPending, setPhotosPending] = useState(false);
   const busy = useRef(false);
   useEffect(() => { void loadSessionUserName().then(setActor).catch(() => {}); }, []);
   function pick(value: string) {
@@ -74,12 +77,23 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         : { action: 'status', status: status as 'ready' | 'using', beneficiary_store_id: storeId, customer_name: customer.name, customer_phone: customer.phone, customer_id_card: customer.idCard, note, revision });
       await ensureData(saved.customer ? ['vehicles', 'customers', 'contracts'] : mode==='transfer'||mode==='receive'?['vehicles','stores']:['vehicles'], true).catch(() => {});
       notify(mode === 'transfer' ? `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${stores.find(store=>String(store.id)===storeId)?.name || 'cơ sở đích'}. Đã lưu lịch sử.` : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho. Đã lưu lịch sử.`:saved.draft?'Đã tạo hợp đồng nháp. Xe vẫn Lưu kho đến khi phát hành hợp đồng.':`Đã đổi trạng thái xe ${selected.license}.`);
-      if (saved.draft||saved.telegram_event_id) setResult(saved); else onClose();
+      if (saved.draft || saved.telegram_event_id || mode === 'transfer' || mode === 'receive') setResult({ ...saved, mode }); else onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được thao tác xe.'); }
     finally { busy.current = false; setSaving(false); }
   }
 
-  if(result?.telegram_event_id)return <Dialog title="Kiểm tra & gửi Telegram · Điều chuyển xe" onClose={onClose}><div className="mg-dialog-body"><VehicleTransferTelegramPanel vehicleId={result.id} eventId={result.telegram_event_id}/></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button></div></Dialog>;
+  if (result && (result.mode === 'transfer' || result.mode === 'receive')) {
+    const photoKind = result.mode === 'receive' ? 'receive' : 'transfer';
+    return <Dialog title={result.mode === 'receive' ? 'Đã nhận xe · Tải ảnh' : 'Đã chuyển xe · Tải ảnh'} onClose={() => { if (!photosPending) onClose(); }}>
+      <div className="mg-dialog-body">
+        <p role="status">{result.mode === 'receive' ? 'Xe đã về Lưu kho tại cơ sở nhận. Tải 1 ảnh nhận xe bên dưới.' : 'Xe đang Chờ luân chuyển. Tải 1 ảnh chuyển xe bên dưới.'}</p>
+        <SavedRecordPhotos entity="vehicles" recordId={result.id} slots={vehicleTransferPhotoSlots(result.event_id, photoKind)}
+          title={result.mode === 'receive' ? 'Ảnh nhận xe (1 ảnh)' : 'Ảnh chuyển xe (1 ảnh)'} onPendingChange={setPhotosPending} />
+        {result.telegram_event_id && <VehicleTransferTelegramPanel vehicleId={result.id} eventId={result.telegram_event_id} />}
+      </div>
+      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={photosPending} onClick={onClose}>Đóng</button></div>
+    </Dialog>;
+  }
   if (result?.draft) return <Dialog title="Đã tạo hợp đồng nháp" subtitle={selected ? vehicleOption(selected) : ''} onClose={onClose}>
     <div className="mg-dialog-body"><ul className="mg-vehicle-action-result">
       <li><Check size={16} />Xe vẫn <strong>Lưu kho</strong>. Chỉ chuyển sang Đang thuê sau khi phát hành hợp đồng.</li>
@@ -92,7 +106,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
       <button type="button" className="mg-button mg-button-primary" onClick={() => { onClose(); router.push(`/contracts/drafts?contract_id=${result.draft!.id}`); }}><FileText size={16} />Mở hợp đồng nháp</button></div>
   </Dialog>;
 
-  return <Dialog title={title} subtitle={selected ? vehicleOption(selected) : 'Chọn xe cần thao tác'} onClose={() => { if (!busy.current) onClose(); }}>
+  return <Dialog title={title} subtitle={selected ? vehicleOption(selected) : 'Chọn xe cần thao tác'} onClose={() => { if (!busy.current && !photosPending) onClose(); }}>
     <form noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
       <div className="mg-field mg-field-wide"><label htmlFor="vehicle-action-vehicle">Xe<span aria-hidden="true"> *</span></label>
         <input id="vehicle-action-vehicle" list="vehicle-action-options" value={picked} disabled={saving || Boolean(vehicle)} placeholder="Nhập biển số hoặc tên xe…" onChange={event => pick(event.target.value)} />
@@ -105,14 +119,14 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <p className="mg-transfer-direction mg-field-wide">{selected?vehicleTransferRoute(selected):''}</p>
         <div className="mg-field"><label htmlFor="vehicle-receive-from">Cơ sở chuyển đi</label><input id="vehicle-receive-from" value={String(selected?.transfer_from_store_name||'')} readOnly disabled/></div>
         <div className="mg-field"><label htmlFor="vehicle-receive-to">Cơ sở nhận xe</label><input id="vehicle-receive-to" value={String(selected?.transfer_to_store_name||selected?.store_name||'')} readOnly disabled/></div>
-        <p className="mg-composer-hint mg-field-wide">Chỉ xác nhận khi xe đã đến cơ sở nhận. Xe chuyển từ Chờ luân chuyển sang Lưu kho; ngày giờ và người nhận được lưu trong Lịch sử.</p>
+        <p className="mg-composer-hint mg-field-wide">Chỉ xác nhận khi xe đã đến cơ sở nhận. Xe chuyển từ Chờ luân chuyển sang Lưu kho; sau đó tải 1 ảnh nhận xe. Ngày giờ và người nhận được lưu trong Lịch sử.</p>
         {receiveBlocked&&<p className="mg-field-error mg-field-wide" role="alert">Lần chuyển xe không còn chờ nhận hoặc thiếu thông tin. Đóng hộp thoại, nhấn Làm mới rồi kiểm tra lịch sử.</p>}
       </>:mode === 'transfer' ? <>
         <div className="mg-field"><label htmlFor="vehicle-action-from">Cơ sở hiện tại</label><input id="vehicle-action-from" value={String(selected?.store_name || '')} readOnly disabled /></div>
         <div className="mg-field"><label htmlFor="vehicle-action-to">Chuyển đến cơ sở<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-to" value={storeId} disabled={saving} onChange={event => setStoreId(event.target.value)}>
             <option value="">Chọn cơ sở</option>{(destinations.length?destinations:stores).filter(store => String(store.id) !== String(selected?.store_id)).map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
-        <p className="mg-composer-hint mg-field-wide">Khi lưu, xe chuyển sang Chờ luân chuyển tại cơ sở đích. Khi xe đến nơi, bấm Nhận xe để xác nhận. Mỗi thao tác đều được ghi vào Lịch sử.</p>
+        <p className="mg-composer-hint mg-field-wide">Khi lưu, xe chuyển sang Chờ luân chuyển tại cơ sở đích. Sau đó tải 1 ảnh chuyển xe. Khi xe đến nơi, bấm Nhận xe để xác nhận. Mỗi thao tác đều được ghi vào Lịch sử.</p>
       </> : <>
         <div className="mg-field"><label htmlFor="vehicle-action-status">Trạng thái<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-status" value={status} disabled={saving || !selected} onChange={event => setStatus(event.target.value)}>

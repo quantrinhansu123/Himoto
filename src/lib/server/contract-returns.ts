@@ -196,8 +196,8 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   if (duplicate.rowCount) throw new ContractReturnError('Xe mới đã nằm trong hợp đồng này.', 409);
   const oldVehicle = await client.query('SELECT license FROM himoto.vehicles WHERE id=$1 FOR UPDATE', [item.vehicle_id]);
   await client.query('UPDATE himoto.order_vehicle_details SET vehicle_id=$2,updated_at=now() WHERE id=$1', [input.item_id,input.vehicle_id]);
-  await client.query(`INSERT INTO himoto.management_contract_vehicle_swaps(order_id,order_item_id,from_vehicle_id,to_vehicle_id,actor_id)
-    VALUES ($1,$2,$3,$4,$5)`, [item.order_id,input.item_id,item.vehicle_id,input.vehicle_id,actorId]);
+  const swap = await client.query(`INSERT INTO himoto.management_contract_vehicle_swaps(order_id,order_item_id,from_vehicle_id,to_vehicle_id,actor_id)
+    VALUES ($1,$2,$3,$4,$5) RETURNING id`, [item.order_id,input.item_id,item.vehicle_id,input.vehicle_id,actorId]);
   const oldOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
   const foreignOldOpen=dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
   if (!oldOpen.rowCount&&!foreignOldOpen) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
@@ -235,5 +235,6 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
       [item.order_id, JSON.stringify(payload)]);
   }
 
-  return { item_id: input.item_id, old_license: String(oldVehicle.rows[0]?.license || ''), new_license: String(next.license || '') };
+  return { item_id: input.item_id, order_id: Number(item.order_id), swap_id: Number(swap.rows[0].id),
+    old_license: String(oldVehicle.rows[0]?.license || ''), new_license: String(next.license || '') };
 }

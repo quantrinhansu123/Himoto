@@ -32,5 +32,5 @@ export function returnContractItems(items: ReturnInput[],settlements?:ReturnSett
   return returnRequest<ReturnResult[]>('/api/auth/returns', { items,...(settlements?.length?{settlements}:{}) });
 }
 export function changeContractVehicle(input: { item_id: number; item_revision: string; vehicle_id: number }) {
-  return returnRequest<{ item_id: number; old_license: string; new_license: string }>('/api/auth/returns/vehicle', input);
+  return returnRequest<{ item_id: number; order_id: number; swap_id: number; old_license: string; new_license: string }>('/api/auth/returns/vehicle', input);
 }

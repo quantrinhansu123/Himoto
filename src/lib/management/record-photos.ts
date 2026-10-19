@@ -1,4 +1,7 @@
-export type PhotoEntity = 'customers' | 'contracts';
+export type PhotoEntity = 'customers' | 'contracts' | 'vehicles';
+export const VEHICLE_TRANSFER_PHOTO_SLOT = (eventId: number, kind: 'transfer' | 'receive' = 'transfer') => `${kind}-${eventId}-1`;
+export const vehicleTransferPhotoSlots = (eventId: number, kind: 'transfer' | 'receive' = 'transfer') =>
+  [{ key: VEHICLE_TRANSFER_PHOTO_SLOT(eventId, kind), label: kind === 'receive' ? 'Ảnh nhận xe' : 'Ảnh chuyển xe' }];
 export interface PhotoSlot { key: string; label: string }
 export interface SavedPhoto { slot: string; updated_at: string; mime_type?: string }
 export type PendingPhotos = Record<string, File>;
