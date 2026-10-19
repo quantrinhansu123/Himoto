@@ -1,4 +1,5 @@
 import 'server-only';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import { VEHICLE_STATUSES, VEHICLE_TYPES } from '@/lib/management/config';
 import { vehicleRevision, writeVehicleAudit } from './vehicle-audit';
@@ -37,7 +38,7 @@ async function checkVehicle(client: Client, values: VehicleValues, id: number | 
   if (id !== null) {
     if(currentStatus==='in_transit'&&(values.status!=='in_transit'||String(values.store_id)!==String(currentStoreId)))throw new VehicleSaveError('Xe đang Chờ luân chuyển. Dùng Xác nhận nhận xe tại cơ sở đích trước khi đổi trạng thái hoặc cơ sở.',409);
     const open = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-      WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+      WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
         AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [id]);
     if (open.rowCount && values.status !== (currentStatus === 'rent' ? 'using' : currentStatus)) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng để đổi trạng thái.');
     if (open.rowCount && String(values.store_id) !== String(currentStoreId)) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở, không được đổi cơ sở quản lý xe.');

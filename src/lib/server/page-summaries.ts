@@ -3,13 +3,14 @@ import type { PoolClient } from 'pg';
 import { mapApiRow } from '@/lib/management/repository';
 import { summarizeBySalesStaff, summarizeByStore, summarizeSalesKpis } from '@/lib/management/source-sales';
 import { contractTableSql } from './contract-drafts';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 
 export class PageSummaryError extends Error {}
 export async function readOperationsSummary(client:Pick<PoolClient,'query'>) {
   const result=await client.query(`SELECT o.store_id,count(*)::int AS active,
     count(*) FILTER (WHERE o.order_status='overdue' OR o.order_status='renting' AND COALESCE(o.return_at,ov.end_date)<now())::int AS overdue
     FROM himoto.orders o LEFT JOIN LATERAL (SELECT max(d.return_at) AS end_date FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL) ov ON o.return_at IS NULL
-    WHERE o.deleted_at IS NULL AND o.order_status IN ('renting','overdue','wait_payment') GROUP BY o.store_id`);
+    WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment') GROUP BY o.store_id`);
   return {stores:result.rows};
 }
 export async function readSalesSummary(client:Pick<PoolClient,'query'>,params:URLSearchParams) {

@@ -1,4 +1,5 @@
 import 'server-only';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import type { ReturnableContractItem, ReturnInput, ReturnResult } from '@/lib/management/contract-returns';
 import { dailyPriceSql, depositLateral, rentalPaid, rentalPaidSql } from './contract-deposits';
@@ -62,7 +63,7 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
   LEFT JOIN himoto.customers c ON c.id=o.customer_id
   LEFT JOIN himoto.stores s ON s.id=o.store_id
   ${depositLateral()}
-  WHERE d.deleted_at IS NULL AND o.deleted_at IS NULL
+  WHERE d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
     AND o.order_status IN ('renting','overdue','wait_payment','completed')`;
 
 function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractItem[] {
@@ -112,7 +113,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
       o.order_status,o.total,o.pid,o.draft_payload,o.xmin::text AS order_revision,${dailyPriceSql()} AS daily_price,
       COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS contract_code
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-    WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+    WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status IN ('renting','overdue','wait_payment') FOR UPDATE OF d,o`, [input.item_id]);
   const item = itemResult.rows[0];
   if (!item) throw new ContractReturnError('Không tìm thấy xe đang thuê cần trả.', 404);
@@ -177,7 +178,7 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   await client.query("SET LOCAL lock_timeout = '5s'");
   const result = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.xmin::text AS item_revision,o.store_id,o.draft_payload
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-    WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+    WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status IN ('renting','overdue','wait_payment') FOR UPDATE OF d,o`, [input.item_id]);
   const item = result.rows[0];
   if (!item) throw new ContractReturnError('Không tìm thấy xe đang thuê cần đổi.', 404);
@@ -188,7 +189,7 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
     WHERE v.id=$1 AND v.status='ready' FOR UPDATE OF v`, [input.vehicle_id]);
   if (!newVehicle.rowCount) throw new ContractReturnError('Xe mới phải đang Lưu kho.', 409);
   const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-    WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+    WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [input.vehicle_id]);
   if (openRental.rowCount || dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[input.vehicle_id])).rows[0]?.blocked) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
   const duplicate = await client.query(`SELECT 1 FROM himoto.order_vehicle_details

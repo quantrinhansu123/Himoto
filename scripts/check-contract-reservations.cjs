@@ -45,6 +45,9 @@ async function run() {
         bank_owner_type text,bank_id bigint,cash_id bigint,note text,user_id bigint,store_id bigint,payment_method int,object_type text,object_id bigint,order_item_id bigint,updated_at timestamptz);
       CREATE TABLE himoto.banks(id bigint PRIMARY KEY,bank_name text,owner_name text,account_number text,store_id bigint,owner_type text,status text,account_type int,opening_balance numeric DEFAULT 0);
       CREATE TABLE himoto.cash(id bigint PRIMARY KEY,name text,store_id bigint,status text,opening_balance numeric DEFAULT 0);
+      ALTER TABLE himoto.customers ADD customer_type text,ADD nationality text,ADD contact_channel text,ADD contact_detail text;
+      ALTER TABLE himoto.stores ADD kind text DEFAULT 'physical',ADD user_id bigint;
+      ALTER TABLE himoto.order_vehicle_details ADD substitute_unit_price numeric;
       CREATE TABLE himoto.management_contract_payments(request_id uuid PRIMARY KEY,order_id bigint,transaction_id bigint,actor_id bigint,request_hash text,renewal_payload jsonb);
       INSERT INTO himoto.stores VALUES(1,'CS nguồn khách QA'),(2,'CS giữ xe QA');
       INSERT INTO himoto.users VALUES(80,'Nhân viên QA');

@@ -8,6 +8,7 @@ import { staffRoles } from '@/lib/management/staff-positions';
 import { dataAccess } from './access-context';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractFinalizeError extends Error {
@@ -130,7 +131,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
       LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
       LEFT JOIN himoto.users mu ON mu.id=s.user_id
       WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.deleted_at IS NULL
-        AND o.deleted_at IS NULL AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
+        AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
   if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(conflictLabel).join('; ')} chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.`, 409);
   const notStored = vehicles.rows.filter(row => row.status!=='ready');
   if (notStored.length) throw new ContractFinalizeError(`Xe ${notStored.map(row => row.license).join(', ')} phải ở trạng thái Lưu kho. Đóng hợp đồng cũ và xác nhận nhận xe trước khi phát hành hợp đồng mới.`, 409);

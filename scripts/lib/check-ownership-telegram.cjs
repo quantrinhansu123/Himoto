@@ -58,6 +58,17 @@ module.exports=async function checkOwnershipTelegram(db,c,schema,notices){
       const chat=['reservation','handover','return'].includes(kind)?groups[0].chat_id:'-100000000001';
       assert.equal((await notices.dispatchContractNotifications(async(_url,options)=>{assert.equal(JSON.parse(options.body).chat_id,chat);return Response.json({ok:true,result:{message_id:901}});},1,db,[900002])).sent,1);
     }
+    // A source battery order must never be dispatched through car/ownership routing,
+    // even if an old manual notification was already pending before the correction.
+    await c.query(`INSERT INTO ${schema}.orders(id,store_id,contract_number,order_status,order_type,draft_payload)
+      VALUES(900099,900001,'QA-LEGACY-PIN','renting','ownership','{"legacy_migration":{"sourceStoreId":"30"}}')`);
+    const batteryNotice=randomUUID();
+    await c.query(`INSERT INTO ${schema}.management_contract_notifications(id,order_id,store_id,event_key,root_event_key,event_type,payload,delivery_mode,status)
+      SELECT $1::uuid,900099,900001,$1::text,$1::text,'rental',payload,'manual','pending' FROM ${schema}.management_contract_notifications
+      WHERE order_id=900002 AND delivery_mode='manual' LIMIT 1`,[batteryNotice]);
+    await assert.rejects(()=>service.readContractTelegram(db,900099,143,{access_role:'admin'}),e=>e.status===404);
+    assert.equal((await notices.dispatchContractNotifications(async()=>{throw Error('Battery history must never reach Telegram');},1,db,[900099])).sent,0);
+    assert.equal((await c.query(`SELECT status FROM ${schema}.management_contract_notifications WHERE id=$1`,[batteryNotice])).rows[0].status,'pending');
     const transferChecks=await require('./check-vehicle-transfer-telegram.cjs')(db,c,schema,notices);
     // A missing/disabled ownership route never falls back to the physical branch or the other ownership group.
     await save([{...groups[1],enabled:false}]);
@@ -69,6 +80,7 @@ module.exports=async function checkOwnershipTelegram(db,c,schema,notices){
     await save(groups);assert.equal((await notices.dispatchContractNotifications(async()=>{throw Error('Configuration change must not replay waiting history');},1,db,[900002])).sent,0);
     const same=(await service.readContractTelegram(db,900003,143,{access_role:'admin'})).state;assert(same.events.every(event=>event.unchanged&&!event.can_send));
     return ['Ownership rental/reservation/handover/return and renewals route to two distinct groups/topics, including ownership_cd, ownership branches and legacy drafts; ordinary rentals and battery swaps stay scoped',
-      'Settings validate ownership routes, reject duplicate destinations atomically and preserve them for older clients; disabled/missing routes wait without fallback or automatic replay; sent content remains deduplicated',...transferChecks];
+      'Settings validate ownership routes, reject duplicate destinations atomically and preserve them for older clients; disabled/missing routes wait without fallback or automatic replay; sent content remains deduplicated',
+      'Legacy battery history is excluded from ownership previews and actual outbox dispatch, including previously queued manual notifications',...transferChecks];
   }finally{Object.defineProperties(owner,descriptors);await c.query('ROLLBACK TO SAVEPOINT ownership_telegram_cases');await c.query('RELEASE SAVEPOINT ownership_telegram_cases');}
 };

@@ -7,13 +7,13 @@ import { formatDateTime } from '@/lib/formatters';
 import { normalize } from '@/lib/management/table-utils';
 import type { ManagementRow } from '@/lib/management/types';
 
-interface VehicleRental { order_id: number; code: string; status: string; customer: string; return_at: string | null }
+interface VehicleRental { order_id: number; code: string; status: string; customer?: string; store_name?: string; return_at: string | null }
 type Tone = 'ok' | 'warn' | 'danger';
 export interface VehicleAvailability { tone: Tone; label: string; detail: string }
 
 const RENTAL_LABELS: Record<string, string> = {
   renting: 'Đang được thuê', overdue: 'Quá hạn chưa trả', wait_payment: 'Hợp đồng cũ chưa đóng (chờ thanh toán)',
-  pending: 'Đã đặt, chờ giao xe', deposit_contract: 'Đã đặt cọc giữ xe',
+  pending: 'Đã đặt, chờ giao xe', deposit_contract: 'Đã đặt cọc giữ xe', bad_debt: 'Hợp đồng cũ chưa đóng (nợ xấu)',
 };
 const TONE_ORDER: Record<Tone, number> = { ok: 0, warn: 1, danger: 2 };
 const MAX_OPTIONS = 60;
@@ -28,9 +28,9 @@ export function vehicleAvailability(vehicle: ManagementRow, ownOrderId?: number)
   const others = all.filter(rental => rental.order_id !== ownOrderId);
   if (others.length) {
     const [rental] = others;
-    const more = others.length > 1 ? ` (+${others.length - 1} hợp đồng khác)` : '';
     return { tone: 'danger', label: RENTAL_LABELS[rental.status] || 'Đang có hợp đồng mở',
-      detail: `HĐ ${rental.code} · ${rental.customer || 'Chưa rõ khách'} · hẹn trả ${formatReturn(rental.return_at)}${more}` };
+      detail: others.map(item => [`HĐ ${item.code}`, item.store_name, RENTAL_LABELS[item.status], item.customer, `hẹn trả ${formatReturn(item.return_at)}`].filter(Boolean).join(' · ')).join('; ')
+        + '. Hoàn tất hợp đồng cũ trước khi chọn xe.' };
   }
   if (all.length) return { tone: 'ok', label: 'Xe của hợp đồng này', detail: '' };
   if (vehicle.status === 'ready') return { tone: 'ok', label: 'Lưu kho', detail: '' };
@@ -50,15 +50,18 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
   const selected = vehicles.find(item => String(item.id) === value);
   const ranked = useMemo(() => vehicles
     .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId) }))
-    .filter(({ item, availability }) => availability.tone === 'ok' || String(item.id) === value)
     .sort((a, b) => TONE_ORDER[a.availability.tone] - TONE_ORDER[b.availability.tone] || String(a.item.name).localeCompare(String(b.item.name), 'vi')),
-  [vehicles, ownOrderId, value]);
+  [vehicles, ownOrderId]);
   const term = normalize(query);
-  const matches = term ? ranked.filter(({ item }) => normalize(`${item.name} ${item.license} ${item.brand || ''} ${item.store_name || ''}`).includes(term)) : ranked;
+  const plateTerm = term.replace(/[^a-z0-9]/g, '');
+  const matches = term ? ranked.filter(({ item }) => normalize(`${item.name} ${item.license} ${item.brand || ''} ${item.store_name || ''}`).includes(term)
+    || Boolean(plateTerm) && normalize(String(item.license || '')).replace(/[^a-z0-9]/g, '').includes(plateTerm)) : ranked;
   const shown = matches.slice(0, MAX_OPTIONS);
   const selectedAvailability = selected ? vehicleAvailability(selected, ownOrderId) : null;
 
   function choose(next: string) {
+    const vehicle = vehicles.find(item => String(item.id) === next);
+    if (next && (!vehicle || vehicleAvailability(vehicle, ownOrderId).tone !== 'ok' || takenIds.includes(next) && next !== value)) return;
     onChange(next);
     setQuery(''); setOpen(false); setActive(0);
   }
@@ -93,8 +96,10 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
       {shown.map(({ item, availability }, position) => {
         const price = monthly ? item.monthly_price : item.daily_price;
         const taken = takenIds.includes(String(item.id)) && String(item.id) !== value;
+        const unavailable = availability.tone !== 'ok' || taken;
         return <div key={item.id} id={`${listId}-${item.id}`} role="option" aria-selected={String(item.id) === value}
-          className={`mg-vehicle-option${String(item.id) === value ? ' is-selected' : ''}${position === active ? ' is-active' : ''}`}
+          aria-disabled={unavailable}
+          className={`mg-vehicle-option${unavailable ? ' is-disabled' : ''}${String(item.id) === value ? ' is-selected' : ''}${position === active ? ' is-active' : ''}`}
           onMouseDown={event => event.preventDefault()} onMouseEnter={() => setActive(position)} onClick={() => choose(String(item.id))}>
           <div className="mg-vehicle-option-main"><strong>{item.name} · {item.license}</strong>
             <span className={`mg-vehicle-badge is-${availability.tone}`}>{availability.label}</span></div>
@@ -103,7 +108,6 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
         </div>;
       })}
       {!vehicles.length && <small>Cửa hàng đã chọn chưa có xe.</small>}
-      {vehicles.length > 0 && !ranked.length && <small>Không có xe Lưu kho sẵn sàng cho thuê.</small>}
       {ranked.length > 0 && !matches.length && <small>Không có xe phù hợp khớp từ khóa.</small>}
       {matches.length > shown.length && <small>Còn {matches.length - shown.length} xe nữa, gõ thêm để thu hẹp.</small>}
     </div>}

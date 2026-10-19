@@ -1,4 +1,5 @@
 import 'server-only';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import { ContractFinalizeError } from './contract-finalize';
 import { readPaymentContext } from './contract-payments';
@@ -33,7 +34,7 @@ export async function handoverReservation(client: Database, id: number, actorId:
       LEFT JOIN himoto.stores s ON s.id=o.store_id
       LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
       LEFT JOIN himoto.users mu ON mu.id=s.user_id
-      WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND o.deleted_at IS NULL
+      WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
         AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') ORDER BY v.license`,[vehicleIds,id]);
   if (conflicts.rowCount) {
     throw new ContractFinalizeError(`Xe đang thuộc đơn khác: ${conflicts.rows.map(row => {

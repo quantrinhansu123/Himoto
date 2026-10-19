@@ -13,6 +13,7 @@ import type { ContractDraft } from '@/lib/management/contract-document';
 import { dataAccess } from './access-context';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
@@ -88,7 +89,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
     FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
     WHERE d.deleted_at IS NULL GROUP BY d.order_id
   ) ov ON ov.order_id=o.id
-  WHERE o.deleted_at IS NULL`; }
+  WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`; }
 
 export const CONTRACT_LIST_SQL = contractListSql();
 /** Filtering/summary fields only. Full document/customer/vehicle details are hydrated for the selected page. */

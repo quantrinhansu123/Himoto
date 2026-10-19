@@ -17,6 +17,7 @@ import { VEHICLE_GPS_JOIN_SQL } from '@/lib/server/vehicle-gps-query';
 import { normalizeCustomerLookup, validCustomerLookup } from '@/lib/management/contract-document';
 import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
+import { VEHICLE_ORDER_SQL } from '@/lib/server/contract-classification';
 
 export const runtime = 'nodejs';
 
@@ -39,17 +40,22 @@ const listQueries: Record<string, QueryConfig> = {
     sql: `${STORE_SELECT_SQL} ORDER BY s.id`,
   },
   'vehicle/vehicles': {
-    sql: `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
+    sql: `WITH rental_blockers AS MATERIALIZED (
+            SELECT vehicle_id,jsonb_agg(jsonb_build_object('order_id',order_id,'code',code,'status',status,'store_name',store_name,'return_at',return_at) ORDER BY order_id DESC) AS rentals
+            FROM himoto.vehicle_rental_blockers(ARRAY(SELECT id FROM himoto.vehicles WHERE COALESCE(current_store_id,store_id)>0))
+            GROUP BY vehicle_id
+          ) SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, v.xmin::text AS vehicle_revision,
                  pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
                  pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
                  pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
-                 r.rentals, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
+                 r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  gps.has_device AS gps_has_device,
                  gps.normalized_status AS gps_normalized_status,
                  gps.last_at AS gps_last_at,gps.latitude AS gps_latitude,gps.longitude AS gps_longitude,gps.synced_at AS gps_last_sync,gps.provider AS gps_provider,
                  gps.heartbeat_at AS gps_heartbeat_at,gps.position_recorded_at AS gps_position_at,gps.provider_reported_at AS gps_reported_at,gps.last_ignition AS gps_ignition
           FROM himoto.vehicles v
+          LEFT JOIN rental_blockers blockers ON blockers.vehicle_id=v.id
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
           ${VEHICLE_TRANSFER_JOIN_SQL}
           LEFT JOIN LATERAL (
@@ -61,7 +67,7 @@ const listQueries: Record<string, QueryConfig> = {
             FROM himoto.order_vehicle_details d
             JOIN himoto.orders o ON o.id = d.order_id
             LEFT JOIN himoto.customers c ON c.id = o.customer_id
-            WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+            WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
               AND o.order_status IN ('renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract')
           ) r ON true
           LEFT JOIN LATERAL (

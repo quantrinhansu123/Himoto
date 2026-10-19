@@ -6,6 +6,7 @@ import { openIntegrationSecret } from './integration-secrets';
 import { telegramCall, telegramMediaBatches, requireTelegramTime, TelegramContinuation, TelegramDeliveryError, TELEGRAM_DISPATCH_BUDGET_MS, TELEGRAM_MEDIA_TIMEOUT_MS, TELEGRAM_TEXT_TIMEOUT_MS } from './telegram-delivery';
 import { copyContractCustomerPhotos } from './contract-customer-photos';
 import { CONTRACT_TELEGRAM_ROUTE_SQL } from './contract-telegram-routing';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 
 import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
@@ -39,6 +40,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
           WHERE route=${CONTRACT_TELEGRAM_ROUTE_SQL} AND enabled
       ) g ON true
       WHERE n.status='pending' AND n.delivery_mode='manual' AND ($1::bigint[] IS NULL OR n.order_id=ANY($1))
+        AND (n.order_id IS NULL OR ${VEHICLE_ORDER_SQL})
         AND ($3::bigint[] IS NULL OR n.vehicle_event_id=ANY($3))
         AND (g.chat_id IS NULL OR NOT EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases l
           WHERE l.chat_id=g.chat_id AND l.thread_id=COALESCE(g.thread_id,0) AND l.notice_id<>n.id

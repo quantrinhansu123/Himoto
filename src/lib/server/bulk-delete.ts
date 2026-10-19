@@ -1,4 +1,5 @@
 import 'server-only';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import { deleteDatabaseStore, StoreSaveError } from './store-management';
 import { referenceColumns } from './vehicle-import';
@@ -96,7 +97,7 @@ async function deleteContracts(client: Client, ids: number[]) {
   if (released.length) await client.query(`UPDATE himoto.vehicles v SET status = 'ready', updated_at = now()
     WHERE v.id = ANY($1::bigint[]) AND v.status = 'using' AND NOT EXISTS (
       SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id = d.order_id
-      WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND o.order_status = ANY($2::text[]))`, [released, OPEN_STATUSES]);
+      WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status = ANY($2::text[]))`, [released, OPEN_STATUSES]);
 }
 
 // Hard delete. Receipts recorded against a contract are taken back out of its collected amount (and out

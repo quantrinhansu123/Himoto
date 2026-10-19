@@ -1646,6 +1646,10 @@
 .mg-vehicle-option > span { color: var(--mg-slate-500); font-size: 12px; }
 .mg-vehicle-option > em { color: var(--mg-red-text); font-size: 12px; font-style: normal; }
 .mg-vehicle-option.is-active { background: var(--mg-slate-50); }
+.mg-vehicle-option.is-disabled { cursor: not-allowed; background: var(--mg-slate-50); }
+.mg-vehicle-option.is-disabled strong { color: var(--mg-slate-500); }
+.mg-vehicle-option-main strong { min-width: 0; overflow-wrap: anywhere; }
+.mg-vehicle-option-main { flex-wrap: wrap; }
 .mg-vehicle-option.is-selected {
   background: var(--mg-brand-50);
   box-shadow: inset 3px 0 0 var(--mg-brand-600);

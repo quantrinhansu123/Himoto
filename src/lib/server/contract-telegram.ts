@@ -7,6 +7,7 @@ import { hasPermission, type PermissionAccount } from '@/lib/management/permissi
 import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
 import { contractPhotoLabel } from '@/lib/management/contract-photos';
 import { OWNERSHIP_ORDER_SQL,contractTelegramDestination } from './contract-telegram-routing';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
 
 type Database=Pick<PoolClient,'query'>;
 interface Event {key:string;kind:ContractEventType;phases:string[];payload?:NotificationPayload;renewal?:RenewalNotice}
@@ -16,7 +17,7 @@ export function canSendContractEvent(user:PermissionAccount,kind:ContractEventTy
 }
 export async function readContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount) {
   const o=(await db.query(`SELECT o.store_id,o.order_status,o.contract_number,o.draft_payload,s.store_name,${OWNERSHIP_ORDER_SQL} AS ownership
-    FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL`,[id])).rows[0];
+    FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`,[id])).rows[0];
   if(!o)throw new ContractTelegramError('Không tìm thấy hợp đồng.',404);
   const notices=(await db.query(`SELECT id,event_key,root_event_key,event_type,photo_phases,photo_slots,payload,content_hash,status,sent_at,delivery_mode
     ,error_code,message_ids FROM himoto.management_contract_notifications WHERE order_id=$1 ORDER BY created_at DESC,id`,[id])).rows;
