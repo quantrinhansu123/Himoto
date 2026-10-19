@@ -25,11 +25,23 @@ export async function handoverReservation(client: Database, id: number, actorId:
     WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY v.id FOR UPDATE OF d,v`,[id]);
   if (!items.rowCount || items.rows.some(row=>row.status!=='ready')) throw new ContractFinalizeError('Xe phải đang Lưu kho và đã được cơ sở nhận xác nhận trước khi giao.',409);
   const vehicleIds = items.rows.map(row=>Number(row.vehicle_id));
-  const conflicts = await client.query(`SELECT d.id FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-    WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND o.deleted_at IS NULL
-      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt')`,[vehicleIds,id]);
-  if (conflicts.rowCount) throw new ContractFinalizeError('Xe đang thuộc đơn khác. Kiểm tra lại trước khi giao.',409);
-  if(dataAccess.getStore()&&(await client.query('SELECT EXISTS(SELECT 1 FROM unnest($1::bigint[]) AS v(id) WHERE himoto.vehicle_has_other_rental(v.id,$2)) AS blocked',[vehicleIds,id])).rows[0]?.blocked)throw new ContractFinalizeError('Xe đang thuộc đơn khác. Kiểm tra lại trước khi giao.',409);
+  const conflicts = dataAccess.getStore()
+    ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts($1::bigint[],$2)', [vehicleIds, id])
+    : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code, s.store_name,
+        COALESCE(cu.name, mu.name, '') AS manager_name
+      FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
+      LEFT JOIN himoto.stores s ON s.id=o.store_id
+      LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
+      LEFT JOIN himoto.users mu ON mu.id=s.user_id
+      WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND o.deleted_at IS NULL
+        AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') ORDER BY v.license`,[vehicleIds,id]);
+  if (conflicts.rowCount) {
+    throw new ContractFinalizeError(`Xe đang thuộc đơn khác: ${conflicts.rows.map(row => {
+      const store = String(row.store_name || '').trim();
+      const manager = String(row.manager_name || '').trim();
+      return `xe ${row.license} · hợp đồng ${row.code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}`;
+    }).join('; ')}. Kiểm tra lại trước khi giao.`,409);
+  }
   const payload = order.draft_payload || {}, composer = payload.management_composer || {};
   const next = {...payload,management_composer:{...composer,draft:{...composer.draft,reservation:false},handover:{at:new Date().toISOString(),actor_id:actorId}}};
   await client.query(`UPDATE himoto.orders SET order_status='renting',draft_payload=$2,updated_at=now() WHERE id=$1`,[id,JSON.stringify(next)]);

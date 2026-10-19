@@ -97,12 +97,21 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
   if(scope&&!scope.scope_all&&Number(vehicle.store_id)!==scope.store_id)throw new VehicleActionError('Chỉ được thao tác xe tại cơ sở được phân quyền.',403);
   if (input.revision && input.revision !== vehicle.revision) throw new VehicleActionError('Thông tin xe đã thay đổi. Nhấn Làm mới rồi thao tác lại.', 409);
   if(vehicle.status==='in_transit'&&input.action==='status')throw new VehicleActionError('Xe đang Chờ luân chuyển. Cơ sở đích cần dùng Xác nhận nhận xe trước khi đổi trạng thái.',409);
-  if(scope&&(await client.query('SELECT himoto.vehicle_has_other_rental($1,NULL) AS blocked',[vehicleId])).rows[0]?.blocked)throw new VehicleActionError('Xe đang thuộc hợp đồng chưa đóng. Hoàn tất hợp đồng cũ trước khi thao tác.',409);
-  const open = await client.query(`SELECT COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) AS code
-    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-    WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND o.deleted_at IS NULL
-      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`, [vehicleId]);
-  if (open.rowCount) throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}. Trả xe trên hợp đồng trước khi ${input.action === 'transfer' ? 'chuyển xe' : input.action==='receive'?'nhận xe':'đổi trạng thái'}.`, 409);
+  const open = scope
+    ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts(ARRAY[$1::bigint],NULL) LIMIT 1', [vehicleId])
+    : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) AS code, s.store_name,
+        COALESCE(cu.name, mu.name, '') AS manager_name
+      FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
+      LEFT JOIN himoto.stores s ON s.id=o.store_id
+      LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
+      LEFT JOIN himoto.users mu ON mu.id=s.user_id
+      WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND o.deleted_at IS NULL
+        AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`, [vehicleId]);
+  if (open.rowCount) {
+    const store = String(open.rows[0].store_name || '').trim();
+    const manager = String(open.rows[0].manager_name || '').trim();
+    throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}. Trả xe trên hợp đồng trước khi ${input.action === 'transfer' ? 'chuyển xe' : input.action==='receive'?'nhận xe':'đổi trạng thái'}.`, 409);
+  }
   if(input.action==='receive') {
     if(vehicle.status!=='in_transit')throw new VehicleActionError('Xe không còn Chờ luân chuyển hoặc đã được nhận. Nhấn Làm mới để kiểm tra.',409);
     const transfer=await readPendingVehicleTransfer(client,vehicleId);

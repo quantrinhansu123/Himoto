@@ -92,6 +92,7 @@ async function main(){const c=await pool.connect();try{
   assert.equal((await c.query("SELECT count(*)::int AS n FROM qa_access_scope.vehicle_location_events WHERE vehicle_id=91001 AND event_type IN ('manual_transfer','manual_transfer_receive')")).rows[0].n,2);
   checks.push('Real transfer and distinct destination-receiver services retain both audit events under RLS');
   await c.query('RESET ROLE');
+  await c.query('UPDATE qa_access_scope.stores SET user_id=70002 WHERE id=80002');
   await c.query("INSERT INTO qa_access_scope.orders(id,store_id,customer_id,order_status,pid,total,contract_number) VALUES(92002,80002,90002,'renting',0,'100','QA-PRIVATE-B')");
   await c.query('INSERT INTO qa_access_scope.order_vehicle_details(order_id,vehicle_id) VALUES(92002,91001)');
   await c.query("INSERT INTO qa_access_scope.orders(id,store_id,customer_id,order_status,order_mode,pid,total,draft_reference,draft_payload) VALUES(92003,80001,90001,'draft','draft',0,'0','NHAP-QA-3',$1)",[JSON.stringify(draft)]);
@@ -100,8 +101,8 @@ async function main(){const c=await pool.connect();try{
   assert.equal((await c.query("SELECT qa_access_scope.contract_number_available('QA-PRIVATE-B',92003) AS available")).rows[0].available,false);
   assert.equal((await c.query('SELECT id FROM qa_access_scope.orders WHERE id=92002')).rowCount,0);
   checks.push('Paper contract numbers detect duplicates in hidden branches using a boolean-only function without exposing other-branch records');
-  await assert.rejects(dataAccess.run({...scope,id:70001,store_id:80001},async()=>finalize(proxy,92003,70001,{revision:await revision('orders',92003),paid_at:paidAt,deposit:null,rental:null})),e=>e.status===409&&!e.message.includes('QA-PRIVATE-B'));
-  checks.push('A hidden other-branch open contract still prevents double rental without exposing its code or customer');
+  await assert.rejects(dataAccess.run({...scope,id:70001,store_id:80001},async()=>finalize(proxy,92003,70001,{revision:await revision('orders',92003),paid_at:paidAt,deposit:null,rental:null})),e=>e.status===409&&/QA-PRIVATE-B/.test(e.message)&&/Cơ sở B QA/.test(e.message)&&/Người nhận QA/.test(e.message)&&!/Khách B QA/.test(e.message));
+  checks.push('A hidden other-branch open contract blocks double rental and names the contract, store and manager without exposing the customer');
   await c.query('RESET ROLE');
   const customerMigration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-cross-branch-customer-lookup.sql'),'utf8')
     .replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope')

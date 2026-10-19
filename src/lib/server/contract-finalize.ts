@@ -116,12 +116,22 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
     WHERE v.id = ANY($1::bigint[]) ORDER BY v.id FOR UPDATE OF v`, [vehicleIds]);
   if (vehicles.rowCount !== vehicleIds.length) throw new ContractFinalizeError('Có xe trong bản nháp không còn tồn tại.', 409);
-  const conflicts = await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code
-    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
-    WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.deleted_at IS NULL
-      AND o.deleted_at IS NULL AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
-  if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(row => `xe ${row.license} đang thuộc hợp đồng ${row.code}`).join('; ')} chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.`, 409);
-  if(dataAccess.getStore()&&(await client.query('SELECT EXISTS(SELECT 1 FROM unnest($1::bigint[]) AS v(id) WHERE himoto.vehicle_has_other_rental(v.id,$2)) AS blocked',[vehicleIds,id])).rows[0]?.blocked)throw new ContractFinalizeError('Có xe đang thuộc hợp đồng chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.',409);
+  const conflictLabel = (row: { license: string; code: string; store_name?: string | null; manager_name?: string | null }) => {
+    const store = String(row.store_name || '').trim();
+    const manager = String(row.manager_name || '').trim();
+    return `xe ${row.license} đang thuộc hợp đồng ${row.code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}`;
+  };
+  const conflicts = dataAccess.getStore()
+    ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts($1::bigint[],$2)', [vehicleIds, id])
+    : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code, s.store_name,
+        COALESCE(cu.name, mu.name, '') AS manager_name
+      FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
+      LEFT JOIN himoto.stores s ON s.id=o.store_id
+      LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
+      LEFT JOIN himoto.users mu ON mu.id=s.user_id
+      WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.deleted_at IS NULL
+        AND o.deleted_at IS NULL AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
+  if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(conflictLabel).join('; ')} chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.`, 409);
   const notStored = vehicles.rows.filter(row => row.status!=='ready');
   if (notStored.length) throw new ContractFinalizeError(`Xe ${notStored.map(row => row.license).join(', ')} phải ở trạng thái Lưu kho. Đóng hợp đồng cũ và xác nhận nhận xe trước khi phát hành hợp đồng mới.`, 409);
   for (const line of lines) {
