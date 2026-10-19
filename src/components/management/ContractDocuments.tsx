@@ -5,7 +5,7 @@ import { copyCustomerPhotosToContract,photoEndpoint,type SavedPhoto } from '@/li
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { ContractWorkflowGuide,type ContractWorkflow } from './ContractWorkflowGuide';
 
-export function ContractDocuments({id,phase,onPendingChange,workflow}:{id:number;phase:ContractPhotoPhase;workflow?:ContractWorkflow;onPendingChange?:(pending:boolean)=>void}) {
+export function ContractDocuments({id,phase,onPendingChange,onSaved,workflow}:{id:number;phase:ContractPhotoPhase;workflow?:ContractWorkflow;onPendingChange?:(pending:boolean)=>void;onSaved?:()=>void}) {
   const slots=useMemo(()=>contractDocumentSlots(phase),[phase]);
   const [importing,setImporting]=useState(phase==='rental'),[pending,setPending]=useState(false),[error,setError]=useState(''),[version,setVersion]=useState(0),[photos,setPhotos]=useState<SavedPhoto[]>([]);
   const callback=useRef(onPendingChange);callback.current=onPendingChange;
@@ -36,6 +36,6 @@ export function ContractDocuments({id,phase,onPendingChange,workflow}:{id:number
       {error&&<p className="mg-field-error" role="alert">{error}</p>}
     </div>}
     <ContractWorkflowGuide workflow={workflow||(phase.startsWith('return-')?'return':phase.startsWith('renewal-')?'renewal':phase==='handover'?'handover':'rental')}/>
-    <SavedRecordPhotos entity="contracts" recordId={id} slots={slots} title="Ảnh hồ sơ bổ sung · riêng với ảnh xe" onPendingChange={setPending} bulkImageLabel="Tải thêm loạt ảnh hồ sơ hợp đồng" bulkPosition="bottom"/>
+    <SavedRecordPhotos entity="contracts" recordId={id} slots={slots} title="Ảnh hồ sơ bổ sung · riêng với ảnh xe" onPendingChange={setPending} onSaved={onSaved} bulkImageLabel="Tải thêm loạt ảnh hồ sơ hợp đồng" bulkPosition="bottom"/>
   </section>;
 }

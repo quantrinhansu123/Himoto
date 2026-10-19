@@ -83,36 +83,47 @@ export function StaffOrganizationChart() {
     if (person.status === 'leave') setShowDeparted(true);
     setTarget({ person, mode: 'view' });
   }
+  const searchField = (
+    <div className="mg-org-staff-search" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) { setSuggestOpen(false); setActiveSuggest(-1); } }}>
+      <label className="mg-search" htmlFor="staff-org-search"><Search size={17} /><span className="mg-sr-only">Tìm nhân sự</span>
+        <input id="staff-org-search" type="search" role="combobox" aria-expanded={suggestOpen} aria-controls={listId} aria-autocomplete="list"
+          aria-activedescendant={suggestOpen && suggestions[activeSuggest] ? `${listId}-${activeSuggest}` : undefined}
+          placeholder="Tìm nhân sự theo mã, tên hoặc số điện thoại…" value={search} autoComplete="off"
+          onFocus={() => setSuggestOpen(true)}
+          onChange={event => { setSearch(event.target.value); setSuggestOpen(true); setActiveSuggest(-1); }}
+          onKeyDown={event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault(); setSuggestOpen(true);
+              setActiveSuggest(current => !suggestions.length ? -1 : current < 0 ? (event.key === 'ArrowDown' ? 0 : suggestions.length - 1) : (current + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length);
+            } else if (event.key === 'Enter' && suggestOpen && suggestions[activeSuggest]) { event.preventDefault(); pickStaff(suggestions[activeSuggest]); }
+            else if (event.key === 'Escape' && suggestOpen) { event.preventDefault(); setSuggestOpen(false); setActiveSuggest(-1); }
+          }} />
+        {search && <button type="button" aria-label="Xóa từ khóa" onClick={() => { setSearch(''); setSuggestOpen(false); setActiveSuggest(-1); }}><X size={15} /></button>}
+      </label>
+      {suggestOpen && search.trim() && <div className="mg-org-search-popup" id={listId} role="listbox" aria-label="Gợi ý nhân sự">
+        {suggestions.length ? suggestions.map((person, index) => {
+          const name = person.name || '—';
+          const meta = [person.code, normalizeStaffPosition(person.position) || person.position, person.store_name || 'Trụ sở công ty', person.phone].filter(Boolean).join(' · ');
+          return <button type="button" role="option" id={`${listId}-${index}`} key={person.id} className={activeSuggest === index ? 'is-active' : ''}
+            aria-selected={activeSuggest === index} onMouseDown={event => event.preventDefault()} onClick={() => pickStaff(person)}>
+            <strong>{name}</strong><span>{meta}</span>
+          </button>;
+        }) : <p className="mg-org-search-empty">Không tìm thấy nhân sự phù hợp.</p>}
+      </div>}
+    </div>
+  );
   return <section className="mg-org-section" aria-labelledby="staff-org-title">
-    <div className="mg-org-heading"><div><span className="mg-eyebrow">CƠ CẤU TỔ CHỨC</span><h2 id="staff-org-title">Sơ đồ nhân sự</h2><p>Nhân sự và cơ sở theo dữ liệu hiện tại trên hệ thống. Xem, sửa hoặc xóa trực tiếp trên từng thẻ nhân sự.</p></div>
-      <div className="mg-org-heading-actions">
-        <div className="mg-org-staff-search" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) { setSuggestOpen(false); setActiveSuggest(-1); } }}>
-          <label className="mg-search" htmlFor="staff-org-search"><Search size={17} /><span className="mg-sr-only">Tìm nhân sự</span>
-            <input id="staff-org-search" type="search" role="combobox" aria-expanded={suggestOpen} aria-controls={listId} aria-autocomplete="list"
-              aria-activedescendant={suggestOpen && suggestions[activeSuggest] ? `${listId}-${activeSuggest}` : undefined}
-              placeholder="Tìm mã, tên hoặc số điện thoại…" value={search} autoComplete="off"
-              onFocus={() => setSuggestOpen(true)}
-              onChange={event => { setSearch(event.target.value); setSuggestOpen(true); setActiveSuggest(-1); }}
-              onKeyDown={event => {
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                  event.preventDefault(); setSuggestOpen(true);
-                  setActiveSuggest(current => !suggestions.length ? -1 : current < 0 ? (event.key === 'ArrowDown' ? 0 : suggestions.length - 1) : (current + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length);
-                } else if (event.key === 'Enter' && suggestOpen && suggestions[activeSuggest]) { event.preventDefault(); pickStaff(suggestions[activeSuggest]); }
-                else if (event.key === 'Escape' && suggestOpen) { event.preventDefault(); setSuggestOpen(false); setActiveSuggest(-1); }
-              }} />
-            {search && <button type="button" aria-label="Xóa từ khóa" onClick={() => { setSearch(''); setSuggestOpen(false); setActiveSuggest(-1); }}><X size={15} /></button>}
-          </label>
-          {suggestOpen && search.trim() && <div className="mg-org-search-popup" id={listId} role="listbox" aria-label="Gợi ý nhân sự">
-            {suggestions.length ? suggestions.map((person, index) => {
-              const name = person.name || '—';
-              const meta = [person.code, normalizeStaffPosition(person.position) || person.position, person.store_name || 'Trụ sở công ty', person.phone].filter(Boolean).join(' · ');
-              return <button type="button" role="option" id={`${listId}-${index}`} key={person.id} className={activeSuggest === index ? 'is-active' : ''}
-                aria-selected={activeSuggest === index} onMouseDown={event => event.preventDefault()} onClick={() => pickStaff(person)}>
-                <strong>{name}</strong><span>{meta}</span>
-              </button>;
-            }) : <p className="mg-org-search-empty">Không tìm thấy nhân sự phù hợp.</p>}
-          </div>}
+    <div className="mg-org-heading">
+      <div className="mg-org-heading-copy">
+        <span className="mg-eyebrow">CƠ CẤU TỔ CHỨC</span>
+        <h2 id="staff-org-title">Sơ đồ nhân sự</h2>
+        <p>Nhân sự và cơ sở theo dữ liệu hiện tại trên hệ thống. Xem, sửa hoặc xóa trực tiếp trên từng thẻ nhân sự.</p>
+        <div className="mg-org-toolbar" role="search" aria-label="Tìm nhân sự trên sơ đồ">
+          {searchField}
+          {search.trim() && <span className="mg-org-search-count" aria-live="polite"><strong>{shown.length}</strong> nhân sự khớp</span>}
         </div>
+      </div>
+      <div className="mg-org-heading-actions">
         <label><input type="checkbox" checked={showDeparted} onChange={event => setShowDeparted(event.target.checked)} />Hiện nhân sự đã nghỉ việc</label>
         <button type="button" className="mg-button" disabled={loading || refreshing} onClick={() => void reload()}><RotateCcw size={16} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>
       </div>

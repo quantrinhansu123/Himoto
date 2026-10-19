@@ -118,7 +118,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [editing, setEditing] = useState<ManagementRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
-  const [createStaffOpen, setCreateStaffOpen] = useState(false);
+  const [staffDialog, setStaffDialog] = useState<{ row: ManagementRow | null; mode: 'view' | 'edit' | 'delete' | 'create' } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagementRow | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -180,10 +180,16 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const columns = config.columns.filter(c => visibleKeys.includes(c.key));
   const statusOptions = [...config.statuses, ...Array.from(new Set(paged?table.data?.statuses || []:rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || query.overdueDays.trim() || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
-  const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : false;
-  const canDelete = source === 'api' && can('settings.write') && (kind === 'customers' || kind === 'stores' || kind === 'vehicles');
+  const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : kind === 'staff' ? can('hr.write') : false;
+  const canDelete = source === 'api' && (
+    (kind === 'staff' && can('hr.write'))
+    || (can('settings.write') && (kind === 'customers' || kind === 'stores' || kind === 'vehicles'))
+  );
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
-  const canBulkDelete = source === 'api' && can('settings.write') && kind !== 'contracts';
+  const canBulkDelete = source === 'api' && (
+    (kind === 'staff' && can('hr.write'))
+    || (can('settings.write') && kind !== 'contracts' && kind !== 'staff')
+  );
   useEffect(() => {
     if(paged)return;
     setSelectedIds(current => {
@@ -254,9 +260,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
             { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => setVehicleAction({ mode: 'transfer', vehicle: null }) },
             { key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => setVehicleAction({ mode: 'status', vehicle: null }) },
           ]} />}
-          {(canEdit || kind === 'staff' && can('hr.write')) && <button type="button" className="mg-button mg-button-primary mg-page-add" disabled={loading || Boolean(error)} onClick={() => {
+          {canEdit && <button type="button" className="mg-button mg-button-primary mg-page-add" disabled={loading || Boolean(error)} onClick={() => {
             if (kind === 'customers' && source === 'api') setCreateCustomerOpen(true);
-            else if (kind === 'staff') setCreateStaffOpen(true);
+            else if (kind === 'staff') setStaffDialog({ row: null, mode: 'create' });
             else { setEditing(null); setFormOpen(true); }
           }}><Plus size={18} />{config.addLabel}</button>}
           {(kind === 'stores' || kind === 'vehicles' || kind === 'customers') && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
@@ -292,8 +298,17 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         {kind === 'contracts' && <ContractSummary values={paged?table.data?.summary:undefined} rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset} />}
         {kind === 'customers' && blacklistError && <p className="mg-blacklist-error" role="alert">{blacklistError}</p>}
         <DataTable config={config} columns={columns} rows={paged ? filteredRows : filteredRows.slice(offset, offset + pageSize)} offset={offset} sortKey={sort.key} sortDirection={sort.direction}
-          onSort={key => { setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }} onView={view} onEdit={row => { if (kind === 'contracts') { setPrintRow(row); setComposerMode(row.status === 'draft' ? 'draft' : 'edit'); setComposerOpen(true); } else { setEditing(row); setFormOpen(true); } }}
-          onDelete={canDelete ? row => { setDeleteTarget(row); setDeleteError(''); } : undefined} canDelete={canDelete}
+          onSort={key => { setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }}
+          onView={row => { if (kind === 'staff') setStaffDialog({ row, mode: 'view' }); else view(row); }}
+          onEdit={row => {
+            if (kind === 'contracts') { setPrintRow(row); setComposerMode(row.status === 'draft' ? 'draft' : 'edit'); setComposerOpen(true); }
+            else if (kind === 'staff') setStaffDialog({ row, mode: 'edit' });
+            else { setEditing(row); setFormOpen(true); }
+          }}
+          onDelete={canDelete ? row => {
+            if (kind === 'staff') setStaffDialog({ row, mode: 'delete' });
+            else { setDeleteTarget(row); setDeleteError(''); }
+          } : undefined} canDelete={canDelete}
           blacklistBusyId={blacklistBusyId} onBlacklist={kind === 'customers' ? async row => {
             if (blacklistPending.current) return;
             blacklistPending.current = true; setBlacklistBusyId(row.id); setBlacklistError('');
@@ -326,8 +341,15 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       <div className="mg-list-note"><span className="mg-note-line" />{kind === 'contracts' ? canSaveContractDrafts ? 'Dữ liệu hiện tại từ Supabase. Bản nháp được lưu trên hệ thống để mở lại và tiếp tục sửa.' : 'Danh sách lấy từ hệ thống; chức năng ghi bản nháp chưa được kết nối.' : kind === 'customers' && source === 'api' ? 'Dữ liệu khách hàng được đọc và cập nhật trực tiếp trong Supabase. Hồ sơ có đơn thuê liên quan sẽ được bảo vệ khỏi thao tác xóa.' : kind === 'stores' ? 'Cơ sở được cập nhật trực tiếp trong Supabase. Chỉ xóa được cơ sở chưa có dữ liệu liên quan; có thể chọn Tạm ngừng để giữ lịch sử.' : kind === 'vehicles' ? 'Có thể đánh dấu Đang thuê trước khi nhập hợp đồng. Xe đã có hợp đồng mở phải trả xe trên hợp đồng; cơ sở giữ xe và cơ sở ghi nhận doanh thu được quản lý riêng.' : kind === 'staff' ? 'Nhân sự được thêm, sửa trực tiếp trong Supabase; mã nhân sự do hệ thống tự cấp. Nhân sự còn lịch trực hoặc dữ liệu liên quan được bảo vệ khỏi xóa.' : 'Các trường chưa được API cung cấp hiển thị “—”. Danh sách hiện chỉ đọc.'}</div>
     </div>
     {formOpen && kind === 'vehicles' ? <VehicleEditDialog row={editing} onClose={() => setFormOpen(false)} /> : formOpen && kind === 'stores' ? <StoreEditDialog row={editing} onSaved={() => { if (!editing) { setQuery(EMPTY_QUERY); setPage(1); } }} onClose={() => setFormOpen(false)} /> : formOpen && <EntityForm config={config} row={editing} onClose={() => setFormOpen(false)} />}
-    {createStaffOpen && kind === 'staff' && <StaffDialog row={null} mode="create" stores={dataset?.stores || EMPTY_ROWS} defaultStoreId={selectedStore === 'all' ? '' : selectedStore} onClose={() => setCreateStaffOpen(false)}
-      onChanged={async created => { if (created) notify(`Đã thêm nhân sự ${created.name}${created.code ? ` · ${created.code}` : ''}.`); await reload(['stores', 'staff']); }} />}
+    {staffDialog && kind === 'staff' && <StaffDialog key={`${staffDialog.mode}-${staffDialog.row?.id || 'new'}`} row={staffDialog.row} mode={staffDialog.mode}
+      stores={dataset?.stores || EMPTY_ROWS} defaultStoreId={selectedStore === 'all' ? '' : selectedStore}
+      onClose={() => setStaffDialog(null)}
+      onSwitch={mode => setStaffDialog(current => current && { ...current, mode })}
+      onChanged={async created => {
+        if (created) notify(`Đã thêm nhân sự ${created.name}${created.code ? ` · ${created.code}` : ''}.`);
+        else if (staffDialog.mode === 'delete' && staffDialog.row) notify(`Đã xóa nhân sự ${staffDialog.row.name}.`);
+        await reload(['stores', 'staff']);
+      }} />}
     {createCustomerOpen && kind === 'customers' && <CustomerCreateDialog idCard="" onCreated={() => setCreateCustomerOpen(false)} onClose={() => setCreateCustomerOpen(false)} />}
     {deleteTarget && canDelete && <Dialog title={kind === 'stores' ? 'Xóa cơ sở?' : kind === 'vehicles' ? 'Xóa xe?' : 'Xóa hồ sơ khách hàng?'} subtitle={kind === 'vehicles' ? `${deleteTarget.name} · ${deleteTarget.license || deleteTarget.code}` : `${deleteTarget.name} · ${deleteTarget.code}`} onClose={() => { if (!deleteBusy) { setDeleteTarget(null); setDeleteError(''); } }}>
       <div className="mg-dialog-body"><p>{kind === 'stores' ? 'Chỉ xóa cơ sở chưa có xe, nhân sự, khách hàng, hợp đồng, giao dịch hoặc dữ liệu liên quan. Cơ sở đã được sử dụng sẽ được giữ lại để bảo toàn lịch sử.' : kind === 'vehicles' ? 'Xe sẽ bị xóa hẳn khỏi Supabase. Chỉ xóa được xe chưa từng nằm trong hợp đồng, bản nháp hoặc dữ liệu liên quan; xe đã dùng nên chuyển sang Đã bán hoặc Hỏng để giữ lịch sử.' : 'Thao tác này sẽ xóa hồ sơ khách hàng khỏi Supabase. Hồ sơ đang được dùng trong đơn thuê sẽ không thể xóa để bảo toàn lịch sử.'}</p>{deleteError && <p className="mg-error-message" role="alert">{deleteError}</p>}</div>

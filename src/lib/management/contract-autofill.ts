@@ -8,6 +8,8 @@ export interface ContractAutofillRepository {
   lookupCustomer(idCard: string, signal?: AbortSignal): Promise<ManagementRow | null>;
   searchCustomers(query: string, signal?: AbortSignal): Promise<ManagementRow[]>;
   loadStaff(storeId: string, signal?: AbortSignal): Promise<ManagementRow[]>;
+  /** All staff rows for NVKD commission (not filtered by branch). */
+  loadSalesStaff(signal?: AbortSignal): Promise<ManagementRow[]>;
   createCustomer(customer: CustomerDetails, assignment?: CustomerAssignment): Promise<ManagementRow>;
   updateCustomer(customer: ManagementRow): Promise<ManagementRow>;
   deleteCustomer(id: number): Promise<void>;
@@ -29,6 +31,7 @@ export function createDemoAutofillRepository(repository: ManagementRepository): 
       return dataset.customers.filter(row => ['id_card','phone','contact_detail'].some(key=>normalizeCustomerLookup(String(row[key]||''))===phone));
     },
     async loadStaff(storeId, signal) { signal?.throwIfAborted(); return staffMatchesStore((await repository.load()).staff, storeId); },
+    async loadSalesStaff(signal) { signal?.throwIfAborted(); return (await repository.load()).staff; },
     async createCustomer(customer, assignment) {
       const errors = assignment?.allow_incomplete ? validateOperationalCustomer(customer,'demo') : validateCustomer(customer, 'demo');
       if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
@@ -103,6 +106,11 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
         if (!rows.length) throw new Error('API nhân sự trả về trang rỗng trước khi tải đủ dữ liệu.');
       }
       throw new Error('Danh sách nhân sự vượt giới hạn tải.');
+    },
+    async loadSalesStaff(signal) {
+      const payload = await request('/auth/contract-staff', { method: 'GET', signal });
+      if (!Array.isArray(payload) || !payload.every(object)) throw new Error('API NVKD trả về dữ liệu chưa được hỗ trợ.');
+      return payload.map(row => mapApiRow('staff', row));
     },
     async createCustomer(customer, assignment) {
       const errors = assignment?.allow_incomplete ? validateOperationalCustomer(customer,'api') : validateCustomer(customer, 'api');

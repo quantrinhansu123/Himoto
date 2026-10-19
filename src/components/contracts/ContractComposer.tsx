@@ -55,9 +55,16 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const ownershipPage = pathname.startsWith('/contracts/ownership');
   const { dataset, selectedStore, source, canSaveContractDrafts, canFinalizeContracts, contractAutofill, saveContract, saveContractDraft, ensureData } = useManagement();
   const [attributionError,setAttributionError] = useState('');
+  const [salesDirectory,setSalesDirectory] = useState<ManagementRow[]>([]);
   const [profileRevision,setProfileRevision] = useState(String(row?.draft_revision || ''));
   const [profileMessage,setProfileMessage] = useState('');
-  useEffect(()=>{void ensureData(['staff']).catch(cause=>setAttributionError(cause instanceof Error ? cause.message : 'Không tải được nhân viên ghi nhận doanh số.'));},[ensureData]);
+  useEffect(()=>{
+    const controller=new AbortController();
+    void contractAutofill.loadSalesStaff(controller.signal)
+      .then(rows=>{if(!controller.signal.aborted){setSalesDirectory(rows);setAttributionError('');}})
+      .catch(cause=>{if(!controller.signal.aborted)setAttributionError(cause instanceof Error?cause.message:'Không tải được nhân viên ghi nhận doanh số.');});
+    return()=>controller.abort();
+  },[contractAutofill]);
   const [savedDraft, setSavedDraft] = useState<{ id: number; revision: string } | null>(null);
   const [finalizeTarget, setFinalizeTarget] = useState<{ id: number; revision: string; code: string } | null>(null);
   const editingDraft = mode === 'draft' || mode === 'reservation' || row?.status === 'draft';
@@ -412,7 +419,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     }
   }
   const branchStaff = staffMatchesStore(staff, staffStoreId);
-  const salesStaff = (dataset?.staff || []).filter(person => staffIsAvailable(person) && staffRoles(person.position).includes('NVKD'));
+  // Commission NVKD: every active profile with position NVKD, company-wide (not branch-scoped).
+  const salesStaff = salesDirectory.filter(person => staffIsAvailable(person) && staffRoles(person.position).includes('NVKD'));
   const nameKey = (value: unknown) => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
   const salesOption = (person: ManagementRow) => salesStaff.filter(item => nameKey(item.name) === nameKey(person.name)).length > 1 ? `${person.name} · ${person.code}` : String(person.name || '');
   const findSalesStaff = (text: string) => { const matches = nameKey(text) ? salesStaff.filter(person => nameKey(salesOption(person)) === nameKey(text)) : []; return matches.length === 1 ? matches[0] : undefined; };
@@ -576,8 +584,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-staff-options" value={draft.customer_source} placeholder="Chọn hoặc nhập tên nhân sự" onChange={event => changeSource(event.target.value)} /></div>
               <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD ghi nhận doanh số</label><input id="contract-sales_staff_id" list="contract-sales-staff-options" value={salesValue} placeholder="Chọn hoặc nhập tên NVKD" aria-invalid={salesUnmatched} onChange={event=>changeSales(event.target.value)} onBlur={()=>{if(draft.sales_staff_id)setSalesText(null);}} />
                 <datalist id="contract-sales-staff-options">{salesStaff.map(person=><option key={person.id} value={salesOption(person)}>{person.code}</option>)}</datalist>
-                {salesUnmatched ? <p className="mg-field-error">Không có NVKD tên này. Chọn trong danh sách gợi ý; để trống là chưa phân công.</p> : <small>Tự điền theo Nguồn khách nếu là NVKD. Tiền thuê thực thu của mọi khách, gồm gia hạn; không gồm cọc.</small>}</div>
-              {attributionError && <p className="mg-field-error mg-field-wide" role="alert">{attributionError}</p>}
+                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không có NVKD tên này. Chọn trong danh sách gợi ý; để trống là chưa phân công.</p> : <small>Gợi ý toàn bộ nhân sự chức vụ NVKD (không lọc cơ sở). Tự điền theo Nguồn khách nếu khớp NVKD. Tiền thuê thực thu gồm gia hạn; không gồm cọc.</small>}</div>
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
             <div className="mg-contract-record-status">{canSaveDraft ? <><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></> : mode === 'edit' ? <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div> : null}</div>

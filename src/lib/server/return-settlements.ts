@@ -30,9 +30,11 @@ export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
       const parsed=parse(row.refund,true),raw=row.refund as Record<string,unknown>;
       const text=(key:string)=>{const value=raw[key];if(value!==undefined&&(typeof value!=='string'||value.length>150))throw new ContractReturnError('Thông tin nhận hoàn cọc chưa hợp lệ.');return String(value||'').trim();};
       const recipient_bank=text('recipient_bank'),recipient_account=text('recipient_account').replace(/\s/g,''),recipient_name=text('recipient_name');
-      // Account number may be omitted when a return QR photo exists; completeReturnBatch verifies the photo.
-      if(parsed.method!=='cash'&&(!recipient_bank||!recipient_name||(recipient_account&&!/^[A-Z0-9-]{3,34}$/i.test(recipient_account))))throw new ContractReturnError('Nhập ngân hàng và chủ tài khoản khách nhận hoàn cọc; số TK chỉ bắt buộc khi chưa có ảnh QR.');
-      refund={...parsed,...(parsed.method!=='cash'?{recipient_bank,recipient_name,...(recipient_account?{recipient_account}:{})}:{})};
+      // Typed recipient fields may be omitted when a return QR photo exists; completeReturnBatch verifies the photo.
+      if(parsed.method!=='cash'&&recipient_account&&!/^[A-Z0-9-]{3,34}$/i.test(recipient_account))throw new ContractReturnError('Số tài khoản khách nhận hoàn cọc chưa hợp lệ.');
+      if(parsed.method!=='cash'&&!recipient_bank&&!recipient_name&&!recipient_account){/* QR-only path */}
+      else if(parsed.method!=='cash'&&(!recipient_bank||!recipient_name)&&!recipient_account)throw new ContractReturnError('Nhập ngân hàng và chủ tài khoản, hoặc để trống cả ba ô khi đã lưu ảnh QR.');
+      refund={...parsed,...(parsed.method!=='cash'?{...(recipient_bank?{recipient_bank}:{}),...(recipient_name?{recipient_name}:{}),...(recipient_account?{recipient_account}:{})}:{})};
     }
     const ids=[...receipts.map(receipt=>receipt.request_id),...(refund?[refund.request_id]:[])];
     if(new Set(ids).size!==ids.length)throw new ContractReturnError('Mỗi khoản thu / hoàn cần một mã giao dịch riêng.');
@@ -78,13 +80,16 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
       if(context.items.length)throw new ContractReturnError('Chỉ hoàn cọc trong lượt trả sau khi đã nhận đủ xe của hợp đồng.',409);
       if(context.remaining===null||context.remaining>0)throw new ContractReturnError('Cần thu đủ phí quá hạn, sửa chữa và công nợ trước khi hoàn cọc.',409);
       const refund=settlement.refund;
-      if(refund.method!=='cash'&&!refund.recipient_account){
+      if(refund.method!=='cash'&&(!refund.recipient_bank||!refund.recipient_name||!refund.recipient_account)){
         const qrSlots=selected.map(returnRefundQrSlot);
         const hasQr=(await db.query(`SELECT 1 FROM himoto.management_record_photos
           WHERE entity_type='contracts' AND entity_id=$1 AND slot=ANY($2::text[]) LIMIT 1`,[settlement.order_id,qrSlots])).rowCount;
-        if(!hasQr)throw new ContractReturnError('Chưa có số TK khách cũng chưa có ảnh QR / Số tài khoản khách nhận hoàn. Nhập số TK hoặc lưu ảnh QR rồi thử lại.',409);
+        if(!hasQr)throw new ContractReturnError('Thiếu thông tin nhận hoàn cọc và chưa có ảnh QR / Số tài khoản khách nhận hoàn. Nhập đủ hoặc lưu ảnh QR rồi thử lại.',409);
+        if(refund.recipient_bank||refund.recipient_name||refund.recipient_account){
+          if(!refund.recipient_bank||!refund.recipient_name)throw new ContractReturnError('Khi nhập tay thông tin nhận hoàn, cần đủ ngân hàng và tên chủ TK (số TK có thể thay bằng ảnh QR).',409);
+        }
       }
-      const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank?` · ${refund.recipient_bank}${refund.recipient_account?` · ${refund.recipient_account}`:' · theo ảnh QR'} · ${refund.recipient_name}`:''}`});
+      const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account||'QR',refund.recipient_name].filter(Boolean).join(' · ')}`:' · theo ảnh QR'}`});
       context=paid.context;refundId=paid.transaction_id;
     }
     const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
