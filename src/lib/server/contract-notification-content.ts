@@ -34,7 +34,7 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
       :depositAmount>0
         ?['Hoàn cọc: chưa ghi nhận phiếu hoàn — tick «Đã hoàn cọc» khi trả xe hoặc ghi phiếu chi sổ quỹ']
         :[]),
-    ...(p.refund_recipient?.account?[`Khách nhận hoàn: ${p.refund_recipient.bank} · ${p.refund_recipient.account} · ${p.refund_recipient.name}`]:[])]
+    ...(p.refund_recipient?.account?[`Khách nhận hoàn: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[])]
     :kind==='renewal'?[`Khách gia hạn: ${p.customer}`,...vehicle,
       ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${day(item.before_return_at)} - ${day(item.return_at)}`):[`Gia hạn: ${day(p.renewal?.before_return_at||null)} - ${day(p.renewal?.return_at||null)}`]),
       `Phí gia hạn: ${money(p.renewal?.amount)} đ`,`Hình thức thanh toán: ${method}`]

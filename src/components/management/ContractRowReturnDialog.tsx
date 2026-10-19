@@ -47,7 +47,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [repairs,setRepairs]=useState<Record<string,{amount:string;note:string}>>({});
   const [settlements,setSettlements]=useState<Record<number,ReturnSettlement|undefined>>({});
-  const [settlementBlocked,setSettlementBlocked]=useState(false);
+  const [settlementBlocks,setSettlementBlocks]=useState<Record<number,boolean>>({});
   const searchGeneration=useRef(0);
   const [returnedAt, setReturnedAt] = useState(localNow);
   const [hourlyRate, setHourlyRate] = useState(String(DEFAULT_LATE_HOURLY_RATE));
@@ -67,7 +67,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const accept = useCallback((result: ReturnableContractItem[]) => {
     setRows(result);
     setOverrides({});
-    setRepairs({});setSettlements({});setSettlementBlocked(false);
+    setRepairs({});setSettlements({});setSettlementBlocks({});
     const active=result.filter(row=>!row.completed_at);
     setPicked(new Set(active.map(row=>row.order_id)).size===1?active.map(row => String(row.item_id)):[]);
   }, []);
@@ -111,6 +111,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const selectedGps=useSelectedVehicleGps(lines.map(line=>line.row.vehicle_id));
 
   const orderIds = new Set(lines.map(line => line.row.order_id));
+  const settlementBlocked=[...orderIds].some(id=>settlementBlocks[id]!==false);
   const summary = orderIds.size === 1 ? (() => {
     const first = lines[0].row;
     const adjustment = lines.reduce((sum, line) => sum + line.adjustment, 0);
@@ -137,7 +138,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
       setError(reason);notify(reason);return;
     }
     if(settlementBlocked){
-      const reason='Chưa đủ thông tin hoàn cọc: chọn tài khoản chi hoàn, hoặc nhập đủ ngân hàng + số TK + tên chủ TK, hoặc đã lưu ảnh QR / số TK ở hồ sơ trả xe.';
+      const reason='Hoàn tất mục Thu phí và hoàn cọc: chọn đã hoàn hoặc chưa hoàn cọc, và kiểm tra thông tin được báo lỗi bên dưới.';
       setError(reason);notify(reason);return;
     }
     if(invalid){
@@ -185,6 +186,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã trả xe hợp đồng {done.code}{done.due !== null && done.due > 0 ? ` · còn thiếu ${formatMoney(done.due)}` : ''}{done.depositHeld > 0 ? ` · cọc đang giữ ${formatMoney(done.depositHeld)}` : ''}.</p>
+          {done.depositHeld>0&&<p role="alert">Chưa ghi nhận hoàn hết cọc. Hệ thống còn giữ {formatMoney(done.depositHeld)}; kiểm tra phiếu chi nếu đã hoàn tiền thực tế.</p>}
           {done.telegramEvents.map(event=><ContractTelegramPanel key={event.key} id={event.orderId} eventKey={event.key}/>)}
           {done.due!==null&&done.due<=0&&done.depositHeld===0?<p>Đã ghi nhận đủ các khoản thu và hoàn cọc đã chọn trong lượt trả xe.</p>:canPayContracts ? <>
             <p>Bấm nút bên dưới để mở phiếu thu/chi Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng.</p>
@@ -230,13 +232,13 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
             <div><dt>{summary.due !== null && summary.due < 0 ? 'Thu thừa' : 'Còn thiếu (không trừ cọc)'}</dt><dd>{summary.due === null ? '—' : formatMoney(Math.abs(summary.due))}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(summary.depositHeld)}</dd></div>
           </dl>}
-          {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={setSettlementBlocked} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
+          {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={blocked=>setSettlementBlocks(current=>current[orderId]===blocked?current:{...current,[orderId]:blocked})} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
           <p className="mg-composer-hint">Trả đủ xe và thu đủ tiền sẽ đóng hợp đồng; còn nợ chuyển Chờ thanh toán. Xe trả về Lưu kho. Các khoản đã chọn thu / hoàn được lưu cùng lượt xác nhận; khoản chưa chọn không tạo phiếu tiền.</p>
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer">{photosPending&&<span className="mg-field-error" role="status">Chưa xác nhận được: ảnh/video mới chỉ đang chọn — bấm «Lưu ảnh / video» phía trên để gắn vào hồ sơ.</span>}{settlementBlocked&&!photosPending&&<span className="mg-field-error" role="status">Chưa xác nhận được: thiếu hoàn cọc (tài khoản chi, hoặc ngân hàng + số TK + tên chủ TK, hoặc ảnh QR / số TK đã lưu).</span>}<button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !lines.length}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer">{photosPending&&<span className="mg-field-error" role="status">Chưa xác nhận được: ảnh/video mới chỉ đang chọn — bấm «Lưu ảnh / video» phía trên để gắn vào hồ sơ.</span>}{!done&&settlementBlocked&&!photosPending&&<span className="mg-field-error" role="status">Hoàn tất mục Thu phí và hoàn cọc: chọn đã hoàn hoặc chưa hoàn cọc và kiểm tra thông tin được báo lỗi.</span>}<button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !lines.length}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
     </form>
   </Dialog>;
 }

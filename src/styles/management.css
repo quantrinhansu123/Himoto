@@ -3727,6 +3727,8 @@
 .mg-document-batch .mg-button, .mg-return-settlement .mg-button { white-space:normal; }
 .mg-return-settlement fieldset { margin:12px 0; padding:12px; border:1px solid var(--mg-border, #dce2e6); border-radius:8px; min-width:0; }
 .mg-return-settlement h3 { margin:0 0 12px; font-size:1rem; }
+.mg-return-settlement .mg-checkbox { min-height:44px; }
+.mg-return-settlement .mg-checkbox input { flex:0 0 18px; width:18px; height:18px; margin:0; accent-color:var(--mg-brand-600); }
 .mg-workflow-guide { margin:16px 0; }
 .mg-workflow-guide summary { cursor:pointer; font-weight:600; }
 .mg-workflow-guide li { margin:8px 0; overflow-wrap:anywhere; }

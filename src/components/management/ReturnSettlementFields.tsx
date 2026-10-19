@@ -7,14 +7,15 @@ import { returnRefundEvidenceSlots } from '@/lib/management/contract-photos';
 import { photoEndpoint,type SavedPhoto } from '@/lib/management/record-photos';
 import { formatMoney } from '@/lib/formatters';
 import { ContractWorkflowGuide } from './ContractWorkflowGuide';
+import { normalizeRefundAccount,validRefundAccount } from '@/lib/management/return-refunds';
 
 type Kind=ReturnReceipt['kind']|'refund';
 interface Row {enabled:boolean;amount:string;method:PaymentMethod;account_id:string;request_id:string}
 const labels:Record<Kind,string>={late_fee:'Đã thu phí quá hạn',repair_fee:'Đã thu tiền sửa chữa',rental_debt:'Đã thu công nợ thuê xe',refund:'Đã hoàn cọc cho khách'};
-const accountOk=(value:string)=>/^[A-Z0-9-]{3,34}$/i.test(value.trim().replace(/\s/g,''));
 export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,repairFee,netAdjustment,closes,early=false,late=false,onChange,onBlockChange,disabled=false}:{orderId:number;itemIds:number[];photoVersion?:number;lateFee:number;repairFee:number;netAdjustment:number;closes:boolean;early?:boolean;late?:boolean;onChange:(value?:ReturnSettlement)=>void;onBlockChange?:(blocked:boolean)=>void;disabled?:boolean}) {
   const [context,setContext]=useState<PaymentContext>(),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   const [rows,setRows]=useState<Partial<Record<Kind,Row>>>({});
+  const [refundDeferred,setRefundDeferred]=useState(false);
   const [recipient,setRecipient]=useState({recipient_bank:'',recipient_account:'',recipient_name:''});
   const [hasRefundQr,setHasRefundQr]=useState(false);
   const [paidAt,setPaidAt]=useState(()=>new Date(Date.now()+7*3600000).toISOString().slice(0,16));
@@ -23,7 +24,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const itemKey=itemIds.join(',');
   const qrSlots=useMemo(()=>itemKey?itemKey.split(',').flatMap(id=>returnRefundEvidenceSlots(Number(id))):[],[itemKey]);
   useEffect(()=>{
-    const controller=new AbortController();setContext(undefined);setError('');setRows({});
+    const controller=new AbortController();setContext(undefined);setError('');setRows({});setRefundDeferred(false);
     void loadPaymentContext(orderId,controller.signal).then(value=>{if(!controller.signal.aborted)setContext(value);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được tài khoản thu / hoàn.');});
     return()=>controller.abort();
   },[orderId,retry]);
@@ -44,15 +45,16 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const refundAllowed=closes&&due!==null&&collected===due;
   const refundRow=rows.refund;
   const refundMethod=refundRow?.method||'cash';
-  const accountValue=recipient.recipient_account.trim().replace(/\s/g,'');
+  const accountValue=normalizeRefundAccount(recipient.recipient_account);
   const bankValue=recipient.recipient_bank.trim();
   const nameValue=recipient.recipient_name.trim();
   // Saved return hồ sơ (QR / số TK) or a complete typed recipient stands in for transfer refunds.
-  const typedRecipientReady=Boolean(bankValue) && Boolean(nameValue) && accountOk(accountValue);
-  const refundRecipientReady=refundMethod==='cash' || hasRefundQr || typedRecipientReady;
-  const refundReady=!refundRow?.enabled || (refundAllowed && Boolean(Number(refundRow.account_id)) && /^\d{1,13}$/.test(refundRow.amount||'') && Number(refundRow.amount)>0 && refundRecipientReady);
+  const typedRecipientReady=Boolean(bankValue) && Boolean(nameValue) && validRefundAccount(accountValue);
+  const refundRecipientReady=refundMethod==='cash' || (hasRefundQr || typedRecipientReady) && (!recipient.recipient_account.trim() || validRefundAccount(recipient.recipient_account));
+  const refundDecisionMissing=closes&&Boolean(context?.deposit_held)&&!refundRow?.enabled&&!refundDeferred;
+  const refundReady=!refundRow?.enabled || (refundAllowed && Boolean(context&&paymentAccounts(context,refundMethod).some(account=>account.id===Number(refundRow.account_id))) && /^\d{1,13}$/.test(refundRow.amount||'') && Number(refundRow.amount)>0 && Number(refundRow.amount)<=limits.refund && refundRecipientReady);
   useEffect(()=>{
-    if(!context){change.current(undefined);block.current?.(false);return;}
+    if(!context){change.current(undefined);block.current?.(true);return;}
     const receipts=(['late_fee','repair_fee','rental_debt'] as const).filter(kind=>rows[kind]?.enabled).map(kind=>{
       const row=rows[kind]!;return {kind,request_id:row.request_id,amount:row.amount,method:row.method,account_id:Number(row.account_id),paid_at:paidAt};
     });
@@ -63,9 +65,9 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
         ...(accountValue?{recipient_account:accountValue}:{}),
         ...(nameValue?{recipient_name:nameValue}:{}),
       }:{})}:undefined;
-    change.current(receipts.length||refund?{order_id:orderId,revision:context.revision,receipts,...(refund?{refund}:{})}:undefined);
-    block.current?.(Boolean(refundRow?.enabled && !refundReady));
-  },[context,rows,recipient,refundAllowed,refundReady,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr]);
+    change.current(receipts.length||refund||refundDeferred?{order_id:orderId,revision:context.revision,receipts,...(refund?{refund}:{}),...(refundDeferred?{refund_deferred:true as const}:{})}:undefined);
+    block.current?.(refundDecisionMissing||Boolean(refundRow?.enabled && !refundReady));
+  },[context,rows,recipient,refundAllowed,refundReady,refundDecisionMissing,refundDeferred,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr]);
   function update(kind:Kind,patch:Partial<Row>){
     const old=rows[kind];const method=patch.method||old?.method||'transfer';
     const account=patch.method||!old?paymentAccounts(context!,method)[0]?.id:old.account_id;
@@ -79,8 +81,13 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
     <div className="mg-field"><label htmlFor={`return-${orderId}-paid-at`}>Thời điểm thực tế thu / hoàn (24h)</label><DateTime24Controls id={`return-${orderId}-paid-at`} label="Thời điểm thực tế thu / hoàn" value={paidAt} onChange={setPaidAt}/></div>
     {(['late_fee','repair_fee','rental_debt','refund'] as const).filter(kind=>limits[kind]>0).map(kind=>{
       const row=rows[kind],method=row?.method||'transfer',accounts=paymentAccounts(context,method),blocked=kind==='refund'&&!refundAllowed;
-      return <fieldset key={kind} disabled={disabled||blocked}><legend>{kind==='refund'?'Cọc còn giữ':kind==='late_fee'?'Phí quá hạn':kind==='repair_fee'?'Phí sửa chữa':'Công nợ tiền thuê'}: {formatMoney(limits[kind])}</legend>
-        <label className="mg-checkbox"><input type="checkbox" checked={Boolean(row?.enabled)&&!blocked} onChange={event=>update(kind,{enabled:event.target.checked})}/>{labels[kind]}</label>
+      return <fieldset key={kind} disabled={disabled}><legend>{kind==='refund'?'Cọc còn giữ':kind==='late_fee'?'Phí quá hạn':kind==='repair_fee'?'Phí sửa chữa':'Công nợ tiền thuê'}: {formatMoney(limits[kind])}</legend>
+        <label className="mg-checkbox"><input type={kind==='refund'?'radio':'checkbox'} name={kind==='refund'?`return-${orderId}-refund-decision`:undefined} disabled={blocked} checked={Boolean(row?.enabled)&&!blocked} onChange={event=>{if(kind==='refund')setRefundDeferred(false);update(kind,{enabled:event.target.checked});}}/>{labels[kind]}</label>
+        {kind==='refund'&&<>
+          <label className="mg-checkbox"><input type="radio" name={`return-${orderId}-refund-decision`} checked={refundDeferred} onChange={()=>{setRefundDeferred(true);update('refund',{enabled:false});}}/>Chưa hoàn cọc — tiếp tục ghi nhận cọc đang giữ</label>
+          {refundDecisionMissing&&<p role="status">Chọn đã hoàn hoặc chưa hoàn cọc trước khi xác nhận. Nhập STK hay lưu ảnh QR chưa tạo phiếu chi hoàn cọc.</p>}
+          {refundDeferred&&<p role="status">Lượt này không tạo phiếu hoàn. Cọc vẫn được ghi nhận đang giữ và Telegram sẽ báo chưa có phiếu hoàn.</p>}
+        </>}
         {row?.enabled&&!blocked&&<div className="mg-form-grid mg-contract-grid-two">
           <div className="mg-field"><label htmlFor={`return-${orderId}-${kind}-amount`}>Số tiền thực tế (VNĐ)</label><input id={`return-${orderId}-${kind}-amount`} inputMode="numeric" value={amount(kind)} onChange={event=>update(kind,{amount:event.target.value.replace(/\D/g,'').slice(0,13)})}/></div>
           <div className="mg-field"><label htmlFor={`return-${orderId}-${kind}-method`}>{kind==='refund'?'Hình thức hoàn':'Hình thức thu'}</label><select id={`return-${orderId}-${kind}-method`} value={method} onChange={event=>update(kind,{method:event.target.value as PaymentMethod})}>{PAYMENT_METHODS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
@@ -98,12 +105,12 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
               const value=recipient[key];
               // With QR evidence, typed fields are optional; without QR, all three are required.
               const invalid=hasRefundQr
-                ? key==='recipient_account' && Boolean(value.trim()) && !accountOk(value)
-                : key==='recipient_account' ? !accountOk(value||' ') : !value.trim();
+                ? key==='recipient_account' && Boolean(value.trim()) && !validRefundAccount(value)
+                : key==='recipient_account' ? !validRefundAccount(value||' ') : !value.trim();
               return <div className="mg-field" key={key}><label htmlFor={`return-${orderId}-${key}`}>{label}</label>
-                <input id={`return-${orderId}-${key}`} value={value} maxLength={key==='recipient_account'?34:150} aria-invalid={invalid||undefined}
+                <input id={`return-${orderId}-${key}`} value={value} maxLength={key==='recipient_account'?64:150} aria-invalid={invalid||undefined} aria-describedby={invalid?`return-${orderId}-${key}-error`:undefined}
                   onChange={event=>setRecipient(current=>({...current,[key]:event.target.value}))}/>
-                {invalid&&<p className="mg-field-error">{key==='recipient_name'?'Nhập tên chủ tài khoản khách nhận tiền hoặc lưu ảnh QR hồ sơ trả xe.':key==='recipient_bank'?'Nhập ngân hàng khách nhận hoặc lưu ảnh QR hồ sơ trả xe.':'Nhập số tài khoản khách (3–34 ký tự) hoặc lưu ảnh QR hồ sơ trả xe.'}</p>}
+                {invalid&&<p id={`return-${orderId}-${key}-error`} className="mg-field-error" role="alert">{key==='recipient_name'?'Nhập tên chủ tài khoản khách nhận tiền hoặc lưu ảnh QR hồ sơ trả xe.':key==='recipient_bank'?'Nhập ngân hàng khách nhận hoặc lưu ảnh QR hồ sơ trả xe.':'STK cần 3–34 chữ/số hoặc dấu gạch nối; chấp nhận dấu chấm và khoảng trắng phân nhóm.'}</p>}
               </div>;
             })}
           </>}
