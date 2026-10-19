@@ -429,6 +429,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   })();
   const salesStaff = commissionPool.filter(person => {
     if (!staffIsAvailable(person)) return false;
+    // Placeholder profile named "TLS" (not a real person) must not appear in suggestions.
+    if (/^tls$/i.test(String(person.name || '').trim())) return false;
     if (String(person.id) === draft.sales_staff_id || String(person.id) === draft.tls_staff_id) return true;
     const roles = staffRoles(person.position);
     if (roles.includes('TPKD') || roles.includes('TLS')) return true;
