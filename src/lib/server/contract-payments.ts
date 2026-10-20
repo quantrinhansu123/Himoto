@@ -138,7 +138,9 @@ export async function recordContractPayment(client: Database, id: number, actorI
     if (context.remaining === null || context.paid_amount === null || context.total_amount === null) throw new ContractPaymentError('Thiếu hoặc sai số liệu tiền hợp đồng/tổng đã thu. Cần đối chiếu trước khi thanh toán.', 409);
     if (context.paid_amount + amount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tổng đã thu vượt giới hạn lưu trữ.', 409);
     if (extra && context.total_amount + amount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tiền hợp đồng vượt giới hạn lưu trữ.', 409);
-    if (!renewal && !extra && amount > context.remaining) throw new ContractPaymentError('Số tiền thu vượt phần còn thiếu của hợp đồng.', 409);
+    // Linked renewal receipts are capped by the saved renewal fee below — not by rental remaining
+    // (already-paid / overpaid contracts can still have remaining 0 after the fee is added to total).
+    if (!renewal && !extra && input.renewal_version === undefined && amount > context.remaining) throw new ContractPaymentError('Số tiền thu vượt phần còn thiếu của hợp đồng.', 409);
   }
   const lines = renewal ? renewalLines(input) : [];
   let renewalPayload: Record<string, unknown> | null = null;

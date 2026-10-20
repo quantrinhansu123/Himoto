@@ -67,6 +67,14 @@ try{
  await assert.rejects(()=>atomic(()=>completeReturnBatch(db,153,[{item_id:101,item_revision:r.item_revision,returned_at:local(Date.now()-120_000),hourly_rate:'20000'}],[{order_id:1,revision:debt.revision,receipts:[],refund:{request_id:randomUUID(),amount:'1000000',method:'cash',account_id:5,paid_at:paidAt}}])),e=>e.status===409);
  assert.equal(await snapshot(),beforeRefund);
  checks.push('Explicit unpaid extension preserves 140000 as rental debt; refund without collecting it is rejected atomically without fabricating a receipt');
+ await c.query('ROLLBACK TO SAVEPOINT baseline');
+ await db.query(`UPDATE himoto.orders SET total='280000',pid=1580000 WHERE id=1`);
+ const overpaid=await readPaymentContext(db,1);assert.equal(overpaid.remaining,0);assert.equal(overpaid.paid_amount,580000);
+ const overBody={...body,...await revisions(),request_id:randomUUID(),amount:'500000'};
+ const over=await atomic(()=>renewContractAndCollect(db,1,153,overBody));
+ assert.equal(over.amount,500000);assert.equal(over.payment.context.total_amount,780000);
+ assert.equal(over.payment.context.paid_amount,1080000);
+ checks.push('Paid renewal receipt still saves when rental remaining is 0 after prior overpayment; fee is capped by the renewal version, not remaining debt');
 }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
 console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,productionSequenceChanges:0,realTelegramRequests:0},null,2));}
 main().catch(e=>{console.error(e.name,e.code||'',e.message);process.exitCode=1;});
