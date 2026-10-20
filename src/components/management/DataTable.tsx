@@ -22,7 +22,11 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
   }
   if (column.format === 'person' || column.format === 'vehicle') return <div className={`mg-identity ${column.format === 'vehicle' ? 'mg-identity-vehicle' : ''}`}>
     {column.format === 'person' && <span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{String(value || '').split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span>}
-    <div><strong title={String(value || '')}>{value || '—'}</strong>{column.secondary && <small title={String(row[column.secondary] || '')}>{row[column.secondary] || '—'}</small>}</div></div>;
+    <div>
+      <strong title={String(value || '')}>{value || '—'}</strong>
+      {column.secondary && <small title={String(row[column.secondary] || '')}>{row[column.secondary] || '—'}</small>}
+      {config.kind === 'vehicles' && column.key === 'name' && <small title={String(row.holder_name || 'Lưu kho')}>{row.holder_name || 'Lưu kho'}</small>}
+    </div></div>;
   const display = optionLabel(config, column.key, formatValue(value, column.format));
   return <span className={`mg-cell-value ${column.format === 'money' || column.format === 'number' ? 'mg-numeric' : ''}`} title={display}>{display}</span>;
 }

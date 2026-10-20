@@ -210,7 +210,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const pageCount = paged ? table.data?.pages || 1 : Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safePage = paged ? table.data?.page || 1 : Math.min(page, pageCount);
   const offset = (safePage - 1) * pageSize;
-  const columns = config.columns.filter(c => visibleKeys.includes(c.key));
+  // Always keep vehicle customer holder visible even if an older column-menu state hid it.
+  const columns = config.columns.filter(c => visibleKeys.includes(c.key) || (kind === 'vehicles' && c.key === 'holder_name'));
   const statusOptions = [...config.statuses, ...Array.from(new Set(paged?table.data?.statuses || []:rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || query.overdueDays.trim() || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
   const canManageStaff = can('hr.write') || can('settings.write');
