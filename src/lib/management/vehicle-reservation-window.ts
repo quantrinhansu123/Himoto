@@ -14,6 +14,14 @@ export interface OpenVehicleRental {
 
 const HARD_STATUSES = new Set(['renting', 'overdue', 'wait_payment', 'pending', 'bad_debt']);
 
+function statusOf(item: OpenVehicleRental) {
+  return String(item.status || '').trim().toLowerCase();
+}
+
+function isDeposit(item: OpenVehicleRental) {
+  return statusOf(item) === 'deposit_contract';
+}
+
 function asTime(value: string | null | undefined): number | null {
   if (!value) return null;
   const raw = String(value).trim();
@@ -22,6 +30,12 @@ function asTime(value: string | null | undefined): number | null {
   const stamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw) ? `${raw}+07:00` : raw;
   const ms = new Date(stamp).getTime();
   return Number.isFinite(ms) ? ms : null;
+}
+
+function formatPickup(value: string | null | undefined) {
+  const ms = asTime(value);
+  if (ms == null) return '';
+  return new Date(ms).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
 
 /** Classify open rentals on a vehicle against a proposed rental window. */
@@ -35,18 +49,20 @@ export function classifyReservationWindow(
   if (!others.length) return { kind: 'none', detail: '' };
 
   const endMs = asTime(proposedEnd);
-  const hard = others.find(item => HARD_STATUSES.has(item.status));
+  // Cọc giữ xe không bao giờ chặn cứng — chỉ cảnh báo hoặc cho chen trước ngày nhận.
+  const hard = others.find(item => HARD_STATUSES.has(statusOf(item)));
   if (hard) {
     return {
       kind: 'hard',
       rental: hard,
-      detail: `HĐ ${hard.code} (${hard.status}) đang mở. Hoàn tất hợp đồng cũ trước khi chọn xe.`,
+      detail: `HĐ ${hard.code} đang mở. Hoàn tất hợp đồng cũ trước khi chọn xe.`,
     };
   }
 
-  const deposits = others.filter(item => item.status === 'deposit_contract');
+  const deposits = others.filter(isDeposit);
+  const unknown = others.filter(item => !isDeposit(item) && !HARD_STATUSES.has(statusOf(item)));
   if (!deposits.length) {
-    const [first] = others;
+    const [first] = unknown.length ? unknown : others;
     return {
       kind: 'hard',
       rental: first,
@@ -58,12 +74,13 @@ export function classifyReservationWindow(
     return {
       kind: 'overlap_warn',
       rental: deposits[0],
-      detail: `Xe đã cọc giữ (HĐ ${deposits[0].code}). Nhập hẹn trả để kiểm tra lịch chen.`,
+      detail: `Xe đã cọc giữ (HĐ ${deposits[0].code}). Nhập hẹn trả để kiểm tra lịch chen trước ngày nhận.`,
     };
   }
 
   const overlapping = deposits.filter(item => {
     const pickup = asTime(item.rent_at);
+    // Thiếu ngày nhận → không chắc chen được, cảnh báo (vẫn cho chọn).
     return pickup == null || endMs > pickup;
   });
   const squeezable = deposits.filter(item => {
@@ -73,10 +90,7 @@ export function classifyReservationWindow(
 
   if (!overlapping.length && squeezable.length) {
     const item = squeezable[0];
-    const pickup = item.rent_at ? new Date(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(item.rent_at)) ? `${item.rent_at}+07:00` : String(item.rent_at)) : null;
-    const when = pickup && Number.isFinite(pickup.getTime())
-      ? pickup.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
-      : 'ngày nhận đã cọc';
+    const when = formatPickup(item.rent_at) || 'ngày nhận đã cọc';
     return {
       kind: 'squeeze_ok',
       rental: item,
@@ -85,10 +99,10 @@ export function classifyReservationWindow(
   }
 
   const item = overlapping[0] || deposits[0];
-  const pickup = item.rent_at ? String(item.rent_at) : '';
+  const when = formatPickup(item.rent_at);
   return {
     kind: 'overlap_warn',
     rental: item,
-    detail: `Xe đã cọc giữ (HĐ ${item.code}${pickup ? `, nhận ${pickup.replace('T', ' ')}` : ''}). Hẹn trả của HĐ này chồng hoặc vượt ngày nhận — cần xác nhận khi phát hành.`,
+    detail: `Xe đã cọc giữ (HĐ ${item.code}${when ? `, nhận ${when}` : ''}). Hẹn trả chồng/vượt ngày nhận — vẫn chọn được, cần xác nhận khi phát hành.`,
   };
 }

@@ -41,7 +41,9 @@ const listQueries: Record<string, QueryConfig> = {
   },
   'vehicle/vehicles': {
     sql: `WITH rental_blockers AS MATERIALIZED (
-            SELECT vehicle_id,jsonb_agg(jsonb_build_object('order_id',order_id,'code',code,'status',status,'store_name',store_name,'return_at',return_at) ORDER BY order_id DESC) AS rentals
+            SELECT vehicle_id,jsonb_agg(jsonb_build_object(
+              'order_id',order_id,'code',code,'status',status,'store_name',store_name,
+              'rent_at',rent_at,'return_at',return_at) ORDER BY order_id DESC) AS rentals
             FROM himoto.vehicle_rental_blockers(ARRAY(SELECT id FROM himoto.vehicles WHERE COALESCE(current_store_id,store_id)>0))
             GROUP BY vehicle_id
           ) SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
@@ -62,7 +64,7 @@ const listQueries: Record<string, QueryConfig> = {
             SELECT json_agg(json_build_object('order_id', o.id,
                      'code', COALESCE(NULLIF(o.contract_number, ''), NULLIF(o.draft_reference, ''), '#' || o.id::text),
                      'status', CASE WHEN o.order_status = 'renting' AND d.return_at < now() THEN 'overdue' ELSE o.order_status END,
-                     'customer', COALESCE(c.name, o.customer_name, ''), 'return_at', d.return_at) ORDER BY d.rent_at DESC) AS rentals,
+                     'customer', COALESCE(c.name, o.customer_name, ''), 'rent_at', d.rent_at, 'return_at', d.return_at) ORDER BY d.rent_at DESC) AS rentals,
                    (array_agg(o.store_id ORDER BY d.rent_at DESC))[1] AS store_id
             FROM himoto.order_vehicle_details d
             JOIN himoto.orders o ON o.id = d.order_id

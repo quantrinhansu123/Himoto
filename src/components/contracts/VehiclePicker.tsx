@@ -43,7 +43,12 @@ export function vehicleAvailability(
     };
   }
   if (classified.kind === 'overlap_warn') {
-    return { tone: 'warn', label: 'Cọc giữ xe · chồng lịch', detail: classified.detail, selectable: true };
+    return {
+      tone: 'warn',
+      label: 'Cọc giữ xe · cần xác nhận',
+      detail: classified.detail,
+      selectable: true,
+    };
   }
   if (classified.kind === 'squeeze_ok') {
     return { tone: 'ok', label: 'Chen trước ngày nhận cọc', detail: classified.detail, selectable: true };
