@@ -10,16 +10,21 @@ export type TableKind = 'contracts' | 'customers';
 export interface ManagementTableInput {
   kind: TableKind; query: TableQuery; store: string; scope: string; page: number; size: number;
   sort: string; direction: 'asc' | 'desc';
+  /** When set, SQL only indexes recent + open contracts before paging. */
+  recentDays?: number;
 }
 export interface ManagementTableResult {
   rows: ManagementRow[]; total: number; scopeCount: number; tabCount: number;
   page: number; pages: number; statusCounts: [string, number][]; statuses: string[];
   dueCount: number; summary: ContractSummary | null;
+  /** Echo of the recent window applied server-side; null means full history. */
+  recentDays?: number | null;
 }
 export function managementTableQuery(input: ManagementTableInput, all = false) {
   const params = new URLSearchParams({table:'1',page:String(input.page),size:String(input.size),sort:input.sort,direction:input.direction,store:input.store});
   if (all) params.set('all','1');
   if (input.scope) params.set('scope',input.scope);
+  if (input.recentDays) params.set('recent',String(input.recentDays));
   for (const [key,value] of Object.entries({search:input.query.search,status:input.query.status,from:input.query.startDate,to:input.query.endDate,overdue_days:input.query.overdueDays,overdue_compare:input.query.overdueCompare})) if (value) params.set(key,value);
   for (const [key,value] of Object.entries(input.query.filters)) if (value) params.set(`filter_${key}`,value);
   return params;
@@ -47,7 +52,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   const pages=Math.max(1,Math.ceil(sorted.length/input.size)),page=Math.min(input.page,pages),offset=(page-1)*input.size;
   return {rows:all ? sorted : sorted.slice(offset,offset+input.size),total:sorted.length,scopeCount:scoped.length,tabCount:tabRows.length,page,pages,
     statusCounts:[...counts].sort(([a],[b])=>a.localeCompare(b)),statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:scoped.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0).length,
-    summary:input.kind==='contracts' ? summarizeContracts(filtered,[]) : null};
+    summary:input.kind==='contracts' ? summarizeContracts(filtered,[]) : null,recentDays:input.recentDays??null};
 }
 function overdueDays(value: unknown, now: number) {
   const date=Date.parse(String(value||''));return Number.isFinite(date) ? Math.max(0,Math.floor((now-date)/86400000)) : 0;

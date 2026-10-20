@@ -50,7 +50,10 @@ async function main(){
   assert.deepEqual(plate.summary,summarizeContracts(plateRows.filter(row=>row.store_id===1),[]));
   checks.push('All-contract search pins renting/overdue newest-first before drafts and 25 completed rentals, including stable ties, pagination and export; store/status filters and draft-only/default lists stay scoped');
   assert.deepEqual(server.parseManagementTable('contracts',shared.managementTableQuery(base)),base);
-  for(const query of ['size=51','page=0','page=NaN','direction=x','scope=x','sort=sql','filter_unknown=x','store=0','overdue_compare=x','all=0'])assert.throws(()=>server.parseManagementTable('contracts',new URLSearchParams(query)),server.ManagementTableError);
+  for(const query of ['size=51','page=0','page=NaN','direction=x','scope=x','sort=sql','filter_unknown=x','store=0','overdue_compare=x','all=0','recent=0','recent=99999'])assert.throws(()=>server.parseManagementTable('contracts',new URLSearchParams(query)),server.ManagementTableError);
+  assert.equal(server.parseManagementTable('contracts',shared.managementTableQuery({...base,recentDays:30})).recentDays,30);
+  assert.match(server.contractRecentClause(30),/interval '30 days'/);
+  checks.push('Recent-window param is validated and embeds a bounded open-or-recent SQL clause');
   let called=false;await assert.rejects(()=>server.readManagementTable({query(){called=true;}},'contracts',new URLSearchParams('size=999')),server.ManagementTableError);assert.equal(called,false);
   assert.equal(mapApiRow('contracts',{id:1,rent_at:new Date('2026-10-10T09:00:00Z')}).start_date,'2026-10-10T09:00:00.000Z');
   checks.push('Page/filter bounds are validated before SQL; PostgreSQL Date values map exactly like the original JSON API');

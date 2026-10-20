@@ -100,10 +100,13 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl}));
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [historyAll, setHistoryAll] = useState(false);
   const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' }>(overdueOnly ? { key: 'overdue_days', direction: 'desc' } : { key: 'code', direction: 'asc' });
   const [openedAt, setOpenedAt] = useState(() => Date.now());
   const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => store.kind === 'lease_to_own').map(store => store.id)), [dataset?.stores]);
-  const tableInput:ManagementTableInput={kind:kind==='customers'?'customers':'contracts',query,store:selectedStore,scope:draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'',page,size:pageSize,sort:sort.key,direction:sort.direction};
+  const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
+  const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
+  const tableInput:ManagementTableInput={kind:kind==='customers'?'customers':'contracts',query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:30}:{})};
   const tableRevision=useMemo(()=>({at:resources[kind].updatedAt}),[kind,resources[kind].updatedAt]);
   const contractsRevision=useMemo(()=>({at:resources.contracts.updatedAt}),[resources.contracts.updatedAt]);
   const table=useManagementTable(tableInput,paged,tableRevision,[...ownershipStoreIds]);
@@ -310,6 +313,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}{contractId && <span className="mg-active-filter">Hợp đồng #{contractId}<button type="button" aria-label="Bỏ lọc hợp đồng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}</div>}
         {isFiltered && <div className="mg-filter-summary"><span><strong>{resultCount}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
         {kind==='contracts'&&query.search.trim()&&(draftsOnly?<div className="mg-billing-reminder"><p>Chỉ tìm trong hợp đồng nháp.</p><Link className="mg-button" href={`/contracts?search=${encodeURIComponent(query.search.trim())}`}>Tìm trong tất cả hợp đồng</Link></div>:!tableInput.scope&&<p className="mg-reminder-help">Kết quả ưu tiên hợp đồng đang thuê / quá hạn gần nhất để mở trả xe; các bản nháp và lịch sử vẫn ở bên dưới.</p>)}
+        {kind==='contracts'&&!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder" role="status"><p>Đang tải nhanh hợp đồng khoảng <strong>{table.data.recentDays} ngày</strong> gần đây và các hợp đồng đang mở. Phân trang trong tập này trước.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
         {kind === 'contracts' && !loading && !error && dueCount > 0 && <div className="mg-billing-reminder" role="status"><p><strong>{dueCount} hợp đồng thuê sở hữu đến hạn đóng tiền.</strong> {paymentDueOnly && canBulkRemind ? 'Chọn nhiều hợp đồng rồi bấm Gửi nhắc nợ để gửi tin Zalo tới từng số khách.' : 'Khoản chưa đóng đủ tiếp tục hiện để kế toán giục nợ.'}</p>{!paymentDueOnly && <button className="mg-button" type="button" onClick={() => router.push('/contracts/due')}>Xem khoản đến hạn</button>}{paymentDueOnly && canBulkRemind && selectedIds.size > 0 && <button className="mg-button mg-button-primary" type="button" onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ ({selectedIds.size})</button>}</div>}
         {kind === 'contracts' && <ContractSummary values={paged?table.data?.summary:undefined} rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset} />}
         {kind === 'customers' && blacklistError && <p className="mg-blacklist-error" role="alert">{blacklistError}</p>}

@@ -15,7 +15,8 @@ import { contractNumberError, paperContractNumber } from '@/lib/management/contr
 import { contractNumberAvailable } from './contract-number';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 
-const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM((r.value->>'fee')::numeric)
+const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
+    CASE WHEN (r.value->>'fee') ~ '^-?\\d+(\\.\\d+)?$' THEN (r.value->>'fee')::numeric ELSE 0 END)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
 /** List/detail projection: omit per-row payment history (collections) and full draft blob for issued contracts. */
 function contractListSql(compact = false) { return `SELECT o.id, o.contract_number, o.draft_reference,
@@ -37,7 +38,8 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   o.store_id, s.store_name, s.kind AS store_kind, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
   o.total AS total_amount, ${rentalPaidSql()} AS paid_amount, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded,
   '[]'::json AS collections,
-  NULLIF(o.draft_payload->'management_composer'->'draft'->>'unit_price','')::numeric AS unit_price,
+  CASE WHEN NULLIF(o.draft_payload->'management_composer'->'draft'->>'unit_price','') ~ '^-?\\d+(\\.\\d+)?$'
+    THEN (o.draft_payload->'management_composer'->'draft'->>'unit_price')::numeric ELSE NULL END AS unit_price,
   o.draft_payload->'management_composer'->'draft'->>'package_name' AS package_name,
   o.draft_payload->'management_composer'->'draft'->>'payment_method' AS payment_method,
   o.draft_payload->'management_composer'->'draft'->>'deposit_payment_method' AS deposit_payment_method,
