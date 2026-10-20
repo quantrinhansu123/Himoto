@@ -93,6 +93,9 @@ async function main(){
     assert.equal((await c.query(`SELECT * FROM ${schema}.management_contract_notifications`)).rowCount,1);
     assert.equal((await notices.dispatchContractNotifications(fake,5,db)).configured,false);
     const token='123456789:qa-only-bot-token-123456789';await c.query(`UPDATE ${schema}.management_telegram_settings SET bot_cipher=$1`,[crypto.sealIntegrationSecret({token})]);await c.query(`INSERT INTO ${schema}.management_store_telegram(store_id,chat_id,enabled) VALUES(23,'-100000000001',true),(31,'-100000000002',true)`);
+    if(process.argv.includes('--ownership-only')) {
+      checks.push(...await require('./lib/check-ownership-telegram.cjs')(db,c,schema,notices));
+    } else {
     await notices.queueContractNotification(db,1,'rental','qa-ready',143,'rental');
     const calls=[];const telegram=async(url,options)=>{const method=new URL(url).pathname.split('/').at(-1);const form=options.body instanceof FormData;const chat=form?options.body.get('chat_id'):JSON.parse(options.body).chat_id;assert.equal(chat,'-100000000001');calls.push(method);return Response.json({ok:true,result:method==='sendMediaGroup'?[{message_id:2},{message_id:3}]:{message_id:1}});};
     assert.equal((await notices.dispatchContractNotifications(telegram,5,db)).sent,0);assert.equal(calls.length,0);
@@ -129,6 +132,7 @@ async function main(){
     await c.query('ROLLBACK TO SAVEPOINT deny_foreign_preference');
     await c.query('SAVEPOINT deny_secret');await assert.rejects(()=>c.query(`SELECT secret_cipher FROM ${schema}.management_gps_accounts`),e=>e.code==='42501');await c.query('ROLLBACK TO SAVEPOINT deny_secret');
     await c.query('RESET ROLE');checks.push('Migrations run twice, rolled-back transactions leave no notification, branch RLS hides foreign reports, and provider credentials remain inaccessible to the application role');
+    }
   }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
   console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0,realTelegramRequests:0},null,2));
 }

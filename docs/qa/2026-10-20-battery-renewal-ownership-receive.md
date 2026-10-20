@@ -21,9 +21,10 @@ Migration bổ sung và quyền nhận xe đã áp dụng. Không nhập lại d
 
 - `node scripts/check-battery-contracts.cjs --live-temp`: 13 nhóm, bảng TEMP và rollback.
 - `node scripts/check-account-scope.cjs`: 18 nhóm, schema QA và rollback; có gia hạn pin/phiếu thu dưới RLS thật và chặn ID cơ sở khác.
-- `node scripts/check-gps-contract-integrations.cjs`: 27 nhóm, nhà cung cấp/Telegram mô phỏng; kiểm tra ghi chú đúng mảng và giữ khóa các tin đã gửi bằng mẫu cũ.
+- `node scripts/check-gps-contract-integrations.cjs`: 27 nhóm đạt trước khi tích hợp 6 commit mới từ `origin/main` (#2fdbad9). Sau tích hợp, suite đầy đủ dừng ở kiểm tra ảnh snapshot trong `scripts/lib/check-contract-telegram.cjs`: commit #66e171f chuyển sang lưu tham chiếu và tải ảnh khi gửi, trong khi test yêu cầu ảnh nguyên bản tại lúc xếp gửi. Không tuyên bố suite đầy đủ đạt trên bản cuối. Dùng `--ownership-only` để chạy riêng định tuyến/ghi chú Thuê sở hữu với các API Telegram mô phỏng; chế độ mặc định vẫn giữ nguyên mọi assertion ảnh.
 - `node scripts/check-vehicle-transfers.cjs`: 9 nhóm, TEMP và rollback.
-- Typecheck, lint và production build đạt; lint còn cảnh báo đã có tại `StaffOrganizationChart.tsx:58`.
+- `node scripts/check-gps-contract-integrations.cjs --ownership-only`: **10 nhóm đạt sau tích hợp**, gồm đúng nội dung ghi chú, định tuyến sở hữu, chống gửi trùng và điều chuyển/nhận xe. Không gọi Telegram thật.
+- Typecheck, lint và production build bản cuối sau tích hợp đạt. Các cảnh báo có sẵn trên main: `ManagementPage.tsx:110` (2) và `StaffOrganizationChart.tsx:58` (1).
 - Bộ phân quyền được bổ sung các migration hỗ trợ kho/hợp đồng hiện hành trong schema QA. Assertion mẫu Telegram trả xe sửa tên trường thành “Hình thức hoàn cọc” cho khớp hành vi đã triển khai trước đợt này.
 - API chỉ đọc với tài khoản cơ sở thật xác nhận quyền nhận xe, hồ sơ pin cơ sở #35 và 404 khi cơ sở khác đoán ID.
 - UI trên production build local: **12 tình huống đạt**, Chromium desktop và WebKit iPhone, `errors=[]`; mọi API ghi được mô phỏng. Bộ test chờ tải xong danh sách sau khi lưu trước khi chuyển trang để không hủy request giả lập giữa chừng trên WebKit.
