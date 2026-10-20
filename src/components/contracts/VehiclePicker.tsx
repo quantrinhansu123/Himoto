@@ -6,10 +6,10 @@ import { VEHICLE_STATUSES } from '@/lib/management/config';
 import { formatDateTime } from '@/lib/formatters';
 import { normalize } from '@/lib/management/table-utils';
 import type { ManagementRow } from '@/lib/management/types';
+import { classifyReservationWindow, type OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 
-interface VehicleRental { order_id: number; code: string; status: string; customer?: string; store_name?: string; return_at: string | null }
 type Tone = 'ok' | 'warn' | 'danger';
-export interface VehicleAvailability { tone: Tone; label: string; detail: string }
+export interface VehicleAvailability { tone: Tone; label: string; detail: string; selectable: boolean }
 
 const RENTAL_LABELS: Record<string, string> = {
   renting: 'Đang được thuê', overdue: 'Quá hạn chưa trả', wait_payment: 'Hợp đồng cũ chưa đóng (chờ thanh toán)',
@@ -18,50 +18,69 @@ const RENTAL_LABELS: Record<string, string> = {
 const TONE_ORDER: Record<Tone, number> = { ok: 0, warn: 1, danger: 2 };
 const MAX_OPTIONS = 60;
 
-function rentalsOf(vehicle: ManagementRow): VehicleRental[] {
-  try { return vehicle.rentals_json ? JSON.parse(String(vehicle.rentals_json)) as VehicleRental[] : []; } catch { return []; }
+function rentalsOf(vehicle: ManagementRow): OpenVehicleRental[] {
+  try { return vehicle.rentals_json ? JSON.parse(String(vehicle.rentals_json)) as OpenVehicleRental[] : []; } catch { return []; }
 }
-const formatReturn = (value: string | null) => value ? formatDateTime(value) : 'chưa có ngày trả';
+const formatReturn = (value: string | null | undefined) => value ? formatDateTime(value) : 'chưa có ngày trả';
 
-export function vehicleAvailability(vehicle: ManagementRow, ownOrderId?: number): VehicleAvailability {
+export function vehicleAvailability(
+  vehicle: ManagementRow,
+  ownOrderId?: number,
+  proposedStart = '',
+  proposedEnd = '',
+): VehicleAvailability {
   const all = rentalsOf(vehicle);
-  const others = all.filter(rental => rental.order_id !== ownOrderId);
-  if (others.length) {
-    const [rental] = others;
-    return { tone: 'danger', label: RENTAL_LABELS[rental.status] || 'Đang có hợp đồng mở',
-      detail: others.map(item => [`HĐ ${item.code}`, item.store_name, RENTAL_LABELS[item.status], item.customer, `hẹn trả ${formatReturn(item.return_at)}`].filter(Boolean).join(' · ')).join('; ')
-        + '. Hoàn tất hợp đồng cũ trước khi chọn xe.' };
+  const classified = classifyReservationWindow(all, proposedStart, proposedEnd, ownOrderId);
+  if (classified.kind === 'hard') {
+    const rental = classified.rental;
+    return {
+      tone: 'danger',
+      label: rental ? (RENTAL_LABELS[rental.status] || 'Đang có hợp đồng mở') : 'Đang có hợp đồng mở',
+      detail: classified.detail || (rental
+        ? [`HĐ ${rental.code}`, rental.store_name, RENTAL_LABELS[rental.status], `hẹn trả ${formatReturn(rental.return_at)}`].filter(Boolean).join(' · ') + '. Hoàn tất hợp đồng cũ trước khi chọn xe.'
+        : ''),
+      selectable: false,
+    };
   }
-  if (all.length) return { tone: 'ok', label: 'Xe của hợp đồng này', detail: '' };
-  if (vehicle.status === 'ready') return { tone: 'ok', label: 'Lưu kho', detail: '' };
+  if (classified.kind === 'overlap_warn') {
+    return { tone: 'warn', label: 'Cọc giữ xe · chồng lịch', detail: classified.detail, selectable: true };
+  }
+  if (classified.kind === 'squeeze_ok') {
+    return { tone: 'ok', label: 'Chen trước ngày nhận cọc', detail: classified.detail, selectable: true };
+  }
+  if (all.length) return { tone: 'ok', label: 'Xe của hợp đồng này', detail: '', selectable: true };
+  if (vehicle.status === 'ready') return { tone: 'ok', label: 'Lưu kho', detail: '', selectable: true };
   const status = VEHICLE_STATUSES.find(option => option.value === vehicle.status)?.label || String(vehicle.status || 'Chưa rõ trạng thái');
   return { tone: 'warn', label: status,
-    detail: `Xe đang ở trạng thái ${status}. Cần đóng hợp đồng cũ và xác nhận xe về Lưu kho trước khi phát hành hợp đồng mới.` };
+    detail: `Xe đang ở trạng thái ${status}. Cần đóng hợp đồng cũ và xác nhận xe về Lưu kho trước khi phát hành hợp đồng mới.`,
+    selectable: true };
 }
 
-export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, ownOrderId, takenIds, disabled, invalid, onChange }: {
+export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, ownOrderId, takenIds, disabled, invalid, proposedStart, proposedEnd, onChange }: {
   id: string; index: number; vehicles: ManagementRow[]; value: string; storeName: string; monthly: boolean; ownOrderId?: number;
-  takenIds: string[]; disabled: boolean; invalid: boolean; onChange: (id: string) => void;
+  takenIds: string[]; disabled: boolean; invalid: boolean; proposedStart?: string; proposedEnd?: string; onChange: (id: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const listId = `${id}-options`;
+  const start = proposedStart || '';
+  const end = proposedEnd || '';
   const selected = vehicles.find(item => String(item.id) === value);
   const ranked = useMemo(() => vehicles
-    .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId) }))
+    .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId, start, end) }))
     .sort((a, b) => TONE_ORDER[a.availability.tone] - TONE_ORDER[b.availability.tone] || String(a.item.name).localeCompare(String(b.item.name), 'vi')),
-  [vehicles, ownOrderId]);
+  [vehicles, ownOrderId, start, end]);
   const term = normalize(query);
   const plateTerm = term.replace(/[^a-z0-9]/g, '');
   const matches = term ? ranked.filter(({ item }) => normalize(`${item.name} ${item.license} ${item.brand || ''} ${item.store_name || ''}`).includes(term)
     || Boolean(plateTerm) && normalize(String(item.license || '')).replace(/[^a-z0-9]/g, '').includes(plateTerm)) : ranked;
   const shown = matches.slice(0, MAX_OPTIONS);
-  const selectedAvailability = selected ? vehicleAvailability(selected, ownOrderId) : null;
+  const selectedAvailability = selected ? vehicleAvailability(selected, ownOrderId, start, end) : null;
 
   function choose(next: string) {
     const vehicle = vehicles.find(item => String(item.id) === next);
-    if (next && (!vehicle || vehicleAvailability(vehicle, ownOrderId).tone !== 'ok' || takenIds.includes(next) && next !== value)) return;
+    if (next && (!vehicle || !vehicleAvailability(vehicle, ownOrderId, start, end).selectable || takenIds.includes(next) && next !== value)) return;
     onChange(next);
     setQuery(''); setOpen(false); setActive(0);
   }
@@ -96,7 +115,7 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
       {shown.map(({ item, availability }, position) => {
         const price = monthly ? item.monthly_price : item.daily_price;
         const taken = takenIds.includes(String(item.id)) && String(item.id) !== value;
-        const unavailable = availability.tone !== 'ok' || taken;
+        const unavailable = !availability.selectable || taken;
         return <div key={item.id} id={`${listId}-${item.id}`} role="option" aria-selected={String(item.id) === value}
           aria-disabled={unavailable}
           className={`mg-vehicle-option${unavailable ? ' is-disabled' : ''}${String(item.id) === value ? ' is-selected' : ''}${position === active ? ' is-active' : ''}`}
@@ -112,7 +131,8 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
       {matches.length > shown.length && <small>Còn {matches.length - shown.length} xe nữa, gõ thêm để thu hẹp.</small>}
     </div>}
     {selectedAvailability && selectedAvailability.tone !== 'ok' && <div className={`mg-vehicle-warning is-${selectedAvailability.tone}`} role="alert">
-      <AlertTriangle size={16} /><div><strong>Cảnh báo: {selectedAvailability.label}</strong><span>{selectedAvailability.detail}</span></div>
+      <AlertTriangle size={16} /><div><strong>{selectedAvailability.tone === 'warn' ? 'Cảnh báo' : 'Cảnh báo'}: {selectedAvailability.label}</strong><span>{selectedAvailability.detail}</span></div>
     </div>}
+    {selectedAvailability && selectedAvailability.tone === 'ok' && selectedAvailability.detail && <p className="mg-composer-hint" role="status">{selectedAvailability.detail}</p>}
   </div>;
 }

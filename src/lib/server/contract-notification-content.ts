@@ -113,9 +113,9 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       :renewal.version!==undefined?Number(t.renewal_payload?.version)===Number(renewal.version)
         :t.renewal_payload&&t.renewal_payload.version===undefined&&
           new Date(t.renewal_payload.return_at).getTime()===new Date(renewal.return_at).getTime()&&t.renewal_payload.license===renewal.license)):[];
-  // Rental/handover telegrams include cọc + thuê; reservation is deposit-only. Never drop CK cọc and show only a cash rental fee.
+  // Rental/handover: cọc + thuê. Reservation (cọc giữ xe) records advance as order:rental_fees, not order:deposit.
   const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?eventRefunds:kind==='renewal'?renewalTx
-    :kind==='reservation'?depositTx:[...depositTx,...rental];
+    :kind==='reservation'?rental:[...depositTx,...rental];
   const methods=(rows:typeof tx)=>[...new Set(rows.map(t=>String(t.method)).filter(method=>method&&method!=='Chưa xác định'))].sort().join(', ');
   const fee=o.total_rental_fees==null?null:Number(o.total_rental_fees);
   const deposit=o.first_deposit_amount==null&&o.additional_deposit_amount==null?null:Number(o.first_deposit_amount||0)+Number(o.additional_deposit_amount||0);

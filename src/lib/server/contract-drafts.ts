@@ -193,16 +193,24 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     } : undefined);
   } catch (cause) { if (cause instanceof ContractTypeError) throw new DraftSaveError(cause.message, cause.status); throw cause; }
   const stores = await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.store_id || null]);
+  // Vehicle store may be another branch; resolve via company directory, not RLS-scoped stores.
   const vehicleStores = edits.draft.vehicle_store_id && edits.draft.vehicle_store_id !== edits.draft.store_id
-    ? await client.query('SELECT id, store_name FROM himoto.stores WHERE id = $1', [edits.draft.vehicle_store_id]) : stores;
-  const staff = await client.query('SELECT id, store_id, user_id, full_name FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id || null]);
+    ? await client.query('SELECT id, store_name FROM himoto.store_directory() WHERE id = $1', [edits.draft.vehicle_store_id])
+    : stores;
+  const staff = edits.draft.staff_id
+    ? (dataAccess.getStore()
+      ? await client.query('SELECT id, store_id, user_id, full_name FROM himoto.staff_for_contract($1)', [edits.draft.staff_id])
+      : await client.query('SELECT id, store_id, user_id, full_name FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id]))
+    : { rows: [] as { id: number; store_id: number; user_id: number; full_name: string }[] };
   if(staff.rows[0])edits.draft.staff_name=staff.rows[0].full_name;
   for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
     if (!edits.draft[key]) continue;
     if (!(await loadCommissionStaff(edits.draft[key], role))) throw new DraftSaveError(`Chọn nhân viên ${role === 'NVKD' ? 'NVKD hoặc TPKD' : role} đang làm việc để ghi nhận doanh số.`,409);
   }
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
-  const vehicles = await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
+  const vehicles = dataAccess.getStore()
+    ? await client.query(`SELECT id, store_id, store_name FROM himoto.vehicle_inventory() WHERE id = ANY($1::bigint[])`, [ids])
+    : await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id) WHERE v.id = ANY($1::bigint[])`, [ids]);
   if (edits.draft.customer_id) {
     const scope = dataAccess.getStore();

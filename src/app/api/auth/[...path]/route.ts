@@ -28,7 +28,7 @@ type QueryConfig = { sql: string; values?: number[] };
 const listQueries: Record<string, QueryConfig> = {
   'hr/staff': {
     sql: `SELECT p.id, p.staff_code, p.full_name, p.phone, p.email, p.position,
-                 p.store_id, s.store_name, p.status, p.joined_at, p.notes
+                 p.store_id, s.store_name, p.status, p.joined_at, p.notes, p.user_id
           FROM himoto.staff_profiles p
           LEFT JOIN himoto.stores s ON s.id = p.store_id
           ORDER BY p.id DESC`,
@@ -195,8 +195,11 @@ async function GETHandler(request: NextRequest, { params }: Params) {
       if (!/^\d+$/.test(storeId) || !Number.isSafeInteger(Number(storeId)) || Number(storeId) <= 0) {
         return NextResponse.json({ status: 'error', message: 'Mã cơ sở không hợp lệ.' }, { status: 400 });
       }
-      const staffSql=hasPermission(dataAccess.getStore(),'hr.read')?query.sql:'SELECT p.id,p.full_name,p.position,p.status,p.store_id FROM himoto.staff_profiles p ORDER BY p.id DESC';
-      return await readAll({ sql: staffSql.replace('ORDER BY p.id DESC', 'WHERE p.store_id=$1 ORDER BY p.id DESC'), values: [Number(storeId)] });
+      // Contract composer loads representative staff by vehicle store across branches.
+      const staffSql=hasPermission(dataAccess.getStore(),'hr.read')?query.sql:'SELECT p.id,p.full_name,p.position,p.status,p.store_id,p.user_id FROM himoto.staff_profiles p ORDER BY p.id DESC';
+      const scopedSql=staffSql.replace('ORDER BY p.id DESC', 'WHERE p.store_id=$1 ORDER BY p.id DESC');
+      const data=(await ownerDatabase.query(scopedSql,[Number(storeId)])).rows;
+      return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
     }
     if (key === 'order/car-rental') {
       const customerId = request.nextUrl.searchParams.get('customer_id');

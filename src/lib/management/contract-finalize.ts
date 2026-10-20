@@ -2,8 +2,13 @@ import type { PaymentMethod } from './contract-payments';
 
 export interface FinalizeReceipt { method: PaymentMethod; account_id: number }
 export interface FinalizeCollection extends FinalizeReceipt { purpose: 'deposit' | 'rental'; amount: string; paid_at: string }
-export type FinalizeInput = { revision: string; paid_at: string; deposit: FinalizeReceipt | null; rental: FinalizeReceipt | null } | { revision: string; receipts: FinalizeCollection[]; reservation?: true };
+export type FinalizeInput = { revision: string; paid_at: string; deposit: FinalizeReceipt | null; rental: FinalizeReceipt | null; acknowledge_reservation_overlap?: true }
+  | { revision: string; receipts: FinalizeCollection[]; reservation?: true; acknowledge_reservation_overlap?: true };
 export interface FinalizeResult { order_id: number; code: string; total_amount: number; deposit_amount: number; paid_amount: number; transaction_ids: number[]; status?: 'renting' | 'deposit_contract' }
+export class FinalizeOverlapError extends Error {
+  readonly code = 'reservation_overlap' as const;
+  constructor(message: string) { super(message); }
+}
 
 /** Balance only the automatic row; editing it manually opts into a partial payment. */
 export function balanceCollectionAmounts<T extends { amount: string; automatic?: boolean }>(rows: T[], due: number): T[] {
@@ -48,6 +53,9 @@ export async function finalizeContract(orderId: number, input: FinalizeInput): P
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(input),
   });
   const result = await response.json().catch(() => null);
-  if (!response.ok || result?.status !== 'success' || typeof result?.data?.code !== 'string') throw new Error(result?.message || `Không lưu chính thức được hợp đồng (HTTP ${response.status}).`);
+  if (!response.ok || result?.status !== 'success' || typeof result?.data?.code !== 'string') {
+    if (result?.code === 'reservation_overlap') throw new FinalizeOverlapError(result?.message || 'Xe đã có cọc giữ chồng lịch.');
+    throw new Error(result?.message || `Không lưu chính thức được hợp đồng (HTTP ${response.status}).`);
+  }
   return result.data as FinalizeResult;
 }

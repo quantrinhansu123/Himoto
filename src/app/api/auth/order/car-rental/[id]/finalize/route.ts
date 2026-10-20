@@ -27,7 +27,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    if (error instanceof ContractFinalizeError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    if (error instanceof ContractFinalizeError) return NextResponse.json({ status: 'error', message: error.message, ...(error.code ? { code: error.code } : {}) }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin lưu chính thức không hợp lệ.' }, { status: 400 });
     if (error && typeof error === 'object' && 'code' in error && error.code === '23505') return NextResponse.json({ status: 'error', message: 'Số hợp đồng vừa được dùng. Thử lại.' }, { status: 409 });
     console.error('Contract finalize failed:', error instanceof Error ? error.name : 'Unknown database error');

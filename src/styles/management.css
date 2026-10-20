@@ -3751,6 +3751,13 @@
 .mg-debt-reminder-dialog { max-width: 680px; }
 .mg-debt-reminder-dialog .mg-field { margin-bottom: 14px; }
 .mg-debt-reminder-dialog textarea { min-height: 220px; resize: vertical; }
+.mg-bulk-debt-reminder-dialog { max-width: 720px; }
+.mg-bulk-reminder-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; max-height: min(50vh, 420px); overflow: auto; }
+.mg-bulk-reminder-list li { padding: 12px; border: 1px solid var(--mg-line); border-radius: 8px; background: white; }
+.mg-bulk-reminder-list strong, .mg-bulk-reminder-list small { display: block; overflow-wrap: anywhere; }
+.mg-bulk-reminder-list small { margin-top: 4px; color: var(--mg-slate-600); }
+.mg-bulk-reminder-list .mg-field-error { margin: 8px 0 0; }
+.mg-bulk-reminder-list .mg-reminder-status { margin-top: 8px; }
 .mg-reminder-help { color: var(--mg-slate-600); font-size: 13px; line-height: 1.6; }
 .mg-reminder-picker { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
 .mg-reminder-picker button { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; padding: 12px; border: 1px solid var(--mg-line); border-radius: 8px; background: white; color: var(--mg-slate-700); cursor: pointer; }

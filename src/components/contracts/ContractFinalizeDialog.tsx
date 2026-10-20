@@ -5,7 +5,7 @@ import { CheckCircle2, LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { PAYMENT_METHODS, PaymentContext, PaymentMethod, loadPaymentContext, paymentAccountKey, paymentAccountMatchesMethod, paymentAccounts, paymentMethodLabel, vietnamPaymentTime } from '@/lib/management/contract-payments';
 import { PAYMENT_METHOD_FALLBACK } from '@/lib/management/contract-finalize';
-import { FinalizeCollection, FinalizeResult, balanceCollectionAmounts, finalizeContract } from '@/lib/management/contract-finalize';
+import { FinalizeCollection, FinalizeOverlapError, FinalizeResult, balanceCollectionAmounts, finalizeContract } from '@/lib/management/contract-finalize';
 import type { ContractCharge } from '@/lib/management/contract-charges';
 import { DateTime24Field } from './DateTime24Field';
 import { ContractTransactionPhotos } from '@/components/management/ContractTransactionPhotos';
@@ -26,6 +26,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   const [error,setError] = useState(''), [saving,setSaving] = useState(false);
   const [photosPending,setPhotosPending]=useState(false);
   const [completed,setCompleted]=useState<FinalizeResult|null>(null);
+  const [overlapWarning,setOverlapWarning]=useState('');
+  const [acknowledgeOverlap,setAcknowledgeOverlap]=useState(false);
   const busy = useRef(false), nextKey = useRef(0);
   const initialMethods = useRef({deposit:depositMethods,rental:rentalMethods,charges});
   const depositDue = Math.max(deposit-(context?.deposit_paid || 0),0), rentalDue = Math.max(total-(context?.paid_amount || 0),0);
@@ -88,9 +90,25 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     let receipts: FinalizeCollection[];
     try {receipts=[...collections(depositState,'deposit',depositDue),...collections(rentalState,'rental',rentalDue)]; if (reservation && !receipts.length) throw new Error('Nhập khoản tiền giữ xe đã nhận.');}
     catch(cause){setError(cause instanceof Error ? cause.message : 'Kiểm tra các khoản đã nhận.');return;}
+    if (overlapWarning && !acknowledgeOverlap) {
+      setError('Tick xác nhận chồng lịch cọc giữ xe để tiếp tục, hoặc chỉnh lại ngày thuê/hẹn trả.');
+      return;
+    }
     busy.current=true;setSaving(true);
-    try{setCompleted(await finalizeContract(orderId,{revision,receipts,...(reservation ? {reservation:true as const} : {})}));}
-    catch(cause){setError(cause instanceof Error ? cause.message : 'Không lưu chính thức được hợp đồng.');}
+    try{
+      setCompleted(await finalizeContract(orderId,{
+        revision,receipts,
+        ...(reservation ? {reservation:true as const} : {}),
+        ...(acknowledgeOverlap ? {acknowledge_reservation_overlap:true as const} : {}),
+      }));
+    }
+    catch(cause){
+      if (cause instanceof FinalizeOverlapError) {
+        setOverlapWarning(cause.message);
+        setAcknowledgeOverlap(false);
+        setError(cause.message);
+      } else setError(cause instanceof Error ? cause.message : 'Không lưu chính thức được hợp đồng.');
+    }
     finally{busy.current=false;setSaving(false);}
   }
 
@@ -141,8 +159,12 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       </>}
       <ContractTransactionPhotos id={orderId} phase="rental" workflow={reservation?'reservation':'rental'} title="Ảnh xe lúc thuê / lập hợp đồng" onPendingChange={setPhotosPending}/>
       {photosPending&&<p role="status">Lưu ảnh đang chọn trước khi hoàn tất hợp đồng.</p>}
+      {overlapWarning && <div className="mg-vehicle-warning is-warn" role="alert">
+        <p>{overlapWarning}</p>
+        <label className="mg-checkbox"><input type="checkbox" checked={acknowledgeOverlap} onChange={event=>{setAcknowledgeOverlap(event.target.checked); if(event.target.checked)setError('');}} />Tôi đã hiểu và vẫn muốn phát hành dù chồng lịch cọc giữ xe</label>
+      </div>}
       {missingAccounts && <p className="mg-field-error" role="alert">{noAccountMessage}</p>}
       {error && <p className="mg-field-error" role="alert">{error}</p>}
-    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context||photosPending||missingAccounts}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>
+    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context||photosPending||missingAccounts || (Boolean(overlapWarning) && !acknowledgeOverlap)}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>
   </Dialog>;
 }

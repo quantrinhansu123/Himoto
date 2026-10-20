@@ -42,8 +42,14 @@ def mock(route):
         data = [customer] if params['query'][0] in [customer['phone'],customer['id_card']] else []
     elif endpoint == '/api/auth/customers': data = [customer]
     elif endpoint == '/api/auth/stores': data = stores
+    elif endpoint == '/api/auth/store-directory': data = [dict(id=s['id'], store_name=s['store_name'], manager_user_id=None, manager_name=None, store_phone='', store_address='') for s in stores]
     elif endpoint == '/api/auth/hr/staff': data = staff
     elif endpoint == '/api/auth/vehicle/vehicles': data = vehicles
+    elif endpoint == '/api/auth/vehicles/inventory': data = [
+        dict(id=v['id'], name=v['name'], license=v['license'], type=v['type'], status=v['status'],
+             store_id=v['store_id'], store_name=v['store_name'], from_store_name=None, to_store_name=None,
+             available=v['status']=='ready' and not v.get('rentals'), rental_blockers=v.get('rentals') or [])
+        for v in vehicles]
     elif endpoint == '/api/auth/order/car-rental': data = []
     else: raise AssertionError(f'Unexpected business request {endpoint}')
     route.fulfill(json={'status':'success','data':data})

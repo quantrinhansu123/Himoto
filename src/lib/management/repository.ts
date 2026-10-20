@@ -98,6 +98,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     address: text(raw.address || raw.store_address), created_at: text(raw.created_at),
   };
   if (kind === 'staff') return { ...base, position: normalizeStaffPosition(raw.position), hire_date: text(raw.joined_at), notes: text(raw.notes),
+    user_id: number(raw.user_id),
     status: ({ '1': 'active', '0': 'inactive' } as Record<string, string>)[base.status] || base.status };
   if (kind === 'stores') return { ...base, manager_name: text(raw.manager_name),
     user_id: number(raw.user_id), kind: text(raw.kind), store_revision: text(raw.store_revision),

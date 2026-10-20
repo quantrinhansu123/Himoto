@@ -22,6 +22,13 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
     (9004,1,'order:deposit_refund','out',999999,'pending',143,23,99,NULL,1,NULL,'QA')`);
   const snapshot=await content.notificationPayload(db,1,'rental',143,['rental']);
   assert.equal(snapshot.contract_staff,'Named QA employee');assert(content.contractNotificationText('rental',snapshot).includes('Named QA employee'));assert(!content.contractNotificationText('rental',snapshot).includes('Actor QA'));assert.equal(snapshot.grand_total,1200000);assert.equal(snapshot.days,1);assert.equal(snapshot.method,'CK TK cá nhân');
+  await c.query('SAVEPOINT reservation_telegram_method');
+  await c.query(`DELETE FROM ${schema}.transactions WHERE id=9002`);
+  const reservationSnap=await content.notificationPayload(db,1,'reservation',143,['rental']);
+  assert.equal(reservationSnap.method,'CK TK cá nhân');
+  assert(content.contractNotificationText('reservation',reservationSnap).includes('Hình thức thanh toán: CK TK cá nhân'));
+  assert(!content.contractNotificationText('reservation',reservationSnap).includes('Chưa ghi nhận thanh toán'));
+  await c.query('ROLLBACK TO SAVEPOINT reservation_telegram_method');
   await c.query(`INSERT INTO ${schema}.staff_profiles(id,staff_code,full_name,phone,store_id,user_id,status) VALUES(990101,'QA990101','Selected employee QA','0900000091',23,143,'active')`);
   await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,draft}','{"staff_id":"990101","staff_name":""}')::json WHERE id=1`);
   const selectedStaff=await content.notificationPayload(db,1,'rental',143,['rental']);

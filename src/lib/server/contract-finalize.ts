@@ -12,10 +12,9 @@ import { VEHICLE_ORDER_SQL } from './contract-classification';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractFinalizeError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  constructor(message: string, public status = 400, public code?: string) { super(message); }
 }
 
-const OPEN_STATUSES = ['renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract', 'bad_debt'];
 const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 const validLocal = (value: unknown): value is string => {
   if (typeof value !== 'string' || !LOCAL_DATE_TIME.test(value)) return false;
@@ -42,8 +41,12 @@ function parseReceipt(value: unknown, label: string): FinalizeReceipt | null {
 export function parseFinalizeInput(body: unknown): FinalizeInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractFinalizeError('Thông tin lưu chính thức không hợp lệ.');
   const input = body as Record<string, unknown>;
+  const acknowledge = input.acknowledge_reservation_overlap === true ? { acknowledge_reservation_overlap: true as const } : {};
+  if (input.acknowledge_reservation_overlap !== undefined && input.acknowledge_reservation_overlap !== true) {
+    throw new ContractFinalizeError('Xác nhận chồng lịch cọc giữ xe không hợp lệ.');
+  }
   if ('receipts' in input) {
-    if (Object.keys(input).some(key=>!['revision','receipts','reservation'].includes(key)) || (input.reservation !== undefined && input.reservation !== true) || typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision) ||
+    if (Object.keys(input).some(key=>!['revision','receipts','reservation','acknowledge_reservation_overlap'].includes(key)) || (input.reservation !== undefined && input.reservation !== true) || typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision) ||
       !Array.isArray(input.receipts) || input.receipts.length > 40) throw new ContractFinalizeError('Thông tin các khoản thu không hợp lệ.');
     const receipts: FinalizeCollection[] = input.receipts.map(value=>{
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ContractFinalizeError('Khoản thu không hợp lệ.');
@@ -54,12 +57,12 @@ export function parseFinalizeInput(body: unknown): FinalizeInput {
       return {...receipt,purpose:row.purpose as FinalizeCollection['purpose'],amount:row.amount,paid_at:row.paid_at};
     });
     if (input.reservation && (!receipts.length || receipts.some(row=>row.purpose !== 'rental'))) throw new ContractFinalizeError('Nhập tiền giữ xe trả trước, được trừ vào tiền thuê.');
-    return {revision:input.revision,receipts,...(input.reservation ? {reservation:true as const} : {})};
+    return {revision:input.revision,receipts,...(input.reservation ? {reservation:true as const} : {}),...acknowledge};
   }
-  if (Object.keys(input).some(key => !['revision', 'paid_at', 'deposit', 'rental'].includes(key)) || !('deposit' in input) || !('rental' in input) ||
+  if (Object.keys(input).some(key => !['revision', 'paid_at', 'deposit', 'rental', 'acknowledge_reservation_overlap'].includes(key)) || !('deposit' in input) || !('rental' in input) ||
       typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision)) throw new ContractFinalizeError('Thông tin lưu chính thức không hợp lệ.');
   if (!validPaidAt(input.paid_at)) throw new ContractFinalizeError('Ngày giờ thu tiền không hợp lệ hoặc nằm trong tương lai.');
-  return { revision: input.revision, paid_at: input.paid_at, deposit: parseReceipt(input.deposit, 'tiền cọc'), rental: parseReceipt(input.rental, 'tiền thuê') };
+  return { revision: input.revision, paid_at: input.paid_at, deposit: parseReceipt(input.deposit, 'tiền cọc'), rental: parseReceipt(input.rental, 'tiền thuê'), ...acknowledge };
 }
 
 // Caller owns BEGIN/COMMIT/ROLLBACK: contract number, vehicle lines, vehicle
@@ -113,26 +116,51 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     if (total === 0 && input.rental) throw new ContractFinalizeError('Bản nháp không có tiền thuê để ghi phiếu thu.');
   }
 
-  const vehicles = await client.query(`SELECT v.id, v.license, v.status, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
+  // Cross-branch rentals lock stock at another store without granting table-wide vehicle SELECT.
+  const vehicles = dataAccess.getStore()
+    ? await client.query('SELECT * FROM himoto.lock_vehicles_for_contract($1::bigint[])', [vehicleIds])
+    : await client.query(`SELECT v.id, v.license, v.status, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
     WHERE v.id = ANY($1::bigint[]) ORDER BY v.id FOR UPDATE OF v`, [vehicleIds]);
   if (vehicles.rowCount !== vehicleIds.length) throw new ContractFinalizeError('Có xe trong bản nháp không còn tồn tại.', 409);
-  const conflictLabel = (row: { license: string; code: string; store_name?: string | null; manager_name?: string | null }) => {
+  const conflictLabel = (row: { license: string; code: string; store_name?: string | null; manager_name?: string | null; status?: string | null; rent_at?: Date | string | null; severity?: string | null }) => {
     const store = String(row.store_name || '').trim();
     const manager = String(row.manager_name || '').trim();
+    const pickup = row.rent_at ? String(row.rent_at).replace('T', ' ').slice(0, 16) : '';
+    if (row.severity === 'reservation_overlap') {
+      return `xe ${row.license} đã cọc giữ (HĐ ${row.code}${pickup ? `, nhận ${pickup}` : ''}${store ? ` tại ${store}` : ''}) — hẹn trả HĐ này chồng/vượt ngày nhận`;
+    }
     return `xe ${row.license} đang thuộc hợp đồng ${row.code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}`;
   };
+  const proposedStart = `${start}:00+07:00`, proposedEnd = `${end}:00+07:00`;
   const conflicts = dataAccess.getStore()
-    ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts($1::bigint[],$2)', [vehicleIds, id])
+    ? await client.query('SELECT * FROM himoto.vehicle_window_conflicts($1::bigint[],$2,$3::timestamptz,$4::timestamptz)', [vehicleIds, id, proposedStart, proposedEnd])
     : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code, s.store_name,
-        COALESCE(cu.name, mu.name, '') AS manager_name
+        COALESCE(cu.name, mu.name, '') AS manager_name,
+        CASE WHEN o.order_status='renting' AND d.return_at<now() THEN 'overdue' ELSE o.order_status END AS status,
+        d.rent_at, d.return_at,
+        CASE WHEN o.order_status='deposit_contract' THEN 'reservation_overlap' ELSE 'hard' END AS severity
       FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
       LEFT JOIN himoto.stores s ON s.id=o.store_id
       LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
       LEFT JOIN himoto.users mu ON mu.id=s.user_id
       WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.deleted_at IS NULL
-        AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status = ANY($3::text[]) ORDER BY v.license`, [vehicleIds, id, OPEN_STATUSES]);
-  if (conflicts.rowCount) throw new ContractFinalizeError(`Không thể lưu chính thức: ${conflicts.rows.map(conflictLabel).join('; ')} chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.`, 409);
+        AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+        AND (
+          o.order_status = ANY($3::text[])
+          OR (o.order_status='deposit_contract' AND d.rent_at IS NOT NULL AND $5::timestamptz > d.rent_at)
+        )
+      ORDER BY v.license`, [vehicleIds, id, ['renting','overdue','wait_payment','pending','bad_debt'], proposedStart, proposedEnd]);
+  const hard = conflicts.rows.filter(row => row.severity !== 'reservation_overlap');
+  const soft = conflicts.rows.filter(row => row.severity === 'reservation_overlap');
+  if (hard.length) throw new ContractFinalizeError(`Không thể lưu chính thức: ${hard.map(conflictLabel).join('; ')} chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.`, 409);
+  if (soft.length && !('acknowledge_reservation_overlap' in input && input.acknowledge_reservation_overlap === true)) {
+    throw new ContractFinalizeError(
+      `Cảnh báo chồng lịch cọc giữ xe: ${soft.map(conflictLabel).join('; ')}. Tick xác nhận để vẫn phát hành, hoặc chỉnh hẹn trả trước ngày nhận của khách đã cọc.`,
+      409,
+      'reservation_overlap',
+    );
+  }
   const notStored = vehicles.rows.filter(row => row.status!=='ready');
   if (notStored.length) throw new ContractFinalizeError(`Xe ${notStored.map(row => row.license).join(', ')} phải ở trạng thái Lưu kho. Đóng hợp đồng cũ và xác nhận nhận xe trước khi phát hành hợp đồng mới.`, 409);
   for (const line of lines) {
@@ -232,12 +260,16 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   draft.payment_method=actualMethods('rental') || draft.payment_method; draft.deposit_payment_method=actualMethods('deposit') || draft.deposit_payment_method;
 
   const finalized = { at: new Date().toISOString(), actor_id: actorId, contract_number: code, item_ids: itemIds, transaction_ids: transactionIds,
+    ...(soft.length ? { reservation_overlap_acknowledged: true, reservation_overlap_codes: soft.map(row => String(row.code)) } : {}),
     ...(retiredItemIds.length ? { retired_legacy_item_ids: retiredItemIds } : {}) };
   await client.query(`UPDATE himoto.orders SET order_status=$12, order_mode='standard', contract_number=$2,
       contract_issued_at=now() AT TIME ZONE 'Asia/Ho_Chi_Minh', rent_at=$3, return_at=$4, total=$5, total_rental_fees=$6, first_deposit_amount=$7,
       pid=$8, created_without_collect_deposit=$9, created_without_collect_rental_fees=$10, draft_payload=$11, updated_at=now()
     WHERE id=$1`, [id, code, startAt, endAt, String(total), rentalBase, deposit || null, paid, oldDepositPaid+depositCollected<deposit, oldRentalPaid+rentalCollected<total,
     JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized, ...(reservation ? {reservation:{at:finalized.at,actor_id:actorId,applies_to:'rental'}} : {}) } }), reservation ? 'deposit_contract' : 'renting']);
-  if (!reservation) await client.query(`UPDATE himoto.vehicles SET status='using', updated_at=now() WHERE id = ANY($1::bigint[])`, [vehicleIds]);
+  if (!reservation) {
+    if (dataAccess.getStore()) await client.query('SELECT himoto.mark_vehicles_using($1::bigint[])', [vehicleIds]);
+    else await client.query(`UPDATE himoto.vehicles SET status='using', updated_at=now() WHERE id = ANY($1::bigint[])`, [vehicleIds]);
+  }
   return { order_id: id, code, total_amount: total, deposit_amount: deposit, paid_amount: paid, transaction_ids: transactionIds, status:reservation ? 'deposit_contract' : 'renting' };
 }

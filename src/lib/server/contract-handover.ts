@@ -46,6 +46,7 @@ export async function handoverReservation(client: Database, id: number, actorId:
   const payload = order.draft_payload || {}, composer = payload.management_composer || {};
   const next = {...payload,management_composer:{...composer,draft:{...composer.draft,reservation:false},handover:{at:new Date().toISOString(),actor_id:actorId}}};
   await client.query(`UPDATE himoto.orders SET order_status='renting',draft_payload=$2,updated_at=now() WHERE id=$1`,[id,JSON.stringify(next)]);
-  await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=ANY($1::bigint[])`,[vehicleIds]);
+  if (dataAccess.getStore()) await client.query('SELECT himoto.mark_vehicles_using($1::bigint[])',[vehicleIds]);
+  else await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=ANY($1::bigint[])`,[vehicleIds]);
   return readPaymentContext(client,id);
 }

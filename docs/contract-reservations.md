@@ -24,7 +24,7 @@ Ví dụ trên: nhận 100.000 đ hôm nay, thu thêm 200.000 đ khi giao xe. H�
 
 ## Dữ liệu và kiểm thử
 
-Dùng trạng thái `deposit_contract`, bảng đơn/xe/phiếu thu và JSON hợp đồng hiện có; không cần migration mới. Phiếu giữ xe có loại `order:rental_fees` và nội dung ghi rõ trừ tiền thuê. Các khoản được ghi cùng đơn trong một transaction; xung đột xe, phiên bản cũ hoặc ghi lỗi không lưu một phần. Đơn chờ giao ngăn xe bị lập thêm hợp đồng khác nhưng chưa chuyển xe thành Đang thuê.
+Dùng trạng thái `deposit_contract`, bảng đơn/xe/phiếu thu và JSON hợp đồng hiện có; không cần migration mới. Phiếu giữ xe có loại `order:rental_fees` và nội dung ghi rõ trừ tiền thuê. Các khoản được ghi cùng đơn trong một transaction; xung đột xe, phiên bản cũ hoặc ghi lỗi không lưu một phần. **Chen lịch trước ngày nhận (phương án B):** xe đang `deposit_contract` vẫn cho lập HĐ khác nếu **hẹn trả ≤ ngày dự kiến nhận** của khách đã cọc. Nếu hẹn trả **chồng/vượt** ngày nhận → cảnh báo trên picker và khi phát hành phải tick xác nhận (`acknowledge_reservation_overlap`). Hợp đồng đang thuê / chờ thanh toán / nợ xấu vẫn chặn cứng. Cần migration `docs/sql/2026-10-20-reservation-window-conflicts.sql`.
 
 Kiểm thử SQL chạy bằng PostgreSQL trong bộ nhớ (PGlite), kiểm thử trình duyệt giả lập toàn bộ API nghiệp vụ. Không chạy migration hoặc ghi dữ liệu nghiệp vụ thật vào Supabase.
 
