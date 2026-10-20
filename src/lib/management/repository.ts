@@ -111,11 +111,15 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     birthday: text(raw.birthday || raw.date_of_birth), relatives_text: text(raw.relatives_text) || relativesText(raw.relatives), relatives_json: relativesJson(raw.relatives),
     customer_revision: text(raw.customer_revision), contract_count: number(raw.contract_count), status: ['blacklist', 'bad_debt'].includes(base.status) ? 'blacklist' : ['draft', '0'].includes(base.status) ? 'draft' : raw.warning || raw.warning_note ? 'warning' :
       (({ '1': 'active', '0': 'draft' } as Record<string, string>)[base.status] || base.status) };
-  if (kind === 'vehicles') return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type), vehicle_revision: text(raw.vehicle_revision),
+  if (kind === 'vehicles') {
+    const openRentals = (Array.isArray(raw.rentals) ? raw.rentals : Array.isArray(raw.rental_blockers) ? raw.rental_blockers : []).map(object);
+    const latestCustomer = openRentals.map(rental => text(rental.customer || rental.customer_name)).find(Boolean) || '';
+    return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type), vehicle_revision: text(raw.vehicle_revision),
     transfer_event_id:number(raw.transfer_event_id),transfer_from_store_id:number(raw.transfer_from_store_id),transfer_to_store_id:number(raw.transfer_to_store_id),
     transfer_from_store_name:text(raw.transfer_from_store_name),transfer_to_store_name:text(raw.transfer_to_store_name),transfer_receivable:number(raw.transfer_receivable),
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
     rentals_json: Array.isArray(raw.rental_blockers) ? JSON.stringify(raw.rental_blockers) : Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
+    holder_name: text(raw.holder_name) || latestCustomer || 'Lưu kho',
     beneficiary_store_id: number(raw.beneficiary_store_id ?? raw.current_store_id ?? raw.store_id), beneficiary_store_name: text(raw.beneficiary_store_name || raw.store_name),
     odometer: number(raw.odometer), daily_price: number(raw.daily_price), monthly_price: number(raw.monthly_price), year: text(raw.year),
     status: ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[base.status] || base.status,
@@ -128,6 +132,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
         lastAt: raw.gps_last_at,
       });
     })(),gps_latitude:number(raw.gps_latitude),gps_longitude:number(raw.gps_longitude),gps_last_sync:text(raw.gps_last_sync),gps_provider:text(raw.gps_provider),gps_heartbeat_at:text(raw.gps_heartbeat_at),gps_position_at:text(raw.gps_position_at),gps_reported_at:text(raw.gps_reported_at),gps_ignition:typeof raw.gps_ignition==='boolean'?Number(raw.gps_ignition):'' };
+  }
   const customer = object(raw.customer);
   const vehicles = Array.isArray(raw.vehicles) ? raw.vehicles.map(object) : [];
   const store = object(raw.store);

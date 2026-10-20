@@ -41,7 +41,7 @@ export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: st
     if (query.startDate && (!date || date < query.startDate)) return false;
     if (query.endDate && (!date || date > query.endDate)) return false;
     if (!matchesOverdueDays(row, query.overdueDays || '', query.overdueCompare || '')) return false;
-    const searchable = ['code', 'name', 'phone', 'id_card', 'address', 'license', 'customer_name', 'customer_phone', 'vehicle_name'];
+    const searchable = ['code', 'name', 'phone', 'id_card', 'address', 'license', 'customer_name', 'customer_phone', 'vehicle_name', 'holder_name'];
     return !needle || searchable.some(key => normalize(String(row[key] ?? '')).includes(needle));
   });
 }

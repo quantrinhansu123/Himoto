@@ -9,7 +9,7 @@ import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
 import { GpsEvidence } from './GpsEvidence';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
-  vehicles: ['overdue_days', 'license', 'store_name', 'daily_price'],
+  vehicles: ['overdue_days', 'license', 'holder_name', 'store_name'],
   contracts: ['code', 'customer_phone', 'license', 'end_date'],
   customers: ['phone', 'id_card', 'store_name'],
   staff: ['phone', 'position', 'store_name'],

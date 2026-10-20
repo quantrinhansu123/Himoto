@@ -41,17 +41,21 @@ const listQueries: Record<string, QueryConfig> = {
   },
   'vehicle/vehicles': {
     sql: `WITH rental_blockers AS MATERIALIZED (
-            SELECT vehicle_id,jsonb_agg(jsonb_build_object(
-              'order_id',order_id,'code',code,'status',status,'store_name',store_name,
-              'rent_at',rent_at,'return_at',return_at) ORDER BY order_id DESC) AS rentals
-            FROM himoto.vehicle_rental_blockers(ARRAY(SELECT id FROM himoto.vehicles WHERE COALESCE(current_store_id,store_id)>0))
-            GROUP BY vehicle_id
+            SELECT b.vehicle_id,jsonb_agg(jsonb_build_object(
+              'order_id',b.order_id,'code',b.code,'status',b.status,'store_name',b.store_name,
+              'customer',COALESCE(NULLIF(c.name,''),NULLIF(o.customer_name,''),''),
+              'rent_at',b.rent_at,'return_at',b.return_at) ORDER BY b.rent_at DESC NULLS LAST, b.order_id DESC) AS rentals
+            FROM himoto.vehicle_rental_blockers(ARRAY(SELECT id FROM himoto.vehicles WHERE COALESCE(current_store_id,store_id)>0)) b
+            LEFT JOIN himoto.orders o ON o.id=b.order_id
+            LEFT JOIN himoto.customers c ON c.id=o.customer_id
+            GROUP BY b.vehicle_id
           ) SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, v.xmin::text AS vehicle_revision,
                  pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
                  pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
                  pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
                  r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
+                 COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
                  gps.has_device AS gps_has_device,
                  gps.normalized_status AS gps_normalized_status,
                  gps.last_at AS gps_last_at,gps.latitude AS gps_latitude,gps.longitude AS gps_longitude,gps.synced_at AS gps_last_sync,gps.provider AS gps_provider,

@@ -15,6 +15,11 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
   if(config.kind==='vehicles'&&column.key==='location_status')return <><span className={`mg-status mg-status-${statusTone(String(value))}`}><span/>{optionLabel(config,column.key,String(value||''))}</span><GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/></>;
   if (column.format === 'status') return <span className={`mg-status mg-status-${statusTone(String(value))}`}><span />{optionLabel(config, column.key, String(value || ''))}</span>;
   if (column.format === 'code') return <span className="mg-code">{value || '—'}</span>;
+  if (config.kind === 'vehicles' && column.key === 'holder_name') {
+    const holder = String(value || 'Lưu kho');
+    if (holder === 'Lưu kho') return <span className="mg-status mg-status-green"><span />Lưu kho</span>;
+    return <div className="mg-identity"><span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{holder.split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span><div><strong title={holder}>{holder}</strong></div></div>;
+  }
   if (column.format === 'person' || column.format === 'vehicle') return <div className={`mg-identity ${column.format === 'vehicle' ? 'mg-identity-vehicle' : ''}`}>
     {column.format === 'person' && <span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{String(value || '').split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span>}
     <div><strong title={String(value || '')}>{value || '—'}</strong>{column.secondary && <small title={String(row[column.secondary] || '')}>{row[column.secondary] || '—'}</small>}</div></div>;
