@@ -10,7 +10,8 @@ async function main() {
   const base = { item_id: 101, item_revision: '1', order_revision: '2', return_at: '2026-01-20T10:00', amount: '300', note: ' QA ' };
   assert.equal(server.parseRenewalInput(base).note, 'QA');
   assert.equal(server.parseRenewalInput({ ...base, amount: '0' }).amount, '0');
-  for (const patch of [{ amount: '-1' }, { amount: '1.5' }, { amount: '01' }, { amount: 300 }, { return_at: '2026-02-30T10:00' }, { return_at: '' }, { item_id: 0 }, { item_revision: '' }, { order_revision: 'x' }, { total: '1' }, { note: 'a'.repeat(2001) }]) {
+  assert.equal(server.parseRenewalInput({ ...base, expected_amount: '280' }).expected_amount, '280');
+  for (const patch of [{ amount: '-1' }, { amount: '1.5' }, { amount: '01' }, { amount: 300 }, { expected_amount: '01' }, { expected_amount: 280 }, { return_at: '2026-02-30T10:00' }, { return_at: '' }, { item_id: 0 }, { item_revision: '' }, { order_revision: 'x' }, { total: '1' }, { note: 'a'.repeat(2001) }]) {
     assert.throws(() => server.parseRenewalInput({ ...base, ...patch }));
   }
   const now = Date.parse('2026-01-03T12:30:00Z');
@@ -46,7 +47,7 @@ async function main() {
         INSERT INTO qa_renewal_order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,total_renewal_amount) VALUES
           (101,1,100,'2026-01-01T10:00:00+07:00','2026-01-10T10:00:00+07:00',0),(102,1,100,'2026-01-01T10:00:00+07:00','2026-01-10T10:00:00+07:00',0),(201,2,100,'2026-01-01T10:00:00+07:00','2026-01-10T10:00:00+07:00',0);
         UPDATE qa_renewal_order_vehicle_details SET completed_at='2026-01-09T10:00:00+07:00' WHERE id=102;`);
-      const first = await renew();
+      const first = await renew({ expected_amount: '280' });
       assert.equal(first.version, 2); assert.equal(first.total_amount, 1300); assert.equal(first.amount, 300);
       let order = (await c.query('SELECT total,pid,return_at,draft_payload FROM qa_renewal_orders WHERE id=1')).rows[0];
       assert.equal(order.total, '1300'); assert.equal(Number(order.pid), 400); assert.equal(order.return_at.toISOString(), '2026-01-20T03:00:00.000Z');
@@ -54,6 +55,7 @@ async function main() {
       const v2 = order.draft_payload.management_composer.versions[0];
       assert.equal(v2.version, 2); assert.equal(v2.before_return_at, '2026-01-10T03:00:00.000Z'); assert.equal(v2.return_at, '2026-01-20T10:00:00+07:00');
       assert.equal(v2.before_total, 1000); assert.equal(v2.total, 1300); assert.equal(v2.license, 'QA-A'); assert(v2.overdue_minutes > 0);
+      assert.equal(v2.expected_amount, 280); assert.equal(v2.amount_mismatch, true); assert.match(String(v2.warning), /Cảnh báo/);
       const item = (await c.query('SELECT return_at,total_renewal_amount FROM qa_renewal_order_vehicle_details WHERE id=101')).rows[0];
       assert.equal(item.return_at.toISOString(), '2026-01-20T03:00:00.000Z'); assert.equal(Number(item.total_renewal_amount), 300);
       checks.push('PostgreSQL TEMP: renewal moves the vehicle and contract return date, adds the fee to the contract total only (paid unchanged), keeps legacy payload and records version v2 with before/after values');

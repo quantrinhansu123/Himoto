@@ -12,7 +12,7 @@ export async function renewContractAndCollect(db:Pick<PoolClient,'query'>,id:num
   if (!input.request_id) return recordContractRenewal(db,id,actor,input);
   await db.query("SET LOCAL lock_timeout='5s'");
   await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`contract-payment:${input.request_id}`]);
-  const hash = createHash('sha256').update(JSON.stringify({id,actor,item:input.item_id,return_at:input.return_at,amount:input.amount,note:input.note,receipt:input.receipt??null})).digest('hex');
+  const hash = createHash('sha256').update(JSON.stringify({id,actor,item:input.item_id,return_at:input.return_at,amount:input.amount,expected_amount:input.expected_amount??null,note:input.note,receipt:input.receipt??null})).digest('hex');
   const order = (await db.query('SELECT draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id])).rows[0];
   if (!order) throw new ContractRenewalError('Không tìm thấy hợp đồng.',404);
   const saved = order.draft_payload?.management_composer?.versions;

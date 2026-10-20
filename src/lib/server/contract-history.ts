@@ -133,6 +133,7 @@ export async function readContractHistory(client: Database, id: number): Promise
         detail: [`Hẹn trả ${vietnamTime(item.before_return_at)} → ${vietnamTime(item.return_at)}`,
           overdue ? `Quá hạn ${Math.floor(overdue / 1440)} ngày ${Math.ceil((overdue % 1440) / 60)} giờ` : '',
           before !== null && after !== null && before !== after ? `Tiền hợp đồng ${formatMoney(before)} → ${formatMoney(after)}` : '',
+          item.amount_mismatch && item.warning ? String(item.warning) : '',
           item.note ? String(item.note) : ''].filter(Boolean).join(' · '),
         version: { label: `Phiên bản v${item.version}`, return_at: item.return_at ? iso(item.return_at) : null, total: after, paid: amountOrNull(item.paid) } });
       originals.push({ at: new Date(iso(item.created_at)).getTime(), return_at: item.before_return_at ? iso(item.before_return_at) : null, total: before });

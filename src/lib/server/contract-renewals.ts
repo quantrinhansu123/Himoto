@@ -14,16 +14,18 @@ const iso = (value: unknown) => value instanceof Date ? value.toISOString() : va
 export function parseRenewalInput(body: unknown): RenewalInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractRenewalError('Thông tin gia hạn không hợp lệ.');
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['item_id', 'item_revision', 'order_revision', 'return_at', 'amount', 'note', 'request_id', 'receipt'].includes(key)) ||
+  if (Object.keys(input).some(key => !['item_id', 'item_revision', 'order_revision', 'return_at', 'amount', 'expected_amount', 'note', 'request_id', 'receipt'].includes(key)) ||
       !Number.isSafeInteger(input.item_id) || Number(input.item_id) <= 0 ||
       typeof input.item_revision !== 'string' || !/^\d{1,20}$/.test(input.item_revision) ||
       typeof input.order_revision !== 'string' || !/^\d{1,20}$/.test(input.order_revision) ||
       typeof input.return_at !== 'string' || !LOCAL_MINUTE.test(input.return_at) ||
       typeof input.amount !== 'string' || !/^(0|[1-9]\d{0,12})$/.test(input.amount) || Number(input.amount) > MAX_PAYMENT_AMOUNT ||
+      (input.expected_amount !== undefined && (typeof input.expected_amount !== 'string' || !/^(0|[1-9]\d{0,12})$/.test(input.expected_amount) || Number(input.expected_amount) > MAX_PAYMENT_AMOUNT)) ||
       typeof input.note !== 'string' || input.note.trim().length > 2000) throw new ContractRenewalError('Kiểm tra xe, ngày trả mới và chi phí gia hạn.');
   const returnAt = new Date(`${input.return_at}:00+07:00`);
   if (!Number.isFinite(returnAt.getTime()) || new Date(returnAt.getTime() + 7 * 3_600_000).toISOString().slice(0, 16) !== input.return_at) throw new ContractRenewalError('Ngày trả mới không hợp lệ.');
-  const result: RenewalInput = { item_id: Number(input.item_id), item_revision: input.item_revision, order_revision: input.order_revision, return_at: input.return_at, amount: input.amount, note: input.note.trim() };
+  const result: RenewalInput = { item_id: Number(input.item_id), item_revision: input.item_revision, order_revision: input.order_revision, return_at: input.return_at, amount: input.amount, note: input.note.trim(),
+    ...(input.expected_amount === undefined ? {} : { expected_amount: input.expected_amount }) };
   if (input.request_id !== undefined) {
     if (typeof input.request_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.request_id)) throw new ContractRenewalError('Mã lần gia hạn không hợp lệ.');
     result.request_id = input.request_id.toLowerCase();
@@ -69,10 +71,16 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   const overdueMinutes = beforeReturn ? Math.max(0, Math.floor((Date.now() - new Date(beforeReturn).getTime()) / 60_000)) : 0;
   const total = beforeTotal === null ? null : beforeTotal + amount;
   const paid = await rentalPaid(client, orderId, item.pid);
+  const expected = input.expected_amount === undefined ? null : Number(input.expected_amount);
+  const mismatch = expected !== null && amount !== expected;
+  const warning = mismatch
+    ? `Cảnh báo: chi phí gia hạn ${amount.toLocaleString('vi-VN')} đ khác gợi ý theo hợp đồng ${expected.toLocaleString('vi-VN')} đ.`
+    : undefined;
   const version: RenewalVersion = { version: nextRenewalVersion(versions), kind: 'renewal', created_at: new Date().toISOString(), actor_id: actorId,
     item_id: input.item_id, vehicle_id: Number(item.vehicle_id), vehicle_name: String(item.vehicle_name || ''), license: String(item.license || ''),
     rent_at: iso(item.rent_at), before_return_at: beforeReturn, return_at: newReturn, overdue_minutes: overdueMinutes,
-    amount, before_total: beforeTotal, total, paid, note: input.note };
+    amount, before_total: beforeTotal, total, paid, note: input.note,
+    ...(expected === null ? {} : { expected_amount: expected, amount_mismatch: mismatch, ...(warning ? { warning } : {}) }) };
   payload.management_composer = { ...composer, versions: [...versions, version] };
 
   await client.query(`UPDATE himoto.order_vehicle_details SET return_at=$2::timestamptz,

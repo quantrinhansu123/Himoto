@@ -57,7 +57,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     void contractTelegramRequest(orderId, undefined, controller.signal).then(data => setRenewalVersion(data.next_renewal_version)).catch(() => {});
     return () => controller.abort();
   }, [orderId]);
-  const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null; version: number; collected: boolean } | null>(null);
+  const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null; version: number; collected: boolean; mismatch?: boolean; expected?: number | null } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -118,6 +118,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   }
 
   const fee = feeReady(amount);
+  const expectedFee = rate > 0 && unitCount >= 1 && unitCount <= maxCount ? rate * unitCount : null;
+  const amountMismatch = expectedFee !== null && /^\d+$/.test(amount || '') && fee !== expectedFee;
   const total = selected?.total_amount ?? null;
   const paid = selected?.paid_amount ?? null;
   const nextTotal = total === null ? null : total + fee;
@@ -144,17 +146,19 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
         request_id: requestId.current ??= crypto.randomUUID(),
         item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
         return_at: returnAt, amount: amount || '0', note: note.trim(),
+        ...(expectedFee !== null ? { expected_amount: String(expectedFee) } : {}),
         ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:paidAt}} : {}),
       });
       let remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
       let collected = false;
+      const mismatchNote = amountMismatch && expectedFee !== null ? ` · cảnh báo: phí ${formatMoney(fee)} khác gợi ý ${formatMoney(expectedFee)}` : '';
       if (collecting) {
         const payment = result.payment;
         if (!payment) throw new Error('Chưa xác nhận được phiếu thu gia hạn. Tải lại hợp đồng để kiểm tra trước khi thử lại.');
         acceptContractPayment(payment.context);
         remaining = payment.context.remaining;
         collected = true;
-        notify(`${result.code}: đã tạo phiên bản v${result.version} và ghi phiếu Thu #${payment.transaction_id} · ${formatMoney(fee)}.`);
+        notify(`${result.code}: đã tạo phiên bản v${result.version} và ghi phiếu Thu #${payment.transaction_id} · ${formatMoney(fee)}${mismatchNote}.`);
         await reload();
         if (payment.company_transfer) {
           selectStore('all');
@@ -163,10 +167,10 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
           return;
         }
       } else {
-        notify(`${result.code}: đã tạo phiên bản v${result.version} — hẹn trả ${formatDateTime(result.return_at)}${result.total_amount !== null ? `, tiền hợp đồng ${formatMoney(result.total_amount)}` : ''}.`);
+        notify(`${result.code}: đã tạo phiên bản v${result.version} — hẹn trả ${formatDateTime(result.return_at)}${result.total_amount !== null ? `, tiền hợp đồng ${formatMoney(result.total_amount)}` : ''}${mismatchNote}.`);
         await reload();
       }
-      setDone({ code: result.code, fee, remaining, version: result.version, collected });
+      setDone({ code: result.code, fee, remaining, version: result.version, collected, mismatch: Boolean(mismatchNote), expected: expectedFee });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được gia hạn hợp đồng.'); }
     finally { setSaving(false); }
   }
@@ -181,6 +185,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí ${formatMoney(done.fee)}` : ''}{done.collected ? ' · đã ghi phiếu Thu vào sổ quỹ.' : '.'}</p>
+          {done.mismatch && done.expected != null && <p className="mg-field-error" role="status">Cảnh báo đã ghi: chi phí gia hạn {formatMoney(done.fee)} khác gợi ý theo hợp đồng {formatMoney(done.expected)}.</p>}
           {!done.collected&&done.fee>0&&<p role="alert">Đã dời hạn trả nhưng chưa ghi nhận thu {formatMoney(done.fee)} phí gia hạn. Khoản này còn trong công nợ và cần thu trước khi hoàn cọc.</p>}
           {error && <p className="mg-error-message" role="alert">{error}</p>}
           <ContractTelegramPanel id={orderId} eventKey={`renewal:${orderId}:${done.version}`}/>
@@ -212,6 +217,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
             <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn"
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
               <small>{rate ? `Gợi ý: ${formatMoney(rate)} × ${unitCount || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(rate * (unitCount || 0))}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
+            {amountMismatch && expectedFee !== null && <p className="mg-field-error" role="status">Cảnh báo: chi phí {formatMoney(fee)} khác gợi ý theo hợp đồng {formatMoney(expectedFee)}. Vẫn lưu được; cảnh báo sẽ ghi vào lịch sử gia hạn.</p>}
             {canCollect && <>
               <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='received'} onChange={()=>setCollectionChoice('received')} />Đã thực nhận tiền gia hạn — ghi phiếu thu cùng lúc lưu</label>
               <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='unpaid'} onChange={()=>setCollectionChoice('unpaid')} />Chưa nhận tiền — ghi công nợ gia hạn</label>
