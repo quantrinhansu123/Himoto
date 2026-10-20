@@ -19,7 +19,7 @@ export const ACCESS_PERMISSION_LABELS:Record<AccessPermission,string>={
 };
 export const ACCESS_ROLES = {
   branch_staff: {label:'Nhân viên cơ sở',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
-  ownership_staff: {label:'Nhân viên thuê sở hữu',permissions:['contracts.read','contracts.draft','customers.read','customers.write','vehicles.read']},
+  ownership_staff: {label:'Nhân viên thuê sở hữu',permissions:['contracts.read','contracts.draft','customers.read','customers.write','vehicles.read','vehicles.receive']},
   ownership_manager: {label:'Quản lý thuê sở hữu',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
   hr: {label:'HCNS',permissions:['hr.read','hr.write']},
   accounting: {label:'Kế toán',permissions:['contracts.read','finance.read','finance.write']},

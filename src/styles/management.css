@@ -2444,6 +2444,9 @@
 .mg-payment-fields p { margin: 0; }
 
 .mg-battery-dialog { width: 760px; }
+.mg-battery-history-entry { padding: 16px 0; border-bottom: 1px solid var(--mg-line); }
+.mg-battery-history-entry p { margin: 6px 0; overflow-wrap: anywhere; }
+.mg-battery-history-note { white-space: pre-wrap; }
 .mg-battery-dialog .mg-payment-fields { padding-top: 14px; border-top: 1px solid var(--mg-line); }
 .mg-battery-dialog .mg-payment-fields:first-of-type { padding-top: 0; border-top: 0; }
 .mg-battery-lookup { display: grid; gap: 6px; }

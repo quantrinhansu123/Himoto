@@ -6,7 +6,7 @@ import { normalize } from '@/lib/management/table-utils';
 
 // Shared with the legacy full-list endpoint so voucher fields keep the same meaning.
 export const CASHBOOK_LIST_SQL = `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id, s.store_name,
-  CASE WHEN t.name='battery:rental' THEN 'Thu tiền thuê pin' WHEN t.name='battery:deposit' THEN 'Thu cọc thuê pin' WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc' WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
+  CASE WHEN t.name='battery:rental' THEN 'Thu tiền thuê pin' WHEN t.name='battery:renewal' THEN 'Thu gia hạn pin / sạc' WHEN t.name='battery:deposit' THEN 'Thu cọc thuê pin' WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc' WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
   COALESCE(t."desc", t.note) AS content, t.value AS amount, t.order_id,
   COALESCE(o.contract_number,o.draft_reference,bc.code,'#' || t.order_id::text) AS contract_code,
   CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'

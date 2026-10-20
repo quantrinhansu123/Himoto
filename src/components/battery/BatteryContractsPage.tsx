@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { FileSearch, LoaderCircle, Pencil, Plus, Printer, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { CalendarPlus, FileSearch, History, LoaderCircle, Pencil, Plus, Printer, RotateCcw, Search, Trash2, Undo2, X } from 'lucide-react';
 import { BATTERY_COLLECTION_METHODS, BATTERY_PRODUCT_PRESETS, BATTERY_STATUSES, BatteryContract, BatteryContractInput, BatteryContractPrefill, batteryPaymentAccounts, batteryProductKind, batteryRequest, BatteryRequestError, batteryStatusLabel, DEFAULT_BATTERY_NAME, type BatteryCollectionMethod } from '@/lib/management/battery-contracts';
 import { loadCashbookAccounts, type CashbookAccount } from '@/lib/management/cashbook-repository';
 import { addRentalMonths, isOwnershipStore } from '@/lib/management/contract-billing';
@@ -17,6 +17,7 @@ import { PreviewPage, PrintPreviewDialog } from '@/components/contracts/Contract
 import { VietnamDateField } from '@/components/contracts/VietnamDateField';
 import { DateTime24Field } from '@/components/contracts/DateTime24Field';
 import { BatteryContractPrintDocument, BatteryPrintData } from './BatteryContractPrintDocument';
+import { BatteryWorkflowDialog, type BatteryWorkflowMode } from './BatteryWorkflowDialog';
 
 const vietnamNow = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16);
 const moment = (value: string) => value ? `${value.slice(11, 16)} ${value.slice(8, 10)}/${value.slice(5, 7)}/${value.slice(0, 4)}` : '—';
@@ -29,7 +30,7 @@ const fold = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/
 export function BatteryContractsPage() {
   const searchParams = useSearchParams();
   const vehicleContractId = searchParams.get('vehicle_contract_id');
-  const { dataset, selectedStore, selectStore, loading: datasetLoading, error: datasetError, notify } = useManagement();
+  const { dataset, selectedStore, selectStore, loading: datasetLoading, error: datasetError, notify, can } = useManagement();
   const [rows, setRows] = useState<BatteryContract[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -38,6 +39,7 @@ export function BatteryContractsPage() {
   const [status, setStatus] = useState('');
   const [editing, setEditing] = useState<BatteryContract | null | undefined>(undefined);
   const [printing, setPrinting] = useState<BatteryContract | null>(null);
+  const [workflow, setWorkflow] = useState<{ row: BatteryContract; mode: BatteryWorkflowMode } | null>(null);
   const [removing, setRemoving] = useState<BatteryContract | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -69,7 +71,7 @@ export function BatteryContractsPage() {
   const filtered = Boolean(search || status);
   return <section className="mg-page mg-battery-page" aria-label="Hợp đồng thuê pin"><div className="mg-page-content">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">HỢP ĐỒNG <span>/</span> THUÊ PIN / SẠC</div><h1>Hợp đồng thuê pin / sạc<span className="mg-title-count">{loading || error ? '—' : visible.length}</span></h1><p>Lập, lưu và in hợp đồng thuê pin hoặc sạc xe điện theo mẫu HIMOTO. Có thể mở sẵn từ hợp đồng thuê xe.</p></div>
-      <div className="mg-heading-actions"><button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button></div></div>
+      <div className="mg-heading-actions">{can('contracts.draft') && <button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button>}</div></div>
     <div className="mg-data-panel">
       {vehicleContractId && <p className="mg-composer-hint">Pin / sạc của hợp đồng xe #{vehicleContractId}. <Link href="/contracts/battery">Bỏ lọc hợp đồng xe</Link></p>}
       <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!status ? 'is-active' : ''} aria-pressed={!status} onClick={() => setStatus('')}>Tất cả<span>{rows.length}</span></button>
@@ -88,8 +90,11 @@ export function BatteryContractsPage() {
               <td><span className={`mg-status mg-status-${STATUS_TONE[row.status]}`}><span />{batteryStatusLabel(row.status)}</span></td>
               <td className="mg-actions-column"><div className="mg-row-actions"><RowActionsMenu label={`Thao tác ${row.code}`} actions={[
                 { key: 'print', label: 'Xem / In hợp đồng', icon: <Printer size={16} />, onSelect: () => setPrinting(row) },
-                { key: 'edit', label: 'Sửa hợp đồng', icon: <Pencil size={16} />, onSelect: () => setEditing(row) },
-                { key: 'delete', label: 'Xóa hợp đồng', danger: true, icon: <Trash2 size={16} />, onSelect: () => { setRemoving(row); setDeleteError(''); } },
+                ...(row.status === 'renting' && can('contracts.renew') ? [{ key: 'renew', label: 'Gia hạn pin / sạc', icon: <CalendarPlus size={16} />, onSelect: () => setWorkflow({ row, mode: 'renew' }) }] : []),
+                ...(row.status === 'renting' && can('contracts.return') ? [{ key: 'return', label: 'Trả pin / sạc', icon: <Undo2 size={16} />, onSelect: () => setWorkflow({ row, mode: 'return' }) }] : []),
+                { key: 'history', label: 'Lịch sử / Thu gia hạn', icon: <History size={16} />, onSelect: () => setWorkflow({ row, mode: 'history' }) },
+                ...(can('contracts.draft') ? [{ key: 'edit', label: 'Sửa hợp đồng', icon: <Pencil size={16} />, onSelect: () => setEditing(row) },
+                  { key: 'delete', label: 'Xóa hợp đồng', danger: true, icon: <Trash2 size={16} />, onSelect: () => { setRemoving(row); setDeleteError(''); } }] : []),
               ]} /></div></td></tr>)}</tbody>
         </table>
       </div>
@@ -97,6 +102,7 @@ export function BatteryContractsPage() {
     {editing !== undefined && dataset && <BatteryContractForm key={editing?.id || 'new'} row={editing} storeId={selectedStore} onClose={() => setEditing(undefined)} onRefresh={() => { setEditing(undefined); refresh(); }}
       onSaved={(saved, print) => { setEditing(undefined); refresh(); notify('Đã lưu hợp đồng thuê pin.'); if (print) setPrinting(saved); }} />}
     {printing && <BatteryPrintPreview doc={printing} onClose={() => setPrinting(null)} />}
+    {workflow && <BatteryWorkflowDialog key={`${workflow.row.id}-${workflow.mode}`} id={workflow.row.id} code={workflow.row.code} initialMode={workflow.mode} onClose={() => setWorkflow(null)} onSaved={refresh} />}
     {removing && <Dialog title="Xóa hợp đồng thuê pin" onClose={() => { if (!deleteLock.current) setRemoving(null); }}><div className="mg-dialog-body"><p>Xóa hợp đồng <strong>{removing.code}</strong> của <strong>{removing.customer_name}</strong>?</p>{deleteError && <p role="alert" className="mg-field-error">{deleteError}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={deleteBusy} onClick={() => setRemoving(null)}>Đóng</button><button type="button" className="mg-button mg-button-primary" disabled={deleteBusy || Boolean(deleteError)} onClick={() => void remove()}>{deleteBusy ? 'Đang xóa…' : 'Xác nhận xóa'}</button></div></Dialog>}
   </div></section>;

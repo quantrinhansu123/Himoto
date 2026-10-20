@@ -107,7 +107,7 @@ async function deleteTransactions(client: Client, ids: number[]) {
   const batteryIds = [...new Set(rows.filter(row=>row.object_type === 'battery_contract').map(row=>Number(row.object_id)))];
   for (const batteryId of batteryIds) {
     const receipts = rows.filter(row=>row.object_type === 'battery_contract' && Number(row.object_id) === batteryId && row.status === 'approved' && row.type === 'in');
-    const paid = receipts.filter(row=>row.name === 'battery:rental').reduce((sum,row)=>sum+Number(row.value || 0),0);
+    const paid = receipts.filter(row=>['battery:rental','battery:renewal'].includes(String(row.name))).reduce((sum,row)=>sum+Number(row.value || 0),0);
     const deposit = receipts.filter(row=>row.name === 'battery:deposit').reduce((sum,row)=>sum+Number(row.value || 0),0);
     await client.query(`UPDATE himoto.battery_contracts SET paid_amount=GREATEST(COALESCE(paid_amount,0)-$2,0),
       deposit_amount=GREATEST(COALESCE(deposit_amount,0)-$3,0),updated_at=now() WHERE id=$1`,[batteryId,paid,deposit]);

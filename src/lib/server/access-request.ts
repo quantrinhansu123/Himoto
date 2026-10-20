@@ -19,6 +19,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/photo-ocr'))return 'customers.write';
   if(path.endsWith('/telegram'))return path.includes('/vehicles/')?'vehicles.read':'contracts.read'; // Mutation checks the selected operation permission inside the handler.
   if(path.endsWith('/battery-swaps'))return read?'contracts.read':'contracts.renew';
+  if(path.includes('/battery-contracts/')&&path.endsWith('/actions'))return read?'contracts.read':action==='return'?'contracts.return':'contracts.renew';
   if(path.endsWith('/reservation-no-show'))return 'contracts.finalize';
   if(path.includes('/record-photos/contracts/')&&/\/battery-swap-\d+-/.test(path))return read?'contracts.read':'contracts.renew';
   if(path.includes('/record-photos/'))return path.includes('/customers/')?(read?'customers.read':'customers.write'):read?'contracts.read':/\/renewal-(?:receipt-)?\d+-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.renew':/\/return-\d+-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.return':/\/handover-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.finalize':'contracts.draft';
@@ -49,7 +50,7 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     const user=await userFromSession(request.cookies.get(SESSION_COOKIE)?.value).catch(()=>null);
     if(!user)return NextResponse.json({status:'error',message:'Phiên đăng nhập đã hết hạn.'},{status:401});
     let operation='';
-    if(request.nextUrl.pathname.endsWith('/actions')) {
+    if(request.method!=='GET'&&request.nextUrl.pathname.endsWith('/actions')) {
       try {operation=String((await request.clone().json()).action||'');}catch {return NextResponse.json({status:'error',message:'Thao tác không hợp lệ.'},{status:400});}
     }
     const permission=requestPermission(request.nextUrl.pathname,request.method,operation);

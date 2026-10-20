@@ -24,7 +24,7 @@ module.exports=async function checkOwnershipTelegram(db,c,schema,notices){
     for(const invalid of [[groups[0],groups[0]],[{...groups[0],route:'daily'}],[{...groups[0],chat_id:'12345'}],[{...groups[0],thread_id:2147483648}],{},[groups[0],{...groups[1],chat_id:groups[0].chat_id}]])await assert.rejects(()=>save(invalid),settings.IntegrationSettingsError);
     assert.equal((await c.query(`SELECT chat_id FROM ${schema}.management_ownership_telegram WHERE route='ownership_renewal'`)).rows[0].chat_id,groups[1].chat_id);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name,kind) VALUES(900001,'Ownership branch QA','lease_to_own')`);
-    const version={kind:'renewal',version:2,amount:250000,before_return_at:'2026-10-18T00:00:00Z',return_at:'2026-11-18T00:00:00Z',license:'QA-OWN',vehicle_name:'QA'};
+    const version={kind:'renewal',version:2,amount:250000,before_return_at:'2026-10-18T00:00:00Z',return_at:'2026-11-18T00:00:00Z',license:'QA-OWN',vehicle_name:'QA',note:'57/180N\nKhách đóng theo ngày'};
     const cases=[
       {id:900001,type:'daily',store:23,route:null},
       {id:900002,type:'ownership',store:23,route:'ownership_new'},
@@ -40,16 +40,23 @@ module.exports=async function checkOwnershipTelegram(db,c,schema,notices){
       for(const event of state.events){
         const renewal=event.kind==='renewal',expected=item.route?renewal?groups[1]:groups[0]:{chat_id:'-100000000001',thread_id:null};
         assert.equal(event.destination_label,item.route?renewal?'Thuê sở hữu · Gia hạn':'Thuê sở hữu · Ký mới, trả xe & điều chuyển':'Nhóm cơ sở Branch A QA');
+        assert.equal(event.text.includes('Ghi chú: '+version.note),Boolean(renewal&&item.route));
         await service.saveContractTelegram(db,item.id,143,{access_role:'admin'},{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()});
         const calls=[];
         assert.equal((await notices.dispatchContractNotifications(async(url,options)=>{
-          const body=JSON.parse(options.body);assert.equal(body.chat_id,expected.chat_id);assert.equal(body.message_thread_id,expected.thread_id||undefined);calls.push(new URL(url).pathname.split('/').at(-1));
+          const body=JSON.parse(options.body);assert.equal(body.chat_id,expected.chat_id);assert.equal(body.message_thread_id,expected.thread_id||undefined);assert.equal(body.text.includes('Ghi chú: '+version.note),Boolean(renewal&&item.route));calls.push(new URL(url).pathname.split('/').at(-1));
           return Response.json({ok:true,result:{message_id:800+calls.length}});
         },1,db,[item.id])).sent,1);
         assert.deepEqual(calls,['sendMessage']);
       }
       const same=(await service.readContractTelegram(db,item.id,143,{access_role:'admin'})).state;assert(same.events.every(event=>event.unchanged&&!event.can_send));
     }
+    const {notificationHash}=load(path.join(root,'lib/server/contract-notification-content'));
+    const older=(await c.query(`SELECT id,payload FROM ${schema}.management_contract_notifications WHERE order_id=900002 AND event_type='renewal' AND status='sent'`)).rows[0];
+    delete older.payload.ownership_renewal_note;
+    await c.query(`UPDATE ${schema}.management_contract_notifications SET payload=$2::jsonb,content_hash=$3 WHERE id=$1`,[older.id,JSON.stringify(older.payload),notificationHash('renewal',older.payload)]);
+    const oldEvent=(await service.readContractTelegram(db,900002,143,{access_role:'admin'})).state.events.find(e=>e.kind==='renewal');
+    assert(oldEvent.unchanged&&!oldEvent.can_send);assert(!oldEvent.text.includes('Ghi chú:'));
     // Returns belong to the main ownership group; swaps keep branch routing.
     for(const kind of ['reservation','handover','return','battery_swap']){
       const id=randomUUID(),key=`ownership-route:${id}`;
@@ -79,7 +86,8 @@ module.exports=async function checkOwnershipTelegram(db,c,schema,notices){
     assert.equal((await c.query(`SELECT status FROM ${schema}.management_contract_notifications WHERE id=$1`,[waitId])).rows[0].status,'awaiting_config');
     await save(groups);assert.equal((await notices.dispatchContractNotifications(async()=>{throw Error('Configuration change must not replay waiting history');},1,db,[900002])).sent,0);
     const same=(await service.readContractTelegram(db,900003,143,{access_role:'admin'})).state;assert(same.events.every(event=>event.unchanged&&!event.can_send));
-    return ['Ownership rental/reservation/handover/return and renewals route to two distinct groups/topics, including ownership_cd, ownership branches and legacy drafts; ordinary rentals and battery swaps stay scoped',
+    return ['Ownership renewal preview and delivered text preserve multiline daily notes; other rentals omit notes; already sent older templates stay locked without replay',
+      'Ownership rental/reservation/handover/return and renewals route to two distinct groups/topics, including ownership_cd, ownership branches and legacy drafts; ordinary rentals and battery swaps stay scoped',
       'Settings validate ownership routes, reject duplicate destinations atomically and preserve them for older clients; disabled/missing routes wait without fallback or automatic replay; sent content remains deduplicated',
       'Legacy battery history is excluded from ownership previews and actual outbox dispatch, including previously queued manual notifications',...transferChecks];
   }finally{Object.defineProperties(owner,descriptors);await c.query('ROLLBACK TO SAVEPOINT ownership_telegram_cases');await c.query('RELEASE SAVEPOINT ownership_telegram_cases');}

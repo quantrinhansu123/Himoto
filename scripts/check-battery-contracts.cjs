@@ -6,6 +6,7 @@ require('@next/env').loadEnvConfig(path.resolve(__dirname,'..'),false,{info(){},
 const {load,root} = require('./lib/load-typescript.cjs');
 const api = load(path.join(root,'lib/management/battery-contracts'));
 const server = load(path.join(root,'lib/server/battery-contracts'));
+const workflow = load(path.join(root,'lib/server/battery-workflow'));
 const billing = load(path.join(root,'lib/management/contract-billing'));
 const checks = [];
 function input(method='cash',account=5) {
@@ -35,6 +36,9 @@ assert.equal(api.batteryProductKind(api.DEFAULT_BATTERY_CHARGER_NAME),'battery_c
 assert.equal(server.parseBatteryInput({...input(),vehicle_contract_id:901}).vehicle_contract_id,901);
 assert.throws(()=>server.parseBatteryInput({...input(),vehicle_contract_id:-1}));
 checks.push('Pin + charger preset and strict linked vehicle contract IDs');
+const action = (revision='1',patch={})=>({action:'renew',revision,request_id:randomUUID(),ends_at:'2026-03-31T09:30',amount:300000,note:'Gia hạn QA',...patch});
+for(const patch of [{ends_at:'2026-02-30T09:30'},{amount:-1},{amount:0,receipt:{method:'cash',account_id:5,paid_at:'2026-01-31T09:30'}},{receipt:{method:'cash',account_id:5,paid_at:'2099-01-01T09:30'}},{workflow_history:[]}])assert.throws(()=>workflow.parseBatteryAction(action('1',patch)));
+checks.push('Workflow rejects invalid dates, negative amounts, future/zero receipts and client-supplied history');
 async function live() {
   const pool=load(path.join(root,'lib/server/himoto-database')).himotoPool;
   const c=await pool.connect();
@@ -49,6 +53,8 @@ async function live() {
     await proxy.query(fs.readFileSync(path.join(__dirname,'../docs/sql/2026-10-16-battery-contract-links.sql'),'utf8').replace(/^BEGIN;\s*/,'').replace(/COMMIT;\s*$/,''));
     const legacyMigration=fs.readFileSync(path.join(__dirname,'../docs/sql/2026-10-19-battery-legacy-import.sql'),'utf8').replace(/^BEGIN;\s*/,'').replace(/COMMIT;\s*$/,'');
     await proxy.query(legacyMigration);await proxy.query(legacyMigration);
+    const workflowMigration=fs.readFileSync(path.join(__dirname,'../docs/sql/2026-10-20-battery-contract-actions.sql'),'utf8').replace(/^BEGIN;\s*/,'').replace(/COMMIT;\s*$/,'');
+    await proxy.query(workflowMigration);await proxy.query(workflowMigration);
     await c.query('CREATE TEMP SEQUENCE qa_pin_seq START 99000');
     for(const table of ['battery_contracts','transactions']) await c.query(`ALTER TABLE qa_pin_${table} ALTER COLUMN id SET DEFAULT nextval('qa_pin_seq')`);
     await c.query("INSERT INTO qa_pin_stores(id,store_name,status) VALUES(35,'CS Thuê sở hữu QA','opening')");
@@ -121,6 +127,45 @@ async function live() {
     await attempt(()=>server.saveBatteryContract(proxy,143,edit(updated,{paid_amount:350000,paid_account_type:'transfer',paid_method:'CK',paid_account_id:11,deposit_account_id:null}),legacyId));
     assert.deepEqual((await c.query("SELECT value FROM qa_pin_transactions WHERE object_id=$1 AND name='battery:rental'",[legacyId])).rows.map(r=>Number(r.value)),[50000]);
     checks.push('TEMP: legacy import migration is repeatable; historical rent/deposit need no new account or receipt; only a 50k increase is collected and source baselines cannot be reduced');
+    let battery=(await server.listBatteryContracts(proxy,35)).find(r=>r.id===legacyId);
+    const receipt={method:'transfer',account_id:11,paid_at:'2026-02-01T09:30'};
+    const collectNow=action(battery.revision,{receipt});
+    let context=await attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,collectNow));
+    assert.equal(context.contract.ends_at,collectNow.ends_at);assert.equal(context.contract.rent_price,300000);
+    assert.equal(context.contract.paid_amount,650000);assert.equal(context.contract.deposit_amount,3000000);
+    assert.equal(context.renewal_amount,300000);assert.equal(context.renewal_collected,300000);assert.equal(context.renewal_remaining,0);
+    const workflowTx=context.history[0].transaction_id;
+    const countAfterRenewal=(await c.query('SELECT count(*) n FROM qa_pin_transactions')).rows[0].n;
+    await attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,collectNow));
+    assert.equal((await c.query('SELECT count(*) n FROM qa_pin_transactions')).rows[0].n,countAfterRenewal);
+    await assert.rejects(()=>attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,{...collectNow,note:'changed'})),/nội dung khác/);
+    await attempt(()=>server.saveBatteryContract(proxy,143,edit(context.contract,{notes:'Edit after renewal',deposit_account_id:null}),legacyId));
+    assert.equal((await c.query('SELECT count(*) n FROM qa_pin_transactions')).rows[0].n,countAfterRenewal);
+    checks.push('TEMP: renewal keeps rate/deposit/imported baseline; one linked receipt and date update are atomic, retries do not duplicate, editing afterward does not collect again');
+    context=await workflow.readBatteryWorkflow(proxy,legacyId);
+    const unpaid=action(context.contract.revision,{ends_at:'2026-04-30T09:30',amount:200000});
+    context=await attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,unpaid));
+    assert.equal(context.renewal_remaining,200000);assert.equal(context.contract.paid_amount,650000);
+    const collectDebt=action(context.contract.revision,{action:'collect_renewal',renewal_id:unpaid.request_id,amount:100000,receipt});delete collectDebt.ends_at;
+    context=await attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,collectDebt));
+    assert.equal(context.renewal_remaining,100000);assert.equal(context.contract.ends_at,unpaid.ends_at);
+    const eventCount=context.history.length;
+    for(const patch of [{amount:100001},{receipt:{...receipt,account_id:13}},{receipt:{...receipt,account_id:14}},{receipt:{...receipt,account_id:12}},{revision:'0'}])await assert.rejects(()=>attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,{...collectDebt,request_id:randomUUID(),...patch})));
+    context=await workflow.readBatteryWorkflow(proxy,legacyId);
+    assert.equal(context.history.length,eventCount);assert.equal(context.contract.paid_amount,750000);assert.equal(context.renewal_remaining,100000);
+    assert(context.accounts.every(a=>a.store_id===35||a.owner_type==='company'));
+    checks.push('TEMP: unpaid renewals and partial debt collection preserve dates, reject excess/stale/wrong-branch/inactive receipts, and roll back every failed mutation');
+    const returned={action:'return',revision:context.contract.revision,request_id:randomUUID(),returned_at:'2026-04-15T09:30',note:'Đã nhận pin'};
+    context=await attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,returned));
+    assert.equal(context.contract.status,'returned');assert.equal(context.contract.ends_at,unpaid.ends_at);assert.equal(context.renewal_remaining,100000);assert.equal(context.contract.deposit_amount,3000000);
+    await assert.rejects(()=>attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,action(context.contract.revision,{ends_at:'2026-05-30T09:30'}))),/Trạng thái/);
+    context=await attempt(()=>workflow.applyBatteryAction(proxy,legacyId,143,{...collectDebt,request_id:randomUUID(),revision:context.contract.revision}));
+    assert.equal(context.renewal_remaining,0);assert.equal(context.contract.status,'returned');
+    await attempt(()=>del.bulkDelete(proxy,'transactions',[workflowTx]));
+    context=await workflow.readBatteryWorkflow(proxy,legacyId);
+    assert.equal(context.renewal_remaining,300000);assert.equal(context.contract.paid_amount,550000);
+    assert.equal(context.contract.deposit_amount,3000000);
+    checks.push('TEMP: return retains deposit/debt and planned end, stops further renewal, allows outstanding collection; explicit receipt deletion reopens exactly the linked debt');
   } finally {await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
 }
 (async()=>{if(process.argv.includes('--live-temp'))await live();console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));})().catch(e=>{console.error(e);process.exitCode=1;});

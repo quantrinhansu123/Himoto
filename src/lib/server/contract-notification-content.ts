@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { CONTRACT_CUSTOMER_PHOTO_SLOTS,isContractTransactionPhoto } from '@/lib/management/contract-photos';
+import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null}
 export interface RenewalNotice {version?:number;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;items?:RenewalNotice[]}
@@ -10,6 +11,7 @@ export interface NotificationPayload {
   code:string;customer:string;phone:string;store:string;actor:string;vehicles:string;total:string;at:string;photos:Attachment[];contract_staff?:string;
   vehicle_names?:string;days?:number|null;deposit?:number|null;rental_fee?:number|null;grand_total?:number|null;
   refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
+  ownership_renewal_note?:string;
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
   refund_recipient?:{bank?:string;account?:string;name?:string};
   refund_pending?:{amount:number;bank?:string;account?:string;name?:string};
@@ -41,7 +43,8 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
     ...(!p.refund_pending&&p.refund_recipient?.account?[`Khách nhận hoàn: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[])]
     :kind==='renewal'?[`Khách gia hạn: ${p.customer}`,...vehicle,
       ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${day(item.before_return_at)} - ${day(item.return_at)}`):[`Gia hạn: ${day(p.renewal?.before_return_at||null)} - ${day(p.renewal?.return_at||null)}`]),
-      `Phí gia hạn: ${money(p.renewal?.amount)} đ`,`Hình thức thanh toán: ${method}`]
+      `Phí gia hạn: ${money(p.renewal?.amount)} đ`,`Hình thức thanh toán: ${method}`,
+      ...(p.ownership_renewal_note?[`Ghi chú: ${p.ownership_renewal_note}`]:[])]
     :[`${kind==='reservation'?'Khách đặt cọc giữ xe':kind==='handover'?'Khách nhận xe':'Khách thuê xe'}: ${p.customer}`,...vehicle,
       `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,`Tiền cọc: ${money(p.deposit)}`,
       ...(p.rental_fee!=null&&p.total!=null&&Number(p.total)!==p.rental_fee?[`Phí khác / điều chỉnh: ${money(Number(p.total)-p.rental_fee)}`]:[]),
@@ -95,7 +98,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   if(kind==='battery_swap'&&!swap)throw Error('Không tìm thấy lượt đổi pin đã xác nhận.');
   const o=(await db.query(`SELECT o.store_id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
     COALESCE(NULLIF(c.name,''),o.customer_name,'') AS customer,COALESCE(NULLIF(c.phone,''),o.customer_phone,'') AS phone,
-    s.store_name AS store,u.name AS actor,
+    s.store_name AS store,u.name AS actor,${OWNERSHIP_ORDER_SQL} AS ownership,
     COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'profile'->>'staff_name'),''),
       NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),
       (SELECT full_name FROM himoto.staff_profiles WHERE id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'),
@@ -114,6 +117,9 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     FROM himoto.transactions t LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id WHERE t.order_id=$1 AND t.status='approved' ORDER BY t.created_at,t.id`,[orderId])).rows;
   const draft=o.draft_payload?.management_composer?.draft;
   const composer=o.draft_payload?.management_composer;
+  const renewalNote=kind==='renewal'&&o.ownership===true&&renewal
+    ? String((renewal as RenewalNotice & {note?:string}).note ||
+      (Array.isArray(composer?.versions)?composer.versions.find((v:{kind:string;version:number})=>v.kind==='renewal'&&v.version===renewal.version)?.note:'') || '').trim() : '';
   const depositTx=tx.filter(t=>['in','addon'].includes(t.type)&&/^order:deposit(?::|$)/.test(t.name));
   const refunds=tx.filter(t=>t.type==='out'&&/^(order:deposit_refund$|order:complete:)/.test(t.name));
   const settlement=kind==='return'&&Array.isArray(composer?.return_settlements)?composer.return_settlements.findLast((entry:{item_ids:number[]})=>Array.isArray(entry.item_ids)&&entry.item_ids.length===returnIds.length&&entry.item_ids.every(id=>returnIds.includes(String(id)))):undefined;
@@ -146,6 +152,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     ?{...(settlement.recipient||{}),amount:Math.min(Number(settlement.refund_pending_amount)||heldDeposit,heldDeposit)}:undefined;
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
+    ...(renewalNote?{ownership_renewal_note:renewalNote}:{}),
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,
     refunded:eventRefunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{}),...(pendingRefund?{refund_pending:pendingRefund}:{}),
     ...(adjustments.length?{return_fees:{returned_at:adjustments.map((entry:{actual_return_at:string})=>entry.actual_return_at).sort().at(-1),late:adjustments.reduce((sum:number,entry:{late_fee?:number;fee:number;repair_fee?:number;early_discount?:number})=>sum+Number(entry.late_fee??Math.max(entry.fee+(entry.early_discount||0)-(entry.repair_fee||0),0)),0),repair:adjustments.reduce((sum:number,entry:{repair_fee?:number})=>sum+Number(entry.repair_fee||0),0),early_discount:adjustments.reduce((sum:number,entry:{early_discount?:number})=>sum+Number(entry.early_discount||0),0),collected:feeReceipts.reduce((sum,t)=>sum+Number(t.value),0),method:methods(feeReceipts)}}:{}),...(settlement?.recipient?.account?{refund_recipient:settlement.recipient}:{}),

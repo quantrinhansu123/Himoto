@@ -77,7 +77,7 @@ const SELECT = `SELECT b.*, b.signed_on::text AS signed_on_text, b.id_card_issue
   LEFT JOIN himoto.orders vo ON vo.id=b.vehicle_contract_id
   LEFT JOIN LATERAL (SELECT COALESCE(t.cash_id,t.bank_id) AS account_id,
     CASE WHEN t.cash_id IS NOT NULL THEN 'cash' WHEN t.bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method,t.created_at AS collected_at
-    FROM himoto.transactions t WHERE t.object_type='battery_contract' AND t.object_id=b.id AND t.name='battery:rental' AND t.status='approved' ORDER BY t.id DESC LIMIT 1) rp ON true
+    FROM himoto.transactions t WHERE t.object_type='battery_contract' AND t.object_id=b.id AND t.name IN ('battery:rental','battery:renewal') AND t.status='approved' ORDER BY t.id DESC LIMIT 1) rp ON true
   LEFT JOIN LATERAL (SELECT COALESCE(t.cash_id,t.bank_id) AS account_id,
     CASE WHEN t.cash_id IS NOT NULL THEN 'cash' WHEN t.bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method,t.created_at AS collected_at
     FROM himoto.transactions t WHERE t.object_type='battery_contract' AND t.object_id=b.id AND t.name='battery:deposit' AND t.status='approved' ORDER BY t.id DESC LIMIT 1) dp ON true`;
@@ -119,6 +119,7 @@ async function readOne(client: Database, id: number) {
   if (!result.rowCount) throw new BatteryContractError('Hợp đồng thuê pin không còn tồn tại.', 404);
   return map(result.rows[0]);
 }
+export { readOne as readBatteryContract };
 async function nextCode(client: Database, signedOn: string) {
   const prefix = `P${signedOn.slice(2, 4)}${signedOn.slice(5, 7)}${signedOn.slice(8, 10)}-`;
   const result = await client.query(`SELECT coalesce(max(substring(code FROM '\\d+$')::int), 0) + 1 AS next FROM himoto.battery_contracts WHERE code LIKE $1 || '%'`, [prefix]);
@@ -178,13 +179,13 @@ async function collectBatteryPayments(client: Database,id: number,actorId: numbe
     const name = purpose === 'paid' ? 'battery:rental' : 'battery:deposit';
     const target = Number(purpose === 'paid' ? input.paid_amount : input.deposit_amount) || 0;
     const baseline = Number(imported?.[purpose === 'paid' ? 'legacy_paid_amount' : 'legacy_deposit_amount'] || 0);
-    const before = baseline + Number(totals.rows.find(row=>row.name === name)?.amount || 0), delta = target-before;
+    const before = baseline + totals.rows.filter(row=>row.name === name || purpose === 'paid' && row.name === 'battery:renewal').reduce((sum,row)=>sum+Number(row.amount),0), delta = target-before;
     if (delta < 0) throw new BatteryContractError('Số đã thu thấp hơn phiếu thu hiện có. Đối chiếu Sổ quỹ trước khi điều chỉnh; không tự xóa tiền đã nhận.',409);
     if (!delta) {
       if (target > 0) {
         const latest = await client.query(`SELECT COALESCE(cash_id,bank_id) AS account_id,
           CASE WHEN cash_id IS NOT NULL THEN 'cash' WHEN bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method
-          FROM himoto.transactions WHERE object_type='battery_contract' AND object_id=$1 AND name=$2 AND status='approved' ORDER BY id DESC LIMIT 1`,[id,name]);
+          FROM himoto.transactions WHERE object_type='battery_contract' AND object_id=$1 AND (name=$2 OR ($2='battery:rental' AND name='battery:renewal')) AND status='approved' ORDER BY id DESC LIMIT 1`,[id,name]);
         if (!latest.rowCount && baseline === target) {
           if (input[`${purpose}_account_id`] !== null) throw new BatteryContractError('Khoản thu app cũ được giữ trong lịch sử; chỉ chọn tài khoản mới khi thu tăng thêm.',409);
           continue;

@@ -8,6 +8,7 @@ async function main(){const c=await pool.connect();try{
   await c.query('BEGIN');await c.query("SET LOCAL lock_timeout='5s'; CREATE SCHEMA qa_access_scope");
   const tables=['users','roles','stores','staff_profiles','customers','orders','vehicles','banks','cash','transactions','order_vehicle_details','activity_logs','battery_contracts','store_duty_schedules','management_contract_payments','management_contract_vehicle_swaps','management_record_photos','gps_devices','gps_positions','vehicle_location_events','vehicle_transfers','management_contract_types'];
   for(const table of tables)await c.query(`CREATE TABLE qa_access_scope.${table} (LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING INDEXES)`);
+  await c.query(fs.readFileSync('docs/sql/2026-10-20-battery-contract-actions.sql','utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;|^COMMIT;/gm,''));
   let migration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-17-account-access.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('SCHEMA himoto','SCHEMA qa_access_scope').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   for(const key of ['scope_all','store_id','actor_id','operation','transfer_vehicle_id'])migration=migration.replaceAll(`qa_access_scope.${key}'`,`himoto.${key}'`);
   await c.query(migration);await c.query(migration);
@@ -15,6 +16,9 @@ async function main(){const c=await pool.connect();try{
   await c.query(numbering);await c.query(numbering);
   const inventoryMigration=fs.readFileSync('docs/sql/2026-10-18-shared-vehicle-inventory.sql','utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(inventoryMigration);await c.query(inventoryMigration);
+  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql']) {
+    await c.query(fs.readFileSync(path.join('docs/sql',file),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replaceAll("'himoto'","'qa_access_scope'").replace(/^BEGIN;|^COMMIT;/gm,''));
+  }
   const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   await c.query(duplicates);await c.query(duplicates);
   // Every generated ID belongs to this rollback-only schema, never a production sequence.
@@ -66,6 +70,19 @@ async function main(){const c=await pool.connect();try{
   const scope={id:70002,store_id:80002,scope_all:false,operation:'',access_role:'branch_staff',permissions:[...ACCESS_ROLES.branch_staff.permissions]};
   await c.query("SELECT set_config('himoto.operation','',true)");
   await c.query("INSERT INTO qa_access_scope.cash(id,store_id,opening_balance,status) VALUES(93001,80002,0,'Active')");
+  await c.query(`INSERT INTO qa_access_scope.battery_contracts(id,store_id,code,status,customer_name,battery_name,signed_on,starts_at,ends_at,paid_amount)
+    VALUES(94001,80002,'QA-PIN-RLS','renting','Khách pin QA','Pin QA','2026-01-01','2026-01-01T08:00:00+07','2026-02-01T08:00:00+07',0)`);
+  const pin=load(path.join(root,'lib/server/battery-workflow'));
+  const pinContext=await pin.readBatteryWorkflow(proxy,94001);
+  const pinResult=await pin.applyBatteryAction(proxy,94001,70002,{action:'renew',revision:pinContext.contract.revision,request_id:require('node:crypto').randomUUID(),ends_at:'2026-03-01T08:00',amount:100000,note:'Pin RLS QA',receipt:{method:'cash',account_id:93001,paid_at:'2026-02-01T08:00'}});
+  assert.equal(pinResult.contract.paid_amount,100000);assert.equal(pinResult.renewal_remaining,0);
+  await c.query("SELECT set_config('himoto.store_id','80001',true)");
+  await assert.rejects(()=>pin.readBatteryWorkflow(proxy,94001),e=>e.status===404);
+  await assert.rejects(()=>pin.applyBatteryAction(proxy,94001,70001,{action:'return',revision:pinResult.contract.revision,request_id:require('node:crypto').randomUUID(),returned_at:'2026-02-15T08:00',note:''}),e=>e.status===404);
+  await c.query("SELECT set_config('himoto.store_id','80002',true)");
+  // Keep later vehicle receipt assertions independent of the battery fixture.
+  await c.query('DELETE FROM qa_access_scope.transactions WHERE object_type=\'battery_contract\' AND object_id=94001');
+  checks.push('Battery history, renewal and receipt work under real branch RLS; foreign guessed IDs cannot read or change the contract');
   const draft={management_composer:{version:1,status:'draft',draft:{start_date:'2026-10-11T08:00',end_date:'2026-10-13T08:00',unit_price:'250000',total_amount:'500000',deposit_amount:'0',package_name:'Theo ngày',vehicles:[{id:'91001',driver_name:'QA'}]}}};
   await c.query("INSERT INTO qa_access_scope.orders(id,store_id,customer_id,order_status,order_mode,pid,total,draft_reference,draft_payload) VALUES(92001,80002,90002,'draft','draft',0,'0','NHAP-QA',$1)",[JSON.stringify(draft)]);
   const revision=async(table,id)=>(await c.query(`SELECT xmin::text AS revision FROM qa_access_scope.${table} WHERE id=$1`,[id])).rows[0].revision;
@@ -197,6 +214,10 @@ async function main(){const c=await pool.connect();try{
   checks.push('Real account create/update/list/audit services preserve blank-update passwords, never return hashes and prevent self-lockout');
   checks.push('Explicit global scope and the existing owner connection remain compatible; no production rows or sequences are used');
   assert(!hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'contracts.finalize'));
+  assert(hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'vehicles.receive'));
+  assert(!hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'vehicles.transfer'));
+  const {requestPermission}=load(path.join(root,'lib/server/access-request'));
+  for(const [method,action,permission] of [['GET','','contracts.read'],['POST','renew','contracts.renew'],['POST','collect_renewal','contracts.renew'],['POST','return','contracts.return']])assert.equal(requestPermission('/api/auth/battery-contracts/1/actions',method,action),permission);
   assert(hasPermission({access_role:'ownership_manager',permissions:[...ACCESS_ROLES.ownership_manager.permissions]},'contracts.finalize'));
   assert(!hasPermission({role_id:1,access_role:'branch_staff',permissions:[]},'accounts.manage'));
   for(const raw of [{name:'QA',login_name:'qa',password:'secret-password',access_role:'branch_staff',store_id:80001,scope_all:false,permissions:[],enabled:true},{name:'QA',login_name:'qa-valid',password:'secret-password',access_role:'branch_staff',store_id:80001,scope_all:true,permissions:[],enabled:true}])assert.throws(()=>parseAccountValues(raw,true),AccountAccessError);
