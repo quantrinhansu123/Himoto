@@ -9,7 +9,7 @@ import { CONTRACT_TELEGRAM_ROUTE_SQL } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 
 import type { ContractEventType } from '@/lib/management/contract-telegram';
-import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
+import { contractNotificationText, hydrateNotificationPhotos, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
 export { contractNotificationText } from './contract-notification-content';
 type Database=Pick<PoolClient,'query'>;
 export async function queueContractNotification(client:Database,orderId:number,kind:ContractEventType,eventKey:string,actorId:number,phase:string|string[],renewal?:RenewalNotice) {
@@ -60,7 +60,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
     const target={chat_id:row.chat_id,...(row.thread_id?{message_thread_id:row.thread_id}:{})};
     let contacted=false,continued=false;
     try {
-      const photos=payload.photos||[];
+      const photos=await hydrateNotificationPhotos(database,row.order_id==null?null:Number(row.order_id),payload.photos||[]);
       if(ids.some(id=>!Number.isSafeInteger(id)||id<=0)||ids.length>photos.length||ids.length&&row.error_code!=='DELIVERY_CONTINUE')throw new TelegramDeliveryError('SEND_UNCERTAIN');
       const text=contractNotificationText(row.event_type,payload);
       // Only acknowledged media is skipped when the worker resumes a deliberate continuation.

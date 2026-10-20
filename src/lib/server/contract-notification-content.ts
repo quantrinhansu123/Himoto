@@ -56,7 +56,9 @@ export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
   return createHash('sha256').update(JSON.stringify(canonical({kind,...content}))).digest('hex');
 }
 export async function notificationPhotos(db:Database,orderId:number,phases:string[]):Promise<Attachment[]> {
-  const result=await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
+  // Queue only slot / Cloudinary refs. Embedding multi-MB base64 blobs here made finalize roll back
+  // under statement_timeout when staff attached hồ sơ photos. Dispatch reloads bytes by slot.
+  const result=await db.query(`SELECT slot,mime_type,NULL::text AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
     FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND
       (slot ~ ANY($2::text[]) OR ($3 AND slot ~ '^plate-[1-9][0-9]{0,14}$' AND EXISTS
         (SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.vehicle_id::text=substring(slot from 7) AND d.deleted_at IS NULL))) ORDER BY slot`,
@@ -68,8 +70,22 @@ export async function notificationPhotos(db:Database,orderId:number,phases:strin
   });
   const seen=new Set<string>();
   return photos.filter(photo=>{
-    const key=photo.mime_type+':'+(photo.cloudinary_public_id?`${photo.cloudinary_cloud_name}/${photo.cloudinary_public_id}/${photo.cloudinary_version}`:createHash('sha256').update(photo.bytes||'').digest('hex'));
+    const key=photo.mime_type+':'+(photo.cloudinary_public_id?`${photo.cloudinary_cloud_name}/${photo.cloudinary_public_id}/${photo.cloudinary_version}`:`slot:${photo.slot}`);
     if(seen.has(key))return false;seen.add(key);return true;
+  });
+}
+/** Resolve photo bytes at Telegram send time for queue rows that only stored slot refs. */
+export async function hydrateNotificationPhotos(db:Database,orderId:number|null,photos:Attachment[]):Promise<Attachment[]> {
+  if(!orderId||!photos.length)return photos;
+  const need=photos.filter(photo=>!photo.cloudinary_public_id&&!photo.bytes).map(photo=>photo.slot);
+  if(!need.length)return photos;
+  const rows=await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
+    FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND slot=ANY($2::text[])`,[orderId,need]);
+  const bySlot=new Map(rows.rows.map(row=>[String(row.slot),row as Attachment]));
+  return photos.map(photo=>{
+    if(photo.cloudinary_public_id||photo.bytes)return photo;
+    const loaded=bySlot.get(photo.slot);
+    return loaded?{...photo,...loaded}:photo;
   });
 }
 export async function notificationPayload(db:Database,orderId:number,kind:ContractEventType,actorId:number,phases:string[],renewal?:RenewalNotice):Promise<NotificationPayload&{store_id:number}> {

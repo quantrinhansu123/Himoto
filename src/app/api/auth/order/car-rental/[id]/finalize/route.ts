@@ -14,25 +14,53 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
   if (denied) return denied;
   const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
   if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
+  const { id } = await params;
+  if (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) {
+    return NextResponse.json({ status: 'error', message: 'Mã hợp đồng không hợp lệ.' }, { status: 400 });
+  }
+  let input;
+  try { input = parseFinalizeInput(await request.json()); }
+  catch (error) {
+    if (error instanceof ContractFinalizeError) return NextResponse.json({ status: 'error', message: error.message, ...(error.code ? { code: error.code } : {}) }, { status: error.status });
+    if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin lưu chính thức không hợp lệ.' }, { status: 400 });
+    throw error;
+  }
+
+  // Commit the issued contract first. Queuing Telegram (and encoding attached photos) must not
+  // roll back money / vehicle / status writes when the notification step times out.
   let client;
+  let data;
   try {
-    const { id } = await params;
-    if (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) throw new ContractFinalizeError('Mã hợp đồng không hợp lệ.');
-    const input = parseFinalizeInput(await request.json());
     client = await himotoPool.connect();
     await client.query('BEGIN');
-    const data = await finalizeContractDraft(client, Number(id), user.id, input);
-    await queueContractNotification(client,Number(id),data.status==='deposit_contract'?'reservation':'rental',`finalize:${id}:${data.code}`,user.id,'rental');
+    data = await finalizeContractDraft(client, Number(id), user.id, input);
     await client.query('COMMIT');
-    return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof ContractFinalizeError) return NextResponse.json({ status: 'error', message: error.message, ...(error.code ? { code: error.code } : {}) }, { status: error.status });
-    if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin lưu chính thức không hợp lệ.' }, { status: 400 });
     if (error && typeof error === 'object' && 'code' in error && error.code === '23505') return NextResponse.json({ status: 'error', message: 'Số hợp đồng vừa được dùng. Thử lại.' }, { status: 409 });
-    console.error('Contract finalize failed:', error instanceof Error ? error.name : 'Unknown database error');
+    if (error && typeof error === 'object' && 'code' in error && error.code === '57014') {
+      return NextResponse.json({ status: 'error', message: 'Lưu chính thức bị quá thời gian chờ. Thử lại; nếu vẫn lỗi, bỏ bớt ảnh hồ sơ rồi gửi Telegram sau.' }, { status: 504 });
+    }
+    if (error && typeof error === 'object' && 'code' in error && error.code === '42883') {
+      return NextResponse.json({ status: 'error', message: 'Thiếu hàm kiểm tra lịch xe trên database. Chạy SQL reservation-window / cross-branch rồi thử lại.' }, { status: 503 });
+    }
+    console.error('Contract finalize failed:', error instanceof Error ? error.message : error);
     return NextResponse.json({ status: 'error', message: 'Không lưu chính thức được hợp đồng. Chưa có thay đổi nào được ghi.' }, { status: 500 });
+  } finally { client?.release(); client = undefined; }
+
+  try {
+    client = await himotoPool.connect();
+    await client.query('BEGIN');
+    await client.query("SET LOCAL statement_timeout = '60s'");
+    await queueContractNotification(client, Number(id), data.status === 'deposit_contract' ? 'reservation' : 'rental', `finalize:${id}:${data.code}`, user.id, 'rental');
+    await client.query('COMMIT');
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('Contract finalize notification queue failed:', error instanceof Error ? error.message : error);
   } finally { client?.release(); }
+
+  return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export const POST = withAccessRequest(POSTHandler);
