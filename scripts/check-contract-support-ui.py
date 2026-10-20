@@ -11,6 +11,8 @@ parser.add_argument('--url', default='http://127.0.0.1:3015')
 parser.add_argument('--session-cookie-file', required=True)
 parser.add_argument('--output', default='.backups/branch-support-20261020/ui')
 args = parser.parse_args()
+manifest = json.loads((Path(__file__).resolve().parents[1] / '.next/react-loadable-manifest.json').read_text(encoding='utf-8'))
+composer_chunk = next(value['files'][-1].rsplit('/', 1)[-1] for key, value in manifest.items() if key.endswith(' -> @/components/contracts/ContractComposer'))
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 checks, errors, writes = [], [], []
@@ -143,6 +145,16 @@ with sync_playwright() as p:
             page.get_by_role('button', name='Thao tác ' + code, exact=True).filter(visible=True).click()
             page.get_by_role('menuitem', name=name, exact=True).click()
 
+        preload_pattern = '**/_next/static/chunks/' + composer_chunk + '*'
+        def fail_preload(route):
+            route.abort('failed')
+        ctx.route(preload_pattern, fail_preload)
+        with page.expect_event('requestfailed', predicate=lambda req: composer_chunk in req.url, timeout=60000):
+            goto()
+        ctx.unroute(preload_pattern, fail_preload)
+        page.get_by_role('button', name='Nhập hợp đồng', exact=True).click()
+        expect(page.locator('dialog.mg-contract-composer')).to_be_visible(timeout=30000)
+        checks.append(f'{engine.name}: background composer download failure is handled; later contract entry retries normally')
         goto()
         page.get_by_role('button', name='Chưa gửi Telegram', exact=True).click()
         dialog = page.get_by_role('dialog')

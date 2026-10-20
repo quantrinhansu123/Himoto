@@ -14,6 +14,7 @@
 - **Xóa bản nháp** có hộp xác nhận. API yêu cầu `contracts.draft`, khóa dòng, đối chiếu phiên bản và từ chối hợp đồng đã phát hành, có phiếu hoặc lịch sử xe. Chỉ ẩn nháp và lưu người/thời điểm xóa; không xóa ảnh, phiếu hoặc đổi trạng thái xe. Quyền cơ sở tiếp tục do RLS kiểm soát.
 - Các TK ngân hàng hoạt động dùng được theo đúng cơ sở và sở hữu, không dựa vào mã loại kế thừa. SePay dùng cùng điều kiện. Hình thức đã chọn không tự đổi khi thiếu TK; giao diện yêu cầu đối chiếu tài khoản thật.
 - Khi mở trả xe của hợp đồng đã trả hết, màn hình kiểm tra kho và nêu rõ hợp đồng/cơ sở khác còn giữ xe; nếu đã giải phóng thì báo chọn được cho hợp đồng mới.
+- Tải trước cửa sổ nhập hợp đồng chỉ là tối ưu tốc độ; lỗi tải nền hoặc tải bị hủy khi chuyển trang được xử lý, không phát sinh lỗi JavaScript chưa bắt. Lần mở thực tế vẫn tải lại được mô-đun.
 
 ## Kiểm tra
 
@@ -23,7 +24,7 @@
 - `npm run test:sepay`: 8 nhóm; ngân hàng loại 2 và chống ghi nhận trùng webhook, chỉ ghi vào TEMP.
 - `node scripts/check-telegram-delivery.cjs`: 4 nhóm; timeout/media/checkpoint và không tự replay POST mất phản hồi.
 - `npm run test:contract-reservations -- --pglite-path .backups/contract-flow-qa/node_modules/@electric-sql/pglite`: 8 nhóm đặt cọc/giao xe và số dư trên PostgreSQL cục bộ.
-- `python -X utf8 scripts/check-contract-support-ui.py --session-cookie-file <private session file>`: 16 tình huống Chromium desktop và WebKit iPhone; mọi API ghi bị giả lập, không gửi Telegram/phiếu thật. Ảnh kiểm thử giữ trong `.backups/branch-support-20261020/ui/`. Khi nhận đủ mã tin, ẩn thông báo xếp hàng cũ và hiển thị trạng thái thành công.
+- `python -X utf8 scripts/check-contract-support-ui.py --session-cookie-file <private session file>`: Chromium desktop và WebKit iPhone; thêm tình huống cố ý chặn tải mô-đun nhập hợp đồng lần đầu rồi mở lại để kiểm tra khôi phục. Mọi API ghi bị giả lập, không gửi Telegram/phiếu thật. Ảnh kiểm thử giữ trong `.backups/branch-support-20261020/ui/`. Khi nhận đủ mã tin, ẩn thông báo xếp hàng cũ và hiển thị trạng thái thành công.
 - Kiểm tra HTTP bằng tài khoản cơ sở thật: TK Hàng Bút hiện đúng, RLS danh sách chưa gửi giữ đúng cơ sở, xe đã giải phóng và hồ sơ đối chiếu không hiển thị mốc kỹ thuật như ngày thu hồi thật. Không gửi tin và không phát hành hợp đồng khách trong QA.
 
 Không thay đổi chính sách chỉ gửi sau khi người dùng bấm gửi. Telegram/mạng vẫn có thể lỗi; chỉ trạng thái có xác nhận mã tin đầy đủ mới báo thành công.

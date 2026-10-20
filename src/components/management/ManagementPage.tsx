@@ -161,7 +161,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [selectedStore]);
   useEffect(() => {
     if (kind !== 'contracts' || loading) return;
-    const timer = window.setTimeout(() => { void loadComposer(); }, 1500);
+    const timer = window.setTimeout(() => { void loadComposer().catch(() => {}); }, 1500);
     return () => window.clearTimeout(timer);
   }, [kind, loading]);
   useEffect(() => {
@@ -251,7 +251,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   }
   function warmComposer() {
     if (loading || error) return;
-    void loadComposer();
+    void loadComposer().catch(() => {});
     void ensureData(CONTRACT_DATA_KINDS).catch(() => {});
   }
 
