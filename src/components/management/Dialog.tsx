@@ -29,7 +29,7 @@ export function lockBodyScroll() {
   };
 }
 
-export function Dialog({ title, subtitle, children, onClose, className = '' }: { title: string; subtitle?: string; children: ReactNode; onClose: () => void; className?: string }) {
+export function Dialog({ title, subtitle, children, onClose, className = '', dismissOnBackdrop = true }: { title: string; subtitle?: string; children: ReactNode; onClose: () => void; className?: string; dismissOnBackdrop?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -53,7 +53,7 @@ export function Dialog({ title, subtitle, children, onClose, className = '' }: {
     if (event.target !== event.currentTarget || event.defaultPrevented) return;
     event.preventDefault(); event.stopPropagation(); onClose();
   }}
-    onClick={event => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose(); } }}>
+    onClick={event => { if (dismissOnBackdrop && event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose(); } }}>
     <div className="mg-dialog-header"><div><h2 id={titleId}>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>
       <button className="mg-icon-button" type="button" onClick={onClose} aria-label="Đóng hộp thoại"><X size={20} /></button></div>
     {children}

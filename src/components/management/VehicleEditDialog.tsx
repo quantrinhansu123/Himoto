@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Check, LoaderCircle } from 'lucide-react';
 import { ManagementRow } from '@/lib/management/types';
 import { VEHICLE_STATUSES, VEHICLE_TYPES } from '@/lib/management/config';
@@ -22,6 +22,11 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
   const [draft, setDraft] = useState<VehicleEdits>({ name: value('name'), license: value('license'), brand: value('brand') || 'honda', color: value('color'),
     type: value('type') || VEHICLE_TYPES[0].value, year: value('year'), store_id: value('store_id') || (selectedStore !== 'all' ? selectedStore : ''),
     status: value('status') || 'ready', chassis: value('chassis'), engine: value('engine'), odometer: value('odometer'), note: '' });
+  const initialDraft = useRef(draft);
+  const dirty = (Object.keys(draft) as (keyof VehicleEdits)[]).some(key => draft[key] !== initialDraft.current[key]);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const continueButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (confirmDiscard) continueButton.current?.focus(); }, [confirmDiscard]);
   const [errors, setErrors] = useState<Partial<Record<keyof VehicleEdits, string>>>({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -30,7 +35,13 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
   const rented = (() => { try { return JSON.parse(String(row?.rentals_json || '[]')).length > 0; } catch { return row?.status === 'using'; } })();
   const statusOptions = VEHICLE_STATUSES;
   const storeMissing = draft.store_id && !stores.some(store => String(store.id) === draft.store_id);
-  function change(key: keyof VehicleEdits, next: string) { setDraft(current => ({ ...current, [key]: next })); setErrors(current => ({ ...current, [key]: '' })); }
+  function requestClose() {
+    if (busy.current) return;
+    if (confirmDiscard) { setConfirmDiscard(false); return; }
+    if (dirty) setConfirmDiscard(true);
+    else onClose();
+  }
+  function change(key: keyof VehicleEdits, next: string) { setConfirmDiscard(false); setDraft(current => ({ ...current, [key]: next })); setErrors(current => ({ ...current, [key]: '' })); }
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy.current) return;
     const next: Partial<Record<keyof VehicleEdits, string>> = {};
@@ -54,7 +65,7 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
   }
   const describedBy = (key: string) => errors[key as keyof VehicleEdits] ? `vehicle-${key}-error` : undefined;
   const fieldError = (key: keyof VehicleEdits) => errors[key] && <p id={`vehicle-${key}-error`} className="mg-field-error">{errors[key]}</p>;
-  return <Dialog title={row ? 'Chỉnh sửa xe' : 'Thêm xe'} subtitle={row ? `${row.code} · ${value('license')}` : 'Lưu trực tiếp vào Supabase'} onClose={() => { if (!busy.current) onClose(); }}>
+  return <Dialog title={row ? 'Chỉnh sửa xe' : 'Thêm xe'} subtitle={row ? `${row.code} · ${value('license')}` : 'Lưu trực tiếp vào Supabase'} dismissOnBackdrop={false} onClose={requestClose}>
     <form ref={form} noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
       {FIELDS.slice(0, 4).map(field => <div key={field.key} className="mg-field"><label htmlFor={`vehicle-${field.key}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
         <input id={`vehicle-${field.key}`} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
@@ -72,8 +83,10 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
         <textarea id="vehicle-note" value={draft.note} maxLength={500} disabled={saving} placeholder="VD: đưa xe đi sửa phanh, chuyển xe sang cơ sở khác…" onChange={event => change('note', event.target.value)} />
         <small>Mọi trường thay đổi được ghi giá trị cũ → mới trong tab Lịch sử, cùng ngày giờ và người thao tác.</small></div>
     </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
-      <div className="mg-dialog-footer"><span className="mg-form-note">* Thông tin bắt buộc</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
-        <button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : row ? 'Lưu xe' : 'Thêm xe'}</button></div>
+      <div className="mg-dialog-footer">{confirmDiscard ? <><span className="mg-form-note" role="alert">Thông tin xe chưa được lưu. Bỏ thay đổi?</span>
+        <button ref={continueButton} type="button" className="mg-button" onClick={() => setConfirmDiscard(false)}>Tiếp tục nhập</button>
+        <button type="button" className="mg-button mg-button-danger" onClick={onClose}>Bỏ thay đổi</button></> : <><span className="mg-form-note">* Thông tin bắt buộc</span><button type="button" className="mg-button" disabled={saving} onClick={requestClose}>Hủy</button>
+        <button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : row ? 'Lưu xe' : 'Thêm xe'}</button></>}</div>
     </form>
   </Dialog>;
 }

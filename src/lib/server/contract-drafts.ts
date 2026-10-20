@@ -23,6 +23,8 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
   o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
   o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
+  COALESCE(o.draft_payload #>> '{management_composer,profile,sales_staff_id}',o.draft_payload #>> '{management_composer,draft,sales_staff_id}') AS sales_staff_id,
+  COALESCE(o.draft_payload #>> '{management_composer,profile_attribution,NVKD,name}',o.draft_payload #>> '{management_composer,sales_attribution,NVKD,name}') AS sales_staff_name,
 
   CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
   o.customer_id, c.status AS customer_status, c.customer_type, c.nationality, c.contact_channel, c.contact_detail,
@@ -51,7 +53,18 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   CASE WHEN o.order_status='draft' THEN jsonb_build_object(
       'management_composer', o.draft_payload->'management_composer',
       'order_items', ${compact ? "'[]'::jsonb" : "o.draft_payload->'order_items'"})
-    ELSE ${compact ? "'{}'::jsonb" : "jsonb_build_object('order_items', o.draft_payload->'order_items')"} END AS draft_payload,
+    ELSE ${compact ? "'{}'::jsonb" : `jsonb_build_object('order_items', o.draft_payload->'order_items',
+      'management_composer', jsonb_build_object(
+        'profile', jsonb_strip_nulls(jsonb_build_object(
+          'vehicle_store_id', o.draft_payload #> '{management_composer,draft,vehicle_store_id}',
+          'staff_id', o.draft_payload #> '{management_composer,draft,staff_id}',
+          'staff_name', o.draft_payload #> '{management_composer,draft,staff_name}',
+          'sales_staff_id', o.draft_payload #> '{management_composer,draft,sales_staff_id}',
+          'tls_staff_id', o.draft_payload #> '{management_composer,draft,tls_staff_id}'
+        )) || COALESCE(o.draft_payload::jsonb #> '{management_composer,profile}','{}'::jsonb),
+        'sales_attribution', o.draft_payload #> '{management_composer,sales_attribution}',
+        'profile_attribution', o.draft_payload #> '{management_composer,profile_attribution}'
+      ))`} END AS draft_payload,
   o.contract_signed_on AS signed_on, o.contract_authorization_date AS authorization_date,
 
   o.contract_collateral_description AS collateral_description, o.customer_source, o.customer_source_url,
@@ -94,7 +107,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
 export const CONTRACT_LIST_SQL = contractListSql();
 /** Filtering/summary fields only. Full document/customer/vehicle details are hydrated for the selected page. */
 export function contractTableSql(scopeClause: string) {
-  return `SELECT id,contract_number,draft_reference,rental_type,contract_type_id,contract_type_name,contract_type_months,
+  return `SELECT id,contract_number,draft_reference,rental_type,contract_type_id,contract_type_name,contract_type_months,sales_staff_id,sales_staff_name,
     status,customer_id,customer_status,customer_name,customer_phone,store_id,store_name,store_kind,start_date,end_date,
     total_amount,paid_amount,deposit_amount,return_adjustment_amount,company_paid_amount,company_payment_count,representative_name,draft_payload,vehicles
     FROM (${contractListSql(true)}${scopeClause}) listing`;

@@ -148,9 +148,9 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
         AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
         AND (
           o.order_status = ANY($3::text[])
-          OR (o.order_status='deposit_contract' AND d.rent_at IS NOT NULL AND $5::timestamptz > d.rent_at)
+          OR (o.order_status='deposit_contract' AND d.rent_at IS NOT NULL AND $4::timestamptz > d.rent_at)
         )
-      ORDER BY v.license`, [vehicleIds, id, ['renting','overdue','wait_payment','pending','bad_debt'], proposedStart, proposedEnd]);
+      ORDER BY v.license`, [vehicleIds, id, ['renting','overdue','wait_payment','pending','bad_debt'], proposedEnd]);
   const hard = conflicts.rows.filter(row => row.severity !== 'reservation_overlap');
   const soft = conflicts.rows.filter(row => row.severity === 'reservation_overlap');
   if (hard.length) throw new ContractFinalizeError(`Không thể lưu chính thức: ${hard.map(conflictLabel).join('; ')} chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.`, 409);

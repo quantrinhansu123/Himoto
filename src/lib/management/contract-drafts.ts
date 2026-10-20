@@ -16,7 +16,7 @@ export function validateDraftSave(draft: ContractDraft, dataset: ManagementDatas
   Object.assign(errors,chargeErrors(draft.extra_charges,false));
   if (draft.store_id && !dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Cơ sở đã chọn không còn tồn tại.';
   if (draft.vehicle_store_id && !dataset.stores.some(row => String(row.id) === draft.vehicle_store_id)) errors.vehicle_store_id = 'Cửa hàng xe đã chọn không còn tồn tại.';
-  if (draft.staff_id && !dataset.staff.some(row => String(row.id) === draft.staff_id && String(row.store_id) === contractStaffStoreId(draft))) errors.staff_id = 'Nhân sự phải thuộc cửa hàng xe đã chọn.';
+  if (draft.staff_id && !dataset.staff.some(row => String(row.id) === draft.staff_id && String(row.store_id) === contractStaffStoreId(draft))) errors.staff_id = 'Chọn lại người đại diện Bên A tại cửa hàng xe. Nhân viên TLS/NVKD ghi nhận doanh số được chọn riêng ở phần Hợp đồng.';
   const vehicleIds = new Set<string>();
   draft.vehicles.forEach((vehicle, index) => {
     if (vehicle.id && !dataset.vehicles.some(row => String(row.id) === vehicle.id)) errors[`vehicle_${index}`] = 'Xe đã chọn không còn tồn tại.';

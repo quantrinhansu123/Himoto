@@ -434,6 +434,13 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     const finalizing = action === 'finalize' && canSaveDraft;
     const savingDraft = !finalizing && (action === 'draft' || (editingDraft && action !== 'preview'));
     const savingRecord = mode === 'edit' && action !== 'preview';
+    // A draft may already have a representative while the branch directory is still loading.
+    // Do not mistake the temporary empty list for an employee from another branch.
+    if ((savingDraft || finalizing) && draft.staff_id && (staffLoading || staffError)) {
+      setSection('customer');
+      setSaveError(staffError || 'Đang tải nhân sự cửa hàng xe. Đợi tải xong rồi lưu lại; thông tin đang nhập vẫn được giữ.');
+      return;
+    }
     const validationDataset = {
       ...dataset,
       staff,
@@ -448,7 +455,11 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
         return [...byId.values()];
       })(),
     };
-    const next = savingDraft ? validateDraftSave(draft, validationDataset) : finalizing ? reserving ? validateReservationDraft(draft,validationDataset,staff,source) : validateOperationalDraft(draft,validationDataset,staff,source) : validateContractDraft(draft,validationDataset,staff,source);
+    // Apply the same representative check before both draft save and issue, so an
+    // invalid Bên A selection opens its own field instead of an unexplained API error.
+    const next = savingDraft ? validateDraftSave(draft, validationDataset) : finalizing
+      ? { ...validateDraftSave(draft, validationDataset), ...(reserving ? validateReservationDraft(draft,validationDataset,staff,source) : validateOperationalDraft(draft,validationDataset,staff,source)) }
+      : validateContractDraft(draft,validationDataset,staff,source);
     if (canSaveDraft && (!row && !draft.contract_type_id || draft.contract_type_id && !catalog.types.some(type => type.id === draft.contract_type_id && (type.active || row && (row.contract_type_id || row.rental_type) === type.id)))) next.contract_type_id = catalog.error || 'Chọn loại hợp đồng đang dùng, hoặc thêm loại mới.';
     if (rentalDays && (!/^\d+$/.test(rentalDays) || !Number.isSafeInteger(Number(rentalDays)) || Number(rentalDays) < 1 || (draft.start_date && !addRentalDays(draft.start_date,rentalDays)))) next.rental_days = 'Nhập số ngày nguyên lớn hơn 0 và ngày thuê hợp lệ.';
     if (!savingDraft && lookupState !== 'found') next.id_card = 'Tra cứu hoặc tạo khách hàng trước khi lưu / in.';
