@@ -104,11 +104,14 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [openedAt, setOpenedAt] = useState(() => Date.now());
   const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => store.kind === 'lease_to_own').map(store => store.id)), [dataset?.stores]);
   const tableInput:ManagementTableInput={kind:kind==='customers'?'customers':'contracts',query,store:selectedStore,scope:draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'',page,size:pageSize,sort:sort.key,direction:sort.direction};
-  const table=useManagementTable(tableInput,paged,resources[kind],[...ownershipStoreIds]);
-  const renewable=useManagementTable({...tableInput,query:{...EMPTY_QUERY,search:renewSearch},scope:'renewable',page:1,size:30},renewPicker,resources.contracts,[...ownershipStoreIds]);
-  const loading=datasetLoading || paged && table.loading && !table.data;
+  const tableRevision=useMemo(()=>({at:resources[kind].updatedAt}),[kind,resources[kind].updatedAt]);
+  const contractsRevision=useMemo(()=>({at:resources.contracts.updatedAt}),[resources.contracts.updatedAt]);
+  const table=useManagementTable(tableInput,paged,tableRevision,[...ownershipStoreIds]);
+  const renewable=useManagementTable({...tableInput,query:{...EMPTY_QUERY,search:renewSearch},scope:'renewable',page:1,size:30},renewPicker,contractsRevision,[...ownershipStoreIds]);
+  // Paged contract/customer lists load via their own API; do not block the table on stores prefetch.
+  const loading=paged ? table.loading && !table.data : datasetLoading;
   const refreshing=datasetRefreshing || paged && table.loading && Boolean(table.data);
-  const error=datasetError || (paged?table.error:'');
+  const error=(paged?table.error:'') || (!paged?datasetError:'');
   async function reload(kinds?:readonly ManagementKind[]) { if(paged)table.refresh(); await reloadDataset(kinds); }
   useEffect(() => {
     if (kind !== 'contracts') return;

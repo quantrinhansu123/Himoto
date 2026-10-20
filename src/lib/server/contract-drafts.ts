@@ -112,6 +112,50 @@ export function contractTableSql(scopeClause: string) {
     total_amount,paid_amount,deposit_amount,return_adjustment_amount,company_paid_amount,company_payment_count,representative_name,draft_payload,vehicles
     FROM (${contractListSql(true)}${scopeClause}) listing`;
 }
+/**
+ * Lean index for paged lists: enough fields to filter/sort/summarize without staff joins,
+ * return-adjustment scans, or full vehicle/document payloads. Page rows are hydrated next.
+ */
+export function contractIndexSql(scopeClause: string) {
+  return `SELECT o.id, o.contract_number, o.draft_reference,
+    COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
+    o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
+    o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
+    o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
+    CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
+    o.customer_id, c.status AS customer_status,
+    COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
+    COALESCE(c.id_card, o.customer_idnumber) AS customer_id_card,
+    o.store_id, s.store_name, s.kind AS store_kind, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
+    o.total AS total_amount, ${rentalPaidSql()} AS paid_amount,
+    CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
+         ELSE COALESCE(o.first_deposit_amount, 0) + COALESCE(o.additional_deposit_amount, 0) END AS deposit_amount,
+    COALESCE(company.paid_amount,0) AS company_paid_amount, COALESCE(company.payment_count,0) AS company_payment_count,
+    CASE WHEN o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL
+      THEN jsonb_build_object('management_composer', jsonb_build_object('installment_plan', o.draft_payload #> '{management_composer,installment_plan}'))
+      ELSE '{}'::jsonb END AS draft_payload,
+    COALESCE(ov.vehicles, '[]'::json) AS vehicles
+    FROM himoto.orders o
+    LEFT JOIN himoto.customers c ON c.id = o.customer_id
+    LEFT JOIN himoto.stores s ON s.id = o.store_id
+    LEFT JOIN (
+      SELECT order_id, SUM(value) AS paid_amount, COUNT(*)::int AS payment_count
+      FROM himoto.transactions WHERE type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
+      GROUP BY order_id
+    ) company ON company.order_id=o.id
+    LEFT JOIN (
+      SELECT t.order_id, SUM(t.value) FILTER (WHERE t.type IN ('in','addon') AND ${depositReceiptSql()}) AS paid
+      FROM himoto.transactions t WHERE t.status='approved' GROUP BY t.order_id
+    ) deposit_totals ON deposit_totals.order_id=o.id
+    CROSS JOIN LATERAL (SELECT COALESCE(deposit_totals.paid,0) AS paid) dep
+    LEFT JOIN (
+      SELECT d.order_id, json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license) ORDER BY d.id) AS vehicles,
+        min(d.rent_at) AS start_date, max(d.return_at) AS end_date
+      FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
+      WHERE d.deleted_at IS NULL GROUP BY d.order_id
+    ) ov ON ov.order_id=o.id
+    WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${scopeClause}`;
+}
 
 export function contractListScopeClause(scope: string | null): string {
   switch (scope) {

@@ -12,7 +12,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,himoto AS $$
     COALESCE(s.store_name,'')::text, d.rent_at::timestamptz, d.return_at::timestamptz
   FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
   LEFT JOIN himoto.stores s ON s.id=o.store_id
-  WHERE d.vehicle_id=ANY(targets) AND d.deleted_at IS NULL AND o.deleted_at IS NULL
+  WHERE d.vehicle_id=ANY(targets) AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
     AND COALESCE(o.draft_payload #>> '{legacy_migration,sourceStoreId}','') <> '30'
     AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt')
   ORDER BY d.vehicle_id, d.rent_at DESC, d.id DESC
@@ -52,7 +52,7 @@ CREATE OR REPLACE FUNCTION himoto.vehicle_window_conflicts(
   LEFT JOIN himoto.users mu ON mu.id=s.user_id
   WHERE d.vehicle_id = ANY(targets)
     AND d.order_id IS DISTINCT FROM excluded_order
-    AND d.deleted_at IS NULL AND o.deleted_at IS NULL
+    AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
     AND COALESCE(o.draft_payload #>> '{legacy_migration,sourceStoreId}','') <> '30'
     AND (
       o.order_status IN ('renting','overdue','wait_payment','pending','bad_debt')
