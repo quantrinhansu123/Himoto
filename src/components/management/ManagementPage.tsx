@@ -121,7 +121,27 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     const timer = window.setInterval(() => setOpenedAt(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, [kind]);
-  const [visibleKeys, setVisibleKeys] = useState<string[]>(config.columns.filter(c => !c.hidden).map(c => c.key));
+  const defaultVisibleKeys = useMemo(() => config.columns.filter(c => !c.hidden).map(c => c.key), [config.columns]);
+  const columnSignature = defaultVisibleKeys.join('|');
+  const [visibleKeys, setVisibleKeys] = useState<string[]>(() => defaultVisibleKeys);
+  // Hot reload / new default columns (e.g. Tên khách hàng) must appear without clearing the page.
+  useEffect(() => {
+    setVisibleKeys(current => {
+      const missing = defaultVisibleKeys.filter(key => !current.includes(key));
+      if (!missing.length) return current;
+      const next = [...current];
+      for (const key of missing) {
+        const at = defaultVisibleKeys.indexOf(key);
+        let insertAt = next.length;
+        for (let i = at + 1; i < defaultVisibleKeys.length; i += 1) {
+          const idx = next.indexOf(defaultVisibleKeys[i]);
+          if (idx >= 0) { insertAt = idx; break; }
+        }
+        next.splice(insertAt, 0, key);
+      }
+      return next;
+    });
+  }, [columnSignature, defaultVisibleKeys]);
   const [viewing, setViewing] = useState<ManagementRow | null>(null);
   const [qrTarget,setQrTarget]=useState<number|null>(null);
   const [reminderTarget,setReminderTarget]=useState<number|null>(null);
