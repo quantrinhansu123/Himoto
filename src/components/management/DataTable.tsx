@@ -36,6 +36,7 @@ interface Props {
   onPayment?: (row: ManagementRow) => void;
   onQr?: (row: ManagementRow) => void;
   onReminder?: (row: ManagementRow) => void;
+  onTelegram?: (row: ManagementRow) => void;
   onHandover?: (row: ManagementRow) => void;
   onReturn?: (row: ManagementRow) => void;
   onRenew?: (row: ManagementRow) => void;
@@ -59,7 +60,7 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder, onHandover, onReturn, onRenew, onVehicleChange, onBatteryRent, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onRenew, onVehicleChange, onBatteryRent, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const {can}=useManagement();
   const selectable = Boolean(selectedIds && onSelectionChange);
   const columnCount = columns.length + (selectable ? 3 : 2);
@@ -69,6 +70,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     const isContract = config.kind === 'contracts';
     const isActiveContract = isContract && ['renting', 'overdue', 'wait_payment'].includes(row.status);
     const actions: RowAction[] = [{ key: 'view', label: 'Xem chi tiết', icon: <Eye size={16} />, onSelect: () => onView(row) }];
+    if(isContract&&onTelegram&&!['draft','cancelled'].includes(row.status))actions.push({key:'telegram',label:'Gửi Telegram',icon:<MessageCircle size={16}/>,onSelect:()=>onTelegram(row)});
     if (config.kind === 'vehicles' && onVehicleAction){
       if(can('vehicles.transfer'))actions.push({ key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') });
       if(can('vehicles.write'))actions.push({ key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') });
@@ -94,7 +96,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         title: !row.customer_revision ? 'Nhấn Làm mới để tải phiên bản hồ sơ' : undefined,
         icon: blacklistBusyId === row.id ? <LoaderCircle size={16} className="mg-spin" /> : blacklisted ? <ShieldCheck size={16} /> : <ShieldBan size={16} />, onSelect: () => onBlacklist(row) });
     }
-    if (canDelete && onDelete) actions.push({ key: 'delete', label: `Xóa ${config.singular}`, danger: true, icon: <Trash2 size={16} />, onSelect: () => onDelete(row) });
+    if (canDelete && onDelete && (!isContract || row.status === 'draft')) actions.push({ key: 'delete', label: isContract ? 'Xóa bản nháp' : `Xóa ${config.singular}`, danger: true, icon: <Trash2 size={16} />, onSelect: () => onDelete(row) });
     return actions;
   };
   return <><ManagementMobileList config={config} rows={rows} sortKey={sortKey} sortDirection={sortDirection} onSort={onSort} onView={onView}

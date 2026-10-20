@@ -52,7 +52,7 @@ function rentalDays(start: unknown, end: unknown) {
 
 export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
 
-export function ContractDetail({ row, onClose, onQr,onReminder,onPrint, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
+export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
   const { dataset, source, can } = useManagement();
   const [section, setSection] = useState<DetailSection>('vehicle');
   const [viewingVersion, setViewingVersion] = useState('');
@@ -232,7 +232,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint, onPrintV
         {history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow} />}
       </>)}
     {panel('photos','Ảnh thuê / trả xe',section==='photos'&&<ContractPhotoGallery id={row.id}/>)}
-    {panel('telegram','Gửi thông tin và ảnh vào nhóm Telegram',section==='telegram'&&source==='api'&&<ContractTelegramPanel id={row.id}/>)}
+    {panel('telegram','Gửi thông tin và ảnh vào nhóm Telegram',section==='telegram'&&source==='api'&&(row.status==='draft'?<p role="status">Hợp đồng đang lưu nháp. Bấm Tiếp tục hoàn tất hợp đồng, kiểm tra thanh toán rồi Xác nhận lưu chính thức. Sau khi phát hành mới gửi được thông tin và ảnh lên Telegram.</p>:row.status==='cancelled'?<p>Hợp đồng đã hủy, không có giao dịch mới để gửi.</p>:<ContractTelegramPanel id={row.id}/>))}
     {source === 'api' && (section === 'vehicle' || section === 'customer') && <>
       {section === 'vehicle' && <SavedRecordPhotos entity="contracts" recordId={row.id} slots={draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))} title="Ảnh biển số xe" />}
       {section === 'customer' && draft.customer_id && <SavedRecordPhotos entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Ảnh CCCD" />}
@@ -240,7 +240,8 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint, onPrintV
     </div>
     {noShow&&<ReservationNoShowDialog orderId={row.id} onClose={()=>setNoShow(false)} onDone={onClose}/>}
     <div className="mg-dialog-footer">{row.status==='deposit_contract'&&can('contracts.finalize')&&<button type="button" className="mg-button" onClick={()=>setNoShow(true)}>Khách không đến nhận xe</button>}<button type="button" className="mg-button" onClick={onClose}>Đóng</button>
-      {source==='api'&&<button type="button" className="mg-button" onClick={()=>setSection('telegram')}><MessageCircle size={15}/>Gửi Telegram</button>}
+      {row.status==='draft'&&can('contracts.draft')&&onEditDraft&&<button type="button" className="mg-button mg-button-primary" onClick={onEditDraft}>Tiếp tục hoàn tất hợp đồng</button>}
+      {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('telegram')}><MessageCircle size={15}/>Gửi Telegram</button>}
       {onReminder&&isRemindableContract(row)&&<button type="button" className="mg-button" onClick={onReminder}><MessageCircle size={15}/>Nhắc nợ</button>}
       {canOperateRental && <>
         {can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15} />Trả xe</button>}

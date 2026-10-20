@@ -9,6 +9,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';
   if(path==='/api/auth/store-directory')return null;
   if(path==='/api/auth/contract-staff')return 'contracts.read';
+  if(path==='/api/auth/contract-telegram-pending')return 'contracts.read';
   if(path.startsWith('/api/auth/integrations'))return 'settings.write';
   if(path.startsWith('/api/auth/gps'))return path.endsWith('/refresh')||read?'vehicles.read':'settings.write';
   if(path==='/api/auth/debt-reminders'||path.endsWith('/debt-reminder'))return 'contracts.read';

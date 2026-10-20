@@ -47,6 +47,7 @@ async function run() {
       CREATE TABLE himoto.cash(id bigint PRIMARY KEY,name text,store_id bigint,status text,opening_balance numeric DEFAULT 0);
       ALTER TABLE himoto.customers ADD customer_type text,ADD nationality text,ADD contact_channel text,ADD contact_detail text;
       ALTER TABLE himoto.stores ADD kind text DEFAULT 'physical',ADD user_id bigint;
+      CREATE FUNCTION himoto.store_directory() RETURNS SETOF himoto.stores LANGUAGE sql STABLE AS 'SELECT * FROM himoto.stores';
       ALTER TABLE himoto.order_vehicle_details ADD substitute_unit_price numeric;
       CREATE TABLE himoto.management_contract_payments(request_id uuid PRIMARY KEY,order_id bigint,transaction_id bigint,actor_id bigint,request_hash text,renewal_payload jsonb);
       INSERT INTO himoto.stores VALUES(1,'CS nguồn khách QA'),(2,'CS giữ xe QA');

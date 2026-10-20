@@ -75,7 +75,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   // Store banks/cash must match cơ sở nguồn; company banks are usable from every store (Cashbook may attach them to a display branch).
   const accounts = await client.query(`SELECT id, 'bank'::text AS kind, store_id, owner_type,bank_name,account_number,owner_name,
       CASE WHEN owner_type='company' THEN 'CK công ty · ' ELSE 'CK cá nhân · ' END || bank_name || ' · ' || owner_name || ' · ' || account_number AS label
-    FROM himoto.banks WHERE lower(status) = 'active' AND account_type IN (0,1) AND (store_id=$1 OR owner_type='company')
+    FROM himoto.banks WHERE lower(status) = 'active' AND (store_id=$1 OR owner_type='company')
     UNION ALL SELECT id, 'cash'::text AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,'Két tiền mặt · ' || COALESCE(NULLIF(name,''),'#' || id::text) AS label
     FROM himoto.cash WHERE lower(status)='active' AND store_id=$1 ORDER BY kind,id`, [order.store_id]);
   const history = await client.query(`SELECT t.id,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,

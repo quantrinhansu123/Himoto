@@ -42,6 +42,6 @@ export function ContractTelegramPanel({id,eventKind,eventKey}:{id:number;eventKi
         catch(cause){setError(cause instanceof Error?cause.message:'Chưa gửi được Telegram.');}finally{setBusy(false);}
       }}>{busy?<LoaderCircle size={16} className="mg-spin"/>:<Send size={16}/>} {busy?'Đang xử lý…':event.unchanged&&event.status==='sent'?'Đã gửi Telegram':event.status==='pending'||event.status==='sending'?'Đang gửi Telegram':event.status==='unknown'?'Cần đối chiếu Telegram':'Gửi toàn bộ Telegram'} · {event.photo_count} ảnh · {event.video_count||0} video</button>
     </div>}
-    {message&&<p role="status">{message}</p>}{error&&<p className="mg-field-error" role="alert">{error}</p>}
+    {message&&event?.status!=='sent'&&<p role="status">{message}</p>}{error&&<p className="mg-field-error" role="alert">{error}</p>}
   </section>;
 }

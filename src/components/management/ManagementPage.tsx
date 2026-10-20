@@ -48,6 +48,8 @@ const CustomerDetail = dynamic(() => import('./CustomerDetail').then(module => m
 const VehicleActionDialog = dynamic(() => import('./VehicleActionDialog').then(module => module.VehicleActionDialog), { ssr: false, loading: FeatureLoading });
 const VehicleDetail = dynamic(() => import('./VehicleDetail').then(module => module.VehicleDetail), { ssr: false, loading: FeatureLoading });
 const SharedVehicleInventory = dynamic(() => import('./SharedVehicleInventory').then(module => module.SharedVehicleInventory), { ssr: false, loading: FeatureLoading });
+const ContractDraftDeleteDialog = dynamic(() => import('./ContractDraftDeleteDialog').then(module => module.ContractDraftDeleteDialog), { ssr:false, loading:FeatureLoading });
+const ContractTelegramDialog = dynamic(() => import('./ContractTelegramDialog').then(module => module.ContractTelegramDialog), { ssr:false, loading:FeatureLoading });
 const StoreDetail = dynamic(() => import('./StoreDetail').then(module => module.StoreDetail), { ssr: false, loading: FeatureLoading });
 const StaffDialog = dynamic(() => import('./StaffDialogs').then(module => module.StaffDialog), { ssr: false, loading: FeatureLoading });
 const ContractQrDialog=dynamic(()=>import('./ContractPaymentQr').then(module=>module.ContractQrDialog),{ssr:false,loading:FeatureLoading});
@@ -123,6 +125,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [staffDialog, setStaffDialog] = useState<{ row: ManagementRow | null; mode: 'view' | 'edit' | 'delete' | 'create' } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagementRow | null>(null);
+  const [draftDeleteTarget,setDraftDeleteTarget]=useState<ManagementRow|null>(null);
+  const [telegramTarget,setTelegramTarget]=useState<{id:number;code:string}|'pending'|null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [blacklistBusyId, setBlacklistBusyId] = useState<number | null>(null);
@@ -187,6 +191,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : kind === 'staff' ? canManageStaff : false;
   const canDelete = source === 'api' && (
     (kind === 'staff' && canManageStaff)
+    || (kind === 'contracts' && canSaveContractDrafts)
     || (can('settings.write') && (kind === 'customers' || kind === 'stores' || kind === 'vehicles'))
   );
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
@@ -273,6 +278,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           }}><Plus size={18} />{config.addLabel}</button>}
           {(kind === 'stores' || kind === 'vehicles' || kind === 'customers') && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
           {canBulkRemind && <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}
+          {kind==='contracts'&&source==='api'&&<button type="button" className="mg-button" onClick={()=>setTelegramTarget('pending')}><MessageCircle size={17}/>Chưa gửi Telegram</button>}
           {kind === 'contracts' && canSaveContractDrafts && <><button type="button" className="mg-button" disabled={loading || Boolean(error) || !dataset || !canSaveContractDrafts} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={() => { setPrintRow(null); setComposerMode('draft'); setComposerOpen(true); }}><Plus size={17} />Nhập hợp đồng</button></>}</div>
       </div>
 
@@ -313,9 +319,11 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
             else { setEditing(row); setFormOpen(true); }
           }}
           onDelete={canDelete ? row => {
-            if (kind === 'staff') setStaffDialog({ row, mode: 'delete' });
+            if (kind === 'contracts') setDraftDeleteTarget(row);
+            else if (kind === 'staff') setStaffDialog({ row, mode: 'delete' });
             else { setDeleteTarget(row); setDeleteError(''); }
           } : undefined} canDelete={canDelete}
+          onTelegram={kind==='contracts'&&source==='api'?row=>setTelegramTarget({id:row.id,code:row.code}):undefined}
           blacklistBusyId={blacklistBusyId} onBlacklist={kind === 'customers' ? async row => {
             if (blacklistPending.current) return;
             blacklistPending.current = true; setBlacklistBusyId(row.id); setBlacklistError('');
@@ -377,6 +385,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       <div className="mg-dialog-body"><p>{bulkDeleteNote[kind]}</p>{bulkDeleteError && <p className="mg-error-message" role="alert">{bulkDeleteError}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={bulkDeleteBusy} onClick={() => setBulkDeleteOpen(false)}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={bulkDeleteBusy} onClick={() => void deleteSelected()}>{bulkDeleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa {selectedIds.size} {config.singular}</>}</button></div>
     </Dialog>}
+    {draftDeleteTarget&&<ContractDraftDeleteDialog row={draftDeleteTarget} onClose={()=>setDraftDeleteTarget(null)} onDeleted={()=>{setDraftDeleteTarget(null);invalidateData(['contracts']);void reload(['contracts']);notify('Đã xóa bản nháp khỏi danh sách.');}}/>}
+    {telegramTarget&&<ContractTelegramDialog order={telegramTarget==='pending'?undefined:telegramTarget} store={selectedStore} onClose={()=>setTelegramTarget(null)}/>}
     {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} initialQuery={returnTarget.query} onClose={() => setReturnTarget(null)} />}
     {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} onClose={() => setRenewTarget(null)} />}
     {renewPicker && <Dialog title="Chọn hợp đồng gia hạn" onClose={()=>setRenewPicker(false)}><div className="mg-dialog-body"><label className="mg-field">Tìm hợp đồng cần gia hạn<input type="search" autoFocus value={renewSearch} placeholder="Mã hợp đồng, khách, SĐT hoặc biển số" onChange={event=>setRenewSearch(event.target.value)}/></label><ul className="mg-operation-picks">{(renewable.data?.rows || []).map(row=><li key={row.id}><button type="button" onClick={()=>{setRenewPicker(false);setRenewTarget(row);}}><strong>{row.code} · {row.customer_name}</strong><span>{row.license} · {row.customer_phone}</span></button></li>)}</ul></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setRenewPicker(false)}>Đóng</button></div></Dialog>}
@@ -397,6 +407,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {batteryPrinting && <BatteryPrintPreview doc={batteryPrinting} onClose={() => setBatteryPrinting(null)} />}
     {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onBatteryRent={() => { setBatteryRentTarget(viewing); setViewing(null); }} onPayment={canPayContracts ? (purpose?: PaymentPurpose) => { router.push(cashbookPaymentPath(viewing.id, purpose || 'debt')); setViewing(null); } : undefined} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }}
       onQr={()=>{setQrTarget(viewing.id);setViewing(null);}}
+      onEditDraft={()=>{setPrintRow(viewing);setComposerMode('draft');setViewing(null);setComposerOpen(true);}}
       onReminder={canSendDebtReminder(accessUser)?()=>{setReminderTarget(viewing.id);setViewing(null);}:undefined}
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
     {qrTarget!==null&&<ContractQrDialog id={qrTarget} onClose={()=>setQrTarget(null)}/>}

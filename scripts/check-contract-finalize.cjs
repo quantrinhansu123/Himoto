@@ -54,7 +54,7 @@ async function main() {
           (102,'Xe C','Honda','xeso',2026,31,31,'QA-C','repairing',143),(103,'Xe D','Honda','xeso',2026,23,23,'QA-D','using',143);
         INSERT INTO qa_fin_cash(id,store_id,opening_balance,status) VALUES (5,23,0,'Active'),(15,31,0,'Active');
         INSERT INTO qa_fin_banks(id,store_id,bank_name,account_number,owner_name,opening_balance,account_type,status,owner_type) VALUES
-          (6,23,'QA Bank','001','QA',0,0,'Active','personal'),(7,1,'QA Corp','002','HIMOTO',0,1,'Active','company');`);
+          (6,23,'QA Bank','001','QA',0,2,'Active','personal'),(7,1,'QA Corp','002','HIMOTO',0,1,'Active','company');`);
       await c.query(`INSERT INTO qa_fin_orders(id,order_status,order_mode,store_id,customer_id,total,pid,draft_reference,contract_number,draft_payload) VALUES
           (1,'draft','draft',23,9,'0',0,'NHAP-1',NULL,$1),(2,'renting','standard',23,8,'100',0,NULL,'QA-OPEN',NULL),
           (3,'draft','draft',23,9,'0',0,'NHAP-3',NULL,$2),(4,'draft','draft',23,9,'0',0,'NHAP-4',NULL,$3),
@@ -94,14 +94,17 @@ async function main() {
 
       await c.query("UPDATE qa_fin_vehicles SET status='ready' WHERE id=101");
       await c.query("UPDATE qa_fin_order_vehicle_details SET completed_at=now() WHERE order_id=1 AND vehicle_id=101");
-      await assert.rejects(finalize(6,{deposit:null,rental:null}),error=>error.status===409);
-      await c.query("UPDATE qa_fin_orders SET order_status='wait_payment' WHERE id=1");
-      await assert.rejects(finalize(6,{deposit:null,rental:null}),error=>error.status===409);
+      for(const status of ['renting','wait_payment']) {
+        await c.query('UPDATE qa_fin_orders SET order_status=$1 WHERE id=1',[status]);
+        await c.query('SAVEPOINT returned_vehicle');
+        const reuse=await finalize(6,{deposit:null,rental:null});assert.equal(reuse.status,'renting');
+        await c.query('ROLLBACK TO SAVEPOINT returned_vehicle');await c.query('RELEASE SAVEPOINT returned_vehicle');
+      }
       await c.query("UPDATE qa_fin_orders SET order_status='completed' WHERE id=1");
       await c.query("UPDATE qa_fin_vehicles SET status='using' WHERE id=101");
       await assert.rejects(finalize(6,{deposit:null,rental:null}),error=>error.status===409);
       await c.query("UPDATE qa_fin_vehicles SET status='ready' WHERE id=101");
-      checks.push('A returned vehicle still tied to an unclosed/debt contract cannot be issued again, and an orphan using status cannot bypass stock checkout; only closed prior contract plus ready stock succeeds');
+      checks.push('A returned line no longer blocks ready stock even while its parent awaits settlement; a true open rental and orphan using status still block checkout');
       const later = await finalize(6, { deposit: null, rental: null });
       assert.equal(later.code, `${day}-0009`); assert.equal(later.paid_amount, 0); assert.deepEqual(later.transaction_ids, []);
       const debt = (await c.query('SELECT total,pid,created_without_collect_deposit,created_without_collect_rental_fees,first_deposit_amount FROM qa_fin_orders WHERE id=6')).rows[0];

@@ -75,6 +75,8 @@ function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractI
     const plan = value ? parseInstallmentPlan(value) : null;
     if (value && !plan) throw new ContractReturnError('Lịch đóng tiền chưa hợp lệ. Cần đối chiếu hợp đồng.', 409);
     const baseTotal = row.total_amount == null ? null : Number(row.total_amount), paid = row.paid_amount == null ? null : Number(row.paid_amount);
+    const reconciliations=(row.draft_payload as {management_composer?:{vehicle_reconciliations?:{item_id:number;actual_recovery_at:string|null}[]}}|undefined)?.management_composer?.vehicle_reconciliations;
+    const returnReconciled=Array.isArray(reconciliations)&&reconciliations.some(item=>Number(item.item_id)===Number(row.item_id)&&item.actual_recovery_at===null);
     const total = plan && (row.order_status !== 'completed' || plan.stopped_at) ? installmentBalance(plan, baseTotal, paid).accrued_total : baseTotal;
     return { item_id: Number(row.item_id), order_id: Number(row.order_id), contract_code: String(row.contract_code),
     order_status: String(row.order_status), customer_name: String(row.customer_name), customer_id_card: String(row.customer_id_card),
@@ -83,7 +85,7 @@ function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractI
     item_revision: String(row.item_revision), order_revision: String(row.order_revision),
     total_amount: total, paid_amount: paid, overdue: Boolean(row.overdue),
     daily_price: Number(row.daily_price) > 0 ? Number(row.daily_price) : null,
-    deposit_paid: Number(row.deposit_paid) || 0, deposit_held: Math.max(Number(row.deposit_held) || 0, 0) };
+    deposit_paid: Number(row.deposit_paid) || 0, deposit_held: Math.max(Number(row.deposit_held) || 0, 0), ...(returnReconciled?{return_reconciled:true}:{}) };
   });
 }
 

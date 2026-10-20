@@ -40,10 +40,10 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       setContext(value);
       const usable = (method: PaymentMethod) => paymentAccounts(value, method).length > 0;
       const withAccounts = (methods: PaymentMethod[]) => {
-        const matched = methods.filter(usable);
-        if (matched.length) return matched;
+        // A selected payment method describes money actually received; never replace it silently.
+        if (methods.length) return [...new Set(methods)];
         const fallback = PAYMENT_METHOD_FALLBACK.find(usable);
-        return fallback ? [fallback] : methods.length ? methods : ['transfer' as PaymentMethod];
+        return [fallback || 'transfer' as PaymentMethod];
       };
       const row = (method: PaymentMethod, amount: string, label?: string): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime(),label});
       const seed = (due: number, methods: PaymentMethod[], label?: string) => {
@@ -56,7 +56,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       const rentalMethods = withAccounts(initialMethods.current.rental);
       const rentalRows = feeTotal && feeTotal<=rentalDue
         ? [...seed(rentalDue-feeTotal,rentalMethods,'Tiền thuê xe'),...fees.map(item=>{
-            const method = item.method && usable(item.method) ? item.method : rentalMethods[0];
+            const method = item.method || rentalMethods[0];
             return row(method,item.amount,item.name.trim());
           })]
         : seed(rentalDue,rentalMethods);
@@ -71,7 +71,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   const collected = (state: CollectionState) => state.collect ? state.rows.reduce((sum,row)=>sum+(Number(row.amount)||0),0) : 0;
   const accountGap = (state: CollectionState) => state.collect && state.rows.some(row => !(row.automatic && row.amount === '0') && !accountsFor(row).length);
   const missingAccounts = Boolean(context) && ((depositState.collect && accountGap(depositState)) || (rentalState.collect && accountGap(rentalState)));
-  const noAccountMessage = 'Sổ quỹ có thể đã có TK ở cơ sở khác, nhưng phiếu thu chỉ nhận tài khoản đúng cơ sở nguồn khách của hợp đồng + đúng hình thức (Tiền mặt = két; CK tài khoản cá nhân = ngân hàng cơ sở; CK công ty = TK công ty). Đổi Hình thức rồi chọn lại Tài khoản nhận.';
+  const noAccountMessage = 'Chưa có tài khoản đang hoạt động cho hình thức này tại cơ sở hợp đồng. Nhờ quản trị kiểm tra tài khoản trong Sổ quỹ, rồi mở lại bước thanh toán. Chọn đúng hình thức thực tế đã nhận tiền.';
   function collections(state: CollectionState, purpose: FinalizeCollection['purpose'], due: number): FinalizeCollection[] {
     if (!state.collect || !due) return [];
     if (!state.rows.length) throw new Error('Thêm khoản tiền đã nhận, hoặc bỏ chọn thu tiền để ghi nhận chưa thu.');
@@ -131,7 +131,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-amount`}>Số tiền đã nhận (VNĐ)</label><input id={`${purpose}-collection-${index}-amount`} inputMode="numeric" value={formatInput(row.amount)} onChange={event=>update(row.key,{amount:event.target.value.replace(/\D/g,'')})}/>{row.automatic && <small>Tự tính phần còn lại. Có thể sửa theo số tiền thực nhận.</small>}</div>
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-method`}>Hình thức</label><select id={`${purpose}-collection-${index}-method`} value={row.method} onChange={event=>update(row.key,{method:event.target.value as PaymentMethod,account:''})}>{PAYMENT_METHODS.map(method=><option key={method.value} value={method.value}>{paymentMethodLabel(method.value)}</option>)}</select></div>
               <div className="mg-field"><label htmlFor={`${purpose}-collection-${index}-account`}>Tài khoản nhận</label><select id={`${purpose}-collection-${index}-account`} value={chosenAccount(row) ? paymentAccountKey(chosenAccount(row)!) : ''} disabled={!accountsFor(row).length} aria-invalid={!accountsFor(row).length || undefined} onChange={event=>update(row.key,{account:event.target.value})}>{accountsFor(row).length ? accountsFor(row).map(account=><option key={paymentAccountKey(account)} value={paymentAccountKey(account)}>{account.label}</option>) : <option value="">Chưa có tài khoản phù hợp</option>}</select>
-                {row.method === 'transfer' && <small>Phải hiện dòng bắt đầu bằng “CK cá nhân · …”. Nếu chỉ thấy két tiền mặt thì đang chọn nhầm Hình thức Tiền mặt.</small>}
+                {row.method === 'transfer' && <small>Chọn tài khoản cá nhân của cơ sở đã thực nhận khoản tiền này.</small>}
                 {!accountsFor(row).length && <p className="mg-field-error">{noAccountMessage}</p>}</div>
               <DateTime24Field id={`${purpose}-collection-${index}-paid-at`} label="Thời điểm nhận" value={row.paid_at} onChange={value=>update(row.key,{paid_at:value})}/>
             </div>

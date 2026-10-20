@@ -69,7 +69,7 @@ export async function processSePayEvent(client:Database,input:SePayPayload,confi
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`sepay:${config.mode}:${input.id}`]);
   const previous=(await client.query('SELECT id,fingerprint,status FROM himoto.management_sepay_events WHERE mode=$1 AND external_id=$2',[config.mode,input.id])).rows[0];
   if(previous){if(previous.fingerprint!==input.fingerprint)throw new SePayError('Mã giao dịch đã được dùng cho dữ liệu khác.',409);return {replayed:true,status:previous.status};}
-  const registered=await client.query(`SELECT id,store_id,bank_name FROM himoto.banks WHERE lower(status)='active' AND account_type IN(0,1) AND regexp_replace(account_number,'\\s','','g')=$1`,[input.account]);
+  const registered=await client.query(`SELECT id,store_id,bank_name FROM himoto.banks WHERE lower(status)='active' AND regexp_replace(account_number,'\\s','','g')=$1`,[input.account]);
   if(!bankBin(input.gateway)||!registered.rows.some(row=>bankBin(row.bank_name||'')===bankBin(input.gateway)))throw new SePayError('Tài khoản hoặc ngân hàng nhận chưa được khai báo hoạt động trong HIMOTO.',400);
   const event=(await client.query(`INSERT INTO himoto.management_sepay_events(external_id,mode,fingerprint,transfer_type,amount,account_number,content,reference_code,transaction_at,status)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'received') RETURNING id`,[input.id,config.mode,input.fingerprint,input.direction,input.amount,input.account,input.content,input.reference,input.at])).rows[0];

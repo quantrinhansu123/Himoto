@@ -55,7 +55,7 @@ export function classifyReservationWindow(
     return {
       kind: 'hard',
       rental: hard,
-      detail: `HĐ ${hard.code} đang mở. Hoàn tất hợp đồng cũ trước khi chọn xe.`,
+      detail: `HĐ ${hard.code}${hard.store_name?` · ${hard.store_name}`:''} đang mở. Cơ sở quản lý cần xác nhận trả xe trên đúng hợp đồng này trước khi chọn xe.`,
     };
   }
 
@@ -66,7 +66,7 @@ export function classifyReservationWindow(
     return {
       kind: 'hard',
       rental: first,
-      detail: `HĐ ${first.code} đang mở. Hoàn tất hợp đồng cũ trước khi chọn xe.`,
+      detail: `HĐ ${first.code}${first.store_name?` · ${first.store_name}`:''} đang mở. Cơ sở quản lý cần xác nhận trả xe trên đúng hợp đồng này trước khi chọn xe.`,
     };
   }
 

@@ -58,6 +58,7 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
         const title = String((config.kind === 'contracts' ? row.customer_name : row.name) || row.code || `#${row.id}`);
         const label = String((config.kind === 'vehicles' ? row.license : row.code) || row.code || title);
         const receive=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='receive'):undefined;
+        const contractAction=config.kind==='contracts'?actions(row).find(item=>item.key===(row.status==='draft'?'delete':'telegram')):undefined;
         const summary = SUMMARY_KEYS[config.kind].filter(key => row[key] !== undefined && row[key] !== '').map(key => {
           const column = config.columns.find(item => item.key === key);
           const value = optionLabel(config, key, formatValue(row[key], column?.format));
@@ -81,6 +82,7 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
             {config.kind==='vehicles'&&<GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/>}
           </button>
           {receive&&<button type="button" className="mg-button mg-button-primary mg-mobile-receive" disabled={busyId===row.id} onClick={receive.onSelect}>Nhận xe</button>}
+          {contractAction&&<button type="button" className={`mg-button${contractAction.danger?' mg-button-danger':''}`} onClick={contractAction.onSelect}>{contractAction.icon}{contractAction.label}</button>}
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId === row.id} /></div>
         </li>;
       })}</ul>}
