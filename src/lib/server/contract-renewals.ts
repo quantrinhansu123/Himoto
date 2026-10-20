@@ -1,4 +1,5 @@
 import 'server-only';
+import { contractVehicleReadSource } from './contract-vehicle-reads';
 import type { PoolClient } from 'pg';
 import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
 import { nextRenewalVersion, type RenewalInput, type RenewalResult, type RenewalVersion } from '@/lib/management/contract-renewals';
@@ -49,7 +50,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   const locked = await client.query(`SELECT d.id,d.vehicle_id,d.rent_at,d.return_at,d.xmin::text AS item_revision,
       o.total,o.pid,o.order_status,o.draft_payload,o.xmin::text AS order_revision,
       COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,v.name AS vehicle_name,v.license
-    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id LEFT JOIN himoto.vehicles v ON v.id=d.vehicle_id
+    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id LEFT JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
     WHERE d.id=$1 AND d.order_id=$2 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
     FOR UPDATE OF d,o`, [input.item_id, orderId]);
   const item = locked.rows[0];

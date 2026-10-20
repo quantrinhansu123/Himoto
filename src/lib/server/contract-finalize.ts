@@ -4,7 +4,7 @@ import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, findPaymentAccount, paymentAccount
 import { draftPaymentMethod, PAYMENT_METHOD_LABELS, type FinalizeInput, type FinalizeReceipt, type FinalizeCollection, type FinalizeResult } from '@/lib/management/contract-finalize';
 import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { readPaymentContext } from './contract-payments';
-import { dataAccess } from './access-context';
+import { usesScopedDatabase } from './access-context';
 import { loadCommissionStaff } from './commission-staff';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
@@ -117,7 +117,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   }
 
   // Cross-branch rentals lock stock at another store without granting table-wide vehicle SELECT.
-  const vehicles = dataAccess.getStore()
+  const vehicles = usesScopedDatabase()
     ? await client.query('SELECT * FROM himoto.lock_vehicles_for_contract($1::bigint[])', [vehicleIds])
     : await client.query(`SELECT v.id, v.license, v.status, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
@@ -133,7 +133,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     return `xe ${row.license} đang thuộc hợp đồng ${row.code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}`;
   };
   const proposedStart = `${start}:00+07:00`, proposedEnd = `${end}:00+07:00`;
-  const conflicts = dataAccess.getStore()
+  const conflicts = usesScopedDatabase()
     ? await client.query('SELECT * FROM himoto.vehicle_window_conflicts($1::bigint[],$2,$3::timestamptz,$4::timestamptz)', [vehicleIds, id, proposedStart, proposedEnd])
     : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code, s.store_name,
         COALESCE(cu.name, mu.name, '') AS manager_name,
@@ -144,7 +144,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
       LEFT JOIN himoto.stores s ON s.id=o.store_id
       LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
       LEFT JOIN himoto.users mu ON mu.id=s.user_id
-      WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.deleted_at IS NULL
+      WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.deleted_at IS NULL AND d.completed_at IS NULL
         AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
         AND (
           o.order_status = ANY($3::text[])
@@ -209,7 +209,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (!code) {
     const day = (await client.query(`SELECT to_char(now() AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYMMDD') AS day`)).rows[0].day as string;
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`contract-number:${day}`]);
-    const last = dataAccess.getStore()?await client.query('SELECT himoto.contract_day_last($1) AS last',[day]):await client.query(`SELECT COALESCE(max(substring(contract_number from 8)::int), 0) AS last FROM himoto.orders WHERE contract_number ~ ('^' || $1 || '-[0-9]{4}$')`, [day]);
+    const last = usesScopedDatabase()?await client.query('SELECT himoto.contract_day_last($1) AS last',[day]):await client.query(`SELECT COALESCE(max(substring(contract_number from 8)::int), 0) AS last FROM himoto.orders WHERE contract_number ~ ('^' || $1 || '-[0-9]{4}$')`, [day]);
     let sequence = Number(last.rows[0].last);
     do {
       if (++sequence > 9999) throw new ContractFinalizeError('Đã hết dãy số tự động trong ngày. Nhập số HĐ giấy để tiếp tục.',409);
@@ -268,7 +268,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     WHERE id=$1`, [id, code, startAt, endAt, String(total), rentalBase, deposit || null, paid, oldDepositPaid+depositCollected<deposit, oldRentalPaid+rentalCollected<total,
     JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized, ...(reservation ? {reservation:{at:finalized.at,actor_id:actorId,applies_to:'rental'}} : {}) } }), reservation ? 'deposit_contract' : 'renting']);
   if (!reservation) {
-    if (dataAccess.getStore()) await client.query('SELECT himoto.mark_vehicles_using($1::bigint[])', [vehicleIds]);
+    if (usesScopedDatabase()) await client.query('SELECT himoto.mark_vehicles_using($1::bigint[])', [vehicleIds]);
     else await client.query(`UPDATE himoto.vehicles SET status='using', updated_at=now() WHERE id = ANY($1::bigint[])`, [vehicleIds]);
   }
   return { order_id: id, code, total_amount: total, deposit_amount: deposit, paid_amount: paid, transaction_ids: transactionIds, status:reservation ? 'deposit_contract' : 'renting' };

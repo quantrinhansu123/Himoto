@@ -101,38 +101,46 @@ async function run() {
       checks.push('PostgreSQL TEMP: source Láng saves an NH vehicle already using, inventory snapshot is verified by the server and drafts create no receipts');
       // Current issue policy requires ready stock even when a previous using flag has no open contract.
       await updateDatabaseVehicle(proxy,100,values(100,'ready'),143);
-      // Optional read-only lookup of a real active TLS profile; every write stays in TEMP.
+      // Generic TLS works without a person. An optional real TLS id also checks legacy profile compatibility.
       const tlsProfileId=Number(process.argv.find(arg=>arg.startsWith('--tls-profile-id='))?.split('=')[1]);
-      if (Number.isSafeInteger(tlsProfileId)&&tlsProfileId>0) {
+      {
         await c.query('SAVEPOINT qa_tls');
         try {
           await c.query("INSERT INTO qa_cross_stores(id,store_name) VALUES(36,'Trụ Sở Chính'); INSERT INTO qa_cross_cash(id,store_id,opening_balance,status) VALUES(16,36,0,'Active'); INSERT INTO qa_cross_staff_profiles(id,staff_code,full_name,phone,store_id) VALUES(701,'QA701','Đại diện NH QA','0900000092',32)");
-          const tlsDraft={...structuredClone(draft),store_id:'36',vehicle_store_id:'32',staff_id:'701',tls_staff_id:String(tlsProfileId)};
+          const tlsDraft={...structuredClone(draft),store_id:'36',vehicle_store_id:'32',staff_id:'701',customer_source:'TLS',tls_staff_id:Number.isSafeInteger(tlsProfileId)&&tlsProfileId>0?String(tlsProfileId):''};
           const tlsSave=()=>saveDatabaseDraft(proxy,null,{draft:tlsDraft,status:'draft',rental_type:'daily',notes:'QA TLS TEMP'});
           tlsDraft.staff_id='700';
-          await assert.rejects(tlsSave(),/người đại diện Bên A/);
+          const supported=await tlsSave();
+          assert.equal((await c.query('SELECT draft_payload FROM qa_cross_orders WHERE id=$1',[supported.id])).rows[0].draft_payload.management_composer.draft.staff_id,'700');
+          tlsDraft.staff_id='';tlsDraft.staff_name='Nhân viên mới hỗ trợ QA';
+          const freeText=await tlsSave();
+          assert.equal((await c.query('SELECT draft_payload FROM qa_cross_orders WHERE id=$1',[freeText.id])).rows[0].draft_payload.management_composer.draft.staff_name,'Nhân viên mới hỗ trợ QA');
+          tlsDraft.staff_id='999999';
+          const stale=await tlsSave();
+          assert.equal((await c.query('SELECT draft_payload FROM qa_cross_orders WHERE id=$1',[stale.id])).rows[0].draft_payload.management_composer.draft.staff_id,'');
           tlsDraft.staff_id='701';
+          tlsDraft.staff_name='';
           const tlsSaved=await tlsSave();
           const issued=await finalizeContractDraft(proxy,Number(tlsSaved.id),143,{revision:tlsSaved.draft_revision,paid_at:time.vietnamRentalTime(new Date(Date.now()-60000)),deposit:{method:'cash',account_id:16},rental:{method:'cash',account_id:16}});
           assert.equal(issued.transaction_ids.length,2);
           const tlsOrder=(await c.query('SELECT store_id,draft_payload FROM qa_cross_orders WHERE id=$1',[tlsSaved.id])).rows[0];
           const composer=tlsOrder.draft_payload.management_composer;
           assert.equal(Number(tlsOrder.store_id),36);assert.equal(composer.draft.vehicle_store_id,'32');assert.equal(composer.draft.staff_id,'701');
-          assert.equal(composer.sales_attribution.TLS.staff_id,tlsProfileId);assert(!composer.sales_attribution.NVKD);
+          assert.equal(composer.draft.customer_source,'TLS');assert.equal(composer.draft.tls_staff_id,'');assert(!composer.sales_attribution);
           assert.equal(Number((await vehicle(100)).current_store_id),32);
           const listing=()=>proxy.query(CONTRACT_LIST_SQL+' AND o.id=$1',[tlsSaved.id]);
           let projected=(await listing()).rows[0];
           let reopened=document.createContractDraft(dataset,'all',mapApiRow('contracts',projected));
-          assert.equal(reopened.vehicle_store_id,'32');assert.equal(reopened.staff_id,'701');assert.equal(reopened.tls_staff_id,String(tlsProfileId));
+          assert.equal(reopened.vehicle_store_id,'32');assert.equal(reopened.staff_id,'701');assert.equal(reopened.tls_staff_id,'');
           const profile=load(path.join(root,'lib/management/contract-profile')).contractProfile(tlsDraft);
           profile.customer.address='Địa chỉ hồ sơ bổ sung QA';
           const {updateContractProfile}=load(path.join(root,'lib/server/contract-profile'));
           await updateContractProfile(proxy,Number(tlsSaved.id),143,{revision:String((await c.query('SELECT xmin::text AS r FROM qa_cross_orders WHERE id=$1',[tlsSaved.id])).rows[0].r),profile});
           projected=(await listing()).rows[0];
           reopened=document.createContractDraft(dataset,'all',mapApiRow('contracts',projected));
-          assert.equal(reopened.customer.address,'Địa chỉ hồ sơ bổ sung QA');assert.equal(reopened.tls_staff_id,String(tlsProfileId));
+          assert.equal(reopened.customer.address,'Địa chỉ hồ sơ bổ sung QA');assert.equal(reopened.tls_staff_id,profile.tls_staff_id || '');
           assert.equal(projected.draft_payload.management_composer.draft,undefined,'Issued lists must not restore the full draft blob');
-          checks.push('PostgreSQL TEMP: HQ revenue + NH representative/vehicle + company-wide TLS save and finalize with correct attribution; a wrong branch representative is rejected separately');
+          checks.push('PostgreSQL TEMP: TLS remains a generic source; supporting staff from another branch, new free-text names and stale IDs with a typed name save; issue preserves the stock/revenue branches');
           checks.push('PostgreSQL TEMP: reopening an issued contract preserves its vehicle branch, representative without a login, TLS and subsequent profile changes without sending the full draft blob');
         } finally {await c.query('ROLLBACK TO SAVEPOINT qa_tls');await c.query('RELEASE SAVEPOINT qa_tls');}
       }
@@ -171,4 +179,6 @@ async function run() {
   }
   console.log(JSON.stringify({passed:checks.length,checks,permanentBusinessWrites:0},null,2));
 }
-run().then(()=>process.exit(0)).catch(error=>{console.error(error.stack);process.exit(1);});
+const {dataAccess}=load(path.join(root,'lib/server/access-context'));
+const task=process.argv.includes('--admin-scope')?dataAccess.run({id:143,access_role:'admin',scope_all:true,store_id:null,operation:''},run):run();
+task.then(()=>process.exit(0)).catch(error=>{console.error(error.stack);process.exit(1);});

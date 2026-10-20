@@ -219,7 +219,7 @@ export function validateContractDraft(draft: ContractDraft, dataset: ManagementD
   Object.assign(errors,chargeErrors(draft.extra_charges,true));
   if (contractStaffStoreId(draft) && !dataset.stores.some(row => String(row.id) === draft.store_id)) errors.store_id = 'Chọn cơ sở nguồn khách / ghi nhận doanh thu.';
   if (!dataset.stores.some(row => String(row.id) === contractStaffStoreId(draft))) errors.vehicle_store_id = 'Chọn cửa hàng xe.';
-  if (requirements.representative && !draft.staff_name.trim() && !staffMatchesStore(staff, contractStaffStoreId(draft)).some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn nhân sự tại cửa hàng xe hoặc nhập tên người đại diện.';
+  if (requirements.representative && !draft.staff_name.trim() && !staff.some(row => String(row.id) === draft.staff_id && staffIsAvailable(row))) errors.staff_id = 'Chọn hoặc nhập tên người làm hợp đồng.';
   if (!draft.customer_id) errors.id_card = 'Tra cứu hoặc tạo khách hàng trước khi in.';
   Object.assign(errors, validateContractCustomer(draft.customer, source));
   for (const key of ['phone','id_card','address'] as const) if (!requirements[key] && !draft.customer[key].trim()) delete errors[key];

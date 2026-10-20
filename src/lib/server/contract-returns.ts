@@ -1,10 +1,11 @@
 import 'server-only';
+import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import type { ReturnableContractItem, ReturnInput, ReturnResult } from '@/lib/management/contract-returns';
 import { dailyPriceSql, depositLateral, rentalPaid, rentalPaidSql } from './contract-deposits';
 import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
-import { dataAccess } from './access-context';
+import { usesScopedDatabase } from './access-context';
 import { lateReturnFee } from '@/lib/management/return-fees';
 
 type Database = Pick<PoolClient, 'query'>;
@@ -66,6 +67,8 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
   WHERE d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
     AND o.order_status IN ('renting','overdue','wait_payment','completed')`;
 
+const returnableSql = () => RETURNABLE_SQL.replace('JOIN himoto.vehicles v', `JOIN ${contractVehicleReadSource()} v`);
+
 function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractItem[] {
   return rows.map(row => {
     const value = (row.draft_payload as {management_composer?: {installment_plan?: unknown}} | undefined)?.management_composer?.installment_plan;
@@ -90,7 +93,7 @@ export async function searchReturnableItems(client: Database, query: string): Pr
   const pattern = `%${text.replace(/[\\%_]/g, '\\$&')}%`;
   const digits = text.replace(/\D/g, '');
   const plate = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const result = await client.query(`${RETURNABLE_SQL}
+  const result = await client.query(`${returnableSql()}
     AND (COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) ILIKE $1 ESCAPE '\\'
       OR ($2 <> '' AND regexp_replace(COALESCE(c.id_card::text,o.customer_idnumber::text,''),'\\D','','g')=$2)
       OR ($2 <> '' AND regexp_replace(COALESCE(NULLIF(c.phone,''),o.customer_phone,''),'\\D','','g')=$2)
@@ -102,7 +105,7 @@ export async function searchReturnableItems(client: Database, query: string): Pr
 
 export async function loadContractReturnableItems(client: Database, orderId: number): Promise<ReturnableContractItem[]> {
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return [];
-  const result = await client.query(`${RETURNABLE_SQL} AND o.id=$1 ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id`, [orderId]);
+  const result = await client.query(`${returnableSql()} AND o.id=$1 ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id`, [orderId]);
   return mapReturnableRows(result.rows);
 }
 
@@ -168,7 +171,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   if (plan && !remainingItems) await client.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(draft_payload::jsonb,
     '{management_composer,installment_plan,stopped_at}',to_jsonb($2::text),true)::json WHERE id=$1`, [item.order_id,input.returned_at < plan.end ? input.returned_at : plan.end]);
   const vehicleOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
-  const foreignOpen=dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
+  const foreignOpen=usesScopedDatabase()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
   if (!vehicleOpen.rowCount&&!foreignOpen) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
   return { item_id: input.item_id, contract_code: String(item.contract_code), returned_at: actual, scheduled_return_at: toIso(item.return_at)!,
     late_minutes: lateMinutes, chargeable_hours: chargeableHours, hourly_rate: hourlyRate, fee,late_fee:lateFee,repair_fee:repairFee, total_amount: nextTotal, status: nextStatus };
@@ -191,7 +194,7 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [input.vehicle_id]);
-  if (openRental.rowCount || dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[input.vehicle_id])).rows[0]?.blocked) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
+  if (openRental.rowCount || usesScopedDatabase()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[input.vehicle_id])).rows[0]?.blocked) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
   const duplicate = await client.query(`SELECT 1 FROM himoto.order_vehicle_details
     WHERE order_id=$1 AND vehicle_id=$2 AND id<>$3 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.order_id,input.vehicle_id,input.item_id]);
   if (duplicate.rowCount) throw new ContractReturnError('Xe mới đã nằm trong hợp đồng này.', 409);
@@ -200,7 +203,7 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   const swap = await client.query(`INSERT INTO himoto.management_contract_vehicle_swaps(order_id,order_item_id,from_vehicle_id,to_vehicle_id,actor_id)
     VALUES ($1,$2,$3,$4,$5) RETURNING id`, [item.order_id,input.item_id,item.vehicle_id,input.vehicle_id,actorId]);
   const oldOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
-  const foreignOldOpen=dataAccess.getStore()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
+  const foreignOldOpen=usesScopedDatabase()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
   if (!oldOpen.rowCount&&!foreignOldOpen) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
   await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=$1`, [input.vehicle_id]);
 

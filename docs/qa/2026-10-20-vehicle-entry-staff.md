@@ -1,5 +1,7 @@
 # Vehicle entry and contract staff checks — 2026-10-20
 
+The representative/source policy below is superseded by [contract operations corrections](2026-10-20-contract-operations.md): free-text names and employees from other stores are now explicitly allowed; source TLS is generic.
+
 - Vehicle entry/edit ignores backdrop clicks. Escape, X and Cancel ask before discarding changed fields; continuing retains values.
 - Draft save waits for the branch staff directory instead of validating against its temporary empty state.
 - Issuing a draft validates Bên A locally and focuses the representative field if its branch is invalid. TLS/NVKD commission selection remains separate; printing issued historical contracts keeps its existing rules.

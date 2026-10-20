@@ -10,7 +10,7 @@ import { chargeTotal } from '@/lib/management/contract-charges';
 import { CONTRACT_TYPES } from '@/lib/management/config';
 import { ContractTypeError, resolveDraftContractType, validContractTypeId } from './contract-types';
 import type { ContractDraft } from '@/lib/management/contract-document';
-import { dataAccess } from './access-context';
+import { dataAccess, usesScopedDatabase } from './access-context';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
@@ -211,17 +211,26 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     ? await client.query('SELECT id, store_name FROM himoto.store_directory() WHERE id = $1', [edits.draft.vehicle_store_id])
     : stores;
   const staff = edits.draft.staff_id
-    ? (dataAccess.getStore()
+    ? (usesScopedDatabase()
       ? await client.query('SELECT id, store_id, user_id, full_name FROM himoto.staff_for_contract($1)', [edits.draft.staff_id])
       : await client.query('SELECT id, store_id, user_id, full_name FROM himoto.staff_profiles WHERE id = $1', [edits.draft.staff_id]))
     : { rows: [] as { id: number; store_id: number; user_id: number; full_name: string }[] };
-  if(staff.rows[0])edits.draft.staff_name=staff.rows[0].full_name;
+  if (staff.rows[0]) {
+    if (!edits.draft.staff_name.trim()) edits.draft.staff_name=staff.rows[0].full_name;
+  } else if (edits.draft.staff_id) {
+    if (!edits.draft.staff_name.trim()) throw new DraftSaveError('Nhân sự đã thay đổi. Chọn lại hoặc tự nhập tên người làm hợp đồng.');
+    edits.draft.staff_id='';
+  }
+  if (edits.draft.tls_staff_id || /^(tls|telesales?)$/i.test(edits.draft.customer_source.trim())) {
+    edits.draft.customer_source='TLS';
+    edits.draft.tls_staff_id='';
+  }
   for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
     if (!edits.draft[key]) continue;
     if (!(await loadCommissionStaff(edits.draft[key], role))) throw new DraftSaveError(`Chọn nhân viên ${role === 'NVKD' ? 'NVKD hoặc TPKD' : role} đang làm việc để ghi nhận doanh số.`,409);
   }
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
-  const vehicles = dataAccess.getStore()
+  const vehicles = usesScopedDatabase()
     ? await client.query(`SELECT id, store_id, store_name FROM himoto.vehicle_inventory() WHERE id = ANY($1::bigint[])`, [ids])
     : await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id) WHERE v.id = ANY($1::bigint[])`, [ids]);

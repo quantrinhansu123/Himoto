@@ -82,6 +82,11 @@ async function main(){
     assert.throws(()=>parseContractProfile({revision:'1',profile:{...profile,total_amount:'1'}}),/Chỉ cập nhật/);
     const before=(await c.query('SELECT total,total_rental_fees,pid,order_status,customer_id,rent_at,return_at,xmin::text AS revision FROM qa_sales_orders WHERE id=4')).rows[0];
     const receiptCount=(await c.query('SELECT count(*)::int AS n FROM qa_sales_transactions')).rows[0].n;
+    // Commission lookups use the owner pool, so redirect that read to the same TEMP staff fixtures.
+    const owner=load(path.join(root,'lib/server/himoto-database')).ownerDatabase;
+    const ownerQuery=Object.getOwnPropertyDescriptor(owner,'query');
+    Object.defineProperty(owner,'query',{configurable:true,value:(sql,params)=>proxy.query(sql,params)});
+    try {
     const updated=await attempt(()=>updateContractProfile(proxy,4,143,{revision:before.revision,profile:{...profile,customer:{...customer,id_card:'001234567877',address:'Địa chỉ bổ sung'}}}));
     assert(updated.revision);
     const after=(await c.query('SELECT total,total_rental_fees,pid,order_status,customer_id,rent_at,return_at,draft_payload FROM qa_sales_orders WHERE id=4')).rows[0];
@@ -93,6 +98,15 @@ async function main(){
     assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_sales_transactions')).rows[0].n,receiptCount);
     await assert.rejects(()=>attempt(()=>updateContractProfile(proxy,4,143,{revision:updated.revision,profile:{...profile,sales_staff_id:'20'}})),/NVKD/);
     checks.push('Supplementing issued paperwork/employee attribution preserves debt, dates, customer identity and receipts; wrong department or financial keys rejected');
+    } finally {Object.defineProperty(owner,'query',ownerQuery);}
+    const tlsBefore=(await staffSales(proxy,'2026-10-01','2026-10-31')).rows.find(r=>r.department==='TLS').revenue;
+    await order(11,88,35,'2026-10-15',400000,{draft:{tls_staff_id:''}});
+    await c.query("UPDATE qa_sales_orders SET customer_source='TLS' WHERE id=11");
+    await c.query("INSERT INTO qa_sales_staff_profiles(id,staff_code,full_name,phone,position,status,store_id) VALUES(21,'QA-21','TLS khác QA','0900000021','TLS','active',36)");
+    await order(12,89,35,'2026-10-15',500000,{draft:{tls_staff_id:'21'}});
+    const generic=(await staffSales(proxy,'2026-10-01','2026-10-31')).rows.filter(r=>r.department==='TLS');
+    assert.equal(generic.length,1);assert.equal(generic[0].name,'TLS');assert.equal(generic[0].staff_id,0);assert.equal(generic[0].revenue,tlsBefore+900000);
+    checks.push('Generic TLS sources with no employee ID and historical TLS employees aggregate into one TLS department without losing first-rental revenue');
     console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));
   }finally{await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
 }

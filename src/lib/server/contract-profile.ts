@@ -5,6 +5,7 @@ import { CUSTOMER_FIELDS,validateOperationalCustomer } from '@/lib/management/co
 import { validDocumentRequirements } from '@/lib/management/contract-requirements';
 import { validIdentityIssueDate } from '@/lib/management/customer-identity';
 import { loadCommissionStaff } from './commission-staff';
+import { usesScopedDatabase } from './access-context';
 export class ContractProfileError extends Error {constructor(message:string,public status=400){super(message);}}
 export function parseContractProfile(body:unknown):{revision:string;profile:ContractProfile} {
   if(!body || typeof body !== 'object' || Array.isArray(body))throw new ContractProfileError('Hồ sơ hợp đồng chưa hợp lệ.');
@@ -31,7 +32,10 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
   if(!row.rowCount)throw new ContractProfileError('Không tìm thấy hợp đồng.',404);
   if(row.rows[0].revision !== revision)throw new ContractProfileError('Hợp đồng đã thay đổi; tải lại trước khi lưu hồ sơ.',409);
   if(row.rows[0].order_status === 'draft')throw new ContractProfileError('Lưu nháp để cập nhật hợp đồng này.',409);
-  if(profile.staff_id && !(await client.query('SELECT id FROM himoto.staff_profiles WHERE id=$1 FOR SHARE',[profile.staff_id])).rowCount)throw new ContractProfileError('Nhân viên đã chọn không còn tồn tại.',409);
+  if(profile.staff_id && !(await client.query(usesScopedDatabase()?'SELECT id FROM himoto.staff_for_contract($1)':'SELECT id FROM himoto.staff_profiles WHERE id=$1 FOR SHARE',[profile.staff_id])).rowCount) {
+    if (!profile.staff_name.trim()) throw new ContractProfileError('Chọn lại hoặc tự nhập tên người làm hợp đồng.',409);
+    profile.staff_id='';
+  }
   const attribution:Record<string,{staff_id:number;name:string}>={};
   for(const [key,department] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const){
     if(profile[key]){

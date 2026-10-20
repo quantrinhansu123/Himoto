@@ -16,14 +16,15 @@ async function run() {
   draft.store_id = '1'; draft.staff_id = '8'; draft.payment_method = 'Tiền mặt'; draft.deposit_payment_method = 'Tiền mặt, CK tk công ty';
   draft.vehicles = [document.vehicleDetails(dataset.vehicles[0], draft.customer)];
   assert.deepEqual(drafts.validateDraftSave(draft, dataset), {});
-  assert(drafts.validateDraftSave({ ...draft, vehicle_store_id: '1' }, dataset).staff_id);
+  assert.deepEqual(drafts.validateDraftSave({ ...draft, vehicle_store_id: '1' }, dataset),{});
+  assert.deepEqual(drafts.validateDraftSave({ ...draft, staff_id:'',staff_name:'Nhân viên hỗ trợ mới QA' }, dataset),{});
   const edits = { draft, status: 'draft', rental_type: 'daily', notes: 'QA' };
   assert.deepEqual(server.parseDraftEdits(edits), edits);
   for (const vehicle_store_id of [2, '1 OR 1=1', '-1', '9999999999999999999']) assert.throws(() => server.parseDraftEdits({ ...edits, draft: { ...draft, vehicle_store_id } }));
   const { vehicle_store_id, ...legacy } = draft;
   assert.equal(document.contractStaffStoreId(legacy), '1');
   assert.deepEqual(server.parseDraftEdits({ ...edits, draft: legacy }).draft, legacy);
-  checks.push('vehicle staff branch differs from revenue branch; invalid staff/branch IDs are rejected while old snapshots remain compatible');
+  checks.push('supporting staff from other branches and typed new names are accepted; malformed branch IDs are rejected while old snapshots remain compatible');
   const row = { id: 901, code: 'QA-901', status: 'draft', draft_json: JSON.stringify(draft) };
   const reopened = document.createContractDraft(dataset, 'all', row);
   assert.equal(reopened.vehicle_store_id, '2'); assert.equal(reopened.store_id, '1'); assert.equal(reopened.staff_id, '8');

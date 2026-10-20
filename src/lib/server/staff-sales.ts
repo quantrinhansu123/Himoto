@@ -10,7 +10,7 @@ const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number
 // Rank complete rental history before branch/date filters. Allocate known
 // initial fees first when collecting combined rent/fee receipts, as billing does.
 const SALES_CTE = `WITH eligible AS (
-  SELECT o.id,o.customer_id,o.store_id,o.rent_at,o.created_at,o.draft_payload,
+  SELECT o.id,o.customer_id,o.store_id,o.rent_at,o.created_at,o.draft_payload,o.customer_source,
     row_number() OVER(PARTITION BY o.customer_id ORDER BY COALESCE(o.rent_at,o.created_at),o.id) AS rental_number,
     (COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type,'')='ownership'
       OR COALESCE(o.draft_payload #>> '{management_composer,draft,ownership}','false')='true'
@@ -51,7 +51,8 @@ const SALES_CTE = `WITH eligible AS (
     ('NVKD',CASE WHEN ids.sales_id ~ '^[1-9][0-9]{0,14}$' THEN ids.sales_id::bigint END,COALESCE(o.draft_payload #>> '{management_composer,profile_attribution,NVKD,name}',o.draft_payload #>> '{management_composer,sales_attribution,NVKD,name}')),
     ('TLS',CASE WHEN ids.tls_id ~ '^[1-9][0-9]{0,14}$' THEN ids.tls_id::bigint END,COALESCE(o.draft_payload #>> '{management_composer,profile_attribution,TLS,name}',o.draft_payload #>> '{management_composer,sales_attribution,TLS,name}'))
   ) a(department,staff_id,saved_name)
-  WHERE ($3::bigint IS NULL OR o.store_id=$3) AND a.staff_id IS NOT NULL
+  WHERE ($3::bigint IS NULL OR o.store_id=$3) AND (a.staff_id IS NOT NULL OR a.department='TLS'
+    AND upper(trim(COALESCE(NULLIF(o.customer_source,''),o.draft_payload #>> '{management_composer,draft,customer_source}',''))) IN ('TLS','TELESALE','TELESALES'))
     AND (a.department='NVKD' OR NOT o.ownership AND o.rental_number=1 AND (COALESCE(o.rent_at,o.created_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date)
 )
 `;
@@ -75,8 +76,8 @@ export async function staffSales(client: Pick<PoolClient, 'query'>, from: string
   const report=result.rows[0];
   const grouped = new Map<string, { row: StaffSalesRow; customers: Set<number>; newCustomers: Set<number> }>();
   for (const item of report.items) {
-    const key = `${item.department}:${item.staff_id}`;
-    const entry = grouped.get(key) ?? { row: { staff_id: Number(item.staff_id), department: item.department, name: String(item.name), contracts: 0, customers: 0, new_customers: 0, revenue: 0 }, customers: new Set<number>(), newCustomers: new Set<number>() };
+    const key = item.department==='TLS' ? 'TLS' : `${item.department}:${item.staff_id}`;
+    const entry = grouped.get(key) ?? { row: { staff_id: item.department==='TLS'?0:Number(item.staff_id), department: item.department, name: item.department==='TLS'?'TLS':String(item.name), contracts: 0, customers: 0, new_customers: 0, revenue: 0 }, customers: new Set<number>(), newCustomers: new Set<number>() };
     entry.row.revenue += Number(item.revenue); entry.row.contracts += 1; entry.customers.add(Number(item.customer_id));
     if (Number(item.rental_number) === 1 && item.started_in_range) entry.newCustomers.add(Number(item.customer_id));
     grouped.set(key, entry);

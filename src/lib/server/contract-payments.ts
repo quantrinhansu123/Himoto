@@ -1,4 +1,5 @@
 import 'server-only';
+import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
@@ -91,7 +92,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   const company = history.rows.filter(row => row.type !== 'out' && row.bank_owner_type === 'company');
   const items = await client.query(`SELECT d.id,d.vehicle_id,v.name,v.license,
       ${dailyPriceSql()} AS daily_price,d.return_at,d.total_renewal_amount,d.xmin::text AS revision
-    FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id JOIN himoto.orders o ON o.id=d.order_id
+    FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY d.id`, [id]);
   return { id: Number(order.id), code: String(order.code), status: String(order.status), store_id: Number(order.store_id), revision: String(order.revision),
     total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0), ...(billing ? {billing, billing_base_total: baseTotal} : {}),
