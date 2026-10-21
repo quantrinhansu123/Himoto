@@ -14,6 +14,12 @@ Mỗi PGD có một báo cáo mỗi ngày. Chọn PGD, ngày, nhập nhân sự,
 
 Lưu nháp giữ dữ liệu và ảnh trên hệ thống. Chốt yêu cầu đủ sáu ảnh (xe, pin, tiền mặt, tài khoản cá nhân, tài khoản Công ty, khóa cửa) và xác nhận tắt điện. Báo cáo đã chốt chỉ được xem. Kiểm soát phiên bản ngăn ghi đè khi nhiều người cùng sửa. Ảnh được lưu riêng từng mục, tối đa 2 MB sau xử lý, chỉ truy cập qua phiên đăng nhập trong phạm vi PGD.
 
+Migration trên cũng áp dụng `2026-10-22-shift-report-requests.sql`. Mỗi thao tác lưu nháp, tải ảnh và chốt có mã riêng; kết quả xác nhận được lưu trong cùng transaction với dữ liệu. Nếu mất phản hồi, nút **Thử lại thao tác lưu** gửi lại đúng thao tác và tiếp tục từ phần chưa xác nhận, không tạo trùng hay tự bỏ kiểm soát phiên bản. Trong lúc chưa xác nhận, giữ nguyên dữ liệu/ảnh và tạm khóa sửa form. Báo cáo đang lưu không chuyển trang qua menu; khi còn thay đổi chưa lưu, chuyển mục qua menu hoặc đóng/tải lại trang sẽ yêu cầu xác nhận.
+
+Với hệ thống đã có bảng báo cáo/ảnh, chỉ thêm bảng xác nhận bằng `node scripts/migrate-shift-reports.cjs --apply --requests-only` trước khi triển khai phiên bản này. Tab trình duyệt cũ vẫn dùng được API cũ, nhưng cần tải lại trang để có cơ chế thử lại mới.
+
+Kiểm tra phục hồi và phân quyền bằng `node scripts/check-shift-report-retries.cjs` (PostgreSQL TEMP, rollback toàn bộ, không ghi dữ liệu nghiệp vụ) và `python scripts/check-shift-report-retries-ui.py --cookie-file <session-file>` (API mô phỏng).
+
 Thống kê theo PGD và ngày báo cáo gồm tổng số hợp đồng, hoàn thành, đang thuê, quá hạn; tổng thu thực tế, thu cọc, thu gia hạn, thu phí thuê; tổng chi thực tế, tiền cọc phải trả, hoàn lại do trả sớm, tiền phạt muộn. Người trực ca nhập các số liệu và tổng thực tế riêng để đối chiếu. Hệ thống không tự cộng tiền phạt vào chi hoặc cộng các trạng thái hợp đồng có thể trùng nhau. Số liệu được lưu cùng báo cáo; báo cáo cũ đã chốt chưa có phần này hiển thị chưa ghi nhận, không tự thêm số 0. Không cần migration bổ sung.
 
 Nút điền mẫu Hà Đông ngày 21/10/2026 chỉ điền số liệu được cung cấp, không tự tạo báo cáo, ảnh hoặc xác nhận an toàn. Thay PGD/ngày của báo cáo đã lưu bằng cách tạo báo cáo mới.

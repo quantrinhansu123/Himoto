@@ -5,6 +5,7 @@ import { SHIFT_PHOTOS } from '@/lib/management/shift-reports';
 import { validatePhotoBytes } from '@/lib/server/record-photos';
 import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
+import { ShiftRequestError, shiftRequestId, shiftRequestHash, readShiftReceipt, writeShiftReceipt } from '@/lib/server/shift-report-requests';
 
 export const runtime = 'nodejs';
 type Context = { params: Promise<{ id: string; slot: string }> };
@@ -17,7 +18,10 @@ async function handle(request: NextRequest, context: Context) {
   try {
     let bytes: Buffer | undefined;
     const mime = request.headers.get('content-type') || '';
+    const requestId = request.method === 'PUT' ? shiftRequestId(request.headers) : null;
+    const revision = Number(request.headers.get('x-report-revision'));
     if (request.method === 'PUT') {
+      if (!Number.isSafeInteger(revision) || revision < 1) throw new Error('Phiên bản báo cáo không hợp lệ.');
       // Read a bounded stream even when Content-Length is absent.
       const reader = request.body?.getReader();
       if (!reader) throw new Error('Chọn ảnh để tải lên.');
@@ -26,6 +30,9 @@ async function handle(request: NextRequest, context: Context) {
       bytes = Buffer.concat(parts); validatePhotoBytes(mime, bytes);
     }
     client = await himotoPool.connect(); await client.query('BEGIN');
+    const hash = request.method === 'PUT' ? shiftRequestHash(JSON.stringify({ actor: user!.id, id, slot, revision, mime }), bytes!) : '';
+    const receipt = await readShiftReceipt(client, requestId, user!.id, hash);
+    if (receipt) { await client.query('COMMIT'); return NextResponse.json({ data: receipt }); }
     const report = (await client.query('SELECT store_id,status FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!report) { await client.query('ROLLBACK'); return NextResponse.json({ message: 'Không tìm thấy báo cáo.' }, { status: 404 }); }
     if (request.method === 'GET') {
@@ -35,14 +42,16 @@ async function handle(request: NextRequest, context: Context) {
       return new Response(new Uint8Array(photo.data), { headers: { 'Content-Type': photo.mime_type, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
     }
     if (report.status !== 'draft') { await client.query('ROLLBACK'); return NextResponse.json({ message: 'Báo cáo đã chốt, không thể thay ảnh.' }, { status: 409 }); }
-    const revision = Number(request.headers.get('x-report-revision'));
     const updated = await client.query('UPDATE himoto.management_shift_reports SET revision=revision+1,updated_at=now() WHERE id=$1 AND revision=$2 RETURNING revision', [id,revision]);
     if (!updated.rowCount) { await client.query('ROLLBACK'); return NextResponse.json({ message: 'Báo cáo đã thay đổi. Mở lại trước khi thay ảnh.' }, { status: 409 }); }
     await client.query(`INSERT INTO himoto.management_shift_photos(report_id,store_id,slot,mime_type,data) VALUES($1,$2,$3,$4,$5)
       ON CONFLICT(report_id,slot) DO UPDATE SET mime_type=EXCLUDED.mime_type,data=EXCLUDED.data`, [id,report.store_id,slot,mime,bytes]);
-    await client.query('COMMIT'); return NextResponse.json({ data: { revision: updated.rows[0].revision } });
+    const saved = { revision: updated.rows[0].revision };
+    await writeShiftReceipt(client, requestId, user!.id, Number(report.store_id), hash, saved);
+    await client.query('COMMIT'); return NextResponse.json({ data: saved });
   } catch (e) {
     if (client) await client.query('ROLLBACK').catch(() => {});
+    if (e instanceof ShiftRequestError) return NextResponse.json({ message: e.message }, { status: e.status });
     return NextResponse.json({ message: (e as { code?: string }).code ? 'Chưa xử lý được ảnh. Vui lòng thử lại.' : e instanceof Error ? e.message : 'Ảnh không hợp lệ.' }, { status: (e as { code?: string }).code ? 500 : 400 });
   } finally { client?.release(); }
 }

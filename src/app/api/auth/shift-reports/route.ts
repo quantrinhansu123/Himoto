@@ -4,6 +4,7 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { dataAccess } from '@/lib/server/access-context';
 import { parseShiftInput, SHIFT_PHOTOS } from '@/lib/management/shift-reports';
 import { hasPermission } from '@/lib/management/permissions';
+import { ShiftRequestError, shiftRequestId, shiftRequestHash, readShiftReceipt, writeShiftReceipt } from '@/lib/server/shift-report-requests';
 
 export const runtime = 'nodejs';
 export const GET = withAccessRequest(async (request: NextRequest) => {
@@ -28,7 +29,11 @@ export const POST = withAccessRequest(async (request: NextRequest) => {
     if (!['draft','submitted'].includes(raw.status) || (raw.id != null && (!Number.isSafeInteger(raw.id) || raw.id <= 0 || !Number.isSafeInteger(raw.revision)))) return NextResponse.json({ message: 'Báo cáo không hợp lệ.' }, { status: 400 });
     const actor = dataAccess.getStore()!;
     if (!actor.scope_all && input.store_id !== actor.store_id) return NextResponse.json({ message: 'PGD nằm ngoài phạm vi được phân công.' }, { status: 403 });
+    const requestId = shiftRequestId(request.headers);
+    const hash = shiftRequestHash(JSON.stringify({ actor: actor.id, id: raw.id ?? null, revision: raw.revision ?? null, input, status: raw.status }));
     client = await himotoPool.connect(); await client.query('BEGIN');
+    const receipt = await readShiftReceipt(client, requestId, actor.id, hash);
+    if (receipt) { await client.query('COMMIT'); return NextResponse.json({ data: receipt }); }
     if (!(await client.query('SELECT id FROM himoto.stores WHERE id=$1', [input.store_id])).rowCount) throw new Error('PGD không tồn tại.');
     if (raw.id != null) {
       const existing = (await client.query('SELECT * FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE', [raw.id])).rows[0];
@@ -43,10 +48,13 @@ export const POST = withAccessRequest(async (request: NextRequest) => {
     const result = raw.id != null
       ? await client.query('UPDATE himoto.management_shift_reports SET payload=$1,status=$2,revision=revision+1,updated_at=now() WHERE id=$3 RETURNING id,revision', [input, raw.status, raw.id])
       : await client.query('INSERT INTO himoto.management_shift_reports(store_id,report_date,payload,created_by) VALUES($1,$2,$3,$4) RETURNING id,revision', [input.store_id,input.date,input,actor.id]);
+    const saved = { id: Number(result.rows[0].id), revision: result.rows[0].revision };
+    await writeShiftReceipt(client, requestId, actor.id, input.store_id, hash, saved);
     await client.query('COMMIT');
-    return NextResponse.json({ data: { id: Number(result.rows[0].id), revision: result.rows[0].revision } });
+    return NextResponse.json({ data: saved });
   } catch (e) {
     if (client) await client.query('ROLLBACK').catch(() => {});
+    if (e instanceof ShiftRequestError) return NextResponse.json({ message: e.message }, { status: e.status });
     const code = (e as { code?: string }).code;
     return NextResponse.json({ message: code === '23505' ? 'PGD đã có báo cáo ngày này. Mở báo cáo trong danh sách.' : code ? 'Chưa lưu được báo cáo. Vui lòng thử lại.' : e instanceof Error ? e.message : 'Thông tin không hợp lệ.' }, { status: code === '23505' ? 409 : code ? 500 : 400 });
   } finally { client?.release(); }
