@@ -87,6 +87,7 @@ def cloud(route):
 
 
 def save_photo(dialog):
+    dialog.locator('.mg-media-individual > summary').first.click()
     field = dialog.get_by_role('group', name='Toàn cảnh xe', exact=True)
     field.get_by_label('Chọn ảnh Toàn cảnh xe', exact=True).set_input_files(dict(name='qa.png', mimeType='image/png', buffer=pixel))
     save = dialog.get_by_role('button', name='Lưu ảnh / video', exact=True)
@@ -112,6 +113,7 @@ with sync_playwright() as pw:
         page.goto(args.url+'/contracts?action=return&query=QA-141.53', wait_until='networkidle', timeout=120000)
         dialog = page.get_by_role('dialog', name='Trả xe', exact=True)
         expect(dialog.get_by_role('region', name='Thu phí và hoàn cọc')).to_be_visible()
+        dialog.get_by_text('Giờ trả và cách tính phí gợi ý',exact=True).click()
         dialog.locator('#contract-return-hourly-rate').press('Enter')
         dialog.locator('form').evaluate("form => form.dispatchEvent(new SubmitEvent('submit', {bubbles:true,cancelable:true}))")
         save_photo(dialog)

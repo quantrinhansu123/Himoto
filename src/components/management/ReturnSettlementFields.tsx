@@ -44,7 +44,8 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const debt=due===null?0:Math.max(due-lateFee-repairFee,0);
   const limits:Record<Kind,number>=useMemo(()=>({late_fee:lateFee,repair_fee:repairFee,rental_debt:debt,refund:context?.deposit_held||0}),[lateFee,repairFee,debt,context?.deposit_held]);
   const amount=(kind:Kind)=>rows[kind]?.amount??String(limits[kind]);
-  const collected=(['late_fee','repair_fee','rental_debt'] as const).reduce((sum,kind)=>sum+(rows[kind]?.enabled?Number(amount(kind))||0:0),0);
+  // A waived fee must not leave a previously selected, now-hidden receipt in the submission.
+  const collected=(['late_fee','repair_fee','rental_debt'] as const).reduce((sum,kind)=>sum+(limits[kind]>0&&rows[kind]?.enabled?Number(amount(kind))||0:0),0);
   const refundAllowed=closes&&due!==null&&collected===due;
   const refundRow=rows.refund;
   const refundMethod=refundRow?.method||'cash';
@@ -58,7 +59,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const refundReady=!refundRow?.enabled || (refundAllowed && Boolean(context&&paymentAccounts(context,refundMethod).some(account=>account.id===Number(refundRow.account_id))) && /^\d{1,13}$/.test(refundRow.amount||'') && Number(refundRow.amount)>0 && Number(refundRow.amount)<=limits.refund && refundRecipientReady);
   useEffect(()=>{
     if(!context){change.current(undefined);block.current?.(true);return;}
-    const receipts=(['late_fee','repair_fee','rental_debt'] as const).filter(kind=>rows[kind]?.enabled).map(kind=>{
+    const receipts=(['late_fee','repair_fee','rental_debt'] as const).filter(kind=>limits[kind]>0&&rows[kind]?.enabled).map(kind=>{
       const row=rows[kind]!;return {kind,request_id:row.request_id,amount:row.amount,method:row.method,account_id:Number(row.account_id),paid_at:paidAt};
     });
     const row=rows.refund;
@@ -71,18 +72,19 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
     const pendingRecipient={...(bankValue?{bank:bankValue}:{}),...(accountValue?{account:accountValue}:{}),...(nameValue?{name:nameValue}:{})};
     change.current(receipts.length||refund||refundDeferred?{order_id:orderId,revision:context.revision,receipts,...(refund?{refund}:{}),...(refundDeferred?{refund_deferred:true as const,...(Object.keys(pendingRecipient).length?{refund_recipient:pendingRecipient}:{})}:{})}:undefined);
     block.current?.(qrBusy||refundDecisionMissing||Boolean(refundRow?.enabled && !refundReady)||Boolean(refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account)));
-  },[context,rows,recipient,refundAllowed,refundReady,refundDecisionMissing,refundDeferred,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr,qrBusy]);
+  },[context,rows,recipient,refundAllowed,refundReady,refundDecisionMissing,refundDeferred,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr,qrBusy,limits]);
   function update(kind:Kind,patch:Partial<Row>){
     const old=rows[kind];const method=patch.method||old?.method||'transfer';
     const account=patch.method||!old?paymentAccounts(context!,method)[0]?.id:old.account_id;
     setRows(current=>({...current,[kind]:{enabled:false,amount:String(limits[kind]),method,account_id:String(account||''),request_id:old?.request_id||crypto.randomUUID(),...old,...patch,...(patch.method?{account_id:String(account||'')}:{})}}));
   }
-  if(error)return <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={()=>setRetry(value=>value+1)}>Tải lại khoản thu / hoàn</button></p>;
-  if(!context)return <p role="status">Đang tải số tiền và tài khoản thu / hoàn…</p>;
-  return <section className="mg-return-settlement" aria-label="Thu phí và hoàn cọc"><h3>2. Thu phí → 3. Hoàn cọc</h3>
+  if(error)return <section className="mg-return-settlement" data-blocked="true"><p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={()=>setRetry(value=>value+1)}>Tải lại khoản thu / hoàn</button></p></section>;
+  if(!context)return <section className="mg-return-settlement" aria-busy="true"><p role="status">Đang tải số tiền và tài khoản thu / hoàn…</p></section>;
+  const blocked=qrBusy||refundDecisionMissing||Boolean(refundRow?.enabled&&!refundReady)||Boolean(refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account));
+  return <section className="mg-return-settlement" aria-label="Thu phí và hoàn cọc" data-blocked={blocked} aria-busy={qrBusy}><h3>2. Thu phí và hoàn cọc</h3>
     <ContractWorkflowGuide workflow="return" company={context.history.some(row=>!row.deposit&&row.type==='in'&&row.method.includes('công ty'))} early={early} late={late}/>
     <p>Chỉ chọn khoản đã thực nhận hoặc đã hoàn cho khách. Mỗi khoản tạo một phiếu thu/chi cùng lượt xác nhận.</p>
-    <div className="mg-field"><label htmlFor={`return-${orderId}-paid-at`}>Thời điểm thực tế thu / hoàn (24h)</label><DateTime24Controls id={`return-${orderId}-paid-at`} label="Thời điểm thực tế thu / hoàn" value={paidAt} onChange={setPaidAt}/></div>
+    <details className="mg-return-options"><summary>Sửa thời điểm thu / hoàn</summary><div className="mg-field"><label htmlFor={`return-${orderId}-paid-at`}>Thời điểm thực tế thu / hoàn (24h)</label><DateTime24Controls id={`return-${orderId}-paid-at`} label="Thời điểm thực tế thu / hoàn" value={paidAt} onChange={setPaidAt}/></div></details>
     {(['late_fee','repair_fee','rental_debt','refund'] as const).filter(kind=>limits[kind]>0).map(kind=>{
       const row=rows[kind],method=row?.method||'transfer',accounts=paymentAccounts(context,method),blocked=kind==='refund'&&!refundAllowed;
       return <fieldset key={kind} disabled={disabled}><legend>{kind==='refund'?'Cọc còn giữ':kind==='late_fee'?'Phí quá hạn':kind==='repair_fee'?'Phí sửa chữa':'Công nợ tiền thuê'}: {formatMoney(limits[kind])}</legend>

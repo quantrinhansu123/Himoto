@@ -18,6 +18,13 @@ import { SavedRecordPhotos } from './RecordPhotoFields';
 export type VehicleActionMode = 'transfer' | 'status' | 'receive';
 const STATUS_CHOICES = [{ value: 'using', label: 'Lập hợp đồng nháp' }, { value: 'ready', label: 'Lưu kho' }] as const;
 const vehicleOption = (row: ManagementRow) => `${row.license || row.code} — ${row.name}`;
+const plateKey=(value:string)=>value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+function resolveVehicle(rows:ManagementRow[],value:string){
+  const full=rows.find(row=>vehicleOption(row)===value);if(full)return full;
+  const key=plateKey(value);if(!key)return null;
+  const matches=rows.filter(row=>plateKey(String(row.license||''))===key);
+  return matches.length===1?matches[0]:null;
+}
 
 export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleActionMode; vehicle: ManagementRow | null; onClose: () => void }) {
   const { dataset, ensureData, notify } = useManagement();
@@ -25,9 +32,16 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
   const vehicles = useMemo(() => dataset?.vehicles || [], [dataset]);
   const stores = dataset?.stores || [];
   const [destinations,setDestinations]=useState<{id:number;name:string}[]>([]);
+  const [inventory,setInventory]=useState<ManagementRow[]>([]);
+  useEffect(()=>{if(mode!=='transfer')return;const controller=new AbortController();
+    void fetch('/api/auth/vehicles/inventory',{signal:controller.signal,cache:'no-store'}).then(async response=>{
+      const body=await response.json();if(response.ok&&body.status==='success'&&!controller.signal.aborted)setInventory(body.data.map((row:ManagementRow)=>({...row,id:Number(row.id)})));
+    }).catch(()=>{});return()=>controller.abort();
+  },[mode]);
   useEffect(()=>{if(mode!=='transfer')return;const controller=new AbortController();void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok||body.status!=='success')throw Error('Không tải được cơ sở chuyển đến.');setDestinations(body.data.map((row:{id:string|number;store_name:string})=>({id:Number(row.id),name:row.store_name})));}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được cơ sở chuyển đến.');});return()=>controller.abort();},[mode]);
   const [picked, setPicked] = useState(vehicle ? vehicleOption(vehicle) : '');
-  const selected = vehicle || vehicles.find(row => vehicleOption(row) === picked) || null;
+  const selected = vehicle || resolveVehicle(vehicles,picked);
+  const otherStock=!selected?resolveVehicle(inventory,picked):null;
   const statusOf = (row: ManagementRow | null) => row ? (String(row.status) === 'rent' ? 'using' : String(row.status)) : '';
   const currentStatus = statusOf(selected);
   const defaults = (row: ManagementRow | null) => ({
@@ -48,13 +62,14 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
   useEffect(() => { void loadSessionUserName().then(setActor).catch(() => {}); }, []);
   function pick(value: string) {
     setPicked(value);
-    const next = vehicles.find(row => vehicleOption(row) === value) || null;
+    const next = resolveVehicle(vehicles,value);
     if (next?.id === selected?.id) return;
     const reset = defaults(next);
     setStatus(reset.status); setStoreId(reset.storeId); setError('');
   }
   const rented = (() => { try { return JSON.parse(String(selected?.rentals_json || '[]')).length > 0; } catch { return false; } })();
   const transferBlocked = mode === 'transfer' && Boolean(selected) && currentStatus !== 'ready';
+  const sameDestination=mode==='transfer'&&Boolean(selected)&&storeId===String(selected?.store_id);
   const receiveBlocked=mode==='receive' && (!selected||currentStatus!=='in_transit'||!selected.transfer_event_id||selected.transfer_receivable===0);
   const title = mode === 'transfer' ? 'Chuyển xe' : mode==='receive'?'Nhận xe':'Đổi trạng thái';
 
@@ -109,9 +124,11 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
   return <Dialog title={title} subtitle={selected ? vehicleOption(selected) : 'Chọn xe cần thao tác'} onClose={() => { if (!busy.current && !photosPending) onClose(); }}>
     <form noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
       <div className="mg-field mg-field-wide"><label htmlFor="vehicle-action-vehicle">Xe<span aria-hidden="true"> *</span></label>
-        <input id="vehicle-action-vehicle" list="vehicle-action-options" value={picked} disabled={saving || Boolean(vehicle)} placeholder="Nhập biển số hoặc tên xe…" onChange={event => pick(event.target.value)} />
+        <input id="vehicle-action-vehicle" list="vehicle-action-options" autoComplete="off" value={picked} disabled={saving || Boolean(vehicle)} placeholder="Nhập biển số hoặc tên xe…" onChange={event => pick(event.target.value)} />
         <datalist id="vehicle-action-options">{vehicles.map(row => <option key={row.id} value={vehicleOption(row)} />)}</datalist>
         {selected && <small>Hiện tại: {optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)} · {String(selected.store_name || '—')}</small>}
+        {otherStock&&<p role="status">Xe {otherStock.license} hiện ở {otherStock.store_name}. Chỉ tài khoản cơ sở đang giữ xe được chuyển. Để lập hợp đồng, chọn đúng Cửa hàng xe trong form hợp đồng.</p>}
+        {sameDestination&&<p role="status">Xe đang ở {selected?.store_name}. Không cần chuyển về cùng cơ sở; có thể chọn xe này khi lập hợp đồng.</p>}
         {rented && <small className="mg-field-error">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng trước khi {mode === 'transfer' ? 'chuyển xe' : 'đổi trạng thái'}.</small>}
         {selected&&(rented||['using','rent'].includes(currentStatus))&&<Link className="mg-button" href={`/contracts?action=return&query=${encodeURIComponent(String(selected.license||''))}`} onClick={onClose}>Tìm hợp đồng đang thuê · Trả xe & hoàn cọc</Link>}
         {transferBlocked && !rented && <small className="mg-field-error">Chỉ chuyển xe đang Lưu kho.</small>}</div>
@@ -122,7 +139,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <p className="mg-composer-hint mg-field-wide">Chỉ xác nhận khi xe đã đến cơ sở nhận. Xe chuyển từ Chờ luân chuyển sang Lưu kho; sau đó tải 1 ảnh nhận xe. Ngày giờ và người nhận được lưu trong Lịch sử.</p>
         {receiveBlocked&&<p className="mg-field-error mg-field-wide" role="alert">Lần chuyển xe không còn chờ nhận hoặc thiếu thông tin. Đóng hộp thoại, nhấn Làm mới rồi kiểm tra lịch sử.</p>}
       </>:mode === 'transfer' ? <>
-        <div className="mg-field"><label htmlFor="vehicle-action-from">Cơ sở hiện tại</label><input id="vehicle-action-from" value={String(selected?.store_name || '')} readOnly disabled /></div>
+        <div className="mg-field"><label htmlFor="vehicle-action-from">Cơ sở hiện tại</label><input id="vehicle-action-from" value={String(selected?.store_name || otherStock?.store_name || '')} readOnly disabled /></div>
         <div className="mg-field"><label htmlFor="vehicle-action-to">Chuyển đến cơ sở<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-to" value={storeId} disabled={saving} onChange={event => setStoreId(event.target.value)}>
             <option value="">Chọn cơ sở</option>{(destinations.length?destinations:stores).filter(store => String(store.id) !== String(selected?.store_id)).map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
@@ -148,7 +165,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <textarea id="vehicle-action-note" value={note} maxLength={500} disabled={saving} onChange={event => setNote(event.target.value)} /></div>
     </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
       <div className="mg-dialog-footer"><span className="mg-form-note">Ngày giờ và người nhập được ghi tự động khi lưu.</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
-        <button type="submit" className="mg-button mg-button-primary" disabled={saving || !selected || rented || transferBlocked || receiveBlocked}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : mode==='receive'?'Xác nhận đã nhận xe':title}</button></div>
+        <button type="submit" className="mg-button mg-button-primary" disabled={saving || !selected || rented || transferBlocked || receiveBlocked || sameDestination}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : mode==='receive'?'Xác nhận đã nhận xe':title}</button></div>
     </form>
   </Dialog>;
 }

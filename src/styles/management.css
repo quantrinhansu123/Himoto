@@ -3751,6 +3751,18 @@
   background: var(--mg-brand-50, #fff5f5);
 }
 .mg-saved-photos-commit .mg-button { min-height: 44px; width: 100%; }
+.mg-media-upload-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.mg-media-upload-actions .mg-button { min-height:44px; }
+.mg-media-gallery, .mg-media-individual, .mg-extra-documents, .mg-return-options { margin:10px 0; min-width:0; }
+.mg-media-gallery>summary, .mg-media-individual>summary, .mg-extra-documents>summary, .mg-return-options>summary { cursor:pointer; min-height:40px; padding:8px 0; font-weight:600; color:var(--mg-slate-700); overflow-wrap:anywhere; }
+.mg-media-gallery[open]>summary, .mg-media-individual[open]>summary, .mg-extra-documents[open]>summary, .mg-return-options[open]>summary { margin-bottom:8px; }
+.mg-media-thumbnails { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); gap:12px; }
+.mg-media-thumbnails img, .mg-media-thumbnails video { max-height:160px; object-fit:contain; }
+.mg-saved-photos.is-compact .mg-record-photos { padding:12px; }
+.mg-saved-photos.is-compact .mg-media-upload-toolbar>p { margin:8px 0 0; font-size:13px; }
+.mg-saved-photos.is-compact .mg-saved-photos-commit { margin:10px 0; }
+.mg-saved-photos.is-compact .mg-saved-photos-commit p { margin:0; }
+.mg-transaction-photos.is-compact>p { margin:8px 0 12px; }
 .mg-debt-reminder-dialog { max-width: 680px; }
 .mg-debt-reminder-dialog .mg-field { margin-bottom: 14px; }
 .mg-debt-reminder-dialog textarea { min-height: 220px; resize: vertical; }

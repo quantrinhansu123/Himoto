@@ -64,6 +64,22 @@ for(const [name,recipient,qr] of [['pending-typed',{bank:'QA bank',account:'000.
 }
 for(const r of [{account:'bad/#'},{account:'. . .'},{account:'000123456',amount:'1'},{account_id:15}])assert.throws(()=>parseReturnSettlements([{...deferred,refund_recipient:r}]));
 assert.throws(()=>parseReturnSettlements([{...settlement,refund_recipient:{account:'000123456'}}]));
+for(const actualFee of ['0','50000']){
+ await c.query('ROLLBACK TO SAVEPOINT baseline');
+ await db.query("UPDATE himoto.order_vehicle_details SET rent_at=now()-interval '5 days',return_at=now()-interval '3 days',total_money=0,total_renewal_amount=0 WHERE id=101");
+ const f=await fixture();f.item.fee_override=actualFee;
+ const original=(await db.query('SELECT total,pid FROM himoto.orders WHERE id=1')).rows[0];
+ const result=await completeReturnBatch(db,153,[f.item],parseReturnSettlements([{order_id:1,revision:f.settlement.revision,receipts:[],refund_deferred:true}]));
+ assert.equal(result[0].late_fee,Number(actualFee));assert.equal(result[0].status,actualFee==='0'?'completed':'wait_payment');
+ const after=(await db.query('SELECT total,pid,draft_payload FROM himoto.orders WHERE id=1')).rows[0];
+ assert.equal(Number(after.total),Number(original.total)+Number(actualFee));assert.equal(after.pid,original.pid);
+ assert.equal(after.draft_payload.management_composer.return_adjustments[0].fee_overridden,true);
+ assert(after.draft_payload.management_composer.return_adjustments[0].late_minutes>0);
+ assert.equal((await readPaymentContext(db,1)).deposit_held,1000000);
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.transactions')).rows[0].n,2);
+ assert.equal((await db.query('SELECT status FROM himoto.vehicles WHERE id=700')).rows[0].status,'ready');
+ checks.push('Manual overdue fee '+actualFee+' overrides a multi-day suggestion, preserves already-entered rent/deposit and creates no uncollected or zero-value receipt');
+}
 }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
 console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,productionSequenceChanges:0,realTelegramRequests:0},null,2));}
 main().catch(e=>{console.error(e.name,e.code||'',e.message);process.exitCode=1;});
