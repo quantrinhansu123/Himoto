@@ -13,6 +13,7 @@ module.exports=async function checkRetractions(db,c,schema){
   const fixture=async(count=3,overrides={})=>{
    const id=randomUUID(),key='retract:'+id;
    const payload=(await c.query(`SELECT payload FROM ${schema}.management_contract_notifications WHERE order_id=1 LIMIT 1`)).rows[0].payload;
+   payload.customer='WRONG SENT CUSTOMER QA';
    await c.query(`INSERT INTO ${schema}.management_contract_notifications(id,order_id,store_id,event_key,root_event_key,event_type,payload,status,message_ids,delivery_target,delivery_mode,sent_at)
      VALUES($1,1,23,$2,$2,'rental',$3,'sent',$4,$5,'manual',now())`,[id,key,JSON.stringify(payload),JSON.stringify(Array.from({length:count},(_,i)=>i+1)),JSON.stringify({...target,...overrides})]);
    return {id,key,input:{action:'retract',notice_id:id,event_key:key,request_id:randomUUID(),reason:'QA nhập sai thông tin hợp đồng',confirmed:true}};
@@ -37,7 +38,12 @@ module.exports=async function checkRetractions(db,c,schema){
   assert.equal((await r.dispatchTelegramRetractions(fake,1,db,[1])).completed,1);assert.deepEqual(batches.map(ids=>ids.length),[100,100,1]);
   assert.deepEqual(batches.flat(),Array.from({length:201},(_,i)=>i+1));assert.equal((await read(fresh.id)).retraction.state,'done');
   event=(await service.readContractTelegram(db,1,143,user)).state.events.find(item=>item.key===fresh.key);assert(event.can_send);assert.equal(event.status,'retracted');
+  const corrected=await service.readContractTelegram(db,1,143,user);assert.notEqual(corrected.payloads.get(fresh.key).customer,'WRONG SENT CUSTOMER QA');
   await service.saveContractTelegram(db,1,143,user,fresh.input);assert.equal((await r.dispatchTelegramRetractions(fake,1,db,[1])).completed,0);assert.equal(batches.length,3);
+  await service.saveContractTelegram(db,1,143,user,{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()});
+  const resend=(await db.query("SELECT payload FROM himoto.management_contract_notifications WHERE root_event_key=$1 AND status='pending'",[fresh.key])).rows[0];assert(resend);assert.notEqual(resend.payload.customer,'WRONG SENT CUSTOMER QA');
+  await db.query("UPDATE himoto.management_contract_notifications SET status='sent',sent_at=now() WHERE root_event_key=$1 AND status='pending'",[fresh.key]);
+  assert.equal((await service.readContractTelegram(db,1,143,user)).state.events.find(item=>item.key===fresh.key).can_send,false);
   checks.push('Double click/parallel worker is claimed once; exact frozen group and all 201 media/text IDs removed in 100/100/1 batches; successful retraction permits explicit resend only');
   const partial=await fixture(101);await service.saveContractTelegram(db,1,143,user,partial.input);let calls=0;
   await r.dispatchTelegramRetractions(async()=>++calls===1?Response.json({ok:true,result:true}):Response.json({ok:false,error_code:403},{status:403}),1,db,[1]);

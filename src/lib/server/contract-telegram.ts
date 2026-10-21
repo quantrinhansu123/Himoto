@@ -49,11 +49,14 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal);void _store;
     const related=notices.filter(n=>(n.root_event_key||n.event_key)===event.key);
     const delivered=related.find(n=>n.status==='sent'&&n.retraction?.state!=='done');
-    const payload=event.payload?{...event.payload,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,
+    // Once a bad delivery is retracted, rebuild from the corrected contract. A later
+    // successful resend becomes the baseline so it stays locked against duplication.
+    const baseline:NotificationPayload|undefined=related.some(n=>n.retraction?.state==='done')?delivered?.payload:event.payload;
+    const payload=baseline?{...baseline,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,
       ...(fresh.ownership_renewal_note?{ownership_renewal_note:fresh.ownership_renewal_note}:{}),
       ...(event.kind==='return'?{refunded:fresh.refunded,deposit:fresh.deposit,...(fresh.return_fees?{return_fees:fresh.return_fees}:{}),...(fresh.refund_recipient?{refund_recipient:fresh.refund_recipient}:{})}:{}),
       // Legacy payloads predate the detailed templates.
-      ...(!('rental_fee' in event.payload)?{vehicle_names:fresh.vehicle_names,days:fresh.days,rental_fee:fresh.rental_fee,deposit:fresh.deposit,grand_total:fresh.grand_total}:{}),
+      ...(!('rental_fee' in baseline)?{vehicle_names:fresh.vehicle_names,days:fresh.days,rental_fee:fresh.rental_fee,deposit:fresh.deposit,grand_total:fresh.grand_total}:{}),
     }:fresh;
     // A template update must not reopen an already delivered transaction.
     if(delivered&&event.kind==='renewal'&&!delivered.payload?.ownership_renewal_note)delete payload.ownership_renewal_note;

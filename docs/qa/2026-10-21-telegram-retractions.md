@@ -4,6 +4,8 @@ Open **Danh sách hợp đồng → ⋯ → Gửi Telegram → Thu hồi tin Tel
 
 The employee needs the original event's operation permission and access to its contract/branch. No bot token or arbitrary chat/message ID is accepted from the browser. Retraction removes only the saved text/photo/video IDs from that delivery. Orders, finance receipts, returns and stored photos are unchanged. After success the employee can correct the contract and explicitly send again; cancelled contracts cannot send again.
 
+After a successful retraction, the preview rebuilds business fields from the corrected contract instead of recycling the bad sent snapshot. A successful replacement delivery becomes the new immutable baseline for duplicate prevention.
+
 Each new delivery freezes chat/topic, bot identity and earliest send time before contacting Telegram. Continuations use the frozen destination even after group configuration changes. All message IDs and original outbox payloads remain as history. A reason, actor, request time, acknowledged deleted IDs and final/error outcome are audited in the existing delivery review.
 
 Retraction is queued/committed before the worker contacts Telegram. `deleteMessages` batches up to 100 IDs; already missing messages are skipped by Telegram. Atomic claims prevent overlapping workers. Failed/ambiguous responses retain checkpoints, block resend and expose a manual retry. No automatic replay after failure. A process interrupted while claiming is recoverable after two minutes. The request's background callback invokes only the retraction worker; scheduler runs can also recover pending requests. Retraction is refused while a newer attempt of the same transaction is sending.
