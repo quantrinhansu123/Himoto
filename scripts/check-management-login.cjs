@@ -50,6 +50,18 @@ async function run() {
   try {
     const current = session.signSession(7);
     row = account;
+    let readQueries = 0;
+    const concurrentDatabase = { query: async () => { readQueries++; await new Promise(resolve => setTimeout(resolve, 10)); return { rows: row ? [row] : [] }; } };
+    const readers = await Promise.all(Array.from({length:6}, () => session.readSessionUser(current,concurrentDatabase)));
+    assert.equal(readQueries,1); assert(readers.every(user => user.id === 7));
+    row = { ...account, status: 'deactive' };
+    assert.equal(await session.readSessionUser(current,concurrentDatabase),null); assert.equal(readQueries,2);
+    row = account;
+    let failedReads = 0;
+    const failedDatabase = { query: async () => { failedReads++; throw Error('QA failure'); } };
+    await assert.rejects(session.readSessionUser(current,failedDatabase),/QA failure/);
+    await assert.rejects(session.readSessionUser(current,failedDatabase),/QA failure/); assert.equal(failedReads,2);
+    checks.push('six parallel read requests share one lookup; settled reads and failed reads are cleared so revocation and retry stay fresh');
     assert.equal((await session.userFromSession(current, database)).id, 7);
     row = { ...account, status: 'deactive' };
     assert.equal(await session.userFromSession(current, database), null);
@@ -83,6 +95,15 @@ async function run() {
     assert.throws(() => session.signSession(7), /MANAGEMENT_SESSION_SECRET/);
     process.env.MANAGEMENT_SESSION_SECRET = key;
     assert.equal(session.isManagementConfigured(), true);
+    const { dataAccess } = load(path.join(root,'lib/server/access-context'));
+    await dataAccess.run({ id:7,access_role:'admin',store_id:null,scope_all:true,operation:'' }, async () => {
+      const scopedCookie = `${session.SESSION_COOKIE}=${session.signSession(7)}`;
+      assert.equal(await session.protectDatabaseRequest(new NextRequest('http://localhost/api/auth/customers',{headers:{cookie:scopedCookie}})),null);
+      assert.equal(await session.protectDatabaseRequest(new NextRequest('http://localhost/api/auth/customers',{method:'POST',headers:{cookie:scopedCookie,origin:'http://localhost'}})),null);
+      assert.equal((await session.protectDatabaseRequest(new NextRequest('http://localhost/api/auth/customers'))).status,401);
+      assert.equal((await session.protectDatabaseRequest(new NextRequest('http://localhost/api/auth/customers',{method:'POST',headers:{cookie:scopedCookie,origin:'https://other.invalid'}}))).status,403);
+    });
+    checks.push('authenticated request scope avoids a duplicate database lookup while missing cookies and cross-origin writes remain rejected');
     assert.equal((await session.protectDatabaseRequest(request)).status, 401);
     const repository = load(path.join(root, 'lib/management/repository')).createManagementRepository();
     process.env.NEXT_PUBLIC_MANAGEMENT_DATA_SOURCE = 'demo';

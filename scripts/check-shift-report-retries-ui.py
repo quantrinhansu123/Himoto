@@ -104,6 +104,8 @@ with sync_playwright() as pw:
     page.get_by_label('Xác nhận đã tắt các thiết bị điện',exact=True).check()
     state['drop']='submit';before=len(state['applied'])
     page.get_by_role('button',name='Chốt báo cáo',exact=True).click();retry()
+    expect(page.get_by_role('heading',name='Danh sách báo cáo',exact=True)).to_be_visible()
+    page.get_by_role('button',name='Mở báo cáo',exact=True).click()
     expect(page.get_by_text('Đã chốt · Chỉ xem',exact=True)).to_be_visible()
     assert state['applied'][before:]==['draft','photo','photo','photo','photo','submit']
     expect(page.get_by_role('button',name='Chốt báo cáo',exact=True)).to_have_count(0)

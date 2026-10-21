@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { dataAccess } from '@/lib/server/access-context';
-import { parseShiftInput, SHIFT_PHOTOS } from '@/lib/management/shift-reports';
+import { parseShiftInput } from '@/lib/management/shift-reports';
 import { hasPermission } from '@/lib/management/permissions';
 import { ShiftRequestError, shiftRequestId, shiftRequestHash, readShiftReceipt, writeShiftReceipt } from '@/lib/server/shift-report-requests';
 
@@ -41,13 +41,10 @@ export const POST = withAccessRequest(async (request: NextRequest) => {
         await client.query('ROLLBACK'); return NextResponse.json({ message: 'Báo cáo đã thay đổi hoặc đã chốt. Mở lại từ danh sách để kiểm tra.' }, { status: 409 });
       }
     }
-    if (raw.status === 'submitted') {
-      const photos = raw.id ? (await client.query('SELECT slot FROM himoto.management_shift_photos WHERE report_id=$1', [raw.id])).rows.map(r => r.slot) : [];
-      if (!input.electricity_off || SHIFT_PHOTOS.some(([slot]) => !photos.includes(slot))) throw new Error('Bổ sung đủ 6 ảnh và xác nhận đã tắt thiết bị điện trước khi chốt.');
-    }
+    if (raw.status === 'submitted' && !input.electricity_off) throw new Error('Xác nhận đã tắt thiết bị điện trước khi chốt.');
     const result = raw.id != null
       ? await client.query('UPDATE himoto.management_shift_reports SET payload=$1,status=$2,revision=revision+1,updated_at=now() WHERE id=$3 RETURNING id,revision', [input, raw.status, raw.id])
-      : await client.query('INSERT INTO himoto.management_shift_reports(store_id,report_date,payload,created_by) VALUES($1,$2,$3,$4) RETURNING id,revision', [input.store_id,input.date,input,actor.id]);
+      : await client.query('INSERT INTO himoto.management_shift_reports(store_id,report_date,payload,created_by,status) VALUES($1,$2,$3,$4,$5) RETURNING id,revision', [input.store_id,input.date,input,actor.id,raw.status]);
     const saved = { id: Number(result.rows[0].id), revision: result.rows[0].revision };
     await writeShiftReceipt(client, requestId, actor.id, input.store_id, hash, saved);
     await client.query('COMMIT');

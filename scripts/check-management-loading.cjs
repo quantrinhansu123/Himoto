@@ -119,9 +119,12 @@ async function run() {
   assert.equal(electric.vehicles[0].type_text, 'Xe điện');
   checks.push('contract summaries and detail fields remain correct without fetching customer/staff/vehicle collections');
   const queries = [];
-  cache.set(path.join(root, 'lib/server/himoto-database.ts'), { exports: { himotoPool: { query: async (sql, values) => { queries.push({ sql, values }); return { rows: [] }; } } } });
+  const queryDatabase = { query: async (sql, values) => { queries.push({ sql, values }); return { rows: [] }; } };
+  cache.set(path.join(root, 'lib/server/himoto-database.ts'), { exports: { himotoPool: queryDatabase, ownerDatabase: queryDatabase } });
   cache.set(path.join(root, 'lib/server/management-session.ts'), { exports: { protectDatabaseRequest: async () => null } });
   // This suite isolates loading/filter SQL; authentication and RLS have separate integration suites.
+  cache.set(path.join(root, 'lib/server/access-context.ts'), { exports: { dataAccess: { getStore: () => undefined }, usesScopedDatabase: () => false } });
+  cache.set(path.join(root, 'lib/server/contract-vehicle-reads.ts'), { exports: { contractVehicleDetailsSql: sql => sql, contractVehicleReadSource: () => 'himoto.vehicles' } });
   cache.set(path.join(root, 'lib/server/access-request.ts'), { exports: { withAccessRequest: handler => handler } });
   cache.set(path.join(root, 'lib/server/contract-drafts.ts'), { exports: { CONTRACT_LIST_SQL: 'SELECT * FROM himoto.orders o WHERE o.deleted_at IS NULL' } });
   const { NextRequest } = require('next/server');

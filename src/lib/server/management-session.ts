@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { ACCESS_PERMISSIONS, canRecordContractPayment, isAdminAccount } from '@/lib/management/permissions';
 import { himotoPool, ownerDatabase } from './himoto-database';
+import { dataAccess } from './access-context';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
@@ -92,6 +93,20 @@ export async function userFromSession(token: string | undefined, database: Datab
   return account && allowedAccount(account) ? safeUser(account) : null;
 }
 
+// Coalesce only simultaneous reads. Settled lookups are removed immediately so
+// the next request still observes account disabling and permission changes.
+const pendingSessionReads = new Map<string, Promise<SessionUser | null>>();
+export function readSessionUser(token: string | undefined, database: Database = ownerDatabase): Promise<SessionUser | null> {
+  if (!token || verifySession(token) === null) return Promise.resolve(null);
+  const pending = pendingSessionReads.get(token);
+  if (pending) return pending;
+  const request = userFromSession(token, database);
+  pendingSessionReads.set(token, request);
+  const clear = () => { if (pendingSessionReads.get(token) === request) pendingSessionReads.delete(token); };
+  void request.then(clear, clear);
+  return request;
+}
+
 // Reads only: the signed token is verified on every request, but the account
 // status/role lookup is shared for a few seconds so a page's parallel list
 // requests cost one database round trip. Writes always re-check the account.
@@ -111,7 +126,7 @@ function readSessionAllowed(token: string | undefined): Promise<boolean> {
 }
 
 export async function currentSessionUser() {
-  return userFromSession((await cookies()).get(SESSION_COOKIE)?.value);
+  return readSessionUser((await cookies()).get(SESSION_COOKIE)?.value);
 }
 
 export function sameOrigin(request: NextRequest) {
@@ -124,6 +139,9 @@ export function sameOrigin(request: NextRequest) {
 export async function protectDatabaseRequest(request: NextRequest): Promise<NextResponse | null> {
   if (!isManagementConfigured()) return NextResponse.json({ status: 'error', message: 'Hệ thống chưa được cấu hình kết nối dữ liệu. Vui lòng liên hệ quản trị viên.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   if (request.method !== 'GET' && !sameOrigin(request)) return NextResponse.json({ status: 'error', message: 'Yêu cầu không hợp lệ.' }, { status: 403 });
+  // withAccessRequest already authenticated this request and loaded its scope.
+  const actor = dataAccess.getStore();
+  if (actor && verifySession(request.cookies.get(SESSION_COOKIE)?.value) === actor.id) return null;
   try {
     const token = request.cookies.get(SESSION_COOKIE)?.value;
     if (request.method === 'GET' ? await readSessionAllowed(token) : await userFromSession(token)) return null;

@@ -13,9 +13,10 @@ let actor={id:1,store_id:1,scope_all:false,access_role:'branch_staff',permission
 const sqlForTemp=sql=>sql.replaceAll('himoto.','pg_temp.').replaceAll("'pg_temp.scope_all'","'himoto.scope_all'").replaceAll("'pg_temp.store_id'","'himoto.store_id'");
 async function main(){
   const c=await database.ownerDatabase.connect();
-  const descriptors=Object.getOwnPropertyDescriptors(database.himotoPool),originalSession=session.userFromSession;
+  const descriptors=Object.getOwnPropertyDescriptors(database.himotoPool),originalSession=session.userFromSession,originalReadSession=session.readSessionUser;
   try {
     await c.query('BEGIN');
+    await c.query("SET LOCAL statement_timeout='15s'");
     await c.query('CREATE TEMP TABLE stores(id bigint PRIMARY KEY); CREATE TEMP TABLE users(id bigint PRIMARY KEY); INSERT INTO stores VALUES(1),(2); INSERT INTO users VALUES(1),(2)');
     for(const name of ['2026-10-22-shift-reports.sql','2026-10-22-shift-report-requests.sql']) {
       const sql=sqlForTemp(fs.readFileSync(path.join(process.cwd(),'docs/sql',name),'utf8').replace(/^BEGIN;|^COMMIT;/gm,''));
@@ -35,9 +36,17 @@ async function main(){
       return c.query(sqlForTemp(sql),values);
     }};
     Object.defineProperty(database.himotoPool,'connect',{configurable:true,value:async()=>proxy});
+    let photoReadQueries=0;
+    Object.defineProperty(database.himotoPool,'query',{configurable:true,value:async(sql,values)=>{
+      photoReadQueries++;await proxy.query('BEGIN');
+      try { const result=await proxy.query(sql,values);await proxy.query('COMMIT');return result; }
+      catch(error){await proxy.query('ROLLBACK');throw error;}
+    }});
     session.userFromSession=async()=>actor;
+    session.readSessionUser=async()=>actor;
     const reports=load(path.join(root,'app/api/auth/shift-reports/route'));
     const photos=load(path.join(root,'app/api/auth/shift-reports/[id]/photos/[slot]/route'));
+    const readPhoto=(id,slot)=>photos.GET(new NextRequest(`http://localhost/api/auth/shift-reports/${id}/photos/${slot}`),{params:Promise.resolve({id:String(id),slot})});
     async function post(body,key=randomUUID()){
       const response=await reports.POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{origin:'http://localhost','content-type':'application/json','x-shift-request-id':key},body:JSON.stringify(body)}));
       return {status:response.status,...await response.json()};
@@ -65,6 +74,9 @@ async function main(){
     checks.push('Draft replay does not increment revision; another editor remains protected by revision checks after a replay.');
     const photoKey=randomUUID(),uploaded=await photo(id,'vehicles',3,photoKey);assert.equal(uploaded.status,200);assert.equal(uploaded.data.revision,4);
     assert.deepEqual(await photo(id,'vehicles',3,photoKey),uploaded);
+    const image=await readPhoto(id,'vehicles');assert.equal(image.status,200);
+    assert.equal((await image.arrayBuffer()).byteLength,4);assert.equal(image.headers.get('cache-control'),'private, no-store');assert.equal(photoReadQueries,1);
+    checks.push('Image reads use one SQL statement without row locks and preserve authenticated private responses.');
     assert.equal((await photo(id,'vehicles',3,photoKey,Buffer.from([255,216,255,2]))).status,409);
     assert.equal((await c.query('SELECT revision FROM pg_temp.management_shift_reports WHERE id=$1',[id])).rows[0].revision,4);
     checks.push('Photo replay preserves bytes and revision; the same key cannot replace a different image.');
@@ -77,8 +89,10 @@ async function main(){
     assert.equal((await post({...submitBody,revision:submitted.data.revision,status:'draft'})).status,409);
     checks.push('Six photos and safety confirmation allow submission; a lost submission response can be replayed while submitted reports stay locked.');
     const partial=await post({payload:{...base,date:'2026-10-23'},status:'draft'});assert.equal(partial.status,200);
-    assert.equal((await post({id:partial.data.id,revision:1,payload:{...base,date:'2026-10-23'},status:'submitted'})).status,400);
+    assert.equal((await post({id:partial.data.id,revision:1,payload:{...base,date:'2026-10-23',electricity_off:false},status:'submitted'})).status,400);
+    assert.equal((await post({id:partial.data.id,revision:1,payload:{...base,date:'2026-10-23'},status:'submitted'})).status,200);
     actor={...actor,store_id:2};
+    assert.equal((await readPhoto(id,'vehicles')).status,404);
     assert.equal((await post(createBody,createKey)).status,403);
     assert.equal((await photo(id,'vehicles',3,photoKey)).status,404);
     await c.query("SELECT set_config('himoto.scope_all','false',true),set_config('himoto.store_id','2',true)");await c.query('SET LOCAL ROLE himoto_scoped');
@@ -88,6 +102,7 @@ async function main(){
     console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));
   } finally {
     session.userFromSession=originalSession;
+    session.readSessionUser=originalReadSession;
     Object.defineProperties(database.himotoPool,descriptors);
     await c.query('ROLLBACK');c.release();
   }

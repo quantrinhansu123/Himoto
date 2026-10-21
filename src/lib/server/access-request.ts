@@ -2,7 +2,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { hasPermission, type AccessPermission } from '@/lib/management/permissions';
 import { dataAccess } from './access-context';
-import { SESSION_COOKIE, sameOrigin, userFromSession } from './management-session';
+import { SESSION_COOKIE, sameOrigin, userFromSession, readSessionUser } from './management-session';
 
 export function requestPermission(path:string,method:string,action=''):AccessPermission|null {
   const read=method==='GET';
@@ -49,7 +49,17 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
 export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Promise<Response>|Response) {
   return async(request:NextRequest,context:C):Promise<Response>=>{
     if(request.method!=='GET'&&!sameOrigin(request))return NextResponse.json({status:'error',message:'Yêu cầu không hợp lệ.'},{status:403});
-    const user=await userFromSession(request.cookies.get(SESSION_COOKIE)?.value).catch(()=>null);
+    let user;
+    try {
+      const token=request.cookies.get(SESSION_COOKIE)?.value;
+      try { user=await (request.method==='GET'?readSessionUser:userFromSession)(token); }
+      catch(error) {
+        if(request.method!=='GET')throw error;
+        user=await readSessionUser(token);
+      }
+    }catch {
+      return NextResponse.json({status:'error',message:'Không xác thực được phiên đăng nhập do lỗi kết nối DB. Vui lòng thử lại.'},{status:503});
+    }
     if(!user)return NextResponse.json({status:'error',message:'Phiên đăng nhập đã hết hạn.'},{status:401});
     let operation='';
     if(request.method!=='GET'&&request.nextUrl.pathname.endsWith('/actions')) {

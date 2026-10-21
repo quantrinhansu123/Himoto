@@ -16,6 +16,14 @@ async function handle(request: NextRequest, context: Context) {
   if (!/^[1-9]\d{0,14}$/.test(id) || !SHIFT_PHOTOS.some(([key]) => key === slot)) return NextResponse.json({ message: 'Ảnh không hợp lệ.' }, { status: 400 });
   let client;
   try {
+    if (request.method === 'GET') {
+      // One MVCC read: no row locks or multi-query transaction for image views.
+      const photo = (await himotoPool.query(`SELECT p.mime_type,p.data FROM himoto.management_shift_photos p
+        JOIN himoto.management_shift_reports r ON r.id=p.report_id AND r.store_id=p.store_id
+        WHERE r.id=$1 AND p.slot=$2`, [id,slot])).rows[0];
+      if (!photo) return NextResponse.json({ message: 'Chưa có ảnh.' }, { status: 404 });
+      return new Response(new Uint8Array(photo.data), { headers: { 'Content-Type': photo.mime_type, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
+    }
     let bytes: Buffer | undefined;
     const mime = request.headers.get('content-type') || '';
     const requestId = request.method === 'PUT' ? shiftRequestId(request.headers) : null;
@@ -35,12 +43,6 @@ async function handle(request: NextRequest, context: Context) {
     if (receipt) { await client.query('COMMIT'); return NextResponse.json({ data: receipt }); }
     const report = (await client.query('SELECT store_id,status FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!report) { await client.query('ROLLBACK'); return NextResponse.json({ message: 'Không tìm thấy báo cáo.' }, { status: 404 }); }
-    if (request.method === 'GET') {
-      const photo = (await client.query('SELECT mime_type,data FROM himoto.management_shift_photos WHERE report_id=$1 AND slot=$2', [id,slot])).rows[0];
-      await client.query('COMMIT');
-      if (!photo) return NextResponse.json({ message: 'Chưa có ảnh.' }, { status: 404 });
-      return new Response(new Uint8Array(photo.data), { headers: { 'Content-Type': photo.mime_type, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
-    }
     if (report.status !== 'draft') { await client.query('ROLLBACK'); return NextResponse.json({ message: 'Báo cáo đã chốt, không thể thay ảnh.' }, { status: 409 }); }
     const updated = await client.query('UPDATE himoto.management_shift_reports SET revision=revision+1,updated_at=now() WHERE id=$1 AND revision=$2 RETURNING revision', [id,revision]);
     if (!updated.rowCount) { await client.query('ROLLBACK'); return NextResponse.json({ message: 'Báo cáo đã thay đổi. Mở lại trước khi thay ảnh.' }, { status: 409 }); }

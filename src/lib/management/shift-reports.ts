@@ -22,6 +22,7 @@ export const emptyShiftSummary = (): ShiftSummary => Object.fromEntries(SHIFT_SU
 export interface ShiftInput {
   store_id: number; date: string; staff: string; vehicles: number; batteries: number;
   charged: number; transfers: number; cash: number; personal: number; company: number;
+  rented_batteries?: number;
   electricity_off: boolean; notes: string;
   electrical_devices?: string;
   summary?: ShiftSummary;
@@ -48,6 +49,7 @@ export function parseShiftInput(raw: unknown): ShiftInput {
   const numbers = ['vehicles', 'batteries', 'charged', 'transfers', 'cash', 'personal', 'company'] as const;
   for (const key of numbers) if (!Number.isSafeInteger(b[key]) || Number(b[key]) < 0 || Number(b[key]) > (['cash', 'personal', 'company'].includes(key) ? 1e12 : 100000)) throw new Error('Số lượng và số tiền phải là số nguyên không âm hợp lệ.');
   if (Number(b.charged) > Number(b.batteries)) throw new Error('Số pin đầy không được vượt tổng số pin.');
+  if (b.rented_batteries !== undefined && (!Number.isSafeInteger(b.rented_batteries) || Number(b.rented_batteries) < 0 || Number(b.rented_batteries) > 100000)) throw new Error('Số pin đã cho thuê phải là số nguyên không âm hợp lệ.');
   const hasVehicleCounts = b.daily_vehicles !== undefined || b.monthly_vehicles !== undefined;
   if (hasVehicleCounts) {
     for (const key of ['daily_vehicles','monthly_vehicles']) {
@@ -65,6 +67,7 @@ export function parseShiftInput(raw: unknown): ShiftInput {
   }
   return { store_id: Number(b.store_id), date: b.date, staff: b.staff.trim(), notes: b.notes.trim(), electricity_off: b.electricity_off,
     ...(typeof b.electrical_devices === 'string' ? { electrical_devices: b.electrical_devices.trim() } : {}),
+    ...(b.rented_batteries !== undefined ? { rented_batteries: b.rented_batteries } : {}),
     ...Object.fromEntries(numbers.map(k => [k, b[k]])), ...(summary ? { summary } : {}),
     ...(hasVehicleCounts ? { daily_vehicles: b.daily_vehicles, monthly_vehicles: b.monthly_vehicles } : {}) } as ShiftInput;
 }

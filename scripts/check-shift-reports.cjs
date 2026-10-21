@@ -6,6 +6,8 @@ const { parseShiftInput, SHIFT_PHOTOS, emptyShiftSummary, shiftVehicleTotal } = 
 const base = { store_id: 1, date: '2026-10-21', staff: 'Chu Văn Tú, Nguyễn Anh Tú', vehicles: 19, batteries: 4, charged: 2, transfers: 1, cash: 1865000, personal: 64300134, company: 26790959, electricity_off: false, notes: 'Không' };
 async function main() {
   assert.deepEqual(parseShiftInput(base), base);
+  assert.equal(parseShiftInput({...base,rented_batteries:7}).rented_batteries,7);
+  for(const rented_batteries of [-1,1.5,'7',null,100001])assert.throws(()=>parseShiftInput({...base,rented_batteries}));
   const vehicles = parseShiftInput({ ...base, vehicles: 20, daily_vehicles: 16, monthly_vehicles: 7 });
   assert.equal(shiftVehicleTotal(vehicles), 43);
   assert.equal(shiftVehicleTotal(base), null);
@@ -25,6 +27,30 @@ async function main() {
   assert.equal(noSession.status, 401);
   const crossOrigin = await POST(new NextRequest('http://localhost/api/auth/shift-reports', { method: 'POST', headers: { origin: 'https://invalid.example' }, body: '{}' }));
   assert.equal(crossOrigin.status, 403);
+  {
+    const database=load(path.join(root,'lib/server/himoto-database'));
+    const descriptors=Object.getOwnPropertyDescriptors(database.himotoPool),original=session.userFromSession;
+    let locked=false;
+    const statements=[];
+    try {
+      session.userFromSession=async()=>({id:7,access_role:'admin',scope_all:true,permissions:[]});
+      Object.defineProperty(database.himotoPool,'connect',{configurable:true,value:async()=>({release(){},query:async(sql,params)=>{
+        statements.push(sql);
+        if(sql==='SELECT id FROM himoto.stores WHERE id=$1')return {rows:[{id:1}],rowCount:1};
+        if(sql.startsWith('SELECT * FROM himoto.management_shift_reports'))return {rows:[{id:1,status:locked?'submitted':'draft',revision:1,store_id:1,payload:base}]};
+        if(sql.startsWith('UPDATE himoto.management_shift_reports')){assert.equal(params[1],'submitted');return {rows:[{id:1,revision:2}]};}
+        if(sql.startsWith('INSERT INTO himoto.management_shift_reports')){assert.equal(params[4],'submitted');return {rows:[{id:2,revision:1}]};}
+        return {rows:[]};
+      }})});
+      const submit=(electricity_off,id=1)=>POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{origin:'http://localhost','Content-Type':'application/json'},body:JSON.stringify({id,revision:1,payload:{...base,electricity_off},status:'submitted'})}));
+      assert.equal((await submit(true)).status,200);
+      assert.equal((await submit(false)).status,400);
+      assert.equal((await submit(true,null)).status,200);
+      locked=true;assert.equal((await submit(true)).status,409);
+      assert(!statements.some(sql=>sql.includes('management_shift_photos')));
+      console.log('PASS: chốt không có ảnh, vẫn cần xác nhận tắt điện và khóa báo cáo đã chốt.');
+    } finally {session.userFromSession=original;Object.defineProperties(database.himotoPool,descriptors);}
+  }
   console.log('PASS: số lượng, số tiền, ngày, nhân sự, pin đầy, 6 loại ảnh, phiên đăng nhập và chống gửi khác origin.');
   if (process.argv.includes('--live-read')) {
     require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
@@ -38,8 +64,8 @@ async function main() {
     const invalid = await POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{...headers,origin:'http://localhost','Content-Type':'application/json'},body:JSON.stringify({payload:{...base,charged:5},status:'draft'})}));
     assert.equal(invalid.status,400);
     const store = (await ownerDatabase.query('SELECT id FROM himoto.stores ORDER BY id LIMIT 1')).rows[0];
-    const incomplete = await POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{...headers,origin:'http://localhost','Content-Type':'application/json'},body:JSON.stringify({payload:{...base,store_id:Number(store.id),electricity_off:true},status:'submitted'})}));
-    assert.equal(incomplete.status,400); assert.match((await incomplete.json()).message,/6 ảnh/);
+    const incomplete = await POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{...headers,origin:'http://localhost','Content-Type':'application/json'},body:JSON.stringify({payload:{...base,store_id:Number(store.id),electricity_off:false},status:'submitted'})}));
+    assert.equal(incomplete.status,400); assert.match((await incomplete.json()).message,/tắt thiết bị điện/);
     const branch = (await ownerDatabase.query("SELECT u.id FROM himoto.users u JOIN himoto.management_account_access a ON a.user_id=u.id WHERE u.status='active' AND u.deleted_at IS NULL AND a.enabled AND NOT a.scope_all AND a.store_id IS NOT NULL AND a.permissions ? 'contracts.read' LIMIT 1")).rows[0];
     if (branch) {
       const branchHeaders = {cookie:`himoto_management_session=${session.signSession(Number(branch.id))}`};
