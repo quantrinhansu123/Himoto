@@ -30,7 +30,7 @@ export function parseManagementTable(kind:TableKind,params:URLSearchParams):Mana
   return {kind,page,size,sort,direction:direction as 'asc'|'desc',scope,store,...(recent?{recentDays:Number(recent)}:{}),query:{...EMPTY_QUERY,filters,search,status,startDate:from,endDate:to,overdueDays:days,overdueCompare:compare as 'eq'|'gt'|'lt',...(bucket?{overdueBucket:bucket as OverdueBucket}:{})}};
 }
 function contractScopeClause(scope:string) {
-  if(scope==='overdue')return contractStatusClause('overdue');
+  if(scope==='overdue')return ` AND (o.order_status='bad_debt' OR ${contractStatusClause('overdue').slice(5)})`;
   return scope==='due' ? ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL`
     : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
 }
@@ -62,13 +62,14 @@ export function contractRecentClause(days:number) {
 }
 export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:TableKind,params:URLSearchParams) {
   const input=parseManagementTable(kind,params);
+  const statusClause=kind==='contracts'?contractStatusClause(input.query.status):'';
+  const monitoring=kind==='contracts'&&(input.scope==='overdue'||input.scope==='ownership'||input.query.status==='overdue'||input.query.status==='bad_debt'||Boolean(input.query.overdueBucket));
   const recentDays=input.recentDays&&!input.scope&&!input.query.search.trim()&&!input.query.startDate&&!input.query.endDate
     &&!input.query.filters.customer_id&&!input.query.filters.id ? input.recentDays : undefined;
   const clause=kind==='contracts'
-    ? `${contractScopeClause(input.scope)}${contractStatusClause(input.query.status)}${recentDays?contractRecentClause(recentDays):''}`
+    ? `${contractScopeClause(input.scope)}${monitoring?'':statusClause}${recentDays?contractRecentClause(recentDays):''}`
     : '';
   const all=params.get('all')==='1';
-  const monitoring=input.scope==='overdue'||input.scope==='ownership'||input.query.status==='overdue'||Boolean(input.query.overdueBucket);
   const now=Date.now();
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   // Paged contract lists: lean index for filter/sort/totals, then hydrate only the visible page.

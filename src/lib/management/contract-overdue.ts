@@ -4,15 +4,18 @@ import { OWNERSHIP_CONTRACT_TYPES } from './config';
 
 export const OVERDUE_BUCKETS=[
   {key:'traditional-overdue',label:'Quá hạn'}, {key:'traditional-3',label:'Trên 3 ngày'}, {key:'traditional-10',label:'Trên 10 ngày'},
+  {key:'traditional-bad-debt',label:'Nợ xấu'},
   {key:'ownership-overdue',label:'Quá hạn'}, {key:'ownership-1-5',label:'1–5 ngày'}, {key:'ownership-6-15',label:'6–15 ngày'}, {key:'ownership-15-plus',label:'Trên 15 ngày'},
+  {key:'ownership-bad-debt',label:'Nợ xấu'},
 ] as const;
 export type OverdueBucket=typeof OVERDUE_BUCKETS[number]['key'];
 export function isOwnershipContract(row:ManagementRow){return row.store_kind==='lease_to_own'||OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type));}
 export function matchesOverdueBucket(row:ManagementRow,bucket:string){
   if(!bucket)return true;
-  if(row.status!=='overdue'&&row.collection_overdue!==1)return false;
   const owner=isOwnershipContract(row),minutes=Number(row.overdue_minutes),days=Math.floor(minutes/1440);
   if(bucket.startsWith('ownership-')!==owner)return false;
+  if(bucket.endsWith('-bad-debt'))return row.status==='bad_debt';
+  if(row.status==='bad_debt'||row.status!=='overdue'&&row.collection_overdue!==1)return false;
   if(bucket.endsWith('-overdue'))return true;
   if(!Number.isFinite(minutes))return false;
   switch(bucket){
@@ -57,6 +60,7 @@ export function withContractOverdue(row:ManagementRow,now=Date.now()):Management
 /** Ownership collections follow unpaid installments; older contracts retain the vehicle deadline. */
 export function withContractMonitoring(row:ManagementRow,now=Date.now()):ManagementRow {
   const base=withContractOverdue(row,now);
+  if(row.status==='bad_debt')return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:0,monitoring_amount:base.rental_debt_amount};
   const owner=isOwnershipContract(row);
   if(!owner||!row.billing_plan_json)return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:row.status==='overdue'?1:0,monitoring_amount:owner?base.rental_debt_amount:base.overdue_fee_estimate};
   if(row.billing_error||row.billing_due_amount===undefined||row.billing_due_amount==='')return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'payment',overdue_minutes:undefined,overdue_days:0,overdue_fee_estimate:undefined,collection_overdue:row.status==='overdue'?1:0,monitoring_amount:undefined};

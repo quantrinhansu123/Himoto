@@ -83,7 +83,7 @@ export function StaffSalesPage() {
     <details className="mg-monitor-tools"><summary>Thống kê hợp đồng & báo cáo khác</summary>
     <p className="mg-sales-kpi-note">Các thống kê bên dưới dùng phạm vi và cách tính ghi tại từng mục. Chốt KPI thuê xe theo bảng Doanh thu thuê xe phía trên.</p>
     <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>
-    <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền hợp đồng còn thiếu của đơn đang thuê, quá hạn, chờ thanh toán và nợ xấu; Nợ xấu quá hạn gồm đơn Quá hạn và Nợ xấu.</p>
+    <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền hợp đồng còn thiếu của đơn đang thuê, quá hạn, chờ tất toán và nợ xấu; Nợ xấu quá hạn gồm đơn Quá hạn và Nợ xấu.</p>
     <SummaryTable title="Theo NVKD ghi nhận doanh số" description={`Tổng hợp từ Danh sách hợp đồng theo cột NVKD ghi nhận doanh số. ${scope}`} column="NVKD ghi nhận doanh số" unit="nhân viên" summary={sources} filename={`doanh-so-nvkd-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
     <SummaryTable title="Doanh thu theo cơ sở" description={`Tổng hợp từ Danh sách hợp đồng theo cột Nguồn / doanh thu. ${scope}`} column="Cơ sở (Nguồn / doanh thu)" unit="cơ sở" summary={stores} filename={`doanh-thu-co-so-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
     <div className="mg-source-sales-heading mg-source-sales-heading-sub"><div><h2>Theo NVKD / TLS được phân công</h2></div></div>

@@ -142,7 +142,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
     const refundable=rentalRefund?context.rental_refundable??0:context.deposit_held;
     if (amount > refundable) throw new ContractPaymentError(rentalRefund?'Số tiền hoàn vượt tiền thuê được giảm do trả sớm và thực tế đã thu dư.':`Số tiền trả cọc vượt tiền cọc đang giữ (${context.deposit_held.toLocaleString('vi-VN')} đ).`, 409);
   } else {
-    if (extra ? !canAddExtraReceipt(context.status) : !PAYABLE_STATUSES.includes(context.status)) throw new ContractPaymentError(extra ? 'Không thêm phiếu thu cho hợp đồng nháp hoặc đã hủy.' : 'Chỉ thu tiền cho hợp đồng đang thuê, quá hạn, chờ thanh toán hoặc nợ xấu.', 409);
+    if (extra ? !canAddExtraReceipt(context.status) : !PAYABLE_STATUSES.includes(context.status)) throw new ContractPaymentError(extra ? 'Không thêm phiếu thu cho hợp đồng nháp hoặc đã hủy.' : 'Chỉ thu tiền cho hợp đồng đang thuê, quá hạn, chờ tất toán hoặc nợ xấu.', 409);
     if (context.remaining === null || context.paid_amount === null || context.total_amount === null) throw new ContractPaymentError('Thiếu hoặc sai số liệu tiền hợp đồng/tổng đã thu. Cần đối chiếu trước khi thanh toán.', 409);
     if (context.paid_amount + amount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tổng đã thu vượt giới hạn lưu trữ.', 409);
     if (extra && context.total_amount + amount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tiền hợp đồng vượt giới hạn lưu trữ.', 409);

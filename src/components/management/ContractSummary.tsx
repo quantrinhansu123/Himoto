@@ -26,7 +26,7 @@ export function ContractSummary({ rows, customers, loading, unavailable, values 
         <dt>{metric.label}</dt><dd>{formatted[index]}</dd><span>{metric.hint}</span>
       </div>)}
     </dl>
-    <p className="mg-contract-summary-note">Công nợ tạm tính = phần tiền hợp đồng còn thiếu sau khi trừ tổng đã thu, áp dụng cho đơn đang thuê, quá hạn, chờ thanh toán và nợ xấu.</p>
+    <p className="mg-contract-summary-note">Công nợ tạm tính = phần tiền hợp đồng còn thiếu sau khi trừ tổng đã thu, áp dụng cho đơn đang thuê, quá hạn, chờ tất toán và nợ xấu.</p>
     {ready && metrics.some(metric => metric.value === null) && <p className="mg-contract-summary-note is-incomplete">Chưa đủ số liệu tiền hợp đồng hoặc tổng đã thu để tính các ô hiển thị “—”.</p>}
     <span className="mg-sr-only" role="status" aria-atomic="true">{loading ? 'Đang tải thống kê hợp đồng.' : unavailable ? 'Không tải được thống kê hợp đồng.' : `Kết quả theo bộ lọc: ${metrics.map((metric, index) => `${metric.label}: ${formatted[index]}`).join('; ')}.`}</span>
   </section>;

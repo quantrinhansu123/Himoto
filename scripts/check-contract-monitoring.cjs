@@ -31,6 +31,25 @@ async function main(){
   const page=projectManagementTable(rows,{...input,size:1,query:{...EMPTY_QUERY,overdueBucket:'ownership-6-15'}},false,now);
   assert.equal(page.total,2);assert.equal(page.pages,2);assert.deepEqual(page.rows.map(row=>row.id),[5]);
   checks.push('Traditional >3/>10-day shortcuts exclude ownership; branch filters, totals, sorting, pagination and exports use the same selected group');
+  const bad=[{...late(21,100*1440,false),status:'bad_debt'},
+    {...base,id:22,code:'QA-22',status:'bad_debt',rental_type:'daily',paid_amount:500000,end_date:'2026-12-01T00:00:00+07:00'},
+    {...late(23,2*1440),status:'bad_debt'},
+    {...base,id:24,code:'QA-24',status:'bad_debt',rental_type:'ownership',end_date:undefined}];
+  const cases=[...regular,...rows,...bad,{...base,id:25,status:'wait_payment',rental_type:'daily'}];
+  for(const [scope,bucket,ids]of [['overdue','traditional-bad-debt',[21,22]],['ownership','ownership-bad-debt',[23,24]]]){
+    const report=projectManagementTable(cases,{...input,scope,query:{...EMPTY_QUERY,status:'bad_debt',overdueBucket:bucket}},true,now);
+    assert.deepEqual(report.rows.map(row=>row.id).sort((a,b)=>a-b),ids);
+    assert.equal(report.overdueCounts[bucket],2);
+    assert(report.rows.every(row=>row.status==='bad_debt'&&row.monitoring_amount===row.rental_debt_amount));
+    const page=projectManagementTable(cases,{...input,scope,size:1,page:2,query:{...EMPTY_QUERY,status:'bad_debt',overdueBucket:bucket}},false,now);
+    assert.equal(page.rows.length,1);assert.equal(page.total,2);assert.equal(page.overdueCounts[bucket],2);
+  }
+  const mixed=projectManagementTable(cases,{...input,scope:'overdue',query:{...EMPTY_QUERY,status:'overdue',overdueBucket:'traditional-10'}},true,now);
+  assert.deepEqual(mixed.rows.map(row=>row.id),[13]);assert.equal(mixed.overdueCounts['traditional-bad-debt'],2);
+  const branch=projectManagementTable(cases,{...input,scope:'overdue',store:'2',query:{...EMPTY_QUERY,status:'bad_debt',overdueBucket:'traditional-bad-debt'}},true,now);
+  assert.equal(branch.total,0);assert.equal(branch.overdueCounts['traditional-bad-debt'],0);
+  assert.equal(MANAGEMENT_CONFIG.contracts.statuses.find(row=>row.value==='wait_payment').label,'Chờ tất toán');
+  checks.push('Bad debt remains an explicit contract flag, distinct from wait-payment and age groups; future/unknown dates and zero balances stay visible; counts are stable across tabs, pagination and branch filtering');
   const plan=createInstallmentPlan('2026-10-01T09:00','2026-12-01T09:00','Theo tuần',100000);assert(plan);
   const planned={...base,status:'renting',billing_plan_json:JSON.stringify(plan),total_amount:100000,paid_amount:200000,end_date:'2026-12-01T09:00:00+07:00'};
   const due=projectManagementTable([planned],{...input,query:{...EMPTY_QUERY,status:'overdue',overdueBucket:'ownership-6-15'}},true,now).rows[0];
@@ -38,6 +57,8 @@ async function main(){
   assert.equal(projectManagementTable([{...planned,paid_amount:300000}],{...input,query:{...EMPTY_QUERY,status:'overdue'}},true,now).total,0);
   const waiting=projectManagementTable([{...planned,status:'wait_payment'}],{...input,query:{...EMPTY_QUERY,status:'overdue'}},true,now);
   assert.equal(waiting.total,1);assert.equal(new Map(waiting.statusCounts).get('renting')||0,0);
+  const ownerBad=projectManagementTable([{...planned,status:'bad_debt'}],{...input,query:{...EMPTY_QUERY,status:'bad_debt',overdueBucket:'ownership-bad-debt'}},true,now);
+  assert.equal(ownerBad.total,1);assert.equal(ownerBad.overdueCounts['ownership-bad-debt'],1);assert.equal(ownerBad.overdueCounts['ownership-6-15'],0);
   const invalid=projectManagementTable([{...planned,status:'overdue',billing_plan_json:'invalid'}],{...input,query:{...EMPTY_QUERY,status:'overdue'}},true,now);
   assert.equal(invalid.total,1);assert.equal(invalid.rows[0].monitoring_amount,undefined);assert.equal(invalid.rows[0].overdue_minutes,undefined);
   checks.push('Unpaid installments drive ownership overdue age and amount even with a future vehicle return; paying due installments removes overdue without consuming the deposit');

@@ -12,7 +12,7 @@ type Tone = 'ok' | 'warn' | 'danger';
 export interface VehicleAvailability { tone: Tone; label: string; detail: string; selectable: boolean }
 
 const RENTAL_LABELS: Record<string, string> = {
-  renting: 'Đang được thuê', overdue: 'Quá hạn chưa trả', wait_payment: 'Hợp đồng cũ chưa đóng (chờ thanh toán)',
+  renting: 'Đang được thuê', overdue: 'Quá hạn chưa trả', wait_payment: 'Hợp đồng cũ chưa đóng (chờ tất toán)',
   pending: 'Đã đặt, chờ giao xe', deposit_contract: 'Đã đặt cọc giữ xe', bad_debt: 'Hợp đồng cũ chưa đóng (nợ xấu)',
 };
 const TONE_ORDER: Record<Tone, number> = { ok: 0, warn: 1, danger: 2 };

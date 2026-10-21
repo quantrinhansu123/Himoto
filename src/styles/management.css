@@ -3830,9 +3830,11 @@
 .mg-toolbar>.mg-monitor-tools { margin:0; flex:0 1 auto; max-width:100%; }
 .mg-toolbar>.mg-monitor-tools[open] { flex-basis:100%; }
 .mg-toolbar .mg-date-filters { flex-basis:100%; }
-.mg-overdue-buckets { display:flex; gap:8px; padding:10px 16px; border-bottom:1px solid var(--mg-line); }
+.mg-overdue-buckets { display:flex; flex-wrap:wrap; gap:8px; padding:10px 16px; border-bottom:1px solid var(--mg-line); }
 .mg-overdue-buckets button { display:flex; align-items:center; justify-content:center; gap:5px; min-height:40px; padding:7px 12px; border:1px solid var(--mg-line); border-radius:7px; background:var(--mg-card); font:inherit; font-size:13px; cursor:pointer; }
 .mg-overdue-buckets button.is-active { border-color:var(--mg-brand-500); color:var(--mg-brand-700); background:var(--mg-brand-50); font-weight:600; }
+.mg-overdue-buckets button.is-bad-debt { color:var(--mg-brand-700); }
+.mg-overdue-buckets button.is-bad-debt span { background:var(--mg-brand-50); color:var(--mg-brand-700); }
 .mg-overdue-buckets button span { padding:1px 5px; border-radius:10px; background:var(--mg-slate-100); font-size:11px; }
 .mg-compact-contracts .mg-toolbar { display:flex; flex-wrap:wrap; gap:8px; padding:10px 16px; }
 .mg-compact-contracts .mg-search { flex:1 1 220px; }
@@ -3849,7 +3851,7 @@
 .mg-monitoring-card-amounts { display:grid; gap:3px; font-size:12px; }
 .mg-mobile-monitoring-card .mg-mobile-card-title { white-space:normal; }
 .mg-mobile-monitoring-card .mg-status { font-size:11px; white-space:normal; max-width:100%; }
-@media(max-width:767px) { .mg-overdue-buckets { gap:5px; padding:8px 10px; } .mg-overdue-buckets button { flex:1; padding:7px 5px; font-size:12px; } }
+@media(max-width:767px) { .mg-overdue-buckets { gap:5px; padding:8px 10px; } .mg-overdue-buckets button { flex:1 1 100px; padding:7px 5px; font-size:12px; white-space:nowrap; } }
 .mg-media-upload-actions .mg-button { min-height:44px; }
 .mg-media-gallery, .mg-media-individual, .mg-extra-documents, .mg-return-options { margin:10px 0; min-width:0; }
 .mg-media-gallery>summary, .mg-media-individual>summary, .mg-extra-documents>summary, .mg-return-options>summary { cursor:pointer; min-height:40px; padding:8px 0; font-weight:600; color:var(--mg-slate-700); overflow-wrap:anywhere; }
