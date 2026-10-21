@@ -6,13 +6,14 @@ import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLe
 import { CASHBOOK_COLUMNS, CashbookColumnKey, CashbookRow, VoucherType, VOUCHER_LABELS, cashbookCell, sortCashbookRows } from '@/lib/management/cashbook';
 import { CashbookPagination, DEFAULT_CASHBOOK_PAGINATION } from '@/lib/management/cashbook-repository';
 import { MobileDetailsCard } from './MobileDetailsCard';
+import { formatMoney } from '@/lib/formatters';
 
 interface Props {
   type: VoucherType; rows: CashbookRow[]; loading: boolean; error: string; filtered: boolean; onReset: () => void; onRetry: () => void;
-  total?: number; pagination?: CashbookPagination; onPaginationChange?: (value: CashbookPagination) => void;
+  total?: number; amount?: number; pagination?: CashbookPagination; onPaginationChange?: (value: CashbookPagination) => void;
   selectedIds?: ReadonlySet<string>; onSelectionChange?: (ids: string[], selected: boolean) => void; onDeleteAll?: () => void;
 }
-export function CashbookTable({ type, rows, total: remoteTotal, pagination: remotePagination, onPaginationChange: remoteChange, loading, error, filtered, onReset, onRetry, selectedIds, onSelectionChange, onDeleteAll }: Props) {
+export function CashbookTable({ type, rows, total: remoteTotal, amount: remoteAmount, pagination: remotePagination, onPaginationChange: remoteChange, loading, error, filtered, onReset, onRetry, selectedIds, onSelectionChange, onDeleteAll }: Props) {
   const selectable = Boolean(selectedIds && onSelectionChange);
   const columnCount = CASHBOOK_COLUMNS.length + (selectable ? 1 : 0);
   const title = VOUCHER_LABELS[type];
@@ -22,6 +23,7 @@ export function CashbookTable({ type, rows, total: remoteTotal, pagination: remo
   useEffect(() => { if (!remotePagination) setLocalPagination(current => ({ ...current, page: 1 })); }, [rows, remotePagination]);
   const sorted = useMemo(() => remotePagination ? rows : sortCashbookRows(rows, pagination.key, pagination.direction), [rows, remotePagination, pagination.key, pagination.direction]);
   const total = remoteTotal ?? sorted.length;
+  const amount = remoteAmount ?? (remotePagination ? undefined : rows.reduce((sum, row) => sum + (row.amount || 0), 0));
   const { page, pageSize } = pagination;
   const sort = pagination;
   const setPage = (next: number) => onPaginationChange({ ...pagination, page: next });
@@ -37,6 +39,7 @@ export function CashbookTable({ type, rows, total: remoteTotal, pagination: remo
       {onDeleteAll ? <button type="button" className="mg-button mg-button-danger mg-cashbook-delete-all" disabled={loading || Boolean(error) || !total} onClick={onDeleteAll}><Trash2 size={15} />Xóa hết ({total})</button>
         : <span className="mg-cashbook-panel-description">Cùng mẫu {CASHBOOK_COLUMNS.length} cột</span>}
     </div>
+    <div className="mg-cashbook-table-total"><span>{type === 'income' ? 'Tổng tiền thu' : 'Tổng tiền chi'} <small>theo bộ lọc</small></span><strong>{loading || error || amount === undefined ? '—' : formatMoney(amount)}</strong></div>
     <div className="mg-mobile-records" aria-busy={loading}>
       <div className="mg-mobile-list-controls">
         {selectable && <label className="mg-mobile-select-all"><input type="checkbox" aria-label={`Chọn tất cả thẻ ${title.toLowerCase()} trên trang này`} disabled={loading || Boolean(error) || !pageRows.length}

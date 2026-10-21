@@ -1,6 +1,6 @@
 import type { ManagementConfig,ManagementColumn } from './types';
 
-export function compactContractConfig(config:ManagementConfig):ManagementConfig {
+export function compactContractConfig(config:ManagementConfig, mode:'monitoring'|'rental'|'due'='monitoring'):ManagementConfig {
   const columns:ManagementColumn[]=[
     {key:'code',label:'Mã HĐ',format:'code'},
     {key:'contract_signed_at',label:'Ngày ký / bắt đầu',format:'date'},
@@ -11,5 +11,15 @@ export function compactContractConfig(config:ManagementConfig):ManagementConfig 
     {key:'monitoring_amount',label:'Số tiền',format:'money',align:'right'},
     {key:'contract_gps_status',label:'Định vị',sortable:false},
   ];
-  return {...config,columns:[...columns,...config.columns.filter(column=>!columns.some(item=>item.key===column.key)).map(column=>({...column,hidden:true}))]};
+  if(mode!=='monitoring')columns.splice(5,3,
+    ...(mode==='due' ? [
+      {key:'billing_next_due_at',label:'Hẹn đóng tiền',format:'date',align:undefined},
+      {key:'billing_due_amount',label:'Tiền đến hạn',format:'money',align:'right'},
+    ] as ManagementColumn[] : [
+      {key:'end_date',label:'Hẹn trả xe',format:'date'},
+      {key:'total_amount',label:'Tiền thuê',format:'money',align:'right'},
+    ] as ManagementColumn[]),
+    {key:'status',label:'Trạng thái',format:'status'});
+  const optional=mode==='monitoring'?config.columns:[...config.columns,{key:'contract_gps_status',label:'Định vị',sortable:false}];
+  return {...config,columns:[...columns,...optional.filter(column=>!columns.some(item=>item.key===column.key)).map(column=>({...column,hidden:true}))]};
 }

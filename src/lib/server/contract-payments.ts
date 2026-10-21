@@ -29,7 +29,7 @@ export function parseContractPayment(body: unknown): PaymentInput {
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.paid_at)) throw new ContractPaymentError('Kiểm tra số tiền nguyên VNĐ, hình thức, tài khoản, ngày giờ và ghi chú thanh toán.');
   const date = new Date(`${input.paid_at}+07:00`);
   if (!Number.isFinite(date.getTime()) || new Date(date.getTime() + 7 * 3600000).toISOString().slice(0, 16) !== input.paid_at || date.getTime() > Date.now() + 5 * 60000) throw new ContractPaymentError('Ngày giờ thu tiền không hợp lệ hoặc nằm trong tương lai.');
-  const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', refund = input.purpose === 'deposit_refund';
+  const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
   if (input.purpose !== undefined && !renewal && !extra && !refund) throw new ContractPaymentError('Nghiệp vụ thanh toán không hợp lệ.');
   if ('renewal_version' in input && (input.purpose !== undefined || !Number.isSafeInteger(input.renewal_version) || Number(input.renewal_version) < 2)) throw new ContractPaymentError('Chọn phiên bản gia hạn đã lưu để ghi nhận phiếu thu.');
   if (!renewal && ['item_id', 'item_revision', 'return_at', 'items'].some(key => key in input)) throw new ContractPaymentError('Chỉ truyền xe và ngày hẹn trả khi thu tiền gia hạn.');
@@ -54,7 +54,7 @@ export function parseContractPayment(body: unknown): PaymentInput {
     if (!validItem(input)) throw new ContractPaymentError('Chọn xe, phiên bản chi tiết xe và ngày hẹn trả mới hợp lệ.');
     return { ...base, purpose: 'renewal', item_id: Number(input.item_id), item_revision: String(input.item_revision), return_at: String(input.return_at) };
   }
-  return { ...base, ...(extra ? { purpose: 'extra' as const } : refund ? { purpose: 'deposit_refund' as const } : {}), ...('renewal_version' in input ? { renewal_version: Number(input.renewal_version) } : {}) };
+  return { ...base, ...(extra ? { purpose: 'extra' as const } : refund ? { purpose: rentalRefund?'rental_refund' as const:'deposit_refund' as const } : {}), ...('renewal_version' in input ? { renewal_version: Number(input.renewal_version) } : {}) };
 }
 const renewalLines = (input: PaymentInput) => input.items
   ?? (input.item_id ? [{ item_id: input.item_id, item_revision: String(input.item_revision), return_at: String(input.return_at), amount: input.amount }] : []);
@@ -91,6 +91,10 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id
     WHERE t.order_id=$1 AND t.type IN ('in','addon','out') AND t.status='approved' ORDER BY t.created_at DESC,t.id DESC`, [id]);
   const company = history.rows.filter(row => row.type !== 'out' && row.bank_owner_type === 'company');
+  const adjustments=order.draft_payload?.management_composer?.return_adjustments;
+  const earlyDiscount=Array.isArray(adjustments)?adjustments.reduce((sum:number,row:{early_discount?:unknown})=>sum+(money(row?.early_discount)??0),0):0;
+  const rentalRefunded=history.rows.filter(row=>row.type==='out'&&row.name==='order:rental_refund').reduce((sum,row)=>sum+Number(row.amount),0);
+  const rentalRefundable=total===null||paid===null||!Number.isSafeInteger(earlyDiscount)||!Number.isSafeInteger(rentalRefunded)?0:Math.max(Math.min(earlyDiscount-rentalRefunded,paid-total),0);
   const items = await client.query(`SELECT d.id,d.vehicle_id,v.name,v.license,
       ${dailyPriceSql()} AS daily_price,d.return_at,d.total_renewal_amount,d.xmin::text AS revision
     FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id JOIN himoto.orders o ON o.id=d.order_id
@@ -98,6 +102,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   return { id: Number(order.id), code: String(order.code), status: String(order.status), store_id: Number(order.store_id), revision: String(order.revision),
     total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0), ...(billing ? {billing, billing_base_total: baseTotal} : {}),
     deposit_paid: depositPaid, deposit_refunded: depositRefunded, deposit_held: Math.max(depositPaid - depositRefunded, 0),
+    rental_refundable:rentalRefundable,
     company_paid_amount: company.reduce((sum, row) => sum + Number(row.amount), 0), company_payment_count: company.length,
     end_date: order.end_date instanceof Date ? order.end_date.toISOString() : order.end_date == null ? null : String(order.end_date),
     items: items.rows.map(row => ({ id: Number(row.id), vehicle_id: Number(row.vehicle_id), name: String(row.name || ''), license: String(row.license || ''), revision: String(row.revision),
@@ -113,7 +118,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
 export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput) {
   input = parseContractPayment(input);
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractPaymentError('Hợp đồng hoặc người thực hiện không hợp lệ.');
-  const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', refund = input.purpose === 'deposit_refund';
+  const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
   const fingerprint = createHash('sha256').update(JSON.stringify({ id, actorId, amount: input.amount, method: input.method, account_id: input.account_id, paid_at: input.paid_at, note: input.note,
     ...(input.renewal_version !== undefined ? { renewal_version: input.renewal_version } : {}),
     ...(renewal ? { purpose: input.purpose, ...(input.items ? { items: input.items.map(item => [item.item_id, item.return_at, item.amount]) } : { item_id: input.item_id, return_at: input.return_at }) }
@@ -134,7 +139,8 @@ export async function recordContractPayment(client: Database, id: number, actorI
   const amount = Number(input.amount);
   if (refund) {
     if (!canAddExtraReceipt(context.status)) throw new ContractPaymentError('Không trả cọc cho hợp đồng nháp hoặc đã hủy.', 409);
-    if (amount > context.deposit_held) throw new ContractPaymentError(`Số tiền trả cọc vượt tiền cọc đang giữ (${context.deposit_held.toLocaleString('vi-VN')} đ).`, 409);
+    const refundable=rentalRefund?context.rental_refundable??0:context.deposit_held;
+    if (amount > refundable) throw new ContractPaymentError(rentalRefund?'Số tiền hoàn vượt tiền thuê được giảm do trả sớm và thực tế đã thu dư.':`Số tiền trả cọc vượt tiền cọc đang giữ (${context.deposit_held.toLocaleString('vi-VN')} đ).`, 409);
   } else {
     if (extra ? !canAddExtraReceipt(context.status) : !PAYABLE_STATUSES.includes(context.status)) throw new ContractPaymentError(extra ? 'Không thêm phiếu thu cho hợp đồng nháp hoặc đã hủy.' : 'Chỉ thu tiền cho hợp đồng đang thuê, quá hạn, chờ thanh toán hoặc nợ xấu.', 409);
     if (context.remaining === null || context.paid_amount === null || context.total_amount === null) throw new ContractPaymentError('Thiếu hoặc sai số liệu tiền hợp đồng/tổng đã thu. Cần đối chiếu trước khi thanh toán.', 409);
@@ -191,10 +197,10 @@ export async function recordContractPayment(client: Database, id: number, actorI
   const transaction = await client.query(`INSERT INTO himoto.transactions
     (order_id,created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id,order_item_id)
     VALUES ($1,$2,now(),$11,$15,$3,$4,'approved',$5,$6,$7,$8,$9,$10,$12,$13,$14) RETURNING id`,
-    [id, `${input.paid_at}:00+07:00`, amount, input.note || (refund ? `Trả cọc hợp đồng_${context.code}` : `Gia hạn hợp đồng_${context.code}`), actorId, context.store_id,
+    [id, `${input.paid_at}:00+07:00`, amount, input.note || (rentalRefund?`Hoàn tiền thuê trả sớm_${context.code}`:refund ? `Trả cọc hợp đồng_${context.code}` : `Gia hạn hợp đồng_${context.code}`), actorId, context.store_id,
       cash ? null : account.id, cash ? account.id : null,
       cash ? 1 : 2, cash ? null : (input.method === 'company_transfer' ? 'company' : 'personal'),
-      renewal ? 'order:renewal' : extra ? 'order:extra' : refund ? DEPOSIT_REFUND_NAME : 'order:payment',
+      renewal ? 'order:renewal' : extra ? 'order:extra' : rentalRefund?'order:rental_refund':refund ? DEPOSIT_REFUND_NAME : 'order:payment',
       singleItem ? 'line_item_id' : 'order', singleItem ?? id, singleItem, refund ? 'out' : 'in']);
   const transactionId = Number(transaction.rows[0].id);
   if (renewal) {
@@ -204,6 +210,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
         (SELECT max(d.return_at) FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.deleted_at IS NULL)) END,
       updated_at=now() WHERE id=$1`, [id,amount]);
   } else if (extra) await client.query('UPDATE himoto.orders SET pid=pid+$2,total=(total::numeric+$2)::text,updated_at=now() WHERE id=$1', [id, amount]);
+  else if (rentalRefund) await client.query('UPDATE himoto.orders SET pid=pid-$2,updated_at=now() WHERE id=$1', [id,amount]);
   else if (refund) await client.query('UPDATE himoto.orders SET updated_at=now() WHERE id=$1', [id]);
   else await client.query('UPDATE himoto.orders SET pid=pid+$2,updated_at=now() WHERE id=$1', [id, amount]);
   await client.query(`INSERT INTO himoto.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload)

@@ -36,7 +36,7 @@ export function managementTableQuery(input: ManagementTableInput, all = false) {
 export function projectManagementTable(source: ManagementRow[], input: ManagementTableInput, all = false, now = Date.now(), ownershipStores: number[] = []): ManagementTableResult {
   // SQL plans may return equal sort values in different orders; use IDs as a stable tie-breaker across pages.
   let rows = [...source].sort((a,b)=>a.id-b.id);
-  if(input.kind==='contracts')rows=rows.map(row=>applyInstallmentBilling(row,now));
+  if(input.kind==='contracts')rows=rows.map(row=>({...applyInstallmentBilling(row,now),contract_signed_at:row.signed_on||row.start_date}));
   const monitoring=input.kind==='contracts'&&(input.scope==='ownership'||input.scope==='overdue'||input.query.status==='overdue'||Boolean(input.query.overdueBucket));
   if(monitoring)rows=rows.map(row=>withContractMonitoring(row,now));
   if (input.scope === 'drafts') rows=rows.filter(row=>row.status==='draft');

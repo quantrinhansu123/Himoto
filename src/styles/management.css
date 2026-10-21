@@ -1852,6 +1852,64 @@
 }
 .mg-cashbook-count-marker.is-expense { background: var(--mg-red-dot); }
 
+.mg-cashbook-summary { margin-bottom: 22px; }
+.mg-rental-revenue { margin:20px 0; }
+.mg-rental-revenue-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px; background:var(--mg-yellow-50); border-bottom:1px solid var(--mg-line); }
+.mg-rental-revenue-heading h2 { margin:0 0 5px; font-size:18px; }
+.mg-rental-revenue-heading p { margin:0; font-size:12px; color:var(--mg-muted); }
+.mg-rental-revenue-heading>strong { color:var(--mg-heading); font-size:30px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.mg-rental-revenue-formula { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; padding:18px 20px; margin:0; }
+.mg-rental-revenue-formula dt { color:var(--mg-slate-600); font-size:12px; }
+.mg-rental-revenue-formula dd { margin:7px 0 0; font-size:18px; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.mg-rental-revenue-note { margin:0; padding:0 20px 14px; font-size:12px; color:var(--mg-muted); line-height:1.6; }
+.mg-rental-revenue-note.is-incomplete { color:var(--mg-yellow-900); }
+.mg-rental-revenue-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:12px 20px; border-top:1px solid var(--mg-line); }
+.mg-rental-revenue-toolbar>div { display:flex; gap:6px; }
+.mg-rental-revenue-toolbar .is-active { background:var(--mg-yellow-100); border-color:var(--mg-yellow-300); color:var(--mg-heading); }
+.mg-rental-revenue-table { min-width:780px; }
+.mg-rental-revenue .mg-table-scroll { min-height:0; }
+.mg-rental-revenue-table tfoot { background:var(--mg-slate-50); font-weight:600; }
+@media(max-width:640px){.mg-rental-revenue-heading{align-items:flex-start;flex-direction:column;padding:16px}.mg-rental-revenue-formula{grid-template-columns:repeat(2,minmax(0,1fr));padding:16px}.mg-rental-revenue-note{padding-left:16px;padding-right:16px}}
+.mg-cashbook-summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mg-cashbook-summary-heading h2 { margin: 0; font-size: 17px; color: var(--mg-heading); }
+.mg-cashbook-summary-heading p { margin: 5px 0 0; color: var(--mg-slate-600); font-size: 12px; }
+.mg-cashbook-summary-heading > span { color: var(--mg-muted); font-size: 12px; }
+.mg-cashbook-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+.mg-cashbook-metric { min-width: 0; padding: 18px; border: 1px solid var(--mg-line); border-radius: var(--mg-radius-md); background: var(--mg-card); box-shadow: var(--mg-shadow-sm); }
+.mg-cashbook-metric dt { display: flex; align-items: center; gap: 8px; color: var(--mg-slate-600); font-size: 13px; font-weight: 600; }
+.mg-cashbook-metric-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex-shrink: 0; border-radius: 8px; background: var(--mg-slate-100); color: var(--mg-slate-700); }
+.mg-cashbook-metric dd { display: flex; flex-direction: column; gap: 8px; margin: 13px 0 0; }
+.mg-cashbook-metric-value { color: var(--mg-heading); font-size: clamp(21px, 1.8vw, 28px); line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mg-cashbook-metric dd > span { min-height: 32px; color: var(--mg-muted); font-size: 12px; line-height: 1.5; }
+.mg-cashbook-metric dd > a { align-self: flex-start; padding: 4px 0; color: var(--mg-slate-600); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.mg-cashbook-metric.is-deposit .mg-cashbook-metric-icon { background: var(--mg-yellow-100); color: var(--mg-yellow-800); }
+.mg-cashbook-metric.is-outside-deposit { border-color: var(--mg-yellow-300); background: var(--mg-yellow-50); }
+.mg-cashbook-metric.is-outside-deposit .mg-cashbook-metric-icon { background: var(--mg-yellow-100); color: var(--mg-yellow-900); }
+.mg-cashbook-metric.is-expense .mg-cashbook-metric-icon { background: var(--mg-brand-50); color: var(--mg-brand-700); }
+.mg-cashbook-breakdowns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.mg-cashbook-breakdown { min-width: 0; padding: 18px 20px; border: 1px solid var(--mg-line); border-radius: var(--mg-radius-md); background: var(--mg-card); }
+.mg-cashbook-breakdown h3 { margin: 0 0 14px; font-size: 14px; color: var(--mg-heading); }
+.mg-cashbook-breakdown dl { margin: 0; }
+.mg-cashbook-breakdown dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; font-size: 13px; }
+.mg-cashbook-breakdown dt { color: var(--mg-slate-600); }
+.mg-cashbook-breakdown dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mg-cashbook-breakdown p { margin: 13px 0 0; color: var(--mg-muted); font-size: 12px; line-height: 1.5; }
+.mg-cashbook-net { display: flex; justify-content: space-between; gap: 16px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--mg-line); font-size: 13px; }
+.mg-cashbook-net strong { text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mg-cashbook-table-total { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 13px 20px; border-bottom: 1px solid var(--mg-line); background: var(--mg-slate-50); }
+.mg-cashbook-table-total > span { color: var(--mg-slate-600); font-size: 13px; font-weight: 600; }
+.mg-cashbook-table-total small { margin-left: 4px; color: var(--mg-muted); font-size: 11px; font-weight: 400; }
+.mg-cashbook-table-total strong { font-size: 19px; color: var(--mg-heading); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .mg-cashbook-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .mg-cashbook-summary-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .mg-cashbook-breakdowns { grid-template-columns: minmax(0, 1fr); }
+  .mg-cashbook-metric { padding: 14px; }
+  .mg-cashbook-metric dd > span { min-height: 0; }
+  .mg-cashbook-breakdown { padding: 16px; }
+}
+@media (max-width: 420px) { .mg-cashbook-metrics { grid-template-columns: minmax(0, 1fr); } }
+
 .mg-cashbook-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
 .mg-cashbook-panel { min-width: 0; scroll-margin-top: 20px; }
 .mg-cashbook-panel .mg-pagination { flex-wrap: wrap; gap: 10px; }
@@ -3589,7 +3647,7 @@
 .mg-operation-links a { color: var(--mg-slate-800); background: white; padding: 14px; border: 1px solid var(--mg-line); border-radius: 10px; text-decoration: none; }
 .mg-operation-picks { display: grid; gap: 8px; padding: 0; list-style: none; }
 .mg-operation-picks button { width: 100%; padding: 14px; display: grid; gap: 6px; border: 1px solid var(--mg-line); border-radius: 10px; background: white; text-align: left; font: inherit; }
-.mg-sales-filter { display: grid; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--mg-line); background: linear-gradient(180deg, #fff, var(--mg-slate-50)); }
+.mg-sales-filter { display: grid; grid-template-columns:minmax(0,1fr); gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--mg-line); background: linear-gradient(180deg, #fff, var(--mg-slate-50)); }
 .mg-sales-filter-presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .mg-sales-filter-presets button, .mg-sales-segmented button { height: 32px; padding: 0 12px; border: 1px solid var(--mg-line-strong); border-radius: var(--mg-radius-full); background: #fff; color: var(--mg-slate-600); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.15s, border-color 0.15s, color 0.15s; }
 .mg-sales-filter-presets button:hover, .mg-sales-segmented button:hover { border-color: var(--mg-brand-400); color: var(--mg-slate-900); }
@@ -3627,7 +3685,7 @@
   .mg-sales-filter, .mg-sales-kpis { padding-left: 12px; padding-right: 12px; }
   .mg-sales-filter-presets { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .mg-sales-filter-field, .mg-sales-filter-range { width: 100%; }
-  .mg-sales-filter-range input { flex: 1; }
+  .mg-sales-filter-range input { flex: 1; width:0; }
   .mg-sales-segmented { display: flex; } .mg-sales-segmented button { flex: 1; }
   .mg-sales-filter-reset { margin-left: 0; width: 100%; justify-content: center; }
   .mg-sales-kpis { gap: 8px; } .mg-sales-kpi { padding: 12px; } .mg-sales-kpi dd { font-size: 17px; }
@@ -3778,11 +3836,12 @@
 .mg-overdue-buckets button span { padding:1px 5px; border-radius:10px; background:var(--mg-slate-100); font-size:11px; }
 .mg-compact-contracts .mg-toolbar { display:flex; flex-wrap:wrap; gap:8px; padding:10px 16px; }
 .mg-compact-contracts .mg-search { flex:1 1 220px; }
-.mg-compact-contracts .mg-status-tabs { display:none; }
+.mg-monitoring-contracts .mg-status-tabs { display:none; }
 .mg-compact-contracts .mg-page-heading { flex-direction:row; align-items:flex-start; gap:8px; margin-bottom:12px; }
 .mg-compact-contracts .mg-page-heading h1 { font-size:20px; }
 .mg-compact-contracts .mg-filter-summary { padding:6px 16px; font-size:12px; }
 .mg-compact-contracts .mg-table { min-width:960px; }
+.mg-compact-contracts .mg-filter-controls .mg-column-menu { display:block; }
 .mg-compact-contracts .mg-table th,.mg-compact-contracts .mg-table td { padding:10px 8px; font-size:13px; }
 .mg-monitoring-amount { display:grid; gap:2px; font-variant-numeric:tabular-nums; }
 .mg-monitoring-amount small { color:var(--mg-slate-500); font-size:11px; white-space:normal; }

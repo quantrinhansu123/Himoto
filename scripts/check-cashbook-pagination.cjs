@@ -38,7 +38,7 @@ async function main() {
     const client = await himotoPool.connect();
     try {
       await client.query('BEGIN');
-      for (const table of ['transactions', 'users', 'cash', 'orders', 'battery_contracts', 'stores', 'banks']) {
+      for (const table of ['transactions', 'users', 'cash', 'orders', 'battery_contracts', 'stores', 'banks', 'management_contract_payments']) {
         await client.query(`CREATE TEMP TABLE ${table} ON COMMIT DROP AS SELECT * FROM himoto.${table} WHERE false`);
       }
       await client.query("INSERT INTO pg_temp.users(id,name) VALUES (7,'Trần Hoài Linh'),(8,'Trần Hoài Linh')");

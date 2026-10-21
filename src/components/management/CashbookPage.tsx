@@ -9,12 +9,14 @@ import { CashbookAccount, CashbookListResult, CashbookPagination, DEFAULT_CASHBO
 import { useManagement } from './ManagementProvider';
 import { CashbookAccounts } from './CashbookAccounts';
 import { CashbookTable } from './CashbookTable';
+import { CashbookSummary } from './CashbookSummary';
 import { ContractPaymentDialog } from './ContractPaymentDialog';
 import { parsePaymentPurpose, type PaymentPurpose } from '@/lib/management/contract-payments';
 
 export function CashbookPage() {
-  const { source, selectedStore, selectStore, notify, canPayContracts } = useManagement();
+  const { source, selectedStore, selectStore, notify, canPayContracts, dataset } = useManagement();
   const [result, setResult] = useState<CashbookListResult | null>(null);
+  const [loadedFilter, setLoadedFilter] = useState('');
   const [incomePagination, setIncomePagination] = useState<CashbookPagination>(DEFAULT_CASHBOOK_PAGINATION);
   const [expensePagination, setExpensePagination] = useState<CashbookPagination>(DEFAULT_CASHBOOK_PAGINATION);
   const [loading, setLoading] = useState(true);
@@ -27,6 +29,7 @@ export function CashbookPage() {
   const [search, setSearch] = useState('');
   useEffect(() => { const timer = setTimeout(() => setSearch(query.search), 250); return () => clearTimeout(timer); }, [query.search]);
   const requestQuery = useMemo(() => ({ search, actor: query.actor, startDate: query.startDate, endDate: query.endDate }), [search, query.actor, query.startDate, query.endDate]);
+  const filterKey = JSON.stringify([selectedStore, requestQuery]);
   const [paymentTarget, setPaymentTarget] = useState<{ id: number; purpose: PaymentPurpose } | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -48,11 +51,11 @@ export function CashbookPage() {
     setLoading(!hasLoaded.current); setRefreshing(hasLoaded.current); setError('');
     if (query.search !== search) return;
     if (requestQuery.startDate && requestQuery.endDate && requestQuery.startDate > requestQuery.endDate) { setLoading(false); setRefreshing(false); return; }
-    void loadCashbookPage(requestQuery, selectedStore, incomePagination, expensePagination, controller.signal).then(data => { if (current) { setResult(data); hasLoaded.current = true; } }).catch(cause => {
+    void loadCashbookPage(requestQuery, selectedStore, incomePagination, expensePagination, controller.signal).then(data => { if (current) { setResult(data); setLoadedFilter(filterKey); hasLoaded.current = true; } }).catch(cause => {
       if (current) setError(cause instanceof Error ? cause.message : 'Không tải được sổ quỹ. Vui lòng thử lại.');
     }).finally(() => { if (current) { setLoading(false); setRefreshing(false); } });
     return () => { current = false; controller.abort(); };
-  }, [requestQuery, query.search, search, selectedStore, incomePagination, expensePagination, retry]);
+  }, [requestQuery, query.search, search, selectedStore, incomePagination, expensePagination, retry, filterKey]);
   const [accounts, setAccounts] = useState<CashbookAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [accountsError, setAccountsError] = useState('');
@@ -73,7 +76,10 @@ export function CashbookPage() {
   const incomeCount = invalidDate ? 0 : result?.income.total || 0, expenseCount = invalidDate ? 0 : result?.expense.total || 0;
   const actors = result?.actors || [];
   const records = [...income, ...expense];
-  const pending = loading || refreshing || query.search !== search;
+  const pending = loading || refreshing || query.search !== search || (!error && !invalidDate && loadedFilter !== filterKey);
+  const scopeName = selectedStore === 'all' ? 'Tất cả cơ sở' : dataset?.stores.find(store => String(store.id) === selectedStore)?.name || `Cơ sở #${selectedStore}`;
+  const dateLabel = (value: string) => value.split('-').reverse().join('/');
+  const period = query.startDate && query.endDate ? `${dateLabel(query.startDate)} – ${dateLabel(query.endDate)}` : query.startDate ? `Từ ${dateLabel(query.startDate)}` : query.endDate ? `Đến ${dateLabel(query.endDate)}` : 'Toàn bộ thời gian';
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedRecords, setSelectedRecords] = useState<Map<string, CashbookRow>>(() => new Map());
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -163,11 +169,10 @@ export function CashbookPage() {
         <label htmlFor="cashbook-end">Đến ngày <input id="cashbook-end" type="date" value={query.endDate} aria-invalid={invalidDate} aria-describedby={invalidDate ? 'cashbook-date-error' : undefined} onChange={event => update({ endDate: event.target.value })} /></label>
         {invalidDate && <span id="cashbook-date-error" className="mg-field-error" role="alert">Đến ngày phải bằng hoặc sau Từ ngày.</span>}{isFiltered && <button type="button" className="mg-button" onClick={reset}><RotateCcw size={14} />Xóa bộ lọc</button>}</div>
     </div>
-    <div className="mg-cashbook-overview" aria-label="Số phiếu theo bộ lọc"><a href="#cashbook-income"><span className="mg-cashbook-count-marker is-income" /><span>Phiếu thu</span><strong>{pending || error ? '—' : incomeCount}</strong><span className="mg-cashbook-jump">Xem danh sách ↓</span></a>
-      <a href="#cashbook-expense"><span className="mg-cashbook-count-marker is-expense" /><span>Phiếu chi</span><strong>{pending || error ? '—' : expenseCount}</strong><span className="mg-cashbook-jump">Xem danh sách ↓</span></a></div>
+    <CashbookSummary result={result} loading={pending} unavailable={Boolean(error) || invalidDate} scope={`${scopeName} · ${period}`} />
     <CashbookAccounts accounts={storeAccounts} loading={accountsLoading} error={accountsError} onRetry={() => setRetry(value => value + 1)} />
-    <div className="mg-cashbook-tables"><CashbookTable type="income" rows={income} total={incomeCount} pagination={{ ...incomePagination, page: result?.income.page || incomePagination.page }} onPaginationChange={setIncomePagination} loading={pending} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} onDeleteAll={() => openDeleteAll('income')} />
-      <CashbookTable type="expense" rows={expense} total={expenseCount} pagination={{ ...expensePagination, page: result?.expense.page || expensePagination.page }} onPaginationChange={setExpensePagination} loading={pending} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} onDeleteAll={() => openDeleteAll('expense')} /></div>
+    <div className="mg-cashbook-tables"><CashbookTable type="income" rows={income} total={incomeCount} amount={invalidDate ? undefined : result?.income.amount} pagination={{ ...incomePagination, page: result?.income.page || incomePagination.page }} onPaginationChange={setIncomePagination} loading={pending} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} onDeleteAll={() => openDeleteAll('income')} />
+      <CashbookTable type="expense" rows={expense} total={expenseCount} amount={invalidDate ? undefined : result?.expense.amount} pagination={{ ...expensePagination, page: result?.expense.page || expensePagination.page }} onPaginationChange={setExpensePagination} loading={pending} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} onDeleteAll={() => openDeleteAll('expense')} /></div>
     <div className="mg-list-note"><span className="mg-note-line" />Sổ quỹ đọc từ danh sách giao dịch hiện có. Trường chưa có dữ liệu hiển thị “—”.</div>
   </div>{deleteOpen && <Dialog title={`Xóa ${selectedIds.size} phiếu?`} subtitle={selectedRows.slice(0, 6).map(row => `#${row.id}`).join(', ') + (selectedRows.length > 6 ? '…' : '')} onClose={() => { if (!deleteBusy) setDeleteOpen(false); }}>
       <div className="mg-dialog-body"><p>Phiếu sẽ bị xóa hẳn khỏi Sổ quỹ và số dư tài khoản được tính lại. Phiếu thu gắn hợp đồng sẽ được trừ khỏi số tiền đã thu của hợp đồng đó (phiếu gia hạn / thu thêm còn trừ khỏi tổng tiền hợp đồng). Ngày hẹn trả đã gia hạn không tự lùi lại. Không thể hoàn tác.</p>

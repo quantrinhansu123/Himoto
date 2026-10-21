@@ -3,6 +3,7 @@ import { useEffect,useState } from 'react';
 import { ArrowDownToLine,CalendarRange,FilterX,Receipt,RotateCcw,TrendingUp,TriangleAlert,Wallet } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { SalesCharts } from './SalesCharts';
+import {RentalRevenuePanel} from './RentalRevenuePanel';
 import { loadSalesSummary,loadStaffSales,type StaffSalesReport,type SalesSummaryReport } from '@/lib/management/staff-sales';
 import { summarizeBySalesStaff,summarizeByStore,summarizeSalesKpis,type SalesKpis,type SourceSalesSummary } from '@/lib/management/source-sales';
 import { vietnamDate } from '@/lib/management/duty-roster';
@@ -69,22 +70,25 @@ export function StaffSalesPage() {
   function changeTo(value:string){if(!value)return;setTo(value);if(value<from)setFrom(value);}
   const scope='Hợp đồng có ngày bắt đầu thuê trong kỳ; không tính nháp, giữ xe / chờ nhận xe và đã hủy.';
   function exportCsv(){downloadCsv([['Nhân viên','Bộ phận','Cách tính','Hợp đồng','Khách','Khách mới','Doanh số'],...rows.map(row=>[row.name,row.department,row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên',row.contracts,row.customers,row.new_customers,row.revenue])],`doanh-so-${from}-${to}.csv`);}
-  return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Doanh số nhân viên</h1><p>NVKD: tiền thuê thực thu trong kỳ, gồm gia hạn, không gồm cọc. TLS: tiền thuê HĐ mở mới đầu tiên, không tính thuê sở hữu, khách quay lại hoặc gia hạn.</p></div><div className="mg-heading-actions"><button className="mg-button" type="button" onClick={()=>{setRetry(v=>v+1);void reload();}}><RotateCcw size={16}/>Tải lại</button><button className="mg-button" type="button" disabled={loading || !rows.length} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất CSV</button></div></div>
+  return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Doanh số nhân viên</h1><p>Phí thuê + gia hạn + trả muộn − tiền thuê đã hoàn do trả sớm. Tính theo ngày thực thu / thực hoàn tiền, tách riêng tiền cọc.</p></div><div className="mg-heading-actions"><button className="mg-button" type="button" onClick={()=>{setRetry(v=>v+1);void reload();}}><RotateCcw size={16}/>Tải lại</button></div></div>
     <div className="mg-data-panel"><div className="mg-sales-filter" role="search" aria-label="Bộ lọc doanh số">
       <div className="mg-sales-filter-presets" role="group" aria-label="Chọn nhanh kỳ báo cáo">{PRESETS.map(preset=><button key={preset.id} type="button" className={activePreset===preset.id ? 'is-active' : ''} aria-pressed={activePreset===preset.id} onClick={()=>choosePreset(preset.id)}>{preset.label}</button>)}</div>
       <div className="mg-sales-filter-row">
         <div className="mg-sales-filter-field"><span className="mg-sales-filter-label">Khoảng ngày</span><div className="mg-sales-filter-range"><CalendarRange size={16} aria-hidden="true"/><input aria-label="Từ ngày doanh số" type="date" value={from} max={today} onChange={e=>changeFrom(e.target.value)}/><span aria-hidden="true">→</span><input aria-label="Đến ngày doanh số" type="date" value={to} max={today} onChange={e=>changeTo(e.target.value)}/></div></div>
-        <div className="mg-sales-filter-field"><span className="mg-sales-filter-label" id="sales-department-label">Bộ phận NVKD / TLS</span><div className="mg-sales-segmented" role="group" aria-labelledby="sales-department-label">{DEPARTMENTS.map(item=><button key={item.value || 'all'} type="button" className={department===item.value ? 'is-active' : ''} aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div></div>
         <button type="button" className="mg-button mg-sales-filter-reset" disabled={isDefault} onClick={()=>{choosePreset('month');setDepartment('');}}><FilterX size={16}/>Đặt lại</button>
       </div>
       <p className="mg-sales-filter-summary">Kỳ báo cáo <strong>{viDate(from)} – {viDate(to)}</strong> · {periodDays} ngày · {storeName}</p>
     </div>
+    <RentalRevenuePanel key={`${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>
+    <details className="mg-monitor-tools"><summary>Thống kê hợp đồng & báo cáo khác</summary>
+    <p className="mg-sales-kpi-note">Các thống kê bên dưới dùng phạm vi và cách tính ghi tại từng mục. Chốt KPI thuê xe theo bảng Doanh thu thuê xe phía trên.</p>
     <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>
     <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền hợp đồng còn thiếu của đơn đang thuê, quá hạn, chờ thanh toán và nợ xấu; Nợ xấu quá hạn gồm đơn Quá hạn và Nợ xấu.</p>
     <SummaryTable title="Theo NVKD ghi nhận doanh số" description={`Tổng hợp từ Danh sách hợp đồng theo cột NVKD ghi nhận doanh số. ${scope}`} column="NVKD ghi nhận doanh số" unit="nhân viên" summary={sources} filename={`doanh-so-nvkd-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
     <SummaryTable title="Doanh thu theo cơ sở" description={`Tổng hợp từ Danh sách hợp đồng theo cột Nguồn / doanh thu. ${scope}`} column="Cơ sở (Nguồn / doanh thu)" unit="cơ sở" summary={stores} filename={`doanh-thu-co-so-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
     <div className="mg-source-sales-heading mg-source-sales-heading-sub"><div><h2>Theo NVKD / TLS được phân công</h2></div></div>
+    <div className="mg-sales-filter-row"><div className="mg-sales-segmented" role="group" aria-label="Bộ phận báo cáo bổ sung">{DEPARTMENTS.map(item=><button key={item.value||'all'} type="button" aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div><button className="mg-button" type="button" disabled={loading||!rows.length} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất báo cáo bổ sung</button></div>
     {loading ? <p role="status" className="mg-table-state">Đang tải doanh số…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : <><ul className="mg-sales-cards">{rows.map(row=><li key={`${row.department}-${row.staff_id}`}><strong>{row.name} · {row.department}</strong><b>{money(row.revenue)}</b><span>{row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên'}</span><span>{row.contracts} hợp đồng · {row.customers} khách · {row.new_customers} khách mới</span></li>)}</ul>{!rows.length && <p className="mg-table-state">Chưa có doanh số được gắn nhân viên trong kỳ.</p>}</>}
-    </div>
+    </details></div>
   </div></section>;
 }

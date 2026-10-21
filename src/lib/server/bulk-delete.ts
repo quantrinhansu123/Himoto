@@ -114,9 +114,10 @@ async function deleteTransactions(client: Client, ids: number[]) {
   }
   const byOrder = new Map<number, { paid: number; total: number }>();
   for (const row of rows) {
-    if (row.order_id == null || !['in', 'addon'].includes(String(row.type))) continue;
+    const rentalRefund=row.type==='out'&&row.name==='order:rental_refund'&&row.status==='approved';
+    if (row.order_id == null || !rentalRefund&&!['in', 'addon'].includes(String(row.type))) continue;
     const order = byOrder.get(Number(row.order_id)) || { paid: 0, total: 0 };
-    order.paid += Number(row.value || 0);
+    order.paid += (rentalRefund?-1:1)*Number(row.value || 0);
     if (['order:extra', 'order:renewal'].includes(String(row.name))) order.total += Number(row.value || 0);
     byOrder.set(Number(row.order_id), order);
   }

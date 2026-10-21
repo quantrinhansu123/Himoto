@@ -14,6 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--url', default='http://127.0.0.1:3101')
 parser.add_argument('--session-cookie-file', required=True)
 parser.add_argument('--output', default='.backups/cashbook-performance/ui')
+parser.add_argument('--browser', choices=['chromium','webkit'], default='chromium')
 args = parser.parse_args()
 output = Path(args.output)
 output.mkdir(parents=True, exist_ok=True)
@@ -22,6 +23,22 @@ records = [dict(id=base + i, type=kind, created_at=f'2026-10-02T{1+i%12:02}:00:0
     reason='Bảo dưỡng' if kind=='out' else 'Thanh toán hợp đồng', content=f'Nội dung QA {i}',
     order_id=42, contract_code='HD-QA-42', payment_method='Tiền mặt', account='Két QA')
     for base, kind in [(1000, 'in'), (2000, 'out')] for i in range(24)]
+for index,row in enumerate(records):
+    row['summary_category']=(['deposit_income','rental_income','renewal_income','other_income'][index%4] if row['type']!='out' else ['deposit_refund_expense','other_expense'][index%2])
+summary_keys=['deposit_income','rental_income','renewal_income','late_fee_income','repair_income','extra_income','other_income','deposit_refund_expense','rental_refund_expense','other_expense']
+
+def money(value):return f'{value:,}'.replace(',','.')+' đ'
+
+async def check_summary(page,matches):
+    income=sum(row['amount'] for row in matches if row['type']!='out')
+    expense=sum(row['amount'] for row in matches if row['type']=='out')
+    deposit=sum(row['amount'] for row in matches if row['summary_category']=='deposit_income')
+    summary=page.get_by_role('region',name='Tổng hợp thu chi theo bộ lọc')
+    await expect(summary).to_have_attribute('aria-busy','false')
+    for key,value in [('income',income),('deposit',deposit),('outside-deposit',income-deposit),('expense',expense)]:
+        await expect(summary.locator(f'[data-metric="{key}"] .mg-cashbook-metric-value')).to_have_text(money(value))
+    for kind,value in [('income',income),('expense',expense)]:
+        await expect(page.locator(f'#cashbook-{kind} .mg-cashbook-table-total strong')).to_have_text(money(value))
 
 def normalize(value):
     return ''.join(c for c in unicodedata.normalize('NFD', str(value)) if not 0x300<=ord(c)<=0x36f).replace('đ','d').replace('Đ','D').lower().strip()
@@ -73,15 +90,17 @@ async def main():
                     data[kind]=dict(total=len(rows),amount=sum(row['amount'] for row in rows),page=page,pageSize=size,rows=rows[(page-1)*size:page*size])
                 actors=sorted({row['user_id'] for row in records if not query.get('store_id') or str(row['store_id'])==query['store_id']})
                 data['actors']=[[f'id:{actor}',f'Trần Hoài Linh · #{actor}'] for actor in actors]
+                data['breakdown']={key:sum(row['amount'] for row in matches if row['summary_category']==key) for key in summary_keys}
             await route.fulfill(json={'status':'success','data':data})
         elif endpoint=='/api/auth/stores':
             await route.fulfill(json={'status':'success','data':[dict(id=i,store_name=f'Cơ sở QA {i}',status='opening') for i in [1,2]]})
         elif endpoint=='/api/auth/cashbook/accounts': await route.fulfill(json={'status':'success','data':[]})
+        elif endpoint=='/api/auth/payment-events': await route.fulfill(json={'status':'success','data':[]})
         elif endpoint in ['/api/session','/api/auth/me']: await route.fulfill(json={'user':dict(id=143,name='QA')})
         else: unexpected.append(endpoint); await route.abort()
     async with async_playwright() as p:
-        browser=await p.chromium.launch(headless=True)
-        context=await browser.new_context(viewport={'width':1440,'height':1000},timezone_id='Asia/Ho_Chi_Minh',accept_downloads=True)
+        browser=await getattr(p,args.browser).launch(headless=True)
+        context=await browser.new_context(viewport={'width':1440,'height':1000},timezone_id='Asia/Ho_Chi_Minh',accept_downloads=True,reduced_motion='reduce')
         cookies=json.loads(Path(args.session_cookie_file).read_text(encoding='utf-8-sig'))
         for cookie in cookies: cookie['domain']=urlparse(args.url).hostname; cookie['secure']=args.url.startswith('https:')
         await context.add_cookies(cookies)
@@ -93,6 +112,7 @@ async def main():
         for panel in [income,expense]:
             await expect(panel.locator('tbody .mg-code')).to_have_count(5)
             await expect(panel.locator('.mg-title-count')).to_have_text('24')
+        await check_summary(page,records)
         assert all(endpoint!='/api/auth/transactions' and not query.get('mode') for endpoint,query in requests)
         initial_requests=sum(endpoint.endswith('/vouchers') for endpoint,_ in requests)
         assert initial_requests<=2,initial_requests
@@ -106,6 +126,7 @@ async def main():
         second=await income.locator('tbody .mg-code').first.text_content()
         await income.locator('tbody').get_by_label('Chọn phiếu '+second,exact=True).check()
         assert await expense.locator('tbody .mg-code').all_text_contents()==original_expense
+        await check_summary(page,records)
         await page.get_by_role('button',name='Xóa phiếu đã chọn (2)',exact=True).click()
         dialog=page.get_by_role('dialog')
         await expect(dialog).to_contain_text('2 phiếu thu')
@@ -130,6 +151,7 @@ async def main():
         await page.locator('#cashbook-end').fill('2026-10-02')
         await expect(income.locator('.mg-title-count')).to_have_text('12')
         await expect(expense.locator('.mg-title-count')).to_have_text('12')
+        await check_summary(page,filtered({'store_id':'1','actor':'id:7','from':'2026-10-02','to':'2026-10-02'}))
         async with page.expect_download() as downloading:
             await page.get_by_role('button',name='Xuất CSV',exact=True).click()
         downloaded=await downloading.value
@@ -148,34 +170,47 @@ async def main():
         checks.append('delete-all resolves every matching ID, retains the full filter snapshot, requires typed confirmation, and cancel sends no writes')
         await page.locator('#cashbook-start').fill('2026-10-03')
         await expect(page.locator('#cashbook-date-error')).to_be_visible()
+        await expect(page.locator('[data-metric="income"] .mg-cashbook-metric-value')).to_have_text('—')
         await expect(page.get_by_role('button',name='Xuất CSV',exact=True)).to_be_disabled()
         await page.locator('.mg-cashbook-filters').get_by_role('button',name='Xóa bộ lọc',exact=True).click()
         await expect(income.locator('.mg-title-count')).to_have_text('24')
         delay[0]=0.6
         await page.get_by_role('button',name='Tải lại',exact=True).click()
         await expect(income.locator('table')).to_have_attribute('aria-busy','true')
+        await expect(page.locator('[data-metric="deposit"] .mg-cashbook-metric-value')).to_have_text('—')
         await expect(income.get_by_role('status').last).to_contain_text('Đang tải')
         await expect(income.locator('table')).to_have_attribute('aria-busy','false')
         delay[0]=0; fail[0]=True
         await page.get_by_role('button',name='Tải lại',exact=True).click()
         await expect(income.get_by_role('alert').last).to_contain_text('Lỗi QA')
+        await expect(page.locator('[data-metric="outside-deposit"] .mg-cashbook-metric-value')).to_have_text('—')
         await income.get_by_role('button',name='Thử lại',exact=True).last.click()
         await expect(income.locator('.mg-title-count')).to_have_text('24')
         await expect(expense.locator('.mg-title-count')).to_have_text('24')
         checks.append('reversed dates prevent export; loading, failed requests and retry remain explicit')
+        await check_summary(page,records)
+        await page.get_by_role('searchbox').fill('nothing-matches')
+        await expect(income.locator('.mg-title-count')).to_have_text('0')
+        await check_summary(page,[])
+        await page.locator('.mg-cashbook-filters').get_by_role('button',name='Xóa bộ lọc',exact=True).click()
+        await expect(income.locator('.mg-title-count')).to_have_text('24')
+        checks.append('Money cards and both table totals span all pages, update with filters, separate deposits, and hide stale money during loading/errors/invalid dates; empty matches show zero')
         for width in [1440,375]:
             await page.set_viewport_size({'width':width,'height':1000 if width>600 else 812})
-            assert await page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            await page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+            assert await page.evaluate('document.documentElement.scrollWidth<=innerWidth'), await page.evaluate('Array.from(document.querySelectorAll("body *")).filter(e=>e.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(e).position!=="fixed").slice(0,10).map(e=>({tag:e.tagName,cls:e.className,width:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right}))')
             if width==375:
                 await expect(income.locator('.mg-mobile-card-detail')).to_have_count(10)
                 await expect(expense.locator('.mg-mobile-card-detail')).to_have_count(5)
+            summary=page.get_by_role('region',name='Tổng hợp thu chi theo bộ lọc')
+            await summary.screenshot(path=str(output/f'summary-{width}.png'))
             await page.screenshot(path=str(output/f'cashbook-{width}.png'),full_page=True)
         checks.append('desktop and mobile show only the requested records without page overflow')
         assert not unexpected,unexpected
         assert not errors,errors
         assert not mock_writes,mock_writes
         await browser.close()
-    result=dict(passed=len(checks),checks=checks,jsErrors=errors,unexpectedRequests=unexpected,businessWrites=0)
+    result=dict(passed=len(checks),browser=args.browser,checks=checks,jsErrors=errors,unexpectedRequests=unexpected,businessWrites=0)
     (output/'results.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps(result,ensure_ascii=False,indent=2))
 

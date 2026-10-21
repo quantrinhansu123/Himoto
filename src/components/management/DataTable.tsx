@@ -113,7 +113,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (canDelete && onDelete && (!isContract || row.status === 'draft')) actions.push({ key: 'delete', label: isContract ? 'Xóa bản nháp' : `Xóa ${config.singular}`, danger: true, icon: <Trash2 size={16} />, onSelect: () => onDelete(row) });
     return actions;
   };
-  return <><ManagementMobileList config={config} rows={rows} sortKey={sortKey} sortDirection={sortDirection} onSort={onSort} onView={onView}
+  return <><ManagementMobileList config={config} columns={columns} rows={rows} sortKey={sortKey} sortDirection={sortDirection} onSort={onSort} onView={onView}
     actions={rowActions} busyId={cloningId ?? blacklistBusyId} loading={loading} error={error} isFiltered={isFiltered} onReset={onReset} onRetry={onRetry}
     selectedIds={selectedIds} onSelectionChange={onSelectionChange} />
   <div className="mg-table-scroll mg-desktop-records" tabIndex={0} role="region" aria-label={`Bảng ${config.title.toLowerCase()}, cuộn ngang để xem thêm cột`}>

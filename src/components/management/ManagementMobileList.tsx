@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowDown, ArrowUp, FileSearch, LoaderCircle, RotateCcw } from 'lucide-react';
-import { ManagementConfig, ManagementKind, ManagementRow } from '@/lib/management/types';
+import { ManagementColumn, ManagementConfig, ManagementKind, ManagementRow } from '@/lib/management/types';
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
 import { RowAction, RowActionsMenu } from './RowActionsMenu';
@@ -19,6 +19,7 @@ const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
 
 interface Props {
   config: ManagementConfig;
+  columns?:ManagementColumn[];
   rows: ManagementRow[];
   sortKey: string;
   sortDirection: 'asc' | 'desc';
@@ -35,9 +36,11 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function ManagementMobileList({ config, rows, sortKey, sortDirection, onSort, onView, actions, busyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function ManagementMobileList({ config, columns=config.columns.filter(column=>!column.hidden), rows, sortKey, sortDirection, onSort, onView, actions, busyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const selectable = Boolean(selectedIds && onSelectionChange);
-  const compact=config.kind==='contracts'&&config.columns.some(column=>column.key==='monitoring_amount');
+  const compact=config.kind==='contracts'&&config.columns.some(column=>column.key==='contract_signed_at');
+  const monitoring=config.columns.some(column=>column.key==='monitoring_amount');
+  const visible=(key:string)=>columns.some(column=>column.key===key);
   const showOverdue=config.kind==='contracts'&&config.columns.some(column=>column.key==='overdue_minutes');
   const ids = rows.map(row => row.id);
   const selected = ids.filter(id => selectedIds?.has(id)).length;
@@ -62,12 +65,15 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
         const label = String((config.kind === 'vehicles' ? row.license : row.code) || row.code || title);
         const receive=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='receive'):undefined;
         const contractAction=config.kind==='contracts'?actions(row).find(item=>item.key===(row.status==='draft'?'delete':'telegram')):undefined;
-        if(config.kind==='contracts'&&config.columns.some(column=>column.key==='monitoring_amount'))return <li key={row.id} className="mg-mobile-record-card mg-mobile-monitoring-card">
+        if(compact)return <li key={row.id} className="mg-mobile-record-card mg-mobile-monitoring-card">
+          {selectable&&<label className="mg-mobile-card-select"><input type="checkbox" aria-label={`Chọn ${label}`} checked={Boolean(selectedIds?.has(row.id))} onChange={event=>onSelectionChange?.([row.id],event.target.checked)}/></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={()=>onView(row)}>
             <strong className="mg-mobile-card-title">{row.code} · {title}</strong>
-            <span className="mg-monitoring-card-meta"><span>{row.license||'—'}</span><span>Ký: {formatValue(row.contract_signed_at,'date')}</span><span>Cọc: {formatValue(row.deposit_amount,'money')}</span></span>
-            <span className="mg-monitoring-card-amounts"><strong>Quá hạn: {formatValue(row.overdue_minutes,'duration')}</strong><ContractMonitoringAmount row={row}/></span>
-            <ContractGpsIndicator row={row}/>
+            <span className="mg-monitoring-card-meta">{visible('license')&&<span>{row.license||'—'}</span>}{visible('contract_signed_at')&&<span>Ký: {formatValue(row.contract_signed_at,'date')}</span>}{visible('deposit_amount')&&<span>Cọc: {formatValue(row.deposit_amount,'money')}</span>}</span>
+            <span className="mg-monitoring-card-amounts">{monitoring?<>{visible('overdue_minutes')&&<strong>Quá hạn: {formatValue(row.overdue_minutes,'duration')}</strong>}{visible('monitoring_amount')&&<ContractMonitoringAmount row={row}/>}</>:columns.filter(column=>['end_date','total_amount','billing_next_due_at','billing_due_amount'].includes(column.key)).map(column=><span key={column.key}>{column.label}: <strong>{formatValue(row[column.key],column.format)}</strong></span>)}</span>
+            {columns.filter(column=>!['code','customer_name','license','contract_signed_at','deposit_amount','end_date','total_amount','billing_next_due_at','billing_due_amount','overdue_minutes','monitoring_amount','status','contract_gps_status'].includes(column.key)).map(column=><span className="mg-mobile-card-extra" key={column.key}>{column.label}: {optionLabel(config,column.key,formatValue(row[column.key],column.format))}</span>)}
+            {visible('status')&&<span className={`mg-status mg-status-${statusTone(row.status)}`}><span/>{optionLabel(config,'status',row.status)}</span>}
+            {visible('contract_gps_status')&&<ContractGpsIndicator row={row}/>}
           </button>
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId===row.id}/></div>
         </li>;

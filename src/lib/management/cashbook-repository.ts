@@ -1,5 +1,5 @@
 import { createCashbookFixtures } from '@/fixtures/cashbook-data';
-import { CashbookColumnKey, CashbookFilters, CashbookRow, VoucherType } from './cashbook';
+import { CASHBOOK_BREAKDOWN_KEYS, type CashbookBreakdown, CashbookColumnKey, CashbookFilters, CashbookRow, VoucherType } from './cashbook';
 
 export interface CashbookRepository { load(signal?: AbortSignal): Promise<CashbookRow[]> }
 type ApiRecord = Record<string, unknown>;
@@ -41,7 +41,7 @@ export function createDemoCashbookRepository(): CashbookRepository {
 export interface CashbookPagination { page: number; pageSize: number; key: CashbookColumnKey; direction: 'asc' | 'desc' }
 export const DEFAULT_CASHBOOK_PAGINATION: CashbookPagination = { page: 1, pageSize: 5, key: 'date', direction: 'desc' };
 export interface CashbookPageResult { rows: CashbookRow[]; total: number; amount: number; page: number; pageSize: number }
-export interface CashbookListResult { total: number; income: CashbookPageResult; expense: CashbookPageResult; actors: [string, string][] }
+export interface CashbookListResult { total: number; income: CashbookPageResult; expense: CashbookPageResult; actors: [string, string][]; breakdown?: CashbookBreakdown }
 export function cashbookQuery(filters: CashbookFilters, storeId: string): URLSearchParams {
   const query = new URLSearchParams();
   if (storeId && storeId !== 'all') query.set('store_id', storeId);
@@ -70,7 +70,17 @@ export async function loadCashbookPage(filters: CashbookFilters, storeId: string
     return { rows: raw.rows.map(item => mapCashbookRow(object(item))), total: Number(raw.total), amount: Number(raw.amount), page: Number(raw.page), pageSize: Number(raw.pageSize) };
   };
   if (!Number.isSafeInteger(data.total) || Number(data.total) < 0 || !Array.isArray(data.actors) || !data.actors.every(actor => Array.isArray(actor) && actor.length === 2 && actor.every(item => typeof item === 'string'))) throw new Error('API sổ quỹ thiếu tổng số phiếu hoặc người thực hiện.');
-  return { total: Number(data.total), income: page(data.income), expense: page(data.expense), actors: (data.actors as [string, string][]).sort((a, b) => a[1].localeCompare(b[1], 'vi')) };
+  const incomePage = page(data.income), expensePage = page(data.expense);
+  let breakdown: CashbookBreakdown | undefined;
+  if (data.breakdown !== undefined) {
+    const raw = object(data.breakdown);
+    if (CASHBOOK_BREAKDOWN_KEYS.some(key => typeof raw[key] !== 'number' || !Number.isFinite(raw[key]))) throw new Error('API sổ quỹ trả về tổng chi tiết không hợp lệ.');
+    breakdown = Object.fromEntries(CASHBOOK_BREAKDOWN_KEYS.map(key => [key, raw[key]])) as CashbookBreakdown;
+    const sum = (keys: (keyof CashbookBreakdown)[]) => keys.reduce((total, key) => total + breakdown![key], 0);
+    if (Math.abs(sum(CASHBOOK_BREAKDOWN_KEYS.filter(key => key.endsWith('_income'))) - incomePage.amount) > 0.01 ||
+        Math.abs(breakdown.deposit_refund_expense + breakdown.rental_refund_expense + breakdown.other_expense - expensePage.amount) > 0.01) throw new Error('Tổng chi tiết sổ quỹ không khớp tổng thu / chi.');
+  }
+  return { total: Number(data.total), income: incomePage, expense: expensePage, actors: (data.actors as [string, string][]).sort((a, b) => a[1].localeCompare(b[1], 'vi')), ...(breakdown ? { breakdown } : {}) };
 }
 // Full filtered records are fetched only when the user explicitly exports them.
 export async function loadCashbookExport(filters: CashbookFilters, storeId: string): Promise<CashbookRow[]> {

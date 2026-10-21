@@ -51,6 +51,11 @@ async function main(){
     assert.equal(result.rows[0].monitoring_amount,100000);assert.equal(result.rows[0].total_amount,300000);assert.equal(result.rows[0].billing_base_total,100000);
   }finally{Date.now=oldNow;}
   const columns=compactContractConfig(MANAGEMENT_CONFIG.contracts).columns.filter(column=>!column.hidden);
+  const normal=compactContractConfig(MANAGEMENT_CONFIG.contracts,'rental');
+  assert.equal(normal.columns.filter(column=>!column.hidden).length,8);
+  for(const key of ['representative_name','sales_staff_name','store_name','return_adjustment_amount'])assert.equal(normal.columns.find(column=>column.key===key).hidden,true);
+  const dateSort=projectManagementTable([{...base,id:80,status:'renting',signed_on:'2026-10-20'},{...base,id:81,status:'renting',signed_on:'2026-10-01'}],{...input,scope:'',sort:'contract_signed_at',direction:'asc'},true,now);
+  assert.deepEqual(dateSort.rows.map(row=>row.id),[81,80]);
   assert.deepEqual(columns.map(column=>column.key),['code','contract_signed_at','deposit_amount','customer_name','license','overdue_minutes','monitoring_amount','contract_gps_status']);
   checks.push('Bucket inputs validate before SQL; hydration preserves accrued amounts exactly once; eight default fields leave other columns available on demand');
   if(process.argv.includes('--live-read')){

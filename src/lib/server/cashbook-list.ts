@@ -1,12 +1,25 @@
 import 'server-only';
 import type { Pool } from 'pg';
 import { himotoPool } from './himoto-database';
-import { CASHBOOK_COLUMNS } from '@/lib/management/cashbook';
+import { CASHBOOK_COLUMNS, CASHBOOK_BREAKDOWN_KEYS } from '@/lib/management/cashbook';
 import { normalize } from '@/lib/management/table-utils';
+import { depositReceiptSql } from './contract-deposits';
 
 // Shared with the legacy full-list endpoint so voucher fields keep the same meaning.
 export const CASHBOOK_LIST_SQL = `SELECT t.id, t.created_at, t.type, t.user_id, u.name AS user_name, t.store_id, s.store_name,
-  CASE WHEN t.name='battery:rental' THEN 'Thu tiền thuê pin' WHEN t.name='battery:renewal' THEN 'Thu gia hạn pin / sạc' WHEN t.name='battery:deposit' THEN 'Thu cọc thuê pin' WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc' WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
+  CASE WHEN t.type='out' THEN CASE
+      WHEN t.name='order:rental_refund' THEN 'rental_refund_expense'
+      WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' OR t.name='battery:deposit_refund' THEN 'deposit_refund_expense'
+      ELSE 'other_expense' END
+    WHEN ${depositReceiptSql('t')} OR t.name='battery:deposit' THEN 'deposit_income'
+    WHEN t.name IN ('order:renewal','battery:renewal') OR (t.name IN ('order:payment','order:rental_fees') AND t.id IN
+      (SELECT p.transaction_id FROM himoto.management_contract_payments p WHERE p.renewal_payload IS NOT NULL)) THEN 'renewal_income'
+    WHEN t.name='order:payment' OR t.name LIKE 'order:rental_fees%' OR t.name='battery:rental' THEN 'rental_income'
+    WHEN t.name='order:return_late' THEN 'late_fee_income'
+    WHEN t.name='order:return_repair' THEN 'repair_income'
+    WHEN t.name='order:extra' THEN 'extra_income'
+    ELSE 'other_income' END AS amount_category,
+  CASE WHEN t.name='order:rental_refund' THEN 'Hoàn tiền thuê trả sớm' WHEN t.name='order:return_late' THEN 'Thu phí trả muộn' WHEN t.name='order:return_repair' THEN 'Thu phí sửa chữa' WHEN t.name='battery:rental' THEN 'Thu tiền thuê pin' WHEN t.name='battery:renewal' THEN 'Thu gia hạn pin / sạc' WHEN t.name='battery:deposit' THEN 'Thu cọc thuê pin' WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn' WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng' WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách' WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc' WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
   COALESCE(t."desc", t.note) AS content, t.value AS amount, t.order_id,
   COALESCE(o.contract_number,o.draft_reference,bc.code,'#' || t.order_id::text) AS contract_code,
   CASE WHEN t.payment_method=3 THEN 'Tiền mặt + Chuyển khoản'
@@ -90,6 +103,7 @@ export async function listCashbook(params: URLSearchParams, database: Pick<Pool,
     count(*) FILTER (WHERE v.type='out')::int AS expense_count,
     COALESCE(sum(v.amount) FILTER (WHERE v.type IN ('in','addon')),0) AS income_amount,
     COALESCE(sum(v.amount) FILTER (WHERE v.type='out'),0) AS expense_amount,
+    ${CASHBOOK_BREAKDOWN_KEYS.map(key => `COALESCE(sum(v.amount) FILTER (WHERE v.amount_category='${key}'),0) AS ${key}`).join(',\n    ')},
     (SELECT count(*)::int FROM himoto.transactions WHERE status='approved' AND type IN ('in','addon','out')) AS total
     FROM matched v`;
   const pageSql = (kind: 'income' | 'expense', config: typeof income) => {
@@ -100,7 +114,7 @@ export async function listCashbook(params: URLSearchParams, database: Pick<Pool,
   const incomeSql = pageSql('income', income), expenseSql = pageSql('expense', expense);
   const actorStore = store && store !== 'all' ? ` AND t.store_id=${bind(Number(store))}` : '';
   const result = await database.query(`WITH vouchers AS NOT MATERIALIZED (${CASHBOOK_LIST_SQL}),
-    matched AS MATERIALIZED (SELECT v.id,v.type,v.amount FROM vouchers v WHERE ${condition}),
+    matched AS MATERIALIZED (SELECT v.id,v.type,v.amount,v.amount_category FROM vouchers v WHERE ${condition}),
     summary AS (${summarySql}), income_page AS (${incomeSql}), expense_page AS (${expenseSql}),
     actors AS (SELECT DISTINCT t.user_id AS id,u.name FROM himoto.transactions t JOIN himoto.users u ON u.id=t.user_id
       WHERE t.status='approved' AND t.type IN ('in','addon','out') AND NULLIF(u.name,'') IS NOT NULL${actorStore} ORDER BY u.name,t.user_id)
@@ -111,5 +125,6 @@ export async function listCashbook(params: URLSearchParams, database: Pick<Pool,
     FROM summary`, values);
   const counts = result.rows[0];
   const page = (kind: 'income' | 'expense', config: typeof income) => ({ rows: counts[`${kind}_rows`], total: counts[`${kind}_count`], amount: Number(counts[`${kind}_amount`]), page: Math.min(config.page, Math.max(1, Math.ceil(counts[`${kind}_count`] / config.pageSize))), pageSize: config.pageSize });
-  return { total: counts.total, income: page('income', income), expense: page('expense', expense), actors: counts.actors };
+  return { total: counts.total, income: page('income', income), expense: page('expense', expense), actors: counts.actors,
+    breakdown: Object.fromEntries(CASHBOOK_BREAKDOWN_KEYS.map(key => [key, Number(counts[key])])) };
 }
