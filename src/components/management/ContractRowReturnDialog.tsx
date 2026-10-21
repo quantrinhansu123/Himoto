@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef,useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef,useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LoaderCircle, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
@@ -126,13 +126,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     setPicked(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
   }
 
-  async function search(event: FormEvent) {
-    event.preventDefault();
-    await loadItems(searchTerm);
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function submit() {
     if (!lines.length || saving) return;
     if(photosPending){
       const reason='Ảnh/video vừa chọn chưa lưu vào hồ sơ. Cuộn lên bấm «Lưu ảnh / video», đợi «Đã lưu ảnh», rồi xác nhận trả xe.';
@@ -183,7 +177,8 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const subtitle = rows[0] ? `${rows[0].contract_code} · ${rows[0].customer_name}` : contractId !== undefined ? 'Đang tải xe trực tiếp từ hợp đồng đã chọn' : 'Tìm theo mã hợp đồng, CCCD, biển số hoặc SĐT khách để trả xe';
 
   return <Dialog title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={() => { if (!saving) onClose(); }}>
-    <form onSubmit={event => { if (lines.length) void submit(event); else void search(event); }}>
+    {/* Only the confirmation button records a return. Enter in a field cannot confirm it. */}
+    <form onSubmit={event => event.preventDefault()}>
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã trả xe hợp đồng {done.code}{done.due !== null && done.due > 0 ? ` · còn thiếu ${formatMoney(done.due)}` : ''}{done.depositHeld > 0 ? ` · cọc đang giữ ${formatMoney(done.depositHeld)}` : ''}.</p>
@@ -199,7 +194,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {!contractCode && <div className="mg-return-search"><label className="mg-sr-only" htmlFor="contract-return-search">Mã hợp đồng, CCCD, biển số hoặc SĐT khách</label><input autoFocus id="contract-return-search" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void loadItems(searchTerm); } }} placeholder="Mã HĐ, CCCD, biển số hoặc SĐT khách" /><button className="mg-button" type="button" disabled={loading || !searchTerm.trim()} onClick={() => void loadItems(searchTerm)}>{loading ? <LoaderCircle size={15} className="mg-spin" /> : null}Tìm</button></div>}
         {contractCode && !rows.length && loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && rows.length === 0 && !error && (searchTerm ? <p>{contractCode ? 'Hợp đồng này không có xe trong danh sách chi tiết để trả.' : 'Không tìm thấy xe khớp mã hợp đồng, CCCD, biển số hoặc SĐT khách.'}</p> : <p>Nhập mã hợp đồng, CCCD, biển số hoặc SĐT khách để tra cứu xe cần trả.</p>)}
-        {rows.length > 0 && !openRows.length && <><div className="mg-return-estimate"><span>Tất cả xe trong hợp đồng đã được trả; hợp đồng không còn xe đang thuê.</span></div><ReturnedVehicleStatus rows={rows}/></>}
+        {rows.length > 0 && !openRows.length && <><div className="mg-return-estimate"><span>Tất cả xe trong hợp đồng đã được trả; hợp đồng không còn xe đang thuê.</span><p>Có thể bổ sung ảnh/video bên dưới. Lưu ảnh giữ nguyên lần trả xe và các phiếu thu/chi đã ghi.</p></div><ReturnedVehicleStatus rows={rows}/></>}
         {openRows.length > 0 && <>
           <h3>1. Nhận xe & kiểm tra phí</h3><p>Nhập giờ khách thực tế bàn giao xe cho công ty để tính quá hạn. Nếu không bố trí được người đến lấy, hướng dẫn khách mang xe đến cơ sở.</p><div className="mg-form-grid mg-contract-grid-two">
             <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ trả thực tế (24h)</label><DateTime24Controls id="contract-returned-at" label="Ngày giờ trả thực tế" value={returnedAt} onChange={value => { setReturnedAt(value); setOverrides({}); }} /></div>
@@ -224,7 +219,6 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
                 {line&&<><div className="mg-form-grid mg-contract-grid-two"><div className="mg-field"><label htmlFor={`return-repair-${id}`}>Thu sửa chữa do khách làm hỏng (VNĐ)</label><input id={`return-repair-${id}`} inputMode="numeric" value={repairs[id]?.amount||''} placeholder="0" onChange={event=>setRepairs(current=>({...current,[id]:{amount:digits(event.target.value),note:current[id]?.note||''}}))}/></div>{Number(repairs[id]?.amount)>0&&<div className="mg-field"><label htmlFor={`return-repair-note-${id}`}>Nội dung hư hỏng / sửa chữa</label><input id={`return-repair-note-${id}`} maxLength={1000} value={repairs[id]?.note||''} onChange={event=>setRepairs(current=>({...current,[id]:{amount:current[id]?.amount||'',note:event.target.value}}))}/></div>}</div><ContractTransactionPhotos id={row.order_id} phase={`return-${row.item_id}`} title={`Ảnh nhận lại ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})} onSaved={()=>setPhotoVersion(value=>value+1)}/></>}
               </div>;
             })}
-            {doneRows.map(row => <div key={row.item_id} className="mg-return-line is-done"><span><strong>{row.vehicle_name} · {row.license}</strong> · Đã trả {formatDateTime(row.completed_at)}</span></div>)}
           </div>
           {summary && <dl className="mg-return-summary">
             <div><dt>Điều chỉnh tiền thuê</dt><dd>{summary.adjustment > 0 ? '+' : summary.adjustment < 0 ? '−' : ''}{formatMoney(Math.abs(summary.adjustment))}</dd></div>
@@ -236,10 +230,11 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
           {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={blocked=>setSettlementBlocks(current=>current[orderId]===blocked?current:{...current,[orderId]:blocked})} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
           <p className="mg-composer-hint">Trả đủ xe và thu đủ tiền sẽ đóng hợp đồng; còn nợ chuyển Chờ thanh toán. Xe trả về Lưu kho. Các khoản đã chọn thu / hoàn được lưu cùng lượt xác nhận; khoản chưa chọn không tạo phiếu tiền.</p>
         </>}
+        {doneRows.map(row => <div key={row.item_id} className="mg-return-line is-done"><p><strong>{row.vehicle_name} · {row.license}</strong> · Đã trả {formatDateTime(row.completed_at)}</p><ContractTransactionPhotos id={row.order_id} phase={`return-${row.item_id}`} title={`Bổ sung ảnh trả xe ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})}/></div>)}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer">{photosPending&&<span className="mg-field-error" role="status">Chưa xác nhận được: ảnh/video mới chỉ đang chọn — bấm «Lưu ảnh / video» phía trên để gắn vào hồ sơ.</span>}{!done&&settlementBlocked&&!photosPending&&<span className="mg-field-error" role="status">Hoàn tất mục Thu phí và hoàn cọc: chọn đã hoàn hoặc chưa hoàn cọc và kiểm tra thông tin được báo lỗi.</span>}<button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || !lines.length}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer">{photosPending&&<span className="mg-field-error" role="status">Ảnh/video mới chưa lưu — bấm «Lưu ảnh / video» phía trên để gắn vào hồ sơ.</span>}{!done&&settlementBlocked&&!photosPending&&<span className="mg-field-error" role="status">Hoàn tất mục Thu phí và hoàn cọc: chọn đã hoàn hoặc chưa hoàn cọc và kiểm tra thông tin được báo lỗi.</span>}<button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="button" onClick={event => { if (event.currentTarget.form?.reportValidity()) void submit(); }} className="mg-button mg-button-primary" disabled={loading || saving || !lines.length}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
     </form>
   </Dialog>;
 }
