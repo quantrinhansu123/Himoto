@@ -18,7 +18,7 @@ async function handle(request:NextRequest,{params}:Params,writing:boolean){
     const user=dataAccess.getStore()!;
     const state=writing?await saveVehicleTransferTelegram(client,Number(id),Number(eventId),user):(await readVehicleTransferTelegram(client,Number(id),Number(eventId),user)).state;
     await client.query('COMMIT');
-    if(writing)after(async()=>{await dispatchContractNotifications(undefined,1,undefined,undefined,[Number(eventId)]);});
+    if(writing)after(async()=>{await dispatchContractNotifications(undefined,2,undefined,undefined,[Number(eventId)]);});
     return NextResponse.json({status:'success',data:state},{headers:{'Cache-Control':'private, no-store'}});
   }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});return NextResponse.json({status:'error',message:error instanceof VehicleTransferTelegramError?error.message:'Không xử lý được Telegram của lượt chuyển xe.'},{status:error instanceof VehicleTransferTelegramError?error.status:500});}
   finally{client?.release();}

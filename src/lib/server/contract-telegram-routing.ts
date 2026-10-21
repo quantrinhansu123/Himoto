@@ -15,7 +15,13 @@ export function contractTelegramDestination(kind:ContractEventType,ownership:boo
   const route=ownership&&(kind==='renewal'||['rental','reservation','handover','return'].includes(kind))?kind==='renewal'?'ownership_renewal':'ownership_new':null;
   return OWNERSHIP_TELEGRAM_DESTINATIONS.find(item=>item.route===route)?.label||`Nhóm cơ sở ${storeName||'của hợp đồng'}`;
 }
-export function vehicleTransferTelegramDestinations(fromKind:string|null,toKind:string|null,fromStoreId:number,toStoreId:number,fromName:string,toName:string,operationStoreId:number) {
+export function vehicleTransferTelegramDestinations(fromKind:string|null,toKind:string|null,fromStoreId:number,toStoreId:number,fromName:string,toName:string,operationStoreId:number,ownership:boolean) {
+  if([fromStoreId,toStoreId].some(id=>!Number.isSafeInteger(id)||id<=0)||fromStoreId===toStoreId)return {labels:[],targets:[]};
+  if(!ownership)return {
+    labels:[`Nhóm cơ sở ${fromName||'chuyển đi'}`,`Nhóm cơ sở ${toName||'nhận xe'}`],
+    // Keep the :store suffix so both outbox rows use the existing branch routing.
+    targets:[{event_key_suffix:'from:store',store_id:fromStoreId},{event_key_suffix:'to:store',store_id:toStoreId}],
+  };
   const ownershipLabel=OWNERSHIP_TELEGRAM_DESTINATIONS[0].label;
   const fromOwnership=fromKind==='lease_to_own',toOwnership=toKind==='lease_to_own';
   const branch= !fromOwnership ? {store_id:fromStoreId,name:fromName}
