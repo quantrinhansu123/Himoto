@@ -4,7 +4,7 @@ import { MANAGEMENT_CONFIG } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
 import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import { projectManagementTable, type ManagementTableInput, type TableKind } from '@/lib/management/management-table';
-import { CONTRACT_LIST_SQL, CONTRACT_PAGE_SQL, contractIndexSql, contractListScopeClause } from './contract-drafts';
+import { CONTRACT_LIST_SQL, contractIndexSql, contractListScopeClause } from './contract-drafts';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
 import { dailyPriceSql } from './contract-deposits';
@@ -74,16 +74,13 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   // Paged contract lists: lean index for filter/sort/totals, then hydrate only the visible page.
   if(kind==='contracts'&&!all){
-    // Vehicle names/plates are needed to search or sort, but otherwise only the
-    // visible page needs them. Keep date aggregates for overdue/recent semantics.
-    const includeVehicleLabels=monitoring || Boolean(input.query.search.trim()) || input.sort==='vehicle_name';
-    const indexed=await client.query(overdueSql(contractVehicleDetailsSql(contractIndexSql(clause, includeVehicleLabels))));
+    const indexed=await client.query(overdueSql(contractVehicleDetailsSql(contractIndexSql(clause))));
     const projected=projectManagementTable(indexed.rows.map(row=>mapApiRow(kind,row)),recentDays?{...input,recentDays}:input,false,now);
     if(!projected.rows.length)return projected;
     const ids=projected.rows.map(row=>row.id);
     let details;
     try {
-      details=await client.query(contractVehicleDetailsSql(CONTRACT_PAGE_SQL),[ids]);
+      details=await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=ANY($1::bigint[])`),[ids]);
     } catch (cause) {
       console.error('Contract page hydrate failed; serving lean index rows.', cause instanceof Error ? cause.message : cause);
       return {...projected,recentDays:recentDays??null};
