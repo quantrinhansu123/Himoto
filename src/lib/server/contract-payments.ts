@@ -1,4 +1,5 @@
 import 'server-only';
+import { extendContractVehicleLine } from './contract-renewal-line';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { createHash } from 'node:crypto';
@@ -197,8 +198,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
       singleItem ? 'line_item_id' : 'order', singleItem ?? id, singleItem, refund ? 'out' : 'in']);
   const transactionId = Number(transaction.rows[0].id);
   if (renewal) {
-    for (const line of lines) await client.query(`UPDATE himoto.order_vehicle_details SET return_at=$3::timestamptz,
-      total_renewal_amount=COALESCE(total_renewal_amount,0)+$4,updated_at=now() WHERE id=$1 AND order_id=$2`, [line.item_id,id,`${line.return_at}:00+07:00`,Number(line.amount)]);
+    for (const line of lines) await extendContractVehicleLine(client, id, line.item_id, String(line.item_revision), `${line.return_at}:00+07:00`, Number(line.amount));
     await client.query(`UPDATE himoto.orders SET pid=pid+$2,total=(total::numeric+$2)::text,
       return_at=CASE WHEN return_at IS NULL THEN NULL ELSE GREATEST(return_at,
         (SELECT max(d.return_at) FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.deleted_at IS NULL)) END,

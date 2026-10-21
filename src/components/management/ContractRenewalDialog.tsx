@@ -180,7 +180,13 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     router.push(cashbookPaymentPath(orderId, purpose));
   }
 
-  return <Dialog title={`Gia hạn · ${contractCode}`} subtitle="Lưu sẽ tạo phiên bản hợp đồng mới với ngày trả và tiền hợp đồng mới" className="mg-renewal-dialog" onClose={() => { if (!saving) onClose(); }}>
+  function close() {
+    if (saving) return;
+    if (photosPending && !window.confirm('Có ảnh/video chưa lưu vào hồ sơ. Đóng sẽ bỏ các tệp chưa lưu. Anh/chị vẫn muốn đóng?')) return;
+    onClose();
+  }
+
+  return <Dialog title={`Gia hạn · ${contractCode}`} subtitle="Lưu sẽ tạo phiên bản hợp đồng mới với ngày trả và tiền hợp đồng mới" className="mg-renewal-dialog" onClose={close}>
     <form onSubmit={submit}>
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
@@ -257,7 +263,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done ? 'Đóng' : 'Hủy'}</button>
+      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={close}>{done ? 'Đóng' : 'Hủy'}</button>
         {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn || (collecting && (!paymentContext || !accounts.length))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : collecting ? 'Lưu gia hạn và thu tiền' : 'Lưu gia hạn'}</button>}</div>
     </form>
   </Dialog>;

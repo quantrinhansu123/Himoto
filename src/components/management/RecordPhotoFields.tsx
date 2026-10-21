@@ -178,7 +178,7 @@ export function SavedRecordPhotos({ entity, recordId, slots, title,onPendingChan
   const commit=pendingCount > 0 && <div className="mg-saved-photos-commit">
       <p className="mg-field-error" role="status">Còn {pendingCount} tệp mới chưa lưu — bấm «{saveLabel}» để gắn vào hồ sơ.</p>
       <button type="button" className="mg-button mg-button-primary" disabled={busy || processing} onClick={async () => {
-        setBusy(true); setError('');
+        setBusy(true); setError(''); setMessage('');
         try { await saveRecordPhotos(entity, recordId, photos); setPhotos({}); setVersion(current => current + 1); setMessage('Đã lưu ảnh.'); onSaved?.(); }
         catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được ảnh.'); }
         finally { setBusy(false); }

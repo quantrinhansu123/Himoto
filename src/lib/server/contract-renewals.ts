@@ -5,6 +5,7 @@ import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
 import { nextRenewalVersion, type RenewalInput, type RenewalResult, type RenewalVersion } from '@/lib/management/contract-renewals';
 import { rentalPaid } from './contract-deposits';
 import { parseContractPayment, ContractPaymentError } from './contract-payments';
+import { extendContractVehicleLine } from './contract-renewal-line';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractRenewalError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -84,8 +85,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
     ...(expected === null ? {} : { expected_amount: expected, amount_mismatch: mismatch, ...(warning ? { warning } : {}) }) };
   payload.management_composer = { ...composer, versions: [...versions, version] };
 
-  await client.query(`UPDATE himoto.order_vehicle_details SET return_at=$2::timestamptz,
-    total_renewal_amount=COALESCE(total_renewal_amount,0)+$3,updated_at=now() WHERE id=$1`, [input.item_id, newReturn, amount]);
+  await extendContractVehicleLine(client, orderId, input.item_id, input.item_revision, newReturn, amount);
   await client.query(`UPDATE himoto.orders SET
       total=CASE WHEN $2::bigint=0 THEN total ELSE (total::numeric+$2)::text END,
       return_at=CASE WHEN return_at IS NULL THEN NULL ELSE GREATEST(return_at,

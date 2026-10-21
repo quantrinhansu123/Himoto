@@ -83,6 +83,7 @@ async function main() {
     const hold = new Promise(resolve => { releaseUpload = resolve; });
     const file = new File([jpeg], 'qa.jpg', { type: 'image/jpeg' });
     global.fetch = async (url, init) => {
+      if (url === '/api/auth/record-photos/contracts/3' && init.method !== 'PUT') return Response.json({ status: 'success', data: [{ slot: 'plate-100', updated_at: '2026-10-21T13:00:00Z' }] });
       if (url === '/api/auth/photo-uploads/sign') return Response.json({ status: 'success', data: signed });
       if (String(url).startsWith('https://api.cloudinary.com/')) { cloudStarted = true; await hold; cloudDone = true; return Response.json(receipt); }
       if (url === '/api/auth/photo-ocr') { ocrBeforeCloud = !cloudDone; return Response.json({ status: 'success', data: { fields: { license: '29B1-123.45' } } }); }

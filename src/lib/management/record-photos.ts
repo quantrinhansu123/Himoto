@@ -45,17 +45,27 @@ export async function copyCustomerPhotosToContract(id:number) {
 }
 
 export async function saveRecordPhotos(entity: PhotoEntity, id: number, photos: PendingPhotos) {
-  for (const [slot, photo] of Object.entries(photos)) {
+  const entries = Object.entries(photos);
+  for (const [slot, photo] of entries) {
     let receipt: CloudUploadReceipt | undefined;
     if (uploads.has(photo) || photo.type.startsWith('video/')) {
       try { receipt = await uploadRecordPhoto(photo); }
       catch { receipt = await uploadRecordPhoto(photo, true); }
     }
     const response = await fetch(photoEndpoint(entity, id, slot), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': receipt ? 'application/json' : photo.type }, body: receipt ? JSON.stringify(receipt) : photo });
-    if (!response.ok) {
-      const result = await response.json().catch(() => null);
+    const result = await response.json().catch(() => null);
+    if (!response.ok || result?.status !== 'success') {
       throw new Error(result?.message || 'Chưa lưu được ảnh. Giữ form và bấm lưu lại để thử lại.');
     }
+  }
+  if (!entries.length) return;
+  // Cloudinary upload alone does not attach a file to this record. Verify the
+  // saved slots before the caller clears its files or reports success.
+  const response = await fetch(photoEndpoint(entity, id), { credentials: 'same-origin', cache: 'no-store' });
+  const result = await response.json().catch(() => null);
+  const saved: SavedPhoto[] = Array.isArray(result?.data) ? result.data : [];
+  if (!response.ok || result?.status !== 'success' || entries.some(([slot]) => !saved.some(photo => photo.slot === slot))) {
+    throw new Error('Chưa xác nhận đủ ảnh/video trong hồ sơ. Tệp vẫn giữ trong form; bấm Lưu ảnh / video để thử lại.');
   }
 }
 

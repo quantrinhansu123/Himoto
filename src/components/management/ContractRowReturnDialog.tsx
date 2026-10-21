@@ -201,7 +201,13 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const invalid = lines.some(line => line.override !== undefined && !/^\d{1,13}$/.test(line.override)||line.estimate.missingDayPrice&&line.override===undefined);
   const subtitle = rows[0] ? `${rows[0].contract_code} · ${rows[0].customer_name}` : contractId !== undefined ? 'Đang tải xe trực tiếp từ hợp đồng đã chọn' : 'Tìm theo mã hợp đồng, CCCD, biển số hoặc SĐT khách để trả xe';
 
-  return <Dialog title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={() => { if (!saving) onClose(); }}>
+  function close() {
+    if (saving) return;
+    if (photosPending && !window.confirm('Có ảnh/video chưa lưu vào hồ sơ. Đóng sẽ bỏ các tệp chưa lưu. Anh/chị vẫn muốn đóng?')) return;
+    onClose();
+  }
+
+  return <Dialog title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={close}>
     {/* Only the confirmation button records a return. Enter in a field cannot confirm it. */}
     <form ref={formRef} onSubmit={event => event.preventDefault()}>
       <div className="mg-dialog-body">
@@ -261,7 +267,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}<button type="button" className="mg-button" disabled={saving} onClick={onClose}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="button" onClick={event => { const invalidField=event.currentTarget.form?.querySelector<HTMLInputElement>('input:invalid,select:invalid');if(invalidField){for(let parent=invalidField.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;invalidField.reportValidity();return;}void submit(); }} className="mg-button mg-button-primary" disabled={loading || saving || !lines.length}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}<button type="button" className="mg-button" disabled={saving} onClick={close}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="button" onClick={event => { const invalidField=event.currentTarget.form?.querySelector<HTMLInputElement>('input:invalid,select:invalid');if(invalidField){for(let parent=invalidField.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;invalidField.reportValidity();return;}void submit(); }} className="mg-button mg-button-primary" disabled={loading || saving || !lines.length}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
     </form>
   </Dialog>;
 }

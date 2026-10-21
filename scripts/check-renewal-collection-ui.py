@@ -1,5 +1,5 @@
 """Branch renewal/refund regression. Every API write is synthetic."""
-import argparse, json
+import argparse, json, struct, zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -16,6 +16,8 @@ state={};writes=[];unexpected=[];errors=[];checks=[]
 now=datetime.now(timezone(timedelta(hours=7)))
 start=(now-timedelta(days=2)).isoformat();old_end=(now-timedelta(hours=1)).isoformat()
 accounts=[dict(id=15,kind='bank',store_id=32,owner_type='personal',label='CK cá nhân QA'),dict(id=5,kind='cash',store_id=32,owner_type='',label='Két QA')]
+def chunk(kind,data):return struct.pack('!I',len(data))+kind+data+struct.pack('!I',zlib.crc32(kind+data)&0xffffffff)
+pixel=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('!IIBBBBB',160,100,8,2,0,0,0))+chunk(b'IDAT',zlib.compress((b'\x00'+bytes([216,234,242])*160)*100))+chunk(b'IEND',b'')
 def context():
     return dict(id=901,code='QA-32031',status='renting',revision='2' if state.get('renewed') else '1',store_id=32,total_amount=state.get('total',280000),paid_amount=state.get('paid',280000),remaining=state.get('total',280000)-state.get('paid',280000),deposit_paid=1000000,deposit_refunded=0,deposit_held=1000000,company_paid_amount=0,company_payment_count=0,accounts=accounts,history=[],items=[])
 def returnable():
@@ -23,6 +25,14 @@ def returnable():
 def mock(route):
     req=route.request;path=urlparse(req.url).path;query=parse_qs(urlparse(req.url).query)
     if mock_contract_type_read(route):return
+    if path=='/api/auth/photo-uploads/sign':
+        route.fulfill(json=dict(status='success',data=dict(cloud_name='qa',api_key='qa',signature='qa',params=dict(public_id='qa/fixture',timestamp=1))));return
+    if path.startswith('/api/auth/record-photos/'):
+        if req.method=='PUT':
+            writes.append(dict(path=path,body=req.post_data_json))
+            if state.get('confirmPhotos'):state.setdefault('photos',{})[path.split('/')[-1]]=dict(slot=path.split('/')[-1],mime_type='image/jpeg',updated_at='2026-10-21T13:00:00Z')
+            route.fulfill(json=dict(status='success'));return
+        if req.method=='GET' and len(path.split('/'))>6:route.fulfill(body=pixel,content_type='image/png');return
     if req.method=='POST':
         body=req.post_data_json;writes.append(dict(path=path,body=body))
         if path.endswith('/901/renewals'):
@@ -43,7 +53,7 @@ def mock(route):
     elif path=='/api/auth/returns':data=[returnable()]
     elif path.endswith('/payments'):data=context()
     elif path.endswith('/telegram'):data=dict(auto_enabled=False,next_renewal_version=2,events=[])
-    elif path.startswith('/api/auth/record-photos/'):data=[]
+    elif path.startswith('/api/auth/record-photos/'):data=list(state.get('photos',{}).values())
     elif path in ['/api/session','/api/auth/me']:route.fulfill(json=dict(user=dict(id=153,name='QA')));return
     else:data=[]
     route.fulfill(json=dict(status='success',data=data))
@@ -53,6 +63,7 @@ with sync_playwright() as pw:
         browser=getattr(pw,name).launch()
         ctx=browser.new_context(viewport=dict(width=width,height=height),timezone_id='Asia/Ho_Chi_Minh',reduced_motion='reduce')
         ctx.add_cookies([dict(name='himoto_management_session',value=Path(a.branch_cookie_file).read_text().strip(),url=a.url,httpOnly=True,sameSite='Strict')]);ctx.route('**/api/**',mock)
+        ctx.route('https://api.cloudinary.com/**',lambda route:route.fulfill(json=dict(public_id='qa/fixture',version=1,signature='qa')))
         page=ctx.new_page();page.set_default_timeout(30000);page.on('pageerror',lambda e:errors.append(str(e)))
         for collect in [True,False]:
             state.clear();state['collect']=collect
@@ -83,6 +94,27 @@ with sync_playwright() as pw:
             page.screenshot(path=str(out/f'{name}-{width}-{"paid" if collect else "unpaid"}.png'))
             ret.get_by_role('button',name='Hủy',exact=True).click()
             checks.append(dict(browser=name,width=width,collected=collect,refundEnabled=collect))
+        state.clear();state['collect']=False
+        page.goto(a.url+'/contracts',wait_until='networkidle',timeout=90000)
+        page.locator('button.mg-row-menu-trigger:visible').first.click();page.get_by_role('menuitem',name='Gia hạn',exact=True).click()
+        form=page.get_by_role('dialog',name='Gia hạn · QA-32031')
+        picker=form.get_by_label('Chọn nhiều ảnh hồ sơ',exact=True)
+        expect(form.get_by_role('button',name='Chọn nhiều ảnh',exact=True)).to_be_enabled()
+        picker.set_input_files(dict(name='qa.png',mimeType='image/png',buffer=pixel))
+        save=form.get_by_role('button',name='Lưu ảnh / video',exact=True)
+        expect(save).to_be_enabled();expect(form.get_by_role('button',name='Lưu gia hạn',exact=True)).to_be_disabled()
+        page.once('dialog',lambda dialog:dialog.dismiss())
+        form.get_by_role('button',name='Hủy',exact=True).click();expect(form).to_be_visible()
+        save.click()
+        expect(form).to_contain_text('Chưa xác nhận đủ ảnh/video trong hồ sơ')
+        expect(save).to_be_enabled();expect(form.get_by_role('button',name='Lưu gia hạn',exact=True)).to_be_disabled()
+        page.screenshot(path=str(out/f'{name}-{width}-photo-not-attached.png'))
+        state['confirmPhotos']=True;save.click()
+        expect(form).to_contain_text('Đã lưu ảnh.')
+        expect(form.get_by_role('button',name='Lưu gia hạn',exact=True)).to_be_enabled()
+        assert list(state['photos'])==['renewal-2-1']
+        form.get_by_role('button',name='Hủy',exact=True).click();expect(form).not_to_be_visible()
+        checks.append(dict(browser=name,width=width,unconfirmedPhotosRetained=True,closeGuard=True,retryConfirmed=True))
         ctx.unroute_all(behavior='wait');ctx.close()
         browser.close()
 assert not unexpected,unexpected
