@@ -16,7 +16,7 @@ async function main(){const c=await pool.connect();try{
   await c.query(numbering);await c.query(numbering);
   const inventoryMigration=fs.readFileSync('docs/sql/2026-10-18-shared-vehicle-inventory.sql','utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(inventoryMigration);await c.query(inventoryMigration);
-  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql']) {
+  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-contract-return-and-draft-release.sql']) {
     await c.query(fs.readFileSync(path.join('docs/sql',file),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replaceAll("'himoto'","'qa_access_scope'").replace(/^BEGIN;|^COMMIT;/gm,''));
   }
   const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
@@ -108,6 +108,32 @@ async function main(){const c=await pool.connect();try{
   await dataAccess.run({...scope,id:70001,store_id:80001,operation:'receive'},()=>actions(proxy,91001,{action:'receive',transfer_event_id:transferred.event_id,note:'QA receive'},70001));
   assert.equal((await c.query("SELECT count(*)::int AS n FROM qa_access_scope.vehicle_location_events WHERE vehicle_id=91001 AND event_type IN ('manual_transfer','manual_transfer_receive')")).rows[0].n,2);
   checks.push('Real transfer and distinct destination-receiver services retain both audit events under RLS');
+  // Own source contract, foreign physical stock: the same arrangement as Hà Đông / Giáp Bát.
+  await c.query('RESET ROLE');
+  await c.query("INSERT INTO qa_access_scope.vehicles(id,name,brand,type,year,license,color,status,odometer,created_by,store_id,current_store_id) VALUES(91103,'Xe chéo QA','Honda','xeso',2024,'QA-CROSS','Đỏ','using',0,70001,80001,80001)");
+  await c.query("INSERT INTO qa_access_scope.orders(id,store_id,order_status,total,pid,contract_number) VALUES(92020,80002,'renting','100',100,'QA-CROSS-RETURN')");
+  await c.query("INSERT INTO qa_access_scope.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,type,hiring_fee) VALUES(92021,92020,91103,now()-interval '2 days',now()+interval '1 day','day',100)");
+  await c.query("SELECT set_config('himoto.store_id','80002',true),set_config('himoto.actor_id','70002',true)");await c.query('SET LOCAL ROLE himoto_scoped');
+  assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91103')).rowCount,0);
+  const crossReturnable=await dataAccess.run(scope,()=>load(path.join(root,'lib/server/contract-returns')).loadContractReturnableItems(proxy,92020));
+  assert.equal(crossReturnable[0].license,'QA-CROSS');
+  await dataAccess.run(scope,()=>returns(proxy,70002,{item_id:92021,item_revision:crossReturnable[0].item_revision,returned_at:paidAt,hourly_rate:'0'}));
+  assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91103')).rowCount,0);
+  await c.query("SELECT set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true)");
+  await c.query('SAVEPOINT cross_return_denied');await assert.rejects(()=>proxy.query('SELECT himoto.release_returned_contract_vehicle(92021)'),e=>e.code==='42501');await c.query('ROLLBACK TO SAVEPOINT cross_return_denied');
+  await c.query('RESET ROLE');
+  const crossStock=(await c.query('SELECT status,current_store_id,store_id FROM qa_access_scope.vehicles WHERE id=91103')).rows[0];
+  assert.equal(crossStock.status,'ready');assert.equal(Number(crossStock.current_store_id),80001);assert.equal(Number(crossStock.store_id),80001);
+  // Handover also resolves a foreign stock row through the restricted helper.
+  await c.query("INSERT INTO qa_access_scope.orders(id,store_id,order_status,total,pid,contract_number) VALUES(92022,80002,'deposit_contract','100',0,'QA-CROSS-HANDOVER')");
+  await c.query("INSERT INTO qa_access_scope.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,type,hiring_fee) VALUES(92023,92022,91103,now(),now()+interval '1 day','day',100)");
+  await c.query("SELECT set_config('himoto.store_id','80002',true),set_config('himoto.actor_id','70002',true)");await c.query('SET LOCAL ROLE himoto_scoped');
+  const handed=await dataAccess.run(scope,async()=>load(path.join(root,'lib/server/contract-handover')).handoverReservation(proxy,92022,70002,await revision('orders',92022)));
+  assert.equal(handed.status,'renting');
+  await proxy.query('SELECT himoto.release_returned_contract_vehicle(92021)');
+  await c.query('RESET ROLE');assert.equal((await c.query('SELECT status FROM qa_access_scope.vehicles WHERE id=91103')).rows[0].status,'using');
+  await c.query("SELECT set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true)");await c.query('SET LOCAL ROLE himoto_scoped');
+  checks.push('Source branch can return and hand over its contract against foreign physical stock; returned stock stays at its actual branch; unrelated branches cannot invoke release');
   await c.query('RESET ROLE');
   await c.query('UPDATE qa_access_scope.stores SET user_id=70002 WHERE id=80002');
   await c.query("INSERT INTO qa_access_scope.orders(id,store_id,customer_id,order_status,pid,total,contract_number) VALUES(92002,80002,90002,'renting',0,'100','QA-PRIVATE-B')");

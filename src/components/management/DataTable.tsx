@@ -90,6 +90,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if(isContract&&onReminder&&isRemindableContract(row))actions.push({key:'reminder',label:'Nhắc nợ',icon:<MessageCircle size={16}/>,onSelect:()=>onReminder(row)});
     if (isContract && onPayment && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'payment', label: 'Thanh toán', icon: <Wallet size={16} />, onSelect: () => onPayment(row) });
     if (isContract && onHandover && row.status === 'deposit_contract') actions.push({key:'handover',label:'Giao xe',icon:<Bike size={16}/>,onSelect:()=>onHandover(row)});
+    if(isContract&&onPrint&&can('contracts.finalize')&&row.status==='deposit_contract')actions.push({key:'continue-reservation',label:'Bổ sung hồ sơ / Tiếp tục hợp đồng cọc',icon:<Pencil size={16}/>,onSelect:()=>onPrint(row)});
     if (isActiveContract && onReturn) actions.push({ key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
     if (isActiveContract && !row.billing_plan_json && onRenew) actions.push({ key: 'renew', label: 'Gia hạn', title: 'Gia hạn trực tiếp trên hợp đồng', icon: <CalendarPlus size={16} />, onSelect: () => onRenew(row) });
     if (isActiveContract && onVehicleChange) actions.push({ key: 'vehicle', label: 'Đổi xe', title: 'Đổi xe trực tiếp trên hợp đồng', icon: <Bike size={16} />, onSelect: () => onVehicleChange(row) });

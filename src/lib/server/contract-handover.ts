@@ -3,7 +3,7 @@ import { VEHICLE_ORDER_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import { ContractFinalizeError } from './contract-finalize';
 import { readPaymentContext } from './contract-payments';
-import { dataAccess } from './access-context';
+import { usesScopedDatabase } from './access-context';
 
 type Database = Pick<PoolClient, 'query'>;
 export function parseHandoverInput(body: unknown): { revision: string } {
@@ -22,11 +22,14 @@ export async function handoverReservation(client: Database, id: number, actorId:
   const order = (await client.query(`SELECT id,order_status,draft_payload,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`,[id])).rows[0];
   if (!order) throw new ContractFinalizeError('Không tìm thấy đơn giữ xe.',404);
   if (order.order_status !== 'deposit_contract' || order.revision !== revision) throw new ContractFinalizeError('Đơn đã thay đổi hoặc đã giao xe. Tải lại trước khi xác nhận.',409);
-  const items = await client.query(`SELECT d.id,d.vehicle_id,v.status FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id
-    WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY v.id FOR UPDATE OF d,v`,[id]);
-  if (!items.rowCount || items.rows.some(row=>row.status!=='ready')) throw new ContractFinalizeError('Xe phải đang Lưu kho và đã được cơ sở nhận xác nhận trước khi giao.',409);
+  const items = await client.query(`SELECT d.id,d.vehicle_id FROM himoto.order_vehicle_details d
+    WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY d.vehicle_id FOR UPDATE OF d`,[id]);
   const vehicleIds = items.rows.map(row=>Number(row.vehicle_id));
-  const conflicts = dataAccess.getStore()
+  const stock=usesScopedDatabase()
+    ?await client.query('SELECT id,status FROM himoto.lock_vehicles_for_contract($1::bigint[])',[vehicleIds])
+    :await client.query('SELECT id,status FROM himoto.vehicles WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE',[vehicleIds]);
+  if(!items.rowCount||stock.rowCount!==items.rowCount||stock.rows.some(row=>row.status!=='ready'))throw new ContractFinalizeError('Xe phải đang Lưu kho và đã được cơ sở nhận xác nhận trước khi giao.',409);
+  const conflicts = usesScopedDatabase()
     ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts($1::bigint[],$2)', [vehicleIds, id])
     : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code, s.store_name,
         COALESCE(cu.name, mu.name, '') AS manager_name
@@ -34,7 +37,7 @@ export async function handoverReservation(client: Database, id: number, actorId:
       LEFT JOIN himoto.stores s ON s.id=o.store_id
       LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
       LEFT JOIN himoto.users mu ON mu.id=s.user_id
-      WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+      WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
         AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') ORDER BY v.license`,[vehicleIds,id]);
   if (conflicts.rowCount) {
     throw new ContractFinalizeError(`Xe đang thuộc đơn khác: ${conflicts.rows.map(row => {
@@ -46,7 +49,7 @@ export async function handoverReservation(client: Database, id: number, actorId:
   const payload = order.draft_payload || {}, composer = payload.management_composer || {};
   const next = {...payload,management_composer:{...composer,draft:{...composer.draft,reservation:false},handover:{at:new Date().toISOString(),actor_id:actorId}}};
   await client.query(`UPDATE himoto.orders SET order_status='renting',draft_payload=$2,updated_at=now() WHERE id=$1`,[id,JSON.stringify(next)]);
-  if (dataAccess.getStore()) await client.query('SELECT himoto.mark_vehicles_using($1::bigint[])',[vehicleIds]);
+  if (usesScopedDatabase()) await client.query('SELECT himoto.mark_vehicles_using($1::bigint[])',[vehicleIds]);
   else await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=ANY($1::bigint[])`,[vehicleIds]);
   return readPaymentContext(client,id);
 }

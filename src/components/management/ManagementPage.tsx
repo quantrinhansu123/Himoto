@@ -435,6 +435,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {batteryPrinting && <BatteryPrintPreview doc={batteryPrinting} onClose={() => setBatteryPrinting(null)} />}
     {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onBatteryRent={() => { setBatteryRentTarget(viewing); setViewing(null); }} onPayment={canPayContracts ? (purpose?: PaymentPurpose) => { router.push(cashbookPaymentPath(viewing.id, purpose || 'debt')); setViewing(null); } : undefined} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }}
       onQr={()=>{setQrTarget(viewing.id);setViewing(null);}}
+      onHandover={can('contracts.finalize')?()=>{setHandoverId(viewing.id);setViewing(null);}:undefined}
       onEditDraft={()=>{setPrintRow(viewing);setComposerMode('draft');setViewing(null);setComposerOpen(true);}}
       onReminder={canSendDebtReminder(accessUser)?()=>{setReminderTarget(viewing.id);setViewing(null);}:undefined}
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
@@ -442,6 +443,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {reminderTarget!==null&&<DebtReminderDialog orderId={reminderTarget} onClose={()=>setReminderTarget(null)}/>}
     {bulkReminderIds&&canBulkRemind&&<BulkDebtReminderDialog orderIds={bulkReminderIds} onClose={()=>setBulkReminderIds(null)} onSent={()=>{setSelectedIds(new Set());notify('Đã gửi nhắc nợ cho các hợp đồng đã chọn.');}}/>}
     {composerOpen && dataset && <ManagementDataBoundary kinds={CONTRACT_DATA_KINDS} title="Mở hợp đồng" onClose={() => setComposerOpen(false)}><ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} onClose={() => setComposerOpen(false)} onDraftSaved={() => { setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); router.push('/contracts/drafts'); }}
+      onHandover={printRow?.status==='deposit_contract'&&can('contracts.finalize')?()=>{setComposerOpen(false);setHandoverId(printRow.id);}:undefined}
       onFinalized={result => {
         notify(`${result.status === 'deposit_contract' ? 'Đã nhận cọc giữ xe, chờ giao xe' : 'Đã lưu chính thức hợp đồng'} ${result.code}${result.transaction_ids.length ? ` và ghi ${result.transaction_ids.length} phiếu thu vào Sổ quỹ` : ''}. Xem trạng thái gửi tin tại thẻ Telegram của hợp đồng.`);
         invalidateData(['vehicles', 'customers']);

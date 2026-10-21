@@ -52,7 +52,7 @@ function customerStatusLabel(status?: string) {
   return status ? `Trạng thái: ${status}` : 'Chưa có trạng thái';
 }
 const formatMoneyInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, onFinalized }: { row?: ManagementRow | null; mode?: 'print' | 'edit' | 'draft' | 'reservation'; onClose: () => void; onDraftSaved?: () => void; onFinalized?: (result: FinalizeResult) => void }) {
+export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, onFinalized,onHandover }: { row?: ManagementRow | null; mode?: 'print' | 'edit' | 'draft' | 'reservation'; onClose: () => void; onDraftSaved?: () => void; onFinalized?: (result: FinalizeResult) => void;onHandover?:()=>void }) {
   const pathname = usePathname();
   const ownershipPage = pathname.startsWith('/contracts/ownership');
   const { dataset, selectedStore, source, canSaveContractDrafts, canFinalizeContracts, contractAutofill, saveContract, saveContractDraft, ensureData } = useManagement();
@@ -60,6 +60,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [salesDirectory,setSalesDirectory] = useState<ManagementRow[]>([]);
   const [profileRevision,setProfileRevision] = useState(String(row?.draft_revision || ''));
   const [profileMessage,setProfileMessage] = useState('');
+  const savedProfile=useRef('');
   useEffect(()=>{
     const controller=new AbortController();
     void contractAutofill.loadSalesStaff(controller.signal)
@@ -690,7 +691,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   }
   async function persistProfile() {
     if(!row || !profileRevision || busy.current || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
-    try{const result=await saveContractProfile(row.id,profileRevision,contractProfile(draft));setProfileRevision(result.revision);await savePhotos(row.id);setProfileMessage('Đã lưu hồ sơ, ảnh và yêu cầu khi in. Tiền, công nợ và kho xe giữ theo giao dịch đã ghi.');void ensureData(['contracts'],true).catch(()=>{});}
+    try{const profile=contractProfile(draft);const result=await saveContractProfile(row.id,profileRevision,profile);setProfileRevision(result.revision);await savePhotos(row.id);savedProfile.current=JSON.stringify(profile);setProfileMessage('Đã lưu hồ sơ, ảnh và yêu cầu khi in. Tiền, công nợ và kho xe giữ theo giao dịch đã ghi.');void ensureData(['contracts'],true).catch(()=>{});}
     catch(cause){setSaveError(cause instanceof Error ? cause.message : 'Không lưu được hồ sơ.');}
     finally{busy.current=false;setSaving(false);}
   }
@@ -718,7 +719,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     </section>;
   }
   return <>
-    <Dialog title={reserving ? 'Nhận cọc giữ xe' : editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}` : 'Bản nháp · Chưa phát hành hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
+    <Dialog title={row?.status==='deposit_contract'?'Bổ sung hồ sơ hợp đồng cọc':reserving ? 'Nhận cọc giữ xe' : editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}` : 'Bản nháp · Chưa phát hành hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
       <form ref={form} noValidate onSubmit={submit}>
         <div className="mg-dialog-body mg-composer-body">
           <div className="mg-composer-notice">{reserving ? 'Chọn khách, cơ sở giữ xe, xe và ngày dự kiến nhận. Tiền giữ xe được trừ vào tiền thuê; chỉ vào Sổ quỹ sau khi xác nhận khoản đã nhận. Lưu nháp chưa ghi tiền.' : canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Hợp đồng nháp để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách; bản in là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
@@ -868,11 +869,12 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
           </div>
           </fieldset>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}{profileMessage && <p className="mg-payment-success" role="status">{profileMessage}</p>}
         </div>
-        <div className="mg-dialog-footer"><span className="mg-form-note">{canSaveDraft ? 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
+        <div className="mg-dialog-footer"><span className="mg-form-note">{row?.status==='deposit_contract'?'Điền thông tin khách, giấy tờ và người làm hợp đồng → Lưu hồ sơ hợp đồng → Tiếp tục giao xe. Tiền cọc và tiền thuê giữ theo giao dịch đã ghi.':canSaveDraft ? 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
           {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
           {canSaveDraft && source === 'api' && canSaveContractDrafts && canFinalizeContracts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
           {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
           {row && !canSaveDraft && source === 'api' && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
+          {row?.status==='deposit_contract'&&canFinalizeContracts&&onHandover&&<button type="button" className="mg-button mg-button-primary" disabled={saving||!profileMessage||savedProfile.current!==JSON.stringify(contractProfile(draft))} onClick={onHandover}><CheckCircle2 size={16}/>Tiếp tục giao xe</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>
     </Dialog>

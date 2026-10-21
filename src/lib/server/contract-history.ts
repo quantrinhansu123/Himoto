@@ -54,7 +54,8 @@ export async function readContractHistory(client: Database, id: number): Promise
   if (!Number.isSafeInteger(id) || id <= 0) throw new ContractHistoryError('Mã hợp đồng không hợp lệ.');
   const order = await client.query(`SELECT o.id,o.created_at,u.name AS actor,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb) AS return_adjustments,
-      COALESCE(o.draft_payload::jsonb #> '{management_composer,versions}','[]'::jsonb) AS versions
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,versions}','[]'::jsonb) AS versions,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,reservation_releases}','[]'::jsonb) AS reservation_releases
     FROM himoto.orders o LEFT JOIN himoto.users u ON u.id=o.contract_responsible_user_id
     WHERE o.id=$1 AND o.deleted_at IS NULL`, [id]);
   if (!order.rowCount) throw new ContractHistoryError('Không tìm thấy hợp đồng.', 404);
@@ -66,6 +67,10 @@ export async function readContractHistory(client: Database, id: number): Promise
   const created: ContractChange = { id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
     title: 'Tạo hợp đồng', detail: '', amount: null };
   const changes: ContractChange[] = [created];
+  for(const [index,item] of (Array.isArray(order.rows[0].reservation_releases)?order.rows[0].reservation_releases:[]).entries()) {
+    changes.push({id:`reservation-release-${index}`,kind:'reservation_release',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,
+      title:`Gỡ giữ xe ${item.license||''}`,detail:`${item.reason||''} · Giữ nguyên phiếu thu/chi và số tiền hợp đồng. Ngày thu hồi gốc chưa xác định.`});
+  }
   // Earliest renewal's "before" values describe the contract as originally created.
   const originals: { at: number; return_at: string | null; total: number | null }[] = [];
   for (const row of transactions.rows) {

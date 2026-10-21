@@ -152,7 +152,8 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   if (oldTotal !== null && oldTotal + fee < 0) throw new ContractReturnError('Số tiền giảm khi trả sớm vượt tổng tiền thuê của hợp đồng.');
 
   const actual = localTimestamp(input.returned_at);
-  await client.query('UPDATE himoto.order_vehicle_details SET completed_at=$2::timestamptz,updated_at=now() WHERE id=$1', [input.item_id, actual]);
+  if(usesScopedDatabase())await client.query('SELECT himoto.complete_contract_vehicle_return($1,$2::timestamptz)',[input.item_id,actual]);
+  else await client.query('UPDATE himoto.order_vehicle_details SET completed_at=$2::timestamptz,updated_at=now() WHERE id=$1', [input.item_id, actual]);
   const open = await client.query(`SELECT count(*)::int AS count, bool_or(d.return_at < now()) AS has_overdue
     FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL`, [item.order_id]);
   const remainingItems = Number(open.rows[0].count);
@@ -172,9 +173,13 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
       order_status=$4,updated_at=now() WHERE id=$1`, [item.order_id,fee,plan ? (baseTotal ?? 0)+fee : nextTotal ?? 0,nextStatus,JSON.stringify([returnAdjustment])]);
   if (plan && !remainingItems) await client.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(draft_payload::jsonb,
     '{management_composer,installment_plan,stopped_at}',to_jsonb($2::text),true)::json WHERE id=$1`, [item.order_id,input.returned_at < plan.end ? input.returned_at : plan.end]);
-  const vehicleOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
-  const foreignOpen=usesScopedDatabase()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
-  if (!vehicleOpen.rowCount&&!foreignOpen) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
+  if(usesScopedDatabase())await client.query('SELECT himoto.release_returned_contract_vehicle($1)',[input.item_id]);
+  else {
+    const vehicleOpen=await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+      WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+      AND o.order_status IN('renting','overdue','wait_payment','pending','bad_debt') LIMIT 1`,[item.vehicle_id]);
+    if(!vehicleOpen.rowCount)await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`,[item.vehicle_id]);
+  }
   return { item_id: input.item_id, contract_code: String(item.contract_code), returned_at: actual, scheduled_return_at: toIso(item.return_at)!,
     late_minutes: lateMinutes, chargeable_hours: chargeableHours, hourly_rate: hourlyRate, fee,late_fee:lateFee,repair_fee:repairFee, total_amount: nextTotal, status: nextStatus };
 }
