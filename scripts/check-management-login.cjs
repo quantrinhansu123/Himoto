@@ -44,6 +44,19 @@ async function run() {
   row={...row,access_enabled:false};
   await assert.rejects(session.authenticateAccount('nv.qa',password,database),error=>error.status===403);
   checks.push('Explicit branch access overrides the legacy admin role; disabled managed accounts cannot sign in');
+  let retryReads=0;
+  const transientDatabase={query:async()=>{retryReads++;if(retryReads===1)throw Object.assign(new Error('Connection terminated unexpectedly'),{code:'ECONNRESET'});return {rows:[account]};}};
+  assert.deepEqual(await session.authenticateAccount(account.email,password,transientDatabase),expectedUser);
+  assert.equal(retryReads,2);
+  for(const [code,expectedCalls] of [['ECONNRESET',2],['42601',1],['57014',1]]){
+    let calls=0;
+    await assert.rejects(session.authenticateAccount(account.email,password,{query:async()=>{calls++;throw Object.assign(new Error('QA failure'),{code});}}));
+    assert.equal(calls,expectedCalls);
+  }
+  let wrongReads=0;
+  await assert.rejects(session.authenticateAccount(account.email,'wrong',{query:async()=>{wrongReads++;return {rows:[account]};}}),error=>error.status===401);
+  assert.equal(wrongReads,1);
+  checks.push('Login retries one interrupted DB read, bounds persistent failures, and never retries bad credentials, SQL bugs or statement timeouts');
 
   const previousKey = process.env.MANAGEMENT_SESSION_SECRET;
   process.env.MANAGEMENT_SESSION_SECRET = key;
@@ -125,6 +138,12 @@ async function run() {
     Object.defineProperty(pool, 'query', { configurable: true, value: database.query });
     try {
       const handler = load(path.join(root, 'app/api/session/route'));
+      let unavailableReads=0;
+      Object.defineProperty(dbModule.ownerDatabase,'query',{configurable:true,value:async()=>{unavailableReads++;throw Object.assign(new Error('QA connection interrupted'),{code:'ECONNRESET'});}});
+      const unavailable=await handler.POST(new NextRequest('http://127.0.0.1:3000/api/session',{method:'POST',headers:{Host:'127.0.0.1:3000',Origin:'http://127.0.0.1:3000','Content-Type':'application/json'},body:JSON.stringify({email:'outage@example.invalid',password})}));
+      assert.equal(unavailable.status,503);assert.equal(unavailable.headers.get('Retry-After'),'5');assert.equal(unavailable.headers.get('set-cookie'),null);assert.equal(unavailableReads,2);
+      Object.defineProperty(dbModule.ownerDatabase,'query',{configurable:true,value:database.query});
+      checks.push('Persistent DB outage returns 503 with retry guidance and cannot issue a login cookie');
       row = account;
       const response = await handler.POST(new NextRequest('http://127.0.0.1:3000/api/session', { method: 'POST', headers: { Host: '127.0.0.1:3000', Origin: 'http://127.0.0.1:3000', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: account.email, password }) }));
       assert.equal(response.status, 200);

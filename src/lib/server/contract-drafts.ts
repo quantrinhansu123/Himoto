@@ -5,7 +5,7 @@ import { loadCommissionStaff } from './commission-staff';
 import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } from '@/lib/management/contract-document';
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
-import { depositReceiptSql, rentalPaidSql } from './contract-deposits';
+import { depositLateral, rentalPaidSql } from './contract-deposits';
 import { chargeTotal } from '@/lib/management/contract-charges';
 import { CONTRACT_TYPES } from '@/lib/management/config';
 import { ContractTypeError, resolveDraftContractType, validContractTypeId } from './contract-types';
@@ -75,18 +75,11 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   FROM himoto.orders o
   LEFT JOIN himoto.customers c ON c.id = o.customer_id
   LEFT JOIN himoto.stores s ON s.id = o.store_id
-  LEFT JOIN (
-    SELECT order_id, SUM(value) AS paid_amount, COUNT(*)::int AS payment_count
-    FROM himoto.transactions WHERE type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
-    GROUP BY order_id
-  ) company ON company.order_id=o.id
-  LEFT JOIN (
-    SELECT t.order_id,
-      SUM(t.value) FILTER (WHERE t.type IN ('in','addon') AND ${depositReceiptSql()}) AS paid,
-      SUM(t.value) FILTER (WHERE t.type='out' AND (t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%')) AS refunded
-    FROM himoto.transactions t WHERE t.status='approved' GROUP BY t.order_id
-  ) deposit_totals ON deposit_totals.order_id=o.id
-  CROSS JOIN LATERAL (SELECT COALESCE(deposit_totals.paid,0) AS paid,COALESCE(deposit_totals.refunded,0) AS refunded) dep
+  ${depositLateral()}
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(SUM(value),0) AS paid_amount, COUNT(*)::int AS payment_count
+    FROM himoto.transactions WHERE order_id=o.id AND type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
+  ) company ON true
   LEFT JOIN (
     SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_profiles ORDER BY user_id,store_id,id
   ) staff ON staff.user_id=o.contract_responsible_user_id AND staff.store_id=CASE
@@ -95,16 +88,16 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
         ELSE o.store_id END
   LEFT JOIN himoto.staff_profiles saved_staff ON saved_staff.id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'
   LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_profiles ORDER BY user_id,id) fallback_staff ON fallback_staff.user_id=o.contract_responsible_user_id
-  LEFT JOIN (
-    SELECT d.order_id,json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license${compact ? '' : `,
+  LEFT JOIN LATERAL (
+    SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license${compact ? '' : `,
       'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,
       'driver_license_issued_on', d.driver_license_issued_on, 'borrow_hats', d.borrow_hats,
       'borrow_raincoats', d.borrow_raincoats, 'rent_at', d.rent_at, 'return_at', d.return_at, 'completed_at', d.completed_at`} ) ORDER BY d.id) AS vehicles,
       min(d.rent_at) AS start_date, max(d.return_at) AS end_date
     FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
-    WHERE d.deleted_at IS NULL GROUP BY d.order_id
-  ) ov ON ov.order_id=o.id
+    WHERE d.order_id=o.id AND d.deleted_at IS NULL
+  ) ov ON true
   WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`; }
 
 export const CONTRACT_LIST_SQL = contractListSql();
@@ -118,53 +111,55 @@ export function contractTableSql(scopeClause: string) {
 /**
  * Lean index for paged lists: enough fields to filter/sort/summarize without staff joins,
  * return-adjustment scans, or full vehicle/document payloads. Page rows are hydrated next.
+ * Aggregates stay LATERAL so PostgreSQL never scans every transaction/vehicle first.
  */
-export function contractIndexSql(scopeClause: string) {
+export function contractIndexSql(scopeClause: string, options: { includeVehicleLabels?: boolean; includeCompany?: boolean; includePaid?: boolean } = {}) {
+  const includeVehicleLabels = Boolean(options.includeVehicleLabels);
+  const includeCompany = Boolean(options.includeCompany);
+  const includePaid = Boolean(options.includePaid);
   return `SELECT o.id, o.contract_number, o.draft_reference,
     o.contract_signed_on AS signed_on,
     COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
     o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
     o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
     o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
-    CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
+    CASE WHEN o.order_status='renting' AND COALESCE(o.return_at${includeVehicleLabels ? ',ov.end_date' : ''}) < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, c.status AS customer_status,
     COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
     COALESCE(c.id_card, o.customer_idnumber) AS customer_id_card,
-    o.store_id, s.store_name, s.kind AS store_kind, COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date,
-    o.total AS total_amount, ${rentalPaidSql()} AS paid_amount,
+    o.store_id, s.store_name, s.kind AS store_kind, ${includeVehicleLabels ? 'COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date' : 'o.rent_at AS start_date, o.return_at AS end_date'},
+    o.total AS total_amount, ${includePaid ? rentalPaidSql() : 'NULL::numeric'} AS paid_amount,
     CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
          ELSE COALESCE(o.first_deposit_amount, 0) + COALESCE(o.additional_deposit_amount, 0) END AS deposit_amount,
-    COALESCE(company.paid_amount,0) AS company_paid_amount, COALESCE(company.payment_count,0) AS company_payment_count,
+    ${includeCompany
+      ? 'COALESCE(company.paid_amount,0) AS company_paid_amount, COALESCE(company.payment_count,0) AS company_payment_count'
+      : '0::numeric AS company_paid_amount, 0 AS company_payment_count'},
     CASE WHEN o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL
       THEN jsonb_build_object('management_composer', jsonb_build_object('installment_plan', o.draft_payload #> '{management_composer,installment_plan}'))
       ELSE '{}'::jsonb END AS draft_payload,
-    COALESCE(ov.vehicles, '[]'::json) AS vehicles
+    ${includeVehicleLabels ? 'COALESCE(ov.vehicles, \'[]\'::json)' : '\'[]\'::json'} AS vehicles
     FROM himoto.orders o
     LEFT JOIN himoto.customers c ON c.id = o.customer_id
     LEFT JOIN himoto.stores s ON s.id = o.store_id
-    LEFT JOIN (
-      SELECT order_id, SUM(value) AS paid_amount, COUNT(*)::int AS payment_count
-      FROM himoto.transactions WHERE type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
-      GROUP BY order_id
-    ) company ON company.order_id=o.id
-    LEFT JOIN (
-      SELECT t.order_id, SUM(t.value) FILTER (WHERE t.type IN ('in','addon') AND ${depositReceiptSql()}) AS paid
-      FROM himoto.transactions t WHERE t.status='approved' GROUP BY t.order_id
-    ) deposit_totals ON deposit_totals.order_id=o.id
-    CROSS JOIN LATERAL (SELECT COALESCE(deposit_totals.paid,0) AS paid) dep
-    LEFT JOIN (
-      SELECT d.order_id, json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license) ORDER BY d.id) AS vehicles,
+    ${includePaid ? depositLateral() : ''}
+    ${includeCompany ? `LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(value),0) AS paid_amount, COUNT(*)::int AS payment_count
+      FROM himoto.transactions WHERE order_id=o.id AND type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
+    ) company ON true` : ''}
+    ${includeVehicleLabels ? `LEFT JOIN LATERAL (
+      SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license) ORDER BY d.id) AS vehicles,
         min(d.rent_at) AS start_date, max(d.return_at) AS end_date
-      FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
-      WHERE d.deleted_at IS NULL GROUP BY d.order_id
-    ) ov ON ov.order_id=o.id
+      FROM himoto.order_vehicle_details d
+      LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
+      WHERE d.order_id=o.id AND d.deleted_at IS NULL
+    ) ov ON true` : ''}
     WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${scopeClause}`;
 }
 
 export function contractListScopeClause(scope: string | null): string {
   switch (scope) {
     case 'drafts': return ` AND o.order_status='draft'`;
-    case 'overdue': return ` AND (o.order_status IN ('overdue','bad_debt') OR o.order_status='renting' AND COALESCE(o.return_at, ov.end_date) < now())`;
+    case 'overdue': return ` AND (o.order_status IN ('overdue','bad_debt') OR o.order_status='renting' AND o.return_at < now())`;
     case 'vat': return ` AND EXISTS (SELECT 1 FROM himoto.transactions t WHERE t.order_id=o.id AND t.type IN ('in','addon') AND t.status='approved' AND t.bank_owner_type='company')`;
     case 'ownership': return ` AND (s.kind='lease_to_own' OR COALESCE(NULLIF(o.order_type,''), o.draft_payload->'management_composer'->>'rental_type') IN ('ownership','ownership_cd'))`;
     default: return '';

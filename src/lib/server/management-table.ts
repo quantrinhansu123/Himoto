@@ -3,12 +3,12 @@ import type { PoolClient } from 'pg';
 import { MANAGEMENT_CONFIG } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
 import { EMPTY_QUERY } from '@/lib/management/table-utils';
-import { projectManagementTable, type ManagementTableInput, type TableKind } from '@/lib/management/management-table';
-import { CONTRACT_LIST_SQL, contractIndexSql, contractListScopeClause } from './contract-drafts';
+import { projectManagementTable, type ManagementTableInput, type ManagementTableResult, type TableKind } from '@/lib/management/management-table';
+import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
 import { dailyPriceSql } from './contract-deposits';
-import { OVERDUE_BUCKETS,type OverdueBucket,withContractMonitoring } from '@/lib/management/contract-overdue';
+import { OVERDUE_BUCKETS,type OverdueBucket } from '@/lib/management/contract-overdue';
 
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
@@ -34,6 +34,19 @@ function contractScopeClause(scope:string) {
   return scope==='due' ? ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL`
     : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
 }
+function contractPageScopeClause(scope:string) {
+  if(scope==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment','bad_debt')`;
+  if(scope==='due')return ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt')`;
+  if(scope==='renewable')return ` AND o.order_status IN ('renting','overdue')`;
+  return contractListScopeClause(scope);
+}
+function contractPageStatusClause(status:string) {
+  if(!status)return '';
+  if(status==='renting')return ` AND o.order_status IN ('renting','overdue')`;
+  if(status==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment','bad_debt')`;
+  if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
+  return ` AND o.order_status='${status}'`;
+}
 /** Only the overdue list needs per-line dates/prices. Reuse the return screen's price source. */
 function overdueDetailsSql(sql:string) {
   return `SELECT listing.*, (SELECT COALESCE(json_agg(json_build_object(
@@ -47,7 +60,7 @@ function overdueDetailsSql(sql:string) {
 export function contractStatusClause(status:string) {
   if(!status)return '';
   if(status==='renting')return ` AND o.order_status IN ('renting','overdue')`;
-  if(status==='overdue')return ` AND (o.order_status='overdue' OR o.order_status='renting' AND COALESCE(o.return_at, ov.end_date) < now()
+  if(status==='overdue')return ` AND (o.order_status='overdue' OR o.order_status='renting' AND o.return_at < now()
     OR o.order_status IN ('renting','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL)`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
   return ` AND o.order_status='${status}'`;
@@ -57,53 +70,74 @@ export function contractRecentClause(days:number) {
   return ` AND (
     o.order_status IN ('draft','renting','overdue','wait_payment','deposit_contract','pending','bad_debt')
     OR o.created_at >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
-    OR COALESCE(o.rent_at, ov.start_date) >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
+    OR o.rent_at >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
   )`;
+}
+function contractStoreSql(store:string) {
+  return store==='all' ? '' : ` AND o.store_id=${Number(store)}`;
+}
+function contractSearchSql(search:string) {
+  if(!search.trim())return {sql:'',value:undefined as string|undefined};
+  return {sql:` AND (o.contract_number ILIKE $3 OR o.draft_reference ILIKE $3 OR o.customer_name ILIKE $3 OR COALESCE(o.customer_phone,'') ILIKE $3)`,
+    value:`%${search.trim().replace(/[%_\\]/g,'')}%`};
+}
+export function contractPageSql(scopeClause:string) {
+  return `SELECT o.id, o.contract_number, o.draft_reference,
+    CASE WHEN o.order_status='renting' AND o.return_at < now() THEN 'overdue' ELSE o.order_status END AS status,
+    o.customer_id, o.customer_name, o.customer_phone,
+    o.store_id, o.rent_at AS start_date, o.return_at AS end_date,
+    o.total AS total_amount, '[]'::json AS vehicles
+    FROM himoto.orders o
+    WHERE o.deleted_at IS NULL${scopeClause}`;
+}
+function mapManagementRows(kind:TableKind,rows:unknown[]) {
+  const mapped=[];
+  for(const row of rows){
+    try { mapped.push(mapApiRow(kind,row as Parameters<typeof mapApiRow>[1])); }
+    catch (error) { console.error('Skipping unreadable management row', error); }
+  }
+  return mapped;
 }
 export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:TableKind,params:URLSearchParams) {
   const input=parseManagementTable(kind,params);
-  const statusClause=kind==='contracts'?contractStatusClause(input.query.status):'';
+  const all=params.get('all')==='1';
+  const statusClause=kind==='contracts'?(all?contractStatusClause(input.query.status):contractPageStatusClause(input.query.status)):'';
   const monitoring=kind==='contracts'&&(input.scope==='overdue'||input.scope==='ownership'||input.query.status==='overdue'||input.query.status==='bad_debt'||Boolean(input.query.overdueBucket));
   const recentDays=input.recentDays&&!input.scope&&!input.query.search.trim()&&!input.query.startDate&&!input.query.endDate
     &&!input.query.filters.customer_id&&!input.query.filters.id ? input.recentDays : undefined;
+  const storeSql=kind==='contracts'?contractStoreSql(input.store):'';
+  const listWindow=all&&recentDays?contractRecentClause(recentDays):'';
   const clause=kind==='contracts'
-    ? `${contractScopeClause(input.scope)}${monitoring?'':statusClause}${recentDays?contractRecentClause(recentDays):''}`
+    ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}`
     : '';
-  const all=params.get('all')==='1';
   const now=Date.now();
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
-  // Paged contract lists: lean index for filter/sort/totals, then hydrate only the visible page.
   if(kind==='contracts'&&!all){
-    const indexed=await client.query(overdueSql(contractVehicleDetailsSql(contractIndexSql(clause))));
-    const projected=projectManagementTable(indexed.rows.map(row=>mapApiRow(kind,row)),recentDays?{...input,recentDays}:input,false,now);
-    if(!projected.rows.length)return projected;
-    const ids=projected.rows.map(row=>row.id);
-    let details;
-    try {
-      details=await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=ANY($1::bigint[])`),[ids]);
-    } catch (cause) {
-      console.error('Contract page hydrate failed; serving lean index rows.', cause instanceof Error ? cause.message : cause);
-      return {...projected,recentDays:recentDays??null};
-    }
-    const mapped=new Map(details.rows.map(row=>{const record=mapApiRow(kind,row);return [record.id,record];}));
-    // Keep the lean row if detail hydrate misses an id so the Đang thuê page never goes blank.
-    projected.rows=projected.rows.map(row=>{
-      const detail=mapped.get(row.id);
-      if(!detail)return row;
-      const merged={...detail,...(row.billing_plan_json?{billing_base_total:row.billing_base_total,total_amount:row.total_amount,billing_plan_json:row.billing_plan_json,billing_due_amount:row.billing_due_amount,billing_next_due_at:row.billing_next_due_at,billing_overdue_at:row.billing_overdue_at}:{})};
-      return monitoring?withContractMonitoring({...merged,overdue_items_json:row.overdue_items_json,status:row.status},now):merged;
-    });
-    return {...projected,recentDays:recentDays??null};
+    const take=input.size+1;
+    const offset=Math.max(0,(input.page-1)*input.size);
+    const search=contractSearchSql(input.query.search);
+    const indexed=await client.query(
+      `${contractPageSql(clause)}${search.sql} ORDER BY o.id DESC LIMIT $1 OFFSET $2`,
+      search.value?[take,offset,search.value]:[take,offset]);
+    const hasMore=indexed.rows.length>input.size;
+    const rows=mapManagementRows(kind,indexed.rows.slice(0,input.size));
+    const total=offset+rows.length+(hasMore?1:0);
+    return {
+      rows,total,scopeCount:total,tabCount:total,page:input.page,pages:hasMore?input.page+1:Math.max(1,input.page),
+      statusCounts:[],statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:0,
+      summary:{contractCount:rows.length,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null},
+      recentDays:recentDays??null,
+    };
   }
   const fullSql=kind==='contracts' ? `${CONTRACT_LIST_SQL}${clause}` : CUSTOMER_PROFILE_SQL;
   const sql=kind==='contracts' ? fullSql
     : `SELECT id,name,phone,id_card,address,status,warning,store_id,store_name,contract_count FROM (${CUSTOMER_PROFILE_SQL}) listing`;
   const result=await client.query(kind==='contracts' ? overdueSql(contractVehicleDetailsSql(sql)) : sql);
-  const projected=projectManagementTable(result.rows.map(row=>mapApiRow(kind,row)),input,all,now);
+  const projected=projectManagementTable(mapManagementRows(kind,result.rows),input,all,now);
   if(kind==='contracts'||!projected.rows.length)return projected;
   const ids=projected.rows.map(row=>row.id);
   const details=await client.query(`${fullSql} WHERE c.id=ANY($1::bigint[])`,[ids]);
-  const mapped=new Map(details.rows.map(row=>{const record=mapApiRow(kind,row);return [record.id,record];}));
+  const mapped=new Map(mapManagementRows(kind,details.rows).map(record=>[record.id,record]));
   projected.rows=projected.rows.flatMap(row=>{const detail=mapped.get(row.id);return detail ? [detail] : [];});
   return projected;
 }

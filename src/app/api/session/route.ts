@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAccount, checkLoginLimit, clearLoginLimit, LoginError, sameOrigin, SESSION_COOKIE, SESSION_SECONDS, signSession, userFromSession, isManagementConfigured } from '@/lib/server/management-session';
+import { logSessionUnavailable, retrySessionRead } from '@/lib/server/session-read';
 
 export const runtime = 'nodejs';
 const headers = { 'Cache-Control': 'no-store' };
@@ -21,16 +22,17 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof LoginError) return NextResponse.json({ message: error.message }, { status: error.status, headers });
     if (error instanceof SyntaxError) return NextResponse.json({ message: 'Thông tin đăng nhập không hợp lệ.' }, { status: 400, headers });
-    return NextResponse.json({ message: 'Không kết nối được hệ thống đăng nhập. Vui lòng thử lại.' }, { status: 503, headers });
+    logSessionUnavailable(error);
+    return NextResponse.json({ message: 'Kết nối dữ liệu đăng nhập đang gián đoạn. Vui lòng thử lại sau vài giây.' }, { status: 503, headers: { ...headers, 'Retry-After': '5' } });
   }
 }
 
 export async function GET(request: NextRequest) {
   if (!isManagementConfigured()) return NextResponse.json({ message: 'Hệ thống chưa được cấu hình kết nối dữ liệu.' }, { status: 503, headers });
   try {
-    const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
+    const user = await retrySessionRead(() => userFromSession(request.cookies.get(SESSION_COOKIE)?.value));
     return NextResponse.json({ user }, { status: user ? 200 : 401, headers });
-  } catch { return NextResponse.json({ message: 'Không xác thực được phiên đăng nhập.' }, { status: 503, headers }); }
+  } catch (error) { logSessionUnavailable(error); return NextResponse.json({ message: 'Kết nối dữ liệu đăng nhập đang gián đoạn. Vui lòng thử lại sau vài giây.' }, { status: 503, headers: { ...headers, 'Retry-After': '5' } }); }
 }
 
 export async function DELETE(request: NextRequest) {

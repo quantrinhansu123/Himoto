@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ACCESS_PERMISSIONS, canRecordContractPayment, isAdminAccount } from '@/lib/management/permissions';
 import { himotoPool, ownerDatabase } from './himoto-database';
 import { dataAccess } from './access-context';
+import { retrySessionRead } from './session-read';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
@@ -65,7 +66,7 @@ export class LoginError extends Error {
 }
 
 export async function authenticateAccount(email: string, password: string, database: Database = ownerDatabase): Promise<SessionUser> {
-  const result = await database.query(`SELECT ${accountFields}, u.password FROM himoto.users u ${accountJoin} WHERE (lower(u.email)=lower($1) OR lower(a.login_name)=lower($1)) AND u.deleted_at IS NULL LIMIT 1`, [email]);
+  const result = await retrySessionRead(() => database.query(`SELECT ${accountFields}, u.password FROM himoto.users u ${accountJoin} WHERE (lower(u.email)=lower($1) OR lower(a.login_name)=lower($1)) AND u.deleted_at IS NULL LIMIT 1`, [email]));
   const account = result.rows[0] as Account | undefined;
   // A missing user still performs bcrypt work; never return a password hash.
   const hash = account?.password?.replace(/^\$2y\$/, '$2b$') || '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';

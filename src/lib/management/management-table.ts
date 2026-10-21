@@ -64,11 +64,21 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
     summary:input.kind==='contracts' ? summarizeContracts(filtered,[]) : null,recentDays:input.recentDays??null,...(monitoring?{overdueCounts}:{})};
 }
 export async function requestManagementTable(input: ManagementTableInput, signal?: AbortSignal, all = false, ownershipStores: number[] = []): Promise<ManagementTableResult> {
-  const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${managementTableQuery(input,all)}`,{cache:'no-store',credentials:'same-origin',signal});
+  const controller=new AbortController();
+  let timedOut=false;
+  const cancel=()=>controller.abort(signal?.reason);
+  if(signal?.aborted)cancel();else signal?.addEventListener('abort',cancel,{once:true});
+  const timer=setTimeout(()=>{timedOut=true;controller.abort();},all?120000:45000);
+  try {
+  const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${managementTableQuery(input,all)}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal});
   const result=await response.json().catch(()=>null);
   if (!response.ok || result?.status!=='success') throw new Error(result?.message || 'Không tải được danh sách. Thử lại.');
   // Old deployments/test fixtures return the original array until their API is upgraded.
   if (Array.isArray(result.data)) return projectManagementTable(result.data.map((row: Record<string,unknown>)=>mapApiRow(input.kind,row)),input,all,Date.now(),ownershipStores);
   if (!Array.isArray(result.data?.rows) || !Number.isSafeInteger(result.data.total) || !Array.isArray(result.data.statusCounts)) throw new Error('Danh sách trả về không hợp lệ.');
   return result.data;
+  } catch(error) {
+    if(timedOut&&!signal?.aborted)throw new Error('Máy chủ phản hồi quá lâu. Vui lòng bấm Thử lại để tải danh sách.');
+    throw error;
+  } finally {clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
 }

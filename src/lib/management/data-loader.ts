@@ -5,7 +5,7 @@ export const CONTRACT_DATA_KINDS: readonly ManagementKind[] = ['stores', 'vehicl
 export const VEHICLE_DATA_KINDS: readonly ManagementKind[] = ['vehicles'];
 const STORE_KINDS: readonly ManagementKind[] = ['stores'];
 const PAGE_KINDS: Record<string, readonly ManagementKind[]> = {
-  staff: ['stores', 'staff'], customers: STORE_KINDS, contracts: STORE_KINDS,
+  staff: ['stores', 'staff'], customers: STORE_KINDS, contracts: [],
   stores: STORE_KINDS, vehicles: ['stores', 'vehicles'], 'duty-roster': ['stores', 'staff'], cashbook: STORE_KINDS,
   operations: STORE_KINDS, 'staff-sales': ['stores','staff'],
 };

@@ -21,6 +21,7 @@ import { VEHICLE_ORDER_SQL } from '@/lib/server/contract-classification';
 import { contractVehicleDetailsSql } from '@/lib/server/contract-vehicle-reads';
 
 export const runtime = 'nodejs';
+export const maxDuration = 30;
 
 const normalizeId=(value:string)=>value.trim().replace(/\s/g,'').toUpperCase();
 type Params = { params: Promise<{ path: string[] }> };
@@ -164,10 +165,19 @@ async function GETHandler(request: NextRequest, { params }: Params) {
       const client=await himotoPool.connect();
       try {
         await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+        // Bound abandoned/slow list queries so they cannot occupy the pool indefinitely.
+        await client.query(request.nextUrl.searchParams.get('all')==='1'
+          ? "SET LOCAL statement_timeout='60s'" : "SET LOCAL statement_timeout='20s'");
         const data=await readManagementTable(client,key==='customers'?'customers':'contracts',request.nextUrl.searchParams);
         await client.query('COMMIT');
         return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'no-store'}});
-      } catch(error) { await client.query('ROLLBACK');throw error; }
+      } catch(error) {
+        await client.query('ROLLBACK');
+        if(error&&typeof error==='object'&&'code' in error&&error.code==='57014')return NextResponse.json(
+          {status:'error',message:'Dữ liệu đang phản hồi chậm. Vui lòng bấm Thử lại để tải danh sách.'},
+          {status:503,headers:{'Cache-Control':'no-store','Retry-After':'5'}});
+        throw error;
+      }
       finally { client.release(); }
     }
     if (key === 'cashbook/vouchers') {
@@ -232,7 +242,8 @@ async function GETHandler(request: NextRequest, { params }: Params) {
     return await readAll(query);
   } catch (error) {
     if (error instanceof CashbookQueryError || error instanceof ManagementTableError || error instanceof PageSummaryError) return NextResponse.json({ status: 'error', message: error.message }, { status: 400 });
-    console.error('Supabase read failed:', error instanceof Error ? error.name : 'Unknown database error');
+    console.error('Supabase read failed:', error instanceof Error ? error.message : 'Unknown database error',
+      error&&typeof error==='object'&&'code' in error?error.code:'');
     return NextResponse.json({ status: 'error', message: 'Không tải được dữ liệu từ Supabase.' }, { status: 500 });
   }
 }
