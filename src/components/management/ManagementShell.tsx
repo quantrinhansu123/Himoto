@@ -13,6 +13,7 @@ import { SePayNotifications } from './SePayNotifications';
 import { GpsSyncPulse } from './GpsSyncPulse';
 
 const navigation = [
+  {href:'/shift-reports',label:'Báo cáo cuối ca',kind:'shift-reports' as const,icon:ReceiptText},
   {href:'/operations',label:'Thao tác nhanh',kind:'operations' as const,icon:House},
   {href:'/staff-sales',label:'Doanh số nhân viên',kind:'staff-sales' as const,icon:ReceiptText},
   { href: '/staff', label: 'Nhân sự', kind: 'staff' as const, icon: UsersRound },

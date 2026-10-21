@@ -6,6 +6,7 @@ import { SESSION_COOKIE, sameOrigin, userFromSession } from './management-sessio
 
 export function requestPermission(path:string,method:string,action=''):AccessPermission|null {
   const read=method==='GET';
+  if(path.startsWith('/api/auth/shift-reports'))return 'contracts.read';
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';
   if(path==='/api/auth/store-directory')return null;
   if(path==='/api/auth/contract-staff')return 'contracts.read';
