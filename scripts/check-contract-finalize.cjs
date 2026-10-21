@@ -38,7 +38,7 @@ async function main() {
     const revision = async id => (await c.query('SELECT xmin::text AS r FROM qa_fin_orders WHERE id=$1', [id])).rows[0].r;
     const finalize = async (id, patch = {}) => savepoint(async () => server.finalizeContractDraft(proxy, id, 143, { ...base, revision: await revision(id), ...patch }));
     const draft = (vehicles, extra = {}) => JSON.stringify({ management_composer: { version: 1, status: 'draft', draft: {
-      start_date: '2026-10-11T08:00', end_date: '2026-10-13T08:00', unit_price: '250000', total_amount: '500000', deposit_amount: '1000000', package_name: 'Theo ngày',
+      start_date: '2026-10-11T08:00', end_date: '2026-10-13T08:00', unit_price: '250000', total_amount: String(500000*vehicles.length), deposit_amount: '1000000', package_name: 'Theo ngày',
       vehicles: vehicles.map(id => ({ id: String(id), driver_name: 'QA', driver_license_number: 'GPLX', driver_license_issued_on: '2020-01-02', borrow_hats: '02', borrow_raincoats: '01' })), ...extra } } });
     try {
       await c.query('BEGIN');
@@ -62,20 +62,36 @@ async function main() {
         [draft([100, 101]), draft([103]), draft([102]), `${day}-0007`, draft([101], { deposit_amount: '', total_amount: '300000' })]);
       await c.query(`INSERT INTO qa_fin_order_vehicle_details(order_id,vehicle_id,rent_at,return_at) VALUES (2,103,'2026-10-01T08:00:00+07:00','2026-10-05T08:00:00+07:00')`);
 
+      await c.query('SAVEPOINT stale_multi_total');
+      await c.query(`UPDATE qa_fin_orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,draft,total_amount}','"500000"')::json WHERE id=1`);
+      await assert.rejects(finalize(1, { rental: { method: 'transfer', account_id: 6 } }),error=>error.status===409&&/2 xe/.test(error.message));
+      assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_fin_transactions WHERE order_id=1')).rows[0].n,0);
+      assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_fin_order_vehicle_details WHERE order_id=1')).rows[0].n,0);
+      await c.query('ROLLBACK TO SAVEPOINT stale_multi_total');
+      checks.push('PostgreSQL TEMP: a two-vehicle draft with a one-vehicle total is rejected before issue, receipts or vehicle changes');
+      await c.query('SAVEPOINT multi_fee_total');
+      await c.query(`UPDATE qa_fin_orders SET draft_payload=jsonb_set(jsonb_set(draft_payload::jsonb,'{management_composer,draft,total_amount}','"1050000"'),'{management_composer,draft,extra_charges}','[{"name":"Ship QA","amount":"50000"}]')::json WHERE id=1`);
+      const withFees=await finalize(1,{rental:{method:'transfer',account_id:6}});
+      assert.equal(withFees.total_amount,1050000);assert.equal(withFees.paid_amount,2050000);
+      const feeOrder=(await c.query('SELECT total_rental_fees,first_deposit_amount FROM qa_fin_orders WHERE id=1')).rows[0];
+      assert.equal(Number(feeOrder.total_rental_fees),1000000);assert.equal(Number(feeOrder.first_deposit_amount),1000000);
+      assert.equal(Number((await c.query("SELECT value FROM qa_fin_transactions WHERE order_id=1 AND name='order:rental_fees'")).rows[0].value),1050000);
+      await c.query('ROLLBACK TO SAVEPOINT multi_fee_total');
+      checks.push('PostgreSQL TEMP: two vehicle rents plus one shipping fee produce the correct receipt; the contract deposit is collected once');
       const result = await finalize(1, { rental: { method: 'transfer', account_id: 6 } });
-      assert.equal(result.code, `${day}-0008`); assert.equal(result.paid_amount, 1500000); assert.equal(result.transaction_ids.length, 2);
+      assert.equal(result.code, `${day}-0008`); assert.equal(result.paid_amount, 2000000); assert.equal(result.transaction_ids.length, 2);
       const order = (await c.query('SELECT * FROM qa_fin_orders WHERE id=1')).rows[0];
       assert.equal(order.order_status, 'renting'); assert.equal(order.order_mode, 'standard'); assert.equal(order.contract_number, `${day}-0008`);
-      assert.equal(order.total, '500000'); assert.equal(Number(order.pid), 1500000); assert.equal(order.first_deposit_amount, 1000000);
+      assert.equal(order.total, '1000000'); assert.equal(Number(order.pid), 2000000); assert.equal(order.first_deposit_amount, 1000000);
       assert.equal(order.rent_at.toISOString(), '2026-10-11T01:00:00.000Z'); assert.equal(order.return_at.toISOString(), '2026-10-13T01:00:00.000Z');
       assert.equal(order.draft_reference, 'NHAP-1'); assert.equal(order.draft_payload.management_composer.finalized.contract_number, `${day}-0008`);
       const items = (await c.query('SELECT vehicle_id,total_money,hiring_fee,type,borrow_hats,borrow_raincoats,driver_name,completed_at FROM qa_fin_order_vehicle_details WHERE order_id=1 ORDER BY id')).rows;
       assert.deepEqual(items.map(row => [Number(row.vehicle_id), Number(row.total_money), row.hiring_fee, row.type, Number(row.borrow_hats), row.borrow_raincoats, row.driver_name, row.completed_at]),
-        [[100, 500000, 250000, 'day', 2, 1, 'QA', null], [101, 0, 250000, 'day', 2, 1, 'QA', null]]);
+        [[100, 1000000, 250000, 'day', 2, 1, 'QA', null], [101, 0, 250000, 'day', 2, 1, 'QA', null]]);
       assert.deepEqual((await c.query('SELECT status FROM qa_fin_vehicles WHERE id IN (100,101) ORDER BY id')).rows.map(row => row.status), ['using', 'using']);
       const receipts = (await c.query('SELECT name,value,cash_id,bank_id,payment_method,bank_owner_type,store_id,user_id,status,type FROM qa_fin_transactions WHERE order_id=1 ORDER BY id')).rows;
       assert.deepEqual(receipts.map(row => [row.name, Number(row.value), row.cash_id && Number(row.cash_id), row.bank_id && Number(row.bank_id), Number(row.payment_method), row.bank_owner_type, Number(row.store_id), row.status, row.type]),
-        [['order:deposit', 1000000, 5, null, 1, null, 23, 'approved', 'in'], ['order:rental_fees', 500000, null, 6, 2, 'personal', 23, 'approved', 'in']]);
+        [['order:deposit', 1000000, 5, null, 1, null, 23, 'approved', 'in'], ['order:rental_fees', 1000000, null, 6, 2, 'personal', 23, 'approved', 'in']]);
       checks.push('PostgreSQL TEMP: a draft becomes Đang thuê with the next YYMMDD-NNNN number, vehicle lines, vehicles marked using, deposit + rental receipts in the cashbook and pid = collected amount');
 
       const before = JSON.stringify((await c.query('SELECT o.id,o.order_status,o.pid,o.contract_number,(SELECT count(*) FROM qa_fin_order_vehicle_details d WHERE d.order_id=o.id) AS lines FROM qa_fin_orders o ORDER BY o.id')).rows)
@@ -153,10 +169,10 @@ async function main() {
       const renewal = (await c.query(`INSERT INTO qa_fin_transactions(order_id,name,type,value,note,status,user_id,store_id) VALUES (6,'order:renewal','in',200000,'QA','approved',143,23) RETURNING id`)).rows[0].id;
       await c.query(`INSERT INTO qa_fin_management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash) VALUES (gen_random_uuid(),6,$1,143,repeat('a',64))`, [renewal]);
       await assert.rejects(remove('transactions', [Number(rental), 999999]), error => error.status === 409);
-      assert.equal(Number((await c.query('SELECT pid FROM qa_fin_orders WHERE id=1')).rows[0].pid), 1500000);
+      assert.equal(Number((await c.query('SELECT pid FROM qa_fin_orders WHERE id=1')).rows[0].pid), 2000000);
       assert.deepEqual(await remove('transactions', [Number(rental), Number(renewal)]), [Number(rental), Number(renewal)]);
       const [o1, o6] = (await c.query('SELECT total,pid FROM qa_fin_orders WHERE id IN (1,6) ORDER BY id')).rows;
-      assert.deepEqual([o1.total, Number(o1.pid), o6.total, Number(o6.pid)], ['500000', 1000000, '300000', 0]);
+      assert.deepEqual([o1.total, Number(o1.pid), o6.total, Number(o6.pid)], ['1000000', 1000000, '300000', 0]);
       assert.equal(await receiptCount(), receiptsBefore - 1);
       assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_fin_management_contract_payments')).rows[0].n, 0);
       checks.push('PostgreSQL TEMP: bulk voucher delete is hard and all-or-nothing; it takes receipts back out of the contract pid (and out of total for renewal/extra) and drops the payment-ledger rows');

@@ -9,6 +9,7 @@ import { loadCommissionStaff } from './commission-staff';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { rentalQuote } from '@/lib/management/contract-pricing';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractFinalizeError extends Error {
@@ -106,6 +107,10 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   const otherFees = chargeTotal(draft.extra_charges);
   if (otherFees === null || Object.keys(chargeErrors(draft.extra_charges as ContractCharge[] | undefined,true)).length || (total !== null && otherFees > total)) throw new ContractFinalizeError('Kiểm tra tên, số tiền và tổng các khoản phí khác.',409);
   if (total === null || deposit === null || unitPrice === null || total + deposit > MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Số tiền thuê / tiền cọc của bản nháp không hợp lệ.', 409);
+  if (lines.length > 1 && unitPrice > 0 && draft.package_name !== 'Tùy chọn') {
+    const quote = rentalQuote({ start_date: start, end_date: end, package_name: String(draft.package_name || ''), unit_price: String(unitPrice), vehicles: lines, extra_charges: draft.extra_charges });
+    if (!quote || quote.total_amount !== total) throw new ContractFinalizeError(`Tổng tiền chưa khớp ${lines.length} xe đã chọn. Mở lại bản nháp, kiểm tra đơn giá mỗi xe và lưu lại trước khi phát hành.`, 409);
+  }
   const ownership = composer.rental_type === 'ownership';
   if (draft.ownership_term_months !== undefined && !['6','12','24','custom'].includes(String(draft.ownership_term_months))) throw new ContractFinalizeError('Phân loại thuê sở hữu chưa hợp lệ.',409);
   // Ownership currently follows ordinary rental operations; the term is a label.

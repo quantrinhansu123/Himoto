@@ -26,7 +26,8 @@ import { DateTime24Field } from './DateTime24Field';
 import { VietnamDateField } from './VietnamDateField';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
-import { addRentalMonths, billingInterval, OWNERSHIP_TERMS, rentalPeriodCount } from '@/lib/management/contract-billing';
+import { addRentalMonths, billingUnitLabel, OWNERSHIP_TERMS } from '@/lib/management/contract-billing';
+import { rentalQuote, selectedRentalVehicleCount } from '@/lib/management/contract-pricing';
 import { CustomerInternationalFields } from './CustomerInternationalFields';
 import { contractPhotoSlots } from '@/lib/management/contract-photos';
 import { normalizeCustomerLookup,validCustomerLookup } from '@/lib/management/contract-document';
@@ -90,8 +91,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [rentalDays, setRentalDays] = useState(() => rentalDayCount(draft.start_date,draft.end_date));
   const [autoReturn, setAutoReturn] = useState(!row);
   const staffStoreId = contractStaffStoreId(draft);
-  // A finalized contract (or one of its versions) keeps its ledger total until the user edits dates, price or the first vehicle.
-  const livePricing = useRef(row && row.status !== 'draft' ? { start: draft.start_date, end: draft.end_date, unit: draft.unit_price, vehicle: draft.vehicles[0]?.id } : null);
+  // Opening an issued contract keeps its recorded total, including historical prices.
+  const livePricing = useRef(row && row.status !== 'draft' ? { start: draft.start_date, end: draft.end_date, unit: draft.unit_price, vehicle: draft.vehicles[0]?.id, count: selectedRentalVehicleCount(draft.vehicles) } : null);
   const [idInput, setIdInput] = useState(String(draft.customer_lookup ?? (draft.customer.id_card || draft.customer.phone || '')));
   const preserveCustomer = useRef(Boolean(row && draft.customer_id && draft.customer.name.trim()));
   const [lookupState, setLookupState] = useState<LookupState>(row && draft.customer_id && draft.customer.name.trim() ? 'found' : 'idle');
@@ -613,25 +614,25 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   if (!typeOptions.some(type => type.id === selectedTypeId) && row) typeOptions.push({id:selectedTypeId,label:draft.contract_type_name || CONTRACT_TYPES.find(type=>type.value===rentalType)?.label || rentalType,rental_type:rentalType,term_months:null,active:false,revision:''});
   const requirements = documentRequirements(draft.document_requirements);
   const otherFees = chargeTotal(draft.extra_charges) ?? 0;
+  const quote = rentalQuote(draft);
+  const quotedTotal = quote ? String(quote.total_amount) : null;
+  const selectedVehicleCount = selectedRentalVehicleCount(draft.vehicles);
   useEffect(() => {
     if (draft.package_name === 'Tùy chọn') return;
     const rate = monthlyPackage ? pricingVehicle?.monthly_price : draft.package_name === 'Theo tuần' && pricingVehicle?.daily_price != null ? Number(pricingVehicle.daily_price) * 7 : pricingVehicle?.daily_price;
     if (livePricing.current && String(pricingVehicle?.id) === livePricing.current.vehicle) return;
-    if (pricingVehicle) {
-      const nextRate = rate == null || !Number.isFinite(Number(rate)) ? '' : String(rate);
+    if (pricingVehicle && rate != null && Number.isFinite(Number(rate))) {
+      const nextRate = String(rate);
       setDraft(previous => previous.unit_price === nextRate ? previous : { ...previous, unit_price: nextRate });
     }
   }, [pricingVehicle, monthlyPackage, draft.package_name]);
   useEffect(() => {
     const live = livePricing.current;
-    if (live && live.start === draft.start_date && live.end === draft.end_date && live.unit === draft.unit_price) return;
-    const interval = billingInterval(draft.package_name);
-    const units = interval ? rentalPeriodCount(draft.start_date, draft.end_date, interval) : 0;
-    if (units && draft.unit_price && Number.isSafeInteger(Number(draft.unit_price))) {
-      const total = String(units * Number(draft.unit_price)+otherFees);
-      setDraft(previous => previous.total_amount === total && Boolean(previous.ownership) === ownership ? previous : { ...previous, ownership, total_amount: total });
+    if (live && live.start === draft.start_date && live.end === draft.end_date && live.unit === draft.unit_price && live.count === selectedVehicleCount) return;
+    if (quotedTotal !== null) {
+      setDraft(previous => previous.total_amount === quotedTotal && Boolean(previous.ownership) === ownership ? previous : { ...previous, ownership, total_amount: quotedTotal });
     }
-  }, [draft.start_date, draft.end_date, draft.unit_price, draft.package_name, ownership, otherFees]);
+  }, [draft.start_date, draft.end_date, draft.unit_price, selectedVehicleCount, ownership, quotedTotal]);
   function changeCharges(next: ContractCharge[]) {
     setDraft(previous=>({...previous,extra_charges:next,total_amount:String(Math.max((Number(previous.total_amount)||0)-(chargeTotal(previous.extra_charges)||0),0)+(chargeTotal(next)||0))}));
     setSaveError('');setErrors(previous=>Object.fromEntries(Object.entries(previous).filter(([key])=>!key.startsWith('charge_') && key!=='extra_charges')));
@@ -837,7 +838,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               {moneyField('unit_price', 'Đơn giá áp dụng (VNĐ)')}
               <div className="mg-field"><label htmlFor="contract-rental-base">Tiền thuê xe (VNĐ)</label><input id="contract-rental-base" readOnly value={formatMoneyInput(String(Math.max((Number(draft.total_amount)||0)-otherFees,0)))}/></div>
               {paymentMethodField('payment_method', 'Hình thức dự kiến thu thuê/phí')}
-            </div></div>
+            </div><p className="mg-composer-hint">Đơn giá áp dụng cho mỗi xe / {billingUnitLabel(draft.package_name)}.</p>{quote&&(canSaveDraft||quotedTotal===draft.total_amount)&&<p role="status" className="mg-composer-hint">{quote.vehicle_count} xe × {quote.period_count} {billingUnitLabel(draft.package_name)} × {formatMoneyInput(String(quote.unit_price))} đ = {formatMoneyInput(String(quote.rental_amount))} đ tiền thuê xe. Phí khác và tiền cọc tính riêng theo hợp đồng.</p>}</div>
             <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng</h3>
               {(draft.extra_charges || []).map((item,index)=><div className="mg-extra-charge-row" key={index}>
                 <div className="mg-field"><label htmlFor={`contract-charge-${index}-name`}>Tên khoản phí {index+1}</label><input id={`contract-charge-${index}-name`} value={item.name} maxLength={100} placeholder="Ví dụ: Phí ship" aria-invalid={Boolean(errors[`charge_${index}_name`])} onChange={event=>changeCharges((draft.extra_charges || []).map((row,i)=>i===index ? {...row,name:event.target.value} : row))}/>{errors[`charge_${index}_name`] && <p className="mg-field-error">{errors[`charge_${index}_name`]}</p>}</div>

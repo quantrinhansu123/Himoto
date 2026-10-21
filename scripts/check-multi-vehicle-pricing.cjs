@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict'),path=require('node:path');
+const {load,root}=require('./lib/load-typescript.cjs');
+const {rentalQuote,selectedRentalVehicleCount}=load(path.join(root,'lib/management/contract-pricing'));
+const base={start_date:'2026-10-21T09:00',end_date:'2026-10-23T09:00',package_name:'Theo ngày',unit_price:'200000',vehicles:[{id:'100'},{id:'101'}]};
+assert.equal(rentalQuote(base).total_amount,800000);
+assert.equal(rentalQuote({...base,vehicles:[{id:'100'},{id:''}]}).total_amount,400000);
+assert.equal(selectedRentalVehicleCount([{id:'100'},{id:'100'},{id:''}]),1);
+assert.equal(rentalQuote({...base,vehicles:[]}).total_amount,0);
+assert.equal(rentalQuote({...base,end_date:'2026-10-23T09:01'}).total_amount,1200000);
+assert.equal(rentalQuote({...base,package_name:'Theo tuần',end_date:'2026-11-04T09:00',unit_price:'1000000'}).total_amount,4000000);
+assert.equal(rentalQuote({...base,package_name:'Theo tháng',start_date:'2028-01-31T09:00',end_date:'2028-02-29T09:00',unit_price:'3000000'}).total_amount,6000000);
+const fees=rentalQuote({...base,extra_charges:[{name:'Phí ship',amount:'50000'}]});
+assert.equal(fees.rental_amount,800000);assert.equal(fees.extra_amount,50000);assert.equal(fees.total_amount,850000);
+for(const change of [{unit_price:''},{unit_price:'-1'},{unit_price:'1.5'},{unit_price:'9999999999999'},{end_date:base.start_date},{package_name:'Tùy chọn'},{extra_charges:[{name:'Bad',amount:'-1'}]}])assert.equal(rentalQuote({...base,...change}),null);
+console.log(JSON.stringify({passed:5,checks:['Selected vehicles determine quantity; empty rows never add rent','Days, weeks and calendar months multiply each vehicle price','Partial periods retain existing rounding','Named fees are added once per contract','Invalid and overflowing quotes are rejected'],realBusinessWrites:0},null,2));
