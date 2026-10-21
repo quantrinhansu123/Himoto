@@ -14,6 +14,7 @@ import { dataAccess, usesScopedDatabase } from './access-context';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { contractVehicleDetailsSql } from './contract-vehicle-reads';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
     CASE WHEN (r.value->>'fee') ~ '^-?\\d+(\\.\\d+)?$' THEN (r.value->>'fee')::numeric ELSE 0 END)
@@ -354,6 +355,6 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
       contract_signed_on=$13, contract_authorization_date=$14, contract_collateral_description=$15, customer_source=$16,
       customer_source_url=$17, order_type=$18, updated_at=now() WHERE id=$19 AND order_status='draft'`, [...values, id]);
   }
-  const result = await client.query(`${CONTRACT_LIST_SQL} AND o.id = $1`, [savedId]);
+  const result = await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id = $1`), [savedId]);
   return result.rows[0];
 }

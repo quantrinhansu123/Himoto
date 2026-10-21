@@ -6,6 +6,7 @@ import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import { projectManagementTable, type ManagementTableInput, type TableKind } from '@/lib/management/management-table';
 import { CONTRACT_LIST_SQL, contractIndexSql, contractListScopeClause } from './contract-drafts';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
+import { contractVehicleDetailsSql } from './contract-vehicle-reads';
 
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
@@ -54,13 +55,13 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const all=params.get('all')==='1';
   // Paged contract lists: lean index for filter/sort/totals, then hydrate only the visible page.
   if(kind==='contracts'&&!all){
-    const indexed=await client.query(contractIndexSql(clause));
+    const indexed=await client.query(contractVehicleDetailsSql(contractIndexSql(clause)));
     const projected=projectManagementTable(indexed.rows.map(row=>mapApiRow(kind,row)),recentDays?{...input,recentDays}:input,false);
     if(!projected.rows.length)return projected;
     const ids=projected.rows.map(row=>row.id);
     let details;
     try {
-      details=await client.query(`${CONTRACT_LIST_SQL} AND o.id=ANY($1::bigint[])`,[ids]);
+      details=await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=ANY($1::bigint[])`),[ids]);
     } catch (cause) {
       console.error('Contract page hydrate failed; serving lean index rows.', cause instanceof Error ? cause.message : cause);
       return {...projected,recentDays:recentDays??null};
@@ -77,7 +78,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const fullSql=kind==='contracts' ? `${CONTRACT_LIST_SQL}${clause}` : CUSTOMER_PROFILE_SQL;
   const sql=kind==='contracts' ? fullSql
     : `SELECT id,name,phone,id_card,address,status,warning,store_id,store_name,contract_count FROM (${CUSTOMER_PROFILE_SQL}) listing`;
-  const result=await client.query(sql);
+  const result=await client.query(kind==='contracts' ? contractVehicleDetailsSql(sql) : sql);
   const projected=projectManagementTable(result.rows.map(row=>mapApiRow(kind,row)),input,all);
   if(kind==='contracts'||!projected.rows.length)return projected;
   const ids=projected.rows.map(row=>row.id);

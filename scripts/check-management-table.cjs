@@ -36,6 +36,10 @@ async function main(){
   ];
   const plateInput={...base,query:{...EMPTY_QUERY,search:'123.45'},size:2,store:'1'};
   const plate=shared.projectManagementTable(plateRows,plateInput),plateNext=shared.projectManagementTable(plateRows,{...plateInput,page:2});
+  for(const search of ['QA12345','qa 12345','QA-123.45','12345','123 45']){
+    const found=shared.projectManagementTable(plateRows,{...plateInput,query:{...EMPTY_QUERY,search}});
+    assert.equal(found.total,29);assert.deepEqual(found.rows.map(row=>row.id),[133,132]);
+  }
   assert.equal(plate.total,29);assert.deepEqual(plate.rows.map(row=>row.id),[133,132]);assert.deepEqual(plateNext.rows.map(row=>row.id),[131,130]);
   assert.deepEqual(shared.projectManagementTable(plateRows,{...plateInput,direction:'desc'}).rows.map(row=>row.id),[133,132]);
   assert.deepEqual(shared.projectManagementTable(plateRows,{...plateInput,sort:'start_date'}).rows.map(row=>row.id),[133,132]);

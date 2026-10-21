@@ -33,6 +33,7 @@ function matchesOverdueDays(row: ManagementRow, daysText: string, compare: Overd
 
 export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: string): ManagementRow[] {
   const needle = normalize(query.search);
+  const licenseNeedle = needle.replace(/[\s.-]/g, '');
   return rows.filter(row => {
     if (storeId && storeId !== 'all' && String(row.store_id ?? row.id) !== storeId) return false;
     if (query.status && row.status !== query.status) return false;
@@ -42,7 +43,8 @@ export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: st
     if (query.endDate && (!date || date > query.endDate)) return false;
     if (!matchesOverdueDays(row, query.overdueDays || '', query.overdueCompare || '')) return false;
     const searchable = ['code', 'name', 'phone', 'id_card', 'address', 'license', 'customer_name', 'customer_phone', 'vehicle_name', 'holder_name'];
-    return !needle || searchable.some(key => normalize(String(row[key] ?? '')).includes(needle));
+    return !needle || searchable.some(key => normalize(String(row[key] ?? '')).includes(needle)) ||
+      /\d/.test(licenseNeedle) && normalize(String(row.license ?? '')).replace(/[\s.-]/g, '').includes(licenseNeedle);
   });
 }
 

@@ -16,7 +16,7 @@ async function main(){const c=await pool.connect();try{
   await c.query(numbering);await c.query(numbering);
   const inventoryMigration=fs.readFileSync('docs/sql/2026-10-18-shared-vehicle-inventory.sql','utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(inventoryMigration);await c.query(inventoryMigration);
-  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-contract-return-and-draft-release.sql']) {
+  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-contract-return-and-draft-release.sql','2026-10-21-contract-vehicle-labels.sql']) {
     await c.query(fs.readFileSync(path.join('docs/sql',file),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replaceAll("'himoto'","'qa_access_scope'").replace(/^BEGIN;|^COMMIT;/gm,''));
   }
   const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
@@ -117,9 +117,24 @@ async function main(){const c=await pool.connect();try{
   assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91103')).rowCount,0);
   const crossReturnable=await dataAccess.run(scope,()=>load(path.join(root,'lib/server/contract-returns')).loadContractReturnableItems(proxy,92020));
   assert.equal(crossReturnable[0].license,'QA-CROSS');
+  const readTable=load(path.join(root,'lib/server/management-table')).readManagementTable;
+  const findCross=(extra={})=>dataAccess.run(scope,()=>readTable(proxy,'contracts',new URLSearchParams({table:'1',search:'QA-CROSS',...extra})));
+  const crossPage=await findCross();assert.equal(crossPage.total,1);assert.equal(crossPage.rows[0].id,92020);
+  assert.equal(crossPage.rows[0].license,'QA-CROSS');assert.equal(crossPage.rows[0].vehicle_name,'Xe chéo QA');
+  const crossDescription=JSON.parse(crossPage.rows[0].vehicles_json)[0];assert.equal(crossDescription.brand,'Honda');assert.equal(crossDescription.year,2024);assert.equal(crossDescription.color,'Đỏ');
+  const crossExport=await findCross({all:'1'});assert.equal(crossExport.rows[0].license,'QA-CROSS');
+  const labels=(await proxy.query('SELECT * FROM himoto.contract_vehicle_labels() WHERE id=91103')).rows;
+  assert.deepEqual(Object.keys(labels[0]).sort(),['id','name','license','brand','type','year','color'].sort());
+  assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91103')).rowCount,0);
   await dataAccess.run(scope,()=>returns(proxy,70002,{item_id:92021,item_revision:crossReturnable[0].item_revision,returned_at:paidAt,hourly_rate:'0'}));
+  const completedCross=await findCross({status:'completed'});assert.equal(completedCross.total,1);assert.equal(completedCross.rows[0].license,'QA-CROSS');
+  assert.equal((await findCross({status:'renting'})).total,0);
   assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91103')).rowCount,0);
   await c.query("SELECT set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true)");
+  const foreignCross=await dataAccess.run({...scope,id:70001,store_id:80001},()=>readTable(proxy,'contracts',new URLSearchParams({table:'1',filter_id:'92020'})));
+  assert.equal(foreignCross.total,0);
+  assert.equal((await proxy.query('SELECT id FROM himoto.contract_vehicle_labels() WHERE id=91103')).rowCount,0);
+  checks.push('Cross-branch vehicle labels survive contract search, detail hydration, export and completion; helpers expose only description fields for own contracts and keep foreign contracts/vehicle tables restricted');
   await c.query('SAVEPOINT cross_return_denied');await assert.rejects(()=>proxy.query('SELECT himoto.release_returned_contract_vehicle(92021)'),e=>e.code==='42501');await c.query('ROLLBACK TO SAVEPOINT cross_return_denied');
   await c.query('RESET ROLE');
   const crossStock=(await c.query('SELECT status,current_store_id,store_id FROM qa_access_scope.vehicles WHERE id=91103')).rows[0];

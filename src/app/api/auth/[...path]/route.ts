@@ -18,6 +18,7 @@ import { normalizeCustomerLookup, validCustomerLookup } from '@/lib/management/c
 import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
 import { VEHICLE_ORDER_SQL } from '@/lib/server/contract-classification';
+import { contractVehicleDetailsSql } from '@/lib/server/contract-vehicle-reads';
 
 export const runtime = 'nodejs';
 
@@ -121,7 +122,7 @@ const listQueries: Record<string, QueryConfig> = {
 };
 
 async function readAll(query: QueryConfig) {
-  const data = await himotoPool.query(query.sql, query.values);
+  const data = await himotoPool.query(contractVehicleDetailsSql(query.sql), query.values);
   // The UI filters and sorts locally, so return each current dataset in one
   // response instead of making dozens of sequential page requests.
   return NextResponse.json({ status: 'success', data: data.rows }, { headers: { 'Cache-Control': 'no-store' } });
