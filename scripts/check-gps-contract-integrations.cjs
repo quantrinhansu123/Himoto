@@ -57,6 +57,7 @@ async function main(){
     const ownershipGroups=fs.readFileSync('docs/sql/2026-10-18-ownership-telegram-groups.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(ownershipGroups);await c.query(ownershipGroups);
     const ownershipTransfers=fs.readFileSync('docs/sql/2026-10-18-ownership-transfer-telegram.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(ownershipTransfers);await c.query(ownershipTransfers);
     const dualTransferTelegram=fs.readFileSync('docs/sql/2026-10-19-transfer-telegram-dual-groups.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(dualTransferTelegram);await c.query(dualTransferTelegram);
+    const retractions=fs.readFileSync('docs/sql/2026-10-21-telegram-retractions.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(retractions);await c.query(retractions);
     const pacing=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-five-second-poll.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(pacing);await c.query(pacing);
     const history=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-history-webhooks.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(history);await c.query(history);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name) VALUES(23,'Branch A QA'),(31,'Branch B QA')`);
@@ -93,7 +94,11 @@ async function main(){
     assert.equal((await c.query(`SELECT * FROM ${schema}.management_contract_notifications`)).rowCount,1);
     assert.equal((await notices.dispatchContractNotifications(fake,5,db)).configured,false);
     const token='123456789:qa-only-bot-token-123456789';await c.query(`UPDATE ${schema}.management_telegram_settings SET bot_cipher=$1`,[crypto.sealIntegrationSecret({token})]);await c.query(`INSERT INTO ${schema}.management_store_telegram(store_id,chat_id,enabled) VALUES(23,'-100000000001',true),(31,'-100000000002',true)`);
-    if(process.argv.includes('--ownership-only')) {
+    if(process.argv.includes('--retractions-only')) {
+      checks.push(...await require('./lib/check-telegram-retractions.cjs')(db,c,schema));
+    } else if(process.argv.includes('--telegram-controls-only')) {
+      checks.push(...await require('./lib/check-contract-telegram.cjs')(db,c,schema,notices));
+    } else if(process.argv.includes('--ownership-only')) {
       checks.push(...await require('./lib/check-ownership-telegram.cjs')(db,c,schema,notices));
     } else {
     await notices.queueContractNotification(db,1,'rental','qa-ready',143,'rental');
@@ -112,6 +117,7 @@ async function main(){
     checks.push(...await require('./check-contract-documents.cjs')(db,c,schema,notices));
     checks.push(...await require('./lib/check-telegram-media-first.cjs')(db,c,schema,notices));
     checks.push(...await require('./lib/check-ownership-telegram.cjs')(db,c,schema,notices));
+    checks.push(...await require('./lib/check-telegram-retractions.cjs')(db,c,schema));
     checks.push(...await require('./lib/check-gps-status-parity.cjs')(db,c,schema));
     await c.query(`ALTER TABLE ${schema}.vehicles ENABLE ROW LEVEL SECURITY; CREATE POLICY qa_vehicle_read ON ${schema}.vehicles FOR SELECT TO himoto_scoped USING(himoto.access_store(COALESCE(current_store_id,store_id)))`);
     await c.query(`GRANT USAGE ON SCHEMA ${schema} TO himoto_scoped; GRANT SELECT ON ${schema}.vehicles,${schema}.orders,${schema}.gps_devices TO himoto_scoped; GRANT UPDATE ON ${schema}.orders TO himoto_scoped`);

@@ -2,25 +2,24 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { nextRenewalVersion } from '@/lib/management/contract-renewals';
-import { CONTRACT_EVENT_LABELS, type ContractEventType, type ContractTelegramState } from '@/lib/management/contract-telegram';
+import { canSendContractEvent,CONTRACT_EVENT_LABELS, type ContractEventType, type ContractTelegramState } from '@/lib/management/contract-telegram';
 import { hasPermission, type PermissionAccount } from '@/lib/management/permissions';
 import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
 import { contractPhotoLabel } from '@/lib/management/contract-photos';
 import { OWNERSHIP_ORDER_SQL,contractTelegramDestination } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { queueTelegramRetraction,retractionEligibility,retractionErrorText } from './telegram-retractions';
 
 type Database=Pick<PoolClient,'query'>;
 interface Event {key:string;kind:ContractEventType;phases:string[];payload?:NotificationPayload;renewal?:RenewalNotice}
 export class ContractTelegramError extends Error {constructor(message:string,public status=400){super(message);}}
-export function canSendContractEvent(user:PermissionAccount,kind:ContractEventType) {
-  return hasPermission(user,kind==='renewal'||kind==='battery_swap'?'contracts.renew':kind==='return'?'contracts.return':kind==='rental'||kind==='reservation'?'contracts.draft':'contracts.finalize');
-}
+export { canSendContractEvent };
 export async function readContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount) {
   const o=(await db.query(`SELECT o.store_id,o.order_status,o.contract_number,o.draft_payload,s.store_name,${OWNERSHIP_ORDER_SQL} AS ownership
     FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`,[id])).rows[0];
   if(!o)throw new ContractTelegramError('Không tìm thấy hợp đồng.',404);
   const notices=(await db.query(`SELECT id,event_key,root_event_key,event_type,photo_phases,photo_slots,payload,content_hash,status,sent_at,delivery_mode
-    ,error_code,message_ids FROM himoto.management_contract_notifications WHERE order_id=$1 ORDER BY created_at DESC,id`,[id])).rows;
+    ,error_code,message_ids,delivery_target,retraction FROM himoto.management_contract_notifications WHERE order_id=$1 ORDER BY created_at DESC,id`,[id])).rows;
   const composer=o.draft_payload?.management_composer||{};
   const versions=Array.isArray(composer.versions)?composer.versions:[];
   const events:Event[]=notices.filter(n=>n.delivery_mode==='auto').map(n=>({key:n.event_key,kind:n.event_type,payload:n.payload,
@@ -40,6 +39,8 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const returned=composer.reservation_no_show?[]:(await db.query('SELECT id FROM himoto.order_vehicle_details WHERE order_id=$1 AND completed_at IS NOT NULL AND deleted_at IS NULL ORDER BY id DESC',[id])).rows;
     for(const item of returned)if(!events.some(e=>e.kind==='return'&&(e.phases.includes(`return-${item.id}`)||e.key.split(':').at(-1)?.split('-').includes(String(item.id)))))add({key:`return:${id}:${item.id}`,kind:'return',phases:[`return-${item.id}`]});
   }
+  // Sent history stays reachable even after a contract was cancelled or its event shape changed.
+  for(const notice of notices)if(notice.message_ids?.length)add({key:notice.root_event_key||notice.event_key,kind:notice.event_type,phases:notice.photo_phases||[],payload:notice.payload});
   const payloads=new Map<string,NotificationPayload>();
   const result:ContractTelegramState={auto_enabled:false,next_renewal_version:nextRenewalVersion(versions),events:[]};
   // Snapshot business facts for an existing transaction; refresh saved photos and verified payment/refund receipts.
@@ -47,7 +48,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     if(!event.phases.length)event.phases=event.kind==='return'?event.key.split(':').at(-1)!.split('-').map(n=>`return-${n}`):[event.kind==='handover'?'handover':'rental'];
     const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal);void _store;
     const related=notices.filter(n=>(n.root_event_key||n.event_key)===event.key);
-    const delivered=related.find(n=>n.status==='sent');
+    const delivered=related.find(n=>n.status==='sent'&&n.retraction?.state!=='done');
     const payload=event.payload?{...event.payload,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,
       ...(fresh.ownership_renewal_note?{ownership_renewal_note:fresh.ownership_renewal_note}:{}),
       ...(event.kind==='return'?{refunded:fresh.refunded,deposit:fresh.deposit,...(fresh.return_fees?{return_fees:fresh.return_fees}:{}),...(fresh.refund_recipient?{refund_recipient:fresh.refund_recipient}:{})}:{}),
@@ -58,16 +59,19 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     if(delivered&&event.kind==='renewal'&&!delivered.payload?.ownership_renewal_note)delete payload.ownership_renewal_note;
     payloads.set(event.key,payload);
     const hash=notificationHash(event.kind,payload);
-    const same=related.find(n=>(n.content_hash||notificationHash(n.event_type,n.payload))===hash&& !['manual','awaiting_config','failed','unknown'].includes(n.status));
+    const same=related.find(n=>n.retraction?.state!=='done'&&(n.content_hash||notificationHash(n.event_type,n.payload))===hash&& !['manual','awaiting_config','failed','unknown'].includes(n.status));
     // An unresolved send for this transaction must be reconciled before a new variant is sent.
-    const unresolved=related.find(n=>['unknown','sending','pending'].includes(n.status));
-    const latest=same||unresolved||related[0];
+    const unresolved=related.find(n=>n.retraction?.state!=='done'&&(['unknown','sending','pending'].includes(n.status)||n.retraction));
+    const latest=related.find(n=>n.retraction&&n.retraction.state!=='done')||same||unresolved||related[0];
     result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`,phases:event.phases,
       destination_label:contractTelegramDestination(event.kind,o.ownership===true,o.store_name),
-      text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
+      text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.retraction?.state==='done'?'retracted':latest?.retraction?.state==='failed'?'retraction_failed':latest?.retraction?'retracting':latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
       attachments:payload.photos.map(photo=>({slot:photo.slot,mime_type:photo.mime_type,label:contractPhotoLabel(photo.slot)})),
-      can_send:canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
+      can_send:!['draft','cancelled'].includes(o.order_status)&&canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
       delivery_contract_code:latest?.payload?.code,
+      deliveries:related.filter(n=>n.message_ids?.length).map(n=>({id:n.id,sent_at:n.sent_at?new Date(n.sent_at).toISOString():null,message_count:n.message_ids.length,text:contractNotificationText(n.event_type,n.payload),
+        ...retractionEligibility(n,user),retraction_state:n.retraction?.state||null,retraction_reason:n.retraction?.reason,retracted_at:n.retraction?.state==='done'?n.retraction.finished_at:undefined,
+        ...(n.retraction?.state==='failed'?{blocked_reason:retractionErrorText(n.retraction.error)}:{})})),
       can_retry_confirmed_absent:canSendContractEvent(user,event.kind)&&latest?.status==='unknown'&&!latest?.message_ids?.length});
   }
   return {state:result,payloads,store_id:Number(o.store_id)};
@@ -75,6 +79,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
 export async function saveContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount,input:unknown) {
   if(!input||typeof input!=='object'||Array.isArray(input))throw new ContractTelegramError('Yêu cầu Telegram không hợp lệ.');
   const body=input as Record<string,unknown>;
+  if(body.action==='retract'){await queueTelegramRetraction(db,id,actorId,user,body);return;}
   if(body.action==='auto') {
     if(Object.keys(body).some(k=>!['action','enabled'].includes(k))||typeof body.enabled!=='boolean')throw new ContractTelegramError('Chọn chế độ tự gửi hợp lệ.');
     if(!hasPermission(user,'contracts.finalize'))throw new ContractTelegramError('Tài khoản chưa được phép đổi chế độ tự gửi.',403);

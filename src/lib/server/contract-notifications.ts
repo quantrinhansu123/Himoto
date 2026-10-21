@@ -7,6 +7,7 @@ import { telegramCall, telegramMediaBatches, requireTelegramTime, TelegramContin
 import { copyContractCustomerPhotos } from './contract-customer-photos';
 import { CONTRACT_TELEGRAM_ROUTE_SQL } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { dispatchTelegramRetractions,telegramBotIdentity } from './telegram-retractions';
 
 import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { contractNotificationText, hydrateNotificationPhotos, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
@@ -21,6 +22,7 @@ export async function queueContractNotification(client:Database,orderId:number,k
 }
 /** Claims are committed before calling Telegram. An uncertain send is never retried automatically. */
 export async function dispatchContractNotifications(send:typeof fetch=fetch,limit=5,database:Database=ownerDatabase,orderIds?:number[],vehicleEventIds?:number[],deadline=Date.now()+TELEGRAM_DISPATCH_BUDGET_MS) {
+  if(!vehicleEventIds)await dispatchTelegramRetractions(send,Math.min(limit,3),database,orderIds,Math.min(deadline,Date.now()+90_000));
   const settings=(await database.query('SELECT bot_cipher FROM himoto.management_telegram_settings WHERE singleton=true')).rows[0];
   if(!settings?.bot_cipher){await database.query("UPDATE himoto.management_contract_notifications SET status='awaiting_config' WHERE status='pending' AND delivery_mode='manual'");return {sent:0,configured:false};}
   const {token}=openIntegrationSecret<{token:string}>(settings.bot_cipher);let sent=0;
@@ -29,7 +31,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
     const leaseId=randomUUID();
     // An atomic lease serializes complete media + summary blocks in the same Telegram topic.
     const row=(await database.query(`WITH candidate AS MATERIALIZED (
-      SELECT n.id,g.chat_id,g.thread_id FROM himoto.management_contract_notifications n
+      SELECT n.id,target.chat_id,target.thread_id FROM himoto.management_contract_notifications n
       LEFT JOIN himoto.orders o ON o.id=n.order_id
       LEFT JOIN himoto.stores s ON s.id=o.store_id
       LEFT JOIN LATERAL (
@@ -39,11 +41,13 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
         SELECT chat_id,thread_id FROM himoto.management_ownership_telegram
           WHERE route=${CONTRACT_TELEGRAM_ROUTE_SQL} AND enabled
       ) g ON true
+      LEFT JOIN LATERAL (SELECT COALESCE(n.delivery_target->>'chat_id',g.chat_id) AS chat_id,
+        CASE WHEN n.delivery_target IS NULL THEN g.thread_id ELSE (n.delivery_target->>'thread_id')::integer END AS thread_id) target ON true
       WHERE n.status='pending' AND n.delivery_mode='manual' AND ($1::bigint[] IS NULL OR n.order_id=ANY($1))
         AND (n.order_id IS NULL OR ${VEHICLE_ORDER_SQL})
         AND ($3::bigint[] IS NULL OR n.vehicle_event_id=ANY($3))
-        AND (g.chat_id IS NULL OR NOT EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases l
-          WHERE l.chat_id=g.chat_id AND l.thread_id=COALESCE(g.thread_id,0) AND l.notice_id<>n.id
+        AND (target.chat_id IS NULL OR NOT EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases l
+          WHERE l.chat_id=target.chat_id AND l.thread_id=COALESCE(target.thread_id,0) AND l.notice_id<>n.id
             AND (l.expires_at>clock_timestamp() OR EXISTS(SELECT 1 FROM himoto.management_contract_notifications held
               WHERE held.id=l.notice_id AND held.status='pending' AND held.error_code='DELIVERY_CONTINUE'))))
       ORDER BY n.created_at,n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1
@@ -60,6 +64,9 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
     const target={chat_id:row.chat_id,...(row.thread_id?{message_thread_id:row.thread_id}:{})};
     let contacted=false,continued=false;
     try {
+      if(row.delivery_target?.bot_id&&row.delivery_target.bot_id!==telegramBotIdentity(token))throw new TelegramDeliveryError('BOT_CHANGED',true);
+      if(!row.delivery_target)await database.query('UPDATE himoto.management_contract_notifications SET delivery_target=$2::jsonb WHERE id=$1 AND delivery_target IS NULL',
+        [row.id,JSON.stringify({chat_id:row.chat_id,thread_id:row.thread_id||null,bot_id:telegramBotIdentity(token),started_at:new Date().toISOString()})]);
       const photos=await hydrateNotificationPhotos(database,row.order_id==null?null:Number(row.order_id),payload.photos||[]);
       if(ids.some(id=>!Number.isSafeInteger(id)||id<=0)||ids.length>photos.length||ids.length&&row.error_code!=='DELIVERY_CONTINUE')throw new TelegramDeliveryError('SEND_UNCERTAIN');
       const text=contractNotificationText(row.event_type,payload);

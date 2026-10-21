@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
 const {load,root}=require('./lib/load-typescript.cjs');
 module.exports=async function checkDocuments(db,c,schema,notices){
   const {contractDocumentSlots}=load(path.join(root,'lib/management/contract-photos'));
-  const {notificationPhotos,notificationHash}=load(path.join(root,'lib/server/contract-notification-content'));
+  const {notificationPhotos,notificationHash,hydrateNotificationPhotos}=load(path.join(root,'lib/server/contract-notification-content'));
   const {parsePhotoTarget,requireContractPhotoSlot}=load(path.join(root,'lib/server/record-photos'));
   const {requestPermission}=load(path.join(root,'lib/server/access-request'));
   const {copyContractCustomerPhotos}=load(path.join(root,'lib/server/contract-customer-photos'));
@@ -36,7 +36,7 @@ module.exports=async function checkDocuments(db,c,schema,notices){
   assert.equal((await copyContractCustomerPhotos(db,1,143)).copied,3);
   await insert('customers',990001,'id_front',changed);
   assert.equal((await copyContractCustomerPhotos(db,1,143)).copied,0);
-  const copy=(await notificationPhotos(db,1,['rental'])).find(photo=>photo.slot==='customer-id-front');
+  const copy=(await hydrateNotificationPhotos(db,1,await notificationPhotos(db,1,['rental']))).find(photo=>photo.slot==='customer-id-front');
   assert.equal(copy.bytes,Buffer.concat([source,Buffer.from([1])]).toString('base64'));
   await insert('contracts',1,'driver-license',Buffer.concat([source,Buffer.from([3])]));
   for(let i=1;i<=35;i++)await insert('contracts',1,`rental-document-${i}`,Buffer.concat([source,Buffer.from([10+i])]));
@@ -48,21 +48,23 @@ module.exports=async function checkDocuments(db,c,schema,notices){
   const photos=await notificationPhotos(db,1,['rental']);
   assert.equal(photos.filter(p=>p.slot.includes('-document-')).length,35);
   assert(photos.some(p=>p.slot==='customer-id-front'));assert(photos.some(p=>p.slot==='customer-id-back'));assert(photos.some(p=>p.slot==='driver-license'));
-  assert(!photos.some(p=>p.slot==='customer-driver-license')); // same licence image appears only once
+  assert(photos.some(p=>p.slot==='customer-driver-license')); // Independent legacy slots have independent refs.
   assert(!photos.some(p=>p.slot.startsWith('handover-')||p.slot.startsWith('return-')));
   assert.deepEqual((await notificationPhotos(db,1,['return-1001'])).map(p=>p.slot),['return-1001-document-1']);
   assert(photos.findIndex(p=>p.slot==='rental-document-2')<photos.findIndex(p=>p.slot==='rental-document-10'));
-  const beforeHash=notificationHash('rental',{photos});
+  const beforeHash=notificationHash('rental',{photos:await hydrateNotificationPhotos(db,1,photos)});
   // Finalization must import missing customer documents even if the UI import
   // was skipped. Already copied identity photos must keep their old bytes.
   await c.query(`DELETE FROM ${schema}.management_record_photos WHERE entity_type='contracts' AND entity_id=1 AND slot='customer-id-back'`);
   await notices.queueContractNotification(db,1,'rental','qa-documents',143,'rental');
   const queued=(await c.query(`SELECT payload FROM ${schema}.management_contract_notifications WHERE event_key='qa-documents'`)).rows[0].payload;
   assert(queued.photos.some(p=>p.slot==='customer-id-back'));
-  assert.equal(queued.photos.find(p=>p.slot==='customer-id-front').bytes,Buffer.concat([source,Buffer.from([1])]).toString('base64'));
+  assert.equal(queued.photos.find(p=>p.slot==='customer-id-front').bytes,null);
+  assert.equal((await hydrateNotificationPhotos(db,1,queued.photos)).find(p=>p.slot==='customer-id-front').bytes,Buffer.concat([source,Buffer.from([1])]).toString('base64'));
   await insert('contracts',1,'rental-document-1',changed);
-  assert.notEqual(notificationHash('rental',{photos:await notificationPhotos(db,1,['rental'])}),beforeHash);
-  assert.equal(queued.photos.find(p=>p.slot==='rental-document-1').bytes,Buffer.concat([source,Buffer.from([11])]).toString('base64'));
+  assert.notEqual(notificationHash('rental',{photos:await hydrateNotificationPhotos(db,1,await notificationPhotos(db,1,['rental']))}),beforeHash);
+  assert.equal(queued.photos.find(p=>p.slot==='rental-document-1').bytes,null);
+  assert.equal((await hydrateNotificationPhotos(db,1,queued.photos)).find(p=>p.slot==='rental-document-1').bytes,changed.toString('base64'));
   const {randomUUID}=require('node:crypto'),service=load(path.join(root,'lib/server/contract-telegram')),admin={access_role:'admin'};
   const event=(await service.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-documents');
   await service.saveContractTelegram(db,1,143,admin,{action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()});
@@ -75,7 +77,7 @@ module.exports=async function checkDocuments(db,c,schema,notices){
   },5,db);
   assert.equal(batches.reduce((sum,n)=>sum+n,0),event.photo_count);
   assert.equal(methods.at(-1),'sendMessage');assert.equal(methods.filter(method=>method==='sendMessage').length,1);
-  assert.equal(queued.photos.length,42); // 3 vehicle + 35 additional + 1 plate + 3 identity
+  assert.equal(queued.photos.length,43); // 3 vehicle + 35 additional + 1 plate + 4 identity slots
   const database=load(path.join(root,'lib/server/himoto-database')).himotoPool;
   const session=load(path.join(root,'lib/server/management-session')),savedUser=session.userFromSession,descriptor=Object.getOwnPropertyDescriptor(database,'connect');
   let user={id:143,access_role:'branch_staff',store_id:23,scope_all:false,permissions:['contracts.read','contracts.draft']};
@@ -96,7 +98,7 @@ module.exports=async function checkDocuments(db,c,schema,notices){
     user=null;assert.equal((await request()).status,401);
   } finally {Object.defineProperty(database,'connect',descriptor);session.userFromSession=savedUser;}
   return ['More than 15 photos are accepted, saved, reopened and selected with phase-specific permissions and ownership; malformed slots are rejected',
-    'CCCD/passport/licence copies are idempotent snapshots; later source edits preserve contract images; duplicate licence images are sent once',
-    'One explicit Submit sends 42 vehicle, document, plate and identity images in albums of at most 10; other phases stay isolated and queued snapshots remain immutable',
+    'CCCD/passport/licence copies are idempotent snapshots; later source edits preserve contract images; independent legacy licence slots stay available',
+    'One explicit Submit sends 43 vehicle, document, plate and identity images in albums of at most 10; other phases stay isolated and current outboxes hydrate saved refs at dispatch time',
     'Actual identity-import API returns 200/404 appropriately and rejects unsigned, read-only and cross-origin requests with 401/403; all writes remain inside QA rollback'];
 };

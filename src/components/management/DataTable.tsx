@@ -79,7 +79,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     const isContract = config.kind === 'contracts';
     const isActiveContract = isContract && ['renting', 'overdue', 'wait_payment'].includes(row.status);
     const actions: RowAction[] = [{ key: 'view', label: 'Xem chi tiết', icon: <Eye size={16} />, onSelect: () => onView(row) }];
-    if(isContract&&onTelegram&&!['draft','cancelled'].includes(row.status))actions.push({key:'telegram',label:'Gửi Telegram',icon:<MessageCircle size={16}/>,onSelect:()=>onTelegram(row)});
+    if(isContract&&onTelegram&&row.status!=='draft')actions.push({key:'telegram',label:row.status==='cancelled'?'Lịch sử Telegram / Thu hồi tin':'Gửi Telegram',icon:<MessageCircle size={16}/>,onSelect:()=>onTelegram(row)});
     if (config.kind === 'vehicles' && onVehicleAction){
       if(can('vehicles.transfer'))actions.push({ key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') });
       if(can('vehicles.write'))actions.push({ key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') });

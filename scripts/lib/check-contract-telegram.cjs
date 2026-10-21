@@ -62,7 +62,11 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   const command={action:'send',event_key:event.key,hash:event.hash,request_id:randomUUID()};
   await telegram.saveContractTelegram(db,1,143,admin,command);await telegram.saveContractTelegram(db,1,143,admin,command);
   assert.equal((await c.query(`SELECT id FROM ${schema}.management_contract_notifications WHERE root_event_key='renewal:1:2' AND delivery_mode='manual'`)).rowCount,1);
-  // Change the live photo after queuing. The immutable outbox must keep the previous bytes and five-photo album.
+  // Historical outboxes can embed bytes. Verify that backwards-compatible path explicitly;
+  // current outboxes intentionally store refs and hydrate the saved slot at dispatch time.
+  const legacyNotice=(await c.query(`SELECT id,payload FROM ${schema}.management_contract_notifications WHERE root_event_key='renewal:1:2' AND delivery_mode='manual'`)).rows[0];
+  for(const attachment of legacyNotice.payload.photos)attachment.bytes=(await c.query(`SELECT encode(data,'base64') AS bytes FROM ${schema}.management_record_photos WHERE entity_type='contracts' AND entity_id=1 AND slot=$1`,[attachment.slot])).rows[0].bytes;
+  await c.query(`UPDATE ${schema}.management_contract_notifications SET payload=$2,content_hash=$3 WHERE id=$1`,[legacyNotice.id,JSON.stringify(legacyNotice.payload),content.notificationHash('renewal',legacyNotice.payload)]);
   await c.query(`UPDATE ${schema}.management_record_photos SET data=$1 WHERE slot='renewal-2-1'`,[Buffer.from([255,216,255,9])]);
   const calls=[];
   const fake=async(url,options)=>{const method=new URL(url).pathname.split('/').at(-1);calls.push(method);
