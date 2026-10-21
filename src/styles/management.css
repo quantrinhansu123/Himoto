@@ -3762,6 +3762,32 @@
 .mg-media-tabs [aria-selected=true] { color:var(--mg-brand-700); border-bottom-color:currentColor; background:var(--mg-bg); font-weight:600; }
 .mg-media-tabs [role=tab]:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
 .mg-media-hint { color:var(--mg-slate-600); font-size:13px; line-height:1.6; }
+.mg-controls-inline { display:contents; }
+.mg-monitor-tools { margin:6px 12px; min-width:0; }
+.mg-monitor-tools>summary { cursor:pointer; min-height:36px; padding:8px 10px; color:var(--mg-slate-600); font-size:13px; }
+.mg-page-heading>.mg-monitor-tools { margin:0; }
+.mg-toolbar>.mg-monitor-tools { margin:0; flex:0 1 auto; max-width:100%; }
+.mg-toolbar>.mg-monitor-tools[open] { flex-basis:100%; }
+.mg-toolbar .mg-date-filters { flex-basis:100%; }
+.mg-overdue-buckets { display:flex; gap:8px; padding:10px 16px; border-bottom:1px solid var(--mg-line); }
+.mg-overdue-buckets button { display:flex; align-items:center; justify-content:center; gap:5px; min-height:40px; padding:7px 12px; border:1px solid var(--mg-line); border-radius:7px; background:var(--mg-card); font:inherit; font-size:13px; cursor:pointer; }
+.mg-overdue-buckets button.is-active { border-color:var(--mg-brand-500); color:var(--mg-brand-700); background:var(--mg-brand-50); font-weight:600; }
+.mg-overdue-buckets button span { padding:1px 5px; border-radius:10px; background:var(--mg-slate-100); font-size:11px; }
+.mg-compact-contracts .mg-toolbar { display:flex; flex-wrap:wrap; gap:8px; padding:10px 16px; }
+.mg-compact-contracts .mg-search { flex:1 1 220px; }
+.mg-compact-contracts .mg-status-tabs { display:none; }
+.mg-compact-contracts .mg-page-heading { flex-direction:row; align-items:flex-start; gap:8px; margin-bottom:12px; }
+.mg-compact-contracts .mg-page-heading h1 { font-size:20px; }
+.mg-compact-contracts .mg-filter-summary { padding:6px 16px; font-size:12px; }
+.mg-compact-contracts .mg-table { min-width:960px; }
+.mg-compact-contracts .mg-table th,.mg-compact-contracts .mg-table td { padding:10px 8px; font-size:13px; }
+.mg-monitoring-amount { display:grid; gap:2px; font-variant-numeric:tabular-nums; }
+.mg-monitoring-amount small { color:var(--mg-slate-500); font-size:11px; white-space:normal; }
+.mg-monitoring-card-meta { display:flex; flex-wrap:wrap; gap:3px 12px; font-size:12px; color:var(--mg-slate-600); }
+.mg-monitoring-card-amounts { display:grid; gap:3px; font-size:12px; }
+.mg-mobile-monitoring-card .mg-mobile-card-title { white-space:normal; }
+.mg-mobile-monitoring-card .mg-status { font-size:11px; white-space:normal; max-width:100%; }
+@media(max-width:767px) { .mg-overdue-buckets { gap:5px; padding:8px 10px; } .mg-overdue-buckets button { flex:1; padding:7px 5px; font-size:12px; } }
 .mg-media-upload-actions .mg-button { min-height:44px; }
 .mg-media-gallery, .mg-media-individual, .mg-extra-documents, .mg-return-options { margin:10px 0; min-width:0; }
 .mg-media-gallery>summary, .mg-media-individual>summary, .mg-extra-documents>summary, .mg-return-options>summary { cursor:pointer; min-height:40px; padding:8px 0; font-weight:600; color:var(--mg-slate-700); overflow-wrap:anywhere; }

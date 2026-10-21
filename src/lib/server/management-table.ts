@@ -8,13 +8,14 @@ import { CONTRACT_LIST_SQL, contractIndexSql, contractListScopeClause } from './
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
 import { dailyPriceSql } from './contract-deposits';
+import { OVERDUE_BUCKETS,type OverdueBucket,withContractMonitoring } from '@/lib/management/contract-overdue';
 
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
   const integer=(key:string,fallback:number,max:number)=>{const value=params.get(key);if(value===null)return fallback;if(!/^[1-9]\d*$/.test(value)||!Number.isSafeInteger(Number(value))||Number(value)>max)throw new ManagementTableError('Phân trang không hợp lệ.');return Number(value);};
   const page=integer('page',1,1000000),size=integer('size',10,50),direction=params.get('direction')||'asc',scope=params.get('scope')||'';
   if(!['asc','desc'].includes(direction)||!['','drafts','vat','overdue','ownership','due','renewable','remindable'].includes(scope)||kind!=='contracts'&&scope)throw new ManagementTableError('Phạm vi hoặc sắp xếp không hợp lệ.');
-  const sort=params.get('sort')||'code',allowed=new Set([...MANAGEMENT_CONFIG[kind].columns.map(column=>column.key),'code','contract_type_name','overdue_days','overdue_minutes','overdue_fee_estimate','rental_debt_amount','billing_next_due_at','billing_due_amount','company_paid_amount']);
+  const sort=params.get('sort')||'code',allowed=new Set([...MANAGEMENT_CONFIG[kind].columns.map(column=>column.key),'code','contract_type_name','overdue_days','overdue_minutes','overdue_fee_estimate','rental_debt_amount','contract_signed_at','monitoring_amount','contract_gps_status','billing_next_due_at','billing_due_amount','company_paid_amount']);
   if(!allowed.has(sort))throw new ManagementTableError('Cột sắp xếp không hợp lệ.');
   const store=params.get('store')||'all';if(store!=='all'&&(!/^[1-9]\d*$/.test(store)||!Number.isSafeInteger(Number(store))))throw new ManagementTableError('Cơ sở không hợp lệ.');
   const filters:Record<string,string>={};const keys=new Set([...MANAGEMENT_CONFIG[kind].filters.map(filter=>filter.key),'contract_type_id','customer_id','id']);
@@ -22,11 +23,14 @@ export function parseManagementTable(kind:TableKind,params:URLSearchParams):Mana
   const from=params.get('from')||'',to=params.get('to')||'';for(const date of [from,to])if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))))throw new ManagementTableError('Khoảng ngày không hợp lệ.');
   const search=params.get('search')||'',status=params.get('status')||'',days=params.get('overdue_days')||'',compare=params.get('overdue_compare')||'eq';
   const recent=params.get('recent')||'';
+  const bucket=params.get('overdue_bucket')||'';
+  if(bucket&&(kind!=='contracts'||!OVERDUE_BUCKETS.some(item=>item.key===bucket)))throw new ManagementTableError('Nhóm quá hạn không hợp lệ.');
   if(search.length>500||status.length>100||days&&!/^\d{1,5}$/.test(days)||!['eq','gt','lt'].includes(compare)||params.has('all')&&params.get('all')!=='1')throw new ManagementTableError('Bộ lọc không hợp lệ.');
   if(recent&&(!/^[1-9]\d{0,3}$/.test(recent)||Number(recent)>3660))throw new ManagementTableError('Khoảng ngày gần đây không hợp lệ.');
-  return {kind,page,size,sort,direction:direction as 'asc'|'desc',scope,store,...(recent?{recentDays:Number(recent)}:{}),query:{...EMPTY_QUERY,filters,search,status,startDate:from,endDate:to,overdueDays:days,overdueCompare:compare as 'eq'|'gt'|'lt'}};
+  return {kind,page,size,sort,direction:direction as 'asc'|'desc',scope,store,...(recent?{recentDays:Number(recent)}:{}),query:{...EMPTY_QUERY,filters,search,status,startDate:from,endDate:to,overdueDays:days,overdueCompare:compare as 'eq'|'gt'|'lt',...(bucket?{overdueBucket:bucket as OverdueBucket}:{})}};
 }
 function contractScopeClause(scope:string) {
+  if(scope==='overdue')return contractStatusClause('overdue');
   return scope==='due' ? ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL`
     : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
 }
@@ -43,7 +47,8 @@ function overdueDetailsSql(sql:string) {
 export function contractStatusClause(status:string) {
   if(!status)return '';
   if(status==='renting')return ` AND o.order_status IN ('renting','overdue')`;
-  if(status==='overdue')return ` AND (o.order_status='overdue' OR o.order_status='renting' AND COALESCE(o.return_at, ov.end_date) < now())`;
+  if(status==='overdue')return ` AND (o.order_status='overdue' OR o.order_status='renting' AND COALESCE(o.return_at, ov.end_date) < now()
+    OR o.order_status IN ('renting','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL)`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
   return ` AND o.order_status='${status}'`;
 }
@@ -63,11 +68,13 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     ? `${contractScopeClause(input.scope)}${contractStatusClause(input.query.status)}${recentDays?contractRecentClause(recentDays):''}`
     : '';
   const all=params.get('all')==='1';
-  const overdueSql=(sql:string)=>input.scope==='overdue'?overdueDetailsSql(sql):sql;
+  const monitoring=input.scope==='overdue'||input.scope==='ownership'||input.query.status==='overdue'||Boolean(input.query.overdueBucket);
+  const now=Date.now();
+  const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   // Paged contract lists: lean index for filter/sort/totals, then hydrate only the visible page.
   if(kind==='contracts'&&!all){
     const indexed=await client.query(overdueSql(contractVehicleDetailsSql(contractIndexSql(clause))));
-    const projected=projectManagementTable(indexed.rows.map(row=>mapApiRow(kind,row)),recentDays?{...input,recentDays}:input,false);
+    const projected=projectManagementTable(indexed.rows.map(row=>mapApiRow(kind,row)),recentDays?{...input,recentDays}:input,false,now);
     if(!projected.rows.length)return projected;
     const ids=projected.rows.map(row=>row.id);
     let details;
@@ -82,7 +89,8 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     projected.rows=projected.rows.map(row=>{
       const detail=mapped.get(row.id);
       if(!detail)return row;
-      return {...detail,...(input.scope==='overdue'?{overdue_items_json:row.overdue_items_json,overdue_days:row.overdue_days,overdue_minutes:row.overdue_minutes,overdue_fee_estimate:row.overdue_fee_estimate,rental_debt_amount:row.rental_debt_amount}:{}),...(row.billing_plan_json?{billing_plan_json:row.billing_plan_json,billing_due_amount:row.billing_due_amount,billing_next_due_at:row.billing_next_due_at,billing_overdue_at:row.billing_overdue_at}:{})};
+      const merged={...detail,...(row.billing_plan_json?{billing_base_total:row.billing_base_total,total_amount:row.total_amount,billing_plan_json:row.billing_plan_json,billing_due_amount:row.billing_due_amount,billing_next_due_at:row.billing_next_due_at,billing_overdue_at:row.billing_overdue_at}:{})};
+      return monitoring?withContractMonitoring({...merged,overdue_items_json:row.overdue_items_json,status:row.status},now):merged;
     });
     return {...projected,recentDays:recentDays??null};
   }
@@ -90,7 +98,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const sql=kind==='contracts' ? fullSql
     : `SELECT id,name,phone,id_card,address,status,warning,store_id,store_name,contract_count FROM (${CUSTOMER_PROFILE_SQL}) listing`;
   const result=await client.query(kind==='contracts' ? overdueSql(contractVehicleDetailsSql(sql)) : sql);
-  const projected=projectManagementTable(result.rows.map(row=>mapApiRow(kind,row)),input,all);
+  const projected=projectManagementTable(result.rows.map(row=>mapApiRow(kind,row)),input,all,now);
   if(kind==='contracts'||!projected.rows.length)return projected;
   const ids=projected.rows.map(row=>row.id);
   const details=await client.query(`${fullSql} WHERE c.id=ANY($1::bigint[])`,[ids]);

@@ -7,6 +7,7 @@ import { formatValue } from '@/lib/management/table-utils';
 import { RowAction, RowActionsMenu } from './RowActionsMenu';
 import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
 import { GpsEvidence } from './GpsEvidence';
+import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
   vehicles: ['license', 'holder_name', 'store_name', 'overdue_days'],
@@ -36,22 +37,23 @@ interface Props {
 
 export function ManagementMobileList({ config, rows, sortKey, sortDirection, onSort, onView, actions, busyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const selectable = Boolean(selectedIds && onSelectionChange);
+  const compact=config.kind==='contracts'&&config.columns.some(column=>column.key==='monitoring_amount');
   const showOverdue=config.kind==='contracts'&&config.columns.some(column=>column.key==='overdue_minutes');
   const ids = rows.map(row => row.id);
   const selected = ids.filter(id => selectedIds?.has(id)).length;
   return <div className="mg-mobile-records" aria-busy={loading}>
-    <div className="mg-mobile-list-controls">
+    {!compact&&<div className="mg-mobile-list-controls">
       {selectable && <label className="mg-mobile-select-all"><input type="checkbox" aria-label="Chọn tất cả thẻ trên trang này"
         disabled={loading || Boolean(error) || !rows.length} checked={rows.length > 0 && selected === rows.length}
         ref={input => { if (input) input.indeterminate = selected > 0 && selected < rows.length; }}
         onChange={event => onSelectionChange?.(ids, event.target.checked)} /><span>Chọn tất cả</span></label>}
       <label className="mg-mobile-sort"><span className="mg-sr-only">Sắp xếp danh sách</span><select aria-label="Sắp xếp danh sách" value={sortKey} onChange={event => onSort(event.target.value)}>
-        {config.columns.map(column => <option key={column.key} value={column.key}>{column.label}</option>)}
+        {config.columns.filter(column=>column.sortable!==false).map(column => <option key={column.key} value={column.key}>{column.label}</option>)}
       </select></label>
       <button type="button" className="mg-icon-button" aria-label={sortDirection === 'asc' ? 'Đang tăng dần, đổi sang giảm dần' : 'Đang giảm dần, đổi sang tăng dần'} onClick={() => onSort(sortKey)}>
         {sortDirection === 'asc' ? <ArrowUp size={17} /> : <ArrowDown size={17} />}
       </button>
-    </div>
+    </div>}
     {loading ? <div className="mg-table-state" role="status"><LoaderCircle className="mg-spin" size={26} /><strong>Đang tải danh sách…</strong></div>
       : error ? <div className="mg-table-state mg-table-error" role="alert"><FileSearch size={30} /><strong>Không tải được dữ liệu</strong><p>{error}</p><button type="button" className="mg-button" onClick={onRetry}><RotateCcw size={15} />Thử lại</button></div>
       : !rows.length ? <div className="mg-table-state"><FileSearch size={32} /><strong>{isFiltered ? 'Không tìm thấy kết quả' : 'Danh sách đang trống'}</strong><p>{isFiltered ? 'Thử từ khóa khác hoặc bỏ bớt bộ lọc.' : 'Chưa có bản ghi để hiển thị.'}</p>{isFiltered && <button type="button" className="mg-button" onClick={onReset}>Xóa bộ lọc</button>}</div>
@@ -60,6 +62,15 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
         const label = String((config.kind === 'vehicles' ? row.license : row.code) || row.code || title);
         const receive=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='receive'):undefined;
         const contractAction=config.kind==='contracts'?actions(row).find(item=>item.key===(row.status==='draft'?'delete':'telegram')):undefined;
+        if(config.kind==='contracts'&&config.columns.some(column=>column.key==='monitoring_amount'))return <li key={row.id} className="mg-mobile-record-card mg-mobile-monitoring-card">
+          <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={()=>onView(row)}>
+            <strong className="mg-mobile-card-title">{row.code} · {title}</strong>
+            <span className="mg-monitoring-card-meta"><span>{row.license||'—'}</span><span>Ký: {formatValue(row.contract_signed_at,'date')}</span><span>Cọc: {formatValue(row.deposit_amount,'money')}</span></span>
+            <span className="mg-monitoring-card-amounts"><strong>Quá hạn: {formatValue(row.overdue_minutes,'duration')}</strong><ContractMonitoringAmount row={row}/></span>
+            <ContractGpsIndicator row={row}/>
+          </button>
+          <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId===row.id}/></div>
+        </li>;
         const summary = SUMMARY_KEYS[config.kind].filter(key => row[key] !== undefined && row[key] !== '').map(key => {
           const column = config.columns.find(item => item.key === key);
           const value = optionLabel(config, key, formatValue(row[key], column?.format));

@@ -1,5 +1,6 @@
 import { CellValue, ManagementRow } from './types';
 import { staffRoles } from './staff-positions';
+import { matchesOverdueBucket,type OverdueBucket } from './contract-overdue';
 
 export type OverdueCompare = 'gt' | 'lt' | 'eq';
 export interface TableQuery {
@@ -12,6 +13,7 @@ export interface TableQuery {
   overdueDays: string;
   /** gt = trên, lt = dưới, eq = bằng. Defaults to eq when days are set. */
   overdueCompare: OverdueCompare | '';
+  overdueBucket?:OverdueBucket;
 }
 export const EMPTY_QUERY: TableQuery = { search: '', status: '', filters: {}, startDate: '', endDate: '', overdueDays: '', overdueCompare: 'eq' };
 export const OVERDUE_COMPARE_OPTIONS: { value: OverdueCompare; label: string }[] = [
@@ -36,12 +38,13 @@ export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: st
   const licenseNeedle = needle.replace(/[\s.-]/g, '');
   return rows.filter(row => {
     if (storeId && storeId !== 'all' && String(row.store_id ?? row.id) !== storeId) return false;
-    if (query.status && row.status !== query.status) return false;
+    if (query.status && row.status !== query.status && !(query.status==='overdue'&&row.collection_overdue===1)) return false;
     if (Object.entries(query.filters).some(([key, value]) => value && String(row[key] ?? '') !== value && !(key === 'position' && staffRoles(row.position).includes(value)))) return false;
     const date = String(row.start_date ?? '').slice(0, 10);
     if (query.startDate && (!date || date < query.startDate)) return false;
     if (query.endDate && (!date || date > query.endDate)) return false;
     if (!matchesOverdueDays(row, query.overdueDays || '', query.overdueCompare || '')) return false;
+    if (!matchesOverdueBucket(row, query.overdueBucket || '')) return false;
     const searchable = ['code', 'name', 'phone', 'id_card', 'address', 'license', 'customer_name', 'customer_phone', 'vehicle_name', 'holder_name'];
     return !needle || searchable.some(key => normalize(String(row[key] ?? '')).includes(needle)) ||
       /\d/.test(licenseNeedle) && normalize(String(row.license ?? '')).replace(/[\s.-]/g, '').includes(licenseNeedle);

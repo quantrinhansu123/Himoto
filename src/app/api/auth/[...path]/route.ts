@@ -4,7 +4,7 @@ import { himotoPool, ownerDatabase } from '@/lib/server/himoto-database';
 import { CONTRACT_LIST_SQL, DraftSaveError, contractListScopeClause, saveDatabaseDraft } from '@/lib/server/contract-drafts';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { STORE_SELECT_SQL } from '@/lib/server/store-management';
-import { createAccount, deleteAccount, listAccountTransactions, parseAccountCollectionPath, parseAccountPath, updateAccount } from '@/lib/server/cashbook-accounts';
+import { createAccount, deleteAccount, listAccountTransactions, parseAccountCollectionPath, parseAccountPath, updateAccount,setAccountStatus } from '@/lib/server/cashbook-accounts';
 import { createStaff, parseStaffPath, updateStaff } from '@/lib/server/staff-management';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { validIdentityIssueDate } from '@/lib/management/customer-identity';
@@ -341,6 +341,8 @@ async function PATCHHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
   const patchPath = (await params).path;
+  const statusAccount=parseAccountPath(patchPath,'status');
+  if(statusAccount)return setAccountStatus(statusAccount.kind,statusAccount.id,request);
   const account = parseAccountPath(patchPath);
   if (account) return updateAccount(account.kind, account.id, request);
   const staffId = parseStaffPath(patchPath);

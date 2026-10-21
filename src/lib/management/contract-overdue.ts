@@ -1,5 +1,29 @@
 import type { ManagementRow } from './types';
 import { DEFAULT_LATE_HOURLY_RATE,lateReturnFee } from './return-fees';
+import { OWNERSHIP_CONTRACT_TYPES } from './config';
+
+export const OVERDUE_BUCKETS=[
+  {key:'traditional-overdue',label:'Quá hạn'}, {key:'traditional-3',label:'Trên 3 ngày'}, {key:'traditional-10',label:'Trên 10 ngày'},
+  {key:'ownership-overdue',label:'Quá hạn'}, {key:'ownership-1-5',label:'1–5 ngày'}, {key:'ownership-6-15',label:'6–15 ngày'}, {key:'ownership-15-plus',label:'Trên 15 ngày'},
+] as const;
+export type OverdueBucket=typeof OVERDUE_BUCKETS[number]['key'];
+export function isOwnershipContract(row:ManagementRow){return row.store_kind==='lease_to_own'||OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type));}
+export function matchesOverdueBucket(row:ManagementRow,bucket:string){
+  if(!bucket)return true;
+  if(row.status!=='overdue'&&row.collection_overdue!==1)return false;
+  const owner=isOwnershipContract(row),minutes=Number(row.overdue_minutes),days=Math.floor(minutes/1440);
+  if(bucket.startsWith('ownership-')!==owner)return false;
+  if(bucket.endsWith('-overdue'))return true;
+  if(!Number.isFinite(minutes))return false;
+  switch(bucket){
+    case 'traditional-3':return minutes>3*1440;
+    case 'traditional-10':return minutes>10*1440;
+    case 'ownership-1-5':return days>=1&&days<=5;
+    case 'ownership-6-15':return days>=6&&days<=15;
+    case 'ownership-15-plus':return days>15;
+    default:return false;
+  }
+}
 
 interface OverdueItem {return_at?:unknown;completed_at?:unknown;daily_price?:unknown}
 function itemsFrom(value:unknown):OverdueItem[]|undefined {
@@ -28,4 +52,19 @@ export function withContractOverdue(row:ManagementRow,now=Date.now()):Management
   return {...row,overdue_minutes:minutes,overdue_days:minutes===undefined?0:Math.floor(minutes/1440),
     overdue_fee_estimate:minutes===undefined||unknownFee?undefined:fee,
     rental_debt_amount:total===undefined||total===''||paid===undefined||paid===''?undefined:Math.max(Number(total)-Number(paid),0)};
+}
+
+/** Ownership collections follow unpaid installments; older contracts retain the vehicle deadline. */
+export function withContractMonitoring(row:ManagementRow,now=Date.now()):ManagementRow {
+  const base=withContractOverdue(row,now);
+  const owner=isOwnershipContract(row);
+  if(!owner||!row.billing_plan_json)return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:row.status==='overdue'?1:0,monitoring_amount:owner?base.rental_debt_amount:base.overdue_fee_estimate};
+  if(row.billing_error||row.billing_due_amount===undefined||row.billing_due_amount==='')return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'payment',overdue_minutes:undefined,overdue_days:0,overdue_fee_estimate:undefined,collection_overdue:row.status==='overdue'?1:0,monitoring_amount:undefined};
+  const due=String(row.billing_overdue_at||'');
+  const dueAt=Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(due)?`${due}:00+07:00`:due);
+  const active=['renting','overdue','wait_payment','bad_debt'].includes(row.status);
+  const late=active&&Number(row.billing_due_amount)>0&&Number.isFinite(dueAt)&&dueAt<=now;
+  const minutes=late?Math.max(0,Math.floor((now-dueAt)/60000)):undefined;
+  return {...base,status:late&&row.status==='renting'?'overdue':!late&&row.status==='overdue'?'renting':row.status,
+    contract_signed_at:row.signed_on||row.start_date,overdue_basis:'payment',overdue_minutes:minutes,overdue_days:minutes===undefined?0:Math.floor(minutes/1440),overdue_fee_estimate:undefined,collection_overdue:late?1:0,monitoring_amount:row.billing_due_amount};
 }

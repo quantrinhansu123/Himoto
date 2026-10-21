@@ -10,7 +10,8 @@ out=Path(a.output)/a.browser;out.mkdir(parents=True,exist_ok=True);checks=[];req
 rows=[]
 for id,minutes,fee in [(1,3075,360000),(2,125,60000),(3,2880,None)]:
     row=dict(id=id,code=f'QA-OVERDUE-{id}',name=f'QA-OVERDUE-{id}',status='overdue',customer_name=f'Khách quá hạn QA {id}',customer_phone='0900000000',vehicle_name='Xe QA',license=f'QA-{id:03}',store_id=32,store_name='CS QA',start_date='2026-10-01T09:00:00+07:00',end_date='2026-10-18T09:00:00+07:00',total_amount=1000000,paid_amount=600000,deposit_amount=2000000,rental_type='daily',contract_type_id='daily',contract_type_name='Thuê theo ngày',overdue_days=minutes//1440,overdue_minutes=minutes,rental_debt_amount=400000)
-    if fee is not None:row['overdue_fee_estimate']=fee
+    row['contract_signed_at']=row['start_date'];row['overdue_basis']='return'
+    if fee is not None:row['overdue_fee_estimate']=fee;row['monitoring_amount']=fee
     rows.append(row)
 
 def mock(route):
@@ -40,23 +41,23 @@ with sync_playwright() as pw:
     page.goto(a.url+'/contracts/overdue',wait_until='networkidle',timeout=120000)
     region=page.get_by_role('region',name='Hợp đồng quá hạn',exact=True)
     expect(region.get_by_role('heading',name='Hợp đồng quá hạn',exact=True)).to_be_visible()
-    expect(region.get_by_text('Tiền thuê còn thiếu chưa gồm phí tạm tính',exact=False)).to_be_visible()
+    expect(region.get_by_role('region',name='Thống kê hợp đồng theo bộ lọc')).not_to_be_visible()
     if mobile:
         card=region.locator('.mg-mobile-record-card').filter(has_text='QA-OVERDUE-1')
         expect(card).to_contain_text('2 ngày 3 giờ 15 phút');expect(card).to_contain_text('360.000');expect(card).to_contain_text('400.000')
         expect(region.locator('.mg-mobile-record-card').filter(has_text='QA-OVERDUE-2')).to_contain_text('0 ngày 2 giờ 5 phút')
         expect(region.locator('.mg-mobile-record-card').filter(has_text='QA-OVERDUE-3')).to_contain_text('Cần đối chiếu')
-        region.get_by_role('combobox',name='Sắp xếp danh sách',exact=True).select_option('overdue_fee_estimate')
     else:
-        for text in ['Thời gian quá hạn','Phí quá hạn (tạm tính)','Tiền thuê còn thiếu']:expect(region.get_by_role('columnheader',name=text,exact=False)).to_be_visible()
+        for text in ['Quá hạn','Số tiền','Định vị']:expect(region.get_by_role('columnheader',name=text,exact=False)).to_be_visible()
         row=region.locator('tbody tr').filter(has_text='QA-OVERDUE-1')
         expect(row).to_contain_text('2 ngày 3 giờ 15 phút');expect(row).to_contain_text('360.000');expect(row).to_contain_text('400.000')
         expect(region.locator('tbody tr').filter(has_text='QA-OVERDUE-2')).to_contain_text('0 ngày 2 giờ 5 phút')
         expect(region.locator('tbody tr').filter(has_text='QA-OVERDUE-3')).to_contain_text('Cần đối chiếu')
-        region.get_by_role('columnheader',name='Phí quá hạn (tạm tính)',exact=False).get_by_role('button').click()
+    region.get_by_text('Bộ lọc nâng cao',exact=True).click()
+    region.get_by_role('combobox',name='Sắp xếp hợp đồng',exact=True).select_option('monitoring_amount')
     checks.append('Elapsed days/hours/minutes, estimated late fees and rental debt are visible together; missing prices show a reconciliation message')
     page.wait_for_timeout(500)
-    assert any(r['query'].get('sort')=='overdue_fee_estimate' for r in requests)
+    assert any(r['query'].get('sort')=='monitoring_amount' for r in requests)
     region.get_by_role('spinbutton',name='Số ngày quá hạn',exact=True).fill('0')
     if mobile:expect(region.locator('.mg-mobile-record-card')).to_have_count(1)
     else:expect(region.locator('tbody tr')).to_have_count(1)

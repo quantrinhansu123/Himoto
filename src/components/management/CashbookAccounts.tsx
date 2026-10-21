@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Banknote, Eye, FileSearch, Landmark, LoaderCircle, Pencil, Plus, RotateCcw, Trash2, WalletCards } from 'lucide-react';
+import { Archive,Banknote, Eye, FileSearch, Landmark, LoaderCircle, Pencil, Plus, RotateCcw, Trash2, WalletCards } from 'lucide-react';
 import type { CashbookAccount } from '@/lib/management/cashbook-repository';
 import { AccountDialogMode, CashbookAccountDialog } from './CashbookAccountDialog';
 import { useManagement } from './ManagementProvider';
@@ -11,8 +11,11 @@ const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)
 const typeLabel = (account: CashbookAccount) => account.kind === 'cash' ? 'Tiền mặt' : account.owner_type === 'company' ? 'TK công ty' : 'Ngân hàng';
 
 interface Props { accounts: CashbookAccount[]; loading: boolean; error: string; onRetry: () => void }
-export function CashbookAccounts({ accounts, loading, error, onRetry }: Props) {
-  const { selectedStore } = useManagement();
+export function CashbookAccounts({ accounts:allAccounts, loading, error, onRetry }: Props) {
+  const { selectedStore,can } = useManagement();
+  const canManage=can('finance.write');
+  const [status,setStatus]=useState('active');
+  const accounts=allAccounts.filter(account=>status==='all'||(account.status.toLowerCase()==='active')===(status==='active'));
   const [target, setTarget] = useState<{ account: CashbookAccount; mode: Exclude<AccountDialogMode, 'create'> } | null>(null);
   const [creating, setCreating] = useState(false);
   const total = accounts.reduce((sum, account) => ({ opening: sum.opening + account.opening_balance, income: sum.income + account.income, expense: sum.expense + account.expense, balance: sum.balance + account.balance }), { opening: 0, income: 0, expense: 0, balance: 0 });
@@ -20,7 +23,8 @@ export function CashbookAccounts({ accounts, loading, error, onRetry }: Props) {
     <div className="mg-cashbook-panel-heading"><span className="mg-cashbook-symbol is-account" aria-hidden="true"><WalletCards size={20} /></span>
       <div><h2 id="cashbook-accounts-title">Danh sách TK<span className="mg-title-count">{loading || error ? '—' : accounts.length}</span></h2><p>Số dư = số dư đầu kỳ + tổng thu − tổng chi của từng tài khoản.</p></div>
       <span className="mg-cashbook-panel-description">Tính trên toàn bộ phiếu, không theo bộ lọc ngày</span>
-      <button type="button" className="mg-button mg-button-primary mg-cashbook-account-add" onClick={() => setCreating(true)}><Plus size={16} />Thêm tài khoản</button>
+      <label className="mg-field"><span className="mg-sr-only">Trạng thái tài khoản</span><select aria-label="Trạng thái tài khoản" value={status} onChange={event=>setStatus(event.target.value)}><option value="active">Đang sử dụng</option><option value="inactive">Ngừng sử dụng</option><option value="all">Tất cả tài khoản</option></select></label>
+      {canManage&&<button type="button" className="mg-button mg-button-primary mg-cashbook-account-add" onClick={() => setCreating(true)}><Plus size={16} />Thêm tài khoản</button>}
     </div>
     <div className="mg-mobile-records" aria-busy={loading}>
       {loading ? <div className="mg-table-state" role="status"><LoaderCircle size={25} className="mg-spin" /><strong>Đang tính số dư…</strong></div>
@@ -34,8 +38,9 @@ export function CashbookAccounts({ accounts, loading, error, onRetry }: Props) {
           </button>
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${account.label}`} actions={[
             { key: 'view', label: 'Xem chi tiết', icon: <Eye size={16} />, onSelect: () => setTarget({ account, mode: 'view' }) },
-            { key: 'edit', label: 'Sửa tài khoản', icon: <Pencil size={16} />, onSelect: () => setTarget({ account, mode: 'edit' }) },
-            { key: 'delete', label: 'Xóa tài khoản', icon: <Trash2 size={16} />, danger: true, onSelect: () => setTarget({ account, mode: 'delete' }) },
+            ...(canManage?[{ key: 'edit', label: 'Sửa tài khoản', icon: <Pencil size={16} />, onSelect: () => setTarget({ account, mode: 'edit' }) },
+            ...(account.status.toLowerCase()==='active'?[{key:'archive',label:'Ngừng sử dụng',icon:<Archive size={16}/>,onSelect:()=>setTarget({account,mode:'archive'})}]:[]),
+            ...(account.voucher_count===0?[{ key: 'delete', label: 'Xóa tài khoản', icon: <Trash2 size={16} />, danger: true, onSelect: () => setTarget({ account, mode: 'delete' }) }]:[])]:[]),
           ]} /></div>
         </li>)}</ul><p className="mg-mobile-list-total">Tổng số dư <strong>{money(total.balance)}</strong></p></>}
     </div>
@@ -55,10 +60,11 @@ export function CashbookAccounts({ accounts, loading, error, onRetry }: Props) {
             <td className={`mg-align-right mg-numeric mg-cashbook-balance${account.balance < 0 ? ' is-negative' : ''}`}><strong>{money(account.balance)}</strong></td>
             <td className="mg-align-right"><div className="mg-row-actions">
               <button type="button" className="mg-icon-button" aria-label={`Xem ${account.label}`} title="Xem" onClick={() => setTarget({ account, mode: 'view' })}><Eye size={16} /></button>
-              <button type="button" className="mg-icon-button" aria-label={`Sửa ${account.label}`} title="Sửa" onClick={() => setTarget({ account, mode: 'edit' })}><Pencil size={16} /></button>
-              <button type="button" className="mg-icon-button" aria-label={`Xóa ${account.label}`} title="Xóa" onClick={() => setTarget({ account, mode: 'delete' })}><Trash2 size={16} /></button></div></td>
+              {canManage&&<><button type="button" className="mg-icon-button" aria-label={`Sửa ${account.label}`} title="Sửa" onClick={() => setTarget({ account, mode: 'edit' })}><Pencil size={16} /></button>
+              {account.status.toLowerCase()==='active'&&<button type="button" className="mg-icon-button" aria-label={`Ngừng sử dụng ${account.label}`} title="Ngừng sử dụng" onClick={()=>setTarget({account,mode:'archive'})}><Archive size={16}/></button>}
+              {account.voucher_count===0&&<button type="button" className="mg-icon-button" aria-label={`Xóa ${account.label}`} title="Xóa" onClick={() => setTarget({ account, mode: 'delete' })}><Trash2 size={16} /></button>}</>}</div></td>
           </tr>)}</tbody>
-        {!loading && !error && accounts.length > 0 && <tfoot><tr><th scope="row" colSpan={3}>Tổng cộng</th>
+        {!loading && !error && accounts.length > 0 && <tfoot><tr><th scope="row" colSpan={3}>Tổng TK đang hiển thị</th>
           <td className="mg-align-right mg-numeric">{money(total.opening)}</td><td className="mg-align-right mg-numeric mg-cashbook-income-amount">{money(total.income)}</td>
           <td className="mg-align-right mg-numeric mg-cashbook-expense-amount">{money(total.expense)}</td>
           <td className={`mg-align-right mg-numeric mg-cashbook-balance${total.balance < 0 ? ' is-negative' : ''}`}><strong>{money(total.balance)}</strong></td><td /></tr></tfoot>}

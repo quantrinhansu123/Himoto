@@ -121,6 +121,7 @@ export function contractTableSql(scopeClause: string) {
  */
 export function contractIndexSql(scopeClause: string) {
   return `SELECT o.id, o.contract_number, o.draft_reference,
+    o.contract_signed_on AS signed_on,
     COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
     o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
     o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,

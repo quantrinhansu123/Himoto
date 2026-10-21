@@ -59,7 +59,9 @@ def mock(route):
             statuses=['active' if parsed.path.endswith('customers') else 'renting'], dueCount=0, summary=summary)
     else:
         data = {'/api/auth/stores': [dict(id=31, store_name='Cơ sở QA', status='opening')],
-                '/api/auth/vehicle/vehicles': [], '/api/auth/hr/staff': []}.get(parsed.path)
+                '/api/auth/vehicle/vehicles': [], '/api/auth/hr/staff': [], '/api/auth/payment-events': [],
+                '/api/auth/contract-staff': [], '/api/auth/vehicles/inventory': [],
+                '/api/auth/store-directory': [dict(id=31,store_name='Cơ sở QA',status='opening')]}.get(parsed.path)
         if parsed.path.startswith('/api/auth/record-photos/'):
             data = []
         assert data is not None, parsed.path

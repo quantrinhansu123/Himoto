@@ -9,9 +9,12 @@ import { ManagementMobileList } from './ManagementMobileList';
 import { useManagement } from './ManagementProvider';
 import { isRemindableContract } from '@/lib/management/debt-reminders';
 import { GpsEvidence } from './GpsEvidence';
+import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
+  if(column.key==='monitoring_amount')return <ContractMonitoringAmount row={row}/>;
+  if(column.key==='contract_gps_status')return <ContractGpsIndicator row={row}/>;
   if(column.key==='overdue_fee_estimate'&&value===undefined)return <span className="mg-cell-value" title="Thiếu hạn trả hoặc giá thuê ngày; nhập phí thực tế khi trả xe.">Cần đối chiếu</span>;
   if(config.kind==='vehicles'&&column.key==='location_status')return <><span className={`mg-status mg-status-${statusTone(String(value))}`}><span/>{optionLabel(config,column.key,String(value||''))}</span><GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/></>;
   if (column.format === 'status') return <span className={`mg-status mg-status-${statusTone(String(value))}`}><span />{optionLabel(config, column.key, String(value || ''))}</span>;
@@ -119,7 +122,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         checked={rows.length > 0 && pageSelected === rows.length} ref={input => { if (input) input.indeterminate = pageSelected > 0 && pageSelected < rows.length; }}
         onChange={event => onSelectionChange?.(pageIds, event.target.checked)} /></th>}<th scope="col" className="mg-index">STT</th>{columns.map(column => <th key={column.key} scope="col" className={`${column.align === 'right' ? 'mg-align-right' : ''}${column.key === 'code' ? ' mg-record-code' : ''}`}
         aria-sort={sortKey === column.key ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}>
-        <button type="button" className="mg-sort" onClick={() => onSort(column.key)} aria-label={`Sắp xếp theo ${column.label}`}><span>{column.label}</span>{sortKey === column.key ? sortDirection === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} /> : <ArrowUpDown size={12} />}</button>
+        {column.sortable===false?<span>{column.label}</span>:<button type="button" className="mg-sort" onClick={() => onSort(column.key)} aria-label={`Sắp xếp theo ${column.label}`}><span>{column.label}</span>{sortKey === column.key ? sortDirection === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} /> : <ArrowUpDown size={12} />}</button>}
       </th>)}<th scope="col" className="mg-actions-column">Thao tác</th></tr></thead>
       <tbody>{loading ? <tr><td colSpan={columnCount}><div className="mg-table-state" role="status"><LoaderCircle className="mg-spin" size={26} /><strong>Đang tải danh sách…</strong><p>Thông tin sẽ xuất hiện trong giây lát.</p></div></td></tr>
         : error ? <tr><td colSpan={columnCount}><div className="mg-table-state mg-table-error" role="alert"><FileSearch size={30} /><strong>Không tải được dữ liệu</strong><p>{error}</p><button className="mg-button" onClick={onRetry}><RotateCcw size={15} />Thử lại</button></div></td></tr>

@@ -2,14 +2,14 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, LoaderCircle, Trash2 } from 'lucide-react';
-import { CashbookAccount, CashbookAccountEdits, CashbookAccountVoucher, createCashbookAccount, deleteCashbookAccount, loadCashbookAccountVouchers, updateCashbookAccount } from '@/lib/management/cashbook-repository';
+import { CashbookAccount, CashbookAccountEdits, CashbookAccountVoucher, createCashbookAccount, deleteCashbookAccount, loadCashbookAccountVouchers, updateCashbookAccount,setCashbookAccountStatus } from '@/lib/management/cashbook-repository';
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 import { SuggestionInput } from './SuggestionInput';
 import { MobileDetailsCard } from './MobileDetailsCard';
 
-export type AccountDialogMode = 'create' | 'view' | 'edit' | 'delete';
+export type AccountDialogMode = 'create' | 'view' | 'edit' | 'delete' | 'archive';
 type AccountType = 'cash' | 'bank' | 'company';
 const ACCOUNT_TYPES: [AccountType, string][] = [['cash', 'Tiền mặt (két)'], ['bank', 'Ngân hàng cơ sở'], ['company', 'TK công ty']];
 const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)} ₫`;
@@ -121,7 +121,7 @@ export function CashbookAccountDialog({ account, mode, defaultStoreId, onClose, 
         <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button><button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : account ? 'Lưu tài khoản' : 'Thêm tài khoản'}</button></div></form>
     </Dialog>;
   }
-  const title = mode === 'view' ? 'Chi tiết tài khoản' : 'Xóa tài khoản';
+  const title = mode === 'view' ? 'Chi tiết tài khoản' : mode==='archive'?'Ngừng sử dụng tài khoản':'Xóa tài khoản';
   const details: [string, string][] = [['Loại', account.kind === 'cash' ? 'Tiền mặt' : account.owner_type === 'company' ? 'TK công ty' : 'Ngân hàng'],
     ...(isBank ? [['Ngân hàng', account.bank_name || '—'], ['Chủ tài khoản', account.owner_name || '—'], ['Số tài khoản', account.account_number || '—']] as [string, string][] : [['Tên két / nội dung', account.label]] as [string, string][]),
     ['Cơ sở', account.store_name || (account.owner_type === 'company' ? 'Toàn công ty' : '—')],
@@ -135,5 +135,6 @@ export function CashbookAccountDialog({ account, mode, defaultStoreId, onClose, 
       <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button></div></>}
     {mode === 'delete' && <><div className="mg-dialog-body"><p>Xóa vĩnh viễn <strong>{account.label}</strong>? Chỉ xóa được tài khoản chưa có phiếu thu/chi nào. Nếu đã có phiếu, hãy chuyển sang “Ngừng sử dụng”.</p>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={saving} onClick={() => void run(() => deleteCashbookAccount(account))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Trash2 size={16} />}{saving ? 'Đang xóa…' : 'Xóa tài khoản'}</button></div></>}
+    {mode==='archive'&&<><div className="mg-dialog-body"><p>Ngừng sử dụng <strong>{account.label}</strong>? Tài khoản sẽ được ẩn khỏi danh sách đang sử dụng và không dùng cho khoản thu/chi mới. Số dư và lịch sử phiếu vẫn giữ nguyên.</p>{error&&<p role="alert" className="mg-error-message">{error}</p>}</div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button><button type="button" className="mg-button mg-button-primary" disabled={saving} onClick={()=>void run(()=>setCashbookAccountStatus(account,'inactive'))}>{saving?'Đang lưu…':'Ngừng sử dụng'}</button></div></>}
   </Dialog>;
 }

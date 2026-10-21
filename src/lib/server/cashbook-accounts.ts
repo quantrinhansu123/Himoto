@@ -106,6 +106,17 @@ export async function deleteAccount(kind: 'bank' | 'cash', id: number) {
   } finally { client.release(); }
 }
 
+/** Archive only changes availability. Existing balances, transactions and account details stay intact. */
+export async function setAccountStatus(kind:'bank'|'cash',id:number,request:Request){
+  let body:Record<string,unknown>;
+  try{body=await request.json();if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>key!=='status')||!['active','inactive'].includes(String(body.status)))throw Error();}
+  catch{return json(400,'Trạng thái tài khoản không hợp lệ.');}
+  const table=kind==='cash'?'cash':'banks';
+  try{const result=await himotoPool.query(`UPDATE himoto.${table} SET status=$2,updated_at=now() WHERE id=$1 RETURNING id`,[id,body.status==='active'?'Active':'Inactive']);
+    return result.rowCount?NextResponse.json({status:'success',data:null}):json(404,'Không tìm thấy tài khoản.');
+  }catch{return json(500,'Không đổi được trạng thái tài khoản.');}
+}
+
 const dateParam = (value: string | null) => value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 
 export async function listAccountTransactions(kind: 'bank' | 'cash', id: number, params: URLSearchParams) {

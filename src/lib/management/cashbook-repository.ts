@@ -116,7 +116,7 @@ export async function loadCashbookAccounts(baseUrl = '/api', signal?: AbortSigna
   if (envelope.status !== 'success' || !Array.isArray(envelope.data)) throw new Error('API tài khoản trả về cấu trúc chưa được hỗ trợ.');
   return envelope.data.map(item => mapCashbookAccount(object(item)));
 }
-async function writeCashbookAccount(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: CashbookAccountEdits) {
+async function writeCashbookAccount(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: CashbookAccountEdits | Pick<CashbookAccountEdits,'status'>) {
   const response = await fetch(`/api/auth/cashbook/accounts/${path}`, { method, cache: 'no-store', credentials: 'same-origin',
     headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
   const envelope = object(await response.json().catch(() => ({})));
@@ -139,6 +139,7 @@ const accountPath = (account: CashbookAccount) => `${account.kind}/${encodeURICo
 export const createCashbookAccount = (kind: CashbookAccount['kind'], values: CashbookAccountEdits) => writeCashbookAccount(kind, 'POST', values);
 export const updateCashbookAccount = (account: CashbookAccount, edits: CashbookAccountEdits) => writeCashbookAccount(accountPath(account), 'PATCH', edits);
 export const deleteCashbookAccount = (account: CashbookAccount) => writeCashbookAccount(accountPath(account), 'DELETE');
+export const setCashbookAccountStatus=(account:CashbookAccount,status:'active'|'inactive')=>writeCashbookAccount(`${accountPath(account)}/status`,'PATCH',{status});
 
 // Verified in apps/api/src/modules/finance/finance.controller.ts. This adapter performs GET only.
 export const CASHBOOK_ENDPOINT = '/auth/transactions';

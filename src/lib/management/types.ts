@@ -45,6 +45,7 @@ export interface ManagementColumn {
   secondary?: string;
   align?: 'right';
   hidden?: boolean;
+  sortable?:boolean;
 }
 export interface ManagementField {
   key: string;
