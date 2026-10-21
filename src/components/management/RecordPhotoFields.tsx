@@ -55,6 +55,8 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
   const [uploadStates, setUploadStates] = useState<Record<string, { loading: boolean; error?: string }>>({});
   const imagePicker=useRef<HTMLInputElement>(null),videoPicker=useRef<HTMLInputElement>(null),cameraPicker=useRef<HTMLInputElement>(null);
   const [batchBusy,setBatchBusy]=useState(false);
+  const [uploadTab,setUploadTab]=useState<'quick'|'detail'>('quick');
+  const tabId=useId();
   slots=entity==='contracts'?expandContractPhotoSlots(slots,[...saved.map(photo=>photo.slot),...Object.keys(value)]):slots;
   if(compact&&entity==='contracts'){
     const documents=slots.filter(slot=>slot.key.includes('-document-'));
@@ -122,8 +124,14 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
     <p role="status">{batchBusy?'Đang xử lý tệp…':`${slots.filter(slot=>!isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} ảnh${videoCount>0?` · ${slots.filter(slot=>isVideoSlot(slot.key)&&(value[slot.key]||saved.some(p=>p.slot===slot.key))).length} / ${videoCount} video`:''}`}</p>
   </div>;
   return <fieldset className="mg-record-photos"><legend>{title}</legend>
-    {bulkPosition==='top'&&toolbar}
+    {compact&&<div className="mg-media-tabs" role="tablist" aria-label="Cách tải ảnh">{(['quick','detail'] as const).map((tab,index)=><button key={tab} type="button" role="tab" id={`${tabId}-${tab}`} aria-controls={`${tabId}-${tab}-panel`} aria-selected={uploadTab===tab} tabIndex={uploadTab===tab?0:-1} onClick={()=>setUploadTab(tab)} onKeyDown={event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();const next=event.key==='Home'?'quick':event.key==='End'?'detail':index===0?'detail':'quick';
+      setUploadTab(next);document.getElementById(`${tabId}-${next}`)?.focus();
+    }}>{tab==='quick'?'Tải nhanh / Hàng loạt':'Tải ảnh chi tiết'}</button>)}</div>}
+    {compact?<div role="tabpanel" id={`${tabId}-quick-panel`} aria-labelledby={`${tabId}-quick`} hidden={uploadTab!=='quick'} tabIndex={0}>{toolbar}</div>:bulkPosition==='top'&&toolbar}
     {actions}
+    {compact&&uploadTab==='quick'&&<p className="mg-media-hint">Chọn nhiều ảnh cùng lúc, không cần phân loại. Có thể lưu thiếu ảnh và bổ sung sau.</p>}
     {error && <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={() => setRetry(current => current + 1)}>Thử lại</button></p>}
     {compact&&occupied.length>0&&<details className="mg-media-gallery"><summary>Xem {occupied.length} ảnh / video đã chọn và đã lưu</summary><div className="mg-media-thumbnails">{occupied.map((slot,index)=>{
       const photo=saved.find(photo=>photo.slot===slot.key),file=value[slot.key],state=uploadStates[slot.key];
@@ -133,9 +141,9 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
         {state?.error&&file&&<p role="alert" className="mg-field-error">{state.error} <button type="button" className="mg-button" onClick={()=>upload(slot.key,file,true)}>Tải ảnh lại</button></p>}
       </div>;
     })}</div></details>}
-    {compact&&<details className="mg-media-individual"><summary>Chọn theo vị trí ảnh (tuỳ chọn)</summary><div className="mg-photo-grid">{slots.filter(slot=>!slot.key.includes('-document-')&&/-(?:[1-6]|video-[1-3])$/.test(slot.key)).map(slot=><PhotoField key={slot.key} slot={slot} file={value[slot.key]} disabled={disabled||batchBusy||!savedReady} savedUrl={saved.some(photo=>photo.slot===slot.key)&&recordId?`${photoEndpoint(entity,recordId,slot.key)}?v=${encodeURIComponent(saved.find(photo=>photo.slot===slot.key)!.updated_at)}`:undefined}
+    {compact&&<div role="tabpanel" id={`${tabId}-detail-panel`} aria-labelledby={`${tabId}-detail`} hidden={uploadTab!=='detail'} tabIndex={0}><p className="mg-media-hint">Chỉ mở mục cần dùng. Các mục ảnh đều tuỳ chọn; ảnh đã chọn được giữ khi đổi tab.</p><details className="mg-media-individual"><summary>Chọn theo vị trí ảnh (tuỳ chọn)</summary><div className="mg-photo-grid">{slots.filter(slot=>!slot.key.includes('-document-')&&/-(?:[1-6]|video-[1-3])$/.test(slot.key)).map(slot=><PhotoField key={slot.key} slot={slot} file={value[slot.key]} disabled={disabled||batchBusy||!savedReady} savedUrl={saved.some(photo=>photo.slot===slot.key)&&recordId?`${photoEndpoint(entity,recordId,slot.key)}?v=${encodeURIComponent(saved.find(photo=>photo.slot===slot.key)!.updated_at)}`:undefined}
       onBusyChange={busy=>{if(busy)busySlots.current.add(slot.key);else busySlots.current.delete(slot.key);onBusyChange?.(busySlots.current.size>0);}}
-      onChange={file=>{const next={...latestValue.current};if(file){next[slot.key]=file;upload(slot.key,file);}else delete next[slot.key];latestValue.current=next;onChange(next);}}/>)}</div></details>}
+      onChange={file=>{const next={...latestValue.current};if(file){next[slot.key]=file;upload(slot.key,file);}else delete next[slot.key];latestValue.current=next;onChange(next);}}/>)}</div></details></div>}
     {!compact&&<>
     <div className="mg-photo-grid">{slots.filter(slot=>!bulk||value[slot.key]||saved.some(p=>p.slot===slot.key)||(!slot.key.includes('-document-')&&/-(?:[1-6]|video-1)$/.test(slot.key))||slots.find(s=>isVideoSlot(s.key)===isVideoSlot(slot.key)&&!value[s.key]&&!saved.some(p=>p.slot===s.key))?.key===slot.key).map(slot => {
       const photo = saved.find(photo => photo.slot === slot.key);
@@ -155,7 +163,7 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
         </div>}
       </div>;
     })}</div></>}
-    {bulkPosition==='bottom'&&toolbar}
+    {!compact&&bulkPosition==='bottom'&&toolbar}
   </fieldset>;
 }
 

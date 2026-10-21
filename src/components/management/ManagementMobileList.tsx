@@ -36,6 +36,7 @@ interface Props {
 
 export function ManagementMobileList({ config, rows, sortKey, sortDirection, onSort, onView, actions, busyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const selectable = Boolean(selectedIds && onSelectionChange);
+  const showOverdue=config.kind==='contracts'&&config.columns.some(column=>column.key==='overdue_minutes');
   const ids = rows.map(row => row.id);
   const selected = ids.filter(id => selectedIds?.has(id)).length;
   return <div className="mg-mobile-records" aria-busy={loading}>
@@ -64,7 +65,7 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
           const value = optionLabel(config, key, formatValue(row[key], column?.format));
           return { key, label: column?.label || (key === 'customer_phone' ? 'Số điện thoại' : 'Biển số'), value };
         });
-        return <li key={row.id} className={`mg-mobile-record-card${receive?' mg-mobile-card-receive':''}${selectedIds?.has(row.id) ? ' is-selected' : ''}`}>
+        return <li key={row.id} className={`mg-mobile-record-card${receive?' mg-mobile-card-receive':''}${showOverdue?' mg-mobile-card-overdue':''}${selectedIds?.has(row.id) ? ' is-selected' : ''}`}>
           {selectable && <label className="mg-mobile-card-select"><input type="checkbox" aria-label={`Chọn ${label}`} checked={Boolean(selectedIds?.has(row.id))}
             onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={() => onView(row)}>
@@ -73,6 +74,11 @@ export function ManagementMobileList({ config, rows, sortKey, sortDirection, onS
             {config.kind === 'contracts' && row.billing_overdue_at && Number(row.billing_due_amount) > 0 && <span className="mg-mobile-card-billing">
               <span>Hẹn đóng: {formatValue(row.billing_overdue_at, 'date')} {String(row.billing_overdue_at).slice(11, 16)}</span>
               <strong>Còn thiếu đến hạn: {formatValue(row.billing_due_amount, 'money')}</strong>
+            </span>}
+            {showOverdue&&<span className="mg-mobile-card-billing">
+              <strong>Quá hạn: {formatValue(row.overdue_minutes,'duration')}</strong>
+              <span>Phí quá hạn (tạm tính): {row.overdue_fee_estimate===undefined?'Cần đối chiếu':formatValue(row.overdue_fee_estimate,'money')}</span>
+              <span>Tiền thuê còn thiếu: {formatValue(row.rental_debt_amount,'money')}</span>
             </span>}
             <span className="mg-mobile-card-footer"><span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
               {config.kind === 'vehicles' && row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}

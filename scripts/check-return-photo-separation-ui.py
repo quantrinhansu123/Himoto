@@ -87,6 +87,7 @@ def cloud(route):
 
 
 def save_photo(dialog):
+    dialog.get_by_role('tab', name='Tải ảnh chi tiết', exact=True).first.click()
     dialog.locator('.mg-media-individual > summary').first.click()
     field = dialog.get_by_role('group', name='Toàn cảnh xe', exact=True)
     field.get_by_label('Chọn ảnh Toàn cảnh xe', exact=True).set_input_files(dict(name='qa.png', mimeType='image/png', buffer=pixel))
@@ -105,8 +106,9 @@ with sync_playwright() as pw:
         ctx.add_cookies([dict(name='himoto_management_session', value=Path(args.session_cookie_file).read_text().strip(), url=args.url, httpOnly=True, sameSite='Strict')])
         ctx.route('**/api/**', mock)
         ctx.route('https://api.cloudinary.com/**', cloud)
+        def collect_error(error):errors.append(str(error))
         page = ctx.new_page()
-        page.on('pageerror', lambda error: errors.append(str(error)))
+        page.on('pageerror', collect_error)
         state.clear()
         state.update(completed=False, photos={})
         before = len(posts)
@@ -126,6 +128,10 @@ with sync_playwright() as pw:
         assert len(posts) == before+1
         checks.append(name+': explicit confirmation records exactly one return')
 
+        page.wait_for_load_state('networkidle')
+        page.remove_listener('pageerror',collect_error)
+        page.close()
+        page=ctx.new_page();page.on('pageerror',collect_error)
         state.update(completed=True, photos={})
         page.goto(args.url+'/contracts?contract_id=901', wait_until='networkidle', timeout=120000)
         page.locator('button.mg-row-menu-trigger').filter(visible=True).first.click()
@@ -140,6 +146,9 @@ with sync_playwright() as pw:
         assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
         dialog.screenshot(path=str(out/f'{name}-completed-return-photo-supplement.png'))
         checks.append(name+': completed contract accepts return photos without a new return or settlement')
+        page.wait_for_load_state('networkidle')
+        page.remove_listener('pageerror',collect_error)
+        page.close()
         ctx.unroute_all(behavior='wait')
         ctx.close()
         browser.close()

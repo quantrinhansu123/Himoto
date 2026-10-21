@@ -41,7 +41,7 @@ export interface Option { value: string; label: string }
 export interface ManagementColumn {
   key: string;
   label: string;
-  format?: 'person' | 'vehicle' | 'code' | 'money' | 'date' | 'number' | 'status';
+  format?: 'person' | 'vehicle' | 'code' | 'money' | 'date' | 'number' | 'status' | 'duration';
   secondary?: string;
   align?: 'right';
   hidden?: boolean;

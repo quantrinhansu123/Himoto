@@ -157,6 +157,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     id_card_issued_on: text(raw.id_card_issued_on), id_card_issued_by: text(raw.id_card_issued_by),
     relatives_text: relativesText(raw.relatives), relatives_json: relativesJson(raw.relatives), warning_note: text(raw.warning_note),
     vehicle_id: number(raw.vehicle_id ?? vehicles[0]?.id), vehicles_json: JSON.stringify(vehicles),
+    overdue_items_json: Array.isArray(raw.overdue_items)?JSON.stringify(raw.overdue_items):undefined,
     vehicle_name: vehicles.map(v => text(v.name)).filter(Boolean).join(', '),
     license: vehicles.map(v => text(v.license)).filter(Boolean).join(', '),
     start_date: text(raw.start_date || raw.rent_at), end_date: text(raw.end_date || raw.return_at),

@@ -95,6 +95,17 @@ with sync_playwright() as pw:
     expect(dialog.get_by_role('group',name='Toàn cảnh xe',exact=True)).not_to_be_visible()
     assert dialog.locator('.mg-media-upload-toolbar:visible').count()==1
     assert not dialog.locator('.mg-contract-documents').is_visible()
+    quick=dialog.get_by_role('tab',name='Tải nhanh / Hàng loạt',exact=True)
+    detail=dialog.get_by_role('tab',name='Tải ảnh chi tiết',exact=True)
+    expect(quick).to_have_attribute('aria-selected','true')
+    quick.focus();quick.press('ArrowRight');expect(detail).to_be_focused()
+    expect(detail).to_have_attribute('aria-selected','true')
+    expect(dialog.locator('.mg-media-upload-toolbar').first).not_to_be_visible()
+    dialog.locator('.mg-media-individual > summary').click()
+    expect(dialog.get_by_role('group',name='Toàn cảnh xe',exact=True)).to_be_visible()
+    detail.press('Home');expect(quick).to_be_focused()
+    expect(dialog.get_by_role('group',name='Toàn cảnh xe',exact=True)).not_to_be_visible()
+    checks.append('Two keyboard-accessible tabs combine the batch uploader with expandable optional detail fields')
     confirm(dialog)
     expect(dialog.get_by_role('alert').filter(has_text='Hoàn tất mục')).to_be_visible();assert len(posts)==before
     expect(dialog.get_by_label('Chưa hoàn cọc',exact=False)).to_be_focused()
@@ -130,6 +141,10 @@ with sync_playwright() as pw:
     uploader=dialog.locator('.mg-transaction-photos').first
     uploader.get_by_label('Chọn nhiều ảnh hồ sơ',exact=True).set_input_files([str(images[0]),str(qr),str(images[1])])
     save=uploader.get_by_role('button',name='Lưu ảnh / video',exact=True);expect(save).to_be_enabled()
+    uploader.get_by_role('tab',name='Tải ảnh chi tiết',exact=True).click()
+    expect(save).to_be_enabled()
+    expect(uploader.get_by_text('Còn 3 tệp mới chưa lưu',exact=False)).to_be_visible()
+    uploader.get_by_role('tab',name='Tải nhanh / Hàng loạt',exact=True).click()
     assert save.bounding_box()['y']-uploader.get_by_role('button',name='Chọn nhiều ảnh',exact=True).bounding_box()['y']<250
     confirm(dialog);expect(dialog.get_by_role('alert').filter(has_text='Ảnh/video vừa chọn chưa lưu')).to_be_visible();assert len(posts)==before
     state['failSave']=True;save.click();expect(dialog.get_by_role('alert').filter(has_text='QA chưa lưu được ảnh')).to_be_visible();assert len(posts)==before
@@ -137,6 +152,7 @@ with sync_playwright() as pw:
     assert 'return-101-document-2' in state['photos'] and len(state['photos'])==3
     assert uploader.locator('.mg-media-gallery').get_attribute('open') is None
     assert len(posts)==before
+    checks.append('Switching between upload tabs preserves all pending files, including the QR, before a partial batch is saved')
     checks.append('One batch accepts vehicle and QR images, saves the QR to refund evidence, shows Save beside the picker, and retains files after a failed save without returning the vehicle')
     dialog.get_by_label('Đã hoàn cọc cho khách',exact=True).check()
     expect(dialog).to_contain_text('Đã nhận ảnh hồ sơ hoàn cọc')

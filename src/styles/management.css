@@ -3485,6 +3485,11 @@
   .mg-mobile-card-summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mg-mobile-card-summary > span + span::before { content: '·'; margin-right: 6px; }
   .mg-mobile-card-billing { display: grid; gap: 3px; font-size: 12px; color: var(--mg-slate-800); line-height: 1.4; }
+  .mg-mobile-card-overdue { display:grid; grid-template-columns:auto minmax(0,1fr) auto; }
+  .mg-mobile-card-overdue > .mg-mobile-card-select { grid-column:1; grid-row:1; }
+  .mg-mobile-card-overdue > .mg-mobile-card-main { grid-column:2; grid-row:1; }
+  .mg-mobile-card-overdue > .mg-mobile-card-actions { grid-column:3; grid-row:1; }
+  .mg-mobile-card-overdue > .mg-button { grid-column:2; grid-row:2; min-height:44px; margin:0 0 12px 12px; }
   .mg-mobile-card-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
   .mg-mobile-card-footer .mg-status { font-size: 10.5px; padding: 2px 6px; max-width: 100%; white-space: normal; }
   .mg-mobile-card-extra { min-width: 0; font-size: 11px; color: var(--mg-slate-600); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3752,6 +3757,11 @@
 }
 .mg-saved-photos-commit .mg-button { min-height: 44px; width: 100%; }
 .mg-media-upload-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.mg-media-tabs { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 16px; border-bottom:1px solid var(--mg-line); }
+.mg-media-tabs [role=tab] { flex:1; min-height:44px; padding:10px 12px; border:1px solid transparent; border-bottom:3px solid transparent; border-radius:6px 6px 0 0; background:transparent; color:var(--mg-slate-600); font:inherit; cursor:pointer; }
+.mg-media-tabs [aria-selected=true] { color:var(--mg-brand-700); border-bottom-color:currentColor; background:var(--mg-bg); font-weight:600; }
+.mg-media-tabs [role=tab]:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+.mg-media-hint { color:var(--mg-slate-600); font-size:13px; line-height:1.6; }
 .mg-media-upload-actions .mg-button { min-height:44px; }
 .mg-media-gallery, .mg-media-individual, .mg-extra-documents, .mg-return-options { margin:10px 0; min-width:0; }
 .mg-media-gallery>summary, .mg-media-individual>summary, .mg-extra-documents>summary, .mg-return-options>summary { cursor:pointer; min-height:40px; padding:8px 0; font-weight:600; color:var(--mg-slate-700); overflow-wrap:anywhere; }

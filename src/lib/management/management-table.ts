@@ -5,6 +5,7 @@ import { OWNERSHIP_CONTRACT_TYPES } from './config';
 import { mapApiRow, READ_ENDPOINTS } from './repository';
 import type { ManagementRow } from './types';
 import { isRemindableContract } from './debt-reminders';
+import { withContractOverdue } from './contract-overdue';
 
 export type TableKind = 'contracts' | 'customers';
 export interface ManagementTableInput {
@@ -40,7 +41,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if (input.scope === 'due') rows=rows.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0);
   if (input.scope === 'renewable') rows=rows.filter(row=>['renting','overdue'].includes(row.status)&&!row.billing_plan_json);
   if (input.scope === 'remindable') rows=rows.filter(isRemindableContract);
-  if (input.scope === 'overdue') rows=rows.filter(row=>row.status==='overdue').map(row=>({...row,overdue_days:overdueDays(row.end_date,now)}));
+  if (input.scope === 'overdue') rows=rows.filter(row=>row.status==='overdue').map(row=>withContractOverdue(row,now));
   const scoped=filterRows(rows,EMPTY_QUERY,input.store),tabRows=filterRows(scoped,{...input.query,status:''},'all');
   const counts=new Map<string,number>();for(const row of tabRows)counts.set(row.status,(counts.get(row.status)||0)+1);
   // Overdue vehicles are still on rent until the actual handover is recorded.
@@ -53,9 +54,6 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   return {rows:all ? sorted : sorted.slice(offset,offset+input.size),total:sorted.length,scopeCount:scoped.length,tabCount:tabRows.length,page,pages,
     statusCounts:[...counts].sort(([a],[b])=>a.localeCompare(b)),statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:scoped.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0).length,
     summary:input.kind==='contracts' ? summarizeContracts(filtered,[]) : null,recentDays:input.recentDays??null};
-}
-function overdueDays(value: unknown, now: number) {
-  const date=Date.parse(String(value||''));return Number.isFinite(date) ? Math.max(0,Math.floor((now-date)/86400000)) : 0;
 }
 export async function requestManagementTable(input: ManagementTableInput, signal?: AbortSignal, all = false, ownershipStores: number[] = []): Promise<ManagementTableResult> {
   const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${managementTableQuery(input,all)}`,{cache:'no-store',credentials:'same-origin',signal});
