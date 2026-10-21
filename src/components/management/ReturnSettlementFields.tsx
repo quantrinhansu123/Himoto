@@ -3,11 +3,13 @@ import { useEffect,useMemo,useRef,useState } from 'react';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { loadPaymentContext,paymentAccounts,PAYMENT_METHODS,type PaymentContext,type PaymentMethod } from '@/lib/management/contract-payments';
 import type { ReturnReceipt,ReturnSettlement } from '@/lib/management/contract-returns';
-import { returnRefundEvidenceSlots } from '@/lib/management/contract-photos';
+import { returnRefundEvidenceSlots,returnRefundQrSlot } from '@/lib/management/contract-photos';
 import { photoEndpoint,type SavedPhoto } from '@/lib/management/record-photos';
 import { formatMoney } from '@/lib/formatters';
 import { ContractWorkflowGuide } from './ContractWorkflowGuide';
 import { normalizeRefundAccount,validRefundAccount } from '@/lib/management/return-refunds';
+import { mergeRefundRecipient } from '@/lib/management/refund-qr';
+import { RefundQrUpload } from './RefundQrUpload';
 
 type Kind=ReturnReceipt['kind']|'refund';
 interface Row {enabled:boolean;amount:string;method:PaymentMethod;account_id:string;request_id:string}
@@ -18,25 +20,26 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const [refundDeferred,setRefundDeferred]=useState(false);
   const [recipient,setRecipient]=useState({recipient_bank:'',recipient_account:'',recipient_name:''});
   const [hasRefundQr,setHasRefundQr]=useState(false);
+  const [savedQrSlot,setSavedQrSlot]=useState<string>(),[qrVersion,setQrVersion]=useState(0),[qrBusy,setQrBusy]=useState(false);
   const [paidAt,setPaidAt]=useState(()=>new Date(Date.now()+7*3600000).toISOString().slice(0,16));
   const change=useRef(onChange);change.current=onChange;
   const block=useRef(onBlockChange);block.current=onBlockChange;
   const itemKey=itemIds.join(',');
   const qrSlots=useMemo(()=>itemKey?itemKey.split(',').flatMap(id=>returnRefundEvidenceSlots(Number(id))):[],[itemKey]);
   useEffect(()=>{
-    const controller=new AbortController();setContext(undefined);setError('');setRows({});setRefundDeferred(false);
+    const controller=new AbortController();setContext(undefined);setError('');setRows({});setRefundDeferred(false);setRecipient({recipient_bank:'',recipient_account:'',recipient_name:''});
     void loadPaymentContext(orderId,controller.signal).then(value=>{if(!controller.signal.aborted)setContext(value);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được tài khoản thu / hoàn.');});
     return()=>controller.abort();
   },[orderId,retry]);
   useEffect(()=>{
-    if(!qrSlots.length){setHasRefundQr(false);return;}
+    if(!qrSlots.length){setHasRefundQr(false);setSavedQrSlot(undefined);return;}
     const controller=new AbortController();
     void fetch(photoEndpoint('contracts',orderId),{cache:'no-store',credentials:'same-origin',signal:controller.signal})
       .then(async response=>{const body=await response.json();if(!response.ok||body.status!=='success')throw new Error();return body.data as SavedPhoto[];})
-      .then(photos=>{if(!controller.signal.aborted)setHasRefundQr(photos.some(photo=>qrSlots.includes(photo.slot)));})
+      .then(photos=>{if(!controller.signal.aborted){setHasRefundQr(photos.some(photo=>qrSlots.includes(photo.slot)));setSavedQrSlot(photos.find(photo=>itemKey.split(',').some(id=>returnRefundQrSlot(Number(id))===photo.slot))?.slot);}})
       .catch(()=>{if(!controller.signal.aborted)setHasRefundQr(false);});
     return()=>controller.abort();
-  },[orderId,qrSlots,photoVersion]);
+  },[orderId,qrSlots,photoVersion,qrVersion,itemKey]);
   const due=context?.remaining===null?null:Math.max((context?.total_amount||0)+netAdjustment-(context?.paid_amount||0),0);
   const debt=due===null?0:Math.max(due-lateFee-repairFee,0);
   const limits:Record<Kind,number>=useMemo(()=>({late_fee:lateFee,repair_fee:repairFee,rental_debt:debt,refund:context?.deposit_held||0}),[lateFee,repairFee,debt,context?.deposit_held]);
@@ -67,8 +70,8 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
       }:{})}:undefined;
     const pendingRecipient={...(bankValue?{bank:bankValue}:{}),...(accountValue?{account:accountValue}:{}),...(nameValue?{name:nameValue}:{})};
     change.current(receipts.length||refund||refundDeferred?{order_id:orderId,revision:context.revision,receipts,...(refund?{refund}:{}),...(refundDeferred?{refund_deferred:true as const,...(Object.keys(pendingRecipient).length?{refund_recipient:pendingRecipient}:{})}:{})}:undefined);
-    block.current?.(refundDecisionMissing||Boolean(refundRow?.enabled && !refundReady)||Boolean(refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account)));
-  },[context,rows,recipient,refundAllowed,refundReady,refundDecisionMissing,refundDeferred,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr]);
+    block.current?.(qrBusy||refundDecisionMissing||Boolean(refundRow?.enabled && !refundReady)||Boolean(refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account)));
+  },[context,rows,recipient,refundAllowed,refundReady,refundDecisionMissing,refundDeferred,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr,qrBusy]);
   function update(kind:Kind,patch:Partial<Row>){
     const old=rows[kind];const method=patch.method||old?.method||'transfer';
     const account=patch.method||!old?paymentAccounts(context!,method)[0]?.id:old.account_id;
@@ -100,7 +103,10 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
               ? 'Các ô dưới đây là thông tin để kế toán nhận và xử lý. Có QR đã lưu thì để trống; khách chỉ cung cấp STK thì nhập tại đây. Không cần chọn tài khoản chi khi chưa hoàn tiền.'
               : hasRefundQr
               ? 'Đã có ảnh QR / số TK trong hồ sơ trả xe — có thể bỏ trống ngân hàng, số TK và tên chủ TK.'
-              : 'Hoàn CK: nhập đủ ngân hàng + số TK + tên chủ TK, hoặc lưu ảnh «QR / Số tài khoản khách nhận hoàn» ở mục Hồ sơ hợp đồng bên trên rồi bấm Lưu ảnh / video.'}</p>
+              : 'Hoàn CK: tải ảnh QR để tự điền, hoặc nhập đủ ngân hàng + số TK + tên chủ TK.'}</p>
+            {itemIds[0]&&<RefundQrUpload key={`${orderId}-${itemKey}`} orderId={orderId} slot={returnRefundQrSlot(itemIds[0])} savedSlot={savedQrSlot} recipient={recipient} disabled={disabled}
+              onBusy={setQrBusy} onSaved={()=>{setHasRefundQr(true);setSavedQrSlot(returnRefundQrSlot(itemIds[0]));setQrVersion(value=>value+1);}}
+              onRead={(fields,before)=>setRecipient(current=>mergeRefundRecipient(current,fields,before))}/>}
             {hasRefundQr&&<p className="mg-field-wide" role="status">{refundDeferred?'Đã có ảnh QR / thông tin nhận hoàn để gửi cùng hồ sơ Telegram.':'Đã nhận ảnh hồ sơ hoàn cọc — đủ để xác nhận chuyển khoản.'}</p>}
             {([
               ['recipient_bank',hasRefundQr||refundDeferred?'Ngân hàng nhận của khách (tuỳ chọn)':'Ngân hàng nhận của khách *'],
