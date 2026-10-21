@@ -7,7 +7,7 @@ import type { PhotoOcrController } from './usePhotoOcr';
 import { isVideoSlot,prepareRecordVideo } from '@/lib/management/record-photos';
 import { expandContractPhotoSlots,expandablePhotoPrefix } from '@/lib/management/contract-photos';
 
-function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange }: { slot: PhotoSlot; file?: File; savedUrl?: string; disabled: boolean; onChange: (file?: File) => void; onBusyChange: (busy: boolean) => void }) {
+export function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange, fileHint='Tệp mới · bấm Lưu ảnh / video bên dưới' }: { slot: PhotoSlot; file?: File; savedUrl?: string; disabled: boolean; onChange: (file?: File) => void; onBusyChange: (busy: boolean) => void;fileHint?:string }) {
   const camera = useRef<HTMLInputElement>(null), library = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const generation = useRef(0);
@@ -39,7 +39,7 @@ function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange }: 
     <div className="mg-photo-actions"><button type="button" className="mg-button" disabled={disabled || busy} onClick={() => camera.current?.click()}>{busy ? <LoaderCircle size={16} className="mg-spin" /> : <Camera size={16} />}{video?'Quay video':'Chụp ảnh'}</button>
       <button type="button" className="mg-button" disabled={disabled || busy} onClick={() => library.current?.click()}><ImagePlus size={16} />{video?'Chọn video':'Chọn ảnh'}</button>
       {file && <button type="button" className="mg-icon-button" disabled={disabled || busy} aria-label={`Bỏ ảnh mới ${slot.label}`} onClick={() => onChange()}><X size={16} /></button>}</div>
-    {busy && <small role="status">Đang xử lý tệp…</small>}{file && <small>Tệp mới · bấm Lưu ảnh / video bên dưới</small>}
+    {busy && <small role="status">Đang xử lý tệp…</small>}{file && <small>{fileHint}</small>}
     {error && <p className="mg-field-error" role="alert">{error}</p>}
   </div>;
 }

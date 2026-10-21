@@ -18,6 +18,7 @@ Chạy `docs/sql/2026-10-16-record-photos.sql` nếu chưa có bảng ảnh, sau
 
 ## Hành vi
 
+- Thêm/sửa xe có **Chụp ảnh / Chọn ảnh đăng ký xe** để tự điền số khung, số máy. Chỉ điền ô trống hoặc giá trị AI đã điền, giữ các giá trị nhập tay. Ảnh dùng để đọc, chưa lưu vào hồ sơ xe. OCR có thể nhầm 0/O, 1/I; cần đối chiếu trước khi bấm lưu. API dùng quyền `vehicles.write`, độc lập quyền sửa khách hàng.
 - Chụp hoặc chọn ảnh CCCD mặt trước/mặt sau trong form thêm khách: tự đọc số CCCD/CMND, họ tên, địa chỉ cư trú, ngày cấp và cơ quan cấp nếu xuất hiện rõ trong ảnh. Không suy đoán dữ liệu thiếu, không dùng ngày sinh hoặc ngày hết hạn làm ngày cấp. Số điện thoại và GPLX vẫn nhập từ thông tin thực tế của khách.
 - Trong hợp đồng, phần Phương tiện có ô **Biển số để tự chọn xe** ngay cả khi chưa chọn xe. Biển số khớp duy nhất một xe trong kho sẽ chọn xe đó vào dòng đang trống. Biển chưa có, trùng nhiều xe hoặc ảnh không khớp xe đang chọn sẽ báo để kiểm tra thủ công; không tự thêm hoặc đổi biển số trong kho.
 - Sau khi thu nhỏ ảnh, trình duyệt bắt đầu hai việc độc lập: gửi bytes trực tiếp tới `/api/auth/photo-ocr` để server gọi Gemini bằng Base64 inline; xin chữ ký rồi tải cùng ảnh thẳng lên Cloudinary. OCR không nhận URL Cloudinary và không chờ tải ảnh hoàn tất.

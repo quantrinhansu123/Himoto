@@ -3746,6 +3746,9 @@
 .mg-payment-state { font-weight: 600; }
 .mg-photo-feedback { margin: 10px 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .mg-photo-feedback p { margin: 0 0 8px; }
+.mg-vehicle-registration { padding:14px; margin-bottom:16px; border:1px solid var(--mg-border,#e3e7eb); border-radius:10px; background:var(--mg-bg-subtle,#f8fafb); }
+.mg-vehicle-registration .mg-photo-slot > a { max-width:240px; }
+.mg-vehicle-registration .mg-photo-slot img { max-height:100px; }
 .mg-saved-photos-commit {
   display: grid;
   gap: 10px;

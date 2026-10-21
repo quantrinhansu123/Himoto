@@ -5,21 +5,27 @@ import { normalizeRefundAccount,validRefundAccount } from './return-refunds';
 
 export const OCR_CUSTOMER_KEYS = ['id_card', 'name', 'id_card_issued_on', 'id_card_issued_by'] as const;
 export const OCR_DRIVER_KEYS = ['driver_license_number','driver_license_issued_on'] as const;
+export const OCR_VEHICLE_KEYS = ['chassis','engine'] as const;
+export type VehicleRegistrationValues = Record<typeof OCR_VEHICLE_KEYS[number],string>;
 export type OcrCustomerKey = typeof OCR_CUSTOMER_KEYS[number] | typeof OCR_DRIVER_KEYS[number];
-export type OcrKind = 'cccd_front' | 'cccd_back' | 'plate' | 'passport' | 'driver_license' | 'customer_documents' | 'refund_qr';
-export type OcrFields = Partial<Record<OcrCustomerKey | 'license' | typeof REFUND_RECIPIENT_KEYS[number], string>>;
+export type OcrKind = 'cccd_front' | 'cccd_back' | 'plate' | 'passport' | 'driver_license' | 'customer_documents' | 'refund_qr' | 'vehicle_registration';
+export type OcrFields = Partial<Record<OcrCustomerKey | 'license' | typeof REFUND_RECIPIENT_KEYS[number] | typeof OCR_VEHICLE_KEYS[number], string>>;
 export interface OcrResult { fields: OcrFields; warnings?:string[] }
 export const plateKey = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export function cleanOcrFields(value: unknown, kind: OcrKind): OcrFields {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Kết quả đọc ảnh không hợp lệ.');
   const input = value as Record<string, unknown>, fields: OcrFields = {};
-  const keys = kind==='refund_qr'?REFUND_RECIPIENT_KEYS:kind === 'plate' ? ['license'] as const : kind==='driver_license'?OCR_DRIVER_KEYS:kind==='customer_documents'?[...OCR_CUSTOMER_KEYS,...OCR_DRIVER_KEYS]:kind==='cccd_back'?OCR_CUSTOMER_KEYS.filter(key=>key!=='name'):OCR_CUSTOMER_KEYS;
+  const keys = kind==='vehicle_registration'?OCR_VEHICLE_KEYS:kind==='refund_qr'?REFUND_RECIPIENT_KEYS:kind === 'plate' ? ['license'] as const : kind==='driver_license'?OCR_DRIVER_KEYS:kind==='customer_documents'?[...OCR_CUSTOMER_KEYS,...OCR_DRIVER_KEYS]:kind==='cccd_back'?OCR_CUSTOMER_KEYS.filter(key=>key!=='name'):OCR_CUSTOMER_KEYS;
   for (const key of keys) {
     const raw = input[key];
     if (raw === undefined || raw === null || raw === '') continue;
     if (typeof raw !== 'string' || raw.length > 255) throw new Error('Kết quả đọc ảnh không hợp lệ.');
     let text = Array.from(raw.trim(), character => character.charCodeAt(0) < 32 ? ' ' : character).join('').replace(/\s+/g, ' ');
+    if(kind==='vehicle_registration'){
+      text=text.toUpperCase().replace(/\s/g,'');
+      if(/^(NULL|UNDEFINED|UNKNOWN|NONE|N\/A)$/.test(text)||!/[0-9]/.test(text)||!/^[A-Z0-9][A-Z0-9./*-]{1,78}[A-Z0-9]$/.test(text))continue;
+    }
     if(kind==='refund_qr'){
       if(text.length>150||/^(null|undefined|unknown|n\/a)$/i.test(text))continue;
       if(key==='recipient_account'){text=normalizeRefundAccount(text);if(!validRefundAccount(text))continue;}
@@ -30,6 +36,15 @@ export function cleanOcrFields(value: unknown, kind: OcrKind): OcrFields {
     if (text) fields[key] = text;
   }
   return fields;
+}
+
+/** Only empty or previously AI-filled identifiers can change; manual edits win. */
+export function mergeOcrVehicle(current:VehicleRegistrationValues,result:OcrFields,before:VehicleRegistrationValues,previousAi:OcrFields){
+  const values={...current},applied:OcrFields={};
+  for(const key of OCR_VEHICLE_KEYS)if(result[key]&&current[key]===before[key]&&(!current[key].trim()||current[key]===previousAi[key])){
+    values[key]=result[key];applied[key]=result[key];
+  }
+  return {values,applied};
 }
 
 // A new photo fills the four identity fields, including values entered before the read.

@@ -16,7 +16,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/sepay/settings'))return read?'finance.read':'settings.write';
   if(path.includes('/payment-intents')||path.includes('/payment-events'))return read?'contracts.read':'contracts.draft';
   if(path.includes('/photo-uploads'))return null;
-  if(path.includes('/photo-ocr'))return 'customers.write';
+  if(path.includes('/photo-ocr'))return action==='vehicle_registration'?'vehicles.write':'customers.write';
   if(path.endsWith('/telegram'))return path.includes('/vehicles/')?'vehicles.read':'contracts.read'; // Mutation checks the selected operation permission inside the handler.
   if(path.endsWith('/battery-swaps'))return read?'contracts.read':'contracts.renew';
   if(path.includes('/battery-contracts/')&&path.endsWith('/actions'))return read?'contracts.read':action==='return'?'contracts.return':'contracts.renew';
@@ -54,7 +54,7 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     if(request.method!=='GET'&&request.nextUrl.pathname.endsWith('/actions')) {
       try {operation=String((await request.clone().json()).action||'');}catch {return NextResponse.json({status:'error',message:'Thao tác không hợp lệ.'},{status:400});}
     }
-    const permission=requestPermission(request.nextUrl.pathname,request.method,operation);
+    const permission=requestPermission(request.nextUrl.pathname,request.method,request.nextUrl.pathname==='/api/auth/photo-ocr'?request.headers.get('x-photo-kind')||'':operation);
     // Own branch option list is required for every workspace role; mutation remains an admin setting.
     const branchOptions=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/stores';
     const composerStaff=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/hr/staff'&&request.nextUrl.searchParams.has('store_id')&&hasPermission(user,'contracts.read');
