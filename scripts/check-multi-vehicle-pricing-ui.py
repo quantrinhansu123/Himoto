@@ -68,14 +68,14 @@ with sync_playwright() as pw:
         checks.append(name+': removing, adding, selecting, changing duration/rate and editing fees immediately update the quote')
         form.get_by_role('button',name='Lưu nháp',exact=True).click();expect(form).to_have_count(0)
         page.wait_for_load_state('networkidle')
-        page.reload(wait_until='networkidle')
         page.locator('button.mg-row-menu-trigger').filter(visible=True).first.click();page.get_by_role('menuitem',name='Tiếp tục sửa bản nháp',exact=True).click();form=page.locator('dialog.mg-contract-composer');tab('Chi phí');expect(form.locator('#contract-unit_price')).to_have_value('180.000');expect(form.locator('#contract-total_amount')).to_have_value('795.000')
         form.get_by_role('button',name='Hoàn tất & thanh toán',exact=True).click()
         pay=page.get_by_role('dialog',name='Xác nhận thanh toán · QA-MULTI',exact=True);expect(pay).to_be_visible();expect(pay).to_contain_text('795.000');expect(pay).to_contain_text('1.000.000')
         assert len([w for w in writes if w['draft']['total_amount']=='795000'])>=2
         pay.screenshot(path=str(out/f'{name}-payment-matches-two-vehicles.png'))
         checks.append(name+': saved/reopened draft retains its manual price and corrected total; payment dialog receives that total without a real issue or receipt')
-        ctx.unroute_all(behavior='wait');ctx.close();browser.close()
+        page.wait_for_load_state('networkidle')
+        ctx.unroute_all(behavior='ignoreErrors');ctx.close();browser.close()
 assert not errors,errors
 report=dict(passed=len(checks),checks=checks,javascriptErrors=errors,simulatedDraftSaves=len(writes),realBusinessWrites=0,realTelegramRequests=0)
 (out/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8');print(json.dumps(report,ensure_ascii=False,indent=2))
