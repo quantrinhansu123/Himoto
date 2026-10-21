@@ -125,6 +125,13 @@ async function main(){
     assert.equal((await c.query('SELECT count(*) AS n FROM qa_transfer_customers')).rows[0].n,customersBefore);
     assert.equal((await c.query('SELECT count(*) AS n FROM qa_transfer_orders')).rows[0].n,draftsBefore);
     checks.push('Draft checkout preserves stock status and still creates its customer/draft and records beneficiary changes; audit failure rolls back the vehicle, new customer and draft together');
+    await c.query("UPDATE qa_transfer_orders SET order_status='wait_payment' WHERE id=201");
+    await c.query('UPDATE qa_transfer_order_vehicle_details SET completed_at=now() WHERE id=301');
+    const settled=(await c.query('SELECT total,pid,order_status FROM qa_transfer_orders WHERE id=201')).rows[0];
+    await attempt(()=>applyVehicleAction(proxy,103,{action:'transfer',to_store_id:32,note:'Đã trả xe, hợp đồng cũ còn chờ quyết toán'},143));
+    assert.equal((await vehicle(103)).status,'in_transit');
+    assert.deepEqual((await c.query('SELECT total,pid,order_status FROM qa_transfer_orders WHERE id=201')).rows[0],settled);
+    checks.push('A returned rental line no longer blocks a stock transfer while its old contract awaits settlement; old status and money stay unchanged');
     assert.throws(()=>parseVehicleAction({action:'transfer',to_store_id:32,revision:123}),VehicleActionError);
     assert.throws(()=>parseVehicleAction({action:'receive',transfer_event_id:0}),VehicleActionError);
     assert.throws(()=>parseVehicleValues({...edit,revision:'invalid'}),VehicleSaveError);

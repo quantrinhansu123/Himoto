@@ -17,6 +17,8 @@ try{
  for(const table of tables)await c.query(`CREATE TABLE ${schema}.${table}(LIKE himoto.${table} INCLUDING DEFAULTS)`);
  const migration=fs.readFileSync('docs/sql/2026-10-19-contract-classification-availability.sql','utf8').replace(/^BEGIN;|^COMMIT;/gm,'');
  await db.query(migration);await db.query(migration);
+ await db.query('DROP FUNCTION himoto.vehicle_rental_blockers(bigint[])');
+ for(const file of ['2026-10-20-returned-vehicle-availability.sql','2026-10-20-reservation-window-conflicts.sql'])await db.query(fs.readFileSync('docs/sql/'+file,'utf8').replace(/^BEGIN;|^COMMIT;/gm,''));
  await c.query(`INSERT INTO ${schema}.stores(id,store_name,kind) VALUES(1,'CS Nguyễn Hoàng QA','physical'),(2,'CS Hà Đông QA','physical'),(35,'CS Sở hữu QA','lease_to_own');
    INSERT INTO ${schema}.vehicles(id,name,license,type,status,store_id,current_store_id,year,created_by) VALUES
     (369,'VISION QA','12T1-217.42','scooter','ready',1,1,2026,143),(370,'FELIZ QA','QA-PIN','electric','ready',1,1,2026,143),(371,'XE QA','QA-NATIVE','scooter','ready',1,1,2026,143);
@@ -39,13 +41,13 @@ try{
  await assert.rejects(()=>readContractTelegram(db,2,143,{access_role:'admin'}),e=>e.status===404);
  checks.push('Legacy battery anchors cannot open the vehicle Telegram send workflow');
  const blockers=(await db.query('SELECT * FROM himoto.vehicle_rental_blockers(ARRAY[369,370,371]::bigint[])')).rows;
- assert.deepEqual(blockers.map(b=>[Number(b.vehicle_id),b.code,b.status,b.store_name]),[[369,'VPS-12427','deposit_contract','CS Hà Đông QA'],[371,'QA-NATIVE','wait_payment','CS Nguyễn Hoàng QA']]);
- for(const id of [369,371])assert.equal((await db.query('SELECT himoto.vehicle_has_other_rental($1,NULL) AS blocked',[id])).rows[0].blocked,true);
+ assert.deepEqual(blockers.map(b=>[Number(b.vehicle_id),b.code,b.status,b.store_name]),[[369,'VPS-12427','deposit_contract','CS Hà Đông QA']]);
+ assert.equal((await db.query('SELECT himoto.vehicle_has_other_rental(369,NULL) AS blocked')).rows[0].blocked,true);
  assert.equal((await db.query('SELECT himoto.vehicle_has_other_rental(370,NULL) AS blocked')).rows[0].blocked,false);
  assert.equal((await db.query('SELECT * FROM himoto.vehicle_other_rental_conflicts(ARRAY[370]::bigint[],NULL)')).rowCount,0);
  assert.equal((await db.query('SELECT * FROM himoto.vehicle_other_rental_conflicts(ARRAY[369]::bigint[],1)')).rowCount,0);
  assert.equal((await db.query('SELECT available FROM himoto.vehicle_inventory() WHERE id=370')).rows[0].available,true);
- checks.push('Picker, issuance gate, own-order exclusion and shared stock agree: cross-branch deposits and unpaid returned contracts block; battery-only/deleted anchors do not reserve vehicles');
+ checks.push('Picker and shared stock retain cross-branch deposit holds, release returned lines awaiting settlement, and exclude battery-only/deleted anchors');
  const apiSource=fs.readFileSync('src/app/api/auth/[...path]/route.ts','utf8');
  const vehicleSql=apiSource.match(/'vehicle\/vehicles':\s*\{\s*sql:\s*`([\s\S]*?)`,\s*\},/)[1];
  const fragments={VEHICLE_ORDER_SQL,
@@ -60,7 +62,8 @@ try{
  const scoped=(await c.query(listingSql)).rows;
  const vehicle=mapApiRow('vehicles',scoped.find(v=>Number(v.id)===369));
  const [rental]=JSON.parse(vehicle.rentals_json);assert.equal(rental.code,'VPS-12427');assert.equal(rental.store_name,'CS Hà Đông QA');
- assert.deepEqual(Object.keys(rental).sort(),['code','order_id','return_at','status','store_name']);
+ assert.deepEqual(Object.keys(rental).sort(),['code','customer','order_id','rent_at','return_at','status','store_name']);
+ assert.equal(rental.customer,'','The hidden other-branch customer stays unreadable');
  assert.equal((await db.query('SELECT id FROM himoto.orders WHERE id=1')).rowCount,0);
  await c.query('RESET ROLE');
  checks.push('Actual scoped PostgreSQL role sees the cross-branch hold reason without gaining SELECT access to the other branch order, customer identity or financial data');
@@ -69,6 +72,31 @@ try{
  assert.equal((await db.query('SELECT available FROM himoto.vehicle_inventory() WHERE id=369')).rows[0].available,true);
  assert.equal((await db.query('SELECT * FROM himoto.vehicle_other_rental_conflicts(ARRAY[369]::bigint[],NULL)')).rowCount,0);
  checks.push('Closing the real prior contracts clears both the picker blocker and issuance gate for ready stock; no unrelated contract or receipt needs deletion');
+ const returnedMigration=fs.readFileSync('docs/sql/2026-10-21-returned-vehicle-conflicts.sql','utf8').replace(/^BEGIN;|^COMMIT;/gm,'');
+ await db.query(returnedMigration);await db.query(returnedMigration);
+ await db.query('UPDATE himoto.orders SET store_id=2 WHERE id=4');
+ const moneyBefore=(await db.query('SELECT total,pid FROM himoto.orders WHERE id=4')).rows[0];
+ for(const status of ['renting','overdue','wait_payment','pending','deposit_contract','bad_debt']){
+   await db.query('UPDATE himoto.orders SET order_status=$1 WHERE id=4',[status]);
+   await db.query('UPDATE himoto.order_vehicle_details SET completed_at=now() WHERE id=103');
+   assert.equal((await db.query('SELECT himoto.vehicle_has_other_rental(371,NULL) AS blocked')).rows[0].blocked,false,status+' returned line');
+   assert.equal((await db.query('SELECT * FROM himoto.vehicle_other_rental_conflicts(ARRAY[371]::bigint[],NULL)')).rowCount,0,status+' returned conflict');
+   await db.query('UPDATE himoto.order_vehicle_details SET completed_at=NULL WHERE id=103');
+   assert.equal((await db.query('SELECT himoto.vehicle_has_other_rental(371,NULL) AS blocked')).rows[0].blocked,true,status+' active line');
+   assert.equal((await db.query('SELECT * FROM himoto.vehicle_other_rental_conflicts(ARRAY[371]::bigint[],NULL)')).rowCount,1,status+' active conflict');
+   assert.equal((await db.query('SELECT himoto.vehicle_has_other_rental(371,4) AS blocked')).rows[0].blocked,false,'Own order exclusion');
+ }
+ await c.query('SET LOCAL ROLE himoto_scoped');
+ assert.equal((await db.query('SELECT id FROM himoto.orders WHERE id=4')).rowCount,0);
+ assert.equal((await db.query('SELECT * FROM himoto.vehicle_other_rental_conflicts(ARRAY[371]::bigint[],NULL)')).rowCount,1);
+ await c.query('RESET ROLE');
+ await db.query('UPDATE himoto.order_vehicle_details SET completed_at=now() WHERE id=103');
+ await c.query('SET LOCAL ROLE himoto_scoped');
+ assert.equal((await db.query('SELECT himoto.vehicle_has_other_rental(371,NULL) AS blocked')).rows[0].blocked,false);
+ assert.equal((await db.query('SELECT * FROM himoto.vehicle_other_rental_conflicts(ARRAY[371]::bigint[],NULL)')).rowCount,0);
+ await c.query('RESET ROLE');
+ assert.deepEqual((await db.query('SELECT total,pid FROM himoto.orders WHERE id=4')).rows[0],moneyBefore);
+ checks.push('Returned lines clear both cross-branch conflict helpers for every active order status; actual unreturned lines still block, own-order exclusion and branch RLS remain intact, and financial amounts stay unchanged');
  assert(VEHICLE_ORDER_SQL.includes("sourceStoreId"));
 }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
 console.log(JSON.stringify({passed:checks.length,checks,productionBusinessWrites:0,productionSequenceChanges:0,realTelegramRequests:0},null,2));}
