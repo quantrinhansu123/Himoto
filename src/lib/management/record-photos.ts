@@ -44,6 +44,11 @@ export async function copyCustomerPhotosToContract(id:number) {
   return body.data as {copied:number};
 }
 
+export async function deleteRecordPhoto(entity: PhotoEntity, id: number, slot: string) {
+  const response = await fetch(photoEndpoint(entity, id, slot), { method: 'DELETE', credentials: 'same-origin' });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.status !== 'success') throw new Error(result?.message || 'Không xóa được ảnh. Giữ form và thử lại.');
+}
 export async function saveRecordPhotos(entity: PhotoEntity, id: number, photos: PendingPhotos) {
   const entries = Object.entries(photos);
   for (const [slot, photo] of entries) {

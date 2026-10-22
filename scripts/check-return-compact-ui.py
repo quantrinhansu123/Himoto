@@ -35,6 +35,8 @@ def mock(route):
             if state.get('failSave'):
                 state['failSave']=False;route.fulfill(status=503,json=dict(status='error',message='QA chưa lưu được ảnh'));return
             state['photos'][slot]='image/jpeg';state['photoWrites']+=1;route.fulfill(json=dict(status='success'));return
+        if req.method=='DELETE':
+            assert slot in state['photos'];state['photos'].pop(slot);route.fulfill(json=dict(status='success'));return
         route.fulfill(body=images[0].read_bytes(),content_type='image/png');return
     if path=='/api/auth/photo-uploads/sign':
         state['uploads']+=1;body=req.post_data_json
@@ -170,6 +172,9 @@ with sync_playwright() as pw:
     uploader.get_by_role('button',name='Lưu ảnh / video',exact=True).click();expect(uploader.get_by_text('Đã lưu ảnh.',exact=True)).to_be_visible()
     assert len(posts)==before
     uploader.locator('.mg-media-gallery > summary').click();expect(uploader.locator('.mg-media-thumbnails img')).to_have_count(2)
+    uploader.get_by_role('button',name='Xóa ảnh',exact=False).first.click()
+    expect(uploader.locator('.mg-media-thumbnails img')).to_have_count(1)
+    assert len(state['photos'])==1
     uploader.locator('.mg-media-gallery > summary').click()
     assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
     dialog.screenshot(path=str(out/'completed-return-compact.png'))

@@ -15,6 +15,7 @@ module.exports=async function checkDocuments(db,c,schema,notices){
   for(const slot of ['rental-document-50','handover-document-100','return-1001-document-15','renewal-2-document-1','renewal-receipt-9001-document-15','customer-id-front','customer-id-back','customer-driver-license'])parsePhotoTarget('contracts','1',slot);
   for(const slot of ['rental-document-0','rental-document-00','return-0-document-1','return-1001-document-00'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-1001-document-15','PUT'),'contracts.return');
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-1001-document-15','DELETE'),'contracts.return');
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-1001-document-50','PUT'),'contracts.return');
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-50','PUT'),'contracts.finalize');
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/renewal-2-document-50','PUT'),'contracts.renew');

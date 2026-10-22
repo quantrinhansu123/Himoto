@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict'), path = require('node:path');
 const { load, root } = require('./lib/load-typescript.cjs');
-const { saveRecordPhotos } = load(path.join(root, 'lib/management/record-photos'));
+const { saveRecordPhotos, deleteRecordPhoto } = load(path.join(root, 'lib/management/record-photos'));
 
 async function main() {
   const originalFetch = global.fetch, checks = [], requests = [];
@@ -28,6 +28,17 @@ async function main() {
     checks.push('Success requires both acknowledged writes and a fresh list containing every saved slot');
     global.fetch = async () => { throw Error('Empty batches must not fetch'); };
     await saveRecordPhotos('contracts', 1, {});
+    requests.length = 0;
+    global.fetch = async (url, init) => {
+      requests.push([String(url), init.method || 'GET']);
+      if (init.method === 'DELETE') return Response.json({ status: 'success' });
+      throw Error('Delete must not issue other requests');
+    };
+    await deleteRecordPhoto('contracts', 1, 'return-101-1');
+    assert.deepEqual(requests, [['/api/auth/record-photos/contracts/1/return-101-1', 'DELETE']]);
+    global.fetch = async () => Response.json({ status: 'error', message: 'QA chưa xóa được ảnh' }, { status: 503 });
+    await assert.rejects(() => deleteRecordPhoto('contracts', 1, 'return-101-1'), /QA chưa xóa được ảnh/);
+    checks.push('A mistaken saved photo can be deleted through the same slot URL; a failed delete keeps the file on the record');
   } finally { global.fetch = originalFetch; }
   console.log(JSON.stringify({ passed: checks.length, checks, realProviderRequests: 0, realBusinessWrites: 0 }, null, 2));
 }

@@ -27,6 +27,9 @@ async function main(){
   const photoFields=require('node:fs').readFileSync(path.join(root,'components/management/RecordPhotoFields.tsx'),'utf8');
   assert.match(composerSource,/contractEvidenceSlots\('rental'\)/);
   assert.match(photoFields,/mg-media-documents/);
+  assert.match(photoFields,/Xóa \$\{video\?'video':'ảnh'\}/);
+  assert.match(photoFields,/deleteRecordPhoto/);
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/rental-document-1','DELETE'),'contracts.draft');
   for(const slot of ['rental-15','rental-16','rental-video-3','handover-video-1','return-101-15','return-101-16','renewal-receipt-42-video-3'])parsePhotoTarget('contracts','1',slot);
   for(const slot of ['rental-0','rental-video-4','return-101-0'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-video-1','PUT'),'contracts.finalize');

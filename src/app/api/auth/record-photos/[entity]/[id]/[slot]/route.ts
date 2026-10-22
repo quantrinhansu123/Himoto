@@ -2,7 +2,7 @@ import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
-import { RecordPhotoError, parsePhotoTarget, requirePhotoRecord,requireContractPhotoSlot, writeRecordPhoto } from '@/lib/server/record-photos';
+import { RecordPhotoError, parsePhotoTarget, requirePhotoRecord,requireContractPhotoSlot, writeRecordPhoto, deleteRecordPhoto } from '@/lib/server/record-photos';
 import { MAX_PHOTO_BYTES } from '@/lib/management/record-photos';
 import { verifyPhotoReceipt, writeCloudinaryPhoto, readCloudinaryPhoto, type CloudPhotoReceipt } from '@/lib/server/cloudinary-photos';
 
@@ -66,6 +66,26 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
 }
 const GETHandler = (request: NextRequest, params: Params) => handle(request, params, false);
 const PUTHandler = (request: NextRequest, params: Params) => handle(request, params, true);
+async function DELETEHandler(request: NextRequest, { params }: Params) {
+  const denied = await protectDatabaseRequest(request); if (denied) return denied;
+  let client;
+  try {
+    const raw = await params, target = parsePhotoTarget(raw.entity, raw.id, raw.slot);
+    if (!target.slot) throw new RecordPhotoError('Loại ảnh không hợp lệ.');
+    const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
+    if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
+    client = await himotoPool.connect();
+    await client.query('BEGIN');
+    await requireContractPhotoSlot(client, target.entity, target.id, raw.slot);
+    await deleteRecordPhoto(client, target.entity, target.id, raw.slot);
+    await client.query('COMMIT');
+    return NextResponse.json({ status: 'success' }, { headers: { 'Cache-Control': 'private, no-store' } });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    return NextResponse.json({ status: 'error', message: error instanceof RecordPhotoError ? error.message : 'Không xóa được ảnh.' }, { status: error instanceof RecordPhotoError ? error.status : 500 });
+  } finally { client?.release(); }
+}
 
 export const GET = withAccessRequest(GETHandler);
 export const PUT = withAccessRequest(PUTHandler);
+export const DELETE = withAccessRequest(DELETEHandler);

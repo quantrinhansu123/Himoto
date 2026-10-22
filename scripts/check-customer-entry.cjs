@@ -52,6 +52,19 @@ async function main() {
   const photoUi = fs.readFileSync(path.join(root, 'components/management/RecordPhotoFields.tsx'), 'utf8');
   assert.ok(photoUi.includes("entity==='vehicles'"));
   assert.ok(photoUi.includes('setSavedReady(true)'));
+  assert.ok(photoUi.includes('Xóa ${video?\'video\':\'ảnh\'}'));
+  assert.ok(photoUi.includes('deleteRecordPhoto'));
+  const deleted=[];
+  await photos.deleteRecordPhoto({ query(sql, params) {
+    if (/FROM himoto\.customers/.test(sql)) return { rowCount: 1, rows: [{ id: 1 }] };
+    if (sql.startsWith('DELETE')) { deleted.push(params); return { rowCount: 1, rows: [{ slot: params[2] }] }; }
+    return { rowCount: 0, rows: [] };
+  } }, 'customers', 1, 'id_front');
+  assert.deepEqual(deleted[0], ['customers', 1, 'id_front']);
+  await assert.rejects(() => photos.deleteRecordPhoto({ query(sql) {
+    if (sql.startsWith('DELETE')) return { rowCount: 0, rows: [] };
+    return { rowCount: 1, rows: [{ id: 1 }] };
+  } }, 'customers', 1, 'id_back'), error => error.status === 404);
   checks.push('transfer photo lookup pins source-store access, then accepts the transfer event when the vehicle row is no longer visible');
 
   const { NextRequest, NextResponse } = require('next/server');
@@ -66,6 +79,7 @@ async function main() {
     const request = new NextRequest('http://localhost/api/auth/record-photos/customers/1/id_front');
     assert.equal((await imageRoute.GET(request, params)).status, 401);
     assert.equal((await imageRoute.PUT(request, params)).status, 401);
+    assert.equal((await imageRoute.DELETE(request, params)).status, 401);
     assert.equal((await listRoute.GET(request, params)).status, 401);
     session.protectDatabaseRequest = async () => null;
     session.userFromSession = async () => ({ id: 7, access_role: 'admin', scope_all: true });
@@ -108,6 +122,9 @@ async function main() {
       assert.equal((await photos.readRecordPhotos(proxy, 'customers', 1)).length, 2);
       await assert.rejects(photos.writeRecordPhoto(proxy, 'contracts', 4, 'plate-100', 'image/jpeg', jpeg, 7), error => error.status === 404);
       await assert.rejects(photos.readRecordPhotos(proxy, 'contracts', 404), error => error.status === 404);
+      await photos.deleteRecordPhoto(proxy, 'customers', 1, 'id_back');
+      assert.equal((await photos.readRecordPhotos(proxy, 'customers', 1)).length, 1);
+      await assert.rejects(() => photos.deleteRecordPhoto(proxy, 'customers', 1, 'id_back'), error => error.status === 404);
       await client.query('DELETE FROM qa_photo_customers WHERE id=1');
       assert.equal((await client.query("SELECT count(*)::int AS n FROM qa_photo_files WHERE entity_type='customers'")).rows[0].n, 0);
       assert.equal((await photos.readRecordPhotos(proxy, 'contracts', 3)).length, 1);

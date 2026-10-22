@@ -36,6 +36,8 @@ def mock(route):
         state['uploads']+=1
         if state['case']=='upload-error':route.fulfill(status=503,json=dict(status='error',message='QA chưa lưu được ảnh'));return
         state['saved']=True;route.fulfill(json=dict(status='success'));return
+    if req.method=='DELETE' and path=='/api/auth/record-photos/contracts/901/return-101-document-2':
+        state['saved']=False;route.fulfill(json=dict(status='success'));return
     if req.method=='POST' and path.endswith('/refund-qr'):
         state['reads']+=1
         if state['case']=='manual-inflight':state['held']=route;return

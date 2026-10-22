@@ -77,6 +77,11 @@ export async function readRecordPhotos(client: Pick<PoolClient, 'query'>, entity
   const result = await client.query('SELECT slot, updated_at, mime_type FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 ORDER BY slot', [entity, id]);
   return result.rows;
 }
+export async function deleteRecordPhoto(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, slot: string) {
+  await requirePhotoRecord(client, entity, id);
+  const result = await client.query('DELETE FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3 RETURNING slot', [entity, id, slot]);
+  if (!result.rowCount) throw new RecordPhotoError('Chưa có ảnh.', 404);
+}
 export async function writeRecordPhoto(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, slot: string, type: string, data: Buffer, actorId: number) {
   if(/-video-[1-3]$/.test(slot))throw new RecordPhotoError('Video cần tải qua Cloudinary.');
   validatePhotoBytes(type, data);

@@ -79,6 +79,11 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   if(error)return <section className="mg-return-settlement" data-blocked="true"><p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={()=>setRetry(value=>value+1)}>Tải lại khoản thu / hoàn</button></p></section>;
   if(!context)return <section className="mg-return-settlement" aria-busy="true"><p role="status">Đang tải số tiền và tài khoản thu / hoàn…</p></section>;
   const blocked=qrBusy||refundDecisionMissing||Boolean(refundRow?.enabled&&!refundReady)||Boolean(refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account));
+  const refundBlockReason=!refundAllowed&&context.deposit_held>0
+    ? (!closes ? 'Chưa thể tick đã hoàn cọc vì hợp đồng còn xe chưa nhận lại.'
+      : due===null ? 'Chưa thể tick đã hoàn cọc: cần đối chiếu tiền hợp đồng.'
+      : `Chưa thể tick «Đã hoàn cọc»: còn ${formatMoney(Math.max(due-collected,0))} chưa ghi nhận thu. Công nợ tiền thuê có thể gồm phí gia hạn; gia hạn ngày trả không đồng nghĩa đã thu tiền. Nếu đã nhận, tick khoản thu phía trên rồi hoàn cọc; nếu chưa thu thì chọn chưa hoàn cọc.`)
+    : '';
   return <section className="mg-return-settlement" aria-label="Thu phí và hoàn cọc" data-blocked={blocked} aria-busy={qrBusy}><h3>2. Thu phí và hoàn cọc</h3>
     <ContractWorkflowGuide workflow="return" company={context.history.some(row=>!row.deposit&&row.type==='in'&&row.method.includes('công ty'))} early={early} late={late}/>
     <p>Chỉ chọn khoản đã thực nhận hoặc đã hoàn cho khách. Mỗi khoản tạo một phiếu thu/chi cùng lượt xác nhận.</p>
@@ -86,10 +91,13 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
     {(['late_fee','repair_fee','rental_debt','refund'] as const).filter(kind=>limits[kind]>0).map(kind=>{
       const row=rows[kind],method=row?.method||'transfer',accounts=paymentAccounts(context,method),blocked=kind==='refund'&&!refundAllowed;
       return <fieldset key={kind} disabled={disabled}><legend>{kind==='refund'?'Cọc còn giữ':kind==='late_fee'?'Phí quá hạn':kind==='repair_fee'?'Phí sửa chữa':'Công nợ tiền thuê'}: {formatMoney(limits[kind])}</legend>
-        <label className="mg-checkbox"><input type={kind==='refund'?'radio':'checkbox'} name={kind==='refund'?`return-${orderId}-refund-decision`:undefined} disabled={blocked} checked={Boolean(row?.enabled)&&!blocked} onChange={event=>{if(kind==='refund')setRefundDeferred(false);update(kind,{enabled:event.target.checked});}}/>{labels[kind]}</label>
+        <label className="mg-checkbox"><input type={kind==='refund'?'radio':'checkbox'} name={kind==='refund'?`return-${orderId}-refund-decision`:undefined} disabled={blocked} title={kind==='refund'?refundBlockReason||undefined:undefined} checked={Boolean(row?.enabled)&&!blocked} onChange={event=>{if(kind==='refund')setRefundDeferred(false);update(kind,{enabled:event.target.checked});}}/>{labels[kind]}</label>
         {kind==='refund'&&<>
+          {refundBlockReason&&<p className="mg-field-error" role="status">{refundBlockReason}</p>}
           <label className="mg-checkbox"><input type="radio" name={`return-${orderId}-refund-decision`} checked={refundDeferred} onChange={()=>{setRefundDeferred(true);update('refund',{enabled:false});}}/>Chưa hoàn cọc — tiếp tục ghi nhận cọc đang giữ</label>
-          {refundDecisionMissing&&<p role="status">Chọn đã hoàn hoặc chưa hoàn cọc trước khi xác nhận. Nhập STK hay lưu ảnh QR chưa tạo phiếu chi hoàn cọc.</p>}
+          {refundDecisionMissing&&<p role="status">{refundBlockReason
+            ? 'Chọn «Chưa hoàn cọc» để trả xe và giữ cọc, hoặc ghi nhận thu công nợ/phí phía trên rồi tick đã hoàn.'
+            : 'Chọn đã hoàn hoặc chưa hoàn cọc trước khi xác nhận. Nhập STK hay lưu ảnh QR chưa tạo phiếu chi hoàn cọc.'}</p>}
           {refundDeferred&&<p role="status">Gửi QR hoặc STK bên dưới lên Telegram để kế toán hoàn cọc sau. Lượt này lưu thông tin nhận hoàn và giữ cọc đang chờ hoàn; khi đã chuyển tiền mới ghi phiếu chi.</p>}
         </>}
         {(row?.enabled&&!blocked||kind==='refund'&&refundDeferred)&&<div className="mg-form-grid mg-contract-grid-two">
@@ -104,6 +112,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
               : 'Không bắt buộc. Tải ảnh QR để tự điền, hoặc nhập ngân hàng / số TK / tên chủ TK nếu khách đã cung cấp.'}</p>
             {itemIds[0]&&<RefundQrUpload key={`${orderId}-${itemKey}`} orderId={orderId} slot={returnRefundQrSlot(itemIds[0])} savedSlot={savedQrSlot} recipient={recipient} disabled={disabled}
               onBusy={setQrBusy} onSaved={()=>{setHasRefundQr(true);setSavedQrSlot(returnRefundQrSlot(itemIds[0]));setQrVersion(value=>value+1);}}
+              onRemoved={()=>{setHasRefundQr(false);setSavedQrSlot(undefined);setQrVersion(value=>value+1);}}
               onRead={(fields,before)=>setRecipient(current=>mergeRefundRecipient(current,fields,before))}/>}
             {hasRefundQr&&<p className="mg-field-wide" role="status">{refundDeferred?'Đã có ảnh QR / thông tin nhận hoàn để gửi cùng hồ sơ Telegram.':'Đã nhận ảnh hồ sơ hoàn cọc — đủ để xác nhận chuyển khoản.'}</p>}
             {([
@@ -123,10 +132,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
         </div>}
       </fieldset>;
     })}
-    {!refundAllowed&&context.deposit_held>0&&<p role="status">{!closes
-      ? 'Chưa thể hoàn cọc vì hợp đồng còn xe chưa nhận lại.'
-      : due===null ? 'Chưa thể hoàn cọc: cần đối chiếu tiền hợp đồng.'
-      : `Chưa thể hoàn cọc: còn ${formatMoney(Math.max(due-collected,0))} chưa ghi nhận thu. Công nợ tiền thuê có thể gồm phí gia hạn; gia hạn ngày trả không đồng nghĩa đã thu tiền. Nếu đã nhận, chọn khoản thu và đúng tài khoản ở trên.`}</p>}
+    {refundBlockReason&&<p role="status">{refundBlockReason}</p>}
     {refundRow?.enabled&&!refundReady&&<p className="mg-field-error" role="alert">Chưa đủ thông tin hoàn cọc: chọn tài khoản / két chi hoàn và số tiền đã hoàn. Ngân hàng, STK và tên chủ TK của khách không bắt buộc.</p>}
     <p role="status">Đã chọn thu: {formatMoney(collected)} · Còn phải thu sau lượt này: {due===null?'Chưa đối chiếu':formatMoney(Math.max(due-collected,0))}</p>
     <p>Chuyển khoản hoàn cọc: đối chiếu QR / số tài khoản khách trong ảnh hồ sơ. Ứng dụng ghi nhận khoản đã hoàn, không tự chuyển tiền ngân hàng.</p>
