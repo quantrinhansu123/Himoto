@@ -1,5 +1,6 @@
 import 'server-only';
 import { readCloudinaryPhoto } from './cloudinary-photos';
+import { readObjectVideo } from './cloudfly-videos';
 import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
 import type { Attachment } from './contract-notification-content';
 
@@ -50,7 +51,9 @@ export async function* telegramMediaBatches(photos: Attachment[], offset: number
     for (let index = 0; index < candidates.length; index += 3) {
       requireTelegramTime(deadline, TELEGRAM_MEDIA_TIMEOUT_MS + (video ? 45_000 : 15_000));
       loaded.push(...await Promise.all(candidates.slice(index, index + 3).map(async photo => {
-        const data = photo.cloudinary_public_id
+        const data = photo.object_key
+          ? await readObjectVideo({object_bucket:photo.object_bucket!,object_key:photo.object_key,object_etag:photo.object_etag!})
+          : photo.cloudinary_public_id
           ? Buffer.from(await (await readCloudinaryPhoto({ cloudinary_public_id: photo.cloudinary_public_id, cloudinary_cloud_name: photo.cloudinary_cloud_name!, cloudinary_version: Number(photo.cloudinary_version), mime_type: photo.mime_type })).arrayBuffer())
           : Buffer.from(photo.bytes || '', 'base64');
         if (!data.length || data.length > (photo.mime_type === 'video/mp4' ? MAX_VIDEO_BYTES : 2 * 1024 * 1024)) throw new TelegramDeliveryError('PHOTO_SIZE', true);

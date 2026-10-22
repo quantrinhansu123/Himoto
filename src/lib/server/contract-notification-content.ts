@@ -5,7 +5,7 @@ import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { CONTRACT_CUSTOMER_PHOTO_SLOTS,isContractTransactionPhoto } from '@/lib/management/contract-photos';
 import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
 
-export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null}
+export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null;object_bucket?:string|null;object_key?:string|null;object_etag?:string|null}
 export interface RenewalNotice {version?:number;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;items?:RenewalNotice[]}
 export interface NotificationPayload {
   code:string;customer:string;phone:string;store:string;actor:string;vehicles:string;total:string;at:string;photos:Attachment[];contract_staff?:string;
@@ -61,32 +61,34 @@ export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
 export async function notificationPhotos(db:Database,orderId:number,phases:string[]):Promise<Attachment[]> {
   // Queue only slot / Cloudinary refs. Embedding multi-MB base64 blobs here made finalize roll back
   // under statement_timeout when staff attached hồ sơ photos. Dispatch reloads bytes by slot.
-  const result=await db.query(`SELECT slot,mime_type,NULL::text AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
+  const result=await db.query(`SELECT slot,mime_type,NULL::text AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag
     FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND
       (slot ~ ANY($2::text[]) OR ($3 AND slot ~ '^plate-[1-9][0-9]{0,14}$' AND EXISTS
         (SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.vehicle_id::text=substring(slot from 7) AND d.deleted_at IS NULL))) ORDER BY slot`,
     [orderId,phases.map(phase=>`^${phase}-(?:[1-9][0-9]{0,14}|video-[1-3]|document-[1-9][0-9]{0,14})$`).concat(phases.includes('rental')?['^(driver-license|customer-id-front|customer-id-back|customer-driver-license)$']:[]),phases.includes('rental')]);
-  const photos=(result.rows as Attachment[]).filter(photo=>photo.slot.startsWith('plate-')||isContractTransactionPhoto(photo.slot));
+  // Preserve the legacy payload shape/hash when an attachment has no object reference.
+  const photos=(result.rows as Attachment[]).map<Attachment>(({object_bucket,object_key,object_etag,...photo})=>object_key?{...photo,object_bucket,object_key,object_etag}:photo)
+    .filter(photo=>photo.slot.startsWith('plate-')||isContractTransactionPhoto(photo.slot));
   photos.sort((a,b)=>{
     const rank=(slot:string)=>slot==='driver-license'?1000:CONTRACT_CUSTOMER_PHOTO_SLOTS.some(p=>p.key===slot)?1001:slot.startsWith('plate-')?999:phases.findIndex(phase=>slot.startsWith(`${phase}-`));
     return rank(a.slot)-rank(b.slot)||a.slot.localeCompare(b.slot,'en',{numeric:true});
   });
   const seen=new Set<string>();
   return photos.filter(photo=>{
-    const key=photo.mime_type+':'+(photo.cloudinary_public_id?`${photo.cloudinary_cloud_name}/${photo.cloudinary_public_id}/${photo.cloudinary_version}`:`slot:${photo.slot}`);
+    const key=photo.mime_type+':'+(photo.object_key?`${photo.object_bucket}/${photo.object_key}/${photo.object_etag}`:photo.cloudinary_public_id?`${photo.cloudinary_cloud_name}/${photo.cloudinary_public_id}/${photo.cloudinary_version}`:`slot:${photo.slot}`);
     if(seen.has(key))return false;seen.add(key);return true;
   });
 }
 /** Resolve photo bytes at Telegram send time for queue rows that only stored slot refs. */
 export async function hydrateNotificationPhotos(db:Database,orderId:number|null,photos:Attachment[]):Promise<Attachment[]> {
   if(!orderId||!photos.length)return photos;
-  const need=photos.filter(photo=>!photo.cloudinary_public_id&&!photo.bytes).map(photo=>photo.slot);
+  const need=photos.filter(photo=>!photo.object_key&&!photo.cloudinary_public_id&&!photo.bytes).map(photo=>photo.slot);
   if(!need.length)return photos;
-  const rows=await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
+  const rows=await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag
     FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND slot=ANY($2::text[])`,[orderId,need]);
   const bySlot=new Map(rows.rows.map(row=>[String(row.slot),row as Attachment]));
   return photos.map(photo=>{
-    if(photo.cloudinary_public_id||photo.bytes)return photo;
+    if(photo.object_key||photo.cloudinary_public_id||photo.bytes)return photo;
     const loaded=bySlot.get(photo.slot);
     return loaded?{...photo,...loaded}:photo;
   });

@@ -18,7 +18,7 @@ const RENTAL_LABELS: Record<string, string> = {
 const TONE_ORDER: Record<Tone, number> = { ok: 0, warn: 1, danger: 2 };
 const MAX_OPTIONS = 60;
 const plateKey = (value: unknown) => normalize(String(value || '')).replace(/[^a-z0-9]/g, '');
-export function matchesVehicleSearch(item: Pick<ManagementRow,'name'|'license'|'brand'|'store_name'>, query: string) {
+export function matchesVehicleSearch(item: Pick<ManagementRow,'name'> & Partial<Pick<ManagementRow,'license'|'brand'|'store_name'>>, query: string) {
   const term = normalize(query);
   if (!term) return true;
   const plateTerm = term.replace(/[^a-z0-9]/g, '');

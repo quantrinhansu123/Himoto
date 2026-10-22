@@ -4,9 +4,11 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { RecordPhotoError, parsePhotoTarget, requirePhotoRecord,requireContractPhotoSlot, writeRecordPhoto, deleteRecordPhoto } from '@/lib/server/record-photos';
 import { MAX_PHOTO_BYTES } from '@/lib/management/record-photos';
-import { verifyPhotoReceipt, writeCloudinaryPhoto, readCloudinaryPhoto, type CloudPhotoReceipt } from '@/lib/server/cloudinary-photos';
+import { verifyPhotoReceipt, writeCloudinaryPhoto, readCloudinaryPhoto, cleanupConvertedVideo, type CloudPhotoReceipt } from '@/lib/server/cloudinary-photos';
+import { objectVideoUrl } from '@/lib/server/cloudfly-videos';
 
 export const runtime = 'nodejs';
+export const maxDuration = 300;
 type Params = { params: Promise<{ entity: string; id: string; slot: string }> };
 async function handle(request: NextRequest, { params }: Params, writing: boolean) {
   const denied = await protectDatabaseRequest(request); if (denied) return denied;
@@ -45,18 +47,20 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
       response = NextResponse.json({ status: 'success' });
     } else {
       await requirePhotoRecord(client, target.entity, target.id);
-      const result = await client.query('SELECT mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3', [target.entity, target.id, raw.slot]);
+      const result = await client.query('SELECT mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3', [target.entity, target.id, raw.slot]);
       if (!result.rowCount) throw new RecordPhotoError('Chưa có ảnh.', 404);
       await client.query('COMMIT'); client.release(); client = undefined;
       const photo = result.rows[0];
-      if (photo.cloudinary_public_id) {
+      if (photo.object_key) response = NextResponse.redirect(await objectVideoUrl(photo), 307);
+      else if (photo.cloudinary_public_id) {
         const remote = await readCloudinaryPhoto(photo,request.headers.get('range'));
         const headers:Record<string,string>={'Content-Type':photo.mime_type,'X-Content-Type-Options':'nosniff','Content-Disposition':`inline; filename="${photo.mime_type==='video/mp4'?'video-hop-dong.mp4':'anh-ho-so.jpg'}"`};
         for(const key of ['Content-Length','Content-Range','Accept-Ranges']){const value=remote.headers.get(key);if(value)headers[key]=value;}
         response = new NextResponse(remote.body, {status:remote.status,headers});
       } else response = new NextResponse(new Uint8Array(photo.data), { headers: { 'Content-Type': photo.mime_type, 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline; filename="anh-ho-so"' } });
     }
-    if (client) await client.query('COMMIT');
+    if (client) { await client.query('COMMIT'); client.release(); client = undefined; }
+    if (receipt) await cleanupConvertedVideo(receipt);
     response.headers.set('Cache-Control', 'private, no-store');
     return response;
   } catch (error) {

@@ -88,5 +88,5 @@ export async function writeRecordPhoto(client: Pick<PoolClient, 'query'>, entity
   await requirePhotoRecord(client, entity, id);
   await client.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by)
     VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(entity_type,entity_id,slot)
-    DO UPDATE SET mime_type=EXCLUDED.mime_type,data=EXCLUDED.data,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=NULL,cloudinary_cloud_name=NULL,cloudinary_version=NULL`, [entity, id, slot, type, data, actorId]);
+    DO UPDATE SET mime_type=EXCLUDED.mime_type,data=EXCLUDED.data,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=NULL,cloudinary_cloud_name=NULL,cloudinary_version=NULL,object_bucket=NULL,object_key=NULL,object_etag=NULL`, [entity, id, slot, type, data, actorId]);
 }

@@ -2,6 +2,8 @@
 
 Mở `/shift-reports`. Mỗi PGD có một báo cáo mỗi ngày; chọn cơ sở ở thanh trên và lọc ngày / tiến độ trong danh sách.
 
+Video mới hỗ trợ lưu bản chính thức vào CloudFly theo [cấu hình video](cloudfly-videos.md); ảnh và video Cloudinary cũ tiếp tục đọc qua các API hiện có.
+
 ## 1. PGD kiểm kê
 
 Nhập ngày, nhân sự, xe thực tế tại PGD, pin / pin đầy, số xe điều chuyển, tiền mặt và số dư tài khoản cá nhân / công ty. Có thể tự điền hoặc nhập số xe thuê ngày / tháng và thống kê hợp đồng / thu chi; nhân sự cần kiểm tra số liệu trước khi chốt. Báo cáo cũ thiếu số liệu vẫn hiển thị chưa ghi nhận.

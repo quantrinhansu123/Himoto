@@ -30,6 +30,10 @@ async function main(){
       }
       if(name.includes('requests'))await c.query(sql); // Migration can be rerun safely.
     }
+    const objectMigration=fs.readFileSync(path.join(process.cwd(),'docs/sql/2026-10-22-cloudfly-videos.sql'),'utf8').replace(/^BEGIN;|^COMMIT;/gm,'');
+    for(const statement of objectMigration.split(';').filter(sql=>sql.trim()&&!sql.includes('himoto.management_record_photos'))){
+      await c.query(sqlForTemp(statement));
+    }
     await c.query('GRANT SELECT ON stores,users TO himoto_scoped');
     const scope=async()=>{
       const current=dataAccess.getStore();
@@ -138,10 +142,11 @@ async function main(){
     assert.deepEqual(await audit(auditBody,auditKey),draft);
     assert.equal((await audit({...auditBody,revision:1,fingerprint:'stale'})).status,409);
     const cloudModule=load(path.join(root,'lib/server/cloudinary-photos')),{v2:cloudinary}=require('cloudinary');
-    const envKeys=['CLOUDINARY_CLOUD_NAME','CLOUDINARY_API_KEY','CLOUDINARY_API_SECRET'],oldEnv=Object.fromEntries(envKeys.map(k=>[k,process.env[k]]));
-    const originalShiftAsset=cloudModule.shiftCloudAsset;
+    const envKeys=['CLOUDINARY_CLOUD_NAME','CLOUDINARY_API_KEY','CLOUDINARY_API_SECRET','VIDEO_STORAGE_PROVIDER'],oldEnv=Object.fromEntries(envKeys.map(k=>[k,process.env[k]]));
+    const originalShiftAsset=cloudModule.shiftCloudAsset,originalCleanup=cloudModule.cleanupConvertedVideo;
     try{
       process.env.CLOUDINARY_CLOUD_NAME='qa-cloud';process.env.CLOUDINARY_API_KEY='qa-key';process.env.CLOUDINARY_API_SECRET='qa-unit-test-secret';
+      process.env.VIDEO_STORAGE_PROVIDER='cloudinary';
       const uploadId=randomUUID(),publicId=`himoto/management-video/2/${uploadId}`;
       const receipt={public_id:publicId,version:1,resource_type:'video',signature:cloudinary.utils.api_sign_request({public_id:publicId,version:1},'qa-unit-test-secret')};
       const videoId=randomUUID();
@@ -155,8 +160,25 @@ async function main(){
       const savedVideo=await video();assert.equal(savedVideo.status,200,savedVideo.message);
       cloudModule.shiftCloudAsset=async()=>{throw Error('Replay must not make another asset API call');};
       assert.deepEqual(await video(),savedVideo);mediaRevision=savedVideo.data.revision;
-    }finally{cloudModule.shiftCloudAsset=originalShiftAsset;for(const k of envKeys)if(oldEnv[k]===undefined)delete process.env[k];else process.env[k]=oldEnv[k];}
+      const objectId=randomUUID(),objectKey=`himoto/videos/qa-cloud/2/${uploadId}/v1.mp4`;
+      let cleanupCalls=0;
+      cloudModule.cleanupConvertedVideo=async()=>{cleanupCalls++;};
+      cloudModule.shiftCloudAsset=async()=>({cloud_name:'qa-cloud',mime_type:'video/mp4',object_bucket:'qa-himoto-videos',object_key:objectKey,object_etag:'qa-etag'});
+      const objectRequest=()=>new NextRequest(`http://localhost/api/auth/shift-reports/${mediaReportId}/media/${objectId}`,{method:'PUT',headers:{origin:'http://localhost','content-type':'application/json','x-shift-request-id':objectId,'x-report-revision':String(mediaRevision),'x-shift-stage':'audit','x-shift-category':'vehicles','x-file-name':'qa.mp4'},body:JSON.stringify(receipt)});
+      const objectContext={params:Promise.resolve({id:String(mediaReportId),mediaId:objectId})};
+      const savedObject=await mediaRoute.PUT(objectRequest(),objectContext);assert.equal(savedObject.status,200);
+      const objectResponse=await savedObject.json();assert.equal(cleanupCalls,1);
+      const objectRow=(await c.query('SELECT cloudinary_public_id,object_key,object_etag FROM pg_temp.management_shift_media WHERE id=$1',[objectId])).rows[0];
+      assert.equal(objectRow.cloudinary_public_id,null);assert.equal(objectRow.object_key,objectKey);assert.equal(objectRow.object_etag,'qa-etag');
+      cloudModule.shiftCloudAsset=async()=>{throw Error('Object replay must not copy again');};
+      assert.deepEqual(await (await mediaRoute.PUT(objectRequest(),objectContext)).json(),objectResponse);assert.equal(cleanupCalls,2);
+      actor={...actor,store_id:2};
+      const hidden=await mediaRoute.GET(new NextRequest(`http://localhost/api/auth/shift-reports/${mediaReportId}/media/${objectId}`),objectContext);
+      assert.equal(hidden.status,404);assert.equal(hidden.headers.get('Location'),null);actor={...actor,store_id:1};
+      mediaRevision=objectResponse.data.revision;
+    }finally{cloudModule.shiftCloudAsset=originalShiftAsset;cloudModule.cleanupConvertedVideo=originalCleanup;for(const k of envKeys)if(oldEnv[k]===undefined)delete process.env[k];else process.env[k]=oldEnv[k];}
     checks.push('Video evidence verifies the uploader signature, enforces 45 MB / 180 seconds from asset metadata, and replays a committed attachment without another cloud API call.');
+    checks.push('CloudFly evidence stores only object references, cleans temporary conversion after COMMIT, replays without another copy, and cannot issue a playback URL outside the PostgreSQL branch scope.');
     const auditMedia=await evidence(mediaReportId,randomUUID(),'cash',mediaRevision,'audit');assert.equal(auditMedia.status,200,auditMedia.message);
     assert.equal((await audit({...auditBody,revision:1,status:'confirmed'})).status,409);
     mediaRevision=auditMedia.data.revision;

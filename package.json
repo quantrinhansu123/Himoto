@@ -59,6 +59,8 @@
     "lint:management": "eslint \"src/components/management/**/*.{ts,tsx}\" \"src/components/contracts/**/*.{ts,tsx}\" \"src/lib/management/**/*.ts\" \"src/app/(management)/**/*.tsx\" src/fixtures/management-data.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1155.0",
+    "@aws-sdk/s3-request-presigner": "^3.1155.0",
     "@fontsource/roboto": "^5.3.0",
     "@vercel/functions": "^3.9.11",
     "axios": "^1.7.9",
