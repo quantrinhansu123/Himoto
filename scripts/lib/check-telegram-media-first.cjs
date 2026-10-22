@@ -75,7 +75,20 @@ module.exports=async function checkMediaFirst(db,c,schema,notices){
   const timeoutState=(await c.query(`SELECT status,error_code,message_ids FROM ${schema}.management_contract_notifications WHERE id=$1`,[timeoutId])).rows[0];
   assert.equal(timeoutState.status,'unknown');assert.equal(timeoutState.error_code,'TELEGRAM_TIMEOUT');assert.deepEqual(timeoutState.message_ids,[]);
   await notices.dispatchContractNotifications(async()=>{timeoutCalls++;throw Error('Timeout must not auto retry');},1,db,[2]);assert.equal(timeoutCalls,1);
+  const orphan=await enqueue({...payload,photos:[photo(0)]}),orphanMethods=[];
+  await c.query(`UPDATE ${schema}.management_contract_notifications SET status='sending',error_code=NULL,message_ids='[]'::jsonb WHERE id=$1`,[orphan]);
+  assert.equal((await notices.dispatchContractNotifications(async(url)=>{
+    orphanMethods.push(new URL(url).pathname.split('/').at(-1));
+    return Response.json({ok:true,result:{message_id:900}});
+  },1,db,[2])).sent,1);
+  assert.deepEqual(orphanMethods,['sendPhoto','sendMessage']);
+  const stuck=await enqueue({...payload,photos:[photo(0)]});
+  await c.query(`UPDATE ${schema}.management_contract_notifications SET status='sending',error_code=NULL,message_ids='[15]'::jsonb WHERE id=$1`,[stuck]);
+  await notices.dispatchContractNotifications(async()=>{throw Error('Orphaned sending with Telegram IDs must not contact Telegram');},1,db,[2]);
+  const stuckState=(await c.query(`SELECT status,error_code FROM ${schema}.management_contract_notifications WHERE id=$1`,[stuck])).rows[0];
+  assert.equal(stuckState.status,'unknown');assert.equal(stuckState.error_code,'SEND_UNCERTAIN');
   return ['23 mixed photos/video preserve attachment order, send videos separately and put one summary after all media; a concurrent sender cannot interleave the same group',
     'Media interruption preserves partial Telegram IDs, omits the closing summary, releases the group lease and never retries an uncertain send automatically',
-    'Long deliveries checkpoint acknowledged media, reserve the group even after lease expiry, resume only the remaining attachments or final summary and send each once; actual Telegram timeouts remain unknown without automatic replay'];
+    'Long deliveries checkpoint acknowledged media, reserve the group even after lease expiry, resume only the remaining attachments or final summary and send each once; actual Telegram timeouts remain unknown without automatic replay',
+    'A killed worker that left sending with no lease is resumed; sending with unconfirmed Telegram IDs stays unknown'];
 };

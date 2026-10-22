@@ -43,17 +43,20 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       ) g ON true
       LEFT JOIN LATERAL (SELECT COALESCE(n.delivery_target->>'chat_id',g.chat_id) AS chat_id,
         CASE WHEN n.delivery_target IS NULL THEN g.thread_id ELSE (n.delivery_target->>'thread_id')::integer END AS thread_id) target ON true
-      WHERE n.status='pending' AND n.delivery_mode='manual' AND ($1::bigint[] IS NULL OR n.order_id=ANY($1))
+      WHERE n.delivery_mode='manual' AND ($1::bigint[] IS NULL OR n.order_id=ANY($1))
+        AND (n.status='pending' OR (n.status='sending' AND NOT EXISTS (
+          SELECT 1 FROM himoto.management_telegram_delivery_leases live
+          WHERE live.notice_id=n.id AND live.expires_at>clock_timestamp())))
         AND (n.order_id IS NULL OR ${VEHICLE_ORDER_SQL})
         AND ($3::bigint[] IS NULL OR n.vehicle_event_id=ANY($3))
         AND (target.chat_id IS NULL OR NOT EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases l
           WHERE l.chat_id=target.chat_id AND l.thread_id=COALESCE(target.thread_id,0) AND l.notice_id<>n.id
             AND (l.expires_at>clock_timestamp() OR EXISTS(SELECT 1 FROM himoto.management_contract_notifications held
-              WHERE held.id=l.notice_id AND held.status='pending' AND held.error_code='DELIVERY_CONTINUE'))))
+              WHERE held.id=l.notice_id AND (held.status='sending' OR held.status='pending' AND held.error_code='DELIVERY_CONTINUE')))))
       ORDER BY n.created_at,n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1
     ), lease AS (
       INSERT INTO himoto.management_telegram_delivery_leases(chat_id,thread_id,lease_id,notice_id,expires_at)
-      SELECT chat_id,COALESCE(thread_id,0),$2::uuid,id,clock_timestamp()+interval '6 minutes' FROM candidate WHERE chat_id IS NOT NULL
+      SELECT chat_id,COALESCE(thread_id,0),$2::uuid,id,clock_timestamp()+interval '3 minutes' FROM candidate WHERE chat_id IS NOT NULL
       ON CONFLICT(chat_id,thread_id) DO UPDATE SET lease_id=EXCLUDED.lease_id,notice_id=EXCLUDED.notice_id,expires_at=EXCLUDED.expires_at
       WHERE management_telegram_delivery_leases.expires_at<=clock_timestamp() OR management_telegram_delivery_leases.notice_id=EXCLUDED.notice_id RETURNING lease_id
     ) UPDATE himoto.management_contract_notifications n SET status='sending' FROM candidate c
@@ -73,11 +76,21 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       // Only acknowledged media is skipped when the worker resumes a deliberate continuation.
       for await(const batch of telegramMediaBatches(photos,ids.length,deadline)) {
         requireTelegramTime(deadline,TELEGRAM_MEDIA_TIMEOUT_MS);
-        await database.query("UPDATE himoto.management_telegram_delivery_leases SET expires_at=clock_timestamp()+interval '6 minutes' WHERE lease_id=$1",[leaseId]);
+        await database.query("UPDATE himoto.management_telegram_delivery_leases SET expires_at=clock_timestamp()+interval '3 minutes' WHERE lease_id=$1",[leaseId]);
         const form=new FormData();form.append('chat_id',row.chat_id);if(row.thread_id)form.append('message_thread_id',String(row.thread_id));
         contacted=true;
-        if(batch.length===1){const video=batch[0].type==='video/mp4';form.append(video?'video':'photo',new Blob([new Uint8Array(batch[0].data)],{type:batch[0].type}),video?'video-hop-dong.mp4':'anh-hop-dong.jpg');if(video)form.append('supports_streaming','true');ids.push(...await telegramCall(token,video?'sendVideo':'sendPhoto',form,send));}
-        else {form.append('media',JSON.stringify(batch.map((_,i)=>({type:'photo',media:`attach://photo${i}`}))));batch.forEach((file,i)=>form.append(`photo${i}`,new Blob([new Uint8Array(file.data)],{type:file.type}),`anh-${i+1}.jpg`));ids.push(...await telegramCall(token,'sendMediaGroup',form,send,batch.length));}
+        if(batch.length===1){
+          const video=batch[0].type==='video/mp4';
+          if(batch[0].url)form.append(video?'video':'photo',batch[0].url);
+          else form.append(video?'video':'photo',new Blob([new Uint8Array(batch[0].data!)],{type:batch[0].type}),video?'video-hop-dong.mp4':'anh-hop-dong.jpg');
+          if(video)form.append('supports_streaming','true');
+          ids.push(...await telegramCall(token,video?'sendVideo':'sendPhoto',form,send));
+        }
+        else {
+          form.append('media',JSON.stringify(batch.map((file,i)=>({type:'photo',media:file.url||`attach://photo${i}`}))));
+          batch.forEach((file,i)=>{if(file.data)form.append(`photo${i}`,new Blob([new Uint8Array(file.data)],{type:file.type}),`anh-${i+1}.jpg`);});
+          ids.push(...await telegramCall(token,'sendMediaGroup',form,send,batch.length));
+        }
         contacted=false;
         await database.query('UPDATE himoto.management_contract_notifications SET message_ids=$2 WHERE id=$1',[row.id,JSON.stringify(ids)]);
       }

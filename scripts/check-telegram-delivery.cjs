@@ -15,6 +15,13 @@ async function main(){
     assert(large.every(group=>group.reduce((sum,f)=>sum+f.data.length,0)<=delivery.TELEGRAM_ALBUM_BYTES));
     assert.deepEqual((await batches(Array.from({length:23},(_,i)=>photo(i)))).map(group=>group.length),[10,10,3]);
     await assert.rejects(batches([photo(1,2*1024*1024+1)]),/PHOTO_SIZE/);
+    const oldEnv={...process.env};
+    delete process.env.CLOUDINARY_URL;Object.assign(process.env,{CLOUDINARY_CLOUD_NAME:'qa-cloud',CLOUDINARY_API_KEY:'qa-key',CLOUDINARY_API_SECRET:'qa-media-test-secret'});
+    try {
+      const remote=await batches(Array.from({length:10},(_,i)=>({slot:`rental-${i+1}`,mime_type:'image/jpeg',bytes:null,cloudinary_public_id:`himoto/management/1/${i}`,cloudinary_cloud_name:'qa-cloud',cloudinary_version:1})));
+      assert.equal(remote.length,1);assert.equal(remote[0].length,10);
+      assert(remote[0].every(file=>file.url&&!file.data&&String(file.url).includes('qa-cloud')));
+    } finally { for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]; Object.assign(process.env,oldEnv); }
     checks.push('The reported 7-photo/2-video payload splits into 7/1/1; photo albums obey byte/count caps, preserve all media and reject oversized files');
     const originalTimeout=AbortSignal.timeout,timeouts=[];
     AbortSignal.timeout=ms=>{timeouts.push(ms);return new AbortController().signal;};
@@ -52,6 +59,10 @@ async function main(){
     assert.equal(cron.status,200);assert.deepEqual((await cron.json()).telegram,{queued:true});assert.equal(gpsReads,1);assert.equal(sends,0);assert.equal(callbacks.length,1);
     await callbacks[0]();assert.equal(sends,1);assert.equal(historyReads,1);
     checks.push('Authenticated scheduler responds before Telegram upload work; a slow delivery no longer holds its 55s HTTP request open');
+    const telegramRoute=fs.readFileSync(path.join(root,'app/api/auth/order/car-rental/[id]/telegram/route.ts'),'utf8');
+    assert.match(telegramRoute,/writing\|\|pending/);
+    assert.match(fs.readFileSync(path.join(root,'lib/server/contract-notifications.ts'),'utf8'),/n\.status='sending'/);
+    checks.push('A pending or orphaned sending notice is dispatched again when staff reopen or refresh the Telegram panel');
   }finally{global.fetch=originalFetch;}
   console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realTelegramRequests:0},null,2));
 }

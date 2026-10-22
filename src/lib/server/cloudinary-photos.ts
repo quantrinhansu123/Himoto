@@ -92,12 +92,18 @@ export async function cleanupConvertedVideo(receipt: CloudPhotoReceipt) {
     console.error('Temporary video conversion cleanup pending.');
   }
 }
-export async function readCloudinaryPhoto(photo: { cloudinary_public_id: string; cloudinary_cloud_name: string; cloudinary_version: number; mime_type?: string }, range?:string|null) {
+export function cloudinaryPhotoUrl(photo: { cloudinary_public_id: string; cloudinary_cloud_name: string; mime_type?: string }, expiresIn = 600) {
   const settings = config();
   if (settings.cloud_name !== photo.cloudinary_cloud_name) throw new RecordPhotoError('Cấu hình Cloudinary không khớp nơi lưu ảnh.', 503);
+  const video = photo.mime_type === 'video/mp4';
+  return cloudinary.utils.private_download_url(photo.cloudinary_public_id, video ? 'mp4' : 'jpg', {
+    ...settings, resource_type: video ? 'video' : 'image', type: 'authenticated',
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+  });
+}
+export async function readCloudinaryPhoto(photo: { cloudinary_public_id: string; cloudinary_cloud_name: string; cloudinary_version: number; mime_type?: string }, range?:string|null) {
   const video=photo.mime_type==='video/mp4';
-  const url = cloudinary.utils.private_download_url(photo.cloudinary_public_id, video?'mp4':'jpg', { ...settings, resource_type:video?'video':'image', type: 'authenticated', expires_at: Math.floor(Date.now() / 1000) + 300 });
-  const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(video?45_000:15_000), ...(range?{headers:{Range:range}}:{}) });
+  const response = await fetch(cloudinaryPhotoUrl(photo, 300), { cache: 'no-store', signal: AbortSignal.timeout(video?45_000:15_000), ...(range?{headers:{Range:range}}:{}) });
   if (!response.ok) throw new RecordPhotoError('Không tải được ảnh Cloudinary. Thử lại sau.', 502);
   return response;
 }
