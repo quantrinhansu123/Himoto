@@ -32,7 +32,7 @@ import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
 import { addRentalMonths, billingUnitLabel, OWNERSHIP_TERMS } from '@/lib/management/contract-billing';
 import { rentalQuote, selectedRentalVehicleCount } from '@/lib/management/contract-pricing';
 import { CustomerInternationalFields } from './CustomerInternationalFields';
-import { contractPhotoSlots } from '@/lib/management/contract-photos';
+import { contractPhotoSlots, contractEvidenceSlots } from '@/lib/management/contract-photos';
 import { normalizeCustomerLookup,validCustomerLookup } from '@/lib/management/contract-document';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos,copyCustomerPhotosToContract } from '@/lib/management/record-photos';
@@ -139,6 +139,11 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [licensePhotos,setLicensePhotos]=useState<PendingPhotos>({});
   const [processingLicense,setProcessingLicense]=useState(false);
   const [processingMedia,setProcessingMedia]=useState(false);
+  const mediaBusy = useRef(new Set<string>());
+  const setMediaBusy = (id: string) => (busy: boolean) => {
+    if (busy) mediaBusy.current.add(id); else mediaBusy.current.delete(id);
+    setProcessingMedia(mediaBusy.current.size > 0);
+  };
   const [platePhotos, setPlatePhotos] = useState<PendingPhotos>({});
   const [processingCustomerPhoto, setProcessingCustomerPhoto] = useState(false);
   const [processingPlatePhoto, setProcessingPlatePhoto] = useState(false);
@@ -859,7 +864,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             })}
             <button className="mg-button" type="button" onClick={() => change('vehicles', [...draft.vehicles, emptyVehicle()])}><Plus size={16} />Thêm xe</button>
             {source === 'api' && <RecordPhotoFields key={`plates-${photoVersion}`} entity="contracts" recordId={savedDraft?.id || row?.id} slots={[{ key: 'scan_plate', label: 'Biển số để tự chọn xe' }, ...draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))]} title="Chụp biển số · Tự chọn xe bằng AI" value={platePhotos} onChange={setPlatePhotos} onBusyChange={setProcessingPlatePhoto} disabled={saving} ocr={plateOcr} />}
-            <div className="mg-field mg-field-wide"><RecordPhotoFields key={`transaction-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractPhotoSlots('rental')} title="Ảnh xe 4 góc, toàn cảnh & video" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setProcessingMedia}/><p>Ảnh/video được lưu cùng bản nháp và tập hợp ở bước cuối với CCCD, GPLX và ảnh biển số. Chỉ gửi Telegram khi chủ động bấm Gửi toàn bộ.</p></div>
+            <div className="mg-field mg-field-wide"><RecordPhotoFields key={`transaction-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractPhotoSlots('rental')} title="Ảnh xe 4 góc, toàn cảnh & video" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setMediaBusy('vehicle')}/><p>Ảnh/video được lưu cùng bản nháp và tập hợp ở bước cuối với CCCD, GPLX và ảnh biển số. Chỉ gửi Telegram khi chủ động bấm Gửi toàn bộ.</p></div>
           </>)}
           {panel('payment', 'Chi phí', <>
             {!reserving && <div className="mg-contract-cost-section"><h3>Tiền cọc</h3><div className="mg-form-grid mg-contract-grid-two">
@@ -886,6 +891,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
               <div className="mg-field"><label htmlFor="contract-amount-due">Tổng cần thu gồm cọc (VNĐ)</label><input id="contract-amount-due" readOnly value={formatMoneyInput(String((Number(draft.deposit_amount)||0)+(Number(draft.total_amount)||0)))}/><small>Gồm cọc + tiền thuê + phí khác. Đây là số cần thu, chưa phải tiền đã nhận.</small></div>
             </div>
             <p className="mg-composer-hint">Bấm Hoàn tất & thanh toán để xác nhận tiền đã nhận, chọn tài khoản/tiền mặt và lưu hợp đồng. Có thể ghi nhận đã thanh toán đủ, thu một phần hoặc chưa thu.</p>
+            {source === 'api' && <div className="mg-field mg-field-wide"><RecordPhotoFields key={`evidence-payment-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractEvidenceSlots('rental')} title="Ảnh hợp đồng đã ký & bill chuyển khoản" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setMediaBusy('evidence-payment')}/><p>Chụp hợp đồng giấy đã ký và bill CK / tổng tiền mặt. Cùng các ô ở mục Ký kết; lưu với bản nháp, gửi Telegram khi bấm Gửi toàn bộ.</p></div>}
           </>)}
           {panel('signing', 'Ký kết & Ghi chú', <div className="mg-form-grid mg-contract-grid-two">
             <div className="mg-field mg-field-wide"><label htmlFor="contract-collateral_description">Tài sản thế chấp / Đặt cọc tài sản</label><textarea id="contract-collateral_description" rows={3} value={draft.collateral_description} onChange={event => change('collateral_description', event.target.value)} placeholder="Chi tiết giấy tờ hoặc tài sản đặt cọc" />
@@ -895,6 +901,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             <div className="mg-field"><label htmlFor="contract-signer-b">Người ký Bên B (Khách thuê)</label><input id="contract-signer-b" value={draft.customer.name} readOnly placeholder="Theo khách hàng đã chọn" /></div>
             <div className="mg-field mg-field-wide"><label htmlFor="contract-record-notes">Ghi chú hợp đồng</label><textarea id="contract-record-notes" rows={3} value={notes} onChange={event => setNotes(event.target.value)} /></div>
             <div className="mg-field mg-field-wide"><label htmlFor="contract-customer-warning_note">Cảnh báo</label><textarea id="contract-customer-warning_note" rows={2} value={draft.customer.warning_note} disabled={lookupState !== 'found'} onChange={event => setDraft(previous => ({ ...previous, customer: { ...previous.customer, warning_note: event.target.value } }))} /></div>
+            {source === 'api' && <div className="mg-field mg-field-wide"><RecordPhotoFields key={`evidence-signing-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractEvidenceSlots('rental')} title="Ảnh hợp đồng đã ký & bill chuyển khoản" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setMediaBusy('evidence-signing')}/><p>Chụp hợp đồng giấy sau khi ký và bill CK nếu thu chuyển khoản. Ảnh giữ cùng bản nháp.</p></div>}
           </div>)}
           <div className="mg-contract-step-actions"><span>Phần {sectionIndex + 1} / {CONTRACT_FORM_SECTIONS.length}</span>
             <button type="button" className="mg-button" disabled={sectionIndex === 0} onClick={() => setSection(CONTRACT_FORM_SECTIONS[sectionIndex - 1].id)}><ChevronLeft size={16} />Quay lại</button>

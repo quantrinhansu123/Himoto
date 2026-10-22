@@ -5,6 +5,11 @@ export function contractDocumentSlots(phase:ContractPhotoPhase):PhotoSlot[] {
   const labels=phase.startsWith('return-')?['Ảnh hợp đồng khi trả xe','QR / Số tài khoản khách nhận hoàn','Biên nhận thu phí / hoàn tiền']:phase.startsWith('renewal-')?['Biên nhận thanh toán gia hạn']:phase==='rental'?['Hợp đồng đã ký','Bill chuyển khoản / tổng tiền mặt','Khách nhận xe, biển số, chìa khóa & mũ','VNeID · trang CCCD 1 (nếu chưa có)','VNeID · trang CCCD 2 (nếu chưa có)','VNeID · trang CCCD 3 (nếu chưa có)','GPLX mặt sau / trang bổ sung','Giấy tờ bản cứng bổ sung (nếu chưa có)','Thẻ sinh viên / giấy tờ giảm giá','Vé máy bay khứ hồi','Danh bạ liên hệ do khách cung cấp','Đơn giao hàng · địa chỉ nhà hiện tại','Trang mạng xã hội do khách cung cấp']:[];
   return Array.from({length:15},(_,index)=>({key:`${phase}-document-${index+1}`,label:labels[index]||`Ảnh hồ sơ bổ sung ${index+1}`}));
 }
+/** Signed contract + transfer/cash bill on the main form; extra papers stay in the optional list. */
+export function contractEvidenceSlots(phase:ContractPhotoPhase):PhotoSlot[] {
+  const slots=contractDocumentSlots(phase);
+  return slots.slice(0, phase.startsWith('return-') ? 3 : Math.min(2, slots.length));
+}
 /** Preferred return document slot: QR / customer refund account photo. */
 export function returnRefundQrSlot(itemId:number){return `return-${itemId}-document-2`;}
 /** Any return hồ sơ document can evidence the customer's refund account (QR or số TK). */

@@ -2,12 +2,16 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 const {load,root}=require('./lib/load-typescript.cjs');
 module.exports=async function checkDocuments(db,c,schema,notices){
-  const {contractDocumentSlots}=load(path.join(root,'lib/management/contract-photos'));
+  const {contractDocumentSlots,contractEvidenceSlots}=load(path.join(root,'lib/management/contract-photos'));
   const {notificationPhotos,notificationHash,hydrateNotificationPhotos}=load(path.join(root,'lib/server/contract-notification-content'));
   const {parsePhotoTarget,requireContractPhotoSlot}=load(path.join(root,'lib/server/record-photos'));
   const {requestPermission}=load(path.join(root,'lib/server/access-request'));
   const {copyContractCustomerPhotos}=load(path.join(root,'lib/server/contract-customer-photos'));
   assert.equal(contractDocumentSlots('rental').length,15); // initial placeholders, never an upload cap
+  assert.deepEqual(contractEvidenceSlots('rental').map(slot=>slot.key),['rental-document-1','rental-document-2']);
+  assert.equal(contractEvidenceSlots('rental')[0].label,'Hợp đồng đã ký');
+  assert.equal(contractEvidenceSlots('rental')[1].label,'Bill chuyển khoản / tổng tiền mặt');
+  assert.equal(contractEvidenceSlots('return-101').length,3);
   for(const slot of ['rental-document-50','handover-document-100','return-1001-document-15','renewal-2-document-1','renewal-receipt-9001-document-15','customer-id-front','customer-id-back','customer-driver-license'])parsePhotoTarget('contracts','1',slot);
   for(const slot of ['rental-document-0','rental-document-00','return-0-document-1','return-1001-document-00'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-1001-document-15','PUT'),'contracts.return');

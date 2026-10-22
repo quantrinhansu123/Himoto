@@ -18,10 +18,15 @@ async function main(){
   assert.equal(merged.customer.driver_license_number,'QA-LIC-001');assert.equal(merged.customer.id_card,foreign.id_card);
   const serverOcr=load(path.join(root,'lib/server/photo-ocr'));serverOcr.ocrKind('passport');serverOcr.ocrKind('driver_license');
   checks.push('Passport OCR preserves alphanumeric IDs; driver-license OCR fills only the license number/issue date and preserves customer identity');
-  const {contractPhotoSlots}=load(path.join(root,'lib/management/contract-photos'));
+  const {contractPhotoSlots,contractEvidenceSlots}=load(path.join(root,'lib/management/contract-photos'));
   const {parsePhotoTarget}=load(path.join(root,'lib/server/record-photos'));
   const {requestPermission}=load(path.join(root,'lib/server/access-request'));
   assert.equal(contractPhotoSlots('rental').length,18);
+  assert.deepEqual(contractEvidenceSlots('rental').map(slot=>[slot.key,slot.label]),[['rental-document-1','Hợp đồng đã ký'],['rental-document-2','Bill chuyển khoản / tổng tiền mặt']]);
+  const composerSource=require('node:fs').readFileSync(path.join(root,'components/contracts/ContractComposer.tsx'),'utf8');
+  const photoFields=require('node:fs').readFileSync(path.join(root,'components/management/RecordPhotoFields.tsx'),'utf8');
+  assert.match(composerSource,/contractEvidenceSlots\('rental'\)/);
+  assert.match(photoFields,/mg-media-documents/);
   for(const slot of ['rental-15','rental-16','rental-video-3','handover-video-1','return-101-15','return-101-16','renewal-receipt-42-video-3'])parsePhotoTarget('contracts','1',slot);
   for(const slot of ['rental-0','rental-video-4','return-101-0'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-video-1','PUT'),'contracts.finalize');

@@ -66,6 +66,12 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
   const imagePrefix=entity==='contracts'?expandablePhotoPrefix(slots):undefined;
   const bulk=entity==='contracts'&&(compact||slots.length>6);
   const imageCount=slots.filter(slot=>!isVideoSlot(slot.key)).length,videoCount=slots.length-imageCount;
+  const compactDocuments=compact?slots.filter((slot,index,list)=>{
+    if(!slot.key.includes('-document-'))return false;
+    const documents=list.filter(item=>item.key.includes('-document-'));
+    const keep=documents.some(item=>item.key.includes('return-'))?3:2;
+    return documents.indexOf(slot)<keep||value[slot.key]||saved.some(photo=>photo.slot===slot.key);
+  }):[];
   async function chooseMany(files:File[],video:boolean) {
     if(disabled||batchBusy||!savedReady)return;
     const available=slots.filter(slot=>isVideoSlot(slot.key)===video&&(!compact||!slot.key.includes('-document-'))&&!latestValue.current[slot.key]&&!saved.some(photo=>photo.slot===slot.key));
@@ -141,7 +147,11 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
         {state?.error&&file&&<p role="alert" className="mg-field-error">{state.error} <button type="button" className="mg-button" onClick={()=>upload(slot.key,file,true)}>Tải ảnh lại</button></p>}
       </div>;
     })}</div></details>}
-    {compact&&<div role="tabpanel" id={`${tabId}-detail-panel`} aria-labelledby={`${tabId}-detail`} hidden={uploadTab!=='detail'} tabIndex={0}><p className="mg-media-hint">Chỉ mở mục cần dùng. Các mục ảnh đều tuỳ chọn; ảnh đã chọn được giữ khi đổi tab.</p><details className="mg-media-individual"><summary>Chọn theo vị trí ảnh (tuỳ chọn)</summary><div className="mg-photo-grid">{slots.filter(slot=>!slot.key.includes('-document-')&&/-(?:[1-6]|video-[1-3])$/.test(slot.key)).map(slot=><PhotoField key={slot.key} slot={slot} file={value[slot.key]} disabled={disabled||batchBusy||!savedReady} savedUrl={saved.some(photo=>photo.slot===slot.key)&&recordId?`${photoEndpoint(entity,recordId,slot.key)}?v=${encodeURIComponent(saved.find(photo=>photo.slot===slot.key)!.updated_at)}`:undefined}
+    {compact&&<div role="tabpanel" id={`${tabId}-detail-panel`} aria-labelledby={`${tabId}-detail`} hidden={uploadTab!=='detail'} tabIndex={0}><p className="mg-media-hint">Chỉ mở mục cần dùng. Các mục ảnh đều tuỳ chọn; ảnh đã chọn được giữ khi đổi tab.</p>
+    {compactDocuments.length>0&&<details className="mg-media-documents" open><summary>Ảnh hợp đồng đã ký & bill chuyển khoản</summary><div className="mg-photo-grid">{compactDocuments.map(slot=><PhotoField key={slot.key} slot={slot} file={value[slot.key]} disabled={disabled||batchBusy||!savedReady} savedUrl={saved.some(photo=>photo.slot===slot.key)&&recordId?`${photoEndpoint(entity,recordId,slot.key)}?v=${encodeURIComponent(saved.find(photo=>photo.slot===slot.key)!.updated_at)}`:undefined}
+      onBusyChange={busy=>{if(busy)busySlots.current.add(slot.key);else busySlots.current.delete(slot.key);onBusyChange?.(busySlots.current.size>0);}}
+      onChange={file=>{const next={...latestValue.current};if(file){next[slot.key]=file;upload(slot.key,file);}else delete next[slot.key];latestValue.current=next;onChange(next);}}/>)}</div></details>}
+    <details className="mg-media-individual"><summary>Chọn theo vị trí ảnh (tuỳ chọn)</summary><div className="mg-photo-grid">{slots.filter(slot=>!slot.key.includes('-document-')&&/-(?:[1-6]|video-[1-3])$/.test(slot.key)).map(slot=><PhotoField key={slot.key} slot={slot} file={value[slot.key]} disabled={disabled||batchBusy||!savedReady} savedUrl={saved.some(photo=>photo.slot===slot.key)&&recordId?`${photoEndpoint(entity,recordId,slot.key)}?v=${encodeURIComponent(saved.find(photo=>photo.slot===slot.key)!.updated_at)}`:undefined}
       onBusyChange={busy=>{if(busy)busySlots.current.add(slot.key);else busySlots.current.delete(slot.key);onBusyChange?.(busySlots.current.size>0);}}
       onChange={file=>{const next={...latestValue.current};if(file){next[slot.key]=file;upload(slot.key,file);}else delete next[slot.key];latestValue.current=next;onChange(next);}}/>)}</div></details></div>}
     {!compact&&<>

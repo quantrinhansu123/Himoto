@@ -52,9 +52,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const accountValue=normalizeRefundAccount(recipient.recipient_account);
   const bankValue=recipient.recipient_bank.trim();
   const nameValue=recipient.recipient_name.trim();
-  // Saved return hồ sơ (QR / số TK) or a complete typed recipient stands in for transfer refunds.
-  const typedRecipientReady=Boolean(bankValue) && Boolean(nameValue) && validRefundAccount(accountValue);
-  const refundRecipientReady=refundMethod==='cash' || (hasRefundQr || typedRecipientReady) && (!recipient.recipient_account.trim() || validRefundAccount(recipient.recipient_account));
+  const refundRecipientReady=refundMethod==='cash' || !recipient.recipient_account.trim() || validRefundAccount(recipient.recipient_account);
   const refundDecisionMissing=closes&&Boolean(context?.deposit_held)&&!refundRow?.enabled&&!refundDeferred;
   const refundReady=!refundRow?.enabled || (refundAllowed && Boolean(context&&paymentAccounts(context,refundMethod).some(account=>account.id===Number(refundRow.account_id))) && /^\d{1,13}$/.test(refundRow.amount||'') && Number(refundRow.amount)>0 && Number(refundRow.amount)<=limits.refund && refundRecipientReady);
   useEffect(()=>{
@@ -102,28 +100,23 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
           </>}
           {kind==='refund'&&(refundDeferred||method!=='cash')&&<>
             <p className="mg-composer-hint mg-field-wide">{refundDeferred
-              ? 'Các ô dưới đây là thông tin để kế toán nhận và xử lý. Có QR đã lưu thì để trống; khách chỉ cung cấp STK thì nhập tại đây. Không cần chọn tài khoản chi khi chưa hoàn tiền.'
-              : hasRefundQr
-              ? 'Đã có ảnh QR / số TK trong hồ sơ trả xe — có thể bỏ trống ngân hàng, số TK và tên chủ TK.'
-              : 'Hoàn CK: tải ảnh QR để tự điền, hoặc nhập đủ ngân hàng + số TK + tên chủ TK.'}</p>
+              ? 'Không bắt buộc. Có QR đã lưu thì để trống; khách đưa STK thì nhập tại đây. Không cần chọn tài khoản chi khi chưa hoàn tiền.'
+              : 'Không bắt buộc. Tải ảnh QR để tự điền, hoặc nhập ngân hàng / số TK / tên chủ TK nếu khách đã cung cấp.'}</p>
             {itemIds[0]&&<RefundQrUpload key={`${orderId}-${itemKey}`} orderId={orderId} slot={returnRefundQrSlot(itemIds[0])} savedSlot={savedQrSlot} recipient={recipient} disabled={disabled}
               onBusy={setQrBusy} onSaved={()=>{setHasRefundQr(true);setSavedQrSlot(returnRefundQrSlot(itemIds[0]));setQrVersion(value=>value+1);}}
               onRead={(fields,before)=>setRecipient(current=>mergeRefundRecipient(current,fields,before))}/>}
             {hasRefundQr&&<p className="mg-field-wide" role="status">{refundDeferred?'Đã có ảnh QR / thông tin nhận hoàn để gửi cùng hồ sơ Telegram.':'Đã nhận ảnh hồ sơ hoàn cọc — đủ để xác nhận chuyển khoản.'}</p>}
             {([
-              ['recipient_bank',hasRefundQr||refundDeferred?'Ngân hàng nhận của khách (tuỳ chọn)':'Ngân hàng nhận của khách *'],
-              ['recipient_account',hasRefundQr||refundDeferred?'Số tài khoản khách nhận (tuỳ chọn)':'Số tài khoản khách nhận *'],
-              ['recipient_name',hasRefundQr||refundDeferred?'Tên chủ tài khoản nhận (tuỳ chọn)':'Tên chủ tài khoản nhận *'],
+              ['recipient_bank','Ngân hàng nhận của khách (tuỳ chọn)'],
+              ['recipient_account','Số tài khoản khách nhận (tuỳ chọn)'],
+              ['recipient_name','Tên chủ tài khoản nhận (tuỳ chọn)'],
             ] as const).map(([key,label])=>{
               const value=recipient[key];
-              // With QR evidence, typed fields are optional; without QR, all three are required.
-              const invalid=hasRefundQr||refundDeferred
-                ? key==='recipient_account' && Boolean(value.trim()) && !validRefundAccount(value)
-                : key==='recipient_account' ? !validRefundAccount(value||' ') : !value.trim();
+              const invalid=key==='recipient_account' && Boolean(value.trim()) && !validRefundAccount(value);
               return <div className="mg-field" key={key}><label htmlFor={`return-${orderId}-${key}`}>{label}</label>
                 <input id={`return-${orderId}-${key}`} value={value} maxLength={key==='recipient_account'?64:150} aria-invalid={invalid||undefined} aria-describedby={invalid?`return-${orderId}-${key}-error`:undefined}
                   onChange={event=>setRecipient(current=>({...current,[key]:event.target.value}))}/>
-                {invalid&&<p id={`return-${orderId}-${key}-error`} className="mg-field-error" role="alert">{key==='recipient_name'?'Nhập tên chủ tài khoản khách nhận tiền hoặc lưu ảnh QR hồ sơ trả xe.':key==='recipient_bank'?'Nhập ngân hàng khách nhận hoặc lưu ảnh QR hồ sơ trả xe.':'STK cần 3–34 chữ/số hoặc dấu gạch nối; chấp nhận dấu chấm và khoảng trắng phân nhóm.'}</p>}
+                {invalid&&<p id={`return-${orderId}-${key}-error`} className="mg-field-error" role="alert">STK cần 3–34 chữ/số hoặc dấu gạch nối; chấp nhận dấu chấm và khoảng trắng phân nhóm.</p>}
               </div>;
             })}
           </>}
@@ -134,7 +127,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
       ? 'Chưa thể hoàn cọc vì hợp đồng còn xe chưa nhận lại.'
       : due===null ? 'Chưa thể hoàn cọc: cần đối chiếu tiền hợp đồng.'
       : `Chưa thể hoàn cọc: còn ${formatMoney(Math.max(due-collected,0))} chưa ghi nhận thu. Công nợ tiền thuê có thể gồm phí gia hạn; gia hạn ngày trả không đồng nghĩa đã thu tiền. Nếu đã nhận, chọn khoản thu và đúng tài khoản ở trên.`}</p>}
-    {refundRow?.enabled&&!refundReady&&<p className="mg-field-error" role="alert">Chưa đủ thông tin hoàn cọc: chọn tài khoản chi hoàn, hoặc nhập đủ ngân hàng / số TK / tên chủ TK, hoặc lưu ảnh QR.</p>}
+    {refundRow?.enabled&&!refundReady&&<p className="mg-field-error" role="alert">Chưa đủ thông tin hoàn cọc: chọn tài khoản / két chi hoàn và số tiền đã hoàn. Ngân hàng, STK và tên chủ TK của khách không bắt buộc.</p>}
     <p role="status">Đã chọn thu: {formatMoney(collected)} · Còn phải thu sau lượt này: {due===null?'Chưa đối chiếu':formatMoney(Math.max(due-collected,0))}</p>
     <p>Chuyển khoản hoàn cọc: đối chiếu QR / số tài khoản khách trong ảnh hồ sơ. Ứng dụng ghi nhận khoản đã hoàn, không tự chuyển tiền ngân hàng.</p>
   </section>;

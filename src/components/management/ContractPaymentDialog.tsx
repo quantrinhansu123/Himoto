@@ -14,6 +14,8 @@ import { bulkDelete } from '@/lib/management/bulk-delete';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { ContractPaymentQr } from './ContractPaymentQr';
 import { contractTransferMemo } from '@/lib/management/sepay';
+import { SavedRecordPhotos } from './RecordPhotoFields';
+import { contractEvidenceSlots } from '@/lib/management/contract-photos';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const defaultNote = (purpose: PaymentPurpose, code: string) => purpose==='rental_refund'?`Hoàn tiền thuê trả sớm_${code}`:purpose === 'extra' ? `Thu thêm hợp đồng_${code}` : purpose === 'deposit_refund' ? `Trả cọc hợp đồng_${code}` : purpose === 'debt' ? contractTransferMemo(code) : `Gia hạn hợp đồng_${code}`;
@@ -259,6 +261,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', onClose, on
             <label className="mg-field-wide">{refund ? 'Nội dung chi' : 'Nội dung thu / chuyển khoản'}<textarea aria-label="Nội dung thu / chuyển khoản" maxLength={2000} required={purpose === 'extra'} value={note} onChange={event => setNote(event.target.value)} rows={2} /></label>
             {method === 'company_transfer' && !refund && <p className="mg-field-wide">Sau khi ghi nhận, hợp đồng sẽ có trong Hợp đồng VAT và chuyển đến danh sách đó.</p>}
           </fieldset> : <p>{context.remaining === null ? 'Cần đối chiếu số liệu tiền trước khi thu.' : !extraAllowed ? 'Trạng thái hợp đồng này chưa cho phép thu tiền.' : context.remaining === 0 ? 'Không còn công nợ theo số liệu hiện có. Bấm Thêm phiếu thu để ghi khoản thu khác vào Sổ quỹ.' : 'Trạng thái hợp đồng này chưa cho phép thu công nợ. Bấm Thêm phiếu thu để ghi khoản thu khác vào Sổ quỹ.'}</p>}</>}
+          {!refund && <SavedRecordPhotos entity="contracts" recordId={id} slots={contractEvidenceSlots('rental')} title="Ảnh hợp đồng đã ký & bill chuyển khoản" />}
           <div className="mg-payment-history-heading"><h3>Lịch sử phiếu Thu / Chi ({context.history.length})</h3><div className="mg-payment-history-actions">
             {rentalRefundAllowed&&!rentalRefund&&<button type="button" className="mg-button" disabled={locked||loading} onClick={()=>choosePurpose('rental_refund')}><Wallet size={15}/>Hoàn tiền thuê trả sớm</button>}
             {refundAllowed && !refund && <button type="button" className="mg-button" disabled={locked || loading} onClick={() => choosePurpose('deposit_refund')}><Wallet size={15} />Trả cọc</button>}

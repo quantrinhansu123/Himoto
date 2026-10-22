@@ -73,19 +73,21 @@ with sync_playwright() as pw:
                     section.locator('#return-901-recipient_bank').fill('QA bank');section.locator('#return-901-recipient_name').fill('Khách QA')
                 if case=='partial-qr':section.locator('#return-901-recipient_bank').fill('QA bank')
                 if case=='invalid-qr':section.locator('#return-901-recipient_account').fill('bad/#')
-                if case=='missing-recipient':section.locator('#return-901-recipient_account').fill('000123456')
+                if case=='missing-recipient':
+                    expect(section.get_by_text('Ngân hàng nhận của khách *',exact=True)).to_have_count(0)
+                    section.locator('#return-901-recipient_account').fill('000123456')
             section.get_by_label('Đã hoàn cọc cho khách',exact=True).scroll_into_view_if_needed()
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
             page.screenshot(path=str(out/f'{name}-{width}-{case}.png'))
             submit.click()
-            if case in ['invalid-qr','missing-recipient']:
+            if case=='invalid-qr':
                 expect(dialog.get_by_role('alert').filter(has_text='Hoàn tất mục')).to_be_visible();assert len(posts)==before
                 dialog.get_by_role('button',name='Hủy',exact=True).click()
             else:
                 expect(dialog).to_contain_text('Đã trả xe hợp đồng QA-RETURN');assert len(posts)==before+1
                 if case.startswith('deferred'):expect(dialog).to_contain_text('Chưa ghi nhận hoàn hết cọc')
                 dialog.get_by_role('button',name='Đóng',exact=True).click()
-            checks.append(dict(browser=name,case=case,blocked=case in ['invalid-qr','missing-recipient']))
+            checks.append(dict(browser=name,case=case,blocked=case=='invalid-qr'))
         ctx.unroute_all(behavior='wait');ctx.close();browser.close()
 assert not errors,errors
 assert not unexpected,unexpected

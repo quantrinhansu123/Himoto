@@ -3855,9 +3855,9 @@
 .mg-mobile-monitoring-card .mg-status { font-size:11px; white-space:normal; max-width:100%; }
 @media(max-width:767px) { .mg-overdue-buckets { gap:5px; padding:8px 10px; } .mg-overdue-buckets button { flex:1 1 100px; padding:7px 5px; font-size:12px; white-space:nowrap; } }
 .mg-media-upload-actions .mg-button { min-height:44px; }
-.mg-media-gallery, .mg-media-individual, .mg-extra-documents, .mg-return-options { margin:10px 0; min-width:0; }
-.mg-media-gallery>summary, .mg-media-individual>summary, .mg-extra-documents>summary, .mg-return-options>summary { cursor:pointer; min-height:40px; padding:8px 0; font-weight:600; color:var(--mg-slate-700); overflow-wrap:anywhere; }
-.mg-media-gallery[open]>summary, .mg-media-individual[open]>summary, .mg-extra-documents[open]>summary, .mg-return-options[open]>summary { margin-bottom:8px; }
+.mg-media-gallery, .mg-media-individual, .mg-media-documents, .mg-extra-documents, .mg-return-options { margin:10px 0; min-width:0; }
+.mg-media-gallery>summary, .mg-media-individual>summary, .mg-media-documents>summary, .mg-extra-documents>summary, .mg-return-options>summary { cursor:pointer; min-height:40px; padding:8px 0; font-weight:600; color:var(--mg-slate-700); overflow-wrap:anywhere; }
+.mg-media-gallery[open]>summary, .mg-media-individual[open]>summary, .mg-media-documents[open]>summary, .mg-extra-documents[open]>summary, .mg-return-options[open]>summary { margin-bottom:8px; }
 .mg-media-thumbnails { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); gap:12px; }
 .mg-media-thumbnails img, .mg-media-thumbnails video { max-height:160px; object-fit:contain; }
 .mg-saved-photos.is-compact .mg-record-photos { padding:12px; }

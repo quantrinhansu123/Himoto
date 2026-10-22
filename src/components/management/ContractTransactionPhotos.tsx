@@ -16,7 +16,7 @@ export function ContractTransactionPhotos({id,phase,title,onPendingChange,onSave
   useEffect(()=>{callback.current?.(photosPending||documentsPending);},[photosPending,documentsPending]);
   useEffect(()=>()=>callback.current?.(false),[]);
   return <section className="mg-transaction-photos is-compact" aria-label={title}><h3><Camera size={16} aria-hidden="true"/>{title}</h3>
-    <p>Chọn cùng lúc ảnh xe, hợp đồng, biên nhận và QR. Lưu ảnh ở đây; gửi cả bộ Telegram ở bước cuối.</p>
+    <p>Tải nhanh ảnh xe. Ảnh hợp đồng đã ký và bill chuyển khoản nằm ở tab Tải ảnh chi tiết. Lưu ảnh ở đây; gửi cả bộ Telegram ở bước cuối.</p>
     <SavedRecordPhotos entity="contracts" recordId={id} slots={slots} title="Ảnh và video của lượt này" compact onPendingChange={setPhotosPending} onSaved={onSaved}/>
     {(phase!=='rental'||can('contracts.draft'))&&<details className="mg-extra-documents"><summary>Giấy tờ và hướng dẫn bổ sung (tuỳ chọn)</summary><ContractDocuments id={id} phase={phase} workflow={workflow} onPendingChange={setDocumentsPending} onSaved={onSaved}/></details>}
   </section>;

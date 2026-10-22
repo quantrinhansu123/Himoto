@@ -1,7 +1,6 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { ReturnInput,ReturnReceipt,ReturnResult,ReturnSettlement } from '@/lib/management/contract-returns';
-import { returnRefundEvidenceSlots } from '@/lib/management/contract-photos';
 import { normalizeRefundAccount,validRefundAccount } from '@/lib/management/return-refunds';
 import { ContractReturnError,recordVehicleReturn } from './contract-returns';
 import { parseContractPayment,readPaymentContext,recordContractPayment } from './contract-payments';
@@ -40,10 +39,7 @@ export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
       const parsed=parse(row.refund,true),raw=row.refund as Record<string,unknown>;
       const text=(key:string)=>{const value=raw[key];if(value!==undefined&&(typeof value!=='string'||value.length>150))throw new ContractReturnError('Thông tin nhận hoàn cọc chưa hợp lệ.');return String(value||'').trim();};
       const rawAccount=text('recipient_account'),recipient_bank=text('recipient_bank'),recipient_account=normalizeRefundAccount(rawAccount),recipient_name=text('recipient_name');
-      // Typed recipient fields may be omitted when a return QR photo exists; completeReturnBatch verifies the photo.
       if(parsed.method!=='cash'&&rawAccount&&!validRefundAccount(rawAccount))throw new ContractReturnError('Số tài khoản khách nhận hoàn cọc chưa hợp lệ.');
-      // Completeness depends on saved QR evidence, checked inside the transaction.
-      // A bank/name typed alongside QR is optional just like an account number.
       refund={...parsed,...(parsed.method!=='cash'?{...(recipient_bank?{recipient_bank}:{}),...(recipient_name?{recipient_name}:{}),...(recipient_account?{recipient_account}:{})}:{})};
     }
     const ids=[...receipts.map(receipt=>receipt.request_id),...(refund?[refund.request_id]:[])];
@@ -90,14 +86,7 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
       if(context.items.length)throw new ContractReturnError('Chỉ hoàn cọc trong lượt trả sau khi đã nhận đủ xe của hợp đồng.',409);
       if(context.remaining===null||context.remaining>0)throw new ContractReturnError('Cần thu đủ phí quá hạn, sửa chữa và công nợ trước khi hoàn cọc.',409);
       const refund=settlement.refund;
-      if(refund.method!=='cash'&&(!refund.recipient_bank||!refund.recipient_name||!refund.recipient_account)){
-        const qrSlots=selected.flatMap(returnRefundEvidenceSlots);
-        const hasQr=(await db.query(`SELECT 1 FROM himoto.management_record_photos
-          WHERE entity_type='contracts' AND entity_id=$1 AND slot=ANY($2::text[]) LIMIT 1`,[settlement.order_id,qrSlots])).rowCount;
-        // QR / số TK photo alone is enough; ignore incomplete typed recipient fields when evidence exists.
-        if(!hasQr)throw new ContractReturnError('Thiếu thông tin nhận hoàn cọc và chưa có ảnh QR / Số tài khoản khách nhận hoàn. Nhập đủ ngân hàng + số TK + tên chủ TK, hoặc lưu ảnh QR hồ sơ trả xe rồi thử lại.',409);
-      }
-      const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account||'QR',refund.recipient_name].filter(Boolean).join(' · ')}`:' · theo ảnh QR'}`});
+      const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account,refund.recipient_name].filter(Boolean).join(' · ')}`:''}`});
       context=paid.context;refundId=paid.transaction_id;
     }
     const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(settlement.refund_deferred?{refund_deferred:true,refund_pending_amount:context.deposit_held,...(settlement.refund_recipient?{recipient:settlement.refund_recipient}:{})}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
