@@ -8,6 +8,9 @@ async function run() {
   const checks = [];
   assert.equal(time.vietnamRentalTime(new Date('2026-10-11T08:30:00Z')), '2026-10-11T15:30');
   assert.equal(time.vietnamRentalTime(new Date('2026-12-31T17:00:00Z')), '2027-01-01T00:00');
+  assert.equal(time.addRentalDuration('2026-10-12T17:00:00.000Z', 1, 'day'), '2026-10-14T00:00');
+  assert.equal(time.addRentalDuration('2026-10-13T00:00', 1, 'day'), '2026-10-14T00:00');
+  assert.equal(time.addRentalDuration('2026-10-13T00:00', 2, 'hour'), '2026-10-13T02:00');
   for (const [start, days, end] of [
     ['2026-10-31T15:30','2','2026-11-02T15:30'],
     ['2026-12-31T15:30','1','2027-01-01T15:30'],

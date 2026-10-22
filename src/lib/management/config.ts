@@ -89,7 +89,7 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     columns: [{ ...codeColumn, label: 'Mã hợp đồng' }, { key: 'customer_name', label: 'Khách hàng', format: 'person', secondary: 'customer_phone' },
       { key: 'vehicle_name', label: 'Xe / biển số', format: 'vehicle', secondary: 'license' }, { ...branchColumn, label: 'Nguồn / doanh thu' },
       { key: 'representative_name', label: 'Nhân viên nguồn khách' }, { key: 'sales_staff_name', label: 'NVKD ghi nhận doanh số' },
-      { key: 'start_date', label: 'Bắt đầu thuê', format: 'date' }, { key: 'end_date', label: 'Dự kiến trả', format: 'date' },
+      { key: 'start_date', label: 'Bắt đầu thuê', format: 'datetime' }, { key: 'end_date', label: 'Dự kiến trả', format: 'datetime' },
       { key: 'total_amount', label: 'Tiền thuê', format: 'money', align: 'right' },
       { key: 'return_adjustment_amount', label: 'Phát sinh trả xe', format: 'money', align: 'right' },
       { key: 'deposit_amount', label: 'Tiền cọc', format: 'money', align: 'right' }, statusColumn,

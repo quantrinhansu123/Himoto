@@ -10,6 +10,7 @@ import {
   paymentMethodLabel, PaymentContext, PaymentMethod, vietnamPaymentTime,
 } from '@/lib/management/contract-payments';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
+import { addRentalDuration } from '@/lib/management/rental-time';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
@@ -18,7 +19,6 @@ import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { contractTelegramRequest } from '@/lib/management/contract-telegram';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-const vietnamInput = (ms: number) => new Date(ms + 7 * 3_600_000).toISOString().slice(0, 16);
 const DEFAULT_HOURLY_RATE = '20000';
 function defaultRate(row: ReturnableContractItem | null, unit: 'day' | 'hour', fallbackDaily?: number) {
   if (unit === 'hour') return DEFAULT_HOURLY_RATE;
@@ -90,7 +90,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
 
   const selected = rows.find(row => String(row.item_id) === itemId) || null;
   const overdue = useMemo(() => overdueParts(selected?.scheduled_return_at ?? null), [selected?.scheduled_return_at]);
-  const dueMs = selected?.scheduled_return_at ? new Date(selected.scheduled_return_at).getTime() : NaN;
+  const dueStamp = selected?.scheduled_return_at || '';
+  const dueMs = dueStamp ? Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dueStamp) ? `${dueStamp}:00+07:00` : dueStamp) : NaN;
   const maxCount = unit === 'day' ? 365 : 720;
   const unitCount = /^\d+$/.test(count) ? Number(count) : 0;
   const rate = /^\d{1,9}$/.test(rateInput) ? Number(rateInput) : 0;
@@ -102,7 +103,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
 
   useEffect(() => {
     if (!selected || !Number.isFinite(dueMs) || unitCount < 1 || unitCount > maxCount) return;
-    setReturnAt(vietnamInput(dueMs + unitCount * (unit === 'day' ? 86_400_000 : 3_600_000)));
+    setReturnAt(addRentalDuration(selected.scheduled_return_at || '', unitCount, unit));
     if (!amountTouched && rate) setAmount(String(rate * unitCount));
   }, [selected, dueMs, unit, unitCount, maxCount, rate, amountTouched]);
 

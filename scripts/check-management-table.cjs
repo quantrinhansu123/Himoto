@@ -96,8 +96,9 @@ async function main(){
   checks.push('Default recent list fetches only the current page from orders');
   checks.push('Page hydrate returns the saved composer draft and revision so a reopened draft is not reconstructed empty');
   let called=false;await assert.rejects(()=>server.readManagementTable({query(){called=true;}},'contracts',new URLSearchParams('size=999')),server.ManagementTableError);assert.equal(called,false);
-  assert.equal(mapApiRow('contracts',{id:1,rent_at:new Date('2026-10-10T09:00:00Z')}).start_date,'2026-10-10T09:00:00.000Z');
-  checks.push('Page/filter bounds are validated before SQL; PostgreSQL Date values map exactly like the original JSON API');
+  assert.equal(mapApiRow('contracts',{id:1,rent_at:new Date('2026-10-10T09:00:00Z')}).start_date,'2026-10-10T16:00');
+  assert.equal(mapApiRow('contracts',{id:2,return_at:new Date('2026-10-12T17:00:00Z')}).end_date,'2026-10-13T00:00');
+  checks.push('Page/filter bounds are validated before SQL; PostgreSQL Date values map to Vietnam local time so midnight +07 does not shift a calendar day');
   if(process.argv.includes('--live-read')){
     require('@next/env').loadEnvConfig(path.resolve(__dirname,'..'),false,{info(){},error(){}});
     const db=load(path.join(root,'lib/server/himoto-database')).himotoPool,c=await db.connect();

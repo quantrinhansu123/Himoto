@@ -11,7 +11,7 @@ import { CHANGE_LABELS, ContractHistory, loadContractHistory } from '@/lib/manag
 import { paymentMethodLabel, type PaymentPurpose } from '@/lib/management/contract-payments';
 import { ManagementRow } from '@/lib/management/types';
 import { MANAGEMENT_CONFIG, optionLabel } from '@/lib/management/config';
-import { formatDateTime, formatMoney } from '@/lib/formatters';
+import { formatDate, formatDateTime, formatMoney } from '@/lib/formatters';
 import { isRemindableContract } from '@/lib/management/debt-reminders';
 import { MobileDetailsCard } from './MobileDetailsCard';
 import { SavedRecordPhotos } from './RecordPhotoFields';
@@ -37,7 +37,11 @@ type DetailSection = (typeof SECTIONS)[number]['id'];
 const text = (value: unknown) => value == null || value === '' ? '—' : String(value);
 const money = (value: unknown) => value == null || value === '' || !Number.isFinite(Number(value)) ? '—' : formatMoney(Number(value));
 const dateTime = (value: string) => value ? formatDateTime(value) : '—';
-const date = (value: string) => value ? new Date(value).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
+const date = (value: string) => {
+  if (!value) return '—';
+  const formatted = formatDate(value);
+  return formatted === '--' ? value : formatted;
+};
 const millis = (value: unknown) => {
   const raw = value == null ? '' : String(value);
   return raw ? new Date(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw) ? `${raw}:00+07:00` : raw).getTime() : NaN;

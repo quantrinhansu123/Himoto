@@ -52,6 +52,9 @@ async function run() {
   });
   check('missing values and CSV formula escaping', () => {
     assert.equal(formatValue(undefined, 'money'), '—'); assert.equal(formatValue('2026-10-06', 'date'), '06/10/2026');
+    assert.equal(formatValue('2026-10-12T17:00:00.000Z', 'date'), '13/10/2026');
+    assert.equal(formatValue('2026-10-13T00:00', 'date'), '13/10/2026');
+    assert.equal(formatValue('2026-10-12T17:00:00.000Z', 'datetime'), '13/10/2026 00:00');
     assert.equal(csvCell('=SUM(1,2)'), '"\'=SUM(1,2)"'); assert.equal(csvCell('a"b'), '"a""b"');
   });
   const repository = createDemoRepository();

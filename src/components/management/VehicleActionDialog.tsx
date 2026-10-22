@@ -131,7 +131,8 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         {otherStock&&<p role="status">Xe {otherStock.license} hiện ở {otherStock.store_name}. Chỉ tài khoản cơ sở đang giữ xe được chuyển. Để lập hợp đồng, chọn đúng Cửa hàng xe trong form hợp đồng.</p>}
         {sameDestination&&<p role="status">Xe đang ở {selected?.store_name}. Không cần chuyển về cùng cơ sở; có thể chọn xe này khi lập hợp đồng.</p>}
         {rented && <small className="mg-field-error">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng trước khi {mode === 'transfer' ? 'chuyển xe' : 'đổi trạng thái'}.</small>}
-        {selected&&(rented||['using','rent'].includes(currentStatus))&&<Link className="mg-button" href={`/contracts?action=return&query=${encodeURIComponent(String(selected.license||''))}`} onClick={onClose}>Tìm hợp đồng đang thuê · Trả xe & hoàn cọc</Link>}
+        {selected && !rented && ['using','rent'].includes(currentStatus) && <small>Không còn hợp đồng mở. Chọn Lưu kho nếu cần phát hành hợp đồng mới.</small>}
+        {selected&&rented&&<Link className="mg-button" href={`/contracts?action=return&query=${encodeURIComponent(String(selected.license||''))}`} onClick={onClose}>Tìm hợp đồng đang thuê · Trả xe & hoàn cọc</Link>}
         {transferBlocked && !rented && <small className="mg-field-error">Chỉ chuyển xe đang Lưu kho.</small>}</div>
       {mode==='receive'?<>
         <p className="mg-transfer-direction mg-field-wide">{selected?vehicleTransferRoute(selected):''}</p>

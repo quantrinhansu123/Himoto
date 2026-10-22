@@ -14,6 +14,14 @@ function localMilliseconds(value: string): number | null {
   return date.getTime();
 }
 
+/** Add whole days or hours onto a Vietnam-local or ISO instant, keeping the wall clock in VN. */
+export function addRentalDuration(origin: string, count: number, unit: 'day' | 'hour'): string {
+  const stamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(origin) ? `${origin}:00+07:00` : origin;
+  const ms = Date.parse(stamp);
+  if (!Number.isFinite(ms) || !Number.isSafeInteger(count) || count < 1) return '';
+  return vietnamRentalTime(new Date(ms + count * (unit === 'day' ? 86_400_000 : 3_600_000)));
+}
+
 export function addRentalDays(start: string, days: string): string {
   const time = localMilliseconds(start), count = Number(days);
   if (time === null || !/^\d+$/.test(days) || !Number.isSafeInteger(count) || count < 1) return '';

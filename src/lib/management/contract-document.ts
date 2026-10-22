@@ -45,7 +45,7 @@ const value = (input: unknown) => input == null ? '' : String(input);
 export function contractStaffStoreId(draft: ContractDraft) { return draft.vehicle_store_id ?? draft.store_id; }
 export const dateInput = (input: unknown) => value(input).slice(0, 10);
 export function dateTimeInput(input: unknown): string {
-  const timestamp = value(input);
+  const timestamp = input instanceof Date ? input.toISOString() : value(input);
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(timestamp)) return '';
   if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp)) return timestamp.slice(0, 16);
   const date = new Date(timestamp);

@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { load } = require('./check-contract-payments.cjs');
 const root = path.resolve(__dirname, '../src');
@@ -23,6 +24,11 @@ async function main() {
   assert.deepEqual(shared.draftPaymentMethods(''), []);
   assert.deepEqual(shared.PAYMENT_METHOD_FALLBACK, ['transfer', 'company_transfer', 'cash']);
   checks.push('strict finalize input (revision, Vietnam time not in the future, allowlisted receipt fields); draft payment labels map to methods');
+  const finalizeSource = fs.readFileSync(path.join(root, 'lib/server/contract-finalize.ts'), 'utf8');
+  const pickerSource = fs.readFileSync(path.join(root, 'components/contracts/VehiclePicker.tsx'), 'utf8');
+  assert.ok(finalizeSource.includes('releaseIdleRentedVehicles'));
+  assert.ok(pickerSource.includes('Sẵn sàng phát hành'));
+  checks.push('a vehicle left Đang thuê after every rental line closed is released on finalize and stays selectable in the picker');
 
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });
@@ -118,9 +124,13 @@ async function main() {
       }
       await c.query("UPDATE qa_fin_orders SET order_status='completed' WHERE id=1");
       await c.query("UPDATE qa_fin_vehicles SET status='using' WHERE id=101");
-      await assert.rejects(finalize(6,{deposit:null,rental:null}),error=>error.status===409);
-      await c.query("UPDATE qa_fin_vehicles SET status='ready' WHERE id=101");
-      checks.push('A returned line no longer blocks ready stock even while its parent awaits settlement; a true open rental and orphan using status still block checkout');
+      await c.query('SAVEPOINT stale_using');
+      const released = await finalize(6,{deposit:null,rental:null});
+      assert.equal(released.status,'renting');
+      assert.equal((await c.query('SELECT status FROM qa_fin_vehicles WHERE id=101')).rows[0].status,'using');
+      await c.query('ROLLBACK TO SAVEPOINT stale_using');
+      await c.query('RELEASE SAVEPOINT stale_using');
+      checks.push('A returned line no longer blocks ready stock even while its parent awaits settlement; a stale using status with no open rental is released so checkout can proceed');
       const later = await finalize(6, { deposit: null, rental: null });
       assert.equal(later.code, `${day}-0009`); assert.equal(later.paid_amount, 0); assert.deepEqual(later.transaction_ids, []);
       const debt = (await c.query('SELECT total,pid,created_without_collect_deposit,created_without_collect_rental_fees,first_deposit_amount FROM qa_fin_orders WHERE id=6')).rows[0];

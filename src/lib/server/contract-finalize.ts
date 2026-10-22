@@ -23,6 +23,24 @@ const validLocal = (value: unknown): value is string => {
   return Number.isFinite(date.getTime()) && new Date(date.getTime() + 7 * 3600000).toISOString().slice(0,16) === value;
 };
 const validPaidAt = (value: unknown): value is string => validLocal(value) && new Date(`${value}+07:00`).getTime() <= Date.now()+5*60000;
+
+/** Legacy / imported returns can leave status=using after every rental line is closed. */
+async function releaseIdleRentedVehicles(client: Database, rows: { id: unknown; status?: unknown }[]) {
+  const stale = rows.filter(row => ['using', 'rent'].includes(String(row.status))).map(row => Number(row.id)).filter(id => Number.isSafeInteger(id) && id > 0);
+  if (!stale.length) return;
+  const released = usesScopedDatabase()
+    ? await client.query(`UPDATE himoto.vehicles v SET status='ready', updated_at=now()
+        WHERE v.id = ANY($1::bigint[]) AND v.status IN ('using','rent') AND NOT himoto.vehicle_has_open_rental(v.id)
+        RETURNING id`, [stale])
+    : await client.query(`UPDATE himoto.vehicles v SET status='ready', updated_at=now()
+        WHERE v.id = ANY($1::bigint[]) AND v.status IN ('using','rent') AND NOT EXISTS (
+          SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+          WHERE d.vehicle_id=v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+            AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','bad_debt'))
+        RETURNING id`, [stale]);
+  const ready = new Set(released.rows.map(row => Number(row.id)));
+  for (const row of rows) if (ready.has(Number(row.id))) row.status = 'ready';
+}
 const amountOf = (value: unknown) => {
   const text = value == null ? '' : String(value).trim();
   if (text === '') return 0;
@@ -137,6 +155,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     }
     return `xe ${row.license} đang thuộc hợp đồng ${row.code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}`;
   };
+  await releaseIdleRentedVehicles(client, vehicles.rows);
   const proposedStart = `${start}:00+07:00`, proposedEnd = `${end}:00+07:00`;
   const conflicts = usesScopedDatabase()
     ? await client.query('SELECT * FROM himoto.vehicle_window_conflicts($1::bigint[],$2,$3::timestamptz,$4::timestamptz)', [vehicleIds, id, proposedStart, proposedEnd])

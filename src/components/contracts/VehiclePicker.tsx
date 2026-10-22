@@ -54,10 +54,13 @@ export function vehicleAvailability(
     return { tone: 'ok', label: 'Chen trước ngày nhận cọc', detail: classified.detail, selectable: true };
   }
   if (all.length) return { tone: 'ok', label: 'Xe của hợp đồng này', detail: '', selectable: true };
-  if (vehicle.status === 'ready') return { tone: 'ok', label: 'Lưu kho', detail: '', selectable: true };
+  if (vehicle.status === 'ready' || ['using', 'rent'].includes(String(vehicle.status))) {
+    return { tone: 'ok', label: vehicle.status === 'ready' ? 'Lưu kho' : 'Sẵn sàng phát hành',
+      detail: vehicle.status === 'ready' ? '' : 'Không còn hợp đồng mở. Phát hành sẽ đưa xe vào Đang thuê.', selectable: true };
+  }
   const status = VEHICLE_STATUSES.find(option => option.value === vehicle.status)?.label || String(vehicle.status || 'Chưa rõ trạng thái');
   return { tone: 'warn', label: status,
-    detail: `Xe đang ở trạng thái ${status}. Cần đóng hợp đồng cũ và xác nhận xe về Lưu kho trước khi phát hành hợp đồng mới.`,
+    detail: `Xe đang ở trạng thái ${status}. Cần xác nhận xe về Lưu kho trước khi phát hành hợp đồng mới.`,
     selectable: true };
 }
 

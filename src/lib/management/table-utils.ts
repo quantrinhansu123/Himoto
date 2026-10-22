@@ -1,6 +1,7 @@
 import { CellValue, ManagementRow } from './types';
 import { staffRoles } from './staff-positions';
 import { matchesOverdueBucket,type OverdueBucket } from './contract-overdue';
+import { formatDate, formatDateTime } from '@/lib/formatters';
 
 export type OverdueCompare = 'gt' | 'lt' | 'eq';
 export interface TableQuery {
@@ -102,9 +103,14 @@ export function formatValue(value: CellValue, format?: string): string {
   if (format === 'money') return `${numberFormatter.format(Number(value))} ₫`;
   if (format === 'number') return numberFormatter.format(Number(value));
   if (format === 'duration') {const minutes=Math.max(0,Math.floor(Number(value)));return `${Math.floor(minutes/1440)} ngày ${Math.floor(minutes%1440/60)} giờ${minutes%60?` ${minutes%60} phút`:''}`;}
-  if (format === 'date') {
-    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-    return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value);
+  if (format === 'date' || format === 'datetime') {
+    const raw = String(value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return match ? `${match[3]}/${match[2]}/${match[1]}` : raw;
+    }
+    const formatted = format === 'datetime' ? formatDateTime(raw) : formatDate(raw);
+    return formatted === '--' ? raw : formatted;
   }
   return String(value);
 }

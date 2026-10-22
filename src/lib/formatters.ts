@@ -17,7 +17,8 @@ const vietnamDateTimeFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:VN_TZ,y
 
 /** Always 24h (never SA/CH / AM/PM). */
 function vietnamParts(input: string | Date, withTime: boolean) {
-  const date = input instanceof Date ? input : new Date(input);
+  const raw = input instanceof Date ? input : String(input);
+  const date = raw instanceof Date ? raw : new Date(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw) ? `${raw}:00+07:00` : raw);
   if (!Number.isFinite(date.getTime())) return null;
   const parts = (withTime?vietnamDateTimeFormatter:vietnamDateFormatter).formatToParts(date);
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value || '';
