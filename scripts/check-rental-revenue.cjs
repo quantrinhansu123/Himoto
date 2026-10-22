@@ -67,6 +67,13 @@ async function main(){
       assert.equal((await payments.readPaymentContext(db,42)).rental_refundable,0);
       await assert.rejects(save(input((await payments.readPaymentContext(db,42)).revision,1)),e=>e.status===409);
       checks.push('TEMP: deleting refund vouchers reverses collected amount; discount without actual excess collections cannot be paid out; foreign branch and out-of-period receipts do not leak');
+      await c.query(`INSERT INTO pg_temp.orders(id,contract_number,order_status,store_id,total,pid,total_rental_fees,draft_payload)
+        VALUES(45,'QA-cross-store','renting',23,'150',150,100,'{"management_composer":{"draft":{"extra_charges":[{"amount":"50"}]}}}');
+        INSERT INTO pg_temp.transactions(id,order_id,name,type,value,created_at,status,store_id,user_id,cash_id,note) VALUES
+        (15,45,'order:rental_fees','in',50,'2026-10-20T10:00:00+07:00','approved',31,7,1,'QA'),
+        (16,45,'order:payment','in',100,'2026-10-21T10:00:00+07:00','approved',23,7,1,'QA');`);
+      assert.equal((await rentalRevenue(db,'2026-10-21','2026-10-21',23)).total.revenue,640);
+      checks.push('TEMP: selecting only orders with receipts in the requested period retains their complete cross-branch history, so prior fees are not deducted again');
     }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
   }
   console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,productionSequenceChanges:0},null,2));

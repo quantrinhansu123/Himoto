@@ -1,3 +1,4 @@
+import { parseExternalVehicles, type ExternalVehicle, type ShiftAudit, type ShiftMedia, type ShiftSnapshot } from './shift-audits';
 export const SHIFT_PHOTOS = [
   ['vehicles', 'Ảnh kiểm kê xe'], ['batteries', 'Ảnh kiểm kê pin'],
   ['cash', 'Ảnh tiền mặt thực tế'], ['personal', 'Ảnh tài khoản cá nhân'],
@@ -28,15 +29,20 @@ export interface ShiftInput {
   summary?: ShiftSummary;
   daily_vehicles?: number;
   monthly_vehicles?: number;
+  external_vehicles?: ExternalVehicle[];
+  other_vehicles?:number;
 }
 export interface ShiftReport {
   id: number; store_name: string; payload: ShiftInput; status: 'draft' | 'submitted';
   revision: number; created_by_name: string; updated_at: string; photos: string[];
+  media?:ShiftMedia[]; audit?:ShiftAudit|null; app_snapshot?:ShiftSnapshot|null;
+  legacy_photos?:string[];
 }
-export function shiftVehicleTotal(input: Pick<ShiftInput, 'vehicles'|'daily_vehicles'|'monthly_vehicles'>): number | null {
+export function shiftVehicleTotal(input: Pick<ShiftInput, 'vehicles'|'daily_vehicles'|'monthly_vehicles'|'external_vehicles'|'other_vehicles'>): number | null {
+  if(input.other_vehicles!==undefined&&(!Number.isSafeInteger(input.other_vehicles)||input.other_vehicles<0))return null;
   const counts = [input.vehicles, input.daily_vehicles, input.monthly_vehicles];
   return counts.every(value => Number.isSafeInteger(value) && Number(value) >= 0)
-    ? counts.reduce<number>((sum, value) => sum + Number(value), 0) : null;
+    ? counts.reduce<number>((sum, value) => sum + Number(value), 0) + (input.external_vehicles?.length??0) + (input.other_vehicles??0) : null;
 }
 export function parseShiftInput(raw: unknown): ShiftInput {
   if (!raw || typeof raw !== 'object') throw new Error('Thông tin báo cáo không hợp lệ.');
@@ -51,6 +57,7 @@ export function parseShiftInput(raw: unknown): ShiftInput {
   if (Number(b.charged) > Number(b.batteries)) throw new Error('Số pin đầy không được vượt tổng số pin.');
   if (b.rented_batteries !== undefined && (!Number.isSafeInteger(b.rented_batteries) || Number(b.rented_batteries) < 0 || Number(b.rented_batteries) > 100000)) throw new Error('Số pin đã cho thuê phải là số nguyên không âm hợp lệ.');
   const hasVehicleCounts = b.daily_vehicles !== undefined || b.monthly_vehicles !== undefined;
+  if(b.other_vehicles!==undefined&&(!Number.isSafeInteger(b.other_vehicles)||Number(b.other_vehicles)<0||Number(b.other_vehicles)>100000))throw Error('Số xe khác phải là số nguyên không âm.');
   if (hasVehicleCounts) {
     for (const key of ['daily_vehicles','monthly_vehicles']) {
       if (!Number.isSafeInteger(b[key]) || Number(b[key]) < 0 || Number(b[key]) > 100000) throw new Error('Số xe cho thuê ngày và tháng phải là số nguyên không âm hợp lệ.');
@@ -68,6 +75,9 @@ export function parseShiftInput(raw: unknown): ShiftInput {
   return { store_id: Number(b.store_id), date: b.date, staff: b.staff.trim(), notes: b.notes.trim(), electricity_off: b.electricity_off,
     ...(typeof b.electrical_devices === 'string' ? { electrical_devices: b.electrical_devices.trim() } : {}),
     ...(b.rented_batteries !== undefined ? { rented_batteries: b.rented_batteries } : {}),
+    ...(b.external_vehicles!==undefined?{external_vehicles:parseExternalVehicles(b.external_vehicles)}:{}),
+    ...(b.other_vehicles!==undefined?{other_vehicles:b.other_vehicles}:{}),
+
     ...Object.fromEntries(numbers.map(k => [k, b[k]])), ...(summary ? { summary } : {}),
     ...(hasVehicleCounts ? { daily_vehicles: b.daily_vehicles, monthly_vehicles: b.monthly_vehicles } : {}) } as ShiftInput;
 }

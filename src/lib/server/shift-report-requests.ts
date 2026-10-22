@@ -17,7 +17,7 @@ export function shiftRequestHash(...parts: (string | Buffer)[]): string {
   for (const part of parts) hash.update(part);
   return hash.digest('hex');
 }
-export type ShiftReceipt = { id?: number; revision: number };
+export type ShiftReceipt = { id?: number; revision: number; [key:string]:unknown };
 // The receipt and business write share one transaction. Concurrent retries wait
 // for the first transaction, then replay its result without repeating the write.
 export async function readShiftReceipt(client: Pick<PoolClient, 'query'>, key: string | null, actor: number, hash: string): Promise<ShiftReceipt | null> {

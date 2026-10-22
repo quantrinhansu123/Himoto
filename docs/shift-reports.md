@@ -1,30 +1,50 @@
-# Báo cáo cuối ca
+﻿# Báo cáo cuối ca: PGD kiểm kê → KTNB đối soát
 
-Tổng kết xe cuối ngày = xe cho thuê ngày + xe cho thuê tháng + xe lưu kho thực tế. Ví dụ 16 + 7 + 20 = 43 xe. Hai trường xe cho thuê được nhập và lưu cùng báo cáo, tổng tự tính; báo cáo cũ thiếu số liệu không hiển thị tổng giả định. Không cộng lại số xe điều chuyển vào tổng.
+Mở `/shift-reports`. Mỗi PGD có một báo cáo mỗi ngày; chọn cơ sở ở thanh trên và lọc ngày / tiến độ trong danh sách.
 
-Phần Pin cửa hàng gồm ba cột: tổng số pin tại cửa hàng, trong đó pin đầy, pin đã cho thuê. Pin đã cho thuê được lưu riêng, không bị giới hạn bởi số pin tại cửa hàng; nút tự điền lấy số hợp đồng thuê pin đang thuê của cơ sở được chọn, mỗi hợp đồng tương ứng một pin. Báo cáo cũ chưa có trường này vẫn mở được.
+## 1. PGD kiểm kê
 
-Tab **Báo cáo cuối ca** tại `/shift-reports` dành cho người có quyền xem hợp đồng. Người có quyền lập hợp đồng nháp hoặc thu/chi được tạo và chốt báo cáo trong PGD được phân công.
+Nhập ngày, nhân sự, xe thực tế tại PGD, pin / pin đầy, số xe điều chuyển, tiền mặt và số dư tài khoản cá nhân / công ty. Có thể tự điền hoặc nhập số xe thuê ngày / tháng và thống kê hợp đồng / thu chi; nhân sự cần kiểm tra số liệu trước khi chốt. Báo cáo cũ thiếu số liệu vẫn hiển thị chưa ghi nhận.
 
-Trang mở vào **Danh sách báo cáo** gồm bản nháp và báo cáo đã chốt, theo cơ sở đang chọn trên thanh điều hướng. Bấm **Mở báo cáo** để xem/sửa, bấm **Danh sách báo cáo** để quay lại. Sau khi chốt thành công, tự quay về danh sách và tải lại dữ liệu. Báo cáo đang soạn được giữ trong bộ nhớ khi chuyển giữa danh sách và chi tiết.
+Xe giữ bên ngoài được ghi từng biển số và lý do; tách khỏi xe có mặt tại PGD. Xe khác (thuê sở hữu, sửa chữa, đang chuyển…) ghi riêng, không cộng trùng. Tổng tài sản = thuê ngày + thuê tháng + tại PGD + giữ bên ngoài + xe khác; ví dụ 16 + 7 + 19 + 1 + 0 = 43.
 
-Áp dụng bảng dữ liệu trước khi sử dụng:
+Mỗi mục cho chọn nhiều ảnh / video. Mỗi phần PGD hoặc KTNB tối đa 60 ảnh và 3 video. Ảnh JPEG/PNG/WebP được xử lý xuống tối đa 2 MB; ảnh gốc tối đa 30 MB. Video MP4/MOV/WebM tối đa 45 MB, 3 phút; tải trực tiếp vào Cloudinary dạng authenticated, xác minh chữ ký, kích thước, định dạng và thời lượng trên máy chủ. Tệp chỉ đọc qua phiên đăng nhập trong phạm vi PGD. Ảnh cũ vẫn giữ nguyên và xem được trong báo cáo.
+
+Lưu nháp giữ dữ liệu và tệp trên hệ thống. Chốt cần xác nhận tắt điện và thông tin báo cáo hợp lệ; ảnh/video minh chứng không bắt buộc. Video là minh chứng bổ sung. Sau chốt, dữ liệu và minh chứng PGD chỉ được xem.
+
+Khi chốt, hệ thống thử lưu ảnh chụp số kho app tại thời điểm đó, độc lập với truy vấn tài chính. Lỗi chụp kho không làm mất / hoàn tác bản kiểm kê và minh chứng đã xác nhận; KTNB sẽ thấy thiếu nguồn kho nếu không có bản chụp. Không lấy tồn kho hiện tại làm số tồn quá khứ.
+
+## 2. KTNB đối soát
+
+Chọn **Đối soát KTNB** trên báo cáo PGD đã chốt. So sánh bốn cột độc lập: PGD, App, Sổ, KTNB kiểm tra. Số PGD được giữ nguyên; số sổ và số KTNB nhập độc lập. Hiển thị số chênh lệch với từng nguồn, không chỉ gắn nhãn “khớp”. Ví dụ PGD 64.300.134đ và KTNB 64.710.134đ hiển thị lệch 410.000đ.
+
+Nguồn app gồm kho đã chụp, doanh thu ngày và lũy kế từ đầu tháng đến ngày báo cáo, số dư sổ quỹ và điều chuyển có biển số / nơi đi / nơi đến. Doanh thu thuê xe = thuê + gia hạn + phí trả muộn − hoàn tiền thuê trả sớm, theo ngày thu / hoàn tiền thực tế ở múi giờ Việt Nam; không gồm cọc, hoàn cọc, sửa chữa hay khoản phí khác. Đọc toàn bộ lịch sử thu của các hợp đồng phát sinh trong kỳ để phân bổ phí cũ đúng, kể cả giao dịch qua cơ sở khác.
+
+Số dư app là số dư đầu kỳ cộng phiếu thu / chi đã duyệt đến hết ngày, chỉ tính tài khoản gắn PGD; tài khoản công ty dùng chung không tự phân bổ. Đây không phải số dư ngân hàng trực tiếp. Nguồn thiếu được hiển thị “Chưa có”, không thay bằng 0. Kho hiện tại chỉ dùng cho ngày hiện tại; báo cáo cũ không có bản chụp kho cần đối chiếu chứng từ và giải trình.
+
+KTNB có thể lưu nháp, thêm minh chứng riêng, rồi xác nhận. Cần đủ số Sổ / KTNB, biển số và lý do cho xe bên ngoài, giải trình từng khoản lệch / thiếu nguồn app và điều chuyển khác app. Giao dịch chưa phân loại cần ghi kết quả kiểm tra. Kết quả phân biệt **Khớp** và **Có giải trình**; không tự đổi khoản lệch thành khớp. Sau xác nhận khóa kết quả và minh chứng KTNB, lưu người / thời điểm xác nhận và bản chụp số app. Có nội dung báo cáo để sao chép gửi / lưu.
+
+Nếu số app hoặc minh chứng thay đổi trong lúc kiểm tra, lần xác nhận cũ bị từ chối. Lấy lại số app hoặc mở lại báo cáo để rà trước khi lưu. Mọi thao tác ghi dùng mã riêng và kết quả xác nhận trong cùng transaction: mất phản hồi có thể thử lại đúng bước, không tạo trùng hay tự bỏ kiểm soát phiên bản. Form giữ dữ liệu/tệp khi chưa xác nhận; chuyển mục qua menu hỏi trước khi bỏ thay đổi và bị chặn khi đang lưu.
+
+## Phân quyền và triển khai
+
+PGD cần quyền xem hợp đồng và lập nháp hoặc thu/chi để lập kiểm kê. KTNB dùng quyền `shift.review` riêng; vai trò **Kiểm toán nội bộ (KTNB)** có quyền đọc hợp đồng / xe / sổ quỹ và đối soát, không có quyền sửa hợp đồng hay thu/chi. Quản trị viên cấp vai trò hoặc quyền này tại Tài khoản & Phân quyền; không tự thay quyền tài khoản đang dùng. Phạm vi cơ sở được áp dụng ở API và PostgreSQL RLS.
+
+Áp dụng migration trước khi triển khai:
 
 ```powershell
 node scripts/migrate-shift-reports.cjs --apply
+# Nếu đã có bảng kiểm kê / ảnh, chỉ bổ sung các bảng xác nhận và KTNB:
+node scripts/migrate-shift-reports.cjs --apply --requests-only
 ```
 
-Mỗi PGD có một báo cáo mỗi ngày. Chọn PGD, ngày, nhập nhân sự, số xe lưu kho, tổng pin/pin đầy, xe điều chuyển, tiền mặt và số dư hai loại tài khoản. Số tiền tính bằng đồng; số lượng và số tiền là số nguyên không âm.
+Script áp dụng `2026-10-22-shift-reports.sql`, `2026-10-22-shift-report-requests.sql`, `2026-10-22-shift-audits.sql`; lặp lại an toàn. Không tự nhập mẫu Hà Đông, ảnh, video hoặc xác nhận bất kỳ báo cáo nào. Tải lại tab cũ để dùng giao diện mới.
 
-Lưu nháp giữ dữ liệu và ảnh trên hệ thống. Ảnh đính kèm (xe, pin, tiền mặt, tài khoản cá nhân, tài khoản Công ty, khóa cửa) không bắt buộc khi chốt. Chốt chỉ yêu cầu xác nhận tắt điện và thông tin báo cáo hợp lệ. Báo cáo đã chốt chỉ được xem. Kiểm soát phiên bản ngăn ghi đè khi nhiều người cùng sửa. Ảnh được lưu riêng từng mục, tối đa 2 MB sau xử lý, chỉ truy cập qua phiên đăng nhập trong phạm vi PGD.
+## Kiểm tra
 
-Migration trên cũng áp dụng `2026-10-22-shift-report-requests.sql`. Mỗi thao tác lưu nháp, tải ảnh và chốt có mã riêng; kết quả xác nhận được lưu trong cùng transaction với dữ liệu. Nếu mất phản hồi, nút **Thử lại thao tác lưu** gửi lại đúng thao tác và tiếp tục từ phần chưa xác nhận, không tạo trùng hay tự bỏ kiểm soát phiên bản. Trong lúc chưa xác nhận, giữ nguyên dữ liệu/ảnh và tạm khóa sửa form. Báo cáo đang lưu không chuyển trang qua menu; khi còn thay đổi chưa lưu, chuyển mục qua menu hoặc đóng/tải lại trang sẽ yêu cầu xác nhận.
+`node scripts/check-shift-audits.cjs` kiểm tra công thức, thiếu nguồn, số chênh lệch, số kho và phân quyền. `node scripts/check-shift-report-retries.cjs` chạy transaction / RLS trên PostgreSQL TEMP rồi rollback toàn bộ, không ghi dữ liệu nghiệp vụ. `node scripts/check-rental-revenue.cjs --live-temp` kiểm tra thu / hoàn thực tế và lịch sử khác cơ sở. Hai script `check-shift-audits-ui.py` và `check-shift-report-retries-ui.py` dùng `--url`, `--cookie-file`, `--browser chromium|webkit`; toàn bộ API nghiệp vụ và Cloudinary được mô phỏng.
 
-Với hệ thống đã có bảng báo cáo/ảnh, chỉ thêm bảng xác nhận bằng `node scripts/migrate-shift-reports.cjs --apply --requests-only` trước khi triển khai phiên bản này. Tab trình duyệt cũ vẫn dùng được API cũ, nhưng cần tải lại trang để có cơ chế thử lại mới.
-
-Kiểm tra phục hồi và phân quyền bằng `node scripts/check-shift-report-retries.cjs` (PostgreSQL TEMP, rollback toàn bộ, không ghi dữ liệu nghiệp vụ) và `python scripts/check-shift-report-retries-ui.py --cookie-file <session-file>` (API mô phỏng).
-
-Thống kê theo PGD và ngày báo cáo gồm tổng số hợp đồng, hoàn thành, đang thuê, quá hạn; tổng thu thực tế, thu cọc, thu gia hạn, thu phí thuê; tổng chi thực tế, tiền cọc phải trả, hoàn lại do trả sớm, tiền phạt muộn. Người trực ca nhập các số liệu và tổng thực tế riêng để đối chiếu. Hệ thống không tự cộng tiền phạt vào chi hoặc cộng các trạng thái hợp đồng có thể trùng nhau. Số liệu được lưu cùng báo cáo; báo cáo cũ đã chốt chưa có phần này hiển thị chưa ghi nhận, không tự thêm số 0. Không cần migration bổ sung.
+## Tự điền và điều hướng
 
 Mỗi tab có nút **Tự điền từ DB**, lấy theo PGD và ngày ở tab Thông tin. Nút chỉ điền phần đang chọn, chưa lưu báo cáo; có thể kiểm tra/sửa trước khi lưu. Đã thay nút điền mẫu bằng dữ liệu DB. Thay PGD/ngày của báo cáo đã lưu bằng cách tạo báo cáo mới.
 
@@ -38,3 +58,5 @@ Nguồn tự điền:
 - **An toàn:** lấy danh sách thiết bị từ báo cáo đã chốt gần nhất không sau ngày chọn; không tự xác nhận tắt điện, không tự ghi Không cho bất thường, không sao chép ảnh.
 
 API `/api/auth/shift-reports/autofill` chỉ đọc, dùng transaction nhất quán, timeout 15 giây, kiểm tra phân quyền và phạm vi PGD. Mất kết nối giữ nguyên các giá trị trong form. Kết quả ghi rõ nguồn và thời điểm đọc. Không cần migration mới.
+
+Danh sách và chi tiết được tách riêng; kiểm kê xe, pin, điều chuyển có các tab con. Các số tự điền cần được nhân sự kiểm tra; không tự xác nhận kết quả KTNB.

@@ -5,11 +5,15 @@ import { Plus, Save, CheckCircle2, ClipboardList, RefreshCw } from 'lucide-react
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { vietnamDate } from '@/lib/management/duty-roster';
-import { prepareRecordPhoto } from '@/lib/management/record-photos';
-import { emptyShiftSummary, shiftVehicleTotal, parseShiftInput, SHIFT_PHOTOS, SHIFT_SUMMARY_FIELDS, type ShiftInput, type ShiftReport } from '@/lib/management/shift-reports';
+import { shiftApi as api,UnconfirmedSaveError,uploadShiftEvidence,type PendingShiftFile,type ShiftUpload } from '@/lib/management/shift-report-client';
+import { ShiftEvidence } from './ShiftEvidence';
+import { ShiftAuditPanel } from './ShiftAuditPanel';
+import type { ShiftMedia } from '@/lib/management/shift-audits';
+import { emptyShiftSummary, shiftVehicleTotal, parseShiftInput, SHIFT_SUMMARY_FIELDS, type ShiftInput, type ShiftReport } from '@/lib/management/shift-reports';
 import type { ShiftAutofillResult, ShiftAutofillSection } from '@/lib/management/shift-autofill';
 
-const blank = (store = 0): ShiftInput => ({ store_id: store, date: vietnamDate(), staff: '', vehicles: 0, batteries: 0, charged: 0, rented_batteries: 0, transfers: 0, cash: 0, personal: 0, company: 0, electricity_off: false, notes: '', summary: emptyShiftSummary(), daily_vehicles: 0, monthly_vehicles: 0 });
+const blank = (store = 0): ShiftInput => ({ store_id: store, date: vietnamDate(), staff: '', vehicles: 0, batteries: 0, charged: 0, rented_batteries: 0, transfers: 0, cash: 0, personal: 0, company: 0, electricity_off: false, notes: '', summary: emptyShiftSummary(), daily_vehicles: 0, monthly_vehicles: 0, other_vehicles: 0 });
+
 const money = (value: number) => new Intl.NumberFormat('vi-VN').format(value) + ' đồng';
 const REPORT_TABS = [
   ['information', 'Thông tin'],
@@ -19,22 +23,13 @@ const REPORT_TABS = [
 type ReportTab = typeof REPORT_TABS[number][0];
 const INVENTORY_TABS = [['vehicles','Tổng kết xe'],['batteries','Pin cửa hàng'],['transfers','Xe điều chuyển']] as const;
 type InventoryTab = typeof INVENTORY_TABS[number][0];
-type SavedReport = Pick<ShiftReport,'id'|'revision'|'status'|'photos'>;
+type SavedReport = Pick<ShiftReport,'id'|'revision'|'status'|'photos'|'media'|'legacy_photos'>;
+
 type SavePlan = {
   input: ShiftInput; submit: boolean; current: SavedReport | null; draftSaved: boolean;
   draftKey: string; submitKey: string;
-  photos: { slot: string; file: File; key: string; prepared?: File; saved: boolean }[];
+  photos: ShiftUpload[];
 };
-class UnconfirmedSaveError extends Error {}
-async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  let response: Response;
-  try { response = await fetch(url, { ...options, cache: 'no-store', credentials: 'same-origin' }); }
-  catch { throw new UnconfirmedSaveError('Mất kết nối, chưa xác nhận được kết quả lưu.'); }
-  const result = await response.json().catch(() => null);
-  if (response.status >= 500 || (response.ok && !result?.data)) throw new UnconfirmedSaveError('Chưa xác nhận được kết quả lưu.');
-  if (!response.ok || !result?.data) throw new Error(result?.message || 'Không xử lý được báo cáo. Vui lòng thử lại.');
-  return result.data;
-}
 export function ShiftReportsPage() {
   const [tab, setTab] = useState<ReportTab>('information');
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>('vehicles');
@@ -44,7 +39,11 @@ export function ShiftReportsPage() {
   const [editing, setEditing] = useState(false), [input, setInput] = useState<ShiftInput>(() => blank());
   const [showList, setShowList] = useState(true);
   const [record, setRecord] = useState<SavedReport | null>(null);
-  const [files, setFiles] = useState<Record<string,File>>({}), [previews, setPreviews] = useState<Record<string,string>>({});
+  const [files, setFiles] = useState<Record<string,PendingShiftFile>>({});
+  const [workflow,setWorkflow]=useState<'pgd'|'audit'>('pgd'),[auditTarget,setAuditTarget]=useState<ShiftReport|null>(null);
+  const [auditOpened,setAuditOpened]=useState(false);
+  const [historyDate,setHistoryDate]=useState(''),[historyStatus,setHistoryStatus]=useState('all');
+  const pendingDelete=useRef<{file:ShiftMedia;key:string;revision:number}|null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [listError, setListError] = useState('');
   const lock = useRef(false);
   const pendingSave = useRef<SavePlan | null>(null);
@@ -63,19 +62,12 @@ export function ShiftReportsPage() {
   const noteOptions = Array.from(new Set(['Không', ...historyForStore.map(row => row.payload.notes.trim()).filter(Boolean)]));
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setListError('');
-    const load = async () => {
-      const response = await fetch(`/api/auth/shift-reports${selectedStore === 'all' ? '' : '?store_id=' + selectedStore}`, { signal: controller.signal, credentials: 'same-origin', cache: 'no-store' });
-      const body = await response.json().catch(() => null);
-      if (!response.ok || !Array.isArray(body?.data)) throw new Error(body?.message || 'Không tải được danh sách báo cáo. Vui lòng thử lại.');
-      if (!controller.signal.aborted) setRows(body.data);
-    };
-    load().catch(e => { if (!controller.signal.aborted) setListError(e.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    const query=new URLSearchParams({...selectedStore!=='all'?{store_id:selectedStore}:{},...historyDate?{date:historyDate}:{}});
+    api<ShiftReport[]>(`/api/auth/shift-reports?${query}`, { signal: controller.signal })
+      .then(data => { if (!Array.isArray(data)) throw new Error('Không tải được danh sách báo cáo. Vui lòng thử lại.'); if (!controller.signal.aborted) setRows(data); }).catch(e => { if (!controller.signal.aborted) setListError(e.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+
     return () => controller.abort();
-  }, [selectedStore,retry]);
-  useEffect(() => {
-    const urls = Object.fromEntries(Object.entries(files).map(([key,file]) => [key,URL.createObjectURL(file)])); setPreviews(urls);
-    return () => Object.values(urls).forEach(URL.revokeObjectURL);
-  }, [files]);
+  }, [selectedStore,retry,historyDate]);
   const dirty = useRef(false);
   useEffect(() => {
     const leave = (event: BeforeUnloadEvent) => {
@@ -96,10 +88,13 @@ export function ShiftReportsPage() {
     return () => { window.removeEventListener('beforeunload',leave); document.removeEventListener('click',navigate,true); };
   }, []);
   function open(row?: ShiftReport) {
-    if (dirty.current && !window.confirm('Có thay đổi chưa lưu. Bỏ thay đổi để mở báo cáo khác?')) return;
-    dirty.current = false; setInput(row ? { ...row.payload, ...(row.status === 'draft' ? { rented_batteries: row.payload.rented_batteries ?? 0, daily_vehicles: row.payload.daily_vehicles ?? 0, monthly_vehicles: row.payload.monthly_vehicles ?? 0 } : {}), ...(row.status === 'draft' && !row.payload.summary ? { summary: emptyShiftSummary() } : {}) } : blank(selectedStore === 'all' ? 0 : Number(selectedStore)));
+    if (dirty.current && !window.confirm('Có thay đổi chưa lưu. Bỏ thay đổi để mở báo cáo khác?')) return false;
+    dirty.current = false; setInput(row ? { ...row.payload, ...(row.status === 'draft' ? { rented_batteries: row.payload.rented_batteries ?? 0, daily_vehicles: row.payload.daily_vehicles ?? 0, monthly_vehicles: row.payload.monthly_vehicles ?? 0, other_vehicles: row.payload.other_vehicles ?? 0 } : {}), ...(row.status === 'draft' && !row.payload.summary ? { summary: emptyShiftSummary() } : {}) } : blank(selectedStore === 'all' ? 0 : Number(selectedStore)));
+    pendingDelete.current=null;setAuditTarget(row?.status==='submitted'?row:null);setAuditOpened(false);setWorkflow('pgd');
     pendingSave.current = null; setUnconfirmed(false);
     setRecord(row || null); setFiles({}); setError(''); setEditing(true); setShowList(false); setTab('information'); setInventoryTab('vehicles'); setAutofilled({});
+    return true;
+
   }
   function update<K extends keyof ShiftInput>(key: K, value: ShiftInput[K]) { dirty.current = true; setInput(current => ({ ...current, [key]: value })); }
   async function autofill(section: ShiftAutofillSection) {
@@ -133,15 +128,17 @@ export function ShiftReportsPage() {
   }
   async function save(submit: boolean) {
     if (lock.current) return;
+    if(pendingDelete.current){await removeEvidence(pendingDelete.current.file);return;}
     setError('');
     if (!pendingSave.current) {
       try {
         parseShiftInput(input);
         if (submit && !input.electricity_off) { setTab('safety'); throw new Error('Xác nhận đã tắt thiết bị điện trước khi chốt.'); }
+
       } catch (e) { setError((e as Error).message); return; }
       if (submit && !window.confirm('Chốt báo cáo cuối ca? Báo cáo và ảnh sẽ được khóa sau khi chốt.')) return;
       pendingSave.current = { input, submit, current: record, draftSaved: false, draftKey: crypto.randomUUID(), submitKey: crypto.randomUUID(),
-        photos: Object.entries(files).map(([slot,file]) => ({ slot, file, key: crypto.randomUUID(), saved: false })) };
+        photos: Object.entries(files).map(([key,item]) => ({ slot:item.category, file:item.file, key, saved: false })) };
     }
     const plan = pendingSave.current;
     dirty.current = true;
@@ -149,18 +146,18 @@ export function ShiftReportsPage() {
     try {
       if (!plan.draftSaved) {
         const result = await api<{id:number;revision:number}>('/api/auth/shift-reports', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-shift-request-id': plan.draftKey }, body: JSON.stringify({ id: plan.current?.id, revision: plan.current?.revision, payload: plan.input, status: 'draft' }) });
-        plan.current = { ...result, status: 'draft', photos: plan.current?.photos || [] }; plan.draftSaved = true; setRecord(plan.current);
+        plan.current = { ...result, status: 'draft', photos: plan.current?.photos || [],media:plan.current?.media||[],legacy_photos:plan.current?.legacy_photos||[] }; plan.draftSaved = true; setRecord(plan.current);
       }
       for (const item of plan.photos) {
         if (item.saved) continue;
-        item.prepared ??= await prepareRecordPhoto(item.file);
-        const uploaded = await api<{revision:number}>(`/api/auth/shift-reports/${plan.current!.id}/photos/${item.slot}`, { method: 'PUT', headers: { 'Content-Type': item.prepared.type, 'x-report-revision': String(plan.current!.revision), 'x-shift-request-id': item.key }, body: item.prepared });
-        plan.current = { ...plan.current!, revision: uploaded.revision, photos: Array.from(new Set([...plan.current!.photos,item.slot])) }; item.saved = true; setRecord(plan.current);
-        setFiles(previous => { const next = { ...previous }; if (next[item.slot] === item.file) delete next[item.slot]; return next; });
+        const uploaded=await uploadShiftEvidence(plan.current!.id,plan.current!.revision,'pgd',item);
+        plan.current = { ...plan.current!, revision: uploaded.revision, media:[...(plan.current!.media||[]),uploaded.media],photos: Array.from(new Set([...plan.current!.photos,...(uploaded.media.mime_type.startsWith('image/')?[item.slot]:[])])) }; item.saved = true; setRecord(plan.current);
+        setFiles(previous => { const next = { ...previous }; delete next[item.key]; return next; });
       }
       if (plan.submit) {
         const completed = await api<{id:number;revision:number}>('/api/auth/shift-reports', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-shift-request-id': plan.submitKey }, body: JSON.stringify({ id: plan.current!.id, revision: plan.current!.revision, payload: plan.input, status: 'submitted' }) });
         plan.current = { ...plan.current!, ...completed, status: 'submitted' }; setRecord(plan.current);
+        setAuditTarget({...plan.current,payload:plan.input,store_name:stores.find(s=>s.id===plan.input.store_id)?.name||'PGD',created_by_name:'PGD',updated_at:new Date().toISOString()});
       }
       pendingSave.current = null; setUnconfirmed(false);
       dirty.current = false; notify(plan.submit ? 'Đã chốt báo cáo cuối ca.' : 'Đã lưu nháp báo cáo và ảnh.');
@@ -173,11 +170,24 @@ export function ShiftReportsPage() {
     }
     finally { lock.current = false; setBusy(false); setRetry(n => n + 1); }
   }
-  const numeric = (key: 'vehicles'|'batteries'|'charged'|'rented_batteries'|'transfers'|'cash'|'personal'|'company'|'daily_vehicles'|'monthly_vehicles', label: string, currency = false) => <div className="mg-field"><label htmlFor={'shift-'+key}>{label}</label><input id={'shift-'+key} type="number" min="0" max={currency ? 1e12 : 100000} step="1" required value={input[key] === undefined || Number.isNaN(input[key]) ? '' : input[key]} onChange={e => update(key,e.target.value === '' ? NaN : Number(e.target.value))}/>{currency && Number.isFinite(input[key]) && <small>{money(input[key]!)}</small>}</div>;
-  const renderPhotos = (slots: readonly string[], visible: boolean) => <>
-      <h3>Ảnh đính kèm</h3><p>Mỗi mục một ảnh JPEG, PNG hoặc WebP; ảnh lớn được thu nhỏ khi lưu.</p>
-      <div className="shift-photo-grid">{SHIFT_PHOTOS.filter(([slot]) => slots.includes(slot)).map(([slot,label]) => <div key={slot} className="shift-photo"><strong>{label}</strong>{visible && (previews[slot] || record?.photos.includes(slot)) ? <a href={previews[slot] || `/api/auth/shift-reports/${record!.id}/photos/${slot}`} target="_blank" rel="noreferrer"><img loading="lazy" decoding="async" width={360} height={160} src={previews[slot] || `/api/auth/shift-reports/${record!.id}/photos/${slot}?v=${record!.revision}`} alt={label}/></a> : <div className="shift-photo-empty">Chưa có ảnh</div>}{!readonly && <input type="file" accept="image/jpeg,image/png,image/webp" aria-label={label} disabled={busy} onChange={e => { const file = e.target.files?.[0]; if (file) { dirty.current = true; setFiles(previous => ({ ...previous,[slot]:file })); } e.target.value=''; }}/>}<small>{files[slot] ? 'Ảnh mới · Chưa lưu' : record?.photos.includes(slot) ? 'Đã lưu ảnh' : 'Không bắt buộc'}</small></div>)}</div>
-  </>;
+  async function removeEvidence(file:ShiftMedia){
+    if(!record||lock.current)return;
+    if(!pendingDelete.current&&!window.confirm('Xóa minh chứng kiểm kê này?'))return;
+    pendingDelete.current??={file,key:crypto.randomUUID(),revision:record.revision};
+    lock.current=true;setBusy(true);dirty.current=true;setError('');
+    try{
+      const item=pendingDelete.current;
+      const saved=await api<{revision:number}>(file.url,{method:'DELETE',headers:{'x-shift-request-id':item.key,'x-report-revision':String(item.revision),'x-shift-category':file.category,'x-shift-stage':'pgd'}});
+      const media=(record.media||[]).filter(m=>m.id!==file.id);
+      setRecord({...record,revision:saved.revision,media,photos:Array.from(new Set([...(record.legacy_photos||[]),...media.filter(m=>m.stage==='pgd'&&m.mime_type.startsWith('image/')).map(m=>m.category)]))});
+      pendingDelete.current=null;setUnconfirmed(false);
+    }catch(e){const unknown=e instanceof UnconfirmedSaveError;if(!unknown)pendingDelete.current=null;setUnconfirmed(unknown);setError((e as Error).message);}
+    finally{lock.current=false;setBusy(false);setRetry(n=>n+1);}
+  }
+  const numeric = (key: 'vehicles'|'batteries'|'charged'|'rented_batteries'|'transfers'|'cash'|'personal'|'company'|'daily_vehicles'|'monthly_vehicles'|'other_vehicles', label: string, currency = false) => <div className="mg-field"><label htmlFor={'shift-'+key}>{label}</label><input id={'shift-'+key} type="number" min="0" max={currency ? 1e12 : 100000} step="1" required={!(['daily_vehicles','monthly_vehicles','other_vehicles'].includes(key))} value={input[key] === undefined || Number.isNaN(input[key]) ? '' : input[key]} onChange={e => update(key,e.target.value === '' ? (['daily_vehicles','monthly_vehicles','other_vehicles'].includes(key)?undefined:NaN) : Number(e.target.value))}/>{currency && Number.isFinite(input[key]) && <small>{money(input[key]!)}</small>}</div>;
+  const legacyMedia:ShiftMedia[]=(record?.legacy_photos||[]).map(slot=>({id:'legacy:'+slot,category:slot,stage:'pgd',mime_type:'image/jpeg',filename:'Ảnh đã lưu trước đây',url:`/api/auth/shift-reports/${record!.id}/photos/${slot}`}));
+  const renderPhotos = (slots: readonly string[]) => <ShiftEvidence slots={slots} media={[...legacyMedia,...(record?.media||[]).filter(m=>m.stage==='pgd')]} pending={files} readonly={readonly} disabled={busy||unconfirmed} onFiles={value=>{dirty.current=true;setFiles(value);}} onDelete={file=>void removeEvidence(file)}/>;
+  const visibleRows=rows.filter(row=>historyStatus==='all'||historyStatus==='draft'&&row.status==='draft'||historyStatus==='pending'&&row.status==='submitted'&&row.audit?.status!=='confirmed'||historyStatus==='confirmed'&&row.audit?.status==='confirmed'||historyStatus==='explained'&&row.audit?.result==='explained');
   return <section className="mg-page"><div className="mg-page-content shift-reports">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">VẬN HÀNH PGD</div><h1>Báo cáo cuối ca</h1><p>Kiểm kê xe, pin, tiền và xác nhận an toàn trước khi kết thúc ca.</p></div><div className="mg-heading-actions"><button className="mg-button" disabled={busy || loading} onClick={() => setRetry(n => n+1)}><RefreshCw size={16}/>Làm mới</button>{writable && <button className="mg-button mg-button-primary" disabled={busy || unconfirmed} onClick={() => open()}><Plus size={16}/>Tạo báo cáo</button>}</div></div>
     {directoryError && <p role="alert">{directoryError}</p>}
@@ -185,7 +195,9 @@ export function ShiftReportsPage() {
       <button type="button" className={'mg-button'+(showList ? ' mg-button-primary' : '')} aria-pressed={showList} disabled={busy || unconfirmed} onClick={() => setShowList(true)}><ClipboardList size={16}/>Danh sách báo cáo{!loading && !listError ? ` (${rows.length})` : ''}</button>
       {editing && <button type="button" className={'mg-button'+(!showList ? ' mg-button-primary' : '')} aria-pressed={!showList} disabled={busy} onClick={() => setShowList(false)}>{record?.status === 'submitted' ? 'Chi tiết báo cáo' : 'Tiếp tục soạn báo cáo'}</button>}
     </div>
-    {editing && !showList && <form className="mg-data-panel shift-form" onInvalidCapture={event => {
+    {editing&&!showList&&auditTarget&&<div className="shift-workflow" role="group" aria-label="Bước báo cáo"><button type="button" className="mg-button" aria-pressed={workflow==='pgd'} onClick={()=>setWorkflow('pgd')}>1. PGD kiểm kê</button><button type="button" className="mg-button" aria-pressed={workflow==='audit'} onClick={()=>{setAuditOpened(true);setWorkflow('audit');}}>2. KTNB đối soát</button></div>}
+    {editing && <form hidden={showList||workflow!=='pgd'} className="mg-data-panel shift-form" onInvalidCapture={event => {
+
       event.preventDefault();
       const field = event.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(':invalid');
       if (!field) return;
@@ -193,6 +205,8 @@ export function ShiftReportsPage() {
       if (panel?.hasAttribute('data-inventory-section')) {
         setTab('inventory'); setInventoryTab(panel.getAttribute('data-inventory-section') as InventoryTab);
       } else if (panel) setTab(panel.id.replace('shift-panel-', '') as ReportTab);
+      field.closest('details')?.setAttribute('open','');
+
       setError(field.validationMessage);
       requestAnimationFrame(() => field.focus());
     }} onSubmit={e => { e.preventDefault(); void save(false); }}>
@@ -212,34 +226,36 @@ export function ShiftReportsPage() {
         </div>
         <div id="shift-panel-summary" role="tabpanel" aria-labelledby="shift-tab-summary" hidden={tab !== 'summary'} tabIndex={0}><h3>Thống kê hợp đồng và thu chi trong ngày</h3>{renderAutofill('summary')}
         <p>Tự điền theo PGD và ngày báo cáo từ phiếu đã duyệt, sau đó kiểm tra và bổ sung số liệu thực tế.</p>
+
         {!input.summary ? <p>Báo cáo này chưa ghi nhận thống kê hợp đồng và thu chi.</p> : <div className="shift-summary-grid">{['Hợp đồng', 'Thu thực tế', 'Chi và các khoản liên quan'].map((title, group) => <div key={title} className="shift-summary-card"><h4>{title}</h4>{SHIFT_SUMMARY_FIELDS.slice(group * 4, group * 4 + 4).map(([key, label, currency]) => <div key={key} className="mg-field"><label htmlFor={'shift-summary-' + key}>{label}{currency ? ' (đồng)' : ''}</label><input id={'shift-summary-' + key} type="number" min="0" max={currency ? 1e12 : 100000} step="1" required value={Number.isNaN(input.summary![key]) ? '' : input.summary![key]} onChange={event => update('summary', { ...input.summary!, [key]: event.target.value === '' ? NaN : Number(event.target.value) })}/>{currency && Number.isFinite(input.summary![key]) && <small>{money(input.summary![key])}</small>}</div>)}</div>)}</div>}
         </div><div id="shift-panel-inventory" role="tabpanel" aria-labelledby="shift-tab-inventory" hidden={tab !== 'inventory'} tabIndex={0}>
         <div id="shift-inventory-panel-vehicles" role="tabpanel" aria-labelledby="shift-inventory-tab-vehicles" data-inventory-section="vehicles" hidden={inventoryTab !== 'vehicles'} tabIndex={0}><h3>Tổng kết xe cuối ngày</h3>{renderAutofill('inventory')}
-        <div className="mg-form-grid">{numeric('daily_vehicles','Xe cho thuê ngày (xe)')}{numeric('monthly_vehicles','Xe cho thuê tháng (xe)')}{numeric('vehicles','Xe lưu kho thực tế (xe)')}
-          <div className="mg-field"><label htmlFor="shift-vehicle-total">Tổng kết xe cuối ngày (xe)</label><input id="shift-vehicle-total" readOnly value={shiftVehicleTotal(input) ?? ''} placeholder="Chưa đủ số liệu"/><small>Tự tính: xe cho thuê ngày + xe cho thuê tháng + xe lưu kho.</small></div>
+        <div className="mg-form-grid">{numeric('daily_vehicles','Xe cho thuê ngày (xe)')}{numeric('monthly_vehicles','Xe cho thuê tháng (xe)')}{numeric('vehicles','Xe lưu kho thực tế (xe)')}{numeric('other_vehicles','Xe khác / thuê sở hữu (xe)')}
+          <div className="mg-field"><label htmlFor="shift-vehicle-total">Tổng kết xe cuối ngày (xe)</label><input id="shift-vehicle-total" readOnly value={shiftVehicleTotal(input) ?? ''} placeholder="Chưa đủ số liệu"/><small>Tự tính: xe thuê ngày + xe thuê tháng + xe tại PGD + xe giữ bên ngoài + xe khác.</small></div>
         </div>
         {readonly && shiftVehicleTotal(input) === null && <p>Báo cáo cũ chưa ghi nhận đủ số xe cho thuê ngày/tháng để tính tổng.</p>}
-        {renderPhotos(['vehicles'], tab === 'inventory' && inventoryTab === 'vehicles')}</div>
+        <details><summary>Xe giữ bên ngoài (CA giữ, sửa chữa…)</summary><p>Tách khỏi số xe có mặt tại PGD và cộng vào tổng tài sản xe.</p>{(input.external_vehicles||[]).map((item,index)=><div className="shift-edit-row" key={index}><input aria-label={`PGD biển số xe ngoài ${index+1}`} placeholder="Biển số" value={item.plate} onChange={e=>update('external_vehicles',input.external_vehicles!.map((v,i)=>i===index?{...v,plate:e.target.value}:v))}/><input aria-label={`PGD lý do xe ngoài ${index+1}`} placeholder="Lý do / nơi giữ" value={item.reason} onChange={e=>update('external_vehicles',input.external_vehicles!.map((v,i)=>i===index?{...v,reason:e.target.value}:v))}/>{!readonly&&<button type="button" className="mg-button" onClick={()=>update('external_vehicles',input.external_vehicles!.filter((_,i)=>i!==index))}>Bỏ dòng</button>}</div>)}{!readonly&&<button type="button" className="mg-button" onClick={()=>update('external_vehicles',[...(input.external_vehicles||[]),{plate:'',reason:''}])}>Thêm xe giữ bên ngoài</button>}</details>
+        {renderPhotos(['vehicles'])}</div>
         <div id="shift-inventory-panel-batteries" role="tabpanel" aria-labelledby="shift-inventory-tab-batteries" data-inventory-section="batteries" hidden={inventoryTab !== 'batteries'} tabIndex={0}><h3>Pin cửa hàng</h3>{renderAutofill('batteries')}<div className="mg-form-grid shift-battery-grid">{numeric('batteries','Tổng số pin (pin)')}{numeric('charged','Trong đó pin đầy (pin)')}{numeric('rented_batteries','Pin đã cho thuê (pin)')}</div>
-        {renderPhotos(['batteries'], tab === 'inventory' && inventoryTab === 'batteries')}</div>
+        {renderPhotos(['batteries'])}</div>
         <div id="shift-inventory-panel-transfers" role="tabpanel" aria-labelledby="shift-inventory-tab-transfers" data-inventory-section="transfers" hidden={inventoryTab !== 'transfers'} tabIndex={0}><h3>Xe điều chuyển</h3>{renderAutofill('transfers')}<div className="mg-form-grid">{numeric('transfers','Số xe điều chuyển trong ca (xe)')}</div></div>
         </div><div id="shift-panel-accounts" role="tabpanel" aria-labelledby="shift-tab-accounts" hidden={tab !== 'accounts'} tabIndex={0}><h3>Tiền các tài khoản</h3>{renderAutofill('accounts')}<div className="mg-form-grid">{numeric('cash','Tiền mặt thực tế (đồng)',true)}{numeric('personal','TK cá nhân được phân công (đồng)',true)}{numeric('company','TK Công ty (đồng)',true)}</div>
-        {renderPhotos(['cash','personal','company'], tab === 'accounts')}</div><div id="shift-panel-safety" role="tabpanel" aria-labelledby="shift-tab-safety" hidden={tab !== 'safety'} tabIndex={0}><h3>An toàn cuối ca</h3>{renderAutofill('safety')}<label className="shift-checkbox"><input type="checkbox" checked={input.electricity_off} onChange={e => update('electricity_off',e.target.checked)}/>Xác nhận đã tắt các thiết bị điện</label>
+        {renderPhotos(['cash','personal','company'])}</div><div id="shift-panel-safety" role="tabpanel" aria-labelledby="shift-tab-safety" hidden={tab !== 'safety'} tabIndex={0}><h3>An toàn cuối ca</h3>{renderAutofill('safety')}<label className="shift-checkbox"><input type="checkbox" checked={input.electricity_off} onChange={e => update('electricity_off',e.target.checked)}/>Xác nhận đã tắt các thiết bị điện</label>
+
         <div className="mg-form-grid">
           <div className="mg-field"><label htmlFor="shift-devices">Thiết bị điện đã tắt gồm</label><input id="shift-devices" list="shift-device-options" maxLength={1000} placeholder="Chọn danh sách cũ hoặc nhập thiết bị thực tế" value={input.electrical_devices ?? ''} onChange={e => update('electrical_devices',e.target.value)}/><datalist id="shift-device-options">{deviceOptions.map(value => <option key={value} value={value}/>)}</datalist><small>Ví dụ: đèn, quạt, điều hòa, máy tính, bộ sạc pin. Chọn đúng các thiết bị thực tế đã tắt.</small></div>
           <div className="mg-field"><label htmlFor="shift-notes">Bất thường / chênh lệch (nếu có)</label><input id="shift-notes" list="shift-note-options" maxLength={5000} placeholder="Chọn nội dung cũ hoặc gõ nội dung mới" value={input.notes} onChange={e => update('notes',e.target.value)}/><datalist id="shift-note-options">{noteOptions.map(value => <option key={value} value={value}/>)}</datalist><small>Gợi ý từ các báo cáo đã tải của PGD đang chọn. Nội dung mới được lưu khi lưu báo cáo.</small></div>
         </div>
-        {renderPhotos(['door'], tab === 'safety')}</div>
+        {renderPhotos(['door'])}</div>
       </fieldset>
       {error && <p className="mg-field-error" role="alert">{error}</p>}
       {!readonly && <div className="shift-actions">{unconfirmed ? <button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(false)}><RefreshCw size={16}/>{busy ? 'Đang xác nhận…' : 'Thử lại thao tác lưu'}</button> : <><button type="submit" className="mg-button" disabled={busy}><Save size={16}/>{busy ? 'Đang lưu…' : 'Lưu nháp'}</button><button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(true)}><CheckCircle2 size={16}/>Chốt báo cáo</button></>}</div>}
     </form>}
-    {showList && <div className="mg-data-panel shift-history"><h2>Danh sách báo cáo</h2>
-      <p>100 báo cáo gần nhất · {selectedStore === 'all' ? 'Tất cả PGD được phân quyền' : stores.find(store => String(store.id) === selectedStore)?.name || 'PGD đang chọn'} · Gồm bản nháp và báo cáo đã chốt.</p>
-      {listError && <div role="alert"><p>{listError}</p><button type="button" className="mg-button" onClick={() => setRetry(value => value+1)}>Tải lại danh sách</button></div>}
-      <div className="shift-table-scroll"><table><thead><tr><th>Ngày / PGD</th><th>Nhân sự trực ca</th><th>Xe / Pin</th><th>Tiền mặt</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-        {loading ? <tr><td colSpan={6} role="status">Đang tải danh sách báo cáo…</td></tr> : listError ? <tr><td colSpan={6}>Chưa tải được dữ liệu. Bấm Tải lại danh sách để kiểm tra.</td></tr> : !rows.length ? <tr><td colSpan={6}>Chưa có báo cáo cho PGD đang chọn. Bấm Tạo báo cáo để bắt đầu.</td></tr> : rows.map(row => <tr key={row.id}><td><strong>{row.payload.date.split('-').reverse().join('/')}</strong><br/>{row.store_name}</td><td>{row.payload.staff}</td><td>{row.payload.vehicles} xe / {row.payload.batteries} pin</td><td>{money(row.payload.cash)}</td><td>{row.status === 'submitted' ? 'Đã chốt' : 'Bản nháp'}<br/><small>{row.created_by_name}</small></td><td><button type="button" className="mg-button" disabled={busy || unconfirmed} onClick={() => open(row)}>Mở báo cáo</button></td></tr>)}
-      </tbody></table></div>
+    {auditTarget&&auditOpened&&<div hidden={showList||workflow!=='audit'}><ShiftAuditPanel key={auditTarget.id} report={auditTarget} onDirty={value=>{dirty.current=value;}} onBusy={value=>{lock.current=value;setBusy(value);}} onSaved={()=>setRetry(n=>n+1)}/></div>}
+    {showList&&<div className="mg-data-panel shift-history"><h2>Báo cáo theo cơ sở</h2><p>100 báo cáo gần nhất trong phạm vi PGD đang chọn. Chọn ngày để xem báo cáo cũ. Mỗi PGD có một báo cáo mỗi ngày.</p>
+      <div className="shift-history-filters"><div className="mg-field"><label htmlFor="shift-history-date">Xem ngày</label><input id="shift-history-date" type="date" value={historyDate} onChange={e=>setHistoryDate(e.target.value)}/></div><div className="mg-field"><label htmlFor="shift-history-status">Tiến độ báo cáo</label><select id="shift-history-status" value={historyStatus} onChange={e=>setHistoryStatus(e.target.value)}><option value="all">Tất cả</option><option value="draft">PGD đang lập</option><option value="pending">Chờ KTNB xác nhận</option><option value="confirmed">Đã xác nhận KTNB</option><option value="explained">Đã xác nhận có giải trình</option></select></div>{historyDate&&<button type="button" className="mg-button" onClick={()=>setHistoryDate('')}>Xóa ngày lọc</button>}</div>
+      {listError?<div role="alert"><p>{listError}</p><button type="button" className="mg-button" onClick={()=>setRetry(n=>n+1)}>Tải lại danh sách</button></div>:loading?<p role="status">Đang tải báo cáo…</p>:!visibleRows.length?<p>Chưa có báo cáo phù hợp.</p>:<div className="shift-table-scroll"><table><thead><tr><th>Ngày / PGD</th><th>Nhân sự trực ca</th><th>Xe tại PGD / Pin</th><th>Tiền mặt</th><th>PGD</th><th>KTNB</th><th>Thao tác</th></tr></thead><tbody>{visibleRows.map(row=><tr key={row.id}><td><strong>{row.payload.date.split('-').reverse().join('/')}</strong><br/>{row.store_name}</td><td>{row.payload.staff}</td><td>{row.payload.vehicles} xe / {row.payload.batteries} pin</td><td>{money(row.payload.cash)}</td><td><span className="shift-badge">{row.status==='submitted'?'Đã chốt':'Bản nháp'}</span><br/><small>{row.created_by_name}</small></td><td><span className={'shift-badge '+(row.audit?.status==='confirmed'?'is-confirmed':'')}>{row.status==='draft'?'Chưa gửi':row.audit?.status==='confirmed'?(row.audit.result==='matched'?'Đã xác nhận · Khớp':'Có giải trình'):row.audit?'Đang đối soát':'Chờ đối soát'}</span>{row.audit&&<small>{row.audit.reviewer_name}</small>}</td><td><div className="shift-actions"><button type="button" className="mg-button" disabled={busy||unconfirmed} onClick={()=>open(row)}>Mở báo cáo</button>{row.status==='submitted'&&<button type="button" className="mg-button" disabled={busy||unconfirmed} onClick={()=>{if(open(row)){setAuditOpened(true);setWorkflow('audit');}}}>{can('shift.review')&&row.audit?.status!=='confirmed'?'Đối soát KTNB':'Xem đối soát'}</button>}</div></td></tr>)}</tbody></table></div>}
     </div>}
+
   </div></section>;
 }

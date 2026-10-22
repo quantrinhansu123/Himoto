@@ -16,7 +16,7 @@ async function main(){const c=await pool.connect();try{
   await c.query(numbering);await c.query(numbering);
   const inventoryMigration=fs.readFileSync('docs/sql/2026-10-18-shared-vehicle-inventory.sql','utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(inventoryMigration);await c.query(inventoryMigration);
-  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-contract-return-and-draft-release.sql','2026-10-21-contract-vehicle-labels.sql']) {
+  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-cross-branch-renewals.sql','2026-10-21-contract-return-and-draft-release.sql','2026-10-21-contract-vehicle-labels.sql']) {
     await c.query(fs.readFileSync(path.join('docs/sql',file),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replaceAll("'himoto'","'qa_access_scope'").replace(/^BEGIN;|^COMMIT;/gm,''));
   }
   const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
@@ -104,7 +104,7 @@ async function main(){const c=await pool.connect();try{
   await c.query("UPDATE qa_access_scope.orders SET order_status='completed' WHERE id=92001"); // explicitly closed prior contract fixture
   await c.query("SELECT set_config('himoto.operation','transfer',true)");
   const transferred=await dataAccess.run({...scope,operation:'transfer'},()=>actions(proxy,91001,{action:'transfer',to_store_id:80001,note:'QA transfer'},70002));
-  await c.query("SELECT set_config('himoto.store_id','80002',true),set_config('himoto.actor_id','70002',true),set_config('himoto.operation',''),set_config('himoto.transfer_vehicle_id','',true)");
+  await c.query("SELECT set_config('himoto.store_id','80002',true),set_config('himoto.actor_id','70002',true),set_config('himoto.operation','',true),set_config('himoto.transfer_vehicle_id','',true)");
   assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91001')).rowCount,0);
   assert.equal((await c.query("SELECT count(*)::int AS n FROM qa_access_scope.vehicle_location_events WHERE vehicle_id=91001 AND event_type='manual_transfer'")).rows[0].n,1);
   await load(path.join(root,'lib/server/record-photos')).requirePhotoRecord(proxy,'vehicles',91001);

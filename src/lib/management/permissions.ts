@@ -10,12 +10,13 @@ export type PermissionAccount = {
   scope_all?: boolean;
 };
 
-export const ACCESS_PERMISSIONS = ['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write','hr.read','hr.write','finance.read','finance.write','settings.write','accounts.manage'] as const;
+export const ACCESS_PERMISSIONS = ['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write','hr.read','hr.write','finance.read','finance.write','shift.review','settings.write','accounts.manage'] as const;
 export type AccessPermission = typeof ACCESS_PERMISSIONS[number];
 export const ACCESS_PERMISSION_LABELS:Record<AccessPermission,string>={
   'contracts.read':'Xem hợp đồng','contracts.draft':'Lập / sửa hợp đồng nháp','contracts.finalize':'Duyệt và phát hành hợp đồng','contracts.renew':'Gia hạn hợp đồng','contracts.return':'Trả / đổi xe',
   'customers.read':'Xem khách hàng','customers.write':'Thêm / sửa khách hàng','vehicles.read':'Xem xe và lịch sử','vehicles.transfer':'Chuyển xe','vehicles.receive':'Nhận xe','vehicles.write':'Thêm / sửa thông tin xe',
   'hr.read':'Xem nhân sự và lịch trực','hr.write':'Quản lý nhân sự và lịch trực','finance.read':'Xem sổ quỹ','finance.write':'Thu / chi và quản lý TK ngân hàng, két','settings.write':'Quản lý cấu hình và nhập dữ liệu','accounts.manage':'Quản lý tài khoản và phân quyền',
+  'shift.review':'KTNB đối soát và xác nhận báo cáo cuối ca',
 };
 export const ACCESS_ROLES = {
   branch_staff: {label:'Nhân viên cơ sở',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
@@ -23,6 +24,7 @@ export const ACCESS_ROLES = {
   ownership_manager: {label:'Quản lý thuê sở hữu',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
   hr: {label:'HCNS',permissions:['hr.read','hr.write']},
   accounting: {label:'Kế toán',permissions:['contracts.read','finance.read','finance.write']},
+  internal_control: {label:'Kiểm toán nội bộ (KTNB)',permissions:['contracts.read','vehicles.read','finance.read','shift.review']},
   admin: {label:'Quản trị viên',permissions:[...ACCESS_PERMISSIONS]},
 } as const;
 export type AccessRole = keyof typeof ACCESS_ROLES;

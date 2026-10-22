@@ -37,7 +37,7 @@ export async function saveManagedAccount(client:PoolClient,actorId:number,raw:un
     if(!store)throw new AccountAccessError('Cơ sở không còn tồn tại.');
     if(input.access_role.startsWith('ownership_')&&store.kind!=='lease_to_own')throw new AccountAccessError('Vai trò thuê sở hữu phải gắn cơ sở thuê sở hữu.');
   }
-  const slug=({branch_staff:'nhan-vien',ownership_staff:'thue-so-huu-hop-dong',ownership_manager:'thue-so-huu-truong-phong',hr:'nhan-su',accounting:'ke-toan',admin:'quan-tri-vien'})[input.access_role];
+  const slug=({branch_staff:'nhan-vien',ownership_staff:'thue-so-huu-hop-dong',ownership_manager:'thue-so-huu-truong-phong',hr:'nhan-su',accounting:'ke-toan',internal_control:'ke-toan',admin:'quan-tri-vien'})[input.access_role];
   const role=(await client.query('SELECT id FROM himoto.roles WHERE slug=$1',[slug])).rows[0];if(!role)throw new AccountAccessError('Vai trò chưa được cấu hình.');
   const password=input.password?await hash(input.password,12):null;
   if(!id){const created=await client.query(`INSERT INTO himoto.users(name,email,password,role,role_id,status,store_id,created_at,updated_at)

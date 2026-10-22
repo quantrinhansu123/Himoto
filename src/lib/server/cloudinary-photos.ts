@@ -43,6 +43,15 @@ export async function writeCloudinaryPhoto(client: Pick<PoolClient, 'query'>, en
     DO UPDATE SET mime_type=EXCLUDED.mime_type,data=NULL,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=EXCLUDED.cloudinary_public_id,cloudinary_cloud_name=EXCLUDED.cloudinary_cloud_name,cloudinary_version=EXCLUDED.cloudinary_version`,
   [entity, id, slot, actor, receipt.public_id, config().cloud_name, receipt.version,video?'video/mp4':'image/jpeg']);
 }
+type ShiftAssetMetadata={resource_type?:string;format?:string;version?:number;bytes?:number;duration?:number};
+export async function shiftCloudAsset(receipt:CloudPhotoReceipt,readAsset:(id:string,options:Record<string,unknown>)=>Promise<ShiftAssetMetadata>=(id,options)=>cloudinary.api.resource(id,options)) {
+  const settings=config();
+  if(receipt.resource_type==='video') {
+    const asset=await readAsset(receipt.public_id,{...settings,resource_type:'video',type:'authenticated',media_metadata:true,timeout:15000});
+    if(asset.resource_type!=='video'||asset.format!=='mp4'||Number(asset.version)!==receipt.version||!asset.bytes||asset.bytes>MAX_VIDEO_BYTES||!asset.duration||asset.duration>180)throw new RecordPhotoError('Video kiểm kê tối đa 45 MB và 3 phút.');
+  }
+  return {cloud_name:settings.cloud_name,mime_type:receipt.resource_type==='video'?'video/mp4':'image/jpeg'};
+}
 export async function readCloudinaryPhoto(photo: { cloudinary_public_id: string; cloudinary_cloud_name: string; cloudinary_version: number; mime_type?: string }, range?:string|null) {
   const settings = config();
   if (settings.cloud_name !== photo.cloudinary_cloud_name) throw new RecordPhotoError('Cấu hình Cloudinary không khớp nơi lưu ảnh.', 503);

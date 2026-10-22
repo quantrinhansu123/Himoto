@@ -26,6 +26,7 @@ export const RENTAL_REVENUE_SQL=`WITH classified AS (
     FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,draft,extra_charges}')='array'
       THEN o.draft_payload::jsonb #> '{management_composer,draft,extra_charges}' ELSE '[]'::jsonb END) charge) f ON true
   WHERE t.status='approved' AND t.type IN('in','addon','out') AND ${VEHICLE_ORDER_SQL}
+    AND t.order_id=ANY($4::bigint[])
     AND t.created_at < (($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
 ), allocated AS (
   SELECT *,SUM(CASE WHEN category='rental' THEN value ELSE 0 END)
@@ -37,6 +38,12 @@ FROM allocated WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Ch
   AND ($3::bigint IS NULL OR store_id=$3)`;
 export async function rentalRevenue(db:Pick<PoolClient,'query'>,from:string,to:string,store?:number){
   if(!validDate(from)||!validDate(to)||from>to||store!==undefined&&(!Number.isSafeInteger(store)||store<=0))throw new RentalRevenueError('Kiểm tra khoảng ngày và cơ sở của báo cáo.');
-  const result=await db.query(RENTAL_REVENUE_SQL,[from,to,store??null]);
+  const relevant=await db.query(`SELECT DISTINCT order_id FROM himoto.transactions
+    WHERE status='approved' AND type IN('in','addon','out') AND order_id IS NOT NULL
+      AND created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      AND created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      AND ($3::bigint IS NULL OR store_id=$3)`,[from,to,store??null]);
+  if(!relevant.rows.length)return summarizeRentalRevenue([]);
+  const result=await db.query(RENTAL_REVENUE_SQL,[from,to,store??null,relevant.rows.map(row=>String(row.order_id))]);
   return summarizeRentalRevenue(result.rows as RevenueReceipt[]);
 }

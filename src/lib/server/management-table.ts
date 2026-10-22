@@ -154,7 +154,8 @@ function contractHydrateSql() {
     LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_profiles ORDER BY user_id,id) fallback_staff
       ON fallback_staff.user_id=o.contract_responsible_user_id
     LEFT JOIN LATERAL (
-      SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license) ORDER BY d.id) AS vehicles
+      SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
+        'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color) ORDER BY d.id) AS vehicles
       FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
       WHERE d.order_id=o.id AND d.deleted_at IS NULL
     ) ov ON true

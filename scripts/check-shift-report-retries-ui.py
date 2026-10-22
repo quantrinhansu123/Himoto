@@ -18,9 +18,12 @@ slots={'Kiểm kê xe / pin':['Ảnh kiểm kê xe','Ảnh kiểm kê pin'],'Ti�
 def mock(route):
     req=route.request;path=urlparse(req.url).path
     if path=='/api/session':route.fulfill(json={'user':{'name':'QA'}});return
+    if path=='/api/auth/payment-events':route.fulfill(content_type='text/event-stream',body=': QA mock\n\n');return
     if path.startswith('/api/auth/shift-reports'):
         if req.method=='GET':
             if path=='/api/auth/shift-reports':route.fulfill(json={'data':[state['report']] if state['report'] else []})
+            elif path.endswith('/audit'):
+                route.fulfill(json={'data':{'captured_at':'2026-10-22T12:00:00Z','date':'2026-10-22','fingerprint':'QA','values':{'daily_vehicles':0,'monthly_vehicles':0,'vehicles':0,'external_vehicles':None,'batteries':None,'cash':0,'personal':0,'company':0,'revenue_day':0,'revenue_month':0},'assets_total':0,'revenue':{'rental':0,'renewal':0,'late':0,'early':0,'revenue':0},'unclassified_count':0,'transfers':[],'inventory_note':'QA','accounts_note':'QA'}})
             else:route.fulfill(content_type='image/png',body=png)
             return
         raw=req.post_data_json if req.method=='POST' else None
@@ -37,7 +40,7 @@ def mock(route):
         if raw:
             if raw.get('id') is None:
                 if row:route.fulfill(status=409,json={'message':'PGD đã có báo cáo ngày này.'});return
-                row={'id':9001,'revision':1,'payload':raw['payload'],'status':'draft','photos':[],'store_name':'CS QA','created_by_name':'QA','updated_at':'2026-10-22T00:00:00Z'}
+                row={'id':9001,'revision':1,'payload':raw['payload'],'status':'draft','photos':[],'media':[],'legacy_photos':[],'store_name':'CS QA','created_by_name':'QA','updated_at':'2026-10-22T00:00:00Z'}
                 state['report']=row
             else:
                 if raw['revision']!=row['revision'] or row['status']!='draft':route.fulfill(status=409,json={'message':'Báo cáo đã thay đổi.'});return
@@ -45,7 +48,8 @@ def mock(route):
             data={k:row[k] for k in ['id','revision']}
         else:
             if int(req.headers['x-report-revision'])!=row['revision'] or row['status']!='draft':route.fulfill(status=409,json={'message':'Báo cáo đã thay đổi.'});return
-            row['revision']+=1;row['photos']=list(set(row['photos']+[path.split('/')[-1]]));data={'revision':row['revision']}
+            category=req.headers['x-shift-category'];row['revision']+=1;row['photos']=list(set(row['photos']+[category]));data={'revision':row['revision']}
+            row['media'].append({'id':path.split('/')[-1],'category':category,'stage':'pgd','mime_type':'image/jpeg','url':path,'filename':'qa.png'})
         state['applied'].append(kind);state['receipts'][key]={'hash':fingerprint,'data':data}
         if state['drop']==kind:state['drop']=None;route.abort('failed');return
         route.fulfill(json={'data':data});return
@@ -69,6 +73,8 @@ with sync_playwright() as pw:
         page.get_by_label('Nhân sự trực ca',exact=True).fill('QA unsaved report')
     def choose(tab,label):
         page.get_by_role('tab',name=tab,exact=True).click()
+        if tab=='Kiểm kê xe / pin':
+            page.get_by_role('tab',name='Pin cửa hàng' if label=='Ảnh kiểm kê pin' else 'Tổng kết xe',exact=True).click()
         page.get_by_label(label,exact=True).set_input_files({'name':'qa.png','mimeType':'image/png','buffer':png})
     def retry():
         expect(page.get_by_role('button',name='Thử lại thao tác lưu',exact=True)).to_be_visible()
@@ -94,7 +100,7 @@ with sync_playwright() as pw:
     state['drop']='photo';before=len(state['applied'])
     page.get_by_role('button',name='Lưu nháp',exact=True).click();retry()
     expect(page.get_by_role('button',name='Thử lại thao tác lưu',exact=True)).to_have_count(0)
-    expect(page.get_by_text('Ảnh mới · Chưa lưu',exact=True)).to_have_count(0)
+    expect(page.locator('.shift-media-gallery small').filter(has_text='· Chưa lưu')).to_have_count(0)
     assert state['applied'][before:]==['draft','photo','photo']
     assert state['report']['revision']==5
     checks.append('Lost photo response resumes that photo then uploads the next photo; confirmed steps are not repeated and file bytes remain identical.')
@@ -104,7 +110,7 @@ with sync_playwright() as pw:
     page.get_by_label('Xác nhận đã tắt các thiết bị điện',exact=True).check()
     state['drop']='submit';before=len(state['applied'])
     page.get_by_role('button',name='Chốt báo cáo',exact=True).click();retry()
-    expect(page.get_by_role('heading',name='Danh sách báo cáo',exact=True)).to_be_visible()
+    expect(page.get_by_role('heading',name='Báo cáo theo cơ sở',exact=True)).to_be_visible()
     page.get_by_role('button',name='Mở báo cáo',exact=True).click()
     expect(page.get_by_text('Đã chốt · Chỉ xem',exact=True)).to_be_visible()
     assert state['applied'][before:]==['draft','photo','photo','photo','photo','submit']
@@ -116,7 +122,7 @@ with sync_playwright() as pw:
     fresh();choose('Kiểm kê xe / pin','Ảnh kiểm kê xe');dialogs.clear();accept_dialog=False
     menu('Danh sách hợp đồng').click();expect(page).to_have_url(a.url+'/shift-reports')
     assert dialogs==['confirm']
-    expect(page.get_by_text('Ảnh mới · Chưa lưu',exact=True)).to_be_visible()
+    expect(page.locator('.shift-media-gallery small').filter(has_text='· Chưa lưu')).to_be_visible()
     expect(page.locator('#shift-staff')).to_have_value('QA unsaved report')
     if a.browser=='webkit':page.get_by_role('button',name='Đóng menu',exact=True).click()
     page.screenshot(path=str(out/'unsaved-navigation-blocked.png'),full_page=True)

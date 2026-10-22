@@ -38,6 +38,7 @@ async function main() {
         statements.push(sql);
         if(sql==='SELECT id FROM himoto.stores WHERE id=$1')return {rows:[{id:1}],rowCount:1};
         if(sql.startsWith('SELECT * FROM himoto.management_shift_reports'))return {rows:[{id:1,status:locked?'submitted':'draft',revision:1,store_id:1,payload:base}]};
+        if(sql.startsWith('UPDATE himoto.management_shift_reports SET app_snapshot')||sql.startsWith('UPDATE himoto.management_shift_reports SET submitted_at'))return {rows:[]};
         if(sql.startsWith('UPDATE himoto.management_shift_reports')){assert.equal(params[1],'submitted');return {rows:[{id:1,revision:2}]};}
         if(sql.startsWith('INSERT INTO himoto.management_shift_reports')){assert.equal(params[4],'submitted');return {rows:[{id:2,revision:1}]};}
         return {rows:[]};
