@@ -65,3 +65,14 @@ node scripts/check-cloudfly-video-live.cjs --synthetic-file .backups/<test-folde
 Script chỉ nhận clip tên synthetic-qa.mp4 dưới 1 MB. Nó chuyển định dạng, kiểm tra object Private, GET ký số, byte range, chặn anonymous, retry sau khi xóa nguồn và phát/tua trên Chromium/WebKit ở viewport máy tính/điện thoại. Các file cloud được tạo trong lượt thử được xóa trong finally. URL có chữ ký đi vào browser qua stdin và không được in ra log. Không gọi Telegram hay ghi DB.
 
 Theo dõi dung lượng lưu trữ và băng thông download riêng. Chưa có cơ sở kết luận chi phí thực tế hoặc tốc độ giữa Vercel và CloudFly từ một clip thử nhỏ.
+
+## Xác minh cấu hình trên Vercel
+
+Phản hồi ký upload video có trường video_storage_provider. Upload thông thường không gọi thêm S3. Quản trị viên có quyền settings.write có thể gửi verify_storage=true cùng yêu cầu ký upload video: server Vercel ghi một tệp nhỏ tại key UUID riêng trong himoto/storage-checks/, kiểm tra đọc byte range và chặn anonymous, sau đó xóa trong finally. Không nhận bucket/key do trình duyệt chỉ định và không gắn tệp vào hồ sơ.
+
+```powershell
+node scripts/check-video-storage-probe.cjs
+node scripts/verify-production-video-storage.cjs
+```
+
+Script xác minh production chỉ SELECT tài khoản admin đã có quyền. Phiên ký được giữ trong bộ nhớ, hết hạn sau năm phút; không in cookie, khóa hoặc chữ ký upload. Chỉ kết luận bật thành công khi runtime Production báo cloudfly và toàn bộ phép kiểm tra đọc/ghi/riêng tư/dọn tệp đều đạt. Nếu session secret local khác production, xác minh bị từ chối và không thay đổi tài khoản.

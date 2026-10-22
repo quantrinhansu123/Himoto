@@ -1,6 +1,6 @@
 import 'server-only';
-import { createHash } from 'node:crypto';
-import { S3Client, HeadObjectCommand, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { createHash, randomUUID } from 'node:crypto';
+import { S3Client, HeadObjectCommand, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
 import { RecordPhotoError } from './record-photos';
@@ -134,4 +134,30 @@ export async function readObjectVideo(ref: ObjectVideoRef) {
 }
 export async function hasConvertedVideo(receipt: CloudPhotoReceipt, cloudName: string) {
   return Boolean(await findVideo(convertedVideoKey(receipt, cloudName), 180));
+}
+/** Admin diagnostic: prove deployed credentials can write/read privately without touching business records. */
+export async function probeCloudflyVideoStorage() {
+  const config = settings(), client = cloudflyVideoClient();
+  const key = `himoto/storage-checks/${randomUUID()}.bin`;
+  const bytes = Buffer.from(`HIMOTO storage probe ${randomUUID()}`);
+  const command = { Bucket: config.bucket, Key: key };
+  try {
+    await client.send(new PutObjectCommand({ ...command, Body: bytes, ContentLength: bytes.length,
+      ContentType: 'application/octet-stream', ACL: 'private', IfNoneMatch: '*',
+      ContentMD5: createHash('md5').update(bytes).digest('base64'),
+    }), { abortSignal: AbortSignal.timeout(15_000) });
+    const head = await client.send(new HeadObjectCommand(command), { abortSignal: AbortSignal.timeout(10_000) });
+    const range = await client.send(new GetObjectCommand({ ...command, Range: 'bytes=0-15', IfMatch: head.ETag }), { abortSignal: AbortSignal.timeout(10_000) });
+    if (head.ContentLength !== bytes.length || range.$metadata.httpStatusCode !== 206 || range.ContentLength !== 16 ||
+      !range.Body || !Buffer.from(await range.Body.transformToByteArray()).equals(bytes.subarray(0, 16))) {
+      throw new RecordPhotoError('Kiểm tra đọc/ghi kho video chưa khớp.', 502);
+    }
+    const anonymous = await fetch(`${config.endpoint}/${config.bucket}/${key}`, { redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+    await anonymous.body?.cancel();
+    if (![403, 404].includes(anonymous.status)) throw new RecordPhotoError('Tệp kiểm tra kho video đang truy cập được công khai.', 503);
+    return { provider: 'cloudfly', write: true, read: true, range: true, private: true, temporary_file_removed: true };
+  } finally {
+    // The key is generated here and is never linked to a business record, even if PUT times out.
+    await client.send(new DeleteObjectCommand(command), { abortSignal: AbortSignal.timeout(10_000) });
+  }
 }
