@@ -3,11 +3,11 @@ import { summarizeContracts, type ContractSummary } from './contract-summary';
 import { applyInstallmentBilling } from './contract-billing';
 import { OWNERSHIP_CONTRACT_TYPES } from './config';
 import { mapApiRow, READ_ENDPOINTS } from './repository';
-import type { ManagementRow } from './types';
+import type { ManagementKind, ManagementRow } from './types';
 import { isRemindableContract } from './debt-reminders';
 import { withContractMonitoring,OVERDUE_BUCKETS,matchesOverdueBucket } from './contract-overdue';
 
-export type TableKind = 'contracts' | 'customers';
+export type TableKind = ManagementKind;
 export interface ManagementTableInput {
   kind: TableKind; query: TableQuery; store: string; scope: string; page: number; size: number;
   sort: string; direction: 'asc' | 'desc';

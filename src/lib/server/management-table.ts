@@ -8,6 +8,10 @@ import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
 import { dailyPriceSql } from './contract-deposits';
+import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
+import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
+import { STORE_SELECT_SQL } from './store-management';
 import { OVERDUE_BUCKETS,type OverdueBucket } from '@/lib/management/contract-overdue';
 
 export class ManagementTableError extends Error {}
@@ -76,10 +80,19 @@ export function contractRecentClause(days:number) {
 function contractStoreSql(store:string) {
   return store==='all' ? '' : ` AND o.store_id=${Number(store)}`;
 }
+function likeNeedle(search:string) {
+  return `%${search.trim().replace(/[%_\\]/g,'')}%`;
+}
 function contractSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
   return {sql:` AND (o.contract_number ILIKE $3 OR o.draft_reference ILIKE $3 OR o.customer_name ILIKE $3 OR COALESCE(o.customer_phone,'') ILIKE $3)`,
-    value:`%${search.trim().replace(/[%_\\]/g,'')}%`};
+    value:likeNeedle(search)};
+}
+function contractFilterSql(filters:Record<string,string>) {
+  let sql='';
+  if(/^[1-9]\d{0,14}$/.test(filters.customer_id||''))sql+=` AND o.customer_id=${Number(filters.customer_id)}`;
+  if(/^[1-9]\d{0,14}$/.test(filters.id||''))sql+=` AND o.id=${Number(filters.id)}`;
+  return sql;
 }
 export function contractPageSql(scopeClause:string) {
   return `SELECT o.id, o.contract_number, o.draft_reference,
@@ -89,6 +102,144 @@ export function contractPageSql(scopeClause:string) {
     o.total AS total_amount, '[]'::json AS vehicles
     FROM himoto.orders o
     WHERE o.deleted_at IS NULL${scopeClause}`;
+}
+function customerSearchSql(search:string) {
+  if(!search.trim())return {sql:'',value:undefined as string|undefined};
+  return {sql:` AND (c.name ILIKE $3 OR COALESCE(c.phone,'') ILIKE $3 OR COALESCE(c.id_card,'') ILIKE $3)`,
+    value:likeNeedle(search)};
+}
+function customerPageClause(store:string,status:string) {
+  const storeSql=store==='all'?'':` AND c.store_id=${Number(store)}`;
+  const statusSql=status==='blacklist'||status==='bad_debt'?` AND c.status=2`
+    :status==='draft'?` AND c.status=0`
+    :status==='warning'?` AND NULLIF(BTRIM(c.warning),'') IS NOT NULL`
+    :status==='active'?` AND c.status NOT IN (0,2) AND NULLIF(BTRIM(c.warning),'') IS NULL`:'';
+  return `${storeSql}${statusSql}`;
+}
+export function customerPageSql(scopeClause:string) {
+  return `SELECT c.id, c.name, c.phone, c.id_card, c.address,
+    CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
+         WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
+    c.warning, c.store_id, s.store_name, COALESCE(oc.contract_count,0) AS contract_count
+    FROM himoto.customers c
+    LEFT JOIN himoto.stores s ON s.id = c.store_id
+    LEFT JOIN LATERAL (
+      SELECT count(*)::int AS contract_count FROM himoto.orders o WHERE o.customer_id=c.id AND o.deleted_at IS NULL
+    ) oc ON true
+    WHERE true${scopeClause}`;
+}
+function contractHydrateSql() {
+  return `SELECT o.id, o.contract_number, o.draft_reference,
+    CASE WHEN o.order_status='renting' AND o.return_at < now() THEN 'overdue' ELSE o.order_status END AS status,
+    o.customer_id, o.customer_name, o.customer_phone,
+    o.store_id, s.store_name, s.kind AS store_kind,
+    o.rent_at AS start_date, o.return_at AS end_date, o.total AS total_amount,
+    CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
+      ELSE COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) END AS deposit_amount,
+    COALESCE(staff.full_name, saved_staff.full_name, fallback_staff.full_name) AS staff_name,
+    COALESCE(o.draft_payload #>> '{management_composer,draft,contract_type_name}', o.order_type) AS rental_type,
+    ov.vehicles
+    FROM himoto.orders o
+    LEFT JOIN himoto.stores s ON s.id = o.store_id
+    LEFT JOIN (SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_profiles ORDER BY user_id,store_id,id) staff
+      ON staff.user_id=o.contract_responsible_user_id AND staff.store_id=o.store_id
+    LEFT JOIN himoto.staff_profiles saved_staff ON saved_staff.id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'
+    LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_profiles ORDER BY user_id,id) fallback_staff
+      ON fallback_staff.user_id=o.contract_responsible_user_id
+    LEFT JOIN LATERAL (
+      SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license) ORDER BY d.id) AS vehicles
+      FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
+      WHERE d.order_id=o.id AND d.deleted_at IS NULL
+    ) ov ON true
+    WHERE o.deleted_at IS NULL AND o.id=ANY($1::bigint[])`;
+}
+function vehicleSearchSql(search:string) {
+  if(!search.trim())return {sql:'',value:undefined as string|undefined};
+  return {sql:` AND (v.name ILIKE $3 OR v.license ILIKE $3 OR v.brand ILIKE $3)`,value:likeNeedle(search)};
+}
+function vehiclePageClause(store:string,status:string,filters:Record<string,string>) {
+  const storeSql=store==='all'?'':` AND COALESCE(v.current_store_id,v.store_id)=${Number(store)}`;
+  const mapped:Record<string,string>={using:"'using','rent'",repairing:"'repairing','maintenance'",pending:"'pending','holding'"};
+  const statusSql=!status?'':mapped[status]?` AND v.status IN (${mapped[status]})`
+    :/^[a-z][a-z0-9_]{0,63}$/.test(status)?` AND v.status='${status}'`:'';
+  const type=filters.type||'';
+  const typeSql=!type?'':type==='xe_dien'?` AND v.type IN ('xe_dien','electric')`
+    :/^[a-z0-9_]+$/.test(type)?` AND v.type='${type}'`:'';
+  const beneficiary=filters.beneficiary_store_id||'';
+  const beneficiarySql=/^[1-9]\d{0,14}$/.test(beneficiary)?` AND COALESCE(v.current_store_id,v.store_id)=${Number(beneficiary)}`:'';
+  return `${storeSql}${statusSql}${typeSql}${beneficiarySql}`;
+}
+export function vehiclePageSql(scopeClause:string) {
+  return `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer,
+    v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name,
+    v.xmin::text AS vehicle_revision
+    FROM himoto.vehicles v
+    LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
+    WHERE COALESCE(v.current_store_id,v.store_id)>0${scopeClause}`;
+}
+function vehicleHydrateSql() {
+  return `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer,
+    NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
+    v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, v.xmin::text AS vehicle_revision,
+    pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
+    pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
+    pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
+    r.rentals, COALESCE(r.rentals,'[]'::json) AS rental_blockers,
+    COALESCE(r.store_id, v.current_store_id, v.store_id) AS beneficiary_store_id,
+    COALESCE(bs.store_name, s.store_name) AS beneficiary_store_name,
+    COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
+    gps.has_device AS gps_has_device, gps.normalized_status AS gps_normalized_status, gps.last_at AS gps_last_at,
+    gps.latitude AS gps_latitude, gps.longitude AS gps_longitude, gps.synced_at AS gps_last_sync, gps.provider AS gps_provider,
+    gps.heartbeat_at AS gps_heartbeat_at, gps.position_recorded_at AS gps_position_at,
+    gps.provider_reported_at AS gps_reported_at, gps.last_ignition AS gps_ignition
+    FROM himoto.vehicles v
+    LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
+    ${VEHICLE_TRANSFER_JOIN_SQL}
+    LEFT JOIN LATERAL (
+      SELECT json_agg(json_build_object('order_id', o.id,
+               'code', COALESCE(NULLIF(o.contract_number, ''), NULLIF(o.draft_reference, ''), '#' || o.id::text),
+               'status', CASE WHEN o.order_status = 'renting' AND d.return_at < now() THEN 'overdue' ELSE o.order_status END,
+               'customer', COALESCE(c.name, o.customer_name, ''), 'rent_at', d.rent_at, 'return_at', d.return_at) ORDER BY d.rent_at DESC) AS rentals,
+             (array_agg(o.store_id ORDER BY d.rent_at DESC))[1] AS store_id
+      FROM himoto.order_vehicle_details d
+      JOIN himoto.orders o ON o.id = d.order_id
+      LEFT JOIN himoto.customers c ON c.id = o.customer_id
+      WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+        AND o.order_status IN ('renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract')
+    ) r ON true
+    LEFT JOIN himoto.stores bs ON bs.id=COALESCE(r.store_id, v.current_store_id, v.store_id)
+    ${VEHICLE_GPS_JOIN_SQL}
+    WHERE v.id=ANY($1::bigint[])`;
+}
+function staffSearchSql(search:string) {
+  if(!search.trim())return {sql:'',value:undefined as string|undefined};
+  return {sql:` AND (p.full_name ILIKE $3 OR COALESCE(p.phone,'') ILIKE $3 OR COALESCE(p.staff_code,'') ILIKE $3)`,value:likeNeedle(search)};
+}
+function staffPageClause(store:string,status:string,filters:Record<string,string>) {
+  const storeSql=store==='all'?'':` AND p.store_id=${Number(store)}`;
+  const statusSql=status==='active'?` AND p.status IN ('active','1')`:status==='inactive'?` AND p.status IN ('inactive','0')`
+    :status&&/^[a-z][a-z0-9_]{0,63}$/.test(status)?` AND p.status='${status}'`:'';
+  const position=filters.position||'';
+  const positionSql=position.length&&position.length<=100?` AND p.position='${position.replace(/'/g,"''")}'`:'';
+  return `${storeSql}${statusSql}${positionSql}`;
+}
+export function staffPageSql(scopeClause:string) {
+  return `SELECT p.id, p.staff_code, p.full_name, p.phone, p.email, p.position,
+    p.store_id, s.store_name, p.status, p.joined_at, p.notes, p.user_id
+    FROM himoto.staff_profiles p
+    LEFT JOIN himoto.stores s ON s.id = p.store_id
+    WHERE true${scopeClause}`;
+}
+function storeSearchSql(search:string) {
+  if(!search.trim())return {sql:'',value:undefined as string|undefined};
+  return {sql:` AND (s.store_name ILIKE $3 OR COALESCE(s.code,'') ILIKE $3 OR COALESCE(s.store_address,'') ILIKE $3)`,value:likeNeedle(search)};
+}
+function storePageClause(status:string) {
+  return status==='active'?` AND s.status IN ('active','opening','1')`:status==='inactive'?` AND s.status IN ('inactive','0')`
+    :status&&/^[a-z][a-z0-9_]{0,63}$/.test(status)?` AND s.status='${status}'`:'';
+}
+export function storePageSql(scopeClause:string) {
+  return `${STORE_SELECT_SQL} WHERE true${scopeClause}`;
 }
 function mapManagementRows(kind:TableKind,rows:unknown[]) {
   const mapped=[];
@@ -108,36 +259,45 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const storeSql=kind==='contracts'?contractStoreSql(input.store):'';
   const listWindow=all&&recentDays?contractRecentClause(recentDays):'';
   const clause=kind==='contracts'
-    ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}`
+    ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}`
     : '';
   const now=Date.now();
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
-  if(kind==='contracts'&&!all){
+  if(!all){
     const take=input.size+1;
     const offset=Math.max(0,(input.page-1)*input.size);
-    const search=contractSearchSql(input.query.search);
-    const indexed=await client.query(
-      `${contractPageSql(clause)}${search.sql} ORDER BY o.id DESC LIMIT $1 OFFSET $2`,
-      search.value?[take,offset,search.value]:[take,offset]);
+    const search=kind==='contracts'?contractSearchSql(input.query.search)
+      :kind==='customers'?customerSearchSql(input.query.search)
+      :kind==='vehicles'?vehicleSearchSql(input.query.search)
+      :kind==='staff'?staffSearchSql(input.query.search)
+      :storeSearchSql(input.query.search);
+    const pageSql=kind==='contracts'?`${contractPageSql(clause)}${search.sql} ORDER BY o.id DESC LIMIT $1 OFFSET $2`
+      :kind==='customers'?`${customerPageSql(customerPageClause(input.store,input.query.status))}${search.sql} ORDER BY c.id DESC LIMIT $1 OFFSET $2`
+      :kind==='vehicles'?`${vehiclePageSql(vehiclePageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY v.id DESC LIMIT $1 OFFSET $2`
+      :kind==='staff'?`${staffPageSql(staffPageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY p.id DESC LIMIT $1 OFFSET $2`
+      :`${storePageSql(storePageClause(input.query.status))}${search.sql} ORDER BY s.id DESC LIMIT $1 OFFSET $2`;
+    const indexed=await client.query(pageSql,search.value?[take,offset,search.value]:[take,offset]);
     const hasMore=indexed.rows.length>input.size;
-    const rows=mapManagementRows(kind,indexed.rows.slice(0,input.size));
+    let rows=mapManagementRows(kind,indexed.rows.slice(0,input.size));
+    if(rows.length&&(kind==='contracts'||kind==='vehicles')){
+      const ids=rows.map(row=>row.id);
+      try {
+        const details=await client.query(kind==='contracts'?overdueSql(contractVehicleDetailsSql(contractHydrateSql())):vehicleHydrateSql(),[ids]);
+        const mapped=new Map(mapManagementRows(kind,details.rows).map(record=>[record.id,record]));
+        rows=rows.map(row=>mapped.get(row.id)||row);
+      } catch (cause) {
+        console.error('Management page hydrate failed; serving lean list rows.', cause instanceof Error ? cause.message : cause);
+      }
+    }
     const total=offset+rows.length+(hasMore?1:0);
     return {
       rows,total,scopeCount:total,tabCount:total,page:input.page,pages:hasMore?input.page+1:Math.max(1,input.page),
       statusCounts:[],statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:0,
-      summary:{contractCount:rows.length,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null},
-      recentDays:recentDays??null,
+      summary:kind==='contracts'?{contractCount:rows.length,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null,
+      recentDays:kind==='contracts'?recentDays??null:undefined,
     };
   }
   const fullSql=kind==='contracts' ? `${CONTRACT_LIST_SQL}${clause}` : CUSTOMER_PROFILE_SQL;
-  const sql=kind==='contracts' ? fullSql
-    : `SELECT id,name,phone,id_card,address,status,warning,store_id,store_name,contract_count FROM (${CUSTOMER_PROFILE_SQL}) listing`;
-  const result=await client.query(kind==='contracts' ? overdueSql(contractVehicleDetailsSql(sql)) : sql);
-  const projected=projectManagementTable(mapManagementRows(kind,result.rows),input,all,now);
-  if(kind==='contracts'||!projected.rows.length)return projected;
-  const ids=projected.rows.map(row=>row.id);
-  const details=await client.query(`${fullSql} WHERE c.id=ANY($1::bigint[])`,[ids]);
-  const mapped=new Map(mapManagementRows(kind,details.rows).map(record=>[record.id,record]));
-  projected.rows=projected.rows.flatMap(row=>{const detail=mapped.get(row.id);return detail ? [detail] : [];});
-  return projected;
+  const result=await client.query(kind==='contracts' ? overdueSql(contractVehicleDetailsSql(fullSql)) : fullSql);
+  return projectManagementTable(mapManagementRows(kind,result.rows),input,all,now);
 }

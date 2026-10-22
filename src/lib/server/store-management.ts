@@ -8,9 +8,10 @@ export class StoreSaveError extends Error {
 
 export const STORE_SELECT_SQL = `SELECT s.id, s.code, s.store_name, s.store_phone, s.store_address, s.status,
   s.user_id, s.kind, COALESCE(s.updated_at::text, '') AS store_revision, u.name AS manager_name,
-  (SELECT count(*)::int FROM himoto.vehicles v WHERE v.current_store_id = s.id) AS vehicle_count,
-  (SELECT count(*)::int FROM himoto.staff_profiles p WHERE p.store_id = s.id) AS staff_count
-  FROM himoto.stores s LEFT JOIN himoto.users u ON u.id = s.user_id AND u.deleted_at IS NULL`;
+  COALESCE(vc.n,0)::int AS vehicle_count, COALESCE(pc.n,0)::int AS staff_count
+  FROM himoto.stores s LEFT JOIN himoto.users u ON u.id = s.user_id AND u.deleted_at IS NULL
+  LEFT JOIN (SELECT current_store_id AS store_id, count(*)::int AS n FROM himoto.vehicles GROUP BY current_store_id) vc ON vc.store_id=s.id
+  LEFT JOIN (SELECT store_id, count(*)::int AS n FROM himoto.staff_profiles GROUP BY store_id) pc ON pc.store_id=s.id`;
 
 export function parseStoreEdits(body: unknown): StoreEdits {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new StoreSaveError('Thông tin cơ sở không hợp lệ.');

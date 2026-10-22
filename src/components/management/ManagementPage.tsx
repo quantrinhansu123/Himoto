@@ -98,7 +98,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const fullConfig = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : overdueOnly ? { ...baseConfig, title: 'Hợp đồng quá hạn', description: 'Thời gian trễ của xe chưa trả; phí tạm tính theo giá ngày và 20.000đ/giờ, chốt theo thực tế khi trả xe. Tiền thuê còn thiếu chưa gồm phí tạm tính, không trừ cọc.', columns: [baseConfig.columns[0], ...overdueColumns, ...baseConfig.columns.slice(1)] } : ownershipOnly ? { ...baseConfig, title: 'Hợp đồng thuê sở hữu', description: 'Hợp đồng thuộc cơ sở thuê sở hữu hoặc loại Thuê sở hữu / Thuê sở hữu( cd). Bản nháp và loại sở hữu được ưu tiên lên đầu danh sách.', columns: baseConfig.columns.map(column => column.key === 'contract_type_name' ? { ...column, hidden: false } : column) } : baseConfig;
   const config = compactContracts ? compactContractConfig(fullConfig,columnMode) : fullConfig;
   const { dataset, loading:datasetLoading, refreshing:datasetRefreshing, error:datasetError, resources, source, canSaveContractDrafts, canPayContracts, can, accessUser, selectedStore, selectStore, reload:reloadDataset, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
-  const paged = kind === 'contracts' || kind === 'customers';
+  const paged = true;
   const router = useRouter();
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
   const contractId = kind === 'contracts' ? searchParams.get('contract_id') : null;
@@ -120,7 +120,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => store.kind === 'lease_to_own').map(store => store.id)), [dataset?.stores]);
   const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
   const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
-  const tableInput:ManagementTableInput={kind:kind==='customers'?'customers':'contracts',query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:30}:{})};
+  const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:30}:{})};
   const tableRevision=useMemo(()=>({at:resources[kind].updatedAt}),[kind,resources[kind].updatedAt]);
   const contractsRevision=useMemo(()=>({at:resources.contracts.updatedAt}),[resources.contracts.updatedAt]);
   const table=useManagementTable(tableInput,paged,tableRevision,[...ownershipStoreIds]);

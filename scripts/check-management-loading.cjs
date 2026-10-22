@@ -25,11 +25,10 @@ async function run() {
   const { loadCustomerContracts } = load(path.join(root, 'lib/management/contract-history'));
   for (const route of ['/vehicles', '/customers', '/staff', '/contracts', '/contracts/drafts', '/contracts/vat', '/stores', '/duty-roster', '/cashbook']) {
     const kinds = managementKindsForPath(route);
-    if(route==='/contracts'||route.startsWith('/contracts/drafts')||route.startsWith('/contracts/vat'))assert(!kinds.includes('stores'));
-    else assert(kinds.includes('stores'));
-    assert(!kinds.includes('contracts') || route.startsWith('/contracts'));
-    assert(!kinds.includes('vehicles') || route === '/vehicles');
-    assert(!kinds.includes('customers') || route === '/customers');
+    assert(kinds.includes('stores'));
+    assert(!kinds.includes('contracts'));
+    assert(!kinds.includes('vehicles'));
+    assert(!kinds.includes('customers'));
   }
   checks.push('page dependencies exclude unrelated collections, including cashbook and contract subpages');
   let clock = 1000;

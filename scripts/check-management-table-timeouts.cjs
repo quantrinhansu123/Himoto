@@ -24,8 +24,9 @@ async function main(){
  }};
  const page=await server.readManagementTable(client,'contracts',new URLSearchParams('size=10'));
  assert.equal(page.rows[0].id,123);
- assert.equal(commands.length,1);
- assert(commands.some(sql=>/\bLIMIT \$1\b/.test(sql)&&!sql.includes('himoto.customers')&&!sql.includes('himoto.transactions')));
+ assert.equal(commands.length,2);
+ assert(/\bLIMIT \$1\b/.test(commands[0])&&!commands[0].includes('himoto.customers')&&!commands[0].includes('himoto.transactions'));
+ assert(commands[1].includes('ANY($1'));
  console.log('PASS: request timeout, cancellation, retry, cleanup and transaction recovery preserve readable list rows');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

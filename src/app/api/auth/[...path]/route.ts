@@ -161,14 +161,18 @@ async function GETHandler(request: NextRequest, { params }: Params) {
     if (key==='order/car-rental' && request.nextUrl.searchParams.get('summary')==='sales') {
       return NextResponse.json({status:'success',data:await readSalesSummary(himotoPool,request.nextUrl.searchParams)},{headers:{'Cache-Control':'no-store'}});
     }
-    if (request.nextUrl.searchParams.get('table')==='1' && ['customers','order/car-rental'].includes(key)) {
+    const tableKind=({customers:'customers','order/car-rental':'contracts','vehicle/vehicles':'vehicles','hr/staff':'staff',stores:'stores'} as const)[key];
+    if (request.nextUrl.searchParams.get('table')==='1' && tableKind) {
+      if(request.nextUrl.searchParams.get('all')==='1' && tableKind!=='contracts' && tableKind!=='customers'){
+        return await readAll(listQueries[key]);
+      }
       const client=await himotoPool.connect();
       try {
         await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
         // Bound abandoned/slow list queries so they cannot occupy the pool indefinitely.
         await client.query(request.nextUrl.searchParams.get('all')==='1'
           ? "SET LOCAL statement_timeout='60s'" : "SET LOCAL statement_timeout='20s'");
-        const data=await readManagementTable(client,key==='customers'?'customers':'contracts',request.nextUrl.searchParams);
+        const data=await readManagementTable(client,tableKind,request.nextUrl.searchParams);
         await client.query('COMMIT');
         return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'no-store'}});
       } catch(error) {
