@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from './himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, verifySession } from './management-session';
 import { VehicleSaveError, createDatabaseVehicle, parseVehicleValues, updateDatabaseVehicle } from './vehicle-management';
+import { failureResponse } from './public-failure';
 
 export async function saveVehicle(request: NextRequest, id: number | null) {
   const denied = await protectDatabaseRequest(request);
@@ -21,8 +22,9 @@ export async function saveVehicle(request: NextRequest, id: number | null) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof VehicleSaveError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin xe không hợp lệ.' }, { status: 400 });
-    if (error && typeof error === 'object' && 'code' in error && ['23505', '55P03', '40P01'].includes(String(error.code))) return NextResponse.json({ status: 'error', message: 'Biển số bị trùng hoặc danh sách xe đang được cập nhật. Nhấn Làm mới rồi thử lại.' }, { status: 409 });
-    console.error('Vehicle save failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không lưu được xe. Nhấn Làm mới để kiểm tra trước khi thử lại.' }, { status: 500 });
+    if (error && typeof error === 'object' && 'code' in error && ['23505', '55P03', '40P01'].includes(String(error.code))) {
+      return failureResponse('Biển số bị trùng hoặc danh sách xe đang được cập nhật.', error);
+    }
+    return failureResponse('Không lưu được xe.', error);
   } finally { client?.release(); }
 }

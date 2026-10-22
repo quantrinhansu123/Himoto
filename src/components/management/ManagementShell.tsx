@@ -65,7 +65,8 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     setSigningOut(true); setSignOutError('');
     try {
       const response = await fetch('/api/session', { method: 'DELETE', credentials: 'same-origin' });
-      if (!response.ok) throw new Error('Không đăng xuất được. Vui lòng thử lại.');
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.message || 'Không đăng xuất được. Vui lòng thử lại.');
       window.location.replace('/login');
     } catch (cause) { setSignOutError(cause instanceof Error ? cause.message : 'Không đăng xuất được.'); setSigningOut(false); }
   }

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest, SESSION_COOKIE, verifySession } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { previewVehicleReset, readVehicleRequestBody, resetDatabaseVehicles, VehicleImportError } from '@/lib/server/vehicle-import';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 async function handle(request: NextRequest, remove: boolean) {
@@ -21,8 +22,7 @@ async function handle(request: NextRequest, remove: boolean) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof VehicleImportError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Yêu cầu xóa không hợp lệ.' }, { status: 400 });
-    console.error('Vehicle reset failed:', error instanceof Error ? error.name : 'Database error');
-    return NextResponse.json({ status: 'error', message: 'Không xác nhận được kết quả. Làm mới danh sách xe trước khi thử lại.' }, { status: 500 });
+    return failureResponse('Không xác nhận được kết quả xóa xe.', error);
   } finally { client?.release(); }
 }
 const GETHandler = (request: NextRequest) => handle(request, false);

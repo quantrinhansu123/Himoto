@@ -7,6 +7,7 @@ import { ACCESS_PERMISSIONS, canRecordContractPayment, isAdminAccount } from '@/
 import { himotoPool, ownerDatabase } from './himoto-database';
 import { dataAccess } from './access-context';
 import { retrySessionRead } from './session-read';
+import { failureResponse } from './public-failure';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
@@ -147,7 +148,7 @@ export async function protectDatabaseRequest(request: NextRequest): Promise<Next
     const token = request.cookies.get(SESSION_COOKIE)?.value;
     if (request.method === 'GET' ? await readSessionAllowed(token) : await userFromSession(token)) return null;
     return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
-  } catch {
-    return NextResponse.json({ status: 'error', message: 'Không xác thực được phiên đăng nhập. Vui lòng thử lại.' }, { status: 503 });
+  } catch (error) {
+    return failureResponse('Không xác thực được phiên đăng nhập. Vui lòng thử lại.', error, 503);
   }
 }

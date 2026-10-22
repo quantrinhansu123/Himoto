@@ -1,6 +1,7 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { himotoPool } from '@/lib/server/himoto-database';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime='nodejs';
 export const GET=withAccessRequest(async(_request:NextRequest)=>{
@@ -25,7 +26,7 @@ export const GET=withAccessRequest(async(_request:NextRequest)=>{
       rental_blockers:byVehicle.get(Number(row.id))||[],
     }));
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'private, no-store'}});
-  }catch{
-    return NextResponse.json({status:'error',message:'Không tải được kho xe chung. Bấm Làm mới để thử lại.'},{status:500});
+  }catch(error){
+    return failureResponse('Không tải được kho xe chung.',error);
   }
 });

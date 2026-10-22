@@ -107,7 +107,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
         setOverlapWarning(cause.message);
         setAcknowledgeOverlap(false);
         setError(cause.message);
-      } else setError(cause instanceof Error ? cause.message : 'Không lưu chính thức được hợp đồng.');
+      } else setError(cause instanceof Error && cause.message ? cause.message : 'Không lưu chính thức được hợp đồng. Máy chủ không trả nguyên nhân.');
     }
     finally{busy.current=false;setSaving(false);}
   }

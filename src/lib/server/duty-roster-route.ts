@@ -4,6 +4,7 @@ import { himotoPool } from './himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from './management-session';
 import { deleteDuty, DutyError, listDuties, parseDutyInput, saveDuty } from './duty-roster';
 import { vietnamDate } from '@/lib/management/duty-roster';
+import { failureResponse } from './public-failure';
 
 export async function handleDutyRequest(request:NextRequest,method:'GET'|'POST'|'PATCH'|'DELETE',rawId?:string) {
   const denied=await protectDatabaseRequest(request);if(denied)return denied;
@@ -27,7 +28,6 @@ export async function handleDutyRequest(request:NextRequest,method:'GET'|'POST'|
     if(client)await client.query('ROLLBACK').catch(()=>{});
     if(error instanceof DutyError)return NextResponse.json({status:'error',message:error.message},{status:error.status});
     if(error instanceof SyntaxError)return NextResponse.json({status:'error',message:'Thông tin ca trực không hợp lệ.'},{status:400});
-    console.error('Duty roster request failed:',error instanceof Error?error.name:'Unknown error');
-    return NextResponse.json({status:'error',message:'Chưa xác nhận được lịch trực. Làm mới để kiểm tra trước khi thử lại.'},{status:500});
+    return failureResponse('Chưa xác nhận được lịch trực.',error);
   } finally {client?.release();}
 }

@@ -3,6 +3,7 @@ import { withAccessRequest } from '@/lib/server/access-request';
 import { dataAccess } from '@/lib/server/access-context';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { deleteContractDraft, DraftDeleteError } from '@/lib/server/contract-draft-delete';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
@@ -26,7 +27,8 @@ export const DELETE = withAccessRequest(async (request: NextRequest, { params }:
     return NextResponse.json({ status: 'success', data: { id: Number(id) } }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    return NextResponse.json({ status: 'error', message: error instanceof DraftDeleteError ? error.message : 'Không xóa được bản nháp. Làm mới danh sách để kiểm tra.' },
-      { status: error instanceof DraftDeleteError ? error.status : error instanceof SyntaxError ? 400 : 500 });
+    if (error instanceof DraftDeleteError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin bản nháp không hợp lệ.' }, { status: 400 });
+    return failureResponse('Không xóa được bản nháp. Làm mới danh sách để kiểm tra.', error);
   } finally { client?.release(); }
 });

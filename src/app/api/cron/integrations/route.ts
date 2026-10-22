@@ -5,6 +5,7 @@ import { syncGpsAccounts } from '@/lib/server/gps-sync';
 import { dispatchContractNotifications } from '@/lib/server/contract-notifications';
 import { TELEGRAM_DISPATCH_BUDGET_MS } from '@/lib/server/telegram-delivery';
 import { syncGpsEventHistory } from '@/lib/server/gps-history-sync';
+import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
 export const maxDuration=300;
 export async function POST(request:NextRequest) {
@@ -18,5 +19,5 @@ export async function POST(request:NextRequest) {
       if(results[0].status==='rejected')console.error('Telegram background dispatch failed.');
       if(results[1].status==='rejected')console.error('GPS history sync failed.');});
     return NextResponse.json({status:'success',gps,telegram:{queued:true}},{headers:{'Cache-Control':'no-store'}});}
-  catch{return NextResponse.json({status:'error',message:'Đồng bộ chưa hoàn tất.'},{status:503});}
+  catch(error){return failureResponse('Đồng bộ chưa hoàn tất.',error,503);}
 }

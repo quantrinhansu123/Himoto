@@ -5,6 +5,7 @@ import { protectDatabaseRequest,SESSION_COOKIE,userFromSession } from '@/lib/ser
 import { readPhotoBody } from '@/lib/server/photo-body';
 import { RecordPhotoError } from '@/lib/server/record-photos';
 import { extractPhoto,limitPhotoOcr,PhotoOcrError } from '@/lib/server/photo-ocr';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime='nodejs';
 export const maxDuration=45;
@@ -24,8 +25,8 @@ async function POSTHandler(request:NextRequest,{params}:{params:Promise<{id:stri
     const data=await extractPhoto('refund_qr',photo.mimeType,photo.data,request.signal);
     return NextResponse.json({status:'success',data},{headers});
   }catch(error){
-    const known=error instanceof PhotoOcrError||error instanceof RecordPhotoError;
-    return NextResponse.json({status:'error',message:known?error.message:'Không đọc được ảnh nhận hoàn. Thử lại hoặc nhập tay.'},{status:known?error.status:500,headers});
+    if(error instanceof PhotoOcrError||error instanceof RecordPhotoError)return NextResponse.json({status:'error',message:error.message},{status:error.status,headers});
+    return failureResponse('Không đọc được ảnh nhận hoàn. Thử lại hoặc nhập tay.',error);
   }
 }
 export const POST=withAccessRequest(POSTHandler);

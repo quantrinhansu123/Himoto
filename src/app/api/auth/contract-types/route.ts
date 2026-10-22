@@ -4,6 +4,7 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { canRecordContractPayment } from '@/lib/management/permissions';
 import { ContractTypeError, listContractTypes, saveContractType } from '@/lib/server/contract-types';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 async function handle(request: NextRequest) {
@@ -19,8 +20,9 @@ async function handle(request: NextRequest) {
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'no-store'}});
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(()=>{});
-    const duplicate = error && typeof error === 'object' && 'code' in error && error.code === '23505';
-    return NextResponse.json({status:'error',message:duplicate ? 'Tên loại hợp đồng đã có. Dùng lại hoặc đổi tên khác.' : error instanceof ContractTypeError ? error.message : 'Không tải hoặc lưu được loại hợp đồng.'},{status:duplicate ? 409 : error instanceof ContractTypeError ? error.status : error instanceof SyntaxError ? 400 : 500});
+    if (error instanceof ContractTypeError) return NextResponse.json({status:'error',message:error.message},{status:error.status});
+    if (error instanceof SyntaxError) return NextResponse.json({status:'error',message:'Thông tin loại hợp đồng không hợp lệ.'},{status:400});
+    return failureResponse(request.method === 'GET' ? 'Không tải được loại hợp đồng.' : 'Không lưu được loại hợp đồng.', error);
   } finally { client?.release(); }
 }
 const GETHandler = handle;

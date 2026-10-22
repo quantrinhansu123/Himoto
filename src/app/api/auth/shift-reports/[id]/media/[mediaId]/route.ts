@@ -8,6 +8,7 @@ import { RecordPhotoError,validatePhotoBytes } from '@/lib/server/record-photos'
 import { verifyPhotoReceipt,shiftCloudAsset,readCloudinaryPhoto,cleanupConvertedVideo } from '@/lib/server/cloudinary-photos';
 import { objectVideoUrl } from '@/lib/server/cloudfly-videos';
 import { ShiftRequestError,shiftRequestId,shiftRequestHash,readShiftReceipt,writeShiftReceipt } from '@/lib/server/shift-report-requests';
+import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
 export const maxDuration=300;
 type Context={params:Promise<{id:string;mediaId:string}>};
@@ -65,7 +66,7 @@ async function handle(request:NextRequest,context:Context){
     }
     const updated=(await client.query('UPDATE himoto.management_shift_reports SET revision=revision+1,updated_at=now() WHERE id=$1 RETURNING revision',[id])).rows[0];
     await writeShiftReceipt(client,key,actor.id,Number(report.store_id),hash,updated);await client.query('COMMIT');client.release();client=undefined;if(cloud)await cleanupConvertedVideo(cloud);return NextResponse.json({data:updated});
-  }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});const known=error instanceof RecordPhotoError||error instanceof ShiftRequestError;return NextResponse.json({message:known?error.message:'Không xử lý được minh chứng. Giữ tệp và thử lại.'},{status:known?error.status:500});}finally{client?.release();}
+  }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});const known=error instanceof RecordPhotoError||error instanceof ShiftRequestError;return known?NextResponse.json({message:error.message},{status:error.status}):failureResponse('Không xử lý được minh chứng. Giữ tệp và thử lại.',error);}finally{client?.release();}
 }
 export const GET=withAccessRequest(handle);
 export const PUT=withAccessRequest(handle);

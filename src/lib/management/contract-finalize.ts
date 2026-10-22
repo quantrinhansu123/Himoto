@@ -55,7 +55,7 @@ export async function finalizeContract(orderId: number, input: FinalizeInput): P
   const result = await response.json().catch(() => null);
   if (!response.ok || result?.status !== 'success' || typeof result?.data?.code !== 'string') {
     if (result?.code === 'reservation_overlap') throw new FinalizeOverlapError(result?.message || 'Xe đã có cọc giữ chồng lịch.');
-    throw new Error(result?.message || `Không lưu chính thức được hợp đồng (HTTP ${response.status}).`);
+    throw new Error(result?.message || `Không lưu chính thức được hợp đồng (HTTP ${response.status}). Máy chủ không trả nguyên nhân.`);
   }
   return result.data as FinalizeResult;
 }

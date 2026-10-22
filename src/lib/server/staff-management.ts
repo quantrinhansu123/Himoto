@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { normalizeStaffPosition } from '@/lib/management/staff-positions';
+import { failureResponse } from './public-failure';
 
 const json = (status: number, message: string) => NextResponse.json({ status: 'error', message }, { status });
 const STATUSES = ['active', 'inactive', 'leave'];
@@ -45,9 +46,8 @@ export async function createStaff(request: Request) {
       [name, phone, email, position, storeId, status, joinedAt]);
     return NextResponse.json({ status: 'success', data: result.rows[0] }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') return json(409, 'Mã nhân sự vừa sinh đã tồn tại. Vui lòng thử lại.');
-    console.error('Supabase staff insert failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return json(500, 'Không tạo được nhân sự.');
+    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') return failureResponse('Mã nhân sự vừa sinh đã tồn tại.', error);
+    return failureResponse('Không tạo được nhân sự.', error);
   }
 }
 
@@ -62,7 +62,6 @@ export async function updateStaff(id: number, request: Request) {
     if (!result.rowCount) return json(404, 'Không tìm thấy nhân sự cần cập nhật.');
     return NextResponse.json({ status: 'success', data: null }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('Supabase staff update failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return json(500, 'Không lưu được thay đổi nhân sự.');
+    return failureResponse('Không lưu được thay đổi nhân sự.', error);
   }
 }

@@ -6,6 +6,7 @@ import { validatePhotoBytes } from '@/lib/server/record-photos';
 import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
 import { ShiftRequestError, shiftRequestId, shiftRequestHash, readShiftReceipt, writeShiftReceipt } from '@/lib/server/shift-report-requests';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 type Context = { params: Promise<{ id: string; slot: string }> };
@@ -54,7 +55,8 @@ async function handle(request: NextRequest, context: Context) {
   } catch (e) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (e instanceof ShiftRequestError) return NextResponse.json({ message: e.message }, { status: e.status });
-    return NextResponse.json({ message: (e as { code?: string }).code ? 'Chưa xử lý được ảnh. Vui lòng thử lại.' : e instanceof Error ? e.message : 'Ảnh không hợp lệ.' }, { status: (e as { code?: string }).code ? 500 : 400 });
+    if ((e as { code?: string }).code) return failureResponse('Chưa xử lý được ảnh. Vui lòng thử lại.', e);
+    return NextResponse.json({ message: e instanceof Error && e.message ? e.message : 'Ảnh không hợp lệ.' }, { status: 400 });
   } finally { client?.release(); }
 }
 export const GET = withAccessRequest(handle);

@@ -4,6 +4,7 @@ import { dataAccess } from '@/lib/server/access-context';
 import { ownerDatabase } from '@/lib/server/himoto-database';
 import { readVehicleTransferTelegram,saveVehicleTransferTelegram,VehicleTransferTelegramError } from '@/lib/server/vehicle-transfer-telegram';
 import { dispatchContractNotifications } from '@/lib/server/contract-notifications';
+import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
 export const maxDuration=300;
 type Params={params:Promise<{id:string;eventId:string}>};
@@ -20,7 +21,7 @@ async function handle(request:NextRequest,{params}:Params,writing:boolean){
     await client.query('COMMIT');
     if(writing||['pending','sending'].includes(state.status||''))after(async()=>{await dispatchContractNotifications(undefined,2,undefined,undefined,[Number(eventId)]);});
     return NextResponse.json({status:'success',data:state},{headers:{'Cache-Control':'private, no-store'}});
-  }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});return NextResponse.json({status:'error',message:error instanceof VehicleTransferTelegramError?error.message:'Không xử lý được Telegram của lượt chuyển xe.'},{status:error instanceof VehicleTransferTelegramError?error.status:500});}
+  }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});return error instanceof VehicleTransferTelegramError?NextResponse.json({status:'error',message:error.message},{status:error.status}):failureResponse('Không xử lý được Telegram của lượt chuyển xe.',error);}
   finally{client?.release();}
 }
 export const GET=withAccessRequest((request:NextRequest,params:Params)=>handle(request,params,false));

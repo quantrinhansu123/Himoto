@@ -6,6 +6,7 @@ import { ContractRenewalError, parseRenewalInput } from '@/lib/server/contract-r
 import { renewContractAndCollect } from '@/lib/server/contract-renewal-collection';
 import { ContractPaymentError } from '@/lib/server/contract-payments';
 import { queueContractNotification } from '@/lib/server/contract-notifications';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
@@ -33,8 +34,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof ContractRenewalError || error instanceof ContractPaymentError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin gia hạn không hợp lệ.' }, { status: 400 });
-    console.error('Contract renewal failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không lưu được gia hạn hợp đồng.' }, { status: 500 });
+    return failureResponse('Không lưu được gia hạn hợp đồng.', error);
   } finally { client?.release(); }
 }
 

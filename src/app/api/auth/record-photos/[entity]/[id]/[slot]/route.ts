@@ -6,6 +6,7 @@ import { RecordPhotoError, parsePhotoTarget, requirePhotoRecord,requireContractP
 import { MAX_PHOTO_BYTES } from '@/lib/management/record-photos';
 import { verifyPhotoReceipt, writeCloudinaryPhoto, readCloudinaryPhoto, cleanupConvertedVideo, type CloudPhotoReceipt } from '@/lib/server/cloudinary-photos';
 import { objectVideoUrl } from '@/lib/server/cloudfly-videos';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -65,7 +66,8 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
     return response;
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    return NextResponse.json({ status: 'error', message: error instanceof RecordPhotoError ? error.message : writing ? 'Không lưu được ảnh. Giữ form và thử lưu lại.' : 'Không tải được ảnh.' }, { status: error instanceof RecordPhotoError ? error.status : 500 });
+    if (error instanceof RecordPhotoError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    return failureResponse(writing ? 'Không lưu được ảnh. Giữ form và thử lưu lại.' : 'Không tải được ảnh.', error);
   } finally { client?.release(); }
 }
 const GETHandler = (request: NextRequest, params: Params) => handle(request, params, false);
@@ -86,7 +88,8 @@ async function DELETEHandler(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'success' }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
-    return NextResponse.json({ status: 'error', message: error instanceof RecordPhotoError ? error.message : 'Không xóa được ảnh.' }, { status: error instanceof RecordPhotoError ? error.status : 500 });
+    if (error instanceof RecordPhotoError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    return failureResponse('Không xóa được ảnh.', error);
   } finally { client?.release(); }
 }
 

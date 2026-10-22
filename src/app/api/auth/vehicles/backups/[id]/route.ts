@@ -2,6 +2,7 @@ import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 async function GETHandler(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -12,8 +13,8 @@ async function GETHandler(request: NextRequest, context: { params: Promise<{ id:
     const result = await himotoPool.query('SELECT id,created_at,created_by,action,row_count,sha256,payload FROM himoto.vehicle_import_backups WHERE id=$1::uuid', [id]);
     if (!result.rowCount) return NextResponse.json({ status: 'error', message: 'Không tìm thấy bản sao lưu.' }, { status: 404 });
     return NextResponse.json(result.rows[0], { headers: { 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename="HIMOTO-xe-backup-${id}.json"` } });
-  } catch {
-    return NextResponse.json({ status: 'error', message: 'Không đọc được bản sao lưu.' }, { status: 500 });
+  } catch (error) {
+    return failureResponse('Không đọc được bản sao lưu.', error);
   }
 }
 

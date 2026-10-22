@@ -4,9 +4,10 @@ import { dataAccess } from '@/lib/server/access-context';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { canSendDebtReminder } from '@/lib/management/permissions';
 import { DebtReminderError,listDebtReminders,sendDebtReminder } from '@/lib/server/debt-reminders';
+import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
 export const maxDuration=30;
-const failure=(error:unknown)=>NextResponse.json({status:'error',message:error instanceof DebtReminderError?error.message:'Không xử lý được yêu cầu. Kiểm tra lịch sử nhắc nợ trước khi gửi lại.'},{status:error instanceof DebtReminderError?error.status:500});
+const failure=(error:unknown)=>error instanceof DebtReminderError?NextResponse.json({status:'error',message:error.message},{status:error.status}):failureResponse('Không xử lý được yêu cầu nhắc nợ.',error);
 export const GET=withAccessRequest(async(request:NextRequest)=>{
   try{const page=request.nextUrl.searchParams.get('page')||'1';if(!/^[1-9]\d*$/.test(page))throw new DebtReminderError('Trang không hợp lệ.');
     return NextResponse.json({status:'success',data:await listDebtReminders(himotoPool,request.nextUrl.searchParams.get('store')||'all',Number(page))},{headers:{'Cache-Control':'no-store'}});

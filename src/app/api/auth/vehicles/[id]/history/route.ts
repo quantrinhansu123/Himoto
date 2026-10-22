@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { readVehicleHistory, VehicleHistoryError } from '@/lib/server/vehicle-history';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
@@ -17,8 +18,7 @@ async function GETHandler(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (error instanceof VehicleHistoryError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
-    console.error('Vehicle history failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không tải được lịch sử xe.' }, { status: 500 });
+    return failureResponse('Không tải được lịch sử xe.', error);
   }
 }
 

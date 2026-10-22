@@ -191,10 +191,17 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   useEffect(()=>{
     const action = searchParams.get('action');
     if (!action) {handledAction.current='';return;}
-    if (loading || error || !dataset || handledAction.current === action) return;
+    if (handledAction.current === action) return;
+    // Return lookup is independent of the contracts table; do not wait for a slow/failed list.
+    if (kind === 'contracts' && action === 'return') {
+      handledAction.current = action;
+      setReturnTarget({orderId:null,code:'',query:searchParams.get('query')||''});
+      router.replace(contractPath,{scroll:false});
+      return;
+    }
+    if (loading || error || !dataset) return;
     handledAction.current = action;
     if (kind === 'contracts' && action === 'new') {setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}
-    else if (kind === 'contracts' && action === 'return') setReturnTarget({orderId:null,code:'',query:searchParams.get('query')||''});
     else if (kind === 'contracts' && action === 'renew') setRenewPicker(true);
     else if (kind === 'vehicles' && action === 'status') setVehicleAction({mode:'status',vehicle:null});
     router.replace(contractPath === '/contracts' && kind !== 'contracts' ? '/vehicles' : contractPath,{scroll:false});

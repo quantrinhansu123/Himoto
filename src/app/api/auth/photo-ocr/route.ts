@@ -4,6 +4,7 @@ import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/s
 import { readPhotoBody,readPhotoBatchBody } from '@/lib/server/photo-body';
 import { RecordPhotoError } from '@/lib/server/record-photos';
 import { PhotoOcrError, ocrKind, limitPhotoOcr, extractPhoto } from '@/lib/server/photo-ocr';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 export const maxDuration = 45;
@@ -23,7 +24,8 @@ async function POSTHandler(request: NextRequest) {
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     const known = error instanceof PhotoOcrError || error instanceof RecordPhotoError;
-    return NextResponse.json({ status: 'error', message: known ? error.message : 'Không đọc được ảnh. Thử lại hoặc nhập tay.' }, { status: known ? error.status : 500, headers: { 'Cache-Control': 'private, no-store' } });
+    if (known) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status, headers: { 'Cache-Control': 'private, no-store' } });
+    return failureResponse('Không đọc được ảnh. Thử lại hoặc nhập tay.', error);
   }
 }
 

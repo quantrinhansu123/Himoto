@@ -28,7 +28,12 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const qrSlots=useMemo(()=>itemKey?itemKey.split(',').flatMap(id=>returnRefundEvidenceSlots(Number(id))):[],[itemKey]);
   useEffect(()=>{
     const controller=new AbortController();setContext(undefined);setError('');setRows({});setRefundDeferred(false);setRecipient({recipient_bank:'',recipient_account:'',recipient_name:''});
-    void loadPaymentContext(orderId,controller.signal).then(value=>{if(!controller.signal.aborted)setContext(value);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được tài khoản thu / hoàn.');});
+    void loadPaymentContext(orderId,controller.signal).then(value=>{
+      if(controller.signal.aborted)return;
+      setContext(value);
+      // Keep deposit on the contract so staff can confirm the return without a second click.
+      if(value.deposit_held>0)setRefundDeferred(true);
+    }).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được tài khoản thu / hoàn.');});
     return()=>controller.abort();
   },[orderId,retry]);
   useEffect(()=>{
@@ -91,14 +96,14 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
     {(['late_fee','repair_fee','rental_debt','refund'] as const).filter(kind=>limits[kind]>0).map(kind=>{
       const row=rows[kind],method=row?.method||'transfer',accounts=paymentAccounts(context,method),blocked=kind==='refund'&&!refundAllowed;
       return <fieldset key={kind} disabled={disabled}><legend>{kind==='refund'?'Cọc còn giữ':kind==='late_fee'?'Phí quá hạn':kind==='repair_fee'?'Phí sửa chữa':'Công nợ tiền thuê'}: {formatMoney(limits[kind])}</legend>
+        {kind==='refund'&&<label className="mg-checkbox"><input type="radio" name={`return-${orderId}-refund-decision`} checked={refundDeferred} onChange={()=>{setRefundDeferred(true);update('refund',{enabled:false});}}/>Chưa hoàn cọc — trả xe ngay, giữ cọc {formatMoney(context.deposit_held)}</label>}
         <label className="mg-checkbox"><input type={kind==='refund'?'radio':'checkbox'} name={kind==='refund'?`return-${orderId}-refund-decision`:undefined} disabled={blocked} title={kind==='refund'?refundBlockReason||undefined:undefined} checked={Boolean(row?.enabled)&&!blocked} onChange={event=>{if(kind==='refund')setRefundDeferred(false);update(kind,{enabled:event.target.checked});}}/>{labels[kind]}</label>
         {kind==='refund'&&<>
           {refundBlockReason&&<p className="mg-field-error" role="status">{refundBlockReason}</p>}
-          <label className="mg-checkbox"><input type="radio" name={`return-${orderId}-refund-decision`} checked={refundDeferred} onChange={()=>{setRefundDeferred(true);update('refund',{enabled:false});}}/>Chưa hoàn cọc — tiếp tục ghi nhận cọc đang giữ</label>
           {refundDecisionMissing&&<p role="status">{refundBlockReason
             ? 'Chọn «Chưa hoàn cọc» để trả xe và giữ cọc, hoặc ghi nhận thu công nợ/phí phía trên rồi tick đã hoàn.'
             : 'Chọn đã hoàn hoặc chưa hoàn cọc trước khi xác nhận. Nhập STK hay lưu ảnh QR chưa tạo phiếu chi hoàn cọc.'}</p>}
-          {refundDeferred&&<p role="status">Gửi QR hoặc STK bên dưới lên Telegram để kế toán hoàn cọc sau. Lượt này lưu thông tin nhận hoàn và giữ cọc đang chờ hoàn; khi đã chuyển tiền mới ghi phiếu chi.</p>}
+          {refundDeferred&&<p role="status">Mặc định giữ cọc để xác nhận trả xe. Gửi QR hoặc STK bên dưới lên Telegram nếu kế toán hoàn sau; khi đã chuyển tiền mới ghi phiếu chi.</p>}
         </>}
         {(row?.enabled&&!blocked||kind==='refund'&&refundDeferred)&&<div className="mg-form-grid mg-contract-grid-two">
           {row?.enabled&&!blocked&&<>

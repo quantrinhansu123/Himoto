@@ -160,7 +160,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
       showProblem('Ảnh/video vừa chọn chưa lưu. Bấm «Lưu ảnh / video» rồi xác nhận trả xe.','.mg-saved-photos-commit');return;
     }
     if(settlementBlocked){
-      showProblem('Hoàn tất mục Thu phí và hoàn cọc: chọn đã hoàn hoặc chưa hoàn cọc, và kiểm tra thông tin được báo lỗi.','.mg-return-settlement[aria-busy="true"], .mg-return-settlement[data-blocked="true"]');return;
+      showProblem('Chọn «Chưa hoàn cọc» (giữ cọc) hoặc «Đã hoàn cọc» trong mục Thu phí và hoàn cọc, rồi xác nhận.','.mg-return-settlement[aria-busy="true"], .mg-return-settlement[data-blocked="true"]');return;
     }
     if(invalid){
       showProblem('Nhập phí quá hạn thực tế; có thể nhập 0đ khi không thu.','.mg-return-line-adjust input');return;
@@ -267,7 +267,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}<button type="button" className="mg-button" disabled={saving} onClick={close}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="button" onClick={event => { const invalidField=event.currentTarget.form?.querySelector<HTMLInputElement>('input:invalid,select:invalid');if(invalidField){for(let parent=invalidField.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;invalidField.reportValidity();return;}void submit(); }} className="mg-button mg-button-primary" disabled={loading || saving || !lines.length}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}{settlementBlocked&&!photosPending&&<span role="status">Đang tải / cần chọn hoàn cọc trước khi xác nhận.</span>}<button type="button" className="mg-button" disabled={saving} onClick={close}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="button" onClick={event => { const invalidField=event.currentTarget.form?.querySelector<HTMLInputElement>('input:invalid,select:invalid');if(invalidField){for(let parent=invalidField.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;invalidField.reportValidity();return;}void submit(); }} className="mg-button mg-button-primary" disabled={loading || saving || !lines.length || settlementBlocked || photosPending}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
     </form>
   </Dialog>;
 }

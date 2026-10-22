@@ -82,7 +82,7 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   useEffect(() => { void ensureData(requiredKinds).catch(() => {}); }, [ensureData, requiredKinds, pathname]);
   useEffect(() => {
     if (!notification) return;
-    const timer = setTimeout(() => notify(''), 5000);
+    const timer = setTimeout(() => notify(''), Math.min(20_000, Math.max(5_000, 4_000 + notification.length * 40)));
     return () => clearTimeout(timer);
   }, [notification]);
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { CUSTOMER_IMPORT_BODY_LIMIT, CustomerImportError, customerImportRequest, importDatabaseCustomers } from '@/lib/server/customer-import';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 
@@ -39,9 +40,10 @@ async function POSTHandler(request: NextRequest) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof CustomerImportError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Dữ liệu nhập không hợp lệ.' }, { status: 400 });
-    if (error && typeof error === 'object' && 'code' in error && (error.code === '23505' || error.code === '23503')) return NextResponse.json({ status: 'error', message: 'Khách hàng hoặc cơ sở đã thay đổi. Kiểm tra lại file trước khi nhập.' }, { status: 409 });
-    console.error('Customer Excel import failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không xác nhận được kết quả nhập. Kiểm tra lại file với hệ thống trước khi thử nhập lại.' }, { status: 500 });
+    if (error && typeof error === 'object' && 'code' in error && (error.code === '23505' || error.code === '23503')) {
+      return failureResponse('Khách hàng hoặc cơ sở đã thay đổi. Kiểm tra lại file trước khi nhập.', error);
+    }
+    return failureResponse('Không xác nhận được kết quả nhập.', error);
   } finally { client?.release(); }
 }
 

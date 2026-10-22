@@ -6,6 +6,7 @@ import { hasPermission } from '@/lib/management/permissions';
 import { parseAuditInput,validateAuditConfirmation } from '@/lib/management/shift-audits';
 import { readShiftSnapshot } from '@/lib/server/shift-audits';
 import { ShiftRequestError,shiftRequestId,shiftRequestHash,readShiftReceipt,writeShiftReceipt } from '@/lib/server/shift-report-requests';
+import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
 type Context={params:Promise<{id:string}>};
 export const GET=withAccessRequest(async(_request:NextRequest,context:Context)=>{
@@ -18,7 +19,7 @@ export const GET=withAccessRequest(async(_request:NextRequest,context:Context)=>
     if(!report||report.status!=='submitted'){await client.query('ROLLBACK');return NextResponse.json({message:'PGD cần chốt kiểm kê trước khi đối soát.'},{status:409});}
     const snapshot=await readShiftSnapshot(client,report);await client.query('COMMIT');
     return NextResponse.json({data:snapshot},{headers:{'Cache-Control':'private, no-store'}});
-  }catch{await client.query('ROLLBACK').catch(()=>{});return NextResponse.json({message:'Không lấy được số liệu đối soát từ app. Thử lại sau.'},{status:500});}finally{client.release();}
+  }catch(error){await client.query('ROLLBACK').catch(()=>{});return failureResponse('Không lấy được số liệu đối soát từ app.',error);}finally{client.release();}
 });
 export const POST=withAccessRequest(async(request:NextRequest,context:Context)=>{
   const actor=dataAccess.getStore()!;
@@ -51,5 +52,5 @@ export const POST=withAccessRequest(async(request:NextRequest,context:Context)=>
       reviewer_name:reviewerName,updated_at:saved.updated_at,confirmed_at:saved.confirmed_at}};
     await writeShiftReceipt(client,key,actor.id,Number(report.store_id),hash,data);
     await client.query('COMMIT');return NextResponse.json({data});
-  }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});return NextResponse.json({message:error instanceof ShiftRequestError||!(error as {code?:string}).code?(error as Error).message:'Không lưu được đối soát. Giữ form và thử lại.'},{status:error instanceof ShiftRequestError?error.status:(error as {code?:string}).code?500:400});}finally{client?.release();}
+  }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});return error instanceof ShiftRequestError?NextResponse.json({message:error.message},{status:error.status}):failureResponse('Không lưu được đối soát. Giữ form và thử lại.',error);}finally{client?.release();}
 });

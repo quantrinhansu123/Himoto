@@ -85,7 +85,10 @@ function likeNeedle(search:string) {
 }
 function contractSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
-  return {sql:` AND (o.contract_number ILIKE $3 OR o.draft_reference ILIKE $3 OR o.customer_name ILIKE $3 OR COALESCE(o.customer_phone,'') ILIKE $3)`,
+  return {sql:` AND (o.contract_number ILIKE $3 OR o.draft_reference ILIKE $3 OR o.customer_name ILIKE $3 OR COALESCE(o.customer_phone,'') ILIKE $3
+    OR EXISTS (SELECT 1 FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
+      WHERE d.order_id=o.id AND d.deleted_at IS NULL AND (v.license ILIKE $3
+        OR regexp_replace(upper(COALESCE(v.license,'')),'[^A-Z0-9]','','g') LIKE '%'||regexp_replace(upper($3),'[^A-Z0-9]','','g')||'%')))`,
     value:likeNeedle(search)};
 }
 function contractFilterSql(filters:Record<string,string>) {

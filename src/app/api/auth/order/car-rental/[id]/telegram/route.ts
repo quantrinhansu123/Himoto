@@ -5,6 +5,7 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { ContractTelegramError, readContractTelegram, saveContractTelegram } from '@/lib/server/contract-telegram';
 import { dispatchContractNotifications } from '@/lib/server/contract-notifications';
 import { dispatchTelegramRetractions,TelegramRetractionError } from '@/lib/server/telegram-retractions';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime='nodejs';
 export const maxDuration=300;
@@ -30,7 +31,9 @@ async function handle(request:NextRequest,{params}:Params,writing:boolean) {
   }catch(error) {
     if(client)await client.query('ROLLBACK').catch(()=>{});
     const known=error instanceof ContractTelegramError||error instanceof TelegramRetractionError;
-    return NextResponse.json({status:'error',message:known?error.message:'Không xử lý được Telegram của hợp đồng.'},{status:known?error.status:error instanceof SyntaxError?400:500});
+    if(known)return NextResponse.json({status:'error',message:error.message},{status:error.status});
+    if(error instanceof SyntaxError)return NextResponse.json({status:'error',message:'Thông tin Telegram không hợp lệ.'},{status:400});
+    return failureResponse('Không xử lý được Telegram của hợp đồng.',error);
   }finally{client?.release();}
 }
 export const GET=withAccessRequest((request:NextRequest,params:Params)=>handle(request,params,false));

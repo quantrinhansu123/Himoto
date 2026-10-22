@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { protectDatabaseRequest, SESSION_COOKIE, verifySession } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { importDatabaseVehicles, readVehicleRequestBody, vehicleImportRequest, VehicleImportError } from '@/lib/server/vehicle-import';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 async function POSTHandler(request: NextRequest) {
@@ -21,9 +22,10 @@ async function POSTHandler(request: NextRequest) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof VehicleImportError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Dữ liệu nhập không hợp lệ.' }, { status: 400 });
-    if (error && typeof error === 'object' && 'code' in error && ['23505', '23503', '55P03', '40P01'].includes(String(error.code))) return NextResponse.json({ status: 'error', message: 'Dữ liệu đang thay đổi hoặc có xung đột. Đã hủy lần nhập; kiểm tra lại.' }, { status: 409 });
-    console.error('Vehicle import failed:', error instanceof Error ? error.name : 'Database error');
-    return NextResponse.json({ status: 'error', message: 'Chưa xác nhận được kết quả nhập. Làm mới và kiểm tra dữ liệu trước khi thử lại.' }, { status: 500 });
+    if (error && typeof error === 'object' && 'code' in error && ['23505', '23503', '55P03', '40P01'].includes(String(error.code))) {
+      return failureResponse('Dữ liệu đang thay đổi hoặc có xung đột. Đã hủy lần nhập.', error);
+    }
+    return failureResponse('Chưa xác nhận được kết quả nhập.', error);
   } finally { client?.release(); }
 }
 

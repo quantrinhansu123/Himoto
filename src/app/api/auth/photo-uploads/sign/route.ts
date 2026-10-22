@@ -5,6 +5,7 @@ import { RecordPhotoError } from '@/lib/server/record-photos';
 import { signPhotoUpload } from '@/lib/server/cloudinary-photos';
 import { hasPermission } from '@/lib/management/permissions';
 import { cloudflyVideosEnabled, probeCloudflyVideoStorage } from '@/lib/server/cloudfly-videos';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 export const maxDuration = 90;
@@ -30,7 +31,8 @@ async function POSTHandler(request: NextRequest) {
     const data = {...signed,...(provider?{video_storage_provider:provider}:{}),...(storageCheck?{storage_check:storageCheck}:{})};
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
-    return NextResponse.json({ status: 'error', message: error instanceof RecordPhotoError ? error.message : 'Không khởi tạo được tải ảnh Cloudinary.' }, { status: error instanceof RecordPhotoError ? error.status : 500, headers: { 'Cache-Control': 'private, no-store' } });
+    if (error instanceof RecordPhotoError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status, headers: { 'Cache-Control': 'private, no-store' } });
+    return failureResponse('Không khởi tạo được tải ảnh Cloudinary.', error);
   }
 }
 

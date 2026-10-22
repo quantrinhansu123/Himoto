@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from './himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from './management-session';
 import { BatteryContractError, deleteBatteryContract, listBatteryContracts, saveBatteryContract } from './battery-contracts';
+import { failureResponse } from './public-failure';
 
 export async function handleBatteryContractRequest(request: NextRequest, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', rawId?: string) {
   const denied = await protectDatabaseRequest(request); if (denied) return denied;
@@ -27,8 +28,9 @@ export async function handleBatteryContractRequest(request: NextRequest, method:
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof BatteryContractError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin hợp đồng thuê pin không hợp lệ.' }, { status: 400 });
-    if (error && typeof error === 'object' && 'code' in error && ['23503', '23505', '55P03', '40P01'].includes(String(error.code))) return NextResponse.json({ status: 'error', message: 'Dữ liệu đang thay đổi. Tải lại trang rồi thử lại.' }, { status: 409 });
-    console.error('Battery contract request failed:', error instanceof Error ? error.name : 'Unknown error');
-    return NextResponse.json({ status: 'error', message: 'Chưa xác nhận được hợp đồng thuê pin. Tải lại trang để kiểm tra trước khi thử lại.' }, { status: 500 });
+    if (error && typeof error === 'object' && 'code' in error && ['23503', '23505', '55P03', '40P01'].includes(String(error.code))) {
+      return failureResponse('Dữ liệu đang thay đổi. Tải lại trang rồi thử lại.', error);
+    }
+    return failureResponse('Chưa xác nhận được hợp đồng thuê pin.', error);
   } finally { client?.release(); }
 }

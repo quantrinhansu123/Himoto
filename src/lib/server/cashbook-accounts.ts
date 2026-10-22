@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
+import { failureResponse } from './public-failure';
 
 const json = (status: number, message: string) => NextResponse.json({ status: 'error', message }, { status });
 
@@ -57,8 +58,7 @@ export async function createAccount(kind: 'bank' | 'cash', request: Request) {
         [values.storeId, values.bankName, values.accountNumber, values.ownerName, values.opening, values.status, values.ownerType]);
     return NextResponse.json({ status: 'success', data: { id: result.rows[0].id } }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('Supabase account insert failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return json(500, 'Không tạo được tài khoản.');
+    return failureResponse('Không tạo được tài khoản.', error);
   }
 }
 
@@ -78,8 +78,7 @@ export async function updateAccount(kind: 'bank' | 'cash', id: number, request: 
     }
     return NextResponse.json({ status: 'success', data: null }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('Supabase account update failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return json(500, 'Không lưu được thay đổi tài khoản.');
+    return failureResponse('Không lưu được thay đổi tài khoản.', error);
   }
 }
 
@@ -101,8 +100,7 @@ export async function deleteAccount(kind: 'bank' | 'cash', id: number) {
     return NextResponse.json({ status: 'success', data: null });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Supabase account delete failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return json(500, 'Không xóa được tài khoản.');
+    return failureResponse('Không xóa được tài khoản.', error);
   } finally { client.release(); }
 }
 
@@ -114,7 +112,7 @@ export async function setAccountStatus(kind:'bank'|'cash',id:number,request:Requ
   const table=kind==='cash'?'cash':'banks';
   try{const result=await himotoPool.query(`UPDATE himoto.${table} SET status=$2,updated_at=now() WHERE id=$1 RETURNING id`,[id,body.status==='active'?'Active':'Inactive']);
     return result.rowCount?NextResponse.json({status:'success',data:null}):json(404,'Không tìm thấy tài khoản.');
-  }catch{return json(500,'Không đổi được trạng thái tài khoản.');}
+  }catch(error){return failureResponse('Không đổi được trạng thái tài khoản.',error);}
 }
 
 const dateParam = (value: string | null) => value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
@@ -136,7 +134,6 @@ export async function listAccountTransactions(kind: 'bank' | 'cash', id: number,
        ORDER BY t.created_at DESC, t.id DESC LIMIT 2000`, [id, from, to]);
     return NextResponse.json({ status: 'success', data: result.rows }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('Supabase account transactions failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return json(500, 'Không tải được danh sách thu chi của tài khoản.');
+    return failureResponse('Không tải được danh sách thu chi của tài khoản.', error);
   }
 }

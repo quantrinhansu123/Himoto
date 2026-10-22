@@ -4,6 +4,7 @@ import { queueContractNotification } from '@/lib/server/contract-notifications';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { ContractFinalizeError, finalizeContractDraft, parseFinalizeInput } from '@/lib/server/contract-finalize';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 export const maxDuration=300;
@@ -38,15 +39,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof ContractFinalizeError) return NextResponse.json({ status: 'error', message: error.message, ...(error.code ? { code: error.code } : {}) }, { status: error.status });
-    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') return NextResponse.json({ status: 'error', message: 'Số hợp đồng vừa được dùng. Thử lại.' }, { status: 409 });
-    if (error && typeof error === 'object' && 'code' in error && error.code === '57014') {
-      return NextResponse.json({ status: 'error', message: 'Lưu chính thức bị quá thời gian chờ. Thử lại; nếu vẫn lỗi, bỏ bớt ảnh hồ sơ rồi gửi Telegram sau.' }, { status: 504 });
-    }
-    if (error && typeof error === 'object' && 'code' in error && error.code === '42883') {
-      return NextResponse.json({ status: 'error', message: 'Thiếu hàm kiểm tra lịch xe trên database. Chạy SQL reservation-window / cross-branch rồi thử lại.' }, { status: 503 });
-    }
-    console.error('Contract finalize failed:', error instanceof Error ? error.message : error);
-    return NextResponse.json({ status: 'error', message: 'Không lưu chính thức được hợp đồng. Chưa có thay đổi nào được ghi.' }, { status: 500 });
+    return failureResponse('Không lưu chính thức được hợp đồng.', error);
   } finally { client?.release(); client = undefined; }
 
   try {

@@ -19,6 +19,7 @@ import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
 import { VEHICLE_ORDER_SQL } from '@/lib/server/contract-classification';
 import { contractVehicleDetailsSql } from '@/lib/server/contract-vehicle-reads';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -142,9 +143,8 @@ async function writeDraft(request: NextRequest, id: number | null) {
     if (client) await client.query('ROLLBACK');
     if (error instanceof DraftSaveError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin bản nháp không hợp lệ.' }, { status: 400 });
-    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') return NextResponse.json({ status: 'error', message: 'Mã bản nháp đã được sử dụng.' }, { status: 409 });
-    console.error('Supabase draft write failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không lưu được bản nháp vào Supabase. Thông tin đang nhập vẫn được giữ trong form.' }, { status: 500 });
+    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') return failureResponse('Mã bản nháp đã được sử dụng.', error);
+    return failureResponse('Không lưu được bản nháp. Thông tin đang nhập vẫn được giữ trong form.', error);
   } finally { client?.release(); }
 }
 
@@ -246,9 +246,7 @@ async function GETHandler(request: NextRequest, { params }: Params) {
     return await readAll(query);
   } catch (error) {
     if (error instanceof CashbookQueryError || error instanceof ManagementTableError || error instanceof PageSummaryError) return NextResponse.json({ status: 'error', message: error.message }, { status: 400 });
-    console.error('Supabase read failed:', error instanceof Error ? error.message : 'Unknown database error',
-      error&&typeof error==='object'&&'code' in error?error.code:'');
-    return NextResponse.json({ status: 'error', message: 'Không tải được dữ liệu từ Supabase.' }, { status: 500 });
+    return failureResponse('Không tải được dữ liệu.', error);
   }
 }
 
@@ -330,8 +328,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'success', data: result.rows[0] }, { status: 201 });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Supabase customer insert failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không lưu được khách hàng vào Supabase.' }, { status: 500 });
+    return failureResponse('Không lưu được khách hàng.', error);
   } finally {
     client.release();
   }
@@ -439,8 +436,7 @@ async function PATCHHandler(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'success', data: result.rows[0] });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Supabase customer update failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không lưu được thay đổi khách hàng vào Supabase.' }, { status: 500 });
+    return failureResponse('Không lưu được thay đổi khách hàng.', error);
   } finally {
     client.release();
   }
@@ -472,8 +468,7 @@ async function DELETEHandler(request: NextRequest, { params }: Params) {
     return NextResponse.json({ status: 'success', data: null });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Supabase customer delete failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không xóa được hồ sơ khách hàng.' }, { status: 500 });
+    return failureResponse('Không xóa được hồ sơ khách hàng.', error);
   } finally {
     client.release();
   }

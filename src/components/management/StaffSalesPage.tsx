@@ -39,7 +39,7 @@ function SalesKpiCards({kpis,loading,error}:{kpis:SalesKpis;loading:boolean;erro
     <dt><span className="mg-sales-kpi-icon" aria-hidden="true"><Icon size={16}/></span>{label}</dt>
     <dd>{ready ? money(value) : '—'}</dd>
     {progress!==undefined && <div className="mg-sales-kpi-bar" aria-hidden="true"><span style={{width:`${ready ? progress : 0}%`}}/></div>}
-    <span>{loading ? 'Đang tải…' : error ? 'Không tải được số liệu' : hint}</span>
+    <span>{loading ? 'Đang tải…' : error ? error : hint}</span>
   </div>)}</dl>;
 }
 const SUMMARY_HEADERS=['Hợp đồng','Khách','Tiền thuê','Đã thu tiền thuê','Tiền cọc'];

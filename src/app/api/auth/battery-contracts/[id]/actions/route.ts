@@ -4,6 +4,7 @@ import { dataAccess } from '@/lib/server/access-context';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { BatteryContractError } from '@/lib/server/battery-contracts';
 import { applyBatteryAction, readBatteryWorkflow } from '@/lib/server/battery-workflow';
+import { failureResponse } from '@/lib/server/public-failure';
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
 async function handle(request: NextRequest, { params }: Params) {
@@ -21,8 +22,7 @@ async function handle(request: NextRequest, { params }: Params) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof BatteryContractError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thao tác chưa hợp lệ.' }, { status: 400 });
-    console.error('Battery workflow failed:', error instanceof Error ? error.name : 'Unknown error');
-    return NextResponse.json({ status: 'error', message: 'Chưa xác nhận được thao tác. Tải lại lịch sử để kiểm tra trước khi thử lại.' }, { status: 500 });
+    return failureResponse('Chưa xác nhận được thao tác.', error);
   } finally { client?.release(); }
 }
 export const GET = withAccessRequest(handle);

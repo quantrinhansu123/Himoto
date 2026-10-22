@@ -5,7 +5,7 @@ export async function shiftApi<T>(url:string,options?:RequestInit):Promise<T>{
   let response:Response;
   try{response=await fetch(url,{...options,cache:'no-store',credentials:'same-origin'});}catch{throw new UnconfirmedSaveError('Mất kết nối, chưa xác nhận được kết quả lưu.');}
   const result=await response.json().catch(()=>null);
-  if(response.status>=500||response.ok&&!result?.data)throw new UnconfirmedSaveError('Chưa xác nhận được kết quả lưu.');
+  if(response.status>=500||response.ok&&!result?.data)throw new UnconfirmedSaveError(result?.message || 'Chưa xác nhận được kết quả lưu.');
   if(!response.ok||!result?.data)throw Error(result?.message||'Không xử lý được báo cáo.');
   return result.data;
 }

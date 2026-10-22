@@ -5,6 +5,7 @@ import { dataAccess } from '@/lib/server/access-context';
 import { readVehicleTransferTelegram } from '@/lib/server/vehicle-transfer-telegram';
 import { protectDatabaseRequest, SESSION_COOKIE, verifySession } from '@/lib/server/management-session';
 import { applyVehicleAction, parseVehicleAction, VehicleActionError } from '@/lib/server/vehicle-actions';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
@@ -33,9 +34,10 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof VehicleActionError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin thao tác không hợp lệ.' }, { status: 400 });
-    if (error && typeof error === 'object' && 'code' in error && ['55P03', '40P01'].includes(String(error.code))) return NextResponse.json({ status: 'error', message: 'Xe đang được cập nhật. Thử lại sau giây lát.' }, { status: 409 });
-    console.error('Vehicle action failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không lưu được thao tác xe.' }, { status: 500 });
+    if (error && typeof error === 'object' && 'code' in error && ['55P03', '40P01'].includes(String(error.code))) {
+      return failureResponse('Xe đang được cập nhật. Thử lại sau giây lát.', error);
+    }
+    return failureResponse('Không lưu được thao tác xe.', error);
   } finally { client?.release(); }
 }
 

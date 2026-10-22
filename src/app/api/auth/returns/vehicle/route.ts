@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { ContractReturnError, replaceContractVehicle } from '@/lib/server/contract-returns';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 
@@ -28,8 +29,7 @@ async function POSTHandler(request: NextRequest) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof ContractReturnError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin đổi xe không hợp lệ.' }, { status: 400 });
-    console.error('Contract vehicle change failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không đổi được xe trên hợp đồng.' }, { status: 500 });
+    return failureResponse('Không đổi được xe trên hợp đồng.', error);
   } finally { client?.release(); }
 }
 

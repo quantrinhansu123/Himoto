@@ -4,11 +4,12 @@ import { himotoPool,ownerDatabase } from '@/lib/server/himoto-database';
 import { dataAccess } from '@/lib/server/access-context';
 import { isAdminAccount } from '@/lib/management/permissions';
 import { readSelectedVehicleGps,selectedVehicleIds } from '@/lib/server/selected-vehicle-gps';
+import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
 export const GET=withAccessRequest(async(request:NextRequest)=>{
   if(request.nextUrl.searchParams.has('vehicle_ids')){
     let ids:number[];try{ids=selectedVehicleIds(request.nextUrl.searchParams.get('vehicle_ids')||'');}catch{return NextResponse.json({status:'error',message:'Chọn từ 1 đến 20 xe hợp lệ.'},{status:400});}
-    try{return NextResponse.json({status:'success',data:{selected_vehicles:await readSelectedVehicleGps(himotoPool,ids)}},{headers:{'Cache-Control':'private, no-store'}});}catch{return NextResponse.json({status:'error',message:'Chưa tải được GPS của xe.'},{status:500});}
+    try{return NextResponse.json({status:'success',data:{selected_vehicles:await readSelectedVehicleGps(himotoPool,ids)}},{headers:{'Cache-Control':'private, no-store'}});}catch(error){return failureResponse('Chưa tải được GPS của xe.',error);}
   }
   const store=request.nextUrl.searchParams.get('store')||'all';
   if(store!=='all'&&!/^[1-9]\d{0,14}$/.test(store))return NextResponse.json({status:'error',message:'Cơ sở không hợp lệ.'},{status:400});
@@ -28,7 +29,7 @@ export const GET=withAccessRequest(async(request:NextRequest)=>{
         AND ($2::text IS NULL OR e.source=$2) AND ($3::bigint IS NULL OR e.gps_device_id=$3)
       ORDER BY event_at DESC,e.id DESC LIMIT 100`,[store==='all'?null:Number(store),source==='all'?null:source,device?Number(device):null]);
     return NextResponse.json({status:'success',data:{devices:rows.rows.map(row=>({...row,id:Number(row.id),vehicle_id:row.vehicle_id===null?null:Number(row.vehicle_id),store_id:row.store_id===null?null:Number(row.store_id),last_latitude:row.last_latitude===null?null:Number(row.last_latitude),last_longitude:row.last_longitude===null?null:Number(row.last_longitude),last_speed:row.last_speed===null?null:Number(row.last_speed)})),events:events.rows}},{headers:{'Cache-Control':'no-store'}});
-  }catch{return NextResponse.json({status:'error',message:'Không tải được trạng thái GPS.'},{status:500});}
+  }catch(error){return failureResponse('Không tải được trạng thái GPS.',error);}
 });
 export const PATCH=withAccessRequest(async(request:NextRequest)=>{
   if(!isAdminAccount(dataAccess.getStore()))return NextResponse.json({status:'error',message:'Chỉ quản trị được ghép GPS với xe.'},{status:403});
@@ -36,5 +37,5 @@ export const PATCH=withAccessRequest(async(request:NextRequest)=>{
     const result=await ownerDatabase.query(`UPDATE himoto.gps_devices SET vehicle_id=$2,mapping_status=CASE WHEN $2::bigint IS NULL THEN 'manual_unmapped' ELSE 'manual' END,updated_at=now() AT TIME ZONE 'UTC'
       WHERE id=$1 AND ($2::bigint IS NULL OR EXISTS(SELECT 1 FROM himoto.vehicles WHERE id=$2)) RETURNING id`,[body.device_id,body.vehicle_id]);
     if(!result.rowCount)throw Error();return NextResponse.json({status:'success'});
-  }catch{return NextResponse.json({status:'error',message:'Kiểm tra GPS và xe cần ghép.'},{status:400});}
+  }catch(error){return error && typeof error==='object' && 'code' in error ? failureResponse('Không ghép được GPS với xe.',error) : NextResponse.json({status:'error',message:'Kiểm tra GPS và xe cần ghép.'},{status:400});}
 });

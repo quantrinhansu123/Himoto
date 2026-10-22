@@ -23,7 +23,7 @@ function BackupLink({ id }: { id: string }) {
     try {
       const response = await fetch(`/api/auth/vehicles/backups/${id}`, { credentials: 'same-origin', cache: 'no-store' });
       const document = await response.json().catch(() => null);
-      if (!response.ok || document?.id !== id || !Array.isArray(document?.payload)) throw new Error('Không tải được bản sao lưu. Kiểm tra phiên đăng nhập và thử lại.');
+      if (!response.ok || document?.id !== id || !Array.isArray(document?.payload)) throw new Error(document?.message || 'Không tải được bản sao lưu. Kiểm tra phiên đăng nhập và thử lại.');
       const url = URL.createObjectURL(new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }));
       const link = window.document.createElement('a'); link.href = url; link.download = `HIMOTO-xe-backup-${id}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không tải được bản sao lưu.'); }

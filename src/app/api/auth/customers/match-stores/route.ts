@@ -4,6 +4,7 @@ import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { CUSTOMER_IMPORT_BODY_LIMIT, CustomerImportError } from '@/lib/server/customer-import';
 import { customerStoreRequest, importCustomerStores } from '@/lib/server/customer-store-import';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 
@@ -40,8 +41,7 @@ async function POSTHandler(request: NextRequest) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof CustomerImportError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Dữ liệu khớp cơ sở không hợp lệ.' }, { status: 400 });
-    console.error('Customer store matching failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không xác nhận được kết quả cập nhật. Kiểm tra lại với hệ thống trước khi thử tiếp.' }, { status: 500 });
+    return failureResponse('Không xác nhận được kết quả cập nhật cơ sở khách.', error);
   } finally { client?.release(); }
 }
 

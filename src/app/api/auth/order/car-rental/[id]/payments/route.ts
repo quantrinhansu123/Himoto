@@ -4,6 +4,7 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { canRecordContractPayment, protectDatabaseRequest, userFromSession, SESSION_COOKIE } from '@/lib/server/management-session';
 import { ContractPaymentError, parseContractPayment, readPaymentContext, recordContractPayment } from '@/lib/server/contract-payments';
 import { queueContractNotification } from '@/lib/server/contract-notifications';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
@@ -33,8 +34,7 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof ContractPaymentError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin thanh toán không hợp lệ.' }, { status: 400 });
-    console.error('Contract payment request failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: writing ? 'Chưa xác nhận được thanh toán. Tải lại lịch sử để kiểm tra; khi thử lại, hệ thống giữ mã lần thu để tránh ghi trùng.' : 'Không tải được thông tin thanh toán.' }, { status: 500 });
+    return failureResponse(writing ? 'Chưa xác nhận được thanh toán.' : 'Không tải được thông tin thanh toán.', error);
   } finally { client?.release(); }
 }
 const GETHandler = (request: NextRequest, params: Params) => handle(request, params, false);

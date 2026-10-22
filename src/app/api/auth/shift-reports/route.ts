@@ -6,6 +6,7 @@ import { parseShiftInput } from '@/lib/management/shift-reports';
 import { hasPermission } from '@/lib/management/permissions';
 import { ShiftRequestError, shiftRequestId, shiftRequestHash, readShiftReceipt, writeShiftReceipt } from '@/lib/server/shift-report-requests';
 import { readShiftSnapshot } from '@/lib/server/shift-audits';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 export const GET = withAccessRequest(async (request: NextRequest) => {
@@ -24,7 +25,7 @@ export const GET = withAccessRequest(async (request: NextRequest) => {
       LEFT JOIN himoto.management_shift_audits a ON a.report_id=r.id LEFT JOIN himoto.users reviewer ON reviewer.id=a.reviewer_id
       WHERE ($1::bigint IS NULL OR r.store_id=$1) AND ($2::date IS NULL OR r.report_date=$2) ORDER BY r.report_date DESC,r.id DESC LIMIT 100`, [store || null,date||null]);
     return NextResponse.json({ data: result.rows.map(r => ({ ...r, id: Number(r.id) })) }, { headers: { 'Cache-Control': 'no-store' } });
-  } catch { return NextResponse.json({ message: 'Không tải được báo cáo cuối ca. Kiểm tra kết nối và cấu hình dữ liệu.' }, { status: 500 }); }
+  } catch (error) { return failureResponse('Không tải được báo cáo cuối ca.', error); }
 });
 export const POST = withAccessRequest(async (request: NextRequest) => {
   const user = dataAccess.getStore();
@@ -75,6 +76,8 @@ export const POST = withAccessRequest(async (request: NextRequest) => {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (e instanceof ShiftRequestError) return NextResponse.json({ message: e.message }, { status: e.status });
     const code = (e as { code?: string }).code;
-    return NextResponse.json({ message: code === '23505' ? 'PGD đã có báo cáo ngày này. Mở báo cáo trong danh sách.' : code ? 'Chưa lưu được báo cáo. Vui lòng thử lại.' : e instanceof Error ? e.message : 'Thông tin không hợp lệ.' }, { status: code === '23505' ? 409 : code ? 500 : 400 });
+    if (code === '23505') return failureResponse('PGD đã có báo cáo ngày này. Mở báo cáo trong danh sách.', e);
+    if (code) return failureResponse('Chưa lưu được báo cáo.', e);
+    return NextResponse.json({ message: e instanceof Error && e.message ? e.message : 'Thông tin không hợp lệ.' }, { status: 400 });
   } finally { client?.release(); }
 });

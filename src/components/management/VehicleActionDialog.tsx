@@ -39,7 +39,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
       const body=await response.json();if(response.ok&&body.status==='success'&&!controller.signal.aborted)setInventory(body.data.map((row:ManagementRow)=>({...row,id:Number(row.id)})));
     }).catch(()=>{});return()=>controller.abort();
   },[mode]);
-  useEffect(()=>{if(mode!=='transfer')return;const controller=new AbortController();void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok||body.status!=='success')throw Error('Không tải được cơ sở chuyển đến.');setDestinations(body.data.map((row:{id:string|number;store_name:string})=>({id:Number(row.id),name:row.store_name})));}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được cơ sở chuyển đến.');});return()=>controller.abort();},[mode]);
+  useEffect(()=>{if(mode!=='transfer')return;const controller=new AbortController();void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok||body.status!=='success')throw Error(body.message||'Không tải được cơ sở chuyển đến.');setDestinations(body.data.map((row:{id:string|number;store_name:string})=>({id:Number(row.id),name:row.store_name})));}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được cơ sở chuyển đến.');});return()=>controller.abort();},[mode]);
   const [picked, setPicked] = useState(vehicle ? vehicleOption(vehicle) : '');
   const selected = vehicle || resolveVehicle(vehicles,picked);
   const otherStock=!selected?resolveVehicle(inventory,picked):null;

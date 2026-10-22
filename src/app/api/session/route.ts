@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAccount, checkLoginLimit, clearLoginLimit, LoginError, sameOrigin, SESSION_COOKIE, SESSION_SECONDS, signSession, userFromSession, isManagementConfigured } from '@/lib/server/management-session';
 import { logSessionUnavailable, retrySessionRead } from '@/lib/server/session-read';
+import { publicFailure } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 const headers = { 'Cache-Control': 'no-store' };
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof LoginError) return NextResponse.json({ message: error.message }, { status: error.status, headers });
     if (error instanceof SyntaxError) return NextResponse.json({ message: 'Thông tin đăng nhập không hợp lệ.' }, { status: 400, headers });
     logSessionUnavailable(error);
-    return NextResponse.json({ message: 'Kết nối dữ liệu đăng nhập đang gián đoạn. Vui lòng thử lại sau vài giây.' }, { status: 503, headers: { ...headers, 'Retry-After': '5' } });
+    return NextResponse.json({ message: publicFailure('Kết nối dữ liệu đăng nhập đang gián đoạn. Vui lòng thử lại sau vài giây.', error) }, { status: 503, headers: { ...headers, 'Retry-After': '5' } });
   }
 }
 
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
   try {
     const user = await retrySessionRead(() => userFromSession(request.cookies.get(SESSION_COOKIE)?.value));
     return NextResponse.json({ user }, { status: user ? 200 : 401, headers });
-  } catch (error) { logSessionUnavailable(error); return NextResponse.json({ message: 'Kết nối dữ liệu đăng nhập đang gián đoạn. Vui lòng thử lại sau vài giây.' }, { status: 503, headers: { ...headers, 'Retry-After': '5' } }); }
+  } catch (error) { logSessionUnavailable(error); return NextResponse.json({ message: publicFailure('Kết nối dữ liệu đăng nhập đang gián đoạn. Vui lòng thử lại sau vài giây.', error) }, { status: 503, headers: { ...headers, 'Retry-After': '5' } }); }
 }
 
 export async function DELETE(request: NextRequest) {

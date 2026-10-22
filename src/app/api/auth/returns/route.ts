@@ -6,6 +6,7 @@ import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/s
 import { ContractReturnError, loadContractReturnableItems, parseReturnBatch, searchReturnableItems } from '@/lib/server/contract-returns';
 import { parseReturnSettlements,completeReturnBatch } from '@/lib/server/return-settlements';
 import { ContractPaymentError } from '@/lib/server/contract-payments';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 export const maxDuration=300;
@@ -19,8 +20,7 @@ async function GETHandler(request: NextRequest) {
     const data = rawOrderId ? await loadContractReturnableItems(himotoPool, Number(rawOrderId)) : await searchReturnableItems(himotoPool, query);
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('Contract return lookup failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không tải được danh sách xe cần trả.' }, { status: 500 });
+    return failureResponse('Không tải được danh sách xe cần trả.', error);
   }
 }
 
@@ -47,8 +47,7 @@ async function POSTHandler(request: NextRequest) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof ContractReturnError||error instanceof ContractPaymentError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin trả xe không hợp lệ.' }, { status: 400 });
-    console.error('Contract return failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Chưa ghi nhận được lần trả xe. Tải lại danh sách để kiểm tra.' }, { status: 500 });
+    return failureResponse('Chưa ghi nhận được lần trả xe.', error);
   } finally { client?.release(); }
 }
 

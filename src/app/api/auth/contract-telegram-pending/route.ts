@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { readPendingContractTelegram } from '@/lib/server/contract-telegram-pending';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 export const GET = withAccessRequest(async (request: NextRequest) => {
@@ -12,7 +13,7 @@ export const GET = withAccessRequest(async (request: NextRequest) => {
   try {
     const data = await readPendingContractTelegram(himotoPool, store && store !== 'all' ? Number(store) : null, Number(page));
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'private, no-store'}});
-  } catch {
-    return NextResponse.json({status:'error',message:'Không tải được giao dịch chưa gửi Telegram.'},{status:500});
+  } catch (error) {
+    return failureResponse('Không tải được giao dịch chưa gửi Telegram.', error);
   }
 });

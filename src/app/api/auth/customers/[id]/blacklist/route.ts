@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { changeCustomerBlacklist, CustomerBlacklistError, parseBlacklistChange } from '@/lib/server/customer-blacklist';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 
@@ -23,8 +24,7 @@ async function PATCHHandler(request: NextRequest, { params }: { params: Promise<
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof CustomerBlacklistError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
     if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin đổi Blacklist không hợp lệ.' }, { status: 400 });
-    console.error('Customer blacklist update failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Chưa xác nhận được thay đổi Blacklist. Nhấn Làm mới để kiểm tra trước khi thử lại.' }, { status: 500 });
+    return failureResponse('Chưa xác nhận được thay đổi Blacklist.', error);
   } finally { client?.release(); }
 }
 

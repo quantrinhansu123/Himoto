@@ -5,6 +5,7 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { ContractFinalizeError } from '@/lib/server/contract-finalize';
 import { handoverReservation, parseHandoverInput } from '@/lib/server/contract-handover';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 async function POSTHandler(request: NextRequest, {params}: {params: Promise<{id:string}>}) {
@@ -26,8 +27,7 @@ async function POSTHandler(request: NextRequest, {params}: {params: Promise<{id:
     if (client) await client.query('ROLLBACK').catch(()=>{});
     if (error instanceof ContractFinalizeError) return NextResponse.json({status:'error',message:error.message},{status:error.status});
     if (error instanceof SyntaxError) return NextResponse.json({status:'error',message:'Thông tin giao xe không hợp lệ.'},{status:400});
-    console.error('Contract handover failed:',error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({status:'error',message:'Chưa xác nhận được giao xe. Tải lại để kiểm tra trạng thái.'},{status:500});
+    return failureResponse('Chưa xác nhận được giao xe.',error);
   } finally {client?.release();}
 }
 

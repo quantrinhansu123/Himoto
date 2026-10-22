@@ -12,6 +12,8 @@ assert.match(form,/Ngân hàng nhận của khách \(tuỳ chọn\)/);
 assert.doesNotMatch(form,/Ngân hàng nhận của khách \*/);
 assert.match(form,/Chưa thể tick «Đã hoàn cọc»/);
 assert.match(form,/gia hạn ngày trả không đồng nghĩa đã thu tiền/);
+assert.match(form,/if\(value\.deposit_held>0\)setRefundDeferred\(true\)/);
+assert.match(form,/Chưa hoàn cọc — trả xe ngay/);
 checks.push('Return form keeps bank/STK/name optional');
 checks.push('Đã hoàn cọc stays locked until rental debt/fees on the return form are recorded');
 const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles'];

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { ContractHistoryError, readContractHistory } from '@/lib/server/contract-history';
+import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
@@ -22,8 +23,7 @@ async function GETHandler(request: NextRequest, { params }: Params) {
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {});
     if (error instanceof ContractHistoryError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
-    console.error('Contract history request failed:', error instanceof Error ? error.name : 'Unknown database error');
-    return NextResponse.json({ status: 'error', message: 'Không tải được lịch sử hợp đồng.' }, { status: 500 });
+    return failureResponse('Không tải được lịch sử hợp đồng.', error);
   } finally { client?.release(); }
 }
 

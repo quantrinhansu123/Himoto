@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { hasPermission, type AccessPermission } from '@/lib/management/permissions';
 import { dataAccess } from './access-context';
 import { SESSION_COOKIE, sameOrigin, userFromSession, readSessionUser } from './management-session';
+import { failureResponse } from './public-failure';
 
 export function requestPermission(path:string,method:string,action=''):AccessPermission|null {
   const read=method==='GET';
@@ -57,8 +58,8 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
         if(request.method!=='GET')throw error;
         user=await readSessionUser(token);
       }
-    }catch {
-      return NextResponse.json({status:'error',message:'Không xác thực được phiên đăng nhập do lỗi kết nối DB. Vui lòng thử lại.'},{status:503});
+    }catch(error) {
+      return failureResponse('Không xác thực được phiên đăng nhập do lỗi kết nối DB. Vui lòng thử lại.',error,503);
     }
     if(!user)return NextResponse.json({status:'error',message:'Phiên đăng nhập đã hết hạn.'},{status:401});
     let operation='';
@@ -73,6 +74,10 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     const branchOptions=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/stores';
     const composerStaff=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/hr/staff'&&request.nextUrl.searchParams.has('store_id')&&hasPermission(user,'contracts.read');
     if(!branchOptions&&!composerStaff&&permission&&!hasPermission(user,permission))return NextResponse.json({status:'error',message:'Tài khoản không có quyền thực hiện thao tác này.'},{status:403});
-    return dataAccess.run({...user,store_id:user.store_id??null,scope_all:user.scope_all===true,operation,transfer_vehicle_id},()=>handler(request,context));
+    try {
+      return await dataAccess.run({...user,store_id:user.store_id??null,scope_all:user.scope_all===true,operation,transfer_vehicle_id},()=>handler(request,context));
+    } catch (error) {
+      return failureResponse('Không thực hiện được thao tác.', error);
+    }
   };
 }
