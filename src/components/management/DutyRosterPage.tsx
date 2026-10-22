@@ -1,11 +1,12 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, RotateCcw, Pencil, Trash2 } from 'lucide-react';
 import { addDays, DutyInput, dutyRequest, DutyRequestError, DutySchedule, localDutyTime, vietnamDate, weekStart } from '@/lib/management/duty-roster';
 import { formatTime24 } from '@/lib/formatters';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { Dialog } from './Dialog';
 
 const dateLabel=(date:string)=>new Date(`${date}T00:00:00+07:00`).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',weekday:'long',day:'2-digit',month:'2-digit'});
@@ -38,6 +39,7 @@ export function DutyRosterPage() {
   const staff=dataset?.staff.filter(row=>row.status==='active')||[];
   const unavailable=loading||datasetLoading||Boolean(error||datasetError);
   const refresh=()=>setReload(value=>value+1);
+  useReloadAction(useCallback(()=>setReload(value=>value+1),[]));
   async function remove() {
     if(!removing||deleteLock.current)return;
     deleteLock.current=true;setDeleteBusy(true);setDeleteError('');

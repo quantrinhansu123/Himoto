@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, FileText, LoaderCircle, TriangleAlert } from 'lucide-react';
+import { Check, FileText, LoaderCircle, RotateCcw, TriangleAlert } from 'lucide-react';
 import { ManagementRow } from '@/lib/management/types';
 import { optionLabel, MANAGEMENT_CONFIG } from '@/lib/management/config';
 import { applyVehicleAction, loadSessionUserName, VehicleActionResult } from '@/lib/management/vehicle-repository';
@@ -28,6 +28,7 @@ function resolveVehicle(rows:ManagementRow[],value:string){
 
 export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleActionMode; vehicle: ManagementRow | null; onClose: () => void }) {
   const { dataset, ensureData, notify } = useManagement();
+  const reloadVehicles = () => { setError(''); void ensureData(['vehicles'], true).catch(() => setError('Không tải lại được danh sách xe.')); };
   const router = useRouter();
   const vehicles = useMemo(() => dataset?.vehicles || [], [dataset]);
   const stores = dataset?.stores || [];
@@ -164,7 +165,9 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
       <div className="mg-field mg-field-wide"><label htmlFor="vehicle-action-note">Ghi chú</label>
         <textarea id="vehicle-action-note" value={note} maxLength={500} disabled={saving} onChange={event => setNote(event.target.value)} /></div>
     </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
-      <div className="mg-dialog-footer"><span className="mg-form-note">Ngày giờ và người nhập được ghi tự động khi lưu.</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
+      <div className="mg-dialog-footer"><span className="mg-form-note">Ngày giờ và người nhập được ghi tự động khi lưu.</span>
+        <button type="button" className="mg-button" disabled={saving} onClick={reloadVehicles}><RotateCcw size={16}/>Làm mới</button>
+        <button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
         <button type="submit" className="mg-button mg-button-primary" disabled={saving || !selected || rented || transferBlocked || receiveBlocked || sameDestination}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : mode==='receive'?'Xác nhận đã nhận xe':title}</button></div>
     </form>
   </Dialog>;

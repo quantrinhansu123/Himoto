@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText,Settings, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
+import { ReloadButton, requestReload } from './ReloadButton';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
 import { canRecordContractPayment,hasPermission,type AccessPermission } from '@/lib/management/permissions';
 import { ContractTypesProvider } from '@/components/contracts/ContractTypesProvider';
@@ -39,7 +40,7 @@ const navigation = [
 const navigationPermission=(kind:string):AccessPermission=>kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
-  const { dataset, selectedStore, selectStore, source, canSaveContractDrafts } = useManagement();
+  const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing } = useManagement();
   const pathname = usePathname();
   const router = useRouter();
   const active = navigation.find(n => pathname === n.href) || navigation.find(n => n.kind === 'vehicles')!;
@@ -120,7 +121,8 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
         <div className="mg-breadcrumb"><button type="button" className="mg-icon-button mg-desktop-toggle" aria-label={collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'} onClick={() => setCollapsed(!collapsed)}><PanelLeftClose size={19} /></button>
           <button type="button" className="mg-icon-button mg-mobile-toggle" aria-label="Mở menu" onClick={() => setMobileOpen(true)}><Menu size={21} /></button>
           <span>Quản lý</span><ChevronRight size={14} /><strong>{active.label}</strong></div>
-        <div className="mg-topbar-right"><label className="mg-branch-select"><Building2 size={16} /><span className="mg-sr-only">Cơ sở đang xem</span><select aria-label="Cơ sở đang xem" value={selectedStore} onChange={event => selectStore(event.target.value)}>
+        <div className="mg-topbar-right"><ReloadButton name="Làm mới dữ liệu" busy={refreshing} onClick={() => { requestReload(); void reload(); router.refresh(); }} />
+          <label className="mg-branch-select"><Building2 size={16} /><span className="mg-sr-only">Cơ sở đang xem</span><select aria-label="Cơ sở đang xem" value={selectedStore} onChange={event => selectStore(event.target.value)}>
           {user?.scope_all&&<option value="all">Tất cả cơ sở</option>}{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
           <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{gpsPage?'Tự đồng bộ':integrationPage?'Cấu hình tích hợp':writableDrafts ? 'Lưu nháp' : writableVehicles ? 'Đồng bộ xe' : writableCustomers || writableStores || writableDuties || writableBattery ? 'Có thể sửa' : 'Chỉ đọc'}</span>
           <details className="mg-user-menu" ref={menuRef}><summary aria-label="Menu người dùng"><span className="mg-user-avatar">QT</span><div><strong>{user?.name || 'Quản trị viên'}</strong><small>{user ? 'Đã đăng nhập' : writableCustomers ? 'Supabase' : 'Phiên tra cứu'}</small></div><ChevronDown size={14} /></summary>

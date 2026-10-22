@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, Save, CheckCircle2, ClipboardList, RefreshCw } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { prepareRecordPhoto } from '@/lib/management/record-photos';
 import { emptyShiftSummary, shiftVehicleTotal, parseShiftInput, SHIFT_PHOTOS, SHIFT_SUMMARY_FIELDS, type ShiftInput, type ShiftReport } from '@/lib/management/shift-reports';
@@ -39,6 +40,7 @@ export function ShiftReportsPage() {
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>('vehicles');
   const { dataset, selectedStore, can, notify, error: directoryError } = useManagement();
   const [rows, setRows] = useState<ShiftReport[]>([]), [loading, setLoading] = useState(true), [retry, setRetry] = useState(0);
+  useReloadAction(useCallback(() => setRetry(n => n + 1), []));
   const [editing, setEditing] = useState(false), [input, setInput] = useState<ShiftInput>(() => blank());
   const [showList, setShowList] = useState(true);
   const [record, setRecord] = useState<SavedReport | null>(null);

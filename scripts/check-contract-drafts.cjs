@@ -72,6 +72,18 @@ async function run() {
   assert.deepEqual(reopenedSnapshot,{...snapshot,contract_number:''});
   assert.equal(contract_type_id,'daily');assert.equal(contract_type_name,'Thuê theo ngày');assert.equal(contract_type_months,'');
   assert.equal(mapped.draft_revision, '100'); assert.equal(mapped.total_amount, undefined);
+  const leanHydrate = mapApiRow('contracts', {
+    id: 9001, draft_reference: 'NHAP-9001', status: 'draft', draft_revision: '200',
+    customer_name: 'Tên cột đơn', customer_phone: '0900000000', vehicles: [],
+    draft_payload: { management_composer: { version: 1, notes: 'Đã nhập đủ', rental_type: 'daily', draft: snapshot } },
+  });
+  assert.ok(leanHydrate.draft_json);
+  const fromLean = createContractDraft(before, 'all', leanHydrate);
+  assert.equal(fromLean.customer_lookup, snapshot.customer_lookup);
+  assert.equal(fromLean.customer_source, snapshot.customer_source);
+  assert.equal(fromLean.customer.name, snapshot.customer.name);
+  assert.deepEqual(fromLean.vehicles.map(vehicle => vehicle.id), snapshot.vehicles.map(vehicle => vehicle.id));
+  checks.push('paged list hydrate that only has management_composer still restores the saved draft instead of empty columns');
   const legacy = mapApiRow('contracts', { id: 1, draft_reference: 'OLD-DRAFT', order_status: 'draft', store_id: 1,
     draft_payload: { order_items: [{ vehicle_id: before.vehicles[0].id, driver_name: 'Người lái cũ', borrow_hats: 2, borrow_raincoats: 1 }] } });
   assert.equal(legacy.code, 'OLD-DRAFT'); assert.equal(legacy.status, 'draft');
@@ -154,6 +166,16 @@ async function run() {
       checks.push('real Supabase transaction updates a legacy draft without losing item pricing, creates/updates drafts, rejects stale revisions and issued contracts, leaves financial/items tables unchanged, and rolls back all QA changes');
     } finally { await client.query('ROLLBACK'); client.release(); await pool.end(); }
   }
+  const composer = fs.readFileSync(path.join(root, 'components/contracts/ContractComposer.tsx'), 'utf8');
+  const shell = fs.readFileSync(path.join(root, 'components/management/ManagementShell.tsx'), 'utf8');
+  const table = fs.readFileSync(path.join(root, 'lib/server/management-table.ts'), 'utf8');
+  assert.ok(composer.includes('Làm mới bản nháp'));
+  assert.ok(composer.includes('requestManagementTable'));
+  assert.ok(shell.includes('Làm mới dữ liệu'));
+  assert.ok(table.includes("WHEN o.order_status='draft' THEN jsonb_build_object("));
+  assert.ok(table.includes("o.xmin::text AS draft_revision"));
+  checks.push('composer and the top bar expose a reload action so a stale draft revision can be refreshed without closing the form');
+  checks.push('paged contract hydrate keeps the saved composer draft so reopen does not rebuild from empty list columns');
   process.stdout.write(JSON.stringify({ passed: checks.length, checks }, null, 2) + '\n');
 }
 run().catch(error => { console.error('Draft checks failed:', error.message); process.exitCode = 1; });

@@ -344,6 +344,7 @@
   align-items: center;
   gap: 14px;
 }
+.mg-topbar-right > .mg-button { flex-shrink: 0; }
 .mg-branch-select {
   display: flex;
   align-items: center;
@@ -3365,6 +3366,7 @@
   .mg-breadcrumb { flex-shrink: 0; }
   .mg-breadcrumb strong { display: none; }
   .mg-topbar-right { flex: 1; min-width: 0; gap: 8px; }
+  .mg-topbar-right > .mg-button { min-width: 44px; min-height: 44px; padding: 8px; }
   .mg-branch-select { flex: 1; min-width: 0; min-height: 44px; padding: 0 8px; }
   .mg-branch-select select { width: 100%; min-width: 0; max-width: none; }
   .mg-user-menu { flex-shrink: 0; }

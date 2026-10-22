@@ -1,11 +1,14 @@
 'use client';
 
-import { FormEvent, Fragment, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, Fragment, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { CheckCircle2, ChevronLeft, ChevronRight, LoaderCircle, Plus, Printer, Save, Search, Trash2, UserPlus } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { SuggestionInput } from '@/components/management/SuggestionInput';
 import { useManagement } from '@/components/management/ManagementProvider';
+import { ReloadButton, useReloadAction } from '@/components/management/ReloadButton';
+import { requestManagementTable } from '@/lib/management/management-table';
+import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import { ContractDraft, ContractRelative, CustomerDetails, LegacyContractDocument, buildContractDocument, contractStaffStoreId, createContractDraft, customerDetails, emptyVehicle, formatRelatives, normalizeIdCard, pairRelatives, relativesFromRow, staffIsAvailable, staffMatchesStore, validateContractDraft, validateOperationalDraft, validateReservationDraft, vehicleDetails } from '@/lib/management/contract-document';
 import { documentRequirements } from '@/lib/management/contract-requirements';
 import { hasSalesCommissionRole, staffRoles } from '@/lib/management/staff-positions';
@@ -188,6 +191,35 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     },
   });
   const [saveError, setSaveError] = useState('');
+  const [reloading, setReloading] = useState(false);
+  const draftId = savedDraft?.id ?? row?.id ?? null;
+  const reloadRecord = useCallback(async () => {
+    if (!dataset) return;
+    setReloading(true); setSaveError('');
+    try {
+      await ensureData(['contracts'], true).catch(() => {});
+      if (!draftId) return;
+      const table = await requestManagementTable({
+        kind: 'contracts', query: { ...EMPTY_QUERY, filters: { id: String(draftId) } },
+        store: 'all', scope: '', page: 1, size: 1, sort: 'code', direction: 'desc',
+      });
+      const latest = table.rows[0];
+      if (!latest || latest.id !== draftId) throw new Error('Không tải lại được hồ sơ. Thử lại.');
+      const next = createContractDraft(dataset, selectedStore, latest);
+      if (next.tls_staff_id) next.customer_source = 'TLS';
+      setDraft(next);
+      setSavedDraft({ id: latest.id, revision: String(latest.draft_revision || '') });
+      setProfileRevision(String(latest.draft_revision || ''));
+      setNotes(String(latest.notes || ''));
+      setRentalType(String(latest.rental_type || 'daily'));
+      setStatus(latest.status || 'pending');
+      setIdInput(String(next.customer_lookup ?? (next.customer.id_card || next.customer.phone || '')));
+      setLookupState(next.customer_id && next.customer.name.trim() ? 'found' : 'idle');
+      setRentalDays(rentalDayCount(next.start_date, next.end_date));
+    } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Không tải lại được hồ sơ.'); }
+    finally { setReloading(false); }
+  }, [dataset, draftId, ensureData, selectedStore]);
+  useReloadAction(useCallback(() => { void reloadRecord(); }, [reloadRecord]));
   const busy = useRef(false);
   const [lookupError, setLookupError] = useState('');
   const [lookupRetry, setLookupRetry] = useState(0);
@@ -868,9 +900,11 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             <button type="button" className="mg-button" disabled={sectionIndex === 0} onClick={() => setSection(CONTRACT_FORM_SECTIONS[sectionIndex - 1].id)}><ChevronLeft size={16} />Quay lại</button>
             <button type="button" className="mg-button" disabled={sectionIndex === CONTRACT_FORM_SECTIONS.length - 1} onClick={() => setSection(CONTRACT_FORM_SECTIONS[sectionIndex + 1].id)}>Tiếp tục<ChevronRight size={16} /></button>
           </div>
-          </fieldset>{saveError && <p className="mg-error-message" role="alert">{saveError}</p>}{profileMessage && <p className="mg-payment-success" role="status">{profileMessage}</p>}
+          </fieldset>{saveError && <p className="mg-error-message" role="alert">{saveError} {draftId ? <ReloadButton name="Làm mới bản nháp" busy={reloading} disabled={saving} onClick={() => { void reloadRecord(); }} /> : null}</p>}{profileMessage && <p className="mg-payment-success" role="status">{profileMessage}</p>}
         </div>
-        <div className="mg-dialog-footer"><span className="mg-form-note">{row?.status==='deposit_contract'?'Điền thông tin khách, giấy tờ và người làm hợp đồng → Lưu hồ sơ hợp đồng → Tiếp tục giao xe. Tiền cọc và tiền thuê giữ theo giao dịch đã ghi.':canSaveDraft ? 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
+        <div className="mg-dialog-footer"><span className="mg-form-note">{row?.status==='deposit_contract'?'Điền thông tin khách, giấy tờ và người làm hợp đồng → Lưu hồ sơ hợp đồng → Tiếp tục giao xe. Tiền cọc và tiền thuê giữ theo giao dịch đã ghi.':canSaveDraft ? 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span>
+          <ReloadButton name="Làm mới bản nháp" busy={reloading} disabled={saving} onClick={() => { void reloadRecord(); }} />
+          <button type="button" className="mg-button" disabled={saving || reloading} onClick={onClose}>Đóng</button>
           {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
           {canSaveDraft && source === 'api' && canSaveContractDrafts && canFinalizeContracts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
           {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}

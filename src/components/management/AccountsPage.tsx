@@ -1,12 +1,14 @@
 'use client';
-import { FormEvent,useEffect,useState } from 'react';
+import { FormEvent,useCallback,useEffect,useState } from 'react';
 import { ACCESS_PERMISSIONS,ACCESS_PERMISSION_LABELS,ACCESS_ROLES,type AccessRole,type AccessPermission } from '@/lib/management/permissions';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { Dialog } from './Dialog';
 type AccountRow={id:number;name:string;email:string;login_name:string|null;access_role:AccessRole|null;store_id:number|null;scope_all:boolean;permissions:string[]|null;enabled:boolean|null;status:string;store_name:string|null;revision:string};
 const empty=()=>({name:'',login_name:'',password:'',access_role:'branch_staff' as AccessRole,store_id:'',scope_all:false,permissions:[...ACCESS_ROLES.branch_staff.permissions] as string[],enabled:true});
 export function AccountsPage(){
   const {dataset,notify}=useManagement();const [rows,setRows]=useState<AccountRow[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,setRevision]=useState(0);
+  useReloadAction(useCallback(()=>setRevision(value=>value+1),[]));
   const [editing,setEditing]=useState<AccountRow|null>(null),[open,setOpen]=useState(false),[form,setForm]=useState(empty),[saving,setSaving]=useState(false),[formError,setFormError]=useState('');
   useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');void fetch('/api/auth/accounts',{cache:'no-store',signal:controller.signal}).then(async response=>{const data=await response.json();if(!response.ok||data.status!=='success')throw Error(data.message||'Không tải được tài khoản.');setRows(data.data);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được tài khoản.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[revision]);
   function edit(row:AccountRow|null){setEditing(row);setForm(row?{name:row.name,login_name:row.login_name||row.email.split('@')[0],password:'',access_role:row.access_role||'admin',store_id:String(row.store_id||''),scope_all:row.scope_all??true,permissions:row.permissions||[...ACCESS_PERMISSIONS],enabled:row.enabled??row.status==='active'}:empty());setFormError('');setOpen(true);}

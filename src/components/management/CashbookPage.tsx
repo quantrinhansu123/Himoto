@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { bulkDelete } from '@/lib/management/bulk-delete';
 import { Dialog } from './Dialog';
 import { CashbookRow, EMPTY_CASHBOOK_FILTERS, CashbookFilters, cashbookCsv, VoucherType } from '@/lib/management/cashbook';
 import { CashbookAccount, CashbookListResult, CashbookPagination, DEFAULT_CASHBOOK_PAGINATION, loadCashbookAccounts, loadCashbookDeleteIds, loadCashbookExport, loadCashbookPage } from '@/lib/management/cashbook-repository';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { CashbookAccounts } from './CashbookAccounts';
 import { CashbookTable } from './CashbookTable';
 import { CashbookSummary } from './CashbookSummary';
@@ -24,6 +25,7 @@ export function CashbookPage() {
   const hasLoaded = useRef(false);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  useReloadAction(useCallback(() => setRetry(value => value + 1), []));
   const [query, setQuery] = useState<CashbookFilters>(EMPTY_CASHBOOK_FILTERS);
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
   const [search, setSearch] = useState('');

@@ -1,7 +1,8 @@
 'use client';
-import { useEffect,useMemo,useState } from 'react';
+import { useCallback,useEffect,useMemo,useState } from 'react';
 import { MapPin,RefreshCw,Search } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { Dialog } from './Dialog';
 import { GPS_POLL_INTERVAL_MS,GPS_STATE_LABELS,displayedGpsState,gpsMapLink,type GpsVehicle } from '@/lib/management/gps';
 import { statusTone } from '@/lib/management/config';
@@ -15,6 +16,7 @@ const eventSources:Record<string,string>={poll:'Lấy mẫu',history:'Đọc bù
 export function GpsPage() {
   const {selectedStore,accessUser,dataset,ensureData}=useManagement(),admin=isAdminAccount(accessUser);
   const [data,setData]=useState<{devices:GpsVehicle[];events:GpsEvent[]}>({devices:[],events:[]}),[loading,setLoading]=useState(true),[error,setError]=useState(''),[version,setVersion]=useState(0),[syncing,setSyncing]=useState(false);
+  useReloadAction(useCallback(()=>setVersion(value=>value+1),[]));
   const [search,setSearch]=useState(''),[state,setState]=useState(''),[provider,setProvider]=useState('');
   const [eventSource,setEventSource]=useState('all'),[eventDevice,setEventDevice]=useState('');
   const [mapping,setMapping]=useState<GpsVehicle|null>(null),[vehicle,setVehicle]=useState(''),[saving,setSaving]=useState(false),[formError,setFormError]=useState('');

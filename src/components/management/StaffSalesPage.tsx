@@ -1,7 +1,8 @@
 'use client';
-import { useEffect,useState } from 'react';
+import { useCallback,useEffect,useState } from 'react';
 import { ArrowDownToLine,CalendarRange,FilterX,Receipt,RotateCcw,TrendingUp,TriangleAlert,Wallet } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { SalesCharts } from './SalesCharts';
 import {RentalRevenuePanel} from './RentalRevenuePanel';
 import { loadSalesSummary,loadStaffSales,type StaffSalesReport,type SalesSummaryReport } from '@/lib/management/staff-sales';
@@ -55,6 +56,7 @@ export function StaffSalesPage() {
   const {selectedStore,dataset,error:datasetError,resources,reload}=useManagement();const today=vietnamDate();
   const [from,setFrom]=useState(`${today.slice(0,7)}-01`),[to,setTo]=useState(today),[department,setDepartment]=useState('');
   const [report,setReport]=useState<StaffSalesReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
+  useReloadAction(useCallback(()=>{setRetry(value=>value+1);void reload();},[reload]));
   useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(setReport).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[from,to,selectedStore,retry]);
   const rows=(report?.rows || []).filter(row=>!department || row.department === department);
   const [summary,setSummary]=useState<SalesSummaryReport|null>(null),[summaryLoading,setSummaryLoading]=useState(true),[summaryError,setSummaryError]=useState('');

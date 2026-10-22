@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef, useState,type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState,type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -13,6 +13,7 @@ import { MANAGEMENT_CONFIG, optionLabel, statusTone } from '@/lib/management/con
 import { EMPTY_QUERY, OVERDUE_COMPARE_OPTIONS, TableQuery, csvCell, filterRows, formatValue, sortRows } from '@/lib/management/table-utils';
 import { ManagementColumn, ManagementKind, ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { DataTable } from './DataTable';
 import { Dialog } from './Dialog';
 import { StaffOrganizationChart } from './StaffOrganizationChart';
@@ -131,6 +132,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const refreshing=datasetRefreshing || paged && table.loading && Boolean(table.data);
   const error=(paged?table.error:'') || (!paged?datasetError:'');
   async function reload(kinds?:readonly ManagementKind[]) { if(paged)table.refresh(); await reloadDataset(kinds); }
+  const reloadAll = useRef(() => { void reload(); }); reloadAll.current = () => { void reload(); };
+  useReloadAction(useCallback(() => reloadAll.current(), []));
   useEffect(() => {
     if (kind !== 'contracts') return;
     const timer = window.setInterval(() => {if(document.visibilityState!=='visible')return;setOpenedAt(Date.now());if(monitoringContracts)currentTableRefresh.current();}, 60_000);
@@ -326,7 +329,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
             else if (kind === 'staff') setStaffDialog({ row: null, mode: 'create' });
             else { setEditing(null); setFormOpen(true); }
           }}><Plus size={18} />{config.addLabel}</button>}
-          {(kind === 'stores' || kind === 'vehicles' || kind === 'customers') && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
+          {kind !== 'staff' && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
           {canBulkRemind && <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}
           {kind==='contracts'&&source==='api'&&<button type="button" className="mg-button" onClick={()=>setTelegramTarget('pending')}><MessageCircle size={17}/>Chưa gửi Telegram</button>}
           {kind === 'contracts' && canSaveContractDrafts && <><button type="button" className="mg-button" disabled={loading || Boolean(error) || !dataset || !canSaveContractDrafts} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={() => { setPrintRow(null); setComposerMode('draft'); setComposerOpen(true); }}><Plus size={17} />Nhập hợp đồng</button></>}</div></OptionalTools>

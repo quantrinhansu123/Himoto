@@ -99,7 +99,9 @@ export function contractPageSql(scopeClause:string) {
     CASE WHEN o.order_status='renting' AND o.return_at < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, o.customer_name, o.customer_phone,
     o.store_id, o.rent_at AS start_date, o.return_at AS end_date,
-    o.total AS total_amount, '[]'::json AS vehicles
+    o.total AS total_amount, '[]'::json AS vehicles,
+    o.xmin::text AS draft_revision,
+    CASE WHEN o.order_status='draft' THEN o.draft_payload ELSE NULL END AS draft_payload
     FROM himoto.orders o
     WHERE o.deleted_at IS NULL${scopeClause}`;
 }
@@ -138,6 +140,11 @@ function contractHydrateSql() {
       ELSE COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) END AS deposit_amount,
     COALESCE(staff.full_name, saved_staff.full_name, fallback_staff.full_name) AS staff_name,
     COALESCE(o.draft_payload #>> '{management_composer,draft,contract_type_name}', o.order_type) AS rental_type,
+    o.note AS notes, o.xmin::text AS draft_revision,
+    CASE WHEN o.order_status='draft' THEN jsonb_build_object(
+      'management_composer', o.draft_payload::jsonb->'management_composer',
+      'order_items', COALESCE(o.draft_payload::jsonb->'order_items','[]'::jsonb))
+    ELSE '{}'::jsonb END AS draft_payload,
     ov.vehicles
     FROM himoto.orders o
     LEFT JOIN himoto.stores s ON s.id = o.store_id

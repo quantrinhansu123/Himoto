@@ -1,12 +1,13 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeftRight, ChevronLeft, ChevronRight, LoaderCircle, RefreshCw, Search } from 'lucide-react';
 import { defaultTransferHistoryQuery, loadTransferHistory, type TransferHistoryQuery, type TransferHistoryResult, type TransferHistoryRow } from '@/lib/management/vehicle-transfer-history';
 import { formatDateTime } from '@/lib/formatters';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { MobileDetailsCard } from './MobileDetailsCard';
 import { Dialog } from './Dialog';
 import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
@@ -25,6 +26,7 @@ export function VehicleTransfersPage() {
   const [report, setReport] = useState<TransferHistoryResult | null>(null);
   const [telegramRow,setTelegramRow]=useState<TransferHistoryRow|null>(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [retry, setRetry] = useState(0);
+  useReloadAction(useCallback(() => setRetry(value => value + 1), []));
   const invalidDates = !filters.from || !filters.to || filters.from > filters.to;
   useEffect(() => {
     const controller = new AbortController();

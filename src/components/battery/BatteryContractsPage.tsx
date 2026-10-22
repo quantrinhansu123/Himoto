@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { CalendarPlus, FileSearch, History, LoaderCircle, Pencil, Plus, Printer, RotateCcw, Search, Trash2, Undo2, X } from 'lucide-react';
@@ -11,6 +11,7 @@ import { customerDetails } from '@/lib/management/contract-document';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import type { ManagementRow } from '@/lib/management/types';
 import { useManagement } from '@/components/management/ManagementProvider';
+import { useReloadAction } from '@/components/management/ReloadButton';
 import { Dialog } from '@/components/management/Dialog';
 import { RowActionsMenu } from '@/components/management/RowActionsMenu';
 import { PreviewPage, PrintPreviewDialog } from '@/components/contracts/ContractPrintPreview';
@@ -61,6 +62,7 @@ export function BatteryContractsPage() {
   }, [rows, search, status]);
   const unavailable = datasetLoading || Boolean(datasetError);
   const refresh = () => setReload(value => value + 1);
+  useReloadAction(useCallback(() => setReload(value => value + 1), []));
   async function remove() {
     if (!removing || deleteLock.current) return;
     deleteLock.current = true; setDeleteBusy(true); setDeleteError('');
@@ -71,7 +73,7 @@ export function BatteryContractsPage() {
   const filtered = Boolean(search || status);
   return <section className="mg-page mg-battery-page" aria-label="Hợp đồng thuê pin"><div className="mg-page-content">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">HỢP ĐỒNG <span>/</span> THUÊ PIN / SẠC</div><h1>Hợp đồng thuê pin / sạc<span className="mg-title-count">{loading || error ? '—' : visible.length}</span></h1><p>Lập, lưu và in hợp đồng thuê pin hoặc sạc xe điện theo mẫu HIMOTO. Có thể mở sẵn từ hợp đồng thuê xe.</p></div>
-      <div className="mg-heading-actions">{can('contracts.draft') && <button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button>}</div></div>
+      <div className="mg-heading-actions"><button type="button" className="mg-button" disabled={loading || datasetLoading} onClick={refresh}><RotateCcw size={16} className={loading ? 'mg-spin' : undefined} />{loading ? 'Đang tải…' : 'Làm mới'}</button>{can('contracts.draft') && <button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button>}</div></div>
     <div className="mg-data-panel">
       {vehicleContractId && <p className="mg-composer-hint">Pin / sạc của hợp đồng xe #{vehicleContractId}. <Link href="/contracts/battery">Bỏ lọc hợp đồng xe</Link></p>}
       <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!status ? 'is-active' : ''} aria-pressed={!status} onClick={() => setStatus('')}>Tất cả<span>{rows.length}</span></button>

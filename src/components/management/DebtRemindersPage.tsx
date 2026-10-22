@@ -1,8 +1,9 @@
 'use client';
-import { useEffect,useState } from 'react';
+import { useCallback,useEffect,useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft,ChevronRight,Plus,RefreshCw } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
+import { useReloadAction } from './ReloadButton';
 import { DebtReminderDialog } from './DebtReminderDialog';
 import { canSendDebtReminder } from '@/lib/management/permissions';
 import { reminderRequest,REMINDER_STATUS_LABELS,type DebtReminderRow } from '@/lib/management/debt-reminders';
@@ -11,6 +12,7 @@ type History={rows:DebtReminderRow[];total:number;page:number;pages:number};
 export function DebtRemindersPage() {
   const {selectedStore,accessUser}=useManagement();
   const [open,setOpen]=useState(false),[data,setData]=useState<History|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[page,setPage]=useState(1),[version,setVersion]=useState(0);
+  useReloadAction(useCallback(()=>setVersion(value=>value+1),[]));
   useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');setData(null);
     void reminderRequest<History>(`/api/auth/debt-reminders?store=${encodeURIComponent(selectedStore)}&page=${page}`,{signal:controller.signal})
       .then(value=>{if(!controller.signal.aborted)setData(value);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được lịch sử.');})

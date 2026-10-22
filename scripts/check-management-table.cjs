@@ -59,6 +59,7 @@ async function main(){
   assert.match(server.contractRecentClause(30),/interval '30 days'/);
   const pageSql=server.contractPageSql(server.contractRecentClause(30));
   assert.match(pageSql,/FROM himoto\.orders o/);
+  assert.match(pageSql,/order_status='draft' THEN o\.draft_payload/);
   assert.doesNotMatch(pageSql,/himoto\.customers/);
   assert.doesNotMatch(pageSql,/himoto\.transactions/);
   assert.doesNotMatch(pageSql,/himoto\.vehicles/);
@@ -88,7 +89,12 @@ async function main(){
   assert(sqlCommands[0]&&/\bLIMIT \$1\b/.test(sqlCommands[0])&&sqlCommands[0].includes('OFFSET'));
   assert(!sqlCommands[0].includes('GROUP BY')&&!sqlCommands[0].includes('himoto.transactions'));
   assert(sqlCommands[1]&&sqlCommands[1].includes('ANY($1'));
+  assert.match(sqlCommands[1],/order_status='draft'/);
+  assert.match(sqlCommands[1],/draft_payload::jsonb->'management_composer'/);
+  assert.match(sqlCommands[1],/draft_payload::jsonb->'order_items'/);
+  assert.match(sqlCommands[1],/xmin::text AS draft_revision/);
   checks.push('Default recent list fetches only the current page from orders');
+  checks.push('Page hydrate returns the saved composer draft and revision so a reopened draft is not reconstructed empty');
   let called=false;await assert.rejects(()=>server.readManagementTable({query(){called=true;}},'contracts',new URLSearchParams('size=999')),server.ManagementTableError);assert.equal(called,false);
   assert.equal(mapApiRow('contracts',{id:1,rent_at:new Date('2026-10-10T09:00:00Z')}).start_date,'2026-10-10T09:00:00.000Z');
   checks.push('Page/filter bounds are validated before SQL; PostgreSQL Date values map exactly like the original JSON API');
