@@ -22,10 +22,27 @@ export function validatePhotoBytes(type: string, data: Buffer) {
 }
 export async function requirePhotoRecord(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number) {
   if (entity === 'vehicles') {
-    // Keep source-store access for in-transit transfer photos after the vehicle already moved.
-    await client.query("SELECT set_config('himoto.transfer_vehicle_id',$1,true),set_config('himoto.operation','transfer',true)", [String(id)]);
+    // Source-store staff lose vehicles RLS after current_store_id moves. The
+    // request already pins operation=transfer + transfer_vehicle_id before SET
+    // ROLE; keep a same-transaction pin too, then fall back to the event the
+    // sending/receiving store can still see.
+    await client.query(
+      `SELECT set_config('himoto.transfer_vehicle_id',$1,true),
+              set_config('himoto.operation','transfer',true)`,
+      [String(id)],
+    );
+    const vehicle = await client.query('SELECT id FROM himoto.vehicles WHERE id=$1::bigint', [id]);
+    if (vehicle.rowCount) return;
+    const event = await client.query(
+      `SELECT vehicle_id FROM himoto.vehicle_location_events
+       WHERE vehicle_id=$1 AND event_type IN ('manual_transfer','manual_transfer_receive')
+       LIMIT 1`,
+      [id],
+    );
+    if (!event.rowCount) throw new RecordPhotoError('Không tìm thấy hồ sơ.', 404);
+    return;
   }
-  const table = entity === 'customers' ? 'customers' : entity === 'vehicles' ? 'vehicles' : 'orders';
+  const table = entity === 'customers' ? 'customers' : 'orders';
   const result = await client.query(`SELECT id FROM himoto.${table} WHERE id=$1${entity === 'contracts' ? ' AND deleted_at IS NULL' : ''} FOR SHARE`, [id]);
   if (!result.rowCount) throw new RecordPhotoError('Không tìm thấy hồ sơ.', 404);
 }

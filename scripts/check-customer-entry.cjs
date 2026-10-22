@@ -28,6 +28,31 @@ async function main() {
   photos.validatePhotoBytes('image/webp', Buffer.from('RIFF1234WEBP'));
   for (const [type, bytes] of [['text/html', jpeg], ['image/jpeg', Buffer.from('<svg>')], ['image/jpeg', Buffer.alloc(0)], ['image/jpeg', Buffer.alloc(2 * 1024 * 1024 + 1)]]) assert.throws(() => photos.validatePhotoBytes(type, bytes));
   checks.push('photo entity/slot allowlists, content signatures and 2 MB upload limits reject invalid targets and disguised files');
+  assert.deepEqual(photos.parsePhotoTarget('vehicles', '101', 'transfer-55-1'), { entity: 'vehicles', id: 101, slot: 'transfer-55-1' });
+  const vehicleLookups = [];
+  await photos.requirePhotoRecord({ query(sql, params) { vehicleLookups.push({ sql, params }); return { rowCount: 1, rows: [{ id: 101 }] }; } }, 'vehicles', 101);
+  assert.ok(vehicleLookups.some(item => /set_config\('himoto.transfer_vehicle_id'/.test(item.sql)));
+  assert.ok(vehicleLookups.some(item => /FROM himoto.vehicles/.test(item.sql)));
+  const hiddenVehicle = [];
+  await photos.requirePhotoRecord({ query(sql) {
+    hiddenVehicle.push(sql);
+    if (/vehicle_location_events/.test(sql)) return { rowCount: 1, rows: [{ vehicle_id: 101 }] };
+    return { rowCount: /set_config/.test(sql) ? 1 : 0, rows: [] };
+  } }, 'vehicles', 101);
+  assert.ok(hiddenVehicle.some(sql => /vehicle_location_events/.test(sql)));
+  await assert.rejects(() => photos.requirePhotoRecord({ query(sql) {
+    return { rowCount: /set_config/.test(sql) ? 1 : 0, rows: [] };
+  } }, 'vehicles', 101), error => error.status === 404 && error.message === 'Không tìm thấy hồ sơ.');
+  const accessSource = fs.readFileSync(path.join(root, 'lib/server/access-request.ts'), 'utf8');
+  assert.ok(accessSource.includes('record-photos\\/vehicles\\/'));
+  assert.ok(accessSource.includes('transfer_vehicle_id'));
+  const databaseSource = fs.readFileSync(path.join(root, 'lib/server/himoto-database.ts'), 'utf8');
+  assert.ok(databaseSource.includes('scope.transfer_vehicle_id'));
+  assert.ok(/SET LOCAL ROLE himoto_scoped/.test(databaseSource));
+  const photoUi = fs.readFileSync(path.join(root, 'components/management/RecordPhotoFields.tsx'), 'utf8');
+  assert.ok(photoUi.includes("entity==='vehicles'"));
+  assert.ok(photoUi.includes('setSavedReady(true)'));
+  checks.push('transfer photo lookup pins source-store access, then accepts the transfer event when the vehicle row is no longer visible');
 
   const { NextRequest, NextResponse } = require('next/server');
   const session = load(path.join(root, 'lib/server/management-session'));

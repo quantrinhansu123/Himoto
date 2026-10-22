@@ -49,7 +49,7 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
   disabled?: boolean; onBusyChange?: (busy: boolean) => void; title?: string; ocr?: PhotoOcrController;bulkImageLabel?:string;bulkPosition?:'top'|'bottom';compact?:boolean;actions?:ReactNode;
 }) {
   const [saved, setSaved] = useState<SavedPhoto[]>([]), [error, setError] = useState(''), [retry, setRetry] = useState(0);
-  const [savedReady,setSavedReady]=useState(!recordId);
+  const [savedReady,setSavedReady]=useState(!recordId||entity==='vehicles');
   const busySlots = useRef(new Set<string>());
   const latestValue = useRef(value); latestValue.current = value;
   const [uploadStates, setUploadStates] = useState<Record<string, { loading: boolean; error?: string }>>({});
@@ -105,14 +105,14 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
     });
   }
   useEffect(() => {
-    setSaved([]); setError('');setSavedReady(!recordId);
+    setSaved([]); setError('');setSavedReady(!recordId||entity==='vehicles');
     if (!recordId) return;
     const controller = new AbortController();
     fetch(photoEndpoint(entity, recordId), { signal: controller.signal, cache: 'no-store' }).then(async response => {
       const result = await response.json();
       if (!response.ok || result.status !== 'success') throw new Error(result.message || 'Không tải được ảnh đã lưu.');
       if (!controller.signal.aborted) {setSaved(result.data);setSavedReady(true);}
-    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được ảnh đã lưu.'); });
+    }).catch(cause => { if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : 'Không tải được ảnh đã lưu.'); setSavedReady(true); } });
     return () => controller.abort();
   }, [entity, recordId, retry]);
   const occupied=slots.filter(slot=>value[slot.key]||saved.some(photo=>photo.slot===slot.key));

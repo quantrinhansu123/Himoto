@@ -9,13 +9,18 @@ import { RecordPhotoError, parsePhotoTarget, readRecordPhotos } from '@/lib/serv
 export const runtime = 'nodejs';
 async function GETHandler(request: NextRequest, { params }: { params: Promise<{ entity: string; id: string }> }) {
   const denied = await protectDatabaseRequest(request); if (denied) return denied;
+  let client;
   try {
     const raw = await params, target = parsePhotoTarget(raw.entity, raw.id);
-    const data = await readRecordPhotos(himotoPool, target.entity, target.id);
+    client = await himotoPool.connect();
+    await client.query('BEGIN');
+    const data = await readRecordPhotos(client, target.entity, target.id);
+    await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     return NextResponse.json({ status: 'error', message: error instanceof RecordPhotoError ? error.message : 'Không tải được ảnh hồ sơ.' }, { status: error instanceof RecordPhotoError ? error.status : 500 });
-  }
+  } finally { client?.release(); }
 }
 
 export const GET = withAccessRequest(GETHandler);

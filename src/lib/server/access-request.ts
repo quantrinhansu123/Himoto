@@ -65,11 +65,14 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     if(request.method!=='GET'&&request.nextUrl.pathname.endsWith('/actions')) {
       try {operation=String((await request.clone().json()).action||'');}catch {return NextResponse.json({status:'error',message:'Thao tác không hợp lệ.'},{status:400});}
     }
+    const vehiclePhoto=request.nextUrl.pathname.match(/\/record-photos\/vehicles\/([1-9]\d{0,14})(?:\/|$)/);
+    const transfer_vehicle_id=vehiclePhoto?.[1]||'';
+    if(transfer_vehicle_id)operation='transfer';
     const permission=requestPermission(request.nextUrl.pathname,request.method,request.nextUrl.pathname==='/api/auth/photo-ocr'?request.headers.get('x-photo-kind')||'':operation);
     // Own branch option list is required for every workspace role; mutation remains an admin setting.
     const branchOptions=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/stores';
     const composerStaff=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/hr/staff'&&request.nextUrl.searchParams.has('store_id')&&hasPermission(user,'contracts.read');
     if(!branchOptions&&!composerStaff&&permission&&!hasPermission(user,permission))return NextResponse.json({status:'error',message:'Tài khoản không có quyền thực hiện thao tác này.'},{status:403});
-    return dataAccess.run({...user,store_id:user.store_id??null,scope_all:user.scope_all===true,operation},()=>handler(request,context));
+    return dataAccess.run({...user,store_id:user.store_id??null,scope_all:user.scope_all===true,operation,transfer_vehicle_id},()=>handler(request,context));
   };
 }

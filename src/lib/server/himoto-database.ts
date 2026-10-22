@@ -49,8 +49,8 @@ async function scopedConnect():Promise<PoolClient> {
     try {
       // Supabase port 6543 pools transactions, not sessions. Pin scope and role to
       // the same transaction as the business query; never use session SET ROLE.
-      await rawQuery("SELECT set_config('himoto.scope_all',$1,true),set_config('himoto.store_id',$2,true),set_config('himoto.actor_id',$3,true),set_config('himoto.operation',$4,true),set_config('himoto.transfer_vehicle_id','',true)",
-        [String(scope.scope_all),scope.store_id==null?'':String(scope.store_id),String(scope.id),scope.operation]);
+      await rawQuery("SELECT set_config('himoto.scope_all',$1,true),set_config('himoto.store_id',$2,true),set_config('himoto.actor_id',$3,true),set_config('himoto.operation',$4,true),set_config('himoto.transfer_vehicle_id',$5,true)",
+        [String(scope.scope_all),scope.store_id==null?'':String(scope.store_id),String(scope.id),scope.operation,scope.transfer_vehicle_id||'']);
       await rawQuery('SET LOCAL ROLE himoto_scoped');return result;
     }catch(error){await rollback();throw error;}
   };

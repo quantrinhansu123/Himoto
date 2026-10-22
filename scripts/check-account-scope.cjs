@@ -104,6 +104,13 @@ async function main(){const c=await pool.connect();try{
   await c.query("UPDATE qa_access_scope.orders SET order_status='completed' WHERE id=92001"); // explicitly closed prior contract fixture
   await c.query("SELECT set_config('himoto.operation','transfer',true)");
   const transferred=await dataAccess.run({...scope,operation:'transfer'},()=>actions(proxy,91001,{action:'transfer',to_store_id:80001,note:'QA transfer'},70002));
+  await c.query("SELECT set_config('himoto.store_id','80002',true),set_config('himoto.actor_id','70002',true),set_config('himoto.operation',''),set_config('himoto.transfer_vehicle_id','',true)");
+  assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91001')).rowCount,0);
+  assert.equal((await c.query("SELECT count(*)::int AS n FROM qa_access_scope.vehicle_location_events WHERE vehicle_id=91001 AND event_type='manual_transfer'")).rows[0].n,1);
+  await load(path.join(root,'lib/server/record-photos')).requirePhotoRecord(proxy,'vehicles',91001);
+  await c.query("SELECT set_config('himoto.transfer_vehicle_id','91001',true),set_config('himoto.operation','transfer',true)");
+  assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91001')).rowCount,1);
+  checks.push('Source store keeps the transfer event after the bike leaves and can pin that vehicle for the 1 transfer photo');
   await c.query("SELECT set_config('himoto.transfer_vehicle_id','',true),set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true),set_config('himoto.operation','receive',true)");
   await dataAccess.run({...scope,id:70001,store_id:80001,operation:'receive'},()=>actions(proxy,91001,{action:'receive',transfer_event_id:transferred.event_id,note:'QA receive'},70001));
   assert.equal((await c.query("SELECT count(*)::int AS n FROM qa_access_scope.vehicle_location_events WHERE vehicle_id=91001 AND event_type IN ('manual_transfer','manual_transfer_receive')")).rows[0].n,2);
