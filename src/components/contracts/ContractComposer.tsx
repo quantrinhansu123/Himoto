@@ -179,7 +179,8 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     kind: () => 'plate', snapshot: () => draftRef.current.vehicles.map(vehicle => vehicle.id),
     apply: (slot, result, before, file) => {
       const license = result.fields.license || '';
-      const matches = (dataset?.vehicles || []).filter(vehicle => plateKey(String(vehicle.license || '')) === plateKey(license));
+      const matches = [...new Map([...(dataset?.vehicles || []), ...inventoryVehicles].map(vehicle => [vehicle.id, vehicle])).values()]
+        .filter(vehicle => plateKey(String(vehicle.license || '')) === plateKey(license));
       if (matches.length !== 1) throw new Error(`Đọc được biển số ${license}, ${matches.length ? 'có nhiều xe trùng biển số' : 'chưa tìm thấy xe trong kho'}. Kiểm tra và chọn xe thủ công.`);
       const selected = matches[0], current = draftRef.current;
       if (slot !== 'scan_plate' && slot !== `plate-${selected.id}`) throw new Error(`Ảnh có biển số ${license}, không khớp xe đang chọn. Kiểm tra lại ảnh.`);
@@ -844,7 +845,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             {draft.vehicles.map((vehicle, index) => {
               return <div key={index} className="mg-composer-vehicle"><div className="mg-composer-vehicle-header"><strong>Thông tin xe thuê số {index + 1}</strong>{draft.vehicles.length > 1 && <button className="mg-icon-button" type="button" aria-label={`Bỏ xe ${index + 1}`} onClick={() => change('vehicles', draft.vehicles.filter((_, i) => i !== index))}><Trash2 size={16} /></button>}</div>
               <div className="mg-field"><label htmlFor={`contract-vehicle-${index}`}>Chọn xe thuê *</label>
-                <VehiclePicker id={`contract-vehicle-${index}`} index={index} vehicles={branchVehicles} value={vehicle.id} storeName={!staffStoreId ? 'tất cả cơ sở' : vehicleStoreName || 'cửa hàng xe'} monthly={monthlyPackage}
+                <VehiclePicker id={`contract-vehicle-${index}`} index={index} vehicles={branchVehicles} directory={allVehicles} value={vehicle.id} storeName={!staffStoreId ? 'tất cả cơ sở' : vehicleStoreName || 'cửa hàng xe'} monthly={monthlyPackage}
                   ownOrderId={row?.id} takenIds={draft.vehicles.map(item => item.id).filter(Boolean)} disabled={false} invalid={Boolean(errors[`vehicle_${index}`])}
                   proposedStart={draft.start_date} proposedEnd={draft.end_date} onChange={id => chooseVehicle(index, id)} />
                 {errors[`vehicle_${index}`] && <p className="mg-field-error">{errors[`vehicle_${index}`]}</p>}</div>

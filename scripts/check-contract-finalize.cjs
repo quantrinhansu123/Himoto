@@ -26,9 +26,14 @@ async function main() {
   checks.push('strict finalize input (revision, Vietnam time not in the future, allowlisted receipt fields); draft payment labels map to methods');
   const finalizeSource = fs.readFileSync(path.join(root, 'lib/server/contract-finalize.ts'), 'utf8');
   const pickerSource = fs.readFileSync(path.join(root, 'components/contracts/VehiclePicker.tsx'), 'utf8');
+  const composerSource = fs.readFileSync(path.join(root, 'components/contracts/ContractComposer.tsx'), 'utf8');
   assert.ok(finalizeSource.includes('releaseIdleRentedVehicles'));
   assert.ok(pickerSource.includes('Sẵn sàng phát hành'));
+  assert.ok(pickerSource.includes('matchesVehicleSearch'));
+  assert.ok(pickerSource.includes('extraMatches'));
+  assert.match(composerSource,/directory=\{allVehicles\}/);
   checks.push('a vehicle left Đang thuê after every rental line closed is released on finalize and stays selectable in the picker');
+  checks.push('plate search in Chọn xe thuê looks through shared inventory, not only the selected store');
 
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });

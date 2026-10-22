@@ -17,6 +17,14 @@ const RENTAL_LABELS: Record<string, string> = {
 };
 const TONE_ORDER: Record<Tone, number> = { ok: 0, warn: 1, danger: 2 };
 const MAX_OPTIONS = 60;
+const plateKey = (value: unknown) => normalize(String(value || '')).replace(/[^a-z0-9]/g, '');
+export function matchesVehicleSearch(item: Pick<ManagementRow,'name'|'license'|'brand'|'store_name'>, query: string) {
+  const term = normalize(query);
+  if (!term) return true;
+  const plateTerm = term.replace(/[^a-z0-9]/g, '');
+  return normalize(`${item.name} ${item.license} ${item.brand || ''} ${item.store_name || ''}`).includes(term)
+    || Boolean(plateTerm) && plateKey(item.license).includes(plateTerm);
+}
 
 function rentalsOf(vehicle: ManagementRow): OpenVehicleRental[] {
   try { return vehicle.rentals_json ? JSON.parse(String(vehicle.rentals_json)) as OpenVehicleRental[] : []; } catch { return []; }
@@ -64,9 +72,10 @@ export function vehicleAvailability(
     selectable: true };
 }
 
-export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, ownOrderId, takenIds, disabled, invalid, proposedStart, proposedEnd, onChange }: {
+export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, ownOrderId, takenIds, disabled, invalid, proposedStart, proposedEnd, onChange, directory }: {
   id: string; index: number; vehicles: ManagementRow[]; value: string; storeName: string; monthly: boolean; ownOrderId?: number;
   takenIds: string[]; disabled: boolean; invalid: boolean; proposedStart?: string; proposedEnd?: string; onChange: (id: string) => void;
+  directory?: ManagementRow[];
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -74,20 +83,30 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
   const listId = `${id}-options`;
   const start = proposedStart || '';
   const end = proposedEnd || '';
-  const selected = vehicles.find(item => String(item.id) === value);
+  const selected = vehicles.find(item => String(item.id) === value) || directory?.find(item => String(item.id) === value);
   const ranked = useMemo(() => vehicles
     .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId, start, end) }))
     .sort((a, b) => TONE_ORDER[a.availability.tone] - TONE_ORDER[b.availability.tone] || String(a.item.name).localeCompare(String(b.item.name), 'vi')),
   [vehicles, ownOrderId, start, end]);
   const term = normalize(query);
   const plateTerm = term.replace(/[^a-z0-9]/g, '');
-  const matches = term ? ranked.filter(({ item }) => normalize(`${item.name} ${item.license} ${item.brand || ''} ${item.store_name || ''}`).includes(term)
-    || Boolean(plateTerm) && normalize(String(item.license || '')).replace(/[^a-z0-9]/g, '').includes(plateTerm)) : ranked;
-  const shown = matches.slice(0, MAX_OPTIONS);
+  const extraMatches = term ? (directory || []).filter(item => !vehicles.some(vehicle => String(vehicle.id) === String(item.id)) && matchesVehicleSearch(item, query))
+    .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId, start, end) })) : [];
+  const matches = [...(term ? ranked.filter(({ item }) => matchesVehicleSearch(item, query)) : ranked), ...extraMatches]
+    .sort((a, b) => {
+      if (plateTerm) {
+        const exact = Number(plateKey(a.item.license) === plateTerm) - Number(plateKey(b.item.license) === plateTerm);
+        if (exact) return -exact;
+      }
+      return TONE_ORDER[a.availability.tone] - TONE_ORDER[b.availability.tone] || String(a.item.name).localeCompare(String(b.item.name), 'vi');
+    });
+  const exactPlate = plateTerm ? matches.filter(({ item }) => plateKey(item.license) === plateTerm) : [];
+  const exactIds = new Set(exactPlate.map(row => String(row.item.id)));
+  const shown = [...exactPlate, ...matches.filter(row => !exactIds.has(String(row.item.id)))].slice(0, Math.max(MAX_OPTIONS, exactPlate.length));
   const selectedAvailability = selected ? vehicleAvailability(selected, ownOrderId, start, end) : null;
 
   function choose(next: string) {
-    const vehicle = vehicles.find(item => String(item.id) === next);
+    const vehicle = vehicles.find(item => String(item.id) === next) || directory?.find(item => String(item.id) === next);
     if (next && (!vehicle || !vehicleAvailability(vehicle, ownOrderId, start, end).selectable || takenIds.includes(next) && next !== value)) return;
     onChange(next);
     setQuery(''); setOpen(false); setActive(0);
@@ -111,7 +130,7 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
     <div className="mg-vehicle-picker-input">
       <input id={id} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" autoComplete="off" disabled={disabled}
         aria-invalid={invalid} aria-activedescendant={open && shown[active] ? `${listId}-${shown[active].item.id}` : undefined}
-        placeholder={disabled ? 'Chọn cửa hàng xe trước' : `Gõ tên xe hoặc biển số tại ${storeName}`}
+        placeholder={disabled ? 'Chọn cửa hàng xe trước' : `Gõ tên xe hoặc biển số tại ${storeName}. Gõ biển số để tìm cả cửa hàng khác`}
         value={open ? query : selected ? `${selected.name} · ${selected.license}` : ''}
         onFocus={() => { setOpen(true); setQuery(''); setActive(0); }}
         onBlur={() => { setOpen(false); setQuery(''); }}
@@ -134,7 +153,8 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
           {availability.detail && <em>{availability.detail}</em>}
         </div>;
       })}
-      {!vehicles.length && <small>Cửa hàng đã chọn chưa có xe.</small>}
+      {!vehicles.length && !extraMatches.length && <small>Cửa hàng đã chọn chưa có xe.{directory?.length ? ' Gõ biển số để tìm ở cửa hàng khác.' : ''}</small>}
+      {extraMatches.length > 0 && <small>Khớp biển số / tên xe ở cửa hàng khác.</small>}
       {ranked.length > 0 && !matches.length && <small>Không có xe phù hợp khớp từ khóa.</small>}
       {matches.length > shown.length && <small>Còn {matches.length - shown.length} xe nữa, gõ thêm để thu hẹp.</small>}
     </div>}
