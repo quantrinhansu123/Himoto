@@ -64,6 +64,17 @@ async function main(){
   assert.doesNotMatch(pageSql,/himoto\.transactions/);
   assert.doesNotMatch(pageSql,/himoto\.vehicles/);
   const drafts=load(path.join(root,'lib/server/contract-drafts'));
+  const ownershipPage=server.contractPageSql(drafts.contractListScopeClause('ownership'));
+  assert.match(ownershipPage,/LEFT JOIN himoto\.stores s ON s\.id = o\.store_id/);
+  assert.match(ownershipPage,/EXISTS \(SELECT 1 FROM himoto\.stores sx WHERE sx\.id=o\.store_id AND sx\.kind='lease_to_own'\)/);
+  assert.match(ownershipPage,/ownership_cd/);
+  assert.match(drafts.contractIndexSql(drafts.contractListScopeClause('ownership')),/lease_to_own/);
+  for (const query of [
+    'table=1&page=1&size=10&sort=code&direction=asc&store=all&scope=ownership&overdue_compare=eq',
+    'table=1&page=1&size=10&sort=overdue_minutes&direction=desc&store=all&scope=ownership&overdue_bucket=ownership-1-5&status=overdue&overdue_compare=eq',
+    'table=1&page=1&size=10&sort=overdue_minutes&direction=desc&store=all&scope=ownership&overdue_compare=eq',
+  ]) assert.equal(server.parseManagementTable('contracts',new URLSearchParams(query)).scope,'ownership');
+  checks.push('Ownership list page SQL joins stores and keeps the ownership filter self-contained');
   const indexSql=drafts.contractIndexSql('');
   assert.doesNotMatch(indexSql,/LEFT JOIN LATERAL/);
   assert.doesNotMatch(indexSql,/GROUP BY order_id/);

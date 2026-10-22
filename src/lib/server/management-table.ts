@@ -98,11 +98,12 @@ export function contractPageSql(scopeClause:string) {
   return `SELECT o.id, o.contract_number, o.draft_reference,
     CASE WHEN o.order_status='renting' AND o.return_at < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, o.customer_name, o.customer_phone,
-    o.store_id, o.rent_at AS start_date, o.return_at AS end_date,
+    o.store_id, s.store_name, s.kind AS store_kind, o.rent_at AS start_date, o.return_at AS end_date,
     o.total AS total_amount, '[]'::json AS vehicles,
     o.xmin::text AS draft_revision,
     CASE WHEN o.order_status='draft' THEN o.draft_payload ELSE NULL END AS draft_payload
     FROM himoto.orders o
+    LEFT JOIN himoto.stores s ON s.id = o.store_id
     WHERE o.deleted_at IS NULL${scopeClause}`;
 }
 function customerSearchSql(search:string) {

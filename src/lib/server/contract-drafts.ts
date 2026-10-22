@@ -161,7 +161,7 @@ export function contractListScopeClause(scope: string | null): string {
     case 'drafts': return ` AND o.order_status='draft'`;
     case 'overdue': return ` AND (o.order_status IN ('overdue','bad_debt') OR o.order_status='renting' AND o.return_at < now())`;
     case 'vat': return ` AND EXISTS (SELECT 1 FROM himoto.transactions t WHERE t.order_id=o.id AND t.type IN ('in','addon') AND t.status='approved' AND t.bank_owner_type='company')`;
-    case 'ownership': return ` AND (s.kind='lease_to_own' OR COALESCE(NULLIF(o.order_type,''), o.draft_payload->'management_composer'->>'rental_type') IN ('ownership','ownership_cd'))`;
+    case 'ownership': return ` AND (EXISTS (SELECT 1 FROM himoto.stores sx WHERE sx.id=o.store_id AND sx.kind='lease_to_own') OR COALESCE(NULLIF(o.order_type,''), o.draft_payload #>> '{management_composer,rental_type}') IN ('ownership','ownership_cd'))`;
     default: return '';
   }
 }

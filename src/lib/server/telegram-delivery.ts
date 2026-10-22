@@ -46,8 +46,8 @@ async function loadMedia(photo: Attachment): Promise<Media> {
   // Authenticated Cloudinary photos are handed to Telegram as a signed URL so
   // Vercel does not download+reupload every file. Videos stay as bytes because
   // Telegram URL fetches cap below the 45 MB / 60s contract limit.
-  if (photo.cloudinary_public_id && photo.mime_type !== 'video/mp4') {
-    return { url: cloudinaryPhotoUrl(photo), type: photo.mime_type };
+  if (photo.cloudinary_public_id && photo.cloudinary_cloud_name && photo.mime_type !== 'video/mp4') {
+    return { url: cloudinaryPhotoUrl({ cloudinary_public_id: photo.cloudinary_public_id, cloudinary_cloud_name: photo.cloudinary_cloud_name, mime_type: photo.mime_type }), type: photo.mime_type };
   }
   const data = photo.object_key
     ? await readObjectVideo({ object_bucket: photo.object_bucket!, object_key: photo.object_key, object_etag: photo.object_etag! })

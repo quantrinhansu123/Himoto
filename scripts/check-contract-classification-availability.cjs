@@ -2,6 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
 const {load,root}=require('./lib/load-typescript.cjs');
 const {CONTRACT_LIST_SQL,contractListScopeClause}=load(path.join(root,'lib/server/contract-drafts'));
+const {contractPageSql}=load(path.join(root,'lib/server/management-table'));
 const {VEHICLE_ORDER_SQL}=load(path.join(root,'lib/server/contract-classification'));
 const {mapApiRow}=load(path.join(root,'lib/management/repository'));
 const {readContractTelegram}=load(path.join(root,'lib/server/contract-telegram'));
@@ -35,6 +36,8 @@ try{
  assert.deepEqual(all.map(o=>Number(o.id)).sort(),[1,3,4]);
  const ownership=(await db.query(CONTRACT_LIST_SQL+contractListScopeClause('ownership'))).rows;
  assert.deepEqual(ownership.map(o=>Number(o.id)),[3]);
+ const ownershipPage=(await db.query(`${contractPageSql(contractListScopeClause('ownership'))} ORDER BY o.id`)).rows;
+ assert.ok(ownershipPage.some(row=>Number(row.id)===3),'ownership page SQL must return lease-to-own contracts');
  assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.battery_contracts')).rows[0].n,2);
  assert.equal((await db.query('SELECT total,pid FROM himoto.orders WHERE id=2')).rows[0].pid,'2650000');
  checks.push('SQL lists/summaries exclude source-store-30 battery anchors, retain source-store-29 ownership and native car-plus-battery links; battery records and historical amounts remain intact');
