@@ -1,6 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { StaffSalesReport, StaffSalesRow } from '@/lib/management/staff-sales';
+import { renewalReceiptSql } from './contract-receipts';
 
 export class StaffSalesError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -29,14 +30,15 @@ const SALES_CTE = `WITH eligible AS (
   WHERE o.customer_id IS NOT NULL AND o.order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
 ), receipt_history AS (
   SELECT t.*,o.initial_fees,
-    SUM(CASE WHEN t.name='order:renewal' THEN 0 ELSE t.value END)
+    ${renewalReceiptSql()} AS is_renewal,
+    SUM(CASE WHEN ${renewalReceiptSql()} THEN 0 ELSE t.value END)
       OVER(PARTITION BY t.order_id ORDER BY t.created_at,t.id ROWS UNBOUNDED PRECEDING) AS cumulative_regular
   FROM himoto.transactions t JOIN eligible o ON o.id=t.order_id
   WHERE t.status='approved' AND t.type IN ('in','addon')
-    AND t.name IN ('order:rental_fees','order:payment','order:renewal')
+    AND (t.name IN ('order:rental_fees','order:payment') OR ${renewalReceiptSql()})
     AND (t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= $2::date
 ), receipts AS (
-  SELECT order_id,SUM(CASE WHEN name='order:renewal' THEN value
+  SELECT order_id,SUM(CASE WHEN is_renewal THEN value
     ELSE GREATEST(cumulative_regular-initial_fees,0)-GREATEST(cumulative_regular-value-initial_fees,0) END) AS revenue
   FROM receipt_history WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= $1::date GROUP BY order_id
 ), attributed AS (

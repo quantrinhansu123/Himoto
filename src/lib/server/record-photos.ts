@@ -1,7 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import { hasRenewalVersion, nextRenewalVersion } from '@/lib/management/contract-renewals';
-import { MAX_PHOTO_BYTES, type PhotoEntity } from '@/lib/management/record-photos';
+import { isVehicleDocumentSlot, MAX_PHOTO_BYTES, type PhotoEntity } from '@/lib/management/record-photos';
 import { isContractTransactionPhoto } from '@/lib/management/contract-photos';
 
 export class RecordPhotoError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -9,7 +9,7 @@ const isVehicleTransferPhoto = (slot: string) => /^(transfer|receive)-[1-9]\d{0,
 export function parsePhotoTarget(entity: string, id: string, slot?: string): { entity: PhotoEntity; id: number; slot?: string } {
   if (!['customers', 'contracts', 'vehicles'].includes(entity) || !/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new RecordPhotoError('Hồ sơ không hợp lệ.');
   if (slot !== undefined && !(entity === 'customers' ? ['id_front', 'id_back', 'driver_license'].includes(slot)
-    : entity === 'vehicles' ? isVehicleTransferPhoto(slot)
+    : entity === 'vehicles' ? isVehicleTransferPhoto(slot) || isVehicleDocumentSlot(slot)
     : /^plate-[1-9]\d{0,14}$/.test(slot) || isContractTransactionPhoto(slot))) throw new RecordPhotoError('Loại ảnh không hợp lệ.');
   return { entity: entity as PhotoEntity, id: Number(id), slot };
 }

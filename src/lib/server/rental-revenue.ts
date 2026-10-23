@@ -3,6 +3,7 @@ import type {PoolClient} from 'pg';
 import {summarizeRentalRevenue,type RevenueReceipt} from '@/lib/management/rental-revenue';
 import {VEHICLE_ORDER_SQL} from './contract-classification';
 import {depositReceiptSql} from './contract-deposits';
+import {renewalReceiptSql} from './contract-receipts';
 export class RentalRevenueError extends Error {}
 const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(`${value}T00:00:00Z`).toISOString().slice(0,10)===value;
 // Allocate known initial non-rental fees over the entire receipt history BEFORE
@@ -13,8 +14,7 @@ export const RENTAL_REVENUE_SQL=`WITH classified AS (
       WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'excluded' ELSE 'unclassified' END
     WHEN ${depositReceiptSql()} OR t.name IN('order:return_repair','order:extra') THEN 'excluded'
     WHEN t.name='order:return_late' THEN 'late'
-    WHEN t.name='order:renewal' OR (t.name IN('order:rental_fees','order:payment') AND t.id IN
-      (SELECT p.transaction_id FROM himoto.management_contract_payments p WHERE p.renewal_payload IS NOT NULL)) THEN 'renewal'
+    WHEN ${renewalReceiptSql()} THEN 'renewal'
     WHEN t.name LIKE 'order:rental_fees%' OR t.name='order:payment' THEN 'rental'
     ELSE 'unclassified' END AS category,
     COALESCE(o.draft_payload #>> '{management_composer,profile,sales_staff_id}',o.draft_payload #>> '{management_composer,draft,sales_staff_id}') AS staff_id,

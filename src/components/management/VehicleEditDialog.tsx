@@ -7,9 +7,10 @@ import { VEHICLE_STATUSES, VEHICLE_TYPES } from '@/lib/management/config';
 import { VehicleEdits, saveVehicleRecord } from '@/lib/management/vehicle-repository';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
-import { PhotoField } from './RecordPhotoFields';
+import { VehicleDocumentFields } from './VehicleDocumentFields';
+import { type PendingPhotos, type VehicleDocumentSlot } from '@/lib/management/record-photos';
 import { usePhotoOcr } from './usePhotoOcr';
-import { mergeOcrVehicle, type OcrFields, type VehicleRegistrationValues } from '@/lib/management/photo-ocr';
+import { mergeOcrVehicle, OCR_VEHICLE_KEYS, type OcrFields, type VehicleRegistrationValues } from '@/lib/management/photo-ocr';
 
 const FIELDS: { key: keyof VehicleEdits; label: string; required?: boolean; type?: 'number'; max?: number }[] = [
   { key: 'name', label: 'Tên / dòng xe', required: true, max: 255 }, { key: 'license', label: 'Biển số', required: true, max: 25 },
@@ -26,7 +27,9 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
     type: value('type') || VEHICLE_TYPES[0].value, year: value('year'), store_id: value('store_id') || (selectedStore !== 'all' ? selectedStore : ''),
     status: value('status') || 'ready', chassis: value('chassis'), engine: value('engine'), odometer: value('odometer'), note: '' });
   const initialDraft = useRef(draft);
-  const dirty = (Object.keys(draft) as (keyof VehicleEdits)[]).some(key => draft[key] !== initialDraft.current[key]);
+  const [photos, setPhotos] = useState<PendingPhotos>({});
+  const [removed, setRemoved] = useState<VehicleDocumentSlot[]>([]);
+  const dirty = Object.keys(photos).length > 0 || removed.length > 0 || (Object.keys(draft) as (keyof VehicleEdits)[]).some(key => draft[key] !== initialDraft.current[key]);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const continueButton = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (confirmDiscard) continueButton.current?.focus(); }, [confirmDiscard]);
@@ -36,20 +39,20 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
   const busy = useRef(false);
   const currentDraft=useRef(draft);currentDraft.current=draft;
   const previousAi=useRef<OcrFields>({});
-  const [registration,setRegistration]=useState<File>();
-  const [preparing,setPreparing]=useState(false);
-  const ocr=usePhotoOcr<VehicleRegistrationValues>({kind:()=>'vehicle_registration',snapshot:()=>({chassis:currentDraft.current.chassis,engine:currentDraft.current.engine}),apply:(_slot,result,before)=>{
+  const [preparingSlots, setPreparingSlots] = useState<Record<string, boolean>>({});
+  const preparing = Object.values(preparingSlots).some(Boolean);
+  const ocr=usePhotoOcr<VehicleRegistrationValues>({kind:()=>'vehicle_registration',snapshot:()=>Object.fromEntries(OCR_VEHICLE_KEYS.map(key=>[key,currentDraft.current[key]])) as VehicleRegistrationValues,apply:(_slot,result,before)=>{
     if(busy.current)return 'Đã bỏ qua kết quả vì xe đang được lưu.';
     const merged=mergeOcrVehicle(currentDraft.current,result.fields,before,previousAi.current);
-    const keys=Object.keys(merged.applied) as ('chassis'|'engine')[];
+    const keys=Object.keys(merged.applied) as typeof OCR_VEHICLE_KEYS[number][];
     if(keys.length){
       const next={...currentDraft.current,...merged.values};currentDraft.current=next;setDraft(next);
       previousAi.current={...previousAi.current,...merged.applied};setConfirmDiscard(false);
       setErrors(current=>({...current,...Object.fromEntries(keys.map(key=>[key,'']))}));
     }
-    return `${keys.length?`Đã điền ${keys.map(key=>key==='chassis'?'số khung':'số máy').join(' và ')}.`:'Giữ nguyên các số đã nhập tay.'}${!result.fields.chassis||!result.fields.engine?' Ảnh chưa đọc đủ cả hai số.':''}${!merged.values.chassis.trim()||!merged.values.engine.trim()?' Bổ sung trường còn thiếu.':''}`;
+    const labels={license:'biển số',chassis:'số khung',engine:'số máy',color:'màu sắc',year:'năm sản xuất'};
+    return `${keys.length?`Đã điền ${keys.map(key=>labels[key]).join(', ')}.`:'Giữ nguyên thông tin đã nhập tay.'}${OCR_VEHICLE_KEYS.some(key=>!merged.values[key]?.trim())?' Bổ sung trường còn thiếu hoặc chụp mặt còn lại.':''}`;
   }});
-  const ocrState=ocr.states.registration;
   const form = useRef<HTMLFormElement>(null);
   const rented = (() => { try { return JSON.parse(String(row?.rentals_json || '[]')).length > 0; } catch { return row?.status === 'using'; } })();
   const statusOptions = VEHICLE_STATUSES;
@@ -73,9 +76,9 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
     if (license && dataset?.vehicles.some(vehicle => vehicle.id !== row?.id && String(vehicle.license).trim().toUpperCase() === license)) next.license = 'Biển số này đã có trong danh sách.';
     setErrors(next); setError('');
     if (Object.keys(next).length) { requestAnimationFrame(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return; }
-    ocr.cancel('registration');busy.current = true; setSaving(true);
+    for (const slot of ['registration-front','registration-back']) ocr.cancel(slot);busy.current = true; setSaving(true);
     try {
-      await saveVehicleRecord(row?.id ?? null, draft, value('vehicle_revision') || undefined);
+      await saveVehicleRecord(row?.id ?? null, draft, value('vehicle_revision') || undefined, photos, removed);
       await ensureData(['vehicles'], true).catch(() => {});
       notify(row ? `Đã cập nhật xe ${license}.` : `Đã thêm xe ${license}.`);
       onClose();
@@ -86,15 +89,10 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
   const fieldError = (key: keyof VehicleEdits) => errors[key] && <p id={`vehicle-${key}-error`} className="mg-field-error">{errors[key]}</p>;
   return <Dialog title={row ? 'Chỉnh sửa xe' : 'Thêm xe'} subtitle={row ? `${row.code} · ${value('license')}` : 'Lưu trực tiếp vào Supabase'} dismissOnBackdrop={false} onClose={requestClose}>
     <form ref={form} noValidate onSubmit={submit}><div className="mg-dialog-body">
-      <section className="mg-vehicle-registration" aria-label="Đọc đăng ký xe" aria-busy={preparing||ocr.pending}>
-        <PhotoField slot={{key:'registration',label:'Đăng ký xe · tự điền số khung, số máy'}} file={registration} disabled={saving} onBusyChange={value=>{setPreparing(value);if(value)ocr.cancel('registration');}}
-          fileHint="Ảnh dùng để đọc thông tin, chưa lưu vào hồ sơ xe."
-          onChange={file=>{setRegistration(file);ocr.read('registration',file);}}/>
-        <p className="mg-photo-feedback">Tự điền ô trống, giữ thông tin nhập tay. AI có thể nhầm 0/O, 1/I; đối chiếu đăng ký xe trước khi lưu.</p>
-        {ocrState&&<div className="mg-photo-feedback"><p role={ocrState.phase==='error'?'alert':'status'} className={ocrState.phase==='error'?'mg-field-error':undefined}>{ocrState.message}</p>
-          {ocrState.phase==='reading'?<button type="button" className="mg-button" disabled={saving} onClick={()=>ocr.cancel('registration')}>Bỏ qua AI</button>:registration&&<button type="button" className="mg-button" disabled={saving||preparing} onClick={()=>ocr.read('registration',registration)}>Đọc lại ảnh</button>}
-        </div>}
-      </section><div className="mg-form-grid">
+      <VehicleDocumentFields id={row?.id} photos={photos} removed={removed} disabled={saving} ocr={ocr}
+        onChange={(next, deleted) => { setPhotos(next); setRemoved(deleted); setConfirmDiscard(false); }}
+        onBusyChange={(key, value) => setPreparingSlots(current => current[key] === value ? current : { ...current, [key]: value })}/>
+      <div className="mg-form-grid">
       {FIELDS.slice(0, 4).map(field => <div key={field.key} className="mg-field"><label htmlFor={`vehicle-${field.key}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
         <input id={`vehicle-${field.key}`} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
       <div className="mg-field"><label htmlFor="vehicle-type">Loại xe<span aria-hidden="true"> *</span></label><select id="vehicle-type" value={draft.type} disabled={saving} onChange={event => change('type', event.target.value)}>

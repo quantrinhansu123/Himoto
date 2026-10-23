@@ -11,7 +11,7 @@ const pool = load(path.join(root,'lib/server/himoto-database')).himotoPool;
 const checks = [];
 async function main(){
   const c=await pool.connect();
-  const tables=['orders','transactions','staff_profiles','vehicles','order_vehicle_details'];
+  const tables=['orders','transactions','staff_profiles','vehicles','order_vehicle_details','management_contract_payments'];
   const proxy={query(sql,params){let q=sql;for(const table of tables)q=q.replaceAll(`himoto.${table}`,`pg_temp.qa_sales_${table}`);assert(!q.includes('himoto.'),'Every business query must use TEMP');return c.query(q,params);}};
   const attempt=async work=>{await c.query('SAVEPOINT sales_case');try{const r=await work();await c.query('RELEASE SAVEPOINT sales_case');return r;}catch(error){await c.query('ROLLBACK TO SAVEPOINT sales_case');await c.query('RELEASE SAVEPOINT sales_case');throw error;}};
   const customer={...doc.customerDetails(),name:'Khách QA',phone:'0900000077'};
@@ -70,6 +70,9 @@ async function main(){
     await c.query('UPDATE qa_sales_orders SET total=$1 WHERE id=3',['12000000']);
     result=await staffSales(proxy,'2026-10-01','2026-10-31');assert.equal(row('TLS').revenue,6000000);
     checks.push('Renewals increasing current debt never inflate the original TLS contract value; invalid date filters are rejected');
+    await c.query("INSERT INTO qa_sales_transactions(id,order_id,store_id,user_id,note,created_at,value,name,type,status) VALUES($1,1,35,143,'QA legacy renewal','2026-10-11T10:00:00+07:00',50000,'addon','addon','approved')",[tid++]);
+    result=await staffSales(proxy,'2026-10-01','2026-10-31');assert.equal(row('NVKD').revenue,10060000);assert.equal(row('TLS').revenue,6000000);
+    checks.push('Legacy addon/name=addon renewals count once for NVKD without consuming initial non-rental fees or changing first-rental TLS attribution');
 
     const dataset={stores:[{id:35}],vehicles:[{id:101}],staff:[],customers:[],contracts:[]};
     const draft={...doc.createContractDraft(dataset,'35'),customer_id:77,customer,vehicles:[{...doc.emptyVehicle(),id:'101'}],start_date:'2026-10-13T09:00',end_date:'2026-10-14T09:00',total_amount:'300000',unit_price:'300000',deposit_amount:'3000000'};

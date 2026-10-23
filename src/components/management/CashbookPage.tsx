@@ -13,6 +13,7 @@ import { CashbookTable } from './CashbookTable';
 import { CashbookSummary } from './CashbookSummary';
 import { ContractPaymentDialog } from './ContractPaymentDialog';
 import { parsePaymentPurpose, type PaymentPurpose } from '@/lib/management/contract-payments';
+import { vietnamDate } from '@/lib/management/duty-roster';
 
 export function CashbookPage() {
   const { source, selectedStore, selectStore, notify, canPayContracts, dataset } = useManagement();
@@ -169,6 +170,7 @@ export function CashbookPage() {
       <div className="mg-filter-controls"><label htmlFor="cashbook-actor" className="mg-cashbook-select-label">Người thực hiện<select id="cashbook-actor" value={query.actor} disabled={pending || Boolean(error)} onChange={event => update({ actor: event.target.value })}><option value="">Tất cả người thực hiện</option>{actors.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div></div>
       <div className="mg-date-filters"><span>Ngày phát sinh</span><label htmlFor="cashbook-start">Từ ngày <input id="cashbook-start" type="date" value={query.startDate} aria-invalid={invalidDate} aria-describedby={invalidDate ? 'cashbook-date-error' : undefined} onChange={event => update({ startDate: event.target.value })} /></label>
         <label htmlFor="cashbook-end">Đến ngày <input id="cashbook-end" type="date" value={query.endDate} aria-invalid={invalidDate} aria-describedby={invalidDate ? 'cashbook-date-error' : undefined} onChange={event => update({ endDate: event.target.value })} /></label>
+        <button type="button" className="mg-button" onClick={() => { const today = vietnamDate(); update({ startDate: today, endDate: today }); }}>Hôm nay</button>
         {invalidDate && <span id="cashbook-date-error" className="mg-field-error" role="alert">Đến ngày phải bằng hoặc sau Từ ngày.</span>}{isFiltered && <button type="button" className="mg-button" onClick={reset}><RotateCcw size={14} />Xóa bộ lọc</button>}</div>
     </div>
     <CashbookSummary result={result} loading={pending} unavailable={Boolean(error) || invalidDate} scope={`${scopeName} · ${period}`} />

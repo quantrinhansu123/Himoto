@@ -33,9 +33,12 @@ async def check_summary(page,matches):
     income=sum(row['amount'] for row in matches if row['type']!='out')
     expense=sum(row['amount'] for row in matches if row['type']=='out')
     deposit=sum(row['amount'] for row in matches if row['summary_category']=='deposit_income')
+    rental=sum(row['amount'] for row in matches if row['summary_category'] in ['rental_income','renewal_income','late_fee_income'])
+    early=sum(row['amount'] for row in matches if row['summary_category']=='rental_refund_expense')
+    refund=sum(row['amount'] for row in matches if row['summary_category']=='deposit_refund_expense')
     summary=page.get_by_role('region',name='Tổng hợp thu chi theo bộ lọc')
     await expect(summary).to_have_attribute('aria-busy','false')
-    for key,value in [('income',income),('deposit',deposit),('outside-deposit',income-deposit),('expense',expense)]:
+    for key,value in [('income',deposit+rental),('revenue',rental-early),('expense',refund+early)]:
         await expect(summary.locator(f'[data-metric="{key}"] .mg-cashbook-metric-value')).to_have_text(money(value))
     for kind,value in [('income',income),('expense',expense)]:
         await expect(page.locator(f'#cashbook-{kind} .mg-cashbook-table-total strong')).to_have_text(money(value))
@@ -177,13 +180,13 @@ async def main():
         delay[0]=0.6
         await page.get_by_role('button',name='Tải lại',exact=True).click()
         await expect(income.locator('table')).to_have_attribute('aria-busy','true')
-        await expect(page.locator('[data-metric="deposit"] .mg-cashbook-metric-value')).to_have_text('—')
+        await expect(page.locator('[data-metric="revenue"] .mg-cashbook-metric-value')).to_have_text('—')
         await expect(income.get_by_role('status').last).to_contain_text('Đang tải')
         await expect(income.locator('table')).to_have_attribute('aria-busy','false')
         delay[0]=0; fail[0]=True
         await page.get_by_role('button',name='Tải lại',exact=True).click()
         await expect(income.get_by_role('alert').last).to_contain_text('Lỗi QA')
-        await expect(page.locator('[data-metric="outside-deposit"] .mg-cashbook-metric-value')).to_have_text('—')
+        await expect(page.locator('[data-metric="revenue"] .mg-cashbook-metric-value')).to_have_text('—')
         await income.get_by_role('button',name='Thử lại',exact=True).last.click()
         await expect(income.locator('.mg-title-count')).to_have_text('24')
         await expect(expense.locator('.mg-title-count')).to_have_text('24')

@@ -2,11 +2,13 @@ const assert = require('node:assert/strict'), path = require('node:path'), { ran
 const { load, root } = require('./lib/load-typescript.cjs');
 const { listCashbook } = load(path.join(root, 'lib/server/cashbook-list'));
 const { loadCashbookPage, DEFAULT_CASHBOOK_PAGINATION } = load(path.join(root, 'lib/management/cashbook-repository'));
-const { CASHBOOK_BREAKDOWN_KEYS, EMPTY_CASHBOOK_FILTERS } = load(path.join(root, 'lib/management/cashbook'));
-const expected = { deposit_income:46, rental_income:63, renewal_income:126, late_fee_income:40, repair_income:41, extra_income:42, other_income:43, deposit_refund_expense:153, rental_refund_expense:0, other_expense:53 };
+const { CASHBOOK_BREAKDOWN_KEYS, EMPTY_CASHBOOK_FILTERS, cashbookRentalTotals } = load(path.join(root, 'lib/management/cashbook'));
+const expected = { deposit_income:46, rental_income:63, renewal_income:169, late_fee_income:40, repair_income:41, extra_income:42, other_income:0, deposit_refund_expense:153, rental_refund_expense:0, other_expense:53 };
 
 async function main() {
   const checks = [], originalFetch = global.fetch;
+  assert.deepEqual(cashbookRentalTotals({...expected,rental_refund_expense:20}),{revenue:252,income:318,expense:173});
+  checks.push('Requested rental revenue/actual income/actual expense formulas include late fees and early refunds, while repair and other amounts stay separate');
   const envelope = breakdown => ({ status:'success', data:{total:19, income:{rows:[],total:15,amount:401,page:1,pageSize:5},expense:{rows:[],total:4,amount:206,page:1,pageSize:5},actors:[],breakdown} });
   try {
     global.fetch = async () => Response.json(envelope(expected));

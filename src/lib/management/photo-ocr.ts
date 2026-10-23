@@ -5,7 +5,7 @@ import { normalizeRefundAccount,validRefundAccount } from './return-refunds';
 
 export const OCR_CUSTOMER_KEYS = ['id_card', 'name', 'id_card_issued_on', 'id_card_issued_by'] as const;
 export const OCR_DRIVER_KEYS = ['driver_license_number','driver_license_issued_on'] as const;
-export const OCR_VEHICLE_KEYS = ['chassis','engine'] as const;
+export const OCR_VEHICLE_KEYS = ['license','chassis','engine','color','year'] as const;
 export type VehicleRegistrationValues = Record<typeof OCR_VEHICLE_KEYS[number],string>;
 export type OcrCustomerKey = typeof OCR_CUSTOMER_KEYS[number] | typeof OCR_DRIVER_KEYS[number];
 export type OcrKind = 'cccd_front' | 'cccd_back' | 'plate' | 'passport' | 'driver_license' | 'customer_documents' | 'refund_qr' | 'vehicle_registration';
@@ -22,17 +22,19 @@ export function cleanOcrFields(value: unknown, kind: OcrKind): OcrFields {
     if (raw === undefined || raw === null || raw === '') continue;
     if (typeof raw !== 'string' || raw.length > 255) throw new Error('Kết quả đọc ảnh không hợp lệ.');
     let text = Array.from(raw.trim(), character => character.charCodeAt(0) < 32 ? ' ' : character).join('').replace(/\s+/g, ' ');
-    if(kind==='vehicle_registration'){
+    if(kind==='vehicle_registration'&&(key==='chassis'||key==='engine')){
       text=text.toUpperCase().replace(/\s/g,'');
       if(/^(NULL|UNDEFINED|UNKNOWN|NONE|N\/A)$/.test(text)||!/[0-9]/.test(text)||!/^[A-Z0-9][A-Z0-9./*-]{1,78}[A-Z0-9]$/.test(text))continue;
     }
+    if(kind==='vehicle_registration'&&key==='year'&&(!/^\d{4}$/.test(text)||Number(text)<1980||Number(text)>new Date().getFullYear()+1))continue;
+    if(kind==='vehicle_registration'&&key==='color'&&(text.length>80||/^(null|undefined|unknown|none|n\/a)$/i.test(text)||/[<>{}]/.test(text)))continue;
     if(kind==='refund_qr'){
       if(text.length>150||/^(null|undefined|unknown|n\/a)$/i.test(text))continue;
       if(key==='recipient_account'){text=normalizeRefundAccount(text);if(!validRefundAccount(text))continue;}
     }
     if (key === 'id_card') { text = text.replace(/\s/g, '').toUpperCase(); if (kind === 'passport'||kind==='customer_documents' ? !/^[A-Z0-9-]{3,100}$/.test(text) : !/^\d{9}$|^\d{12}$/.test(text)) continue; }
     if (key === 'id_card_issued_on' || key === 'driver_license_issued_on') { text = parseIssueDateInput(text); if (!validIdentityIssueDate(text)) continue; }
-    if (key === 'license') { text = text.toUpperCase(); if (!/^\d{2}[A-Z]{1,2}\d?\d{4,6}$/.test(plateKey(text))) continue; }
+    if (key === 'license') { text = text.toUpperCase(); if (text.length>25||!/^\d{2}[A-Z]{1,2}\d?\d{4,6}$/.test(plateKey(text))) continue; }
     if (text) fields[key] = text;
   }
   return fields;
@@ -41,7 +43,7 @@ export function cleanOcrFields(value: unknown, kind: OcrKind): OcrFields {
 /** Only empty or previously AI-filled identifiers can change; manual edits win. */
 export function mergeOcrVehicle(current:VehicleRegistrationValues,result:OcrFields,before:VehicleRegistrationValues,previousAi:OcrFields){
   const values={...current},applied:OcrFields={};
-  for(const key of OCR_VEHICLE_KEYS)if(result[key]&&current[key]===before[key]&&(!current[key].trim()||current[key]===previousAi[key])){
+  for(const key of OCR_VEHICLE_KEYS)if(result[key]&&current[key]===before[key]&&(!(current[key]||'').trim()||current[key]===previousAi[key])){
     values[key]=result[key];applied[key]=result[key];
   }
   return {values,applied};

@@ -15,6 +15,8 @@ import { formatDateTime } from '@/lib/formatters';
 import { MobileDetailsCard } from './MobileDetailsCard';
 import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
 import { GpsEvidence } from './GpsEvidence';
+import { SavedRecordPhotos } from './RecordPhotoFields';
+import { VEHICLE_DOCUMENT_SLOTS } from '@/lib/management/record-photos';
 
 const SECTIONS = [
   { id: 'details', label: 'Thông tin xe' },
@@ -70,6 +72,7 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
         {typeof row.gps_latitude==='number'&&typeof row.gps_longitude==='number'&&<a className="mg-button" href={`https://www.google.com/maps?q=${row.gps_latitude},${row.gps_longitude}`} target="_blank" rel="noopener noreferrer">Mở vị trí GPS</a>}
         <dl className="mg-detail-grid">{config.columns.filter(column => column.key !== 'name' && column.key !== 'status' && column.key !== 'location_status').map(column => <div key={column.key}><dt>{column.label}</dt><dd>{optionLabel(config, column.key, formatValue(row[column.key], column.format))}</dd></div>)}
           {config.fields.filter(field => !config.columns.some(column => column.key === field.key) && field.key !== 'store_id').map(field => <div key={field.key}><dt>{field.label}</dt><dd>{row[field.key] || '—'}</dd></div>)}</dl>
+        {source === 'api' && section === 'details' && <SavedRecordPhotos entity="vehicles" recordId={row.id} slots={[...VEHICLE_DOCUMENT_SLOTS]} title="Đăng ký xe & giấy mua bán" readOnly/>}
       </>)}
       {panel('history', <>
         <div className="mg-contract-history-toolbar"><p>Ngày giờ, người thao tác và các trường đã đổi từ giá trị cũ → mới. Lịch sử cũ giữ nội dung đã ghi nhận.</p>

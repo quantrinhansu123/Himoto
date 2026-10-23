@@ -5,6 +5,7 @@ import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { SalesCharts } from './SalesCharts';
 import {RentalRevenuePanel} from './RentalRevenuePanel';
+import { RentalOverviewPanel, VehicleRevenuePanel } from './RentalReportPanels';
 import { loadSalesSummary,loadStaffSales,type StaffSalesReport,type SalesSummaryReport } from '@/lib/management/staff-sales';
 import { summarizeBySalesStaff,summarizeByStore,summarizeSalesKpis,type SalesKpis,type SourceSalesSummary } from '@/lib/management/source-sales';
 import { vietnamDate } from '@/lib/management/duty-roster';
@@ -55,6 +56,7 @@ function SummaryTable({title,description,column,unit,summary,filename,loading,er
 export function StaffSalesPage() {
   const {selectedStore,dataset,error:datasetError,resources,reload}=useManagement();const today=vietnamDate();
   const [from,setFrom]=useState(`${today.slice(0,7)}-01`),[to,setTo]=useState(today),[department,setDepartment]=useState('');
+  const [reportView, setReportView] = useState<'actual' | 'vehicles' | 'overview'>('actual');
   const [report,setReport]=useState<StaffSalesReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useReloadAction(useCallback(()=>{setRetry(value=>value+1);void reload();},[reload]));
   useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(setReport).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[from,to,selectedStore,retry]);
@@ -72,7 +74,7 @@ export function StaffSalesPage() {
   function changeTo(value:string){if(!value)return;setTo(value);if(value<from)setFrom(value);}
   const scope='Hợp đồng có ngày bắt đầu thuê trong kỳ; không tính nháp, giữ xe / chờ nhận xe và đã hủy.';
   function exportCsv(){downloadCsv([['Nhân viên','Bộ phận','Cách tính','Hợp đồng','Khách','Khách mới','Doanh số'],...rows.map(row=>[row.name,row.department,row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên',row.contracts,row.customers,row.new_customers,row.revenue])],`doanh-so-${from}-${to}.csv`);}
-  return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Doanh số nhân viên</h1><p>Phí thuê + gia hạn + trả muộn − tiền thuê đã hoàn do trả sớm. Tính theo ngày thực thu / thực hoàn tiền, tách riêng tiền cọc.</p></div><div className="mg-heading-actions"><button className="mg-button" type="button" onClick={()=>{setRetry(v=>v+1);void reload();}}><RotateCcw size={16}/>Tải lại</button></div></div>
+  return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Báo cáo doanh thu thuê xe</h1><p>Doanh thu thực thu, doanh thu từng xe và tổng quan thuê xe theo cơ sở / ngày.</p></div><div className="mg-heading-actions"><button className="mg-button" type="button" onClick={()=>{setRetry(v=>v+1);void reload();}}><RotateCcw size={16}/>Tải lại</button></div></div>
     <div className="mg-data-panel"><div className="mg-sales-filter" role="search" aria-label="Bộ lọc doanh số">
       <div className="mg-sales-filter-presets" role="group" aria-label="Chọn nhanh kỳ báo cáo">{PRESETS.map(preset=><button key={preset.id} type="button" className={activePreset===preset.id ? 'is-active' : ''} aria-pressed={activePreset===preset.id} onClick={()=>choosePreset(preset.id)}>{preset.label}</button>)}</div>
       <div className="mg-sales-filter-row">
@@ -81,7 +83,12 @@ export function StaffSalesPage() {
       </div>
       <p className="mg-sales-filter-summary">Kỳ báo cáo <strong>{viDate(from)} – {viDate(to)}</strong> · {periodDays} ngày · {storeName}</p>
     </div>
-    <RentalRevenuePanel key={`${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>
+    <div className="mg-report-views" role="group" aria-label="Chọn báo cáo">{([
+      ['actual', 'Doanh thu thực thu / NVKD'], ['vehicles', 'Doanh thu từng xe'], ['overview', 'Tổng quan thuê xe'],
+    ] as const).map(([key, label]) => <button key={key} type="button" className={`mg-button${reportView === key ? ' is-active' : ''}`} aria-pressed={reportView === key} onClick={() => setReportView(key)}>{label}</button>)}</div>
+    {reportView === 'actual' && <RentalRevenuePanel key={`actual-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
+    {reportView === 'vehicles' && <VehicleRevenuePanel key={`vehicles-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
+    {reportView === 'overview' && <RentalOverviewPanel key={`overview-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     <details className="mg-monitor-tools"><summary>Thống kê hợp đồng & báo cáo khác</summary>
     <p className="mg-sales-kpi-note">Các thống kê bên dưới dùng phạm vi và cách tính ghi tại từng mục. Chốt KPI thuê xe theo bảng Doanh thu thuê xe phía trên.</p>
     <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>

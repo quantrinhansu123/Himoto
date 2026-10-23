@@ -1875,7 +1875,7 @@
 .mg-cashbook-summary-heading h2 { margin: 0; font-size: 17px; color: var(--mg-heading); }
 .mg-cashbook-summary-heading p { margin: 5px 0 0; color: var(--mg-slate-600); font-size: 12px; }
 .mg-cashbook-summary-heading > span { color: var(--mg-muted); font-size: 12px; }
-.mg-cashbook-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+.mg-cashbook-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 12px; margin: 0 0 14px; }
 .mg-cashbook-metric { min-width: 0; padding: 18px; border: 1px solid var(--mg-line); border-radius: var(--mg-radius-md); background: var(--mg-card); box-shadow: var(--mg-shadow-sm); }
 .mg-cashbook-metric dt { display: flex; align-items: center; gap: 8px; color: var(--mg-slate-600); font-size: 13px; font-weight: 600; }
 .mg-cashbook-metric-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex-shrink: 0; border-radius: 8px; background: var(--mg-slate-100); color: var(--mg-slate-700); }
@@ -4030,3 +4030,57 @@
 .shift-inventory-tabs #shift-inventory-tab-transfers { --tab-accent:#b45309; --tab-tint:#fffbeb; --tab-border:#fde68a; }
 .shift-view-navigation { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 20px; }
 .shift-history td[colspan] { padding:32px 16px; text-align:center; color:#64748b; }
+
+/* Collapsed rental metrics and the reports inherited from the legacy app. */
+.mg-cashbook-metric > summary { list-style:none; cursor:pointer; border-radius:6px; }
+.mg-cashbook-metric > summary::-webkit-details-marker { display:none; }
+.mg-cashbook-metric > summary:focus-visible { outline:2px solid var(--mg-yellow-600); outline-offset:5px; }
+.mg-cashbook-metric-label { display:flex; align-items:center; gap:8px; color:var(--mg-slate-600); font-size:13px; font-weight:600; }
+.mg-summary-chevron { margin-left:auto; flex-shrink:0; transition:transform .15s; }
+.mg-cashbook-metric[open] .mg-summary-chevron { transform:rotate(180deg); }
+.mg-cashbook-metric > summary > strong { display:block; margin-top:14px; }
+.mg-cashbook-metric.is-revenue { background:var(--mg-yellow-50); border-color:var(--mg-yellow-300); }
+.mg-cashbook-metric-details { display:grid; gap:12px; margin:18px 0 0; padding-top:14px; border-top:1px solid var(--mg-line); }
+.mg-cashbook-metric-details > div { display:flex; justify-content:space-between; gap:12px; }
+.mg-cashbook-metric-details dt { display:block; font-size:12px; font-weight:400; color:var(--mg-slate-600); }
+.mg-cashbook-metric-details dd { display:block; flex-shrink:0; margin:0; font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
+.mg-cashbook-reconciliation { margin:0 0 14px; padding:14px 18px; border:1px solid var(--mg-line); border-radius:var(--mg-radius-md); font-size:12px; }
+.mg-cashbook-reconciliation > summary { cursor:pointer; font-weight:600; }
+.mg-cashbook-reconciliation > p { color:var(--mg-muted); line-height:1.6; }
+.mg-cashbook-reconciliation .mg-cashbook-metric-details { max-width:650px; margin-bottom:16px; }
+.mg-report-views { display:flex; gap:8px; flex-wrap:wrap; margin:18px 20px 0; }
+.mg-report-views .is-active { background:var(--mg-yellow-100); border-color:var(--mg-yellow-400); color:var(--mg-heading); }
+.mg-report-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; padding:20px; }
+.mg-report-totals > div { min-width:0; }
+.mg-report-totals span { display:block; font-size:12px; color:var(--mg-muted); margin-bottom:8px; }
+.mg-report-totals strong { display:block; font-size:24px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.mg-rental-revenue-heading + .mg-rental-revenue-note { padding-top:14px; }
+.mg-report-search { display:flex; align-items:center; gap:8px; min-width:180px; flex:1; }
+.mg-report-search input { width:100%; min-width:0; min-height:40px; padding:8px 10px; border:1px solid var(--mg-line); border-radius:6px; }
+.mg-rental-revenue-toolbar label select { min-height:40px; padding:6px; border:1px solid var(--mg-line); border-radius:6px; background:var(--mg-card); }
+.mg-rental-overview-table { min-width:1600px; }
+.mg-vehicle-revenue-table { min-width:1100px; }
+.mg-rental-overview-table tfoot,.mg-vehicle-revenue-table tfoot { background:var(--mg-slate-50); font-weight:600; }
+.mg-report-store-button { border:0; background:transparent; color:var(--mg-heading); cursor:pointer; text-align:left; text-decoration:underline; text-underline-offset:3px; padding:8px 0; font:inherit; }
+.mg-report-pagination { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:16px 20px; }
+.mg-report-pagination > div { display:flex; gap:6px; flex-wrap:wrap; }
+@media (max-width:640px) {
+  .mg-cashbook-metrics { grid-template-columns:minmax(0,1fr); }
+  .mg-report-totals { grid-template-columns:minmax(0,1fr); padding:16px; }
+  .mg-report-views { margin:16px 16px 0; }
+  .mg-report-views > button { flex:1 1 100%; }
+  .mg-report-pagination { padding:16px; }
+}
+@media (prefers-reduced-motion:reduce) { .mg-summary-chevron { transition:none; } }
+.mg-report-mobile { padding:0 16px 16px; }
+.mg-report-card { padding:14px; margin:0 0 10px; border:1px solid var(--mg-line); border-radius:10px; }
+.mg-report-card summary { cursor:pointer; list-style:none; }
+.mg-report-card summary::-webkit-details-marker { display:none; }
+.mg-report-card summary > strong { display:block; margin-bottom:10px; font-size:13px; }
+.mg-report-card summary > span { display:block; margin-top:7px; color:var(--mg-muted); font-size:12px; }
+.mg-report-card summary b { color:var(--mg-heading); font-size:17px; font-variant-numeric:tabular-nums; }
+.mg-report-card dl { margin:14px 0; border-top:1px solid var(--mg-line); padding-top:10px; }
+.mg-report-card dl > div { display:flex; justify-content:space-between; gap:10px; margin-top:9px; font-size:12px; }
+.mg-report-card dt { color:var(--mg-muted); }
+.mg-report-card dd { margin:0; font-weight:600; text-align:right; }
+.mg-report-card > button { margin-top:12px; width:100%; }

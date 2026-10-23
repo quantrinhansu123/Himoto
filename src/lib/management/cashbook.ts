@@ -32,6 +32,14 @@ export interface CashbookFilters { search: string; actor: string; startDate: str
 export const EMPTY_CASHBOOK_FILTERS: CashbookFilters = { search: '', actor: '', startDate: '', endDate: '' };
 export const CASHBOOK_BREAKDOWN_KEYS = ['deposit_income', 'rental_income', 'renewal_income', 'late_fee_income', 'repair_income', 'extra_income', 'other_income', 'deposit_refund_expense', 'rental_refund_expense', 'other_expense'] as const;
 export type CashbookBreakdown = Record<(typeof CASHBOOK_BREAKDOWN_KEYS)[number], number>;
+export function cashbookRentalTotals(detail: CashbookBreakdown) {
+  const receipts = detail.rental_income + detail.renewal_income + detail.late_fee_income;
+  return {
+    revenue: receipts - detail.rental_refund_expense,
+    income: detail.deposit_income + receipts,
+    expense: detail.deposit_refund_expense + detail.rental_refund_expense,
+  };
+}
 export const actorKey = (row: CashbookRow) => row.actor_id ? `id:${row.actor_id}` : row.actor_name ? `name:${row.actor_name}` : '';
 export function filterCashbookRows(rows: CashbookRow[], filters: CashbookFilters, storeId: string): CashbookRow[] {
   const needle = normalize(filters.search);
