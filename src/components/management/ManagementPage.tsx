@@ -32,6 +32,7 @@ import { compactContractConfig } from '@/lib/management/contract-monitoring-conf
 import { OVERDUE_BUCKETS } from '@/lib/management/contract-overdue';
 import { useSelectedVehicleGps } from './SelectedVehicleGps';
 import { contractVehicleIds,contractGpsFields } from './ContractMonitoringCells';
+import { CONTRACT_STATUS_TABS } from '@/lib/management/contract-tabs';
 
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
@@ -80,7 +81,9 @@ function OptionalTools({collapsed,label,children}:{collapsed:boolean;label:strin
 function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false, ownershipOnly = false, paymentDueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean; ownershipOnly?: boolean; paymentDueOnly?: boolean }) {
   const searchParams = useSearchParams();
   const searchFromUrl = kind === 'contracts' ? searchParams.get('search') || '' : '';
-  const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl,...(overdueOnly?{status:'overdue',overdueBucket:'traditional-overdue' as const}:{})}));
+  const requestedStatus = kind === 'contracts' ? searchParams.get('status') || '' : '';
+  const statusFromUrl = MANAGEMENT_CONFIG.contracts.statuses.some(option=>option.value===requestedStatus)?requestedStatus:'';
+  const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl,status:statusFromUrl,...(overdueOnly?{status:statusFromUrl||'overdue',overdueBucket:'traditional-overdue' as const}:{})}));
   const compactContracts=kind==='contracts';
   const monitoringContracts=compactContracts&&(ownershipOnly||overdueOnly||query.status==='overdue'||query.status==='bad_debt'||Boolean(query.overdueBucket));
   const columnMode=ownershipOnly?'ownership':monitoringContracts?'monitoring':paymentDueOnly?'due':'rental';
@@ -122,14 +125,15 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
   const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
   const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:30}:{})};
-  const tableRevision=useMemo(()=>({at:resources[kind].updatedAt}),[kind,resources[kind].updatedAt]);
+  const resourceUpdatedAt=resources[kind].updatedAt;
+  const tableRevision=useMemo(()=>({at:resourceUpdatedAt}),[resourceUpdatedAt]);
   const contractsRevision=useMemo(()=>({at:resources.contracts.updatedAt}),[resources.contracts.updatedAt]);
   const table=useManagementTable(tableInput,paged,tableRevision,[...ownershipStoreIds]);
   const currentTableRefresh=useRef(table.refresh);currentTableRefresh.current=table.refresh;
   const renewable=useManagementTable({...tableInput,query:{...EMPTY_QUERY,search:renewSearch},scope:'renewable',page:1,size:30},renewPicker,contractsRevision,[...ownershipStoreIds]);
   // Paged contract/customer lists load via their own API; do not block the table on stores prefetch.
   const loading=paged ? table.loading && !table.data : datasetLoading;
-  const refreshing=datasetRefreshing || paged && table.loading && Boolean(table.data);
+  const refreshing=datasetRefreshing || paged && table.refreshing;
   const error=(paged?table.error:'') || (!paged?datasetError:'');
   async function reload(kinds?:readonly ManagementKind[]) { if(paged)table.refresh(); await reloadDataset(kinds); }
   const reloadAll = useRef(() => { void reload(); }); reloadAll.current = () => { void reload(); };
@@ -211,12 +215,12 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     setQuery(current => ({ ...current, filters: { ...current.filters, customer_id: customerId || '', id: contractId || '' } })); setPage(1);
   }, [customerId, contractId]);
   useEffect(()=>{setQuery(current=>({...current,search:searchFromUrl}));setPage(1);},[searchFromUrl]);
+  useEffect(()=>{
+    if(kind!=='contracts')return;
+    const status=statusFromUrl||(overdueOnly?'overdue':'');
+    setQuery(current=>current.status===status?current:{...current,status});setPage(1);
+  },[kind,statusFromUrl,overdueOnly]);
   useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [selectedStore]);
-  useEffect(() => {
-    if (kind !== 'contracts' || loading) return;
-    const timer = window.setTimeout(() => { void loadComposer().catch(() => {}); }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [kind, loading]);
   useEffect(() => {
     const close = (event: MouseEvent) => { if (columnsRef.current && !columnsRef.current.contains(event.target as Node)) columnsRef.current.open = false; };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && columnsRef.current?.open) { columnsRef.current.open = false; columnsRef.current.querySelector<HTMLElement>('summary')?.focus(); } };
@@ -240,8 +244,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const safePage = paged ? table.data?.page || 1 : Math.min(page, pageCount);
   const offset = (safePage - 1) * pageSize;
   // Always keep vehicle customer holder visible even if an older column-menu state hid it.
-  const columns = config.columns.filter(c => visibleKeys.includes(c.key) || (kind === 'vehicles' && c.key === 'holder_name'));
+  const columns = config.columns.filter(c => visibleKeys.includes(c.key) || (kind === 'vehicles' && c.key === 'holder_name') || (ownershipOnly && ['start_date','end_date'].includes(c.key)));
   const statusOptions = [...config.statuses, ...Array.from(new Set(paged?table.data?.statuses || []:rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
+  const contractTabs = kind === 'contracts' && !draftsOnly && !overdueOnly && !paymentDueOnly;
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || query.overdueDays.trim() || query.overdueBucket || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
   const canManageStaff = can('hr.write') || can('settings.write');
   const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : kind === 'staff' ? canManageStaff : false;
@@ -286,10 +291,19 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     vehicles: 'Xe sẽ bị xóa khỏi hệ thống. Nếu có xe đã nằm trong hợp đồng, bản nháp hoặc dữ liệu liên quan, toàn bộ lượt xóa bị hủy.',
     staff: 'Hồ sơ nhân sự sẽ bị xóa khỏi hệ thống. Nếu có nhân sự còn lịch trực hoặc dữ liệu liên quan, toàn bộ lượt xóa bị hủy.',
   };
-  const updateQuery = (next: Partial<TableQuery>) => { setQuery(current => ({ ...current, ...next })); setPage(1); };
+  const updateQuery = (next: Partial<TableQuery>) => {
+    setQuery(current => ({ ...current, ...next })); setPage(1);
+    if(kind==='contracts'&&next.status!==undefined){
+      const url=new URL(window.location.href);
+      if(next.status)url.searchParams.set('status',next.status);else url.searchParams.delete('status');
+      // Preserve the selected tab on refresh/back without requesting a new
+      // server layout or remounting an in-progress contract form.
+      window.history.replaceState(window.history.state,'',url.pathname+url.search);
+    }
+  };
 
   function clearFilters() {
-    setQuery({...EMPTY_QUERY,...(overdueOnly?{status:'overdue',overdueBucket:'traditional-overdue' as const}:{})}); setPage(1); selectStore('all');
+    updateQuery({...EMPTY_QUERY,...(overdueOnly?{status:'overdue',overdueBucket:'traditional-overdue' as const}:{})}); selectStore('all');
     if (customerId || contractId || searchFromUrl) router.replace(contractPath);
   }
   async function exportCsv() {
@@ -345,9 +359,12 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       {kind === 'staff' && <StaffOrganizationChart />}
 
       <div className="mg-data-panel">
-        <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!query.status ? 'is-active' : ''} aria-pressed={!query.status} onClick={() => updateQuery({ status: '',overdueBucket:undefined })}>{draftsOnly?'Tất cả bản nháp':'Tất cả'}<span>{tabCount}</span></button>
-          {statusOptions.filter(option => (kind === 'contracts' && !overdueOnly && option.value === 'draft') || statusCounts.has(option.value) || query.status === option.value).map(option => <button type="button" key={option.value} className={query.status === option.value ? 'is-active' : ''} aria-pressed={query.status === option.value} onClick={() => updateQuery({ status: option.value,overdueBucket:undefined })}>{option.label}<span>{statusCounts.get(option.value) || 0}</span></button>)}</div>
-        {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&<div className="mg-overdue-buckets" role="group" aria-label={ownershipOnly?'Nhóm quá hạn thuê sở hữu':'Nhóm quá hạn truyền thống'}>{ownershipOnly&&<button type="button" aria-pressed={!query.overdueBucket} className={!query.overdueBucket?'is-active':''} onClick={()=>updateQuery({status:'',overdueBucket:undefined,overdueDays:''})}>Tất cả</button>}{OVERDUE_BUCKETS.filter(bucket=>ownershipOnly?bucket.key.startsWith('ownership-')&&bucket.key!=='ownership-overdue':bucket.key.startsWith('traditional-')).map(bucket=><button key={bucket.key} type="button" aria-pressed={query.overdueBucket===bucket.key} className={`${query.overdueBucket===bucket.key?'is-active ':''}${bucket.key.endsWith('-bad-debt')?'is-bad-debt':''}`} onClick={()=>{updateQuery({status:bucket.key.endsWith('-bad-debt')?'bad_debt':'overdue',overdueBucket:bucket.key,overdueDays:''});setSort({key:'overdue_minutes',direction:'desc'});}}>{bucket.label}{table.data?.overdueCounts&&<span>{table.data.overdueCounts[bucket.key]||0}</span>}</button>)}</div>}
+        <div className="mg-status-tabs" aria-label="Lọc theo trạng thái">{contractTabs ? <>
+          {CONTRACT_STATUS_TABS.map(tab => <button type="button" key={tab.value} className={query.status === tab.value ? 'is-active' : ''} aria-pressed={query.status === tab.value} onClick={() => updateQuery({ status: tab.value,overdueBucket:undefined,overdueDays:'' })}>{tab.label}</button>)}
+          {query.status && !CONTRACT_STATUS_TABS.some(tab => tab.value === query.status) && <button type="button" className="is-active" aria-pressed="true">{optionLabel(config,'status',query.status)}</button>}
+        </> : <><button type="button" className={!query.status ? 'is-active' : ''} aria-pressed={!query.status} onClick={() => updateQuery({ status: '',overdueBucket:undefined })}>{draftsOnly?'Tất cả bản nháp':'Tất cả'}<span>{tabCount}</span></button>
+          {statusOptions.filter(option => (kind === 'contracts' && !overdueOnly && option.value === 'draft') || statusCounts.has(option.value) || query.status === option.value).map(option => <button type="button" key={option.value} className={query.status === option.value ? 'is-active' : ''} aria-pressed={query.status === option.value} onClick={() => updateQuery({ status: option.value,overdueBucket:undefined })}>{option.label}<span>{statusCounts.get(option.value) || 0}</span></button>)}</>}</div>
+        {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&(overdueOnly||query.status==='overdue'||query.status==='bad_debt')&&<div className="mg-overdue-buckets" role="group" aria-label={ownershipOnly?'Nhóm quá hạn thuê sở hữu':'Nhóm quá hạn truyền thống'}>{ownershipOnly&&<button type="button" aria-pressed={!query.overdueBucket} className={!query.overdueBucket?'is-active':''} onClick={()=>updateQuery({status:'overdue',overdueBucket:undefined,overdueDays:''})}>Tất cả quá hạn</button>}{OVERDUE_BUCKETS.filter(bucket=>ownershipOnly?bucket.key.startsWith('ownership-')&&bucket.key!=='ownership-overdue':bucket.key.startsWith('traditional-')).map(bucket=><button key={bucket.key} type="button" aria-pressed={query.overdueBucket===bucket.key} className={`${query.overdueBucket===bucket.key?'is-active ':''}${bucket.key.endsWith('-bad-debt')?'is-bad-debt':''}`} onClick={()=>{updateQuery({status:bucket.key.endsWith('-bad-debt')?'bad_debt':'overdue',overdueBucket:bucket.key,overdueDays:''});setSort({key:'overdue_minutes',direction:'desc'});}}>{bucket.label}{table.data?.overdueCounts&&<span>{table.data.overdueCounts[bucket.key]||0}</span>}</button>)}</div>}
         <div className="mg-toolbar"><label className="mg-search"><Search size={17} /><span className="mg-sr-only">Tìm kiếm {config.title.toLowerCase()}</span><input type="search" placeholder={config.searchPlaceholder} value={query.search} onChange={event => updateQuery({ search: event.target.value })} />{query.search && <button type="button" aria-label="Xóa từ khóa" onClick={() => updateQuery({ search: '' })}><X size={15} /></button>}</label>
           <OptionalTools collapsed={compactContracts} label="Bộ lọc nâng cao"><div className="mg-filter-controls mg-list-filters"><span className="mg-filter-icon"><ListFilter size={16} /></span>{compactContracts&&<><label><span className="mg-sr-only">Sắp xếp hợp đồng</span><select aria-label="Sắp xếp hợp đồng" value={sort.key} onChange={event=>{setSort(current=>({...current,key:event.target.value}));setPage(1);}}>{config.columns.filter(column=>column.sortable!==false).map(column=><option key={column.key} value={column.key}>{column.label}</option>)}</select></label><button type="button" className="mg-button" onClick={()=>{setSort(current=>({...current,direction:current.direction==='asc'?'desc':'asc'}));setPage(1);}}>{sort.direction==='asc'?'Tăng dần':'Giảm dần'}</button></>}{config.filters.map(filter => <label className="mg-sr-label" key={filter.key}><span className="mg-sr-only">{filter.label}</span><select aria-label={filter.label} value={query.filters[filter.key] || ''} onChange={event => updateQuery({ filters: { ...query.filters, [filter.key]: event.target.value } })}><option value="">{filter.label}</option>{(kind === 'staff' && filter.key === 'position' ? staffPositionSuggestions(allRows.map(row => row.position)).map(label => ({ value: label, label })) : filter.storeOptions ? (dataset?.stores || EMPTY_ROWS).map(store => ({ value: String(store.id), label: store.name || `Cơ sở #${store.id}` })) : filter.options).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}
             <label className="mg-sr-label"><span className="mg-sr-only">Lọc trạng thái</span><select aria-label="Lọc trạng thái" value={query.status} onChange={event => updateQuery({ status: event.target.value,overdueBucket:undefined })}><option value="">Tất cả trạng thái</option>{statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>

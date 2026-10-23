@@ -91,13 +91,13 @@ async function main(){
   const paged=await server.readManagementTable({async query(sql,params){
     sqlCommands.push(sql);
     if(sql.includes('LIMIT')){
-      assert.equal(params[0],11);
-      return {rows:Array.from({length:11},(_,i)=>({id:i+1,status:'renting',contract_number:`HD-${i+1}`,vehicles:[]}))};
+      assert.equal(params[0],10);
+      return {rows:Array.from({length:10},(_,i)=>({id:i+1,status:'renting',contract_number:`HD-${i+1}`,vehicles:[],__total_count:31}))};
     }
     assert.deepEqual(params[0],[1,2,3,4,5,6,7,8,9,10]);
     return {rows:params[0].map(id=>({id,status:'renting',contract_number:`HD-${id}`,vehicles:[{id:9,name:'Vision',license:'29A-123'}],total:1500000}))};
   }},'contracts',shared.managementTableQuery({...base,recentDays:30}));
-  assert.equal(paged.rows.length,10);assert.equal(paged.rows[0].id,1);assert.equal(paged.pages,2);
+  assert.equal(paged.rows.length,10);assert.equal(paged.rows[0].id,1);assert.equal(paged.total,31);assert.equal(paged.pages,4);
   assert.equal(paged.rows[0].license,'29A-123');assert.equal(paged.rows[0].total_amount,1500000);
   assert(sqlCommands[0]&&/\bLIMIT \$1\b/.test(sqlCommands[0])&&sqlCommands[0].includes('OFFSET'));
   assert(!sqlCommands[0].includes('GROUP BY')&&!sqlCommands[0].includes('himoto.transactions'));

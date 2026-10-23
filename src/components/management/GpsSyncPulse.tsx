@@ -10,7 +10,9 @@ export function GpsSyncPulse() {
     if(!allowed)return;let running=false;const controller=new AbortController();
     const sync=async()=>{if(running||document.visibilityState!=='visible')return;running=true;
       try{await fetch('/api/auth/gps/refresh',{method:'POST',credentials:'same-origin',signal:controller.signal});}catch{/* A provider outage must still refresh the database's stale indicator. */}
-      finally{if(!controller.signal.aborted&&current.current.pathname==='/vehicles')await current.current.ensureData(['vehicles'],true).catch(()=>{});running=false;}};
+      // GPS still polls every five seconds. The full vehicle collection reuses
+      // its 30-second cache instead of refetching all stock on every heartbeat.
+      finally{if(!controller.signal.aborted&&current.current.pathname==='/vehicles')await current.current.ensureData(['vehicles']).catch(()=>{});running=false;}};
     void sync();const timer=setInterval(()=>void sync(),GPS_POLL_INTERVAL_MS);document.addEventListener('visibilitychange',sync);
     return()=>{controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange',sync);};
   },[allowed]);

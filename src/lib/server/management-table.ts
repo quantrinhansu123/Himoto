@@ -2,8 +2,8 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import { MANAGEMENT_CONFIG } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
-import { EMPTY_QUERY } from '@/lib/management/table-utils';
-import { projectManagementTable, type ManagementTableInput, type ManagementTableResult, type TableKind } from '@/lib/management/management-table';
+import { EMPTY_QUERY, filterRows } from '@/lib/management/table-utils';
+import { projectManagementTable, type ManagementTableInput, type TableKind } from '@/lib/management/management-table';
 import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
@@ -98,8 +98,8 @@ function contractFilterSql(filters:Record<string,string>) {
   if(/^[1-9]\d{0,14}$/.test(filters.id||''))sql+=` AND o.id=${Number(filters.id)}`;
   return sql;
 }
-export function contractPageSql(scopeClause:string) {
-  return `SELECT o.id, o.contract_number, o.draft_reference,
+export function contractPageSql(scopeClause:string,includeTotal=false) {
+  return `SELECT ${includeTotal?'count(*) OVER()::int AS __total_count, ':''}o.id, o.contract_number, o.draft_reference,
     CASE WHEN o.order_status='renting' AND o.return_at < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, o.customer_name, o.customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind, o.rent_at AS start_date, o.return_at AS end_date,
@@ -137,10 +137,10 @@ export function customerPageSql(scopeClause:string) {
 }
 function contractHydrateSql() {
   return `SELECT o.id, o.contract_number, o.draft_reference,
-    CASE WHEN o.order_status='renting' AND o.return_at < now() THEN 'overdue' ELSE o.order_status END AS status,
+    CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, o.customer_name, o.customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind,
-    o.rent_at AS start_date, o.return_at AS end_date, o.total AS total_amount,
+    COALESCE(o.rent_at,ov.start_date) AS start_date, COALESCE(o.return_at,ov.end_date) AS end_date, o.total AS total_amount,
     CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
       ELSE COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) END AS deposit_amount,
     COALESCE(staff.full_name, saved_staff.full_name, fallback_staff.full_name) AS staff_name,
@@ -160,7 +160,8 @@ function contractHydrateSql() {
       ON fallback_staff.user_id=o.contract_responsible_user_id
     LEFT JOIN LATERAL (
       SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
-        'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color) ORDER BY d.id) AS vehicles
+        'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color) ORDER BY d.id) AS vehicles,
+        min(d.rent_at) AS start_date, max(d.return_at) AS end_date
       FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
       WHERE d.order_id=o.id AND d.deleted_at IS NULL
     ) ov ON true
@@ -277,38 +278,71 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const now=Date.now();
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   if(!all){
-    const take=input.size+1;
     const offset=Math.max(0,(input.page-1)*input.size);
+    // Installment overdue state and age groups depend on the hydrated balance.
+    // Read candidates for this tab in bounded batches and filter BEFORE paging;
+    // otherwise a paid/not-yet-due rental can occupy an overdue result slot.
+    const filterBeforePaging=kind==='contracts'&&Boolean(input.query.status==='overdue'||input.query.overdueBucket||input.query.overdueDays||input.query.startDate||input.query.endDate);
+    const take=filterBeforePaging?50:kind==='contracts'?input.size:input.size+1;
     const search=kind==='contracts'?contractSearchSql(input.query.search)
       :kind==='customers'?customerSearchSql(input.query.search)
       :kind==='vehicles'?vehicleSearchSql(input.query.search)
       :kind==='staff'?staffSearchSql(input.query.search)
       :storeSearchSql(input.query.search);
-    const pageSql=kind==='contracts'?`${contractPageSql(clause)}${search.sql} ORDER BY o.id DESC LIMIT $1 OFFSET $2`
+    // Count only this tab's matching orders, before LIMIT. Do not hydrate history
+    // or query the other tabs merely to obtain a real page count.
+    const pageSql=kind==='contracts'?`${contractPageSql(clause,!filterBeforePaging)}${search.sql} ORDER BY o.id DESC LIMIT $1 OFFSET $2`
       :kind==='customers'?`${customerPageSql(customerPageClause(input.store,input.query.status))}${search.sql} ORDER BY c.id DESC LIMIT $1 OFFSET $2`
       :kind==='vehicles'?`${vehiclePageSql(vehiclePageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY v.id DESC LIMIT $1 OFFSET $2`
       :kind==='staff'?`${staffPageSql(staffPageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY p.id DESC LIMIT $1 OFFSET $2`
       :`${storePageSql(storePageClause(input.query.status))}${search.sql} ORDER BY s.id DESC LIMIT $1 OFFSET $2`;
-    const indexed=await client.query(pageSql,search.value?[take,offset,search.value]:[take,offset]);
-    const hasMore=indexed.rows.length>input.size;
-    let rows=mapManagementRows(kind,indexed.rows.slice(0,input.size));
-    if(rows.length&&(kind==='contracts'||kind==='vehicles')){
-      const ids=rows.map(row=>row.id);
-      try {
+    const matches:ReturnType<typeof mapManagementRows>=[];
+    let candidateOffset=filterBeforePaging?0:offset,moreCandidates=false,total=0,page=input.page;
+    const readPage=(limit:number,start:number)=>client.query(pageSql,search.value?[limit,start,search.value]:[limit,start]);
+    do {
+      let indexed=await readPage(take,candidateOffset);
+      if(kind==='contracts'&&!filterBeforePaging){
+        // A deletion or changed filter can leave a requested page out of range.
+        // Read one index row to recover the total, then return the actual last page.
+        if(!indexed.rows.length&&candidateOffset>0){
+          const first=await readPage(1,0);
+          total=first.rows.length?Number(first.rows[0].__total_count):0;
+          if(!Number.isSafeInteger(total)||total<0)throw new Error('Không đọc được tổng số hợp đồng. Vui lòng thử lại.');
+          page=Math.max(1,Math.ceil(total/input.size));
+          candidateOffset=(page-1)*input.size;
+          indexed=total?await readPage(take,candidateOffset):first;
+        }else total=indexed.rows.length?Number(indexed.rows[0].__total_count):0;
+        if(!Number.isSafeInteger(total)||total<0)throw new Error('Không đọc được tổng số hợp đồng. Vui lòng thử lại.');
+      }
+      moreCandidates=indexed.rows.length===take;
+      candidateOffset+=indexed.rows.length;
+      let batch=mapManagementRows(kind,indexed.rows.slice(0,filterBeforePaging?take:input.size));
+      if(batch.length&&(kind==='contracts'||kind==='vehicles')){
+        const ids=batch.map(row=>row.id);
+        // A failed detail query must fail this read, not silently turn balances,
+        // vehicle labels or rental dates into missing/incorrect information.
         const details=await client.query(kind==='contracts'?overdueSql(contractVehicleDetailsSql(contractHydrateSql())):vehicleHydrateSql(),[ids]);
         const mapped=new Map(mapManagementRows(kind,details.rows).map(record=>[record.id,record]));
-        rows=rows.map(row=>mapped.get(row.id)||row);
-      } catch (cause) {
-        console.error('Management page hydrate failed; serving lean list rows.', cause instanceof Error ? cause.message : cause);
+        batch=batch.map(row=>mapped.get(row.id)||row);
       }
-    }
-    if(kind==='contracts'){
-      rows=rows.map(row=>applyInstallmentBilling(row,now));
-      if(monitoring)rows=rows.map(row=>withContractMonitoring(row,now));
-    }
-    const total=offset+rows.length+(hasMore?1:0);
+      if(kind==='contracts'){
+        batch=batch.map(row=>applyInstallmentBilling(row,now));
+        if(monitoring)batch=batch.map(row=>withContractMonitoring(row,now));
+      }
+      if(filterBeforePaging)batch=input.query.status==='renting'
+        ?filterRows(batch,{...input.query,status:'',search:''},'all').filter(row=>['renting','overdue'].includes(row.status))
+        :filterRows(batch,{...input.query,search:''},'all');
+      matches.push(...batch);
+    }while(filterBeforePaging&&moreCandidates);
+    // Derived overdue/date filters must finish counting the selected candidate
+    // set; stopping at one extra match is not a total and hides older pages.
+    if(filterBeforePaging){total=matches.length;page=Math.min(input.page,Math.max(1,Math.ceil(total/input.size)));}
+    const pageOffset=(page-1)*input.size;
+    const rows=filterBeforePaging?matches.slice(pageOffset,pageOffset+input.size):matches;
+    if(kind!=='contracts')total=offset+rows.length+(moreCandidates?1:0);
+    const pages=kind==='contracts'?Math.max(1,Math.ceil(total/input.size)):moreCandidates?input.page+1:Math.max(1,input.page);
     return {
-      rows,total,scopeCount:total,tabCount:total,page:input.page,pages:hasMore?input.page+1:Math.max(1,input.page),
+      rows,total,scopeCount:total,tabCount:total,page,pages,
       statusCounts:[],statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:0,
       summary:kind==='contracts'?{contractCount:rows.length,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null,
       recentDays:kind==='contracts'?recentDays??null:undefined,

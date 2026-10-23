@@ -5,6 +5,7 @@ export function isTransientSessionRead(error: unknown) {
   if (!(error instanceof Error)) return false;
   const code = String((error as Error & { code?: string }).code || '');
   return /^(08\w{3}|57P0[123]|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE)$/.test(code)
+    || code === 'XX000' && /^\(ECHECKOUTTIMEOUT\) unable to check out connection from the pool after \d+ms in (?:Transaction|Session) mode$/i.test(error.message)
     || /^(Connection terminated unexpectedly|Connection terminated due to connection timeout|timeout exceeded when trying to connect|Connection ended unexpectedly)$/i.test(error.message);
 }
 

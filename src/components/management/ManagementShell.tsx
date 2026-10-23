@@ -74,12 +74,19 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   // A stale browser tab must return to login when the server rejects its session.
   useEffect(() => {
     if (!user) return;
+    let running = false, lastCheck = 0;
+    let active: AbortController | undefined;
     const checkSession = async () => {
-      if (document.visibilityState !== 'visible') return;
-      try { if ((await fetch('/api/session', { cache: 'no-store' })).status === 401) { router.replace('/login'); router.refresh(); } } catch { /* Keep the page during a temporary network outage. */ }
+      if (document.visibilityState !== 'visible' || running || Date.now() - lastCheck < 15_000) return;
+      running = true; lastCheck = Date.now();
+      active = new AbortController();
+      const timer = setTimeout(() => active?.abort(), 10_000);
+      try { if ((await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin', signal: active.signal })).status === 401) { router.replace('/login'); router.refresh(); } } catch { /* Keep the page during a temporary network outage. */ }
+      finally { clearTimeout(timer); running = false; }
     };
     window.addEventListener('focus', checkSession);
-    return () => window.removeEventListener('focus', checkSession);
+    document.addEventListener('visibilitychange', checkSession);
+    return () => { active?.abort(); window.removeEventListener('focus', checkSession); document.removeEventListener('visibilitychange', checkSession); };
   }, [router, user]);
 
   useEffect(() => {

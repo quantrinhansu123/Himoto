@@ -20,7 +20,7 @@ async function main(){
  }finally{global.fetch=originalFetch;global.setTimeout=originalSet;global.clearTimeout=originalClear;}
  const commands=[];
  const client={async query(sql){commands.push(sql);
-  return {rows:[{id:123,status:'renting',contract_number:'QA-123',vehicles:[]}]};
+  return {rows:[{id:123,status:'renting',contract_number:'QA-123',vehicles:[],__total_count:1}]};
  }};
  const page=await server.readManagementTable(client,'contracts',new URLSearchParams('size=10'));
  assert.equal(page.rows[0].id,123);

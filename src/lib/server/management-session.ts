@@ -2,11 +2,12 @@ import 'server-only';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { compare } from 'bcryptjs';
 import { cookies } from 'next/headers';
+import { unstable_rethrow } from 'next/navigation';
 import { NextRequest, NextResponse } from 'next/server';
 import { ACCESS_PERMISSIONS, canRecordContractPayment, isAdminAccount } from '@/lib/management/permissions';
 import { himotoPool, ownerDatabase } from './himoto-database';
 import { dataAccess } from './access-context';
-import { retrySessionRead } from './session-read';
+import { logSessionUnavailable, retrySessionRead } from './session-read';
 import { failureResponse } from './public-failure';
 
 export const SESSION_COOKIE = 'himoto_management_session';
@@ -129,6 +130,15 @@ function readSessionAllowed(token: string | undefined): Promise<boolean> {
 
 export async function currentSessionUser() {
   return readSessionUser((await cookies()).get(SESSION_COOKIE)?.value);
+}
+
+export async function managementPageSession(read: () => Promise<SessionUser | null> = currentSessionUser) {
+  try { return { user: await retrySessionRead(read), unavailable: false }; }
+  catch (error) {
+    unstable_rethrow(error);
+    logSessionUnavailable(error);
+    return { user: null, unavailable: true };
+  }
 }
 
 export function sameOrigin(request: NextRequest) {
