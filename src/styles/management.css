@@ -4087,9 +4087,9 @@
 .mg-rental-period { display:flex; flex-direction:column; gap:5px; min-width:190px; font-size:12px; line-height:1.5; }
 .mg-rental-period > span { display:flex; flex-wrap:wrap; gap:4px 8px; color:var(--mg-muted,#64748b); }
 .mg-rental-period strong { color:var(--mg-text,#1e293b); font-weight:600; }
-.mg-contract-total { display:inline-grid; grid-template-columns:1fr auto; gap:3px 18px; margin-top:12px; padding:10px 14px; background:#fff; border:1px solid #e2e8f0; border-radius:10px; font-size:13px; }
-.mg-contract-total strong { font-size:22px; line-height:1.2; font-variant-numeric:tabular-nums; color:var(--mg-brand-600); }
-.mg-contract-total small { grid-column:1/-1; color:#64748b; font-size:11px; }
+.mg-record-total { display:inline-grid; grid-template-columns:1fr auto; align-items:center; gap:3px 18px; margin-top:12px; padding:10px 14px; max-width:100%; box-sizing:border-box; background:#fff; border:1px solid #e2e8f0; border-radius:10px; font-size:13px; }
+.mg-record-total strong { font-size:22px; line-height:1.2; font-variant-numeric:tabular-nums; color:var(--mg-brand-600); }
+.mg-record-total small { grid-column:1/-1; color:#64748b; font-size:11px; }
 .mg-debt-report { margin:14px 0 20px; padding:14px; background:#fff; border:1px solid #dbe3ea; border-radius:12px; min-width:0; }
 .mg-debt-report > summary,.mg-ownership-report summary { cursor:pointer; font-weight:600; padding:8px 0; min-height:40px; }
 .mg-collection-panel { margin-top:16px; min-width:0; }
@@ -4104,4 +4104,4 @@
 .mg-ownership-report > details { border-bottom:1px solid #e2e8f0; padding:10px 0; }
 .mg-ownership-report .mg-form-grid { padding-top:10px; }
 .mg-ownership-reconciliation { padding:12px 16px; background:#f1f5f9; border-radius:8px; margin:16px 0; }
-@media(max-width:767px) { .mg-debt-report{padding:10px;} .mg-contract-total{width:100%;max-width:340px;box-sizing:border-box;} .mg-collection-panel .mg-toolbar{display:grid;grid-template-columns:1fr;} .mg-collection-panel .mg-heading-actions{flex-wrap:wrap;} }
+@media(max-width:767px) { .mg-debt-report{padding:10px;} .mg-record-total{width:100%;max-width:340px;} .mg-collection-panel .mg-toolbar{display:grid;grid-template-columns:1fr;} .mg-collection-panel .mg-heading-actions{flex-wrap:wrap;} }

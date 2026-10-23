@@ -13,6 +13,7 @@ import type { ManagementRow } from '@/lib/management/types';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { useReloadAction } from '@/components/management/ReloadButton';
 import { Dialog } from '@/components/management/Dialog';
+import { RecordTotal } from '@/components/management/RecordTotal';
 import { RowActionsMenu } from '@/components/management/RowActionsMenu';
 import { PreviewPage, PrintPreviewDialog } from '@/components/contracts/ContractPrintPreview';
 import { VietnamDateField } from '@/components/contracts/VietnamDateField';
@@ -33,6 +34,7 @@ export function BatteryContractsPage() {
   const vehicleContractId = searchParams.get('vehicle_contract_id');
   const { dataset, selectedStore, selectStore, loading: datasetLoading, error: datasetError, notify, can } = useManagement();
   const [rows, setRows] = useState<BatteryContract[]>([]);
+  const [scopeCount,setScopeCount]=useState<number|null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
@@ -47,12 +49,12 @@ export function BatteryContractsPage() {
   const deleteLock = useRef(false);
   useEffect(() => {
     const controller = new AbortController(); let current = true;
-    setLoading(true); setError('');
-    const params = new URLSearchParams(); if (selectedStore !== 'all' && !vehicleContractId) params.set('store_id', selectedStore);
+    setLoading(true); setError(''); setScopeCount(null);
+    const params = new URLSearchParams({scope_count:'1'}); if (selectedStore !== 'all' && !vehicleContractId) params.set('store_id', selectedStore);
     if (vehicleContractId) params.set('vehicle_contract_id',vehicleContractId);
-    batteryRequest<BatteryContract[]>(`/api/auth/battery-contracts?${params}`, 'GET', undefined, controller.signal).then(data => {
-      if (!Array.isArray(data) || data.some(row => !Number.isSafeInteger(row.id) || typeof row.revision !== 'string')) throw new Error('Kết quả hợp đồng thuê pin chưa hợp lệ.');
-      if (current) setRows(data);
+    batteryRequest<{rows:BatteryContract[];scopeCount:number}>(`/api/auth/battery-contracts?${params}`, 'GET', undefined, controller.signal).then(data => {
+      if (!Array.isArray(data.rows) || data.rows.some(row => !Number.isSafeInteger(row.id) || typeof row.revision !== 'string') || !Number.isSafeInteger(data.scopeCount) || data.scopeCount<0) throw new Error('Kết quả hợp đồng thuê pin chưa hợp lệ.');
+      if (current) {setRows(data.rows);setScopeCount(data.scopeCount);}
     }).catch(cause => { if (current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được hợp đồng thuê pin.'); }).finally(() => { if (current) setLoading(false); });
     return () => { current = false; controller.abort(); };
   }, [selectedStore, reload, vehicleContractId]);
@@ -72,7 +74,7 @@ export function BatteryContractsPage() {
   }
   const filtered = Boolean(search || status);
   return <section className="mg-page mg-battery-page" aria-label="Hợp đồng thuê pin"><div className="mg-page-content">
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">HỢP ĐỒNG <span>/</span> THUÊ PIN / SẠC</div><h1>Hợp đồng thuê pin / sạc<span className="mg-title-count">{loading || error ? '—' : visible.length}</span></h1><p>Lập, lưu và in hợp đồng thuê pin hoặc sạc xe điện theo mẫu HIMOTO. Có thể mở sẵn từ hợp đồng thuê xe.</p></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">HỢP ĐỒNG <span>/</span> THUÊ PIN / SẠC</div><h1>Hợp đồng thuê pin / sạc</h1><RecordTotal label="Toàn bộ hợp đồng pin / sạc" count={scopeCount} loading={loading}/><p>Lập, lưu và in hợp đồng thuê pin hoặc sạc xe điện theo mẫu HIMOTO. Có thể mở sẵn từ hợp đồng thuê xe.</p></div>
       <div className="mg-heading-actions"><button type="button" className="mg-button" disabled={loading || datasetLoading} onClick={refresh}><RotateCcw size={16} className={loading ? 'mg-spin' : undefined} />{loading ? 'Đang tải…' : 'Làm mới'}</button>{can('contracts.draft') && <button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button>}</div></div>
     <div className="mg-data-panel">
       {vehicleContractId && <p className="mg-composer-hint">Pin / sạc của hợp đồng xe #{vehicleContractId}. <Link href="/contracts/battery">Bỏ lọc hợp đồng xe</Link></p>}

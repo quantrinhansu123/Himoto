@@ -257,6 +257,37 @@ function storePageClause(status:string) {
 export function storePageSql(scopeClause:string) {
   return `${STORE_SELECT_SQL} WHERE true${scopeClause}`;
 }
+/** Count lightweight records under the same RLS/store rules as their list.
+ * Search and category filters affect tab counts; the selected status affects
+ * pagination only. The heading always counts the entire permitted catalogue.
+ */
+async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:ManagementTableInput,search:{sql:string;value:string|undefined}) {
+  const {kind,store,query}=input;
+  const source=kind==='customers'?'himoto.customers c':kind==='vehicles'?'himoto.vehicles v':kind==='staff'?'himoto.staff_profiles p':'himoto.stores s';
+  const scope=kind==='customers'?customerPageClause(store,'')
+    :kind==='vehicles'?` AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{})}`
+    :kind==='staff'?staffPageClause(store,'',{}):'';
+  const filters=kind==='vehicles'?vehiclePageClause('all','',query.filters):kind==='staff'?staffPageClause('all','',query.filters):'';
+  const selected=kind==='customers'?customerPageClause('all',query.status)
+    :kind==='vehicles'?vehiclePageClause('all',query.status,{})
+    :kind==='staff'?staffPageClause('all',query.status,{}):storePageClause(query.status);
+  const status=kind==='customers'?`CASE WHEN c.status=2 THEN 'blacklist' WHEN c.status=0 THEN 'draft' WHEN NULLIF(BTRIM(c.warning),'') IS NOT NULL THEN 'warning' ELSE 'active' END`
+    :kind==='vehicles'?`CASE v.status WHEN 'rent' THEN 'using' WHEN 'maintenance' THEN 'repairing' WHEN 'holding' THEN 'pending' ELSE v.status END`
+    :kind==='staff'?`CASE p.status WHEN '1' THEN 'active' WHEN '0' THEN 'inactive' ELSE p.status END`
+    :`CASE s.status WHEN '1' THEN 'active' WHEN 'opening' THEN 'active' WHEN '0' THEN 'inactive' ELSE s.status END`;
+  const result=await client.query(`WITH counted AS MATERIALIZED (
+    SELECT ${status} AS status,(true${filters}${search.sql.replaceAll('$3','$1')}) AS matches,(true${selected}) AS selected
+    FROM ${source} WHERE true${scope}
+  ) SELECT count(*)::int AS scope_count,count(*) FILTER (WHERE matches)::int AS tab_count,
+    count(*) FILTER (WHERE matches AND selected)::int AS total,
+    COALESCE((SELECT jsonb_agg(jsonb_build_array(status,n) ORDER BY status) FROM (
+      SELECT status,count(*)::int AS n FROM counted WHERE matches GROUP BY status
+    ) grouped),'[]'::jsonb) AS status_counts FROM counted`,search.value?[search.value]:[]);
+  const row=result.rows[0];
+  if(!row||['scope_count','tab_count','total'].some(key=>!Number.isSafeInteger(row[key])||row[key]<0)
+    ||!Array.isArray(row.status_counts))throw new Error('Không đọc được tổng số bản ghi. Vui lòng thử lại.');
+  return {scopeCount:row.scope_count as number,tabCount:row.tab_count as number,total:row.total as number,statusCounts:row.status_counts as [string,number][]};
+}
 function mapManagementRows(kind:TableKind,rows:unknown[]) {
   const mapped=[];
   for(const row of rows){
@@ -287,17 +318,20 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       scopeCount=Number(counted.rows[0]?.scope_count);
       if(!Number.isSafeInteger(scopeCount)||scopeCount<0)throw new Error('Không đọc được tổng toàn bộ hợp đồng. Vui lòng thử lại.');
     }
-    const offset=Math.max(0,(input.page-1)*input.size);
     // Installment overdue state and age groups depend on the hydrated balance.
     // Read candidates for this tab in bounded batches and filter BEFORE paging;
     // otherwise a paid/not-yet-due rental can occupy an overdue result slot.
     const filterBeforePaging=kind==='contracts'&&Boolean(input.query.status==='overdue'||input.query.overdueBucket||input.query.overdueDays||input.query.startDate||input.query.endDate);
-    const take=filterBeforePaging?50:kind==='contracts'?input.size:input.size+1;
+    const take=filterBeforePaging?50:input.size;
     const search=kind==='contracts'?contractSearchSql(input.query.search)
       :kind==='customers'?customerSearchSql(input.query.search)
       :kind==='vehicles'?vehicleSearchSql(input.query.search)
       :kind==='staff'?staffSearchSql(input.query.search)
       :storeSearchSql(input.query.search);
+    const catalogue=kind==='contracts'?null:await readCatalogueCounts(client,input,search);
+    if(catalogue)scopeCount=catalogue.scopeCount;
+    let total=catalogue?.total??0,page=catalogue?Math.min(input.page,Math.max(1,Math.ceil(total/input.size))):input.page;
+    const offset=(page-1)*input.size;
     // Count only this tab's matching orders, before LIMIT. Do not hydrate history
     // or query the other tabs merely to obtain a real page count.
     const pageSql=kind==='contracts'?`${contractPageSql(clause,!filterBeforePaging)}${search.sql} ORDER BY o.id DESC LIMIT $1 OFFSET $2`
@@ -306,7 +340,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       :kind==='staff'?`${staffPageSql(staffPageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY p.id DESC LIMIT $1 OFFSET $2`
       :`${storePageSql(storePageClause(input.query.status))}${search.sql} ORDER BY s.id DESC LIMIT $1 OFFSET $2`;
     const matches:ReturnType<typeof mapManagementRows>=[];
-    let candidateOffset=filterBeforePaging?0:offset,moreCandidates=false,total=0,page=input.page;
+    let candidateOffset=filterBeforePaging?0:offset,moreCandidates=false;
     const readPage=(limit:number,start:number)=>client.query(pageSql,search.value?[limit,start,search.value]:[limit,start]);
     do {
       let indexed=await readPage(take,candidateOffset);
@@ -348,11 +382,10 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     if(filterBeforePaging){total=matches.length;page=Math.min(input.page,Math.max(1,Math.ceil(total/input.size)));}
     const pageOffset=(page-1)*input.size;
     const rows=filterBeforePaging?matches.slice(pageOffset,pageOffset+input.size):matches;
-    if(kind!=='contracts')total=offset+rows.length+(moreCandidates?1:0);
-    const pages=kind==='contracts'?Math.max(1,Math.ceil(total/input.size)):moreCandidates?input.page+1:Math.max(1,input.page);
+    const pages=Math.max(1,Math.ceil(total/input.size));
     return {
-      rows,total,scopeCount:scopeCount??total,tabCount:total,page,pages,
-      statusCounts:[],statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:0,
+      rows,total,scopeCount:scopeCount??total,tabCount:catalogue?.tabCount??total,page,pages,
+      statusCounts:catalogue?.statusCounts??[],statuses:catalogue?catalogue.statusCounts.map(([status])=>status):[...new Set(rows.map(row=>row.status))].sort(),dueCount:0,
       summary:kind==='contracts'?{contractCount:rows.length,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null,
       recentDays:kind==='contracts'?recentDays??null:undefined,
     };

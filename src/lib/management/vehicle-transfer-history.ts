@@ -13,7 +13,7 @@ export interface TransferHistoryRow {
   changes: VehicleChange[];
   telegram_event_id?:number;
 }
-export interface TransferHistoryResult { rows: TransferHistoryRow[]; total: number; page: number; size: number }
+export interface TransferHistoryResult { rows: TransferHistoryRow[]; total: number; scopeCount: number; page: number; size: number }
 export const TRANSFER_HISTORY_SIZE = 25;
 export function defaultTransferHistoryQuery(): TransferHistoryQuery {
   const today = vietnamDate();
@@ -28,7 +28,7 @@ export async function loadTransferHistory(query: TransferHistoryQuery, signal?: 
     credentials: 'same-origin', cache: 'no-store', signal, headers: { Accept: 'application/json' },
   });
   const result = await response.json().catch(() => null);
-  if (!response.ok || result?.status !== 'success' || !Array.isArray(result.data?.rows)) {
+  if (!response.ok || result?.status !== 'success' || !Array.isArray(result.data?.rows) || !Number.isSafeInteger(result.data.total) || result.data.total<0 || !Number.isSafeInteger(result.data.scopeCount) || result.data.scopeCount<0) {
     throw new Error(result?.message || 'Không tải được lịch sử luân chuyển.');
   }
   return result.data;

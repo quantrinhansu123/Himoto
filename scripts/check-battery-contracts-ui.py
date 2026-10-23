@@ -42,12 +42,12 @@ def mock(route):
         route.abort()
         return
     if endpoint == '/api/auth/battery-contracts':
-        data = state['rows']
+        data = dict(rows=state['rows'], scopeCount=len(state['rows'])) if 'scope_count=1' in request.url else state['rows']
     elif endpoint == '/api/auth/stores':
         data = [{'id': 35, 'store_name': 'CS Thuê sở hữu', 'status': 'opening', 'store_address': 'Địa chỉ cơ sở QA', 'store_phone': '0900000002'}]
     elif endpoint == '/api/auth/cashbook/accounts':
         data = [{**account, 'opening_balance': 0, 'income': 0, 'expense': 0, 'balance': 0} for account in accounts]
-    elif endpoint in ['/api/auth/customers', '/api/auth/vehicle/vehicles', '/api/auth/hr/staff', '/api/auth/order/car-rental']:
+    elif endpoint in ['/api/auth/customers', '/api/auth/vehicle/vehicles', '/api/auth/hr/staff', '/api/auth/order/car-rental', '/api/auth/payment-events']:
         data = []
     else:
         blocked.append(endpoint)
@@ -64,7 +64,7 @@ with sync_playwright() as p:
     page.add_init_script("""(() => { const NativeDate = Date, now = NativeDate.parse('2026-01-31T09:00:00+07:00'); window.Date = class extends NativeDate { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }; })();""")
     page.on('pageerror', lambda e: errors.append(str(e)))
     page.goto(args.url + '/contracts/battery', wait_until='domcontentloaded')
-    page.get_by_role('button', name='Tạo hợp đồng thuê pin', exact=True).click()
+    page.get_by_role('button', name='Tạo hợp đồng thuê pin / sạc', exact=True).click()
     form = page.locator('dialog.mg-battery-dialog')
     expect(form.get_by_label('Cơ sở cho thuê', exact=False)).to_have_value('35')
     expect(form.locator('#battery-start')).to_have_value('2026-01-31')

@@ -104,7 +104,7 @@ export async function listCashbook(params: URLSearchParams, database: Pick<Pool,
     COALESCE(sum(v.amount) FILTER (WHERE v.type IN ('in','addon')),0) AS income_amount,
     COALESCE(sum(v.amount) FILTER (WHERE v.type='out'),0) AS expense_amount,
     ${CASHBOOK_BREAKDOWN_KEYS.map(key => `COALESCE(sum(v.amount) FILTER (WHERE v.amount_category='${key}'),0) AS ${key}`).join(',\n    ')},
-    (SELECT count(*)::int FROM himoto.transactions WHERE status='approved' AND type IN ('in','addon','out')) AS total
+    (SELECT count(*)::int FROM himoto.transactions WHERE status='approved' AND type IN ('in','addon','out')${store && store !== 'all' ? ` AND store_id=${Number(store)}` : ''}) AS total
     FROM matched v`;
   const pageSql = (kind: 'income' | 'expense', config: typeof income) => {
     const limit = bind(config.pageSize), requestedPage = bind(config.page);

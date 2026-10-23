@@ -104,6 +104,12 @@ function map(row: Record<string, unknown>): BatteryContract {
   };
 }
 
+export async function countBatteryContracts(client: Database, storeId?: number) {
+  const result=await client.query('SELECT count(*)::int AS total FROM himoto.battery_contracts WHERE deleted_at IS NULL AND ($1::bigint IS NULL OR store_id=$1)',[storeId??null]);
+  const total=result.rows[0]?.total;
+  if(!Number.isSafeInteger(total)||total<0)throw new Error('Không đọc được tổng hợp đồng pin / sạc.');
+  return total as number;
+}
 export async function listBatteryContracts(client: Database, storeId?: number, vehicleContractId?: number) {
   if (storeId !== undefined && (!Number.isSafeInteger(storeId) || storeId <= 0)) throw new BatteryContractError('Cơ sở không hợp lệ.');
   if (vehicleContractId !== undefined && (!Number.isSafeInteger(vehicleContractId) || vehicleContractId <= 0)) throw new BatteryContractError('Hợp đồng xe liên kết không hợp lệ.');

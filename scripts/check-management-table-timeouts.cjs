@@ -11,7 +11,7 @@ async function main(){
   global.fetch=async(url,{signal})=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}));
   const pending=shared.requestManagementTable(input);assert.equal(delay,45000);fire();await assert.rejects(pending,/Máy chủ phản hồi quá lâu/);assert.equal(cleared,1);
   const parent=new AbortController();const aborted=shared.requestManagementTable(input,parent.signal);parent.abort();await assert.rejects(aborted,error=>error.name==='AbortError');assert.equal(cleared,2);
-  const result={rows:[],total:0,statusCounts:[]};
+  const result={rows:[],total:0,scopeCount:0,tabCount:0,statusCounts:[]};
   global.fetch=async()=>({ok:true,json:async()=>({status:'success',data:result})});
   assert.deepEqual(await shared.requestManagementTable(input),result);assert.equal(cleared,3);
   global.fetch=async()=>({ok:true,json:()=>new Promise((resolve,reject)=>{fire=()=>{reject(new Error('body failed'));};})});

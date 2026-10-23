@@ -73,7 +73,7 @@ def mock(route):
     if path == '/api/auth/battery-contracts/990/actions':
         data = context()
     elif path == '/api/auth/battery-contracts':
-        data = [state['battery']]
+        data = dict(rows=[state['battery']], scopeCount=1) if 'scope_count=1' in req.url else [state['battery']]
     elif path == '/api/auth/stores':
         data = stores
     elif path in ('/api/auth/hr/staff', '/api/auth/contract-staff'):

@@ -52,7 +52,8 @@ def mock(route):
         if query['search']:
             filtered = [r for r in filtered if query['search'] in r['license']]
         page = int(query['page'])
-        route.fulfill(json=dict(status='success', data=dict(rows=filtered[(page-1)*25:page*25], total=len(filtered), page=page, size=25)))
+        scope_count = len([r for r in rows if query['store'] == 'all' or query['store'] in [str(r['from_store_id']), str(r['to_store_id'])]])
+        route.fulfill(json=dict(status='success', data=dict(rows=filtered[(page-1)*25:page*25], total=len(filtered), scopeCount=scope_count, page=page, size=25)))
     else:
         raise AssertionError(f'Unexpected API (history must not fetch fleet/details): {parsed.path}')
 

@@ -39,6 +39,7 @@ async function main(){
     for(let id=100;id<126;id++)await event(id,'manual_transfer','2026-10-16 12:00:00',702,32,33,null);
     const all=await query({}),second=await query({page:'2'});
     assert.equal(all.total,32);assert.equal(all.rows.length,25);assert.equal(second.total,32);assert.equal(second.rows.length,7);
+    assert.equal(all.scopeCount,34);assert.equal(second.scopeCount,34);
     const combined=[...all.rows,...second.rows];assert.equal(new Set(combined.map(v=>v.id)).size,32);
     assert(!combined.some(v=>[1,6,7,11].includes(v.id)));assert.equal(all.rows[0].id,5);
     assert(combined.find(v=>v.id===2).at.startsWith('2026-10-15T17:00:00'));
@@ -47,6 +48,10 @@ async function main(){
     assert.equal(route.total,4);assert.equal((await query({action:'receive'})).total,3);assert.equal((await query({action:'transfer'})).total,29);
     assert.equal((await query({store:'31'})).total,4);assert.equal((await query({store:'33'})).total,28);
     assert.equal((await query({from_store:'33'})).total,0);
+    assert.equal((await query({store:'31'})).scopeCount,6);
+    assert.equal((await query({store:'33',search:'no-match'})).scopeCount,28);
+    assert.equal((await query({from:'2026-10-18',to:'2026-10-18'})).scopeCount,34);
+    checks.push('Heading counts all permitted history across dates and pages, preserves branch scope and stays populated for an empty search or day');
     checks.push('Origin, destination, either-branch scope and transfer/receipt filters combine without per-vehicle requests');
     const frozen=route.rows.find(v=>v.id===2);
     assert.equal(frozen.license,'QA-701');assert.equal(frozen.vehicle_name,'Tên xe lúc chuyển QA');assert.equal(frozen.actor,'Người chuyển QA');assert.equal(frozen.from_store,'Cơ sở đi QA');assert.equal(frozen.changes[0].to,'Chờ luân chuyển');

@@ -2,7 +2,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool } from './himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from './management-session';
-import { BatteryContractError, deleteBatteryContract, listBatteryContracts, saveBatteryContract } from './battery-contracts';
+import { BatteryContractError, countBatteryContracts, deleteBatteryContract, listBatteryContracts, saveBatteryContract } from './battery-contracts';
 import { failureResponse } from './public-failure';
 
 export async function handleBatteryContractRequest(request: NextRequest, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', rawId?: string) {
@@ -20,8 +20,9 @@ export async function handleBatteryContractRequest(request: NextRequest, method:
     if (method === 'GET' && store !== null && !/^[1-9]\d*$/.test(store)) throw new BatteryContractError('Cơ sở không hợp lệ.');
     if (method === 'GET' && vehicleContract !== null && !/^[1-9]\d*$/.test(vehicleContract)) throw new BatteryContractError('Hợp đồng xe liên kết không hợp lệ.');
     client = await himotoPool.connect(); await client.query(method === 'GET' ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
-    const data = method === 'GET' ? await listBatteryContracts(client, store === null ? undefined : Number(store), vehicleContract === null ? undefined : Number(vehicleContract))
+    let data:unknown = method === 'GET' ? await listBatteryContracts(client, store === null ? undefined : Number(store), vehicleContract === null ? undefined : Number(vehicleContract))
       : method === 'DELETE' ? await deleteBatteryContract(client, id!, raw.revision, user!.id) : await saveBatteryContract(client, user!.id, raw, id);
+    if(method==='GET'&&request.nextUrl.searchParams.get('scope_count')==='1')data={rows:data,scopeCount:await countBatteryContracts(client,store===null?undefined:Number(store))};
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

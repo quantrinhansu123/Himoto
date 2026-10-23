@@ -77,7 +77,7 @@ export async function requestManagementTable(input: ManagementTableInput, signal
   if (!response.ok || result?.status!=='success') throw new Error(result?.message || 'Không tải được danh sách. Thử lại.');
   // Old deployments/test fixtures return the original array until their API is upgraded.
   if (Array.isArray(result.data)) return projectManagementTable(result.data.map((row: Record<string,unknown>)=>mapApiRow(input.kind,row)),input,all,Date.now(),ownershipStores);
-  if (!Array.isArray(result.data?.rows) || !Number.isSafeInteger(result.data.total) || !Array.isArray(result.data.statusCounts)) throw new Error('Danh sách trả về không hợp lệ.');
+  if (!Array.isArray(result.data?.rows) || ['total','scopeCount','tabCount'].some(key=>!Number.isSafeInteger(result.data[key])||result.data[key]<0) || !Array.isArray(result.data.statusCounts)) throw new Error('Danh sách trả về không hợp lệ.');
   return result.data;
   } catch(error) {
     if(timedOut&&!signal?.aborted)throw new Error('Máy chủ phản hồi quá lâu. Vui lòng bấm Thử lại để tải danh sách.');

@@ -80,7 +80,7 @@ async function main() {
       ]) {
         const params = new URLSearchParams({ search: filters.search, actor: filters.actor, from: filters.startDate, to: filters.endDate, store_id: store });
         const result = await listCashbook(params, database), expected = filterCashbookRows(full, filters, store);
-        assert.equal(result.total, full.length);
+        assert.equal(result.total, filterCashbookRows(full, EMPTY_CASHBOOK_FILTERS, store).length);
         for (const type of ['income', 'expense']) {
           const rows = expected.filter(row => row.type === type);
           assert.equal(result[type].total, rows.length); assert.equal(result[type].amount, rows.reduce((sum, row) => sum + (row.amount || 0), 0));

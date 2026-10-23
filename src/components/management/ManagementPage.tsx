@@ -33,6 +33,7 @@ import { OVERDUE_BUCKETS } from '@/lib/management/contract-overdue';
 import { useSelectedVehicleGps } from './SelectedVehicleGps';
 import { contractVehicleIds,contractGpsFields } from './ContractMonitoringCells';
 import { CONTRACT_STATUS_TABS } from '@/lib/management/contract-tabs';
+import { RecordTotal } from './RecordTotal';
 
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
@@ -332,7 +333,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   return <section className={`mg-page mg-page-${kind}${compactContracts?' mg-compact-contracts':''}${monitoringContracts?' mg-monitoring-contracts':''}`} aria-label={config.title}>
     {inventoryOpen&&<SharedVehicleInventory onClose={()=>setInventoryOpen(false)}/>}
     <div className="mg-page-content">
-      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><div className="mg-contract-total" aria-label="Toàn bộ hợp đồng"><span>Toàn bộ hợp đồng</span><strong>{loading&&!table.data ? '…' : error&&!table.data ? '—' : scopeCount.toLocaleString('vi-VN')}</strong><small>Trong phạm vi cơ sở và quyền truy cập</small></div>{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopeCount}</span></h1><p>{config.description}</p></div>}
+      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label="Toàn bộ hợp đồng" count={table.data ? scopeCount : null} loading={loading} className="mg-contract-total"/>{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Toàn bộ xe',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{config.description}</p></div>}
         <OptionalTools collapsed={compactContracts} label="Thao tác khác"><div className="mg-heading-actions">{kind !== 'contracts' && <ResponsiveDataActions>{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
           {kind === 'customers' && can('settings.write') && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && can('settings.write') && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}

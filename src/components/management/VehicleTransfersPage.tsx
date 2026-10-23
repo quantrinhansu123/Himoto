@@ -10,6 +10,7 @@ import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { MobileDetailsCard } from './MobileDetailsCard';
 import { Dialog } from './Dialog';
+import { RecordTotal } from './RecordTotal';
 import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
 
 const dash = (value: string) => value || '—';
@@ -50,7 +51,7 @@ export function VehicleTransfersPage() {
   return <section className="mg-page mg-page-vehicle-transfers" aria-label="Lịch sử luân chuyển">
     {telegramRow?.telegram_event_id&&<Dialog title="Telegram · Điều chuyển xe" onClose={()=>setTelegramRow(null)}><div className="mg-dialog-body"><VehicleTransferTelegramPanel vehicleId={telegramRow.vehicle_id} eventId={telegramRow.telegram_event_id}/></div><div className="mg-dialog-footer"><button className="mg-button" type="button" onClick={()=>setTelegramRow(null)}>Đóng</button></div></Dialog>}
     <div className="mg-page-content">
-      <div className="mg-page-heading"><div><h1>Lịch sử luân chuyển<span className="mg-title-count">{loading || error ? '—' : report?.total || 0}</span></h1>
+      <div className="mg-page-heading"><div><h1>Lịch sử luân chuyển</h1><RecordTotal label="Toàn bộ lượt luân chuyển" count={!loading&&!error?report?.scopeCount:null} loading={loading}/>
         <p>Xem xe chuyển từ cơ sở nào sang cơ sở nào trong ngày. Mỗi dòng là một lần chuyển hoặc nhận xe.</p></div>
         <div className="mg-heading-actions"><Link href="/vehicles" className="mg-button"><ArrowLeftRight size={16}/>Danh sách xe</Link>
           <button type="button" className="mg-button" disabled={loading} onClick={() => setRetry(value => value + 1)}><RefreshCw size={16}/>Làm mới</button></div></div>
