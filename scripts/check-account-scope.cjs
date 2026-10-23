@@ -132,6 +132,8 @@ async function main(){const c=await pool.connect();try{
   assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91103')).rowCount,0);
   const crossReturnable=await dataAccess.run(scope,()=>load(path.join(root,'lib/server/contract-returns')).loadContractReturnableItems(proxy,92020));
   assert.equal(crossReturnable[0].license,'QA-CROSS');
+  const crossSearch=await dataAccess.run(scope,()=>load(path.join(root,'lib/server/contract-returns')).searchReturnableItems(proxy,'QA-CROSS'));
+  assert(crossSearch.some(row=>row.order_id===92020&&row.license==='QA-CROSS'));
   const readTable=load(path.join(root,'lib/server/management-table')).readManagementTable;
   const findCross=(extra={})=>dataAccess.run(scope,()=>readTable(proxy,'contracts',new URLSearchParams({table:'1',search:'QA-CROSS',...extra})));
   const crossPage=await findCross();assert.equal(crossPage.total,1);assert.equal(crossPage.rows[0].id,92020);
@@ -148,6 +150,8 @@ async function main(){const c=await pool.connect();try{
   await c.query("SELECT set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true)");
   const foreignCross=await dataAccess.run({...scope,id:70001,store_id:80001},()=>readTable(proxy,'contracts',new URLSearchParams({table:'1',filter_id:'92020'})));
   assert.equal(foreignCross.total,0);
+  const foreignReturnSearch=await dataAccess.run({...scope,id:70001,store_id:80001},()=>load(path.join(root,'lib/server/contract-returns')).searchReturnableItems(proxy,'QA-CROSS'));
+  assert(!foreignReturnSearch.some(row=>row.order_id===92020));
   assert.equal((await proxy.query('SELECT id FROM himoto.contract_vehicle_labels() WHERE id=91103')).rowCount,0);
   checks.push('Cross-branch vehicle labels survive contract search, detail hydration, export and completion; helpers expose only description fields for own contracts and keep foreign contracts/vehicle tables restricted');
   await c.query('SAVEPOINT cross_return_denied');await assert.rejects(()=>proxy.query('SELECT himoto.release_returned_contract_vehicle(92021)'),e=>e.code==='42501');await c.query('ROLLBACK TO SAVEPOINT cross_return_denied');
