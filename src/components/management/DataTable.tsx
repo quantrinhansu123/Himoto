@@ -10,9 +10,11 @@ import { useManagement } from './ManagementProvider';
 import { isRemindableContract } from '@/lib/management/debt-reminders';
 import { GpsEvidence } from './GpsEvidence';
 import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
+import { ContractRentalPeriod } from './ContractRentalPeriod';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
+  if(column.key==='rental_period')return <ContractRentalPeriod row={row}/>;
   if(column.key==='monitoring_amount')return <ContractMonitoringAmount row={row}/>;
   if(column.key==='contract_gps_status')return <ContractGpsIndicator row={row}/>;
   if(column.key==='overdue_fee_estimate'&&value===undefined)return <span className="mg-cell-value" title="Thiếu hạn trả hoặc giá thuê ngày; nhập phí thực tế khi trả xe.">Cần đối chiếu</span>;

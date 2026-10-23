@@ -44,7 +44,7 @@ for(const [name,recipient,photo] of [
  const result=await completeReturnBatch(db,153,[item],parsed);assert.equal(result[0].status,'completed');
  const ctx=await readPaymentContext(db,1);assert.equal(ctx.deposit_held,0);
  const tx=(await db.query("SELECT type,value,bank_id,cash_id FROM himoto.transactions WHERE name='order:deposit_refund'")).rows;assert.equal(tx.length,1);assert.equal(tx[0].type,'out');assert.equal(Number(tx[0].value),1000000);assert.equal(Number(name==='cash'?tx[0].cash_id:tx[0].bank_id),name==='cash'?5:15);
- const notice=await notificationPayload(db,1,'return',153,['return-101']);assert.equal(notice.refunded,1000000);assert.equal(notice.method,name==='cash'?'Tiền mặt':'CK TK cá nhân');const text=contractNotificationText('return',notice);assert(text.includes('Hình thức hoàn cọc: '+notice.method));assert(!text.includes('undefined'));
+ const notice=await notificationPayload(db,1,'return',153,['return-101']);assert.equal(notice.refunded,1000000);assert.equal(notice.method,name==='cash'?'Tiền mặt':'CK TK cá nhân');const text=contractNotificationText('return',notice);assert(text.includes('Hình thức thanh toán: '+notice.method));assert(!text.includes('undefined'));
  checks.push(name+': return, voucher, refund total and Telegram method agree');await c.query('ROLLBACK TO SAVEPOINT baseline');
 }
 const {item,settlement}=await fixture();
@@ -64,7 +64,7 @@ for(const [name,recipient,qr] of [['pending-typed',{bank:'QA bank',account:'000.
  const parsed=parseReturnSettlements([{order_id:1,revision:f.settlement.revision,receipts:[],refund_deferred:true,...(recipient?{refund_recipient:recipient}:{})}]);
  await completeReturnBatch(db,153,[f.item],parsed);const ctx=await readPaymentContext(db,1);assert.equal(ctx.deposit_held,1000000);assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.transactions')).rows[0].n,2);
  const notice=await notificationPayload(db,1,'return',153,['return-101']);assert.equal(notice.refunded,0);assert.equal(notice.method,'');assert.equal(notice.refund_pending.amount,1000000);
- const text=contractNotificationText('return',notice);assert(text.includes('Chờ kế toán hoàn cọc: 1.000.000'));assert(!text.includes('Hình thức hoàn cọc:'));if(recipient)assert.equal(notice.refund_pending.account,'000123456');if(qr)assert(notice.photos.some(p=>p.slot==='return-101-document-2'));
+ const text=contractNotificationText('return',notice);assert(text.includes('Chờ kế toán hoàn cọc: 1.000.000'));assert(!text.includes('Hình thức thanh toán:'));if(recipient)assert.equal(notice.refund_pending.account,'000123456');if(qr)assert(notice.photos.some(p=>p.slot==='return-101-document-2'));
  await recordContractPayment(db,1,153,{request_id:randomUUID(),revision:ctx.revision,amount:'1000000',method:'transfer',account_id:15,paid_at:paidAt,purpose:'deposit_refund',note:'QA hoàn sau khi đã gửi thông tin'});
  const after=await notificationPayload(db,1,'return',153,['return-101']);assert.equal(after.refund_pending,undefined);assert.equal(after.refunded,1000000);assert.equal(after.method,'CK TK cá nhân');assert.equal((await readPaymentContext(db,1)).deposit_held,0);
  checks.push(name+': recipient/QR survives return into Telegram without a voucher/source account, then a real refund clears pending');await c.query('ROLLBACK TO SAVEPOINT baseline');

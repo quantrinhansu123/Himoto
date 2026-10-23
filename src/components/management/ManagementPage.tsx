@@ -244,7 +244,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const safePage = paged ? table.data?.page || 1 : Math.min(page, pageCount);
   const offset = (safePage - 1) * pageSize;
   // Always keep vehicle customer holder visible even if an older column-menu state hid it.
-  const columns = config.columns.filter(c => visibleKeys.includes(c.key) || (kind === 'vehicles' && c.key === 'holder_name') || (ownershipOnly && ['start_date','end_date'].includes(c.key)));
+  const columns = config.columns.filter(c => visibleKeys.includes(c.key) || (kind === 'vehicles' && c.key === 'holder_name'));
   const statusOptions = [...config.statuses, ...Array.from(new Set(paged?table.data?.statuses || []:rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const contractTabs = kind === 'contracts' && !draftsOnly && !overdueOnly && !paymentDueOnly;
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || query.overdueDays.trim() || query.overdueBucket || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
@@ -310,7 +310,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     if (!filteredRows.length) return;
     let exportRows=filteredRows;
     try {if(paged)exportRows=(await table.exportAll()).rows;} catch(cause){notify(cause instanceof Error?cause.message:'Không xuất được danh sách.');return;}
-    const csv = [columns.map(column => csvCell(column.label)).join(','), ...exportRows.map(row => columns.map(column => csvCell(optionLabel(config, column.key, formatValue(row[column.key], column.format)))).join(','))].join('\r\n');
+    const csv = [columns.map(column => csvCell(column.label)).join(','), ...exportRows.map(row => columns.map(column => csvCell(column.key==='rental_period'?`Bắt đầu: ${formatValue(row.start_date,'datetime')} / Dự kiến trả: ${formatValue(row.end_date,'datetime')}`:optionLabel(config, column.key, formatValue(row[column.key], column.format)))).join(','))].join('\r\n');
     const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a'); link.href = url; link.download = `himoto-${kind}-${source}.csv`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -332,7 +332,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   return <section className={`mg-page mg-page-${kind}${compactContracts?' mg-compact-contracts':''}${monitoringContracts?' mg-monitoring-contracts':''}`} aria-label={config.title}>
     {inventoryOpen&&<SharedVehicleInventory onClose={()=>setInventoryOpen(false)}/>}
     <div className="mg-page-content">
-      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1>{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopeCount}</span></h1><p>{config.description}</p></div>}
+      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><div className="mg-contract-total" aria-label="Toàn bộ hợp đồng"><span>Toàn bộ hợp đồng</span><strong>{loading&&!table.data ? '…' : error&&!table.data ? '—' : scopeCount.toLocaleString('vi-VN')}</strong><small>Trong phạm vi cơ sở và quyền truy cập</small></div>{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}<span className="mg-title-count">{loading || error ? '—' : scopeCount}</span></h1><p>{config.description}</p></div>}
         <OptionalTools collapsed={compactContracts} label="Thao tác khác"><div className="mg-heading-actions">{kind !== 'contracts' && <ResponsiveDataActions>{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
           {kind === 'customers' && can('settings.write') && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           {kind === 'vehicles' && can('settings.write') && <VehicleExcelActions disabled={loading || Boolean(error) || !dataset} />}

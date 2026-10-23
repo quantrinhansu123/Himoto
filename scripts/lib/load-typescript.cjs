@@ -1,6 +1,9 @@
 const fs = require('node:fs'), path = require('node:path'), ts = require('typescript');
 const root = path.resolve(__dirname, '../../src'), cache = new Map();
 function load(filename) {
+  // Windows callers can mix slash styles; aliases must share the same module
+  // instance so a scoped database/mock cannot silently become an owner read.
+  filename=path.normalize(filename);
   if(filename.endsWith('.json'))return JSON.parse(fs.readFileSync(filename,'utf8'));
   const file = filename.endsWith('.ts') ? filename : `${filename}.ts`;
   if (cache.has(file)) return cache.get(file).exports;

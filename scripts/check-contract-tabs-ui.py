@@ -130,13 +130,12 @@ with sync_playwright() as pw:
         if role!='operations':
             if width<768:
                 card=page.locator('.mg-mobile-monitoring-card').first
-                expect(card).to_contain_text('Ngày bắt đầu thuê:')
-                expect(card).to_contain_text('Dự kiến trả xe:')
+                expect(card).to_contain_text('Bắt đầu')
+                expect(card).to_contain_text('Dự kiến trả')
                 expect(card).to_contain_text('23/10/2026 08:30')
                 expect(card).to_contain_text('23/11/2026 17:45')
             else:
-                expect(page.get_by_role('columnheader',name='Sắp xếp theo Ngày bắt đầu thuê',exact=True)).to_be_visible()
-                expect(page.get_by_role('columnheader',name='Sắp xếp theo Dự kiến trả xe',exact=True)).to_be_visible()
+                expect(page.get_by_role('columnheader',name='Thời gian thuê',exact=True)).to_be_visible()
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
             page.locator('.mg-page-contracts:visible').screenshot(path=str(out/f'{role}-dates.png'))
             checks.append(f'{role}: rental start and expected return are visible with the correct Vietnam-local dates')
@@ -226,8 +225,7 @@ with sync_playwright() as pw:
             dialog.screenshot(path=str(out/'interrupted-form-preserved.png'))
             checks.append('An almost-complete form survives repeated app-focus events, a 503 session check and a failed background list refresh without logging out or clearing input')
             dialog.get_by_role('button',name='Đóng',exact=True).click()
-            expect(page.get_by_role('columnheader',name='Sắp xếp theo Ngày bắt đầu thuê',exact=True)).to_be_visible()
-            expect(page.get_by_role('columnheader',name='Sắp xếp theo Dự kiến trả xe',exact=True)).to_be_visible()
+            expect(page.get_by_role('columnheader',name='Thời gian thuê',exact=True)).to_be_visible()
             checks.append('Operations management sees both rental dates on the ownership list, including after a failed background refresh')
         ctx.close();browser.close()
 

@@ -13,6 +13,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path==='/api/auth/contract-staff')return 'contracts.read';
   if(path==='/api/auth/contract-telegram-pending')return 'contracts.read';
   if(path.startsWith('/api/auth/integrations'))return 'settings.write';
+  if(path==='/api/auth/gps/debts')return read?'contracts.read':'contracts.draft';
   if(path.startsWith('/api/auth/gps'))return path.endsWith('/refresh')||read?'vehicles.read':'settings.write';
   if(path==='/api/auth/debt-reminders'||path.endsWith('/debt-reminder'))return 'contracts.read';
   if(path.includes('/sepay/settings'))return read?'finance.read':'settings.write';

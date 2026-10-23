@@ -1,4 +1,5 @@
 import { parseExternalVehicles, type ExternalVehicle, type ShiftAudit, type ShiftMedia, type ShiftSnapshot } from './shift-audits';
+import {parseOwnershipReport,type OwnershipReport} from './ownership-report';
 export const SHIFT_PHOTOS = [
   ['vehicles', 'Ảnh kiểm kê xe'], ['batteries', 'Ảnh kiểm kê pin'],
   ['cash', 'Ảnh tiền mặt thực tế'], ['personal', 'Ảnh tài khoản cá nhân'],
@@ -21,6 +22,7 @@ export const SHIFT_SUMMARY_FIELDS = [
 export type ShiftSummary = Record<typeof SHIFT_SUMMARY_FIELDS[number][0], number>;
 export const emptyShiftSummary = (): ShiftSummary => Object.fromEntries(SHIFT_SUMMARY_FIELDS.map(([key]) => [key, 0])) as ShiftSummary;
 export interface ShiftInput {
+  ownership_report?:OwnershipReport;
   store_id: number; date: string; staff: string; vehicles: number; batteries: number;
   charged: number; transfers: number; cash: number; personal: number; company: number;
   rented_batteries?: number;
@@ -33,6 +35,7 @@ export interface ShiftInput {
   other_vehicles?:number;
 }
 export interface ShiftReport {
+  telegram?:{status:string;message_id:number|null;error_code:string|null}|null;
   id: number; store_name: string; payload: ShiftInput; status: 'draft' | 'submitted';
   revision: number; created_by_name: string; updated_at: string; photos: string[];
   media?:ShiftMedia[]; audit?:ShiftAudit|null; app_snapshot?:ShiftSnapshot|null;
@@ -73,6 +76,7 @@ export function parseShiftInput(raw: unknown): ShiftInput {
     summary = Object.fromEntries(SHIFT_SUMMARY_FIELDS.map(([key]) => [key, values[key]])) as ShiftSummary;
   }
   return { store_id: Number(b.store_id), date: b.date, staff: b.staff.trim(), notes: b.notes.trim(), electricity_off: b.electricity_off,
+    ...(b.ownership_report!==undefined?{ownership_report:parseOwnershipReport(b.ownership_report)}:{}),
     ...(typeof b.electrical_devices === 'string' ? { electrical_devices: b.electrical_devices.trim() } : {}),
     ...(b.rented_batteries !== undefined ? { rented_batteries: b.rented_batteries } : {}),
     ...(b.external_vehicles!==undefined?{external_vehicles:parseExternalVehicles(b.external_vehicles)}:{}),

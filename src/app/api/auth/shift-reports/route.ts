@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after,NextRequest, NextResponse } from 'next/server';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { dataAccess } from '@/lib/server/access-context';
@@ -7,8 +7,12 @@ import { hasPermission } from '@/lib/management/permissions';
 import { ShiftRequestError, shiftRequestId, shiftRequestHash, readShiftReceipt, writeShiftReceipt } from '@/lib/server/shift-report-requests';
 import { readShiftSnapshot } from '@/lib/server/shift-audits';
 import { failureResponse } from '@/lib/server/public-failure';
+import { readOwnershipReport } from '@/lib/server/ownership-report';
+import { ownershipReportText,validateOwnershipSubmission } from '@/lib/management/ownership-report';
+import { queueReportTelegram,deliverReportTelegram } from '@/lib/server/report-telegram';
 
 export const runtime = 'nodejs';
+export const maxDuration=300;
 export const GET = withAccessRequest(async (request: NextRequest) => {
   try {
     const store = request.nextUrl.searchParams.get('store_id');
@@ -16,6 +20,7 @@ export const GET = withAccessRequest(async (request: NextRequest) => {
     if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date))return NextResponse.json({message:'Ngày báo cáo không hợp lệ.'},{status:400});
     if (store && !/^[1-9]\d*$/.test(store)) return NextResponse.json({ message: 'PGD không hợp lệ.' }, { status: 400 });
     const result = await himotoPool.query(`SELECT r.id,r.payload,r.status,r.revision,r.updated_at,r.app_snapshot,s.store_name,COALESCE(u.name,'Nhân sự') AS created_by_name,
+      (SELECT jsonb_build_object('status',n.status,'message_id',n.message_id,'error_code',n.error_code) FROM himoto.management_report_deliveries n WHERE n.delivery_key='shift:'||r.id::text) AS telegram,
       ARRAY(SELECT p.slot FROM himoto.management_shift_photos p WHERE p.report_id=r.id) AS legacy_photos,
       ARRAY(SELECT p.slot FROM himoto.management_shift_photos p WHERE p.report_id=r.id UNION SELECT m.category FROM himoto.management_shift_media m WHERE m.report_id=r.id AND m.stage='pgd' AND m.mime_type LIKE 'image/%') AS photos,
       COALESCE((SELECT jsonb_agg(jsonb_build_object('id',m.id,'category',m.category,'stage',m.stage,'mime_type',m.mime_type,'filename',m.filename,
@@ -42,7 +47,7 @@ export const POST = withAccessRequest(async (request: NextRequest) => {
     const hash = shiftRequestHash(JSON.stringify({ actor: actor.id, id: raw.id ?? null, revision: raw.revision ?? null, input, status: raw.status }));
     client = await himotoPool.connect(); await client.query('BEGIN');
     const receipt = await readShiftReceipt(client, requestId, actor.id, hash);
-    if (receipt) { await client.query('COMMIT'); return NextResponse.json({ data: receipt }); }
+    if (receipt) { await client.query('COMMIT'); if(raw.status==='submitted'&&input.ownership_report)after(()=>deliverReportTelegram(`shift:${receipt.id}`));return NextResponse.json({ data: receipt }); }
     if (!(await client.query('SELECT id FROM himoto.stores WHERE id=$1', [input.store_id])).rowCount) throw new Error('PGD không tồn tại.');
     if (raw.id != null) {
       const existing = (await client.query('SELECT * FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE', [raw.id])).rows[0];
@@ -51,11 +56,16 @@ export const POST = withAccessRequest(async (request: NextRequest) => {
       }
     }
     if (raw.status === 'submitted' && !input.electricity_off) throw new Error('Xác nhận đã tắt thiết bị điện trước khi chốt.');
+    if(raw.status==='submitted'&&input.ownership_report){
+      validateOwnershipSubmission(input.ownership_report);
+      const fresh=await readOwnershipReport(client,input.store_id,input.date);
+      input.ownership_report={...fresh,values:input.ownership_report.values,manual:input.ownership_report.manual};
+    }
 
     const result = raw.id != null
       ? await client.query('UPDATE himoto.management_shift_reports SET payload=$1,status=$2,revision=revision+1,updated_at=now() WHERE id=$3 RETURNING id,revision', [input, raw.status, raw.id])
       : await client.query('INSERT INTO himoto.management_shift_reports(store_id,report_date,payload,created_by,status) VALUES($1,$2,$3,$4,$5) RETURNING id,revision', [input.store_id,input.date,input,actor.id,raw.status]);
-    const saved = { id: Number(result.rows[0].id), revision: result.rows[0].revision };
+    const saved = { id: Number(result.rows[0].id), revision: result.rows[0].revision,...(raw.status==='submitted'&&input.ownership_report?{ownership_report:input.ownership_report}:{}) };
     if(raw.status==='submitted'){
       await client.query('SAVEPOINT shift_snapshot');
       try{
@@ -68,9 +78,11 @@ export const POST = withAccessRequest(async (request: NextRequest) => {
         await client.query('UPDATE himoto.management_shift_reports SET submitted_at=now() WHERE id=$1',[saved.id]);
       }
       await client.query('RELEASE SAVEPOINT shift_snapshot');
+      if(input.ownership_report)await queueReportTelegram(client,`shift:${saved.id}`,input.store_id,ownershipReportText(input.date,input.ownership_report),'ownership_new');
     }
     await writeShiftReceipt(client, requestId, actor.id, input.store_id, hash, saved);
     await client.query('COMMIT');
+    if(raw.status==='submitted'&&input.ownership_report)after(()=>deliverReportTelegram(`shift:${saved.id}`));
     return NextResponse.json({ data: saved });
   } catch (e) {
     if (client) await client.query('ROLLBACK').catch(() => {});

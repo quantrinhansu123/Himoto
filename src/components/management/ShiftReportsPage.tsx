@@ -11,6 +11,9 @@ import { ShiftAuditPanel } from './ShiftAuditPanel';
 import type { ShiftMedia } from '@/lib/management/shift-audits';
 import { emptyShiftSummary, shiftVehicleTotal, parseShiftInput, SHIFT_SUMMARY_FIELDS, type ShiftInput, type ShiftReport } from '@/lib/management/shift-reports';
 import type { ShiftAutofillResult, ShiftAutofillSection } from '@/lib/management/shift-autofill';
+import {blankOwnershipReport,validateOwnershipSubmission} from '@/lib/management/ownership-report';
+import {OwnershipReportFields} from './OwnershipReportFields';
+import {ShiftTelegramStatus} from './ShiftTelegramStatus';
 
 const blank = (store = 0): ShiftInput => ({ store_id: store, date: vietnamDate(), staff: '', vehicles: 0, batteries: 0, charged: 0, rented_batteries: 0, transfers: 0, cash: 0, personal: 0, company: 0, electricity_off: false, notes: '', summary: emptyShiftSummary(), daily_vehicles: 0, monthly_vehicles: 0, other_vehicles: 0 });
 
@@ -19,6 +22,7 @@ const REPORT_TABS = [
   ['information', 'Thông tin'],
   ['inventory', 'Kiểm kê xe / pin'], ['summary', 'Hợp đồng & thu chi'],
   ['accounts', 'Tiền các tài khoản'], ['safety', 'An toàn cuối ca'],
+  ['ownership','Thuê sở hữu & Telegram'],
 ] as const;
 type ReportTab = typeof REPORT_TABS[number][0];
 const INVENTORY_TABS = [['vehicles','Tổng kết xe'],['batteries','Pin cửa hàng'],['transfers','Xe điều chuyển']] as const;
@@ -50,6 +54,7 @@ export function ShiftReportsPage() {
   const [unconfirmed, setUnconfirmed] = useState(false);
   const [autofilled, setAutofilled] = useState<Partial<Record<ShiftAutofillSection, ShiftAutofillResult>>>({});
   const fillController = useRef<AbortController | null>(null);
+  const autoStarted=useRef(new Set<string>());
   useEffect(() => () => fillController.current?.abort(), []);
   const writable = can('contracts.draft') || can('finance.write');
   const readonly = !writable || record?.status === 'submitted';
@@ -90,14 +95,17 @@ export function ShiftReportsPage() {
   function open(row?: ShiftReport) {
     if (dirty.current && !window.confirm('Có thay đổi chưa lưu. Bỏ thay đổi để mở báo cáo khác?')) return false;
     dirty.current = false; setInput(row ? { ...row.payload, ...(row.status === 'draft' ? { rented_batteries: row.payload.rented_batteries ?? 0, daily_vehicles: row.payload.daily_vehicles ?? 0, monthly_vehicles: row.payload.monthly_vehicles ?? 0, other_vehicles: row.payload.other_vehicles ?? 0 } : {}), ...(row.status === 'draft' && !row.payload.summary ? { summary: emptyShiftSummary() } : {}) } : blank(selectedStore === 'all' ? 0 : Number(selectedStore)));
-    pendingDelete.current=null;setAuditTarget(row?.status==='submitted'?row:null);setAuditOpened(false);setWorkflow('pgd');
+    if(!row&&stores.find(s=>s.id===Number(selectedStore))?.kind==='lease_to_own')setInput(current=>({...current,ownership_report:blankOwnershipReport()}));
+    autoStarted.current.clear();pendingDelete.current=null;setAuditTarget(row?.status==='submitted'?row:null);setAuditOpened(false);setWorkflow('pgd');
     pendingSave.current = null; setUnconfirmed(false);
     setRecord(row || null); setFiles({}); setError(''); setEditing(true); setShowList(false); setTab('information'); setInventoryTab('vehicles'); setAutofilled({});
     return true;
 
   }
-  function update<K extends keyof ShiftInput>(key: K, value: ShiftInput[K]) { dirty.current = true; setInput(current => ({ ...current, [key]: value })); }
-  async function autofill(section: ShiftAutofillSection) {
+  function update<K extends keyof ShiftInput>(key: K, value: ShiftInput[K]) { dirty.current = true; if(key==='store_id'||key==='date')autoStarted.current.clear();setInput(current => ({ ...current, [key]: value,
+    ...((key==='store_id'||key==='date')?{summary:emptyShiftSummary(),ownership_report:current.ownership_report||key==='store_id'&&stores.find(s=>s.id===value)?.kind==='lease_to_own'?blankOwnershipReport():undefined}:{}),
+  })); }
+  async function autofill(section: ShiftAutofillSection,silent=false) {
     if (lock.current || readonly || unconfirmed) return;
     if (!input.store_id || !input.date) { setTab('information'); setError('Chọn PGD và ngày báo cáo ở tab Thông tin trước khi tự điền.'); return; }
     const controller = new AbortController(); fillController.current = controller;
@@ -111,13 +119,27 @@ export function ShiftReportsPage() {
       const result = body.data as ShiftAutofillResult;
       if (controller.signal.aborted) return;
       if (result.store_id !== store || result.date !== date || result.section !== section) throw new Error('Dữ liệu trả về không đúng PGD/ngày đang chọn.');
-      setInput(current => current.store_id === store && current.date === date ? { ...current, ...result.values } : current);
+      setInput(current => {
+        if(current.store_id!==store||current.date!==date)return current;
+        const ownership=result.values.ownership_report;
+        if(ownership&&current.ownership_report){for(const key of current.ownership_report.manual)ownership.values[key]=current.ownership_report.values[key];ownership.manual=[...current.ownership_report.manual];}
+        return {...current,...result.values};
+      });
       if (Object.keys(result.values).length) dirty.current = true;
       setAutofilled(current => ({ ...current, [section]: result }));
-      notify(Object.keys(result.values).length ? 'Đã tự điền dữ liệu. Kiểm tra số liệu trước khi lưu báo cáo.' : 'Chưa có dữ liệu phù hợp để tự điền. Xem thông báo tại tab.');
+      if(!silent)notify(Object.keys(result.values).length ? 'Đã tự điền dữ liệu. Kiểm tra số liệu trước khi lưu báo cáo.' : 'Chưa có dữ liệu phù hợp để tự điền. Xem thông báo tại tab.');
     } catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không lấy được dữ liệu.'); }
     finally { lock.current = false; if (!controller.signal.aborted) setBusy(false); }
   }
+  const autoFillAction=useRef(autofill);autoFillAction.current=autofill;
+  const ownershipEnabled=Boolean(input.ownership_report);
+  useEffect(()=>{
+    if(!editing||readonly||record?.id||!input.store_id||!input.date||unconfirmed)return;
+    const sections:ShiftAutofillSection[]=['summary',...(ownershipEnabled?['ownership' as const]:[])];
+    const pending=sections.filter(section=>!autoStarted.current.has(`${input.store_id}:${input.date}:${section}`));
+    for(const section of pending)autoStarted.current.add(`${input.store_id}:${input.date}:${section}`);
+    void(async()=>{for(const section of pending)await autoFillAction.current(section,true);})();
+  },[editing,readonly,record?.id,input.store_id,input.date,ownershipEnabled,unconfirmed]);
   function renderAutofill(section: ShiftAutofillSection) {
     const result = autofilled[section];
     const visible = result?.store_id === input.store_id && result.date === input.date;
@@ -133,10 +155,11 @@ export function ShiftReportsPage() {
     if (!pendingSave.current) {
       try {
         parseShiftInput(input);
+        if(submit&&input.ownership_report){try{validateOwnershipSubmission(input.ownership_report);}catch(e){setTab('ownership');throw e;}}
         if (submit && !input.electricity_off) { setTab('safety'); throw new Error('Xác nhận đã tắt thiết bị điện trước khi chốt.'); }
 
       } catch (e) { setError((e as Error).message); return; }
-      if (submit && !window.confirm('Chốt báo cáo cuối ca? Báo cáo và ảnh sẽ được khóa sau khi chốt.')) return;
+      if (submit && !window.confirm(input.ownership_report?'Chốt và gửi báo cáo thuê sở hữu qua Telegram? Báo cáo và ảnh sẽ được khóa.':'Chốt báo cáo cuối ca? Báo cáo và ảnh sẽ được khóa sau khi chốt.')) return;
       pendingSave.current = { input, submit, current: record, draftSaved: false, draftKey: crypto.randomUUID(), submitKey: crypto.randomUUID(),
         photos: Object.entries(files).map(([key,item]) => ({ slot:item.category, file:item.file, key, saved: false })) };
     }
@@ -155,13 +178,14 @@ export function ShiftReportsPage() {
         setFiles(previous => { const next = { ...previous }; delete next[item.key]; return next; });
       }
       if (plan.submit) {
-        const completed = await api<{id:number;revision:number}>('/api/auth/shift-reports', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-shift-request-id': plan.submitKey }, body: JSON.stringify({ id: plan.current!.id, revision: plan.current!.revision, payload: plan.input, status: 'submitted' }) });
+        const completed = await api<{id:number;revision:number;ownership_report?:ShiftInput['ownership_report']}>('/api/auth/shift-reports', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-shift-request-id': plan.submitKey }, body: JSON.stringify({ id: plan.current!.id, revision: plan.current!.revision, payload: plan.input, status: 'submitted' }) });
+        if(completed.ownership_report)setInput(current=>({...current,ownership_report:completed.ownership_report}));
         plan.current = { ...plan.current!, ...completed, status: 'submitted' }; setRecord(plan.current);
         setAuditTarget({...plan.current,payload:plan.input,store_name:stores.find(s=>s.id===plan.input.store_id)?.name||'PGD',created_by_name:'PGD',updated_at:new Date().toISOString()});
       }
       pendingSave.current = null; setUnconfirmed(false);
       dirty.current = false; notify(plan.submit ? 'Đã chốt báo cáo cuối ca.' : 'Đã lưu nháp báo cáo và ảnh.');
-      if (plan.submit) setShowList(true);
+      if (plan.submit&&!plan.input.ownership_report) setShowList(true);
     } catch (e) {
       const uncertain = e instanceof UnconfirmedSaveError;
       if (!uncertain) pendingSave.current = null;
@@ -189,7 +213,7 @@ export function ShiftReportsPage() {
   const renderPhotos = (slots: readonly string[]) => <ShiftEvidence slots={slots} media={[...legacyMedia,...(record?.media||[]).filter(m=>m.stage==='pgd')]} pending={files} readonly={readonly} disabled={busy||unconfirmed} onFiles={value=>{dirty.current=true;setFiles(value);}} onDelete={file=>void removeEvidence(file)}/>;
   const visibleRows=rows.filter(row=>historyStatus==='all'||historyStatus==='draft'&&row.status==='draft'||historyStatus==='pending'&&row.status==='submitted'&&row.audit?.status!=='confirmed'||historyStatus==='confirmed'&&row.audit?.status==='confirmed'||historyStatus==='explained'&&row.audit?.result==='explained');
   return <section className="mg-page"><div className="mg-page-content shift-reports">
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">VẬN HÀNH PGD</div><h1>Báo cáo cuối ca</h1><p>Kiểm kê xe, pin, tiền và xác nhận an toàn trước khi kết thúc ca.</p></div><div className="mg-heading-actions"><button className="mg-button" disabled={busy || loading} onClick={() => setRetry(n => n+1)}><RefreshCw size={16}/>Làm mới</button>{writable && <button className="mg-button mg-button-primary" disabled={busy || unconfirmed} onClick={() => open()}><Plus size={16}/>Tạo báo cáo</button>}</div></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">VẬN HÀNH PGD</div><h1>Báo cáo cuối ca</h1><p>Kiểm kê xe, pin, tiền và xác nhận an toàn trước khi kết thúc ca.</p></div><div className="mg-heading-actions"><button className="mg-button" disabled={busy || loading} onClick={() => setRetry(n => n+1)}><RefreshCw size={16}/>Làm mới</button>{writable && <button className="mg-button mg-button-primary" disabled={busy || unconfirmed || !stores.length} onClick={() => open()}><Plus size={16}/>Tạo báo cáo</button>}</div></div>
     {directoryError && <p role="alert">{directoryError}</p>}
     <div className="shift-view-navigation" aria-label="Danh sách và chi tiết báo cáo">
       <button type="button" className={'mg-button'+(showList ? ' mg-button-primary' : '')} aria-pressed={showList} disabled={busy || unconfirmed} onClick={() => setShowList(true)}><ClipboardList size={16}/>Danh sách báo cáo{!loading && !listError ? ` (${rows.length})` : ''}</button>
@@ -222,6 +246,7 @@ export function ShiftReportsPage() {
       <fieldset disabled={busy || readonly || unconfirmed}>
         <div id="shift-panel-information" role="tabpanel" aria-labelledby="shift-tab-information" hidden={tab !== 'information'} tabIndex={0}>
         <h3>Thông tin chung</h3>{renderAutofill('information')}<p>PGD, ngày báo cáo và nhân sự trực ca dùng chung cho tất cả các tab báo cáo.</p>
+        <label className="mg-field">Mẫu báo cáo<select value={input.ownership_report?'ownership':'pgd'} onChange={e=>update('ownership_report',e.target.value==='ownership'?blankOwnershipReport():undefined)}><option value="pgd">Kiểm kê PGD</option><option value="ownership">Thuê sở hữu · Tự thống kê và gửi Telegram khi chốt</option></select></label>
         <div className="mg-form-grid"><div className="mg-field"><label htmlFor="shift-store">PGD</label><select id="shift-store" required value={input.store_id || ''} disabled={!!record} onChange={e => update('store_id',Number(e.target.value))}><option value="">Chọn PGD</option>{stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div><div className="mg-field"><label htmlFor="shift-date">Ngày báo cáo</label><input id="shift-date" type="date" required disabled={!!record} value={input.date} onChange={e => update('date',e.target.value)}/></div><div className="mg-field mg-field-wide"><label htmlFor="shift-staff">Nhân sự trực ca</label><input id="shift-staff" required maxLength={1000} placeholder="Nhập họ tên các nhân sự trực ca" value={input.staff} onChange={e => update('staff',e.target.value)}/></div></div>
         </div>
         <div id="shift-panel-summary" role="tabpanel" aria-labelledby="shift-tab-summary" hidden={tab !== 'summary'} tabIndex={0}><h3>Thống kê hợp đồng và thu chi trong ngày</h3>{renderAutofill('summary')}
@@ -247,7 +272,9 @@ export function ShiftReportsPage() {
           <div className="mg-field"><label htmlFor="shift-notes">Bất thường / chênh lệch (nếu có)</label><input id="shift-notes" list="shift-note-options" maxLength={5000} placeholder="Chọn nội dung cũ hoặc gõ nội dung mới" value={input.notes} onChange={e => update('notes',e.target.value)}/><datalist id="shift-note-options">{noteOptions.map(value => <option key={value} value={value}/>)}</datalist><small>Gợi ý từ các báo cáo đã tải của PGD đang chọn. Nội dung mới được lưu khi lưu báo cáo.</small></div>
         </div>
         {renderPhotos(['door'])}</div>
+        <div id="shift-panel-ownership" role="tabpanel" aria-labelledby="shift-tab-ownership" hidden={tab!=='ownership'} tabIndex={0}><h3>Báo cáo cuối ngày thuê sở hữu</h3>{input.ownership_report?<>{renderAutofill('ownership')}<OwnershipReportFields report={input.ownership_report} date={input.date} readonly={readonly} onChange={value=>update('ownership_report',value)}/></>:<p>Chọn mẫu Thuê sở hữu trong tab Thông tin để lập báo cáo theo mẫu và gửi Telegram khi chốt.</p>}</div>
       </fieldset>
+      {record?.status==='submitted'&&input.ownership_report&&<ShiftTelegramStatus id={record.id} canSend={writable}/>}
       {error && <p className="mg-field-error" role="alert">{error}</p>}
       {!readonly && <div className="shift-actions">{unconfirmed ? <button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(false)}><RefreshCw size={16}/>{busy ? 'Đang xác nhận…' : 'Thử lại thao tác lưu'}</button> : <><button type="submit" className="mg-button" disabled={busy}><Save size={16}/>{busy ? 'Đang lưu…' : 'Lưu nháp'}</button><button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(true)}><CheckCircle2 size={16}/>Chốt báo cáo</button></>}</div>}
     </form>}

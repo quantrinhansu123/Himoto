@@ -8,8 +8,8 @@ export interface GpsObservation {
   recorded_at:string|null;heartbeat_at:string|null;reported_at?:string|null;
 }
 export interface GpsVehicle {
-  id:number;vehicle_id:number|null;provider:GpsProvider;external_device_id:string;provider_device_name:string;
-  license:string|null;store_id:number|null;store_name:string|null;management_status:GpsState|'unavailable'|null;
+  id:number;vehicle_id:number|null;provider:GpsProvider|null;external_device_id:string;provider_device_name:string;
+  license:string|null;store_id:number|null;store_name:string|null;management_status:GpsState|'unavailable'|'none'|null;
   sync_received_at:string|null;heartbeat_at:string|null;last_latitude:number|null;last_longitude:number|null;last_speed:number|null;
   mapping_status:string;
   position_recorded_at?:string|null;provider_reported_at?:string|null;last_ignition?:boolean|null;
@@ -21,6 +21,7 @@ export function matchingGpsVehicles(name:string,license:string,vehicles:{id:numb
 }
 export function displayedGpsState(state:string|null,syncedAt:string|null,now=Date.now()) {
   if(state==='unavailable')return 'unavailable';
+  if(state==='none')return 'none';
   if(!syncedAt||!Number.isFinite(Date.parse(syncedAt))||now-Date.parse(syncedAt)>10*60_000)return 'stale';
   return state||'warning';
 }

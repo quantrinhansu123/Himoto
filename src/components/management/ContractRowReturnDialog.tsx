@@ -240,7 +240,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
               const value = line?.override ?? (estimate.missingDayPrice?'':String(estimate.suggested));
               return <div key={id} className={`mg-return-line${estimate.late ? ' is-late' : ''}${line ? '' : ' is-off'}`}>
                 <label className="mg-return-line-head"><input type="checkbox" checked={Boolean(line)} onChange={() => toggle(id)} /><strong>{row.vehicle_name} · {row.license}</strong>{orderIds.size > 1 || contractCode === '' ? <span>{row.contract_code}</span> : null}</label>
-                <span className="mg-return-line-time">Thuê {formatDateTime(row.scheduled_start_at)} → hạn {formatDateTime(row.scheduled_return_at)}</span>
+                <details className="mg-return-options"><summary>Thời gian thuê / hạn trả</summary><span className="mg-return-line-time">Thuê {formatDateTime(row.scheduled_start_at)} → hạn {formatDateTime(row.scheduled_return_at)}</span></details>
                 {line&&<details className="mg-return-options"><summary>Xem vị trí GPS</summary><SelectedVehicleGps vehicleId={row.vehicle_id} data={selectedGps}/></details>}
                 {line && <div className="mg-return-line-adjust">
                   <span>{estimate.late ? lateText(estimate.minutes, estimate.hours,estimate.lateDays) : estimate.early ? `Trả sớm${estimate.unusedDays ? ` ${estimate.unusedDays} ngày` : ' (dưới 1 ngày)'}${row.daily_price ? ` · ${formatMoney(row.daily_price)}/ngày` : ''}` : 'Trả đúng hạn · không điều chỉnh'}</span>
@@ -253,18 +253,18 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
               </div>;
             })}
           </div>
-          {summary && <dl className="mg-return-summary">
+          {summary && <details className="mg-return-options"><summary>Đối chiếu tiền thuê · Cọc giữ {formatMoney(summary.depositHeld)}{summary.due!==null?` · ${summary.due<0?'Thu thừa':'Còn thiếu'} ${formatMoney(Math.abs(summary.due))}`:''}</summary><dl className="mg-return-summary">
             <div><dt>Điều chỉnh tiền thuê</dt><dd>{summary.adjustment > 0 ? '+' : summary.adjustment < 0 ? '−' : ''}{formatMoney(Math.abs(summary.adjustment))}</dd></div>
             <div><dt>Tiền thuê sau trả xe</dt><dd>{summary.total === null ? 'Chưa có' : formatMoney(summary.total)}</dd></div>
             <div><dt>Đã thu tiền thuê</dt><dd>{formatMoney(summary.paid)}</dd></div>
             <div><dt>{summary.due !== null && summary.due < 0 ? 'Thu thừa' : 'Còn thiếu (không trừ cọc)'}</dt><dd>{summary.due === null ? '—' : formatMoney(Math.abs(summary.due))}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(summary.depositHeld)}</dd></div>
-          </dl>}
+          </dl></details>}
           {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={blocked=>setSettlementBlocks(current=>current[orderId]===blocked?current:{...current,[orderId]:blocked})} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
           {lines.map(({row})=><ContractTransactionPhotos key={row.item_id} id={row.order_id} phase={`return-${row.item_id}`} title={`Ảnh trả xe và hồ sơ · ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})} onSaved={()=>setPhotoVersion(value=>value+1)}/>)}
           <p className="mg-composer-hint">Chỉ ghi phiếu cho khoản đã chọn thu / hoàn. Còn nợ: giữ hợp đồng Chờ tất toán.</p>
         </>}
-        {doneRows.map(row => <ContractTransactionPhotos key={row.item_id} id={row.order_id} phase={`return-${row.item_id}`} title={`Bổ sung ảnh trả xe ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})}/>)}
+        {doneRows.length>0&&<details className="mg-return-options"><summary>Xe đã trả · Bổ sung ảnh / hồ sơ ({doneRows.length})</summary>{doneRows.map(row => <ContractTransactionPhotos key={row.item_id} id={row.order_id} phase={`return-${row.item_id}`} title={`Bổ sung ảnh trả xe ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})}/>)}</details>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>

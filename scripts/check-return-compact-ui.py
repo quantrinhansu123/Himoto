@@ -86,6 +86,7 @@ with sync_playwright() as pw:
         page.goto(a.url+'/contracts?action=return&query=QA-328.80',wait_until='networkidle',timeout=120000)
         dialog=page.get_by_role('dialog',name='Trả xe',exact=True)
         expect(dialog.get_by_role('button',name='Xác nhận trả 1 xe',exact=True) if not state.get('completed') else dialog.get_by_role('button',name='Đóng',exact=True)).to_be_visible()
+        if state.get('completed'):dialog.locator('summary').filter(has_text='Xe đã trả · Bổ sung ảnh / hồ sơ').click()
         expect(dialog.locator('.mg-transaction-photos').first.get_by_role('button',name='Chọn nhiều ảnh',exact=True)).to_be_enabled()
         return dialog
     def fee(dialog):return dialog.get_by_role('textbox',name='Phí quá hạn thực tế QA-328.80',exact=True)
@@ -108,10 +109,8 @@ with sync_playwright() as pw:
     detail.press('Home');expect(quick).to_be_focused()
     expect(dialog.get_by_role('group',name='Toàn cảnh xe',exact=True)).not_to_be_visible()
     checks.append('Two keyboard-accessible tabs combine the batch uploader with expandable optional detail fields')
-    confirm(dialog)
-    expect(dialog.get_by_role('alert').filter(has_text='Hoàn tất mục')).to_be_visible();assert len(posts)==before
-    expect(dialog.get_by_label('Chưa hoàn cọc',exact=False)).to_be_focused()
-    checks.append('Short form has one visible bulk uploader and collapsed optional fields; a missing refund decision focuses the real blocking section')
+    expect(dialog.get_by_label('Chưa hoàn cọc',exact=False)).to_be_checked();assert len(posts)==before
+    checks.append('Short form has one visible bulk uploader and collapsed optional fields; the existing default keeps the deposit without creating a refund voucher')
 
     fee(dialog).fill('50000');dialog.get_by_label('Đã thu phí quá hạn',exact=True).check()
     fee(dialog).fill('0');defer(dialog);confirm(dialog)
@@ -148,7 +147,7 @@ with sync_playwright() as pw:
     expect(uploader.get_by_text('Còn 3 tệp mới chưa lưu',exact=False)).to_be_visible()
     uploader.get_by_role('tab',name='Tải nhanh / Hàng loạt',exact=True).click()
     assert save.bounding_box()['y']-uploader.get_by_role('button',name='Chọn nhiều ảnh',exact=True).bounding_box()['y']<250
-    confirm(dialog);expect(dialog.get_by_role('alert').filter(has_text='Ảnh/video vừa chọn chưa lưu')).to_be_visible();assert len(posts)==before
+    expect(dialog.get_by_role('button',name='Xác nhận trả 1 xe',exact=True)).to_be_disabled();assert len(posts)==before
     state['failSave']=True;save.click();expect(dialog.get_by_role('alert').filter(has_text='QA chưa lưu được ảnh')).to_be_visible();assert len(posts)==before
     save.click();expect(uploader.get_by_text('Đã lưu ảnh.',exact=True)).to_be_visible()
     assert 'return-101-document-2' in state['photos'] and len(state['photos'])==3

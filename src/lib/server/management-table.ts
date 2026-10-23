@@ -35,7 +35,9 @@ export function parseManagementTable(kind:TableKind,params:URLSearchParams):Mana
   return {kind,page,size,sort,direction:direction as 'asc'|'desc',scope,store,...(recent?{recentDays:Number(recent)}:{}),query:{...EMPTY_QUERY,filters,search,status,startDate:from,endDate:to,overdueDays:days,overdueCompare:compare as 'eq'|'gt'|'lt',...(bucket?{overdueBucket:bucket as OverdueBucket}:{})}};
 }
 function contractScopeClause(scope:string) {
-  if(scope==='overdue')return ` AND (o.order_status='bad_debt' OR ${contractStatusClause('overdue').slice(5)})`;
+  // Return dates can live only on legacy vehicle lines. Hydrated monitoring
+  // applies the actual overdue test; filtering by the header first loses them.
+  if(scope==='overdue')return contractPageScopeClause(scope);
   return scope==='due' ? ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL`
     : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
 }
@@ -108,7 +110,7 @@ export function contractPageSql(scopeClause:string,includeTotal=false) {
     CASE WHEN o.order_status='draft' THEN o.draft_payload ELSE NULL END AS draft_payload
     FROM himoto.orders o
     LEFT JOIN himoto.stores s ON s.id = o.store_id
-    WHERE o.deleted_at IS NULL${scopeClause}`;
+    WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${scopeClause}`;
 }
 function customerSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
@@ -165,7 +167,7 @@ function contractHydrateSql() {
       FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
       WHERE d.order_id=o.id AND d.deleted_at IS NULL
     ) ov ON true
-    WHERE o.deleted_at IS NULL AND o.id=ANY($1::bigint[])`;
+    WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.id=ANY($1::bigint[])`;
 }
 function vehicleSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
@@ -278,6 +280,13 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const now=Date.now();
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   if(!all){
+    // Count the permitted list without hydrating other tabs or applying search.
+    let scopeCount:number|undefined;
+    if(kind==='contracts'&&params.get('scope_count')==='1'){
+      const counted=await client.query(`SELECT count(*)::int AS scope_count FROM himoto.orders o WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${contractPageScopeClause(input.scope)}${storeSql}`);
+      scopeCount=Number(counted.rows[0]?.scope_count);
+      if(!Number.isSafeInteger(scopeCount)||scopeCount<0)throw new Error('Không đọc được tổng toàn bộ hợp đồng. Vui lòng thử lại.');
+    }
     const offset=Math.max(0,(input.page-1)*input.size);
     // Installment overdue state and age groups depend on the hydrated balance.
     // Read candidates for this tab in bounded batches and filter BEFORE paging;
@@ -342,7 +351,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     if(kind!=='contracts')total=offset+rows.length+(moreCandidates?1:0);
     const pages=kind==='contracts'?Math.max(1,Math.ceil(total/input.size)):moreCandidates?input.page+1:Math.max(1,input.page);
     return {
-      rows,total,scopeCount:total,tabCount:total,page,pages,
+      rows,total,scopeCount:scopeCount??total,tabCount:total,page,pages,
       statusCounts:[],statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:0,
       summary:kind==='contracts'?{contractCount:rows.length,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null,
       recentDays:kind==='contracts'?recentDays??null:undefined,

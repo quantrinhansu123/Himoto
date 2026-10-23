@@ -29,18 +29,18 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
   const depositAmount=Number(p.deposit||0);
   const pendingRecipient=[p.refund_pending?.bank,p.refund_pending?.account,p.refund_pending?.name].filter(Boolean).join(' · ')
     ||((p.photos||[]).some(photo=>/^return-[1-9]\d*-document-[1-9]\d*$/.test(photo.slot))?'Theo ảnh QR / hồ sơ đính kèm':'Chưa có QR/STK — cần bổ sung trước khi hoàn');
-  const lines=kind==='battery_swap'?[`Khách đổi pin: ${p.customer}`,`Bsx: ${p.battery_swap?.license||p.vehicles}`,`Loại xe: ${p.battery_swap?.vehicle_name||p.vehicle_names||'—'}`,`Pin lúc nhận: ${p.battery_swap?.percentage??'—'}%`,`Phí pin dưới 20%: ${money(p.battery_swap?.fee)}`,`Đã thu: ${money(p.battery_swap?.collected)}`,`Hình thức thu: ${method}`]:kind==='return'?[`Khách trả xe: ${p.customer}`,...vehicle,
-    ...(p.return_fees?[...(p.return_fees.returned_at?[`Bàn giao thực tế: ${new Date(p.return_fees.returned_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`]:[]),`Phí quá hạn: ${money(p.return_fees.late)}`,`Phí sửa chữa: ${money(p.return_fees.repair)}`,...(p.return_fees.early_discount?[`Giảm tiền thuê trả sớm: ${money(p.return_fees.early_discount)}`]:[]),`Đã thu phí / công nợ: ${money(p.return_fees.collected)}`,...(p.return_fees.method?[`Hình thức thu: ${p.return_fees.method}`]:[])]:[]),
-    `Tiền cọc: ${money(p.deposit)}`,
-    ...(p.deposit_method?[`Hình thức thu cọc: ${p.deposit_method}`]:[]),
-    `Tổng hoàn cọc: ${money(p.refunded)}`,
+  const lines=kind==='battery_swap'?[`Khách đổi pin: ${p.customer}`,`Bsx: ${p.battery_swap?.license||p.vehicles}`,`Loại xe: ${p.battery_swap?.vehicle_name||p.vehicle_names||'—'}`,`Pin lúc nhận: ${p.battery_swap?.percentage??'—'}%`,`Phí pin dưới 20%: ${money(p.battery_swap?.fee)}`,`Đã thu: ${money(p.battery_swap?.collected)}`,`Hình thức thu: ${method}`]:kind==='return'?[`Khách trả xe: ${p.customer}`,`Biển số: ${p.vehicles||'—'}`,`Xe: ${p.vehicle_names||'—'}`,
+    `Cọc: ${money(p.deposit)}`,`Quá hạn: ${money(p.return_fees?.late)}`,
+    ...(p.return_fees?.repair?[`Sửa chữa: ${money(p.return_fees.repair)}`]:[]),
+    ...(p.return_fees?.early_discount?[`Trả sớm: −${money(p.return_fees.early_discount)}`]:[]),
+    ...(p.return_fees?.collected?[`Đã thu phí / công nợ: ${money(p.return_fees.collected)}${p.return_fees.method?' · '+p.return_fees.method:''}`]:[]),
+    `Hoàn cọc: ${money(p.refunded)}`,
     ...(refundedAmount>0
-      ?[`Hình thức hoàn cọc: ${p.method||'Chưa xác định'}`]
+      ?[`Hình thức thanh toán: ${p.method||'Chưa xác định'}`]
       :!p.refund_pending&&depositAmount>0
         ?['Hoàn cọc: chưa ghi nhận phiếu hoàn — tick «Đã hoàn cọc» khi trả xe hoặc ghi phiếu chi sổ quỹ']
         :[]),
-    ...(p.refund_pending?[`Chờ kế toán hoàn cọc: ${money(p.refund_pending.amount)}`,`Thông tin nhận hoàn: ${pendingRecipient}`]:[]),
-    ...(!p.refund_pending&&p.refund_recipient?.account?[`Khách nhận hoàn: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[])]
+    ...(p.refund_pending?[`Chờ kế toán hoàn cọc: ${money(p.refund_pending.amount)}`,`Thông tin nhận hoàn: ${pendingRecipient}`]:[])]
     :kind==='renewal'?[`Khách gia hạn: ${p.customer}`,...vehicle,
       ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${day(item.before_return_at)} - ${day(item.return_at)}`):[`Gia hạn: ${day(p.renewal?.before_return_at||null)} - ${day(p.renewal?.return_at||null)}`]),
       `Phí gia hạn: ${money(p.renewal?.amount)} đ`,`Hình thức thanh toán: ${method}`,
@@ -49,6 +49,7 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
       `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,`Tiền cọc: ${money(p.deposit)}`,
       ...(p.rental_fee!=null&&p.total!=null&&Number(p.total)!==p.rental_fee?[`Phí khác / điều chỉnh: ${money(Number(p.total)-p.rental_fee)}`]:[]),
       `Tổng tiền: ${money(p.grand_total)}`,`Hình thức thanh toán: ${method}`];
+  if(kind==='return')return [...lines,`HĐ: ${p.code}`].join('\n').slice(0,4000);
   return [...lines,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,`Nhân viên làm hợp đồng: ${p.contract_staff||'Chưa ghi nhận'}`,...(!['rental','reservation'].includes(kind)?[`Người thực hiện: ${p.actor}`]:[]),`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
 }
 export function notificationHash(kind:ContractEventType,p:NotificationPayload) {

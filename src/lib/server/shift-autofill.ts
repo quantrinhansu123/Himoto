@@ -5,6 +5,8 @@ import { emptyShiftSummary, type ShiftInput } from '@/lib/management/shift-repor
 import { SHIFT_AUTOFILL_SECTIONS, type ShiftAutofillSection, type ShiftAutofillResult } from '@/lib/management/shift-autofill';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { depositReceiptSql } from './contract-deposits';
+import {renewalReceiptSql} from './contract-receipts';
+import {readOwnershipReport} from './ownership-report';
 
 type Database = Pick<PoolClient,'query'>;
 export class ShiftAutofillError extends Error { constructor(message: string, public status=400) { super(message); } }
@@ -21,6 +23,11 @@ export async function readShiftAutofill(db: Database, input: ReturnType<typeof p
   const cutoff=new Date(Math.min(Date.parse(end),Date.now())).toISOString();
   const values: Partial<ShiftInput>={},notices:string[]=[],sources:string[]=[];
   if (!(await db.query('SELECT id FROM himoto.stores WHERE id=$1::bigint',[store_id])).rowCount) throw new ShiftAutofillError('PGD không tồn tại hoặc nằm ngoài phạm vi truy cập.',404);
+  if(section==='ownership'){
+    values.ownership_report=await readOwnershipReport(db,store_id,date);
+    sources.push(...values.ownership_report.sources);
+    notices.push('Ô chưa có nguồn để trống; nhập thực tế trước khi chốt và gửi Telegram.');
+  }
   if (section==='information') {
     const rows=(await db.query(`SELECT DISTINCT staff_name FROM himoto.store_duty_schedules
       WHERE store_id=$1::bigint AND deleted_at IS NULL AND (
@@ -95,10 +102,10 @@ export async function readShiftAutofill(db: Database, input: ReturnType<typeof p
       COALESCE(sum(t.value) FILTER (WHERE t.type IN ('in','addon')),0) AS income_total,
       COALESCE(sum(t.value) FILTER (WHERE t.type='out'),0) AS expense_total,
       COALESCE(sum(t.value) FILTER (WHERE t.type IN ('in','addon') AND (${depositReceiptSql()} OR t.name='battery:deposit')),0) AS income_deposit,
-      COALESCE(sum(t.value) FILTER (WHERE t.type IN ('in','addon') AND (t.name LIKE 'order:renewal%' OR t.name='battery:renewal' OR EXISTS(
+      COALESCE(sum(t.value) FILTER (WHERE t.type IN ('in','addon') AND (${renewalReceiptSql()} OR t.name LIKE 'order:renewal%' OR t.name='battery:renewal' OR EXISTS(
         SELECT 1 FROM himoto.management_contract_payments p WHERE p.transaction_id=t.id AND p.renewal_payload IS NOT NULL))),0) AS income_renewal,
       COALESCE(sum(t.value) FILTER (WHERE t.type IN ('in','addon') AND t.name IN ('order:rental_fees','order:payment','battery:rental')
-        AND NOT EXISTS(SELECT 1 FROM himoto.management_contract_payments p WHERE p.transaction_id=t.id AND p.renewal_payload IS NOT NULL)),0) AS income_rental,
+        AND NOT ${renewalReceiptSql()} AND NOT EXISTS(SELECT 1 FROM himoto.management_contract_payments p WHERE p.transaction_id=t.id AND p.renewal_payload IS NOT NULL)),0) AS income_rental,
       COALESCE(sum(t.value) FILTER (WHERE t.type='out' AND (t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' OR t.name='battery:deposit_refund')),0) AS deposit_refund,
       COALESCE(sum(t.value) FILTER (WHERE t.type='out' AND t.name='order:rental_refund'),0) AS early_refund,
       COALESCE(sum(t.value) FILTER (WHERE t.type IN ('in','addon') AND t.name='order:return_late'),0) AS late_penalty

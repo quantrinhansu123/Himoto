@@ -70,7 +70,9 @@ export async function requestManagementTable(input: ManagementTableInput, signal
   if(signal?.aborted)cancel();else signal?.addEventListener('abort',cancel,{once:true});
   const timer=setTimeout(()=>{timedOut=true;controller.abort();},all?120000:45000);
   try {
-  const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${managementTableQuery(input,all)}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal});
+  const params=managementTableQuery(input,all);
+  if(input.kind==='contracts'&&!all)params.set('scope_count','1');
+  const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${params}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal});
   const result=await response.json().catch(()=>null);
   if (!response.ok || result?.status!=='success') throw new Error(result?.message || 'Không tải được danh sách. Thử lại.');
   // Old deployments/test fixtures return the original array until their API is upgraded.
