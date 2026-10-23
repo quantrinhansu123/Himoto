@@ -47,7 +47,7 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
       else await writeRecordPhoto(client, target.entity, target.id, raw.slot, request.headers.get('content-type') || '', data!, user.id);
       response = NextResponse.json({ status: 'success' });
     } else {
-      await requirePhotoRecord(client, target.entity, target.id);
+      await requirePhotoRecord(client, target.entity, target.id, false);
       const result = await client.query('SELECT mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3', [target.entity, target.id, raw.slot]);
       if (!result.rowCount) throw new RecordPhotoError('Chưa có ảnh.', 404);
       await client.query('COMMIT'); client.release(); client = undefined;

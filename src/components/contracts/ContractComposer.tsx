@@ -36,6 +36,7 @@ import { contractPhotoSlots, contractEvidenceSlots } from '@/lib/management/cont
 import { normalizeCustomerLookup,validCustomerLookup } from '@/lib/management/contract-document';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos,copyCustomerPhotosToContract } from '@/lib/management/record-photos';
+import { isAdminAccount } from '@/lib/management/permissions';
 import { usePhotoOcr } from '@/components/management/usePhotoOcr';
 import { mergeOcrCustomer, OCR_CUSTOMER_KEYS, plateKey, type OcrFields } from '@/lib/management/photo-ocr';
 import { useContractTypes } from './ContractTypesProvider';
@@ -59,7 +60,7 @@ const formatMoneyInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/
 export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, onFinalized,onHandover }: { row?: ManagementRow | null; mode?: 'print' | 'edit' | 'draft' | 'reservation'; onClose: () => void; onDraftSaved?: () => void; onFinalized?: (result: FinalizeResult) => void;onHandover?:()=>void }) {
   const pathname = usePathname();
   const ownershipPage = pathname.startsWith('/contracts/ownership');
-  const { dataset, selectedStore, source, canSaveContractDrafts, canFinalizeContracts, contractAutofill, saveContract, saveContractDraft, ensureData } = useManagement();
+  const { dataset, selectedStore, source, accessUser, canSaveContractDrafts, canFinalizeContracts, contractAutofill, saveContract, saveContractDraft, ensureData } = useManagement();
   const [attributionError,setAttributionError] = useState('');
   const [salesDirectory,setSalesDirectory] = useState<ManagementRow[]>([]);
   const [profileRevision,setProfileRevision] = useState(String(row?.draft_revision || ''));
@@ -152,7 +153,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const previousCustomerAi = useRef<OcrFields>({});
   const photoIdentityLookup = useRef('');
   const customerOcr = usePhotoOcr({
-    kind: slot => ['driver_license','driver-license'].includes(slot)?'driver_license':draftRef.current.customer.customer_type==='foreign'?'passport':slot === 'id_front' ? 'customer_documents' : 'cccd_back',
+    kind: slot => ['driver_license','driver-license','customer-driver-license'].includes(slot)?'driver_license':draftRef.current.customer.customer_type==='foreign'?'passport':['id_front','customer-id-front'].includes(slot) ? 'customer_documents' : 'cccd_back',
     snapshot: () => ({ ...draftRef.current.customer }),
     apply: (_slot, result, before) => {
       const current = draftRef.current;
@@ -231,6 +232,13 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   const [lookupRetry, setLookupRetry] = useState(0);
   const [customerMatches, setCustomerMatches] = useState<ManagementRow[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<ManagementRow | null>(() => dataset?.customers.find(customer => customer.id === draft.customer_id) || null);
+  const customerPhotosOnContract = !isAdminAccount(accessUser) && !accessUser?.scope_all &&
+    (!selectedCustomer?.store_id || String(selectedCustomer.store_id) !== String(accessUser?.store_id));
+  const customerPhotoSlots = (draft.customer.customer_type === 'foreign'
+    ? [{key:'id_front',label:'Trang hộ chiếu / giấy tờ'},{key:'id_back',label:'Trang bổ sung (nếu có)'}]
+    : CUSTOMER_PHOTO_SLOTS).map(slot => ({...slot,key:customerPhotosOnContract ? `customer-${slot.key.replaceAll('_','-')}` : slot.key}));
+  const customerPhotoValues = customerPhotosOnContract
+    ? Object.fromEntries(Object.entries(customerPhotos).map(([slot,file])=>[`customer-${slot.replaceAll('_','-')}`,file])) : customerPhotos;
   const permittedStores=useRef(dataset?.stores);permittedStores.current=dataset?.stores;
   const selectedCustomerStatus = customerStatusLabel(selectedCustomer?.status);
   const [staff, setStaff] = useState<ManagementRow[]>([]);
@@ -727,7 +735,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
   ];
   const sectionIndex = CONTRACT_FORM_SECTIONS.findIndex(item => item.id === section);
   async function savePhotos(contractId: number) {
-    if (draft.customer_id) await saveRecordPhotos('customers', draft.customer_id, customerPhotos);
+    if (draft.customer_id) await saveRecordPhotos(customerPhotosOnContract ? 'contracts' : 'customers', customerPhotosOnContract ? contractId : draft.customer_id, customerPhotoValues);
     const selectedPlates = Object.fromEntries(Object.entries(platePhotos).filter(([slot]) => draft.vehicles.some(vehicle => slot === `plate-${vehicle.id}`)));
     await saveRecordPhotos('contracts', contractId, selectedPlates);
     await saveRecordPhotos('contracts',contractId,licensePhotos);setLicensePhotos({});
@@ -828,7 +836,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
             <CustomerInternationalFields prefix="contract-customer" value={draft.customer} onChange={customer=>{setDraft(previous=>({...previous,customer}));setErrors({});}} disabled={saving} errors={errors}/>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(0, 2).map(customerField)}</div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(item=><Fragment key={item.key}>{customerField(item)}{item.key==='driver_license_number'&&source==='api'&&draft.customer_id&&<div className="mg-field-wide"><RecordPhotoFields entity="contracts" recordId={savedDraft?.id||row?.id} slots={[{key:'driver-license',label:'Giấy phép lái xe'}]} title="Chụp GPLX · Tự điền bằng AI" value={licensePhotos} onChange={setLicensePhotos} disabled={saving} onBusyChange={setProcessingLicense} ocr={customerOcr}/></div>}</Fragment>)}</div>
-            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${photoVersion}`} entity="customers" recordId={draft.customer_id} slots={draft.customer.customer_type==='foreign'?[{key:'id_front',label:'Trang hộ chiếu / giấy tờ'},{key:'id_back',label:'Trang bổ sung (nếu có)'}]:CUSTOMER_PHOTO_SLOTS} title={draft.customer.customer_type==='foreign'?'Chụp hộ chiếu · Tự điền bằng AI':'Chụp CCCD · Tự điền bằng AI'} value={customerPhotos} onChange={setCustomerPhotos} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
+            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${customerPhotosOnContract}-${photoVersion}`} entity={customerPhotosOnContract ? 'contracts' : 'customers'} recordId={customerPhotosOnContract ? savedDraft?.id||row?.id : draft.customer_id} slots={customerPhotoSlots} title={draft.customer.customer_type==='foreign'?'Chụp hộ chiếu · Tự điền bằng AI':'Chụp CCCD · Tự điền bằng AI'} value={customerPhotoValues} onChange={photos=>setCustomerPhotos(Object.fromEntries(Object.entries(photos).map(([slot,file])=>[slot.replace(/^customer-/,'').replaceAll('-','_'),file])))} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
             <div className="mg-contract-relatives">{draft.relatives.map((relative, index) => <div className="mg-contract-relative" key={index}>
               <strong>Người thân {index + 1}</strong>
               <div className="mg-form-grid mg-contract-grid-three">{(['name', 'relationship', 'phone'] as const).map(key => {

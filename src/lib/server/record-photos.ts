@@ -20,7 +20,7 @@ export function validatePhotoBytes(type: string, data: Buffer) {
   const webp = type === 'image/webp' && data.subarray(0, 4).toString() === 'RIFF' && data.subarray(8, 12).toString() === 'WEBP';
   if (!jpeg && !png && !webp) throw new RecordPhotoError('Chỉ nhận ảnh JPEG, PNG hoặc WebP hợp lệ.');
 }
-export async function requirePhotoRecord(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number) {
+export async function requirePhotoRecord(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, lock = true) {
   if (entity === 'vehicles') {
     // Source-store staff lose vehicles RLS after current_store_id moves. The
     // request already pins operation=transfer + transfer_vehicle_id before SET
@@ -43,7 +43,9 @@ export async function requirePhotoRecord(client: Pick<PoolClient, 'query'>, enti
     return;
   }
   const table = entity === 'customers' ? 'customers' : 'orders';
-  const result = await client.query(`SELECT id FROM himoto.${table} WHERE id=$1${entity === 'contracts' ? ' AND deleted_at IS NULL' : ''} FOR SHARE`, [id]);
+  // Row locks also require UPDATE visibility. Linked customers can be read
+  // across branches, while their original profile remains owned by its store.
+  const result = await client.query(`SELECT id FROM himoto.${table} WHERE id=$1${entity === 'contracts' ? ' AND deleted_at IS NULL' : ''}${lock ? ' FOR SHARE' : ''}`, [id]);
   if (!result.rowCount) throw new RecordPhotoError('Không tìm thấy hồ sơ.', 404);
 }
 export async function requireContractPhotoSlot(client:Pick<PoolClient,'query'>,entity:PhotoEntity,id:number,slot:string) {
@@ -73,7 +75,7 @@ export async function requireContractPhotoSlot(client:Pick<PoolClient,'query'>,e
   if(receipt&&!(await client.query('SELECT transaction_id FROM himoto.management_contract_payments WHERE transaction_id=$1 AND order_id=$2 AND renewal_payload IS NOT NULL',[Number(receipt[1]),id])).rowCount)throw new RecordPhotoError('Phiếu gia hạn không thuộc hợp đồng.',404);
 }
 export async function readRecordPhotos(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number) {
-  await requirePhotoRecord(client, entity, id);
+  await requirePhotoRecord(client, entity, id, false);
   const result = await client.query('SELECT slot, updated_at, mime_type FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 ORDER BY slot', [entity, id]);
   return result.rows;
 }

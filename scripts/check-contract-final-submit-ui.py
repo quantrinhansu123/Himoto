@@ -15,6 +15,8 @@ parser=argparse.ArgumentParser()
 parser.add_argument('--url',default='http://127.0.0.1:3101')
 parser.add_argument('--session-cookie-file',required=True)
 parser.add_argument('--browser',choices=['chromium','webkit'],default='chromium')
+parser.add_argument('--store-id',type=int,default=1)
+parser.add_argument('--cross-branch',action='store_true')
 parser.add_argument('--output',default='docs/qa/contract-final-submit')
 args=parser.parse_args()
 out=Path(args.output)/args.browser
@@ -25,10 +27,10 @@ def chunk(kind,data):
 # A synthetic thumbnail keeps visual QA legible without customer photographs.
 rgb=bytes([216,234,242])
 pixel=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('!IIBBBBB',160,100,8,2,0,0,0))+chunk(b'IDAT',zlib.compress((b'\x00'+rgb*160)*100))+chunk(b'IEND',b'')
-stores=[dict(id=1,store_name='CS QA',status='opening')]
-staff=[dict(id=8,store_id=1,full_name='Nhân viên làm hợp đồng QA',status='active')]
-customer=dict(id=77,store_id=1,name='Khách QA',phone='0900000077',id_card='001234567877',address='Địa chỉ QA',status='active')
-vehicle=dict(id=101,store_id=1,name='Xe QA',license='QA-101',status='ready',daily_price=200000,type='xega')
+stores=[dict(id=args.store_id,store_name='CS QA',status='opening')]
+staff=[dict(id=8,store_id=args.store_id,full_name='Nhân viên làm hợp đồng QA',status='active')]
+customer=dict(id=77,store_id=args.store_id+100 if args.cross_branch else args.store_id,name='Khách QA',phone='0900000077',id_card='001234567877',address='Địa chỉ QA',status='active')
+vehicle=dict(id=101,store_id=args.store_id,name='Xe QA',license='QA-101',status='ready',daily_price=200000,type='xega')
 state={}
 
 def photos():
@@ -55,6 +57,12 @@ def mock(route):
         if req.method=='GET' and len(parts)>6:
             route.fulfill(body=pixel,content_type='image/png');return
         if req.method=='PUT':
+            if args.cross_branch:
+                assert '/contracts/901/' in path,'Cross-branch photos must attach to the own contract'
+                if parts[-1]=='customer-id-front':
+                    state['identity_attempts']=state.get('identity_attempts',0)+1
+                    if state['identity_attempts']==1:
+                        route.fulfill(status=404,json=dict(status='error',message='Không tìm thấy hồ sơ.'));return
             state.setdefault('photos',{})[parts[-1]]='video/mp4' if '-video-' in parts[-1] else 'image/jpeg'
             writes.append('photo-save')
             data={}
@@ -70,19 +78,25 @@ def mock(route):
         data=telegram()
     elif path in ['/api/auth/order/car-rental','/api/auth/order/car-rental/901'] and req.method in ['POST','PUT']:
         edits=req.post_data_json
+        state['draft_creates']=state.get('draft_creates',0)+(req.method=='POST')
         writes.append('draft-save')
-        state['record']=dict(id=901,draft_reference='NHAP-QA-901',status='draft',store_id=1,draft_revision='1',draft_payload=dict(management_composer=dict(version=1,**copy.deepcopy(edits))))
+        state['record']=dict(id=901,draft_reference='NHAP-QA-901',status='draft',store_id=args.store_id,draft_revision='1',draft_payload=dict(management_composer=dict(version=1,**copy.deepcopy(edits))))
         data=state['record']
     elif path.endswith('/901/finalize') and req.method=='POST':
         writes.append('finalize');state['finalized']=True
         state['record'].update(status='renting',contract_number='000888')
         data=dict(order_id=901,code='000888',status='renting',total_amount=200000,deposit_amount=0,paid_amount=0,transaction_ids=[])
     elif req.method!='GET':
+        if path=='/api/auth/photo-ocr':
+            route.fulfill(status=503,json=dict(status='error',message='QA không dùng AI'));return
         unexpected.append(req.method+' '+path);route.abort();return
     elif path=='/api/auth/hr/staff':data=staff
+    elif path=='/api/auth/contract-staff':data=staff
+    elif path=='/api/auth/store-directory':data=stores
+    elif path=='/api/auth/vehicles/inventory':data=[dict(**vehicle,available=True)]
     elif path=='/api/auth/customers/search':data=[customer]
     elif path.endswith('/901/payments'):
-        data=dict(id=901,code='NHAP-QA-901',status='draft',store_id=1,revision='1',total_amount=200000,paid_amount=0,remaining=200000,deposit_paid=0,deposit_held=0,deposit_refunded=0,accounts=[dict(id=1,kind='cash',label='Két QA',owner_type='',store_id=1)],history=[],items=[],end_date=None)
+        data=dict(id=901,code='NHAP-QA-901',status='draft',store_id=args.store_id,revision='1',total_amount=200000,paid_amount=0,remaining=200000,deposit_paid=0,deposit_held=0,deposit_refunded=0,accounts=[dict(id=1,kind='cash',label='Két QA',owner_type='',store_id=args.store_id)],history=[],items=[],end_date=None)
     elif path in ['/api/auth/gps/selected','/api/auth/gps','/api/auth/payment-events']:data=[]
     elif path in ['/api/session','/api/auth/me']:
         route.fulfill(json=dict(user=dict(id=143,name='QA')));return
@@ -109,12 +123,18 @@ with sync_playwright() as p:
     page.on('pageerror',lambda error:errors.append(str(error)))
     page.set_default_timeout(20000)
     page.goto(args.url+'/contracts',wait_until='networkidle')
+    tools=page.locator('summary').filter(has_text='Thao tác khác')
+    if tools.count():tools.click()
     page.get_by_role('button',name='Nhập hợp đồng',exact=True).click()
     form=page.locator('dialog.mg-contract-composer')
     form.get_by_role('tab',name='Khách hàng',exact=False).click()
-    form.locator('#contract-store').select_option('1')
+    form.locator('#contract-store').select_option(str(args.store_id))
     form.locator('#contract-id-card').fill(customer['phone'])
     expect(form.locator('#contract-customer-name')).to_have_value('Khách QA')
+    if args.cross_branch:
+        identity=form.get_by_role('group',name='Chụp CCCD · Tự điền bằng AI',exact=True)
+        identity.get_by_label('Chọn ảnh CCCD mặt trước',exact=True).set_input_files(dict(name='qa-identity.png',mimeType='image/png',buffer=pixel))
+        expect(identity.locator('img')).to_have_count(1)
     form.locator('#contract-staff').fill(staff[0]['full_name'])
     form.get_by_role('tab',name='Phương tiện',exact=False).click()
     form.locator('#contract-vehicle-0').click()
@@ -134,10 +154,19 @@ with sync_playwright() as p:
     form.get_by_role('tab',name='Chi phí',exact=False).click()
     form.locator('#contract-deposit_amount').fill('0')
     form.get_by_role('button',name='Hoàn tất & thanh toán',exact=True).click()
+    if args.cross_branch:
+        expect(form.locator('.mg-error-message')).to_contain_text('Không tìm thấy hồ sơ.')
+        assert not state.get('finalized') and 'finalize' not in writes
+        form.get_by_role('button',name='Hoàn tất & thanh toán',exact=True).click()
     confirm=page.get_by_role('dialog').filter(has=page.get_by_role('heading',name='Xác nhận thanh toán',exact=False))
     expect(confirm.get_by_text('Ảnh xe lúc thuê / lập hợp đồng',exact=True).first).to_be_visible()
-    expect(confirm.locator('.mg-photo-slot img')).to_have_count(25)
+    expect(confirm.get_by_text('3 ảnh giấy tờ đã gắn với hợp đồng.',exact=True)).to_be_attached()
+    attached_paths=confirm.locator('.mg-photo-slot img').evaluate_all('(images)=>[...new Set(images.map(image=>new URL(image.src).pathname))]')
+    assert set(attached_paths)=={'/api/auth/record-photos/contracts/901/'+slot for slot in state['photos']}
     assert len(state['photos'])==25
+    if args.cross_branch:
+        assert state['draft_creates']==1 and state['identity_attempts']==2
+        checks.append('Cross-branch identity photos attach to the own contract; a failed upload preserves files and retries the same draft before any finalization')
     assert 'telegram-send' not in writes
     checks.append('Final confirmation reuses 22 saved vehicle photos and 3 customer documents; uploading and draft save send nothing')
     confirm.get_by_role('button',name='Xác nhận lưu chính thức',exact=True).click()

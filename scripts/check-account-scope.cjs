@@ -210,10 +210,18 @@ async function main(){const c=await pool.connect();try{
   assert.equal(Number(crossSaved.customer_id),90002);assert.equal(Number(crossSaved.store_id),80001);
   assert.equal((await c.query('SELECT name FROM qa_access_scope.customers WHERE id=90002')).rows[0].name,'Khách B QA');
   const {copyContractCustomerPhotos}=load(path.join(root,'lib/server/contract-customer-photos'));
+  const {readRecordPhotos,writeRecordPhoto}=load(path.join(root,'lib/server/record-photos'));
+  assert.equal((await readRecordPhotos(proxy,'customers',90002))[0].slot,'id_front');
+  await assert.rejects(()=>writeRecordPhoto(proxy,'customers',90002,'id_front','image/jpeg',Buffer.from([255,216,255,218]),70001),e=>e.status===404);
   assert.equal((await copyContractCustomerPhotos(proxy,Number(crossSaved.id),70001)).copied,1);
   assert.equal((await copyContractCustomerPhotos(proxy,Number(crossSaved.id),70001)).copied,0);
   assert.equal((await c.query("SELECT slot FROM qa_access_scope.management_record_photos WHERE entity_type='contracts' AND entity_id=$1",[crossSaved.id])).rows[0].slot,'customer-id-front');
+  await writeRecordPhoto(proxy,'contracts',Number(crossSaved.id),'customer-id-front','image/jpeg',Buffer.from([255,216,255,218]),70001);
+  assert.equal((await copyContractCustomerPhotos(proxy,Number(crossSaved.id),70001)).copied,0);
+  assert.deepEqual((await c.query("SELECT data FROM qa_access_scope.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND slot='customer-id-front'",[crossSaved.id])).rows[0].data,Buffer.from([255,216,255,218]));
+  assert.deepEqual((await c.query("SELECT data FROM qa_access_scope.management_record_photos WHERE entity_type='customers' AND entity_id=90002 AND slot='id_front'")).rows[0].data,Buffer.from([255,216,255,217]));
   await assert.rejects(()=>copyContractCustomerPhotos(proxy,92002,70001),e=>e.status===404);
+  checks.push('Linked customer photos are readable without UPDATE visibility; new photos attach to the own contract, preserve the source profile and survive repeated imports');
   checks.push('Customer identity photos copy to an own-branch contract through RLS, repeated imports are idempotent, and hidden other-branch contracts cannot be targeted');
   crossDraft.contract_number=String(crossSaved.draft_reference);
   await c.query("INSERT INTO qa_access_scope.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',$1,'rental-document-1','image/jpeg',$2,70001)",[crossSaved.id,Buffer.from([255,216,255,217])]);
