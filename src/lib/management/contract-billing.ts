@@ -1,8 +1,14 @@
 import type { ManagementRow } from './types';
 
 export type BillingInterval = 'day' | 'week' | 'month' | 'custom';
-export type OwnershipTerm = '6' | '12' | '24' | 'custom';
-export const OWNERSHIP_TERMS = [{value:'custom',label:'Chưa phân loại'}, {value:'6',label:'6 tháng'}, {value:'12',label:'12 tháng'}, {value:'24',label:'24 tháng'}];
+export const OWNERSHIP_TERM_MONTHS = ['6', '9', '12', '18', '24'] as const;
+export type OwnershipTerm = typeof OWNERSHIP_TERM_MONTHS[number] | 'custom';
+export const OWNERSHIP_TERMS = [{value:'custom',label:'Chưa phân loại'}, ...OWNERSHIP_TERM_MONTHS.map(value => ({value,label:`${value} tháng`}))];
+export const validOwnershipTerm = (value: unknown): value is OwnershipTerm => value === 'custom' || OWNERSHIP_TERM_MONTHS.includes(value as typeof OWNERSHIP_TERM_MONTHS[number]);
+export function isHeadquartersStore(name: unknown) {
+  const normalized = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return normalized.includes('nguyen hoang') || normalized.includes('tru so chinh');
+}
 export interface CustomInstallment { due_at: string; amount: string }
 export interface InstallmentPlan {
   version: 1; start: string; end: string; interval: BillingInterval; amount: number;
@@ -42,7 +48,7 @@ export function addRentalMonths(value: string, months: number): string {
   return start && Number.isInteger(months) && months > 0 && months <= 120 ? boundary(start, 'month', months).toISOString().slice(0,16) : '';
 }
 export function ownershipTerm(start: string, end: string): OwnershipTerm {
-  return (['6','12','24'] as const).find(term => addRentalMonths(start, Number(term)) === end && Boolean(end)) || 'custom';
+  return OWNERSHIP_TERM_MONTHS.find(term => addRentalMonths(start, Number(term)) === end && Boolean(end)) || 'custom';
 }
 export function rentalPeriodCount(startValue: string, endValue: string, interval: BillingInterval): number {
   const start = localDate(startValue), end = localDate(endValue);

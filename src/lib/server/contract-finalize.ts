@@ -10,6 +10,7 @@ import { contractNumberError, paperContractNumber } from '@/lib/management/contr
 import { contractNumberAvailable } from './contract-number';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { rentalQuote } from '@/lib/management/contract-pricing';
+import { validOwnershipTerm } from '@/lib/management/contract-billing';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractFinalizeError extends Error {
@@ -130,7 +131,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     if (!quote || quote.total_amount !== total) throw new ContractFinalizeError(`Tổng tiền chưa khớp ${lines.length} xe đã chọn. Mở lại bản nháp, kiểm tra đơn giá mỗi xe và lưu lại trước khi phát hành.`, 409);
   }
   const ownership = composer.rental_type === 'ownership';
-  if (draft.ownership_term_months !== undefined && !['6','12','24','custom'].includes(String(draft.ownership_term_months))) throw new ContractFinalizeError('Phân loại thuê sở hữu chưa hợp lệ.',409);
+  if (draft.ownership_term_months !== undefined && !validOwnershipTerm(String(draft.ownership_term_months))) throw new ContractFinalizeError('Phân loại thuê sở hữu chưa hợp lệ.',409);
   // Ownership currently follows ordinary rental operations; the term is a label.
   delete composer.installment_plan;
   if (ownership || draft.ownership !== undefined) draft.ownership = ownership;

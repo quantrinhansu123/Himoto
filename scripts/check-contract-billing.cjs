@@ -71,7 +71,7 @@ assert.equal(billing.installmentBalance(stopped,3_000_000,6_000_000,at('2028-01-
 assert.equal(billing.installmentBalance(stopped,3_000_000,9_000_000,at('2028-01-01T09:00')).next_due_at,null);
 checks.push('returning every vehicle freezes new installments while retaining unpaid installments already due');
 async function main(){
-  for (const months of [6,12,24]) {
+  for (const months of [6,9,12,18,24]) {
     const end = billing.addRentalMonths('2024-08-31T10:30',months);
     assert.equal(billing.ownershipTerm('2024-08-31T10:30',end),String(months));
     assert.equal(billing.rentalPeriodCount('2024-08-31T10:30',end,'month'),months);
@@ -79,6 +79,13 @@ async function main(){
   assert.equal(billing.addRentalMonths('2024-01-31T10:30',1),'2024-02-29T10:30');
   assert.equal(billing.addRentalMonths('2026-01-31T10:30',1),'2026-02-28T10:30');
   assert.equal(billing.ownershipTerm(start,'2027-12-01T09:00'),'custom');
+  assert.deepEqual([...billing.OWNERSHIP_TERM_MONTHS],['6','9','12','18','24']);
+  assert.equal(billing.validOwnershipTerm('9'),true);
+  assert.equal(billing.validOwnershipTerm('18'),true);
+  assert.equal(billing.validOwnershipTerm('60'),false);
+  assert.equal(billing.isHeadquartersStore('CS Nguyễn Hoàng'),true);
+  assert.equal(billing.isHeadquartersStore('Trụ sở chính'),true);
+  assert.equal(billing.isHeadquartersStore('CS Thuê sở hữu'),false);
   checks.push('calendar month helpers retain month-end and leap-day behavior');
   const server=load(path.join(root,'lib/server/contract-finalize'));
   const client={query:async sql=>({rowCount:sql.includes('SELECT id, order_status') ? 1 : 0,rows:sql.includes('SELECT id, order_status') ? [{id:1,order_status:'draft',revision:'1',store_id:1,customer_id:1,

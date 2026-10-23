@@ -74,7 +74,9 @@ async function main(){
     'table=1&page=1&size=10&sort=overdue_minutes&direction=desc&store=all&scope=ownership&overdue_bucket=ownership-1-5&status=overdue&overdue_compare=eq',
     'table=1&page=1&size=10&sort=overdue_minutes&direction=desc&store=all&scope=ownership&overdue_compare=eq',
   ]) assert.equal(server.parseManagementTable('contracts',new URLSearchParams(query)).scope,'ownership');
+  assert.match(server.vehiclePageSql(server.vehiclePageClause(35,'','')),/ownership_may_use_headquarters_vehicle/);
   checks.push('Ownership list page SQL joins stores and keeps the ownership filter self-contained');
+  checks.push('Store-scoped vehicle pages include headquarters stock for lease-to-own actors');
   const indexSql=drafts.contractIndexSql('');
   assert.doesNotMatch(indexSql,/LEFT JOIN LATERAL/);
   assert.doesNotMatch(indexSql,/GROUP BY order_id/);

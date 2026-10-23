@@ -10,6 +10,7 @@ import { vehicleTransferPhotoSlots } from '@/lib/management/record-photos';
 import { formatDateTime } from '@/lib/formatters';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
+import { isHeadquartersStore } from '@/lib/management/contract-billing';
 import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
 import Link from 'next/link';
 import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
@@ -27,13 +28,21 @@ function resolveVehicle(rows:ManagementRow[],value:string){
 }
 
 export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleActionMode; vehicle: ManagementRow | null; onClose: () => void }) {
-  const { dataset, ensureData, notify } = useManagement();
+  const { dataset, ensureData, notify, accessUser } = useManagement();
   const reloadVehicles = () => { setError(''); void ensureData(['vehicles'], true).catch(() => setError('Không tải lại được danh sách xe.')); };
   const router = useRouter();
-  const vehicles = useMemo(() => dataset?.vehicles || [], [dataset]);
   const stores = dataset?.stores || [];
   const [destinations,setDestinations]=useState<{id:number;name:string}[]>([]);
   const [inventory,setInventory]=useState<ManagementRow[]>([]);
+  const vehicles = useMemo(() => {
+    const byId = new Map((dataset?.vehicles || []).map(row => [row.id, row]));
+    if (String(accessUser?.access_role || '').startsWith('ownership_')) {
+      for (const row of inventory) {
+        if (isHeadquartersStore(row.store_name) && !byId.has(row.id)) byId.set(row.id, row);
+      }
+    }
+    return [...byId.values()];
+  }, [dataset, inventory, accessUser]);
   useEffect(()=>{if(mode!=='transfer')return;const controller=new AbortController();
     void fetch('/api/auth/vehicles/inventory',{signal:controller.signal,cache:'no-store'}).then(async response=>{
       const body=await response.json();if(response.ok&&body.status==='success'&&!controller.signal.aborted)setInventory(body.data.map((row:ManagementRow)=>({...row,id:Number(row.id)})));

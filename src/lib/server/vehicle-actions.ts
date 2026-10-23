@@ -95,7 +95,10 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
   const vehicle = found.rows[0];
   if (!vehicle) throw new VehicleActionError('Không tìm thấy xe. Nhấn Làm mới để kiểm tra.', 404);
   const scope=dataAccess.getStore();
-  if(scope&&!scope.scope_all&&Number(vehicle.store_id)!==scope.store_id)throw new VehicleActionError('Chỉ được thao tác xe tại cơ sở được phân quyền.',403);
+  if(scope&&!scope.scope_all&&Number(vehicle.store_id)!==scope.store_id){
+    const hq=(await client.query('SELECT himoto.ownership_may_use_headquarters_vehicle($1) AS ok',[vehicle.store_id])).rows[0];
+    if(!hq?.ok)throw new VehicleActionError('Chỉ được thao tác xe tại cơ sở được phân quyền hoặc kho trụ sở chính.',403);
+  }
   if (input.revision && input.revision !== vehicle.revision) throw new VehicleActionError('Thông tin xe đã thay đổi. Nhấn Làm mới rồi thao tác lại.', 409);
   if(vehicle.status==='in_transit'&&input.action==='status')throw new VehicleActionError('Xe đang Chờ luân chuyển. Cơ sở đích cần dùng Xác nhận nhận xe trước khi đổi trạng thái.',409);
   const open = scope

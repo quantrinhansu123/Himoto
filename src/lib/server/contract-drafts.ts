@@ -7,6 +7,7 @@ import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
 import { depositLateral, rentalPaidSql } from './contract-deposits';
 import { chargeTotal } from '@/lib/management/contract-charges';
+import { validOwnershipTerm } from '@/lib/management/contract-billing';
 import { CONTRACT_TYPES } from '@/lib/management/config';
 import { ContractTypeError, resolveDraftContractType, validContractTypeId } from './contract-types';
 import type { ContractDraft } from '@/lib/management/contract-document';
@@ -198,7 +199,7 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (!draft.contract_type_id && (draft.contract_type_name || draft.contract_type_months)) throw new DraftSaveError('Chọn loại hợp đồng cho tên và thời hạn đã nhập.');
   if (draft.document_requirements !== undefined && !validDocumentRequirements(draft.document_requirements)) throw new DraftSaveError('Yêu cầu hồ sơ để in chưa hợp lệ.');
   for (const key of ['sales_staff_id','tls_staff_id'] as const) if (draft[key] !== undefined && (typeof draft[key] !== 'string' || draft[key] && (!/^[1-9]\d*$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key]))))) throw new DraftSaveError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
-  if (draft.ownership_term_months !== undefined && !['6','12','24','custom'].includes(draft.ownership_term_months)) throw new DraftSaveError('Thời hạn thuê sở hữu không hợp lệ.');
+  if (draft.ownership_term_months !== undefined && !validOwnershipTerm(draft.ownership_term_months)) throw new DraftSaveError('Thời hạn thuê sở hữu không hợp lệ.');
   if (draft.custom_installments !== undefined && (!Array.isArray(draft.custom_installments) || draft.custom_installments.length > 3659 || draft.custom_installments.some(item =>
       !item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['due_at','amount'].includes(key)) ||
       typeof item.due_at !== 'string' || item.due_at.length > 16 || typeof item.amount !== 'string' || !/^\d{0,13}$/.test(item.amount)))) throw new DraftSaveError('Lịch đóng tiền tùy chọn không hợp lệ.');

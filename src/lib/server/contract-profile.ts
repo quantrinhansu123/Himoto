@@ -6,6 +6,7 @@ import { validDocumentRequirements } from '@/lib/management/contract-requirement
 import { validIdentityIssueDate } from '@/lib/management/customer-identity';
 import { loadCommissionStaff } from './commission-staff';
 import { usesScopedDatabase } from './access-context';
+import { validOwnershipTerm } from '@/lib/management/contract-billing';
 export class ContractProfileError extends Error {constructor(message:string,public status=400){super(message);}}
 export function parseContractProfile(body:unknown):{revision:string;profile:ContractProfile} {
   if(!body || typeof body !== 'object' || Array.isArray(body))throw new ContractProfileError('Hồ sơ hợp đồng chưa hợp lệ.');
@@ -19,7 +20,7 @@ export function parseContractProfile(body:unknown):{revision:string;profile:Cont
   if(profile.relatives.some(relative=>!relative || typeof relative !== 'object' || Array.isArray(relative) || Object.keys(relative).some(key=>!['name','relationship','phone'].includes(key)) || ['name','relationship','phone'].some(key=>typeof relative[key as keyof typeof relative] !== 'string' || relative[key as keyof typeof relative].length>4000) || relative.phone && !/^\+?\d{9,13}$/.test(relative.phone.replace(/[\s.()-]/g,''))))throw new ContractProfileError('Thông tin người thân chưa hợp lệ.');
   for(const key of ['staff_id','staff_name','signed_on','authorization_date','collateral_description'] as const)if(typeof profile[key] !== 'string' || profile[key].length>4000)throw new ContractProfileError('Thông tin hồ sơ chưa hợp lệ.');
   for(const key of ['sales_staff_id','tls_staff_id'] as const)if(profile[key] !== undefined && (typeof profile[key] !== 'string' || profile[key] && !/^[1-9]\d{0,14}$/.test(profile[key])))throw new ContractProfileError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
-  if(profile.ownership_term_months !== undefined && !['6','12','24','custom'].includes(profile.ownership_term_months))throw new ContractProfileError('Phân loại thuê sở hữu chưa hợp lệ.');
+  if(profile.ownership_term_months !== undefined && !validOwnershipTerm(profile.ownership_term_months))throw new ContractProfileError('Phân loại thuê sở hữu chưa hợp lệ.');
   if(profile.staff_id && !/^[1-9]\d{0,14}$/.test(profile.staff_id) || !validIdentityIssueDate(profile.signed_on) || !validIdentityIssueDate(profile.authorization_date) || profile.document_requirements !== undefined && !validDocumentRequirements(profile.document_requirements))throw new ContractProfileError('Ngày ký, nhân viên hoặc yêu cầu hồ sơ chưa hợp lệ.');
   return {revision:value.revision,profile:structuredClone(profile)};
 }

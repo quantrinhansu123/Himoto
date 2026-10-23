@@ -12,7 +12,8 @@ import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
 import { STORE_SELECT_SQL } from './store-management';
-import { OVERDUE_BUCKETS,type OverdueBucket } from '@/lib/management/contract-overdue';
+import { applyInstallmentBilling } from '@/lib/management/contract-billing';
+import { OVERDUE_BUCKETS,withContractMonitoring,type OverdueBucket } from '@/lib/management/contract-overdue';
 
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
@@ -169,8 +170,8 @@ function vehicleSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
   return {sql:` AND (v.name ILIKE $3 OR v.license ILIKE $3 OR v.brand ILIKE $3)`,value:likeNeedle(search)};
 }
-function vehiclePageClause(store:string,status:string,filters:Record<string,string>) {
-  const storeSql=store==='all'?'':` AND COALESCE(v.current_store_id,v.store_id)=${Number(store)}`;
+export function vehiclePageClause(store:string,status:string,filters:Record<string,string>) {
+  const storeSql=store==='all'?'':` AND (COALESCE(v.current_store_id,v.store_id)=${Number(store)} OR himoto.ownership_may_use_headquarters_vehicle(COALESCE(v.current_store_id,v.store_id)))`;
   const mapped:Record<string,string>={using:"'using','rent'",repairing:"'repairing','maintenance'",pending:"'pending','holding'"};
   const statusSql=!status?'':mapped[status]?` AND v.status IN (${mapped[status]})`
     :/^[a-z][a-z0-9_]{0,63}$/.test(status)?` AND v.status='${status}'`:'';
@@ -300,6 +301,10 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       } catch (cause) {
         console.error('Management page hydrate failed; serving lean list rows.', cause instanceof Error ? cause.message : cause);
       }
+    }
+    if(kind==='contracts'){
+      rows=rows.map(row=>applyInstallmentBilling(row,now));
+      if(monitoring)rows=rows.map(row=>withContractMonitoring(row,now));
     }
     const total=offset+rows.length+(hasMore?1:0);
     return {

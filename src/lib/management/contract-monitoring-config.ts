@@ -1,9 +1,13 @@
 import type { ManagementConfig,ManagementColumn } from './types';
 
-export function compactContractConfig(config:ManagementConfig, mode:'monitoring'|'rental'|'due'='monitoring'):ManagementConfig {
+export function compactContractConfig(config:ManagementConfig, mode:'monitoring'|'ownership'|'rental'|'due'='monitoring'):ManagementConfig {
+  const rentalDates:ManagementColumn[]=[
+    {key:'start_date',label:'Ngày bắt đầu thuê',format:'datetime'},
+    {key:'end_date',label:'Dự kiến trả xe',format:'datetime'},
+  ];
   const columns:ManagementColumn[]=[
     {key:'code',label:'Mã HĐ',format:'code'},
-    {key:'contract_signed_at',label:'Ngày ký / bắt đầu',format:'date'},
+    ...(mode==='ownership'?rentalDates:[{key:'contract_signed_at',label:'Ngày ký / bắt đầu',format:'date' as const}]),
     {key:'deposit_amount',label:'Tiền cọc',format:'money',align:'right'},
     {key:'customer_name',label:'Khách hàng',format:'person'},
     {key:'license',label:'Biển số'},
@@ -11,12 +15,12 @@ export function compactContractConfig(config:ManagementConfig, mode:'monitoring'
     {key:'monitoring_amount',label:'Số tiền',format:'money',align:'right'},
     {key:'contract_gps_status',label:'Định vị',sortable:false},
   ];
-  if(mode!=='monitoring')columns.splice(5,3,
+  if(mode!=='monitoring'&&mode!=='ownership')columns.splice(5,3,
     ...(mode==='due' ? [
       {key:'billing_next_due_at',label:'Hẹn đóng tiền',format:'date',align:undefined},
       {key:'billing_due_amount',label:'Tiền đến hạn',format:'money',align:'right'},
     ] as ManagementColumn[] : [
-      {key:'end_date',label:'Hẹn trả xe',format:'date'},
+      ...rentalDates,
       {key:'total_amount',label:'Tiền thuê',format:'money',align:'right'},
     ] as ManagementColumn[]),
     {key:'status',label:'Trạng thái',format:'status'});

@@ -83,7 +83,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl,...(overdueOnly?{status:'overdue',overdueBucket:'traditional-overdue' as const}:{})}));
   const compactContracts=kind==='contracts';
   const monitoringContracts=compactContracts&&(ownershipOnly||overdueOnly||query.status==='overdue'||query.status==='bad_debt'||Boolean(query.overdueBucket));
-  const columnMode=monitoringContracts?'monitoring':paymentDueOnly?'due':'rental';
+  const columnMode=ownershipOnly?'ownership':monitoringContracts?'monitoring':paymentDueOnly?'due':'rental';
   const catalog = useContractTypes(kind === 'contracts');
   const configured = kind === 'contracts' ? { ...MANAGEMENT_CONFIG.contracts,
     filters: MANAGEMENT_CONFIG.contracts.filters.map(filter=>filter.key === 'rental_type' ? {...filter,key:'contract_type_id',options:catalog.types.map(type=>({value:type.id,label:`${type.label}${!type.active ? ' (đã ẩn)' : ''}`}))} : filter),

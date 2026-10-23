@@ -16,8 +16,10 @@ async function main(){const c=await pool.connect();try{
   await c.query(numbering);await c.query(numbering);
   const inventoryMigration=fs.readFileSync('docs/sql/2026-10-18-shared-vehicle-inventory.sql','utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(inventoryMigration);await c.query(inventoryMigration);
-  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-cross-branch-renewals.sql','2026-10-21-contract-return-and-draft-release.sql','2026-10-21-contract-vehicle-labels.sql','2026-10-22-cross-branch-rental-lines.sql']) {
-    await c.query(fs.readFileSync(path.join('docs/sql',file),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replaceAll("'himoto'","'qa_access_scope'").replace(/^BEGIN;|^COMMIT;/gm,''));
+  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-cross-branch-renewals.sql','2026-10-21-contract-return-and-draft-release.sql','2026-10-21-contract-vehicle-labels.sql','2026-10-22-cross-branch-rental-lines.sql','2026-10-23-ownership-hq-vehicles.sql']) {
+    let sql=fs.readFileSync(path.join('docs/sql',file),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replaceAll("'himoto'","'qa_access_scope'").replace(/^BEGIN;|^COMMIT;/gm,'');
+    for(const key of ['scope_all','store_id','actor_id','operation','transfer_vehicle_id'])sql=sql.replaceAll(`qa_access_scope.${key}'`,`himoto.${key}'`);
+    await c.query(sql);
   }
   const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   await c.query(duplicates);await c.query(duplicates);
@@ -268,8 +270,9 @@ async function main(){const c=await pool.connect();try{
   checks.push('Real account create/update/list/audit services preserve blank-update passwords, never return hashes and prevent self-lockout');
   checks.push('Explicit global scope and the existing owner connection remain compatible; no production rows or sequences are used');
   assert(!hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'contracts.finalize'));
+  assert(hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'contracts.return'));
   assert(hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'vehicles.receive'));
-  assert(!hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'vehicles.transfer'));
+  assert(hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'vehicles.transfer'));
   const {requestPermission}=load(path.join(root,'lib/server/access-request'));
   for(const [method,action,permission] of [['GET','','contracts.read'],['POST','renew','contracts.renew'],['POST','collect_renewal','contracts.renew'],['POST','return','contracts.return']])assert.equal(requestPermission('/api/auth/battery-contracts/1/actions',method,action),permission);
   assert(hasPermission({access_role:'ownership_manager',permissions:[...ACCESS_ROLES.ownership_manager.permissions]},'contracts.finalize'));

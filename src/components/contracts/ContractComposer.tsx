@@ -29,7 +29,7 @@ import { DateTime24Field } from './DateTime24Field';
 import { VietnamDateField } from './VietnamDateField';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
-import { addRentalMonths, billingUnitLabel, OWNERSHIP_TERMS } from '@/lib/management/contract-billing';
+import { addRentalMonths, billingUnitLabel, isHeadquartersStore, isOwnershipStore, OWNERSHIP_TERM_MONTHS, OWNERSHIP_TERMS } from '@/lib/management/contract-billing';
 import { rentalQuote, selectedRentalVehicleCount } from '@/lib/management/contract-pricing';
 import { CustomerInternationalFields } from './CustomerInternationalFields';
 import { contractPhotoSlots, contractEvidenceSlots } from '@/lib/management/contract-photos';
@@ -383,7 +383,7 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     if (end) { setAutoReturn(false); setRentalDays(rentalDayCount(draft.start_date, end)); }
     setDraft(previous => ({ ...previous, contract_type_id:type.id, contract_type_name:type.label, contract_type_months:months ? String(months) : '',
       ownership: next === 'ownership', ...(end ? {end_date:end} : {}), package_name: next.startsWith('monthly') || next === 'ownership' ? 'Theo tháng' : 'Theo ngày',
-      ...(next === 'ownership' ? {tls_staff_id:'', ...(months && [6,12,24].includes(months) ? {ownership_term_months:String(months) as ContractDraft['ownership_term_months']} : {})} : {}) }));
+      ...(next === 'ownership' ? {tls_staff_id:'', ...(months && OWNERSHIP_TERM_MONTHS.includes(String(months) as typeof OWNERSHIP_TERM_MONTHS[number]) ? {ownership_term_months:String(months) as ContractDraft['ownership_term_months']} : {})} : {}) }));
     if (end) setErrors(previous=>({...previous,end_date:'',rental_days:''}));
   }
   function changeRentalStart(value: string) {
@@ -639,7 +639,14 @@ export function ContractComposer({ row, mode = 'print', onClose, onDraftSaved, o
     for (const vehicle of [...(dataset?.vehicles || []), ...inventoryVehicles]) byId.set(vehicle.id, vehicle);
     return [...byId.values()];
   }, [dataset?.vehicles, inventoryVehicles]);
-  const branchVehicles = useMemo(() => allVehicles.filter(vehicle => !staffStoreId || String(vehicle.store_id) === staffStoreId || draft.vehicles.some(item=>item.id===String(vehicle.id))), [allVehicles, staffStoreId, draft.vehicles]);
+  const branchVehicles = useMemo(() => {
+    const staffStore = vehicleStoreOptions.find(store => String(store.id) === staffStoreId);
+    const allowHeadquarters = isOwnershipStore(staffStore?.name) || staffStore?.kind === 'lease_to_own';
+    const headquartersIds = new Set(vehicleStoreOptions.filter(store => isHeadquartersStore(store.name)).map(store => String(store.id)));
+    return allVehicles.filter(vehicle => !staffStoreId || String(vehicle.store_id) === staffStoreId
+      || (allowHeadquarters && headquartersIds.has(String(vehicle.store_id)))
+      || draft.vehicles.some(item=>item.id===String(vehicle.id)));
+  }, [allVehicles, staffStoreId, draft.vehicles, vehicleStoreOptions]);
   const branchName = dataset?.stores.find(store => String(store.id) === draft.store_id)?.name
     || directoryStores.find(store => String(store.id) === draft.store_id)?.name || '';
   const vehicleStoreName = vehicleStoreOptions.find(store => String(store.id) === staffStoreId)?.name || '';
