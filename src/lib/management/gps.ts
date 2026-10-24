@@ -1,7 +1,9 @@
 export type GpsProvider='protrack'|'iopgps';
 export type GpsState='online'|'stopped'|'offline'|'warning';
 export const GPS_POLL_INTERVAL_MS=5000;
-export const GPS_STATE_LABELS:Record<GpsState|string,string>={online:'ON · Đang di chuyển',stopped:'ON · Đang dừng',offline:'OFF · Mất kết nối',warning:'Cần kiểm tra',stale:'Chưa cập nhật',none:'Chưa gắn GPS',unavailable:'Không còn trong tài khoản GPS'};
+export const GPS_LONG_STOP_MS=3*24*60*60_000;
+export const GPS_SYNC_STALE_MS=10*60_000;
+export const GPS_STATE_LABELS:Record<GpsState|string,string>={online:'ON · Đang di chuyển',stopped:'ON · Đang dừng',long_stopped:'Xe dừng trên 3 ngày',offline:'OFF · Mất kết nối',warning:'Cần kiểm tra',stale:'Chưa cập nhật',none:'Chưa gắn GPS',unavailable:'Không còn trong tài khoản GPS'};
 export interface GpsObservation {
   external_id:string;provider_device_id?:string;name:string;license:string;state:GpsState;provider_status:string;
   latitude:number|null;longitude:number|null;speed:number|null;ignition:boolean|null;
@@ -13,6 +15,7 @@ export interface GpsVehicle {
   sync_received_at:string|null;heartbeat_at:string|null;last_latitude:number|null;last_longitude:number|null;last_speed:number|null;
   mapping_status:string;
   position_recorded_at?:string|null;provider_reported_at?:string|null;last_ignition?:boolean|null;
+  stopped_since?:string|null;
 }
 export const normalizeGpsPlate=(value:string)=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 export function matchingGpsVehicles(name:string,license:string,vehicles:{id:number;license:string}[]) {
@@ -22,8 +25,22 @@ export function matchingGpsVehicles(name:string,license:string,vehicles:{id:numb
 export function displayedGpsState(state:string|null,syncedAt:string|null,now=Date.now()) {
   if(state==='unavailable')return 'unavailable';
   if(state==='none')return 'none';
-  if(!syncedAt||!Number.isFinite(Date.parse(syncedAt))||now-Date.parse(syncedAt)>10*60_000)return 'stale';
+  if(!syncedAt||!Number.isFinite(Date.parse(syncedAt))||now-Date.parse(syncedAt)>GPS_SYNC_STALE_MS)return 'stale';
   return state||'warning';
+}
+export function gpsStoppedDurationMs(row:GpsVehicle,now=Date.now()):number|null {
+  if(displayedGpsState(row.management_status,row.sync_received_at,now)!=='stopped'||!row.stopped_since)return null;
+  const since=Date.parse(row.stopped_since),synced=Date.parse(row.sync_received_at||'');
+  if(!Number.isFinite(since)||since>now||since>synced)return null;
+  return now-since;
+}
+/** One vehicle is flagged only when all of its currently available devices agree. */
+export function longStoppedVehicleIds(rows:GpsVehicle[],now=Date.now()):Set<number> {
+  const groups=new Map<number,GpsVehicle[]>();
+  for(const row of rows)if(row.vehicle_id!==null&&row.management_status!=='unavailable'&&row.management_status!=='none'){
+    const devices=groups.get(row.vehicle_id)||[];devices.push(row);groups.set(row.vehicle_id,devices);
+  }
+  return new Set([...groups].filter(([,devices])=>devices.every(row=>(gpsStoppedDurationMs(row,now)??0)>GPS_LONG_STOP_MS)).map(([id])=>id));
 }
 export function gpsMapLink(latitude:number|null,longitude:number|null) {
   if(latitude===null||longitude===null||!Number.isFinite(latitude)||!Number.isFinite(longitude)||Math.abs(latitude)>90||Math.abs(longitude)>180)return null;

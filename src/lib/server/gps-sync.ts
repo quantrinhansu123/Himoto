@@ -25,13 +25,14 @@ export async function persistGpsObservations(client:Database,provider:GpsProvide
     ), changed AS (
       SELECT i.* FROM incoming i LEFT JOIN prior d ON d.external_device_id=i.external_id
       WHERE d.id IS NULL OR d.sync_received_at IS NULL OR d.sync_received_at<now()-interval '60 seconds'
+        OR (i.state='stopped' AND d.stopped_since IS NULL)
         OR ROW(d.provider_device_name,d.management_status,d.provider_status,d.last_latitude,d.last_longitude,d.last_speed,d.source_account_id,d.provider_device_id)
           IS DISTINCT FROM ROW(i.name,i.state,i.provider_status,COALESCE(i.latitude,d.last_latitude),COALESCE(i.longitude,d.last_longitude),i.speed,$3::uuid,COALESCE(NULLIF(i.provider_device_id,''),d.provider_device_id))
         OR (d.vehicle_id IS NULL AND d.mapping_status NOT IN('manual','manual_unmapped') AND ROW(d.vehicle_id,d.mapping_status) IS DISTINCT FROM ROW(i.vehicle_id,i.mapping_status))
         OR ROW(d.heartbeat_at,d.provider_reported_at,d.position_recorded_at,d.last_ignition) IS DISTINCT FROM ROW(i.heartbeat_at,i.reported_at,COALESCE(i.position_recorded_at,d.position_recorded_at),i.ignition)
     ), upserted AS (
-      INSERT INTO himoto.gps_devices(provider,external_device_id,imei,vehicle_id,mapping_status,provider_device_name,management_status,provider_status,heartbeat_at,sync_received_at,status_updated_at,last_latitude,last_longitude,last_speed,last_sync_at,created_at,updated_at,source_account_id,provider_device_id,provider_reported_at,position_recorded_at,last_ignition)
-      SELECT $1,external_id,external_id,vehicle_id,mapping_status,name,state,provider_status,heartbeat_at,now(),now(),latitude,longitude,speed,now() AT TIME ZONE 'UTC',now() AT TIME ZONE 'UTC',now() AT TIME ZONE 'UTC',$3::uuid,NULLIF(provider_device_id,''),reported_at,position_recorded_at,ignition FROM changed
+      INSERT INTO himoto.gps_devices(provider,external_device_id,imei,vehicle_id,mapping_status,provider_device_name,management_status,provider_status,heartbeat_at,sync_received_at,status_updated_at,last_latitude,last_longitude,last_speed,last_sync_at,created_at,updated_at,source_account_id,provider_device_id,provider_reported_at,position_recorded_at,last_ignition,stopped_since)
+      SELECT $1,external_id,external_id,vehicle_id,mapping_status,name,state,provider_status,heartbeat_at,now(),now(),latitude,longitude,speed,now() AT TIME ZONE 'UTC',now() AT TIME ZONE 'UTC',now() AT TIME ZONE 'UTC',$3::uuid,NULLIF(provider_device_id,''),reported_at,position_recorded_at,ignition,CASE WHEN state='stopped' THEN now() END FROM changed
       ON CONFLICT(provider,external_device_id) DO UPDATE SET
         vehicle_id=CASE WHEN himoto.gps_devices.mapping_status IN('manual','manual_unmapped') THEN himoto.gps_devices.vehicle_id ELSE COALESCE(himoto.gps_devices.vehicle_id,EXCLUDED.vehicle_id) END,
         mapping_status=CASE WHEN himoto.gps_devices.vehicle_id IS NOT NULL OR himoto.gps_devices.mapping_status IN('manual','manual_unmapped') THEN himoto.gps_devices.mapping_status ELSE EXCLUDED.mapping_status END,
@@ -39,6 +40,14 @@ export async function persistGpsObservations(client:Database,provider:GpsProvide
         heartbeat_at=EXCLUDED.heartbeat_at,sync_received_at=now(),source_account_id=EXCLUDED.source_account_id,provider_device_id=COALESCE(EXCLUDED.provider_device_id,himoto.gps_devices.provider_device_id),
         provider_reported_at=EXCLUDED.provider_reported_at,position_recorded_at=COALESCE(EXCLUDED.position_recorded_at,himoto.gps_devices.position_recorded_at),last_ignition=EXCLUDED.last_ignition,
         status_updated_at=CASE WHEN himoto.gps_devices.management_status IS DISTINCT FROM EXCLUDED.management_status THEN now() ELSE himoto.gps_devices.status_updated_at END,
+        stopped_since=CASE WHEN EXCLUDED.management_status<>'stopped' THEN NULL
+          WHEN himoto.gps_devices.management_status='stopped'
+            AND himoto.gps_devices.provider_status IS DISTINCT FROM 'not_visible_in_account'
+            AND himoto.gps_devices.source_account_id IS NOT DISTINCT FROM EXCLUDED.source_account_id
+            AND (himoto.gps_devices.vehicle_id IS NOT NULL OR EXCLUDED.vehicle_id IS NULL OR himoto.gps_devices.mapping_status IN('manual','manual_unmapped'))
+            AND himoto.gps_devices.sync_received_at>=now()-interval '10 minutes'
+            AND himoto.gps_devices.sync_received_at<=now()
+          THEN COALESCE(himoto.gps_devices.stopped_since,now()) ELSE now() END,
         last_latitude=COALESCE(EXCLUDED.last_latitude,himoto.gps_devices.last_latitude),last_longitude=COALESCE(EXCLUDED.last_longitude,himoto.gps_devices.last_longitude),last_speed=EXCLUDED.last_speed,last_sync_at=now() AT TIME ZONE 'UTC',updated_at=now() AT TIME ZONE 'UTC'
       RETURNING id,vehicle_id,external_device_id,management_status
     ), events AS (
@@ -62,7 +71,7 @@ export async function persistGpsObservations(client:Database,provider:GpsProvide
     SELECT $1,id FROM himoto.gps_devices WHERE provider=$2 AND external_device_id=ANY($3::text[]) ON CONFLICT DO NOTHING`,[accountId,provider,rows.map(row=>row.external_id)]);
   // A missing device is an access change, not an OFF/movement transition. Keep its journal and mapping.
   // Only a complete successful provider list reaches this function.
-  if(accountId)await client.query(`UPDATE himoto.gps_devices SET provider_status='not_visible_in_account',updated_at=now() AT TIME ZONE 'UTC'
+  if(accountId)await client.query(`UPDATE himoto.gps_devices SET provider_status='not_visible_in_account',stopped_since=NULL,updated_at=now() AT TIME ZONE 'UTC'
     WHERE source_account_id=$1 AND provider=$2 AND NOT(external_device_id=ANY($3::text[]))
       AND provider_status IS DISTINCT FROM 'not_visible_in_account'`,[accountId,provider,rows.map(row=>row.external_id)]);
   return {devices:rows.length,mapped:rows.filter(row=>row.vehicle_id!==null).length};

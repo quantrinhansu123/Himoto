@@ -40,6 +40,13 @@ export async function persistGpsProviderEvents(database:GpsEventDatabase,deviceI
     SELECT d.id,d.vehicle_id,x.state,x.kind,$3,x.key,x.at,x."providerStatus"
     FROM himoto.gps_devices d CROSS JOIN jsonb_to_recordset($2::jsonb) AS x(state text,kind text,key text,at timestamptz,"providerStatus" text)
     WHERE d.id=$1 ON CONFLICT(gps_device_id,source_event_key) WHERE source_event_key IS NOT NULL DO NOTHING`,[deviceId,JSON.stringify(rows),source]);
+  // Recovered movement/offline events can interrupt a stop between two polls.
+  // Clear only the duration evidence; provider history never overwrites current state.
+  if(result.rowCount)await database.query(`UPDATE himoto.gps_devices d SET stopped_since=NULL
+    WHERE d.id=$1 AND d.stopped_since IS NOT NULL AND EXISTS (
+      SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS x(state text,at timestamptz)
+      WHERE x.state IN('online','offline') AND x.at>=d.stopped_since
+    )`,[deviceId,JSON.stringify(rows)]);
   return result.rowCount||0;
 }
 export async function persistGpsMotionHistory(database:GpsEventDatabase,deviceId:number,points:GpsHistoryPoint[],windowStart:string) {

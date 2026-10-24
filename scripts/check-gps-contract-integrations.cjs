@@ -62,12 +62,14 @@ async function main(){
     const retractions=fs.readFileSync('docs/sql/2026-10-21-telegram-retractions.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(retractions);await c.query(retractions);
     const pacing=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-five-second-poll.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(pacing);await c.query(pacing);
     const history=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-history-webhooks.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(history);await c.query(history);
+    const longStops=fs.readFileSync('docs/sql/2026-10-24-gps-long-stops.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(longStops);await c.query(longStops);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name) VALUES(23,'Branch A QA'),(31,'Branch B QA')`);
     await c.query(`INSERT INTO ${schema}.users(id,name,email,password,role_id,status) VALUES(143,'Actor QA','qa-gps@example.invalid','unused',1,'active')`);
     await c.query(`INSERT INTO ${schema}.vehicles(id,name,brand,type,year,store_id,current_store_id,license,color,status,odometer,created_by) VALUES(101,'Vehicle QA','Honda','xeso',2024,23,23,'29B1-123.45','Black','ready',0,143),(102,'Vehicle B QA','Honda','xeso',2024,31,31,'30B1-999.99','Black','ready',0,143)`);
     await c.query(`INSERT INTO ${schema}.orders(id,contract_number,customer_name,customer_phone,order_status,store_id,total,pid) VALUES(1,'HD-QA-1','Customer QA','0900000001','renting',23,'1000',0),(2,'HD-QA-2','Customer B QA','0900000002','renting',31,'1000',0)`);
     await c.query(`INSERT INTO ${schema}.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at) VALUES(1001,1,101,now(),now()+interval '1 day')`);
     const observation=providers.normalizeProtrackDevice(raw,now);await persistGpsObservations(db,'protrack',[observation]);
+    checks.push(await require('./lib/check-gps-long-stops.cjs')(db,c,schema,observation));
     let gps=(await c.query(`SELECT * FROM ${schema}.gps_devices`)).rows[0];assert.equal(Number(gps.vehicle_id),101);assert.equal(gps.management_status,'online');
     const selected=load(path.join(root,'lib/server/selected-vehicle-gps'));assert.deepEqual(selected.selectedVehicleIds('101,102,101'),[101,102]);for(const invalid of ['', '0', '101,abc',Array(21).fill('101').join(',')])assert.throws(()=>selected.selectedVehicleIds(invalid));
     const gpsRows=await selected.readSelectedVehicleGps(db,[101,102]);assert.equal(gpsRows[0].status,'online');assert.equal(gpsRows[1].status,'none');
@@ -89,6 +91,11 @@ async function main(){
     await c.query(`UPDATE ${schema}.management_gps_accounts SET next_attempt_at=clock_timestamp()-interval '1 second'`);assert.equal((await claimGpsAccounts(db,leaseA)).length,1);await finishGpsAccount(db,accountId,leaseA,1);
     checks.push('Five-second pacing prevents overlapping account reads, rejects stale lease completions, backs off provider failures and avoids rewriting unchanged GPS rows');
     checks.push(await require('./lib/check-gps-device-visibility.cjs')(db,c,schema,accountId,observation));
+    if(process.argv.includes('--gps-only')){
+      checks.push(...await require('./lib/check-gps-status-parity.cjs')(db,c,schema));
+      console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0,realTelegramRequests:0},null,2));
+      return;
+    }
     await assert.rejects(()=>requireContractPhotoSlot(db,'contracts',2,'return-1001-1'),e=>e.status===404);
     const photo=Buffer.from([255,216,255,224,1,2]);
     await c.query(`INSERT INTO ${schema}.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,'rental-1','image/jpeg',$1,143),('contracts',1,'rental-2','image/jpeg',$2,143)`,[photo,Buffer.from([255,216,255,224,1,3])]);
