@@ -52,7 +52,7 @@ async function main(){const c=await pool.connect();try{
   checks.push('Shared stock exposes only vehicle/branch/availability metadata; foreign vehicle records, customers, contracts and write access remain restricted');
   checks.push('Own-branch contract can attach a vehicle that physically sits at another store');
   await require('./lib/check-shared-inventory-api.cjs')(c,'qa_access_scope');
-  checks.push('Actual shared-inventory GET allows authorized branch stock readers, returns no customer/financial fields, disables cache and rejects missing/insufficient authorization');
+  checks.push('Actual shared-inventory GET allows every authenticated workspace account, returns no customer/financial fields, disables cache and rejects missing sessions');
   assert.deepEqual((await c.query('SELECT id::int FROM qa_access_scope.customers ORDER BY id')).rows,[{id:90001}]);
   assert.equal((await c.query('SELECT id FROM qa_access_scope.customers WHERE id=90002')).rowCount,0);
   assert.equal(Number((await c.query("SELECT qa_access_scope.find_customer_duplicate('001234567802','',NULL) AS id")).rows[0].id),90002);

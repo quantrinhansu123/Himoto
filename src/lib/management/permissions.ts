@@ -31,6 +31,9 @@ export const ACCESS_ROLES = {
 export type AccessRole = keyof typeof ACCESS_ROLES;
 export function hasPermission(account:PermissionAccount|null|undefined,permission:AccessPermission) {
   if(!account)return false;
+  // Fleet dispatch and receipt are available to every authenticated workspace
+  // account. Profile edits, contracts and money retain their existing grants.
+  if(['vehicles.read','vehicles.transfer','vehicles.receive'].includes(permission))return true;
   if(isAdminAccount(account))return true;
   if(account.permissions)return account.permissions.includes(permission);
   return (account.role==='ke-toan'||account.role_slug==='ke-toan')&&['contracts.read','finance.read','finance.write'].includes(permission);

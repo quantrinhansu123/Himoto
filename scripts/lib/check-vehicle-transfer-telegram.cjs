@@ -19,7 +19,8 @@ module.exports=async function checkTransfers(db,c,schema,notices){
   assert.equal((await c.query(`SELECT id FROM ${schema}.management_contract_notifications WHERE vehicle_event_id IS NOT NULL`)).rowCount,0);
   await assert.rejects(()=>service.saveVehicleTransferTelegram(db,101,900001,destination),e=>e.status===403);
   await assert.rejects(()=>service.readVehicleTransferTelegram(db,101,900001,{...source,store_id:999999}),e=>e.status===403);
-  await assert.rejects(()=>service.saveVehicleTransferTelegram(db,101,900001,{...source,permissions:['vehicles.read']}),e=>e.status===403);
+  assert((await service.readVehicleTransferTelegram(db,101,900001,{...source,permissions:['vehicles.read']})).state.can_send);
+  assert((await service.readVehicleTransferTelegram(db,101,900001,{...source,id:143,store_id:999999,permissions:[]})).state.can_send,'The actual global dispatcher can manage its own event');
   await service.saveVehicleTransferTelegram(db,101,900001,source);await service.saveVehicleTransferTelegram(db,101,900001,source);
   assert.equal((await c.query(`SELECT id FROM ${schema}.management_contract_notifications WHERE vehicle_event_id=900001`)).rowCount,2);
   assert.deepEqual((await c.query(`SELECT event_key FROM ${schema}.management_contract_notifications WHERE vehicle_event_id=900001 ORDER BY event_key`)).rows.map(row=>row.event_key),
@@ -50,7 +51,7 @@ module.exports=async function checkTransfers(db,c,schema,notices){
   assert(regular.state.text.startsWith('ĐIỀU CHUYỂN XE\n'));assert(!regular.state.text.includes('SỞ HỮU'));
   assert.equal((await c.query(`SELECT id FROM ${schema}.management_contract_notifications WHERE vehicle_event_id=900003`)).rowCount,0);
   assert(!(await service.readVehicleTransferTelegram(db,102,900003,branchReceiver)).state.can_send);
-  for(const user of [branchReceiver,{...source,store_id:999999},{...source,permissions:['vehicles.read']}]){
+  for(const user of [branchReceiver,{...source,store_id:999999}]){
     await assert.rejects(()=>service.saveVehicleTransferTelegram(db,102,900003,user),e=>e.status===403);
   }
   const photo=Buffer.from([255,216,255,224,1,2]);

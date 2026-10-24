@@ -13,7 +13,7 @@ module.exports=async function checkInventoryApi(c,schema){
     const response=await request();assert.equal(response.status,200);assert(response.headers.get('Cache-Control').includes('no-store'));
     const rows=(await response.json()).data;assert.equal(rows.length,2);assert(rows.some(row=>Number(row.store_id)===80002));
     assert(rows.every(row=>!('customer_name' in row)&&!('rentals' in row)&&!('customer_phone' in row)&&!('total' in row)));
-    user={...user,permissions:['contracts.read']};assert.equal((await request()).status,403);
+    user={...user,permissions:[],access_role:'hr'};assert.equal((await request()).status,200);
     user=null;assert.equal((await request()).status,401);
   }finally{session.userFromSession=savedUser;session.readSessionUser=savedRead;Object.defineProperty(pool,'query',descriptor);}
 };

@@ -25,6 +25,8 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/battery-contracts/')&&path.endsWith('/actions'))return read?'contracts.read':action==='return'?'contracts.return':'contracts.renew';
   if(path.endsWith('/reservation-no-show'))return 'contracts.finalize';
   if(method==='DELETE'&&/^\/api\/auth\/record-photos\/contracts\/[1-9]\d{0,14}\/[^/]+$/.test(path))return 'contracts.read';
+  const transferPhoto=path.match(/^\/api\/auth\/record-photos\/vehicles\/[1-9]\d{0,14}\/(transfer|receive)-[1-9]\d{0,14}-1$/);
+  if(transferPhoto)return read?'vehicles.read':transferPhoto[1]==='receive'?'vehicles.receive':'vehicles.transfer';
   if(path.includes('/record-photos/contracts/')&&/\/battery-swap-\d+-/.test(path))return read?'contracts.read':'contracts.renew';
   if(/\/record-photos\/vehicles\/\d+\/(registration-(front|back)|purchase-document-[12])$/.test(path))return read?'vehicles.read':'vehicles.write';
   if(read&&/\/record-photos\/vehicles\/\d+$/.test(path))return 'vehicles.read';
@@ -71,8 +73,12 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
       try {operation=String((await request.clone().json()).action||'');}catch {return NextResponse.json({status:'error',message:'Thao tác không hợp lệ.'},{status:400});}
     }
     const vehiclePhoto=request.nextUrl.pathname.match(/\/record-photos\/vehicles\/([1-9]\d{0,14})(?:\/|$)/);
-    const transfer_vehicle_id=vehiclePhoto?.[1]||'';
-    if(transfer_vehicle_id)operation='transfer';
+    const vehicleAction=request.nextUrl.pathname.match(/^\/api\/auth\/vehicles\/([1-9]\d{0,14})\/actions$/);
+    const transfer_vehicle_id=vehiclePhoto?.[1]||(['transfer','receive'].includes(operation)?vehicleAction?.[1]:'')||'';
+    if(vehiclePhoto)operation='transfer';
+    // Fleet visibility is local to these read endpoints, never scope_all for
+    // the authenticated account or for contract/customer/financial queries.
+    if(request.method==='GET'&&(request.nextUrl.pathname==='/api/auth/vehicle/vehicles'||request.nextUrl.pathname==='/api/auth/vehicles/transfers'||/^\/api\/auth\/vehicles\/[1-9]\d{0,14}\/history$/.test(request.nextUrl.pathname)))operation='fleet_read';
     const permission=requestPermission(request.nextUrl.pathname,request.method,request.nextUrl.pathname==='/api/auth/photo-ocr'?request.headers.get('x-photo-kind')||'':operation);
     // Own branch option list is required for every workspace role; mutation remains an admin setting.
     const branchOptions=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/stores';

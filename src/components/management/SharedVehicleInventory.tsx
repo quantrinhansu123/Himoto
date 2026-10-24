@@ -26,7 +26,7 @@ export function SharedVehicleInventory({onClose}:{onClose:()=>void}) {
   const found=(rows||[]).filter(row=>(!store||String(row.store_id)===store)&&(!availability||(availability==='ready'?row.available:!row.available))&&(normalize([row.license,row.name,row.store_name,row.from_store_name,row.to_store_name].join(' ')).includes(normalize(search))||Boolean(plateSearch)&&row.license.toUpperCase().replace(/[^A-Z0-9]/g,'').includes(plateSearch)));
   return <Dialog title="Kho xe toàn hệ thống" onClose={onClose}>
     <div className="mg-dialog-body">
-      <p>Xem xe ở mọi cơ sở để đề nghị điều chuyển. Cơ sở đang quản lý tạo lượt chuyển; cơ sở đích xác nhận đã nhận xe thì xe mới về Lưu kho để lập hợp đồng.</p>
+      <p>Mọi tài khoản có thể điều chuyển xe giữa các cơ sở. Chọn Chuyển xe trên trang Xe; khi xe đến nơi, người nhận xác nhận để xe về Lưu kho và lập hợp đồng.</p>
       <div className="mg-form-grid mg-contract-grid-two">
         <div className="mg-field mg-field-wide"><label htmlFor="shared-inventory-search">Tìm biển số, tên xe hoặc cơ sở</label><input id="shared-inventory-search" type="search" value={search} maxLength={100} onChange={event=>setSearch(event.target.value)} placeholder="Nhập biển số, tên xe, cơ sở…"/></div>
         <div className="mg-field"><label htmlFor="shared-inventory-store">Cơ sở quản lý / chờ nhận</label><select id="shared-inventory-store" value={store} onChange={event=>setStore(event.target.value)}><option value="">Tất cả cơ sở</option>{stores.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></div>
@@ -40,7 +40,7 @@ export function SharedVehicleInventory({onClose}:{onClose:()=>void}) {
           <h3>{row.license||'Chưa có biển số'}</h3><p>{row.name}</p>
           <dl><div><dt>Trạng thái</dt><dd>{VEHICLE_STATUSES.find(item=>item.value===row.status)?.label||row.status}</dd></div><div><dt>Cơ sở quản lý / chờ nhận</dt><dd>{row.store_name||'Chưa xác định'}</dd></div></dl>
           {row.status==='in_transit'&&<p>Đang chuyển: {row.from_store_name||'Chưa xác định'} → {row.to_store_name||row.store_name||'Chưa xác định'}. Chưa xác nhận nhận xe.</p>}
-          <p className={row.available?'mg-payment-success':'mg-composer-hint'}>{row.available?'Có thể đề nghị cơ sở quản lý điều chuyển':row.status==='ready'?'Chưa thể điều chuyển: còn hợp đồng chưa đóng':'Chưa thể điều chuyển khi chưa về Lưu kho'}</p>
+          <p className={row.available?'mg-payment-success':'mg-composer-hint'}>{row.available?'Có thể điều chuyển tới cơ sở khác':row.status==='ready'?'Chưa thể điều chuyển: còn hợp đồng chưa đóng':'Chưa thể điều chuyển khi chưa về Lưu kho'}</p>
         </article>)}</div>
         {!found.length&&<p>Không có xe phù hợp bộ lọc.</p>}
       </>}

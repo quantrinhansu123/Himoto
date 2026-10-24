@@ -11,6 +11,7 @@ async function main(){
     'next/server':{NextRequest,NextResponse,after:callback=>callbacks.push(callback)},
     '@/lib/server/access-request':load(path.join(root,'lib/server/access-request')),
     '@/lib/server/access-context':load(path.join(root,'lib/server/access-context')),
+    '@/lib/server/public-failure':load(path.join(root,'lib/server/public-failure')),
     '@/lib/server/himoto-database':{ownerDatabase:{connect:async()=>({query:async sql=>{queries.push(sql);return {rows:[]};},release(){}})}},
     '@/lib/server/vehicle-transfer-telegram':{VehicleTransferTelegramError,
       readVehicleTransferTelegram:async()=>({state}),
@@ -27,7 +28,7 @@ async function main(){
     session.userFromSession=async()=>user;session.readSessionUser=async()=>user;
     assert.equal((await request('POST',{action:'send'},'https://foreign.invalid')).status,403);
     user=null;assert.equal((await request()).status,401);
-    user={id:153,access_role:'branch_staff',store_id:32,permissions:[]};assert.equal((await request()).status,403);assert.equal(queries.length,0);
+    user={id:153,access_role:'branch_staff',store_id:32,permissions:[]};assert.equal((await request('GET')).status,200);assert.equal(saves,0);queries=[];callbacks.length=0;
     user.permissions=['vehicles.read','vehicles.transfer'];
     assert.equal((await request('GET')).status,200);assert(queries.includes('BEGIN READ ONLY'));assert.equal(saves,0);assert.equal(callbacks.length,1);
     await callbacks.shift()();assert.equal(dispatches,1);dispatches=0;

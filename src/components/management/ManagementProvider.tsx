@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, useMemo, useSyncExternalStore, ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { createManagementRepository } from '@/lib/management/repository';
+import { createManagementRepository, mapApiRow } from '@/lib/management/repository';
 import { ContractEdits, CustomerAssignment, EditableKind, ManagementDataset, ManagementKind, ManagementRepository, ManagementRow } from '@/lib/management/types';
 import { createManagementDataLoader, managementKindsForPath, ResourceState } from '@/lib/management/data-loader';
 import { ContractAutofillRepository, createApiAutofillRepository } from '@/lib/management/contract-autofill';
@@ -60,10 +60,28 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   const pagedKind=pathname==='/customers'?'customers':pathname.startsWith('/contracts')&&!pathname.startsWith('/contracts/battery')&&!pathname.startsWith('/contracts/types')?'contracts':null;
   const loading = requiredKinds.some(kind => !resources[kind].loaded && !resources[kind].error);
   const refreshing = requiredKinds.some(kind => resources[kind].loaded && resources[kind].loading);
-  const error = requiredKinds.map(kind => resources[kind].error).filter(Boolean).join(' ');
+  const resourceError = requiredKinds.map(kind => resources[kind].error).filter(Boolean).join(' ');
   const contractAutofill = useMemo(() => createApiAutofillRepository('/api'), []);
-  const [selectedStore, setSelectedStore] = useState(user&&!user.scope_all&&user.store_id?String(user.store_id):'all');
-  const selectStore=useCallback((id:string)=>setSelectedStore(user&&!user.scope_all&&user.store_id?String(user.store_id):id),[user]);
+  const fleetPage=pathname==='/vehicles'||pathname.startsWith('/vehicles/transfers');
+  const [branchStore, setBranchStore] = useState(user&&!user.scope_all&&user.store_id?String(user.store_id):'all');
+  const [fleetStore,setFleetStore]=useState('all');
+  const [fleetStores,setFleetStores]=useState<ManagementRow[]|null>(null);
+  const [fleetStoresError,setFleetStoresError]=useState('');
+  const [fleetStoresVersion,setFleetStoresVersion]=useState(0);
+  const error=[resourceError,fleetPage?fleetStoresError:''].filter(Boolean).join(' ');
+  const selectedStore=fleetPage?fleetStore:branchStore;
+  const selectStore=useCallback((id:string)=>{
+    if(fleetPage)setFleetStore(id);
+    else setBranchStore(user&&!user.scope_all&&user.store_id?String(user.store_id):id);
+  },[fleetPage,user]);
+  useEffect(()=>{
+    if(!fleetPage)return;const controller=new AbortController();setFleetStoresError('');
+    void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{
+      const body=await response.json();if(!response.ok||body.status!=='success'||!Array.isArray(body.data))throw Error('Không tải được danh sách cơ sở.');
+      if(!controller.signal.aborted)setFleetStores(body.data.map((row:Record<string,unknown>)=>mapApiRow('stores',row)));
+    }).catch(()=>{if(!controller.signal.aborted)setFleetStoresError('Không tải được danh sách cơ sở. Nhấn Làm mới để thử lại.');});return()=>controller.abort();
+  },[fleetPage,fleetStoresVersion]);
+  const visibleDataset=useMemo(()=>dataset&&fleetPage&&fleetStores?{...dataset,stores:fleetStores}:dataset,[dataset,fleetPage,fleetStores]);
   const [notification, notify] = useState('');
 
   const ensureData = useCallback((kinds: readonly ManagementKind[], force = false) => {
@@ -72,10 +90,11 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   }, [loader,pagedKind]);
   const invalidateData = useCallback((kinds: readonly ManagementKind[]) => loader.invalidate(kinds), [loader]);
   const reload = useCallback(async (kinds?: readonly ManagementKind[]) => {
+    if(fleetPage)setFleetStoresVersion(value=>value+1);
     if(pagedKind&&(!kinds||kinds.includes(pagedKind)))loader.invalidate([pagedKind]);
     const targets = (kinds || requiredKinds.filter(kind => kind !== 'stores' || requiredKinds.length === 1 || !loader.getSnapshot().resources.stores.loaded || loader.getSnapshot().resources.stores.error)).filter(kind=>kind!==pagedKind);
     try { await loader.ensure(targets, true); } catch { /* Each failed resource exposes its own error and retry. */ }
-  }, [loader, requiredKinds,pagedKind]);
+  }, [loader, requiredKinds,pagedKind,fleetPage]);
   useEffect(() => {
     loader.setContractsQuery('');
   }, [loader, pathname]);
@@ -167,7 +186,7 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
       end_date: context.end_date ?? undefined,
       company_paid_amount: context.company_paid_amount, company_payment_count: context.company_payment_count } : row));
   };
-  return <ManagementContext.Provider value={{ dataset, resources, loading, refreshing, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts)&&can('contracts.draft'), canPayContracts,canFinalizeContracts:can('contracts.finalize'),can,accessUser:user, selectedStore, selectStore, reload, ensureData, invalidateData, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft, acceptContractPayment }}>
+  return <ManagementContext.Provider value={{ dataset:visibleDataset, resources, loading, refreshing, error, source: 'api', canSaveContractDrafts: Boolean(repository.supportsContractDrafts)&&can('contracts.draft'), canPayContracts,canFinalizeContracts:can('contracts.finalize'),can,accessUser:user, selectedStore, selectStore, reload, ensureData, invalidateData, save, notify, contractAutofill, createCustomer, updateCustomer, deleteCustomer, setCustomerBlacklist, acceptImportedCustomers, updateStore, createStore, deleteStore, cloneContract, saveContract, saveContractDraft, acceptContractPayment }}>
     {children}
     {notification && <div className="mg-toast" role="status"><span>{notification}</span><button type="button" onClick={() => notify('')} aria-label="Đóng thông báo">×</button></div>}
   </ManagementContext.Provider>;

@@ -22,7 +22,7 @@ function noticeStatus(rows:{status:string;message_ids?:unknown}[]) {
 }
 
 export async function readVehicleTransferTelegram(db:Database,vehicleId:number,eventId:number,user:User) {
-  const e=(await db.query(`SELECT e.id,e.vehicle_id,e.event_type,e.from_store_id,e.to_store_id,e.notes,
+  const e=(await db.query(`SELECT e.id,e.vehicle_id,e.event_type,e.from_store_id,e.to_store_id,e.notes,e.created_by,
     e.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS at,
     COALESCE(e.audit_snapshot->>'license',v.license) AS license,COALESCE(e.audit_snapshot->>'vehicle_name',v.name) AS vehicle_name,
     COALESCE(e.audit_snapshot->>'actor_name',u.name) AS actor,
@@ -40,9 +40,9 @@ export async function readVehicleTransferTelegram(db:Database,vehicleId:number,e
     WHERE e.id=$1 AND e.vehicle_id=$2 AND e.event_type IN ('manual_transfer','manual_transfer_receive')`,[eventId,vehicleId])).rows[0];
   if(!e)throw new VehicleTransferTelegramError('Không tìm thấy lượt chuyển/nhận xe.',404);
   const all=user.scope_all===true||user.access_role==='admin';
-  if(!all&&![Number(e.from_store_id),Number(e.to_store_id)].includes(Number(user.store_id)))throw new VehicleTransferTelegramError('Không có quyền xem lượt chuyển xe của cơ sở khác.',403);
+  if(!all&&![Number(e.from_store_id),Number(e.to_store_id)].includes(Number(user.store_id))&&Number(e.created_by)!==Number(user.id))throw new VehicleTransferTelegramError('Không có quyền xem lượt chuyển xe của cơ sở khác.',403);
   const received=e.event_type==='manual_transfer_receive',storeId=Number(received?e.to_store_id:e.from_store_id);
-  const allowed=hasPermission(user,received?'vehicles.receive':'vehicles.transfer')&&(all||storeId===Number(user.store_id));
+  const allowed=hasPermission(user,received?'vehicles.receive':'vehicles.transfer')&&(all||storeId===Number(user.store_id)||Number(e.created_by)===Number(user.id));
   const photoSlot=`${received?'receive':'transfer'}-${e.id}-1`;
   const photos=(await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
     FROM himoto.management_record_photos WHERE entity_type='vehicles' AND entity_id=$1 AND slot=$2`,[vehicleId,photoSlot])).rows;

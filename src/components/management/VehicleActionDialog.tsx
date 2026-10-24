@@ -10,7 +10,7 @@ import { vehicleTransferPhotoSlots } from '@/lib/management/record-photos';
 import { formatDateTime } from '@/lib/formatters';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
-import { isHeadquartersStore } from '@/lib/management/contract-billing';
+import { mapApiRow } from '@/lib/management/repository';
 import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
 import Link from 'next/link';
 import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
@@ -28,7 +28,7 @@ function resolveVehicle(rows:ManagementRow[],value:string){
 }
 
 export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleActionMode; vehicle: ManagementRow | null; onClose: () => void }) {
-  const { dataset, ensureData, notify, accessUser } = useManagement();
+  const { dataset, ensureData, notify } = useManagement();
   const reloadVehicles = () => { setError(''); void ensureData(['vehicles'], true).catch(() => setError('Không tải lại được danh sách xe.')); };
   const router = useRouter();
   const stores = dataset?.stores || [];
@@ -36,16 +36,16 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
   const [inventory,setInventory]=useState<ManagementRow[]>([]);
   const vehicles = useMemo(() => {
     const byId = new Map((dataset?.vehicles || []).map(row => [row.id, row]));
-    if (String(accessUser?.access_role || '').startsWith('ownership_')) {
+    if (mode==='transfer') {
       for (const row of inventory) {
-        if (isHeadquartersStore(row.store_name) && !byId.has(row.id)) byId.set(row.id, row);
+        if (!byId.has(row.id)) byId.set(row.id, row);
       }
     }
     return [...byId.values()];
-  }, [dataset, inventory, accessUser]);
+  }, [dataset, inventory, mode]);
   useEffect(()=>{if(mode!=='transfer')return;const controller=new AbortController();
     void fetch('/api/auth/vehicles/inventory',{signal:controller.signal,cache:'no-store'}).then(async response=>{
-      const body=await response.json();if(response.ok&&body.status==='success'&&!controller.signal.aborted)setInventory(body.data.map((row:ManagementRow)=>({...row,id:Number(row.id)})));
+      const body=await response.json();if(response.ok&&body.status==='success'&&!controller.signal.aborted)setInventory(body.data.map((row:Record<string,unknown>)=>mapApiRow('vehicles',row)));
     }).catch(()=>{});return()=>controller.abort();
   },[mode]);
   useEffect(()=>{if(mode!=='transfer')return;const controller=new AbortController();void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok||body.status!=='success')throw Error(body.message||'Không tải được cơ sở chuyển đến.');setDestinations(body.data.map((row:{id:string|number;store_name:string})=>({id:Number(row.id),name:row.store_name})));}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được cơ sở chuyển đến.');});return()=>controller.abort();},[mode]);
@@ -137,7 +137,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <input id="vehicle-action-vehicle" list="vehicle-action-options" autoComplete="off" value={picked} disabled={saving || Boolean(vehicle)} placeholder="Nhập biển số hoặc tên xe…" onChange={event => pick(event.target.value)} />
         <datalist id="vehicle-action-options">{vehicles.map(row => <option key={row.id} value={vehicleOption(row)} />)}</datalist>
         {selected && <small>Hiện tại: {optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)} · {String(selected.store_name || '—')}</small>}
-        {otherStock&&<p role="status">Xe {otherStock.license} hiện ở {otherStock.store_name}. Chỉ tài khoản cơ sở đang giữ xe được chuyển. Để lập hợp đồng, chọn đúng Cửa hàng xe trong form hợp đồng.</p>}
+        {mode==='transfer'&&<small>Có thể chọn xe ở mọi cơ sở để điều chuyển.</small>}
         {sameDestination&&<p role="status">Xe đang ở {selected?.store_name}. Không cần chuyển về cùng cơ sở; có thể chọn xe này khi lập hợp đồng.</p>}
         {rented && <small className="mg-field-error">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng trước khi {mode === 'transfer' ? 'chuyển xe' : 'đổi trạng thái'}.</small>}
         {selected && !rented && ['using','rent'].includes(currentStatus) && <small>Không còn hợp đồng mở. Chọn Lưu kho nếu cần phát hành hợp đồng mới.</small>}
