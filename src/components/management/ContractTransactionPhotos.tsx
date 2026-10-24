@@ -7,6 +7,7 @@ import { photoEndpoint,type SavedPhoto } from '@/lib/management/record-photos';
 import { useManagement } from './ManagementProvider';
 import { ContractDocuments } from './ContractDocuments';
 import type { ContractWorkflow } from './ContractWorkflowGuide';
+import { ContractPhotoCard } from './ContractPhotoCard';
 
 export function ContractTransactionPhotos({id,phase,title,onPendingChange,onSaved,workflow}:{id:number;phase:ContractPhotoPhase;title:string;workflow?:ContractWorkflow;onPendingChange?:(pending:boolean)=>void;onSaved?:()=>void}) {
   const slots=useMemo(()=>[...contractPhotoSlots(phase),...contractDocumentSlots(phase)],[phase]);
@@ -22,12 +23,11 @@ export function ContractTransactionPhotos({id,phase,title,onPendingChange,onSave
   </section>;
 }
 export function ContractPhotoGallery({id}:{id:number}) {
-  const {can}=useManagement();const [photos,setPhotos]=useState<SavedPhoto[]>([]),[error,setError]=useState(''),[version,setVersion]=useState(0);
+  const {can}=useManagement();const [photos,setPhotos]=useState<SavedPhoto[]>([]),[error,setError]=useState(''),[version,setVersion]=useState(0),[busy,setBusy]=useState(false);
   useEffect(()=>{const controller=new AbortController();void fetch(photoEndpoint('contracts',id),{cache:'no-store',signal:controller.signal}).then(async response=>{const body=await response.json();if(!response.ok||body.status!=='success')throw Error(body.message||'Không tải được ảnh.');if(!controller.signal.aborted)setPhotos(body.data);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được ảnh.');});return()=>controller.abort();},[id,version]);
-  return <section><p>Ảnh/video được lưu riêng theo lúc thuê, giao xe và từng lượt trả xe.</p><button className="mg-button" type="button" onClick={()=>setVersion(value=>value+1)}>Làm mới ảnh</button>
+  return <section><p>Ảnh/video được lưu riêng theo lúc thuê, giao xe và từng lượt trả xe. Dùng nút Xóa dưới từng tệp để bỏ ảnh/video đã lưu nhầm.</p><button className="mg-button" type="button" disabled={busy} onClick={()=>{setError('');setVersion(value=>value+1);}}>Làm mới ảnh</button>
     {error&&<p role="alert">{error}</p>}<div className="mg-transaction-photo-gallery">{photos.filter(photo=>isContractTransactionPhoto(photo.slot)||photo.slot.startsWith('plate-')).map(photo=>{
-      const url=`${photoEndpoint('contracts',id,photo.slot)}?v=${encodeURIComponent(photo.updated_at)}`;
-      return <div key={photo.slot}>{photo.mime_type==='video/mp4'?<><video controls playsInline preload="metadata" src={url} aria-label={contractPhotoLabel(photo.slot)}/><a href={url} target="_blank" rel="noopener noreferrer">{contractPhotoLabel(photo.slot)}</a></>:<a href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt={contractPhotoLabel(photo.slot)} loading="lazy"/><span>{contractPhotoLabel(photo.slot)}</span></a>}</div>;
+      return <ContractPhotoCard key={photo.slot} id={id} slot={photo.slot} label={contractPhotoLabel(photo.slot)} mimeType={photo.mime_type} version={photo.updated_at} disabled={busy} onBusyChange={setBusy} onDeleted={()=>setPhotos(current=>current.filter(saved=>saved.slot!==photo.slot))}/>;
     })}</div>
     {can('contracts.draft')&&<ContractTransactionPhotos id={id} phase="rental" title="Tải ảnh khi thuê xe"/>}
   </section>;

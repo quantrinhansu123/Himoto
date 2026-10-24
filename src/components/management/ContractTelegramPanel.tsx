@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { LoaderCircle, Send } from 'lucide-react';
 import { contractTelegramRequest, NOTICE_STATUS_LABELS, type ContractTelegramState } from '@/lib/management/contract-telegram';
-import { photoEndpoint } from '@/lib/management/record-photos';
 import { ContractTelegramRetraction } from './ContractTelegramRetraction';
+import { ContractPhotoCard } from './ContractPhotoCard';
 
 export function ContractTelegramPanel({id,eventKind,eventKey}:{id:number;eventKind?:string;eventKey?:string}) {
-  const [data,setData]=useState<ContractTelegramState|null>(null),[selected,setSelected]=useState(''),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+  const [data,setData]=useState<ContractTelegramState|null>(null),[selected,setSelected]=useState(''),[loading,setLoading]=useState(false),[actionBusy,setBusy]=useState(false),[photoBusy,setPhotoBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+  const busy=actionBusy||photoBusy;
   const [confirmedAbsent,setConfirmedAbsent]=useState(false);
   const refresh=useCallback(async(signal?:AbortSignal)=>{
     setLoading(true);setError('');
@@ -41,10 +42,7 @@ export function ContractTelegramPanel({id,eventKind,eventKey}:{id:number;eventKi
         try{const state=await contractTelegramRequest(id,{action:'retract',event_key:event.key,notice_id:noticeId,request_id:crypto.randomUUID(),reason,confirmed:true});setData(state);setMessage('Đã nhận yêu cầu thu hồi. Trạng thái sẽ cập nhật khi Telegram xác nhận.');}
         catch(cause){setError(cause instanceof Error?cause.message:'Chưa yêu cầu thu hồi được.');}finally{setBusy(false);}
       }}/>}
-      <div className="mg-transaction-photo-gallery" aria-label="Toàn bộ ảnh và video sẽ gửi">{event.attachments?.map(photo=>{
-        const url=`${photoEndpoint('contracts',id,photo.slot)}?v=${event.hash}`;
-        return <div key={photo.slot}>{photo.mime_type==='video/mp4'?<video controls playsInline preload="metadata" src={url} aria-label={photo.label}/>:<a href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt={photo.label} loading="lazy"/></a>}<span>{photo.label}</span></div>;
-      })}</div>
+      <div className="mg-transaction-photo-gallery" aria-label="Toàn bộ ảnh và video sẽ gửi">{event.attachments?.map(photo=><ContractPhotoCard key={photo.slot} id={id} slot={photo.slot} label={photo.label} mimeType={photo.mime_type} version={event.hash} disabled={busy||loading||Boolean(active)} onBusyChange={setPhotoBusy} onDeleted={async()=>{setData(null);setMessage('');await refresh();}}/>)}</div>
       <button type="button" className="mg-button mg-button-primary" disabled={!event.can_send||busy||loading} onClick={async()=>{
         setBusy(true);setError('');setMessage('');
         try{const state=await contractTelegramRequest(id,{action:'send',event_key:event.key,hash:event.hash,request_id:crypto.randomUUID()});setData(state);setMessage('Đã xếp thông báo vào hàng đợi. Trạng thái bên trên cập nhật sau khi Telegram trả kết quả.');}

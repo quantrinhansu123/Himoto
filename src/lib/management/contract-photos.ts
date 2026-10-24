@@ -1,4 +1,5 @@
 import type { PhotoSlot } from './record-photos';
+import type { AccessPermission } from './permissions';
 export type ContractPhotoPhase='rental'|'handover'|`return-${number}`|`renewal-${number}`|`renewal-receipt-${number}`|`battery-swap-${number}`|`vehicle-swap-${number}`;
 export const CONTRACT_CUSTOMER_PHOTO_SLOTS:PhotoSlot[]=[{key:'customer-id-front',label:'CCCD mặt trước / Hộ chiếu'},{key:'customer-id-back',label:'CCCD mặt sau / Trang bổ sung'},{key:'customer-driver-license',label:'Giấy phép lái xe'}];
 export function contractDocumentSlots(phase:ContractPhotoPhase):PhotoSlot[] {
@@ -24,6 +25,14 @@ export function contractPhotoSlots(phase:ContractPhotoPhase):PhotoSlot[] {
 }
 export function isContractTransactionPhoto(slot:string) {
   return slot==='driver-license'||CONTRACT_CUSTOMER_PHOTO_SLOTS.some(item=>item.key===slot)||/^(rental|handover)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^(return|renewal|renewal-receipt)-[1-9]\d{0,14}-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^battery-swap-[1-9]\d{0,14}-(?:[12]|video-1|document-[1-9]\d{0,14})$/.test(slot)||/^vehicle-swap-[1-9]\d{0,14}-1$/.test(slot);
+}
+/** Match the existing record-photo API's write permission for each contract slot. */
+export function contractPhotoWritePermission(slot:string):AccessPermission|null {
+  if(!isContractTransactionPhoto(slot)&&!/^plate-[1-9]\d{0,14}$/.test(slot))return null;
+  if(slot.startsWith('renewal-')||slot.startsWith('battery-swap-'))return 'contracts.renew';
+  if(slot.startsWith('return-'))return 'contracts.return';
+  if(slot.startsWith('handover-'))return 'contracts.finalize';
+  return 'contracts.draft';
 }
 // Expand from actual saved/pending keys; the initial placeholders are not an upload limit.
 export function expandablePhotoPrefix(slots:PhotoSlot[]) {
