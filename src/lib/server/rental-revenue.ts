@@ -10,7 +10,7 @@ const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFini
 // date filtering. Renewal snapshots identify receipts; unpaid snapshots add no revenue.
 // Resolve attribution and initial fees once per relevant contract, rather than
 // repeating its JSON/permission joins for every historical receipt.
-export const RENTAL_REVENUE_SQL=`WITH scoped_orders AS MATERIALIZED (
+export const RENTAL_REVENUE_CTE=`WITH scoped_orders AS MATERIALIZED (
   SELECT o.id,
     COALESCE(o.draft_payload #>> '{management_composer,profile,sales_staff_id}',o.draft_payload #>> '{management_composer,draft,sales_staff_id}') AS staff_id,
     COALESCE(o.draft_payload #>> '{management_composer,profile_attribution,NVKD,name}',o.draft_payload #>> '{management_composer,sales_attribution,NVKD,name}',s.full_name) AS staff_name,
@@ -22,7 +22,8 @@ export const RENTAL_REVENUE_SQL=`WITH scoped_orders AS MATERIALIZED (
       THEN o.draft_payload::jsonb #> '{management_composer,draft,extra_charges}' ELSE '[]'::jsonb END) charge) f ON true
   WHERE o.id=ANY($4::bigint[]) AND ${VEHICLE_ORDER_SQL}
 ), classified AS (
-  SELECT t.id,t.order_id,t.store_id,t.created_at,t.value,
+  SELECT t.id,t.order_id,t.store_id,t.created_at,t.value,t.type,t.name,t.payment_method,t.bank_owner_type,t.bank_id,t.cash_id,t.user_id,t.order_item_id,
+    COALESCE(t."desc",t.note,'') AS note,
     CASE WHEN t.type='out' THEN CASE WHEN t.name='order:rental_refund' THEN 'early'
       WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'excluded' ELSE 'unclassified' END
     WHEN ${depositReceiptSql()} OR t.name IN('order:return_repair','order:extra') THEN 'excluded'
@@ -39,7 +40,8 @@ export const RENTAL_REVENUE_SQL=`WITH scoped_orders AS MATERIALIZED (
   SELECT *,SUM(CASE WHEN category='rental' THEN value ELSE 0 END)
     OVER(PARTITION BY order_id ORDER BY created_at,id ROWS UNBOUNDED PRECEDING) AS regular_total FROM classified
 )
-SELECT to_char(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD') AS day,category,staff_id,staff_name,
+`;
+export const RENTAL_REVENUE_SQL=`${RENTAL_REVENUE_CTE}SELECT to_char(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD') AS day,category,staff_id,staff_name,
   CASE WHEN category='rental' THEN GREATEST(regular_total-initial_fees,0)-GREATEST(regular_total-value-initial_fees,0) ELSE value END AS amount
 FROM allocated WHERE created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') AND category<>'excluded'
   AND ($3::bigint IS NULL OR store_id=$3)`;

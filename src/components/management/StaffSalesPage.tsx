@@ -16,11 +16,12 @@ const money=(value:number)=>`${value.toLocaleString('vi-VN')} đ`;
 function downloadCsv(rows:(string|number)[][],filename:string){const data=rows.map(row=>row.map(value=>csvCell(String(value))).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF',data],{type:'text/csv;charset=utf-8;'}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}
 const isoDate=(year:number,month:number,day:number)=>new Date(Date.UTC(year,month,day)).toISOString().slice(0,10);
 const viDate=(value:string)=>value.split('-').reverse().join('/');
-const PRESETS=[{id:'today',label:'Hôm nay'},{id:'7d',label:'7 ngày qua'},{id:'month',label:'Tháng này'},{id:'last-month',label:'Tháng trước'},{id:'quarter',label:'Quý này'},{id:'year',label:'Năm nay'}] as const;
+const PRESETS=[{id:'today',label:'Hôm nay'},{id:'yesterday',label:'Hôm qua'},{id:'7d',label:'7 ngày qua'},{id:'month',label:'Tháng này'},{id:'last-month',label:'Tháng trước'},{id:'quarter',label:'Quý này'},{id:'year',label:'Năm nay'}] as const;
 function presetRange(id:typeof PRESETS[number]['id'],today:string):[string,string] {
   const [year,month,day]=today.split('-').map(Number);
   switch(id){
     case 'today': return [today,today];
+    case 'yesterday': return [isoDate(year,month-1,day-1),isoDate(year,month-1,day-1)];
     case '7d': return [isoDate(year,month-1,day-6),today];
     case 'month': return [isoDate(year,month-1,1),today];
     case 'last-month': return [isoDate(year,month-2,1),isoDate(year,month-1,0)];

@@ -1868,6 +1868,52 @@
 .mg-rental-revenue-toolbar>div { display:flex; gap:6px; }
 .mg-rental-revenue-toolbar .is-active { background:var(--mg-yellow-100); border-color:var(--mg-yellow-300); color:var(--mg-heading); }
 .mg-rental-revenue-table { min-width:780px; }
+.mg-revenue-ledger { padding:20px; }
+.mg-revenue-ledger-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.mg-revenue-ledger-heading h3 { display:flex; align-items:center; flex-wrap:wrap; gap:9px; margin:0 0 7px; font-size:17px; }
+.mg-revenue-ledger-heading h3>span { border:1px solid var(--mg-line); border-radius:6px; padding:3px 7px; font-size:12px; color:var(--mg-slate-600); font-weight:500; }
+.mg-revenue-ledger-heading p,.mg-revenue-ledger-help { margin:0; font-size:12px; color:var(--mg-muted); line-height:1.6; }
+.mg-revenue-ledger-filters { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; padding:16px; background:var(--mg-slate-50); border:1px solid var(--mg-line); border-radius:9px; }
+.mg-revenue-ledger-filters .mg-report-search { flex:1 1 240px; min-height:40px; background:var(--mg-surface,#fff); }
+.mg-revenue-ledger-filters>label:not(.mg-report-search) { display:grid; gap:5px; font-size:11px; color:var(--mg-muted); }
+.mg-revenue-ledger-filters select,.mg-revenue-ledger-pagination select { min-height:40px; padding:8px 30px 8px 10px; border:1px solid var(--mg-line); border-radius:6px; background:var(--mg-surface,#fff); color:var(--mg-heading); font:inherit; font-size:12px; }
+.mg-revenue-ledger-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:18px 0; }
+.mg-revenue-ledger-metrics>div { padding:15px 17px; border:1px solid var(--mg-line); border-radius:8px; }
+.mg-revenue-ledger-metrics>div:last-child { background:var(--mg-yellow-50); border-color:var(--mg-yellow-300); }
+.mg-revenue-ledger-metrics dt { font-size:12px; color:var(--mg-muted); }
+.mg-revenue-ledger-metrics dd { margin:7px 0; color:var(--mg-heading); font-size:21px; font-weight:650; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.mg-revenue-ledger-metrics small { font-size:11px; color:var(--mg-muted); }
+.mg-revenue-ledger-methods { border:1px solid var(--mg-line); border-radius:8px; margin-bottom:15px; }
+.mg-revenue-ledger-methods>p { margin:0; padding:11px 15px; font-size:12px; font-weight:600; border-bottom:1px solid var(--mg-line); }
+.mg-revenue-ledger-methods dl { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0; }
+.mg-revenue-ledger-methods dl>div { padding:12px 15px; border-right:1px solid var(--mg-line); }
+.mg-revenue-ledger-methods dl>div:last-child { border-right:0; }
+.mg-revenue-ledger-methods dt { color:var(--mg-muted); font-size:11px; }
+.mg-revenue-ledger-methods dd { margin:6px 0 0; font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.mg-revenue-ledger-help { margin:0 0 13px; }
+.mg-revenue-ledger-scroll { border:1px solid var(--mg-line); border-radius:8px; max-width:100%; }
+.mg-revenue-ledger-table { min-width:1230px; font-size:12px; font-variant-numeric:tabular-nums; }
+.mg-revenue-ledger-table th:first-child { min-width:145px; }
+.mg-revenue-ledger-table td:nth-child(2) { min-width:240px; max-width:320px; }
+.mg-revenue-ledger-table tbody td,.mg-revenue-ledger-table tbody th { vertical-align:top; padding:13px 14px; }
+.mg-revenue-ledger-table tbody tr:nth-child(even) { background:var(--mg-slate-50); }
+.mg-revenue-ledger-table time,.mg-revenue-ledger-table small { display:block; margin-top:5px; font-size:11px; font-weight:400; color:var(--mg-muted); }
+.mg-ledger-type { display:inline-block; border:1px solid var(--mg-line); background:var(--mg-surface,#fff); border-radius:5px; padding:3px 6px; font-weight:500; }
+.mg-ledger-customer { display:block; font-size:12px; font-weight:600; overflow-wrap:anywhere; }
+.mg-ledger-contract { display:inline-block; margin-top:6px; color:var(--mg-red-600,#bd2230); text-decoration:underline; text-underline-offset:3px; }
+.mg-ledger-row-revenue { font-weight:650; }
+.mg-revenue-ledger-table .is-expense { color:var(--mg-red-600,#bd2230); }
+.mg-ledger-row-details { font-size:11px; margin-top:8px; }
+.mg-ledger-row-details summary { cursor:pointer; color:var(--mg-muted); padding:4px 0; }
+.mg-ledger-row-details dl { margin:6px 0 0; display:grid; gap:6px; }
+.mg-ledger-row-details dt { font-weight:600; }
+.mg-ledger-row-details dd { margin:2px 0 0; overflow-wrap:anywhere; white-space:pre-wrap; }
+.mg-revenue-ledger-table tfoot { background:var(--mg-slate-100,#e9edf2); font-weight:650; }
+.mg-revenue-ledger-pagination { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding-top:14px; color:var(--mg-muted); font-size:12px; }
+.mg-revenue-ledger-pagination>label,.mg-revenue-ledger-pagination>div { display:flex; align-items:center; gap:9px; }
+.mg-revenue-ledger-pagination button { min-width:40px; min-height:40px; justify-content:center; }
+.mg-revenue-ledger-error { padding:16px 0; }
+@media(max-width:640px){.mg-revenue-ledger{padding:16px}.mg-revenue-ledger-heading{flex-direction:column}.mg-revenue-ledger-heading>.mg-button{width:100%;justify-content:center}.mg-revenue-ledger-filters{padding:12px}.mg-revenue-ledger-filters>label{width:100%;flex-basis:100%}.mg-revenue-ledger-filters select{width:100%}.mg-revenue-ledger-metrics{grid-template-columns:1fr}.mg-revenue-ledger-metrics>div{padding:12px 14px}.mg-revenue-ledger-metrics dd{font-size:20px}.mg-revenue-ledger-methods dl{grid-template-columns:repeat(2,minmax(0,1fr))}.mg-revenue-ledger-methods dl>div:nth-child(2){border-right:0}.mg-revenue-ledger-methods dl>div:nth-child(-n+2){border-bottom:1px solid var(--mg-line)}.mg-rental-revenue-toolbar>div{flex-wrap:wrap}.mg-revenue-ledger-pagination{justify-content:center}}
 .mg-rental-revenue .mg-table-scroll { min-height:0; }
 .mg-rental-revenue-table tfoot { background:var(--mg-slate-50); font-weight:600; }
 @media(max-width:640px){.mg-rental-revenue-heading{align-items:flex-start;flex-direction:column;padding:16px}.mg-rental-revenue-formula{grid-template-columns:repeat(2,minmax(0,1fr));padding:16px}.mg-rental-revenue-note{padding-left:16px;padding-right:16px}}
