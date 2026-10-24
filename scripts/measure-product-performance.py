@@ -19,7 +19,8 @@ output.parent.mkdir(parents=True, exist_ok=True)
 results = []
 
 observer = """(() => {
-window.__qa={lcp:0,longTasks:[]};
+window.__qa={lcp:0,longTasks:[],rows:0};
+new MutationObserver(()=>{if(!window.__qa.rows&&document.querySelector('table tbody td[data-column],.mg-mobile-card-list>li'))window.__qa.rows=performance.now();}).observe(document,{childList:true,subtree:true});
 new PerformanceObserver(list=>{for(const e of list.getEntries())window.__qa.lcp=e.startTime;}).observe({type:'largest-contentful-paint',buffered:true});
 new PerformanceObserver(list=>{for(const e of list.getEntries())window.__qa.longTasks.push({at:e.startTime,duration:e.duration});}).observe({type:'longtask',buffered:true});
 })()"""
@@ -33,6 +34,9 @@ with sync_playwright() as p:
             context.add_cookies([dict(name='himoto_management_session', value=Path(args.session_cookie_file).read_text().strip(),
                                      url=args.url, httpOnly=True, secure=args.url.startswith('https'), sameSite='Strict')])
             context.add_init_script(observer)
+            # A page may start GPS/integration refresh automatically. Measuring
+            # load must never trigger business writes or provider synchronisation.
+            context.route('**/api/**', lambda route: route.continue_() if route.request.method in ['GET', 'HEAD'] else route.abort())
             page = context.new_page()
             page.set_default_timeout(45000)
             errors, failed, methods = [], [], []
@@ -58,7 +62,7 @@ with sync_playwright() as p:
                     start:Math.round(e.startTime),duration:Math.round(e.duration),ttfb:Math.round(e.responseStart-e.requestStart),
                     transfer:e.transferSize,encoded:e.encodedBodySize,decoded:e.decodedBodySize}));
                 return {ttfb:Math.round(n.responseStart-n.requestStart),domContentLoaded:Math.round(n.domContentLoadedEventEnd),
-                    fcp:Math.round(performance.getEntriesByName('first-contentful-paint')[0]?.startTime||0),lcp:Math.round(q.lcp||0),
+                    fcp:Math.round(performance.getEntriesByName('first-contentful-paint')[0]?.startTime||0),lcp:Math.round(q.lcp||0),firstRowsMs:Math.round(q.rows||0),
                     blockingMs:Math.round(q.longTasks.reduce((sum,e)=>sum+Math.max(e.duration-50,0),0)),longTasks:q.longTasks.length,
                     resources,buildId:document.querySelector('script#__NEXT_DATA__')?.textContent?JSON.parse(document.querySelector('script#__NEXT_DATA__').textContent).buildId:null};
             }""")

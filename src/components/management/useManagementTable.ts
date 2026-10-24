@@ -1,13 +1,15 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { requestManagementTable, managementTableQuery, type ManagementTableInput, type ManagementTableResult } from '@/lib/management/management-table';
+import { requestManagementTable, managementTableQuery,managementStatisticsKey, type ManagementTableInput, type ManagementTableResult } from '@/lib/management/management-table';
 
-const caches=new WeakMap<object,Map<string,{data:ManagementTableResult;at:number}>>();
+type CacheEntry={data:ManagementTableResult;at:number;statisticsAt:number};
+const caches=new WeakMap<object,Map<string,CacheEntry>>();
+const fresh=(entry:CacheEntry|undefined)=>Boolean(entry&&Date.now()-entry.at<30000&&Date.now()-entry.statisticsAt<30000);
 export function useManagementTable(input:ManagementTableInput,enabled:boolean,revision:unknown,ownershipStores:number[]) {
   const serialized=managementTableQuery(input).toString();
-  let cache:Map<string,{data:ManagementTableResult;at:number}>|undefined;
+  let cache:Map<string,CacheEntry>|undefined;
   if(revision&&typeof revision==='object'){cache=caches.get(revision);if(!cache){cache=new Map();caches.set(revision,cache);}}
-  const cached=cache?.get(serialized),initial=cached&&Date.now()-cached.at<30000?cached.data:null;
+  const cached=cache?.get(serialized),initial=cached&&fresh(cached)?cached.data:null;
   // A response belongs to one filter/page only. Never show the previous tab's rows
   // under a newly selected tab, including during the search debounce.
   const [state,setState]=useState<{key:string;data:ManagementTableResult|null;pending:boolean;error:string}>(()=>({key:serialized,data:initial,pending:enabled&&!initial,error:''}));
@@ -26,13 +28,15 @@ export function useManagementTable(input:ManagementTableInput,enabled:boolean,re
     if(!enabled||query!==serialized)return;
     const controller=new AbortController();
     const previous=cache?.get(query);
-    if(previous&&Date.now()-previous.at<30000){setState({key:query,data:previous.data,pending:false,error:''});return;}
+    if(previous&&fresh(previous)){setState({key:query,data:previous.data,pending:false,error:''});return;}
     setState(old=>({key:query,data:old.key===query?old.data:null,pending:true,error:''}));
-    void requestManagementTable(current.current.input,controller.signal,false,current.current.ownershipStores).then(value=>{if(!controller.signal.aborted){setState({key:query,data:value,pending:false,error:''});cache?.set(query,{data:value,at:Date.now()});if(cache&&cache.size>20)cache.delete(cache.keys().next().value!);}})
+    let statistics:CacheEntry|undefined;
+    if(input.kind==='contracts'&&cache){const key=managementStatisticsKey(query);for(const [other,entry] of cache)if(Date.now()-entry.statisticsAt<30000&&managementStatisticsKey(other)===key&&(!statistics||entry.statisticsAt>statistics.statisticsAt))statistics=entry;}
+    void requestManagementTable(current.current.input,controller.signal,false,current.current.ownershipStores,statistics?.data).then(value=>{if(!controller.signal.aborted){setState({key:query,data:value,pending:false,error:''});cache?.set(query,{data:value,at:Date.now(),statisticsAt:statistics&&value.total===statistics.data.total?statistics.statisticsAt:Date.now()});if(cache&&cache.size>20)cache.delete(cache.keys().next().value!);}})
       .catch(cause=>{if(!controller.signal.aborted)setState(old=>({key:query,data:old.key===query?old.data:null,pending:false,error:cause instanceof Error?cause.message:'Không tải được danh sách.'}));});
     return()=>controller.abort();
-  },[enabled,query,serialized,revision,retry,cache]);
+  },[enabled,query,serialized,revision,retry,cache,input.kind]);
   const data=state.key===serialized?state.data:initial;
   const error=state.key===serialized?state.error:'';
-  return {data,loading:enabled&&!data&&!error,refreshing:state.key===serialized&&state.pending&&Boolean(data),error,refresh:()=>{cache?.delete(serialized);setRetry(value=>value+1);},exportAll:()=>requestManagementTable(current.current.input,undefined,true,current.current.ownershipStores)};
+  return {data,loading:enabled&&!data&&!error,refreshing:state.key===serialized&&state.pending&&Boolean(data),error,refresh:()=>{cache?.clear();setRetry(value=>value+1);},exportAll:()=>requestManagementTable(current.current.input,undefined,true,current.current.ownershipStores)};
 }

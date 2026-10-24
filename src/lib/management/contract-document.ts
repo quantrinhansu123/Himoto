@@ -52,9 +52,7 @@ export function dateTimeInput(input: unknown): string {
   if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp)) return timestamp.slice(0, 16);
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return '';
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
-  const part = (type: string) => parts.find(item => item.type === type)?.value;
-  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+  return vietnamRentalTime(date);
 }
 function relativeRecord(input: unknown): ContractRelative {
   const row = input && typeof input === 'object' ? input as Record<string, unknown> : {};

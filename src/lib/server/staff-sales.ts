@@ -10,9 +10,16 @@ const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number
 
 // Rank complete rental history before branch/date filters. Allocate known
 // initial fees first when collecting combined rent/fee receipts, as billing does.
-const SALES_CTE = `WITH eligible AS (
+const SALES_CTE = `WITH ranked AS MATERIALIZED (
+  SELECT o.id,row_number() OVER(PARTITION BY o.customer_id ORDER BY COALESCE(o.rent_at,o.created_at),o.id) AS rental_number
+  FROM himoto.orders o WHERE o.customer_id IS NOT NULL AND o.order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
+), relevant AS MATERIALIZED (
+  SELECT DISTINCT t.order_id FROM himoto.transactions t WHERE t.status='approved' AND t.type IN('in','addon')
+    AND t.created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+    AND t.created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+), eligible AS (
   SELECT o.id,o.customer_id,o.store_id,o.rent_at,o.created_at,o.draft_payload,o.customer_source,
-    row_number() OVER(PARTITION BY o.customer_id ORDER BY COALESCE(o.rent_at,o.created_at),o.id) AS rental_number,
+    ranked.rental_number,
     (COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type,'')='ownership'
       OR COALESCE(o.draft_payload #>> '{management_composer,draft,ownership}','false')='true'
       OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL) AS ownership,
@@ -21,26 +28,29 @@ const SALES_CTE = `WITH eligible AS (
       CASE WHEN o.draft_payload #>> '{management_composer,draft,total_amount}' ~ '^[0-9]{1,13}$'
         THEN GREATEST((o.draft_payload #>> '{management_composer,draft,total_amount}')::numeric - COALESCE(f.amount,0),0)
         WHEN o.total ~ '^[0-9]{1,13}$' THEN GREATEST(o.total::numeric - COALESCE(f.amount,0),0) ELSE 0 END) AS original_rent
-  FROM himoto.orders o
+  FROM himoto.orders o JOIN ranked ON ranked.id=o.id
   LEFT JOIN LATERAL (
     SELECT SUM(CASE WHEN charge->>'amount' ~ '^[0-9]{1,13}$' THEN (charge->>'amount')::numeric ELSE 0 END) AS amount
     FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,draft,extra_charges}')='array'
       THEN o.draft_payload::jsonb #> '{management_composer,draft,extra_charges}' ELSE '[]'::jsonb END) charge
   ) f ON true
   WHERE o.customer_id IS NOT NULL AND o.order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
+    AND ($3::bigint IS NULL OR o.store_id=$3)
+    AND (o.id IN(SELECT order_id FROM relevant) OR COALESCE(o.rent_at,o.created_at)>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      AND COALESCE(o.rent_at,o.created_at)<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh'))
 ), receipt_history AS (
-  SELECT t.*,o.initial_fees,
+  SELECT t.id,t.order_id,t.value,t.created_at,o.initial_fees,
     ${renewalReceiptSql()} AS is_renewal,
     SUM(CASE WHEN ${renewalReceiptSql()} THEN 0 ELSE t.value END)
       OVER(PARTITION BY t.order_id ORDER BY t.created_at,t.id ROWS UNBOUNDED PRECEDING) AS cumulative_regular
   FROM himoto.transactions t JOIN eligible o ON o.id=t.order_id
   WHERE t.status='approved' AND t.type IN ('in','addon')
     AND (t.name IN ('order:rental_fees','order:payment') OR ${renewalReceiptSql()})
-    AND (t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= $2::date
+    AND t.created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
 ), receipts AS (
   SELECT order_id,SUM(CASE WHEN is_renewal THEN value
     ELSE GREATEST(cumulative_regular-initial_fees,0)-GREATEST(cumulative_regular-value-initial_fees,0) END) AS revenue
-  FROM receipt_history WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= $1::date GROUP BY order_id
+  FROM receipt_history WHERE created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') GROUP BY order_id
 ), attributed AS (
   SELECT o.id,o.customer_id,o.rental_number,a.department,a.staff_id,a.saved_name,
     CASE WHEN a.department='TLS' THEN o.original_rent ELSE COALESCE(r.revenue,0) END AS revenue,

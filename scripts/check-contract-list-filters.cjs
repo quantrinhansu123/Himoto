@@ -37,7 +37,7 @@ async function main(){const c=await ownerDatabase.connect(),checks=[];
   const renewable=await read({scope:'renewable'});assert.equal(renewable.total,11);assert(renewable.rows.every(r=>!r.billing_plan_json));
   checks.push('Ordinary renewal picker excludes contracts whose installment schedule must use a different flow');
   const selected=await read({filter_id:'27'});assert.equal(selected.rows[0].paid_amount,0);
-  assert(commands.filter(r=>r.sql.includes('o.id=ANY')).every(r=>r.args[0].length<=50));
+  assert(commands.filter(r=>r.sql.includes('o.id=ANY')).every(r=>r.args[0].length<=250));
   checks.push('Hydration reads rental receipts separately from deposits and stays bounded to the selected IDs');
  }finally{await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
  console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0},null,2));

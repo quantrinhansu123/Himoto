@@ -57,17 +57,19 @@ function SummaryTable({title,description,column,unit,summary,filename,loading,er
   </div>;
 }
 export function StaffSalesPage() {
-  const {selectedStore,dataset,error:datasetError,resources,reload,accessUser}=useManagement();const today=vietnamDate();
+  const {selectedStore,dataset,error:datasetError,resources,reload,accessUser,ensureData}=useManagement();const today=vietnamDate();
   const canViewFleet=canViewOwnedFleetRevenue(accessUser);
   const [from,setFrom]=useState(`${today.slice(0,7)}-01`),[to,setTo]=useState(today),[department,setDepartment]=useState('');
   const [reportView, setReportView] = useState<'actual' | 'vehicles' | 'overview' | 'owned-fleet'>('actual');
+  const [toolsOpen,setToolsOpen]=useState(false);
   const [report,setReport]=useState<StaffSalesReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useReloadAction(useCallback(()=>{setRetry(value=>value+1);void reload();},[reload]));
-  useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(setReport).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[from,to,selectedStore,retry]);
+  useEffect(()=>{if(!toolsOpen)return;const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(value=>{if(!controller.signal.aborted)setReport(value);}).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[toolsOpen,from,to,selectedStore,retry]);
   const rows=(report?.rows || []).filter(row=>!department || row.department === department);
   const [summary,setSummary]=useState<SalesSummaryReport|null>(null),[summaryLoading,setSummaryLoading]=useState(true),[summaryError,setSummaryError]=useState('');
   const staff=dataset?.staff;
-  useEffect(()=>{if(!resources.staff.loaded&&!resources.staff.error)return;const controller=new AbortController();setSummaryLoading(true);setSummaryError('');loadSalesSummary(from,to,selectedStore,staff||[],controller.signal).then(value=>{if(!controller.signal.aborted)setSummary(value);}).catch(cause=>{if(!controller.signal.aborted)setSummaryError(cause instanceof Error?cause.message:'Không tải được thống kê.');}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});return()=>controller.abort();},[from,to,selectedStore,staff,retry,resources.contracts,resources.staff.loaded,resources.staff.error]);
+  useEffect(()=>{if(toolsOpen)void ensureData(['staff']).catch(()=>{});},[toolsOpen,ensureData]);
+  useEffect(()=>{if(!toolsOpen||!resources.staff.loaded&&!resources.staff.error)return;const controller=new AbortController();setSummaryLoading(true);setSummaryError('');loadSalesSummary(from,to,selectedStore,staff||[],controller.signal).then(value=>{if(!controller.signal.aborted)setSummary(value);}).catch(cause=>{if(!controller.signal.aborted)setSummaryError(cause instanceof Error?cause.message:'Không tải được thống kê.');}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});return()=>controller.abort();},[toolsOpen,from,to,selectedStore,staff,retry,resources.contracts,resources.staff.loaded,resources.staff.error]);
   const sources=summary?.sources||summarizeBySalesStaff([],from,to,selectedStore),stores=summary?.stores||summarizeByStore([],from,to,selectedStore),kpis=summary?.kpis||summarizeSalesKpis([],from,to,selectedStore),contractsError=summaryError||datasetError;
   const activePreset=PRESETS.find(preset=>{const [start,end]=presetRange(preset.id,today);return start===from && end===to;})?.id;
   const periodDays=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;
@@ -94,7 +96,8 @@ export function StaffSalesPage() {
     {reportView === 'vehicles' && <VehicleRevenuePanel key={`vehicles-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {reportView === 'overview' && <RentalOverviewPanel key={`overview-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {canViewFleet&&reportView==='owned-fleet'&&<OwnedFleetRevenuePanel key={`fleet-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
-    <details className="mg-monitor-tools"><summary>Thống kê hợp đồng & báo cáo khác</summary>
+    <details className="mg-monitor-tools" onToggle={event=>setToolsOpen(event.currentTarget.open)}><summary>Thống kê hợp đồng & báo cáo khác</summary>
+    {toolsOpen&&<>
     <p className="mg-sales-kpi-note">Các thống kê bên dưới dùng phạm vi và cách tính ghi tại từng mục. Chốt KPI thuê xe theo bảng Doanh thu thuê xe phía trên.</p>
     <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>
     <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền hợp đồng còn thiếu của đơn đang thuê, quá hạn, chờ tất toán và nợ xấu; Nợ xấu quá hạn gồm đơn Quá hạn và Nợ xấu.</p>
@@ -103,6 +106,7 @@ export function StaffSalesPage() {
     <div className="mg-source-sales-heading mg-source-sales-heading-sub"><div><h2>Theo NVKD / TLS được phân công</h2></div></div>
     <div className="mg-sales-filter-row"><div className="mg-sales-segmented" role="group" aria-label="Bộ phận báo cáo bổ sung">{DEPARTMENTS.map(item=><button key={item.value||'all'} type="button" aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div><button className="mg-button" type="button" disabled={loading||!rows.length} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất báo cáo bổ sung</button></div>
     {loading ? <p role="status" className="mg-table-state">Đang tải doanh số…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : <><ul className="mg-sales-cards">{rows.map(row=><li key={`${row.department}-${row.staff_id}`}><strong>{row.name} · {row.department}</strong><b>{money(row.revenue)}</b><span>{row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên'}</span><span>{row.contracts} hợp đồng · {row.customers} khách · {row.new_customers} khách mới</span></li>)}</ul>{!rows.length && <p className="mg-table-state">Chưa có doanh số được gắn nhân viên trong kỳ.</p>}</>}
+    </>}
     </details></div>
   </div></section>;
 }

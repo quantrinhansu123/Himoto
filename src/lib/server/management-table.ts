@@ -4,7 +4,7 @@ import { MANAGEMENT_CONFIG } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
 import { EMPTY_QUERY, filterRows,sortRows } from '@/lib/management/table-utils';
 import { projectManagementTable, type ManagementTableInput, type TableKind } from '@/lib/management/management-table';
-import { CONTRACT_LIST_SQL, contractListScopeClause,contractIndexSql } from './contract-drafts';
+import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
 import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
@@ -15,6 +15,7 @@ import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
 import { STORE_SELECT_SQL } from './store-management';
 import { applyInstallmentBilling } from '@/lib/management/contract-billing';
 import { OVERDUE_BUCKETS,withContractMonitoring,type OverdueBucket } from '@/lib/management/contract-overdue';
+import {contractStatisticsSql,mapContractStatistics,fastContractStatistics} from './contract-table-stats';
 
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
@@ -82,6 +83,14 @@ export function contractRecentClause(days:number) {
 }
 function contractStoreSql(store:string) {
   return store==='all' ? '' : ` AND o.store_id=${Number(store)}`;
+}
+function contractDateSql(query:ManagementTableInput['query']) {
+  // Dates are validated YYYY-MM-DD literals. Resolve legacy line dates in SQL
+  // so a one-day filter never hydrates the entire contract history over hundreds
+  // of network round trips before it can return its first ten matches.
+  if(!query.startDate&&!query.endDate)return '';
+  const started=`COALESCE(o.rent_at,(SELECT min(d.rent_at) FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL))`;
+  return `${query.startDate?` AND ${started}>=('${query.startDate}'::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`:''}${query.endDate?` AND ${started}<(('${query.endDate}'::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`:''}`;
 }
 function likeNeedle(search:string) {
   return `%${search.trim().replace(/[%_\\]/g,'')}%`;
@@ -362,14 +371,15 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const storeSql=kind==='contracts'?contractStoreSql(input.store):'';
   const listWindow=all&&recentDays?contractRecentClause(recentDays):'';
   const clause=kind==='contracts'
-    ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}`
+    ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}${all?'':contractDateSql(input.query)}`
     : '';
   const now=Date.now();
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   if(!all){
     // Count the permitted list without hydrating other tabs or applying search.
     let scopeCount:number|undefined;
-    if(kind==='contracts'&&params.get('scope_count')==='1'){
+    const separateScopeCount=Boolean(input.query.search.trim()||input.query.status||input.query.startDate||input.query.endDate||input.query.overdueDays||input.query.overdueBucket||Object.values(input.query.filters).some(Boolean)||input.scope==='due');
+    if(kind==='contracts'&&params.get('scope_count')==='1'&&separateScopeCount){
       const counted=await client.query(`SELECT count(*)::int AS scope_count FROM himoto.orders o WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${contractPageScopeClause(input.scope)}${storeSql}`);
       scopeCount=Number(counted.rows[0]?.scope_count);
       if(!Number.isSafeInteger(scopeCount)||scopeCount<0)throw new Error('Không đọc được tổng toàn bộ hợp đồng. Vui lòng thử lại.');
@@ -378,7 +388,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     // Read candidates for this tab in bounded batches and filter BEFORE paging;
     // otherwise a paid/not-yet-due rental can occupy an overdue result slot.
     const filterBeforePaging=kind==='contracts'&&Boolean(input.scope==='due'||input.query.status==='overdue'||input.query.overdueBucket||input.query.overdueDays||input.query.startDate||input.query.endDate);
-    const take=filterBeforePaging?50:input.size;
+    const take=filterBeforePaging?250:input.size;
     const search=kind==='contracts'?contractSearchSql(input.query.search)
       :kind==='customers'?customerSearchSql(input.query.search)
       :kind==='vehicles'?vehicleSearchSql(input.query.search)
@@ -434,7 +444,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
         :filterRows(batch,{...input.query,search:''},'all');
       matches.push(...batch);
     }while(filterBeforePaging&&moreCandidates);
-    // Derived overdue/date filters must finish counting the selected candidate
+    // Derived overdue filters must finish counting the selected candidate
     // set; stopping at one extra match is not a total and hides older pages.
     if(filterBeforePaging){total=matches.length;page=Math.min(input.page,Math.max(1,Math.ceil(total/input.size)));}
     const pageOffset=(page-1)*input.size;
@@ -443,10 +453,15 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     let stats;
     if(kind==='contracts'&&params.get('status_counts')==='1'){
       const statsClause=`${contractPageScopeClause(input.scope)}${storeSql}${contractFilterSql(input.query.filters)}`;
-      const base=`${contractVehicleDetailsSql(contractIndexSql(statsClause,{includePaid:true,includeCompany:input.scope==='vat',includeVehicleLabels:true}))}${search.sql.replaceAll('$3','$1')}`;
+      stats=await fastContractStatistics(client,input,statsClause,now);
+      if(!stats){
+      const base=`${contractStatisticsSql(statsClause,input.scope==='vat')}${search.sql.replaceAll('$3','$1')}`;
       const result=await client.query(monitoring||input.query.overdueDays?overdueDetailsSql(base):base,search.value?[search.value]:[]);
-      const index=mapManagementRows('contracts',result.rows).map(row=>withContractMonitoring(applyInstallmentBilling(row,now),now));
-      stats=projectManagementTable(index,{...input,page:1,size:1},true,now);
+      const index=result.rows.map(mapContractStatistics).map(row=>['renting','overdue','wait_payment','bad_debt'].includes(row.status)||row.billing_plan_json||input.query.overdueDays?withContractMonitoring(applyInstallmentBilling(row,now),now):row);
+      // Search is already bound/applied in SQL, including customer and plate
+      // EXISTS checks. Those labels need not travel back for a second search.
+      stats=projectManagementTable(index,{...input,query:{...input.query,search:''},page:1,size:1},true,now);
+      }
     }
     return {
       rows,total,scopeCount:scopeCount??total,tabCount:stats?.tabCount??catalogue?.tabCount??total,page,pages,

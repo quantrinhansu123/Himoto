@@ -32,6 +32,13 @@ export function managementTableQuery(input: ManagementTableInput, all = false) {
   for (const [key,value] of Object.entries(input.query.filters)) if (value) params.set(`filter_${key}`,value);
   return params;
 }
+/** A page/sort change shares the same whole-result statistics. Scope and every
+ * filter stay in the key; caches are owned by one provider/revision only. */
+export function managementStatisticsKey(query:string) {
+  const params=new URLSearchParams(query);
+  for(const key of ['page','size','sort','direction'])params.delete(key);
+  return params.toString();
+}
 /** Same filters, pinned sorting and totals as the original full list, before slicing the page. */
 export function projectManagementTable(source: ManagementRow[], input: ManagementTableInput, all = false, now = Date.now(), ownershipStores: number[] = []): ManagementTableResult {
   // SQL plans may return equal sort values in different orders; use IDs as a stable tie-breaker across pages.
@@ -63,7 +70,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
     statusCounts:[...counts].sort(([a],[b])=>a.localeCompare(b)),statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:scoped.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0).length,
     summary:input.kind==='contracts' ? summarizeContracts(filtered,[]) : null,recentDays:input.recentDays??null,...(monitoring?{overdueCounts}:{})};
 }
-export async function requestManagementTable(input: ManagementTableInput, signal?: AbortSignal, all = false, ownershipStores: number[] = []): Promise<ManagementTableResult> {
+export async function requestManagementTable(input: ManagementTableInput, signal?: AbortSignal, all = false, ownershipStores: number[] = [],statistics?:ManagementTableResult): Promise<ManagementTableResult> {
   const controller=new AbortController();
   let timedOut=false;
   const cancel=()=>controller.abort(signal?.reason);
@@ -72,13 +79,20 @@ export async function requestManagementTable(input: ManagementTableInput, signal
   try {
   const params=managementTableQuery(input,all);
   if(input.kind==='contracts'&&!all)params.set('scope_count','1');
-  if(input.kind==='contracts'&&!all)params.set('status_counts','1');
+  const reuse=input.kind==='contracts'&&!all?statistics:undefined;
+  if(input.kind==='contracts'&&!all&&!reuse)params.set('status_counts','1');
   const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${params}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal});
   const result=await response.json().catch(()=>null);
   if (!response.ok || result?.status!=='success') throw new Error(result?.message || 'Không tải được danh sách. Thử lại.');
   // Old deployments/test fixtures return the original array until their API is upgraded.
   if (Array.isArray(result.data)) return projectManagementTable(result.data.map((row: Record<string,unknown>)=>mapApiRow(input.kind,row)),input,all,Date.now(),ownershipStores);
   if (!Array.isArray(result.data?.rows) || ['total','scopeCount','tabCount'].some(key=>!Number.isSafeInteger(result.data[key])||result.data[key]<0) || !Array.isArray(result.data.statusCounts)) throw new Error('Danh sách trả về không hợp lệ.');
+  if(reuse){
+    // A concurrent create/delete changed this result set: obtain new counters
+    // instead of showing cached counts against a newer number of records.
+    if(result.data.total!==reuse.total)return requestManagementTable(input,signal,all,ownershipStores);
+    return {...result.data,statusCounts:reuse.statusCounts,statuses:reuse.statuses,tabCount:reuse.tabCount,dueCount:reuse.dueCount,summary:reuse.summary,...(reuse.overdueCounts?{overdueCounts:reuse.overdueCounts}:{})};
+  }
   return result.data;
   } catch(error) {
     if(timedOut&&!signal?.aborted)throw new Error('Máy chủ phản hồi quá lâu. Vui lòng bấm Thử lại để tải danh sách.');

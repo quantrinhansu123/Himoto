@@ -1,5 +1,28 @@
 # Tải dữ liệu theo chức năng — 2026-10-10
 
+## Tối ưu bảng và báo cáo — 25/10/2026
+
+Đã đo 15 màn hình bằng Chromium, chặn mọi request ghi và đồng bộ nhà cung cấp trong lúc đo. Điểm nghẽn chính là phần thống kê hợp đồng: mỗi trang 10 dòng vẫn đọc 25.933 hợp đồng, khoảng 18,76 MB từ PostgreSQL, rồi dựng lại bộ định dạng múi giờ nhiều lần.
+
+- Thống kê chỉ đọc các trường cần thiết. PostgreSQL tổng hợp hợp đồng đã đóng; hợp đồng đang mở, trả góp và dữ liệu tiền cũ bất thường vẫn đi qua cùng logic tính tiền/công nợ. Không thay quyền, RLS, cách phân loại nợ xấu hay số liệu nghiệp vụ.
+- Bộ định dạng giờ Việt Nam được tái sử dụng. Bộ lọc ngày áp dụng ngay trong SQL, có ngày trên dòng xe cũ và bỏ dòng đã xóa. Nhóm quá hạn đọc ứng viên theo lô tối đa 250, vẫn đếm đủ trước khi phân trang.
+- Đổi trang/sắp xếp hợp đồng tái sử dụng thống kê cùng bộ lọc trong tối đa 30 giây tính từ lần đọc thống kê gốc. Dòng của trang mới vẫn gọi API. Tổng bản ghi thay đổi sẽ buộc tải lại thống kê; làm mới, lưu thay đổi và đổi phạm vi/bộ lọc làm mất hiệu lực cache tương ứng. Xuất toàn bộ luôn đọc mới.
+- Trang xe/GPS cập nhật trang đang xem, bỏ lượt tải thừa toàn bộ kho xe. Giữ nhịp cập nhật bảng xe 30 giây. GPS dựng tối đa 50 thiết bị mỗi trang; tìm kiếm, số lượng và nhóm dừng lâu vẫn tính trên toàn bộ thiết bị được phép xem.
+- Sổ giao dịch và tổng doanh thu tải song song. Các báo cáo bổ sung và danh sách nhân sự chỉ tải khi mở mục đang thu gọn. Truy vấn doanh số giới hạn hợp đồng liên quan trước các bước xử lý nặng; vẫn xếp hạng lịch sử thuê đầy đủ trước khi lọc ngày/cơ sở để giữ đúng ghi nhận TLS.
+
+Phép đo trực tiếp cùng cơ sở dữ liệu, cùng quyền admin, 10 dòng/trang:
+
+| Phép đo | Trước | Sau |
+| --- | ---: | ---: |
+| Xử lý trang hợp đồng đầu | 10.093 ms | 1.474 ms |
+| Dữ liệu PostgreSQL của riêng phần thống kê | 18.760.138 byte | 154.518 byte |
+| Đọc trang hợp đồng khi tái sử dụng thống kê | 507 ms | 303 ms |
+| Xử lý danh sách quá hạn | 2.032 ms | 659 ms |
+
+Đây là thời gian tầng dữ liệu từ máy kiểm tra, không phải cam kết thời gian tải trình duyệt. Kết quả thô, thông tin phiên và ảnh chứa dữ liệu thật chỉ lưu trong `.backups/product-speed-20261025/`, ngoài Git.
+
+Kiểm chứng: đối chiếu toàn bộ response trước/sau cho 24 trường hợp hợp đồng (admin và nhân viên cơ sở) và 4 kỳ doanh số; tất cả khớp. `node scripts/check-product-speed.cjs --live-temp` kiểm tra cache, múi giờ, tổng tiền không xác định, 1.000 hợp đồng lịch sử và ranh giới ngày bằng PostgreSQL TEMP/rollback. `scripts/check-product-speed-ui.py` kiểm tra 7 nhóm trên Chromium và WebKit: cache hết hạn, thay đổi đồng thời, làm mới, tải riêng từng trang xe, tải song song, mở báo cáo bổ sung và phân trang/tìm GPS. Các API ghi và nhà cung cấp đều giả lập. Các bộ kiểm tra bảng, bộ lọc, số lượng trạng thái, nợ xấu, doanh số, sổ giao dịch và GPS hiện có cũng đã qua. Production build bao gồm TypeScript và ESLint đã qua.
+
 Trang quản lý trước đây luôn đọc cả 5 danh mục và xóa dataset trước mỗi lần làm mới. Hiện tại:
 
 | Trang | Dữ liệu tải khi mở |
