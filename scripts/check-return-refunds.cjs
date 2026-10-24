@@ -4,6 +4,11 @@ const {load,root}=require('./lib/load-typescript.cjs');
 const {parseReturnSettlements,completeReturnBatch}=load(path.join(root,'lib/server/return-settlements'));
 const {readPaymentContext,recordContractPayment}=load(path.join(root,'lib/server/contract-payments'));
 const {notificationPayload,contractNotificationText}=load(path.join(root,'lib/server/contract-notification-content'));
+const {queueContractNotification}=load(path.join(root,'lib/server/contract-notifications'));
+const {readContractTelegram}=load(path.join(root,'lib/server/contract-telegram'));
+const {returnRentalRefundable}=load(path.join(root,'lib/management/return-refunds'));
+const {rentalRevenue}=load(path.join(root,'lib/server/rental-revenue'));
+const {rentalOverview,vehicleRevenue}=load(path.join(root,'lib/server/rental-reports'));
 const pool=load(path.join(root,'lib/server/himoto-database')).ownerDatabase;
 global.fetch=async()=>{throw Error('Real network writes are forbidden in QA');};
 async function main(){const c=await pool.connect(),checks=[];
@@ -16,11 +21,12 @@ assert.match(form,/if\(value\.deposit_held>0\)setRefundDeferred\(true\)/);
 assert.match(form,/Chưa hoàn cọc — trả xe ngay/);
 checks.push('Return form keeps bank/STK/name optional');
 checks.push('Đã hoàn cọc stays locked until rental debt/fees on the return form are recorded');
-const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles'];
+const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles','battery_contracts','management_contract_notifications'];
 const db={query:(sql,args)=>{for(const table of tables)sql=sql.replaceAll(`himoto.${table}`,`pg_temp.qa_refund_${table}`);assert(!sql.includes('himoto.'),'Business SQL must stay in TEMP');return c.query(sql,args);}};
 const local=ms=>new Date(ms+7*3600000).toISOString().slice(0,16),paidAt=local(Date.now()-60000);
 const revisions=async()=>(await db.query('SELECT o.xmin::text AS order_revision,d.xmin::text AS item_revision FROM himoto.orders o JOIN himoto.order_vehicle_details d ON d.order_id=o.id WHERE o.id=1')).rows[0];
 try{await c.query('BEGIN');for(const table of tables)await c.query(`CREATE TEMP TABLE qa_refund_${table}(LIKE himoto.${table} INCLUDING DEFAULTS) ON COMMIT DROP`);
+await c.query('CREATE UNIQUE INDEX qa_refund_event_key ON qa_refund_management_contract_notifications(event_key)');
 await c.query("CREATE TEMP SEQUENCE qa_refund_seq START 99000;ALTER TABLE qa_refund_transactions ALTER COLUMN id SET DEFAULT nextval('qa_refund_seq')");
 await db.query(`INSERT INTO himoto.stores(id,store_name) VALUES(32,'CS QA');
  INSERT INTO himoto.orders(id,store_id,contract_number,order_status,total,pid) VALUES(1,32,'QA-RETURN','renting','420000',1420000);
@@ -87,6 +93,91 @@ for(const actualFee of ['0','50000']){
  assert.equal((await db.query('SELECT status FROM himoto.vehicles WHERE id=700')).rows[0].status,'ready');
  checks.push('Manual overdue fee '+actualFee+' overrides a multi-day suggestion, preserves already-entered rent/deposit and creates no uncollected or zero-value receipt');
 }
+// Two vehicles, 2m deposit and 800k paid rent; returning early discounts 400k.
+async function earlyFixture(paid=800000){
+ await c.query('ROLLBACK TO SAVEPOINT baseline');
+ await db.query("UPDATE himoto.orders SET total='800000',total_rental_fees=800000,pid=$1,draft_payload='{\"management_composer\":{\"draft\":{}}}' WHERE id=1",[2000000+paid]);
+ await db.query('UPDATE himoto.transactions SET value=CASE WHEN id=100 THEN 2000000 ELSE $1 END WHERE id IN(100,101)',[paid]);
+ await db.query('UPDATE himoto.order_vehicle_details SET total_money=400000 WHERE id=101');
+ await db.query("INSERT INTO himoto.vehicles(id,name,license,type,year,store_id,current_store_id,status,created_by) VALUES(701,'Wave QA 2','QA-358.50','xeso',2026,32,32,'using',153)");
+ await db.query("INSERT INTO himoto.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,total_money,total_renewal_amount) VALUES(102,1,701,now()-interval '1 day',now()+interval '1 day',400000,0)");
+ const f=await fixture(),second=(await db.query('SELECT xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=102')).rows[0];
+ return {items:[{...f.item,early_discount:'200000'},{...f.item,item_id:102,item_revision:second.revision,early_discount:'200000'}],settlement:{...f.settlement,refund:{...f.settlement.refund,amount:'2000000'},rental_refund:{...f.settlement.refund,request_id:randomUUID(),amount:'400000',recipient_account:'000.123 456',recipient_bank:'QA bank',recipient_name:'Khách QA'}}};
+}
+const balances=[
+ [800000,800000,0,400000,-400000,400000],
+ [800000,300000,0,400000,-400000,0],
+ [800000,600000,0,400000,-400000,200000],
+ [800000,800000,0,400000,-300000,300000],
+ [800000,1000000,100000,400000,-400000,500000],
+ [800000,900000,100000,400000,-100000,200000],
+ [null,800000,0,400000,-400000,0],
+ [800000,null,0,400000,-400000,0],
+];
+for(const [total_amount,paid_amount,rental_refundable,discount,net,expected]of balances)assert.equal(returnRentalRefundable({total_amount,paid_amount,rental_refundable},discount,net),expected);
+checks.push('Refund preview caps by early discounts AND actual overpayment, including existing credit, repair/late offsets and unknown balances');
+let f=await earlyFixture();
+assert.throws(()=>parseReturnSettlements([{...f.settlement,rental_refund:{...f.settlement.rental_refund,request_id:f.settlement.refund.request_id}}]));
+assert.throws(()=>parseReturnSettlements([{...f.settlement,rental_refund:{...f.settlement.rental_refund,recipient_account:'bad/#'}}]));
+assert.throws(()=>parseReturnSettlements([{...f.settlement,rental_refund:{...f.settlement.rental_refund,purpose:'deposit_refund'}}]));
+const parsed=parseReturnSettlements([f.settlement]);assert.equal(parsed[0].rental_refund.recipient_account,'000123456');
+const result=await completeReturnBatch(db,153,f.items,parsed);assert(result.every(row=>row.status==='completed'));
+const context=await readPaymentContext(db,1);assert.equal(context.total_amount,400000);assert.equal(context.paid_amount,400000);assert.equal(context.deposit_held,0);assert.equal(context.rental_refundable,0);
+const outs=(await db.query("SELECT name,value,type FROM himoto.transactions WHERE type='out' ORDER BY name")).rows;
+assert.deepEqual(outs.map(row=>[row.name,Number(row.value)]),[['order:deposit_refund',2000000],['order:rental_refund',400000]]);
+assert.equal(Number((await db.query('SELECT pid FROM himoto.orders WHERE id=1')).rows[0].pid),2400000);
+const snapshot=(await db.query('SELECT draft_payload FROM himoto.orders WHERE id=1')).rows[0].draft_payload.management_composer.return_settlements[0];
+assert(snapshot.refund_transaction_id&&snapshot.rental_refund_transaction_id&&snapshot.refund_transaction_id!==snapshot.rental_refund_transaction_id);
+const notice=await notificationPayload(db,1,'return',153,['return-101','return-102']),text=contractNotificationText('return',notice);
+assert.equal(notice.refunded,2000000);assert.equal(notice.rental_refunded,400000);assert(text.includes('Hoàn cọc: 2.000.000'));assert(text.includes('Hoàn tiền thuê trả sớm: 400.000'));assert(text.includes('Tổng tiền hoàn: 2.400.000'));
+const today=paidAt.slice(0,10),params=new URLSearchParams({from:today,to:today,store_id:'32'});
+const vehicleParams=new URLSearchParams(params);vehicleParams.set('from',local(Date.now()-3*86400000).slice(0,10));
+const revenue=await rentalRevenue(db,today,today,32),overview=await rentalOverview(db,params),vehicles=await vehicleRevenue(db,vehicleParams);
+assert.equal(revenue.total.early,400000);assert.equal(revenue.total.revenue,400000);assert.equal(overview.total.revenue,400000);assert.equal(overview.total.income,2800000);assert.equal(overview.total.expense,2400000);assert.equal(vehicles.revenue,400000);
+checks.push('2m deposit + 400k early rent refund completes two returns atomically as two correctly classified vouchers; total/paid/Telegram/cashbook/actual revenue/vehicle revenue reconcile without double discount');
+await db.query("UPDATE himoto.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{legacy_migration}','{\"sourceStoreId\":\"32\"}')::json WHERE id=1");
+assert.equal((await vehicleRevenue(db,vehicleParams)).revenue,400000);
+await db.query('UPDATE himoto.order_vehicle_details SET handler_price=450000,money_out_date=50000 WHERE order_id=1');
+assert.equal((await vehicleRevenue(db,vehicleParams)).revenue,500000);
+checks.push('Imported legacy rentals also include new-web early adjustments; legacy handler totals retain their original fee treatment without adding it twice');
+await assert.rejects(()=>completeReturnBatch(db,153,f.items,parsed),e=>e.status===409);
+assert.equal((await db.query("SELECT count(*)::int AS n FROM himoto.transactions WHERE type='out'")).rows[0].n,2);
+checks.push('Repeated return confirmation cannot issue either refund twice');
+for(const [name,paid,patch]of [
+ ['unpaid-discount',300000,{}],['over-rental-cap',800000,{rental_refund:{amount:'400001'}}],
+ ['over-deposit-cap',800000,{refund:{amount:'2000001'}}],['invalid-payout-account',800000,{refund:{account_id:99999}}],
+ ['stale-order',800000,{revision:'0'}],
+]){
+ f=await earlyFixture(paid);const settlement={...f.settlement,...patch,refund:{...f.settlement.refund,...patch.refund},rental_refund:{...f.settlement.rental_refund,...patch.rental_refund}};
+ await c.query('SAVEPOINT invalid_early');
+ await assert.rejects(()=>completeReturnBatch(db,153,f.items,parseReturnSettlements([settlement])),e=>e.status===409);
+ await c.query('ROLLBACK TO SAVEPOINT invalid_early');await c.query('RELEASE SAVEPOINT invalid_early');
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.order_vehicle_details WHERE completed_at IS NOT NULL')).rows[0].n,0);
+ assert.equal((await db.query("SELECT count(*)::int AS n FROM himoto.transactions WHERE type='out'")).rows[0].n,0);
+ assert.equal((await readPaymentContext(db,1)).deposit_held,2000000);assert.equal((await readPaymentContext(db,1)).total_amount,800000);
+ checks.push(name+': rejection rolls back every vehicle return, discount and both refund vouchers');
+}
+f=await earlyFixture();
+await completeReturnBatch(db,153,f.items,parseReturnSettlements([{order_id:1,revision:f.settlement.revision,receipts:[],refund_deferred:true,refund_recipient:{account:'000123456'},rental_refund:{...f.settlement.rental_refund,amount:'100000'}}]));
+const partial=await readPaymentContext(db,1);assert.equal(partial.deposit_held,2000000);assert.equal(partial.rental_refundable,300000);assert.equal(partial.paid_amount,700000);
+const partialNotice=await notificationPayload(db,1,'return',153,['return-101','return-102']);assert.equal(partialNotice.refund_pending.amount,2000000);assert.equal(partialNotice.rental_refunded,100000);assert.equal(partialNotice.refunded,0);
+checks.push('Partial early refund can accompany deferred deposit; remaining rental credit and pending deposit stay separate in payment context and Telegram');
+await queueContractNotification(db,1,'return','return:1:101,102',153,['return-101','return-102']);
+const later=await recordContractPayment(db,1,153,{request_id:randomUUID(),revision:partial.revision,amount:'300000',method:'cash',account_id:5,paid_at:paidAt,purpose:'rental_refund',note:'QA remainder'});
+await recordContractPayment(db,1,153,{request_id:randomUUID(),revision:later.context.revision,amount:'2000000',method:'cash',account_id:5,paid_at:paidAt,purpose:'deposit_refund',note:'QA deposit later'});
+const refreshed=await readContractTelegram(db,1,153,{access_role:'admin',scope_all:true,permissions:[]});
+const updated=refreshed.state.events.find(event=>event.key==='return:1:101,102');assert(updated);assert(updated.text.includes('Hoàn tiền thuê trả sớm: 400.000'));assert(updated.text.includes('Tổng tiền hoàn: 2.400.000'));assert(!updated.text.includes('Chờ kế toán hoàn cọc'));
+await db.query("DELETE FROM himoto.transactions WHERE order_id=1 AND name='order:rental_refund'");
+const removed=await readContractTelegram(db,1,153,{access_role:'admin',scope_all:true,permissions:[]});assert(!removed.state.events.find(event=>event.key==='return:1:101,102').text.includes('Hoàn tiền thuê trả sớm:'));
+checks.push('Refreshing queued Telegram content includes later cashbook rental refunds, clears paid deposit reminders and removes deleted refund amounts instead of retaining stale snapshot totals');
+f=await earlyFixture();
+await completeReturnBatch(db,153,[f.items[0]],parseReturnSettlements([{order_id:1,revision:f.settlement.revision,receipts:[],refund_deferred:true,rental_refund:{...f.settlement.rental_refund,amount:'200000'}}]));
+const one=await readPaymentContext(db,1);assert.equal(one.items.length,1);assert.equal(one.paid_amount,600000);assert.equal(one.total_amount,600000);assert.equal(one.deposit_held,2000000);
+checks.push('Returning one of two vehicles can refund its paid early discount while the other rental and the entire deposit remain open');
+f=await earlyFixture();f.items[0].repair_fee='100000';f.items[0].repair_note='QA repair';f.settlement.rental_refund.amount='300000';
+await completeReturnBatch(db,153,f.items,parseReturnSettlements([f.settlement]));
+assert.equal((await readPaymentContext(db,1)).total_amount,500000);assert.equal((await readPaymentContext(db,1)).paid_amount,500000);
+checks.push('Repair costs offset the early overpayment before refunding; early discount is applied once and only 300k is paid out');
 }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
 console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,productionSequenceChanges:0,realTelegramRequests:0},null,2));}
 main().catch(e=>{console.error(e.name,e.code||'',e.message);process.exitCode=1;});

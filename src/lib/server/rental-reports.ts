@@ -36,8 +36,7 @@ export const VEHICLE_REVENUE_LINES_CTE = `WITH lines AS (
       trunc(o.total_rental_fees::numeric/c.quantity) + CASE WHEN c.position < mod(o.total_rental_fees::numeric,c.quantity) THEN 1 ELSE 0 END
       WHEN COALESCE(d.handler_price,0)<>0 THEN d.handler_price ELSE COALESCE(d.total_money,0) END AS rental,
     CASE WHEN n.native THEN COALESCE(d.total_renewal_amount,0) ELSE 0 END AS renewal,
-    CASE WHEN n.native THEN COALESCE(a.adjustment,0)
-      WHEN COALESCE(d.handler_price,0)<>0 THEN 0 ELSE COALESCE(d.money_out_date,0) END AS adjustment
+    COALESCE(a.adjustment,0) + CASE WHEN n.native OR COALESCE(d.handler_price,0)<>0 THEN 0 ELSE COALESCE(d.money_out_date,0) END AS adjustment
   FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
   CROSS JOIN LATERAL (SELECT o.draft_payload::jsonb->'legacy_migration' IS NULL
     AND jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,draft}')='object' AS native) n
@@ -49,7 +48,7 @@ export const VEHICLE_REVENUE_LINES_CTE = `WITH lines AS (
       - CASE WHEN change->>'repair_fee' ~ '^[0-9]{1,13}$' THEN (change->>'repair_fee')::numeric ELSE 0 END ELSE 0 END) AS adjustment
     FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,return_adjustments}')='array'
       THEN o.draft_payload::jsonb #> '{management_composer,return_adjustments}' ELSE '[]'::jsonb END) change
-    WHERE change->>'item_id'=d.id::text) a ON n.native
+    WHERE change->>'item_id'=d.id::text) a ON true
   WHERE d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
     AND o.order_status NOT IN ('draft','cancelled','cancel_pending_settlement','pending','deposit_contract')
     AND d.rent_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')

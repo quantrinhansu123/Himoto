@@ -11,7 +11,7 @@ export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
   const result=value.map(raw=>{
     if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new ContractReturnError('Thông tin quyết toán trả xe chưa hợp lệ.');
     const row=raw as Record<string,unknown>;
-    if(Object.keys(row).some(key=>!['order_id','revision','receipts','refund','refund_deferred','refund_recipient'].includes(key))||!Number.isSafeInteger(row.order_id)||Number(row.order_id)<=0||typeof row.revision!=='string'||!/^\d{1,20}$/.test(row.revision)||!Array.isArray(row.receipts)||row.receipts.length>20)throw new ContractReturnError('Chọn đúng hợp đồng, phiên bản và các khoản đã thu.');
+    if(Object.keys(row).some(key=>!['order_id','revision','receipts','refund','rental_refund','refund_deferred','refund_recipient'].includes(key))||!Number.isSafeInteger(row.order_id)||Number(row.order_id)<=0||typeof row.revision!=='string'||!/^\d{1,20}$/.test(row.revision)||!Array.isArray(row.receipts)||row.receipts.length>20)throw new ContractReturnError('Chọn đúng hợp đồng, phiên bản và các khoản đã thu.');
     if(row.refund_deferred!==undefined&&(row.refund_deferred!==true||row.refund!==undefined))throw new ContractReturnError('Chọn đã hoàn cọc hoặc chưa hoàn cọc, không chọn cả hai.');
     let pendingRecipient:ReturnSettlement['refund_recipient'];
     if(row.refund_recipient!==undefined){
@@ -34,17 +34,18 @@ export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
       if(!['late_fee','repair_fee','rental_debt'].includes(kind))throw new ContractReturnError('Chọn loại thu quá hạn, sửa chữa hoặc công nợ.');
       return {...parsed,kind};
     });
-    let refund:ReturnSettlement['refund'];
-    if(row.refund!==undefined){
-      const parsed=parse(row.refund,true),raw=row.refund as Record<string,unknown>;
-      const text=(key:string)=>{const value=raw[key];if(value!==undefined&&(typeof value!=='string'||value.length>150))throw new ContractReturnError('Thông tin nhận hoàn cọc chưa hợp lệ.');return String(value||'').trim();};
+    const parseRefund=(value:unknown):ReturnSettlement['refund']=>{
+      if(value===undefined)return undefined;
+      const parsed=parse(value,true),raw=value as Record<string,unknown>;
+      const text=(key:string)=>{const value=raw[key];if(value!==undefined&&(typeof value!=='string'||value.length>150))throw new ContractReturnError('Thông tin nhận hoàn tiền chưa hợp lệ.');return String(value||'').trim();};
       const rawAccount=text('recipient_account'),recipient_bank=text('recipient_bank'),recipient_account=normalizeRefundAccount(rawAccount),recipient_name=text('recipient_name');
-      if(parsed.method!=='cash'&&rawAccount&&!validRefundAccount(rawAccount))throw new ContractReturnError('Số tài khoản khách nhận hoàn cọc chưa hợp lệ.');
-      refund={...parsed,...(parsed.method!=='cash'?{...(recipient_bank?{recipient_bank}:{}),...(recipient_name?{recipient_name}:{}),...(recipient_account?{recipient_account}:{})}:{})};
-    }
-    const ids=[...receipts.map(receipt=>receipt.request_id),...(refund?[refund.request_id]:[])];
+      if(parsed.method!=='cash'&&rawAccount&&!validRefundAccount(rawAccount))throw new ContractReturnError('Số tài khoản khách nhận hoàn tiền chưa hợp lệ.');
+      return {...parsed,...(parsed.method!=='cash'?{...(recipient_bank?{recipient_bank}:{}),...(recipient_name?{recipient_name}:{}),...(recipient_account?{recipient_account}:{})}:{})};
+    };
+    const refund=parseRefund(row.refund),rental_refund=parseRefund(row.rental_refund);
+    const ids=[...receipts.map(receipt=>receipt.request_id),...[refund,rental_refund].flatMap(value=>value?[value.request_id]:[])];
     if(new Set(ids).size!==ids.length)throw new ContractReturnError('Mỗi khoản thu / hoàn cần một mã giao dịch riêng.');
-    return {order_id:Number(row.order_id),revision:row.revision,receipts,...(refund?{refund}:{}),...(row.refund_deferred===true?{refund_deferred:true as const}:{}),...(pendingRecipient?{refund_recipient:pendingRecipient}:{})};
+    return {order_id:Number(row.order_id),revision:row.revision,receipts,...(refund?{refund}:{}),...(rental_refund?{rental_refund}:{}),...(row.refund_deferred===true?{refund_deferred:true as const}:{}),...(pendingRecipient?{refund_recipient:pendingRecipient}:{})};
   });
   if(new Set(result.map(row=>row.order_id)).size!==result.length)throw new ContractReturnError('Mỗi hợp đồng chỉ quyết toán một lần trong lượt trả.');
   return result;
@@ -81,7 +82,12 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
       context=paid.context;transactionIds.push(paid.transaction_id);
       await db.query('UPDATE himoto.transactions SET name=$2 WHERE id=$1',[paid.transaction_id,kind==='late_fee'?'order:return_late':kind==='repair_fee'?'order:return_repair':'order:payment']);
     }
-    let refundId:number|null=null;
+    let refundId:number|null=null,rentalRefundId:number|null=null;
+    if(settlement.rental_refund){
+      const refund=settlement.rental_refund;
+      const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,revision:context.revision,purpose:'rental_refund',note:`Hoàn tiền thuê trả sớm_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account,refund.recipient_name].filter(Boolean).join(' · ')}`:''}`});
+      context=paid.context;rentalRefundId=paid.transaction_id;
+    }
     if(settlement.refund){
       if(context.items.length)throw new ContractReturnError('Chỉ hoàn cọc trong lượt trả sau khi đã nhận đủ xe của hợp đồng.',409);
       if(context.remaining===null||context.remaining>0)throw new ContractReturnError('Cần thu đủ phí quá hạn, sửa chữa và công nợ trước khi hoàn cọc.',409);
@@ -89,7 +95,7 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
       const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account,refund.recipient_name].filter(Boolean).join(' · ')}`:''}`});
       context=paid.context;refundId=paid.transaction_id;
     }
-    const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(settlement.refund_deferred?{refund_deferred:true,refund_pending_amount:context.deposit_held,...(settlement.refund_recipient?{recipient:settlement.refund_recipient}:{})}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
+    const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(rentalRefundId!==null?{rental_refund_transaction_id:rentalRefundId,rental_refund_recipient:{bank:settlement.rental_refund?.recipient_bank,account:settlement.rental_refund?.recipient_account,name:settlement.rental_refund?.recipient_name}}:{}),...(settlement.refund_deferred?{refund_deferred:true,refund_pending_amount:context.deposit_held,...(settlement.refund_recipient?{recipient:settlement.refund_recipient}:{})}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
     await db.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer}',
       COALESCE(draft_payload::jsonb->'management_composer','{}'::jsonb)||jsonb_build_object('return_settlements',COALESCE(draft_payload::jsonb #> '{management_composer,return_settlements}','[]'::jsonb)||$2::jsonb),true)::json,
       order_status=CASE WHEN $3 THEN order_status WHEN $4 THEN 'completed' ELSE 'wait_payment' END,updated_at=now() WHERE id=$1`,[settlement.order_id,JSON.stringify([snapshot]),context.items.length>0,context.remaining===0]);

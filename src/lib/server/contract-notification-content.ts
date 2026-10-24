@@ -10,7 +10,7 @@ export interface RenewalNotice {version?:number;amount:number;before_return_at:s
 export interface NotificationPayload {
   code:string;customer:string;phone:string;store:string;actor:string;vehicles:string;total:string;at:string;photos:Attachment[];contract_staff?:string;
   vehicle_names?:string;days?:number|null;deposit?:number|null;rental_fee?:number|null;grand_total?:number|null;
-  refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
+  refunded?:number;rental_refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
   ownership_renewal_note?:string;
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
   refund_recipient?:{bank?:string;account?:string;name?:string};
@@ -35,7 +35,8 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
     ...(p.return_fees?.early_discount?[`Trả sớm: −${money(p.return_fees.early_discount)}`]:[]),
     ...(p.return_fees?.collected?[`Đã thu phí / công nợ: ${money(p.return_fees.collected)}${p.return_fees.method?' · '+p.return_fees.method:''}`]:[]),
     `Hoàn cọc: ${money(p.refunded)}`,
-    ...(refundedAmount>0
+    ...(p.rental_refunded?[`Hoàn tiền thuê trả sớm: ${money(p.rental_refunded)}`,`Tổng tiền hoàn: ${money(refundedAmount+p.rental_refunded)}`]:[]),
+    ...(refundedAmount>0||Number(p.rental_refunded)>0
       ?[`Hình thức thanh toán: ${p.method||'Chưa xác định'}`]
       :!p.refund_pending&&depositAmount>0
         ?['Hoàn cọc: chưa ghi nhận phiếu hoàn — tick «Đã hoàn cọc» khi trả xe hoặc ghi phiếu chi sổ quỹ']
@@ -107,6 +108,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       (SELECT full_name FROM himoto.staff_profiles WHERE id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'),
       (SELECT full_name FROM himoto.staff_profiles WHERE user_id=o.contract_responsible_user_id ORDER BY CASE WHEN store_id=o.store_id THEN 0 ELSE 1 END,id LIMIT 1)) AS contract_staff,
     o.total::text,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
+    NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND NOT(d.id=ANY($3::bigint[]))) AS return_covers_order,
     (SELECT string_agg(DISTINCT COALESCE(NULLIF(v.license,''),v.name),', ') FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicles,
     (SELECT string_agg(DISTINCT v.name,', ') FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicle_names
     FROM himoto.orders o LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id LEFT JOIN himoto.users u ON u.id=$2
@@ -130,6 +132,9 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const eventRefunds=settlement?.refund_transaction_id!=null
     ?refunds.filter(t=>Number(t.id)===Number(settlement.refund_transaction_id))
     :refunds;
+  const rentalRefunds=kind==='return'?tx.filter(t=>t.type==='out'&&t.name==='order:rental_refund'):[];
+  const eventRentalRefunds=rentalRefunds.filter(t=>o.return_covers_order||Number(t.id)===Number(settlement?.rental_refund_transaction_id)
+    ||t.order_item_id!=null&&returnIds.includes(String(t.order_item_id)));
   const feeReceipts=settlement?tx.filter(t=>t.type!=='out'&&settlement.transaction_ids?.includes(Number(t.id))):[];
   const adjustments=kind==='return'&&Array.isArray(composer?.return_adjustments)?composer.return_adjustments.filter((entry:{item_id:number})=>returnIds.includes(String(entry.item_id))):[];
   const rental=tx.filter(t=>['in','addon'].includes(t.type)&&!/^order:deposit(?::|$)/.test(t.name));
@@ -140,7 +145,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
         :t.renewal_payload&&t.renewal_payload.version===undefined&&
           new Date(t.renewal_payload.return_at).getTime()===new Date(renewal.return_at).getTime()&&t.renewal_payload.license===renewal.license)):[];
   // Rental/handover: cọc + thuê. Reservation (cọc giữ xe) records advance as order:rental_fees, not order:deposit.
-  const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?eventRefunds:kind==='renewal'?renewalTx
+  const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?[...eventRefunds,...eventRentalRefunds]:kind==='renewal'?renewalTx
     :kind==='reservation'?rental:[...depositTx,...rental];
   const methods=(rows:typeof tx)=>[...new Set(rows.map(t=>String(t.method)).filter(method=>method&&method!=='Chưa xác định'))].sort().join(', ');
   const fee=o.total_rental_fees==null?null:Number(o.total_rental_fees);
@@ -158,6 +163,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     ...(renewalNote?{ownership_renewal_note:renewalNote}:{}),
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,
     refunded:eventRefunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{}),...(pendingRefund?{refund_pending:pendingRefund}:{}),
+    ...(eventRentalRefunds.length?{rental_refunded:eventRentalRefunds.reduce((sum,t)=>sum+Number(t.value),0)}:{}),
     ...(adjustments.length?{return_fees:{returned_at:adjustments.map((entry:{actual_return_at:string})=>entry.actual_return_at).sort().at(-1),late:adjustments.reduce((sum:number,entry:{late_fee?:number;fee:number;repair_fee?:number;early_discount?:number})=>sum+Number(entry.late_fee??Math.max(entry.fee+(entry.early_discount||0)-(entry.repair_fee||0),0)),0),repair:adjustments.reduce((sum:number,entry:{repair_fee?:number})=>sum+Number(entry.repair_fee||0),0),early_discount:adjustments.reduce((sum:number,entry:{early_discount?:number})=>sum+Number(entry.early_discount||0),0),collected:feeReceipts.reduce((sum,t)=>sum+Number(t.value),0),method:methods(feeReceipts)}}:{}),...(settlement?.recipient?.account?{refund_recipient:settlement.recipient}:{}),
     ...(swap?{battery_swap:{percentage:Number(swap.battery_percent),fee:Number(swap.fee),collected:selected.reduce((sum,t)=>sum+Number(t.value),0),license:swap.license,vehicle_name:swap.vehicle_name}}:{})};
 }

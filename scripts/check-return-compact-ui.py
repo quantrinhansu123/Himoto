@@ -156,7 +156,7 @@ with sync_playwright() as pw:
     checks.append('Switching between upload tabs preserves all pending files, including the QR, before a partial batch is saved')
     checks.append('One batch accepts vehicle and QR images, saves the QR to refund evidence, shows Save beside the picker, and retains files after a failed save without returning the vehicle')
     dialog.get_by_label('Đã hoàn cọc cho khách',exact=True).check()
-    expect(dialog).to_contain_text('Đã nhận ảnh hồ sơ hoàn cọc')
+    expect(dialog).to_contain_text('Đã nhận ảnh hồ sơ hoàn tiền — kiểm tra thông tin khách nhận.')
     confirm(dialog);expect(dialog).to_contain_text('Đã trả xe hợp đồng QA-RETURN')
     assert posts[-1]['settlements'][0]['refund']['amount']=='1000000'
     checks.append('The QR from the combined batch is usable for a refund without uploading it again')

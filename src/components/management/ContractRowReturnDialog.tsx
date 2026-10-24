@@ -55,6 +55,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const [hourlyRate, setHourlyRate] = useState(String(DEFAULT_LATE_HOURLY_RATE));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef=useRef(false);
   const [photoPending,setPhotoPending]=useState<Record<number,boolean>>({});
   const [photoVersion,setPhotoVersion]=useState(0);
   const photosPending=Object.values(photoPending).some(Boolean);
@@ -65,7 +66,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     wasPhotosPending.current=photosPending;
   },[photosPending]);
   const [error, setError] = useState('');
-  const [done, setDone] = useState<{ orderId: number; telegramEvents: {orderId:number;key:string}[]; code: string; due: number | null; depositHeld: number; closes: boolean } | null>(null);
+  const [done, setDone] = useState<{ orderId: number; telegramEvents: {orderId:number;key:string}[]; code: string; due: number | null; depositHeld: number; depositRefunded:number;rentalRefunded:number;closes: boolean } | null>(null);
 
   const accept = useCallback((result: ReturnableContractItem[]) => {
     setRows(result);
@@ -156,7 +157,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   }
 
   async function submit() {
-    if (!lines.length || saving) return;
+    if (!lines.length || savingRef.current) return;
     if(photosPending){
       showProblem('Ảnh/video vừa chọn chưa lưu. Bấm «Lưu ảnh / video» rồi xác nhận trả xe.','.mg-saved-photos-commit');return;
     }
@@ -166,7 +167,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     if(invalid){
       showProblem('Nhập phí quá hạn thực tế; có thể nhập 0đ khi không thu.','.mg-return-line-adjust input');return;
     }
-    setSaving(true); setError('');
+    savingRef.current=true;setSaving(true); setError('');
     try {
       const items: ReturnInput[] = lines.map(({ row, estimate, override, amount,repairFee,repairNote }) => ({
         item_id: row.item_id, item_revision: row.item_revision, returned_at: returnedAt, hourly_rate: hourlyRate||String(DEFAULT_LATE_HOURLY_RATE),
@@ -184,16 +185,17 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
       await reload(['contracts']);
       if (orderId) setDone({
         orderId, code, telegramEvents:[...new Set(lines.map(line=>line.row.order_id))].map(id=>({orderId:id,key:`return:${id}:${lines.filter(line=>line.row.order_id===id).map(line=>line.row.item_id).sort((a,b)=>a-b).join(',')}`})),
-        due: summary?.due===null||summary?.due===undefined?null:summary.due-chosen.flatMap(row=>row.receipts).reduce((sum,row)=>sum+Number(row.amount),0),
+        due: summary?.due===null||summary?.due===undefined?null:summary.due-chosen.flatMap(row=>row.receipts).reduce((sum,row)=>sum+Number(row.amount),0)+chosen.reduce((sum,row)=>sum+Number(row.rental_refund?.amount||0),0),
         depositHeld: Math.max((summary?.depositHeld ?? 0)-chosen.reduce((sum,row)=>sum+Number(row.refund?.amount||0),0),0),
+        depositRefunded:chosen.reduce((sum,row)=>sum+Number(row.refund?.amount||0),0),rentalRefunded:chosen.reduce((sum,row)=>sum+Number(row.rental_refund?.amount||0),0),
         closes: summary?.closes ?? false,
       });
       else onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không ghi nhận được trả xe.'); }
-    finally { setSaving(false); }
+    finally { savingRef.current=false;setSaving(false); }
   }
 
-  function openCashbook(purpose: 'debt' | 'extra' | 'deposit_refund') {
+  function openCashbook(purpose: 'debt' | 'extra' | 'deposit_refund' | 'rental_refund') {
     if (!done) return;
     onClose();
     router.push(cashbookPaymentPath(done.orderId, purpose));
@@ -214,13 +216,16 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã trả xe hợp đồng {done.code}{done.due !== null && done.due > 0 ? ` · còn thiếu ${formatMoney(done.due)}` : ''}{done.depositHeld > 0 ? ` · cọc đang giữ ${formatMoney(done.depositHeld)}` : ''}.</p>
+          {done.rentalRefunded>0&&<p>Đã ghi nhận hoàn {formatMoney(done.depositRefunded+done.rentalRefunded)}: hoàn cọc {formatMoney(done.depositRefunded)}, hoàn tiền thuê trả sớm {formatMoney(done.rentalRefunded)}.</p>}
+          {done.due!==null&&done.due<0&&<p role="alert">Tiền thuê còn thu dư {formatMoney(-done.due)}. Kiểm tra khoản hoàn trả sớm chưa ghi nhận; không gộp vào tiền cọc.</p>}
           {done.depositHeld>0&&<p role="alert">Chưa ghi nhận hoàn hết cọc. Hệ thống còn giữ {formatMoney(done.depositHeld)}; kiểm tra phiếu chi nếu đã hoàn tiền thực tế.</p>}
           {done.telegramEvents.map(event=><ContractTelegramPanel key={event.key} id={event.orderId} eventKey={event.key}/>)}
-          {done.due!==null&&done.due<=0&&done.depositHeld===0?<p>Đã ghi nhận đủ các khoản thu và hoàn cọc đã chọn trong lượt trả xe.</p>:canPayContracts ? <>
+          {done.due===0&&done.depositHeld===0?<p>Đã ghi nhận đủ các khoản thu và hoàn tiền đã chọn trong lượt trả xe.</p>:canPayContracts ? <>
             <p>Bấm nút bên dưới để mở phiếu thu/chi Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng.</p>
             {(done.due === null || done.due > 0) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
             {done.due !== null && done.due <= 0 && <button type="button" className="mg-button" onClick={() => openCashbook('extra')}><Wallet size={16} />Điền phiếu thu thêm vào sổ quỹ</button>}
             {done.depositHeld > 0 && <button type="button" className="mg-button" onClick={() => openCashbook('deposit_refund')}><Wallet size={16} />Điền chi trả cọc vào sổ quỹ</button>}
+            {done.due!==null&&done.due<0&&<button type="button" className="mg-button" onClick={()=>openCashbook('rental_refund')}><Wallet size={16}/>Điền chi hoàn tiền thuê trả sớm vào sổ quỹ</button>}
           </> : <p>Chỉ kế toán hoặc quản trị viên mới điền được phiếu thu/chi vào sổ quỹ.</p>}
         </div> : <>
         {!contractCode && <div className="mg-return-search"><label className="mg-sr-only" htmlFor="contract-return-search">Mã hợp đồng, CCCD, biển số hoặc SĐT khách</label><input autoFocus id="contract-return-search" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void loadItems(searchTerm); } }} placeholder="Mã HĐ, CCCD, biển số hoặc SĐT khách" /><button className="mg-button" type="button" disabled={loading || !searchTerm.trim()} onClick={() => void loadItems(searchTerm)}>{loading ? <LoaderCircle size={15} className="mg-spin" /> : null}Tìm</button></div>}
@@ -246,7 +251,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
                 {line && <div className="mg-return-line-adjust">
                   <span>{estimate.late ? lateText(estimate.minutes, estimate.hours,estimate.lateDays) : estimate.early ? `Trả sớm${estimate.unusedDays ? ` ${estimate.unusedDays} ngày` : ' (dưới 1 ngày)'}${row.daily_price ? ` · ${formatMoney(row.daily_price)}/ngày` : ''}` : 'Trả đúng hạn · không điều chỉnh'}</span>
                   {estimate.missingDayPrice&&line?.override===undefined&&<p className="mg-field-error">Chưa có giá ngày để gợi ý. Nhập phí thực tế, kể cả 0đ.</p>}
-                  {(estimate.late || estimate.early) && <label>{estimate.late ? 'Phí quá hạn thực tế (+)' : 'Giảm doanh thu (−)'}
+                  {(estimate.late || estimate.early) && <label>{estimate.late ? 'Phí quá hạn thực tế (+)' : 'Giảm tiền thuê do trả sớm (−)'}
                     <input type="text" inputMode="numeric" aria-label={estimate.late?`Phí quá hạn thực tế ${row.license}`:`Giảm doanh thu ${row.license}`} value={value} onChange={event => {setOverrides(current => ({ ...current, [id]: digits(event.target.value) }));setError('');}} /><span>VNĐ</span></label>}
                   {estimate.late&&<button type="button" className="mg-button" onClick={()=>{setOverrides(current=>({...current,[id]:'0'}));setError('');}}>Không thu phí quá hạn (0đ)</button>}
                 </div>}
@@ -261,7 +266,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
             <div><dt>{summary.due !== null && summary.due < 0 ? 'Thu thừa' : 'Còn thiếu (không trừ cọc)'}</dt><dd>{summary.due === null ? '—' : formatMoney(Math.abs(summary.due))}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(summary.depositHeld)}</dd></div>
           </dl></details>}
-          {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={(blocked,reason)=>{const value=blocked?reason||'Kiểm tra khoản thu / hoàn cọc trước khi xác nhận.':'';setSettlementBlocks(current=>current[orderId]===value?current:{...current,[orderId]:value});}} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
+          {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} earlyDiscount={selected.reduce((sum,line)=>sum+(line.estimate.early?line.amount:0),0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={(blocked,reason)=>{const value=blocked?reason||'Kiểm tra khoản thu / hoàn tiền trước khi xác nhận.':'';setSettlementBlocks(current=>current[orderId]===value?current:{...current,[orderId]:value});}} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
           {lines.map(({row})=><ContractTransactionPhotos key={row.item_id} id={row.order_id} phase={`return-${row.item_id}`} title={`Ảnh trả xe và hồ sơ · ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})} onSaved={()=>setPhotoVersion(value=>value+1)}/>)}
           <p className="mg-composer-hint">Chỉ ghi phiếu cho khoản đã chọn thu / hoàn. Còn nợ: giữ hợp đồng Chờ tất toán.</p>
         </>}

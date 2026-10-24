@@ -58,6 +58,10 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
       // Legacy payloads predate the detailed templates.
       ...(!('rental_fee' in baseline)?{vehicle_names:fresh.vehicle_names,days:fresh.days,rental_fee:fresh.rental_fee,deposit:fresh.deposit,grand_total:fresh.grand_total}:{}),
     }:fresh;
+    if(event.kind==='return'){
+      if(fresh.rental_refunded)payload.rental_refunded=fresh.rental_refunded;else delete payload.rental_refunded;
+      if(fresh.refund_pending)payload.refund_pending=fresh.refund_pending;else delete payload.refund_pending;
+    }
     // A template update must not reopen an already delivered transaction.
     if(delivered&&event.kind==='renewal'&&!delivered.payload?.ownership_renewal_note)delete payload.ownership_renewal_note;
     payloads.set(event.key,payload);
