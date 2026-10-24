@@ -8,6 +8,8 @@ export interface ReturnableContractItem {
 }
 export interface ReturnInput { item_id: number; item_revision: string; returned_at: string; hourly_rate: string; fee_override?: string; early_discount?: string;repair_fee?:string;repair_note?:string }
 export interface ReturnResult { item_id: number; contract_code: string; returned_at: string; scheduled_return_at: string; late_minutes: number; chargeable_hours: number; hourly_rate: number; fee: number;late_fee?:number;repair_fee?:number; total_amount: number | null; status: string }
+export interface BadDebtRecoveryInput {item_id:number;item_revision:string;request_id:string;recovered_at:string;note:string}
+export interface BadDebtRecoveryResult {item_id:number;order_id:number;vehicle_id:number;recovered_at:string;replayed:boolean}
 export interface ReturnReceipt {kind:'late_fee'|'repair_fee'|'rental_debt';request_id:string;amount:string;method:import('./contract-payments').PaymentMethod;account_id:number;paid_at:string}
 export type ReturnRefund=Omit<ReturnReceipt,'kind'>&{recipient_bank?:string;recipient_account?:string;recipient_name?:string};
 export interface ReturnSettlement {order_id:number;revision:string;receipts:ReturnReceipt[];refund_deferred?:true;refund_recipient?:{bank?:string;account?:string;name?:string};refund?:ReturnRefund;rental_refund?:ReturnRefund}
@@ -24,8 +26,8 @@ async function returnRequest<T>(path: string, input?: unknown, signal?: AbortSig
 export function searchReturnableItems(query: string, signal?: AbortSignal) {
   return returnRequest<ReturnableContractItem[]>(`/api/auth/returns?${new URLSearchParams({ query })}`, undefined, signal);
 }
-export function loadContractReturnableItems(orderId: number, signal?: AbortSignal) {
-  return returnRequest<ReturnableContractItem[]>(`/api/auth/returns?${new URLSearchParams({ order_id: String(orderId) })}`, undefined, signal);
+export function loadContractReturnableItems(orderId: number, signal?: AbortSignal, recovery=false) {
+  return returnRequest<ReturnableContractItem[]>(`/api/auth/returns?${new URLSearchParams({ order_id: String(orderId),...(recovery?{recovery:'1'}:{}) })}`, undefined, signal);
 }
 export function returnContractItem(input: ReturnInput) {
   return returnRequest<ReturnResult>('/api/auth/returns', input);
@@ -35,4 +37,7 @@ export function returnContractItems(items: ReturnInput[],settlements?:ReturnSett
 }
 export function changeContractVehicle(input: { item_id: number; item_revision: string; vehicle_id: number }) {
   return returnRequest<{ item_id: number; order_id: number; swap_id: number; old_license: string; new_license: string }>('/api/auth/returns/vehicle', input);
+}
+export function recoverBadDebtVehicle(input:BadDebtRecoveryInput) {
+  return returnRequest<BadDebtRecoveryResult>('/api/auth/returns/recover',input);
 }

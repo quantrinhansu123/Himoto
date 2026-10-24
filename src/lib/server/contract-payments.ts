@@ -29,8 +29,8 @@ export function parseContractPayment(body: unknown): PaymentInput {
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.paid_at)) throw new ContractPaymentError('Kiểm tra số tiền nguyên VNĐ, hình thức, tài khoản, ngày giờ và ghi chú thanh toán.');
   const date = new Date(`${input.paid_at}+07:00`);
   if (!Number.isFinite(date.getTime()) || new Date(date.getTime() + 7 * 3600000).toISOString().slice(0, 16) !== input.paid_at || date.getTime() > Date.now() + 5 * 60000) throw new ContractPaymentError('Ngày giờ thu tiền không hợp lệ hoặc nằm trong tương lai.');
-  const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
-  if (input.purpose !== undefined && !renewal && !extra && !refund) throw new ContractPaymentError('Nghiệp vụ thanh toán không hợp lệ.');
+  const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', deposit=input.purpose==='deposit', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
+  if (input.purpose !== undefined && !renewal && !extra && !refund&&!deposit) throw new ContractPaymentError('Nghiệp vụ thanh toán không hợp lệ.');
   if ('renewal_version' in input && (input.purpose !== undefined || !Number.isSafeInteger(input.renewal_version) || Number(input.renewal_version) < 2)) throw new ContractPaymentError('Chọn phiên bản gia hạn đã lưu để ghi nhận phiếu thu.');
   if (!renewal && ['item_id', 'item_revision', 'return_at', 'items'].some(key => key in input)) throw new ContractPaymentError('Chỉ truyền xe và ngày hẹn trả khi thu tiền gia hạn.');
   if (extra && !input.note.trim()) throw new ContractPaymentError('Nhập nội dung cho phiếu thu thêm.');
@@ -54,7 +54,7 @@ export function parseContractPayment(body: unknown): PaymentInput {
     if (!validItem(input)) throw new ContractPaymentError('Chọn xe, phiên bản chi tiết xe và ngày hẹn trả mới hợp lệ.');
     return { ...base, purpose: 'renewal', item_id: Number(input.item_id), item_revision: String(input.item_revision), return_at: String(input.return_at) };
   }
-  return { ...base, ...(extra ? { purpose: 'extra' as const } : refund ? { purpose: rentalRefund?'rental_refund' as const:'deposit_refund' as const } : {}), ...('renewal_version' in input ? { renewal_version: Number(input.renewal_version) } : {}) };
+  return { ...base, ...(deposit?{purpose:'deposit' as const}:extra ? { purpose: 'extra' as const } : refund ? { purpose: rentalRefund?'rental_refund' as const:'deposit_refund' as const } : {}), ...('renewal_version' in input ? { renewal_version: Number(input.renewal_version) } : {}) };
 }
 const renewalLines = (input: PaymentInput) => input.items
   ?? (input.item_id ? [{ item_id: input.item_id, item_revision: String(input.item_revision), return_at: String(input.return_at), amount: input.amount }] : []);
@@ -62,7 +62,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   if (!Number.isSafeInteger(id) || id <= 0) throw new ContractPaymentError('Mã hợp đồng không hợp lệ.');
   const result = await client.query(`SELECT o.id, COALESCE(NULLIF(o.contract_number,''), o.draft_reference, '#' || o.id::text) AS code,
       CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,(SELECT max(d.return_at) FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL)) < now() THEN 'overdue' ELSE o.order_status END AS status,
-      o.store_id, o.total, o.draft_payload, ${rentalPaidSql()} AS rental_paid, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded, o.xmin::text AS revision,
+      o.store_id, o.total, o.draft_payload, COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) AS deposit_amount, ${rentalPaidSql()} AS rental_paid, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded, o.xmin::text AS revision,
       COALESCE(o.return_at,(SELECT max(d.return_at) FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL)) AS end_date
     FROM himoto.orders o ${depositLateral()} WHERE o.id=$1 AND o.deleted_at IS NULL`, [id]);
   if (!result.rowCount) throw new ContractPaymentError('Không tìm thấy hợp đồng.', 404);
@@ -102,6 +102,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   return { id: Number(order.id), code: String(order.code), status: String(order.status), store_id: Number(order.store_id), revision: String(order.revision),
     total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0), ...(billing ? {billing, billing_base_total: baseTotal} : {}),
     deposit_paid: depositPaid, deposit_refunded: depositRefunded, deposit_held: Math.max(depositPaid - depositRefunded, 0),
+    deposit_remaining:Math.max((money(order.deposit_amount)??0)-depositPaid,0),
     rental_refundable:rentalRefundable,
     company_paid_amount: company.reduce((sum, row) => sum + Number(row.amount), 0), company_payment_count: company.length,
     end_date: order.end_date instanceof Date ? order.end_date.toISOString() : order.end_date == null ? null : String(order.end_date),
@@ -118,11 +119,11 @@ export async function readPaymentContext(client: Database, id: number): Promise<
 export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput) {
   input = parseContractPayment(input);
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractPaymentError('Hợp đồng hoặc người thực hiện không hợp lệ.');
-  const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
+  const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', deposit=input.purpose==='deposit', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
   const fingerprint = createHash('sha256').update(JSON.stringify({ id, actorId, amount: input.amount, method: input.method, account_id: input.account_id, paid_at: input.paid_at, note: input.note,
     ...(input.renewal_version !== undefined ? { renewal_version: input.renewal_version } : {}),
     ...(renewal ? { purpose: input.purpose, ...(input.items ? { items: input.items.map(item => [item.item_id, item.return_at, item.amount]) } : { item_id: input.item_id, return_at: input.return_at }) }
-      : extra || refund ? { purpose: input.purpose } : {}) })).digest('hex');
+      : extra || refund || deposit ? { purpose: input.purpose } : {}) })).digest('hex');
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`contract-payment:${input.request_id}`]);
@@ -141,6 +142,8 @@ export async function recordContractPayment(client: Database, id: number, actorI
     if (!canAddExtraReceipt(context.status)) throw new ContractPaymentError('Không trả cọc cho hợp đồng nháp hoặc đã hủy.', 409);
     const refundable=rentalRefund?context.rental_refundable??0:context.deposit_held;
     if (amount > refundable) throw new ContractPaymentError(rentalRefund?'Số tiền hoàn vượt tiền thuê được giảm do trả sớm và thực tế đã thu dư.':`Số tiền trả cọc vượt tiền cọc đang giữ (${context.deposit_held.toLocaleString('vi-VN')} đ).`, 409);
+  } else if(deposit){
+    if(!canAddExtraReceipt(context.status)||amount>(context.deposit_remaining??0))throw new ContractPaymentError('Số tiền cọc bổ sung vượt phần cọc còn thiếu theo hợp đồng.',409);
   } else {
     if (extra ? !canAddExtraReceipt(context.status) : !PAYABLE_STATUSES.includes(context.status)) throw new ContractPaymentError(extra ? 'Không thêm phiếu thu cho hợp đồng nháp hoặc đã hủy.' : 'Chỉ thu tiền cho hợp đồng đang thuê, quá hạn, chờ tất toán hoặc nợ xấu.', 409);
     if (context.remaining === null || context.paid_amount === null || context.total_amount === null) throw new ContractPaymentError('Thiếu hoặc sai số liệu tiền hợp đồng/tổng đã thu. Cần đối chiếu trước khi thanh toán.', 409);
@@ -197,10 +200,10 @@ export async function recordContractPayment(client: Database, id: number, actorI
   const transaction = await client.query(`INSERT INTO himoto.transactions
     (order_id,created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id,order_item_id)
     VALUES ($1,$2,now(),$11,$15,$3,$4,'approved',$5,$6,$7,$8,$9,$10,$12,$13,$14) RETURNING id`,
-    [id, `${input.paid_at}:00+07:00`, amount, input.note || (rentalRefund?`Hoàn tiền thuê trả sớm_${context.code}`:refund ? `Trả cọc hợp đồng_${context.code}` : `Gia hạn hợp đồng_${context.code}`), actorId, context.store_id,
+    [id, `${input.paid_at}:00+07:00`, amount, input.note || (deposit?`Thu cọc hợp đồng_${context.code}`:rentalRefund?`Hoàn tiền thuê trả sớm_${context.code}`:refund ? `Trả cọc hợp đồng_${context.code}` : `Gia hạn hợp đồng_${context.code}`), actorId, context.store_id,
       cash ? null : account.id, cash ? account.id : null,
       cash ? 1 : 2, cash ? null : (input.method === 'company_transfer' ? 'company' : 'personal'),
-      renewal ? 'order:renewal' : extra ? 'order:extra' : rentalRefund?'order:rental_refund':refund ? DEPOSIT_REFUND_NAME : 'order:payment',
+      renewal ? 'order:renewal' : extra ? 'order:extra' : deposit?'order:deposit':rentalRefund?'order:rental_refund':refund ? DEPOSIT_REFUND_NAME : 'order:payment',
       singleItem ? 'line_item_id' : 'order', singleItem ?? id, singleItem, refund ? 'out' : 'in']);
   const transactionId = Number(transaction.rows[0].id);
   if (renewal) {
@@ -215,5 +218,12 @@ export async function recordContractPayment(client: Database, id: number, actorI
   else await client.query('UPDATE himoto.orders SET pid=pid+$2,updated_at=now() WHERE id=$1', [id, amount]);
   await client.query(`INSERT INTO himoto.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload)
     VALUES ($1,$2,$3,$4,$5,$6::jsonb)`, [input.request_id, id, transactionId, actorId, fingerprint, renewalPayload ? JSON.stringify(renewalPayload) : null]);
+  const composer=locked.rows[0].draft_payload?.management_composer;
+  if(!refund&&!deposit&&(composer?.draft?.backfill||composer?.versions?.some((version:{occurred_at?:string})=>version.occurred_at))){
+    const fresh=await readPaymentContext(client,id);
+    if(fresh.status==='wait_payment'&&fresh.remaining===0)await client.query(`UPDATE himoto.orders o SET order_status='completed',updated_at=now() WHERE o.id=$1 AND o.order_status='wait_payment'
+      AND EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND d.completed_at IS NOT NULL)
+      AND NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND d.completed_at IS NULL)`,[id]);
+  }
   return { context: await readPaymentContext(client, id), transaction_id: transactionId, replayed: false, company_transfer: company };
 }

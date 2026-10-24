@@ -258,6 +258,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         {can('contracts.return')&&onVehicleChange&&<button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>}
       </>}
       {row.status==='completed'&&can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}>Bổ sung ảnh trả xe</button>}
+      {row.status==='bad_debt'&&can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15}/>Thu hồi xe nợ xấu</button>}
       {canRentBattery && <button type="button" className="mg-button" onClick={onBatteryRent}><BatteryCharging size={15} />Thuê pin / sạc</button>}
       {canPay && <button type="button" className="mg-button" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : depositHeld > 0 ? 'deposit_refund' : 'extra')}><Wallet size={15} />Điền sổ quỹ</button>}
       {onQr && row.status !== 'cancelled' && <button type="button" className="mg-button" onClick={onQr}><Wallet size={15} />Nhập phiếu chi</button>}

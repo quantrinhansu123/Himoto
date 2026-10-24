@@ -4,7 +4,7 @@ export interface FinalizeReceipt { method: PaymentMethod; account_id: number }
 export interface FinalizeCollection extends FinalizeReceipt { purpose: 'deposit' | 'rental'; amount: string; paid_at: string }
 export type FinalizeInput = { revision: string; paid_at: string; deposit: FinalizeReceipt | null; rental: FinalizeReceipt | null; acknowledge_reservation_overlap?: true }
   | { revision: string; receipts: FinalizeCollection[]; reservation?: true; acknowledge_reservation_overlap?: true };
-export interface FinalizeResult { order_id: number; code: string; total_amount: number; deposit_amount: number; paid_amount: number; transaction_ids: number[]; status?: 'renting' | 'deposit_contract' }
+export interface FinalizeResult { order_id: number; code: string; total_amount: number; deposit_amount: number; paid_amount: number; transaction_ids: number[]; status?: 'renting' | 'deposit_contract' | 'completed' | 'wait_payment' }
 export class FinalizeOverlapError extends Error {
   readonly code = 'reservation_overlap' as const;
   constructor(message: string) { super(message); }

@@ -17,6 +17,7 @@ import { Dialog } from './Dialog';
 import { ContractTransactionPhotos } from './ContractTransactionPhotos';
 import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { contractTelegramRequest } from '@/lib/management/contract-telegram';
+import { validBackfillTime } from '@/lib/management/contract-backfill';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const DEFAULT_HOURLY_RATE = '20000';
@@ -26,7 +27,7 @@ function defaultRate(row: ReturnableContractItem | null, unit: 'day' | 'hour', f
   return daily ? String(daily) : '';
 }
 
-export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClose }: { orderId: number; contractCode: string; unitPrice?: number; onClose: () => void }) {
+export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfill=false, onClose }: { orderId: number; contractCode: string; unitPrice?: number;backfill?:boolean; onClose: () => void }) {
   const { notify, reload, canPayContracts, can, acceptContractPayment, selectStore } = useManagement();
   const canReceiveRenewal = can('contracts.renew');
   const requestId = useRef<string | null>(null);
@@ -40,6 +41,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const [amount, setAmount] = useState('');
   const [amountTouched, setAmountTouched] = useState(false);
   const [note, setNote] = useState('');
+  const [occurredAt,setOccurredAt]=useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -51,7 +53,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const collect = collectionChoice === 'received';
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [accountId, setAccountId] = useState('');
-  const [paidAt, setPaidAt] = useState(vietnamPaymentTime);
+  const [paidAt, setPaidAt] = useState(()=>backfill?'':vietnamPaymentTime());
   useEffect(() => {
     const controller = new AbortController();
     void contractTelegramRequest(orderId, undefined, controller.signal).then(data => setRenewalVersion(data.next_renewal_version)).catch(() => {});
@@ -61,15 +63,15 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadContractReturnableItems(orderId, controller.signal).then(result => {
-      const open = result.filter(row => !row.completed_at);
+    void loadContractReturnableItems(orderId, controller.signal,backfill).then(result => {
+      const open = result.filter(row => backfill||!row.completed_at);
       setRows(open);
       if (open.length === 1) { setItemId(String(open[0].item_id)); setRateInput(defaultRate(open[0], 'day', unitPrice)); }
     }).catch(cause => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được xe trong hợp đồng.');
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [orderId, unitPrice]);
+  }, [orderId, unitPrice,backfill]);
 
   useEffect(() => {
     if (!canReceiveRenewal) return;
@@ -126,13 +128,14 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
   const nextTotal = total === null ? null : total + fee;
   const returnMs = returnAt ? new Date(`${returnAt}:00+07:00`).getTime() : NaN;
   const validReturn = Number.isFinite(returnMs) && (!Number.isFinite(dueMs) || returnMs > dueMs);
-  const stillOverdue = validReturn && returnMs < Date.now();
+  const stillOverdue = !selected?.completed_at&&validReturn && returnMs < Date.now();
   const previewPaid = collecting ? (paid === null ? null : paid + fee) : paid;
   const previewRemaining = nextTotal === null || previewPaid === null ? null : Math.max(nextTotal - previewPaid, 0);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!selected || saving || photosPending) return;
+    if(backfill&&(!validBackfillTime(occurredAt)||note.trim().length<5)){setError('Nhập ngày giờ gia hạn thực tế và lý do nhập bổ sung ít nhất 5 ký tự.');return;}
     if (!validReturn) { setError('Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
     if (canCollect && !collectionChoice) { setError('Chọn đã nhận tiền hoặc chưa nhận tiền gia hạn.'); return; }
@@ -147,6 +150,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
         request_id: requestId.current ??= crypto.randomUUID(),
         item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
         return_at: returnAt, amount: amount || '0', note: note.trim(),
+        ...(backfill?{occurred_at:occurredAt}:{}),
         ...(expectedFee !== null ? { expected_amount: String(expectedFee) } : {}),
         ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:paidAt}} : {}),
       });
@@ -187,7 +191,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
     onClose();
   }
 
-  return <Dialog title={`Gia hạn · ${contractCode}`} subtitle="Lưu sẽ tạo phiên bản hợp đồng mới với ngày trả và tiền hợp đồng mới" className="mg-renewal-dialog" onClose={close}>
+  return <Dialog title={`${backfill?'Nhập bổ sung gia hạn':'Gia hạn'} · ${contractCode}`} subtitle={backfill?'Ghi đúng ngày giao dịch thực tế; xe đã trả chỉ bổ sung lịch sử và phí, không đổi kho hiện tại.':'Lưu sẽ tạo phiên bản hợp đồng mới với ngày trả và tiền hợp đồng mới'} className="mg-renewal-dialog" onClose={close}>
     <form onSubmit={submit}>
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
@@ -246,7 +250,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, onClos
                 </>}
               </>}
             </>}
-            <label className="mg-field-wide">Ghi chú<textarea rows={2} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} placeholder="Lý do gia hạn, thỏa thuận với khách…" /></label>
+            {backfill&&<label className="mg-field-wide">Ngày giờ gia hạn thực tế<DateTime24Controls id="renewal-occurred-at" label="Ngày giờ gia hạn thực tế" value={occurredAt} onChange={setOccurredAt}/></label>}
+            <label className="mg-field-wide">{backfill?'Lý do nhập bổ sung':'Ghi chú'}<textarea aria-label={backfill?'Lý do nhập bổ sung':'Ghi chú'} rows={2} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} placeholder="Lý do gia hạn, thỏa thuận với khách…" /></label>
           </fieldset>
           {stillOverdue && <p className="mg-field-error">Ngày trả mới vẫn ở quá khứ, hợp đồng sẽ tiếp tục quá hạn.</p>}
           <dl className="mg-payment-totals">

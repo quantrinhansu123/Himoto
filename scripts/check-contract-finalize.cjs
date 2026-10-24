@@ -49,7 +49,7 @@ async function main() {
     const revision = async id => (await c.query('SELECT xmin::text AS r FROM qa_fin_orders WHERE id=$1', [id])).rows[0].r;
     const finalize = async (id, patch = {}) => savepoint(async () => server.finalizeContractDraft(proxy, id, 143, { ...base, revision: await revision(id), ...patch }));
     const draft = (vehicles, extra = {}) => JSON.stringify({ management_composer: { version: 1, status: 'draft', draft: {
-      start_date: '2026-10-11T08:00', end_date: '2026-10-13T08:00', unit_price: '250000', total_amount: String(500000*vehicles.length), deposit_amount: '1000000', package_name: 'Theo ngày',
+      start_date: '2026-10-11T08:00', end_date: '2026-10-13T08:00', unit_price: String(250000*vehicles.length), total_amount: String(500000*vehicles.length), deposit_amount: '1000000', package_name: 'Theo ngày',
       vehicles: vehicles.map(id => ({ id: String(id), driver_name: 'QA', driver_license_number: 'GPLX', driver_license_issued_on: '2020-01-02', borrow_hats: '02', borrow_raincoats: '01' })), ...extra } } });
     try {
       await c.query('BEGIN');
@@ -206,6 +206,31 @@ async function main() {
       await c.query('UPDATE qa_fin_orders SET draft_reference=$1 WHERE id=21',[`${day}-0011`]);
       const auto=await finalize(22,{deposit:null,rental:null});assert.equal(auto.code,`${day}-0012`);
       checks.push('PostgreSQL TEMP: paper numbers retain leading zeros in issued contracts, snapshots and receipts; duplicate numbers change no money; automatic numbering skips a number reserved by another draft');
+      await c.query('SAVEPOINT historical_backfill');
+      await c.query(`INSERT INTO qa_fin_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES
+        (108,'History A','Honda','xeso',2026,23,23,'QA-HISTORY-A','using',143),(109,'History B','Honda','xeso',2026,31,31,'QA-HISTORY-B','repairing',143)`);
+      const historicalDraft=draft([108,109],{contract_number:'QA-BACKFILL',unit_price:'470000',total_amount:'1410000',deposit_amount:'0',start_date:'2026-10-01T09:00',end_date:'2026-10-04T09:00',backfill:{note:'Forgot original contract, entered after return',returned_at:'2026-10-04T09:00'}});
+      await c.query(`INSERT INTO qa_fin_orders(id,order_status,order_mode,store_id,customer_id,total,pid,draft_reference,draft_payload) VALUES
+        (30,'draft','draft',23,9,'0',0,'QA-BACKFILL',$1),(31,'renting','standard',31,9,'1000000',0,'QA-NOW','{}')`,[historicalDraft]);
+      await c.query(`INSERT INTO qa_fin_order_vehicle_details(order_id,vehicle_id,rent_at,return_at) VALUES(31,108,'2026-10-20T09:00+07','2026-10-26T09:00+07')`);
+      const resultHistory=await finalize(30,{deposit:null,rental:{method:'cash',account_id:5}});
+      assert.equal(resultHistory.status,'completed');assert.equal(resultHistory.total_amount,1410000);
+      const historyLines=(await c.query('SELECT completed_at,hiring_fee FROM qa_fin_order_vehicle_details WHERE order_id=30 ORDER BY id')).rows;
+      assert.deepEqual(historyLines.map(row=>Number(row.hiring_fee)),[235000,235000]);assert(historyLines.every(row=>row.completed_at));
+      assert.deepEqual((await c.query('SELECT status FROM qa_fin_vehicles WHERE id IN(108,109) ORDER BY id')).rows.map(row=>row.status),['using','repairing']);
+      assert.equal(Number((await c.query('SELECT sum(value) AS total FROM qa_fin_transactions WHERE order_id=30')).rows[0].total),1410000);
+      checks.push('TEMP historical issue: 470,000 × three days totals 1,410,000 for two vehicles; daily rates 235,000 each, actual returns recorded, present using/repairing stock unchanged');
+      await c.query('ROLLBACK TO SAVEPOINT historical_backfill');
+      await c.query(`INSERT INTO qa_fin_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES
+        (108,'History A','Honda','xeso',2026,23,23,'QA-HISTORY-A','using',143),(109,'History B','Honda','xeso',2026,31,31,'QA-HISTORY-B','repairing',143)`);
+      await c.query(`INSERT INTO qa_fin_orders(id,order_status,order_mode,store_id,customer_id,total,pid,draft_reference,draft_payload) VALUES
+        (30,'draft','draft',23,9,'0',0,'QA-BACKFILL',$1),(31,'completed','standard',31,9,'1000000',0,'QA-PAST','{}')`,[historicalDraft]);
+      await c.query(`INSERT INTO qa_fin_order_vehicle_details(order_id,vehicle_id,rent_at,return_at,completed_at) VALUES(31,108,'2026-10-02T09:00+07','2026-10-03T09:00+07','2026-10-03T09:00+07')`);
+      await assert.rejects(finalize(30,{deposit:null,rental:null}),e=>e.status===409&&/chồng/.test(e.message));
+      assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_fin_transactions WHERE order_id=30')).rows[0].n,0);
+      assert.equal((await c.query("SELECT order_status FROM qa_fin_orders WHERE id=30")).rows[0].order_status,'draft');
+      checks.push('TEMP historical issue rejects a past overlap with another completed contract before inserting any lines or receipts');
+      await c.query('ROLLBACK TO SAVEPOINT historical_backfill');await c.query('RELEASE SAVEPOINT historical_backfill');
     } finally { await c.query('ROLLBACK'); c.release(); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

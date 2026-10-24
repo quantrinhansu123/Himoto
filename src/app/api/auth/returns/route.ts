@@ -17,7 +17,7 @@ async function GETHandler(request: NextRequest) {
   try {
     const query = request.nextUrl.searchParams.get('query') || '';
     const rawOrderId = request.nextUrl.searchParams.get('order_id');
-    const data = rawOrderId ? await loadContractReturnableItems(himotoPool, Number(rawOrderId)) : await searchReturnableItems(himotoPool, query);
+    const data = rawOrderId ? await loadContractReturnableItems(himotoPool, Number(rawOrderId),request.nextUrl.searchParams.get('recovery')==='1') : await searchReturnableItems(himotoPool, query);
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return failureResponse('Không tải được danh sách xe cần trả.', error);

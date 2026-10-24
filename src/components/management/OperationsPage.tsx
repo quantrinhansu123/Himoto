@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { CalendarPlus, FilePlus2, RefreshCw, RotateCcw } from 'lucide-react';
+import { CalendarPlus, FilePlus2, RefreshCw, RotateCcw, History } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { useCallback,useEffect,useState } from 'react';
 import { ReloadButton, useReloadAction } from './ReloadButton';
@@ -11,6 +11,7 @@ const actions = [
   {href:'/contracts?action=return',label:'Trả xe',description:'Tìm biển số hoặc hợp đồng để nhận trả.',icon:RotateCcw},
   {href:'/contracts?action=renew',label:'Gia hạn',description:'Chọn hợp đồng và cập nhật ngày hẹn trả.',icon:CalendarPlus},
   {href:'/vehicles?action=status',label:'Trạng thái kho xe',description:'Xe có hợp đồng đang thuê cần xử lý Trả xe trước.',icon:RefreshCw},
+  {href:'/contracts?action=backfill',label:'Nhập bổ sung giao dịch',description:'Hợp đồng, gia hạn hoặc thu/chi bị quên chưa nhập.',icon:History},
 ];
 export function OperationsPage() {
   const router=useRouter();const [plate,setPlate]=useState('');

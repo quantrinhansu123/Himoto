@@ -47,6 +47,8 @@ const VehicleExcelActions = dynamic(() => import('./VehicleExcelActions').then(m
 const VehicleEditDialog = dynamic(() => import('./VehicleEditDialog').then(module => module.VehicleEditDialog), { ssr: false, loading: FeatureLoading });
 const StoreEditDialog = dynamic(() => import('./StoreEditDialog').then(module => module.StoreEditDialog), { ssr: false, loading: FeatureLoading });
 const ContractRowReturnDialog = dynamic(() => import('./ContractRowReturnDialog').then(module => module.ContractRowReturnDialog), { ssr: false, loading: FeatureLoading });
+const BadDebtRecoveryDialog = dynamic(() => import('./BadDebtRecoveryDialog').then(module => module.BadDebtRecoveryDialog), {ssr:false,loading:FeatureLoading});
+const ContractBackfillDialog=dynamic(()=>import('./ContractBackfillDialog').then(module=>module.ContractBackfillDialog),{ssr:false,loading:FeatureLoading});
 const ContractVehicleSwapDialog = dynamic(() => import('./ContractVehicleSwapDialog').then(module => module.ContractVehicleSwapDialog), { ssr: false, loading: FeatureLoading });
 const ContractRenewalDialog = dynamic(() => import('./ContractRenewalDialog').then(module => module.ContractRenewalDialog), { ssr: false, loading: FeatureLoading });
 const BatteryContractForm = dynamic(() => import('@/components/battery/BatteryContractsPage').then(module => module.BatteryContractForm), { ssr: false, loading: FeatureLoading });
@@ -110,6 +112,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const contractPath = paymentDueOnly ? '/contracts/due' : vatOnly ? '/contracts/vat' : draftsOnly ? '/contracts/drafts' : overdueOnly ? '/contracts/overdue' : ownershipOnly ? '/contracts/ownership' : '/contracts';
   const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
   const [inventoryOpen,setInventoryOpen]=useState(false);
+  const [recoveryTarget,setRecoveryTarget]=useState<{id:number;code:string}|null>(null);
+  const [backfillOpen,setBackfillOpen]=useState(false),[backfillComposer,setBackfillComposer]=useState(false),[backfillRenewal,setBackfillRenewal]=useState(false);
   const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string;query?:string } | null>(null);
   const [renewTarget, setRenewTarget] = useState<ManagementRow | null>(null);
   const [renewPicker, setRenewPicker] = useState(false);
@@ -204,6 +208,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       router.replace(contractPath,{scroll:false});
       return;
     }
+    if(kind==='contracts'&&action==='backfill'){handledAction.current=action;setBackfillOpen(true);router.replace(contractPath,{scroll:false});return;}
     if (loading || error || !dataset) return;
     handledAction.current = action;
     if (kind === 'contracts' && action === 'new') {setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}
@@ -354,6 +359,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           {kind !== 'staff' && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
           {canBulkRemind && <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}
           {kind==='contracts'&&source==='api'&&<button type="button" className="mg-button" onClick={()=>setTelegramTarget('pending')}><MessageCircle size={17}/>Chưa gửi Telegram</button>}
+          {kind==='contracts'&&(canSaveContractDrafts||can('contracts.renew')||canPayContracts)&&<button type="button" className="mg-button" onClick={()=>setBackfillOpen(true)}><Plus size={17}/>Nhập bổ sung giao dịch</button>}
           {kind === 'contracts' && canSaveContractDrafts && <><button type="button" className="mg-button" disabled={loading || Boolean(error) || !dataset || !canSaveContractDrafts} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={() => { setPrintRow(null); setComposerMode('draft'); setComposerOpen(true); }}><Plus size={17} />Nhập hợp đồng</button></>}</div></OptionalTools>
       </div>
 
@@ -470,7 +476,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {draftDeleteTarget&&<ContractDraftDeleteDialog row={draftDeleteTarget} onClose={()=>setDraftDeleteTarget(null)} onDeleted={()=>{setDraftDeleteTarget(null);invalidateData(['contracts']);void reload(['contracts']);notify('Đã xóa bản nháp khỏi danh sách.');}}/>}
     {telegramTarget&&<ContractTelegramDialog order={telegramTarget==='pending'?undefined:telegramTarget} store={selectedStore} onClose={()=>setTelegramTarget(null)}/>}
     {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} initialQuery={returnTarget.query} onClose={() => setReturnTarget(null)} />}
-    {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} onClose={() => setRenewTarget(null)} />}
+    {recoveryTarget&&<BadDebtRecoveryDialog id={recoveryTarget.id} code={recoveryTarget.code} onClose={()=>setRecoveryTarget(null)} onRecovered={()=>{table.refresh();invalidateData(['contracts','vehicles']);}}/>}
+    {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} backfill={backfillRenewal} onClose={() => {setRenewTarget(null);setBackfillRenewal(false);}} />}
+    {backfillOpen&&<ContractBackfillDialog onClose={()=>setBackfillOpen(false)} onCreate={()=>{setBackfillOpen(false);setBackfillComposer(true);setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}} onSelect={(action,row)=>{setBackfillOpen(false);if(action==='renewal'){setBackfillRenewal(true);setRenewTarget(row);}else router.push(`${cashbookPaymentPath(row.id)}&backfill=1`);}}/>}
     {renewPicker && <Dialog title="Chọn hợp đồng gia hạn" onClose={()=>setRenewPicker(false)}><div className="mg-dialog-body"><label className="mg-field">Tìm hợp đồng cần gia hạn<input type="search" autoFocus value={renewSearch} placeholder="Mã hợp đồng, khách, SĐT hoặc biển số" onChange={event=>setRenewSearch(event.target.value)}/></label><ul className="mg-operation-picks">{(renewable.data?.rows || []).map(row=><li key={row.id}><button type="button" onClick={()=>{setRenewPicker(false);setRenewTarget(row);}}><strong>{row.code} · {row.customer_name}</strong><span>{row.license} · {row.customer_phone}</span></button></li>)}</ul></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setRenewPicker(false)}>Đóng</button></div></Dialog>}
     {vehicleTarget && kind === 'contracts' && <ManagementDataBoundary kinds={VEHICLE_DATA_KINDS} title="Đổi xe" onClose={() => setVehicleTarget(null)}><ContractVehicleSwapDialog orderId={vehicleTarget.orderId} contractCode={vehicleTarget.code} onClose={() => setVehicleTarget(null)} /></ManagementDataBoundary>}
     {batteryRentTarget && kind === 'contracts' && dataset && <ManagementDataBoundary kinds={['staff'] as const} title="Thuê pin / sạc" onClose={() => setBatteryRentTarget(null)}>
@@ -487,7 +495,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         }} />
     </ManagementDataBoundary>}
     {batteryPrinting && <BatteryPrintPreview doc={batteryPrinting} onClose={() => setBatteryPrinting(null)} />}
-    {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onBatteryRent={() => { setBatteryRentTarget(viewing); setViewing(null); }} onPayment={canPayContracts ? (purpose?: PaymentPurpose) => { router.push(cashbookPaymentPath(viewing.id, purpose || 'debt')); setViewing(null); } : undefined} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }}
+    {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { if(viewing.status==='bad_debt')setRecoveryTarget(viewing);else setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onBatteryRent={() => { setBatteryRentTarget(viewing); setViewing(null); }} onPayment={canPayContracts ? (purpose?: PaymentPurpose) => { router.push(cashbookPaymentPath(viewing.id, purpose || 'debt')); setViewing(null); } : undefined} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }}
       onQr={()=>{setQrTarget(viewing.id);setViewing(null);}}
       onHandover={can('contracts.finalize')?()=>{setHandoverId(viewing.id);setViewing(null);}:undefined}
       onEditDraft={()=>{setPrintRow(viewing);setComposerMode('draft');setViewing(null);setComposerOpen(true);}}
@@ -496,9 +504,10 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {qrTarget!==null&&<ContractQrDialog id={qrTarget} onClose={()=>setQrTarget(null)}/>}
     {reminderTarget!==null&&<DebtReminderDialog orderId={reminderTarget} onClose={()=>setReminderTarget(null)}/>}
     {bulkReminderIds&&canBulkRemind&&<BulkDebtReminderDialog orderIds={bulkReminderIds} onClose={()=>setBulkReminderIds(null)} onSent={()=>{setSelectedIds(new Set());notify('Đã gửi nhắc nợ cho các hợp đồng đã chọn.');}}/>}
-    {composerOpen && dataset && <ManagementDataBoundary kinds={CONTRACT_DATA_KINDS} title="Mở hợp đồng" onClose={() => setComposerOpen(false)}><ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} onClose={() => setComposerOpen(false)} onDraftSaved={() => { setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); if(draftsOnly&&!searchParams.toString())table.refresh();else router.push('/contracts/drafts'); }}
+    {composerOpen && dataset && <ManagementDataBoundary kinds={CONTRACT_DATA_KINDS} title="Mở hợp đồng" onClose={() => {setComposerOpen(false);setBackfillComposer(false);}}><ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} backfill={backfillComposer} onClose={() => {setComposerOpen(false);setBackfillComposer(false);}} onDraftSaved={() => { setBackfillComposer(false);setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); if(draftsOnly&&!searchParams.toString())table.refresh();else router.push('/contracts/drafts'); }}
       onHandover={printRow?.status==='deposit_contract'&&can('contracts.finalize')?()=>{setComposerOpen(false);setHandoverId(printRow.id);}:undefined}
       onFinalized={result => {
+        setBackfillComposer(false);
         notify(`${result.status === 'deposit_contract' ? 'Đã nhận cọc giữ xe, chờ giao xe' : 'Đã lưu chính thức hợp đồng'} ${result.code}${result.transaction_ids.length ? ` và ghi ${result.transaction_ids.length} phiếu thu vào Sổ quỹ` : ''}. Xem trạng thái gửi tin tại thẻ Telegram của hợp đồng.`);
         invalidateData(['vehicles', 'customers']);
         if(paged)table.refresh();else void ensureData(['contracts'], true).catch(() => {});

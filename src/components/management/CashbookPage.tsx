@@ -35,6 +35,7 @@ export function CashbookPage() {
   const requestQuery = useMemo(() => ({ search, actor: query.actor, startDate: query.startDate, endDate: query.endDate }), [search, query.actor, query.startDate, query.endDate]);
   const filterKey = JSON.stringify([selectedStore, requestQuery]);
   const [paymentTarget, setPaymentTarget] = useState<{ id: number; purpose: PaymentPurpose } | null>(null);
+  const [paymentBackfill,setPaymentBackfill]=useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const rawId = params.get('contract_id'), purpose = params.get('purpose');
@@ -45,6 +46,7 @@ export function CashbookPage() {
       return;
     }
     setPaymentTarget({ id: Number(rawId), purpose: parsePaymentPurpose(purpose) });
+    setPaymentBackfill(params.get('backfill')==='1');
   }, [canPayContracts, notify]);
   function closePayment() {
     setPaymentTarget(null);
@@ -192,5 +194,5 @@ export function CashbookPage() {
           {deleteError && <p className="mg-error-message" role="alert">{deleteError}</p>}</div>
         <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={deleteBusy} onClick={() => setDeleteAllRequest(null)}>Hủy</button><button type="submit" className="mg-button mg-button-danger" disabled={deleteBusy || deleteAllLoading || !deleteAllRows.length || deleteAllText.trim().toUpperCase() !== 'XOA'}>{deleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa hết {deleteAllRows.length} {deleteAllLabel}</>}</button></div>
       </form>
-    </Dialog>}{paymentTarget && <ContractPaymentDialog key={`${paymentTarget.id}-${paymentTarget.purpose}`} id={paymentTarget.id} initialPurpose={paymentTarget.purpose} onClose={closePayment} onPaymentSaved={() => setRetry(value => value + 1)} />}</section>;
+    </Dialog>}{paymentTarget && <ContractPaymentDialog key={`${paymentTarget.id}-${paymentTarget.purpose}`} id={paymentTarget.id} initialPurpose={paymentTarget.purpose} backfill={paymentBackfill} onClose={closePayment} onPaymentSaved={() => setRetry(value => value + 1)} />}</section>;
 }

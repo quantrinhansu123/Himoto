@@ -22,7 +22,8 @@ export function SharedVehicleInventory({onClose}:{onClose:()=>void}) {
     return()=>controller.abort();
   },[version]);
   const stores=useMemo(()=>[...new Map((rows||[]).filter(row=>row.store_id).map(row=>[String(row.store_id),row.store_name||`Cơ sở #${row.store_id}`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'vi')),[rows]);
-  const found=(rows||[]).filter(row=>(!store||String(row.store_id)===store)&&(!availability||(availability==='ready'?row.available:!row.available))&&normalize([row.license,row.name,row.store_name,row.from_store_name,row.to_store_name].join(' ')).includes(normalize(search)));
+  const plateSearch=search.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const found=(rows||[]).filter(row=>(!store||String(row.store_id)===store)&&(!availability||(availability==='ready'?row.available:!row.available))&&(normalize([row.license,row.name,row.store_name,row.from_store_name,row.to_store_name].join(' ')).includes(normalize(search))||Boolean(plateSearch)&&row.license.toUpperCase().replace(/[^A-Z0-9]/g,'').includes(plateSearch)));
   return <Dialog title="Kho xe toàn hệ thống" onClose={onClose}>
     <div className="mg-dialog-body">
       <p>Xem xe ở mọi cơ sở để đề nghị điều chuyển. Cơ sở đang quản lý tạo lượt chuyển; cơ sở đích xác nhận đã nhận xe thì xe mới về Lưu kho để lập hợp đồng.</p>

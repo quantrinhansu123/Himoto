@@ -1,6 +1,7 @@
 import type { PaymentMethod, PaymentResult } from './contract-payments';
 
 export interface RenewalInput {
+  occurred_at?:string;
   item_id: number; item_revision: string; order_revision: string;
   return_at: string; amount: string; note: string;
   /** Suggested fee from contract unit price × duration; mismatch still saves with a warning. */
@@ -9,6 +10,7 @@ export interface RenewalInput {
   receipt?: { method: PaymentMethod; account_id: number; paid_at: string };
 }
 export interface RenewalVersion {
+  occurred_at?:string;
   version: number; kind: 'renewal'; created_at: string; actor_id: number;
   item_id: number; vehicle_id: number; vehicle_name: string; license: string;
   rent_at: string | null; before_return_at: string | null; return_at: string; overdue_minutes: number;

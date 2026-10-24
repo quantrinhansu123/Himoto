@@ -78,6 +78,18 @@ async function main() {
       await c.query("UPDATE qa_renewal_orders SET order_status='renting' WHERE id=1");
       assert.equal(JSON.stringify((await c.query('SELECT o.total,o.return_at,o.draft_payload,d.return_at AS item_return FROM qa_renewal_orders o JOIN qa_renewal_order_vehicle_details d ON d.order_id=o.id AND d.id=101 WHERE o.id=1')).rows[0]), snapshot);
       checks.push('PostgreSQL TEMP: earlier date, stale order/vehicle revision, returned vehicle, vehicle of another contract, draft/completed/cancelled contracts change nothing');
+      await c.query('SAVEPOINT historical_renewal');
+      await c.query(`UPDATE qa_renewal_orders SET order_status='completed' WHERE id=1;UPDATE qa_renewal_order_vehicle_details SET completed_at='2026-02-10T10:00+07' WHERE id=101`);
+      const actual=(await c.query('SELECT completed_at FROM qa_renewal_order_vehicle_details WHERE id=101')).rows[0].completed_at;
+      const historical=await renew({occurred_at:'2026-01-21T09:00',return_at:'2026-02-01T10:00',note:'Forgot original extension'});
+      assert.equal(historical.amount,300);
+      const historicalOrder=(await c.query('SELECT draft_payload,order_status FROM qa_renewal_orders WHERE id=1')).rows[0];
+      assert.equal(historicalOrder.order_status,'wait_payment');assert.equal(historicalOrder.draft_payload.management_composer.versions.at(-1).occurred_at,'2026-01-21T09:00:00+07:00');
+      assert.deepEqual((await c.query('SELECT completed_at FROM qa_renewal_order_vehicle_details WHERE id=101')).rows[0].completed_at,actual);
+      assert.equal((await c.query('SELECT status FROM qa_renewal_vehicles WHERE id=100')).rows[0].status,'using');
+      await assert.rejects(renew({occurred_at:'2026-02-11T09:00',return_at:'2026-02-12T10:00',note:'Occurred after vehicle return'}),e=>e.status===400);
+      checks.push('TEMP historical renewal retains actual return/current stock, records actual occurrence separately from entry, opens only unpaid debt and rejects occurrence after return');
+      await c.query('ROLLBACK TO SAVEPOINT historical_renewal');await c.query('RELEASE SAVEPOINT historical_renewal');
     } finally { await c.query('ROLLBACK'); c.release(); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

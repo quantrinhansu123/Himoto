@@ -198,6 +198,34 @@ async function main() {
       await assert.rejects(pay({amount:'1',renewal_version:version.version}),e=>e.status===409);
       await c.query('ROLLBACK TO SAVEPOINT saved_renewal_receipts');
       checks.push('PostgreSQL TEMP: saved renewal receipts link the exact version for personal/company/cash payments, preserve dates and fee, replay once and reject missing versions or overcollection');
+      await c.query('SAVEPOINT missing_deposit');
+      const initial=await server.readPaymentContext(proxy,1),key=randomUUID(),beforeDeposit=await balance();
+      const amount=String(initial.deposit_remaining);assert(Number(amount)>0);
+      const depositResult=await pay({request_id:key,purpose:'deposit',amount,paid_at:'2026-01-03T11:00',note:'Forgot original deposit receipt'});
+      assert.equal(depositResult.context.paid_amount,initial.paid_amount);assert.equal(depositResult.context.total_amount,initial.total_amount);
+      assert.equal(depositResult.context.deposit_remaining,0);assert.equal(depositResult.context.deposit_paid,initial.deposit_paid+Number(amount));
+      const depositTx=(await c.query('SELECT name,created_at FROM qa_payment_transactions WHERE id=$1',[depositResult.transaction_id])).rows[0];
+      assert.equal(depositTx.name,'order:deposit');assert.equal(depositTx.created_at.toISOString(),'2026-01-03T04:00:00.000Z');
+      assert.equal((await pay({request_id:key,revision:'0',purpose:'deposit',amount,paid_at:'2026-01-03T11:00',note:'Forgot original deposit receipt'})).replayed,true);
+      await assert.rejects(pay({purpose:'deposit',amount:'1'}),e=>e.status===409);
+      const afterDeposit=await balance();assert.equal(afterDeposit.total,beforeDeposit.total);
+      assert.equal(Number(afterDeposit.pid),Number(beforeDeposit.pid)+Number(amount));
+      checks.push('TEMP supplemental deposit records the original transaction date, increases held deposit only, preserves rental debt/total, rejects excess and replays one receipt');
+      await c.query('ROLLBACK TO SAVEPOINT missing_deposit');await c.query('RELEASE SAVEPOINT missing_deposit');
+      await c.query('SAVEPOINT historical_renewal_collection');
+      await c.query(`DELETE FROM qa_payment_transactions WHERE order_id=1;
+        UPDATE qa_payment_orders SET order_status='completed',total='1000',pid=1000,first_deposit_amount=0,additional_deposit_amount=0 WHERE id=1;
+        UPDATE qa_payment_order_vehicle_details SET rent_at='2026-01-01T10:00+07',return_at='2026-01-10T10:00+07',completed_at='2026-01-15T10:00+07' WHERE order_id=1`);
+      const beforeHistory=await server.readPaymentContext(proxy,1),lineRevision=(await c.query('SELECT xmin::text AS revision FROM qa_payment_order_vehicle_details WHERE id=101')).rows[0].revision;
+      const historicalInput={request_id:randomUUID(),item_id:101,item_revision:lineRevision,order_revision:beforeHistory.revision,occurred_at:'2026-01-09T10:00',return_at:'2026-01-12T10:00',amount:'300',note:'Forgot renewal and received payment',receipt:{method:'cash',account_id:1,paid_at:'2026-01-09T11:00'}};
+      const collector=load(path.join(root,'lib/server/contract-renewal-collection'));
+      const historicalResult=await transaction(()=>collector.renewContractAndCollect(proxy,1,143,historicalInput));
+      assert.equal(historicalResult.payment.context.status,'completed');assert.equal(historicalResult.payment.context.total_amount,1300);assert.equal(historicalResult.payment.context.paid_amount,1300);
+      assert.equal((await c.query('SELECT completed_at FROM qa_payment_order_vehicle_details WHERE id=101')).rows[0].completed_at.toISOString(),'2026-01-15T03:00:00.000Z');
+      const replayHistory=await transaction(()=>collector.renewContractAndCollect(proxy,1,143,historicalInput));assert.equal(replayHistory.replayed,true);assert.equal(replayHistory.payment.replayed,true);
+      assert.equal((await c.query('SELECT count(*)::int AS count FROM qa_payment_transactions WHERE order_id=1')).rows[0].count,1);
+      checks.push('TEMP historical renewal and original-date receipt commit together, restore completed status when fully paid, preserve actual vehicle return and replay without a second fee/receipt');
+      await c.query('ROLLBACK TO SAVEPOINT historical_renewal_collection');await c.query('RELEASE SAVEPOINT historical_renewal_collection');
     } finally { await c.query('ROLLBACK'); c.release(); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

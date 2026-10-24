@@ -55,7 +55,8 @@ export async function readContractHistory(client: Database, id: number): Promise
   const order = await client.query(`SELECT o.id,o.created_at,u.name AS actor,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb) AS return_adjustments,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,versions}','[]'::jsonb) AS versions,
-      COALESCE(o.draft_payload::jsonb #> '{management_composer,reservation_releases}','[]'::jsonb) AS reservation_releases
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,reservation_releases}','[]'::jsonb) AS reservation_releases,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,vehicle_recoveries}','[]'::jsonb) AS vehicle_recoveries
     FROM himoto.orders o LEFT JOIN himoto.users u ON u.id=o.contract_responsible_user_id
     WHERE o.id=$1 AND o.deleted_at IS NULL`, [id]);
   if (!order.rowCount) throw new ContractHistoryError('Không tìm thấy hợp đồng.', 404);
@@ -67,6 +68,7 @@ export async function readContractHistory(client: Database, id: number): Promise
   const created: ContractChange = { id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
     title: 'Tạo hợp đồng', detail: '', amount: null };
   const changes: ContractChange[] = [created];
+  for(const [index,item]of(Array.isArray(order.rows[0].vehicle_recoveries)?order.rows[0].vehicle_recoveries:[]).entries())changes.push({id:`vehicle-recovery-${index}`,kind:'return',at:iso(item.recovered_at),actor:`#${item.actor_id}`,amount:null,title:'Thu hồi xe trong hợp đồng nợ xấu',detail:`${item.note||''} · Giữ nguyên khoản nợ, cọc và thu/chi. Ghi nhận trên hệ thống: ${vietnamTime(item.recorded_at)}.`});
   for(const [index,item] of (Array.isArray(order.rows[0].reservation_releases)?order.rows[0].reservation_releases:[]).entries()) {
     changes.push({id:`reservation-release-${index}`,kind:'reservation_release',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,
       title:`Gỡ giữ xe ${item.license||''}`,detail:`${item.reason||''} · Giữ nguyên phiếu thu/chi và số tiền hợp đồng. Ngày thu hồi gốc chưa xác định.`});
@@ -133,7 +135,7 @@ export async function readContractHistory(client: Database, id: number): Promise
       const actor = actors.rows.find(row => Number(row.id) === Number(item.actor_id));
       const overdue = Number(item.overdue_minutes) || 0;
       const before = amountOrNull(item.before_total), after = amountOrNull(item.total);
-      changes.push({ id: `version-${item.version}`, kind: 'renewal', at: iso(item.created_at), actor: String(actor?.name || '—'), amount: amountOrNull(item.amount) || null,
+      changes.push({ id: `version-${item.version}`, kind: 'renewal', at: iso(item.occurred_at||item.created_at), actor: String(actor?.name || '—'), amount: amountOrNull(item.amount) || null,
         title: `Phiên bản v${item.version} · Gia hạn${item.license || item.vehicle_name ? ` xe ${item.license || item.vehicle_name}` : ''}`,
         detail: [`Hẹn trả ${vietnamTime(item.before_return_at)} → ${vietnamTime(item.return_at)}`,
           overdue ? `Quá hạn ${Math.floor(overdue / 1440)} ngày ${Math.ceil((overdue % 1440) / 60)} giờ` : '',
@@ -141,7 +143,7 @@ export async function readContractHistory(client: Database, id: number): Promise
           item.amount_mismatch && item.warning ? String(item.warning) : '',
           item.note ? String(item.note) : ''].filter(Boolean).join(' · '),
         version: { label: `Phiên bản v${item.version}`, return_at: item.return_at ? iso(item.return_at) : null, total: after, paid: amountOrNull(item.paid) } });
-      originals.push({ at: new Date(iso(item.created_at)).getTime(), return_at: item.before_return_at ? iso(item.before_return_at) : null, total: before });
+      originals.push({ at: new Date(iso(item.occurred_at||item.created_at)).getTime(), return_at: item.before_return_at ? iso(item.before_return_at) : null, total: before });
     }
   }
   const first = originals.sort((a, b) => a.at - b.at)[0];

@@ -5,11 +5,11 @@ export const PAYMENT_METHODS = [
 ] as const;
 export type PaymentMethod = typeof PAYMENT_METHODS[number]['value'];
 export const paymentMethodLabel = (method: PaymentMethod) => method === 'transfer' ? 'CK tài khoản cá nhân' : PAYMENT_METHODS.find(item => item.value === method)?.label || method;
-export const PAYABLE_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt', 'deposit_contract'];
+export const PAYABLE_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt', 'deposit_contract','completed'];
 export const RENEWABLE_STATUSES = ['renting', 'overdue'];
 export const MAX_PAYMENT_AMOUNT = 9_999_999_999_999;
 export const canAddExtraReceipt = (status: string) => !['draft', 'cancelled'].includes(status);
-export type PaymentPurpose = 'debt' | 'renewal' | 'extra' | 'deposit_refund' | 'rental_refund';export const PAYMENT_PURPOSES: PaymentPurpose[] = ['debt', 'renewal', 'extra', 'deposit_refund', 'rental_refund'];
+export type PaymentPurpose = 'debt' | 'renewal' | 'extra' | 'deposit' | 'deposit_refund' | 'rental_refund';export const PAYMENT_PURPOSES: PaymentPurpose[] = ['debt', 'renewal', 'extra','deposit', 'deposit_refund', 'rental_refund'];
 export function cashbookPaymentPath(contractId: number, purpose: PaymentPurpose = 'debt') {
   return `/cashbook?contract_id=${contractId}&purpose=${purpose}`;
 }
@@ -44,6 +44,7 @@ export interface PaymentContext {
   id: number; code: string; status: string; store_id: number; revision: string;
   total_amount: number | null; paid_amount: number | null; remaining: number | null;
   deposit_paid: number; deposit_refunded: number; deposit_held: number;
+  deposit_remaining?:number;
   rental_refundable?:number;
   company_paid_amount: number; company_payment_count: number;
   accounts: PaymentAccount[]; history: ContractPayment[];
@@ -53,7 +54,7 @@ export interface PaymentContext {
 }
 export interface PaymentInput {
   request_id: string; revision: string; amount: string; method: PaymentMethod; account_id: number; paid_at: string; note: string;
-  purpose?: 'renewal' | 'extra' | 'deposit_refund' | 'rental_refund'; item_id?: number; item_revision?: string; return_at?: string; items?: RenewalLine[];
+  purpose?: 'renewal' | 'extra' | 'deposit' | 'deposit_refund' | 'rental_refund'; item_id?: number; item_revision?: string; return_at?: string; items?: RenewalLine[];
   renewal_version?: number;
 }
 export interface PaymentResult { context: PaymentContext; transaction_id: number; replayed: boolean; company_transfer: boolean }

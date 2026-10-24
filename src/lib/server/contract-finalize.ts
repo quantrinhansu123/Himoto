@@ -9,8 +9,9 @@ import { loadCommissionStaff } from './commission-staff';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
-import { rentalQuote } from '@/lib/management/contract-pricing';
+import { rentalLineRate, rentalQuote } from '@/lib/management/contract-pricing';
 import { validOwnershipTerm } from '@/lib/management/contract-billing';
+import { contractBackfillErrors, type ContractBackfill } from '@/lib/management/contract-backfill';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractFinalizeError extends Error {
@@ -118,6 +119,11 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (!Number.isSafeInteger(customerId) || customerId <= 0) throw new ContractFinalizeError('Bản nháp chưa có khách hàng.', 409);
   const start = draft.start_date, end = draft.end_date;
   if (!validLocal(start) || !validLocal(end) || end <= start) throw new ContractFinalizeError('Thời gian thuê / hẹn trả của bản nháp không hợp lệ.', 409);
+  const backfillErrors=contractBackfillErrors(draft.backfill,start);
+  if(Object.keys(backfillErrors).length)throw new ContractFinalizeError(Object.values(backfillErrors)[0],409);
+  const backfill=draft.backfill as ContractBackfill|undefined;
+  const historical=Boolean(backfill?.returned_at);
+  if(reservation&&backfill)throw new ContractFinalizeError('Nhập bổ sung hợp đồng không dùng chế độ cọc giữ xe.',409);
   if (reservation && new Date(`${start}+07:00`).getTime() < Date.now()) throw new ContractFinalizeError('Chọn thời gian dự kiến nhận xe từ hiện tại trở đi.', 409);
   const lines = Array.isArray(draft.vehicles) ? draft.vehicles as Record<string, unknown>[] : [];
   const vehicleIds = lines.map(line => Number(line?.id));
@@ -128,7 +134,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (total === null || deposit === null || unitPrice === null || total + deposit > MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Số tiền thuê / tiền cọc của bản nháp không hợp lệ.', 409);
   if (lines.length > 1 && unitPrice > 0 && draft.package_name !== 'Tùy chọn') {
     const quote = rentalQuote({ start_date: start, end_date: end, package_name: String(draft.package_name || ''), unit_price: String(unitPrice), vehicles: lines, extra_charges: draft.extra_charges });
-    if (!quote || quote.total_amount !== total) throw new ContractFinalizeError(`Tổng tiền chưa khớp ${lines.length} xe đã chọn. Mở lại bản nháp, kiểm tra đơn giá mỗi xe và lưu lại trước khi phát hành.`, 409);
+    if (!quote || quote.total_amount !== total) throw new ContractFinalizeError(`Tổng tiền chưa khớp đơn giá cho cả ${lines.length} xe. Mở lại bản nháp, kiểm tra đơn giá toàn hợp đồng và lưu lại trước khi phát hành.`, 409);
   }
   const ownership = composer.rental_type === 'ownership';
   if (draft.ownership_term_months !== undefined && !validOwnershipTerm(String(draft.ownership_term_months))) throw new ContractFinalizeError('Phân loại thuê sở hữu chưa hợp lệ.',409);
@@ -156,9 +162,20 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     }
     return `xe ${row.license} đang thuộc hợp đồng ${row.code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}`;
   };
-  await releaseIdleRentedVehicles(client, vehicles.rows);
+  if(!historical)await releaseIdleRentedVehicles(client, vehicles.rows);
   const proposedStart = `${start}:00+07:00`, proposedEnd = `${end}:00+07:00`;
-  const conflicts = usesScopedDatabase()
+  if(historical){
+    const actualEnd=`${backfill!.returned_at}:00+07:00`;
+    const overlaps=usesScopedDatabase()
+      ? await client.query('SELECT vehicle_id FROM himoto.vehicle_history_conflict_ids($1::bigint[],$2,$3::timestamptz,$4::timestamptz)',[vehicleIds,id,proposedStart,actualEnd])
+      : await client.query(`SELECT DISTINCT d.vehicle_id FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+        WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+          AND o.order_status IN('renting','overdue','wait_payment','pending','bad_debt','completed')
+          AND COALESCE(d.rent_at,o.rent_at,'-infinity'::timestamptz)<$4::timestamptz
+          AND COALESCE(d.completed_at,CASE WHEN o.order_status='completed' THEN COALESCE(d.return_at,o.return_at) END,'infinity'::timestamptz)>$3::timestamptz`,[vehicleIds,id,proposedStart,actualEnd]);
+    if(overlaps.rowCount)throw new ContractFinalizeError('Khoảng thuê thực tế chồng với lịch sử thuê đã có của xe. Đối chiếu trước khi nhập bổ sung để tránh trùng hợp đồng.',409);
+  }
+  const conflicts = historical?{rows:[]} : usesScopedDatabase()
     ? await client.query('SELECT * FROM himoto.vehicle_window_conflicts($1::bigint[],$2,$3::timestamptz,$4::timestamptz)', [vehicleIds, id, proposedStart, proposedEnd])
     : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code, s.store_name,
         COALESCE(cu.name, mu.name, '') AS manager_name,
@@ -186,7 +203,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
       'reservation_overlap',
     );
   }
-  const notStored = vehicles.rows.filter(row => row.status!=='ready');
+  const notStored = historical?[]:vehicles.rows.filter(row => row.status!=='ready');
   if (notStored.length) throw new ContractFinalizeError(`Xe ${notStored.map(row => row.license).join(', ')} phải ở trạng thái Lưu kho. Đóng hợp đồng cũ và xác nhận nhận xe trước khi phát hành hợp đồng mới.`, 409);
   for (const line of lines) {
     const stock = vehicles.rows.find(vehicle=>String(vehicle.id)===String(line.id))!;
@@ -247,17 +264,17 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   const type = draft.package_name === 'Theo tháng' ? 'month' : draft.package_name === 'Theo tuần' ? 'week' : 'day';
   const rentalDays = Math.max(Math.ceil((new Date(endAt).getTime() - new Date(startAt).getTime()) / 86_400_000), 1);
   const rentalBase = total-otherFees;
-  const hiringFee = unitPrice || (type === 'day' && rentalBase ? Math.round(rentalBase / rentalDays / lines.length) : 0);
+  const contractRate = unitPrice || (type === 'day' && rentalBase ? Math.round(rentalBase / rentalDays) : 0);
   const itemIds: number[] = [];
   for (const [index, line] of lines.entries()) {
     const text = (key: string) => typeof line[key] === 'string' && String(line[key]).trim() ? String(line[key]).trim() : null;
     const count = (key: string) => /^\d{1,2}$/.test(String(line[key] ?? '')) ? Number(line[key]) : 0;
     const inserted = await client.query(`INSERT INTO himoto.order_vehicle_details
       (vehicle_id, order_id, price_id, borrow_hats, borrow_raincoats, rent_at, return_at, total_money, hiring_fee, status, type, handler_price,
-       total_renewal_amount, driver_name, driver_license_number, driver_license_issued_on, created_at, updated_at)
-      VALUES ($1,$2,0,$3,$4,$5,$6,$7,$8,1,$9,0,0,$10,$11,$12,now(),now()) RETURNING id`,
-    [vehicleIds[index], id, count('borrow_hats'), count('borrow_raincoats'), startAt, endAt, index === 0 ? total : 0, hiringFee, type,
-      text('driver_name'), text('driver_license_number'), /^\d{4}-\d{2}-\d{2}$/.test(String(line.driver_license_issued_on ?? '')) ? line.driver_license_issued_on : null]);
+       total_renewal_amount, driver_name, driver_license_number, driver_license_issued_on, completed_at, created_at, updated_at)
+      VALUES ($1,$2,0,$3,$4,$5,$6,$7,$8,1,$9,0,0,$10,$11,$12,$13::timestamptz,now(),now()) RETURNING id`,
+    [vehicleIds[index], id, count('borrow_hats'), count('borrow_raincoats'), startAt, endAt, index === 0 ? total : 0, rentalLineRate(contractRate,lines.length,index), type,
+      text('driver_name'), text('driver_license_number'), /^\d{4}-\d{2}-\d{2}$/.test(String(line.driver_license_issued_on ?? '')) ? line.driver_license_issued_on : null,historical?`${backfill!.returned_at}:00+07:00`:null]);
     itemIds.push(Number(inserted.rows[0].id));
   }
 
@@ -285,16 +302,18 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   draft.payment_method=actualMethods('rental') || draft.payment_method; draft.deposit_payment_method=actualMethods('deposit') || draft.deposit_payment_method;
 
   const finalized = { at: new Date().toISOString(), actor_id: actorId, contract_number: code, item_ids: itemIds, transaction_ids: transactionIds,
+    ...(backfill?{backfill:{...backfill,recorded_at:new Date().toISOString(),actor_id:actorId}}:{}),
     ...(soft.length ? { reservation_overlap_acknowledged: true, reservation_overlap_codes: soft.map(row => String(row.code)) } : {}),
     ...(retiredItemIds.length ? { retired_legacy_item_ids: retiredItemIds } : {}) };
+  const finalStatus=reservation?'deposit_contract':historical?(oldRentalPaid+rentalCollected<total?'wait_payment':'completed'):'renting';
   await client.query(`UPDATE himoto.orders SET order_status=$12, order_mode='standard', contract_number=$2,
       contract_issued_at=now() AT TIME ZONE 'Asia/Ho_Chi_Minh', rent_at=$3, return_at=$4, total=$5, total_rental_fees=$6, first_deposit_amount=$7,
       pid=$8, created_without_collect_deposit=$9, created_without_collect_rental_fees=$10, draft_payload=$11, updated_at=now()
     WHERE id=$1`, [id, code, startAt, endAt, String(total), rentalBase, deposit || null, paid, oldDepositPaid+depositCollected<deposit, oldRentalPaid+rentalCollected<total,
-    JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized, ...(reservation ? {reservation:{at:finalized.at,actor_id:actorId,applies_to:'rental'}} : {}) } }), reservation ? 'deposit_contract' : 'renting']);
-  if (!reservation) {
+    JSON.stringify({ ...payload, management_composer: { ...composer, draft, finalized, ...(reservation ? {reservation:{at:finalized.at,actor_id:actorId,applies_to:'rental'}} : {}) } }), finalStatus]);
+  if (!reservation&&!historical) {
     if (usesScopedDatabase()) await client.query('SELECT himoto.mark_vehicles_using($1::bigint[])', [vehicleIds]);
     else await client.query(`UPDATE himoto.vehicles SET status='using', updated_at=now() WHERE id = ANY($1::bigint[])`, [vehicleIds]);
   }
-  return { order_id: id, code, total_amount: total, deposit_amount: deposit, paid_amount: paid, transaction_ids: transactionIds, status:reservation ? 'deposit_contract' : 'renting' };
+  return { order_id: id, code, total_amount: total, deposit_amount: deposit, paid_amount: paid, transaction_ids: transactionIds, status:finalStatus };
 }

@@ -174,6 +174,7 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   const edits = input as ContractEdits;
   const draft = edits.draft;
+  if(draft?.backfill!==undefined){const value=draft.backfill;if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['note','returned_at'].includes(key))||typeof value.note!=='string'||value.note.length>1000||(value.returned_at!==undefined&&(typeof value.returned_at!=='string'||value.returned_at.length>16)))throw new DraftSaveError('Thông tin nhập bổ sung không hợp lệ.');}
   if (chargeTotal(draft?.extra_charges) === null) throw new DraftSaveError('Các khoản phí khác không hợp lệ.');
   if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !draft.customer || typeof draft.customer !== 'object' || Array.isArray(draft.customer)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   const defaults = createContractDraft({ stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all');

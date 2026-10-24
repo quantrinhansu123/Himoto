@@ -6,6 +6,7 @@ import { addRentalDays, vietnamRentalTime } from './rental-time';
 import { chargeErrors, chargeTotal, type ContractCharge, type ContractCollection } from './contract-charges';
 import { billingUnitLabel, type CustomInstallment, type OwnershipTerm } from './contract-billing';
 import { documentRequirements, type ContractDocumentRequirements } from './contract-requirements';
+import type { ContractBackfill } from './contract-backfill';
 
 export const CUSTOMER_FIELDS = ['name', 'phone', 'email', 'address', 'id_card', 'id_card_issued_on', 'id_card_issued_by', 'driver_license_number', 'driver_license_issued_on', 'birthday', 'relatives_text', 'warning_note', 'customer_type', 'nationality', 'contact_channel', 'contact_detail'] as const;
 export type CustomerDetails = Record<(typeof CUSTOMER_FIELDS)[number], string> & { relatives_json?: string };
@@ -18,6 +19,7 @@ export interface VehicleDetails {
   borrow_hats: string; borrow_raincoats: string; rent_at: string; return_at: string;
 }
 export interface ContractDraft {
+  backfill?:ContractBackfill;
   contract_type_id?: string;
   contract_type_name?: string;
   contract_type_months?: string;
