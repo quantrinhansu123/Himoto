@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 const {load,root}=require('./lib/load-typescript.cjs');
-const {contractPhotoWritePermission,isContractTransactionPhoto}=load(path.join(root,'lib/management/contract-photos'));
+const {contractPhotoWritePermission,contractPhotoDeletePermission,isContractTransactionPhoto}=load(path.join(root,'lib/management/contract-photos'));
 const {ACCESS_ROLES}=load(path.join(root,'lib/management/permissions'));
 const session=load(path.join(root,'lib/server/management-session'));
 const database=load(path.join(root,'lib/server/himoto-database'));
@@ -32,11 +32,18 @@ const client={
 async function main(){
   for(const [slot,permission]of Object.entries({'rental-1':'contracts.draft','rental-document-50':'contracts.draft','customer-id-front':'contracts.draft','driver-license':'contracts.draft','plate-12':'contracts.draft','handover-video-1':'contracts.finalize','return-101-document-2':'contracts.return','renewal-2-4':'contracts.renew','renewal-receipt-401-document-30':'contracts.renew','battery-swap-5-video-1':'contracts.renew','vehicle-swap-6-1':'contracts.draft'})){
     assert.equal(contractPhotoWritePermission(slot),permission);
-    assert.equal(contractPhotoWritePermission(slot),requestPermission(`/api/auth/record-photos/contracts/901/${slot}`,'DELETE'));
+    assert.equal(contractPhotoWritePermission(slot),requestPermission(`/api/auth/record-photos/contracts/901/${slot}`,'PUT'));
+    assert.equal(contractPhotoDeletePermission(slot),'contracts.read');
+    assert.equal(contractPhotoDeletePermission(slot),requestPermission(`/api/auth/record-photos/contracts/901/${slot}`,'DELETE'));
     assert(isContractTransactionPhoto(slot)||slot.startsWith('plate-'));
   }
-  for(const slot of ['../photo','renewal-0-1','rental-0','return-1-video-4','unknown-1'])assert.equal(contractPhotoWritePermission(slot),null);
-  checks.push('Gallery permission matches the existing DELETE API across all supported contract phases, identity photos and plates; unknown slots fail closed');
+  for(const slot of ['../photo','renewal-0-1','rental-0','return-1-video-4','unknown-1']){assert.equal(contractPhotoWritePermission(slot),null);assert.equal(contractPhotoDeletePermission(slot),null);}
+  assert.equal(requestPermission('/api/auth/record-photos/customers/901/id_front','DELETE'),'customers.write');
+  assert.equal(requestPermission('/api/auth/record-photos/vehicles/901/registration-front','DELETE'),'vehicles.write');
+  assert.equal(requestPermission('/api/auth/order/car-rental/901/renewals','POST'),'contracts.renew');
+  assert.equal(requestPermission('/api/auth/returns','POST'),'contracts.return');
+  assert.equal(requestPermission('/api/auth/order/car-rental/901/telegram','POST'),'contracts.read');
+  checks.push('All valid contract media DELETEs require contracts.read; upload/renewal/return and customer/vehicle document permissions are preserved; unknown slots fail closed');
   const original={protect:session.protectDatabaseRequest,user:session.userFromSession,connect:Object.getOwnPropertyDescriptor(database.himotoPool,'connect')};
   session.protectDatabaseRequest=async()=>null;session.userFromSession=async()=>user;
   Object.defineProperty(database.himotoPool,'connect',{configurable:true,value:async()=>client});
@@ -51,8 +58,12 @@ async function main(){
     checks.push('Completed renewal can delete exactly one chosen photo; sibling files are preserved and the transaction commits');
     assert.equal((await request()).status,404);assert.equal(queries.at(-1).sql,'ROLLBACK');
     checks.push('Already removed photo returns 404 rather than acknowledging a second deletion');
-    for(const role of ['accounting','ownership_staff']){reset(role);assert.equal((await request()).status,403);assert.equal(queries.length,0);}
-    checks.push('Read-only and ownership staff lacking renewal permission are rejected before any database mutation');
+    for(const [role,settings]of Object.entries(ACCESS_ROLES))if(settings.permissions.includes('contracts.read')){reset(role);assert.equal((await request()).status,200,role);}
+    reset('accounting');user.permissions=['contracts.read'];assert.equal((await request()).status,200);
+    checks.push('Every contract-reading role, including ownership staff, accounting and internal control, plus a custom read-only account, can delete a saved renewal photo');
+    reset('hr');assert.equal((await request()).status,403);assert.equal(queries.length,0);
+    reset('branch_staff');user.permissions=[];assert.equal((await request()).status,403);assert.equal(queries.length,0);
+    checks.push('Accounts without contract access remain rejected before any database reads or writes');
     reset();assert.equal((await request('renewal-2-1','902')).status,404);assert.equal(queries.filter(q=>q.sql.startsWith('DELETE ')).length,0);
     reset();assert.equal((await request('renewal-9-1')).status,404);assert.equal(queries.filter(q=>q.sql.startsWith('DELETE ')).length,0);
     checks.push('Unavailable contract and unrelated renewal version cannot reach DELETE');

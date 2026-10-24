@@ -11,6 +11,7 @@ p.add_argument('--url', default='http://127.0.0.1:3022')
 p.add_argument('--cookies', default='.backups/contract-photo-delete-20261024')
 p.add_argument('--output', default='.backups/contract-photo-delete-20261024/ui')
 p.add_argument('--expect-missing', action='store_true')
+p.add_argument('--expect-role-block', action='store_true')
 a = p.parse_args()
 out = Path(a.output)
 out.mkdir(parents=True, exist_ok=True)
@@ -101,6 +102,8 @@ with sync_playwright() as pw:
     profiles = [('admin', 'chromium', 1440, 950), ('branch_staff', 'webkit', 390, 844), ('branch_staff', 'chromium', 844, 390), ('accounting', 'chromium', 1440, 950), ('ownership_staff', 'webkit', 390, 844)]
     if a.expect_missing:
         profiles = profiles[:1]
+    elif a.expect_role_block:
+        profiles = [profile for profile in profiles if profile[0] in ['accounting','ownership_staff']]
     for role, engine, width, height in profiles:
         browser = getattr(pw, engine).launch()
         ctx = browser.new_context(viewport=dict(width=width, height=height), timezone_id='Asia/Ho_Chi_Minh', reduced_motion='reduce')
@@ -126,13 +129,9 @@ with sync_playwright() as pw:
             expect(detail.locator('.mg-transaction-photo-gallery img')).to_have_count(6)
             expect(detail.locator('.mg-transaction-photo-gallery').get_by_role('button', name='Xóa', exact=False)).to_have_count(0)
             checks.append('Reproduced on previous release: saved renewal/return gallery also has no delete action')
-        elif role in ['accounting', 'ownership_staff']:
-            expect(gallery.get_by_role('button', name='Xóa', exact=False)).to_have_count(0)
-            detail.get_by_role('tab', name='Ảnh thuê / trả xe', exact=True).click()
-            all_media = detail.locator('.mg-transaction-photo-gallery')
-            expect(all_media.get_by_role('button', name='Xóa ảnh Gia hạn v2 · Toàn cảnh xe', exact=True)).to_have_count(0)
-            expect(all_media.get_by_role('button', name='Xóa video Trả xe · Video 1', exact=True)).to_have_count(0 if role=='accounting' else 1)
-            checks.append(f'{role}: delete visibility respects each media phase permission')
+        elif a.expect_role_block:
+            expect(delete).to_have_count(0)
+            checks.append(role+': reproduced missing renewal delete button under the previous phase permission')
         else:
             expect(delete).to_be_visible()
             box = delete.bounding_box()
@@ -168,8 +167,8 @@ with sync_playwright() as pw:
             expect(detail.get_by_role('button', name='Gửi toàn bộ Telegram', exact=False)).to_contain_text('3 ảnh')
             assert not unexpected
             gallery.scroll_into_view_if_needed()
-            page.screenshot(path=str(out/f'{engine}-{width}-renewal-deleted.png'))
-            checks.append(f'{engine} {width}: duplicate click issues one DELETE; refresh updates count/hash without sending Telegram')
+            page.screenshot(path=str(out/f'{role}-{engine}-{width}-renewal-deleted.png'))
+            checks.append(f'{role} {engine} {width}: duplicate click issues one DELETE; refresh updates count/hash without sending Telegram')
 
             detail.get_by_role('tab', name='Ảnh thuê / trả xe', exact=True).click()
             all_media = detail.locator('.mg-transaction-photo-gallery')

@@ -34,6 +34,10 @@ export function contractPhotoWritePermission(slot:string):AccessPermission|null 
   if(slot.startsWith('handover-'))return 'contracts.finalize';
   return 'contracts.draft';
 }
+/** Every contract viewer may remove a saved attachment in their existing scope. */
+export function contractPhotoDeletePermission(slot:string):AccessPermission|null {
+  return contractPhotoWritePermission(slot)?'contracts.read':null;
+}
 // Expand from actual saved/pending keys; the initial placeholders are not an upload limit.
 export function expandablePhotoPrefix(slots:PhotoSlot[]) {
   const first=slots.find(slot=>!slot.key.includes('-video-'))?.key;

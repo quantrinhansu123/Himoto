@@ -24,6 +24,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.endsWith('/battery-swaps'))return read?'contracts.read':'contracts.renew';
   if(path.includes('/battery-contracts/')&&path.endsWith('/actions'))return read?'contracts.read':action==='return'?'contracts.return':'contracts.renew';
   if(path.endsWith('/reservation-no-show'))return 'contracts.finalize';
+  if(method==='DELETE'&&/^\/api\/auth\/record-photos\/contracts\/[1-9]\d{0,14}\/[^/]+$/.test(path))return 'contracts.read';
   if(path.includes('/record-photos/contracts/')&&/\/battery-swap-\d+-/.test(path))return read?'contracts.read':'contracts.renew';
   if(/\/record-photos\/vehicles\/\d+\/(registration-(front|back)|purchase-document-[12])$/.test(path))return read?'vehicles.read':'vehicles.write';
   if(read&&/\/record-photos\/vehicles\/\d+$/.test(path))return 'vehicles.read';

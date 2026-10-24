@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { LoaderCircle, Trash2 } from 'lucide-react';
-import { contractPhotoWritePermission } from '@/lib/management/contract-photos';
+import { contractPhotoDeletePermission } from '@/lib/management/contract-photos';
 import { deleteRecordPhoto, photoEndpoint } from '@/lib/management/record-photos';
 import { useManagement } from './ManagementProvider';
 
@@ -13,7 +13,7 @@ export function ContractPhotoCard({id,slot,label,mimeType,version,disabled=false
   const {can,notify}=useManagement();
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const deleting=useRef(false);
-  const permission=contractPhotoWritePermission(slot);
+  const permission=contractPhotoDeletePermission(slot);
   const video=mimeType==='video/mp4',kind=video?'video':'ảnh';
   const url=`${photoEndpoint('contracts',id,slot)}?v=${encodeURIComponent(version)}`;
   async function remove() {

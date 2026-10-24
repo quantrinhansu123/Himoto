@@ -210,7 +210,7 @@ async function main(){const c=await pool.connect();try{
   assert.equal(Number(crossSaved.customer_id),90002);assert.equal(Number(crossSaved.store_id),80001);
   assert.equal((await c.query('SELECT name FROM qa_access_scope.customers WHERE id=90002')).rows[0].name,'Khách B QA');
   const {copyContractCustomerPhotos}=load(path.join(root,'lib/server/contract-customer-photos'));
-  const {readRecordPhotos,writeRecordPhoto}=load(path.join(root,'lib/server/record-photos'));
+  const {readRecordPhotos,writeRecordPhoto,deleteRecordPhoto}=load(path.join(root,'lib/server/record-photos'));
   assert.equal((await readRecordPhotos(proxy,'customers',90002))[0].slot,'id_front');
   await assert.rejects(()=>writeRecordPhoto(proxy,'customers',90002,'id_front','image/jpeg',Buffer.from([255,216,255,218]),70001),e=>e.status===404);
   assert.equal((await copyContractCustomerPhotos(proxy,Number(crossSaved.id),70001)).copied,1);
@@ -223,6 +223,14 @@ async function main(){const c=await pool.connect();try{
   await assert.rejects(()=>copyContractCustomerPhotos(proxy,92002,70001),e=>e.status===404);
   checks.push('Linked customer photos are readable without UPDATE visibility; new photos attach to the own contract, preserve the source profile and survive repeated imports');
   checks.push('Customer identity photos copy to an own-branch contract through RLS, repeated imports are idempotent, and hidden other-branch contracts cannot be targeted');
+  for(const role of ['branch_staff','ownership_staff','accounting','internal_control']){
+    const slot='renewal-2-1';
+    await c.query("INSERT INTO qa_access_scope.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',$1,$2,'image/jpeg',$3,70001)",[crossSaved.id,slot,Buffer.from([255,216,255,217])]);
+    await dataAccess.run({...branchA,access_role:role,permissions:['contracts.read']},()=>deleteRecordPhoto(proxy,'contracts',Number(crossSaved.id),slot));
+    assert.equal((await c.query("SELECT slot FROM qa_access_scope.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND slot=$2",[crossSaved.id,slot])).rowCount,0);
+    await dataAccess.run({...branchA,access_role:role,permissions:['contracts.read']},()=>assert.rejects(()=>deleteRecordPhoto(proxy,'contracts',92002,'rental-1'),e=>e.status===404));
+  }
+  checks.push('Real RLS: contract viewers from staff, ownership staff, accounting and internal control can remove own-scope contract media; guessed other-branch contracts remain inaccessible');
   crossDraft.contract_number=String(crossSaved.draft_reference);
   await c.query("INSERT INTO qa_access_scope.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',$1,'rental-document-1','image/jpeg',$2,70001)",[crossSaved.id,Buffer.from([255,216,255,217])]);
   const switched=await dataAccess.run(branchA,()=>saveDatabaseDraft(proxy,Number(crossSaved.id),{draft:{...crossDraft,customer_id:90001,customer:customerDetails({id:90001,name:'Khách A QA',phone:'0900000001',id_card:'001234567801',address:'Địa chỉ QA',store_id:80001})},revision:crossSaved.draft_revision,status:'draft',rental_type:'daily',notes:'QA changed customer'}));
