@@ -75,11 +75,11 @@ function StoreRelatedList({ kind, storeId, onOpenList, onClose }: { kind: ListSe
     </div>
     <div className="mg-table-scroll mg-store-detail-table mg-desktop-records" tabIndex={0} role="region" aria-label={`Bảng ${config.title.toLowerCase()} của cơ sở`}>
       <table className={`mg-table mg-table-${kind}`} aria-busy={loading}><caption className="mg-sr-only">{config.title} của cơ sở</caption>
-        <thead><tr><th scope="col" className="mg-index">STT</th>{columns.map(column => <th key={column.key} scope="col" className={column.align === 'right' ? 'mg-align-right' : ''}>{column.label}</th>)}</tr></thead>
+        <thead><tr><th scope="col" className="mg-index">STT</th>{columns.map(column => <th key={column.key} scope="col" data-column={column.key} data-format={column.format} className={column.align === 'right' ? 'mg-align-right' : ''}>{column.label}</th>)}</tr></thead>
         <tbody>{loading ? <tr><td colSpan={columns.length + 1}><div className="mg-table-state" role="status"><LoaderCircle size={25} className="mg-spin" /><strong>Đang tải {config.title.toLowerCase()}…</strong></div></td></tr>
           : resource.error ? <tr><td colSpan={columns.length + 1}><div className="mg-table-state mg-table-error" role="alert"><FileSearch size={28} /><strong>Không tải được {config.title.toLowerCase()}</strong><p>{resource.error}</p><button type="button" className="mg-button" onClick={() => void ensureData([kind], true).catch(() => {})}><RotateCcw size={15} />Thử lại</button></div></td></tr>
           : !visible.length ? <tr><td colSpan={columns.length + 1}><div className="mg-table-state"><FileSearch size={28} /><strong>{search ? 'Không tìm thấy kết quả' : `Cơ sở chưa có ${config.singular}`}</strong></div></td></tr>
-          : visible.map((row, index) => <tr key={row.id}><td className="mg-index">{index + 1}</td>{columns.map(column => <td key={column.key} className={column.align === 'right' ? 'mg-align-right' : ''}>
+          : visible.map((row, index) => <tr key={row.id}><td className="mg-index">{index + 1}</td>{columns.map(column => <td key={column.key} data-column={column.key} data-format={column.format} className={column.align === 'right' ? 'mg-align-right' : ''}>
             {kind === 'contracts' && column.key === 'code' ? <Link className="mg-cashbook-contract-link" href={`/contracts?contract_id=${row.id}`} onClick={onClose}>{row.code || '—'}</Link> : <Cell row={row} column={column} config={config} />}</td>)}</tr>)}</tbody>
       </table>
     </div>

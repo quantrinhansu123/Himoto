@@ -12,6 +12,7 @@ import { ContractTypesProvider } from '@/components/contracts/ContractTypesProvi
 import type { SessionUser } from '@/lib/server/management-session';
 import { SePayNotifications } from './SePayNotifications';
 import { GpsSyncPulse } from './GpsSyncPulse';
+import { TableScrollDock } from './TableScrollDock';
 
 const navigation = [
   {href:'/shift-reports',label:'Báo cáo cuối ca',kind:'shift-reports' as const,icon:ReceiptText},
@@ -119,6 +120,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
 
   return <div className={`mg-app ${collapsed ? 'mg-is-collapsed' : ''}`}>
     <GpsSyncPulse/>
+    <TableScrollDock/>
     <a href="#management-main" className="mg-skip">Đến nội dung chính</a>
     <aside className="mg-sidebar">{navContent}</aside>
     <dialog ref={mobileRef} className="mg-mobile-nav" aria-label="Menu điều hướng" onCancel={event => { event.preventDefault(); setMobileOpen(false); }}>
