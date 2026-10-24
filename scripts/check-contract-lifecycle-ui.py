@@ -95,6 +95,35 @@ with sync_playwright() as pw:
             initialize();ctx=browser.new_context(viewport=dict(width=width,height=height),timezone_id='Asia/Ho_Chi_Minh',reduced_motion='reduce');ctx.add_cookies([dict(name='himoto_management_session',value=(Path(a.sessions)/f'session-{role}.txt').read_text().strip(),url=a.url,httpOnly=True,sameSite='Strict')]);ctx.route('**/api/**',mock)
             ctx.add_init_script("const f=fetch;window.fetch=function(i,o){const u=new URL(typeof i==='string'?i:i.url,location.href);return u.pathname==='/api/auth/payment-events'?Promise.resolve(Response.json({status:'success',data:[]})):f.call(this,i,o);};")
             page=ctx.new_page();page.on('pageerror',lambda error:errors.append(str(error)))
+            opened=901;page.goto(a.url+'/contracts/overdue',wait_until='networkidle',timeout=90000)
+            menu=page.locator('button.mg-row-menu-trigger').filter(visible=True).first;menu.click()
+            quick=page.get_by_role('menuitem',name='Chuyển sang Nợ xấu',exact=True)
+            if role=='accounting':
+                expect(quick).to_have_count(0);page.keyboard.press('Escape')
+                checks.append(engine+'/'+role+': quick bad-debt action is hidden without contracts.return')
+            else:
+                expect(quick).to_be_visible();quick.click()
+                dialog=page.get_by_role('dialog',name='Chuyển sang Nợ xấu',exact=True)
+                expect(page.get_by_role('dialog')).to_have_count(1)
+                button=dialog.get_by_role('button',name='Chuyển sang Nợ xấu',exact=True)
+                expect(dialog.get_by_text('Nhập lý do ít nhất 5 ký tự để bật nút xác nhận.',exact=True)).to_be_visible()
+                dialog.get_by_label('Lý do / nội dung đối chiếu',exact=True).fill('....');dialog.get_by_role('checkbox').check();expect(button).to_be_disabled()
+                before=len(writes);dialog.get_by_role('button',name='Quay lại',exact=True).click();expect(dialog).not_to_be_visible();assert len(writes)==before
+                menu.click();page.get_by_role('menuitem',name='Chuyển sang Nợ xấu',exact=True).click()
+                dialog,button=confirm(page,'Chuyển sang Nợ xấu','2026-10-24T10:00','Ngày giờ xác nhận')
+                dialog.screenshot(path=str(out/f'{engine}-{role}-quick-bad-debt.png'))
+                old={key:copy.deepcopy(state[901][key]) for key in ['total','paid','deposit','items']};fail_action='mark_bad_debt'
+                button.click();expect(dialog.get_by_role('alert')).to_contain_text('QA kiểm tra lại');expect(dialog.get_by_label('Lý do / nội dung đối chiếu',exact=True)).to_have_value('QA đối chiếu xe và công nợ')
+                button.click();expect(dialog).not_to_be_visible();assert state[901]['status']=='bad_debt'
+                for key,value in old.items():assert state[901][key]==value,key
+                page.goto(a.url+'/contracts',wait_until='networkidle');menu.click();expect(page.get_by_role('menuitem',name='Chuyển sang Nợ xấu',exact=True)).to_have_count(0);page.keyboard.press('Escape')
+                initialize();page.goto(a.url+'/contracts/overdue',wait_until='networkidle');menu.click()
+                state[901]['status']='bad_debt';page.get_by_role('menuitem',name='Chuyển sang Nợ xấu',exact=True).click()
+                dialog=page.get_by_role('dialog',name='Chuyển sang Nợ xấu',exact=True)
+                expect(dialog.get_by_role('alert')).to_contain_text('không còn ở trạng thái quá hạn')
+                expect(dialog.get_by_role('button',name='Chuyển sang Nợ xấu',exact=True)).to_be_disabled();dialog.get_by_role('button',name='Quay lại',exact=True).click()
+                initialize();state[901]['status']='renting';page.goto(a.url+'/contracts',wait_until='networkidle');menu.click();expect(page.get_by_role('menuitem',name='Chuyển sang Nợ xấu',exact=True)).to_have_count(0);page.keyboard.press('Escape');initialize()
+                checks.append(engine+'/'+role+': overdue quick menu opens confirmation directly; cancel/short note/changed eligibility are safe, failed submit preserves input, success refreshes status without touching money or vehicles')
             if role=='accounting':
                 detail,panel=open_detail(page,904);expect(panel.get_by_role('button',name='Thu hồi xe nợ xấu',exact=True)).to_have_count(0);panel.get_by_role('button',name='Xác nhận tất toán',exact=True).click();dialog,button=confirm(page,'Xác nhận tất toán','2026-10-24T10:00','Ngày giờ xác nhận');button.click();expect(panel).to_contain_text('Đã xác nhận tất toán');assert state[904]['status']=='bad_debt';checks.append(engine+'/'+role+': finance can confirm settlement independently without vehicle-return authority');ctx.unroute_all(behavior='ignoreErrors');ctx.close();continue
             detail,panel=open_detail(page,901);panel.get_by_role('button',name='Chuyển sang Nợ xấu',exact=True).click();dialog,button=confirm(page,'Chuyển sang Nợ xấu','2026-10-24T10:00','Ngày giờ xác nhận');fail_action='mark_bad_debt';button.click();expect(dialog.get_by_role('alert')).to_contain_text('QA kiểm tra lại');expect(dialog.get_by_label('Lý do / nội dung đối chiếu',exact=True)).to_have_value('QA đối chiếu xe và công nợ');button.click();expect(dialog).not_to_be_visible();assert writes[-1]['request_id']==writes[-2]['request_id'];expect(panel.get_by_role('button',name='Xác nhận tất toán',exact=True)).to_be_disabled();checks.append(engine+'/'+role+': overdue classification requires reason/confirmation; failure preserves form and retry identity')

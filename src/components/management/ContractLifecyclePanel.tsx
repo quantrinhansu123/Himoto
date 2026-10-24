@@ -10,6 +10,7 @@ import { legacyResumePlan,lifecycleActionLabel,loadContractLifecycle,localLifecy
 import { formatDateTime,formatMoney } from '@/lib/formatters';
 import { MANAGEMENT_CONFIG,optionLabel } from '@/lib/management/config';
 import { installmentSchedule } from '@/lib/management/contract-billing';
+import { ContractBadDebtDialog } from './ContractBadDebtDialog';
 
 export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayment}:{id:number;reloadKey:number;onChanged:(context:ContractLifecycleContext)=>void;onRecover:()=>void;onPayment?:(purpose:'debt'|'deposit_refund'|'extra')=>void}){
   const {can,notify,invalidateData}=useManagement();
@@ -67,10 +68,10 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
       <h4>Lịch sử trạng thái</h4>{context.events.length?<ul>{context.events.map((event,index)=><li key={index}>{formatDateTime(event.at)} · {event.actor_name||`#${event.actor_id}`} · {event.action==='closed'?'Đóng hợp đồng':lifecycleActionLabel[event.action as ContractLifecycleAction]||event.action}<p>{event.note}</p></li>)}</ul>:<p>Chưa có thao tác trạng thái mới.</p>}
     </>}
     {error&&<p role="alert" className="mg-field-error">{error} <button className="mg-button" onClick={()=>void refresh()}>Thử lại</button></p>}
-    {action&&context&&<Dialog title={lifecycleActionLabel[action]} onClose={()=>{if(!busy.current)setAction(null);}} dismissOnBackdrop={!saving}>
+    {action==='mark_bad_debt'&&context&&<ContractBadDebtDialog id={id} code={context.code} onClose={()=>setAction(null)} onDone={next=>{setContext(next);onChanged(next);setAction(null);}}/>}
+    {action&&action!=='mark_bad_debt'&&context&&<Dialog title={lifecycleActionLabel[action]} onClose={()=>{if(!busy.current)setAction(null);}} dismissOnBackdrop={!saving}>
       <form onSubmit={event=>{event.preventDefault();void save();}}><div className="mg-dialog-body">
         <p>{context.code}</p>
-        {action==='mark_bad_debt'&&<p>Chuyển hợp đồng đã quá hạn sang Nợ xấu. Tiền thuê, cọc, phiếu thu/chi và tình trạng xe giữ nguyên.</p>}
         {action==='settle'&&<p>Đối chiếu đủ tiền thuê, phí phát sinh và cọc. {context.all_returned?'Đã trả đủ xe: xác nhận sẽ đóng hợp đồng.':'Chưa trả đủ xe: hợp đồng vẫn Nợ xấu sau khi xác nhận tất toán.'}</p>}
         {action==='hold'&&<p>Chỉ xác nhận khi đã thực tế thu hồi các xe còn đang thuê. Xe được giải phóng để cho thuê lại; lịch đóng tiền dừng phát sinh kỳ mới, nợ và cọc cũ được giữ nguyên.</p>}
         <div className="mg-field"><label htmlFor="lifecycle-at">{action==='hold'?'Ngày giờ thực tế thu xe và bảo lưu':action==='resume'?'Ngày giờ thực tế thuê lại':'Ngày giờ xác nhận'}</label><DateTime24Controls id="lifecycle-at" label={action==='hold'?'Ngày giờ thực tế thu xe và bảo lưu':action==='resume'?'Ngày giờ thực tế thuê lại':'Ngày giờ xác nhận'} value={at} onChange={setAt}/></div>

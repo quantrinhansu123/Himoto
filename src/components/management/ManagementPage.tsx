@@ -40,6 +40,7 @@ function FeatureLoading() { return <div className="mg-toast" role="status">Đang
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
 const ContractDetail = dynamic(() => import('./ContractDetail').then(module => module.ContractDetail), { ssr: false, loading: FeatureLoading });
 const ContractEditDialog = dynamic(() => import('@/components/contracts/ContractEditDialog').then(module=>module.ContractEditDialog), {ssr:false,loading:FeatureLoading});
+const ContractBadDebtDialog = dynamic(() => import('./ContractBadDebtDialog').then(module=>module.ContractBadDebtDialog), {ssr:false,loading:FeatureLoading});
 const loadComposer = () => import('@/components/contracts/ContractComposer');
 const ContractComposer = dynamic(() => loadComposer().then(module => module.ContractComposer), { ssr: false, loading: FeatureLoading });
 const ContractHandoverDialog = dynamic(() => import('@/components/contracts/ContractHandoverDialog').then(module=>module.ContractHandoverDialog), {ssr:false,loading:FeatureLoading});
@@ -115,6 +116,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
   const [inventoryOpen,setInventoryOpen]=useState(false);
   const [recoveryTarget,setRecoveryTarget]=useState<{id:number;code:string}|null>(null);
+  const [badDebtTarget,setBadDebtTarget]=useState<{id:number;code:string}|null>(null);
   const [backfillOpen,setBackfillOpen]=useState(false),[backfillComposer,setBackfillComposer]=useState(false),[backfillRenewal,setBackfillRenewal]=useState(false);
   const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string;query?:string } | null>(null);
   const [renewTarget, setRenewTarget] = useState<ManagementRow | null>(null);
@@ -430,6 +432,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onReminder={kind==='contracts'&&canSendDebtReminder(accessUser)?row=>setReminderTarget(row.id):undefined}
           onHandover={can('contracts.finalize') && kind === 'contracts' && source === 'api' ? row=>setHandoverId(row.id) : undefined}
           onReturn={can('contracts.return') && kind === 'contracts' && source === 'api' ? row => setReturnTarget({ orderId: row.id, code: row.code }) : undefined}
+          onMarkBadDebt={can('contracts.return') && kind==='contracts' && source==='api' ? row=>setBadDebtTarget({id:row.id,code:row.code}) : undefined}
           onRenew={can('contracts.renew') && kind === 'contracts' && source === 'api' ? row => setRenewTarget(row) : undefined}
           onVehicleChange={can('contracts.return') && kind === 'contracts' && source === 'api' ? row => setVehicleTarget({ orderId: row.id, code: row.code }) : undefined}
           onBatteryRent={can('contracts.draft') && kind === 'contracts' && source === 'api' ? row => setBatteryRentTarget(row) : undefined}
@@ -483,6 +486,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {telegramTarget&&<ContractTelegramDialog order={telegramTarget==='pending'?undefined:telegramTarget} store={selectedStore} onClose={()=>setTelegramTarget(null)}/>}
     {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} initialQuery={returnTarget.query} onClose={() => setReturnTarget(null)} />}
     {recoveryTarget&&<BadDebtRecoveryDialog id={recoveryTarget.id} code={recoveryTarget.code} onClose={()=>setRecoveryTarget(null)} onRecovered={()=>{table.refresh();invalidateData(['contracts','vehicles']);}}/>}
+    {badDebtTarget&&<ContractBadDebtDialog id={badDebtTarget.id} code={badDebtTarget.code} onClose={()=>setBadDebtTarget(null)} onDone={()=>{setBadDebtTarget(null);table.refresh();}}/>}
     {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} backfill={backfillRenewal} onClose={() => {setRenewTarget(null);setBackfillRenewal(false);}} />}
     {backfillOpen&&<ContractBackfillDialog onClose={()=>setBackfillOpen(false)} onCreate={()=>{setBackfillOpen(false);setBackfillComposer(true);setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}} onSelect={(action,row)=>{setBackfillOpen(false);if(action==='renewal'){setBackfillRenewal(true);setRenewTarget(row);}else router.push(`${cashbookPaymentPath(row.id)}&backfill=1`);}}/>}
     {renewPicker && <Dialog title="Chọn hợp đồng gia hạn" onClose={()=>setRenewPicker(false)}><div className="mg-dialog-body"><label className="mg-field">Tìm hợp đồng cần gia hạn<input type="search" autoFocus value={renewSearch} placeholder="Mã hợp đồng, khách, SĐT hoặc biển số" onChange={event=>setRenewSearch(event.target.value)}/></label><ul className="mg-operation-picks">{(renewable.data?.rows || []).map(row=><li key={row.id}><button type="button" onClick={()=>{setRenewPicker(false);setRenewTarget(row);}}><strong>{row.code} · {row.customer_name}</strong><span>{row.license} · {row.customer_phone}</span></button></li>)}</ul></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setRenewPicker(false)}>Đóng</button></div></Dialog>}

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, BatteryCharging, Bike, CalendarPlus, Copy, Eye, FileSearch, LoaderCircle, MessageCircle, Pencil, Printer, RefreshCw, RotateCcw, ShieldBan, ShieldCheck, Trash2, Wallet } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, BatteryCharging, Bike, CalendarPlus, Copy, Eye, FileSearch, LoaderCircle, MessageCircle, Pencil, Printer, RefreshCw, RotateCcw, ShieldBan, ShieldCheck, Trash2, TriangleAlert, Wallet } from 'lucide-react';
 import { ManagementColumn, ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { optionLabel, statusTone, OWNERSHIP_CONTRACT_TYPES } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
@@ -55,6 +55,7 @@ interface Props {
   onTelegram?: (row: ManagementRow) => void;
   onHandover?: (row: ManagementRow) => void;
   onReturn?: (row: ManagementRow) => void;
+  onMarkBadDebt?: (row: ManagementRow) => void;
   onRenew?: (row: ManagementRow) => void;
   onVehicleChange?: (row: ManagementRow) => void;
   onBatteryRent?: (row: ManagementRow) => void;
@@ -76,7 +77,7 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onRenew, onVehicleChange, onBatteryRent, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onRenew, onVehicleChange, onBatteryRent, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const {can,accessUser}=useManagement();
   const blockingError=rows.length?'':error;
   const selectable = Boolean(selectedIds && onSelectionChange);
@@ -100,6 +101,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (isContract && onHandover && row.status === 'deposit_contract') actions.push({key:'handover',label:'Giao xe',icon:<Bike size={16}/>,onSelect:()=>onHandover(row)});
     if(isContract&&onPrint&&can('contracts.finalize')&&row.status==='deposit_contract')actions.push({key:'continue-reservation',label:'Bổ sung hồ sơ / Tiếp tục hợp đồng cọc',icon:<Pencil size={16}/>,onSelect:()=>onPrint(row)});
     if (isActiveContract && onReturn) actions.push({ key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
+    if(isActiveContract&&onMarkBadDebt&&can('contracts.return')&&(row.status==='overdue'||row.collection_overdue===1))actions.push({key:'mark-bad-debt',label:'Chuyển sang Nợ xấu',icon:<TriangleAlert size={16}/>,onSelect:()=>onMarkBadDebt(row)});
     if (isActiveContract && !row.billing_plan_json && onRenew) actions.push({ key: 'renew', label: 'Gia hạn', title: 'Gia hạn trực tiếp trên hợp đồng', icon: <CalendarPlus size={16} />, onSelect: () => onRenew(row) });
     if (isActiveContract && onVehicleChange) actions.push({ key: 'vehicle', label: 'Đổi xe', title: 'Đổi xe trực tiếp trên hợp đồng', icon: <Bike size={16} />, onSelect: () => onVehicleChange(row) });
     if (isContract && onBatteryRent && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'battery', label: 'Thuê pin / sạc', title: 'Lập hợp đồng thuê pin hoặc sạc theo khách và xe của hợp đồng này', icon: <BatteryCharging size={16} />, onSelect: () => onBatteryRent(row) });
