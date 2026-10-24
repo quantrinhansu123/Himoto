@@ -90,6 +90,8 @@ const foldedSql=(value:string)=>`lower(translate(regexp_replace(normalize(COALES
 function contractSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
   return {sql:` AND (o.contract_number ILIKE $3 OR o.draft_reference ILIKE $3 OR ${foldedSql('o.customer_name')} LIKE ${foldedSql('$3')} OR COALESCE(o.customer_phone,'') ILIKE $3
+    OR EXISTS (SELECT 1 FROM himoto.customers linked_customer WHERE linked_customer.id=o.customer_id
+      AND (${foldedSql('linked_customer.name')} LIKE ${foldedSql('$3')} OR COALESCE(linked_customer.phone,'') ILIKE $3))
     OR EXISTS (SELECT 1 FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
       WHERE d.order_id=o.id AND d.deleted_at IS NULL AND (v.license ILIKE $3
         OR regexp_replace(upper(COALESCE(v.license,'')),'[^A-Z0-9]','','g') LIKE '%'||regexp_replace(upper($3),'[^A-Z0-9]','','g')||'%')))`,
@@ -143,10 +145,13 @@ export function customerPageSql(scopeClause:string) {
     WHERE true${scopeClause}`;
 }
 function contractHydrateSql() {
+  // Legacy imports often have only customer_id. Resolve the linked profile on
+  // this bounded page, using the same customer fields as CONTRACT_LIST_SQL.
   return `SELECT o.id, o.contract_number, o.draft_reference,
     ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
-    o.customer_id, o.customer_name, o.customer_phone,
+    o.customer_id, c.status AS customer_status,
+    COALESCE(c.name,o.customer_name) AS customer_name, COALESCE(c.phone,o.customer_phone) AS customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind,
     COALESCE(o.rent_at,ov.start_date) AS start_date, COALESCE(o.return_at,ov.end_date) AS end_date, o.total AS total_amount,
     ${rentalPaidSql()} AS paid_amount,
@@ -165,6 +170,7 @@ function contractHydrateSql() {
     ELSE jsonb_build_object('management_composer',jsonb_build_object('installment_plan',o.draft_payload #> '{management_composer,installment_plan}')) END AS draft_payload,
     ov.vehicles
     FROM himoto.orders o
+    LEFT JOIN himoto.customers c ON c.id=o.customer_id
     LEFT JOIN himoto.stores s ON s.id = o.store_id
     ${depositLateral()}
     LEFT JOIN (SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_account_attribution ORDER BY user_id,store_id,id) staff

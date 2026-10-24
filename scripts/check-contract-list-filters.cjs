@@ -6,7 +6,7 @@ const {createInstallmentPlan}=load(path.join(root,'lib/management/contract-billi
 const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database'));
 async function main(){const c=await ownerDatabase.connect(),checks=[];
  try{await c.query('BEGIN');
-  const tables=['orders','order_vehicle_details','vehicles','stores','staff_profiles','transactions'];
+  const tables=['orders','order_vehicle_details','vehicles','stores','staff_profiles','staff_account_attribution','customers','transactions'];
   for(const table of tables)await c.query(`CREATE TEMP TABLE qa_filters_${table} ON COMMIT DROP AS SELECT * FROM himoto.${table} WHERE false`);
   const commands=[],db={async query(sql,args){commands.push({sql,args});for(const table of tables)sql=sql.replaceAll('himoto.'+table,'pg_temp.qa_filters_'+table);assert(!sql.includes('himoto.'),'Every business read must use TEMP');return c.query(sql,args);}};
   await c.query(`INSERT INTO qa_filters_stores(id,store_name,kind) VALUES(1,'QA','lease_to_own')`);

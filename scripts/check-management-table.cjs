@@ -61,6 +61,7 @@ async function main(){
   assert.match(pageSql,/FROM himoto\.orders o/);
   assert.match(pageSql,/order_status='draft' THEN o\.draft_payload/);
   assert.doesNotMatch(pageSql,/himoto\.customers/);
+  assert.doesNotMatch(pageSql,/\bc\./);
   assert.doesNotMatch(pageSql,/himoto\.transactions/);
   assert.doesNotMatch(pageSql,/himoto\.vehicles/);
   const drafts=load(path.join(root,'lib/server/contract-drafts'));
