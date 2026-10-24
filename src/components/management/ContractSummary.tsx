@@ -13,8 +13,8 @@ export function ContractSummary({ rows, customers, loading, unavailable, values 
   const metrics = [
     { label: 'Số hợp đồng', value: summary.contractCount, hint: 'Toàn bộ kết quả lọc, gồm nháp', money: false },
     { label: 'Số Blacklist', value: summary.blacklistCount, hint: 'Số khách duy nhất trong kết quả lọc', money: false },
-    { label: 'Tổng tiền', value: summary.totalAmount, hint: 'Tiền hợp đồng, trừ nháp và đã hủy', money: true },
-    { label: 'Công nợ', value: summary.receivableAmount, hint: 'Tạm tính, bao gồm nợ xấu', money: true },
+    { label: 'Tổng tiền', value: summary.totalAmount, hint: 'Không gồm nháp, đã hủy và Nợ xấu', money: true },
+    { label: 'Công nợ', value: summary.receivableAmount, hint: 'Tạm tính, không gồm Nợ xấu', money: true },
     { label: 'Nợ xấu', value: summary.badDebtAmount, hint: 'Tiền còn thiếu của hợp đồng Nợ xấu', money: true },
   ];
   const formatted = metrics.map(metric => ready && metric.value !== null

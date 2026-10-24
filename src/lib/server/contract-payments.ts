@@ -1,4 +1,5 @@
 import 'server-only';
+import { badDebtClock,badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { extendContractVehicleLine } from './contract-renewal-line';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
@@ -71,7 +72,9 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   const planValue = order.draft_payload?.management_composer?.installment_plan;
   const plan = planValue ? parseInstallmentPlan(planValue) : null;
   if (planValue && !plan) throw new ContractPaymentError('Lịch đóng tiền thuê sở hữu chưa hợp lệ. Cần đối chiếu trước khi thanh toán.', 409);
-  const billing = plan && (['renting', 'overdue', 'wait_payment', 'bad_debt','reserved'].includes(String(order.status)) || order.status === 'completed' && plan.stopped_at) ? installmentBalance(plan, baseTotal, paid) : undefined;
+  const clock=badDebtClock(String(order.status),badDebtCutoff(order.draft_payload)||plan?.stopped_at&&`${plan.stopped_at}:00+07:00`,Date.now());
+  if(plan&&clock===undefined)throw new ContractPaymentError('Chưa có thời điểm chốt Nợ xấu; cần đối chiếu trước khi thanh toán.',409);
+  const billing = plan && (['renting', 'overdue', 'wait_payment', 'bad_debt','reserved'].includes(String(order.status)) || order.status === 'completed' && plan.stopped_at) ? installmentBalance(plan, baseTotal, paid,clock) : undefined;
   const total = billing ? billing.accrued_total : baseTotal;
   const depositPaid = money(order.deposit_paid) ?? 0, depositRefunded = money(order.deposit_refunded) ?? 0;
   // Store banks/cash must match cơ sở nguồn; company banks are usable from every store (Cashbook may attach them to a display branch).

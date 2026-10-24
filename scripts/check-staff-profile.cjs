@@ -46,6 +46,11 @@ async function run() {
   checks.push('identity issue dates reject impossible calendar days and map to date input format');
 
   const db = load(path.join(root, 'lib/server/himoto-database')).himotoPool;
+  const owner=load(path.join(root,'lib/server/himoto-database')).ownerDatabase,ownerDescriptors=Object.getOwnPropertyDescriptors(owner);
+  const staffAccounts=load(path.join(root,'lib/server/staff-accounts')),originalStaffSync=staffAccounts.syncStaffAccount;
+  const {dataAccess}=load(path.join(root,'lib/server/access-context'));
+  const staffActor={id:7,access_role:'admin',scope_all:true,permissions:[]};
+  staffAccounts.syncStaffAccount=async()=>null; // Atomic provisioning is covered by check-staff-accounts.cjs.
   const dbDescriptors = Object.getOwnPropertyDescriptors(db);
   const session = load(path.join(root, 'lib/server/management-session'));
   const auth = session.protectDatabaseRequest,originalUser=session.userFromSession;
@@ -60,6 +65,7 @@ async function run() {
   };
   Object.defineProperty(db, 'query', { configurable: true, value: query });
   Object.defineProperty(db, 'connect', { configurable: true, value: async () => ({ query, release() {} }) });
+  Object.defineProperty(owner,'connect',{configurable:true,value:async()=>({query,release(){}})});
   const request = (method, data) => new NextRequest('http://localhost/api/auth/customers', { method, headers: { Origin:'http://localhost','Content-Type': 'application/json' }, body: JSON.stringify(data) });
   try {
     const accountServer = load(path.join(root, 'lib/server/cashbook-accounts'));
@@ -75,7 +81,7 @@ async function run() {
 
     const staffServer = load(path.join(root, 'lib/server/staff-management'));
     queries.length = 0;
-    assert.equal((await staffServer.createStaff(request('POST', { name: 'QA', phone: '0900000001', email: '', position: 'Nhân viên kinh doanh', status: 'active', store_id: 23 }))).status, 201);
+    assert.equal((await dataAccess.run(staffActor,()=>staffServer.createStaff(request('POST', { name: 'QA', phone: '0900000001', email: '', position: 'Nhân viên kinh doanh', status: 'active', store_id: 23 })))).status, 201);
     assert.equal(queries.find(q => q.sql.includes('INSERT INTO himoto.staff_profiles')).params[3], 'NVKD');
     checks.push('staff API stores canonical role before writing');
 
@@ -91,7 +97,7 @@ async function run() {
     assert.deepEqual(queries.find(q => q.sql.includes('UPDATE himoto.customers')).params.slice(11,15), [true,'2024-01-15',true,'Nơi cấp QA']);
     assert.equal((await route.POST(request('POST', { ...customer, id_card_issued_on: '2025-02-29' }), { params: Promise.resolve({ path: ['customers'] }) })).status, 400);
     checks.push('customer create/edit API sends both identity fields to SQL and rejects invalid issue dates');
-  } finally { session.protectDatabaseRequest = auth;session.userFromSession=originalUser; Object.defineProperties(db, dbDescriptors); }
+  } finally { session.protectDatabaseRequest = auth;session.userFromSession=originalUser; Object.defineProperties(db, dbDescriptors);Object.defineProperties(owner,ownerDescriptors); }
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });
     const client = await db.connect();
@@ -117,6 +123,7 @@ async function run() {
       Object.defineProperty(db, 'query', { configurable: true, value: proxy });
       // Route transactions use savepoints inside the outer rollback.
       Object.defineProperty(db, 'connect', { configurable: true, value: async () => ({ query: (sql, params) => proxy(sql === 'BEGIN' ? 'SAVEPOINT customer_write' : sql === 'COMMIT' ? 'RELEASE SAVEPOINT customer_write' : sql === 'ROLLBACK' ? 'ROLLBACK TO SAVEPOINT customer_write' : sql, params), release() {} }) });
+      Object.defineProperty(owner,'connect',{configurable:true,value:async()=>({query:(sql,params)=>proxy(sql==='BEGIN'?'SAVEPOINT staff_write':sql==='COMMIT'?'RELEASE SAVEPOINT staff_write':sql==='ROLLBACK'?'ROLLBACK TO SAVEPOINT staff_write':sql,params),release(){}})});
       session.protectDatabaseRequest = async () => null;
       session.userFromSession=async()=>({id:7,access_role:'admin',scope_all:true,permissions:[]});
       const accounts = load(path.join(root, 'lib/server/cashbook-accounts'));
@@ -128,7 +135,7 @@ async function run() {
       assert.equal((await accounts.updateAccount('bank', accountId, request('PATCH', { ...values, store_id: '31' }))).status, 200);
       assert.equal((await proxy('SELECT store_id FROM himoto.banks WHERE id=$1',[accountId])).rows[0].store_id, '31');
       const staff = load(path.join(root, 'lib/server/staff-management'));
-      assert.equal((await staff.createStaff(request('POST', { name: 'QA', phone: '0900000001', email: '', position: 'Nhân viên kinh doanh Giáp Bát', status: 'active', store_id: 23 }))).status, 201);
+      assert.equal((await dataAccess.run(staffActor,()=>staff.createStaff(request('POST', { name: 'QA', phone: '0900000001', email: '', position: 'Nhân viên kinh doanh Giáp Bát', status: 'active', store_id: 23 })))).status, 201);
       assert.equal((await proxy('SELECT position FROM himoto.staff_profiles')).rows[0].position, 'NVKD');
       const route = load(path.join(root, 'app/api/auth/[...path]/route'));
       const customer = { name: 'QA', phone: '0900000001', address: 'QA', id_card: '000000000001', id_card_issued_on: '2024-01-15', id_card_issued_by: 'Nơi cấp QA', status: 'active', store_id: 23 };
@@ -143,8 +150,9 @@ async function run() {
       assert.equal((await route.PATCH(request('PATCH', { ...customer, id_card_issued_on: '', id_card_issued_by: '' }), params)).status, 200);
       assert.deepEqual(await identity(), { day: null, place: null });
       checks.push('PostgreSQL TEMP rollback: branch company account roundtrip, canonical staff insert, customer identity create/update/preserve/clear; no operational writes');
-    } finally { await client.query('ROLLBACK').catch(() => {}); client.release(); session.protectDatabaseRequest = auth;session.userFromSession=originalUser; Object.defineProperties(db, dbDescriptors); }
+    } finally { await client.query('ROLLBACK').catch(() => {}); client.release(); session.protectDatabaseRequest = auth;session.userFromSession=originalUser; Object.defineProperties(db, dbDescriptors);Object.defineProperties(owner,ownerDescriptors); }
   }
+  staffAccounts.syncStaffAccount=originalStaffSync;
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
 }
 run().then(() => process.exit(0)).catch(error => { console.error(error); process.exit(1); });

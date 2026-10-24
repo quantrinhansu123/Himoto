@@ -90,7 +90,7 @@ async function main(){
   const sqlCommands=[];
   const paged=await server.readManagementTable({async query(sql,params){
     sqlCommands.push(sql);
-    if(sql.includes('LIMIT')){
+    if(/\bLIMIT \$1\b/.test(sql)){
       assert.equal(params[0],10);
       return {rows:Array.from({length:10},(_,i)=>({id:i+1,status:'renting',contract_number:`HD-${i+1}`,vehicles:[],__total_count:31}))};
     }

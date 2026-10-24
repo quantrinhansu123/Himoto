@@ -5,6 +5,7 @@ import { dateTimeInput } from './contract-document';
 import { cloneContractRecord, updateContractRecord } from './contract-record';
 import { DraftStorage, readDemoDrafts, saveDraftRecord, writeDemoDrafts, DEMO_DRAFT_STORAGE_KEY } from './contract-drafts';
 import { normalizeStaffPosition } from './staff-positions';
+import { badDebtCutoff } from './contract-bad-debt';
 import { applyInstallmentBilling } from './contract-billing';
 
 export function createDemoRepository(draftStorage?: DraftStorage): ManagementRepository {
@@ -178,6 +179,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     legacy_items_json: JSON.stringify(Array.isArray(payload.order_items) ? payload.order_items : []), draft_revision: text(raw.draft_revision),
     draft_json: typeof raw.draft_json === 'string' ? raw.draft_json : snapshot.customer && Array.isArray(snapshot.vehicles) ? JSON.stringify(snapshot) : undefined,
     billing_plan_json: saved.installment_plan ? JSON.stringify(saved.installment_plan) : '',
+    bad_debt_at: text(raw.bad_debt_at)||badDebtCutoff(payload),
     profile_json: saved.profile ? JSON.stringify(saved.profile) : '',
     // Keep numeric/unrecognized statuses visible until the API contract is agreed.
   };

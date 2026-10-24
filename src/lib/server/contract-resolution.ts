@@ -1,6 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import { installmentBalance,parseInstallmentPlan } from '@/lib/management/contract-billing';
+import { badDebtClock,badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { depositLateral,rentalPaidSql } from './contract-deposits';
 
 type Database=Pick<PoolClient,'query'>;
@@ -14,10 +15,11 @@ export async function readContractResolution(db:Database,id:number){
   const money=(value:unknown)=>value===null||value===undefined||String(value).trim()===''||!Number.isSafeInteger(Number(value))||Number(value)<0?null:Number(value);
   const base=money(row.total),paid=money(row.paid),rawPlan=row.draft_payload?.management_composer?.installment_plan;
   const plan=rawPlan?parseInstallmentPlan(rawPlan):null;
-  const balance=plan?installmentBalance(plan,base,paid):null;
-  const total=rawPlan&&!plan?null:balance?balance.accrued_total:base;
+  const clock=badDebtClock(row.order_status,badDebtCutoff(row.draft_payload)||plan?.stopped_at&&`${plan.stopped_at}:00+07:00`,Date.now());
+  const balance=plan&&clock!==undefined?installmentBalance(plan,base,paid,clock):null;
+  const total=rawPlan&&(!plan||clock===undefined)?null:balance?balance.accrued_total:base;
   // Before return, settlement also covers future contractual installments.
-  const target=balance&&plan&&!plan.stopped_at&&base!==null?base+balance.expected_total-plan.amount:total;
+  const target=balance&&plan&&!plan.stopped_at&&row.order_status!=='bad_debt'&&base!==null?base+balance.expected_total-plan.amount:total;
   const remaining=target===null||paid===null?null:Math.max(target-paid,0);
   const overpayment=target===null||paid===null?null:Math.max(paid-target,0);
   const depositHeld=Math.max(Number(row.deposit_paid)-Number(row.deposit_refunded),0);

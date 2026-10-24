@@ -4,7 +4,8 @@ import { MANAGEMENT_CONFIG } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
 import { EMPTY_QUERY, filterRows,sortRows } from '@/lib/management/table-utils';
 import { projectManagementTable, type ManagementTableInput, type TableKind } from '@/lib/management/management-table';
-import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
+import { CONTRACT_LIST_SQL, contractListScopeClause,contractIndexSql } from './contract-drafts';
+import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
 import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits';
@@ -49,7 +50,7 @@ function contractPageScopeClause(scope:string):string {
 function contractPageStatusClause(status:string) {
   if(!status)return '';
   if(status==='renting')return ` AND o.order_status IN ('renting','overdue')`;
-  if(status==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment','bad_debt')`;
+  if(status==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment')`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
   return ` AND o.order_status='${status}'`;
 }
@@ -67,7 +68,7 @@ export function contractStatusClause(status:string) {
   if(!status)return '';
   if(status==='renting')return ` AND o.order_status IN ('renting','overdue')`;
   if(status==='overdue')return ` AND (o.order_status='overdue' OR o.order_status='renting' AND o.return_at < now()
-    OR o.order_status IN ('renting','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL)`;
+    OR o.order_status IN ('renting','wait_payment') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL)`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
   return ` AND o.order_status='${status}'`;
 }
@@ -143,6 +144,7 @@ export function customerPageSql(scopeClause:string) {
 }
 function contractHydrateSql() {
   return `SELECT o.id, o.contract_number, o.draft_reference,
+    ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, o.customer_name, o.customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind,
@@ -165,10 +167,10 @@ function contractHydrateSql() {
     FROM himoto.orders o
     LEFT JOIN himoto.stores s ON s.id = o.store_id
     ${depositLateral()}
-    LEFT JOIN (SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_profiles ORDER BY user_id,store_id,id) staff
+    LEFT JOIN (SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_account_attribution ORDER BY user_id,store_id,id) staff
       ON staff.user_id=o.contract_responsible_user_id AND staff.store_id=o.store_id
     LEFT JOIN himoto.staff_profiles saved_staff ON saved_staff.id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'
-    LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_profiles ORDER BY user_id,id) fallback_staff
+    LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_account_attribution ORDER BY user_id,id) fallback_staff
       ON fallback_staff.user_id=o.contract_responsible_user_id
     LEFT JOIN LATERAL (
       SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
@@ -432,10 +434,19 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     const pageOffset=(page-1)*input.size;
     const rows=filterBeforePaging?sortRows(matches,input.sort,input.direction).slice(pageOffset,pageOffset+input.size):matches;
     const pages=Math.max(1,Math.ceil(total/input.size));
+    let stats;
+    if(kind==='contracts'&&params.get('status_counts')==='1'){
+      const statsClause=`${contractPageScopeClause(input.scope)}${storeSql}${contractFilterSql(input.query.filters)}`;
+      const base=`${contractVehicleDetailsSql(contractIndexSql(statsClause,{includePaid:true,includeCompany:input.scope==='vat',includeVehicleLabels:true}))}${search.sql.replaceAll('$3','$1')}`;
+      const result=await client.query(monitoring||input.query.overdueDays?overdueDetailsSql(base):base,search.value?[search.value]:[]);
+      const index=mapManagementRows('contracts',result.rows).map(row=>withContractMonitoring(applyInstallmentBilling(row,now),now));
+      stats=projectManagementTable(index,{...input,page:1,size:1},true,now);
+    }
     return {
-      rows,total,scopeCount:scopeCount??total,tabCount:catalogue?.tabCount??total,page,pages,
-      statusCounts:catalogue?.statusCounts??[],statuses:catalogue?catalogue.statusCounts.map(([status])=>status):[...new Set(rows.map(row=>row.status))].sort(),dueCount:0,
-      summary:kind==='contracts'?{contractCount:rows.length,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null,
+      rows,total,scopeCount:scopeCount??total,tabCount:stats?.tabCount??catalogue?.tabCount??total,page,pages,
+      statusCounts:stats?.statusCounts??catalogue?.statusCounts??[],statuses:stats?.statuses??(catalogue?catalogue.statusCounts.map(([status])=>status):[...new Set(rows.map(row=>row.status))].sort()),dueCount:stats?.dueCount??0,
+      summary:stats?.summary??(kind==='contracts'?{contractCount:total,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null),
+      ...(stats?.overdueCounts?{overdueCounts:stats.overdueCounts}:{}),
       recentDays:kind==='contracts'?recentDays??null:undefined,
     };
   }

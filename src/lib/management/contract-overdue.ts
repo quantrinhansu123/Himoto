@@ -1,6 +1,7 @@
 import type { ManagementRow } from './types';
 import { DEFAULT_LATE_HOURLY_RATE,lateReturnFee } from './return-fees';
 import { OWNERSHIP_CONTRACT_TYPES } from './config';
+import { badDebtClock } from './contract-bad-debt';
 
 export const OVERDUE_BUCKETS=[
   {key:'traditional-overdue',label:'Quá hạn'}, {key:'traditional-3',label:'Trên 3 ngày'}, {key:'traditional-10',label:'Trên 10 ngày'},
@@ -35,6 +36,7 @@ function itemsFrom(value:unknown):OverdueItem[]|undefined {
 }
 /** Read-only estimate for vehicles still on hire. It never changes contract totals or receipts. */
 export function withContractOverdue(row:ManagementRow,now=Date.now()):ManagementRow {
+  const clock=badDebtClock(row.status,row.bad_debt_at,now);
   const saved=itemsFrom(row.overdue_items_json);
   const vehicles=itemsFrom(row.vehicles_json);
   const dated=vehicles?.filter(item=>item.return_at);
@@ -44,7 +46,8 @@ export function withContractOverdue(row:ManagementRow,now=Date.now()):Management
     if(item.completed_at)continue;
     const due=Date.parse(String(item.return_at||''));
     if(!Number.isFinite(due)){unknownFee=true;continue;}
-    const elapsed=Math.max(now-due,0);
+    if(clock===undefined){unknownFee=true;continue;}
+    const elapsed=Math.max(clock-due,0);
     minutes=Math.max(minutes??0,Math.floor(elapsed/60000));
     if(!elapsed)continue;
     const price=Number(item.daily_price);

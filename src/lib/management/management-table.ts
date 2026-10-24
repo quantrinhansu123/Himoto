@@ -48,7 +48,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if (input.scope === 'overdue') rows=rows.filter(row=>row.status==='overdue'||row.status==='bad_debt'||row.collection_overdue===1);
   const bucketRows=filterRows(rows,{...input.query,status:'',overdueBucket:undefined},input.store);
   const overdueCounts=Object.fromEntries(OVERDUE_BUCKETS.map(bucket=>[bucket.key,bucketRows.filter(row=>matchesOverdueBucket(row,bucket.key)).length]));
-  const scoped=filterRows(rows,EMPTY_QUERY,input.store),tabRows=filterRows(scoped,{...input.query,status:''},'all');
+  const scoped=filterRows(rows,EMPTY_QUERY,input.store),tabRows=filterRows(scoped,{...input.query,status:'',overdueBucket:undefined},'all');
   const counts=new Map<string,number>();for(const row of tabRows)counts.set(row.status,(counts.get(row.status)||0)+1);
   if(monitoring)for(const row of tabRows)if(row.status!=='overdue'&&row.collection_overdue===1)counts.set('overdue',(counts.get('overdue')||0)+1);
   // Overdue vehicles are still on rent until the actual handover is recorded.
@@ -72,6 +72,7 @@ export async function requestManagementTable(input: ManagementTableInput, signal
   try {
   const params=managementTableQuery(input,all);
   if(input.kind==='contracts'&&!all)params.set('scope_count','1');
+  if(input.kind==='contracts'&&!all)params.set('status_counts','1');
   const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${params}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal});
   const result=await response.json().catch(()=>null);
   if (!response.ok || result?.status!=='success') throw new Error(result?.message || 'Không tải được danh sách. Thử lại.');

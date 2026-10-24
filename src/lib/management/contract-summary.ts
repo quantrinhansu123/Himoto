@@ -1,8 +1,8 @@
 import type { ManagementRow } from './types';
 
 // These are estimates from recorded contract amounts, not a settlement ledger.
-const RECEIVABLE_STATUSES = new Set(['renting', 'overdue', 'wait_payment', 'bad_debt','reserved']);
-const EXCLUDED_TOTAL_STATUSES = new Set(['draft', 'cancelled']);
+const RECEIVABLE_STATUSES = new Set(['renting', 'overdue', 'wait_payment','reserved']);
+const EXCLUDED_TOTAL_STATUSES = new Set(['draft', 'cancelled','bad_debt']);
 
 export interface ContractSummary {
   contractCount: number;
@@ -29,11 +29,11 @@ export function summarizeContracts(rows: ManagementRow[], customers: ManagementR
       const total = amount(row.total_amount);
       totalAmount = totalAmount === null || total === null ? null : totalAmount + total;
     }
-    if (!RECEIVABLE_STATUSES.has(row.status)) continue;
+    if (!RECEIVABLE_STATUSES.has(row.status)&&row.status!=='bad_debt') continue;
     const total = amount(row.total_amount), paid = amount(row.paid_amount);
     const debt = total === null || paid === null ? null : Math.max(total - paid, 0);
-    receivableAmount = receivableAmount === null || debt === null ? null : receivableAmount + debt;
     if (row.status === 'bad_debt') badDebtAmount = badDebtAmount === null || debt === null ? null : badDebtAmount + debt;
+    else receivableAmount = receivableAmount === null || debt === null ? null : receivableAmount + debt;
   }
   return { contractCount: rows.length, blacklistCount: matchedBlacklist.size, totalAmount, receivableAmount, badDebtAmount };
 }

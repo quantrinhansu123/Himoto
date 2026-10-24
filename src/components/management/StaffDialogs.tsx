@@ -9,6 +9,8 @@ import { ManagementRow } from '@/lib/management/types';
 import { Dialog } from './Dialog';
 import { SuggestionInput } from './SuggestionInput';
 import { useManagement } from './ManagementProvider';
+import type { IssuedAccountCredentials } from '@/lib/management/accounts';
+import { AccountCredentialsDialog } from './AccountCredentialsDialog';
 
 export type StaffDialogMode = 'view' | 'edit' | 'delete' | 'create';
 const statusLabel = (value: string) => STAFF_STATUSES.find(option => option.value === value)?.label || value || '—';
@@ -19,7 +21,7 @@ async function saveStaff(id: number | null, body: Record<string, unknown>) {
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const result = await response.json().catch(() => null);
   if (!response.ok || result?.status !== 'success') throw new Error(result?.message || `Không lưu được nhân sự (HTTP ${response.status}).`);
-  return result.data as { id: number; staff_code: string } | null;
+  return result.data as { id: number; staff_code: string;credentials?:IssuedAccountCredentials|null } | null;
 }
 
 interface Props { row: ManagementRow | null; mode: StaffDialogMode; stores: ManagementRow[]; defaultStoreId?: string; onClose: () => void; onChanged: (created?: { name: string; code: string }) => void | Promise<void>; onSwitch?: (mode: StaffDialogMode) => void }
@@ -33,12 +35,13 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [issued,setIssued]=useState<IssuedAccountCredentials|null>(null);
   const busy = useRef(false);
   const change = (key: keyof typeof draft, value: string) => { setDraft(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: '' })); };
-  async function run(action: () => Promise<{ name: string; code: string } | void>) {
+  async function run(action: () => Promise<{ name: string; code: string;credentials?:IssuedAccountCredentials|null } | void>) {
     if (busy.current) return;
     busy.current = true; setSaving(true); setError('');
-    try { const created = await action(); await onChanged(created || undefined); onClose(); }
+    try { const created = await action(); await onChanged(created || undefined); if(created?.credentials)setIssued(created.credentials);else onClose(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Không thực hiện được thao tác.'); }
     finally { busy.current = false; setSaving(false); }
   }
@@ -52,11 +55,12 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
     if (Object.keys(next).length) return;
     const body = { name: draft.name.trim(), phone: draft.phone.trim(), email: draft.email.trim(), position: normalizeStaffPosition(draft.position), store_id: draft.store_id ? Number(draft.store_id) : null, status: draft.status };
     void run(async () => {
-      if (!creating) { await saveStaff(row.id, body); return; }
+      if (!creating) { const saved=await saveStaff(row.id, body);if(saved?.credentials)return {name:body.name,code:row.code,credentials:saved.credentials};return; }
       const created = await saveStaff(null, { ...body, joined_at: draft.joined_at });
-      return { name: body.name, code: created?.staff_code || '' };
+      return { name: body.name, code: created?.staff_code || '',credentials:created?.credentials };
     });
   }
+  if(issued)return <AccountCredentialsDialog value={issued} onClose={onClose}/>;
   const close = () => { if (!busy.current) onClose(); };
   const title = creating ? 'Thêm nhân sự' : mode === 'view' ? 'Hồ sơ nhân sự' : mode === 'edit' ? 'Sửa nhân sự' : 'Xóa nhân sự';
   const positions = staffPositionSuggestions((dataset?.staff || []).map(person => person.position));

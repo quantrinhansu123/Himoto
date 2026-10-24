@@ -21,14 +21,20 @@ export const ACCESS_PERMISSION_LABELS:Record<AccessPermission,string>={
 };
 export const ACCESS_ROLES = {
   branch_staff: {label:'Nhân viên cơ sở',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
+  branch_manager: {label:'Quản lý cơ sở',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','hr.read','hr.write','accounts.manage']},
   ownership_staff: {label:'Nhân viên thuê sở hữu',permissions:['contracts.read','contracts.draft','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
-  ownership_manager: {label:'Quản lý thuê sở hữu',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
+  ownership_manager: {label:'Quản lý thuê sở hữu',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','hr.read','hr.write','accounts.manage']},
   hr: {label:'HCNS',permissions:['hr.read','hr.write']},
+  headquarters_sales: {label:'Kinh doanh / Telesale · Trụ sở',permissions:['contracts.read','customers.read','vehicles.read']},
+  headquarters_debt: {label:'Quản lý công nợ · Trụ sở',permissions:['contracts.read','customers.read','vehicles.read']},
   accounting: {label:'Kế toán',permissions:['contracts.read','finance.read','finance.write']},
   internal_control: {label:'Kiểm toán nội bộ (KTNB)',permissions:['contracts.read','vehicles.read','finance.read','shift.review']},
   admin: {label:'Quản trị viên',permissions:[...ACCESS_PERMISSIONS]},
 } as const;
 export type AccessRole = keyof typeof ACCESS_ROLES;
+export function canManageAccounts(account:PermissionAccount|null|undefined) {
+  return isAdminAccount(account)||Boolean(account&&['branch_manager','ownership_manager'].includes(account.access_role||'')&&account.store_id&&!account.scope_all&&hasPermission(account,'accounts.manage'));
+}
 export function hasPermission(account:PermissionAccount|null|undefined,permission:AccessPermission) {
   if(!account)return false;
   // Fleet dispatch and receipt are available to every authenticated workspace

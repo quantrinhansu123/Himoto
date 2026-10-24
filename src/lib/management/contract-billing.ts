@@ -1,4 +1,5 @@
 import type { ManagementRow } from './types';
+import { badDebtClock } from './contract-bad-debt';
 
 export type BillingInterval = 'day' | 'week' | 'month' | 'custom';
 export const OWNERSHIP_TERM_MONTHS = ['6', '9', '12', '18', '24'] as const;
@@ -129,7 +130,9 @@ export function applyInstallmentBilling(row: ManagementRow, now = Date.now()): M
   if (!plan) return { ...row, total_amount: undefined, billing_due_amount: undefined, billing_error: 'Lịch thanh toán chưa hợp lệ; cần đối chiếu.' };
   if (row.status === 'completed' && !plan.stopped_at) return row;
   const base = row.billing_base_total ?? row.total_amount;
-  const balance = installmentBalance(plan, base == null ? null : Number(base), row.paid_amount == null ? null : Number(row.paid_amount), now);
+  const clock=badDebtClock(row.status,row.bad_debt_at||plan.stopped_at&&`${plan.stopped_at}:00+07:00`,now);
+  if(clock===undefined)return {...row,total_amount:undefined,billing_due_amount:undefined,billing_error:'Chưa có thời điểm chốt Nợ xấu; cần đối chiếu.'};
+  const balance = installmentBalance(plan, base == null ? null : Number(base), row.paid_amount == null ? null : Number(row.paid_amount), clock);
   return { ...row, billing_base_total: base, total_amount: balance.accrued_total ?? undefined,
     billing_due_amount: balance.due_amount ?? undefined, billing_next_due_at: balance.next_due_at || '', billing_overdue_at: balance.overdue_at || '',
     billing_expected_total: balance.expected_total, billing_paid_periods: balance.paid_periods, billing_period_count: balance.period_count };

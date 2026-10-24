@@ -62,6 +62,8 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
     if(context.plan){const balance=installmentBalance(context.plan,context.base_total,context.paid_amount,atMs);if(!balance.overdue_at||Number(balance.due_amount)<=0||balance.overdue_at>=input.at)throw new ContractLifecycleError('Thời điểm chuyển phải sau hạn của khoản tiền còn thiếu.',409);}
     else if(!context.items.some(item=>!item.completed_at&&item.return_at&&new Date(item.return_at).getTime()<atMs)&&!(order.order_status==='overdue'&&order.return_at&&new Date(order.return_at).getTime()<atMs))throw new ContractLifecycleError('Thời điểm chuyển phải sau hạn hợp đồng.',409);
     next='bad_debt';delete lifecycle.settlement;
+    lifecycle.bad_debt={at:stamp(input.at),recorded_at:new Date().toISOString(),actor_id:actorId};
+    if(context.plan)composer.installment_plan={...context.plan,stopped_at:input.at<context.plan.end?input.at:context.plan.end};
   }else if(input.action==='settle'){
     if(order.order_status!=='bad_debt')throw new ContractLifecycleError('Chỉ xác nhận tất toán ở luồng Nợ xấu.',409);
     if(!context.can_settle)throw new ContractLifecycleError(context.settlement_note,409);

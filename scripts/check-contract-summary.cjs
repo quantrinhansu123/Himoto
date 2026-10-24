@@ -29,7 +29,7 @@ check('blacklist counts unique linked customers, independently of contract debt 
 check('only unfinished receivables count; overpayments cannot offset another contract debt', () => {
   const rows = [contract(1), contract(2, { status: 'overdue', paid_amount: 1500 }), contract(3, { status: 'wait_payment', paid_amount: 900 }), contract(4, { status: 'bad_debt', paid_amount: 200 }), contract(5, { status: 'completed' }), contract(6, { status: 'pending' }), contract(7, { status: 'deposit_contract' }), contract(8, { status: 'cancel_pending_settlement' })];
   const summary = summarizeContracts(rows, customers);
-  assert.equal(summary.totalAmount, 8000); assert.equal(summary.receivableAmount, 1600); assert.equal(summary.badDebtAmount, 800);
+  assert.equal(summary.totalAmount, 7000); assert.equal(summary.receivableAmount, 800); assert.equal(summary.badDebtAmount, 800);
   assert.equal(summarizeContracts([rows[1]], customers).badDebtAmount, 0);
 });
 check('draft snapshots and cancelled contracts remain in count but never add financial amounts', () => {
@@ -41,7 +41,7 @@ check('missing or malformed money stays unknown without claiming a partial aggre
     let summary = summarizeContracts([contract(1), contract(2, { total_amount: missing })], customers);
     assert.equal(summary.totalAmount, null); assert.equal(summary.receivableAmount, null); assert.equal(summary.badDebtAmount, 0);
     summary = summarizeContracts([contract(1), contract(2, { status: 'bad_debt', paid_amount: missing })], customers);
-    assert.equal(summary.totalAmount, 2000); assert.equal(summary.receivableAmount, null); assert.equal(summary.badDebtAmount, null);
+    assert.equal(summary.totalAmount, 1000); assert.equal(summary.receivableAmount, 700); assert.equal(summary.badDebtAmount, null);
   }
   assert.equal(summarizeContracts([contract(1, { status: 'completed', paid_amount: undefined })], customers).receivableAmount, 0);
   assert.equal(summarizeContracts([contract(1, { total_amount: 0, paid_amount: 0 })], customers).receivableAmount, 0);
@@ -63,7 +63,7 @@ check('multi-page aggregates are independent of sort order; multiple vehicles do
 check('API numeric money and customer statuses map consistently; draft source money stays excluded', () => {
   const customer = mapApiRow('customers', { id: 1, status: 'bad_debt' });
   const row = mapApiRow('contracts', { id: 1, status: 'bad_debt', customer_id: 1, total_amount: '1000', paid_amount: '300', vehicles: [{ id: 1 }, { id: 2 }] });
-  assert.deepEqual(summarizeContracts([row], [customer]), { contractCount: 1, blacklistCount: 1, totalAmount: 1000, receivableAmount: 700, badDebtAmount: 700 });
+  assert.deepEqual(summarizeContracts([row], [customer]), { contractCount: 1, blacklistCount: 1, totalAmount: 0, receivableAmount: 0, badDebtAmount: 700 });
   const draft = mapApiRow('contracts', { id: 2, status: 'draft', total_amount: 0, paid_amount: 0, draft_payload: { management_composer: { version: 1, draft: { customer: {}, vehicles: [], total_amount: '900000', paid_amount: '100' } } } });
   assert.equal(draft.total_amount, 900000);
   assert.equal(summarizeContracts([draft], []).totalAmount, 0);

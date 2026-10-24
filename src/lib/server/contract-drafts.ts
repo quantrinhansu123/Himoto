@@ -6,6 +6,7 @@ import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } fro
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
 import { depositLateral, rentalPaidSql } from './contract-deposits';
+import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { chargeTotal } from '@/lib/management/contract-charges';
 import { validOwnershipTerm } from '@/lib/management/contract-billing';
 import { CONTRACT_TYPES } from '@/lib/management/config';
@@ -22,6 +23,7 @@ const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
 /** List/detail projection: omit per-row payment history (collections) and full draft blob for issued contracts. */
 function contractListSql(compact = false) { return `SELECT o.id, o.contract_number, o.draft_reference,
+  ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
   COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
   o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
   o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
@@ -59,6 +61,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
       'order_items', ${compact ? "'[]'::jsonb" : "o.draft_payload->'order_items'"})
     ELSE ${compact ? "'{}'::jsonb" : `jsonb_build_object('order_items', o.draft_payload->'order_items',
       'management_composer', jsonb_build_object(
+        'installment_plan', o.draft_payload #> '{management_composer,installment_plan}',
         'profile', jsonb_strip_nulls(jsonb_build_object(
           'vehicle_store_id', o.draft_payload #> '{management_composer,draft,vehicle_store_id}',
           'staff_id', o.draft_payload #> '{management_composer,draft,staff_id}',
@@ -82,13 +85,13 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
     FROM himoto.transactions WHERE order_id=o.id AND type IN ('in','addon') AND status='approved' AND bank_owner_type='company'
   ) company ON true
   LEFT JOIN (
-    SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_profiles ORDER BY user_id,store_id,id
+    SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_account_attribution ORDER BY user_id,store_id,id
   ) staff ON staff.user_id=o.contract_responsible_user_id AND staff.store_id=CASE
         WHEN COALESCE(o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id','') ~ '^[0-9]+$'
         THEN (o.draft_payload->'management_composer'->'draft'->>'vehicle_store_id')::bigint
         ELSE o.store_id END
   LEFT JOIN himoto.staff_profiles saved_staff ON saved_staff.id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'
-  LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_profiles ORDER BY user_id,id) fallback_staff ON fallback_staff.user_id=o.contract_responsible_user_id
+  LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_account_attribution ORDER BY user_id,id) fallback_staff ON fallback_staff.user_id=o.contract_responsible_user_id
   LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license${compact ? '' : `,
       'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
@@ -119,6 +122,7 @@ export function contractIndexSql(scopeClause: string, options: { includeVehicleL
   const includeCompany = Boolean(options.includeCompany);
   const includePaid = Boolean(options.includePaid);
   return `SELECT o.id, o.contract_number, o.draft_reference,
+    ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     o.contract_signed_on AS signed_on,
     COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
     o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
