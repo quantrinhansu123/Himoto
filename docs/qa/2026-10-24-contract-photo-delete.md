@@ -31,10 +31,16 @@ Trên bản trước sửa, fixture gia hạn v2 có bốn ảnh nhưng cả hai
 - Không có lỗi JavaScript. Đã xem ảnh chụp máy tính/điện thoại; nút và tên ảnh nằm trong vùng cuộn, không tràn ngang.
 - `git diff --check`: đạt.
 
+## Kiểm tra production
+
+Vercel xác nhận success cho bản sửa `ca5bf07`. Chạy cùng bộ browser trên `https://himoto.vercel.app`: **23 ca đạt**, không có lỗi JavaScript, 15 DELETE mô phỏng, không ghi dữ liệu thật hoặc gửi Telegram. Nội dung ứng dụng giữ nguyên trong commit bổ sung bằng chứng QA.
+
+Lần đầu bộ kiểm tra gặp lỗi access-control của WebKit ở request đọc nền `/api/auth/payment-events` khi tháo route fixture. Fixture đọc thanh toán đã chuyển sang Response rỗng trong bộ nhớ giống các bộ QA hiện có; lần chạy lại đạt đủ 23 ca. Không sửa luồng thanh toán của ứng dụng.
+
 ## Bảo toàn và giới hạn QA
 
 Toàn bộ API ghi của browser được chặn bằng fixture; 15 yêu cầu DELETE mô phỏng, **0 thao tác ghi dữ liệu thật**, **0 gửi/thu hồi Telegram thật**. Không thao tác với hợp đồng thật trong ảnh người dùng gửi. Session chỉ phục vụ xác thực đọc trang và lưu tại `.backups/`, không in hoặc commit.
 
 21 tệp riêng, `.env*`, diff riêng `scripts/check-contract-support-ui.py` được so SHA-256 với baseline và giữ nguyên. Không chạy SQL riêng hoặc đổi schema.
 
-Bằng chứng local: `.backups/contract-photo-delete-20261024/`, gồm báo cáo API, hồi quy lưu ảnh, tái hiện trước sửa, báo cáo và ảnh browser. Kết quả triển khai và QA production được ghi tại `deployment.json` và `production-ui/report.json` trong cùng thư mục sau khi push.
+Bằng chứng: `.backups/contract-photo-delete-20261024/`, gồm báo cáo API, hồi quy lưu ảnh, tái hiện trước sửa, báo cáo và ảnh browser. Kết quả triển khai và QA production tại `deployment.json` và `production-ui/report.json` trong cùng thư mục.

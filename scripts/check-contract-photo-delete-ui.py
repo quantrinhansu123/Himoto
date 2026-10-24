@@ -104,6 +104,9 @@ with sync_playwright() as pw:
     for role, engine, width, height in profiles:
         browser = getattr(pw, engine).launch()
         ctx = browser.new_context(viewport=dict(width=width, height=height), timezone_id='Asia/Ho_Chi_Minh', reduced_motion='reduce')
+        # Keep unrelated payment polling in-memory, including during WebKit teardown.
+        # This is the same empty fixture as the API mock, with no real payment reads.
+        ctx.add_init_script("""const qaFetch=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(url.pathname==='/api/auth/payment-events')return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return qaFetch.call(this,input,options);};""")
         ctx.add_cookies([dict(name='himoto_management_session', value=Path(a.cookies, f'session-{role}.txt').read_text().strip(), url=a.url, httpOnly=True, sameSite='Strict')])
         ctx.route('**/api/**', mock)
         page = ctx.new_page()
