@@ -53,4 +53,4 @@ async function main(){
  }
  console.log(JSON.stringify({passed:checks.length,checks,operationalWrites:0},null,2));
 }
-main().catch(error=>{console.error(error.name,error.message);process.exitCode=1;});
+main().catch(error=>{console.error(error.name,error.message);process.exitCode=1;}).finally(()=>globalThis.himotoPool?.end());

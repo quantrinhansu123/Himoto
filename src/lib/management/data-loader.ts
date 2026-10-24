@@ -26,7 +26,7 @@ export function contractsQueryForPath(pathname: string): string {
   return '';
 }
 
-export interface ResourceState { loaded: boolean; loading: boolean; error: string; updatedAt: number }
+export interface ResourceState { loaded: boolean; loading: boolean; error: string; updatedAt: number; revision: number }
 export interface ManagementDataState {
   dataset: ManagementDataset;
   resources: Record<ManagementKind, ResourceState>;
@@ -36,7 +36,7 @@ export interface ManagementDataState {
 export function createManagementDataLoader(repository: Pick<ManagementRepository, 'loadKind'>, now = Date.now, maxAge = 30_000) {
   let state: ManagementDataState = {
     dataset: { staff: [], customers: [], contracts: [], stores: [], vehicles: [] },
-    resources: Object.fromEntries(MANAGEMENT_KINDS.map(kind => [kind, { loaded: false, loading: false, error: '', updatedAt: 0 }])) as ManagementDataState['resources'],
+    resources: Object.fromEntries(MANAGEMENT_KINDS.map(kind => [kind, { loaded: false, loading: false, error: '', updatedAt: 0, revision: 0 }])) as ManagementDataState['resources'],
   };
   const listeners = new Set<() => void>();
   const pending = new Map<ManagementKind, Promise<void>>();
@@ -58,7 +58,7 @@ export function createManagementDataLoader(repository: Pick<ManagementRepository
       // A read started before a successful edit must not undo that edit.
       if ((versions.get(kind) || 0) !== version) return;
       publish({ dataset: { ...state.dataset, [kind]: rows }, resources: {
-        ...state.resources, [kind]: { loaded: true, loading: true, error: '', updatedAt: now() },
+        ...state.resources, [kind]: { loaded: true, loading: true, error: '', updatedAt: now(), revision: state.resources[kind].revision + 1 },
       } });
     }).catch(cause => {
       resource(kind, { error: cause instanceof Error ? cause.message : 'Không tải được dữ liệu. Vui lòng thử lại.' });
@@ -74,17 +74,19 @@ export function createManagementDataLoader(repository: Pick<ManagementRepository
       if (contractsQuery === query) return;
       contractsQuery = query;
       versions.set('contracts', (versions.get('contracts') || 0) + 1);
-      resource('contracts', { updatedAt: 0, loaded: false, error: '' });
+      resource('contracts', { updatedAt: 0, loaded: false, error: '', revision: state.resources.contracts.revision + 1 });
     },
     async ensure(kinds: readonly ManagementKind[], force = false) { await Promise.all([...new Set(kinds)].map(kind => load(kind, force))); },
     update(kind: ManagementKind, transform: (rows: ManagementRow[]) => ManagementRow[]) {
       versions.set(kind, (versions.get(kind) || 0) + 1);
       publish({ ...state, dataset: { ...state.dataset, [kind]: transform(state.dataset[kind]) }, resources: {
-        ...state.resources, [kind]: { ...state.resources[kind], error: '', updatedAt: pending.has(kind) ? 0 : state.resources[kind].updatedAt },
+        // Paged lists may never load this collection. Notify them even when its
+        // freshness timestamp is still zero (or two edits occur in one tick).
+        ...state.resources, [kind]: { ...state.resources[kind], error: '', revision: state.resources[kind].revision + 1, updatedAt: pending.has(kind) ? 0 : state.resources[kind].updatedAt },
       } });
     },
     invalidate(kinds: readonly ManagementKind[]) {
-      for (const kind of kinds) { versions.set(kind, (versions.get(kind) || 0) + 1); resource(kind, { updatedAt: 0 }); }
+      for (const kind of kinds) { versions.set(kind, (versions.get(kind) || 0) + 1); resource(kind, { updatedAt: 0, revision: state.resources[kind].revision + 1 }); }
     },
   };
 }

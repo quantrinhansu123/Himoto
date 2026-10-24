@@ -55,7 +55,7 @@ export function StaffOrganizationChart() {
   const [activeSuggest, setActiveSuggest] = useState(-1);
   const listId = useId();
   const allStores = dataset?.stores || [];
-  const allStaff = dataset?.staff || [];
+  const allStaff = useMemo(() => dataset?.staff || [],[dataset?.staff]);
   const scopedStaff = useMemo(() => allStaff.filter(person => {
     // TLS is company-wide: keep visible when filtering any store.
     const companyTls = staffRoles(person.position).includes('TLS');

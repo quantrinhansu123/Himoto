@@ -48,17 +48,19 @@ async function run() {
   const db = load(path.join(root, 'lib/server/himoto-database')).himotoPool;
   const dbDescriptors = Object.getOwnPropertyDescriptors(db);
   const session = load(path.join(root, 'lib/server/management-session'));
-  const auth = session.protectDatabaseRequest;
+  const auth = session.protectDatabaseRequest,originalUser=session.userFromSession;
+  session.userFromSession=async()=>({id:7,access_role:'admin',scope_all:true,permissions:[]});
   session.protectDatabaseRequest = async () => null; // Unit handlers: auth is covered by the login suite.
   const queries = [];
   const query = async (sql, params) => {
     queries.push({ sql, params });
-    if (sql.includes('SELECT id FROM himoto.customers')) return { rowCount: 0, rows: [] };
+    if(sql.includes('himoto.find_customer_duplicate'))return {rowCount:0,rows:[]};
+    if (sql.includes('FROM himoto.customers')&&sql.includes('FOR SHARE')===false&&sql.includes('SELECT')) return { rowCount: 0, rows: [] };
     return { rowCount: 1, rows: [{ id: 1, staff_code: 'NV0001' }] };
   };
   Object.defineProperty(db, 'query', { configurable: true, value: query });
   Object.defineProperty(db, 'connect', { configurable: true, value: async () => ({ query, release() {} }) });
-  const request = (method, data) => new NextRequest('http://localhost/api/auth/customers', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const request = (method, data) => new NextRequest('http://localhost/api/auth/customers', { method, headers: { Origin:'http://localhost','Content-Type': 'application/json' }, body: JSON.stringify(data) });
   try {
     const accountServer = load(path.join(root, 'lib/server/cashbook-accounts'));
     const account = { owner_type: 'company', store_id: '23', bank_name: 'QA Bank', owner_name: 'QA', account_number: '0001', status: 'active', opening_balance: 0 };
@@ -80,19 +82,24 @@ async function run() {
     const route = load(path.join(root, 'app/api/auth/[...path]/route'));
     const customer = { name: 'QA', phone: '0900000001', address: 'QA', id_card: '000000000001', id_card_issued_on: '2024-01-15', id_card_issued_by: 'Nơi cấp QA' };
     queries.length = 0;
-    assert.equal((await route.POST(request('POST', customer), { params: Promise.resolve({ path: ['customers'] }) })).status, 201);
+    const createdCustomer=await route.POST(request('POST', customer), { params: Promise.resolve({ path: ['customers'] }) });
+    assert.equal(createdCustomer.status,201,JSON.stringify(await createdCustomer.json()));
     const insert = queries.find(q => q.sql.includes('INSERT INTO himoto.customers'));
-    assert.deepEqual(insert.params.slice(11), ['2024-01-15','Nơi cấp QA']);
+    assert.deepEqual(insert.params.slice(11,13), ['2024-01-15','Nơi cấp QA']);
     queries.length = 0;
     assert.equal((await route.PATCH(request('PATCH', { ...customer, status: 'active' }), { params: Promise.resolve({ path: ['customers','1'] }) })).status, 200);
-    assert.deepEqual(queries.find(q => q.sql.includes('UPDATE himoto.customers')).params.slice(11), [true,'2024-01-15',true,'Nơi cấp QA']);
+    assert.deepEqual(queries.find(q => q.sql.includes('UPDATE himoto.customers')).params.slice(11,15), [true,'2024-01-15',true,'Nơi cấp QA']);
     assert.equal((await route.POST(request('POST', { ...customer, id_card_issued_on: '2025-02-29' }), { params: Promise.resolve({ path: ['customers'] }) })).status, 400);
     checks.push('customer create/edit API sends both identity fields to SQL and rejects invalid issue dates');
-  } finally { session.protectDatabaseRequest = auth; Object.defineProperties(db, dbDescriptors); }
+  } finally { session.protectDatabaseRequest = auth;session.userFromSession=originalUser; Object.defineProperties(db, dbDescriptors); }
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });
     const client = await db.connect();
     const proxy = async (sql, params) => {
+      if(sql.includes('himoto.find_customer_duplicate')){
+        const updating=sql.includes('find_customer_duplicate($2');
+        return client.query('SELECT id FROM pg_temp.qa_profile_customers WHERE id_card=$1 AND ($2::bigint IS NULL OR id<>$2)',[params[updating?1:0],updating?params[0]:null]);
+      }
       let rewritten = sql;
       for (const table of ['staff_profiles','customers','banks','cash','stores']) rewritten = rewritten.replaceAll(`himoto.${table}`, `pg_temp.qa_profile_${table}`);
       assert(!rewritten.includes('himoto.'), 'All writes must target TEMP tables');
@@ -111,6 +118,7 @@ async function run() {
       // Route transactions use savepoints inside the outer rollback.
       Object.defineProperty(db, 'connect', { configurable: true, value: async () => ({ query: (sql, params) => proxy(sql === 'BEGIN' ? 'SAVEPOINT customer_write' : sql === 'COMMIT' ? 'RELEASE SAVEPOINT customer_write' : sql === 'ROLLBACK' ? 'ROLLBACK TO SAVEPOINT customer_write' : sql, params), release() {} }) });
       session.protectDatabaseRequest = async () => null;
+      session.userFromSession=async()=>({id:7,access_role:'admin',scope_all:true,permissions:[]});
       const accounts = load(path.join(root, 'lib/server/cashbook-accounts'));
       const values = { owner_type: 'company', store_id: '23', bank_name: 'QA', owner_name: 'QA', account_number: '0001', status: 'active', opening_balance: 0 };
       const response = await operation(() => accounts.createAccount('bank', request('POST', values)));
@@ -135,7 +143,7 @@ async function run() {
       assert.equal((await route.PATCH(request('PATCH', { ...customer, id_card_issued_on: '', id_card_issued_by: '' }), params)).status, 200);
       assert.deepEqual(await identity(), { day: null, place: null });
       checks.push('PostgreSQL TEMP rollback: branch company account roundtrip, canonical staff insert, customer identity create/update/preserve/clear; no operational writes');
-    } finally { await client.query('ROLLBACK').catch(() => {}); client.release(); session.protectDatabaseRequest = auth; Object.defineProperties(db, dbDescriptors); }
+    } finally { await client.query('ROLLBACK').catch(() => {}); client.release(); session.protectDatabaseRequest = auth;session.userFromSession=originalUser; Object.defineProperties(db, dbDescriptors); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
 }

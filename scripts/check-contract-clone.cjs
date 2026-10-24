@@ -74,7 +74,7 @@ async function run() {
 
   const invalid = { ...edits, draft: { ...draft, staff_id: '99999' } };
   const unchanged = await repository.load();
-  await assert.rejects(repository.saveContract(copy.id, invalid), /nhân sự/);
+  await assert.rejects(repository.saveContract(copy.id, invalid), /người làm hợp đồng/);
   await assert.rejects(repository.saveContract(copy.id, { ...edits, draft: { ...draft, contract_number: source.code } }), /Mã hợp đồng/);
   assert.deepEqual(await repository.load(), unchanged);
   checks.push('invalid updates and duplicate identity changes fail without partially writing data');

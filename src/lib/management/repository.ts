@@ -172,7 +172,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     contract_type_id: text(raw.contract_type_id || snapshot.contract_type_id || raw.rental_type || saved.rental_type),
     contract_type_name: text(raw.contract_type_name || snapshot.contract_type_name) || CONTRACT_TYPES.find(type=>type.value===text(raw.rental_type || saved.rental_type))?.label || text(raw.rental_type || saved.rental_type),
     contract_type_months: text(raw.contract_type_months ?? snapshot.contract_type_months ?? /^monthly_(\d+)$/.exec(text(raw.rental_type || saved.rental_type))?.[1]),
-    ownership_term_months: [raw.rental_type,saved.rental_type].includes('ownership') ? text(object(saved.profile).ownership_term_months ?? snapshot.ownership_term_months) || 'custom' : '',
+    ownership_term_months: [raw.rental_type,saved.rental_type].includes('ownership') ? text(raw.ownership_term_months ?? object(saved.profile).ownership_term_months ?? snapshot.ownership_term_months) || 'custom' : '',
     signed_on: text(raw.signed_on), authorization_date: text(raw.authorization_date), collateral_description: text(raw.collateral_description),
     customer_source: text(raw.customer_source), customer_source_url: text(raw.customer_source_url),
     legacy_items_json: JSON.stringify(Array.isArray(payload.order_items) ? payload.order_items : []), draft_revision: text(raw.draft_revision),

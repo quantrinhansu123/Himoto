@@ -45,6 +45,7 @@ async function main(){
     const route={exports:{}};
     const source=ts.transpileModule(fs.readFileSync(path.join(root,'app/api/cron/integrations/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
     const dependencies={
+      '@/lib/server/public-failure':load(path.join(root,'lib/server/public-failure')),
       'next/server':{after:work=>callbacks.push(work),NextResponse:{json:(body,options)=>Response.json(body,options)}},
       '@/lib/server/integration-worker-auth':{validIntegrationWorker:auth=>auth==='Bearer qa-only',integrationSchedulerNonce:()=>null,claimIntegrationSchedulerNonce:async()=>true},
       '@/lib/server/himoto-database':{ownerDatabase:{}},

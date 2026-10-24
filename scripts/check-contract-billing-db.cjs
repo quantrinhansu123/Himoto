@@ -14,6 +14,8 @@ async function main(){
  const proxy={query(sql,params){let q=sql;for(const table of tables)q=q.replaceAll(`himoto.${table}`,`pg_temp.qa_bill_${table}`);assert(!q.includes('himoto.'),'Every business query must use TEMP');return c.query(q,params);}};
  const attempt=async work=>{await c.query('SAVEPOINT bill_case');try{const r=await work();await c.query('RELEASE SAVEPOINT bill_case');return r;}catch(error){await c.query('ROLLBACK TO SAVEPOINT bill_case');await c.query('RELEASE SAVEPOINT bill_case');throw error;}};
  const originalNow=Date.now;
+ const commission=load(path.join(root,'lib/server/commission-staff')),originalCommission=commission.loadCommissionStaff;
+ commission.loadCommissionStaff=async id=>{const row=(await c.query('SELECT id,full_name AS name FROM qa_bill_staff_profiles WHERE id=$1',[id])).rows[0];return row?{staff_id:Number(row.id),name:row.name}:null;};
  try{
   await c.query('BEGIN');
   for(const table of tables)await c.query(`CREATE TEMP TABLE qa_bill_${table} (LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS) ON COMMIT DROP`);
@@ -53,6 +55,6 @@ async function main(){
   assert.deepEqual(receipts.map(r=>[r.name,Number(r.value)]),[['order:deposit',3000000],['order:rental_fees',3000000],['order:renewal',3000000]]);
   checks.push('Ordinary renewal is available for ownership, credits actual rent once and preserves the separate deposit and retry protection');
   console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));
- }finally{Date.now=originalNow;await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
+ }finally{Date.now=originalNow;commission.loadCommissionStaff=originalCommission;await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

@@ -2,12 +2,12 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import { MANAGEMENT_CONFIG } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
-import { EMPTY_QUERY, filterRows } from '@/lib/management/table-utils';
+import { EMPTY_QUERY, filterRows,sortRows } from '@/lib/management/table-utils';
 import { projectManagementTable, type ManagementTableInput, type TableKind } from '@/lib/management/management-table';
 import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
-import { dailyPriceSql } from './contract-deposits';
+import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
@@ -34,17 +34,16 @@ export function parseManagementTable(kind:TableKind,params:URLSearchParams):Mana
   if(recent&&(!/^[1-9]\d{0,3}$/.test(recent)||Number(recent)>3660))throw new ManagementTableError('Khoảng ngày gần đây không hợp lệ.');
   return {kind,page,size,sort,direction:direction as 'asc'|'desc',scope,store,...(recent?{recentDays:Number(recent)}:{}),query:{...EMPTY_QUERY,filters,search,status,startDate:from,endDate:to,overdueDays:days,overdueCompare:compare as 'eq'|'gt'|'lt',...(bucket?{overdueBucket:bucket as OverdueBucket}:{})}};
 }
-function contractScopeClause(scope:string) {
+function contractScopeClause(scope:string):string {
   // Return dates can live only on legacy vehicle lines. Hydrated monitoring
   // applies the actual overdue test; filtering by the header first loses them.
   if(scope==='overdue')return contractPageScopeClause(scope);
   return scope==='due' ? ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL`
     : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
 }
-function contractPageScopeClause(scope:string) {
+function contractPageScopeClause(scope:string):string {
   if(scope==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment','bad_debt')`;
-  if(scope==='due')return ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt')`;
-  if(scope==='renewable')return ` AND o.order_status IN ('renting','overdue')`;
+  if(scope==='due'||scope==='renewable')return contractScopeClause(scope);
   return contractListScopeClause(scope);
 }
 function contractPageStatusClause(status:string) {
@@ -86,9 +85,10 @@ function contractStoreSql(store:string) {
 function likeNeedle(search:string) {
   return `%${search.trim().replace(/[%_\\]/g,'')}%`;
 }
+const foldedSql=(value:string)=>`lower(translate(regexp_replace(normalize(COALESCE(${value},''),NFD) COLLATE "C",'[\u0300-\u036f]','','g'),'đĐ','dD'))`;
 function contractSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
-  return {sql:` AND (o.contract_number ILIKE $3 OR o.draft_reference ILIKE $3 OR o.customer_name ILIKE $3 OR COALESCE(o.customer_phone,'') ILIKE $3
+  return {sql:` AND (o.contract_number ILIKE $3 OR o.draft_reference ILIKE $3 OR ${foldedSql('o.customer_name')} LIKE ${foldedSql('$3')} OR COALESCE(o.customer_phone,'') ILIKE $3
     OR EXISTS (SELECT 1 FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
       WHERE d.order_id=o.id AND d.deleted_at IS NULL AND (v.license ILIKE $3
         OR regexp_replace(upper(COALESCE(v.license,'')),'[^A-Z0-9]','','g') LIKE '%'||regexp_replace(upper($3),'[^A-Z0-9]','','g')||'%')))`,
@@ -98,6 +98,10 @@ function contractFilterSql(filters:Record<string,string>) {
   let sql='';
   if(/^[1-9]\d{0,14}$/.test(filters.customer_id||''))sql+=` AND o.customer_id=${Number(filters.customer_id)}`;
   if(/^[1-9]\d{0,14}$/.test(filters.id||''))sql+=` AND o.id=${Number(filters.id)}`;
+  const type=filters.contract_type_id||filters.rental_type;
+  if(type)sql+=` AND COALESCE(NULLIF(o.draft_payload #>> '{management_composer,draft,contract_type_id}',''),NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type,'')='${type.replaceAll("'","''")}'`;
+  if(filters.ownership_term_months)sql+=` AND COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type)='ownership'
+    AND COALESCE(NULLIF(o.draft_payload #>> '{management_composer,profile,ownership_term_months}',''),NULLIF(o.draft_payload #>> '{management_composer,draft,ownership_term_months}',''),'custom')='${filters.ownership_term_months.replaceAll("'","''")}'`;
   return sql;
 }
 export function contractPageSql(scopeClause:string,includeTotal=false) {
@@ -114,7 +118,7 @@ export function contractPageSql(scopeClause:string,includeTotal=false) {
 }
 function customerSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
-  return {sql:` AND (c.name ILIKE $3 OR COALESCE(c.phone,'') ILIKE $3 OR COALESCE(c.id_card,'') ILIKE $3)`,
+  return {sql:` AND (${foldedSql('c.name')} LIKE ${foldedSql('$3')} OR COALESCE(c.phone,'') ILIKE $3 OR COALESCE(c.id_card,'') ILIKE $3 OR ${foldedSql('c.address')} LIKE ${foldedSql('$3')})`,
     value:likeNeedle(search)};
 }
 function customerPageClause(store:string,status:string) {
@@ -143,18 +147,24 @@ function contractHydrateSql() {
     o.customer_id, o.customer_name, o.customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind,
     COALESCE(o.rent_at,ov.start_date) AS start_date, COALESCE(o.return_at,ov.end_date) AS end_date, o.total AS total_amount,
+    ${rentalPaidSql()} AS paid_amount,
     CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
       ELSE COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) END AS deposit_amount,
     COALESCE(staff.full_name, saved_staff.full_name, fallback_staff.full_name) AS staff_name,
-    COALESCE(o.draft_payload #>> '{management_composer,draft,contract_type_name}', o.order_type) AS rental_type,
+    COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type) AS rental_type,
+    o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
+    o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
+    o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
+    COALESCE(o.draft_payload #>> '{management_composer,profile,ownership_term_months}',o.draft_payload #>> '{management_composer,draft,ownership_term_months}') AS ownership_term_months,
     o.note AS notes, o.xmin::text AS draft_revision,
     CASE WHEN o.order_status='draft' THEN jsonb_build_object(
       'management_composer', o.draft_payload::jsonb->'management_composer',
       'order_items', COALESCE(o.draft_payload::jsonb->'order_items','[]'::jsonb))
-    ELSE '{}'::jsonb END AS draft_payload,
+    ELSE jsonb_build_object('management_composer',jsonb_build_object('installment_plan',o.draft_payload #> '{management_composer,installment_plan}')) END AS draft_payload,
     ov.vehicles
     FROM himoto.orders o
     LEFT JOIN himoto.stores s ON s.id = o.store_id
+    ${depositLateral()}
     LEFT JOIN (SELECT DISTINCT ON (user_id,store_id) id,user_id,store_id,full_name FROM himoto.staff_profiles ORDER BY user_id,store_id,id) staff
       ON staff.user_id=o.contract_responsible_user_id AND staff.store_id=o.store_id
     LEFT JOIN himoto.staff_profiles saved_staff ON saved_staff.id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'
@@ -171,7 +181,33 @@ function contractHydrateSql() {
 }
 function vehicleSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
-  return {sql:` AND (v.name ILIKE $3 OR v.license ILIKE $3 OR v.brand ILIKE $3)`,value:likeNeedle(search)};
+  const plate=search.replace(/[^a-z0-9]/gi,'');
+  return {sql:` AND (${foldedSql('v.name')} LIKE ${foldedSql('$3')} OR v.license ILIKE $3 OR v.brand ILIKE $3
+    ${/\d/.test(plate)?`OR regexp_replace(upper(COALESCE(v.license,'')),'[^A-Z0-9]','','g') LIKE '%'||regexp_replace(upper($3),'[^A-Z0-9]','','g')||'%'`:''}
+    OR EXISTS (SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+      LEFT JOIN himoto.customers c ON c.id=o.customer_id WHERE d.vehicle_id=v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL
+      AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')
+      AND ${foldedSql('COALESCE(c.name,o.customer_name)')} LIKE ${foldedSql('$3')}))`,value:likeNeedle(search)};
+}
+function vehicleOverdueSql() {
+  return `COALESCE((SELECT GREATEST(0,floor(extract(epoch FROM (now()-min(d.return_at)))/86400))::int
+    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+    WHERE d.vehicle_id=v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+      AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')),0)`;
+}
+function vehicleRentalSql(field:'customer'|'store') {
+  return `(SELECT ${field==='customer'?"COALESCE(c.name,o.customer_name,'')":'o.store_id'}
+    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+    ${field==='customer'?'LEFT JOIN himoto.customers c ON c.id=o.customer_id':''}
+    WHERE d.vehicle_id=v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+      AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')
+    ORDER BY d.rent_at DESC,d.id DESC LIMIT 1)`;
+}
+const vehicleBeneficiarySql=()=>`COALESCE(${vehicleRentalSql('store')},v.current_store_id,v.store_id)`;
+function vehicleDerivedClause(query:ManagementTableInput['query']) {
+  const op=query.overdueCompare==='gt'?'>':query.overdueCompare==='lt'?'<':'=';
+  const days=query.overdueDays?` AND ${vehicleOverdueSql()}${op}${Number(query.overdueDays)}`:'';
+  return days;
 }
 export function vehiclePageClause(store:string,status:string,filters:Record<string,string>) {
   const storeSql=store==='all'?'':` AND (COALESCE(v.current_store_id,v.store_id)=${Number(store)} OR himoto.ownership_may_use_headquarters_vehicle(COALESCE(v.current_store_id,v.store_id)))`;
@@ -182,7 +218,7 @@ export function vehiclePageClause(store:string,status:string,filters:Record<stri
   const typeSql=!type?'':type==='xe_dien'?` AND v.type IN ('xe_dien','electric')`
     :/^[a-z0-9_]+$/.test(type)?` AND v.type='${type}'`:'';
   const beneficiary=filters.beneficiary_store_id||'';
-  const beneficiarySql=/^[1-9]\d{0,14}$/.test(beneficiary)?` AND COALESCE(v.current_store_id,v.store_id)=${Number(beneficiary)}`:'';
+  const beneficiarySql=/^[1-9]\d{0,14}$/.test(beneficiary)?` AND ${vehicleBeneficiarySql()}=${Number(beneficiary)}`:'';
   return `${storeSql}${statusSql}${typeSql}${beneficiarySql}`;
 }
 export function vehiclePageSql(scopeClause:string) {
@@ -229,7 +265,7 @@ function vehicleHydrateSql() {
 }
 function staffSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
-  return {sql:` AND (p.full_name ILIKE $3 OR COALESCE(p.phone,'') ILIKE $3 OR COALESCE(p.staff_code,'') ILIKE $3)`,value:likeNeedle(search)};
+  return {sql:` AND (${foldedSql('p.full_name')} LIKE ${foldedSql('$3')} OR COALESCE(p.phone,'') ILIKE $3 OR COALESCE(p.staff_code,'') ILIKE $3)`,value:likeNeedle(search)};
 }
 function staffPageClause(store:string,status:string,filters:Record<string,string>) {
   const storeSql=store==='all'?'':` AND p.store_id=${Number(store)}`;
@@ -248,7 +284,7 @@ export function staffPageSql(scopeClause:string) {
 }
 function storeSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
-  return {sql:` AND (s.store_name ILIKE $3 OR COALESCE(s.code,'') ILIKE $3 OR COALESCE(s.store_address,'') ILIKE $3)`,value:likeNeedle(search)};
+  return {sql:` AND (${foldedSql('s.store_name')} LIKE ${foldedSql('$3')} OR COALESCE(s.code,'') ILIKE $3 OR ${foldedSql('s.store_address')} LIKE ${foldedSql('$3')})`,value:likeNeedle(search)};
 }
 function storePageClause(status:string) {
   return status==='active'?` AND s.status IN ('active','opening','1')`:status==='inactive'?` AND s.status IN ('inactive','0')`
@@ -256,6 +292,18 @@ function storePageClause(status:string) {
 }
 export function storePageSql(scopeClause:string) {
   return `${STORE_SELECT_SQL} WHERE true${scopeClause}`;
+}
+function catalogueOrder(input:ManagementTableInput) {
+  const columns:Record<string,Record<string,string>>={
+    customers:{code:'c.id',name:'c.name',phone:'c.phone',id_card:'c.id_card',address:'c.address',store_name:'s.store_name',contract_count:'oc.contract_count',status:'c.status'},
+    vehicles:{code:'v.id',name:'v.name',license:'v.license',brand:'v.brand',type:'v.type',year:'v.year',color:'v.color',chassis:'v.chassis',engine:'v.engine',odometer:'v.odometer',store_name:'s.store_name',status:'v.status',overdue_days:vehicleOverdueSql(),holder_name:`COALESCE(NULLIF(${vehicleRentalSql('customer')},''),'Lưu kho')`,beneficiary_store_name:`(SELECT bs.store_name FROM himoto.stores bs WHERE bs.id=${vehicleBeneficiarySql()})`,location_status:`(SELECT COALESCE(gps.normalized_status,'none') FROM (SELECT 1) anchor ${VEHICLE_GPS_JOIN_SQL})`},
+    staff:{code:'p.staff_code',name:'p.full_name',phone:'p.phone',email:'p.email',position:'p.position',store_name:'s.store_name',status:'p.status',hire_date:'p.joined_at'},
+    stores:{code:'s.code',name:'s.store_name',phone:'s.store_phone',address:'s.store_address',manager_name:'u.name',vehicle_count:'vc.n',staff_count:'pc.n',status:'s.status'},
+  };
+  const id=input.kind==='customers'?'c.id':input.kind==='vehicles'?'v.id':input.kind==='staff'?'p.id':'s.id';
+  const expression=columns[input.kind]?.[input.sort]||id;
+  const direction=input.direction==='desc'?'DESC':'ASC';
+  return `${expression} ${direction} NULLS LAST,${id} ${direction}`;
 }
 /** Count lightweight records under the same RLS/store rules as their list.
  * Search and category filters affect tab counts; the selected status affects
@@ -267,7 +315,7 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
   const scope=kind==='customers'?customerPageClause(store,'')
     :kind==='vehicles'?` AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{})}`
     :kind==='staff'?staffPageClause(store,'',{}):'';
-  const filters=kind==='vehicles'?vehiclePageClause('all','',query.filters):kind==='staff'?staffPageClause('all','',query.filters):'';
+  const filters=kind==='vehicles'?`${vehiclePageClause('all','',query.filters)}${vehicleDerivedClause(query)}`:kind==='staff'?staffPageClause('all','',query.filters):'';
   const selected=kind==='customers'?customerPageClause('all',query.status)
     :kind==='vehicles'?vehiclePageClause('all',query.status,{})
     :kind==='staff'?staffPageClause('all',query.status,{}):storePageClause(query.status);
@@ -321,7 +369,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     // Installment overdue state and age groups depend on the hydrated balance.
     // Read candidates for this tab in bounded batches and filter BEFORE paging;
     // otherwise a paid/not-yet-due rental can occupy an overdue result slot.
-    const filterBeforePaging=kind==='contracts'&&Boolean(input.query.status==='overdue'||input.query.overdueBucket||input.query.overdueDays||input.query.startDate||input.query.endDate);
+    const filterBeforePaging=kind==='contracts'&&Boolean(input.scope==='due'||input.query.status==='overdue'||input.query.overdueBucket||input.query.overdueDays||input.query.startDate||input.query.endDate);
     const take=filterBeforePaging?50:input.size;
     const search=kind==='contracts'?contractSearchSql(input.query.search)
       :kind==='customers'?customerSearchSql(input.query.search)
@@ -335,10 +383,10 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     // Count only this tab's matching orders, before LIMIT. Do not hydrate history
     // or query the other tabs merely to obtain a real page count.
     const pageSql=kind==='contracts'?`${contractPageSql(clause,!filterBeforePaging)}${search.sql} ORDER BY o.id DESC LIMIT $1 OFFSET $2`
-      :kind==='customers'?`${customerPageSql(customerPageClause(input.store,input.query.status))}${search.sql} ORDER BY c.id DESC LIMIT $1 OFFSET $2`
-      :kind==='vehicles'?`${vehiclePageSql(vehiclePageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY v.id DESC LIMIT $1 OFFSET $2`
-      :kind==='staff'?`${staffPageSql(staffPageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY p.id DESC LIMIT $1 OFFSET $2`
-      :`${storePageSql(storePageClause(input.query.status))}${search.sql} ORDER BY s.id DESC LIMIT $1 OFFSET $2`;
+      :kind==='customers'?`${customerPageSql(customerPageClause(input.store,input.query.status))}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
+      :kind==='vehicles'?`${vehiclePageSql(vehiclePageClause(input.store,input.query.status,input.query.filters))}${vehicleDerivedClause(input.query)}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
+      :kind==='staff'?`${staffPageSql(staffPageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
+      :`${storePageSql(storePageClause(input.query.status))}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`;
     const matches:ReturnType<typeof mapManagementRows>=[];
     let candidateOffset=filterBeforePaging?0:offset,moreCandidates=false;
     const readPage=(limit:number,start:number)=>client.query(pageSql,search.value?[limit,start,search.value]:[limit,start]);
@@ -371,6 +419,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       if(kind==='contracts'){
         batch=batch.map(row=>applyInstallmentBilling(row,now));
         if(monitoring)batch=batch.map(row=>withContractMonitoring(row,now));
+        if(input.scope==='due')batch=batch.filter(row=>row.billing_overdue_at&&Number(row.billing_due_amount)>0);
       }
       if(filterBeforePaging)batch=input.query.status==='renting'
         ?filterRows(batch,{...input.query,status:'',search:''},'all').filter(row=>['renting','overdue'].includes(row.status))
@@ -381,7 +430,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     // set; stopping at one extra match is not a total and hides older pages.
     if(filterBeforePaging){total=matches.length;page=Math.min(input.page,Math.max(1,Math.ceil(total/input.size)));}
     const pageOffset=(page-1)*input.size;
-    const rows=filterBeforePaging?matches.slice(pageOffset,pageOffset+input.size):matches;
+    const rows=filterBeforePaging?sortRows(matches,input.sort,input.direction).slice(pageOffset,pageOffset+input.size):matches;
     const pages=Math.max(1,Math.ceil(total/input.size));
     return {
       rows,total,scopeCount:scopeCount??total,tabCount:catalogue?.tabCount??total,page,pages,

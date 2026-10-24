@@ -3,6 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), ts = require('typesc
 const { randomUUID } = require('node:crypto');
 const root = path.resolve(__dirname, '../src'), cache = new Map();
 function load(filename) {
+  filename=path.normalize(filename);
   if (filename.endsWith('.json')) return JSON.parse(fs.readFileSync(filename,'utf8'));
   const file = filename.endsWith('.ts') ? filename : `${filename}.ts`;
   if (cache.has(file)) return cache.get(file).exports;
@@ -202,4 +203,4 @@ async function main() {
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
 }
 module.exports = { load };
-if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; }).finally(()=>globalThis.himotoPool?.end());

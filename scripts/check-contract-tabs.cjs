@@ -36,10 +36,13 @@ async function main() {
     return {rows:sql.includes('LIMIT $1 OFFSET $2')?candidates.slice(args[1],args[1]+args[0]):candidates.filter(row=>args[0].includes(row.id))};
   }};
   const first=await readManagementTable(database,'contracts',managementTableQuery({...input,query:{...EMPTY_QUERY,status:'overdue'}}));
-  assert.deepEqual(first.rows.map(row=>row.id),[50]);assert.equal(first.pages,2);
+  assert.deepEqual(first.rows.map(row=>row.id),[49]);assert.equal(first.pages,2);
   assert.deepEqual(commands.filter(row=>row.sql.includes('LIMIT')).map(row=>row.args),[[50,0],[50,50]]);
   const second=await readManagementTable(database,'contracts',managementTableQuery({...input,page:2,query:{...EMPTY_QUERY,status:'overdue'}}));
-  assert.deepEqual(second.rows.map(row=>row.id),[49]);assert.equal(second.pages,2);
+  assert.deepEqual(second.rows.map(row=>row.id),[50]);assert.equal(second.pages,2);
+  candidates[50].overdue_items[0].return_at=new Date(Date.now()-2*86400000).toISOString();
+  const oldest=await readManagementTable(database,'contracts',managementTableQuery({...input,sort:'overdue_minutes',direction:'desc',query:{...EMPTY_QUERY,status:'overdue'}}));
+  assert.deepEqual(oldest.rows.map(row=>row.id),[50]);
   const bucket=await readManagementTable(database,'contracts',managementTableQuery({...input,query:{...EMPTY_QUERY,status:'overdue',overdueBucket:'traditional-3'}}));
   assert.equal(bucket.rows.length,0);
   checks.push('Overdue filters run before pagination across bounded candidate batches; future rentals never fill overdue slots and age buckets are respected');

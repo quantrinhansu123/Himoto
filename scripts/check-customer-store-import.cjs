@@ -174,11 +174,13 @@ async function main() {
   checks.push('interrupted preview stops without writes; failed second save reports confirmed partial count; retry and lost-response recovery skip previously saved rows without reapplying them');
 
   const session = load(path.join(root, 'lib/server/management-session'));
+  const originalUser=session.userFromSession;
   const pool = load(path.join(root, 'lib/server/himoto-database')).himotoPool;
   const previousEnv = { DATABASE_URL: process.env.DATABASE_URL, MANAGEMENT_SESSION_SECRET: process.env.MANAGEMENT_SESSION_SECRET, NODE_ENV: process.env.NODE_ENV };
   const queryDescriptor = Object.getOwnPropertyDescriptor(pool, 'query'), connectDescriptor = Object.getOwnPropertyDescriptor(pool, 'connect');
   try {
     process.env.DATABASE_URL = 'postgresql://mock.invalid/test'; process.env.MANAGEMENT_SESSION_SECRET = 'qa-only-customer-store-session-key-0000'; process.env.NODE_ENV = 'production';
+    session.userFromSession=async token=>token?{id:7,access_role:'admin',scope_all:true,permissions:[]}:null;
     Object.defineProperty(pool, 'query', { configurable: true, value: async () => ({ rows: [{ id: 7, name: 'QA', status: 'active', role_id: 1 }] }) });
     Object.defineProperty(pool, 'connect', { configurable: true, value: async () => client });
     const route = load(path.join(root, 'app/api/auth/customers/match-stores/route'));
@@ -203,6 +205,7 @@ async function main() {
     assert.equal(failure.status, 500); assert.equal(queries.at(-2).sql, 'ROLLBACK'); assert(!JSON.stringify(await failure.json()).includes('private database error'));
     failUpdate = false;
   } finally {
+    session.userFromSession=originalUser;
     Object.defineProperty(pool, 'query', queryDescriptor); Object.defineProperty(pool, 'connect', connectDescriptor);
     for (const [key, value] of Object.entries(previousEnv)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }

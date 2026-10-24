@@ -11,11 +11,13 @@ assert.match(publicFailure('Không lưu chính thức được hợp đồng.',p
 assert.match(publicFailure('Chưa ghi nhận được lần trả xe.',pg('42501','rental line unavailable')),
   /Dòng thuê xe không còn mở/);
 assert.equal(failureStatus(pg('57014','canceling statement due to statement timeout')),504);
-assert.match(publicFailure('Không lưu được bản nháp.',new Error('Bản nháp đã thay đổi. Tải lại trước khi lưu.')),
+assert.match(publicFailure('Không lưu được bản nháp.',Object.assign(new Error('Bản nháp đã thay đổi. Tải lại trước khi lưu.'),{status:409})),
   /Bản nháp đã thay đổi/);
-assert.doesNotMatch(publicFailure('Không xóa được.',pg('23503','violates foreign key constraint',{detail:'password=supersecret postgres://user:pass@host/db'})),
+assert.doesNotMatch(publicFailure('Không lưu được.',new Error('private database error')),/private database error/);
+assert.doesNotMatch(publicFailure('Không lưu được.',pg('23505','duplicate key',{detail:'private row value',hint:'internal SQL',constraint:'private_constraint',table:'private_table'})),/private|internal SQL/);
+assert.doesNotMatch(publicFailure('Không xóa được.',pg('23503','violates foreign key constraint',{detail:'password=supersecret postgres://user:'+'pass@host/db'})),
   /supersecret|postgres:\/\//);
-assert.match(failureReason({}),/Lỗi chưa xác định/);
+assert.match(failureReason({}),/Vui lòng thử lại/);
 assert.match(publicFailure('Không lưu chính thức được hợp đồng.',{code:'42883',message:'function himoto.vehicle_window_conflicts(bigint[],bigint,timestamp with time zone,timestamp with time zone) does not exist'}),
   /Thiếu hàm trên database/);
 console.log(JSON.stringify({passed:true,sample:publicFailure('Không lưu chính thức được hợp đồng.',pg('42501','new row violates row-level security policy for table "orders"'))}));

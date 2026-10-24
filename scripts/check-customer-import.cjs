@@ -145,11 +145,13 @@ async function run() {
   checks.push('incomplete insert stores missing address/identity as NULL and status 0; commit rechecks opt-in rather than trusting preview');
 
   const session = load(path.join(root, 'lib/server/management-session'));
+  const originalUser=session.userFromSession;
   const pool = load(path.join(root, 'lib/server/himoto-database')).himotoPool;
   const oldEnv = { DATABASE_URL: process.env.DATABASE_URL, MANAGEMENT_SESSION_SECRET: process.env.MANAGEMENT_SESSION_SECRET, NODE_ENV: process.env.NODE_ENV };
   const queryDescriptor = Object.getOwnPropertyDescriptor(pool, 'query'), connectDescriptor = Object.getOwnPropertyDescriptor(pool, 'connect');
   try {
     process.env.DATABASE_URL = 'postgresql://mock.invalid/test';
+    session.userFromSession=async token=>token?{id:7,access_role:'admin',scope_all:true,permissions:[]}:null;
     process.env.MANAGEMENT_SESSION_SECRET = 'customer-import-tests-only-not-a-real-secret'; process.env.NODE_ENV = 'production';
     Object.defineProperty(pool, 'query', { configurable: true, value: async () => ({ rows: [{ id: 7, name: 'QA', email: 'qa@example.invalid', status: 'active', role_id: 1 }] }) });
     Object.defineProperty(pool, 'connect', { configurable: true, value: async () => client });
@@ -179,6 +181,7 @@ async function run() {
     const failed = await send({ rows: [input()], commit: true });
     assert.equal(failed.status, 500); assert.equal(queries.at(-2).sql, 'ROLLBACK'); assert(!JSON.stringify(await failed.json()).includes('mock insert failure'));
   } finally {
+    session.userFromSession=originalUser;
     Object.defineProperty(pool, 'query', queryDescriptor); Object.defineProperty(pool, 'connect', connectDescriptor);
     for (const [key, value] of Object.entries(oldEnv)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }

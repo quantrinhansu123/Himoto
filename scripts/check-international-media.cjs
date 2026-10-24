@@ -42,7 +42,7 @@ async function main(){
   const cloud=load(path.join(root,'lib/server/cloudinary-photos')),sdk=require('cloudinary').v2;
   const oldEnv={...process.env},oldResource=sdk.api.resource,oldFetch=global.fetch;
   try{
-    delete process.env.CLOUDINARY_URL;Object.assign(process.env,{CLOUDINARY_CLOUD_NAME:'qa-cloud',CLOUDINARY_API_KEY:'qa-key',CLOUDINARY_API_SECRET:'qa-media-test-secret'});
+    delete process.env.CLOUDINARY_URL;Object.assign(process.env,{VIDEO_STORAGE_PROVIDER:'cloudinary',CLOUDINARY_CLOUD_NAME:'qa-cloud',CLOUDINARY_API_KEY:'qa-key',CLOUDINARY_API_SECRET:'qa-media-test-secret'});
     const signed=cloud.signPhotoUpload(151,randomUUID(),Date.now(),true),version=1800000000;
     assert.equal(signed.params.format,'mp4');assert.equal(signed.params.type,'authenticated');assert.match(signed.params.transformation,/vc_h264/);
     const receipt={public_id:signed.params.public_id,version,resource_type:'video'};

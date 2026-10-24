@@ -126,9 +126,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
   const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
   const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:30}:{})};
-  const resourceUpdatedAt=resources[kind].updatedAt;
-  const tableRevision=useMemo(()=>({at:resourceUpdatedAt}),[resourceUpdatedAt]);
-  const contractsRevision=useMemo(()=>({at:resources.contracts.updatedAt}),[resources.contracts.updatedAt]);
+  const resourceRevision=resources[kind].revision;
+  const tableRevision=useMemo(()=>({revision:resourceRevision}),[resourceRevision]);
+  const contractsRevision=useMemo(()=>({revision:resources.contracts.revision}),[resources.contracts.revision]);
   const table=useManagementTable(tableInput,paged,tableRevision,[...ownershipStoreIds]);
   const currentTableRefresh=useRef(table.refresh);currentTableRefresh.current=table.refresh;
   const renewable=useManagementTable({...tableInput,query:{...EMPTY_QUERY,search:renewSearch},scope:'renewable',page:1,size:30},renewPicker,contractsRevision,[...ownershipStoreIds]);

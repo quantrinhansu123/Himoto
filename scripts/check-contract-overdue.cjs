@@ -33,12 +33,12 @@ async function main(){
   for(const sort of ['overdue_minutes','overdue_fee_estimate','rental_debt_amount'])assert.equal(parseManagementTable('contracts',managementTableQuery({...input,sort})).sort,sort);
   checks.push('Sub-day rentals sort correctly before pagination; day filters, fee sorting and exports use the same projection');
   const raw={id:901,contract_number:'QA-OVERDUE',status:'overdue',total_amount:1000000,paid_amount:200000,vehicles:[],overdue_items:[{return_at:new Date(Date.now()-119*60000).toISOString(),daily_price:140000}]};
-  const queries=[];const client={query:async(sql)=>{queries.push(sql);return {rows:[queries.length===1?raw:{...raw,overdue_items:undefined}]};}};
+  const queries=[];const client={query:async(sql)=>{queries.push(sql);return {rows:[sql.includes('AS overdue_items')?raw:{...raw,__total_count:1,overdue_items:undefined}]};}};
   const hydrated=await readManagementTable(client,'contracts',managementTableQuery(input));
   assert.equal(hydrated.rows[0].overdue_fee_estimate,40000);assert.equal(hydrated.rows[0].rental_debt_amount,800000);
-  assert.match(queries[0],/d\.completed_at IS NULL/);assert.match(queries[0],/substitute_unit_price/);
-  assert.match(queries[0],/JOIN himoto\.vehicles v ON v\.id=d\.vehicle_id/);
-  assert.doesNotMatch(queries[1],/AS overdue_items/);
+  assert.match(queries[1],/d\.completed_at IS NULL/);assert.match(queries[1],/substitute_unit_price/);
+  assert.match(queries[1],/JOIN himoto\.vehicles v ON v\.id=d\.vehicle_id/);
+  assert.doesNotMatch(queries[0],/AS overdue_items/);
   assert.equal(hydrated.rows[0].overdue_items_json,JSON.stringify(raw.overdue_items));
   queries.length=0;const exported=await readManagementTable(client,'contracts',managementTableQuery(input,true));
   assert.equal(exported.rows[0].overdue_fee_estimate,40000);

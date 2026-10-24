@@ -106,6 +106,7 @@ async function main() {
       await client.query(ddl);
       const cloudMigration = fs.readFileSync(path.resolve(__dirname, '../docs/sql/2026-10-16-cloudinary-photos.sql'), 'utf8');
       await client.query(cloudMigration.replace(/^BEGIN;|^COMMIT;/gm, '').replaceAll('himoto.management_record_photos', 'pg_temp.qa_photo_files'));
+      await client.query('ALTER TABLE qa_photo_files ADD COLUMN object_bucket text,ADD COLUMN object_key text,ADD COLUMN object_etag text');
       for (const statement of migration.match(/ALTER TABLE himoto\.management_record_photos ADD COLUMN[\s\S]*?;/g)) {
         await client.query(statement.replaceAll('himoto.management_record_photos', 'pg_temp.qa_photo_files').replaceAll('himoto.customers', 'pg_temp.qa_photo_customers').replaceAll('himoto.orders', 'pg_temp.qa_photo_orders'));
       }

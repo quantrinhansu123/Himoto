@@ -60,6 +60,18 @@ async function run() {
   await empty.ensure(['customers']); await empty.ensure(['customers']);
   assert.equal(emptyCalls, 1); assert.equal(empty.getSnapshot().resources.customers.loaded, true);
   checks.push('an empty collection is cached as loaded rather than requested repeatedly');
+  const paged = createManagementDataLoader({ loadKind: async () => { throw new Error('Paged collections must not load in full'); } }, () => clock);
+  const initialRevision = paged.getSnapshot().resources.customers.revision;
+  paged.update('customers', rows => [row(9), ...rows]);
+  assert.equal(paged.getSnapshot().resources.customers.updatedAt, 0);
+  assert.equal(paged.getSnapshot().resources.customers.revision, initialRevision + 1);
+  paged.update('customers', rows => rows.filter(record => record.id !== 9));
+  assert.equal(paged.getSnapshot().resources.customers.revision, initialRevision + 2);
+  paged.invalidate(['customers']); paged.invalidate(['customers']);
+  assert.equal(paged.getSnapshot().resources.customers.updatedAt, 0);
+  assert.equal(paged.getSnapshot().resources.customers.revision, initialRevision + 4);
+  assert.equal(paged.getSnapshot().resources.contracts.revision, 0);
+  checks.push('paged list revisions advance after every edit and repeated invalidation even without loading a full collection or advancing the clock');
   const slow = deferred(); let fail = false;
   const isolated = createManagementDataLoader({ loadKind: async kind => {
     if (kind === 'contracts') throw new Error('contracts offline');

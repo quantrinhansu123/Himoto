@@ -14,9 +14,11 @@ parser.add_argument('--session-cookie-file', required=True)
 parser.add_argument('--browser', choices=['chromium', 'webkit'], default='chromium')
 parser.add_argument('--output', default='.backups/product-performance/table-ui')
 args = parser.parse_args()
+expect.set_options(timeout=15000)
 out = Path(args.output) / args.browser
 out.mkdir(parents=True, exist_ok=True)
 checks, requests, errors = [], [], []
+writes = []
 fail_next_page = False
 customers = [dict(id=i, code=f'KH-{i:03}', name=f'Khách QA {i:02}', status='active',
     phone=f'09000000{i:02}', id_card=f'{i:012}', address='Địa chỉ QA', store_id=31,
@@ -36,6 +38,17 @@ def mock(route):
     req = route.request
     parsed = urlparse(req.url)
     params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+    if req.method == 'POST' and parsed.path == '/api/auth/customers':
+        created = dict(req.post_data_json, id=32, code='KH-000', customer_revision='1', contract_count=0, store_name='Cơ sở QA')
+        customers.append(created)
+        writes.append(dict(method=req.method, path=parsed.path))
+        route.fulfill(status=201, json=dict(status='success', data=created))
+        return
+    if req.method == 'DELETE' and parsed.path == '/api/auth/customers/32':
+        customers[:] = [row for row in customers if row['id'] != 32]
+        writes.append(dict(method=req.method, path=parsed.path))
+        route.fulfill(json=dict(status='success', data=dict(id=32)))
+        return
     assert req.method == 'GET', f'Unexpected write: {req.method} {parsed.path}'
     requests.append(dict(path=parsed.path, params=params))
     if parsed.path in ['/api/auth/customers', '/api/auth/order/car-rental']:
@@ -62,6 +75,9 @@ def mock(route):
                 '/api/auth/vehicle/vehicles': [], '/api/auth/hr/staff': [], '/api/auth/payment-events': [],
                 '/api/auth/contract-staff': [], '/api/auth/vehicles/inventory': [],
                 '/api/auth/store-directory': [dict(id=31,store_name='Cơ sở QA',status='opening')]}.get(parsed.path)
+        if parsed.path == '/api/auth/customers/search-by-id-card':
+            route.fulfill(json=dict(status='success', data=None))
+            return
         if parsed.path.startswith('/api/auth/record-photos/'):
             data = []
         assert data is not None, parsed.path
@@ -77,6 +93,7 @@ with sync_playwright() as p:
     page = context.new_page()
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.goto(args.url + '/contracts', wait_until='networkidle')
+    page.locator('details.mg-monitor-tools').evaluate_all('(items)=>items.forEach(item=>item.open=true)')
     expect(page.locator('.mg-result-range')).to_contain_text('31')
     expect(page.locator('tbody tr')).to_have_count(10)
     summary = page.get_by_role('region', name='Thống kê hợp đồng theo bộ lọc')
@@ -125,12 +142,33 @@ with sync_playwright() as p:
     search.fill('Khách QA 31')
     expect(page.locator('tbody tr')).to_have_count(1)
     expect(page.locator('tbody')).to_contain_text('KH-031')
-    assert not any(r['params'].get('search') == 'Khách QA 3' for r in requests[before:])
+    assert [r for r in requests[before:] if r['path'].endswith('customers')][-1]['params'].get('search') == 'Khách QA 31'
     expect(page.locator('.mg-current-page')).to_have_text('1')
     checks.append('Debounced server search sends the final keyword, resets pagination and renders the matching customer')
+
+    search.fill('')
+    expect(page.locator('.mg-result-range strong').last).to_have_text('31')
+    page.get_by_role('button', name='Thêm khách hàng', exact=True).click()
+    dialog = page.get_by_role('dialog', name='Thêm khách hàng tại chỗ')
+    dialog.locator('#new-customer-id_card').fill('009876543210')
+    dialog.get_by_label('Họ và tên', exact=False).fill('Khách vừa tạo QA')
+    dialog.get_by_label('Số điện thoại', exact=False).fill('0900000099')
+    dialog.get_by_label('Nơi ở hiện tại', exact=False).fill('Địa chỉ QA')
+    dialog.get_by_role('button', name='Lưu khách hàng', exact=True).click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator('.mg-record-total:visible strong')).to_have_text('32')
+    expect(page.locator('tbody')).to_contain_text('Khách vừa tạo QA')
+    checks.append('Creating a customer immediately refreshes the paged list and global total without reloading the browser')
+    created_row = page.locator('tbody tr').filter(has_text='Khách vừa tạo QA')
+    created_row.get_by_role('button', name='Thao tác', exact=False).click()
+    page.get_by_role('menuitem', name='Xóa khách hàng', exact=True).click()
+    page.get_by_role('dialog', name='Xóa hồ sơ khách hàng?').get_by_role('button', name='Xóa khách hàng', exact=True).click()
+    expect(page.locator('.mg-record-total:visible strong')).to_have_text('31')
+    expect(page.locator('tbody')).not_to_contain_text('Khách vừa tạo QA')
+    checks.append('Deleting a customer immediately refreshes the current page and total')
     assert not errors, errors
     browser.close()
 
-result = dict(passed=len(checks), checks=checks, consoleErrors=errors, realBusinessWrites=0)
+result = dict(passed=len(checks), checks=checks, consoleErrors=errors, mockedWrites=writes, realBusinessWrites=0)
 (out / 'results.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
 print(json.dumps(result, ensure_ascii=False))

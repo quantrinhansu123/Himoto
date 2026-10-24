@@ -63,7 +63,7 @@ async function run() {
   draft.unit_price = '150000'; draft.total_amount = '300000'; draft.paid_amount = ''; draft.deposit_amount = '1000000';
   draft.relatives = [{ name: 'Người thân một', relationship: 'Mẹ', phone: '0900000099' }, { name: 'Người thân hai', relationship: 'Anh', phone: '0900000088' }];
   assert.deepEqual(validateContractDraft(draft, data, data.staff, 'demo'), {});
-  const invalid = { ...draft, staff_id: '2', end_date: draft.start_date, unit_price: '-1', vehicles: [draft.vehicles[0], draft.vehicles[0]] };
+  const invalid = { ...draft, staff_id: '999999',staff_name:'', end_date: draft.start_date, unit_price: '-1', vehicles: [draft.vehicles[0], draft.vehicles[0]] };
   const errors = validateContractDraft(invalid, data, data.staff, 'demo');
   for (const key of ['staff_id', 'end_date', 'unit_price', 'vehicle_1']) assert(errors[key]);
   assert(validateContractDraft({ ...draft, relatives: [draft.relatives[0], { name: '', relationship: '', phone: '' }] }, data, data.staff, 'demo').relative_1_name);

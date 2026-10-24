@@ -14,6 +14,7 @@
     "test:management-loading": "node scripts/check-management-loading.cjs",
     "test:management-table": "node scripts/check-management-table.cjs",
     "test:record-totals": "node scripts/check-record-totals.cjs",
+    "test:contract-list-filters": "node scripts/check-contract-list-filters.cjs",
     "test:contracts": "node scripts/check-contract-autofill.cjs",
     "test:contract-billing": "node scripts/check-contract-billing.cjs",
     "test:contract-types": "node scripts/check-contract-types.cjs",

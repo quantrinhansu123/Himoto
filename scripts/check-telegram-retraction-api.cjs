@@ -7,6 +7,7 @@ async function main(){
  const {NextRequest,NextResponse}=require('next/server');let user={id:143,access_role:'branch_staff',permissions:['contracts.read','contracts.draft'],store_id:23,scope_all:false};
  let failure=0,deletes=0,sends=0,queries=[];const callbacks=[];
  const dependencies={
+  '@/lib/server/public-failure':load(path.join(root,'lib/server/public-failure')),
   'next/server':{NextRequest,NextResponse,after:callback=>callbacks.push(callback)},
   '@/lib/server/access-request':load(path.join(root,'lib/server/access-request')),
   '@/lib/server/access-context':load(path.join(root,'lib/server/access-context')),

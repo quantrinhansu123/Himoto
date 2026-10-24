@@ -22,7 +22,7 @@ async function main() {
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });
     const c = await load(path.join(root, 'lib/server/himoto-database')).himotoPool.connect();
-    const tables = ['order_vehicle_details', 'orders', 'vehicles'];
+    const tables = ['order_vehicle_details', 'orders', 'vehicles','transactions'];
     const proxy = { query: async (sql, params) => {
       let rewritten = sql;
       for (const table of tables) rewritten = rewritten.replaceAll(`himoto.${table}`, `pg_temp.qa_renewal_${table}`);
@@ -82,4 +82,4 @@ async function main() {
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+main().catch(error => { console.error(error); process.exitCode = 1; }).finally(()=>globalThis.himotoPool?.end());

@@ -43,7 +43,7 @@ function translate(message: string): string {
 }
 
 export function failureReason(error: unknown): string {
-  if (error instanceof Error && error.message && !('code' in error)) {
+  if (error instanceof Error && error.message && !('code' in error) && 'status' in error && Number(error.status)>=400&&Number(error.status)<500) {
     const cleaned = sanitizeFailureReason(error.message);
     if (cleaned) return cleaned;
   }
@@ -54,20 +54,9 @@ export function failureReason(error: unknown): string {
   const mapped = PG[code];
   const message = text(row.message) || (error instanceof Error ? error.message : '');
   const translated = translate(message);
-  const parts = [
-    translated || mapped?.label,
-    translated ? '' : sanitizeFailureReason(message),
-    sanitizeFailureReason(text(row.detail)),
-    sanitizeFailureReason(text(row.hint)),
-    text(row.constraint) ? `ràng buộc ${row.constraint}` : '',
-    text(row.table) ? `bảng ${row.table}` : '',
-    code && !mapped && !translated ? `mã ${code}` : '',
-  ].filter(Boolean);
-  const unique: string[] = [];
-  for (const part of parts) {
-    if (!unique.some(item => item === part || item.includes(part) || part.includes(item))) unique.push(part);
-  }
-  return unique.join(' · ') || 'Lỗi chưa xác định (máy chủ không trả mã).';
+  // Database detail/hint can include entire row values and private identifiers.
+  // Keep actionable business errors; unexpected failures stay in server logs.
+  return translated || mapped?.label || 'Xử lý dữ liệu đang gián đoạn. Vui lòng thử lại.';
 }
 
 export function failureStatus(error: unknown, fallback = 500): number {
