@@ -48,7 +48,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [repairs,setRepairs]=useState<Record<string,{amount:string;note:string}>>({});
   const [settlements,setSettlements]=useState<Record<number,ReturnSettlement|undefined>>({});
-  const [settlementBlocks,setSettlementBlocks]=useState<Record<number,boolean>>({});
+  const [settlementBlocks,setSettlementBlocks]=useState<Record<number,string>>({});
   const searchGeneration=useRef(0);
   const [returnedAt, setReturnedAt] = useState(localNow);
   const lastValidReturnedAt=useRef(returnedAt);
@@ -114,7 +114,8 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const selectedGps=useSelectedVehicleGps(lines.map(line=>line.row.vehicle_id));
 
   const orderIds = new Set(lines.map(line => line.row.order_id));
-  const settlementBlocked=[...orderIds].some(id=>settlementBlocks[id]!==false);
+  const settlementBlockReason=[...orderIds].map(id=>settlementBlocks[id]??'Đang tải số tiền và tài khoản thu / hoàn…').find(Boolean)||'';
+  const settlementBlocked=Boolean(settlementBlockReason);
   const summary = orderIds.size === 1 ? (() => {
     const first = lines[0].row;
     const adjustment = lines.reduce((sum, line) => sum + line.adjustment, 0);
@@ -160,7 +161,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
       showProblem('Ảnh/video vừa chọn chưa lưu. Bấm «Lưu ảnh / video» rồi xác nhận trả xe.','.mg-saved-photos-commit');return;
     }
     if(settlementBlocked){
-      showProblem('Chọn «Chưa hoàn cọc» (giữ cọc) hoặc «Đã hoàn cọc» trong mục Thu phí và hoàn cọc, rồi xác nhận.','.mg-return-settlement[aria-busy="true"], .mg-return-settlement[data-blocked="true"]');return;
+      showProblem(settlementBlockReason,'.mg-return-settlement[aria-busy="true"], .mg-return-settlement[data-blocked="true"]');return;
     }
     if(invalid){
       showProblem('Nhập phí quá hạn thực tế; có thể nhập 0đ khi không thu.','.mg-return-line-adjust input');return;
@@ -260,7 +261,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
             <div><dt>{summary.due !== null && summary.due < 0 ? 'Thu thừa' : 'Còn thiếu (không trừ cọc)'}</dt><dd>{summary.due === null ? '—' : formatMoney(Math.abs(summary.due))}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(summary.depositHeld)}</dd></div>
           </dl></details>}
-          {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={blocked=>setSettlementBlocks(current=>current[orderId]===blocked?current:{...current,[orderId]:blocked})} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
+          {[...orderIds].map(orderId=>{const selected=lines.filter(line=>line.row.order_id===orderId);return <ReturnSettlementFields key={orderId} orderId={orderId} itemIds={selected.map(line=>line.row.item_id)} photoVersion={photoVersion} lateFee={selected.reduce((sum,line)=>sum+(line.estimate.late?line.amount:0),0)} repairFee={selected.reduce((sum,line)=>sum+line.repairFee,0)} netAdjustment={selected.reduce((sum,line)=>sum+line.adjustment,0)} closes={openRows.filter(row=>row.order_id===orderId).length===selected.length} onChange={value=>setSettlements(current=>({...current,[orderId]:value}))} onBlockChange={(blocked,reason)=>{const value=blocked?reason||'Kiểm tra khoản thu / hoàn cọc trước khi xác nhận.':'';setSettlementBlocks(current=>current[orderId]===value?current:{...current,[orderId]:value});}} early={selected.some(line=>line.estimate.early)} late={selected.some(line=>line.estimate.late)} disabled={saving}/>;})}
           {lines.map(({row})=><ContractTransactionPhotos key={row.item_id} id={row.order_id} phase={`return-${row.item_id}`} title={`Ảnh trả xe và hồ sơ · ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})} onSaved={()=>setPhotoVersion(value=>value+1)}/>)}
           <p className="mg-composer-hint">Chỉ ghi phiếu cho khoản đã chọn thu / hoàn. Còn nợ: giữ hợp đồng Chờ tất toán.</p>
         </>}
@@ -268,7 +269,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}{settlementBlocked&&!photosPending&&<span role="status">Đang tải / cần chọn hoàn cọc trước khi xác nhận.</span>}<button type="button" className="mg-button" disabled={saving} onClick={close}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="button" onClick={event => { const invalidField=event.currentTarget.form?.querySelector<HTMLInputElement>('input:invalid,select:invalid');if(invalidField){for(let parent=invalidField.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;invalidField.reportValidity();return;}void submit(); }} className="mg-button mg-button-primary" disabled={loading || saving || !lines.length || settlementBlocked || photosPending}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}{settlementBlocked&&!photosPending&&<span role="status">{settlementBlockReason}</span>}<button type="button" className="mg-button" disabled={saving} onClick={close}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="button" onClick={event => { const invalidField=event.currentTarget.form?.querySelector<HTMLInputElement>('input:invalid,select:invalid');if(invalidField){for(let parent=invalidField.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;invalidField.reportValidity();return;}void submit(); }} className="mg-button mg-button-primary" disabled={loading || saving || !lines.length || settlementBlocked || photosPending}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
     </form>
   </Dialog>;
 }

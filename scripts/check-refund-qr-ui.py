@@ -78,14 +78,16 @@ with sync_playwright() as pw:
             if case=='manual-inflight':
                 expect(widget).to_have_attribute('aria-busy','true');expect(widget).to_contain_text('Đang đọc QR')
                 section.locator('#return-901-recipient_account').fill('009999999');section.locator('#return-901-recipient_name').fill('TEN GO TAY')
-                submit.click();assert len(posts)==before
+                expect(submit).to_be_disabled();expect(dialog.locator('.mg-dialog-footer')).to_contain_text('Đang lưu / đọc ảnh QR');assert len(posts)==before
                 assert state['held'];state['held'].fulfill(json=dict(status='success',data=dict(fields=fields)))
             expect(widget).to_have_attribute('aria-busy','false')
             assert len(posts)==before
             if case=='upload-error':
                 expect(widget).to_contain_text('QA chưa lưu được ảnh');assert not state['saved'] and state['reads']==0
                 expect(section.locator('#return-901-recipient_account')).to_have_value('')
-                submit.click();assert len(posts)==before
+                # QR is optional: a failed optional upload must not invent a return
+                # or prevent staff from confirming an otherwise valid refund.
+                expect(submit).to_be_enabled();assert len(posts)==before
             elif case=='manual-inflight':
                 expect(section.locator('#return-901-recipient_account')).to_have_value('009999999');expect(section.locator('#return-901-recipient_name')).to_have_value('TEN GO TAY')
             else:

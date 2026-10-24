@@ -14,7 +14,7 @@ import { RefundQrUpload } from './RefundQrUpload';
 type Kind=ReturnReceipt['kind']|'refund';
 interface Row {enabled:boolean;amount:string;method:PaymentMethod;account_id:string;request_id:string}
 const labels:Record<Kind,string>={late_fee:'Đã thu phí quá hạn',repair_fee:'Đã thu tiền sửa chữa',rental_debt:'Đã thu công nợ thuê xe',refund:'Đã hoàn cọc cho khách'};
-export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,repairFee,netAdjustment,closes,early=false,late=false,onChange,onBlockChange,disabled=false}:{orderId:number;itemIds:number[];photoVersion?:number;lateFee:number;repairFee:number;netAdjustment:number;closes:boolean;early?:boolean;late?:boolean;onChange:(value?:ReturnSettlement)=>void;onBlockChange?:(blocked:boolean)=>void;disabled?:boolean}) {
+export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,repairFee,netAdjustment,closes,early=false,late=false,onChange,onBlockChange,disabled=false}:{orderId:number;itemIds:number[];photoVersion?:number;lateFee:number;repairFee:number;netAdjustment:number;closes:boolean;early?:boolean;late?:boolean;onChange:(value?:ReturnSettlement)=>void;onBlockChange?:(blocked:boolean,reason?:string)=>void;disabled?:boolean}) {
   const [context,setContext]=useState<PaymentContext>(),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   const [rows,setRows]=useState<Partial<Record<Kind,Row>>>({});
   const [refundDeferred,setRefundDeferred]=useState(false);
@@ -59,9 +59,25 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const nameValue=recipient.recipient_name.trim();
   const refundRecipientReady=refundMethod==='cash' || !recipient.recipient_account.trim() || validRefundAccount(recipient.recipient_account);
   const refundDecisionMissing=closes&&Boolean(context?.deposit_held)&&!refundRow?.enabled&&!refundDeferred;
-  const refundReady=!refundRow?.enabled || (refundAllowed && Boolean(context&&paymentAccounts(context,refundMethod).some(account=>account.id===Number(refundRow.account_id))) && /^\d{1,13}$/.test(refundRow.amount||'') && Number(refundRow.amount)>0 && Number(refundRow.amount)<=limits.refund && refundRecipientReady);
+  const refundAmountError=!refundRow?.enabled?'':!/^\d{1,13}$/.test(refundRow.amount||'')||Number(refundRow.amount)<=0
+    ? 'Nhập số tiền cọc thực tế đã hoàn lớn hơn 0đ.'
+    : Number(refundRow.amount)>limits.refund
+      ? `Số tiền hoàn cọc vượt cọc còn giữ ${formatMoney(limits.refund)} (vượt ${formatMoney(Number(refundRow.amount)-limits.refund)}). Nếu có hoàn tiền thuê, ghi riêng khoản đó.` : '';
+  const refundAccountReady=Boolean(context&&paymentAccounts(context,refundMethod).some(account=>account.id===Number(refundRow?.account_id)));
+  const refundReady=!refundRow?.enabled || (refundAllowed && refundAccountReady && !refundAmountError && refundRecipientReady);
+  const refundBlockReason=!refundAllowed&&(context?.deposit_held||0)>0
+    ? (!closes ? 'Chưa thể tick đã hoàn cọc vì hợp đồng còn xe chưa nhận lại.'
+      : due===null ? 'Chưa thể tick đã hoàn cọc: cần đối chiếu tiền hợp đồng.'
+      : `Chưa thể tick «Đã hoàn cọc»: còn ${formatMoney(Math.max(due-collected,0))} chưa ghi nhận thu. Công nợ tiền thuê có thể gồm phí gia hạn; gia hạn ngày trả không đồng nghĩa đã thu tiền. Nếu đã nhận, tick khoản thu phía trên rồi hoàn cọc; nếu chưa thu thì chọn chưa hoàn cọc.`)
+    : '';
+  const recipientError='Số tài khoản khách nhận chưa hợp lệ. Kiểm tra lại số tài khoản hoặc để trống nếu chưa có.';
+  const blockReason=!context ? error||'Đang tải số tiền và tài khoản thu / hoàn…'
+    : qrBusy ? 'Đang lưu / đọc ảnh QR. Chờ xử lý xong trước khi xác nhận.'
+    : refundDecisionMissing ? 'Chọn đã hoàn hoặc chưa hoàn cọc trước khi xác nhận.'
+    : refundRow?.enabled&&!refundReady ? refundBlockReason||refundAmountError||(!refundAccountReady?'Chọn tài khoản / két thực tế đã chi hoàn cọc.':recipientError)
+    : refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account) ? recipientError : '';
   useEffect(()=>{
-    if(!context){change.current(undefined);block.current?.(true);return;}
+    if(!context){change.current(undefined);block.current?.(true,blockReason);return;}
     const receipts=(['late_fee','repair_fee','rental_debt'] as const).filter(kind=>limits[kind]>0&&rows[kind]?.enabled).map(kind=>{
       const row=rows[kind]!;return {kind,request_id:row.request_id,amount:row.amount,method:row.method,account_id:Number(row.account_id),paid_at:paidAt};
     });
@@ -74,8 +90,8 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
       }:{})}:undefined;
     const pendingRecipient={...(bankValue?{bank:bankValue}:{}),...(accountValue?{account:accountValue}:{}),...(nameValue?{name:nameValue}:{})};
     change.current(receipts.length||refund||refundDeferred?{order_id:orderId,revision:context.revision,receipts,...(refund?{refund}:{}),...(refundDeferred?{refund_deferred:true as const,...(Object.keys(pendingRecipient).length?{refund_recipient:pendingRecipient}:{})}:{})}:undefined);
-    block.current?.(qrBusy||refundDecisionMissing||Boolean(refundRow?.enabled && !refundReady)||Boolean(refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account)));
-  },[context,rows,recipient,refundAllowed,refundReady,refundDecisionMissing,refundDeferred,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr,qrBusy,limits]);
+    block.current?.(Boolean(blockReason),blockReason);
+  },[context,rows,recipient,refundAllowed,refundReady,refundDecisionMissing,refundDeferred,orderId,paidAt,refundRow?.enabled,accountValue,bankValue,nameValue,hasRefundQr,qrBusy,limits,blockReason]);
   function update(kind:Kind,patch:Partial<Row>){
     const old=rows[kind];const method=patch.method||old?.method||'transfer';
     const account=patch.method||!old?paymentAccounts(context!,method)[0]?.id:old.account_id;
@@ -83,12 +99,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   }
   if(error)return <section className="mg-return-settlement" data-blocked="true"><p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={()=>setRetry(value=>value+1)}>Tải lại khoản thu / hoàn</button></p></section>;
   if(!context)return <section className="mg-return-settlement" aria-busy="true"><p role="status">Đang tải số tiền và tài khoản thu / hoàn…</p></section>;
-  const blocked=qrBusy||refundDecisionMissing||Boolean(refundRow?.enabled&&!refundReady)||Boolean(refundDeferred&&recipient.recipient_account.trim()&&!validRefundAccount(recipient.recipient_account));
-  const refundBlockReason=!refundAllowed&&context.deposit_held>0
-    ? (!closes ? 'Chưa thể tick đã hoàn cọc vì hợp đồng còn xe chưa nhận lại.'
-      : due===null ? 'Chưa thể tick đã hoàn cọc: cần đối chiếu tiền hợp đồng.'
-      : `Chưa thể tick «Đã hoàn cọc»: còn ${formatMoney(Math.max(due-collected,0))} chưa ghi nhận thu. Công nợ tiền thuê có thể gồm phí gia hạn; gia hạn ngày trả không đồng nghĩa đã thu tiền. Nếu đã nhận, tick khoản thu phía trên rồi hoàn cọc; nếu chưa thu thì chọn chưa hoàn cọc.`)
-    : '';
+  const blocked=Boolean(blockReason);
   return <section className="mg-return-settlement" aria-label="Thu phí và hoàn cọc" data-blocked={blocked} aria-busy={qrBusy}><h3>2. Thu phí và hoàn cọc</h3>
     <ContractWorkflowGuide workflow="return" company={context.history.some(row=>!row.deposit&&row.type==='in'&&row.method.includes('công ty'))} early={early} late={late}/>
     <p>Chỉ chọn khoản đã thực nhận hoặc đã hoàn cho khách. Mỗi khoản tạo một phiếu thu/chi cùng lượt xác nhận.</p>
@@ -107,9 +118,9 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
         </>}
         {(row?.enabled&&!blocked||kind==='refund'&&refundDeferred)&&<div className="mg-form-grid mg-contract-grid-two">
           {row?.enabled&&!blocked&&<>
-          <div className="mg-field"><label htmlFor={`return-${orderId}-${kind}-amount`}>Số tiền thực tế (VNĐ)</label><input id={`return-${orderId}-${kind}-amount`} inputMode="numeric" value={amount(kind)} onChange={event=>update(kind,{amount:event.target.value.replace(/\D/g,'').slice(0,13)})}/></div>
+          <div className="mg-field"><label htmlFor={`return-${orderId}-${kind}-amount`}>Số tiền thực tế (VNĐ)</label><input id={`return-${orderId}-${kind}-amount`} inputMode="numeric" value={amount(kind)} aria-invalid={kind==='refund'&&Boolean(refundAmountError)||undefined} aria-describedby={kind==='refund'&&refundAmountError?`return-${orderId}-refund-amount-error`:undefined} onChange={event=>update(kind,{amount:event.target.value.replace(/\D/g,'').slice(0,13)})}/>{kind==='refund'&&refundAmountError&&<p id={`return-${orderId}-refund-amount-error`} className="mg-field-error" role="alert">{refundAmountError}</p>}</div>
           <div className="mg-field"><label htmlFor={`return-${orderId}-${kind}-method`}>{kind==='refund'?'Hình thức hoàn':'Hình thức thu'}</label><select id={`return-${orderId}-${kind}-method`} value={method} onChange={event=>update(kind,{method:event.target.value as PaymentMethod})}>{PAYMENT_METHODS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-          <div className="mg-field mg-field-wide"><label htmlFor={`return-${orderId}-${kind}-account`}>{kind==='refund'?'Tài khoản / két chi hoàn':'Tài khoản / két nhận tiền'}</label><select id={`return-${orderId}-${kind}-account`} value={row.account_id} onChange={event=>update(kind,{account_id:event.target.value})}>{!accounts.length&&<option value="">Chưa có tài khoản phù hợp</option>}{accounts.map(account=><option key={account.id} value={account.id}>{account.label}</option>)}</select></div>
+          <div className="mg-field mg-field-wide"><label htmlFor={`return-${orderId}-${kind}-account`}>{kind==='refund'?'Tài khoản / két chi hoàn':'Tài khoản / két nhận tiền'}</label><select id={`return-${orderId}-${kind}-account`} value={row.account_id} onChange={event=>update(kind,{account_id:event.target.value})}>{!accounts.some(account=>String(account.id)===row.account_id)&&<option value="">{accounts.length?'Chọn tài khoản / két':'Chưa có tài khoản phù hợp'}</option>}{accounts.map(account=><option key={account.id} value={account.id}>{account.label}</option>)}</select></div>
           </>}
           {kind==='refund'&&(refundDeferred||method!=='cash')&&<>
             <p className="mg-composer-hint mg-field-wide">{refundDeferred
@@ -138,7 +149,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
       </fieldset>;
     })}
     {refundBlockReason&&<p role="status">{refundBlockReason}</p>}
-    {refundRow?.enabled&&!refundReady&&<p className="mg-field-error" role="alert">Chưa đủ thông tin hoàn cọc: chọn tài khoản / két chi hoàn và số tiền đã hoàn. Ngân hàng, STK và tên chủ TK của khách không bắt buộc.</p>}
+    {refundRow?.enabled&&!refundReady&&!refundAmountError&&<p className="mg-field-error" role="alert">{blockReason}</p>}
     <p role="status">Đã chọn thu: {formatMoney(collected)} · Còn phải thu sau lượt này: {due===null?'Chưa đối chiếu':formatMoney(Math.max(due-collected,0))}</p>
     <p>Chuyển khoản hoàn cọc: đối chiếu QR / số tài khoản khách trong ảnh hồ sơ. Ứng dụng ghi nhận khoản đã hoàn, không tự chuyển tiền ngân hàng.</p>
   </section>;
