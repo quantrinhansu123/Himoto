@@ -123,7 +123,7 @@ export function installmentBalance(plan: InstallmentPlan, baseTotal: number | nu
     remaining_to_own: valid ? Math.max(expectedTotal - rentalPaid, 0) : null, ...(plan.stopped_at ? {stopped_at: plan.stopped_at} : {}) };
 }
 export function applyInstallmentBilling(row: ManagementRow, now = Date.now()): ManagementRow {
-  if (!row.billing_plan_json || !['renting', 'overdue', 'wait_payment', 'bad_debt', 'completed'].includes(row.status)) return row;
+  if (!row.billing_plan_json || !['renting', 'overdue', 'wait_payment', 'bad_debt', 'completed','reserved'].includes(row.status)) return row;
   let plan: InstallmentPlan | null = null;
   try { plan = parseInstallmentPlan(JSON.parse(String(row.billing_plan_json))); } catch { /* Invalid schedules never become zero debt. */ }
   if (!plan) return { ...row, total_amount: undefined, billing_due_amount: undefined, billing_error: 'Lịch thanh toán chưa hợp lệ; cần đối chiếu.' };

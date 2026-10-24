@@ -7,6 +7,7 @@ import type { PoolClient } from 'pg';
 import type { RenewalVersion } from '@/lib/management/contract-renewals';
 import { dailyPriceSql, DEPOSIT_REFUND_NAME, depositLateral, rentalPaidSql } from './contract-deposits';
 import { MAX_PAYMENT_AMOUNT, PAYABLE_STATUSES, canAddExtraReceipt, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, findPaymentAccount, paymentAccountMatchesMethod } from '@/lib/management/contract-payments';
+import { closeResolvedBadDebt } from './contract-resolution';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractPaymentError extends Error {
@@ -70,7 +71,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
   const planValue = order.draft_payload?.management_composer?.installment_plan;
   const plan = planValue ? parseInstallmentPlan(planValue) : null;
   if (planValue && !plan) throw new ContractPaymentError('Lịch đóng tiền thuê sở hữu chưa hợp lệ. Cần đối chiếu trước khi thanh toán.', 409);
-  const billing = plan && (['renting', 'overdue', 'wait_payment', 'bad_debt'].includes(String(order.status)) || order.status === 'completed' && plan.stopped_at) ? installmentBalance(plan, baseTotal, paid) : undefined;
+  const billing = plan && (['renting', 'overdue', 'wait_payment', 'bad_debt','reserved'].includes(String(order.status)) || order.status === 'completed' && plan.stopped_at) ? installmentBalance(plan, baseTotal, paid) : undefined;
   const total = billing ? billing.accrued_total : baseTotal;
   const depositPaid = money(order.deposit_paid) ?? 0, depositRefunded = money(order.deposit_refunded) ?? 0;
   // Store banks/cash must match cơ sở nguồn; company banks are usable from every store (Cashbook may attach them to a display branch).
@@ -225,5 +226,6 @@ export async function recordContractPayment(client: Database, id: number, actorI
       AND EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND d.completed_at IS NOT NULL)
       AND NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND d.completed_at IS NULL)`,[id]);
   }
+  if(composer?.lifecycle?.settlement)await closeResolvedBadDebt(client,id,actorId);
   return { context: await readPaymentContext(client, id), transaction_id: transactionId, replayed: false, company_transfer: company };
 }

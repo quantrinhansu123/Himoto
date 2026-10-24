@@ -20,7 +20,7 @@ const EXCLUDED_STATUSES = new Set(['draft', 'pending', 'deposit_contract', 'canc
 export const UNASSIGNED_SOURCE = 'Chưa phân công NVKD';
 export const UNASSIGNED_STORE = 'Chưa có cơ sở doanh thu';
 
-const RECEIVABLE_STATUSES = new Set(['renting', 'overdue', 'wait_payment', 'bad_debt']);
+const RECEIVABLE_STATUSES = new Set(['renting', 'overdue', 'wait_payment', 'bad_debt','reserved']);
 const OVERDUE_STATUSES = new Set(['overdue', 'bad_debt']);
 
 const tidy = (value: unknown) => String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ');

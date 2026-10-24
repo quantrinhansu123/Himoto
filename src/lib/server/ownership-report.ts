@@ -24,6 +24,7 @@ export async function readOwnershipReport(db:Database,store:number,date:string):
     v.term_unknown=active.filter(r=>!r.term).length;
     v.stock=number((await db.query('SELECT count(*)::int AS total FROM himoto.vehicles WHERE deleted_at IS NULL AND COALESCE(current_store_id,store_id)=$1 AND status<>\'sold\'',[store])).rows[0]?.total);
     v.bad_debt=number((await db.query(`SELECT count(*)::int AS total FROM himoto.orders o JOIN himoto.stores s ON s.id=o.store_id WHERE o.store_id=$1 AND o.deleted_at IS NULL AND ${OWNERSHIP_ORDER_SQL} AND o.order_status='bad_debt'`,[store])).rows[0]?.total);
+    v.reserved=number((await db.query(`SELECT count(*)::int AS total FROM himoto.orders o JOIN himoto.stores s ON s.id=o.store_id WHERE o.store_id=$1 AND o.deleted_at IS NULL AND ${OWNERSHIP_ORDER_SQL} AND o.order_status='reserved'`,[store])).rows[0]?.total);
   }
   const counts=(await db.query(`SELECT count(*) FILTER(WHERE (COALESCE(o.rent_at,d.starts_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date=$2::date)::int AS new_day,
     count(*) FILTER(WHERE (COALESCE(o.rent_at,d.starts_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $3::date AND $2::date)::int AS new_month
@@ -76,7 +77,7 @@ export async function readOwnershipReport(db:Database,store:number,date:string):
     date===vietnamDate()?'Tồn kho / trạng thái hợp đồng tại thời điểm đọc.':'Không có ảnh chụp tồn kho / trạng thái của ngày cũ: nhập theo kiểm kê, không lấy kho hiện tại.',
     'HĐMM theo ngày bắt đầu thuê; khách trả xe theo ngày trả thực tế trên dòng xe, đếm ID khách không trùng trong tháng. Nợ xấu đếm hợp đồng đã đánh dấu nợ xấu.',
     'Thu / chi chỉ gồm phiếu đã duyệt, ngày Việt Nam. Doanh thu tháng cộng từ đầu tháng đến ngày báo cáo. Lãi thuê là doanh thu thuê thuần (gia hạn + thuê + phạt trễ − hoàn trả sớm), chưa trừ chi phí vận hành.',
-    'Bảo lưu / khách mua xe / bán pin / bán sạc chưa có luồng dữ liệu nguồn; cần nhập sổ thực tế. Tổng doanh thu pin + sạc nhập theo sổ tháng.',
+    'Bảo lưu đếm hợp đồng đang bảo lưu trên app ở ngày hiện tại. Khách mua xe / bán pin / bán sạc chưa có luồng dữ liệu nguồn; cần nhập sổ thực tế. Tổng doanh thu pin + sạc nhập theo sổ tháng.',
     'TK THU dùng tài khoản cá nhân được phân công PGD; TK CTY dùng tài khoản công ty được phân công. Số thực tế và sổ đối chiếu phải nhập độc lập.',
     ...(revenue.unclassified_count?[`${revenue.unclassified_count} phiếu xe chưa phân loại (${revenue.unclassified_amount.toLocaleString('vi-VN')} đồng) chưa cộng vào doanh thu thuê.`]:[]),
   ];

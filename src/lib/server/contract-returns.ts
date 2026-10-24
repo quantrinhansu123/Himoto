@@ -8,6 +8,7 @@ import { dailyPriceSql, depositLateral, rentalPaid, rentalPaidSql } from './cont
 import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { usesScopedDatabase } from './access-context';
 import { lateReturnFee } from '@/lib/management/return-fees';
+import { closeResolvedBadDebt } from './contract-resolution';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractReturnError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -129,10 +130,10 @@ export function parseBadDebtRecovery(body:unknown):BadDebtRecoveryInput {
 export async function recordBadDebtRecovery(client:Database,actorId:number,raw:BadDebtRecoveryInput):Promise<BadDebtRecoveryResult> {
   const input=parseBadDebtRecovery(raw);
   await client.query("SET LOCAL lock_timeout = '5s'");
-  const row=(await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.rent_at,d.completed_at,d.xmin::text AS item_revision,o.draft_payload
+  const row=(await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.rent_at,d.completed_at,d.xmin::text AS item_revision,o.draft_payload,o.order_status
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.id=$1 AND d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-      AND o.order_status='bad_debt' FOR UPDATE OF d,o`,[input.item_id])).rows[0];
+      AND o.order_status IN('bad_debt','completed') FOR UPDATE OF d,o`,[input.item_id])).rows[0];
   if(!row)throw new ContractReturnError('Không tìm thấy xe trong hợp đồng nợ xấu thuộc phạm vi tài khoản.',404);
   const payload=structuredClone(row.draft_payload||{}),composer=payload.management_composer||{};
   const events=Array.isArray(composer.vehicle_recoveries)?composer.vehicle_recoveries:[];
@@ -140,12 +141,19 @@ export async function recordBadDebtRecovery(client:Database,actorId:number,raw:B
   const previous=events.find((event:{request_id?:string})=>event.request_id===input.request_id);
   const result={item_id:input.item_id,order_id:Number(row.order_id),vehicle_id:Number(row.vehicle_id),recovered_at:localTimestamp(input.recovered_at)};
   if(previous){if(previous.request_hash!==hash)throw new ContractReturnError('Mã lần thu hồi đã dùng cho thông tin khác.',409);return {...result,replayed:true};}
+  if(row.order_status!=='bad_debt')throw new ContractReturnError('Hợp đồng đã đóng; không ghi thêm lượt thu hồi.',409);
   if(row.completed_at)throw new ContractReturnError('Xe đã được ghi nhận trả/thu hồi. Tải lại để kiểm tra kho.',409);
   if(String(row.item_revision)!==input.item_revision)throw new ContractReturnError('Dòng xe đã thay đổi. Mở lại hợp đồng trước khi xác nhận.',409);
   if(row.rent_at&&new Date(result.recovered_at).getTime()<new Date(row.rent_at).getTime())throw new ContractReturnError('Ngày thu hồi không được trước ngày bắt đầu thuê.');
   if(usesScopedDatabase())await client.query('SELECT himoto.complete_contract_vehicle_return($1,$2::timestamptz)',[input.item_id,result.recovered_at]);
   else await client.query('UPDATE himoto.order_vehicle_details SET completed_at=$2::timestamptz,updated_at=now() WHERE id=$1',[input.item_id,result.recovered_at]);
   composer.vehicle_recoveries=[...events,{...result,request_id:input.request_id,request_hash:hash,recorded_at:new Date().toISOString(),actor_id:actorId,note:input.note}];
+  if(composer.installment_plan){
+    const plan=parseInstallmentPlan(composer.installment_plan);
+    if(!plan)throw new ContractReturnError('Lịch đóng tiền chưa hợp lệ. Cần đối chiếu trước khi thu hồi.',409);
+    const returned=(await client.query('SELECT count(*) FILTER(WHERE completed_at IS NULL)::int AS remaining,max(completed_at) AS latest FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL',[row.order_id])).rows[0];
+    if(Number(returned.remaining)===0){const at=new Date(new Date(returned.latest).getTime()+7*3600000).toISOString().slice(0,16);composer.installment_plan={...plan,stopped_at:at<plan.end?at:plan.end};}
+  }
   payload.management_composer=composer;
   await client.query('UPDATE himoto.orders SET draft_payload=$2,updated_at=now() WHERE id=$1',[row.order_id,JSON.stringify(payload)]);
   if(usesScopedDatabase())await client.query('SELECT himoto.release_returned_contract_vehicle($1)',[input.item_id]);
@@ -155,6 +163,7 @@ export async function recordBadDebtRecovery(client:Database,actorId:number,raw:B
         AND o.order_status IN('renting','overdue','wait_payment','pending','bad_debt') LIMIT 1`,[row.vehicle_id]);
     if(!open.rowCount)await client.query("UPDATE himoto.vehicles SET status='ready',updated_at=now() WHERE id=$1 AND status IN('using','rent','bad_debt')",[row.vehicle_id]);
   }
+  if(composer.lifecycle?.settlement)await closeResolvedBadDebt(client,Number(row.order_id),actorId);
   return {...result,replayed:false};
 }
 

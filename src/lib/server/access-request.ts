@@ -44,6 +44,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/returns'))return read?'contracts.read':'contracts.return';
   if(path.includes('/staff-sales')||path==='/api/auth/rental-revenue')return 'contracts.read';
   if(path.includes('/order/car-rental/')) {
+    if(path.endsWith('/lifecycle'))return read?'contracts.read':'contracts.return';
     if(path.endsWith('/refund-qr'))return 'contracts.return';
     if(path.endsWith('/payments'))return read?'contracts.read':'finance.write';
     if(path.endsWith('/finalize')||path.endsWith('/handover'))return 'contracts.finalize';
@@ -69,7 +70,7 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     }
     if(!user)return NextResponse.json({status:'error',message:'Phiên đăng nhập đã hết hạn.'},{status:401});
     let operation='';
-    if(request.method!=='GET'&&request.nextUrl.pathname.endsWith('/actions')) {
+    if(request.method!=='GET'&&(request.nextUrl.pathname.endsWith('/actions')||/^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/lifecycle$/.test(request.nextUrl.pathname))) {
       try {operation=String((await request.clone().json()).action||'');}catch {return NextResponse.json({status:'error',message:'Thao tác không hợp lệ.'},{status:400});}
     }
     const vehiclePhoto=request.nextUrl.pathname.match(/\/record-photos\/vehicles\/([1-9]\d{0,14})(?:\/|$)/);
@@ -83,7 +84,8 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     // Own branch option list is required for every workspace role; mutation remains an admin setting.
     const branchOptions=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/stores';
     const composerStaff=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/hr/staff'&&request.nextUrl.searchParams.has('store_id')&&hasPermission(user,'contracts.read');
-    if(!branchOptions&&!composerStaff&&permission&&!hasPermission(user,permission))return NextResponse.json({status:'error',message:'Tài khoản không có quyền thực hiện thao tác này.'},{status:403});
+    const lifecycleSettlement=request.method==='POST'&&operation==='settle'&&/^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/lifecycle$/.test(request.nextUrl.pathname)&&hasPermission(user,'contracts.read')&&hasPermission(user,'finance.write');
+    if(!branchOptions&&!composerStaff&&!lifecycleSettlement&&permission&&!hasPermission(user,permission))return NextResponse.json({status:'error',message:'Tài khoản không có quyền thực hiện thao tác này.'},{status:403});
     try {
       return await dataAccess.run({...user,store_id:user.store_id??null,scope_all:user.scope_all===true,operation,transfer_vehicle_id},()=>handler(request,context));
     } catch (error) {

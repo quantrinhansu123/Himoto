@@ -21,10 +21,14 @@ import { ContractBatteryLinks } from './ContractBatteryLinks';
 import { ContractPhotoGallery } from './ContractTransactionPhotos';
 import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { ReservationNoShowDialog } from './ReservationNoShowDialog';
+import { ContractLifecyclePanel } from './ContractLifecyclePanel';
+import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
+import { loadContractLifecycle,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 
 const SECTIONS = [
   { id: 'vehicle', label: 'Thông tin phương tiện' },
   { id: 'contract', label: 'Hợp đồng' },
+  { id: 'lifecycle', label: 'Nợ xấu / bảo lưu' },
   { id: 'customer', label: 'Khách hàng (Bên B)' },
   { id: 'payment', label: 'Chi phí' },
   { id: 'battery', label: 'Pin / sạc' },
@@ -59,6 +63,14 @@ export type ContractVersionPrint = { end_date: string | null; total_amount: numb
 
 export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft,onHandover, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void;onHandover?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
   const { dataset, source, can } = useManagement();
+  const [lifecycleOverride,setLifecycleOverride]=useState<Partial<ManagementRow>>({});
+  const [recoveryOpen,setRecoveryOpen]=useState(false),[lifecycleReload,setLifecycleReload]=useState(0);
+  const applyLifecycle=useCallback((context:ContractLifecycleContext)=>{
+    setLifecycleOverride({status:context.status,draft_revision:context.revision,billing_plan_json:context.plan?JSON.stringify(context.plan):'',end_date:context.end_at||undefined,total_amount:context.total_amount??undefined,paid_amount:context.paid_amount??undefined});
+  },[]);
+  const originalRow=row;
+  row={...originalRow,...lifecycleOverride};
+  useEffect(()=>setLifecycleOverride({}),[originalRow.id,originalRow.draft_revision,originalRow.status]);
   const [section, setSection] = useState<DetailSection>('vehicle');
   const [viewingVersion, setViewingVersion] = useState('');
   const [history, setHistory] = useState<ContractHistory | null>(null);
@@ -240,6 +252,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         {historyState(!history?.cashflow.length, 'Chưa có phiếu thu / chi nào cho hợp đồng này.')}
         {history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow} />}
       </>)}
+    {panel('lifecycle','Nợ xấu / bảo lưu',section==='lifecycle'&&source==='api'&&row.status!=='draft'&&<ContractLifecyclePanel id={row.id} reloadKey={lifecycleReload} onChanged={applyLifecycle} onRecover={()=>setRecoveryOpen(true)} onPayment={onPayment}/>)}
     {panel('photos','Ảnh thuê / trả xe',section==='photos'&&<ContractPhotoGallery id={row.id}/>)}
     {panel('telegram','Gửi thông tin và ảnh vào nhóm Telegram',section==='telegram'&&source==='api'&&(row.status==='draft'?<p role="status">Hợp đồng đang lưu nháp. Bấm Tiếp tục hoàn tất hợp đồng, kiểm tra thanh toán rồi Xác nhận lưu chính thức. Sau khi phát hành mới gửi được thông tin và ảnh lên Telegram.</p>:<>{row.status==='cancelled'&&<p>Hợp đồng đã hủy. Có thể xem lịch sử và thu hồi tin đã gửi.</p>}<ContractTelegramPanel id={row.id}/></>))}
     {source === 'api' && (section === 'vehicle' || section === 'customer') && <>
@@ -248,6 +261,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
     </>}
     </div>
     {noShow&&<ReservationNoShowDialog orderId={row.id} onClose={()=>setNoShow(false)} onDone={onClose}/>}
+    {recoveryOpen&&<BadDebtRecoveryDialog id={row.id} code={row.code} onClose={()=>setRecoveryOpen(false)} onRecovered={()=>{setLifecycleReload(value=>value+1);void loadContractLifecycle(row.id).then(applyLifecycle).catch(()=>{});}}/>}
     <div className="mg-dialog-footer">{row.status==='deposit_contract'&&can('contracts.finalize')&&<><button type="button" className="mg-button" onClick={onPrint}>Bổ sung hồ sơ hợp đồng cọc</button>{onHandover&&<button type="button" className="mg-button mg-button-primary" onClick={onHandover}><Bike size={16}/>Giao xe đã đặt cọc</button>}<button type="button" className="mg-button" onClick={()=>setNoShow(true)}>Khách không đến nhận xe</button></>}<button type="button" className="mg-button" onClick={onClose}>Đóng</button>
       {row.status==='draft'&&can('contracts.draft')&&onEditDraft&&<button type="button" className="mg-button mg-button-primary" onClick={onEditDraft}>Tiếp tục hoàn tất hợp đồng</button>}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('telegram')}><MessageCircle size={15}/>Gửi Telegram</button>}
@@ -258,7 +272,8 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         {can('contracts.return')&&onVehicleChange&&<button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>}
       </>}
       {row.status==='completed'&&can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}>Bổ sung ảnh trả xe</button>}
-      {row.status==='bad_debt'&&can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15}/>Thu hồi xe nợ xấu</button>}
+      {row.status==='bad_debt'&&can('contracts.return')&&<button type="button" className="mg-button" onClick={()=>setRecoveryOpen(true)}><RotateCcw size={15}/>Thu hồi xe nợ xấu</button>}
+      {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('lifecycle')}>Trạng thái &amp; xử lý</button>}
       {canRentBattery && <button type="button" className="mg-button" onClick={onBatteryRent}><BatteryCharging size={15} />Thuê pin / sạc</button>}
       {canPay && <button type="button" className="mg-button" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : depositHeld > 0 ? 'deposit_refund' : 'extra')}><Wallet size={15} />Điền sổ quỹ</button>}
       {onQr && row.status !== 'cancelled' && <button type="button" className="mg-button" onClick={onQr}><Wallet size={15} />Nhập phiếu chi</button>}

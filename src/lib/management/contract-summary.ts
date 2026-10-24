@@ -1,7 +1,7 @@
 import type { ManagementRow } from './types';
 
 // These are estimates from recorded contract amounts, not a settlement ledger.
-const RECEIVABLE_STATUSES = new Set(['renting', 'overdue', 'wait_payment', 'bad_debt']);
+const RECEIVABLE_STATUSES = new Set(['renting', 'overdue', 'wait_payment', 'bad_debt','reserved']);
 const EXCLUDED_TOTAL_STATUSES = new Set(['draft', 'cancelled']);
 
 export interface ContractSummary {

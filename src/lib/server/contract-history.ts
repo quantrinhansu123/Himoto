@@ -56,7 +56,8 @@ export async function readContractHistory(client: Database, id: number): Promise
       COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb) AS return_adjustments,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,versions}','[]'::jsonb) AS versions,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,reservation_releases}','[]'::jsonb) AS reservation_releases,
-      COALESCE(o.draft_payload::jsonb #> '{management_composer,vehicle_recoveries}','[]'::jsonb) AS vehicle_recoveries
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,vehicle_recoveries}','[]'::jsonb) AS vehicle_recoveries,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,lifecycle,events}','[]'::jsonb) AS lifecycle_events
     FROM himoto.orders o LEFT JOIN himoto.users u ON u.id=o.contract_responsible_user_id
     WHERE o.id=$1 AND o.deleted_at IS NULL`, [id]);
   if (!order.rowCount) throw new ContractHistoryError('Không tìm thấy hợp đồng.', 404);
@@ -68,6 +69,8 @@ export async function readContractHistory(client: Database, id: number): Promise
   const created: ContractChange = { id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
     title: 'Tạo hợp đồng', detail: '', amount: null };
   const changes: ContractChange[] = [created];
+  const lifecycleLabels:Record<string,string>={mark_bad_debt:'Chuyển sang Nợ xấu',settle:'Xác nhận tất toán',hold:'Bảo lưu hợp đồng thuê sở hữu',resume:'Thuê lại từ bảo lưu',closed:'Đóng hợp đồng: đã trả xe và tất toán'};
+  for(const [index,item] of(Array.isArray(order.rows[0].lifecycle_events)?order.rows[0].lifecycle_events:[]).entries())changes.push({id:`lifecycle-${index}`,kind:'lifecycle',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,title:lifecycleLabels[item.action]||'Đổi tình trạng hợp đồng',detail:`${item.note||''} · Ghi nhận trên hệ thống: ${vietnamTime(item.recorded_at)}.`});
   for(const [index,item]of(Array.isArray(order.rows[0].vehicle_recoveries)?order.rows[0].vehicle_recoveries:[]).entries())changes.push({id:`vehicle-recovery-${index}`,kind:'return',at:iso(item.recovered_at),actor:`#${item.actor_id}`,amount:null,title:'Thu hồi xe trong hợp đồng nợ xấu',detail:`${item.note||''} · Giữ nguyên khoản nợ, cọc và thu/chi. Ghi nhận trên hệ thống: ${vietnamTime(item.recorded_at)}.`});
   for(const [index,item] of (Array.isArray(order.rows[0].reservation_releases)?order.rows[0].reservation_releases:[]).entries()) {
     changes.push({id:`reservation-release-${index}`,kind:'reservation_release',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,

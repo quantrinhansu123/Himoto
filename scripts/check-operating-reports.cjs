@@ -38,7 +38,9 @@ try{
   assert.equal(report.app.running,1);assert.equal(report.app.term_12,1);assert.equal(report.app.stock,2);assert.equal(report.app.new_day,3-1); // two vehicle orders, excludes battery anchor
   assert.equal(report.app.rental_day,610);assert.equal(report.app.revenue_month,610);assert.equal(report.app.income_day,830);assert.equal(report.app.deposit_day,200);assert.equal(report.app.refund_day,50);
   assert.equal(report.app.battery_income_day,170);assert.equal(report.app.battery_deposit_day,60);assert.equal(report.app.battery_rental_day,110);
-  for(const key of ['reserved','bought_month','battery_sale_day','charger_sale_day','thu_actual','book_income'])assert.equal(report.values[key],null);
+  assert.equal(report.app.reserved,0);assert.equal(report.values.reserved,0);
+  for(const key of ['bought_month','battery_sale_day','charger_sale_day','thu_actual','book_income'])assert.equal(report.values[key],null);
+  await c.query('SAVEPOINT held_report');await c.query("UPDATE orders SET order_status='reserved' WHERE id=1");assert.equal((await source.readOwnershipReport(temp,35,today)).app.reserved,1);await c.query('ROLLBACK TO SAVEPOINT held_report');
   checks.push('Distinct vehicle counts and explicit terms; approved Vietnam-day receipts include legacy addon renewals, exclude pending/next-day and battery anchors; unknown sources stay null.');
   await c.query('UPDATE orders SET customer_id=111 WHERE id IN(1,2)');await c.query('UPDATE order_vehicle_details SET completed_at=$1::date WHERE id IN(1,2)',[today]);
   assert.equal((await source.readOwnershipReport(temp,35,today)).app.returned_month,1);

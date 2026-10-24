@@ -28,6 +28,7 @@ export const CONTRACT_STATUSES: Option[] = [
   { value: 'completed', label: 'Hoàn thành' }, { value: 'pending', label: 'Chờ giao xe' },
   { value: 'overdue', label: 'Quá hạn' }, { value: 'cancelled', label: 'Đã hủy' },
   { value: 'bad_debt', label: 'Nợ xấu' }, { value: 'wait_payment', label: 'Chờ tất toán' },
+  { value: 'reserved', label: 'Bảo lưu' },
   { value: 'deposit_contract', label: 'Đã cọc, chờ nhận xe' },
   { value: 'cancel_pending_settlement', label: 'Chờ tất toán hủy' },
 ];
