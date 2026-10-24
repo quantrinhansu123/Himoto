@@ -4105,7 +4105,26 @@
 .mg-ownership-report .mg-form-grid { padding-top:10px; }
 .mg-ownership-reconciliation { padding:12px 16px; background:#f1f5f9; border-radius:8px; margin:16px 0; }
 @media(max-width:767px) { .mg-debt-report{padding:10px;} .mg-record-total{width:100%;max-width:340px;} .mg-collection-panel .mg-toolbar{display:grid;grid-template-columns:1fr;} .mg-collection-panel .mg-heading-actions{flex-wrap:wrap;} }
-.mg-owned-fleet-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; margin: 16px 0; }
+.mg-rental-revenue > .mg-owned-fleet-summary { padding: 16px 20px; }
+.mg-owned-fleet-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; list-style: none; padding: 0; margin: 0; }
+.mg-owned-fleet-counts > li { min-width: 0; padding: 12px 14px; border: 1px solid var(--mg-line); border-radius: 10px; background: #fff; }
+.mg-owned-fleet-counts strong { display: block; font-size: 24px; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--mg-slate-900); overflow-wrap: anywhere; }
+.mg-owned-fleet-counts > li:first-child strong { color: var(--mg-brand-600); }
+.mg-owned-fleet-counts span { display: block; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--mg-slate-600); }
+.mg-owned-fleet-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; margin: 16px 0 0; }
 .mg-owned-fleet-kpis > div { padding: 14px 16px; border: 1px solid var(--mg-border, #e5e7eb); border-radius: 10px; background: #fafafa; }
 .mg-owned-fleet-kpis dt { font-size: 12px; line-height: 1.5; color: #555; }
 .mg-owned-fleet-kpis dd { margin: 6px 0 0; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+.mg-owned-fleet-summary > .mg-rental-revenue-note { padding: 12px 0 0; }
+.mg-owned-fleet-dialog { width: 1100px; }
+.mg-owned-fleet-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.mg-owned-fleet-dialog > .mg-dialog-header, .mg-owned-fleet-dialog > .mg-dialog-footer { position: relative; flex-shrink: 0; }
+.mg-owned-fleet-dialog > .mg-dialog-body { min-height: 0; overflow: auto; overscroll-behavior: contain; isolation: isolate; }
+.mg-owned-fleet-dialog .mg-table-scroll { min-height: 0; max-height: none; isolation: isolate; }
+.mg-owned-fleet-dialog .mg-table :is(tbody, tfoot) th { position: static; }
+.mg-owned-fleet-dialog .mg-rental-revenue-note { padding-left: 0; padding-right: 0; }
+@media (max-width: 640px) {
+  .mg-rental-revenue > .mg-owned-fleet-summary { padding: 16px; }
+  .mg-owned-fleet-counts { gap: 8px; }
+  .mg-owned-fleet-counts > li { padding: 10px; }
+}

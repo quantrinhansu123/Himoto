@@ -21,15 +21,19 @@ function ReportState({loading,error,reload}:{loading:boolean;error:string;reload
   return loading?<p className="mg-table-state" role="status">Đang tải doanh thu đội xe…</p>:error?<p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={reload}>Thử lại báo cáo đội xe</button></p>:null;
 }
 function FleetSummary({total}:{total:FleetRevenueTotals}) {
-  return <>
-    <p>{total.vehicles.toLocaleString('vi-VN')} xe chủ quản · {total.local_vehicles.toLocaleString('vi-VN')} xe đang quản lý tại cơ sở gốc · {total.away_vehicles.toLocaleString('vi-VN')} xe đã chuyển sang cơ sở khác</p>
+  return <div className="mg-owned-fleet-summary">
+    <ul className="mg-owned-fleet-counts" aria-label="Số xe theo cơ sở chủ quản">
+      <li><strong>{total.vehicles.toLocaleString('vi-VN')}</strong>{' '}<span>xe chủ quản</span></li>
+      <li><strong>{total.local_vehicles.toLocaleString('vi-VN')}</strong>{' '}<span>xe tại cơ sở gốc</span></li>
+      <li><strong>{total.away_vehicles.toLocaleString('vi-VN')}</strong>{' '}<span>xe ở cơ sở khác</span></li>
+    </ul>
     <dl className="mg-owned-fleet-kpis">
       <div><dt>Doanh thu từ xe trực tiếp cho khách thuê</dt><dd>{formatMoney(total.direct_revenue)}</dd></div>
       <div><dt>Doanh thu từ xe cho cơ sở khác mượn</dt><dd>{formatMoney(total.loan_revenue)}</dd></div>
       <div><dt>Tổng doanh thu đội xe</dt><dd>{formatMoney(total.revenue)}</dd></div>
     </dl>
     {total.unassigned_rentals>0&&<p className="mg-rental-revenue-note" role="status">Có {total.unassigned_rentals} lượt thuê chưa xác định cơ sở lập hợp đồng: {formatMoney(total.unassigned_revenue)}. Khoản này được ghi riêng trong tổng, chưa xếp vào hai nguồn doanh thu.</p>}
-  </>;
+  </div>;
 }
 function FleetVehicleDetails({row,scope,onClose}:{row:FleetStoreRevenue;scope:RentalReportScope;onClose:()=>void}) {
   const [page,setPage]=useState(1),[size,setSize]=useState(10);
@@ -37,7 +41,7 @@ function FleetVehicleDetails({row,scope,onClose}:{row:FleetStoreRevenue;scope:Re
   const state=useFleetReport(query,0),report=state.report?.view==='vehicles'?state.report:null;
   const ready=report&&!state.loading&&!state.error,unknown=Boolean(report?.total.unassigned_rentals);
   const pages=Math.max(1,Math.ceil((report?.total.vehicles||0)/size)),active=report?.page||page;
-  return <Dialog title={`Đội xe chủ quản · ${row.store_name}`} subtitle={`${scope.from} – ${scope.to} · Chỉ xem`} onClose={onClose}>
+  return <Dialog className="mg-owned-fleet-dialog" title={`Đội xe chủ quản · ${row.store_name}`} subtitle={`${scope.from} – ${scope.to} · Chỉ xem`} onClose={onClose}>
     <div className="mg-dialog-body"><ReportState {...state}/>{ready&&<>
       <FleetSummary total={report.total}/>
       <p className="mg-rental-revenue-note">Đủ xe thuộc cơ sở này, kể cả xe chưa có doanh thu. Cơ sở đang giữ xe không làm đổi cơ sở chủ quản. Sắp xếp theo doanh thu giảm dần.</p>

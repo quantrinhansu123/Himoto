@@ -37,8 +37,8 @@ def mock(route):
  route.fulfill(json=dict(status='success',data=data))
 
 with sync_playwright() as pw:
- for role,engine,width in [('viewer',pw.chromium,1440),('viewer',pw.webkit,390),('admin',pw.chromium,1440),('manager',pw.chromium,1440),('staff',pw.chromium,1440),('accounting',pw.chromium,1440)]:
-  browser=engine.launch();ctx=browser.new_context(viewport=dict(width=width,height=950),timezone_id='Asia/Ho_Chi_Minh',reduced_motion='reduce')
+ for role,engine,width,height in [('viewer',pw.chromium,1440,950),('viewer',pw.chromium,1024,600),('viewer',pw.webkit,390,844),('admin',pw.chromium,1440,950),('manager',pw.chromium,1440,950),('staff',pw.chromium,1440,950),('accounting',pw.chromium,1440,950)]:
+  browser=engine.launch();ctx=browser.new_context(viewport=dict(width=width,height=height),timezone_id='Asia/Ho_Chi_Minh',reduced_motion='reduce')
   ctx.add_cookies([dict(name='himoto_management_session',value=Path(a.cookies,f'session-{role}.txt').read_text().strip(),url=a.url,httpOnly=True,sameSite='Strict')]);ctx.route('**/api/**',mock)
   state.clear();state['role']=role;before=len(requests);page=ctx.new_page();page.on('pageerror',lambda error:errors.append(str(error)))
   page.goto(a.url+'/staff-sales',wait_until='networkidle',timeout=90000)
@@ -51,17 +51,30 @@ with sync_playwright() as pw:
   tab.click();panel=page.locator('section[aria-label="Doanh thu xe theo cơ sở chủ quản"]');expect(panel).to_have_attribute('aria-busy','false')
   expect(panel.locator('.mg-owned-fleet-kpis')).to_contain_text('4.000.000');expect(panel.locator('.mg-owned-fleet-kpis')).to_contain_text('8.000.000');expect(panel.locator('.mg-rental-revenue-heading > strong')).to_contain_text('12.000.000')
   expect(panel).to_contain_text('80 xe chủ quản');expect(panel).to_contain_text('Chỉ xem');assert not page.evaluate('document.documentElement.scrollWidth>innerWidth+1')
-  page.screenshot(path=str(out/(engine.name+'-stores.png')),full_page=False)
+  counts=panel.get_by_role('list',name='Số xe theo cơ sở chủ quản',exact=True)
+  expect(counts.get_by_role('listitem')).to_have_text(['80 xe chủ quản','40 xe tại cơ sở gốc','40 xe ở cơ sở khác'])
+  assert panel.evaluate("""panel=>{const p=panel.getBoundingClientRect(),r=panel.querySelector('.mg-owned-fleet-counts').getBoundingClientRect();return r.left>=p.left+15&&r.right<=p.right-15;}"""),'Fleet counts touch the panel border'
+  counts.scroll_into_view_if_needed();page.screenshot(path=str(out/(engine.name+f'-{width}-stores.png')),full_page=False)
   checks.append(engine.name+': designated account sees adjacent lazy-loaded report with 80 owned vehicles and separately labelled 4m direct + 8m loan revenue = 12m')
   panel.get_by_role('button',name='Xem đội xe CS Nguyễn Hoàng',exact=True).click();dialog=page.get_by_role('dialog',name='Đội xe chủ quản · CS Nguyễn Hoàng',exact=True)
   expect(dialog.get_by_role('navigation',name='Phân trang đội xe chủ quản')).to_contain_text('80 xe · Trang 1 / 8')
+  dialog.screenshot(path=str(out/(engine.name+f'-{width}-vehicle-summary.png')))
   dialog.get_by_role('button',name='Trang cuối',exact=True).click();expect(dialog.get_by_role('navigation')).to_contain_text('80 xe · Trang 8 / 8');expect(dialog).to_contain_text('QA-040')
   dialog.get_by_label('Số xe mỗi trang',exact=True).select_option('50');expect(dialog.get_by_role('navigation')).to_contain_text('80 xe · Trang 1 / 2')
   dialog.get_by_role('button',name='Trang cuối',exact=True).click();expect(dialog.get_by_role('navigation')).to_contain_text('80 xe · Trang 2 / 2')
   assert len([r for r in private() if r['query'].get('view')=='vehicles'])>=4
   expect(dialog.locator('.mg-owned-fleet-kpis')).to_contain_text('12.000.000');assert not page.evaluate('document.documentElement.scrollWidth>innerWidth+1')
   assert dialog.get_by_role('button',name='Lưu',exact=True).count()==0
-  page.screenshot(path=str(out/(engine.name+'-vehicles.png')),full_page=False);dialog.get_by_role('button',name='Đóng',exact=True).click()
+  page.screenshot(path=str(out/(engine.name+f'-{width}-vehicles.png')),full_page=False)
+  # Real hit testing catches row headings painted on top of the sticky footer.
+  assert dialog.evaluate("""dialog=>{const footer=dialog.querySelector('.mg-dialog-footer'),r=footer.getBoundingClientRect();return [24,48,80].every(x=>footer.contains(document.elementFromPoint(r.left+x,r.top+r.height/2)));}"""),'Vehicle cells overlap the Close footer'
+  for fraction in [0,.5,1]:
+   dialog.locator('.mg-dialog-body').evaluate('(body,fraction)=>body.scrollTop=(body.scrollHeight-body.clientHeight)*fraction',fraction)
+   assert dialog.evaluate("""dialog=>{const h=dialog.querySelector('.mg-dialog-header').getBoundingClientRect(),b=dialog.querySelector('.mg-dialog-body').getBoundingClientRect(),f=dialog.querySelector('.mg-dialog-footer').getBoundingClientRect();return b.top>=h.bottom-1&&b.bottom<=f.top+1&&f.bottom<=innerHeight+1;}"""),'Header, scrollable report and Close footer overlap'
+  if width>=768:
+   expect(dialog.get_by_role('navigation')).to_be_in_viewport()
+  page.screenshot(path=str(out/(engine.name+f'-{width}-vehicles-bottom.png')),full_page=False)
+  dialog.get_by_role('button',name='Đóng',exact=True).click()
   checks.append(engine.name+': all 80 vehicles reachable through real pagination controls; changing size resets page, whole-fleet money never shrinks to the visible rows; mobile stays within viewport')
   page.get_by_label('Cơ sở đang xem',exact=True).select_option('35');expect(panel).to_contain_text('Không có xe thuộc cơ sở đang chọn.');expect(panel.locator('.mg-rental-revenue-heading > strong')).to_contain_text('0')
   page.get_by_label('Cơ sở đang xem',exact=True).select_option('32');expect(panel).to_contain_text('80 xe chủ quản')
