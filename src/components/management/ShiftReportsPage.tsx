@@ -14,6 +14,7 @@ import type { ShiftAutofillResult, ShiftAutofillSection } from '@/lib/management
 import {blankOwnershipReport,validateOwnershipSubmission} from '@/lib/management/ownership-report';
 import {OwnershipReportFields} from './OwnershipReportFields';
 import {ShiftTelegramStatus} from './ShiftTelegramStatus';
+import {ShiftInventoryCheck} from './ShiftInventoryCheck';
 
 const blank = (store = 0): ShiftInput => ({ store_id: store, date: vietnamDate(), staff: '', vehicles: 0, batteries: 0, charged: 0, rented_batteries: 0, transfers: 0, cash: 0, personal: 0, company: 0, electricity_off: false, notes: '', summary: emptyShiftSummary(), daily_vehicles: 0, monthly_vehicles: 0, other_vehicles: 0 });
 
@@ -127,7 +128,7 @@ export function ShiftReportsPage() {
       });
       if (Object.keys(result.values).length) dirty.current = true;
       setAutofilled(current => ({ ...current, [section]: result }));
-      if(!silent)notify(Object.keys(result.values).length ? 'Đã tự điền dữ liệu. Kiểm tra số liệu trước khi lưu báo cáo.' : 'Chưa có dữ liệu phù hợp để tự điền. Xem thông báo tại tab.');
+      if(!silent)notify(Object.keys(result.values).length ? 'Đã tự điền dữ liệu. Kiểm tra số liệu trước khi lưu báo cáo.' : result.inventory ? 'Đã tải đối chiếu. Giữ nguyên số kiểm kê ngày cũ.' : 'Chưa có dữ liệu phù hợp để tự điền. Xem thông báo tại tab.');
     } catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không lấy được dữ liệu.'); }
     finally { lock.current = false; if (!controller.signal.aborted) setBusy(false); }
   }
@@ -255,7 +256,9 @@ export function ShiftReportsPage() {
         {!input.summary ? <p>Báo cáo này chưa ghi nhận thống kê hợp đồng và thu chi.</p> : <div className="shift-summary-grid">{['Hợp đồng', 'Thu thực tế', 'Chi và các khoản liên quan'].map((title, group) => <div key={title} className="shift-summary-card"><h4>{title}</h4>{SHIFT_SUMMARY_FIELDS.slice(group * 4, group * 4 + 4).map(([key, label, currency]) => <div key={key} className="mg-field"><label htmlFor={'shift-summary-' + key}>{label}{currency ? ' (đồng)' : ''}</label><input id={'shift-summary-' + key} type="number" min="0" max={currency ? 1e12 : 100000} step="1" required value={Number.isNaN(input.summary![key]) ? '' : input.summary![key]} onChange={event => update('summary', { ...input.summary!, [key]: event.target.value === '' ? NaN : Number(event.target.value) })}/>{currency && Number.isFinite(input.summary![key]) && <small>{money(input.summary![key])}</small>}</div>)}</div>)}</div>}
         </div><div id="shift-panel-inventory" role="tabpanel" aria-labelledby="shift-tab-inventory" hidden={tab !== 'inventory'} tabIndex={0}>
         <div id="shift-inventory-panel-vehicles" role="tabpanel" aria-labelledby="shift-inventory-tab-vehicles" data-inventory-section="vehicles" hidden={inventoryTab !== 'vehicles'} tabIndex={0}><h3>Tổng kết xe cuối ngày</h3>{renderAutofill('inventory')}
-        <div className="mg-form-grid">{numeric('daily_vehicles','Xe cho thuê ngày (xe)')}{numeric('monthly_vehicles','Xe cho thuê tháng (xe)')}{numeric('vehicles','Xe lưu kho thực tế (xe)')}{numeric('other_vehicles','Xe khác / thuê sở hữu (xe)')}
+        {autofilled.inventory?.store_id===input.store_id&&autofilled.inventory.date===input.date&&<ShiftInventoryCheck result={autofilled.inventory}/>}
+        <p>Số kiểm kê dưới đây là tổng xe còn đang thuê / lưu kho của PGD, không phải số xe phát sinh riêng trong ngày. Kiểm tra thực tế trước khi chốt.</p>
+        <div className="mg-form-grid">{numeric('daily_vehicles','Xe còn đang thuê ngày (lũy kế)')}{numeric('monthly_vehicles','Xe còn đang thuê tháng (lũy kế)')}{numeric('vehicles','Xe lưu kho thực tế (xe)')}{numeric('other_vehicles','Xe khác / thuê sở hữu (xe)')}
           <div className="mg-field"><label htmlFor="shift-vehicle-total">Tổng kết xe cuối ngày (xe)</label><input id="shift-vehicle-total" readOnly value={shiftVehicleTotal(input) ?? ''} placeholder="Chưa đủ số liệu"/><small>Tự tính: xe thuê ngày + xe thuê tháng + xe tại PGD + xe giữ bên ngoài + xe khác.</small></div>
         </div>
         {readonly && shiftVehicleTotal(input) === null && <p>Báo cáo cũ chưa ghi nhận đủ số xe cho thuê ngày/tháng để tính tổng.</p>}

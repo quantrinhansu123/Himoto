@@ -7,6 +7,7 @@ import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { depositReceiptSql } from './contract-deposits';
 import {renewalReceiptSql} from './contract-receipts';
 import {readOwnershipReport} from './ownership-report';
+import {readShiftInventory} from './shift-inventory';
 
 type Database = Pick<PoolClient,'query'>;
 export class ShiftAutofillError extends Error { constructor(message: string, public status=400) { super(message); } }
@@ -22,6 +23,7 @@ export async function readShiftAutofill(db: Database, input: ReturnType<typeof p
   const start=`${date}T00:00:00+07:00`, end=new Date(Date.parse(start)+86400000).toISOString();
   const cutoff=new Date(Math.min(Date.parse(end),Date.now())).toISOString();
   const values: Partial<ShiftInput>={},notices:string[]=[],sources:string[]=[];
+  let inventory:ShiftAutofillResult['inventory'];
   if (!(await db.query('SELECT id FROM himoto.stores WHERE id=$1::bigint',[store_id])).rowCount) throw new ShiftAutofillError('PGD không tồn tại hoặc nằm ngoài phạm vi truy cập.',404);
   if(section==='ownership'){
     values.ownership_report=await readOwnershipReport(db,store_id,date);
@@ -39,33 +41,14 @@ export async function readShiftAutofill(db: Database, input: ReturnType<typeof p
     sources.push('Lịch trực của PGD trong ngày báo cáo.');
   }
   if (section==='inventory') {
-    const row=(await db.query(`WITH active_rentals AS (
-      SELECT DISTINCT ON (d.vehicle_id) d.vehicle_id,d.type,
-        COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),NULLIF(o.order_type,''),'') AS rental_type
-      FROM himoto.orders o JOIN himoto.order_vehicle_details d ON d.order_id=o.id
-      WHERE o.store_id=$1::bigint AND o.deleted_at IS NULL AND d.deleted_at IS NULL
-        AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','bad_debt')
-        AND d.completed_at IS NULL AND COALESCE(d.rent_at,o.rent_at,'-infinity'::timestamptz)<=now()
-      ORDER BY d.vehicle_id,d.rent_at DESC NULLS LAST,d.id DESC
-    ), classified AS (
-      SELECT vehicle_id,CASE
-        WHEN rental_type='daily' THEN 'daily'
-        WHEN rental_type ~ '^monthly(_[0-9]+)?$' THEN 'monthly'
-        WHEN rental_type IN ('ownership','ownership_cd') THEN 'other'
-        WHEN type='day' THEN 'daily' WHEN type='month' THEN 'monthly' ELSE 'other' END AS category
-      FROM active_rentals
-    ) SELECT
-      (SELECT count(*)::int FROM himoto.vehicles WHERE COALESCE(current_store_id,store_id)=$1::bigint AND status='ready') AS vehicles,
-      count(DISTINCT vehicle_id) FILTER (WHERE category='daily')::int AS daily_vehicles,
-      count(DISTINCT vehicle_id) FILTER (WHERE category='monthly')::int AS monthly_vehicles
-      FROM classified`,[store_id])).rows[0];
-    for(const key of ['vehicles','daily_vehicles','monthly_vehicles'] as const) {
-      const count=Number(row?.[key]);
-      if(!Number.isSafeInteger(count)||count<0)throw new ShiftAutofillError('Chưa xác định được số xe từ DB. Vui lòng thử lại.',503);
-      values[key]=count;
-    }
-    sources.push('Theo cơ sở ở tab Thông tin: xe thuê ngày/tháng từ các hợp đồng đang thuê, xe lưu kho từ danh sách xe trạng thái Lưu kho.');
-    notices.push('Số liệu hiện tại tại thời điểm tự điền. Tổng kết xe cuối ngày = xe thuê ngày + xe thuê tháng + xe lưu kho.');
+    inventory=await readShiftInventory(db,store_id,start,end);
+    if(date===vietnamDate())Object.assign(values,{vehicles:inventory.stock_vehicles,daily_vehicles:inventory.daily_vehicles,monthly_vehicles:inventory.monthly_vehicles,other_vehicles:inventory.other_vehicles});
+    else notices.push('Đang xem ngày cũ: giữ nguyên số kiểm kê đã nhập. Hiện trạng xe chỉ để tham khảo, không tự điền vào tồn cuối ngày đã chọn.');
+    sources.push('Hợp đồng bắt đầu thuê và số xe trên các hợp đồng đó được lọc theo ngày báo cáo. Xe còn đang thuê và lưu kho là hiện trạng lúc lấy dữ liệu, gồm cả hợp đồng từ ngày trước.');
+    if(inventory.ready_rentals)notices.push(`${inventory.ready_rentals} xe trên hợp đồng của PGD mang trạng thái Lưu kho nhưng hợp đồng chưa trả. Cần đối chiếu; xe có thể đang ghi nhận tại cơ sở khác.`);
+    if(inventory.ready_conflicts)notices.push(`Đã loại ${inventory.ready_conflicts} xe còn hợp đồng chưa trả khỏi số lưu kho gợi ý để tránh cộng hai lần.`);
+    if(inventory.missing_vehicle_lines)notices.push(`${inventory.missing_vehicle_lines} dòng hợp đồng chưa gắn xe: chưa tính vào số xe.`);
+    if(inventory.duplicate_vehicles)notices.push(`${inventory.duplicate_vehicles} xe có nhiều hợp đồng chưa trả: mỗi xe chỉ tính một lần; cần đối chiếu các hợp đồng.`);
   }
   if (section==='batteries') {
     const rented=(await db.query(`SELECT count(*)::int AS rented_batteries FROM himoto.battery_contracts
@@ -150,5 +133,5 @@ export async function readShiftAutofill(db: Database, input: ReturnType<typeof p
     sources.push('Danh sách thiết bị từ báo cáo đã chốt gần nhất của PGD, không sau ngày đang chọn.');
     notices.push('Chỉ điền danh sách thiết bị để tham khảo; nhân sự tự xác nhận tắt điện, ghi bất thường và đính kèm ảnh khóa cửa.');
   }
-  return {...input,values,notices,sources,read_at:new Date().toISOString()};
+  return {...input,values,notices,sources,read_at:new Date().toISOString(),...(inventory?{inventory}:{})};
 }

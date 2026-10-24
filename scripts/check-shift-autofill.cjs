@@ -23,9 +23,9 @@ async function main(){
   const accounts=await readShiftAutofill(db,input('accounts'));assert.equal(accounts.values.cash,1865000);assert.equal(accounts.values.personal,undefined);assert.equal(accounts.values.company,undefined);assert(accounts.notices.length>=3);
   rows=[{payload:{electrical_devices:'Đèn, quạt',electricity_off:true,notes:'Không'}}];
   const safety=await readShiftAutofill(db,input('safety'));assert.equal(safety.values.electrical_devices,'Đèn, quạt');assert.equal(safety.values.electricity_off,undefined);assert.equal(safety.values.notes,undefined);
-  rows=[{vehicles:20,daily_vehicles:16,monthly_vehicles:7}];const inventory=await readShiftAutofill(db,input('inventory'));assert.equal(inventory.values.daily_vehicles,16);assert.equal(shiftVehicleTotal(inventory.values),43);assert.equal(inventory.values.batteries,undefined);assert.equal(inventory.values.charged,undefined);
+  rows=[{started_contracts:10,started_vehicles:12,active_contracts:20,active_vehicles:23,stock_vehicles:20,ready_vehicles_raw:21,ready_conflicts:1,ready_rentals:1,missing_vehicle_lines:0,duplicate_vehicles:0,other_vehicles:0,daily_vehicles:16,monthly_vehicles:7,issues:[]}];const inventory=await readShiftAutofill(db,input('inventory'));assert.equal(inventory.values.daily_vehicles,16);assert.equal(shiftVehicleTotal(inventory.values),43);assert.equal(inventory.values.batteries,undefined);assert.equal(inventory.values.charged,undefined);
   const coreSql=sqls.at(-1);assert(coreSql.includes("status='ready'"));assert(coreSql.includes('o.store_id=$1::bigint'));assert(coreSql.includes("rental_type='daily'"));assert(!coreSql.includes('management_shift_reports'));assert(!coreSql.includes('vehicle_location_events'));
-  assert.equal((await readShiftAutofill(db,input('inventory','2026-01-01'))).values.vehicles,20);
+  const pastInventory=await readShiftAutofill(db,input('inventory','2026-01-01'));assert.deepEqual(pastInventory.values,{});assert.equal(pastInventory.inventory.stock_vehicles,20);
   const historical={query:async(sql,params)=>{
     assert.equal(params[0],1);assert(!sql.includes('FROM himoto.vehicles'));
     if(sql==='SELECT id FROM himoto.stores WHERE id=$1::bigint')return {rows:[{id:1}],rowCount:1};
