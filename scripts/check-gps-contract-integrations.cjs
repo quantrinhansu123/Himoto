@@ -95,7 +95,9 @@ async function main(){
     assert.equal((await c.query(`SELECT * FROM ${schema}.management_contract_notifications`)).rowCount,1);
     assert.equal((await notices.dispatchContractNotifications(fake,5,db)).configured,false);
     const token='123456789:qa-only-bot-token-123456789';await c.query(`UPDATE ${schema}.management_telegram_settings SET bot_cipher=$1`,[crypto.sealIntegrationSecret({token})]);await c.query(`INSERT INTO ${schema}.management_store_telegram(store_id,chat_id,enabled) VALUES(23,'-100000000001',true),(31,'-100000000002',true)`);
-    if(process.argv.includes('--retractions-only')) {
+    if(process.argv.includes('--telegram-recovery-only')) {
+      checks.push(...await require('./lib/check-telegram-recovery.cjs')(db,c,schema,notices));
+    } else if(process.argv.includes('--retractions-only')) {
       checks.push(...await require('./lib/check-telegram-retractions.cjs')(db,c,schema));
     } else if(process.argv.includes('--telegram-controls-only')) {
       checks.push(...await require('./lib/check-contract-telegram.cjs')(db,c,schema,notices));
@@ -117,6 +119,7 @@ async function main(){
     checks.push(...await require('./lib/check-contract-telegram.cjs')(db,c,schema,notices));
     checks.push(...await require('./check-contract-documents.cjs')(db,c,schema,notices));
     checks.push(...await require('./lib/check-telegram-media-first.cjs')(db,c,schema,notices));
+    checks.push(...await require('./lib/check-telegram-recovery.cjs')(db,c,schema,notices));
     checks.push(...await require('./lib/check-ownership-telegram.cjs')(db,c,schema,notices));
     checks.push(...await require('./lib/check-telegram-retractions.cjs')(db,c,schema));
     checks.push(...await require('./lib/check-gps-status-parity.cjs')(db,c,schema));

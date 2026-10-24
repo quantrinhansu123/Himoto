@@ -49,6 +49,7 @@
     "test:vehicle-registration-ocr": "node scripts/check-vehicle-registration-ocr.cjs",
     "test:refund-qr": "node scripts/check-refund-qr.cjs",
     "test:telegram-retractions": "node scripts/check-telegram-retraction-api.cjs && node scripts/check-gps-contract-integrations.cjs --retractions-only",
+    "test:telegram-recovery": "node scripts/check-telegram-delivery.cjs && node scripts/check-gps-contract-integrations.cjs --telegram-recovery-only",
     "test:cross-branch-rentals": "node scripts/check-cross-branch-rentals.cjs",
     "test:customer-blacklist": "node scripts/check-customer-blacklist.cjs",
     "test:customer-source": "node scripts/check-customer-order-excel.cjs",

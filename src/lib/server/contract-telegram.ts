@@ -9,9 +9,22 @@ import { contractPhotoLabel } from '@/lib/management/contract-photos';
 import { OWNERSHIP_ORDER_SQL,contractTelegramDestination } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { queueTelegramRetraction,retractionEligibility,retractionErrorText } from './telegram-retractions';
+import { telegramErrorDescription } from './telegram-delivery';
 
 type Database=Pick<PoolClient,'query'>;
 interface Event {key:string;kind:ContractEventType;phases:string[];payload?:NotificationPayload;renewal?:RenewalNotice}
+interface ResumableNotice {
+  status:string;error_code?:string;message_ids?:number[];payload?:NotificationPayload;retraction?:unknown;
+  delivery_target?:{chat_id?:string;bot_id?:string};
+}
+function canResumeNotice(notice:ResumableNotice) {
+  const ids=notice.message_ids;
+  return ['failed','unknown'].includes(notice.status)&&!notice.retraction
+    && /^(?:TELEGRAM_(?:400|401|403|404|413|429)|PHOTO_SIZE|MEDIA_FETCH_FAILED)$/.test(notice.error_code||'')
+    && Boolean(notice.delivery_target?.chat_id&&notice.delivery_target.bot_id)
+    && Array.isArray(ids)&&ids.length>0&&ids.length<=(notice.payload?.photos?.length||0)
+    && new Set(ids).size===ids.length&&ids.every(id=>Number.isSafeInteger(id)&&id>0);
+}
 export class ContractTelegramError extends Error {constructor(message:string,public status=400){super(message);}}
 export { canSendContractEvent };
 export async function readContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount) {
@@ -19,7 +32,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`,[id])).rows[0];
   if(!o)throw new ContractTelegramError('Không tìm thấy hợp đồng.',404);
   const notices=(await db.query(`SELECT id,event_key,root_event_key,event_type,photo_phases,photo_slots,payload,content_hash,status,sent_at,delivery_mode
-    ,error_code,message_ids,delivery_target,retraction FROM himoto.management_contract_notifications WHERE order_id=$1 ORDER BY created_at DESC,id`,[id])).rows;
+    ,error_code,message_ids,delivery_target,delivery_review,retraction FROM himoto.management_contract_notifications WHERE order_id=$1 ORDER BY created_at DESC,id`,[id])).rows;
   const composer=o.draft_payload?.management_composer||{};
   const versions=Array.isArray(composer.versions)?composer.versions:[];
   const events:Event[]=notices.filter(n=>n.delivery_mode==='auto').map(n=>({key:n.event_key,kind:n.event_type,payload:n.payload,
@@ -68,14 +81,18 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const hash=notificationHash(event.kind,payload);
     const same=related.find(n=>n.retraction?.state!=='done'&&(n.content_hash||notificationHash(n.event_type,n.payload))===hash&& !['manual','awaiting_config','failed','unknown'].includes(n.status));
     // An unresolved send for this transaction must be reconciled before a new variant is sent.
-    const unresolved=related.find(n=>n.retraction?.state!=='done'&&(['unknown','sending','pending'].includes(n.status)||n.retraction));
-    const latest=related.find(n=>n.retraction&&n.retraction.state!=='done')||same||unresolved||related[0];
+    const unresolved=related.find(n=>n.retraction?.state!=='done'&&(['unknown','sending','pending'].includes(n.status)||n.status==='failed'&&n.message_ids?.length||n.retraction));
+    const latest=related.find(n=>n.retraction&&n.retraction.state!=='done')||unresolved||same||related[0];
+    const failure=Array.isArray(latest?.delivery_review)?latest.delivery_review.findLast((review:{outcome?:string;error_code?:string})=>review.outcome==='delivery_failed'&&review.error_code===latest.error_code):undefined;
     result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`,phases:event.phases,
       destination_label:contractTelegramDestination(event.kind,o.ownership===true,o.store_name),
       text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.retraction?.state==='done'?'retracted':latest?.retraction?.state==='failed'?'retraction_failed':latest?.retraction?'retracting':latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
       attachments:payload.photos.map(photo=>({slot:photo.slot,mime_type:photo.mime_type,label:contractPhotoLabel(photo.slot)})),
       can_send:!['draft','cancelled'].includes(o.order_status)&&canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
       delivery_contract_code:latest?.payload?.code,
+      can_resume:canSendContractEvent(user,event.kind)&&Boolean(latest&&canResumeNotice(latest)),
+      delivery_attachment_count:latest?.payload?.photos?.length||0,
+      delivery_error_description:telegramErrorDescription(failure?.description),
       deliveries:related.filter(n=>n.message_ids?.length).map(n=>({id:n.id,sent_at:n.sent_at?new Date(n.sent_at).toISOString():null,message_count:n.message_ids.length,text:contractNotificationText(n.event_type,n.payload),
         ...retractionEligibility(n,user),retraction_state:n.retraction?.state||null,retraction_reason:n.retraction?.reason,retracted_at:n.retraction?.state==='done'?n.retraction.finished_at:undefined,
         ...(n.retraction?.state==='failed'?{blocked_reason:retractionErrorText(n.retraction.error)}:{})})),
@@ -97,8 +114,14 @@ export async function saveContractTelegram(db:Database,id:number,actorId:number,
       ON CONFLICT(order_id) DO UPDATE SET auto_enabled=EXCLUDED.auto_enabled,updated_by=EXCLUDED.updated_by,updated_at=now()`,[id,order.store_id,body.enabled,actorId]);
     return;
   }
-  const retry=body.action==='retry_confirmed_absent';
-  if(!['send','retry_confirmed_absent'].includes(String(body.action))||Object.keys(body).some(k=>!['action','event_key','hash','request_id',...(retry?['notice_id','confirmed_absent']:[])].includes(k))||typeof body.event_key!=='string'||body.event_key.length>256||typeof body.hash!=='string'||!/^[0-9a-f]{64}$/.test(body.hash)||typeof body.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id)||retry&&(typeof body.notice_id!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.notice_id)||body.confirmed_absent!==true))throw new ContractTelegramError('Yêu cầu gửi không hợp lệ.');
+  const retry=body.action==='retry_confirmed_absent',resume=body.action==='resume';
+  const requestIdPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const noticeIdPattern=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+  const allowed=['action','event_key','hash','request_id',...(retry||resume?['notice_id']:[]),...(retry?['confirmed_absent']:[])];
+  if(!['send','retry_confirmed_absent','resume'].includes(String(body.action))||Object.keys(body).some(k=>!allowed.includes(k))
+    ||typeof body.event_key!=='string'||body.event_key.length>256||typeof body.hash!=='string'||!/^[0-9a-f]{64}$/.test(body.hash)
+    ||typeof body.request_id!=='string'||!requestIdPattern.test(body.request_id)
+    ||(retry||resume)&&(typeof body.notice_id!=='string'||!noticeIdPattern.test(body.notice_id))||retry&&body.confirmed_absent!==true)throw new ContractTelegramError('Yêu cầu gửi không hợp lệ.');
   // Serialize Send and automatic completion on the same contract. The outbox is committed before delivery.
   await db.query('SELECT id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id]);
   const read=await readContractTelegram(db,id,actorId,user);
@@ -106,6 +129,15 @@ export async function saveContractTelegram(db:Database,id:number,actorId:number,
   if(!event)throw new ContractTelegramError('Không tìm thấy giao dịch đã hoàn tất.',404);
   if(!canSendContractEvent(user,event.kind))throw new ContractTelegramError('Tài khoản chưa được phép gửi giao dịch này.',403);
   if(event.hash!==body.hash)throw new ContractTelegramError('Nội dung hoặc ảnh đã thay đổi. Bấm Làm mới để kiểm tra trước khi gửi.',409);
+  if(resume){
+    const notice=(await db.query('SELECT * FROM himoto.management_contract_notifications WHERE id=$1 AND order_id=$2 FOR UPDATE',[body.notice_id,id])).rows[0];
+    if(!notice||(notice.root_event_key||notice.event_key)!==event.key)throw new ContractTelegramError('Lần gửi không thuộc giao dịch này.',404);
+    if(notice.delivery_review?.some((review:{outcome?:string;request_id?:string})=>review.outcome==='resume_remaining'&&review.request_id===body.request_id))return;
+    if(event.notice_id!==body.notice_id||!event.can_resume||!canResumeNotice(notice))throw new ContractTelegramError('Chỉ gửi tiếp lượt bị từ chối rõ ràng và đã lưu mã tệp; tải lại để kiểm tra.',409);
+    const review={outcome:'resume_remaining',actor_id:actorId,at:new Date().toISOString(),request_id:body.request_id,prior_status:notice.status,prior_error:notice.error_code,media_offset:notice.message_ids.length};
+    await db.query(`UPDATE himoto.management_contract_notifications SET status='pending',error_code='DELIVERY_CONTINUE',delivery_review=delivery_review||$3::jsonb WHERE id=$1 AND order_id=$2`,[body.notice_id,id,JSON.stringify([review])]);
+    return; // Keep the original payload, target and acknowledged IDs. Never rebuild a partial delivery.
+  }
   if(retry){
     const old=(await db.query('SELECT root_event_key,content_hash FROM himoto.management_contract_notifications WHERE order_id=$1 AND event_key=$2',[id,`manual:${id}:${body.request_id}`])).rows[0];
     if(old){if(old.root_event_key!==event.key||old.content_hash!==event.hash)throw new ContractTelegramError('Mã gửi lại đã dùng cho nội dung khác.',409);return;}

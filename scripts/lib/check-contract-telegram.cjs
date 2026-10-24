@@ -88,7 +88,9 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   await assert.rejects(()=>telegram.saveContractTelegram(db,1,143,admin,retry),e=>e.status===409);
   await c.query(`UPDATE ${schema}.management_contract_notifications SET message_ids='[]' WHERE id=$1`,[event.notice_id]);
   await telegram.saveContractTelegram(db,1,143,admin,retry);await telegram.saveContractTelegram(db,1,143,admin,retry);
-  assert.equal((await c.query(`SELECT jsonb_array_length(delivery_review) AS n,status FROM ${schema}.management_contract_notifications WHERE id=$1`,[event.notice_id])).rows[0].n,1);
+  const reviews=(await c.query(`SELECT delivery_review FROM ${schema}.management_contract_notifications WHERE id=$1`,[event.notice_id])).rows[0].delivery_review;
+  assert.equal(reviews.filter(review=>review.outcome==='confirmed_absent').length,1);
+  assert.equal(reviews.filter(review=>review.outcome==='delivery_failed').length,1);
   assert.equal((await c.query(`SELECT count(*)::int AS n FROM ${schema}.management_contract_notifications WHERE event_key=$1`,[`manual:1:${retry.request_id}`])).rows[0].n,1);
   assert.equal((await notices.dispatchContractNotifications(fake,1,db,[2])).sent,0);
   await notices.dispatchContractNotifications(async(url,options)=>{if(new URL(url).pathname.endsWith('/sendMessage'))return Response.json({ok:true,result:{message_id:199}});const media=JSON.parse(options.body.get('media'));assert.equal(media.length,5);assert.deepEqual(Buffer.from(await options.body.get('photo0').arrayBuffer()),Buffer.from([255,216,255,9]));return Response.json({ok:true,result:media.map((_,i)=>({message_id:i+100}))});},1,db,[1]);
