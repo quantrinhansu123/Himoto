@@ -12,7 +12,7 @@ import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import { ContractDraft, ContractRelative, CustomerDetails, LegacyContractDocument, buildContractDocument, contractStaffStoreId, createContractDraft, customerDetails, emptyVehicle, formatRelatives, normalizeIdCard, pairRelatives, relativesFromRow, staffIsAvailable, staffMatchesStore, validateContractDraft, validateOperationalDraft, validateReservationDraft, vehicleDetails } from '@/lib/management/contract-document';
 import { documentRequirements } from '@/lib/management/contract-requirements';
 import { hasSalesCommissionRole, staffRoles } from '@/lib/management/staff-positions';
-import { contractProfile,saveContractProfile } from '@/lib/management/contract-profile';
+import { canEditIssuedContract,contractProfile,saveContractProfile } from '@/lib/management/contract-profile';
 import { ManagementRow } from '@/lib/management/types';
 import { CONTRACT_STATUSES, CONTRACT_TYPES } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
@@ -751,7 +751,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     setCustomerPhotos({}); setPlatePhotos({}); setPhotoVersion(current => current + 1);
   }
   async function persistProfile() {
-    if(!row || !profileRevision || busy.current || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
+    if(!row || !canEditIssuedContract(accessUser,row.store_id) || !profileRevision || busy.current || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending)return;busy.current=true;setSaving(true);setSaveError('');setProfileMessage('');
     try{const profile=contractProfile(draft);const result=await saveContractProfile(row.id,profileRevision,profile);setProfileRevision(result.revision);await savePhotos(row.id);savedProfile.current=JSON.stringify(profile);setProfileMessage('Đã lưu hồ sơ, ảnh và yêu cầu khi in. Tiền, công nợ và kho xe giữ theo giao dịch đã ghi.');void ensureData(['contracts'],true).catch(()=>{});}
     catch(cause){setSaveError(cause instanceof Error ? cause.message : 'Không lưu được hồ sơ.');}
     finally{busy.current=false;setSaving(false);}
@@ -943,7 +943,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
           {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
           {canSaveDraft && source === 'api' && canSaveContractDrafts && canFinalizeContracts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
           {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
-          {row && !canSaveDraft && source === 'api' && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
+          {row && !canSaveDraft && source === 'api' && canEditIssuedContract(accessUser,row.store_id) && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
           {row?.status==='deposit_contract'&&canFinalizeContracts&&onHandover&&<button type="button" className="mg-button mg-button-primary" disabled={saving||!profileMessage||savedProfile.current!==JSON.stringify(contractProfile(draft))} onClick={onHandover}><CheckCircle2 size={16}/>Tiếp tục giao xe</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>

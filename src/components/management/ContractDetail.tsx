@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
-import { BatteryCharging, Bike, CalendarPlus, Eye, LoaderCircle, MessageCircle, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
+import { BatteryCharging, Bike, CalendarPlus, Eye, LoaderCircle, MessageCircle, Pencil, Plus, Printer, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { CashflowColumns, cashflowTotals } from './CashflowColumns';
 import { useManagement } from './ManagementProvider';
@@ -22,6 +22,8 @@ import { ContractPhotoGallery } from './ContractTransactionPhotos';
 import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { ReservationNoShowDialog } from './ReservationNoShowDialog';
 import { ContractLifecyclePanel } from './ContractLifecyclePanel';
+import { canEditIssuedContract } from '@/lib/management/contract-profile';
+import { ContractEditDialog } from '@/components/contracts/ContractEditDialog';
 import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
 import { loadContractLifecycle,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 
@@ -62,7 +64,8 @@ function rentalDays(start: unknown, end: unknown) {
 export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
 
 export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft,onHandover, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void;onHandover?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
-  const { dataset, source, can } = useManagement();
+  const { dataset, source, can, accessUser, invalidateData, notify } = useManagement();
+  const [editing,setEditing]=useState(false);
   const [lifecycleOverride,setLifecycleOverride]=useState<Partial<ManagementRow>>({});
   const [recoveryOpen,setRecoveryOpen]=useState(false),[lifecycleReload,setLifecycleReload]=useState(0);
   const applyLifecycle=useCallback((context:ContractLifecycleContext)=>{
@@ -263,6 +266,8 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
     {noShow&&<ReservationNoShowDialog orderId={row.id} onClose={()=>setNoShow(false)} onDone={onClose}/>}
     {recoveryOpen&&<BadDebtRecoveryDialog id={row.id} code={row.code} onClose={()=>setRecoveryOpen(false)} onRecovered={()=>{setLifecycleReload(value=>value+1);void loadContractLifecycle(row.id).then(applyLifecycle).catch(()=>{});}}/>}
     <div className="mg-dialog-footer">{row.status==='deposit_contract'&&can('contracts.finalize')&&<><button type="button" className="mg-button" onClick={onPrint}>Bổ sung hồ sơ hợp đồng cọc</button>{onHandover&&<button type="button" className="mg-button mg-button-primary" onClick={onHandover}><Bike size={16}/>Giao xe đã đặt cọc</button>}<button type="button" className="mg-button" onClick={()=>setNoShow(true)}>Khách không đến nhận xe</button></>}<button type="button" className="mg-button" onClick={onClose}>Đóng</button>
+      {editing&&<ContractEditDialog row={row} onClose={()=>setEditing(false)} onSaved={code=>{setEditing(false);invalidateData(['contracts']);notify(`Đã lưu hợp đồng ${code}.`);onClose();}}/>}
+      {source==='api'&&row.status!=='draft'&&canEditIssuedContract(accessUser,row.store_id)&&<button type="button" className="mg-button" onClick={()=>setEditing(true)}><Pencil size={16}/>Sửa hợp đồng</button>}
       {row.status==='draft'&&can('contracts.draft')&&onEditDraft&&<button type="button" className="mg-button mg-button-primary" onClick={onEditDraft}>Tiếp tục hoàn tất hợp đồng</button>}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('telegram')}><MessageCircle size={15}/>Gửi Telegram</button>}
       {onReminder&&isRemindableContract(row)&&<button type="button" className="mg-button" onClick={onReminder}><MessageCircle size={15}/>Nhắc nợ</button>}

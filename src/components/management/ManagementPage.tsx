@@ -24,6 +24,7 @@ import { batteryPrefillFromVehicleContract } from '@/lib/management/battery-from
 import type { BatteryContract } from '@/lib/management/battery-contracts';
 import { staffPositionSuggestions } from '@/lib/management/staff-positions';
 import { canSendDebtReminder } from '@/lib/management/permissions';
+import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ResponsiveDataActions } from './ResponsiveDataActions';
 import { useContractTypes } from '@/components/contracts/ContractTypesProvider';
 import { useManagementTable } from './useManagementTable';
@@ -38,6 +39,7 @@ import { RecordTotal } from './RecordTotal';
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
 const ContractDetail = dynamic(() => import('./ContractDetail').then(module => module.ContractDetail), { ssr: false, loading: FeatureLoading });
+const ContractEditDialog = dynamic(() => import('@/components/contracts/ContractEditDialog').then(module=>module.ContractEditDialog), {ssr:false,loading:FeatureLoading});
 const loadComposer = () => import('@/components/contracts/ContractComposer');
 const ContractComposer = dynamic(() => loadComposer().then(module => module.ContractComposer), { ssr: false, loading: FeatureLoading });
 const ContractHandoverDialog = dynamic(() => import('@/components/contracts/ContractHandoverDialog').then(module=>module.ContractHandoverDialog), {ssr:false,loading:FeatureLoading});
@@ -172,6 +174,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     });
   }, [columnSignature, defaultVisibleKeys,columnMode]);
   const [viewing, setViewing] = useState<ManagementRow | null>(null);
+  const [contractEditing,setContractEditing]=useState<ManagementRow|null>(null);
   const [qrTarget,setQrTarget]=useState<number|null>(null);
   const [reminderTarget,setReminderTarget]=useState<number|null>(null);
   const [bulkReminderIds,setBulkReminderIds]=useState<number[]|null>(null);
@@ -401,7 +404,10 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onSort={key => { setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }}
           onView={row => { if (kind === 'staff') setStaffDialog({ row, mode: 'view' }); else view(row); }}
           onEdit={row => {
-            if (kind === 'contracts') { setPrintRow(row); setComposerMode(row.status === 'draft' ? 'draft' : 'edit'); setComposerOpen(true); }
+            if (kind === 'contracts') {
+              if(row.status!=='draft'){if(canEditIssuedContract(accessUser,row.store_id))setContractEditing(row);}
+              else {setPrintRow(row);setComposerMode('draft');setComposerOpen(true);}
+            }
             else if (kind === 'staff') setStaffDialog({ row, mode: 'edit' });
             else { setEditing(row); setFormOpen(true); }
           }}
@@ -429,7 +435,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onBatteryRent={can('contracts.draft') && kind === 'contracts' && source === 'api' ? row => setBatteryRentTarget(row) : undefined}
           onVehicleAction={kind === 'vehicles' && source === 'api' && (can('vehicles.transfer')||can('vehicles.receive')||can('vehicles.write')) ? (row, mode) => setVehicleAction({ mode, vehicle: row }) : undefined}
 
-          canEditContract={false}
+          canEditContract={can('contracts.draft')}
           canEditDraft={kind === 'contracts' && canSaveContractDrafts}
           canEdit={canEdit} loading={loading} error={error} isFiltered={isFiltered} onReset={clearFilters} onRetry={() => void reload()}
           selectedIds={canSelectRows ? selectedIds : undefined} onSelectionChange={canSelectRows ? changeSelection : undefined} />
@@ -501,6 +507,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       onEditDraft={()=>{setPrintRow(viewing);setComposerMode('draft');setViewing(null);setComposerOpen(true);}}
       onReminder={canSendDebtReminder(accessUser)?()=>{setReminderTarget(viewing.id);setViewing(null);}:undefined}
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
+    {contractEditing&&<ContractEditDialog row={contractEditing} onClose={()=>setContractEditing(null)} onSaved={code=>{setContractEditing(null);invalidateData(['contracts']);table.refresh();notify(`Đã lưu hợp đồng ${code}.`);}}/>}
     {qrTarget!==null&&<ContractQrDialog id={qrTarget} onClose={()=>setQrTarget(null)}/>}
     {reminderTarget!==null&&<DebtReminderDialog orderId={reminderTarget} onClose={()=>setReminderTarget(null)}/>}
     {bulkReminderIds&&canBulkRemind&&<BulkDebtReminderDialog orderIds={bulkReminderIds} onClose={()=>setBulkReminderIds(null)} onSent={()=>{setSelectedIds(new Set());notify('Đã gửi nhắc nợ cho các hợp đồng đã chọn.');}}/>}

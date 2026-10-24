@@ -8,7 +8,7 @@ export async function loadCustomerContracts(customerId: number, signal?: AbortSi
   return result.data.map((row: Record<string, unknown>) => mapApiRow('contracts', row));
 }
 
-export type ContractChangeKind = 'created' | 'renewal' | 'extra' | 'swap' | 'return' | 'reservation_release' | 'lifecycle';
+export type ContractChangeKind = 'created' | 'renewal' | 'extra' | 'swap' | 'return' | 'reservation_release' | 'lifecycle' | 'edit';
 
 export interface ContractVersionSnapshot { label: string; return_at: string | null; total: number | null; paid: number | null }
 export interface ContractChange {
@@ -24,7 +24,8 @@ export interface ContractCashflow {
 export interface ContractHistory { changes: ContractChange[]; cashflow: ContractCashflow[] }
 
 export const CHANGE_LABELS: Record<ContractChangeKind, string> = {
-  created: 'Tạo hợp đồng', renewal: 'Gia hạn', extra: 'Thu thêm', swap: 'Đổi xe', return: 'Trả xe',reservation_release:'Gỡ giữ xe',lifecycle:'Nợ xấu / bảo lưu',};
+  created: 'Tạo hợp đồng', renewal: 'Gia hạn', extra: 'Thu thêm', swap: 'Đổi xe', return: 'Trả xe',reservation_release:'Gỡ giữ xe',lifecycle:'Nợ xấu / bảo lưu',edit:'Sửa hợp đồng',
+};
 
 export async function loadCustomerCashflow(customerId: number, signal?: AbortSignal): Promise<ContractCashflow[]> {
   const response = await fetch(`/api/auth/customers/${customerId}/payments`, { credentials: 'same-origin', cache: 'no-store', signal, headers: { Accept: 'application/json' } });

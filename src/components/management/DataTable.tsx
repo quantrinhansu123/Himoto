@@ -11,6 +11,7 @@ import { isRemindableContract } from '@/lib/management/debt-reminders';
 import { GpsEvidence } from './GpsEvidence';
 import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
 import { ContractRentalPeriod } from './ContractRentalPeriod';
+import { canEditIssuedContract } from '@/lib/management/contract-profile';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
@@ -76,7 +77,7 @@ interface Props {
 }
 
 export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onRenew, onVehicleChange, onBatteryRent, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
-  const {can}=useManagement();
+  const {can,accessUser}=useManagement();
   const blockingError=rows.length?'':error;
   const selectable = Boolean(selectedIds && onSelectionChange);
   const columnCount = columns.length + (selectable ? 3 : 2);
@@ -102,7 +103,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (isActiveContract && !row.billing_plan_json && onRenew) actions.push({ key: 'renew', label: 'Gia hạn', title: 'Gia hạn trực tiếp trên hợp đồng', icon: <CalendarPlus size={16} />, onSelect: () => onRenew(row) });
     if (isActiveContract && onVehicleChange) actions.push({ key: 'vehicle', label: 'Đổi xe', title: 'Đổi xe trực tiếp trên hợp đồng', icon: <Bike size={16} />, onSelect: () => onVehicleChange(row) });
     if (isContract && onBatteryRent && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'battery', label: 'Thuê pin / sạc', title: 'Lập hợp đồng thuê pin hoặc sạc theo khách và xe của hợp đồng này', icon: <BatteryCharging size={16} />, onSelect: () => onBatteryRent(row) });
-    if (canEditContract || (canEditDraft && row.status === 'draft')) actions.push({ key: 'edit', label: row.status === 'draft' ? OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type)) || row.store_kind === 'lease_to_own' ? 'Duyệt & hoàn tất hợp đồng' : 'Tiếp tục sửa bản nháp' : 'Chỉnh sửa hợp đồng', icon: <Pencil size={16} />, onSelect: () => onEdit(row) });
+    if (isContract && (canEditContract && row.status!=='draft' && canEditIssuedContract(accessUser,row.store_id) || canEditDraft && row.status === 'draft')) actions.push({ key: 'edit', label: row.status === 'draft' ? OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type)) || row.store_kind === 'lease_to_own' ? 'Duyệt & hoàn tất hợp đồng' : 'Tiếp tục sửa bản nháp' : 'Sửa hợp đồng', icon: <Pencil size={16} />, onSelect: () => onEdit(row) });
     if (!isContract && canEdit) actions.push({ key: 'edit', label: 'Chỉnh sửa', icon: <Pencil size={16} />, onSelect: () => onEdit(row) });
     if (isContract && onClone) actions.push({ key: 'clone', label: cloningId === row.id ? 'Đang sao chép…' : 'Sao chép hợp đồng', disabled: cloningId != null,
       icon: cloningId === row.id ? <LoaderCircle size={16} className="mg-spin" /> : <Copy size={16} />, onSelect: () => onClone(row) });

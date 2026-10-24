@@ -48,7 +48,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
     if(path.endsWith('/refund-qr'))return 'contracts.return';
     if(path.endsWith('/payments'))return read?'contracts.read':'finance.write';
     if(path.endsWith('/finalize')||path.endsWith('/handover'))return 'contracts.finalize';
-    if(path.endsWith('/profile')&&!read)return 'contracts.finalize';
+    if(path.endsWith('/profile')&&!read)return 'contracts.draft';
     if(path.endsWith('/renewals'))return 'contracts.renew';
   }
   if(path.includes('/order/car-rental')||path.includes('/battery-contracts'))return read?'contracts.read':'contracts.draft';
