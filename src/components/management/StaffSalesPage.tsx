@@ -6,6 +6,8 @@ import { useReloadAction } from './ReloadButton';
 import { SalesCharts } from './SalesCharts';
 import {RentalRevenuePanel} from './RentalRevenuePanel';
 import { RentalOverviewPanel, VehicleRevenuePanel } from './RentalReportPanels';
+import { OwnedFleetRevenuePanel } from './OwnedFleetRevenuePanel';
+import { canViewOwnedFleetRevenue } from '@/lib/management/permissions';
 import { loadSalesSummary,loadStaffSales,type StaffSalesReport,type SalesSummaryReport } from '@/lib/management/staff-sales';
 import { summarizeBySalesStaff,summarizeByStore,summarizeSalesKpis,type SalesKpis,type SourceSalesSummary } from '@/lib/management/source-sales';
 import { vietnamDate } from '@/lib/management/duty-roster';
@@ -54,9 +56,10 @@ function SummaryTable({title,description,column,unit,summary,filename,loading,er
   </div>;
 }
 export function StaffSalesPage() {
-  const {selectedStore,dataset,error:datasetError,resources,reload}=useManagement();const today=vietnamDate();
+  const {selectedStore,dataset,error:datasetError,resources,reload,accessUser}=useManagement();const today=vietnamDate();
+  const canViewFleet=canViewOwnedFleetRevenue(accessUser);
   const [from,setFrom]=useState(`${today.slice(0,7)}-01`),[to,setTo]=useState(today),[department,setDepartment]=useState('');
-  const [reportView, setReportView] = useState<'actual' | 'vehicles' | 'overview'>('actual');
+  const [reportView, setReportView] = useState<'actual' | 'vehicles' | 'overview' | 'owned-fleet'>('actual');
   const [report,setReport]=useState<StaffSalesReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useReloadAction(useCallback(()=>{setRetry(value=>value+1);void reload();},[reload]));
   useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(setReport).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[from,to,selectedStore,retry]);
@@ -85,10 +88,11 @@ export function StaffSalesPage() {
     </div>
     <div className="mg-report-views" role="group" aria-label="Chọn báo cáo">{([
       ['actual', 'Doanh thu thực thu / NVKD'], ['vehicles', 'Doanh thu từng xe'], ['overview', 'Tổng quan thuê xe'],
-    ] as const).map(([key, label]) => <button key={key} type="button" className={`mg-button${reportView === key ? ' is-active' : ''}`} aria-pressed={reportView === key} onClick={() => setReportView(key)}>{label}</button>)}</div>
+    ] as const).map(([key, label]) => <button key={key} type="button" className={`mg-button${reportView === key ? ' is-active' : ''}`} aria-pressed={reportView === key} onClick={() => setReportView(key)}>{label}</button>)}{canViewFleet&&<button type="button" className={`mg-button${reportView==='owned-fleet'?' is-active':''}`} aria-pressed={reportView==='owned-fleet'} onClick={()=>setReportView('owned-fleet')}>Doanh thu xe theo cơ sở</button>}</div>
     {reportView === 'actual' && <RentalRevenuePanel key={`actual-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {reportView === 'vehicles' && <VehicleRevenuePanel key={`vehicles-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {reportView === 'overview' && <RentalOverviewPanel key={`overview-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
+    {canViewFleet&&reportView==='owned-fleet'&&<OwnedFleetRevenuePanel key={`fleet-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     <details className="mg-monitor-tools"><summary>Thống kê hợp đồng & báo cáo khác</summary>
     <p className="mg-sales-kpi-note">Các thống kê bên dưới dùng phạm vi và cách tính ghi tại từng mục. Chốt KPI thuê xe theo bảng Doanh thu thuê xe phía trên.</p>
     <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>

@@ -12,7 +12,7 @@ function integer(value: string, min: number, max: number) {
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < min || Number(value) > max) throw invalid();
   return Number(value);
 }
-function scope(params: URLSearchParams) {
+export function rentalReportScope(params: URLSearchParams) {
   const from = params.get('from') || '', to = params.get('to') || '';
   for (const value of [from, to]) {
     const parsed = new Date(`${value}T00:00:00Z`);
@@ -30,8 +30,8 @@ const amount = (value: unknown) => {
 // Native finalize writes the whole contract on its first line: distribute its
 // rental-only base equally (the composer has one shared rate), then add each
 // line's renewals/return adjustments. No business record is rewritten.
-export const VEHICLE_REVENUE_CTE = `WITH lines AS (
-  SELECT d.id,d.vehicle_id,d.order_id,d.rent_at,d.return_at,COALESCE(o.contract_number,o.draft_reference,'#'||o.id::text) AS code,
+export const VEHICLE_REVENUE_LINES_CTE = `WITH lines AS (
+  SELECT d.id,d.vehicle_id,d.order_id,o.store_id AS operating_store_id,d.rent_at,d.return_at,COALESCE(o.contract_number,o.draft_reference,'#'||o.id::text) AS code,
     CASE WHEN n.native AND o.total_rental_fees IS NOT NULL THEN
       trunc(o.total_rental_fees::numeric/c.quantity) + CASE WHEN c.position < mod(o.total_rental_fees::numeric,c.quantity) THEN 1 ELSE 0 END
       WHEN COALESCE(d.handler_price,0)<>0 THEN d.handler_price ELSE COALESCE(d.total_money,0) END AS rental,
@@ -54,7 +54,8 @@ export const VEHICLE_REVENUE_CTE = `WITH lines AS (
     AND o.order_status NOT IN ('draft','cancelled','cancel_pending_settlement','pending','deposit_contract')
     AND d.rent_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
     AND d.rent_at < (($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-), totals AS (
+)`;
+export const VEHICLE_REVENUE_CTE = `${VEHICLE_REVENUE_LINES_CTE}, totals AS (
   SELECT vehicle_id,count(*)::int AS rentals,sum(rental) AS rental,sum(renewal) AS renewal,sum(adjustment) AS adjustment,sum(rental+renewal+adjustment) AS revenue
   FROM lines GROUP BY vehicle_id
 ), matched AS (
@@ -70,7 +71,7 @@ function vehicleRow(row: Record<string, unknown>): VehicleRevenueRow {
     rental: amount(row.rental), renewal: amount(row.renewal), adjustment: amount(row.adjustment), revenue: amount(row.revenue) };
 }
 export async function vehicleRevenue(db: Database, params: URLSearchParams) {
-  const { from, to, store } = scope(params), search = (params.get('search') || '').trim().toLowerCase();
+  const { from, to, store } = rentalReportScope(params), search = (params.get('search') || '').trim().toLowerCase();
   if (search.length > 255) throw invalid();
   const page = integer(params.get('page') || '1', 1, 1_000_000), size = integer(params.get('size') || '10', 1, 50);
   const sort = params.get('sort') || 'revenue', direction = params.get('direction') || 'desc', mode = params.get('mode') || 'page';
@@ -97,7 +98,7 @@ export async function vehicleRevenue(db: Database, params: URLSearchParams) {
 // Same approved vouchers and categories as Cashbook. No per-contract snapshots
 // are added to received money; daily/store subtotals reconcile to the overview.
 export async function rentalOverview(db: Database, params: URLSearchParams) {
-  const { from, to, store } = scope(params), view = params.get('view') || 'stores';
+  const { from, to, store } = rentalReportScope(params), view = params.get('view') || 'stores';
   if (!['stores', 'days'].includes(view)) throw invalid();
   const key = view === 'days' ? "to_char(v.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD')" : "COALESCE(v.store_id::text,'unassigned')";
   const name = view === 'days' ? key : "COALESCE(max(v.store_name),'Chưa có cơ sở')";

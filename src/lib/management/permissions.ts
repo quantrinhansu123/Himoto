@@ -1,6 +1,7 @@
 /** Shared role checks for management UI and API (no server-only imports). */
 
 export type PermissionAccount = {
+  id?: number | string;
   role?: string | null;
   role_slug?: string | null;
   role_id?: string | number | null;
@@ -48,4 +49,12 @@ export function canRecordContractPayment(account: PermissionAccount | null | und
 
 export function canSendDebtReminder(account:PermissionAccount|null|undefined) {
   return hasPermission(account,'contracts.read')&&(hasPermission(account,'contracts.draft')||hasPermission(account,'finance.write'));
+}
+
+/** Private, read-only report granted to the active quanlyvanhanh account.
+ * This is an individual entitlement; administrators do not inherit it.
+ * The API applies it to the authenticated database user, never request input.
+ */
+export function canViewOwnedFleetRevenue(account:PermissionAccount|null|undefined) {
+  return account?.id === 145;
 }

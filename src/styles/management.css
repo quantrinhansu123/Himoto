@@ -4105,3 +4105,7 @@
 .mg-ownership-report .mg-form-grid { padding-top:10px; }
 .mg-ownership-reconciliation { padding:12px 16px; background:#f1f5f9; border-radius:8px; margin:16px 0; }
 @media(max-width:767px) { .mg-debt-report{padding:10px;} .mg-record-total{width:100%;max-width:340px;} .mg-collection-panel .mg-toolbar{display:grid;grid-template-columns:1fr;} .mg-collection-panel .mg-heading-actions{flex-wrap:wrap;} }
+.mg-owned-fleet-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; margin: 16px 0; }
+.mg-owned-fleet-kpis > div { padding: 14px 16px; border: 1px solid var(--mg-border, #e5e7eb); border-radius: 10px; background: #fafafa; }
+.mg-owned-fleet-kpis dt { font-size: 12px; line-height: 1.5; color: #555; }
+.mg-owned-fleet-kpis dd { margin: 6px 0 0; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
