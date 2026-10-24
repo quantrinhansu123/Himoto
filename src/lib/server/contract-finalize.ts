@@ -207,7 +207,9 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (notStored.length) throw new ContractFinalizeError(`Xe ${notStored.map(row => row.license).join(', ')} phải ở trạng thái Lưu kho. Đóng hợp đồng cũ và xác nhận nhận xe trước khi phát hành hợp đồng mới.`, 409);
   for (const line of lines) {
     const stock = vehicles.rows.find(vehicle=>String(vehicle.id)===String(line.id))!;
-    line.stock_store_id=String(stock.store_id); line.stock_store_name=String(stock.store_name || '');
+    // Today's physical location is not evidence of a historical handover branch.
+    if(historical){delete line.stock_store_id;delete line.stock_store_name;}
+    else {line.stock_store_id=String(stock.store_id); line.stock_store_name=String(stock.store_name || '');}
   }
   // The legacy app pre-created an empty line per draft (no money, not returned, no receipt). Those
   // placeholders are retired here; any legacy line carrying money or receipts still needs review.

@@ -217,6 +217,7 @@ async function main() {
       assert.equal(resultHistory.status,'completed');assert.equal(resultHistory.total_amount,1410000);
       const historyLines=(await c.query('SELECT completed_at,hiring_fee FROM qa_fin_order_vehicle_details WHERE order_id=30 ORDER BY id')).rows;
       assert.deepEqual(historyLines.map(row=>Number(row.hiring_fee)),[235000,235000]);assert(historyLines.every(row=>row.completed_at));
+      assert((await c.query('SELECT draft_payload FROM qa_fin_orders WHERE id=30')).rows[0].draft_payload.management_composer.draft.vehicles.every(line=>line.stock_store_id===undefined&&line.stock_store_name===undefined));
       assert.deepEqual((await c.query('SELECT status FROM qa_fin_vehicles WHERE id IN(108,109) ORDER BY id')).rows.map(row=>row.status),['using','repairing']);
       assert.equal(Number((await c.query('SELECT sum(value) AS total FROM qa_fin_transactions WHERE order_id=30')).rows[0].total),1410000);
       checks.push('TEMP historical issue: 470,000 × three days totals 1,410,000 for two vehicles; daily rates 235,000 each, actual returns recorded, present using/repairing stock unchanged');

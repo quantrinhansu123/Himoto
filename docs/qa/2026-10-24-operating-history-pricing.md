@@ -27,7 +27,7 @@
 ### Nhập bổ sung giao dịch
 
 - Nút **Nhập bổ sung giao dịch** ở trang hợp đồng và Thao tác nhanh; hiện các lựa chọn theo quyền hiện có.
-- **Hợp đồng bị quên:** nhập ngày thuê/hẹn trả thật, lý do; chọn còn đang thuê hoặc đã trả xe từ trước. Giao dịch đã trả cần ngày trả thật. Khi phát hành lịch sử, kiểm tra chồng lịch thuê cả cơ sở khác, ghi dòng xe đã hoàn thành và giữ kho hiện tại. Chưa thu đủ tiền thì chờ tất toán; đã thu đủ thì hoàn thành.
+- **Hợp đồng bị quên:** nhập ngày thuê/hẹn trả thật, lý do; chọn còn đang thuê hoặc đã trả xe từ trước. Giao dịch đã trả cần ngày trả thật. Khi phát hành lịch sử, kiểm tra chồng lịch thuê cả cơ sở khác, ghi dòng xe đã hoàn thành và giữ kho hiện tại. Không gán cơ sở giữ xe hôm nay thành cơ sở giữ xe ở thời điểm quá khứ chưa xác định. Chưa thu đủ tiền thì chờ tất toán; đã thu đủ thì hoàn thành.
 - **Gia hạn bị quên:** tìm cả hợp đồng đã trả xe. Ngày gia hạn thực tế phải thuộc lượt thuê, không sau ngày trả thực tế/hẹn trả mới. Lưu thời gian phát sinh riêng với thời gian nhập, phí vào đúng hợp đồng; không đổi `completed_at` hoặc kho hiện tại. Có chọn đã nhận tiền/chưa nhận tiền và ngày thu thực tế riêng.
 - **Khoản thu/chi bị quên:** tìm hợp đồng đã có, kể cả hoàn thành; chọn đúng nghiệp vụ (nợ tiền thuê, cọc còn thiếu, thu thêm, hoàn cọc/hoàn thuê đủ điều kiện), tài khoản và ngày thực tế. Cần ghi chú/xác nhận đã đối chiếu lịch sử, không mở QR yêu cầu chuyển khoản mới trong chế độ nhập bù.
 - Bổ sung phiếu cọc chỉ tăng cọc/đã thu chung, không giảm nợ thuê hoặc tăng tổng tiền thuê. Giới hạn theo phần cọc còn thiếu. Thu nợ hợp đồng hoàn thành vẫn được giới hạn đúng phần còn thiếu. Phiếu dùng UUID/revision và transaction hiện có để tránh ghi lặp.
@@ -50,6 +50,7 @@ Kho toàn hệ thống tìm biển không phân biệt dấu chấm, gạch nố
 - `check-multi-vehicle-pricing-ui.py`: 6 ca đạt, Chromium 1440×1000 và WebKit 390×844. Mở lại giá thủ công, thay số xe/ngày/giá/phí, lưu/mở lại nháp và màn hình xác nhận tiền đúng.
 - `check-operating-history-ui.py`: 12 ca đạt, Chromium 1440×950 và WebKit 390×844. Ghi nhận thu hồi lỗi/thử lại cùng mã, mở form hợp đồng lịch sử, gia hạn xe đã trả, bổ sung cọc/hoàn cọc/nợ đúng ngày và xác nhận.
 - Không có lỗi JavaScript trong hai bộ browser. Toàn bộ API ghi ở browser bị chặn bằng fixture: không thu/chi, phát hành, thu hồi/trả xe hoặc gửi Telegram thật để QA.
+- Đã kiểm tra trực tiếp kho production chỉ đọc bằng WebKit: tìm được đúng Vision bằng `29G1-742.69`, `29G174269` và `29G1 742 69`; không có lỗi JavaScript hoặc thao tác ghi.
 
 ## Triển khai và bảo toàn
 
