@@ -8,7 +8,7 @@ import qrcode
 from playwright.sync_api import sync_playwright,expect
 from lib.contract_type_fixtures import mock_contract_type_read
 
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:3022');p.add_argument('--cookie-file',required=True);p.add_argument('--browser',choices=['chromium','webkit'],default='chromium');p.add_argument('--output',default='.backups/return-ux-20261021/ui');p.add_argument('--video-fixture');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:3022');p.add_argument('--cookie-file',required=True);p.add_argument('--browser',choices=['chromium','webkit'],default='chromium');p.add_argument('--output',default='.backups/return-ux-20261021/ui');p.add_argument('--video-fixture');p.add_argument('--photos-only',action='store_true');a=p.parse_args()
 out=Path(a.output)/a.browser;out.mkdir(parents=True,exist_ok=True);expect.set_options(timeout=30000)
 now=datetime.now(timezone(timedelta(hours=7)));state={};posts=[];errors=[];unexpected=[];checks=[]
 images=[]
@@ -70,7 +70,7 @@ def cloud(route):
 
 with sync_playwright() as pw:
     browser=getattr(pw,a.browser).launch();ctx=browser.new_context(viewport=dict(width=390 if a.browser=='webkit' else 1440,height=900),timezone_id='Asia/Ho_Chi_Minh',reduced_motion='reduce')
-    ctx.add_init_script("""const qaFetch=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(url.pathname==='/api/auth/payment-events')return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return qaFetch.call(this,input,options);};""")
+    ctx.add_init_script("""const qaFetch=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(['/api/auth/payment-events','/api/auth/gps/refresh'].includes(url.pathname))return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return qaFetch.call(this,input,options);};""")
     ctx.add_cookies([dict(name='himoto_management_session',value=Path(a.cookie_file).read_text().strip(),url=a.url,httpOnly=True,sameSite='Strict')]);ctx.route('**/api/**',mock);ctx.route('https://api.cloudinary.com/**',cloud)
     def collect_error(error):errors.append(str(error))
     page=ctx.new_page();page.on('pageerror',collect_error)
@@ -151,7 +151,8 @@ with sync_playwright() as pw:
     state['failSave']=True;save.click();expect(dialog.get_by_role('alert').filter(has_text='QA chưa lưu được ảnh')).to_be_visible();assert len(posts)==before
     save.click();expect(uploader.get_by_text('Đã lưu ảnh.',exact=True)).to_be_visible()
     assert 'return-101-document-2' in state['photos'] and len(state['photos'])==3
-    assert uploader.locator('.mg-media-gallery').get_attribute('open') is None
+    expect(uploader.locator('.mg-media-gallery')).to_have_attribute('open','')
+    expect(uploader.locator('.mg-media-thumbnails img').first).to_be_visible()
     assert len(posts)==before
     checks.append('Switching between upload tabs preserves all pending files, including the QR, before a partial batch is saved')
     checks.append('One batch accepts vehicle and QR images, saves the QR to refund evidence, shows Save beside the picker, and retains files after a failed save without returning the vehicle')
@@ -170,7 +171,7 @@ with sync_playwright() as pw:
     uploader.get_by_label('Chọn nhiều ảnh hồ sơ',exact=True).set_input_files([str(images[0]),str(images[1])])
     uploader.get_by_role('button',name='Lưu ảnh / video',exact=True).click();expect(uploader.get_by_text('Đã lưu ảnh.',exact=True)).to_be_visible()
     assert len(posts)==before
-    uploader.locator('.mg-media-gallery > summary').click();expect(uploader.locator('.mg-media-thumbnails img')).to_have_count(2)
+    expect(uploader.locator('.mg-media-gallery')).to_have_attribute('open','');expect(uploader.locator('.mg-media-thumbnails img')).to_have_count(2)
     uploader.get_by_role('button',name='Xóa ảnh',exact=False).first.click()
     expect(uploader.locator('.mg-media-thumbnails img')).to_have_count(1)
     assert len(state['photos'])==1
@@ -185,7 +186,7 @@ with sync_playwright() as pw:
     save=uploader.get_by_role('button',name='Lưu ảnh / video',exact=True);expect(save).to_be_enabled();save.click();expect(uploader.get_by_text('Đã lưu ảnh.',exact=True)).to_be_visible()
     assert len(state['photos'])==20 and all(state['photos'].get(slot)==mime for slot,mime in original.items())
     assert 'return-101-document-2' not in state['photos'],'Ordinary bulk images cannot become the QR evidence slot'
-    uploader.locator('.mg-media-gallery > summary').click();expect(uploader.locator('.mg-media-thumbnails img')).to_have_count(19)
+    expect(uploader.locator('.mg-media-gallery')).to_have_attribute('open','');expect(uploader.locator('.mg-media-thumbnails img')).to_have_count(19)
     uploader.locator('.mg-media-gallery > summary').click();assert len(posts)==before
     checks.append('A later 17-photo batch expands beyond 15, preserves existing vehicle/document/other-phase evidence and never fills the QR slot with an ordinary image')
     if a.video_fixture:
@@ -199,21 +200,22 @@ with sync_playwright() as pw:
     assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
     checks.append('Active return fits the desktop or mobile width with reduced motion')
 
-    reset_page();page.goto(a.url+'/vehicles',wait_until='networkidle',timeout=120000)
-    page.get_by_role('button',name='Chuyển xe',exact=True).first.click()
-    dialog=page.get_by_role('dialog',name='Chuyển xe',exact=True)
-    for plate in ['69D1-328.80','69d132880','69D1 32880']:
-        dialog.locator('#vehicle-action-vehicle').fill(plate)
-        expect(dialog.locator('#vehicle-action-from')).to_have_value('CS Nguyễn Hoàng')
-    dialog.locator('#vehicle-action-to').select_option('33')
-    expect(dialog.get_by_role('button',name='Chuyển xe',exact=True)).to_be_enabled()
-    dialog.locator('#vehicle-action-vehicle').fill('29B1-111.11')
-    expect(dialog).to_contain_text('Chỉ tài khoản cơ sở đang giữ xe được chuyển')
-    expect(dialog.locator('#vehicle-action-from')).to_have_value('CS Giáp Bát')
-    expect(dialog.get_by_role('button',name='Chuyển xe',exact=True)).to_be_disabled();assert state['transfers']==0
-    dialog.locator('#vehicle-action-vehicle').fill('69D1-328.80')
-    dialog.screenshot(path=str(out/'transfer-plain-plate.png'))
-    checks.append('Plain, lowercase and unpunctuated plates resolve a unique local vehicle; other-store lookup explains the location while keeping transfer disabled')
+    if not a.photos_only:
+        reset_page();page.goto(a.url+'/vehicles',wait_until='networkidle',timeout=120000)
+        page.get_by_role('button',name='Chuyển xe',exact=True).first.click()
+        dialog=page.get_by_role('dialog',name='Chuyển xe',exact=True)
+        for plate in ['69D1-328.80','69d132880','69D1 32880']:
+            dialog.locator('#vehicle-action-vehicle').fill(plate)
+            expect(dialog.locator('#vehicle-action-from')).to_have_value('CS Nguyễn Hoàng')
+        dialog.locator('#vehicle-action-to').select_option('33')
+        expect(dialog.get_by_role('button',name='Chuyển xe',exact=True)).to_be_enabled()
+        dialog.locator('#vehicle-action-vehicle').fill('29B1-111.11')
+        expect(dialog).to_contain_text('Chỉ tài khoản cơ sở đang giữ xe được chuyển')
+        expect(dialog.locator('#vehicle-action-from')).to_have_value('CS Giáp Bát')
+        expect(dialog.get_by_role('button',name='Chuyển xe',exact=True)).to_be_disabled();assert state['transfers']==0
+        dialog.locator('#vehicle-action-vehicle').fill('69D1-328.80')
+        dialog.screenshot(path=str(out/'transfer-plain-plate.png'))
+        checks.append('Plain, lowercase and unpunctuated plates resolve a unique local vehicle; other-store lookup explains the location while keeping transfer disabled')
     assert not errors and not unexpected,(errors,unexpected)
     ctx.unroute_all(behavior='wait');ctx.close();browser.close()
 result=dict(passed=len(checks),browser=a.browser,checks=checks,javascriptErrors=errors,unexpectedRequests=unexpected,simulatedReturns=len(posts),realBusinessWrites=0,realTelegramRequests=0)

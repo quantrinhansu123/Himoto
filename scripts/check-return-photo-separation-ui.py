@@ -87,6 +87,8 @@ def cloud(route):
 
 
 def save_photo(dialog):
+    completed = dialog.locator('details.mg-return-options:not([open]) > summary').filter(has_text='Xe đã trả · Bổ sung ảnh / hồ sơ')
+    if completed.count():completed.click()
     dialog.get_by_role('tab', name='Tải ảnh chi tiết', exact=True).first.click()
     dialog.locator('.mg-media-individual > summary').first.click()
     field = dialog.get_by_role('group', name='Toàn cảnh xe', exact=True)
@@ -102,7 +104,7 @@ with sync_playwright() as pw:
     for name, width, height in [('chromium', 1440, 1000), ('webkit', 390, 844)]:
         browser = getattr(pw, name).launch()
         ctx = browser.new_context(viewport=dict(width=width, height=height), timezone_id='Asia/Ho_Chi_Minh', reduced_motion='reduce')
-        ctx.add_init_script("""const qaFetch=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(url.pathname==='/api/auth/payment-events')return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return qaFetch.call(this,input,options);};""")
+        ctx.add_init_script("""const qaFetch=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(['/api/auth/payment-events','/api/auth/gps/refresh'].includes(url.pathname))return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return qaFetch.call(this,input,options);};""")
         ctx.add_cookies([dict(name='himoto_management_session', value=Path(args.session_cookie_file).read_text().strip(), url=args.url, httpOnly=True, sameSite='Strict')])
         ctx.route('**/api/**', mock)
         ctx.route('https://api.cloudinary.com/**', cloud)

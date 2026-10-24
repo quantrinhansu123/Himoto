@@ -5,6 +5,7 @@ import { LoaderCircle, Trash2 } from 'lucide-react';
 import { contractPhotoDeletePermission } from '@/lib/management/contract-photos';
 import { deleteRecordPhoto, photoEndpoint } from '@/lib/management/record-photos';
 import { useManagement } from './ManagementProvider';
+import { RecordPhotoImage } from './RecordPhotoImage';
 
 export function ContractPhotoCard({id,slot,label,mimeType,version,disabled=false,onBusyChange,onDeleted}:{
   id:number;slot:string;label:string;mimeType?:string;version:string;disabled?:boolean;
@@ -28,7 +29,7 @@ export function ContractPhotoCard({id,slot,label,mimeType,version,disabled=false
     finally {deleting.current=false;setBusy(false);onBusyChange(false);}
   }
   return <div className="mg-contract-photo-card">
-    {video?<video controls playsInline preload="metadata" src={url} aria-label={label}/>:<a href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt={label} loading="lazy"/></a>}
+    {video?<video controls playsInline preload="metadata" src={url} aria-label={label}/>:<RecordPhotoImage src={url} alt={label} loading="lazy"/>}
     <span>{label}</span>
     {permission&&can(permission)&&<button type="button" className="mg-button mg-button-danger mg-contract-photo-delete" aria-label={`Xóa ${kind} ${label}`} disabled={disabled||busy} onClick={()=>void remove()}>
       {busy?<LoaderCircle size={16} className="mg-spin" aria-hidden="true"/>:<Trash2 size={16} aria-hidden="true"/>}{busy?'Đang xóa…':`Xóa ${kind}`}

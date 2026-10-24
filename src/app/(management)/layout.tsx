@@ -4,6 +4,7 @@ import { managementPageSession } from '@/lib/server/management-session';
 import { SessionUnavailable } from '@/components/auth/SessionUnavailable';
 import '@/styles/management.css';
 import '@/styles/management-tables.css';
+import '@/styles/management-photos.css';
 import '@/styles/contract-print.css';
 
 export const dynamic = 'force-dynamic';

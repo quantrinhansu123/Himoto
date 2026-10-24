@@ -1,0 +1,11 @@
+.mg-record-photo-preview { width: 100%; min-width: 0; }
+.mg-record-photo-preview > a { display: block; width: 100%; }
+.mg-record-photo-preview img { max-width: 100%; }
+.mg-record-photo-error { display: grid; gap: 8px; min-height: 100px; padding: 12px; border: 1px solid var(--mg-line); border-radius: 8px; background: var(--mg-slate-50); }
+.mg-record-photo-error p { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.mg-record-photo-error .mg-button { min-height: 44px; justify-self: start; white-space: normal; }
+.mg-vehicle-registration .mg-record-photo-preview { max-width: 240px; }
+@media (max-width: 767px) {
+  .mg-media-thumbnails { grid-template-columns: minmax(0, 1fr); }
+  .mg-media-thumbnails .mg-record-photo-preview img { min-height: 100px; }
+}

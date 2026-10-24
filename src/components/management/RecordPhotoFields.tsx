@@ -6,6 +6,7 @@ import { PendingPhotos, PhotoEntity, PhotoSlot, SavedPhoto, deleteRecordPhoto, p
 import type { PhotoOcrController } from './usePhotoOcr';
 import { isVideoSlot,prepareRecordVideo } from '@/lib/management/record-photos';
 import { expandContractPhotoSlots,expandablePhotoPrefix } from '@/lib/management/contract-photos';
+import { RecordPhotoImage } from './RecordPhotoImage';
 
 export function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyChange, fileHint='Tệp mới · bấm Lưu ảnh / video bên dưới' }: { slot: PhotoSlot; file?: File; savedUrl?: string; disabled: boolean; onChange: (file?: File) => void; onBusyChange: (busy: boolean) => void;fileHint?:string }) {
   const camera = useRef<HTMLInputElement>(null), library = useRef<HTMLInputElement>(null);
@@ -30,10 +31,7 @@ export function PhotoField({ slot, file, savedUrl, disabled, onChange, onBusyCha
   }
   return <div className="mg-photo-slot" role="group" aria-labelledby={labelId}>
     <strong id={labelId}>{slot.label}</strong>
-    {video&&(preview||savedUrl)?<video controls playsInline preload="metadata" src={preview||savedUrl} aria-label={slot.label}/>: (preview || savedUrl) && <a href={preview || savedUrl} target="_blank" rel="noopener noreferrer" aria-label={`Xem ảnh ${slot.label}`}>
-      {/* Authenticated image endpoints and local camera previews cannot use the Next image optimizer. */}
-      <img src={preview || savedUrl} alt={slot.label} />
-    </a>}
+    {video&&(preview||savedUrl)?<video controls playsInline preload="metadata" src={preview||savedUrl} aria-label={slot.label}/>: (preview || savedUrl) && <RecordPhotoImage src={preview||savedUrl!} alt={slot.label}/>}
     <input hidden ref={camera} type="file" accept={video?'video/*':'image/*'} capture="environment" aria-label={`${video?'Quay':'Chụp'} ${slot.label}`} disabled={disabled || busy} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void select(file); }} />
     <input hidden ref={library} type="file" accept={video?'video/mp4,video/quicktime,video/webm':'image/*'} aria-label={`Chọn ${video?'video':'ảnh'} ${slot.label}`} disabled={disabled || busy} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void select(file); }} />
     <div className="mg-photo-actions"><button type="button" className="mg-button" disabled={disabled || busy} onClick={() => camera.current?.click()}>{busy ? <LoaderCircle size={16} className="mg-spin" /> : <Camera size={16} />}{video?'Quay video':'Chụp ảnh'}</button>
@@ -156,7 +154,7 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
     {actions}
     {compact&&uploadTab==='quick'&&<p className="mg-media-hint">Chọn nhiều ảnh cùng lúc, không cần phân loại. Có thể lưu thiếu ảnh và bổ sung sau.</p>}
     {error && <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={() => setRetry(current => current + 1)}>Thử lại</button></p>}
-    {compact&&occupied.length>0&&<details className="mg-media-gallery"><summary>Xem {occupied.length} ảnh / video đã chọn và đã lưu</summary><div className="mg-media-thumbnails">{occupied.map((slot,index)=>{
+    {compact&&occupied.length>0&&<details className="mg-media-gallery" open><summary>Xem {occupied.length} ảnh / video đã chọn và đã lưu</summary><div className="mg-media-thumbnails">{occupied.map((slot,index)=>{
       const photo=saved.find(photo=>photo.slot===slot.key),file=value[slot.key],state=uploadStates[slot.key];
       return <div key={slot.key}><PhotoField slot={{...slot,label:`${isVideoSlot(slot.key)?'Video':'Ảnh'} ${index+1}`}} file={file} disabled={disabled||batchBusy||!savedReady} savedUrl={photo&&recordId?`${photoEndpoint(entity,recordId,slot.key)}?v=${encodeURIComponent(photo.updated_at)}`:undefined}
         onBusyChange={busy=>{if(busy)busySlots.current.add(slot.key);else busySlots.current.delete(slot.key);onBusyChange?.(busySlots.current.size>0);}}

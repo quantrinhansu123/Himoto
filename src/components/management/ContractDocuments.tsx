@@ -4,6 +4,7 @@ import { contractDocumentSlots,CONTRACT_CUSTOMER_PHOTO_SLOTS,type ContractPhotoP
 import { copyCustomerPhotosToContract,photoEndpoint,type SavedPhoto } from '@/lib/management/record-photos';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { ContractWorkflowGuide,type ContractWorkflow } from './ContractWorkflowGuide';
+import { RecordPhotoImage } from './RecordPhotoImage';
 
 export function ContractDocuments({id,phase,onPendingChange,onSaved,workflow}:{id:number;phase:ContractPhotoPhase;workflow?:ContractWorkflow;onPendingChange?:(pending:boolean)=>void;onSaved?:()=>void}) {
   const slots=useMemo(()=>contractDocumentSlots(phase),[phase]);
@@ -29,7 +30,7 @@ export function ContractDocuments({id,phase,onPendingChange,onSaved,workflow}:{i
         <p role="status">{photos.filter(photo=>CONTRACT_CUSTOMER_PHOTO_SLOTS.some(slot=>slot.key===photo.slot)||photo.slot==='driver-license').length} ảnh giấy tờ đã gắn với hợp đồng.</p>
         <div className="mg-photo-grid">{[...CONTRACT_CUSTOMER_PHOTO_SLOTS,{key:'driver-license',label:'GPLX chụp khi lập hợp đồng'}].filter(slot=>photos.some(photo=>photo.slot===slot.key)).map(slot=>{
           const photo=photos.find(item=>item.slot===slot.key)!;const url=`${photoEndpoint('contracts',id,slot.key)}?v=${encodeURIComponent(photo.updated_at)}`;
-          return <a key={slot.key} className="mg-photo-slot" href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt={slot.label} loading="lazy"/><span>{slot.label}</span></a>;
+          return <div key={slot.key} className="mg-photo-slot"><RecordPhotoImage src={url} alt={slot.label} loading="lazy"/><span>{slot.label}</span></div>;
         })}</div>
         <button type="button" className="mg-button" disabled={pending} onClick={()=>setVersion(value=>value+1)}>Lấy thêm giấy tờ đã lưu ở hồ sơ khách</button>
       </>}
