@@ -4,7 +4,7 @@ Trang Tài khoản dùng cơ sở đang xem trong cả request API và bảng. C
 
 Mọi tài khoản đang đăng nhập có menu **Đổi mật khẩu của tôi**. Phải xác minh mật khẩu hiện tại và nhập lại mật khẩu mới. API lấy ID từ phiên đã xác thực, không nhận ID đích. Mỗi lần tự đổi tăng phiên bản mật khẩu bằng trigger DB; cookie cũ không được dùng ở yêu cầu tiếp theo. Trình duyệt thực hiện tự đổi được cấp cookie mới, các phiên khác phải đăng nhập lại.
 
-Chỉ tài khoản `quanlyvanhanh`, ID **145**, được xem bản lưu mật khẩu; các quản trị khác không kế thừa quyền này. Theo lựa chọn mới của người dùng, đã bỏ chức năng chỉnh/reset mật khẩu của người khác. Endpoint cũ từ chối action reset trước khi mở kết nối DB; PATCH tài khoản từ chối mật khẩu mới cho mọi tài khoản đang có, kể cả khi người thao tác là ID 145. Tạo tài khoản mới vẫn cấp thông tin ban đầu. Nhân sự quay lại được mở quyền với mật khẩu cũ, không tự sinh mật khẩu thay thế; phiên cũ trước khi nghỉ bị thu hồi bằng phiên bản mới.
+Hai tài khoản quản trị `quanlyvanhanh` (ID **145**) và `quantri` (ID **160**) được xem bản lưu mật khẩu theo yêu cầu ngày 25/10/2026; các quản trị khác không kế thừa quyền này. Đã bỏ chức năng chỉnh/reset mật khẩu của người khác. Endpoint cũ từ chối action reset trước khi mở kết nối DB; PATCH tài khoản từ chối mật khẩu mới cho mọi tài khoản đang có, kể cả khi người thao tác là ID 145 hoặc 160. Tạo tài khoản mới vẫn cấp thông tin ban đầu. Nhân sự quay lại được mở quyền với mật khẩu cũ, không tự sinh mật khẩu thay thế; phiên cũ trước khi nghỉ bị thu hồi bằng phiên bản mới.
 
 ## Bản lưu khôi phục theo yêu cầu vận hành
 

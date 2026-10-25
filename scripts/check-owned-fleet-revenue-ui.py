@@ -19,7 +19,7 @@ def mock(route):
  if path=='/api/auth/gps/refresh':route.fulfill(json=dict(status='success',data={}));return
  assert req.method=='GET','Unexpected mutation '+path
  if path=='/api/auth/staff-sales/owned-fleet-revenue':
-  assert state['role']=='viewer','Private report requested by another account'
+  assert state['role'] in ('viewer','admin'),'Private report requested by another account'
   if state.get('fail'):
    state['fail']=False;route.fulfill(status=503,json=dict(status='error',message='QA nguồn doanh thu gián đoạn'));return
   if q.get('view')=='vehicles':
@@ -45,7 +45,7 @@ with sync_playwright() as pw:
   tab=page.get_by_role('button',name='Doanh thu xe theo cơ sở',exact=True)
   private=lambda:[r for r in requests[before:] if r['path'].endswith('/owned-fleet-revenue')]
   assert not private()
-  if role!='viewer':
+  if role not in ('viewer','admin'):
    expect(tab).to_have_count(0);checks.append(role+': private report tab hidden and no report request sent, including other administrators');ctx.close();browser.close();continue
   expect(tab).to_be_visible();labels=page.locator('.mg-report-views button').all_text_contents();assert labels.index('Doanh thu xe theo cơ sở')==labels.index('Tổng quan thuê xe')+1
   tab.click();panel=page.locator('section[aria-label="Doanh thu xe theo cơ sở chủ quản"]');expect(panel).to_have_attribute('aria-busy','false')

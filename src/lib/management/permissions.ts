@@ -35,9 +35,9 @@ export type AccessRole = keyof typeof ACCESS_ROLES;
 export function canManageAccounts(account:PermissionAccount|null|undefined) {
   return isAdminAccount(account);
 }
-/** Individual password viewing entitlement; other administrators do not inherit it. */
+/** Explicitly granted to the two primary administrators, never to arbitrary admins. */
 export function canRecoverAccountPasswords(account:PermissionAccount|null|undefined) {
-  return account?.id === 145;
+  return isAdminAccount(account)&&(account?.id===145||account?.id===160);
 }
 export function hasPermission(account:PermissionAccount|null|undefined,permission:AccessPermission) {
   if(!account)return false;
@@ -66,10 +66,10 @@ export function canSendDebtReminder(account:PermissionAccount|null|undefined) {
   return hasPermission(account,'contracts.read')&&(hasPermission(account,'contracts.draft')||hasPermission(account,'finance.write'));
 }
 
-/** Private, read-only report granted to the active quanlyvanhanh account.
+/** Private, read-only report granted to quanlyvanhanh and quantri.
  * This is an individual entitlement; administrators do not inherit it.
  * The API applies it to the authenticated database user, never request input.
  */
 export function canViewOwnedFleetRevenue(account:PermissionAccount|null|undefined) {
-  return account?.id === 145;
+  return isAdminAccount(account)&&(account?.id===145||account?.id===160);
 }

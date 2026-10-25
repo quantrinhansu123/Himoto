@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright,expect
 from lib.contract_type_fixtures import mock_contract_type_read
 
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:3037');p.add_argument('--cookie-file',required=True);p.add_argument('--browser',choices=['all','chromium','webkit'],default='all');p.add_argument('--output',default='.backups/multiple-images-20261025/ui');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:3037');p.add_argument('--cookie-file',required=True);p.add_argument('--browser',choices=['all','chromium','webkit'],default='all');p.add_argument('--swap-only',action='store_true');p.add_argument('--output',default='.backups/multiple-images-20261025/ui');a=p.parse_args()
 out=Path(a.output);out.mkdir(parents=True,exist_ok=True);expect.set_options(timeout=30000)
 now=datetime.now(timezone.utc);stamp=lambda days:(now+timedelta(days=days)).isoformat()
 def chunk(kind,data):return struct.pack('!I',len(data))+kind+data+struct.pack('!I',zlib.crc32(kind+data)&0xffffffff)
@@ -17,6 +17,22 @@ def reset():state.clear();state.update(swapped=False,photos={'contracts/901':{'r
 def mock(route):
     if mock_contract_type_read(route):return
     req=route.request;path=urlparse(req.url).path
+    if path=='/api/auth/order/car-rental/901/telegram':
+        photos=[slot for slot in state['photos']['contracts/901'] if slot.startswith('vehicle-swap-12-')]
+        if req.method=='POST':
+            body=req.post_data_json
+            assert body['action']=='send' and body['event_key']=='vehicle-swap:901:12'
+            assert body['hash']=='a'*64
+            assert state.get('telegram_files')!=len(photos),'Duplicate Telegram send'
+            state['telegram_files']=len(photos);writes.append(dict(method='POST',action='telegram'))
+        sent=state.get('telegram_files')==len(photos)
+        event=dict(key='vehicle-swap:901:12',kind='vehicle_swap',label='Đổi xe · QA-101 → QA-102',phases=['vehicle-swap-12'],
+                   text='Khách đổi xe: Khách QA\nXe cũ: QA-101\nXe mới: QA-102\nHợp đồng: QA-MULTI',hash='a'*64,
+                   photo_count=len(photos),video_count=0,status='sent' if sent else None,sent_at=None,
+                   can_send=not sent,unchanged=sent,attachments=[dict(slot=slot,mime_type='image/jpeg',label='Ảnh đổi xe') for slot in photos],
+                   destination_label='Nhóm cơ sở CS QA')
+        rental=dict(event,key='legacy:rental:901',kind='rental',label='Thuê xe',phases=['rental'],photo_count=1)
+        route.fulfill(json=dict(status='success',data=dict(auto_enabled=False,next_renewal_version=1,events=[rental,event])));return
     if path=='/api/auth/photo-uploads/sign':
         body=req.post_data_json;route.fulfill(json=dict(status='success',data=dict(cloud_name='qa',api_key='qa',signature='qa',params=dict(public_id='qa/'+body['upload_id'],timestamp=1))));return
     if path.startswith('/api/auth/record-photos/'):
@@ -65,7 +81,7 @@ with sync_playwright() as pw:
             else:page.get_by_role('button',name=re.compile('^Thao tác QA-10')).filter(visible=True).first.click();page.get_by_role('menuitem',name='Xem chi tiết',exact=True).click()
             return page.locator('dialog[open]').last
         def all_multiple(dialog):
-            pickers=dialog.locator('input[type=file][accept="image/*"]:not([capture])');assert pickers.count()>0
+            pickers=dialog.locator('input[type=file][accept="image/*"]:not([capture])');expect(pickers.first).to_be_attached();assert pickers.count()>0
             for picker in pickers.all():assert picker.get_attribute('multiple') is not None,picker.get_attribute('aria-label')
         page.goto(a.url+'/contracts?contract_id=901',wait_until='networkidle',timeout=120000)
         dialog=detail();dialog.get_by_role('button',name='Đổi xe',exact=True).click();swap=page.get_by_role('dialog',name='Đổi xe · QA-MULTI',exact=True)
@@ -73,10 +89,20 @@ with sync_playwright() as pw:
         swap.get_by_role('button',name='Đổi xe trong hợp đồng',exact=True).click()
         upload=swap.get_by_label('Chọn nhiều ảnh đổi xe',exact=True);expect(upload).to_be_enabled();upload.set_input_files(files(18))
         expect(swap.locator('.mg-media-thumbnails img')).to_have_count(19);state['fail_save']=True
+        expect(swap.get_by_role('button',name='Kiểm tra & gửi Telegram',exact=True)).to_be_disabled()
         swap.get_by_role('button',name='Lưu ảnh',exact=True).click();expect(swap.get_by_role('alert')).to_contain_text('QA save failed')
         expect(swap.locator('.mg-media-thumbnails img')).to_have_count(19)
         swap.get_by_role('button',name='Lưu ảnh',exact=True).click();expect(swap.get_by_text('Đã lưu ảnh.',exact=True)).to_be_visible();assert state['photos']['contracts/901']['vehicle-swap-12-1']=='original-swap'
         checks.append(dict(browser=engine,case='swap-selects-18-images-preserves-original-and-keeps-files-on-save-failure'))
+        swap.get_by_role('button',name='Kiểm tra & gửi Telegram',exact=True).click()
+        expect(swap.get_by_label('Giao dịch cần gửi Telegram').locator('option')).to_have_count(1)
+        expect(swap.locator('.mg-telegram-preview')).to_contain_text('Xe cũ: QA-101')
+        send=swap.get_by_role('button',name=re.compile('^Gửi toàn bộ Telegram'))
+        expect(send).to_contain_text('19 ảnh');send.click()
+        expect(swap.get_by_role('button',name=re.compile('^Đã gửi Telegram'))).to_be_disabled()
+        assert sum(1 for write in writes if write.get('action')=='telegram')==(1 if engine=='chromium' else 2)
+        swap.screenshot(path=str(out/f'{engine}-swap-telegram-sent.png'))
+        checks.append(dict(browser=engine,case='swap-previews-only-its-19-saved-photos-and-sends-once-with-visible-confirmation'))
         swap.get_by_role('button',name='Đóng',exact=True).click();fresh('/contracts?contract_id=901');dialog=detail()
         dialog.get_by_role('tab',name='Ký kết & ghi chú',exact=True).click();photos=dialog.locator('#contract-detail-panel-signing .mg-saved-photos')
         bill=photos.get_by_label('Chọn ảnh Bill chuyển khoản / tổng tiền mặt',exact=True);bill.set_input_files(files(3));expect(photos.locator('img')).to_have_count(5)
@@ -85,8 +111,12 @@ with sync_playwright() as pw:
         dialog.get_by_role('tab',name='Ảnh thuê / trả xe',exact=True).click();supplement=dialog.locator('details').filter(has=page.locator('summary',has_text='Bổ sung ảnh đổi xe')).first;supplement.locator('summary').click()
         more=supplement.get_by_label('Chọn nhiều ảnh đổi xe',exact=True);expect(more).to_be_enabled();more.set_input_files(files(2));supplement.get_by_role('button',name='Lưu ảnh',exact=True).click();expect(supplement.get_by_text('Đã lưu ảnh.',exact=True)).to_be_visible()
         assert len([key for key in state['photos']['contracts/901'] if key.startswith('vehicle-swap-12-')])==21
+        supplement.get_by_role('button',name='Kiểm tra & gửi Telegram',exact=True).click()
+        expect(supplement.get_by_role('button',name=re.compile('^Gửi toàn bộ Telegram'))).to_contain_text('21 ảnh')
         assert sum(1 for write in writes if write.get('action')=='swap')==(1 if engine=='chromium' else 2)
         supplement.screenshot(path=str(out/f'{engine}-swap-supplement.png'));checks.append(dict(browser=engine,case='reopens-completed-swap-and-appends-images-without-another-vehicle-change'))
+        if a.swap_only:
+            page.wait_for_load_state('networkidle');ctx.close();browser.close();continue
         fresh('/customers');page.get_by_role('button',name='Thêm khách hàng',exact=True).click();customer=page.get_by_role('dialog',name='Thêm khách hàng tại chỗ',exact=True)
         all_multiple(customer);customer.get_by_label('Chọn ảnh CCCD mặt trước',exact=True).set_input_files(files(3));expect(customer.locator('img')).to_have_count(3)
         customer.get_by_label('Chọn ảnh Giấy phép lái xe',exact=True).set_input_files(files(2));expect(customer.locator('img')).to_have_count(5)

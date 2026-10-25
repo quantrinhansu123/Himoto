@@ -51,6 +51,8 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     }
     const returned=composer.reservation_no_show?[]:(await db.query('SELECT id FROM himoto.order_vehicle_details WHERE order_id=$1 AND completed_at IS NOT NULL AND deleted_at IS NULL ORDER BY id DESC',[id])).rows;
     for(const item of returned)if(!events.some(e=>e.kind==='return'&&(e.phases.includes(`return-${item.id}`)||e.key.split(':').at(-1)?.split('-').includes(String(item.id)))))add({key:`return:${id}:${item.id}`,kind:'return',phases:[`return-${item.id}`]});
+    const swaps=(await db.query('SELECT id FROM himoto.management_contract_vehicle_swaps WHERE order_id=$1 ORDER BY id DESC',[id])).rows;
+    for(const swap of swaps)add({key:`vehicle-swap:${id}:${swap.id}`,kind:'vehicle_swap',phases:[`vehicle-swap-${swap.id}`]});
   }
   // Sent history stays reachable even after a contract was cancelled or its event shape changed.
   for(const notice of notices)if(notice.message_ids?.length)add({key:notice.root_event_key||notice.event_key,kind:notice.event_type,phases:notice.photo_phases||[],payload:notice.payload});

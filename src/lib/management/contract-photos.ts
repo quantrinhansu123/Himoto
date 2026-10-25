@@ -50,6 +50,7 @@ export function contractPhotoWritePermission(slot:string):AccessPermission|null 
   if(!isContractTransactionPhoto(slot)&&!/^plate-[1-9]\d{0,14}$/.test(slot))return null;
   if(slot.startsWith('renewal-')||slot.startsWith('battery-swap-'))return 'contracts.renew';
   if(slot.startsWith('return-'))return 'contracts.return';
+  if(slot.startsWith('vehicle-swap-'))return 'contracts.return';
   if(slot.startsWith('handover-'))return 'contracts.finalize';
   return 'contracts.draft';
 }

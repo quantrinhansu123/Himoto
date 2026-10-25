@@ -9,10 +9,10 @@ export const CONTRACT_TELEGRAM_ROUTE_SQL = `CASE
   WHEN n.event_type IN ('vehicle_transfer','vehicle_receive') AND n.event_key LIKE '%:store' THEN 'store'
   WHEN n.event_type IN ('vehicle_transfer','vehicle_receive') THEN 'ownership_new'
   WHEN ${OWNERSHIP_ORDER_SQL} AND n.event_type='renewal' THEN 'ownership_renewal'
-  WHEN ${OWNERSHIP_ORDER_SQL} AND n.event_type IN ('rental','reservation','handover','return') THEN 'ownership_new'
+  WHEN ${OWNERSHIP_ORDER_SQL} AND n.event_type IN ('rental','reservation','handover','return','vehicle_swap') THEN 'ownership_new'
   ELSE 'store' END`;
 export function contractTelegramDestination(kind:ContractEventType,ownership:boolean,storeName:string) {
-  const route=ownership&&(kind==='renewal'||['rental','reservation','handover','return'].includes(kind))?kind==='renewal'?'ownership_renewal':'ownership_new':null;
+  const route=ownership&&(kind==='renewal'||['rental','reservation','handover','return','vehicle_swap'].includes(kind))?kind==='renewal'?'ownership_renewal':'ownership_new':null;
   return OWNERSHIP_TELEGRAM_DESTINATIONS.find(item=>item.route===route)?.label||`Nhóm cơ sở ${storeName||'của hợp đồng'}`;
 }
 export function vehicleTransferTelegramDestinations(fromKind:string|null,toKind:string|null,fromStoreId:number,toStoreId:number,fromName:string,toName:string,operationStoreId:number,ownership:boolean) {

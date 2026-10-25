@@ -4,14 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Bike, LoaderCircle } from 'lucide-react';
 import { changeContractVehicle, loadContractReturnableItems, ReturnableContractItem } from '@/lib/management/contract-returns';
 import { formatDateTime } from '@/lib/formatters';
-import { contractPhotoSlots } from '@/lib/management/contract-photos';
 import { isHeadquartersStore } from '@/lib/management/contract-billing';
 import { mapApiRow } from '@/lib/management/repository';
 import type { ManagementRow } from '@/lib/management/types';
 import { VehiclePicker } from '@/components/contracts/VehiclePicker';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
-import { SavedRecordPhotos } from './RecordPhotoFields';
+import { ContractVehicleSwapFollowup } from './ContractVehicleSwapFollowup';
 
 function hasOpenRentals(rentalsJson: unknown) {
   try { return Boolean(JSON.parse(String(rentalsJson || '[]')).length); } catch { return true; }
@@ -82,10 +81,9 @@ export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { 
   return <Dialog title={`Đổi xe · ${contractCode}`} subtitle="Thao tác trực tiếp trên hợp đồng đã chọn" onClose={() => { if (!saving && !photosPending) onClose(); }}>
     <form onSubmit={submit}>
       <div className="mg-dialog-body">
-        {done ? <div className="mg-cashbook-followup" role="status">
-          <p>Đã đổi xe {done.oldLicense} → {done.newLicense}. Chọn nhiều ảnh đổi xe bên dưới, bấm Lưu ảnh rồi đóng.</p>
-          <SavedRecordPhotos entity="contracts" recordId={done.orderId} slots={contractPhotoSlots(`vehicle-swap-${done.swapId}`)}
-            title="Ảnh đổi xe" compact bulkImageLabel="Chọn nhiều ảnh đổi xe" onPendingChange={setPhotosPending} />
+        {done ? <div className="mg-cashbook-followup">
+          <p role="status">Đã đổi xe {done.oldLicense} → {done.newLicense}. Lưu ảnh rồi bấm Kiểm tra &amp; gửi Telegram để gửi thông tin và ảnh của lượt đổi xe.</p>
+          <ContractVehicleSwapFollowup id={done.orderId} swapId={done.swapId} onPendingChange={setPhotosPending}/>
         </div> : <>
           {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
           {!loading && !rows.length && <p>Hợp đồng này không còn xe đang thuê để đổi.</p>}

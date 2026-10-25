@@ -9,6 +9,7 @@ import { ContractDocuments } from './ContractDocuments';
 import type { ContractWorkflow } from './ContractWorkflowGuide';
 import { ContractPhotoCard } from './ContractPhotoCard';
 import type { ContractChange } from '@/lib/management/contract-history';
+import { ContractVehicleSwapFollowup } from './ContractVehicleSwapFollowup';
 
 export function ContractTransactionPhotos({id,phase,title,onPendingChange,onSaved,workflow}:{id:number;phase:ContractPhotoPhase;title:string;workflow?:ContractWorkflow;onPendingChange?:(pending:boolean)=>void;onSaved?:()=>void}) {
   const slots=useMemo(()=>[...contractPhotoSlots(phase),...contractDocumentSlots(phase)],[phase]);
@@ -34,10 +35,10 @@ export function ContractPhotoGallery({id,swaps=[]}:{id:number;swaps?:ContractCha
       return <ContractPhotoCard key={photo.slot} id={id} slot={photo.slot} label={contractPhotoLabel(photo.slot)} mimeType={photo.mime_type} version={photo.updated_at} disabled={busy} onBusyChange={setBusy} onDeleted={()=>setPhotos(current=>current.filter(saved=>saved.slot!==photo.slot))}/>;
     })}</div>
     {can('contracts.draft')&&<ContractTransactionPhotos id={id} phase="rental" title="Tải ảnh khi thuê xe"/>}
-    {can('contracts.draft')&&[...swapPhases].map(([phase,label])=><SwapPhotoSupplement key={phase} id={id} phase={phase as ContractPhotoPhase} label={label} onSaved={()=>setVersion(value=>value+1)}/>)}
+    {can('contracts.return')&&[...swapPhases].map(([phase,label])=><SwapPhotoSupplement key={phase} id={id} phase={phase as ContractPhotoPhase} label={label} onSaved={()=>setVersion(value=>value+1)}/>)}
   </section>;
 }
 function SwapPhotoSupplement({id,phase,label,onSaved}:{id:number;phase:ContractPhotoPhase;label:string;onSaved:()=>void}){
   const [open,setOpen]=useState(false);
-  return <details className="mg-extra-documents" onToggle={event=>setOpen(event.currentTarget.open)}><summary>Bổ sung ảnh đổi xe · {label}</summary>{open&&<SavedRecordPhotos entity="contracts" recordId={id} slots={contractPhotoSlots(phase)} compact title="Ảnh đổi xe" bulkImageLabel="Chọn nhiều ảnh đổi xe" onSaved={onSaved}/>}</details>;
+  return <details className="mg-extra-documents" onToggle={event=>setOpen(event.currentTarget.open)}><summary>Bổ sung ảnh đổi xe · {label}</summary>{open&&<ContractVehicleSwapFollowup id={id} swapId={Number(phase.split('-').at(-1))} onSaved={onSaved}/>}</details>;
 }

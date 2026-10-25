@@ -31,6 +31,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   const transferPhoto=path.match(/^\/api\/auth\/record-photos\/vehicles\/[1-9]\d{0,14}\/(transfer|receive)-[1-9]\d{0,14}-1$/);
   if(transferPhoto)return read?'vehicles.read':transferPhoto[1]==='receive'?'vehicles.receive':'vehicles.transfer';
   if(path.includes('/record-photos/contracts/')&&/\/battery-swap-\d+-/.test(path))return read?'contracts.read':'contracts.renew';
+  if(path.includes('/record-photos/contracts/')&&/\/vehicle-swap-\d+-/.test(path))return read?'contracts.read':'contracts.return';
   if(/\/record-photos\/vehicles\/\d+\/(registration-(front|back)|purchase-document-[12])$/.test(path))return read?'vehicles.read':'vehicles.write';
   if(read&&/\/record-photos\/vehicles\/\d+$/.test(path))return 'vehicles.read';
   if(path.includes('/record-photos/'))return path.includes('/customers/')?(read?'customers.read':'customers.write'):read?'contracts.read':/\/renewal-(?:receipt-)?\d+-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.renew':/\/return-\d+-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.return':/\/handover-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(path)?'contracts.finalize':'contracts.draft';

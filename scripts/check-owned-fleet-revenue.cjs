@@ -6,8 +6,9 @@ const {validOwnedFleetReport,FLEET_TOTAL_FIELDS}=load(path.join(root,'lib/manage
 const {canViewOwnedFleetRevenue}=load(path.join(root,'lib/management/permissions'));
 const query=(patch={})=>new URLSearchParams({from:'2026-10-23',to:'2026-10-23',...patch});
 async function main(){const checks=[];
- assert(canViewOwnedFleetRevenue({id:145,access_role:'admin'}));
- for(const id of [98,160,157,159,112,81,0,undefined,'145'])assert(!canViewOwnedFleetRevenue({id,access_role:'admin'}));
+ for(const id of [145,160])assert(canViewOwnedFleetRevenue({id,access_role:'admin'}));
+ assert(!canViewOwnedFleetRevenue({id:160,access_role:'branch_staff'}));
+ for(const id of [98,713,157,159,112,81,0,undefined,'145','160'])assert(!canViewOwnedFleetRevenue({id,access_role:'admin'}));
  assert(!canViewOwnedFleetRevenue(null));checks.push('Private entitlement is tied to the confirmed active account; other administrators/managers and the deleted former login never inherit it');
  const unused={query(){throw Error('Invalid query reached SQL');}};
  for(const patch of [{from:'2026-02-30'},{to:'2026-10-22'},{store_id:'0'},{view:'invalid'},{view:'vehicles'},{view:'vehicles',store_id:'1',page:'0'},{view:'vehicles',store_id:'1',size:'51'}])await assert.rejects(ownedFleetRevenue(unused,query(patch)),/không hợp lệ/);
@@ -75,11 +76,12 @@ async function main(){const checks=[];
   assert.deepEqual(['POST','PUT','PATCH','DELETE'].filter(method=>method in route),[]);
   const req=()=>new NextRequest('http://localhost/api/auth/staff-sales/owned-fleet-revenue?from=2026-10-23&to=2026-10-23&user_id=145',{headers:{cookie:'himoto_management_session=qa'}});
   assert.equal((await route.GET(req())).status,401);
-  for(const [id,role]of [[98,'admin'],[160,'admin'],[157,'ownership_manager'],[159,'accounting'],[156,'ownership_staff'],[81,'admin']]){actor={id,access_role:role,permissions:['contracts.read'],scope_all:true};assert.equal((await route.GET(req())).status,403);}
+  for(const [id,role]of [[98,'admin'],[713,'admin'],[157,'ownership_manager'],[159,'accounting'],[156,'ownership_staff'],[81,'admin']]){actor={id,access_role:role,permissions:['contracts.read'],scope_all:true};assert.equal((await route.GET(req())).status,403);}
   assert.equal(connections,0);
   actor={id:145,access_role:'admin',scope_all:true};const response=await route.GET(req());assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');
-  assert(statements.includes('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY'));assert(statements.includes('COMMIT'));assert.equal(connections,1);
-  checks.push('API rejects other admins/managers, unauthenticated requests and forged user_id before any global read; only the designated account gets a no-store, read-only transaction; no mutation handlers exist');
+  actor={id:160,access_role:'admin',scope_all:true};assert.equal((await route.GET(req())).status,200);
+  assert(statements.includes('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY'));assert(statements.includes('COMMIT'));assert.equal(connections,2);
+  checks.push('API rejects other admins/managers, unauthenticated requests and forged user_id before any global read; both primary administrators get a no-store, read-only transaction; no mutation handlers exist');
  }finally{session.readSessionUser=oldRead;session.userFromSession=oldUser;Object.defineProperty(database.ownerDatabase,'connect',descriptor);}
  console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,productionSequenceChanges:0},null,2));
 }

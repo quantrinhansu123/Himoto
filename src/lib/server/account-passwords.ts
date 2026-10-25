@@ -28,7 +28,7 @@ export async function rememberAccountPassword(db:Database,id:number,password:str
     VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id) DO UPDATE SET password_cipher=EXCLUDED.password_cipher,password_fingerprint=EXCLUDED.password_fingerprint,
     changed_by=EXCLUDED.changed_by,change_kind=EXCLUDED.change_kind,changed_at=clock_timestamp()`,[id,sealAccountPassword(id,password),fingerprint(passwordHash),actor,kind]);
 }
-function requireRecovery(actor:PermissionAccount){if(!canRecoverAccountPasswords(actor))throw new AccountPasswordError('Chỉ tài khoản quanlyvanhanh được xem mật khẩu.',403);}
+function requireRecovery(actor:PermissionAccount){if(!canRecoverAccountPasswords(actor))throw new AccountPasswordError('Chỉ tài khoản quanlyvanhanh và quantri được xem mật khẩu.',403);}
 async function lockTarget(db:Database,id:number){
   if(!Number.isSafeInteger(id)||id<1)throw new AccountPasswordError('Mã tài khoản không hợp lệ.');
   const target=(await db.query(`SELECT u.id,u.password,u.status,u.xmin::text AS revision,u.management_password_version,a.login_name,a.enabled

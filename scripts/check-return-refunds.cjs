@@ -21,7 +21,7 @@ assert.match(form,/if\(value\.deposit_held>0\)setRefundDeferred\(true\)/);
 assert.match(form,/Chưa hoàn cọc — trả xe ngay/);
 checks.push('Return form keeps bank/STK/name optional');
 checks.push('Đã hoàn cọc stays locked until rental debt/fees on the return form are recorded');
-const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles','battery_contracts','management_contract_notifications'];
+const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','management_contract_vehicle_swaps','customers','staff_profiles','battery_contracts','management_contract_notifications'];
 const db={query:(sql,args)=>{for(const table of tables)sql=sql.replaceAll(`himoto.${table}`,`pg_temp.qa_refund_${table}`);assert(!sql.includes('himoto.'),'Business SQL must stay in TEMP');return c.query(sql,args);}};
 const local=ms=>new Date(ms+7*3600000).toISOString().slice(0,16),paidAt=local(Date.now()-60000);
 const revisions=async()=>(await db.query('SELECT o.xmin::text AS order_revision,d.xmin::text AS item_revision FROM himoto.orders o JOIN himoto.order_vehicle_details d ON d.order_id=o.id WHERE o.id=1')).rows[0];

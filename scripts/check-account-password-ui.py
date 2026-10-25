@@ -12,7 +12,7 @@ checks=[];errors=[];unexpected=[];writes=[];reads=[]
 state={'role':'recovery','version':1}
 stores=[{'id':33,'store_name':'CS Hà Đông QA','status':'opening'},{'id':31,'store_name':'CS Láng QA','status':'opening'}]
 def rows():
-    recovery=state['role']=='recovery'
+    recovery=state['role'] in ('recovery','admin')
     return [dict(id=id,name=name,email=login+'@example.invalid',login_name=login,access_role='branch_staff' if store else 'admin',store_id=store,store_name=label,scope_all=store is None,permissions=['contracts.read'],enabled=True,status='active',revision=str(state['version']),can_edit=True,can_delete=True,password_available=recovery,can_reset_password=recovery,password_changed_at='2026-10-25T05:00:00Z' if state['version']==1 else '2026-10-25T06:00:00Z') for id,name,login,store,label in [(901,'Nhân viên Hà Đông QA','qa.hadong',33,'CS Hà Đông QA'),(902,'Nhân viên Láng QA','qa.lang',31,'CS Láng QA'),(903,'Tài khoản toàn hệ thống QA','qa.global',None,None)]]
 
 def mock(route):
@@ -27,7 +27,7 @@ def mock(route):
             route.fulfill(json={'status':'success','data':{'id':901}});return
         if path=='/api/auth/accounts/password' and req.method=='POST':
             body=req.post_data_json;writes.append({'path':path,'action':body['action']})
-            assert state['role']=='recovery' and body['action']=='reveal'
+            assert state['role'] in ('recovery','admin') and body['action']=='reveal'
             data={'id':body['id'],'password':f'QA-synthetic-value-{state["version"]}','revision':str(state['version'])}
             route.fulfill(json={'status':'success','data':data});return
         if path=='/api/auth/password' and req.method=='PATCH':
@@ -61,7 +61,7 @@ with sync_playwright() as pw:
                 page.get_by_label('Cơ sở đang xem',exact=True).select_option('33')
                 expect(records).to_have_count(1);expect(table).to_contain_text('Nhân viên Hà Đông QA');expect(table).not_to_contain_text('Nhân viên Láng QA');expect(table).not_to_contain_text('Tài khoản toàn hệ thống QA');assert '33' in reads
                 assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
-                if role=='recovery':
+                if role in ('recovery','admin'):
                     expect(table.get_by_role('columnheader',name='Mật khẩu',exact=True) if width>767 else table.get_by_text('Mật khẩu',exact=True)).to_be_visible()
                     assert 'QA-synthetic-value-' not in page.locator('body').inner_text()
                     table.get_by_role('button',name='Hiện mật khẩu qa.hadong',exact=True).click();expect(table.locator('code')).to_have_text('QA-synthetic-value-1')
@@ -72,6 +72,14 @@ with sync_playwright() as pw:
                     expect(table.get_by_role('button',name='Đặt lại mật khẩu',exact=True)).to_have_count(0)
                     page.screenshot(path=str(out/f'{engine}-branch-recovery.png'),full_page=True)
                     checks.append(f'{engine}: Hà Đông filter applies; only the authorized identity can view; employee changes update the displayed password and no reset control exists')
+                    page.get_by_label('Cơ sở đang xem',exact=True).select_option('all')
+                    admin_row=table.locator('tbody tr' if width>767 else '.mg-reminder-card').filter(has_text='Tài khoản toàn hệ thống QA')
+                    admin_row.get_by_role('button',name='Phân quyền',exact=True).click()
+                    editor=page.get_by_role('dialog',name='Cập nhật tài khoản',exact=True)
+                    expect(editor).to_contain_text('18/18 quyền đã chọn')
+                    expect(editor.get_by_role('checkbox',name='KTNB đối soát và xác nhận báo cáo cuối ca',exact=True)).to_be_checked()
+                    editor.get_by_role('button',name='Hủy',exact=True).click()
+                    checks.append(f'{engine}: {role} sees all 18 administrator permissions even when a legacy row only stores one grant')
                 else:
                     expect(table.get_by_role('columnheader',name='Mật khẩu',exact=True) if width>767 else table.get_by_text('Mật khẩu',exact=True)).to_have_count(0)
                     expect(table.get_by_role('button',name='Đặt lại mật khẩu',exact=True)).to_have_count(0)

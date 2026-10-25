@@ -10,7 +10,7 @@ export const POST=withAccessRequest(async(request:NextRequest)=>{
   let client;
   try{
     const actor=dataAccess.getStore()!;
-    if(!canRecoverAccountPasswords(actor))throw new AccountPasswordError('Chỉ tài khoản quanlyvanhanh được xem mật khẩu.',403);
+    if(!canRecoverAccountPasswords(actor))throw new AccountPasswordError('Chỉ tài khoản quanlyvanhanh và quantri được xem mật khẩu.',403);
     const raw=await request.text();if(raw.length>4096)throw new AccountPasswordError('Thông tin mật khẩu quá dài.');
     const body=JSON.parse(raw);
     if(body?.action==='reset')throw new AccountPasswordError('Đã bỏ chức năng đặt lại mật khẩu. Nhân viên tự đổi mật khẩu của mình.',403);

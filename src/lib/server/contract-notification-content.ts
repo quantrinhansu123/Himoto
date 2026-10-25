@@ -17,12 +17,16 @@ export interface NotificationPayload {
   refund_recipient?:{bank?:string;account?:string;name?:string};
   refund_pending?:{amount:number;bank?:string;account?:string;name?:string};
   battery_swap?:{percentage:number;fee:number;collected:number;license:string;vehicle_name:string};
+  vehicle_swap?:{from_license:string;from_name:string;to_license:string;to_name:string};
   transfer?:{from:string;to:string;note:string;received:boolean;ownership?:boolean};
 }
 type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
 const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
 export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive',p:NotificationPayload) {
+  if(kind==='vehicle_swap')return [`Khách đổi xe: ${p.customer}`,`Xe cũ: ${p.vehicle_swap?.from_license||'—'} · ${p.vehicle_swap?.from_name||'—'}`,
+    `Xe mới: ${p.vehicle_swap?.to_license||'—'} · ${p.vehicle_swap?.to_name||'—'}`,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,
+    `Người thực hiện: ${p.actor}`,`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
   if(kind==='vehicle_transfer'||kind==='vehicle_receive')return [`${kind==='vehicle_receive'?'ĐÃ NHẬN XE':'ĐIỀU CHUYỂN XE'}${p.transfer?.ownership===false?'':' SỞ HỮU'}`,`Bsx: ${p.vehicles}`,`Loại xe: ${p.vehicle_names||'—'}`,`Cơ sở chuyển đi: ${p.transfer?.from||'—'}`,`Cơ sở nhận: ${p.transfer?.to||'—'}`,`Trạng thái: ${kind==='vehicle_receive'?'Đã nhận · Lưu kho':'Chờ cơ sở đích xác nhận nhận xe'}`,`Người thực hiện: ${p.actor}`,`Mã lượt: ${p.code}`,...(p.transfer?.note?[`Ghi chú: ${p.transfer.note}`]:[]),`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
   const method=p.method||'Chưa ghi nhận thanh toán';
   const vehicle=[`Bsx: ${p.renewal?.license||p.vehicles||'—'}`,`Loại xe: ${p.renewal?.vehicle_name||p.vehicle_names||'—'}`];
@@ -118,6 +122,18 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     FROM himoto.orders o LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id LEFT JOIN himoto.users u ON u.id=$2
     WHERE o.id=$1 AND o.deleted_at IS NULL`,[orderId,actorId,returnIds.length?returnIds:null])).rows[0];
   if(!o)throw Error('Không tạo được thông báo hợp đồng.');
+  if(kind==='vehicle_swap'){
+    const id=phases.length===1?phases[0].match(/^vehicle-swap-([1-9]\d{0,14})$/)?.[1]:undefined;
+    const changed=id?(await db.query(`SELECT w.created_at,old.license AS from_license,old.name AS from_name,
+      next.license AS to_license,next.name AS to_name,u.name AS actor
+      FROM himoto.management_contract_vehicle_swaps w JOIN himoto.vehicles old ON old.id=w.from_vehicle_id
+      JOIN himoto.vehicles next ON next.id=w.to_vehicle_id LEFT JOIN himoto.users u ON u.id=w.actor_id
+      WHERE w.id=$1 AND w.order_id=$2`,[id,orderId])).rows[0]:undefined;
+    if(!changed)throw Error('Không tìm thấy lượt đổi xe của hợp đồng.');
+    return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:changed.actor||o.actor,
+      vehicles:changed.to_license||'',vehicle_names:changed.to_name||'',total:o.total,at:new Date(changed.created_at).toISOString(),
+      photos:await notificationPhotos(db,orderId,phases),vehicle_swap:{from_license:changed.from_license||'',from_name:changed.from_name||'',to_license:changed.to_license||'',to_name:changed.to_name||''}};
+  }
   const tx=(await db.query(`SELECT t.id,t.name,t.type,t.value,t.created_at,t.order_item_id,r.renewal_payload,
     CASE WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK TK công ty'
       WHEN t.bank_id IS NOT NULL THEN 'CK TK cá nhân'

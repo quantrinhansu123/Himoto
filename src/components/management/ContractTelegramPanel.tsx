@@ -6,7 +6,7 @@ import { contractTelegramRequest, NOTICE_STATUS_LABELS, type ContractTelegramSta
 import { ContractTelegramRetraction } from './ContractTelegramRetraction';
 import { ContractPhotoCard } from './ContractPhotoCard';
 
-export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds}:{id:number;eventKind?:string;eventKey?:string;returnItemIds?:number[]}) {
+export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyEventKey=false}:{id:number;eventKind?:string;eventKey?:string;returnItemIds?:number[];onlyEventKey?:boolean}) {
   const [data,setData]=useState<ContractTelegramState|null>(null),[selected,setSelected]=useState(''),[loading,setLoading]=useState(false),[actionBusy,setBusy]=useState(false),[photoBusy,setPhotoBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
   const busy=actionBusy||photoBusy;
   const returnItems=returnItemIds?.join(',')||'';
@@ -18,7 +18,7 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds}:{id:
     finally{if(!signal?.aborted)setLoading(false);}
   },[id,eventKind,eventKey,returnItems]);
   useEffect(()=>{const controller=new AbortController();void refresh(controller.signal);return()=>controller.abort();},[refresh]);
-  const events=data?.events.filter(e=>!returnItems||e.kind==='return'&&e.phases.some(phase=>returnItems.split(',').some(item=>phase===`return-${item}`)))||[];
+  const events=data?.events.filter(e=>(!onlyEventKey||e.key===eventKey)&&(!returnItems||e.kind==='return'&&e.phases.some(phase=>returnItems.split(',').some(item=>phase===`return-${item}`))))||[];
   const event=events.find(e=>e.key===selected);
   useEffect(()=>setConfirmedAbsent(false),[selected,event?.notice_id]);
   const active=events.some(e=>e.status==='pending'||e.status==='sending'||e.deliveries?.some(delivery=>['pending','processing'].includes(delivery.retraction_state||'')));

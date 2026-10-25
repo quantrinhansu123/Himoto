@@ -21,6 +21,6 @@ export function ChangePasswordDialog({onClose,onChanged}:{onClose:()=>void;onCha
     <div className="mg-field mg-field-wide"><label htmlFor="self-confirm-password">Nhập lại mật khẩu mới</label><input id="self-confirm-password" type={visible?'text':'password'} autoComplete="new-password" required minLength={8} maxLength={72} value={confirmation} disabled={saving} onChange={e=>setConfirmation(e.target.value)}/></div>
     <label className="mg-checkbox"><input type="checkbox" checked={visible} onChange={e=>setVisible(e.target.checked)}/>Hiện mật khẩu đang nhập</label>
     <p className="mg-reminder-help">Sau khi đổi, các phiên đăng nhập khác sẽ hết hiệu lực.</p>
-    <p className="mg-reminder-help">Mật khẩu được cập nhật vào bảng quản lý tài khoản; chỉ quanlyvanhanh được xem để hỗ trợ khôi phục.</p>
+    <p className="mg-reminder-help">Mật khẩu được cập nhật vào bảng quản lý tài khoản; chỉ quanlyvanhanh và quantri được xem để hỗ trợ khôi phục.</p>
   </div>{error&&<p className="mg-field-error" role="alert">{error}</p>}</div><div className="mg-dialog-footer"><button className="mg-button" type="button" disabled={saving} onClick={onClose}>Hủy</button><button className="mg-button mg-button-primary" disabled={saving}>{saving?'Đang đổi…':'Lưu mật khẩu mới'}</button></div></form></Dialog>;
 }

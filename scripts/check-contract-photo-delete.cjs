@@ -30,7 +30,7 @@ const client={
   },
 };
 async function main(){
-  for(const [slot,permission]of Object.entries({'rental-1':'contracts.draft','rental-document-50':'contracts.draft','customer-id-front':'contracts.draft','driver-license':'contracts.draft','plate-12':'contracts.draft','handover-video-1':'contracts.finalize','return-101-document-2':'contracts.return','renewal-2-4':'contracts.renew','renewal-receipt-401-document-30':'contracts.renew','battery-swap-5-video-1':'contracts.renew','vehicle-swap-6-1':'contracts.draft'})){
+  for(const [slot,permission]of Object.entries({'rental-1':'contracts.draft','rental-document-50':'contracts.draft','customer-id-front':'contracts.draft','driver-license':'contracts.draft','plate-12':'contracts.draft','handover-video-1':'contracts.finalize','return-101-document-2':'contracts.return','renewal-2-4':'contracts.renew','renewal-receipt-401-document-30':'contracts.renew','battery-swap-5-video-1':'contracts.renew','vehicle-swap-6-1':'contracts.return'})){
     assert.equal(contractPhotoWritePermission(slot),permission);
     assert.equal(contractPhotoWritePermission(slot),requestPermission(`/api/auth/record-photos/contracts/901/${slot}`,'PUT'));
     assert.equal(contractPhotoDeletePermission(slot),'contracts.read');

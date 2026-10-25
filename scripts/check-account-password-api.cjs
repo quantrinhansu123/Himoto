@@ -11,7 +11,7 @@ async function main(){const previous=process.env.MANAGEMENT_SESSION_SECRET;proce
   session.userFromSession=async()=>actor;session.readSessionUser=async()=>actor;
   Object.defineProperty(db,'connect',{configurable:true,value:async()=>{connections++;return {query:async sql=>{queries.push(sql);return {rows:[]};},release(){}};}});
   passwords.changeOwnPassword=async(_db,id)=>{assert.equal(id,actor.id);changes++;return {password_version:3,changed_at:'2026-10-25T00:00:00Z'};};
-  passwords.revealAccountPassword=async(_db,user,id)=>{assert.equal(user.id,145);reveals++;return {id,password:'QA-only-response',revision:'1'};};
+  passwords.revealAccountPassword=async(_db,user,id)=>{assert([145,160].includes(user.id));reveals++;return {id,password:'QA-only-response',revision:'1'};};
   const own=load(path.join(root,'app/api/auth/password/route')).PATCH,managed=load(path.join(root,'app/api/auth/accounts/password/route')).POST;
   assert.equal((await request(own,'PATCH','/api/auth/password',{})).status,401);
   actor=admin;assert.equal((await request(managed,'POST','/api/auth/accounts/password',{action:'reveal',id:714})).status,403);assert.equal(connections,0);
@@ -29,7 +29,11 @@ async function main(){const previous=process.env.MANAGEMENT_SESSION_SECRET;proce
   const connected=connections;
   const reset=await request(managed,'POST','/api/auth/accounts/password',{action:'reset',id:714,password:'QA-only-reset',revision:'1'});assert.equal(reset.status,403);assert.equal(connections,connected);assert.equal(reset.headers.get('set-cookie'),null);
   assert.equal(passwords.resetAccountPassword,undefined);
-  checks.push('Only self changes renew the Secure HttpOnly cookie; user 145 can view passwords but reset is denied before opening a DB connection');
+  actor={...admin,id:160};
+  const second=await request(managed,'POST','/api/auth/accounts/password',{action:'reveal',id:714});assert.equal(second.status,200);assert.equal(reveals,2);
+  actor={...staff,id:160};const deniedCount=connections;
+  assert.equal((await request(managed,'POST','/api/auth/accounts/password',{action:'reveal',id:714})).status,403);assert.equal(connections,deniedCount);
+  checks.push('Both primary administrators 145 and 160 can view passwords; other admins and a downgraded primary account cannot; resets stay denied');
   passwords.changeOwnPassword=async()=>{throw new passwords.AccountPasswordError('QA invalid current password');};queries=[];
   assert.equal((await request(own,'PATCH','/api/auth/password',{})).status,400);assert(queries.includes('ROLLBACK'));assert(!queries.includes('COMMIT'));
   checks.push('Password failures roll back and never issue a replacement cookie or return supplied passwords');
