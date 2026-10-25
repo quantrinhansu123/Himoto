@@ -89,10 +89,9 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     }
     return initial;
   });
-  const [salesText, setSalesText] = useState<string | null>(null);
   const selectedGps=useSelectedVehicleGps(draft.vehicles.map(vehicle=>vehicle.id));
   // Commission picker mirrors "Nguồn khách" until the user picks someone directly.
-  const salesFollowsSource = useRef(!draft.sales_staff_id && !draft.tls_staff_id);
+  const salesFollowsSource = useRef(!draft.sales_staff_id && !draft.sales_staff_name?.trim() && !draft.tls_staff_id);
   const reserving = canSaveDraft && Boolean(draft.reservation);
   const [rentalDays, setRentalDays] = useState(() => rentalDayCount(draft.start_date,draft.end_date));
   const [autoReturn, setAutoReturn] = useState(!row);
@@ -218,6 +217,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
       const next = createContractDraft(dataset, selectedStore, latest);
       if (next.tls_staff_id) next.customer_source = 'TLS';
       setDraft(next);
+      salesFollowsSource.current = !next.sales_staff_id && !next.sales_staff_name?.trim() && !next.tls_staff_id;
       setSavedDraft({ id: latest.id, revision: String(latest.draft_revision || '') });
       setProfileRevision(String(latest.draft_revision || ''));
       setNotes(String(latest.notes || ''));
@@ -607,7 +607,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     return partial.length === 1 ? partial[0] : undefined;
   };
   function applyCommissionPick(person: ManagementRow | undefined) {
-    setSalesText(null);
+    change('sales_staff_name', person ? String(person.name || '') : '');
     if (!person) { change('sales_staff_id', ''); change('tls_staff_id', ''); return; }
     const roles = staffRoles(person.position);
     const salesOk = hasSalesCommissionRole(person.position);
@@ -618,8 +618,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   }
   const assignedSales = commissionPool.find(person => String(person.id) === draft.sales_staff_id && hasSalesCommissionRole(person.position));
   const assignedTls = commissionPool.find(person => String(person.id) === draft.tls_staff_id && staffRoles(person.position).includes('TLS'));
-  const salesValue = salesText ?? (assignedSales ? salesOption(assignedSales) : assignedTls ? 'TLS' : '');
-  const salesUnmatched = Boolean(salesText?.trim()) && !draft.sales_staff_id && !draft.tls_staff_id;
+  const salesValue = assignedSales ? salesOption(assignedSales) : assignedTls ? 'TLS' : draft.sales_staff_name || '';
   function changeSource(value: string) {
     if (['tls','telesale','telesales'].includes(nameKey(value))) {
       change('customer_source', 'TLS');
@@ -636,7 +635,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     if (!needle) { applyCommissionPick(undefined); return; }
     const exact = salesStaff.filter(person => nameKey(salesOption(person)) === needle || nameKey(person.name) === needle);
     if (exact.length === 1) { applyCommissionPick(exact[0]); return; }
-    setSalesText(value);
+    change('sales_staff_name', value);
     change('sales_staff_id', '');
     change('tls_staff_id', '');
   }
@@ -808,12 +807,13 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
                 <option value="">Chọn cơ sở</option>{(dataset?.stores || []).map(store => <option key={store.id} value={store.name}>{store.name}</option>)}
                 {draft.customer_source_url && !(dataset?.stores || []).some(store => store.name === draft.customer_source_url) && <option value={draft.customer_source_url}>{draft.customer_source_url}</option>}
               </select><small>Cơ sở ghi nhận doanh thu hợp đồng, gợi ý theo hồ sơ khách.</small>{errors.store_id && <p className="mg-field-error">{errors.store_id}</p>}</div>
-              <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" value={draft.customer_source} placeholder="TLS, cửa hàng, giới thiệu…" onChange={event => changeSource(event.target.value)} />
+              <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" maxLength={191} value={draft.customer_source} placeholder="Tự nhập nguồn khách hoặc chọn gợi ý" onChange={event => changeSource(event.target.value)} />
                 <datalist id="contract-source-staff-options"><option value="TLS"/>{sourceStaff.map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
                 <small>Nguồn telesale ghi chung TLS. Có thể tự nhập nguồn khác.</small></div>
               <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD ghi nhận doanh số</label>
-                <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(salesOption)} disabled={Boolean(attributionError)} placeholder="Gõ tên hoặc chọn nhân viên" onChange={changeSales} />
-                {attributionError ? <p className="mg-field-error" role="alert">{attributionError}</p> : salesUnmatched ? <p className="mg-field-error">Không khớp nhân viên. Gõ để lọc gợi ý hoặc chọn trong danh sách; để trống là chưa phân công.</p> : <small>Chọn NVKD hoặc TPKD ghi nhận doanh số khi có. Nguồn TLS không yêu cầu chọn tên nhân viên TLS.</small>}</div>
+                <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(salesOption)} placeholder="Chọn hoặc tự nhập họ tên" onChange={changeSales} />
+                <small>Tự nhập họ tên nếu chưa có trong danh sách. Tên nhập được lưu cùng hợp đồng.</small>
+                {attributionError && <small role="status">Chưa tải được gợi ý nhân viên; vẫn có thể nhập thủ công.</small>}</div>
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
             <div className="mg-contract-record-status">{canSaveDraft ? <><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></> : mode === 'edit' ? <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div> : null}</div>

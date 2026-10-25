@@ -105,14 +105,18 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   const composer = payload.management_composer && typeof payload.management_composer === 'object' ? payload.management_composer as Record<string, unknown> : {};
   const draft = composer.draft && typeof composer.draft === 'object' ? composer.draft as Record<string, unknown> : null;
   if (!draft) throw new ContractFinalizeError('Bản nháp chưa có thông tin hợp đồng. Lưu nháp lại trước khi lưu chính thức.', 409);
-  const attribution:Record<string,{staff_id:number;name:string}> = {};
+  if(draft.sales_staff_name !== undefined && (typeof draft.sales_staff_name !== 'string' || draft.sales_staff_name.length>191))throw new ContractFinalizeError('Tên NVKD tối đa 191 ký tự.',409);
+  draft.sales_staff_name=String(draft.sales_staff_name || '').trim();
+  const attribution:Record<string,{staff_id:number|null;name:string}> = {};
   for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
     if (!draft[key]) continue;
     if (typeof draft[key] !== 'string' || !/^[1-9]\d{0,14}$/.test(String(draft[key]))) throw new ContractFinalizeError('Nhân viên ghi nhận doanh số chưa hợp lệ.',409);
     const person=await loadCommissionStaff(String(draft[key]), role);
     if (!person) throw new ContractFinalizeError(`Nhân viên ${role} đã thay đổi; chọn lại trước khi lưu.`,409);
     attribution[role]=person;
+    if(role==='NVKD')draft.sales_staff_name=person.name;
   }
+  if(!draft.sales_staff_id && draft.sales_staff_name)attribution.NVKD={staff_id:null,name:String(draft.sales_staff_name)};
   if (Object.keys(attribution).length) composer.sales_attribution=attribution;
   const storeId = Number(order.store_id), customerId = Number(order.customer_id);
   if (!Number.isSafeInteger(storeId) || storeId <= 0) throw new ContractFinalizeError('Bản nháp chưa chọn cơ sở.', 409);

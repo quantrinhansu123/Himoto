@@ -82,8 +82,9 @@ function summarize(contracts: readonly ManagementRow[], from: string, to: string
 export function summarizeBySalesStaff(contracts: readonly ManagementRow[], from: string, to: string, store: string, staff: readonly ManagementRow[] = []): SourceSalesSummary {
   const staffNames = new Map(staff.map(person => [String(person.id), tidy(person.name)]));
   return summarize(contracts, from, to, store, contract => {
-    const key = contract.sales_staff_id != null ? String(contract.sales_staff_id) : '';
-    return { key, name: key ? tidy(contract.sales_staff_name) || staffNames.get(key) || `Nhân viên #${key}` : '' };
+    const name = tidy(contract.sales_staff_name);
+    const key = contract.sales_staff_id != null ? String(contract.sales_staff_id) : name ? `name:${name.toLocaleLowerCase('vi')}` : '';
+    return { key, name: key ? name || staffNames.get(key) || `Nhân viên #${key}` : '' };
   }, UNASSIGNED_SOURCE);
 }
 

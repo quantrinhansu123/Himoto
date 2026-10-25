@@ -145,7 +145,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
   const salesStaffId = text(raw.sales_staff_id ?? object(saved.profile).sales_staff_id ?? snapshot.sales_staff_id);
   const salesAttribution = object(object(saved.profile_attribution).NVKD ?? object(saved.sales_attribution).NVKD);
   const mapped: ManagementRow = { ...base, code, name: code,
-    sales_staff_id: /^[1-9]\d{0,14}$/.test(salesStaffId) ? Number(salesStaffId) : undefined, sales_staff_name: text(raw.sales_staff_name ?? salesAttribution.name),
+    sales_staff_id: /^[1-9]\d{0,14}$/.test(salesStaffId) ? Number(salesStaffId) : undefined, sales_staff_name: text(raw.sales_staff_name ?? salesAttribution.name ?? object(saved.profile).sales_staff_name ?? snapshot.sales_staff_name),
     store_id: base.store_id ?? number(store.id), store_name: base.store_name || text(store.store_name || store.name),
     store_kind: text(raw.store_kind),
     staff_id: number(raw.staff_id ?? raw.contract_responsible_user_id),

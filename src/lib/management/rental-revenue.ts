@@ -14,8 +14,9 @@ export function summarizeRentalRevenue(receipts:RevenueReceipt[]):RentalRevenueR
     if(!RENTAL_REVENUE_KEYS.includes(receipt.category as typeof RENTAL_REVENUE_KEYS[number]))continue;
     const kind=receipt.category as typeof RENTAL_REVENUE_KEYS[number];
     if(!value)continue;
-    const assigned=receipt.staff_id&&/^[1-9]\d*$/.test(receipt.staff_id),key=assigned?String(receipt.staff_id):'unassigned';
-    const person=staff.get(key)||{...emptyRentalRevenue(),key,name:assigned?receipt.staff_name||`Nhân viên #${key}`:'Chưa phân công NVKD',events:0};
+    const name=String(receipt.staff_name||'').normalize('NFC').trim().replace(/\s+/g,' ');
+    const linked=receipt.staff_id&&/^[1-9]\d*$/.test(receipt.staff_id),assigned=Boolean(linked||name),key=linked?String(receipt.staff_id):name?`name:${name.toLocaleLowerCase('vi')}`:'unassigned';
+    const person=staff.get(key)||{...emptyRentalRevenue(),key,name:assigned?name||`Nhân viên #${key}`:'Chưa phân công NVKD',events:0};
     const daily=days.get(receipt.day)||{...emptyRentalRevenue(),key:receipt.day,name:receipt.day,events:0};
     for(const target of [total,daily,person,...(assigned?[]:[unassigned])]){target[kind]+=value;target.revenue+=kind==='early'?-value:value;}
     daily.events++;person.events++;days.set(receipt.day,daily);staff.set(key,person);

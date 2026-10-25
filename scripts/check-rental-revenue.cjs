@@ -6,11 +6,19 @@ const payments=load(path.join(root,'lib/server/contract-payments'));
 const {bulkDelete}=load(path.join(root,'lib/server/bulk-delete'));
 async function main(){
   const checks=[];
-  const summary=summarizeRentalRevenue(['rental','renewal','late','early'].map((category,i)=>({day:'2026-10-21',category,amount:[1000,500,60,200][i],staff_id:i===3?null:'7',staff_name:'QA'})));
+  const summary=summarizeRentalRevenue(['rental','renewal','late','early'].map((category,i)=>({day:'2026-10-21',category,amount:[1000,500,60,200][i],staff_id:i===3?null:'7',staff_name:i===3?null:'QA'})));
   assert.equal(summary.total.revenue,1360);assert.equal(summary.unassigned.revenue,-200);assert.equal(summary.staff.reduce((n,r)=>n+r.revenue,0),summary.total.revenue);
   assert(validRentalRevenue(summary));assert(!validRentalRevenue({...summary,total:{...summary.total,revenue:0}}));assert(!validRentalRevenue({...summary,staff:[]}));
   assert.throws(()=>summarizeRentalRevenue([{day:'2026-10-21',category:'rental',amount:null}]));
   checks.push('Formula reconciles across days and assigned/unassigned staff, supports negative refund-only days, and rejects unknown amounts');
+  const manual=summarizeRentalRevenue([
+    {day:'2026-10-21',category:'rental',amount:1000,staff_id:null,staff_name:'  Nhân viên nhập tay QA  '},
+    {day:'2026-10-21',category:'early',amount:200,staff_id:null,staff_name:'Nhân viên nhập tay QA'},
+    {day:'2026-10-21',category:'rental',amount:500,staff_id:'7',staff_name:'Nhân viên nhập tay QA'},
+    {day:'2026-10-21',category:'rental',amount:300,staff_id:null,staff_name:'Nhân viên khác QA'},
+  ]);
+  assert(validRentalRevenue(manual));assert.equal(manual.staff.length,3);assert.equal(manual.staff.find(row=>row.key.startsWith('name:nhân viên nhập')).revenue,800);assert.equal(manual.unassigned.revenue,0);assert.equal(manual.total.revenue,1600);
+  checks.push('Manual NVKD names retain receipts/refunds in separate name groups without merging into a same-name employee ID or unassigned revenue');
   if(process.argv.includes('--live-temp')){
     require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
     const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database')),c=await ownerDatabase.connect();

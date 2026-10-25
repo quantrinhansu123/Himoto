@@ -97,6 +97,7 @@ async function main(){
     for(const key of ['rent_at','return_at'])assert.equal(String(after[key]),String(before[key]));
     assert.equal(after.draft_payload.management_composer.profile.customer.id_card,'001234567877');
     assert.equal(after.draft_payload.management_composer.profile.ownership_term_months,'24');
+    assert.equal(after.draft_payload.management_composer.profile.sales_staff_name,'NVKD QA');
     assert.throws(()=>parseContractProfile({revision:updated.revision,profile:{...profile,ownership_term_months:'60'}}),/Phân loại/);
     assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_sales_transactions')).rows[0].n,receiptCount);
     await assert.rejects(()=>attempt(()=>updateContractProfile(proxy,4,143,{revision:updated.revision,profile:{...profile,sales_staff_id:'20'}})),/NVKD/);
@@ -110,6 +111,20 @@ async function main(){
     const generic=(await staffSales(proxy,'2026-10-01','2026-10-31')).rows.filter(r=>r.department==='TLS');
     assert.equal(generic.length,1);assert.equal(generic[0].name,'TLS');assert.equal(generic[0].staff_id,0);assert.equal(generic[0].revenue,tlsBefore+900000);
     checks.push('Generic TLS sources with no employee ID and historical TLS employees aggregate into one TLS department without losing first-rental revenue');
+    const missingBefore=await staffSales(proxy,'2026-10-01','2026-10-31');
+    await order(21,121,35,'2026-10-16',1000,{draft:{sales_staff_id:'',sales_staff_name:'NVKD nhập tay QA',tls_staff_id:''},composer:{sales_attribution:{NVKD:{staff_id:null,name:'NVKD nhập tay QA'}}}});
+    await order(22,122,35,'2026-10-17',2000,{draft:{sales_staff_id:'',sales_staff_name:'NVKD khác QA',tls_staff_id:''},composer:{sales_attribution:{NVKD:{staff_id:null,name:'NVKD khác QA'}}}});
+    await receipt(21,'2026-10-16',1000);await receipt(22,'2026-10-17',2000);
+    const manualReport=await staffSales(proxy,'2026-10-01','2026-10-31');
+    assert.equal(manualReport.rows.find(row=>row.name==='NVKD nhập tay QA').revenue,1000);assert.equal(manualReport.rows.find(row=>row.name==='NVKD khác QA').revenue,2000);
+    assert.equal(manualReport.unassigned_revenue,missingBefore.unassigned_revenue);assert.equal(manualReport.unassigned_contracts,missingBefore.unassigned_contracts);
+    await c.query(`UPDATE qa_sales_orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,profile_attribution}','{"NVKD":{"staff_id":null,"name":""}}')::json WHERE id=21`);
+    const cleared=await staffSales(proxy,'2026-10-01','2026-10-31');
+    assert(!cleared.rows.some(row=>row.name==='NVKD nhập tay QA'));assert.equal(cleared.unassigned_revenue,missingBefore.unassigned_revenue+1000);assert.equal(cleared.unassigned_contracts,missingBefore.unassigned_contracts+1);
+    const {summarizeBySalesStaff}=load(path.join(root,'lib/management/source-sales'));
+    const summary=summarizeBySalesStaff([{id:21,status:'renting',start_date:'2026-10-16',total_amount:1000,sales_staff_name:'NVKD nhập tay QA'},{id:22,status:'renting',start_date:'2026-10-17',total_amount:2000,sales_staff_name:'NVKD khác QA'},{id:23,status:'renting',start_date:'2026-10-18',total_amount:3000,sales_staff_id:10,sales_staff_name:'NVKD nhập tay QA'}],'2026-10-01','2026-10-31','all');
+    assert.equal(summary.rows.length,3);assert.equal(summary.total.rent,6000);assert.equal(summary.rows.find(row=>row.key==='10').rent,3000);
+    checks.push('Manually named NVKD appear separately in supplementary and contract sales reports, never become another employee ID and are excluded from unassigned totals');
     console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));
   }finally{await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
 }

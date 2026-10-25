@@ -23,6 +23,7 @@ export function parseContractProfile(body:unknown):{revision:string;profile:Cont
   if(profile.relatives.some(relative=>!relative || typeof relative !== 'object' || Array.isArray(relative) || Object.keys(relative).some(key=>!['name','relationship','phone'].includes(key)) || ['name','relationship','phone'].some(key=>typeof relative[key as keyof typeof relative] !== 'string' || relative[key as keyof typeof relative].length>4000) || relative.phone && !/^\+?\d{9,13}$/.test(relative.phone.replace(/[\s.()-]/g,''))))throw new ContractProfileError('Thông tin người thân chưa hợp lệ.');
   for(const key of ['staff_id','staff_name','signed_on','authorization_date','collateral_description'] as const)if(typeof profile[key] !== 'string' || profile[key].length>4000)throw new ContractProfileError('Thông tin hồ sơ chưa hợp lệ.');
   for(const key of ['sales_staff_id','tls_staff_id'] as const)if(profile[key] !== undefined && (typeof profile[key] !== 'string' || profile[key] && !/^[1-9]\d{0,14}$/.test(profile[key])))throw new ContractProfileError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
+  for(const key of ['sales_staff_name','customer_source'] as const)if(profile[key] !== undefined && (typeof profile[key] !== 'string' || profile[key].length>191))throw new ContractProfileError('Tên NVKD và nguồn khách tối đa 191 ký tự.');
   if(profile.ownership_term_months !== undefined && !validOwnershipTerm(profile.ownership_term_months))throw new ContractProfileError('Phân loại thuê sở hữu chưa hợp lệ.');
   if(profile.staff_id && !/^[1-9]\d{0,14}$/.test(profile.staff_id) || !validIdentityIssueDate(profile.signed_on) || !validIdentityIssueDate(profile.authorization_date) || profile.document_requirements !== undefined && !validDocumentRequirements(profile.document_requirements))throw new ContractProfileError('Ngày ký, nhân viên hoặc yêu cầu hồ sơ chưa hợp lệ.');
   return {revision:value.revision,profile:structuredClone(profile),...(typeof value.contract_number==='string'?{contract_number:value.contract_number.trim()}:{}),...(typeof value.notes==='string'?{notes:value.notes}:{})};
@@ -44,14 +45,18 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
     if (!profile.staff_name.trim()) throw new ContractProfileError('Chọn lại hoặc tự nhập tên người làm hợp đồng.',409);
     profile.staff_id='';
   }
-  const attribution:Record<string,{staff_id:number;name:string}>={};
+  const attribution:Record<string,{staff_id:number|null;name:string}>={};
+  profile.sales_staff_name=profile.sales_staff_name?.trim() || '';
   for(const [key,department] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const){
     if(profile[key]){
       const employee=await loadCommissionStaff(profile[key], department);
       if(!employee)throw new ContractProfileError(`Chọn nhân viên ${department === 'NVKD' ? 'NVKD hoặc TPKD' : department} đang hoạt động.`,409);
       attribution[department]=employee;
+      if(department==='NVKD')profile.sales_staff_name=employee.name;
     }
   }
+  // An explicit empty name also overrides a previous assignment when it is cleared.
+  if(!profile.sales_staff_id)attribution.NVKD={staff_id:null,name:profile.sales_staff_name};
   const payload=previous.draft_payload||{},composer=payload.management_composer||{},at=new Date().toISOString();
   const nextNotes=notes??previous.note;
   const edit={at,actor_id:actor,before:{contract_number:previous.contract_number,notes:previous.note,profile:composer.profile||composer.draft||null},after:{contract_number:code,notes:nextNotes,profile}};
@@ -60,7 +65,7 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
     contract_edits:[...(Array.isArray(composer.contract_edits)?composer.contract_edits:[]),edit]}};
   const result=await client.query(`UPDATE himoto.orders SET customer_name=$2,customer_phone=$3,customer_address=NULLIF($4,''),customer_idnumber=NULLIF($5,''),
     draft_payload=$6::json,updated_at=now(),contract_number=$7,
-    draft_reference=CASE WHEN draft_reference=$8 THEN $7 ELSE draft_reference END,note=$9,contract_signed_on=NULLIF($10,'')::date
-    WHERE id=$1 RETURNING xmin::text AS revision`,[id,profile.customer.name,profile.customer.phone,profile.customer.address,profile.customer.id_card,JSON.stringify(updated),code,previous.contract_number,nextNotes,profile.signed_on]);
+    draft_reference=CASE WHEN draft_reference=$8 THEN $7 ELSE draft_reference END,note=$9,contract_signed_on=NULLIF($10,'')::date,customer_source=COALESCE($11,customer_source)
+    WHERE id=$1 RETURNING xmin::text AS revision`,[id,profile.customer.name,profile.customer.phone,profile.customer.address,profile.customer.id_card,JSON.stringify(updated),code,previous.contract_number,nextNotes,profile.signed_on,profile.customer_source?.trim()]);
   return {revision:String(result.rows[0].revision),code:String(code||'')};
 }

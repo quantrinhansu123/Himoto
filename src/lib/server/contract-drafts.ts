@@ -67,6 +67,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
           'staff_id', o.draft_payload #> '{management_composer,draft,staff_id}',
           'staff_name', o.draft_payload #> '{management_composer,draft,staff_name}',
           'sales_staff_id', o.draft_payload #> '{management_composer,draft,sales_staff_id}',
+          'sales_staff_name', o.draft_payload #> '{management_composer,draft,sales_staff_name}',
           'tls_staff_id', o.draft_payload #> '{management_composer,draft,tls_staff_id}'
         )) || COALESCE(o.draft_payload::jsonb #> '{management_composer,profile}','{}'::jsonb),
         'sales_attribution', o.draft_payload #> '{management_composer,sales_attribution}',
@@ -204,6 +205,7 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (!draft.contract_type_id && (draft.contract_type_name || draft.contract_type_months)) throw new DraftSaveError('Chọn loại hợp đồng cho tên và thời hạn đã nhập.');
   if (draft.document_requirements !== undefined && !validDocumentRequirements(draft.document_requirements)) throw new DraftSaveError('Yêu cầu hồ sơ để in chưa hợp lệ.');
   for (const key of ['sales_staff_id','tls_staff_id'] as const) if (draft[key] !== undefined && (typeof draft[key] !== 'string' || draft[key] && (!/^[1-9]\d*$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key]))))) throw new DraftSaveError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
+  if (draft.sales_staff_name !== undefined && (typeof draft.sales_staff_name !== 'string' || draft.sales_staff_name.length>191)) throw new DraftSaveError('Tên NVKD tối đa 191 ký tự.');
   if (draft.ownership_term_months !== undefined && !validOwnershipTerm(draft.ownership_term_months)) throw new DraftSaveError('Thời hạn thuê sở hữu không hợp lệ.');
   if (draft.custom_installments !== undefined && (!Array.isArray(draft.custom_installments) || draft.custom_installments.length > 3659 || draft.custom_installments.some(item =>
       !item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['due_at','amount'].includes(key)) ||
@@ -274,10 +276,16 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     edits.draft.customer_source='TLS';
     edits.draft.tls_staff_id='';
   }
+  const attribution:Record<string,{staff_id:number|null;name:string}> = {};
+  edits.draft.sales_staff_name=edits.draft.sales_staff_name?.trim() || '';
   for (const [key,role] of [['sales_staff_id','NVKD'],['tls_staff_id','TLS']] as const) {
     if (!edits.draft[key]) continue;
-    if (!(await loadCommissionStaff(edits.draft[key], role))) throw new DraftSaveError(`Chọn nhân viên ${role === 'NVKD' ? 'NVKD hoặc TPKD' : role} đang làm việc để ghi nhận doanh số.`,409);
+    const employee=await loadCommissionStaff(edits.draft[key], role);
+    if (!employee) throw new DraftSaveError(`Chọn nhân viên ${role === 'NVKD' ? 'NVKD hoặc TPKD' : role} đang làm việc để ghi nhận doanh số.`,409);
+    attribution[role]=employee;
+    if(role==='NVKD')edits.draft.sales_staff_name=employee.name;
   }
+  if(!edits.draft.sales_staff_id && edits.draft.sales_staff_name)attribution.NVKD={staff_id:null,name:edits.draft.sales_staff_name};
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
   const vehicles = usesScopedDatabase()
     ? await client.query(`SELECT id, store_id, store_name FROM himoto.vehicle_inventory() WHERE id = ANY($1::bigint[])`, [ids])
@@ -325,7 +333,7 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   const previousTime = (value: unknown) => dateTimeInput(value instanceof Date ? value.toISOString() : value);
   const keepStart = previousTime(previous?.rent_at) === edits.draft.start_date;
   const keepEnd = previousTime(previous?.return_at) === edits.draft.end_date;
-  const payload = { ...oldPayload, management_composer: { version: 1, ...edits },
+  const payload = { ...oldPayload, management_composer: { version: 1, ...edits, ...(Object.keys(attribution).length ? {sales_attribution:attribution} : {}) },
     order_items: edits.draft.vehicles.map(vehicle => {
       const oldItem = oldItems.find(item => String(item.vehicle_id) === vehicle.id);
       return { ...oldItem,
