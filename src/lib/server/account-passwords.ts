@@ -28,7 +28,7 @@ export async function rememberAccountPassword(db:Database,id:number,password:str
     VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id) DO UPDATE SET password_cipher=EXCLUDED.password_cipher,password_fingerprint=EXCLUDED.password_fingerprint,
     changed_by=EXCLUDED.changed_by,change_kind=EXCLUDED.change_kind,changed_at=clock_timestamp()`,[id,sealAccountPassword(id,password),fingerprint(passwordHash),actor,kind]);
 }
-function requireRecovery(actor:PermissionAccount){if(!canRecoverAccountPasswords(actor))throw new AccountPasswordError('Chỉ tài khoản quanlyvanhanh được xem hoặc đặt lại mật khẩu.',403);}
+function requireRecovery(actor:PermissionAccount){if(!canRecoverAccountPasswords(actor))throw new AccountPasswordError('Chỉ tài khoản quanlyvanhanh được xem mật khẩu.',403);}
 async function lockTarget(db:Database,id:number){
   if(!Number.isSafeInteger(id)||id<1)throw new AccountPasswordError('Mã tài khoản không hợp lệ.');
   const target=(await db.query(`SELECT u.id,u.password,u.status,u.xmin::text AS revision,u.management_password_version,a.login_name,a.enabled
@@ -40,22 +40,10 @@ async function lockTarget(db:Database,id:number){
 export async function revealAccountPassword(db:Database,actor:PermissionAccount,id:number){
   requireRecovery(actor);
   const target=await lockTarget(db,id),stored=(await db.query('SELECT password_cipher,password_fingerprint,changed_at FROM himoto.management_account_passwords WHERE user_id=$1',[id])).rows[0];
-  if(!stored||stored.password_fingerprint!==fingerprint(target.password))throw new AccountPasswordError('Mật khẩu cũ chỉ lưu dạng băm; cần đặt lại để có bản lưu mới.',409);
+  if(!stored||stored.password_fingerprint!==fingerprint(target.password))throw new AccountPasswordError('Mật khẩu chưa có bản lưu; sẽ cập nhật khi nhân viên tự đổi mật khẩu.',409);
   const password=openAccountPassword(id,stored.password_cipher);
   await db.query("INSERT INTO himoto.management_access_audit(actor_id,target_user_id,action,after_value) VALUES($1,$2,'password_reveal','{}'::jsonb)",[actor.id,id]);
   return {id,password,changed_at:stored.changed_at,revision:target.revision};
-}
-export async function resetAccountPassword(db:Database,actor:PermissionAccount,id:number,revision:string,value:unknown){
-  requireRecovery(actor);const password=validateNewPassword(value);
-  await db.query("SET LOCAL lock_timeout='5s'");
-  await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['management-accounts']);
-  const target=await lockTarget(db,id);
-  if(!revision||target.revision!==revision)throw new AccountPasswordError('Tài khoản đã thay đổi. Tải lại danh sách trước khi đặt lại mật khẩu.',409);
-  const passwordHash=await hash(password,12);
-  const updated=(await db.query(`UPDATE himoto.users SET password=$2,updated_at=now() WHERE id=$1 RETURNING management_password_version,management_password_changed_at`,[id,passwordHash])).rows[0];
-  await rememberAccountPassword(db,id,password,passwordHash,Number(actor.id),'reset');
-  await db.query("INSERT INTO himoto.management_access_audit(actor_id,target_user_id,action,after_value) VALUES($1,$2,'password_reset','{\"password_changed\":true}'::jsonb)",[actor.id,id]);
-  return {id,password_version:Number(updated.management_password_version),changed_at:updated.management_password_changed_at};
 }
 export async function changeOwnPassword(db:Database,actorId:number,current:unknown,value:unknown,confirmation:unknown){
   const password=validateNewPassword(value);

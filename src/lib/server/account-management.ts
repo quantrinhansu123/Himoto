@@ -39,13 +39,13 @@ export async function listManagedAccounts(client:Pick<PoolClient,'query'>,user?:
       AND ($3::boolean OR a.store_id=$4 AND NOT a.scope_all)
       AND ($5::bigint IS NULL OR a.store_id=$5 AND NOT a.scope_all) ORDER BY p.id NULLS LAST,u.id`,[JSON.stringify(ACCESS_PERMISSIONS),JSON.stringify(ACCESS_ROLES.accounting.permissions),!user||isAdminAccount(user),user?.store_id||null,storeId])).rows.map(record=>{
         const {password_hash,password_fingerprint,...row}=record,recovery=canRecoverAccountPasswords(user);
-        return {...row,password_available:recovery&&Boolean(password_hash&&password_fingerprint===createHash('sha256').update(password_hash).digest('hex')),can_reset_password:recovery,
+        return {...row,password_available:recovery&&Boolean(password_hash&&password_fingerprint===createHash('sha256').update(password_hash).digest('hex')),can_reset_password:false,
           can_edit:!user||isAdminAccount(user)||['branch_staff','ownership_staff'].includes(row.access_role),can_delete:Number(row.id)!==Number(user?.id)&&(!user||isAdminAccount(user)||['branch_staff','ownership_staff'].includes(row.access_role))};
       });
 }
 export async function saveManagedAccount(client:Pick<PoolClient,'query'>,actorId:number,raw:unknown,id?:number,user?:PermissionAccount) {
   const input=parseAccountValues(raw,!id);
-  if(id&&input.password&&!canRecoverAccountPasswords({id:actorId}))throw new AccountAccessError('Chỉ tài khoản quanlyvanhanh được đặt lại mật khẩu. Tự đổi mật khẩu tại menu tài khoản.',403);
+  if(id&&input.password)throw new AccountAccessError('Đã bỏ chức năng đặt lại mật khẩu. Nhân viên tự đổi mật khẩu của mình.',403);
   if(user){requireAccountScope(user,input);if(!isAdminAccount(user)&&input.permissions.some(permission=>!user.permissions?.includes(permission)))throw new AccountAccessError('Không được cấp quyền vượt quyền quản lý hiện có.',403);}
   if(!id){if(!input.login_name)input.login_name='nv.'+randomBytes(6).toString('hex');if(!input.password)input.password=randomBytes(18).toString('base64url');}
   await client.query("SET LOCAL lock_timeout='5s'");
@@ -67,20 +67,19 @@ export async function saveManagedAccount(client:Pick<PoolClient,'query'>,actorId
   const password=input.password?await hash(input.password,12):null;
   if(!id){const created=await client.query(`INSERT INTO himoto.users(name,email,password,role,role_id,status,store_id,created_at,updated_at)
     VALUES($1,$2,$3,$4,$5,$6,$7,now(),now()) RETURNING id`,[input.name,`${input.login_name}@accounts.himoto.local`,password,input.access_role==='admin'?'admin':slug,role.id,input.enabled?'active':'inactive',input.store_id]);id=Number(created.rows[0].id);}
-  else await client.query(`UPDATE himoto.users SET name=$2,password=COALESCE($3,password),role=$4,role_id=$5,status=$6,store_id=$7,updated_at=now() WHERE id=$1`,[id,input.name,password,input.access_role==='admin'?'admin':slug,role.id,input.enabled?'active':'inactive',input.store_id]);
+  else await client.query(`UPDATE himoto.users SET name=$2,role=$3,role_id=$4,status=$5,store_id=$6,updated_at=now() WHERE id=$1`,[id,input.name,input.access_role==='admin'?'admin':slug,role.id,input.enabled?'active':'inactive',input.store_id]);
   await client.query(`INSERT INTO himoto.management_account_access(user_id,login_name,access_role,store_id,scope_all,permissions,enabled,created_by,updated_by)
     VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$8) ON CONFLICT(user_id) DO UPDATE SET login_name=EXCLUDED.login_name,access_role=EXCLUDED.access_role,
     store_id=EXCLUDED.store_id,scope_all=EXCLUDED.scope_all,permissions=EXCLUDED.permissions,enabled=EXCLUDED.enabled,updated_by=$8,updated_at=now()`,
     [id,input.login_name,input.access_role,input.store_id,input.scope_all,JSON.stringify(input.permissions),input.enabled,actorId]);
-  if(password)await rememberAccountPassword(client,id!,input.password,password,actorId,before?'reset':'create');
+  if(password)await rememberAccountPassword(client,id!,input.password,password,actorId,'create');
   const admins=await client.query(`SELECT 1 FROM himoto.users u LEFT JOIN himoto.management_account_access a ON a.user_id=u.id
     WHERE u.status='active' AND u.deleted_at IS NULL AND (a.access_role='admin' AND a.enabled OR a.user_id IS NULL AND u.role_id=1) LIMIT 1`);
   if(!admins.rowCount)throw new AccountAccessError('Phải giữ ít nhất một tài khoản quản trị đang hoạt động.',409);
   const {password:omitted,...safe}=input;void omitted;
   await client.query(`INSERT INTO himoto.management_access_audit(actor_id,target_user_id,action,before_value,after_value) VALUES($1,$2,$3,$4::jsonb,$5::jsonb)`,
     [actorId,id,before?'update':'create',before?JSON.stringify(before):null,JSON.stringify({...safe,password_changed:Boolean(password)})]);
-  const passwordVersion=password&&before?(await client.query('SELECT management_password_version FROM himoto.users WHERE id=$1',[id])).rows[0].management_password_version:undefined;
-  return {id,...(passwordVersion!==undefined?{password_version:Number(passwordVersion)}:{}),...(!before?{credentials:{login_name:input.login_name,password:input.password,enabled:input.enabled}}:{})};
+  return {id,...(!before?{credentials:{login_name:input.login_name,password:input.password,enabled:input.enabled}}:{})};
 }
 
 export async function deleteManagedAccount(client:Pick<PoolClient,'query'>,actorId:number,id:number,revision:string,user:PermissionAccount) {

@@ -5,7 +5,6 @@ import { ownerDatabase } from '@/lib/server/himoto-database';
 import { AccountAccessError,listManagedAccounts,saveManagedAccount,deleteManagedAccount,requireAccountScope } from '@/lib/server/account-management';
 import { failureResponse } from '@/lib/server/public-failure';
 import { AccountPasswordError } from '@/lib/server/account-passwords';
-import { SESSION_COOKIE,SESSION_SECONDS,signSession } from '@/lib/server/management-session';
 export const runtime='nodejs';
 async function handle(request:NextRequest){
   let client;
@@ -24,9 +23,7 @@ async function handle(request:NextRequest){
     await client.query('BEGIN');const data=request.method==='DELETE'
       ?await deleteManagedAccount(client,user.id,id!,String(raw.revision||''),user)
       :await saveManagedAccount(client,user.id,raw,id,user);await client.query('COMMIT');
-    const response=NextResponse.json({status:'success',data},{headers:{'Cache-Control':'private, no-store'}});
-    if(id===user.id&&'password_version' in data&&typeof data.password_version==='number')response.cookies.set(SESSION_COOKIE,signSession(user.id,undefined,Date.now(),data.password_version),{httpOnly:true,sameSite:'strict',secure:request.nextUrl.protocol==='https:',path:'/',maxAge:SESSION_SECONDS});
-    return response;
+    return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'private, no-store'}});
   }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});
     if(error instanceof SyntaxError)return NextResponse.json({status:'error',message:'Thông tin tài khoản không hợp lệ.'},{status:400});
     if(error&&typeof error==='object'&&'code' in error&&error.code==='23505')return NextResponse.json({status:'error',message:'Tên đăng nhập đã tồn tại. Chọn tên khác.'},{status:409});

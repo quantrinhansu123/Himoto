@@ -35,7 +35,7 @@ export type AccessRole = keyof typeof ACCESS_ROLES;
 export function canManageAccounts(account:PermissionAccount|null|undefined) {
   return isAdminAccount(account)||Boolean(account&&['branch_manager','ownership_manager'].includes(account.access_role||'')&&account.store_id&&!account.scope_all&&hasPermission(account,'accounts.manage'));
 }
-/** Individual password recovery entitlement; other administrators do not inherit it. */
+/** Individual password viewing entitlement; other administrators do not inherit it. */
 export function canRecoverAccountPasswords(account:PermissionAccount|null|undefined) {
   return account?.id === 145;
 }

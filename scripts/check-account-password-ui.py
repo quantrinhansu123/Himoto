@@ -21,9 +21,8 @@ def mock(route):
     if req.method not in ('GET','HEAD'):
         if path=='/api/auth/accounts/password' and req.method=='POST':
             body=req.post_data_json;writes.append({'path':path,'action':body['action']})
-            assert state['role']=='recovery'
-            if body['action']=='reveal':data={'id':body['id'],'password':f'QA-synthetic-value-{state["version"]}','revision':str(state['version'])}
-            else:state['version']+=1;data={'id':body['id'],'changed_at':'2026-10-25T06:00:00Z'}
+            assert state['role']=='recovery' and body['action']=='reveal'
+            data={'id':body['id'],'password':f'QA-synthetic-value-{state["version"]}','revision':str(state['version'])}
             route.fulfill(json={'status':'success','data':data});return
         if path=='/api/auth/password' and req.method=='PATCH':
             body=req.post_data_json;assert body['new_password']==body['confirmation'];writes.append({'path':path,'action':'self-change'})
@@ -64,12 +63,9 @@ with sync_playwright() as pw:
                     expect(table.locator('code')).to_have_text('••••••••')
                     table.get_by_role('button',name='Hiện mật khẩu qa.hadong',exact=True).click();expect(table.locator('code')).to_have_text('QA-synthetic-value-2')
                     table.get_by_role('button',name='Ẩn mật khẩu qa.hadong',exact=True).click()
-                    table.get_by_role('button',name='Đặt lại mật khẩu',exact=True).click()
-                    dialog=page.get_by_role('dialog',name='Đặt lại mật khẩu',exact=True)
-                    dialog.get_by_label('Mật khẩu mới',exact=True).fill('QA-only-reset-strong')
-                    dialog.get_by_role('button',name='Xác nhận đặt lại',exact=True).click();expect(dialog).not_to_be_visible();expect(table.locator('code')).to_have_text('••••••••')
+                    expect(table.get_by_role('button',name='Đặt lại mật khẩu',exact=True)).to_have_count(0)
                     page.screenshot(path=str(out/f'{engine}-branch-recovery.png'),full_page=True)
-                    checks.append(f'{engine}: Hà Đông filter applies; only recovery identity sees/reveals/resets passwords; polling hides the old password after employee changes it')
+                    checks.append(f'{engine}: Hà Đông filter applies; only the authorized identity can view; employee changes update the displayed password and no reset control exists')
                 else:
                     expect(table.get_by_role('columnheader',name='Mật khẩu',exact=True) if width>767 else table.get_by_text('Mật khẩu',exact=True)).to_have_count(0)
                     expect(table.get_by_role('button',name='Đặt lại mật khẩu',exact=True)).to_have_count(0)

@@ -30,9 +30,11 @@ export async function syncStaffAccount(db:Database,actorId:number,staffId:number
   }
   const login=before?.access_role&&before.login_name?String(before.login_name):`nv${String(staff.id).padStart(4,'0')}`;
   if(before?.login_name===login&&before.deleted_at&&!rehire)return null;
-  if(before?.login_name===login&&!before.deleted_at){
+  if(before?.login_name===login&&(!before.deleted_at||rehire)){
     const enabled=staff.status==='active'&&(before.enabled===true||rehire)&&(before.scope_all||staff.store_id!=null);
-    await db.query('UPDATE himoto.users SET name=$2,status=$3,store_id=$4,updated_at=now() WHERE id=$1',[before.id,staff.full_name,enabled?'active':'inactive',staff.store_id]);
+    await db.query(`UPDATE himoto.users SET name=$2,status=$3,store_id=$4,
+      management_password_version=management_password_version+CASE WHEN $5::boolean AND deleted_at IS NOT NULL THEN 1 ELSE 0 END,
+      deleted_at=CASE WHEN $5::boolean THEN NULL ELSE deleted_at END,updated_at=now() WHERE id=$1`,[before.id,staff.full_name,enabled?'active':'inactive',staff.store_id,rehire]);
     await db.query('UPDATE himoto.management_account_access SET store_id=CASE WHEN scope_all THEN NULL ELSE $2::bigint END,enabled=$3,updated_at=now(),updated_by=$4 WHERE user_id=$1',[before.id,staff.store_id,enabled,actorId]);
     await audit(db,actorId,Number(before.id),'staff_sync',before,{enabled,staff_id:staffId,store_id:staff.store_id});return null;
   }
@@ -40,7 +42,7 @@ export async function syncStaffAccount(db:Database,actorId:number,staffId:number
   const accessRole=initialRole||(kind==='lease_to_own'?'ownership_staff':'branch_staff');
   const scopeAll=['admin','hr','accounting','internal_control','headquarters_sales','headquarters_debt'].includes(accessRole);
   const password=randomBytes(18).toString('base64url'),enabled=staff.status==='active'&&(scopeAll||staff.store_id!=null);
-  // A removed personal login can be reissued with a fresh password after rehire.
+  // New personal logins receive initial credentials; existing passwords are preserved above.
   const previous=(await db.query('SELECT user_id FROM himoto.management_account_access WHERE login_name=$1',[login])).rows[0];
   let accountId=previous?Number(previous.user_id):undefined,revision:string|undefined;
   if(accountId){

@@ -2,9 +2,9 @@
 
 Trang Tài khoản dùng cơ sở đang xem trong cả request API và bảng. Chọn Hà Đông chỉ trả các tài khoản gắn Hà Đông, không gộp tài khoản toàn hệ thống. Quản lý cơ sở không được yêu cầu dữ liệu cơ sở khác bằng URL.
 
-Mọi tài khoản đang đăng nhập có menu **Đổi mật khẩu của tôi**. Phải xác minh mật khẩu hiện tại và nhập lại mật khẩu mới. API lấy ID từ phiên đã xác thực, không nhận ID đích. Mỗi lần đổi/reset tăng phiên bản mật khẩu bằng trigger DB; cookie cũ không được dùng ở yêu cầu tiếp theo. Trình duyệt thực hiện tự đổi được cấp cookie mới, các phiên khác phải đăng nhập lại.
+Mọi tài khoản đang đăng nhập có menu **Đổi mật khẩu của tôi**. Phải xác minh mật khẩu hiện tại và nhập lại mật khẩu mới. API lấy ID từ phiên đã xác thực, không nhận ID đích. Mỗi lần tự đổi tăng phiên bản mật khẩu bằng trigger DB; cookie cũ không được dùng ở yêu cầu tiếp theo. Trình duyệt thực hiện tự đổi được cấp cookie mới, các phiên khác phải đăng nhập lại.
 
-Chỉ tài khoản `quanlyvanhanh`, ID **145**, được xem bản lưu/đặt lại mật khẩu của tài khoản khác; các quản trị khác không kế thừa quyền này. Kiểm tra phía server trên cả endpoint riêng lẫn đường PATCH tài khoản cũ. Tạo tài khoản mới vẫn cấp thông tin đăng nhập ban đầu như trước. Cấp lại mật khẩu cho nhân sự quay lại cũng cần nick này.
+Chỉ tài khoản `quanlyvanhanh`, ID **145**, được xem bản lưu mật khẩu; các quản trị khác không kế thừa quyền này. Theo lựa chọn mới của người dùng, đã bỏ chức năng chỉnh/reset mật khẩu của người khác. Endpoint cũ từ chối action reset trước khi mở kết nối DB; PATCH tài khoản từ chối mật khẩu mới cho mọi tài khoản đang có, kể cả khi người thao tác là ID 145. Tạo tài khoản mới vẫn cấp thông tin ban đầu. Nhân sự quay lại được mở quyền với mật khẩu cũ, không tự sinh mật khẩu thay thế; phiên cũ trước khi nghỉ bị thu hồi bằng phiên bản mới.
 
 ## Bản lưu khôi phục theo yêu cầu vận hành
 
@@ -14,7 +14,7 @@ Chỉ tài khoản `quanlyvanhanh`, ID **145**, được xem bản lưu/đặt l
 
 GET danh sách không trả mật khẩu, hash, ciphertext hoặc fingerprint. Nick 145 bấm **Hiện** để gọi POST riêng có audit, `private, no-store`; UI che mặc định, tự ẩn sau một phút/rời cửa sổ. Khi phiên bản dòng thay đổi, mật khẩu cũ lập tức bị che. Bảng đọc lại metadata mỗi 15 giây và khi quay lại cửa sổ. Không ghi mật khẩu vào localStorage. Người tự đổi được thông báo quyền xem của nick khôi phục ngay trong form.
 
-Không thể khôi phục mật khẩu cũ chỉ có bcrypt. Migration không reset hàng loạt, không thu thập mật khẩu lúc đăng nhập, không sửa hợp đồng/tài chính. Bản lưu xuất hiện từ lần cấp/đổi/reset sau triển khai.
+Không thể khôi phục mật khẩu cũ chỉ có bcrypt. Không cần migration mới để bỏ reset; các bản lưu và lịch sử reset trước đó được giữ. Không thu thập mật khẩu lúc đăng nhập, không sửa mật khẩu thật để thử nghiệm. Bản lưu xuất hiện từ lần cấp hoặc nhân viên tự đổi mật khẩu.
 
 ## Kiểm tra và triển khai
 
