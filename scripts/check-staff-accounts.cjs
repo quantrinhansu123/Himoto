@@ -16,6 +16,7 @@ async function main(){const c=await ownerDatabase.connect();
   }
   await c.query(`INSERT INTO ${schema}.roles SELECT * FROM himoto.roles`);
   for(let repeat=0;repeat<2;repeat++)await c.query(fs.readFileSync('docs/sql/2026-10-24-staff-accounts.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,''));
+  for(let repeat=0;repeat<2;repeat++)await c.query(fs.readFileSync('docs/sql/2026-10-25-account-passwords.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,''));
   await c.query(`INSERT INTO ${schema}.stores(id,store_name,status) VALUES(80001,'A QA','opening'),(80002,'B QA','opening'),(80003,'HQ QA','opening')`);
   await c.query(`INSERT INTO ${schema}.users(id,name,email,password,role_id,status,store_id) VALUES(70001,'Admin QA','admin@qa.invalid','unused',1,'active',NULL),(70002,'Manager QA','manager@qa.invalid','unused',2,'active',80001),(70003,'Legacy QA','legacy@qa.invalid','unused',3,'active',80001),(70004,'HR QA','hr@qa.invalid','unused',7,'active',NULL)`);
   await c.query(`INSERT INTO ${schema}.management_account_access(user_id,login_name,access_role,store_id,scope_all,permissions,enabled) VALUES(70002,'qa.manager','branch_manager',80001,false,$1,true)`,[JSON.stringify(manager.permissions)]);
@@ -55,7 +56,9 @@ async function main(){const c=await ownerDatabase.connect();
   await c.query(`UPDATE ${schema}.staff_profiles SET status='leave' WHERE id=1001`);await staffAccounts.syncStaffAccount(db,admin.id,1001,admin);assert.equal(await session.userFromSession(sessionToken,db),null);assert((await user(current)).deleted_at);
   const beforeLeave=(await user(current)).password;
   await c.query(`UPDATE ${schema}.staff_profiles SET status='active' WHERE id=1001`);assert.equal(await staffAccounts.syncStaffAccount(db,admin.id,1001,admin),null);assert((await user(current)).deleted_at,'Editing a removed employee must not silently reopen access');
-  const rehired=await staffAccounts.syncStaffAccount(db,admin.id,1001,admin,undefined,true);assert(rehired);assert.notEqual((await user(current)).password,beforeLeave);assert(await compare(rehired.password,(await user(current)).password));
+  await rejected(()=>staffAccounts.syncStaffAccount(db,admin.id,1001,admin,undefined,true),403);
+  await c.query(`INSERT INTO ${schema}.users(id,name,email,password,role_id,status) VALUES(145,'Recovery QA','recovery@qa.invalid','unused',1,'active')`);
+  const rehired=await staffAccounts.syncStaffAccount(db,145,1001,{...admin,id:145},undefined,true);assert(rehired);assert.notEqual((await user(current)).password,beforeLeave);assert(await compare(rehired.password,(await user(current)).password));
   checks.push('Delete uses optimistic revision, blocks self/foreign accounts and revokes live sessions; resignation removes login atomically and only explicit rehire issues fresh credentials');
 
   await staff(1002,{store:80002});await rejected(()=>staffAccounts.syncStaffAccount(db,manager.id,1002,manager),403);

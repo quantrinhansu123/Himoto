@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const user = await authenticateAccount(email, body.password);
     clearLoginLimit(email);
     const response = NextResponse.json({ user }, { headers });
-    response.cookies.set(SESSION_COOKIE, signSession(user.id), { httpOnly: true, sameSite: 'strict', secure: request.nextUrl.protocol === 'https:', path: '/', maxAge: SESSION_SECONDS });
+    response.cookies.set(SESSION_COOKIE, signSession(user.id,undefined,Date.now(),user.password_version||0), { httpOnly: true, sameSite: 'strict', secure: request.nextUrl.protocol === 'https:', path: '/', maxAge: SESSION_SECONDS });
     return response;
   } catch (error) {
     if (error instanceof LoginError) return NextResponse.json({ message: error.message }, { status: error.status, headers });

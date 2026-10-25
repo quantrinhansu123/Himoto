@@ -10,6 +10,8 @@ const deps={
  '@/lib/server/access-request':load(path.join(root,'lib/server/access-request')),
  '@/lib/server/access-context':load(path.join(root,'lib/server/access-context')),
  '@/lib/server/public-failure':load(path.join(root,'lib/server/public-failure')),
+ '@/lib/server/account-passwords':load(path.join(root,'lib/server/account-passwords')),
+ '@/lib/server/management-session':session,
  '@/lib/server/himoto-database':{ownerDatabase:{connect:async()=>{connections++;return {query:async sql=>{queries.push(sql);return {rows:[],rowCount:1};},release(){}};}}},
  '@/lib/server/account-management':{...account,
   listManagedAccounts:async(_db,user)=>{assert.equal(user.store_id,32);return [];},

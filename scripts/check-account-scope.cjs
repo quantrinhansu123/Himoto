@@ -14,6 +14,8 @@ async function main(){const c=await pool.connect();try{
   await c.query(migration);await c.query(migration);
   const staffAccountsMigration=fs.readFileSync('docs/sql/2026-10-24-staff-accounts.sql','utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(staffAccountsMigration);await c.query(staffAccountsMigration);
+  const passwordMigration=fs.readFileSync('docs/sql/2026-10-25-account-passwords.sql','utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;|^COMMIT;/gm,'');
+  await c.query(passwordMigration);await c.query(passwordMigration);
   const numbering=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-paper-contract-number.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(numbering);await c.query(numbering);
   const inventoryMigration=fs.readFileSync('docs/sql/2026-10-18-shared-vehicle-inventory.sql','utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
@@ -297,7 +299,7 @@ async function main(){const c=await pool.connect();try{
   const edited=await accounts.saveManagedAccount(proxy,administrator.id,{...branchInput,name:'QA updated',password:'',revision:await revision('users',branchUser.id),id:branchUser.id},branchUser.id);
   assert.equal(edited.id,branchUser.id);
   assert.equal((await c.query('SELECT password FROM qa_access_scope.users WHERE id=$1',[branchUser.id])).rows[0].password,branchBefore);
-  await assert.rejects(accounts.saveManagedAccount(proxy,administrator.id,{...adminInput,enabled:false,revision:await revision('users',administrator.id)},administrator.id),e=>e.status===400);
+  await assert.rejects(accounts.saveManagedAccount(proxy,administrator.id,{...adminInput,password:'',enabled:false,revision:await revision('users',administrator.id)},administrator.id),e=>e.status===400);
   const listed=await accounts.listManagedAccounts(proxy);assert(listed.some(row=>Number(row.id)===branchUser.id));assert(listed.every(row=>!('password' in row)));
   const audits=(await c.query('SELECT after_value FROM qa_access_scope.management_access_audit')).rows;
   assert.equal(audits.length,3);assert(audits.every(row=>!('password' in row.after_value)));

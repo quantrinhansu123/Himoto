@@ -1,0 +1,61 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{compare,hash}=require('bcryptjs');
+require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
+const {load,root}=require('./lib/load-typescript.cjs');
+const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database'));
+const passwords=load(path.join(root,'lib/server/account-passwords')),accounts=load(path.join(root,'lib/server/account-management')),session=load(path.join(root,'lib/server/management-session'));
+const {ACCESS_ROLES,canRecoverAccountPasswords}=load(path.join(root,'lib/management/permissions'));
+const schema='qa_account_passwords',checks=[];
+async function main(){const c=await ownerDatabase.connect();
+ const db={query:(sql,args)=>c.query(sql.replaceAll('himoto.',schema+'.'),args)};
+ const rejected=async(fn,status)=>{await c.query('SAVEPOINT password_denied');try{await assert.rejects(fn,e=>e.status===status);}finally{await c.query('ROLLBACK TO SAVEPOINT password_denied');await c.query('RELEASE SAVEPOINT password_denied');}};
+ try{
+  await c.query('BEGIN');await c.query(`CREATE SCHEMA ${schema}`);
+  for(const table of ['users','roles','stores','staff_profiles','management_account_access','management_access_audit']){
+   await c.query(`CREATE TABLE ${schema}.${table}(LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING INDEXES)`);
+   if((await c.query("SELECT 1 FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name='id'",[schema,table])).rowCount)await c.query(`CREATE SEQUENCE ${schema}.${table}_id_seq START 900000;ALTER TABLE ${schema}.${table} ALTER COLUMN id SET DEFAULT nextval('${schema}.${table}_id_seq')`);
+  }
+  await c.query(`INSERT INTO ${schema}.roles SELECT * FROM himoto.roles`);
+  for(let i=0;i<2;i++)await db.query(fs.readFileSync('docs/sql/2026-10-25-account-passwords.sql','utf8').replace(/^BEGIN;|^COMMIT;/gm,''));
+  const original='QA original password 72',initialHash=await hash(original,10);
+  await c.query(`INSERT INTO ${schema}.stores(id,store_name,status) VALUES(33,'CS Hà Đông QA','opening'),(34,'CS Láng QA','opening')`);
+  for(const [id,name,role,store] of [[145,'Recovery QA',1,null],[713,'Other admin QA',1,null],[714,'Staff HD QA',3,33],[715,'Staff Lang QA',3,34]])await c.query(`INSERT INTO ${schema}.users(id,name,email,password,role_id,role,status,store_id) VALUES($1,$2,$3,$4,$5,$6,'active',$7)`,[id,name,`qa${id}@example.invalid`,initialHash,role,role===1?'admin':'nhan-vien',store]);
+  for(const [id,login,role,store] of [[145,'quanlyvanhanh','admin',null],[713,'qa.admin','admin',null],[714,'qa.hd','branch_staff',33],[715,'qa.lang','branch_staff',34]])await c.query(`INSERT INTO ${schema}.management_account_access(user_id,login_name,access_role,store_id,scope_all,permissions,enabled) VALUES($1,$2,$3,$4,$5,$6,true)`,[id,login,role,store,role==='admin',JSON.stringify(ACCESS_ROLES[role].permissions)]);
+  const recovery={id:145,access_role:'admin',scope_all:true},other={...recovery,id:713},manager={id:716,access_role:'branch_manager',store_id:33,scope_all:false,permissions:[...ACCESS_ROLES.branch_manager.permissions]};
+  assert(canRecoverAccountPasswords(recovery));assert(!canRecoverAccountPasswords(other));assert(!canRecoverAccountPasswords({...other,login_name:'quanlyvanhanh'}));
+  const selected=await accounts.listManagedAccounts(db,recovery,33);assert.deepEqual(selected.map(r=>Number(r.id)),[714]);assert(!JSON.stringify(selected).includes(initialHash));assert(!('password_hash' in selected[0]));assert(!('password_fingerprint' in selected[0]));
+  await rejected(()=>accounts.listManagedAccounts(db,manager,34),403);
+  assert((await accounts.listManagedAccounts(db,manager)).every(r=>Number(r.store_id)===33));
+  assert.equal((await c.query("SELECT has_table_privilege('himoto_scoped',$1,'SELECT') AS allowed",[schema+'.management_account_passwords'])).rows[0].allowed,false);
+  checks.push('Migration is repeatable; owner selects one branch, managers cannot request another, list strips hashes and private password table has no scoped SELECT grant');
+  const sealed=passwords.sealAccountPassword(714,original);assert.equal(passwords.openAccountPassword(714,sealed),original);assert(!sealed.includes(original));assert.notEqual(passwords.sealAccountPassword(714,original),sealed);assert.throws(()=>passwords.openAccountPassword(715,sealed));assert.throws(()=>passwords.openAccountPassword(714,sealed.slice(0,-4)+'AAAA'));
+  for(const invalid of ['',7,'short','a'.repeat(73),'ắ'.repeat(25)])assert.throws(()=>passwords.validateNewPassword(invalid));
+  await rejected(()=>passwords.revealAccountPassword(db,other,714),403);await rejected(()=>passwords.resetAccountPassword(db,other,714,'1','QA denied password'),403);
+  await rejected(()=>passwords.revealAccountPassword(db,recovery,714),409);
+  checks.push('AES-GCM uses randomized account-bound ciphertext; tampering, cross-account reuse, oversized UTF-8 passwords and all other administrators are rejected; old hashes cannot be recovered');
+  const token=session.signSession(714);assert(await session.userFromSession(token,db));
+  await rejected(()=>passwords.changeOwnPassword(db,714,'incorrect','QA changed password','QA changed password'),400);
+  await rejected(()=>passwords.changeOwnPassword(db,714,original,'QA changed password','different'),400);
+  const changed=await passwords.changeOwnPassword(db,714,original,'QA changed password','QA changed password');assert.equal(changed.password_version,1);
+  assert.equal(await session.userFromSession(token,db),null);const fresh=session.signSession(714,undefined,Date.now(),changed.password_version);assert(await session.userFromSession(fresh,db));
+  const revealed=await passwords.revealAccountPassword(db,recovery,714);assert.equal(revealed.password,'QA changed password');
+  assert((await accounts.listManagedAccounts(db,recovery,33))[0].password_available);assert.equal((await accounts.listManagedAccounts(db,other,33))[0].password_available,false);
+  assert(await session.authenticateAccount('qa.hd','QA changed password',db));await assert.rejects(()=>session.authenticateAccount('qa.hd',original,db),e=>e.status===401);
+  checks.push('Self change verifies current password and confirmation, updates the recovery copy and timestamps atomically, accepts new login and revokes the previous cookie');
+  const before=(await db.query('SELECT status,role_id,store_id FROM himoto.users WHERE id=714')).rows[0];
+  await rejected(()=>passwords.resetAccountPassword(db,recovery,714,'0','QA reset password'),409);
+  const reset=await passwords.resetAccountPassword(db,recovery,714,revealed.revision,'QA reset password');assert.equal(reset.password_version,2);assert.equal(await session.userFromSession(fresh,db),null);
+  assert.equal((await passwords.revealAccountPassword(db,recovery,714)).password,'QA reset password');assert.deepEqual((await db.query('SELECT status,role_id,store_id FROM himoto.users WHERE id=714')).rows[0],before);
+  const row=(await db.query('SELECT * FROM himoto.users WHERE id=714')).rows[0];assert(await compare('QA reset password',row.password));
+  const audit=JSON.stringify((await db.query('SELECT before_value,after_value FROM himoto.management_access_audit')).rows);for(const secret of [original,'QA changed password','QA reset password',row.password,sealed])assert(!audit.includes(secret));
+  await db.query('UPDATE himoto.users SET password=$2 WHERE id=$1',[714,await hash('QA external reset',10)]);
+  assert.equal((await accounts.listManagedAccounts(db,recovery,33))[0].password_available,false);await rejected(()=>passwords.revealAccountPassword(db,recovery,714),409);
+  checks.push('Only recovery account can reset; stale revision fails, resets preserve roles/stores/status, audit contains no secrets and externally changed hashes invalidate old recovery copies');
+  const input={name:'Employee created QA',login_name:'qa.new',password:'QA create password',access_role:'branch_staff',store_id:33,scope_all:false,permissions:[...ACCESS_ROLES.branch_staff.permissions],enabled:true};
+  const created=await accounts.saveManagedAccount(db,713,input,undefined,other);
+  assert.equal((await passwords.revealAccountPassword(db,recovery,created.id)).password,input.password);
+  await rejected(()=>accounts.saveManagedAccount(db,713,{...input,revision:'1'},created.id,other),403);
+  checks.push('Account creation records encrypted initial credentials; legacy account PATCH cannot bypass exclusive reset entitlement');
+ }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
+ console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0,passwordsPrinted:false},null,2));
+}
+main().catch(e=>{console.error({passed:false,code:e.code||e.name,message:e.message,stack:e.stack?.split('\n').slice(0,3).join('\n')});process.exitCode=1;});

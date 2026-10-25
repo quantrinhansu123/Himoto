@@ -13,6 +13,7 @@ import type { SessionUser } from '@/lib/server/management-session';
 import { SePayNotifications } from './SePayNotifications';
 import { GpsSyncPulse } from './GpsSyncPulse';
 import { TableScrollDock } from './TableScrollDock';
+import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 const navigation = [
   {href:'/shift-reports',label:'Báo cáo cuối ca',kind:'shift-reports' as const,icon:ReceiptText},
@@ -41,7 +42,7 @@ const navigation = [
 const navigationPermission=(kind:string):AccessPermission=>kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
-  const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing } = useManagement();
+  const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();
   const pathname = usePathname();
   const router = useRouter();
   const active = navigation.find(n => pathname === n.href) || navigation.find(n => n.kind === 'vehicles')!;
@@ -61,6 +62,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
+  const [changingPassword,setChangingPassword]=useState(false);
 
   async function signOut() {
     setSigningOut(true); setSignOutError('');
@@ -139,6 +141,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
             <div className="mg-popover"><strong>{gpsPage?'Định vị GPS tự động':integrationPage?'Quản lý tích hợp':writableBattery ? 'Hợp đồng thuê pin kết nối Supabase' : writableDuties ? 'Quản lý lịch trực' : writableCustomers ? 'Khách hàng kết nối Supabase' : writableStores ? 'Cơ sở kết nối Supabase' : writableVehicles ? 'Xe kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{gpsPage?'Trạng thái xe được cập nhật từ Protrack và IOPGPS; có lưu lịch sử thay đổi.':integrationPage?'Quản trị cập nhật tài khoản GPS và nhóm Telegram của từng cơ sở tại đây.':writableBattery ? 'Tạo, sửa, xóa và in hợp đồng thuê pin; dữ liệu lưu trực tiếp vào Supabase.' : writableDuties ? 'Thêm, sửa hoặc xóa ca; hệ thống kiểm tra trùng giờ của cùng nhân viên.' : writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : writableStores ? 'Thêm và sửa cơ sở; xóa cơ sở có dữ liệu liên quan sẽ bị chặn để giữ lịch sử.' : writableVehicles ? 'Đồng bộ Excel có sao lưu. Xóa hết bị chặn khi xe có dữ liệu liên quan.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>
               <SePayNotifications/>
               {hasPermission(user,'contracts.draft')&&<Link href="/contracts/drafts"><FilePenLine size={16} />Mở hợp đồng nháp</Link>}
+              {user&&<button type="button" onClick={()=>{if(menuRef.current)menuRef.current.open=false;setChangingPassword(true);}}><KeyRound size={16}/>Đổi mật khẩu của tôi</button>}
               {<button type="button" disabled={signingOut} onClick={signOut}><LogOut size={16} />{signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>}
               {signOutError && <p role="alert">{signOutError}</p>}</div></details>
         </div>
@@ -146,6 +149,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
       <main id="management-main" className="mg-content" tabIndex={-1}>{pageAllowed?children:<section className="mg-page"><h1>Không có quyền truy cập</h1><p>Tài khoản chưa được phân quyền cho chức năng này.</p><Link className="mg-button" href={visibleNavigation[0]?.href||'/login'}>Mở chức năng được phân quyền</Link></section>}</main>
       <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{gpsPage?'GPS · Tự đồng bộ mỗi 5 giây':integrationPage?'GPS & Telegram · Cấu hình theo cơ sở':writableBattery ? 'Hợp đồng thuê pin · Ghi trực tiếp vào Supabase' : writableDuties ? 'Lịch trực theo tuần' : writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : writableStores ? 'Cơ sở · Ghi trực tiếp vào Supabase' : writableVehicles ? 'Xe · Đồng bộ có sao lưu' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
       <nav className="mg-mobile-bottom-nav" aria-label="Thao tác chính trên điện thoại">{visibleNavigation.filter(item=>['/operations','/contracts','/vehicles','/cashbook','/staff'].includes(item.href)).slice(0,4).map(item=><Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined}><item.icon size={20}/><span>{item.href === '/operations' ? 'Thao tác' : item.href === '/contracts' ? 'Hợp đồng' : item.href === '/vehicles' ? 'Xe' : 'Sổ quỹ'}</span></Link>)}</nav>
+      {changingPassword&&<ChangePasswordDialog onClose={()=>setChangingPassword(false)} onChanged={()=>{setChangingPassword(false);notify('Đã đổi mật khẩu.');window.dispatchEvent(new Event('himoto-account-password-changed'));router.refresh();}}/>}
     </div>
   </div>;
 }

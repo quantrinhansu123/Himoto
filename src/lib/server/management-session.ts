@@ -12,8 +12,8 @@ import { failureResponse } from './public-failure';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
-export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; scope_all?:boolean };
-type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null; access_role?:string; permissions?:string[]; access_store_id?:string|number|null; scope_all?:boolean; access_enabled?:boolean };
+export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; scope_all?:boolean;password_version?:number };
+type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null; access_role?:string; permissions?:string[]; access_store_id?:string|number|null; scope_all?:boolean; access_enabled?:boolean;management_password_version?:number };
 type Database = Pick<typeof himotoPool, 'query'>;
 export { canRecordContractPayment, isAdminAccount };
 
@@ -24,7 +24,7 @@ export function isManagementConfigured() {
 }
 
 const globalSession = globalThis as typeof globalThis & { managementSessionKey?: string; managementLoginAttempts?: Map<string, { count: number; expires: number }>;
-  managementReadSessions?: Map<number, { expires: number; allowed: Promise<boolean> }> };
+};
 function sessionKey() {
   if (process.env.NODE_ENV === 'production' && (process.env.MANAGEMENT_SESSION_SECRET?.length || 0) < 32) {
     throw new Error('Thiếu MANAGEMENT_SESSION_SECRET hợp lệ cho bản triển khai.');
@@ -33,8 +33,8 @@ function sessionKey() {
 }
 function signature(body: string, key: string) { return createHmac('sha256', key).update(body).digest('base64url'); }
 
-export function signSession(id: number, key = sessionKey(), now = Date.now()) {
-  const body = Buffer.from(JSON.stringify({ id, expires: now + SESSION_SECONDS * 1000 })).toString('base64url');
+export function signSession(id: number, key = sessionKey(), now = Date.now(),passwordVersion=0) {
+  const body = Buffer.from(JSON.stringify({ id, expires: now + SESSION_SECONDS * 1000,...(passwordVersion?{password_version:passwordVersion}:{}) })).toString('base64url');
   return `${body}.${signature(body, key)}`;
 }
 
@@ -47,7 +47,7 @@ export function verifySession(token: string | undefined, key = sessionKey(), now
   if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
   try {
     const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
-    return Number.isSafeInteger(payload.id) && payload.id > 0 && Number.isFinite(payload.expires) && payload.expires > now ? payload.id : null;
+    return Number.isSafeInteger(payload.id) && payload.id > 0 && Number.isFinite(payload.expires) && payload.expires > now && Number.isSafeInteger(payload.password_version??0) && (payload.password_version??0)>=0 ? payload.id : null;
   } catch { return null; }
 }
 
@@ -59,9 +59,10 @@ function safeUser(account: Account): SessionUser {
   const admin=isAdminAccount(account);
   return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
     access_role:account.access_role||(admin?'admin':'accounting'),permissions:admin?[...ACCESS_PERMISSIONS]:account.permissions||['contracts.read','finance.read','finance.write'],
-    store_id:account.access_store_id==null?null:Number(account.access_store_id),scope_all:admin||(!account.access_role)||account.scope_all===true };
+    store_id:account.access_store_id==null?null:Number(account.access_store_id),scope_all:admin||(!account.access_role)||account.scope_all===true,
+    ...(account.management_password_version?{password_version:Number(account.management_password_version)}:{}) };
 }
-const accountFields = 'u.id, u.name, u.email, u.status, u.role, u.role_id, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,a.enabled AS access_enabled';
+const accountFields = 'u.id, u.name, u.email, u.status, u.role, u.role_id, u.management_password_version, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,a.enabled AS access_enabled';
 const accountJoin='LEFT JOIN himoto.roles r ON r.id=u.role_id LEFT JOIN himoto.management_account_access a ON a.user_id=u.id';
 export class LoginError extends Error {
   constructor(message: string, public status = 401) { super(message); }
@@ -93,7 +94,8 @@ export async function userFromSession(token: string | undefined, database: Datab
   if (id === null) return null;
   const result = await database.query(`SELECT ${accountFields} FROM himoto.users u ${accountJoin} WHERE u.id=$1 AND u.deleted_at IS NULL LIMIT 1`, [id]);
   const account = result.rows[0] as Account | undefined;
-  return account && allowedAccount(account) ? safeUser(account) : null;
+  const version=JSON.parse(Buffer.from(token!.split('.')[0],'base64url').toString()).password_version??0;
+  return account && Number(account.management_password_version||0)===version && allowedAccount(account) ? safeUser(account) : null;
 }
 
 // Coalesce only simultaneous reads. Settled lookups are removed immediately so
@@ -110,22 +112,10 @@ export function readSessionUser(token: string | undefined, database: Database = 
   return request;
 }
 
-// Reads only: the signed token is verified on every request, but the account
-// status/role lookup is shared for a few seconds so a page's parallel list
-// requests cost one database round trip. Writes always re-check the account.
-const READ_SESSION_TTL_MS = 15_000;
 function readSessionAllowed(token: string | undefined): Promise<boolean> {
-  const id = verifySession(token);
-  if (id === null) return Promise.resolve(false);
-  const checks = globalSession.managementReadSessions ??= new Map();
-  const now = Date.now();
-  const cached = checks.get(id);
-  if (cached && cached.expires > now) return cached.allowed;
-  for (const [key, value] of checks) if (value.expires <= now) checks.delete(key);
-  const allowed = userFromSession(token).then(Boolean);
-  checks.set(id, { expires: now + READ_SESSION_TTL_MS, allowed });
-  allowed.then(ok => { if (!ok) checks.delete(id); }, () => checks.delete(id));
-  return allowed;
+  // A password reset must revoke an old token on the next request, including
+  // reads handled outside withAccessRequest. Simultaneous reads still coalesce.
+  return readSessionUser(token).then(Boolean);
 }
 
 export async function currentSessionUser() {

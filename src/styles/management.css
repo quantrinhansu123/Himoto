@@ -3660,6 +3660,19 @@
 .mg-transfer-pagination > div { display: flex; gap: 8px; }
 .mg-vehicle-flow-actions { display: flex; gap: 8px; }
 .mg-account-permissions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.mg-account-password { display: flex; align-items: center; gap: 10px; }
+.mg-account-password code { white-space: normal; overflow-wrap: anywhere; max-width: 240px; user-select: all; }
+.mg-accounts-mobile { display: none; }
+@media (max-width: 767px) {
+  .mg-accounts-desktop { display: none; }
+  .mg-accounts-mobile { display: grid; }
+  .mg-accounts-mobile dl { display: grid; gap: 12px; margin: 16px 0; }
+  .mg-accounts-mobile dl > div { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 12px; }
+  .mg-accounts-mobile dt { color: var(--mg-muted); }
+  .mg-accounts-mobile dd { margin: 0; overflow-wrap: anywhere; }
+  .mg-account-mobile-password { margin-bottom: 16px; }
+  .mg-accounts-mobile .mg-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+}
 .mg-account-permissions label { display: flex; gap: 8px; align-items: center; min-height: 32px; overflow-wrap: anywhere; }
 .mg-contract-payment-qr { display: grid; gap: 14px; }
 .mg-contract-payment-qr h3,.mg-contract-payment-qr p { margin: 0; }
