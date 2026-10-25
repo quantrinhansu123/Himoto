@@ -106,6 +106,19 @@ async function run() {
       checks.push('PostgreSQL TEMP: source Láng saves an NH vehicle already using, inventory snapshot is verified by the server and drafts create no receipts');
       // Current issue policy requires ready stock even when a previous using flag has no open contract.
       await updateDatabaseVehicle(proxy,100,values(100,'ready'),143);
+      await c.query('SAVEPOINT qa_old_draft_sales');
+      try {
+        const oldDraft={...structuredClone(draft),contract_number:'005807'};
+        delete oldDraft.sales_staff_id;delete oldDraft.sales_staff_name;
+        const old=await saveDatabaseDraft(proxy,null,{draft:oldDraft,status:'draft',rental_type:'daily',notes:'QA pre-update draft'});
+        const oldId=Number(old.id);
+        assert.equal(old.draft_reference,'005807');
+        assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_cross_transactions WHERE order_id=$1',[oldId])).rows[0].n,0);
+        const issued=await finalizeContractDraft(proxy,oldId,143,{revision:old.draft_revision,paid_at:time.vietnamRentalTime(new Date(Date.now()-60000)),deposit:{method:'cash',account_id:5},rental:{method:'cash',account_id:5}});
+        assert.equal(issued.code,'005807');
+        assert.equal((await c.query('SELECT order_status FROM qa_cross_orders WHERE id=$1',[oldId])).rows[0].order_status,'renting');
+        checks.push('PostgreSQL TEMP: an older 005807 draft without optional sales ID/name saves and issues with its original paper number; draft save creates no receipt');
+      } finally { await c.query('ROLLBACK TO SAVEPOINT qa_old_draft_sales');await c.query('RELEASE SAVEPOINT qa_old_draft_sales'); }
       // Generic TLS works without a person. An optional real TLS id also checks legacy profile compatibility.
       const tlsProfileId=Number(process.argv.find(arg=>arg.startsWith('--tls-profile-id='))?.split('=')[1]);
       {

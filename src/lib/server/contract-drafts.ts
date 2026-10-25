@@ -184,7 +184,9 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !draft.customer || typeof draft.customer !== 'object' || Array.isArray(draft.customer)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   const defaults = createContractDraft({ stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all');
   for (const key of Object.keys(defaults)) {
-    if (['customer', 'vehicles', 'customer_id', 'relatives', 'vehicle_store_id'].includes(key)) continue;
+    // These sales fields are optional and validated below. Older drafts and
+    // already-open forms predate their defaults and must remain saveable.
+    if (['customer', 'vehicles', 'customer_id', 'relatives', 'vehicle_store_id','sales_staff_id','sales_staff_name'].includes(key)) continue;
     const value = draft[key as keyof typeof draft];
     if (typeof value !== 'string' || value.length > 4000) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
   }
