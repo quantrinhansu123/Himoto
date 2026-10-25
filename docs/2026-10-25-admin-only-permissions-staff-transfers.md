@@ -1,0 +1,10 @@
+# Phân quyền chỉ dành cho quản trị viên; điều chuyển nhân sự
+
+- Bỏ ô “Quản lý tài khoản và phân quyền” khỏi biểu mẫu cấp quyền. Vai trò quản trị vẫn có quyền này cố định.
+- Chỉ quản trị được mở danh sách tài khoản và gọi API xem/thêm/sửa/xóa tài khoản. Mảng quyền cũ chứa `accounts.manage` cũng không cho nhân viên, quản lý hoặc HCNS truy cập. Các quyền khác và lựa chọn tất cả cơ sở được giữ.
+- `docs/sql/2026-10-25-admin-only-account-management.sql` thu hồi đúng quyền này khỏi các tài khoản không phải quản trị, ghi nhật ký và thêm ràng buộc chống cấp lại. Cần chạy trong transaction với `set_config('himoto.actor_id', '<admin-id>', true)` trước SQL (bỏ BEGIN/COMMIT ngoài nếu trình chạy đã mở transaction). Kiểm tra tài khoản tác động là quản trị đang hoạt động; chạy lại không tạo thêm nhật ký.
+- **Nhân sự → Sửa nhân sự → Cơ sở → Lưu nhân sự** tự chuyển hồ sơ, tài khoản đăng nhập và phạm vi phân quyền sang cơ sở mới trong cùng transaction. Lỗi đồng bộ tài khoản hủy cả thay đổi hồ sơ. Quyền truy cập của phiên đang đăng nhập cập nhật ở yêu cầu tiếp theo.
+- Đồng bộ nhân sự dựa trên quyền `hr.write` và phạm vi cơ sở, không cần quyền phân quyền. Không nhận vai trò/quyền từ payload nhân sự. Không đổi mật khẩu, tự cấp thêm quyền hoặc mở lại tài khoản đã khóa. Tài khoản đã được quản trị cấp tất cả cơ sở giữ nguyên phạm vi khi điều chuyển; thay đổi nơi làm việc không tự thu hồi quyền quản lý chung.
+- Nhân sự không thuộc phạm vi của người sửa và tài khoản quản trị/tích hợp được bảo vệ. Lịch sử hợp đồng, nhân viên nguồn khách và doanh thu không bị gán lại khi nhân viên chuyển cơ sở.
+
+Kiểm tra: `check-account-management-api.cjs` (các phương thức bị chặn trước khi mở DB cho mọi vai trò không phải quản trị, kể cả quyền cũ), `check-account-global-scope.cjs` (phạm vi và migration lặp), `check-staff-accounts.cjs` (API điều chuyển thật trong schema QA, quyền phiên đăng nhập, giữ mật khẩu/quyền, khóa tài khoản, rollback), `check-account-passwords.cjs` và kiểm tra Chromium/WebKit. Các bài kiểm tra DB dùng dữ liệu QA rồi rollback, chạy lần lượt vì dùng chung advisory lock. Không điều chuyển nhân sự thật trong quá trình kiểm tra.

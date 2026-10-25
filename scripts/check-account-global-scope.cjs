@@ -50,23 +50,34 @@ async function main(){const c=await ownerDatabase.connect();try{
   }
   checks.push('All four staff/manager roles round-trip local/global scope through real saves and sessions, preserving explicit permissions, role, and password');
   const manager={id:70012,access_role:'branch_manager',scope_all:true,store_id:null,permissions:[...ACCESS_ROLES.branch_manager.permissions]};
-  assert(canManageAccounts(manager));assert(!canManageAccounts({...manager,permissions:[]}));assert(!canManageAccounts({...manager,access_role:'branch_staff'}));
+  assert(!canManageAccounts(manager));assert(!canManageAccounts({...manager,permissions:['accounts.manage']}));assert(!hasPermission({...manager,permissions:['accounts.manage']},'accounts.manage'));
   const localManager={...manager,store_id:80001,scope_all:false};
   const input={name:'Other branch staff QA',login_name:'qa.other',access_role:'branch_staff',store_id:80002,scope_all:false,permissions:permissionSet,enabled:true,password:''};
   // Guard rejections occur before a query or password generation.
   const noQuery={query:()=>assert.fail('Unauthorized write reached the database')};
   await assert.rejects(()=>accounts.saveManagedAccount(noQuery,localManager.id,input,undefined,localManager),e=>e.status===403);
   for(const patch of [{scope_all:true,store_id:null},{access_role:'branch_manager'},{permissions:['finance.write']},{access_role:'admin',scope_all:true}])await assert.rejects(()=>accounts.saveManagedAccount(noQuery,manager.id,{...input,...patch},undefined,manager),e=>e.status===403);
-  // Seed an ordinary account in B. Global managers may edit within granted scope,
-  // but may never delegate global scope, manage peer managers, or escalate grants.
+  // Only admin may manage accounts, even for a manager assigned all branches.
   await c.query(`INSERT INTO ${schema}.users(id,name,email,password,role_id,status) VALUES(70020,'Other branch QA','other@qa.invalid','unused',3,'active')`);
   await c.query(`INSERT INTO ${schema}.management_account_access(user_id,login_name,access_role,store_id,scope_all,permissions,enabled) VALUES(70020,'qa.other','branch_staff',80002,false,$1,true)`,[JSON.stringify(permissionSet)]);
   const revision=(await c.query(`SELECT xmin::text AS revision FROM ${schema}.users WHERE id=70020`)).rows[0].revision;
-  await accounts.saveManagedAccount(db,manager.id,{...input,revision},70020,manager);
-  const globals=await accounts.listManagedAccounts(db,manager);assert(globals.some(r=>Number(r.store_id)===80001));assert(globals.some(r=>Number(r.store_id)===80002));assert(globals.every(r=>!r.scope_all));
-  const selected=await accounts.listManagedAccounts(db,manager,80002);assert(selected.length);assert(selected.every(r=>Number(r.store_id)===80002));
+  await rejected(()=>accounts.saveManagedAccount(db,manager.id,{...input,revision},70020,manager),403);
+  await rejected(()=>accounts.listManagedAccounts(db,manager),403);
+  await accounts.saveManagedAccount(db,admin.id,{...input,revision,permissions:[...permissionSet,'accounts.manage']},70020,admin);
+  const saved=(await c.query(`SELECT permissions FROM ${schema}.management_account_access WHERE user_id=70020`)).rows[0];assert.deepEqual(saved.permissions,permissionSet,'Stale permission forms cannot delegate account management');
+  const selected=await accounts.listManagedAccounts(db,admin,80002);assert(selected.length);assert(selected.every(r=>Number(r.store_id)===80002));
   await rejected(()=>accounts.listManagedAccounts(db,localManager,80002),403);
-  checks.push('Global managers keep explicitly granted account management across local branches; local managers remain scoped and only administrators can grant global scope or edit managers');
+  checks.push('Only admin manages accounts, stale legacy permission forms are normalized, and all-branch manager scope cannot delegate account privileges');
+  await c.query(`ALTER TABLE ${schema}.management_account_access DROP CONSTRAINT IF EXISTS account_access_admin_management`);
+  await c.query(`UPDATE ${schema}.management_account_access SET permissions=permissions||'["accounts.manage"]'::jsonb WHERE user_id=70020`);
+  assert(!(await session.userFromSession(session.signSession(70020),db)).permissions.includes('accounts.manage'),'Existing sessions must sanitize legacy grants before data cleanup');
+  const adminMigration=fs.readFileSync('docs/sql/2026-10-25-admin-only-account-management.sql','utf8').replaceAll('himoto.',schema+'.').replaceAll(`${schema}.actor_id'`,"himoto.actor_id'").replace(/^BEGIN;|^COMMIT;/gm,'');
+  await c.query("SELECT set_config('himoto.actor_id',$1,true)",[String(admin.id)]);
+  await c.query(adminMigration);await c.query(adminMigration);
+  assert.deepEqual((await c.query(`SELECT permissions FROM ${schema}.management_account_access WHERE user_id=70020`)).rows[0].permissions,permissionSet);
+  assert.equal((await c.query(`SELECT count(*)::int AS n FROM ${schema}.management_access_audit WHERE action='admin_only_permissions'`)).rows[0].n,1);
+  await rejected(()=>c.query(`UPDATE ${schema}.management_account_access SET permissions=permissions||'["accounts.manage"]'::jsonb WHERE user_id=70020`));
+  checks.push('Admin-only migration runs twice, removes only delegated account management, records one audit entry and prevents reintroduction');
   await rejected(()=>c.query(`UPDATE ${schema}.management_account_access SET store_id=NULL,scope_all=false,enabled=true WHERE user_id=70020`));
   await rejected(()=>c.query(`UPDATE ${schema}.management_account_access SET access_role='unknown' WHERE user_id=70020`));
   checks.push('Database still rejects enabled accounts without any scope and unknown roles');

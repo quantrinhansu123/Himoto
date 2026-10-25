@@ -2,7 +2,7 @@ import 'server-only';
 import { hash } from 'bcryptjs';
 import { createHash,randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { ACCESS_PERMISSIONS, ACCESS_ROLES,canManageAccounts,canRecoverAccountPasswords,isAdminAccount,type PermissionAccount,type AccessRole } from '@/lib/management/permissions';
+import { ACCESS_PERMISSIONS, ACCESS_ROLES,canManageAccounts,canRecoverAccountPasswords,type PermissionAccount,type AccessRole } from '@/lib/management/permissions';
 import { rememberAccountPassword,validateNewPassword } from './account-passwords';
 
 export class AccountAccessError extends Error {constructor(message:string,public status=400){super(message);}}
@@ -16,17 +16,14 @@ export function parseAccountValues(raw:unknown,creating:boolean):AccountValues {
   const scopeAll=role==='admin'||body.scope_all===true,store=scopeAll||body.store_id==null||body.store_id===''?null:Number(body.store_id);
   if(store!==null&&(!Number.isSafeInteger(store)||store<1)||!scopeAll&&store===null&&body.enabled!==false)throw new AccountAccessError('Chọn cơ sở trước khi cho phép đăng nhập.');
   if(typeof body.enabled!=='boolean'||!Array.isArray(body.permissions)||body.permissions.some(p=>!ACCESS_PERMISSIONS.includes(p)))throw new AccountAccessError('Quyền hoặc trạng thái tài khoản không hợp lệ.');
-  if(!['admin','branch_manager','ownership_manager'].includes(role)&&body.permissions.includes('accounts.manage'))throw new AccountAccessError('Chỉ quản lý được quản lý tài khoản.');
-  return {name,login_name:login,password,access_role:role as AccessRole,store_id:store,scope_all:scopeAll,permissions:role==='admin'?[...ACCESS_PERMISSIONS]:[...new Set(body.permissions)] as string[],enabled:body.enabled};
+  return {name,login_name:login,password,access_role:role as AccessRole,store_id:store,scope_all:scopeAll,permissions:role==='admin'?[...ACCESS_PERMISSIONS]:[...new Set(body.permissions.filter(permission=>permission!=='accounts.manage'))] as string[],enabled:body.enabled};
 }
-export function requireAccountScope(user:PermissionAccount,target?:{store_id?:unknown;scope_all?:unknown;access_role?:unknown}) {
-  if(!canManageAccounts(user))throw new AccountAccessError('Chỉ quản lý được quản lý tài khoản và phân quyền.',403);
-  if(target&&!isAdminAccount(user)&&(target.scope_all===true||!['branch_staff','ownership_staff'].includes(String(target.access_role))||!user.scope_all&&Number(target.store_id)!==Number(user.store_id)))throw new AccountAccessError('Chỉ được quản lý tài khoản nhân viên gắn cơ sở trong phạm vi được cấp; chỉ quản trị viên được cấp phạm vi tất cả cơ sở.',403);
+export function requireAccountScope(user:PermissionAccount) {
+  if(!canManageAccounts(user))throw new AccountAccessError('Chỉ quản trị viên được quản lý tài khoản và phân quyền.',403);
 }
 export async function listManagedAccounts(client:Pick<PoolClient,'query'>,user?:PermissionAccount,storeId:number|null=null) {
   if(user)requireAccountScope(user);
   if(storeId!==null&&(!Number.isSafeInteger(storeId)||storeId<1))throw new AccountAccessError('Cơ sở không hợp lệ.');
-  if(storeId!==null&&user&&!isAdminAccount(user)&&!user.scope_all&&storeId!==Number(user.store_id))throw new AccountAccessError('Chỉ được xem tài khoản trong cơ sở của mình.',403);
   return (await client.query(`SELECT u.id,u.name,u.email,u.status,a.login_name,COALESCE(a.access_role,CASE WHEN u.role_id=1 THEN 'admin' ELSE 'accounting' END) AS access_role,a.store_id,
     COALESCE(a.scope_all,true) AS scope_all,COALESCE(a.permissions,CASE WHEN u.role_id=1 THEN $1::jsonb ELSE $2::jsonb END) AS permissions,a.enabled,s.store_name,
     p.id AS staff_id,p.staff_code,p.status AS staff_status,u.xmin::text AS revision,u.password AS password_hash,pw.password_fingerprint,
@@ -35,24 +32,22 @@ export async function listManagedAccounts(client:Pick<PoolClient,'query'>,user?:
     LEFT JOIN himoto.management_account_passwords pw ON pw.user_id=u.id
     LEFT JOIN himoto.stores s ON s.id=a.store_id LEFT JOIN himoto.staff_profiles p ON p.user_id=u.id
     WHERE u.deleted_at IS NULL AND COALESCE(a.login_name,'')<>'system.sepay' AND (a.user_id IS NOT NULL OR u.role_id IN (1,6))
-      AND ($3::boolean OR NOT a.scope_all AND ($4::bigint IS NULL OR a.store_id=$4))
-      AND ($5::bigint IS NULL OR a.store_id=$5 AND NOT a.scope_all) ORDER BY p.id NULLS LAST,u.id`,[JSON.stringify(ACCESS_PERMISSIONS),JSON.stringify(ACCESS_ROLES.accounting.permissions),!user||isAdminAccount(user),user?.scope_all?null:user?.store_id||null,storeId])).rows.map(record=>{
+      AND ($3::bigint IS NULL OR a.store_id=$3 AND NOT a.scope_all) ORDER BY p.id NULLS LAST,u.id`,[JSON.stringify(ACCESS_PERMISSIONS),JSON.stringify(ACCESS_ROLES.accounting.permissions),storeId])).rows.map(record=>{
         const {password_hash,password_fingerprint,...row}=record,recovery=canRecoverAccountPasswords(user);
         return {...row,password_available:recovery&&Boolean(password_hash&&password_fingerprint===createHash('sha256').update(password_hash).digest('hex')),can_reset_password:false,
-          can_edit:!user||isAdminAccount(user)||['branch_staff','ownership_staff'].includes(row.access_role),can_delete:Number(row.id)!==Number(user?.id)&&(!user||isAdminAccount(user)||['branch_staff','ownership_staff'].includes(row.access_role))};
+          can_edit:true,can_delete:Number(row.id)!==Number(user?.id)};
       });
 }
 export async function saveManagedAccount(client:Pick<PoolClient,'query'>,actorId:number,raw:unknown,id?:number,user?:PermissionAccount) {
+  if(user)requireAccountScope(user);
   const input=parseAccountValues(raw,!id);
   if(id&&input.password)throw new AccountAccessError('Đã bỏ chức năng đặt lại mật khẩu. Nhân viên tự đổi mật khẩu của mình.',403);
-  if(user){requireAccountScope(user,input);if(!isAdminAccount(user)&&input.permissions.some(permission=>!user.permissions?.includes(permission)))throw new AccountAccessError('Không được cấp quyền vượt quyền quản lý hiện có.',403);}
   if(!id){if(!input.login_name)input.login_name='nv.'+randomBytes(6).toString('hex');if(!input.password)input.password=randomBytes(18).toString('base64url');}
   await client.query("SET LOCAL lock_timeout='5s'");
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['management-accounts']);
   const before=id?(await client.query(`SELECT u.id,u.name,u.status,u.xmin::text AS revision,a.login_name,a.access_role,a.store_id,a.scope_all,a.permissions,a.enabled
     FROM himoto.users u LEFT JOIN himoto.management_account_access a ON a.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL FOR UPDATE OF u`,[id])).rows[0]:null;
   if(id&&!before)throw new AccountAccessError('Không tìm thấy tài khoản.',404);
-  if(before&&user)requireAccountScope(user,before);
   if(before?.login_name==='system.sepay')throw new AccountAccessError('Tài khoản tích hợp SePay chỉ dùng để ghi log tự động.',403);
   if(id&&String((raw as Record<string,unknown>).revision||'')!==before.revision)throw new AccountAccessError('Tài khoản đã thay đổi. Tải lại danh sách rồi thao tác.',409);
   if(id===actorId&&(!input.enabled||input.access_role!==before.access_role))throw new AccountAccessError('Không được tự khóa hoặc đổi vai trò tài khoản đang đăng nhập.');
@@ -87,7 +82,6 @@ export async function deleteManagedAccount(client:Pick<PoolClient,'query'>,actor
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['management-accounts']);
   const before=(await client.query(`SELECT u.id,u.name,u.xmin::text AS revision,a.login_name,a.access_role,a.store_id,a.scope_all,a.enabled FROM himoto.users u LEFT JOIN himoto.management_account_access a ON a.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL FOR UPDATE OF u`,[id])).rows[0];
   if(!before)throw new AccountAccessError('Không tìm thấy tài khoản.',404);
-  requireAccountScope(user,before);
   if(id===actorId||before.login_name==='system.sepay')throw new AccountAccessError('Không được xóa tài khoản đang đăng nhập hoặc tài khoản tích hợp.',403);
   if(revision!==before.revision)throw new AccountAccessError('Tài khoản đã thay đổi. Tải lại rồi thao tác.',409);
   await client.query('UPDATE himoto.management_account_access SET enabled=false,updated_by=$2,updated_at=now() WHERE user_id=$1',[id,actorId]);

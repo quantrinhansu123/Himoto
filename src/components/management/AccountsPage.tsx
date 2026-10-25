@@ -15,7 +15,7 @@ const permissionGroups = [
   {title:'Xe & kho',permissions:['vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write']},
   {title:'Nhân sự',permissions:['hr.read','hr.write']},
   {title:'Tài chính & đối soát',permissions:['finance.read','finance.write','shift.review']},
-  {title:'Hệ thống',permissions:['settings.write','accounts.manage']},
+  {title:'Hệ thống',permissions:['settings.write']},
 ] as const;
 export function AccountsPage(){
   const {dataset,notify,accessUser,selectedStore}=useManagement();const allowed=canManageAccounts(accessUser),admin=isAdminAccount(accessUser),recovery=canRecoverAccountPasswords(accessUser);const [rows,setRows]=useState<AccountRow[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,setRevision]=useState(0);
@@ -48,7 +48,7 @@ export function AccountsPage(){
   }
   const passwordValue=(row:AccountRow)=>row.password_available?<div className="mg-account-password"><code>{revealed[row.id]?.revision===row.revision?revealed[row.id].password:'••••••••'}</code><button type="button" className="mg-button" disabled={passwordBusy!==null} aria-label={`${revealed[row.id]?.revision===row.revision?'Ẩn':'Hiện'} mật khẩu ${row.login_name||row.email}`} onClick={()=>{if(revealed[row.id]?.revision===row.revision)setRevealed(current=>{const next={...current};delete next[row.id];return next;});else void reveal(row);}}>{passwordBusy===row.id?'Đang tải…':revealed[row.id]?.revision===row.revision?'Ẩn':'Hiện'}</button></div>:<small>Chưa có bản lưu · chờ nhân viên đổi mật khẩu</small>;
   const accountActions=(row:AccountRow)=><div className="mg-heading-actions"><button className="mg-button" disabled={row.can_edit===false} onClick={()=>edit(row)}>Phân quyền</button>{row.can_delete!==false&&<button className="mg-button mg-button-danger" onClick={()=>{setDeleting(row);setDeleteError('');}}>Xóa tài khoản</button>}</div>;
-  if(!allowed)return <section className="mg-page"><p role="alert">Chỉ quản lý được quản lý tài khoản và phân quyền.</p></section>;
+  if(!allowed)return <section className="mg-page"><p role="alert">Chỉ quản trị viên được quản lý tài khoản và phân quyền.</p></section>;
   return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Tài khoản & Phân quyền</h1><p>Gắn cơ sở, vai trò và quyền thao tác. Thay đổi có hiệu lực ở các yêu cầu tiếp theo.</p></div><div className="mg-heading-actions"><button className="mg-button" onClick={()=>setRevision(value=>value+1)}>Làm mới</button><button className="mg-button mg-button-primary" onClick={()=>edit(null)}>Tạo tài khoản</button></div></div>
     {!loading&&!error&&<p role="status">{visibleRows.length} tài khoản{selectedStore!=='all'?` tại ${dataset?.stores.find(store=>String(store.id)===selectedStore)?.name||'cơ sở đã chọn'}`:admin?' trong hệ thống':' trong cơ sở được quản lý'} · {visibleRows.filter(row=>row.staff_id).length} tài khoản cá nhân.</p>}
     {passwordError&&<p role="alert" className="mg-field-error">{passwordError}</p>}
@@ -72,8 +72,9 @@ export function AccountsPage(){
           <label className="mg-account-toggle"><input type="checkbox" checked={form.enabled} onChange={e=>setForm({...form,enabled:e.target.checked})}/><span><strong>Cho phép đăng nhập</strong><small>Bật để tài khoản được truy cập.</small></span></label>
         </div>
       </div></section>
-      <section className="mg-account-section" aria-labelledby="account-permissions-title"><div className="mg-account-section-heading"><h3 id="account-permissions-title">Quyền thao tác</h3><span>{form.permissions.length}/{ACCESS_PERMISSIONS.length} quyền đã chọn</span></div>
-        <div className="mg-account-permission-groups">{permissionGroups.map(group=><fieldset className="mg-account-permission-group" key={group.title}><legend>{group.title}</legend><div className="mg-account-permissions">{group.permissions.map(permission=><label key={permission}><input type="checkbox" checked={form.permissions.includes(permission)} disabled={form.access_role==='admin'||permission==='accounts.manage'||!admin&&!accessUser?.permissions?.includes(permission)} onChange={e=>setForm({...form,permissions:e.target.checked?[...form.permissions,permission]:form.permissions.filter(item=>item!==permission)})}/><span>{ACCESS_PERMISSION_LABELS[permission as AccessPermission]}</span></label>)}</div></fieldset>)}</div>
+      <section className="mg-account-section" aria-labelledby="account-permissions-title"><div className="mg-account-section-heading"><h3 id="account-permissions-title">Quyền thao tác</h3><span>{form.permissions.filter(permission=>permission!=='accounts.manage').length}/{ACCESS_PERMISSIONS.length-1} quyền đã chọn</span></div>
+        <p className="mg-reminder-help">Quản lý tài khoản và phân quyền chỉ dành cho quản trị viên.</p>
+        <div className="mg-account-permission-groups">{permissionGroups.map(group=><fieldset className="mg-account-permission-group" key={group.title}><legend>{group.title}</legend><div className="mg-account-permissions">{group.permissions.map(permission=><label key={permission}><input type="checkbox" checked={form.permissions.includes(permission)} disabled={form.access_role==='admin'||!admin&&!accessUser?.permissions?.includes(permission)} onChange={e=>setForm({...form,permissions:e.target.checked?[...form.permissions,permission]:form.permissions.filter(item=>item!==permission)})}/><span>{ACCESS_PERMISSION_LABELS[permission as AccessPermission]}</span></label>)}</div></fieldset>)}</div>
       </section>
       {formError&&<p role="alert" className="mg-field-error">{formError}</p>}
     </div><div className="mg-dialog-footer"><button className="mg-button" type="button" disabled={saving} onClick={()=>setOpen(false)}>Hủy</button><button className="mg-button mg-button-primary" disabled={saving}>{saving?'Đang lưu…':'Lưu tài khoản'}</button></div></form></Dialog>}

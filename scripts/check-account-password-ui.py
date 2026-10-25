@@ -83,7 +83,7 @@ with sync_playwright() as pw:
                     expect(dialog.locator('#account-password')).to_have_count(0)
                     dialog.get_by_label('Vai trò',exact=True).select_option('hr')
                     expect(dialog.locator('.mg-account-permission-group')).to_have_count(6)
-                    expect(dialog.get_by_role('checkbox')).to_have_count(19)
+                    expect(dialog.get_by_role('checkbox')).to_have_count(18)
                     for checkbox in dialog.get_by_role('checkbox').all():
                         bounds=checkbox.bounding_box();assert bounds and 16<=bounds['width']<=20 and 16<=bounds['height']<=20,bounds
                     assert not dialog.evaluate('el=>el.scrollWidth>el.clientWidth')
@@ -99,7 +99,7 @@ with sync_playwright() as pw:
                     dialog.screenshot(path=str(out/f'{engine}-{width}-account-editor.png'))
                     last=dialog.get_by_role('group',name='Hệ thống',exact=True);last.scroll_into_view_if_needed()
                     expect(footer.get_by_role('button',name='Lưu tài khoản',exact=True)).to_be_in_viewport()
-                    expect(dialog.get_by_role('checkbox',name='Quản lý tài khoản và phân quyền',exact=True)).to_be_disabled()
+                    expect(dialog.get_by_role('checkbox',name='Quản lý tài khoản và phân quyền',exact=True)).to_have_count(0)
                     dialog.screenshot(path=str(out/f'{engine}-{width}-permission-groups.png'))
                     dialog.get_by_role('checkbox',name='Xem hợp đồng',exact=True).check()
                     footer.get_by_role('button',name='Lưu tài khoản',exact=True).click();expect(dialog).not_to_be_visible()

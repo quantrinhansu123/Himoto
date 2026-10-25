@@ -4,6 +4,7 @@ const session=load(path.join(root,'lib/server/management-session')),account=load
 const {ACCESS_ROLES}=load(path.join(root,'lib/management/permissions'));
 const original=session.userFromSession,originalRead=session.readSessionUser,checks=[];
 const manager={id:7,access_role:'branch_manager',store_id:32,scope_all:false,permissions:[...ACCESS_ROLES.branch_manager.permissions]};
+const admin={...manager,access_role:'admin',scope_all:true,permissions:[...ACCESS_ROLES.admin.permissions]};
 let actor=manager,connections=0,writes=0,deletes=0,failure=null,queries=[];
 const deps={
  'next/server':{NextRequest,NextResponse},
@@ -29,13 +30,17 @@ async function main(){try{
  actor=null;assert.equal((await request('GET')).status,401);assert.equal(connections,0);
  actor={...manager,access_role:'branch_staff'};assert.equal((await request('GET')).status,403);assert.equal(connections,0);
  actor={...manager,store_id:null,scope_all:true,permissions:[]};assert.equal((await request('POST',{})).status,403);assert.equal(connections,0);
- actor=manager;
+ for(const role of ['branch_staff','branch_manager','ownership_manager','hr','headquarters_sales'])for(const scope_all of [false,true]){
+   actor={...manager,access_role:role,scope_all,permissions:['accounts.manage']};
+   for(const method of ['GET','POST','PATCH','DELETE'])assert.equal((await request(method,{id:901})).status,403);
+ }
+ assert.equal(connections,0);actor=admin;
  const list=await request('GET');assert.equal(list.status,200);assert.match(list.headers.get('cache-control'),/private, no-store/);
- checks.push('Anonymous, cross-origin, non-manager and global manager actors without accounts.manage stop before owner DB access; manager reads receive the authenticated branch scope');
+ checks.push('Only administrators reach account APIs; local/global managers, HR and staff are denied for every method even with a forged legacy accounts.manage grant');
  queries=[];const create=await request('POST',{});assert.equal(create.status,200);assert.equal((await create.json()).data.credentials.login_name,'qa.generated');assert(queries.includes('BEGIN')&&queries.includes('COMMIT'));assert.match(create.headers.get('cache-control'),/no-store/);
  assert.equal((await request('PATCH',{id:901})).status,200);assert.equal(writes,2);
  assert.equal((await request('DELETE',{id:901,revision:'1'})).status,200);assert.equal(deletes,1);
- checks.push('Create/update/delete commit only authenticated manager operations and generated credentials are returned once without cache');
+ checks.push('Create/update/delete commit only administrator operations and generated credentials are returned once without cache');
  for(const body of [null,[],{id:0},{id:'bad'}])assert.equal((await request('PATCH',body)).status,400);
  failure=Object.assign(Error('QA duplicate'),{code:'23505'});queries=[];assert.equal((await request('POST',{})).status,409);assert(queries.includes('ROLLBACK'));assert(!queries.includes('COMMIT'));
  failure=new account.AccountAccessError('QA scope denied',403);queries=[];assert.equal((await request('POST',{})).status,403);assert(queries.includes('ROLLBACK'));assert(!queries.includes('COMMIT'));

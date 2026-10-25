@@ -58,7 +58,7 @@ function allowedAccount(account: Account) {
 function safeUser(account: Account): SessionUser {
   const admin=isAdminAccount(account);
   return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
-    access_role:account.access_role||(admin?'admin':'accounting'),permissions:admin?[...ACCESS_PERMISSIONS]:account.permissions||['contracts.read','finance.read','finance.write'],
+    access_role:account.access_role||(admin?'admin':'accounting'),permissions:admin?[...ACCESS_PERMISSIONS]:(account.permissions||['contracts.read','finance.read','finance.write']).filter(permission=>permission!=='accounts.manage'),
     store_id:account.access_store_id==null?null:Number(account.access_store_id),scope_all:admin||(!account.access_role)||account.scope_all===true,
     ...(account.management_password_version?{password_version:Number(account.management_password_version)}:{}) };
 }

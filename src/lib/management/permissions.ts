@@ -21,9 +21,9 @@ export const ACCESS_PERMISSION_LABELS:Record<AccessPermission,string>={
 };
 export const ACCESS_ROLES = {
   branch_staff: {label:'Nhân viên cơ sở',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
-  branch_manager: {label:'Quản lý cơ sở',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','hr.read','hr.write','accounts.manage']},
+  branch_manager: {label:'Quản lý cơ sở',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','hr.read','hr.write']},
   ownership_staff: {label:'Nhân viên thuê sở hữu',permissions:['contracts.read','contracts.draft','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive']},
-  ownership_manager: {label:'Quản lý thuê sở hữu',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','hr.read','hr.write','accounts.manage']},
+  ownership_manager: {label:'Quản lý thuê sở hữu',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','hr.read','hr.write']},
   hr: {label:'HCNS',permissions:['hr.read','hr.write']},
   headquarters_sales: {label:'Kinh doanh / Telesale · Trụ sở',permissions:['contracts.read','customers.read','vehicles.read']},
   headquarters_debt: {label:'Quản lý công nợ · Trụ sở',permissions:['contracts.read','customers.read','vehicles.read']},
@@ -33,7 +33,7 @@ export const ACCESS_ROLES = {
 } as const;
 export type AccessRole = keyof typeof ACCESS_ROLES;
 export function canManageAccounts(account:PermissionAccount|null|undefined) {
-  return isAdminAccount(account)||Boolean(account&&['branch_manager','ownership_manager'].includes(account.access_role||'')&&(account.scope_all||account.store_id)&&hasPermission(account,'accounts.manage'));
+  return isAdminAccount(account);
 }
 /** Individual password viewing entitlement; other administrators do not inherit it. */
 export function canRecoverAccountPasswords(account:PermissionAccount|null|undefined) {
@@ -41,6 +41,8 @@ export function canRecoverAccountPasswords(account:PermissionAccount|null|undefi
 }
 export function hasPermission(account:PermissionAccount|null|undefined,permission:AccessPermission) {
   if(!account)return false;
+  // This privilege cannot be delegated, including through a legacy permission array.
+  if(permission==='accounts.manage')return isAdminAccount(account);
   // Fleet dispatch and receipt are available to every authenticated workspace
   // account. Profile edits, contracts and money retain their existing grants.
   if(['vehicles.read','vehicles.transfer','vehicles.receive'].includes(permission))return true;

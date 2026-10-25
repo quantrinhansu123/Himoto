@@ -48,6 +48,12 @@ with sync_playwright() as pw:
             ctx.add_init_script("""const original=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(['/api/auth/payment-events','/api/auth/gps/refresh'].includes(url.pathname))return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return original.call(this,input,options);};""")
             page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto(a.url+'/accounts',wait_until='networkidle',timeout=120000)
+            if actor=='manager':
+                expect(page.get_by_role('link',name='Tài khoản & Phân quyền',exact=True)).to_have_count(0)
+                expect(page.get_by_role('heading',name='Không có quyền truy cập',exact=True)).to_be_visible()
+                expect(page.get_by_role('button',name='Phân quyền',exact=True)).to_have_count(0)
+                checks.append(f'{engine}: branch manager has no account menu or editor even when opening /accounts directly')
+                ctx.close();continue
             container=page.get_by_role('region',name='Danh sách tài khoản',exact=True) if width>767 else page.get_by_role('list',name='Danh sách tài khoản trên điện thoại',exact=True)
             def edit():
                 container.get_by_role('button',name='Phân quyền',exact=True).click()
@@ -61,6 +67,7 @@ with sync_playwright() as pw:
                     label={'branch_manager':'Quản lý cơ sở','branch_staff':'Nhân viên cơ sở','ownership_manager':'Quản lý thuê sở hữu','ownership_staff':'Nhân viên thuê sở hữu'}[role]
                     expect(container).to_contain_text(label);dialog=edit()
                     expect(dialog.get_by_label('Vai trò',exact=True)).to_have_value(role)
+                    expect(dialog.get_by_role('checkbox',name='Quản lý tài khoản và phân quyền',exact=True)).to_have_count(0)
                     scope=dialog.get_by_label('Cơ sở được phân quyền',exact=True)
                     expect(scope).to_have_value(str(state['record']['store_id']))
                     scope.select_option('all');expect(scope).to_have_value('all')
@@ -81,12 +88,6 @@ with sync_playwright() as pw:
                 scope=dialog.get_by_label('Cơ sở được phân quyền',exact=True);expect(scope).to_have_value('all');expect(scope).to_be_disabled()
                 dialog.get_by_role('button',name='Hủy',exact=True).click()
                 checks.append(f'{engine}: administrator role retains mandatory global scope')
-            else:
-                dialog=edit();scope=dialog.get_by_label('Cơ sở được phân quyền',exact=True)
-                expect(scope).to_be_disabled();expect(scope).to_have_value('32');assert 'all' not in scope.locator('option').evaluate_all('els=>els.map(el=>el.value)')
-                assert dialog.get_by_label('Vai trò',exact=True).locator('option').evaluate_all('els=>els.map(el=>el.value)')==['branch_staff','ownership_staff']
-                dialog.get_by_role('button',name='Hủy',exact=True).click()
-                checks.append(f'{engine}: local manager can only assign local staff, with no global or management-role option')
             ctx.close()
         browser.close()
 assert not errors,errors
