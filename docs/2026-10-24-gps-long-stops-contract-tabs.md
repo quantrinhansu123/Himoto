@@ -1,5 +1,7 @@
 # GPS dừng liên tiếp và số đếm tab hợp đồng
 
+Cập nhật 25/10/2026: nhóm dừng ưu tiên mốc trạng thái từ Protrack, không cần chờ tích lũy 72 giờ local khi nhà cung cấp đã xác nhận thời gian dừng. Xem [nguồn thời gian, chống mâu thuẫn và migration bổ sung](gps-provider-stop-duration.md). Phần bên dưới mô tả cơ chế quan sát local dùng làm dự phòng.
+
 - GPS có nhóm riêng **Xe dừng trên 3 ngày**, chuyển xe ra khỏi nhóm dừng thông thường khi vượt 72 giờ; bảng và thẻ mobile hiển thị thời gian dừng cùng mốc bắt đầu.
 - Nhóm đếm xe không trùng. Thiết bị chưa ghép xe không tạo cảnh báo xe; nếu một xe có nhiều GPS đang theo dõi, tất cả phải xác nhận dừng đủ thời gian. GPS chạy/mất kết nối/cảnh báo/chưa cập nhật ngăn xe vào nhóm.
 - `gps_devices.stopped_since` bắt đầu ở lượt đồng bộ thành công đầu tiên. Giữ mốc khi quan sát dừng liên tục; xóa hoặc tính lại khi chạy, OFF, warning, gián đoạn đồng bộ trên 10 phút, đổi tài khoản nguồn, mất quyền xem thiết bị hoặc đổi xe ghép. Khóa điện bật/tắt không thay đổi thời gian dừng.

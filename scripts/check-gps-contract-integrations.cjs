@@ -63,6 +63,7 @@ async function main(){
     const pacing=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-five-second-poll.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(pacing);await c.query(pacing);
     const history=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-history-webhooks.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(history);await c.query(history);
     const longStops=fs.readFileSync('docs/sql/2026-10-24-gps-long-stops.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(longStops);await c.query(longStops);
+    const providerStops=fs.readFileSync('docs/sql/2026-10-25-gps-provider-stop.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(providerStops);await c.query(providerStops);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name) VALUES(23,'Branch A QA'),(31,'Branch B QA')`);
     await c.query(`INSERT INTO ${schema}.users(id,name,email,password,role_id,status) VALUES(143,'Actor QA','qa-gps@example.invalid','unused',1,'active')`);
     await c.query(`INSERT INTO ${schema}.vehicles(id,name,brand,type,year,store_id,current_store_id,license,color,status,odometer,created_by) VALUES(101,'Vehicle QA','Honda','xeso',2024,23,23,'29B1-123.45','Black','ready',0,143),(102,'Vehicle B QA','Honda','xeso',2024,31,31,'30B1-999.99','Black','ready',0,143)`);

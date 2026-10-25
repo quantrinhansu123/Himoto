@@ -19,6 +19,7 @@ state={'gps_fail':False}
 devices=[]
 for id,vehicle,status,hours in [(1,101,'stopped',80),(2,101,'stopped',79),(3,102,'stopped',71),(4,103,'stopped',90),(5,103,'online',None),(6,104,'offline',100),(7,None,'stopped',100),(8,105,'stopped',90)]:
     devices.append(dict(id=id,vehicle_id=vehicle,provider='protrack',external_device_id=f'QA-IMEI-{id}',provider_device_name=f'GPS QA {id}',license=f'QA-{vehicle}' if vehicle else None,store_id=1,store_name='CS QA',management_status=status,mapping_status='auto',sync_received_at=stamp(1 if id==8 else 0),stopped_since=stamp(hours) if hours else None,heartbeat_at=stamp(0),position_recorded_at=stamp(100),last_speed=0,last_latitude=21,last_longitude=105))
+devices.append(dict(id=9,vehicle_id=106,provider='protrack',external_device_id='QA-PROVIDER-STOP',provider_device_name='GPS provider duration QA',license='QA-106',store_id=1,store_name='CS QA',management_status='stopped',mapping_status='auto',sync_received_at=stamp(0),stopped_since=stamp(0.1),provider_stopped_since=stamp(23*24),heartbeat_at=stamp(0),position_recorded_at=stamp(10*24),last_speed=0,last_latitude=21,last_longitude=105))
 contracts=[dict(id=id,contract_number=f'QA-{id}',order_status=status,order_type='daily',store_id=1,store_name='CS QA',customer_name=f'Khách QA {id}',total_amount=1000,paid_amount=0,start_date=stamp(30*24),end_date=stamp(days*24),bad_debt_at=stamp(24) if status=='bad_debt' else None,vehicles=[]) for id,status,days in [(1,'overdue',5),(2,'overdue',12),(3,'bad_debt',20),(4,'renting',-2),(5,'draft',-2),(6,'completed',2)]]
 
 def mock(route):
@@ -55,14 +56,16 @@ with sync_playwright() as pw:
         page.goto(a.url+'/gps',wait_until='networkidle',timeout=120000)
         summary=page.locator('.mg-gps-summary')
         long_stop=summary.get_by_role('button',name=re.compile('^Xe dừng trên 3 ngày'))
-        expect(long_stop.locator('strong')).to_have_text('1')
+        expect(long_stop.locator('strong')).to_have_text('2')
         long_stop.click();expect(long_stop).to_have_attribute('aria-pressed','true')
         if width>767:
             records=page.locator('.mg-desktop-records tbody tr')
             expect(page.get_by_role('columnheader',name='Dừng liên tiếp',exact=True)).to_be_visible()
         else:records=page.locator('.mg-mobile-records .mg-reminder-card')
-        expect(records).to_have_count(2)
-        for record in records.all():expect(record).to_contain_text('QA-101');expect(record).to_contain_text('3 ngày')
+        expect(records).to_have_count(3)
+        for record in records.filter(has_text='QA-101').all():expect(record).to_contain_text('3 ngày');expect(record).to_contain_text('Himoto ghi nhận')
+        reported=records.filter(has_text='QA-106');expect(reported).to_have_count(1)
+        expect(reported).to_contain_text('23 ngày');expect(reported).to_contain_text('Theo Protrack')
         assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
         page.screenshot(path=str(out/f'{engine}-gps-long-stops.png'),full_page=True)
         checks.append(f'{engine}: long-stop filter deduplicates vehicles, shows duration, excludes moving/offline/stale/unmapped and fits viewport')

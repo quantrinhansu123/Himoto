@@ -17,7 +17,7 @@ export const GET=withAccessRequest(async(request:NextRequest)=>{
   if(!['all','poll','history','webhook'].includes(source)||device&&!/^[1-9]\d{0,14}$/.test(device))return NextResponse.json({status:'error',message:'Bộ lọc nhật ký không hợp lệ.'},{status:400});
   try{
     const rows=await himotoPool.query(`SELECT d.id,d.vehicle_id,d.provider,d.external_device_id,d.provider_device_name,d.mapping_status,CASE WHEN d.provider_status='not_visible_in_account' THEN 'unavailable' ELSE d.management_status END AS management_status,CASE WHEN d.provider_status='not_visible_in_account' THEN d.sync_received_at ELSE COALESCE(a.last_success_at,d.sync_received_at) END AS sync_received_at,d.heartbeat_at,d.last_latitude,d.last_longitude,d.last_speed,d.provider_reported_at,d.position_recorded_at,d.last_ignition,
-      d.stopped_since,v.license,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name
+      d.stopped_since,d.provider_stopped_since,v.license,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name
       FROM himoto.gps_devices d LEFT JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id
       LEFT JOIN himoto.vehicles v ON v.id=d.vehicle_id LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
       WHERE (d.vehicle_id IS NULL OR v.id IS NOT NULL AND v.deleted_at IS NULL)
@@ -44,7 +44,7 @@ export const GET=withAccessRequest(async(request:NextRequest)=>{
 export const PATCH=withAccessRequest(async(request:NextRequest)=>{
   if(!isAdminAccount(dataAccess.getStore()))return NextResponse.json({status:'error',message:'Chỉ quản trị được ghép GPS với xe.'},{status:403});
   try{const raw=await request.text();if(raw.length>1024)throw Error();const body=JSON.parse(raw);if(!Number.isSafeInteger(body.device_id)||body.device_id<1||body.vehicle_id!==null&&(!Number.isSafeInteger(body.vehicle_id)||body.vehicle_id<1))throw Error();
-    const result=await ownerDatabase.query(`UPDATE himoto.gps_devices SET stopped_since=CASE WHEN vehicle_id IS DISTINCT FROM $2::bigint THEN NULL ELSE stopped_since END,vehicle_id=$2,mapping_status=CASE WHEN $2::bigint IS NULL THEN 'manual_unmapped' ELSE 'manual' END,updated_at=now() AT TIME ZONE 'UTC'
+    const result=await ownerDatabase.query(`UPDATE himoto.gps_devices SET stopped_since=CASE WHEN vehicle_id IS DISTINCT FROM $2::bigint THEN NULL ELSE stopped_since END,provider_stopped_since=CASE WHEN vehicle_id IS DISTINCT FROM $2::bigint THEN NULL ELSE provider_stopped_since END,vehicle_id=$2,mapping_status=CASE WHEN $2::bigint IS NULL THEN 'manual_unmapped' ELSE 'manual' END,updated_at=now() AT TIME ZONE 'UTC'
       WHERE id=$1 AND ($2::bigint IS NULL OR EXISTS(SELECT 1 FROM himoto.vehicles WHERE id=$2)) RETURNING id`,[body.device_id,body.vehicle_id]);
     if(!result.rowCount)throw Error();return NextResponse.json({status:'success'});
   }catch(error){return error && typeof error==='object' && 'code' in error ? failureResponse('Không ghép được GPS với xe.',error) : NextResponse.json({status:'error',message:'Kiểm tra GPS và xe cần ghép.'},{status:400});}

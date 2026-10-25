@@ -47,6 +47,11 @@ export async function persistGpsProviderEvents(database:GpsEventDatabase,deviceI
       SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS x(state text,at timestamptz)
       WHERE x.state IN('online','offline') AND x.at>=d.stopped_since
     )`,[deviceId,JSON.stringify(rows)]);
+  if(result.rowCount&&rows.some(row=>row.state==='online'))await database.query(`UPDATE himoto.gps_devices d SET provider_stopped_since=NULL
+    WHERE d.id=$1 AND d.provider_stopped_since IS NOT NULL AND EXISTS (
+      SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS x(state text,at timestamptz)
+      WHERE x.state='online' AND x.at>=d.provider_stopped_since
+    )`,[deviceId,JSON.stringify(rows)]);
   return result.rowCount||0;
 }
 export async function persistGpsMotionHistory(database:GpsEventDatabase,deviceId:number,points:GpsHistoryPoint[],windowStart:string) {

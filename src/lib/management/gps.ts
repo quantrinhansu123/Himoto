@@ -8,6 +8,7 @@ export interface GpsObservation {
   external_id:string;provider_device_id?:string;name:string;license:string;state:GpsState;provider_status:string;
   latitude:number|null;longitude:number|null;speed:number|null;ignition:boolean|null;
   recorded_at:string|null;heartbeat_at:string|null;reported_at?:string|null;
+  provider_stopped_since?:string|null;
 }
 export interface GpsVehicle {
   id:number;vehicle_id:number|null;provider:GpsProvider|null;external_device_id:string;provider_device_name:string;
@@ -16,6 +17,7 @@ export interface GpsVehicle {
   mapping_status:string;
   position_recorded_at?:string|null;provider_reported_at?:string|null;last_ignition?:boolean|null;
   stopped_since?:string|null;
+  provider_stopped_since?:string|null;
 }
 export const normalizeGpsPlate=(value:string)=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 export function matchingGpsVehicles(name:string,license:string,vehicles:{id:number;license:string}[]) {
@@ -28,11 +30,16 @@ export function displayedGpsState(state:string|null,syncedAt:string|null,now=Dat
   if(!syncedAt||!Number.isFinite(Date.parse(syncedAt))||now-Date.parse(syncedAt)>GPS_SYNC_STALE_MS)return 'stale';
   return state||'warning';
 }
+export function gpsStopEvidence(row:GpsVehicle,now=Date.now()):{since:string;source:'protrack'|'observed'}|null {
+  if(displayedGpsState(row.management_status,row.sync_received_at,now)!=='stopped')return null;
+  const synced=Date.parse(row.sync_received_at||'');
+  const valid=(value:string|null|undefined)=>Boolean(value&&Number.isFinite(Date.parse(value))&&Date.parse(value)>=Date.UTC(2000,0,1)&&Date.parse(value)<=now&&Date.parse(value)<=synced);
+  if(row.provider==='protrack'&&valid(row.provider_stopped_since))return {since:row.provider_stopped_since!,source:'protrack'};
+  return valid(row.stopped_since)?{since:row.stopped_since!,source:'observed'}:null;
+}
 export function gpsStoppedDurationMs(row:GpsVehicle,now=Date.now()):number|null {
-  if(displayedGpsState(row.management_status,row.sync_received_at,now)!=='stopped'||!row.stopped_since)return null;
-  const since=Date.parse(row.stopped_since),synced=Date.parse(row.sync_received_at||'');
-  if(!Number.isFinite(since)||since>now||since>synced)return null;
-  return now-since;
+  const evidence=gpsStopEvidence(row,now);
+  return evidence?now-Date.parse(evidence.since):null;
 }
 /** One vehicle is flagged only when all of its currently available devices agree. */
 export function longStoppedVehicleIds(rows:GpsVehicle[],now=Date.now()):Set<number> {

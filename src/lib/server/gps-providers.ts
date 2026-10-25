@@ -46,10 +46,16 @@ export function normalizeProtrackDevice(raw:Json,serverTime=Date.now()):GpsObser
   const connected=!invalid&&!badClock&&heartAge<=25*60_000;
   const moving=Number.isFinite(reportAge)&&reportAge>=-60_000&&reportAge<=35_000&&speed!==null&&speed>0&&(speed>=5||Number(raw.icontype)===33);
   const state:GpsState=invalid||badClock?'warning':!connected?'offline':speed===null||speed<0||!reported||reportAge < -60_000?'warning':moving?'online':'stopped';
+  // Verified against Protrack's monitor (V2 chunk 0): static duration uses
+  // servertime - systime; engine-idle uses engineidlestarttime. ACC duration is unrelated.
+  // Never substitute gpstime: an old position alone is not provider stop evidence.
+  const stop=iso(Number(raw.engineidlestatus)===1?raw.engineidlestarttime:raw.systime);
+  const stopAt=stop?Date.parse(stop):NaN;
+  const providerStop=state==='stopped'&&Number.isFinite(stopAt)&&stopAt>=Date.UTC(2000,0,1)&&stopAt<=at?stop:null;
   return {external_id:String(raw.imei||raw.deviceid||''),provider_device_id:String(raw.deviceid||''),name:String(raw.devicename||''),license:String(raw.carnumber||''),state,
     provider_status:raw.block===true?'blocked':raw.validate===false?'invalid':speed===-9?'unactivated':badClock?'invalid_heartbeat':connected?'connected':'offline',
     latitude:coordinate(raw.lat,90),longitude:coordinate(raw.lng,180),speed,ignition:[0,1].includes(number(raw.accstatus)??-1)?Number(raw.accstatus)===1:null,
-    recorded_at:iso(raw.gpstime),heartbeat_at:heartbeat,reported_at:reported};
+    recorded_at:iso(raw.gpstime),heartbeat_at:heartbeat,reported_at:reported,provider_stopped_since:providerStop};
 }
 export function normalizeIopDevice(raw:Json):GpsObservation {
   const data=(raw.deviceStatusBean||{}) as Json,status=number(data.status),speed=number(data.speed);
