@@ -19,6 +19,12 @@ def mock(route):
     req=route.request;url=urlparse(req.url);path=url.path;query=parse_qs(url.query)
     if path=='/api/auth/gps/refresh':route.fulfill(json={'status':'success'});return
     if req.method not in ('GET','HEAD'):
+        if path=='/api/auth/accounts' and req.method=='PATCH':
+            body=req.post_data_json
+            assert body['id']==901 and body['access_role']=='hr' and body['scope_all'] is True and body['store_id'] is None
+            assert set(body['permissions'])=={'hr.read','hr.write','contracts.read'} and body['password']==''
+            writes.append({'path':path,'action':'edit-permissions'})
+            route.fulfill(json={'status':'success','data':{'id':901}});return
         if path=='/api/auth/accounts/password' and req.method=='POST':
             body=req.post_data_json;writes.append({'path':path,'action':body['action']})
             assert state['role']=='recovery' and body['action']=='reveal'
@@ -39,11 +45,11 @@ def mock(route):
     route.fulfill(json={'status':'success','data':data})
 
 with sync_playwright() as pw:
-    for engine,width in [('chromium',1440),('webkit',390)]:
+    for engine,width,height in [('chromium',1440,1000),('chromium',1280,720),('webkit',390,844)]:
         browser=getattr(pw,engine).launch()
         for role in ['recovery','admin','staff']:
             state.update(role=role,version=1)
-            ctx=browser.new_context(viewport={'width':width,'height':1000},timezone_id='Asia/Ho_Chi_Minh',reduced_motion='reduce')
+            ctx=browser.new_context(viewport={'width':width,'height':height},timezone_id='Asia/Ho_Chi_Minh',reduced_motion='reduce')
             ctx.add_cookies([{'name':'himoto_management_session','value':tokens[role],'url':a.url,'httpOnly':True,'sameSite':'Strict'}])
             ctx.route('**/api/**',mock)
             ctx.add_init_script("""const originalFetch=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(url.pathname==='/api/auth/payment-events')return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return originalFetch.call(this,input,options);};""")
@@ -72,7 +78,29 @@ with sync_playwright() as pw:
                     table.get_by_role('button',name='Phân quyền',exact=True).click()
                     dialog=page.get_by_role('dialog',name='Cập nhật tài khoản',exact=True)
                     expect(dialog.locator('#account-password')).to_have_count(0)
-                    dialog.get_by_role('button',name='Hủy',exact=True).click()
+                    dialog.get_by_label('Vai trò',exact=True).select_option('hr')
+                    expect(dialog.locator('.mg-account-permission-group')).to_have_count(6)
+                    expect(dialog.get_by_role('checkbox')).to_have_count(20)
+                    for checkbox in dialog.get_by_role('checkbox').all():
+                        bounds=checkbox.bounding_box();assert bounds and 16<=bounds['width']<=20 and 16<=bounds['height']<=20,bounds
+                    assert not dialog.evaluate('el=>el.scrollWidth>el.clientWidth')
+                    dialog.get_by_role('checkbox',name='Cho phép đăng nhập',exact=False).uncheck()
+                    dialog.get_by_role('checkbox',name='Cho phép đăng nhập',exact=False).check()
+                    scope=dialog.get_by_role('checkbox',name='Phạm vi toàn hệ thống',exact=False)
+                    scope.uncheck();expect(dialog.locator('#account-store')).to_be_visible()
+                    dialog.locator('#account-store').select_option('33');scope.check()
+                    expect(dialog.locator('#account-store')).to_have_count(0)
+                    footer=dialog.locator('.mg-dialog-footer')
+                    dialog.locator('.mg-dialog-body').evaluate('el=>el.scrollTop=0')
+                    expect(footer.get_by_role('button',name='Lưu tài khoản',exact=True)).to_be_in_viewport()
+                    dialog.screenshot(path=str(out/f'{engine}-{width}-account-editor.png'))
+                    last=dialog.get_by_role('group',name='Hệ thống',exact=True);last.scroll_into_view_if_needed()
+                    expect(footer.get_by_role('button',name='Lưu tài khoản',exact=True)).to_be_in_viewport()
+                    expect(dialog.get_by_role('checkbox',name='Quản lý tài khoản và phân quyền',exact=True)).to_be_disabled()
+                    dialog.screenshot(path=str(out/f'{engine}-{width}-permission-groups.png'))
+                    dialog.get_by_role('checkbox',name='Xem hợp đồng',exact=True).check()
+                    footer.get_by_role('button',name='Lưu tài khoản',exact=True).click();expect(dialog).not_to_be_visible()
+                    checks.append(f'{engine} {width}px: compact aligned checkboxes, six permission groups, fixed save footer and unchanged permission payload')
                     checks.append(f'{engine}: another administrator has branch filtering and permission editing, with no password view/reset controls')
             page.get_by_label('Menu người dùng',exact=True).click()
             page.get_by_role('button',name='Đổi mật khẩu của tôi',exact=True).click()
