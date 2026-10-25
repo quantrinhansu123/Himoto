@@ -29,8 +29,9 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
   for(let index=0;index<limit;index++) {
     if(Date.now()+TELEGRAM_MEDIA_TIMEOUT_MS+55_000>deadline)break;
     const leaseId=randomUUID();
+    // Resume a blocked topic's owner even when a refresh targets a different contract.
     // An atomic lease serializes complete media + summary blocks in the same Telegram topic.
-    const row=(await database.query(`WITH candidate AS MATERIALIZED (
+    const row=(await database.query(`WITH routed AS MATERIALIZED (
       SELECT n.id,target.chat_id,target.thread_id FROM himoto.management_contract_notifications n
       LEFT JOIN himoto.orders o ON o.id=n.order_id
       LEFT JOIN himoto.stores s ON s.id=o.store_id
@@ -43,12 +44,22 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       ) g ON true
       LEFT JOIN LATERAL (SELECT COALESCE(n.delivery_target->>'chat_id',g.chat_id) AS chat_id,
         CASE WHEN n.delivery_target IS NULL THEN g.thread_id ELSE (n.delivery_target->>'thread_id')::integer END AS thread_id) target ON true
-      WHERE n.delivery_mode='manual' AND ($1::bigint[] IS NULL OR n.order_id=ANY($1))
-        AND (n.status='pending' OR (n.status='sending' AND NOT EXISTS (
-          SELECT 1 FROM himoto.management_telegram_delivery_leases live
-          WHERE live.notice_id=n.id AND live.expires_at>clock_timestamp())))
+      WHERE n.delivery_mode='manual' AND n.status IN ('pending','sending')
         AND (n.order_id IS NULL OR ${VEHICLE_ORDER_SQL})
+    ), requested AS MATERIALIZED (
+      SELECT target.* FROM routed target JOIN himoto.management_contract_notifications n ON n.id=target.id
+      WHERE ($1::bigint[] IS NULL OR n.order_id=ANY($1))
         AND ($3::bigint[] IS NULL OR n.vehicle_event_id=ANY($3))
+    ), candidate AS MATERIALIZED (
+      SELECT n.id,target.chat_id,target.thread_id FROM himoto.management_contract_notifications n
+      JOIN routed target ON target.id=n.id
+      WHERE n.delivery_mode='manual' AND n.status IN ('pending','sending')
+        AND (EXISTS(SELECT 1 FROM requested wanted WHERE wanted.id=n.id)
+        OR EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases dependency
+          JOIN requested waiting ON waiting.chat_id=dependency.chat_id AND COALESCE(waiting.thread_id,0)=dependency.thread_id
+          WHERE dependency.notice_id=n.id AND (n.status='sending' OR n.status='pending' AND n.error_code='DELIVERY_CONTINUE')))
+        AND NOT EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases live
+          WHERE live.notice_id=n.id AND live.expires_at>clock_timestamp())
         AND (target.chat_id IS NULL OR NOT EXISTS(SELECT 1 FROM himoto.management_telegram_delivery_leases l
           WHERE l.chat_id=target.chat_id AND l.thread_id=COALESCE(target.thread_id,0) AND l.notice_id<>n.id
             AND (l.expires_at>clock_timestamp() OR EXISTS(SELECT 1 FROM himoto.management_contract_notifications held
@@ -58,7 +69,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       INSERT INTO himoto.management_telegram_delivery_leases(chat_id,thread_id,lease_id,notice_id,expires_at)
       SELECT chat_id,COALESCE(thread_id,0),$2::uuid,id,clock_timestamp()+interval '3 minutes' FROM candidate WHERE chat_id IS NOT NULL
       ON CONFLICT(chat_id,thread_id) DO UPDATE SET lease_id=EXCLUDED.lease_id,notice_id=EXCLUDED.notice_id,expires_at=EXCLUDED.expires_at
-      WHERE management_telegram_delivery_leases.expires_at<=clock_timestamp() OR management_telegram_delivery_leases.notice_id=EXCLUDED.notice_id RETURNING lease_id
+      WHERE management_telegram_delivery_leases.expires_at<=clock_timestamp() RETURNING lease_id
     ) UPDATE himoto.management_contract_notifications n SET status='sending' FROM candidate c
       WHERE n.id=c.id AND (c.chat_id IS NULL OR EXISTS(SELECT 1 FROM lease)) RETURNING n.*,c.chat_id,c.thread_id`,[orderIds||null,leaseId,vehicleEventIds||null])).rows[0];
     if(!row)break;
@@ -125,7 +136,11 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
         ...(error instanceof TelegramDeliveryError?{description:error.description,method:error.method}:{}),media_offset:Math.min(ids.length,payload.photos?.length||0)}];
       await database.query('UPDATE himoto.management_contract_notifications SET status=$2,message_ids=$3,error_code=$4,delivery_review=delivery_review||$5::jsonb WHERE id=$1',
         [row.id,continued?'pending':known?'failed':code==='SEND_UNCERTAIN'||contacted||ids.length?'unknown':'failed',JSON.stringify(ids),code,JSON.stringify(review)]);
-    }finally{if(!continued)await database.query('DELETE FROM himoto.management_telegram_delivery_leases WHERE lease_id=$1',[leaseId]);}
+    }finally{
+      // A checkpoint keeps the topic reserved, but lets the next worker resume immediately.
+      if(continued)await database.query('UPDATE himoto.management_telegram_delivery_leases SET expires_at=clock_timestamp() WHERE lease_id=$1',[leaseId]);
+      else await database.query('DELETE FROM himoto.management_telegram_delivery_leases WHERE lease_id=$1',[leaseId]);
+    }
     if(continued)break;
   }
   return {sent,configured:true};
