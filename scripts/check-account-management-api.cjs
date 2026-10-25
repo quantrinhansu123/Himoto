@@ -28,10 +28,10 @@ async function main(){try{
  assert.equal((await request('POST',{},'https://foreign.invalid')).status,403);assert.equal(connections,0);
  actor=null;assert.equal((await request('GET')).status,401);assert.equal(connections,0);
  actor={...manager,access_role:'branch_staff'};assert.equal((await request('GET')).status,403);assert.equal(connections,0);
- actor={...manager,scope_all:true};assert.equal((await request('POST',{})).status,403);assert.equal(connections,0);
+ actor={...manager,store_id:null,scope_all:true,permissions:[]};assert.equal((await request('POST',{})).status,403);assert.equal(connections,0);
  actor=manager;
  const list=await request('GET');assert.equal(list.status,200);assert.match(list.headers.get('cache-control'),/private, no-store/);
- checks.push('Anonymous, cross-origin and forged non-manager/global-branch actors stop before owner DB access; manager reads receive the authenticated branch scope');
+ checks.push('Anonymous, cross-origin, non-manager and global manager actors without accounts.manage stop before owner DB access; manager reads receive the authenticated branch scope');
  queries=[];const create=await request('POST',{});assert.equal(create.status,200);assert.equal((await create.json()).data.credentials.login_name,'qa.generated');assert(queries.includes('BEGIN')&&queries.includes('COMMIT'));assert.match(create.headers.get('cache-control'),/no-store/);
  assert.equal((await request('PATCH',{id:901})).status,200);assert.equal(writes,2);
  assert.equal((await request('DELETE',{id:901,revision:'1'})).status,200);assert.equal(deletes,1);

@@ -38,7 +38,7 @@ async function main(){const c=await ownerDatabase.connect();
   const oldNames=await c.query(`SELECT full_name FROM ${schema}.staff_account_attribution WHERE user_id=70003`);assert.equal(oldNames.rows[0].full_name,'Employee 1001 QA');
   checks.push('New employee gets one unique login and strong generated bcrypt password; repeated sync keeps credentials, and legacy attribution survives relinking');
 
-  assert(canManageAccounts(manager));assert(!canManageAccounts({...manager,access_role:'branch_staff'}));assert(!canManageAccounts({...manager,scope_all:true}));
+  assert(canManageAccounts(manager));assert(!canManageAccounts({...manager,access_role:'branch_staff'}));assert(canManageAccounts({...manager,store_id:null,scope_all:true}));assert(!canManageAccounts({...manager,store_id:null,scope_all:true,permissions:[]}));
   const visible=await accounts.listManagedAccounts(db,manager);assert(visible.every(u=>Number(u.store_id)===80001&&!u.scope_all));assert(!visible.find(u=>Number(u.id)===70001));
   const input={name:'Created by manager QA',login_name:'',password:'',access_role:'branch_staff',store_id:80001,scope_all:false,permissions:[...ACCESS_ROLES.branch_staff.permissions],enabled:true};
   const ordinary=await accounts.saveManagedAccount(db,manager.id,input,undefined,manager);assert(ordinary.credentials.password.length>=24);assert(ordinary.credentials.login_name.startsWith('nv.'));

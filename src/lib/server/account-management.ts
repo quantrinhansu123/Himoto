@@ -15,19 +15,18 @@ export function parseAccountValues(raw:unknown,creating:boolean):AccountValues {
   if(password)validateNewPassword(password);
   const scopeAll=role==='admin'||body.scope_all===true,store=scopeAll||body.store_id==null||body.store_id===''?null:Number(body.store_id);
   if(store!==null&&(!Number.isSafeInteger(store)||store<1)||!scopeAll&&store===null&&body.enabled!==false)throw new AccountAccessError('Chọn cơ sở trước khi cho phép đăng nhập.');
-  if(['branch_staff','branch_manager','ownership_staff','ownership_manager'].includes(role)&&scopeAll)throw new AccountAccessError('Nhân viên và quản lý cơ sở phải được gắn một cơ sở.');
   if(typeof body.enabled!=='boolean'||!Array.isArray(body.permissions)||body.permissions.some(p=>!ACCESS_PERMISSIONS.includes(p)))throw new AccountAccessError('Quyền hoặc trạng thái tài khoản không hợp lệ.');
   if(!['admin','branch_manager','ownership_manager'].includes(role)&&body.permissions.includes('accounts.manage'))throw new AccountAccessError('Chỉ quản lý được quản lý tài khoản.');
   return {name,login_name:login,password,access_role:role as AccessRole,store_id:store,scope_all:scopeAll,permissions:role==='admin'?[...ACCESS_PERMISSIONS]:[...new Set(body.permissions)] as string[],enabled:body.enabled};
 }
 export function requireAccountScope(user:PermissionAccount,target?:{store_id?:unknown;scope_all?:unknown;access_role?:unknown}) {
   if(!canManageAccounts(user))throw new AccountAccessError('Chỉ quản lý được quản lý tài khoản và phân quyền.',403);
-  if(target&&!isAdminAccount(user)&&(Number(target.store_id)!==Number(user.store_id)||target.scope_all===true||!['branch_staff','ownership_staff'].includes(String(target.access_role))))throw new AccountAccessError('Chỉ được quản lý tài khoản nhân viên trong cơ sở của mình.',403);
+  if(target&&!isAdminAccount(user)&&(target.scope_all===true||!['branch_staff','ownership_staff'].includes(String(target.access_role))||!user.scope_all&&Number(target.store_id)!==Number(user.store_id)))throw new AccountAccessError('Chỉ được quản lý tài khoản nhân viên gắn cơ sở trong phạm vi được cấp; chỉ quản trị viên được cấp phạm vi tất cả cơ sở.',403);
 }
 export async function listManagedAccounts(client:Pick<PoolClient,'query'>,user?:PermissionAccount,storeId:number|null=null) {
   if(user)requireAccountScope(user);
   if(storeId!==null&&(!Number.isSafeInteger(storeId)||storeId<1))throw new AccountAccessError('Cơ sở không hợp lệ.');
-  if(storeId!==null&&user&&!isAdminAccount(user)&&storeId!==Number(user.store_id))throw new AccountAccessError('Chỉ được xem tài khoản trong cơ sở của mình.',403);
+  if(storeId!==null&&user&&!isAdminAccount(user)&&!user.scope_all&&storeId!==Number(user.store_id))throw new AccountAccessError('Chỉ được xem tài khoản trong cơ sở của mình.',403);
   return (await client.query(`SELECT u.id,u.name,u.email,u.status,a.login_name,COALESCE(a.access_role,CASE WHEN u.role_id=1 THEN 'admin' ELSE 'accounting' END) AS access_role,a.store_id,
     COALESCE(a.scope_all,true) AS scope_all,COALESCE(a.permissions,CASE WHEN u.role_id=1 THEN $1::jsonb ELSE $2::jsonb END) AS permissions,a.enabled,s.store_name,
     p.id AS staff_id,p.staff_code,p.status AS staff_status,u.xmin::text AS revision,u.password AS password_hash,pw.password_fingerprint,
@@ -36,8 +35,8 @@ export async function listManagedAccounts(client:Pick<PoolClient,'query'>,user?:
     LEFT JOIN himoto.management_account_passwords pw ON pw.user_id=u.id
     LEFT JOIN himoto.stores s ON s.id=a.store_id LEFT JOIN himoto.staff_profiles p ON p.user_id=u.id
     WHERE u.deleted_at IS NULL AND COALESCE(a.login_name,'')<>'system.sepay' AND (a.user_id IS NOT NULL OR u.role_id IN (1,6))
-      AND ($3::boolean OR a.store_id=$4 AND NOT a.scope_all)
-      AND ($5::bigint IS NULL OR a.store_id=$5 AND NOT a.scope_all) ORDER BY p.id NULLS LAST,u.id`,[JSON.stringify(ACCESS_PERMISSIONS),JSON.stringify(ACCESS_ROLES.accounting.permissions),!user||isAdminAccount(user),user?.store_id||null,storeId])).rows.map(record=>{
+      AND ($3::boolean OR NOT a.scope_all AND ($4::bigint IS NULL OR a.store_id=$4))
+      AND ($5::bigint IS NULL OR a.store_id=$5 AND NOT a.scope_all) ORDER BY p.id NULLS LAST,u.id`,[JSON.stringify(ACCESS_PERMISSIONS),JSON.stringify(ACCESS_ROLES.accounting.permissions),!user||isAdminAccount(user),user?.scope_all?null:user?.store_id||null,storeId])).rows.map(record=>{
         const {password_hash,password_fingerprint,...row}=record,recovery=canRecoverAccountPasswords(user);
         return {...row,password_available:recovery&&Boolean(password_hash&&password_fingerprint===createHash('sha256').update(password_hash).digest('hex')),can_reset_password:false,
           can_edit:!user||isAdminAccount(user)||['branch_staff','ownership_staff'].includes(row.access_role),can_delete:Number(row.id)!==Number(user?.id)&&(!user||isAdminAccount(user)||['branch_staff','ownership_staff'].includes(row.access_role))};

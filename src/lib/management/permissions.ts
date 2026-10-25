@@ -33,7 +33,7 @@ export const ACCESS_ROLES = {
 } as const;
 export type AccessRole = keyof typeof ACCESS_ROLES;
 export function canManageAccounts(account:PermissionAccount|null|undefined) {
-  return isAdminAccount(account)||Boolean(account&&['branch_manager','ownership_manager'].includes(account.access_role||'')&&account.store_id&&!account.scope_all&&hasPermission(account,'accounts.manage'));
+  return isAdminAccount(account)||Boolean(account&&['branch_manager','ownership_manager'].includes(account.access_role||'')&&(account.scope_all||account.store_id)&&hasPermission(account,'accounts.manage'));
 }
 /** Individual password viewing entitlement; other administrators do not inherit it. */
 export function canRecoverAccountPasswords(account:PermissionAccount|null|undefined) {

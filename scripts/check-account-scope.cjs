@@ -14,6 +14,8 @@ async function main(){const c=await pool.connect();try{
   await c.query(migration);await c.query(migration);
   const staffAccountsMigration=fs.readFileSync('docs/sql/2026-10-24-staff-accounts.sql','utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(staffAccountsMigration);await c.query(staffAccountsMigration);
+  const globalAccountsMigration=fs.readFileSync('docs/sql/2026-10-25-account-global-scope.sql','utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;|^COMMIT;/gm,'');
+  await c.query(globalAccountsMigration);await c.query(globalAccountsMigration);
   const passwordMigration=fs.readFileSync('docs/sql/2026-10-25-account-passwords.sql','utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(passwordMigration);await c.query(passwordMigration);
   const numbering=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-paper-contract-number.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
@@ -313,8 +315,10 @@ async function main(){const c=await pool.connect();try{
   for(const [method,action,permission] of [['GET','','contracts.read'],['POST','renew','contracts.renew'],['POST','collect_renewal','contracts.renew'],['POST','return','contracts.return']])assert.equal(requestPermission('/api/auth/battery-contracts/1/actions',method,action),permission);
   assert(hasPermission({access_role:'ownership_manager',permissions:[...ACCESS_ROLES.ownership_manager.permissions]},'contracts.finalize'));
   assert(!hasPermission({role_id:1,access_role:'branch_staff',permissions:[]},'accounts.manage'));
-  for(const raw of [{name:'QA',login_name:'qa',password:'secret-password',access_role:'branch_staff',store_id:80001,scope_all:false,permissions:[],enabled:true},{name:'QA',login_name:'qa-valid',password:'secret-password',access_role:'branch_staff',store_id:80001,scope_all:true,permissions:[],enabled:true}])assert.throws(()=>parseAccountValues(raw,true),AccountAccessError);
-  checks.push('Ownership draft/finalization and explicit access-role overrides are enforced; branch accounts cannot be granted global scope');
+  assert.throws(()=>parseAccountValues({name:'QA',login_name:'qa',password:'secret-password',access_role:'branch_staff',store_id:80001,scope_all:false,permissions:[],enabled:true},true),AccountAccessError);
+  const globalStaff=parseAccountValues({name:'QA',login_name:'qa-valid',access_role:'branch_staff',store_id:80001,scope_all:true,permissions:['contracts.read'],enabled:true},true);
+  assert.equal(globalStaff.scope_all,true);assert.equal(globalStaff.store_id,null);assert.deepEqual(globalStaff.permissions,['contracts.read']);
+  checks.push('Ownership and explicit role permissions remain enforced; global branch scope preserves only the selected permissions');
   await c.query('ROLLBACK');
 }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0},null,2));}
 main().catch(error=>{console.error(error);process.exitCode=1;});
