@@ -29,7 +29,8 @@ async function main(){
   assert.match(photoFields,/mg-media-documents/);
   assert.match(photoFields,/Xóa \$\{video\?'video':'ảnh'\}/);
   assert.match(photoFields,/deleteRecordPhoto/);
-  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/rental-document-1','DELETE'),'contracts.draft');
+  // Phase-specific delete authorization is enforced inside the handler after contracts.read.
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/rental-document-1','DELETE'),'contracts.read');
   for(const slot of ['rental-15','rental-16','rental-video-3','handover-video-1','return-101-15','return-101-16','renewal-receipt-42-video-3'])parsePhotoTarget('contracts','1',slot);
   for(const slot of ['rental-0','rental-video-4','return-101-0'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
   assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-video-1','PUT'),'contracts.finalize');
@@ -44,7 +45,7 @@ async function main(){
   try{
     delete process.env.CLOUDINARY_URL;Object.assign(process.env,{VIDEO_STORAGE_PROVIDER:'cloudinary',CLOUDINARY_CLOUD_NAME:'qa-cloud',CLOUDINARY_API_KEY:'qa-key',CLOUDINARY_API_SECRET:'qa-media-test-secret'});
     const signed=cloud.signPhotoUpload(151,randomUUID(),Date.now(),true),version=1800000000;
-    assert.equal(signed.params.format,'mp4');assert.equal(signed.params.type,'authenticated');assert.match(signed.params.transformation,/vc_h264/);
+    assert.equal(signed.params.format,'mp4');assert.equal(signed.params.allowed_formats,'mp4');assert.equal(signed.params.type,'authenticated');assert.match(signed.params.transformation,/vc_h264/);
     const receipt={public_id:signed.params.public_id,version,resource_type:'video'};
     receipt.signature=sdk.utils.api_sign_request({public_id:receipt.public_id,version},process.env.CLOUDINARY_API_SECRET);
     assert.deepEqual(cloud.verifyPhotoReceipt(receipt,151),receipt);assert.throws(()=>cloud.verifyPhotoReceipt(receipt,152));

@@ -1,4 +1,4 @@
-import { prepareRecordPhoto,uploadRecordPhoto,type CloudUploadReceipt } from './record-photos';
+import { prepareRecordPhoto,uploadRecordMedia,type MediaUploadReceipt } from './record-photos';
 import type { ShiftMedia } from './shift-audits';
 export class UnconfirmedSaveError extends Error {}
 export async function shiftApi<T>(url:string,options?:RequestInit):Promise<T>{
@@ -10,12 +10,12 @@ export async function shiftApi<T>(url:string,options?:RequestInit):Promise<T>{
   return result.data;
 }
 export type PendingShiftFile={category:string;file:File};
-export type ShiftUpload={slot:string;file:File;key:string;prepared?:File;cloud?:CloudUploadReceipt;saved:boolean};
+export type ShiftUpload={slot:string;file:File;key:string;prepared?:File;cloud?:MediaUploadReceipt;saved:boolean};
 export async function uploadShiftEvidence(id:number,revision:number,stage:'pgd'|'audit',item:ShiftUpload):Promise<{revision:number;media:ShiftMedia}>{
   const video=item.file.type.startsWith('video/');
   if(video){
     if(!item.file.size||item.file.size>45*1024*1024)throw Error('Video kiểm kê tối đa 45 MB.');
-    if(!item.cloud){try{item.cloud=await uploadRecordPhoto(item.file);}catch{item.cloud=await uploadRecordPhoto(item.file,true);}}
+    if(!item.cloud){try{item.cloud=await uploadRecordMedia(item.file,false,{maxDuration:180});}catch{item.cloud=await uploadRecordMedia(item.file,true,{maxDuration:180});}}
   }else item.prepared??=await prepareRecordPhoto(item.file);
   const url=`/api/auth/shift-reports/${id}/media/${item.key}`;
   const data=await shiftApi<{revision:number}>(url,{method:'PUT',headers:{'Content-Type':video?'application/json':item.prepared!.type,

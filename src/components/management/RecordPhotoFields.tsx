@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState,type ReactNode } from 'react';
 import { Camera, ImagePlus, LoaderCircle, X } from 'lucide-react';
-import { PendingPhotos, PhotoEntity, PhotoSlot, SavedPhoto, deleteRecordPhoto, photoEndpoint, prepareRecordPhoto, saveRecordPhotos, uploadRecordPhoto } from '@/lib/management/record-photos';
+import { PendingPhotos, PhotoEntity, PhotoSlot, SavedPhoto, deleteRecordPhoto, photoEndpoint, prepareRecordPhoto, saveRecordPhotos, uploadRecordMedia } from '@/lib/management/record-photos';
 import type { PhotoOcrController } from './usePhotoOcr';
 import { isVideoSlot,prepareRecordVideo } from '@/lib/management/record-photos';
 import { expandContractPhotoSlots,expandablePhotoPrefix } from '@/lib/management/contract-photos';
@@ -51,7 +51,7 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
   const busySlots = useRef(new Set<string>());
   const latestValue = useRef(value); latestValue.current = value;
   const latestSaved = useRef(saved); latestSaved.current = saved;
-  const [uploadStates, setUploadStates] = useState<Record<string, { loading: boolean; error?: string }>>({});
+  const [uploadStates, setUploadStates] = useState<Record<string, { loading: boolean; error?: string; message?: string }>>({});
   const imagePicker=useRef<HTMLInputElement>(null),videoPicker=useRef<HTMLInputElement>(null),cameraPicker=useRef<HTMLInputElement>(null);
   const [batchBusy,setBatchBusy]=useState(false);
   const [uploadTab,setUploadTab]=useState<'quick'|'detail'>('quick');
@@ -119,7 +119,10 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
   }
   function upload(slot: string, file: File, retry = false) {
     setUploadStates(current => ({ ...current, [slot]: { loading: true } }));
-    void uploadRecordPhoto(file, retry).then(() => {
+    void uploadRecordMedia(file, retry, { onProgress: progress => {
+      if (latestValue.current[slot] === file) setUploadStates(current => ({ ...current, [slot]: { loading: true,
+        message: `${progress.message}${progress.percent === undefined ? '…' : ` · ${progress.percent}%`}` } }));
+    } }).then(() => {
       if (latestValue.current[slot] === file) setUploadStates(current => ({ ...current, [slot]: { loading: false } }));
     }).catch(cause => {
       if (latestValue.current[slot] === file) setUploadStates(current => ({ ...current, [slot]: { loading: false, error: cause instanceof Error ? cause.message : 'Không tải được ảnh.' } }));
@@ -159,7 +162,8 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
       return <div key={slot.key}><PhotoField slot={{...slot,label:`${isVideoSlot(slot.key)?'Video':'Ảnh'} ${index+1}`}} file={file} disabled={disabled||batchBusy||!savedReady} savedUrl={photo&&recordId?`${photoEndpoint(entity,recordId,slot.key)}?v=${encodeURIComponent(photo.updated_at)}`:undefined}
         onBusyChange={busy=>{if(busy)busySlots.current.add(slot.key);else busySlots.current.delete(slot.key);onBusyChange?.(busySlots.current.size>0);}}
         onChange={file=>applySlot(slot.key,file)}/>
-        {state?.error&&file&&<p role="alert" className="mg-field-error">{state.error} <button type="button" className="mg-button" onClick={()=>upload(slot.key,file,true)}>Tải ảnh lại</button></p>}
+        {state?.loading&&file&&<p role="status" className="mg-photo-feedback">{state.message||'Đang tải tệp…'}</p>}
+        {state?.error&&file&&<p role="alert" className="mg-field-error">{state.error} <button type="button" className="mg-button" onClick={()=>upload(slot.key,file,true)}>Tải tệp lại</button></p>}
       </div>;
     })}</div></details>}
     {compact&&<div role="tabpanel" id={`${tabId}-detail-panel`} aria-labelledby={`${tabId}-detail`} hidden={uploadTab!=='detail'} tabIndex={0}><p className="mg-media-hint">Chỉ mở mục cần dùng. Các mục ảnh đều tuỳ chọn; ảnh đã chọn được giữ khi đổi tab.</p>
@@ -177,7 +181,7 @@ export function RecordPhotoFields({ entity, recordId, slots, value, onChange, di
         savedUrl={photo && recordId ? `${photoEndpoint(entity, recordId, slot.key)}?v=${encodeURIComponent(photo.updated_at)}` : undefined}
         onBusyChange={busy => { if (busy) busySlots.current.add(slot.key); else busySlots.current.delete(slot.key); onBusyChange?.(busySlots.current.size > 0); }}
         onChange={file => applySlot(slot.key, file)} />
-        {uploadState && value[slot.key] && <p className={uploadState.error ? 'mg-field-error' : 'mg-photo-feedback'} role={uploadState.error ? 'alert' : 'status'}>{uploadState.loading ? 'Đang tải ảnh…' : uploadState.error || 'Đã tải lên · bấm Lưu ảnh / video để gắn vào hồ sơ.'}{uploadState.error && <button type="button" className="mg-button" disabled={disabled} onClick={() => upload(slot.key, value[slot.key], true)}>Tải ảnh lại</button>}</p>}
+        {uploadState && value[slot.key] && <p className={uploadState.error ? 'mg-field-error' : 'mg-photo-feedback'} role={uploadState.error ? 'alert' : 'status'}>{uploadState.loading ? uploadState.message || 'Đang tải ảnh…' : uploadState.error || 'Đã tải lên · bấm Lưu ảnh / video để gắn vào hồ sơ.'}{uploadState.error && <button type="button" className="mg-button" disabled={disabled} onClick={() => upload(slot.key, value[slot.key], true)}>Tải tệp lại</button>}</p>}
         {state && <div className="mg-photo-feedback"><p role={state.phase === 'error' ? 'alert' : 'status'} className={state.phase === 'error' ? 'mg-field-error' : undefined}>{state.message}</p>
           {state.phase === 'reading' ? <button type="button" className="mg-button" disabled={disabled} onClick={() => ocr?.cancel(slot.key)}>Bỏ qua AI</button> : value[slot.key] && <button type="button" className="mg-button" disabled={disabled} onClick={() => ocr?.read(slot.key, value[slot.key])}>Đọc lại ảnh</button>}
         </div>}

@@ -1,3 +1,6 @@
+import type { BrowserVideoReceipt, VideoProgressCallback } from './video-media';
+export { MAX_VIDEO_BYTES } from './video-media';
+export type MediaUploadReceipt = CloudUploadReceipt | BrowserVideoReceipt;
 export type PhotoEntity = 'customers' | 'contracts' | 'vehicles';
 export const VEHICLE_DOCUMENT_SLOTS = [
   { key: 'registration-front', label: 'Đăng ký xe mặt trước' },
@@ -15,7 +18,7 @@ export interface SavedPhoto { slot: string; updated_at: string; mime_type?: stri
 export type PendingPhotos = Record<string, File>;
 export const CUSTOMER_PHOTO_SLOTS: PhotoSlot[] = [{ key: 'id_front', label: 'CCCD mặt trước' }, { key: 'id_back', label: 'CCCD mặt sau' }];
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
-export const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
+import { MAX_VIDEO_BYTES } from './video-media';
 export const isVideoSlot = (slot:string) => /-video-[1-3]$/.test(slot);
 export interface CloudUploadReceipt { public_id: string; version: number; signature: string; resource_type?: 'video' }
 const uploads = new WeakMap<File, { id: string; promise: Promise<CloudUploadReceipt> }>();
@@ -42,6 +45,10 @@ export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploa
   uploads.set(file, { id, promise }); void promise.catch(() => {});
   return promise;
 }
+export function uploadRecordMedia(file: File, retry = false, options: { maxDuration?: number; onProgress?: VideoProgressCallback } = {}): Promise<MediaUploadReceipt> {
+  if (!file.type.startsWith('video/')) return uploadRecordPhoto(file, retry);
+  return import('./video-upload').then(module => module.uploadBrowserVideo(file, retry, options.maxDuration || 60, options.onProgress));
+}
 export function photoEndpoint(entity: PhotoEntity, id: number, slot?: string) {
   return `/api/auth/record-photos/${entity}/${id}${slot ? `/${encodeURIComponent(slot)}` : ''}`;
 }
@@ -60,10 +67,10 @@ export async function deleteRecordPhoto(entity: PhotoEntity, id: number, slot: s
 export async function saveRecordPhotos(entity: PhotoEntity, id: number, photos: PendingPhotos) {
   const entries = Object.entries(photos);
   for (const [slot, photo] of entries) {
-    let receipt: CloudUploadReceipt | undefined;
+    let receipt: MediaUploadReceipt | undefined;
     if (uploads.has(photo) || photo.type.startsWith('video/')) {
-      try { receipt = await uploadRecordPhoto(photo); }
-      catch { receipt = await uploadRecordPhoto(photo, true); }
+      try { receipt = await uploadRecordMedia(photo); }
+      catch { receipt = await uploadRecordMedia(photo, true); }
     }
     const response = await fetch(photoEndpoint(entity, id, slot), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': receipt ? 'application/json' : photo.type }, body: receipt ? JSON.stringify(receipt) : photo });
     const result = await response.json().catch(() => null);

@@ -72,6 +72,8 @@ async function mockChecks() {
   asset = { ...asset, duration: 181 }; await assert.rejects(() => cloud.cloudinaryVideoObject(other, 180));
   asset = { ...asset, duration: 61 }; await assert.rejects(() => cloud.cloudinaryVideoObject(other, 60));
   asset = { ...asset, duration: 12, video: { codec: 'hevc' } }; await assert.rejects(() => cloud.cloudinaryVideoObject(other, 60));
+  asset = { ...asset, codec: 'hevc', video: undefined }; await assert.rejects(() => cloud.cloudinaryVideoObject(other, 60));
+  delete asset.codec;
   asset = { ...asset, video: { codec: 'h264' }, bytes: mp4.length + 1 }; await assert.rejects(() => cloud.cloudinaryVideoObject(other, 60));
   asset = { ...asset, bytes: mp4.length }; putFailure = true; await assert.rejects(() => cloud.cloudinaryVideoObject(other, 60)); putFailure = false;
   assert.equal(objects.size, 1);

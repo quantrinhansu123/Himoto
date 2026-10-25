@@ -10,7 +10,7 @@ const sdk = require('cloudinary').v2;
 let stage = 'prepare';
 async function main() {
   const filename = process.argv[process.argv.indexOf('--synthetic-file') + 1];
-  if (!process.argv.includes('--synthetic-file') || path.basename(filename || '') !== 'synthetic-qa.mp4' || fs.statSync(filename).size > 1024 * 1024) throw Error('Synthetic clip required');
+  if (!process.argv.includes('--synthetic-file') || !['synthetic-qa.mp4','synthetic-qa.mov'].includes(path.basename(filename || '')) || fs.statSync(filename).size > 1024 * 1024) throw Error('Synthetic clip required');
   const signed = cloud.signPhotoUpload(999999999, randomUUID(), Date.now(), true);
   const privateId = signed.params.public_id;
   let ref, sourceDeleted = false;
@@ -22,7 +22,7 @@ async function main() {
     }
     stage = 'convert-synthetic-video';
     // Match the application's signed browser upload; SDK string transformations are named presets.
-    const form = new FormData(); form.append('file', new Blob([fs.readFileSync(filename)], { type: 'video/mp4' }), 'synthetic-qa.mp4');
+    const form = new FormData(); form.append('file', new Blob([fs.readFileSync(filename)], { type: filename.endsWith('.mov') ? 'video/quicktime' : 'video/mp4' }), path.basename(filename));
     for (const [key, value] of Object.entries(signed.params)) form.append(key, String(value));
     form.append('api_key', signed.api_key); form.append('signature', signed.signature);
     const response = await fetch(`https://api.cloudinary.com/v1_1/${signed.cloud_name}/video/upload`, { method: 'POST', body: form, signal: AbortSignal.timeout(120000) });
@@ -44,12 +44,16 @@ async function main() {
     const unsigned = new URL(signedUrl); unsigned.search = '';
     const denied = await fetch(unsigned, { signal: AbortSignal.timeout(20000) }); await denied.arrayBuffer(); assert([403, 404].includes(denied.status));
     const bytes = await videos.readObjectVideo(ref); assert.equal(bytes.length, metadata.ContentLength);
+    if (process.argv.includes('--save-synthetic-output')) {
+      const output = path.resolve('.backups/browser-video-20261025/fixtures/cloudinary-fallback.mp4');
+      fs.mkdirSync(path.dirname(output), { recursive: true }); fs.writeFileSync(output, bytes);
+    }
     checks.push('Signed playback, byte-range seeking and server-side download work; anonymous access is denied');
     if (process.argv.includes('--browser')) {
       stage = 'browser-playback';
       const browser = require('node:child_process').spawnSync('python', ['scripts/check-cloudfly-video-playback.py'], { input: JSON.stringify({ url: signedUrl }), encoding: 'utf8', timeout: 180000, windowsHide: true });
       const result = JSON.parse(browser.stdout || '{}');
-      if (browser.status !== 0 || result.passed !== 4) throw Error('Synthetic browser playback failed');
+      if (browser.status !== 0 || result.passed !== 4) throw Error(`Synthetic browser playback failed: ${result.browser || 'unknown'} ${result.phase || 'unknown'}`);
       checks.push('Chromium and WebKit decode, play and seek the real private MP4 in desktop and mobile viewports');
     }
     stage = 'remove-conversion-and-retry';

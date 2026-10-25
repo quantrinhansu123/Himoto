@@ -4,7 +4,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import { RecordPhotoError } from './record-photos';
 import type { PoolClient } from 'pg';
 import type { PhotoEntity } from '@/lib/management/record-photos';
-import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
+import { MAX_VIDEO_BYTES } from '@/lib/management/video-media';
 import { cloudflyVideosEnabled, storeConvertedVideo, hasConvertedVideo } from './cloudfly-videos';
 import { ownerDatabase } from './himoto-database';
 
@@ -21,7 +21,8 @@ function config() {
 export function signPhotoUpload(actorId: number, uploadId: unknown, now = Date.now(), video = false) {
   if (typeof uploadId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) throw new RecordPhotoError('Mã tải ảnh không hợp lệ.');
   const settings = config();
-  const params = { public_id: `himoto/${video?'management-video':'management'}/${actorId}/${uploadId}`, timestamp: Math.floor(now / 1000), type: 'authenticated', overwrite: false, format: video?'mp4':'jpg', allowed_formats: video?'mp4,mov,webm':'jpg,png,webp', ...(video?{transformation:'c_limit,w_1280,h_1280,vc_h264,ac_aac'}:{}) };
+  // Formats listed here bypass `format` conversion. Only MP4 belongs in the video output allowlist.
+  const params = { public_id: `himoto/${video?'management-video':'management'}/${actorId}/${uploadId}`, timestamp: Math.floor(now / 1000), type: 'authenticated', overwrite: false, format: video?'mp4':'jpg', allowed_formats: video?'mp4':'jpg,png,webp', ...(video?{transformation:'c_limit,w_1280,h_1280,vc_h264,ac_aac'}:{}) };
   return { cloud_name: settings.cloud_name, api_key: settings.api_key, params, signature: cloudinary.utils.api_sign_request(params, settings.api_secret) };
 }
 export function verifyPhotoReceipt(value: unknown, actorId: number): CloudPhotoReceipt {

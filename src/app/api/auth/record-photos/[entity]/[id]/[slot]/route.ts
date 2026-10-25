@@ -6,6 +6,7 @@ import { RecordPhotoError, parsePhotoTarget, requirePhotoRecord,requireContractP
 import { MAX_PHOTO_BYTES } from '@/lib/management/record-photos';
 import { verifyPhotoReceipt, writeCloudinaryPhoto, readCloudinaryPhoto, cleanupConvertedVideo, type CloudPhotoReceipt } from '@/lib/server/cloudinary-photos';
 import { objectVideoUrl } from '@/lib/server/cloudfly-videos';
+import { isBrowserVideoReceipt, verifyBrowserVideoReceipt, readyBrowserVideo } from '@/lib/server/browser-videos';
 import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
@@ -37,13 +38,25 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
     }
     const user = writing ? await userFromSession(request.cookies.get(SESSION_COOKIE)?.value) : null;
     if (writing && !user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
-    const receipt: CloudPhotoReceipt | undefined = writing && !data && user ? verifyPhotoReceipt(receiptBody, user.id) : undefined;
+    const direct = writing && !data && user && isBrowserVideoReceipt(receiptBody) ? verifyBrowserVideoReceipt(receiptBody, user.id) : undefined;
+    const receipt: CloudPhotoReceipt | undefined = writing && !data && user && !direct ? verifyPhotoReceipt(receiptBody, user.id) : undefined;
     client = await himotoPool.connect();
     await client.query('BEGIN');
     if(writing)await requireContractPhotoSlot(client,target.entity,target.id,raw.slot);
     let response: NextResponse;
-    if (user && (data || receipt)) {
-      if (receipt) { await requirePhotoRecord(client, target.entity, target.id); await writeCloudinaryPhoto(client, target.entity, target.id, raw.slot, user.id, receipt); }
+    if (user && (data || receipt || direct)) {
+      if (direct) {
+        if (target.entity !== 'contracts' || !/-video-[1-3]$/.test(raw.slot)) throw new RecordPhotoError('Video chỉ lưu ở ô video hợp đồng.');
+        await requirePhotoRecord(client, target.entity, target.id);
+        const stored = await readyBrowserVideo(direct, user.id, 60);
+        await client.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by,object_bucket,object_key,object_etag)
+          VALUES($1,$2,$3,'video/mp4',NULL,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,slot)
+          DO UPDATE SET mime_type='video/mp4',data=NULL,updated_by=EXCLUDED.updated_by,updated_at=now(),
+            cloudinary_public_id=NULL,cloudinary_cloud_name=NULL,cloudinary_version=NULL,
+            object_bucket=EXCLUDED.object_bucket,object_key=EXCLUDED.object_key,object_etag=EXCLUDED.object_etag`,
+        [target.entity,target.id,raw.slot,user.id,stored.object_bucket,stored.object_key,stored.object_etag]);
+      }
+      else if (receipt) { await requirePhotoRecord(client, target.entity, target.id); await writeCloudinaryPhoto(client, target.entity, target.id, raw.slot, user.id, receipt); }
       else await writeRecordPhoto(client, target.entity, target.id, raw.slot, request.headers.get('content-type') || '', data!, user.id);
       response = NextResponse.json({ status: 'success' });
     } else {

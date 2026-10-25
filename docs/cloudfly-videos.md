@@ -1,8 +1,10 @@
 # Video CloudFly cho Himoto
 
+Video mới ưu tiên xử lý ngay trên thiết bị và tải trực tiếp vào CloudFly bằng Mediabunny: xem [luồng trình duyệt, CORS và rollback](browser-video-processing.md). Các bước Cloudinary bên dưới là nhánh dự phòng khi thiết bị không xử lý được.
+
 Video mới của hợp đồng và minh chứng PGD/KTNB có thể lưu bản chính thức vào bucket Private trên CloudFly. Ảnh giữ nguyên luồng Cloudinary hoặc bytea đang có. Video cũ trên Cloudinary tiếp tục xem và gửi Telegram được, không tự chuyển hoặc xóa dữ liệu lịch sử.
 
-## Luồng lưu
+## Luồng dự phòng qua Cloudinary
 
 1. Trình duyệt xin chữ ký và upload trực tiếp lên Cloudinary như trước. Cloudinary chuyển MOV/HEVC/WebM sang MP4/H.264/AAC, giới hạn cạnh 1280 px. Bước này vẫn sử dụng quota xử lý của Cloudinary.
 2. Khi lưu tệp vào hồ sơ, server xác minh chữ ký và người upload, kiểm tra quyền/phạm vi hồ sơ, định dạng, dung lượng và thời lượng. Tối đa 45 MB; hợp đồng 60 giây, PGD/KTNB 180 giây.
@@ -18,7 +20,7 @@ API quản lý vẫn xác thực phiên và kiểm tra RLS trước khi cấp UR
 
 Telegram đọc object bằng credential phía server, giữ nguyên cách chia lô/giới hạn và gửi hiện tại. Kiểm thử chỉ mô phỏng Telegram. Không tự gửi tin hay bật thông báo mới.
 
-Không cần CORS PUT cho ứng dụng vì trình duyệt vẫn upload vào Cloudinary; server sao chép sang S3. Phát video dùng thẻ video mặc định, không đặt crossorigin. Giữ nguyên CORS của portal CloudFly hiện có.
+Nhánh dự phòng không cần CORS PUT vì trình duyệt upload vào Cloudinary rồi server sao chép sang S3. Nhánh Mediabunny cần rule PUT riêng cho origin ứng dụng, được bổ sung bằng `scripts/configure-browser-video-cors.cjs` và giữ các rule portal hiện có. Phát video dùng thẻ video mặc định, không đặt crossorigin.
 
 ## Cấu hình và bật production
 

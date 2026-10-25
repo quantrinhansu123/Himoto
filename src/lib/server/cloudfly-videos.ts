@@ -2,13 +2,14 @@ import 'server-only';
 import { createHash, randomUUID } from 'node:crypto';
 import { S3Client, HeadObjectCommand, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
+import { MAX_VIDEO_BYTES } from '@/lib/management/video-media';
 import { RecordPhotoError } from './record-photos';
 import type { CloudPhotoReceipt } from './cloudinary-photos';
 
 export interface ObjectVideoRef { object_bucket: string; object_key: string; object_etag: string }
 export interface VideoMetadata {
   resource_type?: string; format?: string; version?: number; bytes?: number; duration?: number;
+  codec?: string;
   video?: { codec?: string };
 }
 const KEY_PATTERN = /^himoto\/videos\/[a-z0-9_-]+\/[1-9]\d*\/[0-9a-f-]{36}\/v[1-9]\d*\.mp4$/i;
@@ -18,7 +19,7 @@ export function cloudflyVideosEnabled() {
   if (!['cloudinary', 'cloudfly'].includes(provider)) throw new RecordPhotoError('Cấu hình nơi lưu video chưa hợp lệ.', 503);
   return provider === 'cloudfly';
 }
-function settings() {
+export function cloudflyVideoSettings() {
   const endpoint = process.env.CLOUDFLY_S3_ENDPOINT?.trim();
   const bucket = process.env.CLOUDFLY_S3_BUCKET?.trim();
   const accessKeyId = process.env.CLOUDFLY_S3_ACCESS_KEY_ID?.trim();
@@ -28,6 +29,7 @@ function settings() {
   }
   return { endpoint, bucket, region: process.env.CLOUDFLY_S3_REGION?.trim() || 'hn', accessKeyId, secretAccessKey };
 }
+const settings = cloudflyVideoSettings;
 let cached: { fingerprint: string; client: S3Client } | undefined;
 export function cloudflyVideoClient() {
   const config = settings(), fingerprint = createHash('sha256').update(JSON.stringify(config)).digest('hex');
@@ -91,7 +93,7 @@ export async function storeConvertedVideo(receipt: CloudPhotoReceipt, cloudName:
   const asset = await metadata();
   if (asset.resource_type !== 'video' || asset.format !== 'mp4' || Number(asset.version) !== receipt.version ||
     !Number.isSafeInteger(asset.bytes) || Number(asset.bytes) <= 0 || Number(asset.bytes) > MAX_VIDEO_BYTES || !Number.isFinite(asset.duration) || Number(asset.duration) <= 0 || Number(asset.duration) > maxDuration ||
-    (asset.video?.codec && !['h264', 'avc1'].includes(asset.video.codec))) {
+    ((asset.codec || asset.video?.codec) && !['h264', 'avc1'].includes((asset.codec || asset.video?.codec)!))) {
     throw new RecordPhotoError(`Video cần là MP4/H.264, tối đa 45 MB và ${maxDuration} giây.`);
   }
   const bytes = await readVideoBytes(await download());
