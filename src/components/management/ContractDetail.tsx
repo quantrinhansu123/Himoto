@@ -257,7 +257,10 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         {historyState(!history?.cashflow.length, 'Chưa có phiếu thu / chi nào cho hợp đồng này.')}
         {history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow} />}
       </>)}
-    {panel('lifecycle','Nợ xấu / bảo lưu',section==='lifecycle'&&source==='api'&&row.status!=='draft'&&<ContractLifecyclePanel id={row.id} reloadKey={lifecycleReload} onChanged={applyLifecycle} onRecover={()=>setRecoveryOpen(true)} onPayment={onPayment}/>)}
+    {panel('lifecycle','Nợ xấu / bảo lưu',section==='lifecycle'&&(row.status==='draft'
+      ?<div role="status"><p>Hợp đồng này đang <strong>Lưu nháp</strong>, chưa thể bảo lưu hoặc xử lý nợ xấu.</p><p>Để bảo lưu, chọn hợp đồng <strong>thuê sở hữu đã phát hành</strong> ở trạng thái <strong>Đang thuê</strong> hoặc <strong>Quá hạn</strong>. Mở Xem chi tiết → Nợ xấu / bảo lưu → Bảo lưu hợp đồng.</p></div>
+      :source==='api'?<ContractLifecyclePanel id={row.id} reloadKey={lifecycleReload} onChanged={applyLifecycle} onRecover={()=>setRecoveryOpen(true)} onPayment={onPayment}/>
+      :<p role="status">Kết nối dữ liệu hệ thống để xem tình trạng công nợ và bảo lưu hợp đồng.</p>))}
     {panel('photos','Ảnh thuê / trả xe',section==='photos'&&<ContractPhotoGallery id={row.id} swaps={history?.changes.filter(change=>change.kind==='swap')}/>)}
     {panel('telegram','Gửi thông tin và ảnh vào nhóm Telegram',section==='telegram'&&source==='api'&&(row.status==='draft'?<p role="status">Hợp đồng đang lưu nháp. Bấm Tiếp tục hoàn tất hợp đồng, kiểm tra thanh toán rồi Xác nhận lưu chính thức. Sau khi phát hành mới gửi được thông tin và ảnh lên Telegram.</p>:<>{row.status==='cancelled'&&<p>Hợp đồng đã hủy. Có thể xem lịch sử và thu hồi tin đã gửi.</p>}<ContractTelegramPanel id={row.id}/></>))}
     {source === 'api' && (section === 'vehicle' || section === 'customer') && <>
