@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef,useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LoaderCircle, RotateCcw, Wallet } from 'lucide-react';
+import { LoaderCircle, MessageCircle, Pencil, RotateCcw, Wallet } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
@@ -15,6 +15,7 @@ import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { DEFAULT_LATE_HOURLY_RATE,lateReturnFee } from '@/lib/management/return-fees';
 import { SelectedVehicleGps,useSelectedVehicleGps } from './SelectedVehicleGps';
 import { ReturnedVehicleStatus } from './ReturnedVehicleStatus';
+import { ReturnedContractEditor } from './ReturnedContractEditor';
 
 const localNow = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 16);
 const localMillis = (value: string) => new Date(`${value}:00+07:00`).getTime();
@@ -58,6 +59,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const savingRef=useRef(false);
   const [photoPending,setPhotoPending]=useState<Record<number,boolean>>({});
   const [photoVersion,setPhotoVersion]=useState(0);
+  const [editor,setEditor]=useState<{itemId:number;step:'edit'|'telegram'}>();
   const photosPending=Object.values(photoPending).some(Boolean);
   const wasPhotosPending=useRef(false);
   const formRef=useRef<HTMLFormElement>(null);
@@ -210,6 +212,15 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     onClose();
   }
 
+  function openEditor(itemId:number,step:'edit'|'telegram'){
+    if(photosPending){setError('Lưu ảnh/video vừa chọn trước khi mở hồ sơ trả xe.');return;}
+    setEditor({itemId,step});
+  }
+  if(editor)return <ReturnedContractEditor itemId={editor.itemId} initialStep={editor.step} onSaved={()=>{invalidateData(['contracts']);}} onClose={()=>{
+    setEditor(undefined);setDone(null);
+    if(contractId)void loadContractReturnableItems(contractId).then(accept).catch(cause=>setError(cause instanceof Error?cause.message:'Không tải được hồ sơ.'));
+    else void loadItems(searchTerm);
+  }}/>;
   return <Dialog title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={close}>
     {/* Only the confirmation button records a return. Enter in a field cannot confirm it. */}
     <form ref={formRef} onSubmit={event => event.preventDefault()}>
@@ -220,6 +231,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
           {done.due!==null&&done.due<0&&<p role="alert">Tiền thuê còn thu dư {formatMoney(-done.due)}. Kiểm tra khoản hoàn trả sớm chưa ghi nhận; không gộp vào tiền cọc.</p>}
           {done.depositHeld>0&&<p role="alert">Chưa ghi nhận hoàn hết cọc. Hệ thống còn giữ {formatMoney(done.depositHeld)}; kiểm tra phiếu chi nếu đã hoàn tiền thực tế.</p>}
           {done.telegramEvents.map(event=><ContractTelegramPanel key={event.key} id={event.orderId} eventKey={event.key}/>)}
+          {lines[0]&&<button type="button" className="mg-button" onClick={()=>openEditor(lines[0].row.item_id,'edit')}><Pencil size={16}/>Sửa hồ sơ trả xe</button>}
           {done.due===0&&done.depositHeld===0?<p>Đã ghi nhận đủ các khoản thu và hoàn tiền đã chọn trong lượt trả xe.</p>:canPayContracts ? <>
             <p>Bấm nút bên dưới để mở phiếu thu/chi Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng.</p>
             {(done.due === null || done.due > 0) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
@@ -231,7 +243,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {!contractCode && <div className="mg-return-search"><label className="mg-sr-only" htmlFor="contract-return-search">Mã hợp đồng, CCCD, biển số hoặc SĐT khách</label><input autoFocus id="contract-return-search" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void loadItems(searchTerm); } }} placeholder="Mã HĐ, CCCD, biển số hoặc SĐT khách" /><button className="mg-button" type="button" disabled={loading || !searchTerm.trim()} onClick={() => void loadItems(searchTerm)}>{loading ? <LoaderCircle size={15} className="mg-spin" /> : null}Tìm</button></div>}
         {contractCode && !rows.length && loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && rows.length === 0 && !error && (searchTerm ? <p>{contractCode ? 'Hợp đồng này không có xe trong danh sách chi tiết để trả.' : 'Không tìm thấy xe khớp mã hợp đồng, CCCD, biển số hoặc SĐT khách.'}</p> : <p>Nhập mã hợp đồng, CCCD, biển số hoặc SĐT khách để tra cứu xe cần trả.</p>)}
-        {rows.length > 0 && !openRows.length && <><p role="status">Tất cả xe trong hợp đồng đã được trả. Bổ sung ảnh/video bên dưới; không ghi nhận trả hoặc quyết toán lần hai.</p><details className="mg-return-options"><summary>Xem tình trạng xe sau trả</summary><ReturnedVehicleStatus rows={rows}/></details></>}
+        {rows.length > 0 && !openRows.length && <><p role="status">Tất cả xe trong hợp đồng đã được trả. Chọn Sửa hồ sơ trả xe để sửa giờ trả, phí, thu/hoàn và ảnh/video; chọn Gửi Telegram để kiểm tra và gửi hồ sơ đã lưu.</p><details className="mg-return-options"><summary>Xem tình trạng xe sau trả</summary><ReturnedVehicleStatus rows={rows}/></details></>}
         {openRows.length > 0 && <>
           {!contractCode && <p className="mg-composer-hint">Tìm theo một biển số sẽ hiện các xe cùng hợp đồng. Tích chọn những xe khách thực tế trả.</p>}
           <h3>1. Xe trả và phí thực tế</h3><details className="mg-return-options"><summary>Giờ trả và cách tính phí gợi ý</summary><div className="mg-form-grid mg-contract-grid-two">
@@ -270,7 +282,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
           {lines.map(({row})=><ContractTransactionPhotos key={row.item_id} id={row.order_id} phase={`return-${row.item_id}`} title={`Ảnh trả xe và hồ sơ · ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})} onSaved={()=>setPhotoVersion(value=>value+1)}/>)}
           <p className="mg-composer-hint">Chỉ ghi phiếu cho khoản đã chọn thu / hoàn. Còn nợ: giữ hợp đồng Chờ tất toán.</p>
         </>}
-        {doneRows.length>0&&<details className="mg-return-options"><summary>Xe đã trả · Bổ sung ảnh / hồ sơ ({doneRows.length})</summary>{doneRows.map(row => <ContractTransactionPhotos key={row.item_id} id={row.order_id} phase={`return-${row.item_id}`} title={`Bổ sung ảnh trả xe ${row.license}`} onPendingChange={pending=>setPhotoPending(current=>current[row.item_id]===pending?current:{...current,[row.item_id]:pending})}/>)}</details>}
+        {doneRows.length>0&&<section className="mg-return-completed-actions" aria-label="Sửa và gửi hồ sơ xe đã trả"><h3>Hồ sơ xe đã trả</h3>{doneRows.map(row=><div className="mg-return-completed-card" key={row.item_id}><div><strong>{row.license}</strong><span>{row.contract_code} · {formatDateTime(row.completed_at)}</span></div><div className="mg-heading-actions"><button type="button" className="mg-button" disabled={photosPending} onClick={()=>openEditor(row.item_id,'edit')}><Pencil size={16}/>Sửa hồ sơ trả xe</button><button type="button" className="mg-button mg-button-primary" disabled={photosPending} onClick={()=>openEditor(row.item_id,'telegram')}><MessageCircle size={16}/>Gửi Telegram</button></div></div>)}</section>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>

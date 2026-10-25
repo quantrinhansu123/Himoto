@@ -70,6 +70,13 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
   for(const settlement of settlements){
     const selected=items.filter(item=>Number(item.order_id)===settlement.order_id).map(item=>Number(item.id));
     const returns=results.filter(result=>selected.includes(result.item_id));
+    await settleReturnedItems(db,actor,settlement,selected,returns);
+  }
+  return inputs.map(input=>results.find(result=>result.item_id===input.item_id)!);
+}
+
+/** Shared by first return and a correction, after the caller establishes the exact current balance. */
+export async function settleReturnedItems(db:Database,actor:number,settlement:ReturnSettlement,selected:number[],returns:ReturnResult[]) {
     const late=returns.reduce((sum,result)=>sum+(result.late_fee||0),0),repair=returns.reduce((sum,result)=>sum+(result.repair_fee||0),0);
     let context=await readPaymentContext(db,settlement.order_id);
     const debt=Math.max((context.remaining||0)-late-repair,0),limits={late_fee:late,repair_fee:repair,rental_debt:debt};
@@ -100,6 +107,4 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
       COALESCE(draft_payload::jsonb->'management_composer','{}'::jsonb)||jsonb_build_object('return_settlements',COALESCE(draft_payload::jsonb #> '{management_composer,return_settlements}','[]'::jsonb)||$2::jsonb),true)::json,
       order_status=CASE WHEN $3 THEN order_status WHEN $4 THEN 'completed' ELSE 'wait_payment' END,updated_at=now() WHERE id=$1`,[settlement.order_id,JSON.stringify([snapshot]),context.items.length>0,context.remaining===0]);
     for(const result of returns)if(!context.items.length)result.status=context.remaining===0?'completed':'wait_payment';
-  }
-  return inputs.map(input=>results.find(result=>result.item_id===input.item_id)!);
 }

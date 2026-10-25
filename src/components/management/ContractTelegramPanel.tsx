@@ -6,26 +6,28 @@ import { contractTelegramRequest, NOTICE_STATUS_LABELS, type ContractTelegramSta
 import { ContractTelegramRetraction } from './ContractTelegramRetraction';
 import { ContractPhotoCard } from './ContractPhotoCard';
 
-export function ContractTelegramPanel({id,eventKind,eventKey}:{id:number;eventKind?:string;eventKey?:string}) {
+export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds}:{id:number;eventKind?:string;eventKey?:string;returnItemIds?:number[]}) {
   const [data,setData]=useState<ContractTelegramState|null>(null),[selected,setSelected]=useState(''),[loading,setLoading]=useState(false),[actionBusy,setBusy]=useState(false),[photoBusy,setPhotoBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
   const busy=actionBusy||photoBusy;
+  const returnItems=returnItemIds?.join(',')||'';
   const [confirmedAbsent,setConfirmedAbsent]=useState(false);
   const refresh=useCallback(async(signal?:AbortSignal)=>{
     setLoading(true);setError('');
-    try{const state=await contractTelegramRequest(id,undefined,signal);if(!signal?.aborted){setData(state);setSelected(old=>state.events.some(e=>e.key===old)?old:state.events.find(e=>eventKey?e.key===eventKey:eventKind?e.kind===eventKind:true)?.key||'');}}
+    try{const state=await contractTelegramRequest(id,undefined,signal);if(returnItems)state.events=state.events.filter(e=>e.kind==='return'&&e.phases.some(phase=>returnItems.split(',').some(item=>phase===`return-${item}`)));if(!signal?.aborted){setData(state);setSelected(old=>state.events.some(e=>e.key===old)?old:state.events.find(e=>eventKey?e.key===eventKey:eventKind?e.kind===eventKind:true)?.key||state.events[0]?.key||'');}}
     catch(cause){if(!signal?.aborted)setError(cause instanceof Error?cause.message:'Không tải được thông báo.');}
     finally{if(!signal?.aborted)setLoading(false);}
-  },[id,eventKind,eventKey]);
+  },[id,eventKind,eventKey,returnItems]);
   useEffect(()=>{const controller=new AbortController();void refresh(controller.signal);return()=>controller.abort();},[refresh]);
-  const event=data?.events.find(e=>e.key===selected);
+  const events=data?.events.filter(e=>!returnItems||e.kind==='return'&&e.phases.some(phase=>returnItems.split(',').some(item=>phase===`return-${item}`)))||[];
+  const event=events.find(e=>e.key===selected);
   useEffect(()=>setConfirmedAbsent(false),[selected,event?.notice_id]);
-  const active=data?.events.some(e=>e.status==='pending'||e.status==='sending'||e.deliveries?.some(delivery=>['pending','processing'].includes(delivery.retraction_state||'')));
+  const active=events.some(e=>e.status==='pending'||e.status==='sending'||e.deliveries?.some(delivery=>['pending','processing'].includes(delivery.retraction_state||'')));
   useEffect(()=>{if(!active||busy)return;const controller=new AbortController();const timer=setTimeout(()=>void refresh(controller.signal),3000);return()=>{clearTimeout(timer);controller.abort();};},[active,busy,data,refresh]);
   return <section className="mg-contract-telegram">
     <p>Bước cuối · Kiểm tra toàn bộ thông tin, ảnh và video đã lưu từ các bước trước. Chỉ nút Gửi toàn bộ bên dưới mới gửi vào nhóm nhận của giao dịch. Không cần tải lại ảnh đã có.</p>
     <div className="mg-contract-history-toolbar"><button className="mg-button" type="button" disabled={loading||busy} onClick={()=>void refresh()}>{loading?<LoaderCircle size={15} className="mg-spin"/>:null}Làm mới nội dung và ảnh</button></div>
-    {data&&!data.events.length&&<p>Chưa có giao dịch hoàn tất. Ảnh đã lưu sẽ tập hợp tại đây sau khi xác nhận giao dịch.</p>}
-    {Boolean(data?.events.length)&&<label className="mg-telegram-event-label">Giao dịch cần gửi<select aria-label="Giao dịch cần gửi Telegram" value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value);setMessage('');}}>{data?.events.map(e=><option key={e.key} value={e.key}>{e.label} · {e.photo_count} ảnh · {e.video_count||0} video · {e.can_resume?'Gửi chưa hoàn tất':e.status?NOTICE_STATUS_LABELS[e.status]:'Chưa gửi'}</option>)}</select></label>}
+    {data&&!events.length&&<p>Chưa có giao dịch hoàn tất. Ảnh đã lưu sẽ tập hợp tại đây sau khi xác nhận giao dịch.</p>}
+    {Boolean(events.length)&&<label className="mg-telegram-event-label">Giao dịch cần gửi<select aria-label="Giao dịch cần gửi Telegram" value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value);setMessage('');}}>{events.map(e=><option key={e.key} value={e.key}>{e.label} · {e.photo_count} ảnh · {e.video_count||0} video · {e.can_resume?'Gửi chưa hoàn tất':e.status?NOTICE_STATUS_LABELS[e.status]:'Chưa gửi'}</option>)}</select></label>}
     {event&&<div key={event.key}>
       {event.destination_label&&<p><strong>Nơi nhận: {event.destination_label}</strong></p>}
       <pre className="mg-telegram-preview">{event.text}</pre>

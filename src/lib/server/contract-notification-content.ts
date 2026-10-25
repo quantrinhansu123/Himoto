@@ -13,6 +13,7 @@ export interface NotificationPayload {
   refunded?:number;rental_refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
   ownership_renewal_note?:string;
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
+  return_details?:{note:string;returned_at:string[];rental_refund_recipient?:{bank?:string;account?:string;name?:string}};
   refund_recipient?:{bank?:string;account?:string;name?:string};
   refund_pending?:{amount:number;bank?:string;account?:string;name?:string};
   battery_swap?:{percentage:number;fee:number;collected:number;license:string;vehicle_name:string};
@@ -50,7 +51,10 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
       `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,`Tiền cọc: ${money(p.deposit)}`,
       ...(p.rental_fee!=null&&p.total!=null&&Number(p.total)!==p.rental_fee?[`Phí khác / điều chỉnh: ${money(Number(p.total)-p.rental_fee)}`]:[]),
       `Tổng tiền: ${money(p.grand_total)}`,`Hình thức thanh toán: ${method}`];
-  if(kind==='return')return [...lines,`HĐ: ${p.code}`].join('\n').slice(0,4000);
+  if(kind==='return')return [...lines,...(p.return_details?[`Giờ trả: ${p.return_details.returned_at.map(at=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})).join(' · ')}`,
+    ...(p.refund_recipient&&[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].some(Boolean)?[`Nhận hoàn cọc: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
+    ...(p.return_details.rental_refund_recipient?[`Nhận hoàn tiền thuê: ${[p.return_details.rental_refund_recipient.bank,p.return_details.rental_refund_recipient.account,p.return_details.rental_refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
+    ...(p.return_details.note?[`Ghi chú: ${p.return_details.note}`]:[])]:[]),`HĐ: ${p.code}`].join('\n').slice(0,4000);
   return [...lines,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,`Nhân viên làm hợp đồng: ${p.contract_staff||'Chưa ghi nhận'}`,...(!['rental','reservation'].includes(kind)?[`Người thực hiện: ${p.actor}`]:[]),`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n').slice(0,4000);
 }
 export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
@@ -137,6 +141,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     ||t.order_item_id!=null&&returnIds.includes(String(t.order_item_id)));
   const feeReceipts=settlement?tx.filter(t=>t.type!=='out'&&settlement.transaction_ids?.includes(Number(t.id))):[];
   const adjustments=kind==='return'&&Array.isArray(composer?.return_adjustments)?composer.return_adjustments.filter((entry:{item_id:number})=>returnIds.includes(String(entry.item_id))):[];
+  const corrected=kind==='return'&&Array.isArray(composer?.return_corrections)&&composer.return_corrections.some((entry:{item_ids:number[]})=>entry.item_ids?.some(id=>returnIds.includes(String(id))));
   const rental=tx.filter(t=>['in','addon'].includes(t.type)&&!/^order:deposit(?::|$)/.test(t.name));
   // Date changes are not receipts. Only an explicitly associated renewal receipt supplies a payment method.
   const renewalTx=renewal?tx.filter(t=>['in','addon'].includes(t.type)&&Number(t.value)>0&&(
@@ -161,6 +166,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
     ...(renewalNote?{ownership_renewal_note:renewalNote}:{}),
+    ...(corrected?{return_details:{note:String(settlement?.note||''),returned_at:[...new Set<string>(adjustments.map((a:{actual_return_at:string})=>a.actual_return_at))].sort(),...(eventRentalRefunds.length&&settlement?.rental_refund_recipient?.account?{rental_refund_recipient:settlement.rental_refund_recipient}:{})}}:{}),
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,
     refunded:eventRefunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{}),...(pendingRefund?{refund_pending:pendingRefund}:{}),
     ...(eventRentalRefunds.length?{rental_refunded:eventRentalRefunds.reduce((sum,t)=>sum+Number(t.value),0)}:{}),

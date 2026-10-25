@@ -72,6 +72,8 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
       ...(!('rental_fee' in baseline)?{vehicle_names:fresh.vehicle_names,days:fresh.days,rental_fee:fresh.rental_fee,deposit:fresh.deposit,grand_total:fresh.grand_total}:{}),
     }:fresh;
     if(event.kind==='return'){
+      if(fresh.return_details)payload.return_details=fresh.return_details;else delete payload.return_details;
+      if(fresh.refund_recipient)payload.refund_recipient=fresh.refund_recipient;else delete payload.refund_recipient;
       if(fresh.rental_refunded)payload.rental_refunded=fresh.rental_refunded;else delete payload.rental_refunded;
       if(fresh.refund_pending)payload.refund_pending=fresh.refund_pending;else delete payload.refund_pending;
     }
