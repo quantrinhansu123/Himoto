@@ -5,7 +5,7 @@ import { installmentBalance,parseInstallmentPlan } from '@/lib/management/contra
 import { canHoldContract,contractHoldDeadline,legacyResumePlan,localLifecycleTime,resumeInstallmentPlan,validLifecycleTime,type ContractLifecycleContext,type ContractLifecycleInput,type LifecycleEvent } from '@/lib/management/contract-lifecycle';
 import { usesScopedDatabase } from './access-context';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
-import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { closeResolvedBadDebt,readContractResolution } from './contract-resolution';
 
 type Database=Pick<PoolClient,'query'>;
@@ -13,12 +13,10 @@ export class ContractLifecycleError extends Error {constructor(message:string,pu
 const iso=(value:unknown)=>value instanceof Date?value.toISOString():value==null?null:String(value);
 const vn=(value:string)=>localLifecycleTime(new Date(value));
 const stamp=(value:string)=>value+':00+07:00';
-// Operation store kind is used for routing; the agreement's own type controls its lifecycle.
-const rentalTypeSql=`COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),NULLIF(o.order_type,''),'')`;
 const orderSql=`SELECT o.id,o.order_status,o.draft_payload,o.total,o.rent_at,o.return_at,o.xmin::text AS revision,
-  COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,${rentalTypeSql} AS rental_type,
+  COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
   o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
-  ${rentalTypeSql} IN ('ownership','ownership_cd') AS ownership
+  ${EFFECTIVE_RENTAL_TYPE_SQL} IN ('ownership','ownership_cd') AS ownership
   FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`;
 export function parseContractLifecycle(raw:unknown):ContractLifecycleInput {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new ContractLifecycleError('Thông tin thao tác không hợp lệ.');

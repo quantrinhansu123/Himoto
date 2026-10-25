@@ -9,7 +9,7 @@ import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
 import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits';
-import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
 import { STORE_SELECT_SQL } from './store-management';
@@ -111,8 +111,8 @@ function contractFilterSql(filters:Record<string,string>) {
   if(/^[1-9]\d{0,14}$/.test(filters.customer_id||''))sql+=` AND o.customer_id=${Number(filters.customer_id)}`;
   if(/^[1-9]\d{0,14}$/.test(filters.id||''))sql+=` AND o.id=${Number(filters.id)}`;
   const type=filters.contract_type_id||filters.rental_type;
-  if(type)sql+=` AND COALESCE(NULLIF(o.draft_payload #>> '{management_composer,draft,contract_type_id}',''),NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type,'')='${type.replaceAll("'","''")}'`;
-  if(filters.ownership_term_months)sql+=` AND COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type)='ownership'
+  if(type)sql+=` AND COALESCE(NULLIF(o.draft_payload #>> '{management_composer,draft,contract_type_id}',''),${EFFECTIVE_RENTAL_TYPE_SQL})='${type.replaceAll("'","''")}'`;
+  if(filters.ownership_term_months)sql+=` AND ${EFFECTIVE_RENTAL_TYPE_SQL}='ownership'
     AND COALESCE(NULLIF(o.draft_payload #>> '{management_composer,profile,ownership_term_months}',''),NULLIF(o.draft_payload #>> '{management_composer,draft,ownership_term_months}',''),'custom')='${filters.ownership_term_months.replaceAll("'","''")}'`;
   return sql;
 }
@@ -167,7 +167,7 @@ function contractHydrateSql() {
     CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
       ELSE COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) END AS deposit_amount,
     COALESCE(staff.full_name, saved_staff.full_name, fallback_staff.full_name) AS staff_name,
-    COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),o.order_type) AS rental_type,
+    ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
     o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
     o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
     o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,

@@ -15,7 +15,7 @@ import type { ContractDraft } from '@/lib/management/contract-document';
 import { dataAccess, usesScopedDatabase } from './access-context';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
-import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { contractVehicleDetailsSql } from './contract-vehicle-reads';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
@@ -24,7 +24,7 @@ const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
 /** List/detail projection: omit per-row payment history (collections) and full draft blob for issued contracts. */
 function contractListSql(compact = false) { return `SELECT o.id, o.contract_number, o.draft_reference,
   ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
-  COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
+  ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
   o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
   o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
   o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
@@ -125,7 +125,7 @@ export function contractIndexSql(scopeClause: string, options: { includeVehicleL
   return `SELECT o.id, o.contract_number, o.draft_reference,
     ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     o.contract_signed_on AS signed_on,
-    COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''), NULLIF(o.order_type,''), o.order_type) AS rental_type,
+    ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
     o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
     o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
     o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,

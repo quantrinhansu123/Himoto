@@ -6,7 +6,7 @@ import {applyInstallmentBilling} from '@/lib/management/contract-billing';
 import {withContractMonitoring} from '@/lib/management/contract-overdue';
 import {dateTimeInput} from '@/lib/management/contract-document';
 import {BAD_DEBT_CUTOFF_SQL} from './contract-bad-debt';
-import {VEHICLE_ORDER_SQL} from './contract-classification';
+import {EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL} from './contract-classification';
 import {depositReceiptSql,rentalPaidSql} from './contract-deposits';
 
 /** Counts and balances need dates and numeric fields, not every vehicle,
@@ -16,7 +16,7 @@ export function contractStatisticsSql(scopeClause:string,company:boolean){
  return `SELECT o.id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
    CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,dates.end_date)<now() THEN 'overdue' ELSE o.order_status END AS status,
    o.customer_id,c.status AS customer_status,o.store_id,s.kind AS store_kind,
-   COALESCE(NULLIF(o.draft_payload->'management_composer'->>'rental_type',''),NULLIF(o.order_type,''),o.order_type) AS rental_type,
+   ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
    o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
    COALESCE(o.rent_at,dates.start_date) AS start_date,COALESCE(o.return_at,dates.end_date) AS end_date,
    o.contract_signed_on AS signed_on,o.total AS total_amount,
