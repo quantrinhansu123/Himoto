@@ -22,6 +22,7 @@ import { ContractPhotoGallery } from './ContractTransactionPhotos';
 import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { ReservationNoShowDialog } from './ReservationNoShowDialog';
 import { ContractLifecyclePanel } from './ContractLifecyclePanel';
+import { ContractReviewNotice } from './ContractReviewNotice';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractEditDialog } from '@/components/contracts/ContractEditDialog';
 import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
@@ -129,6 +130,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
   return <Dialog title={`Chi tiết hợp đồng: ${row.code}`} subtitle={optionLabel(MANAGEMENT_CONFIG.contracts, 'status', row.status)}
     className="mg-contract-detail" onClose={onClose}>
     <div className="mg-dialog-body">
+      <ContractReviewNotice row={row}/>
       <ContractSectionTabs prefix="contract-detail" sections={SECTIONS} active={section} onChange={setSection} />
       {panel('vehicle', 'Thông tin phương tiện', <>
         {fields([['Thuê lúc', dateTime(draft.start_date)], ['Hẹn trả', dateTime(draft.end_date)]])}

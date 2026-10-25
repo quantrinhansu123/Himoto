@@ -7,6 +7,7 @@ import { DraftStorage, readDemoDrafts, saveDraftRecord, writeDemoDrafts, DEMO_DR
 import { normalizeStaffPosition } from './staff-positions';
 import { badDebtCutoff } from './contract-bad-debt';
 import { applyInstallmentBilling } from './contract-billing';
+import { ContractDraftRequestError,contractErrorFields } from './contract-feedback';
 
 export function createDemoRepository(draftStorage?: DraftStorage): ManagementRepository {
   let dataset = createDemoDataset();
@@ -170,6 +171,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     payment_method: text(raw.payment_method), deposit_payment_method: text(raw.deposit_payment_method),
     company_paid_amount: number(raw.company_paid_amount), company_payment_count: number(raw.company_payment_count),
     rental_type: text(raw.rental_type), notes: text(raw.notes ?? raw.note),
+    legacy_source_store_id:text(raw.legacy_source_store_id),legacy_inferred_ownership:raw.legacy_inferred_ownership===true?1:number(raw.legacy_inferred_ownership),
     contract_type_id: text(raw.contract_type_id || snapshot.contract_type_id || raw.rental_type || saved.rental_type),
     contract_type_name: text(raw.contract_type_name || snapshot.contract_type_name) || CONTRACT_TYPES.find(type=>type.value===text(raw.rental_type || saved.rental_type))?.label || text(raw.rental_type || saved.rental_type),
     contract_type_months: text(raw.contract_type_months ?? snapshot.contract_type_months ?? /^monthly_(\d+)$/.exec(text(raw.rental_type || saved.rental_type))?.[1]),
@@ -255,7 +257,7 @@ export function createApiRepository(baseUrl = '/api', options: { drafts?: boolea
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       const envelope = object(await response.json().catch(() => null));
-      if (!response.ok || envelope.status !== 'success') throw new Error(text(envelope.message) || `Không lưu được bản nháp (HTTP ${response.status}).`);
+      if (!response.ok || envelope.status !== 'success') throw new ContractDraftRequestError(text(envelope.message) || `Không lưu được bản nháp (HTTP ${response.status}).`,contractErrorFields(envelope.fields));
       const row = mapApiRow('contracts', object(envelope.data));
       if (row.status !== 'draft') throw new Error('API chưa xác nhận đã lưu bản nháp. Nhấn Làm mới để kiểm tra trước khi lưu lại.');
       loaded = { ...loaded, contracts: [row, ...loaded.contracts.filter(record => record.id !== row.id)] };

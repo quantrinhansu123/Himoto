@@ -13,3 +13,9 @@ export const EFFECTIVE_RENTAL_TYPE_SQL = `COALESCE(
   CASE WHEN o.draft_payload #>> '{legacy_migration,sourceStoreId}'='29'
     AND COALESCE(o.order_type,'') IN ('','rental') THEN 'ownership' END,
   NULLIF(o.order_type,''),'')`;
+
+// Minimal provenance for staff-facing review notes; never send the import blob.
+export const CONTRACT_REVIEW_SQL = `o.draft_payload #>> '{legacy_migration,sourceStoreId}' AS legacy_source_store_id,
+  (o.draft_payload #>> '{legacy_migration,sourceStoreId}'='29'
+    AND COALESCE(o.order_type,'') IN ('','rental')
+    AND NULLIF(o.draft_payload #>> '{management_composer,rental_type}','') IS NULL) AS legacy_inferred_ownership`;

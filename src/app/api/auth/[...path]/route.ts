@@ -141,8 +141,8 @@ async function writeDraft(request: NextRequest, id: number | null) {
     return NextResponse.json({ status: 'success', data: row }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (client) await client.query('ROLLBACK');
-    if (error instanceof DraftSaveError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
-    if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Thông tin bản nháp không hợp lệ.' }, { status: 400 });
+    if (error instanceof DraftSaveError) return NextResponse.json({ status: 'error', message: error.message,...(Object.keys(error.fields).length?{fields:error.fields}:{}) }, { status: error.status });
+    if (error instanceof SyntaxError) return NextResponse.json({ status: 'error', message: 'Chưa đọc được dữ liệu gửi lên. Giữ form đang nhập và thử lưu lại; nếu vẫn lỗi, báo người phụ trách kèm số hợp đồng.' }, { status: 400 });
     if (error && typeof error === 'object' && 'code' in error && error.code === '23505') return failureResponse('Mã bản nháp đã được sử dụng.', error);
     return failureResponse('Không lưu được bản nháp. Thông tin đang nhập vẫn được giữ trong form.', error);
   } finally { client?.release(); }

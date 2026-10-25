@@ -9,7 +9,7 @@ import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
 import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits';
-import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
+import { CONTRACT_REVIEW_SQL,EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
 import { STORE_SELECT_SQL } from './store-management';
@@ -157,6 +157,7 @@ function contractHydrateSql() {
   // Legacy imports often have only customer_id. Resolve the linked profile on
   // this bounded page, using the same customer fields as CONTRACT_LIST_SQL.
   return `SELECT o.id, o.contract_number, o.draft_reference,
+    ${CONTRACT_REVIEW_SQL},
     ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, c.status AS customer_status,

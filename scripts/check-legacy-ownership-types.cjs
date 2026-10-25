@@ -9,6 +9,7 @@ const{contractStatisticsSql,mapContractStatistics}=load(path.join(root,'lib/serv
 const{readContractLifecycle}=load(path.join(root,'lib/server/contract-lifecycle'));
 const{lifecycleDisplayStatus}=load(path.join(root,'lib/management/contract-lifecycle'));
 const{mapApiRow}=load(path.join(root,'lib/management/repository'));
+const{contractReviewMessages}=load(path.join(root,'lib/management/contract-feedback'));
 const checks=[];
 (async()=>{const c=await ownerDatabase.connect();try{
   await c.query('BEGIN');await c.query("SET LOCAL statement_timeout='20s'");
@@ -46,6 +47,7 @@ const checks=[];
     assert(!list.some(row=>row.id===4));
     for(const row of list){assert.equal(row.rental_type,fixtures.find(([id])=>id===row.id)[4]);if([1,8].includes(row.id)){
       assert.equal(row.contract_type_name,'Thuê sở hữu');assert.equal(row.contract_type_id,'ownership');assert.equal(row.status,'overdue');assert.equal(row.billing_plan_json,'');
+      assert.equal(row.legacy_source_store_id,'29');assert.equal(row.legacy_inferred_ownership,1);assert.equal(contractReviewMessages(row).length,2);
     }}
   }
   const stats=(await db.query(contractStatisticsSql('',false))).rows.map(mapContractStatistics);
@@ -58,6 +60,7 @@ const checks=[];
   checks.push('Lifecycle uses the same provenance-aware type as the contract detail, while keeping original debt, dates and missing schedules');
   const read=extra=>readManagementTable(db,'contracts',new URLSearchParams({store:'all',status_counts:'1',scope_count:'1',size:'50',...extra}));
   const ownership=await read({filter_contract_type_id:'ownership'});assert.deepEqual(ownership.rows.map(row=>row.id).sort((a,b)=>a-b),[1,8,9]);assert.equal(ownership.total,3);
+  assert.equal(contractReviewMessages(ownership.rows.find(row=>row.id===1)).length,2);
   const rental=await read({filter_contract_type_id:'rental'});assert.deepEqual(rental.rows.map(row=>row.id).sort((a,b)=>a-b),[2,6]);assert.equal(rental.total,2);
   const monthly=await read({filter_contract_type_id:'monthly_3'});assert.deepEqual(monthly.rows.map(row=>row.id),[3]);
   const scoped=(await db.query(CONTRACT_LIST_SQL+contractListScopeClause('ownership'))).rows;assert(scoped.some(row=>Number(row.id)===1));

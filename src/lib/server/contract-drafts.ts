@@ -15,14 +15,16 @@ import type { ContractDraft } from '@/lib/management/contract-document';
 import { dataAccess, usesScopedDatabase } from './access-context';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
-import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
+import { CONTRACT_REVIEW_SQL,EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { contractVehicleDetailsSql } from './contract-vehicle-reads';
+import { contractFieldLabel } from '@/lib/management/contract-feedback';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
     CASE WHEN (r.value->>'fee') ~ '^-?\\d+(\\.\\d+)?$' THEN (r.value->>'fee')::numeric ELSE 0 END)
   FROM jsonb_array_elements(COALESCE(o.draft_payload::jsonb #> '{management_composer,return_adjustments}','[]'::jsonb)) AS r(value)),0)`;
 /** List/detail projection: omit per-row payment history (collections) and full draft blob for issued contracts. */
 function contractListSql(compact = false) { return `SELECT o.id, o.contract_number, o.draft_reference,
+  ${CONTRACT_REVIEW_SQL},
   ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
   ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
   o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
@@ -109,7 +111,7 @@ export const CONTRACT_LIST_SQL = contractListSql();
 /** Filtering/summary fields only. Full document/customer/vehicle details are hydrated for the selected page. */
 export function contractTableSql(scopeClause: string) {
   return `SELECT id,contract_number,draft_reference,rental_type,contract_type_id,contract_type_name,contract_type_months,sales_staff_id,sales_staff_name,
-    status,customer_id,customer_status,customer_name,customer_phone,store_id,store_name,store_kind,start_date,end_date,
+    status,customer_id,customer_status,customer_name,customer_phone,store_id,store_name,store_kind,start_date,end_date,legacy_source_store_id,legacy_inferred_ownership,
     total_amount,paid_amount,deposit_amount,return_adjustment_amount,company_paid_amount,company_payment_count,representative_name,draft_payload,vehicles
     FROM (${contractListSql(true)}${scopeClause}) listing`;
 }
@@ -123,6 +125,7 @@ export function contractIndexSql(scopeClause: string, options: { includeVehicleL
   const includeCompany = Boolean(options.includeCompany);
   const includePaid = Boolean(options.includePaid);
   return `SELECT o.id, o.contract_number, o.draft_reference,
+    ${CONTRACT_REVIEW_SQL},
     ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     o.contract_signed_on AS signed_on,
     ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
@@ -172,42 +175,45 @@ export function contractListScopeClause(scope: string | null): string {
   }
 }
 export class DraftSaveError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  constructor(message: string, public status = 400,public fields:Record<string,string>={}) { super(message); }
 }
+const draftFieldError=(key:string,message:string)=>new DraftSaveError(`Kiểm tra ${contractFieldLabel(key)}: ${message}`,400,{[key]:message});
 
 export function parseDraftEdits(input: unknown): ContractEdits {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new DraftSaveError('Chưa đọc được dữ liệu bản nháp. Giữ form đang nhập và thử lưu lại.');
   const edits = input as ContractEdits;
   const draft = edits.draft;
   if(draft?.backfill!==undefined){const value=draft.backfill;if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['note','returned_at'].includes(key))||typeof value.note!=='string'||value.note.length>1000||(value.returned_at!==undefined&&(typeof value.returned_at!=='string'||value.returned_at.length>16)))throw new DraftSaveError('Thông tin nhập bổ sung không hợp lệ.');}
   if (chargeTotal(draft?.extra_charges) === null) throw new DraftSaveError('Các khoản phí khác không hợp lệ.');
-  if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !draft.customer || typeof draft.customer !== 'object' || Array.isArray(draft.customer)) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
+  if (!draft || typeof draft !== 'object' || Array.isArray(draft)) throw new DraftSaveError('Chưa đọc được nội dung bản nháp. Giữ form đang nhập và thử lưu lại.');
+  if(!draft.customer||typeof draft.customer!=='object'||Array.isArray(draft.customer))throw draftFieldError('id_card','Chưa đọc được hồ sơ khách hàng. Tra cứu hoặc chọn lại khách trước khi lưu.');
   const defaults = createContractDraft({ stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all');
   for (const key of Object.keys(defaults)) {
     // These sales fields are optional and validated below. Older drafts and
     // already-open forms predate their defaults and must remain saveable.
     if (['customer', 'vehicles', 'customer_id', 'relatives', 'vehicle_store_id','sales_staff_id','sales_staff_name'].includes(key)) continue;
     const value = draft[key as keyof typeof draft];
-    if (typeof value !== 'string' || value.length > 4000) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
+    if (typeof value !== 'string') throw draftFieldError(key,'Thông tin chưa đầy đủ hoặc chưa đúng định dạng. Mở mục này để kiểm tra rồi lưu lại.');
+    if (value.length > 4000) throw draftFieldError(key,'Nội dung tối đa 4.000 ký tự. Rút gọn rồi lưu lại.');
   }
   if (!Array.isArray(draft.relatives) || draft.relatives.length !== 2) throw new DraftSaveError('Hợp đồng cần đủ 2 người thân.');
   for (const relative of draft.relatives) {
     if (!relative || typeof relative !== 'object' || Array.isArray(relative)) throw new DraftSaveError('Thông tin người thân không hợp lệ.');
     for (const key of ['name', 'relationship', 'phone'] as const) if (typeof relative[key] !== 'string' || relative[key].length > 4000) throw new DraftSaveError('Thông tin người thân không hợp lệ.');
   }
-  for (const key of CUSTOMER_FIELDS) if (typeof draft.customer[key] !== 'string' || draft.customer[key].length > 4000) throw new DraftSaveError('Thông tin khách hàng không hợp lệ.');
+  for (const key of CUSTOMER_FIELDS) if (typeof draft.customer[key] !== 'string' || draft.customer[key].length > 4000) throw draftFieldError(key,'Thông tin khách hàng chưa đúng định dạng hoặc vượt 4.000 ký tự. Kiểm tra hồ sơ khách rồi lưu lại.');
   if (draft.customer_lookup !== undefined && (typeof draft.customer_lookup !== 'string' || draft.customer_lookup.length > 100)) throw new DraftSaveError('Thông tin tra cứu không hợp lệ.');
   if (draft.customer_id !== null && (!Number.isSafeInteger(draft.customer_id) || draft.customer_id <= 0)) throw new DraftSaveError('ID khách hàng không hợp lệ.');
   if (draft.vehicle_store_id !== undefined && typeof draft.vehicle_store_id !== 'string') throw new DraftSaveError('Cửa hàng xe không hợp lệ.');
   if (draft.reservation !== undefined && typeof draft.reservation !== 'boolean') throw new DraftSaveError('Thông tin giữ xe không hợp lệ.');
   if (draft.ownership !== undefined && typeof draft.ownership !== 'boolean') throw new DraftSaveError('Thông tin thuê sở hữu không hợp lệ.');
-  if (draft.contract_type_id !== undefined && !validContractTypeId(draft.contract_type_id)) throw new DraftSaveError('Loại hợp đồng không hợp lệ.');
+  if (draft.contract_type_id !== undefined && !validContractTypeId(draft.contract_type_id)) throw draftFieldError('contract_type_id','Chọn lại loại hợp đồng đang sử dụng.');
   if (draft.contract_type_name !== undefined && (typeof draft.contract_type_name !== 'string' || draft.contract_type_name.length > 80)) throw new DraftSaveError('Tên loại hợp đồng không hợp lệ.');
   if (draft.contract_type_months !== undefined && (typeof draft.contract_type_months !== 'string' || draft.contract_type_months !== '' && (!/^\d{1,3}$/.test(draft.contract_type_months) || Number(draft.contract_type_months) < 1 || Number(draft.contract_type_months) > 120))) throw new DraftSaveError('Thời hạn loại hợp đồng không hợp lệ.');
   if (!draft.contract_type_id && (draft.contract_type_name || draft.contract_type_months)) throw new DraftSaveError('Chọn loại hợp đồng cho tên và thời hạn đã nhập.');
   if (draft.document_requirements !== undefined && !validDocumentRequirements(draft.document_requirements)) throw new DraftSaveError('Yêu cầu hồ sơ để in chưa hợp lệ.');
   for (const key of ['sales_staff_id','tls_staff_id'] as const) if (draft[key] !== undefined && (typeof draft[key] !== 'string' || draft[key] && (!/^[1-9]\d*$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key]))))) throw new DraftSaveError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
-  if (draft.sales_staff_name !== undefined && (typeof draft.sales_staff_name !== 'string' || draft.sales_staff_name.length>191)) throw new DraftSaveError('Tên NVKD tối đa 191 ký tự.');
+  if (draft.sales_staff_name !== undefined && (typeof draft.sales_staff_name !== 'string' || draft.sales_staff_name.length>191)) throw draftFieldError('sales_staff_name','Tên NVKD tối đa 191 ký tự. Kiểm tra tên đã nhập rồi lưu lại.');
   if (draft.ownership_term_months !== undefined && !validOwnershipTerm(draft.ownership_term_months)) throw new DraftSaveError('Thời hạn thuê sở hữu không hợp lệ.');
   if (draft.custom_installments !== undefined && (!Array.isArray(draft.custom_installments) || draft.custom_installments.length > 3659 || draft.custom_installments.some(item =>
       !item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['due_at','amount'].includes(key)) ||
@@ -218,13 +224,15 @@ export function parseDraftEdits(input: unknown): ContractEdits {
     if (!vehicle || typeof vehicle !== 'object' || Array.isArray(vehicle)) throw new DraftSaveError('Thông tin xe không hợp lệ.');
     for (const key of Object.keys(emptyVehicle())) {
       const value = vehicle[key as keyof typeof vehicle];
-      if (typeof value !== 'string' || value.length > 4000) throw new DraftSaveError('Thông tin xe không hợp lệ.');
+      if (typeof value !== 'string' || value.length > 4000) throw draftFieldError(`vehicle_${draft.vehicles.indexOf(vehicle)}_${key}`,'Thông tin xe chưa đúng định dạng hoặc vượt 4.000 ký tự. Kiểm tra dòng xe này rồi lưu lại.');
     }
     if (vehicle.id && (!/^\d+$/.test(vehicle.id) || !Number.isSafeInteger(Number(vehicle.id)) || Number(vehicle.id) <= 0)) throw new DraftSaveError('ID xe không hợp lệ.');
     for (const key of ['stock_store_id','stock_store_name'] as const) if (vehicle[key] !== undefined && (typeof vehicle[key] !== 'string' || vehicle[key]!.length > 255)) throw new DraftSaveError('Thông tin cơ sở xe không hợp lệ.');
   }
-  if (edits.status !== 'draft' || typeof edits.rental_type !== 'string' || typeof edits.notes !== 'string' || edits.notes.length > 4000 || draft.contract_number.length > 32) throw new DraftSaveError('Thông tin bản nháp không hợp lệ.');
-  if (!CONTRACT_TYPES.some(option => option.value === edits.rental_type)) throw new DraftSaveError('Loại hợp đồng không hợp lệ.');
+  if(edits.status!=='draft')throw new DraftSaveError('Chỉ lưu ở trạng thái bản nháp. Kiểm tra trạng thái hiện tại của hợp đồng trước khi thử lại.');
+  if(typeof edits.notes!=='string'||edits.notes.length>4000)throw draftFieldError('notes','Ghi chú phải là văn bản, tối đa 4.000 ký tự.');
+  if(draft.contract_number.length>32)throw draftFieldError('contract_number','Số hợp đồng tối đa 32 ký tự.');
+  if (typeof edits.rental_type!=='string'||!CONTRACT_TYPES.some(option => option.value === edits.rental_type)) throw draftFieldError('contract_type_id','Chọn lại loại hợp đồng đang sử dụng.');
   if (edits.revision !== undefined && (typeof edits.revision !== 'string' || !/^\d+$/.test(edits.revision))) throw new DraftSaveError('Phiên bản bản nháp không hợp lệ.');
   return { draft: { ...structuredClone(draft), ...(edits.rental_type === 'ownership' || draft.ownership !== undefined ? {ownership: edits.rental_type === 'ownership'} : {}) }, status: 'draft', rental_type: edits.rental_type, notes: edits.notes,
     ...(edits.revision ? { revision: edits.revision } : {}) };
