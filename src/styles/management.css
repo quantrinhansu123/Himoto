@@ -3736,6 +3736,11 @@
   .mg-accounts-mobile .mg-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 }
 .mg-contract-payment-qr { display: grid; gap: 14px; }
+.mg-contract-hold-status { display: inline-flex; align-items: flex-start; flex-direction: column; gap: 4px; }
+.mg-contract-code-hold { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.mg-contract-hold-status > small { max-width: 220px; color: var(--mg-muted); font-size: 12px; line-height: 1.45; white-space: normal; }
+.mg-contract-hold-status.is-expired > small { color: #b91c1c; font-weight: 600; }
+.mg-hold-expiry-alert { padding: 12px 14px; border: 1px solid #fecaca; border-radius: 8px; color: #991b1b; background: #fef2f2; }
 .mg-contract-payment-qr h3,.mg-contract-payment-qr p { margin: 0; }
 .mg-contract-qr-image { display: block; width: min(240px,100%); height: auto; margin: 0 auto; background: white; }
 .mg-qr-bank-info { display: grid; gap: 10px; margin: 0; }

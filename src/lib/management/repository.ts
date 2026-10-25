@@ -182,6 +182,8 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     draft_json: typeof raw.draft_json === 'string' ? raw.draft_json : snapshot.customer && Array.isArray(snapshot.vehicles) ? JSON.stringify(snapshot) : undefined,
     billing_plan_json: saved.installment_plan ? JSON.stringify(saved.installment_plan) : '',
     bad_debt_at: text(raw.bad_debt_at)||badDebtCutoff(payload),
+    hold_until:text(raw.hold_until??object(object(saved.lifecycle).active_hold).until),held_at:text(raw.held_at??object(object(saved.lifecycle).active_hold).at),
+    completed_from_hold:raw.completed_from_hold===true||Boolean(object(saved.lifecycle).hold_completion)?1:0,
     profile_json: saved.profile ? JSON.stringify(saved.profile) : '',
     // Keep numeric/unrecognized statuses visible until the API contract is agreed.
   };

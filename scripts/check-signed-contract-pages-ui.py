@@ -92,7 +92,7 @@ with sync_playwright() as pw:
             reset(kind,expired);ctx,page=context();dialog=detail(page);dialog.get_by_role('tab',name='Nợ xấu / bảo lưu',exact=True).click();panel=dialog.locator('#contract-detail-panel-lifecycle')
             expect(panel.get_by_role('button',name='Chuyển sang Nợ xấu',exact=True)).to_be_visible()
             expect(panel.locator('p').filter(has_text=re.compile('^Quá hạn · ')).first).to_contain_text('Thuê xe' if kind=='rental' else 'Thuê sở hữu')
-            expect(panel.get_by_role('button',name='Bảo lưu hợp đồng',exact=True)).to_have_count(1 if kind=='ownership' and not expired else 0)
+            expect(panel.get_by_role('button',name='Bảo lưu hợp đồng',exact=True)).to_have_count(1 if kind=='ownership' else 0)
             dialog.get_by_role('tab',name='Hợp đồng',exact=True).click();contract_panel=dialog.locator('#contract-detail-panel-contract')
             expect(contract_panel.locator('div').filter(has=page.locator('dt',has_text='Trạng thái hợp đồng')).last).to_contain_text('Quá hạn')
             expect(contract_panel.locator('div').filter(has=page.locator('dt',has_text='Loại hợp đồng')).last).to_contain_text('Thuê xe' if kind=='rental' else 'Thuê sở hữu')

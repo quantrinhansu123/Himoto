@@ -12,16 +12,18 @@ import { GpsEvidence } from './GpsEvidence';
 import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
 import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
+import { ContractHoldStatus } from './ContractHoldStatus';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
+  if(config.kind==='contracts'&&column.key==='status'&&row.status==='reserved')return <ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>;
   if(column.key==='rental_period')return <ContractRentalPeriod row={row}/>;
   if(column.key==='monitoring_amount')return <ContractMonitoringAmount row={row}/>;
   if(column.key==='contract_gps_status')return <ContractGpsIndicator row={row}/>;
   if(column.key==='overdue_fee_estimate'&&value===undefined)return <span className="mg-cell-value" title="Thiếu hạn trả hoặc giá thuê ngày; nhập phí thực tế khi trả xe.">Cần đối chiếu</span>;
   if(config.kind==='vehicles'&&column.key==='location_status')return <><span className={`mg-status mg-status-${statusTone(String(value))}`}><span/>{optionLabel(config,column.key,String(value||''))}</span><GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/></>;
   if (column.format === 'status') return <span className={`mg-status mg-status-${statusTone(String(value))}`}><span />{optionLabel(config, column.key, String(value || ''))}</span>;
-  if (column.format === 'code') return <span className="mg-code">{value || '—'}</span>;
+  if (column.format === 'code') return config.kind==='contracts'&&row.status==='reserved'?<span className="mg-contract-code-hold"><span className="mg-code">{value||'—'}</span><ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/></span>:<span className="mg-code">{value || '—'}</span>;
   if (config.kind === 'vehicles' && column.key === 'holder_name') {
     const holder = String(value || 'Lưu kho');
     if (holder === 'Lưu kho') return <span className="mg-status mg-status-green"><span />Lưu kho</span>;

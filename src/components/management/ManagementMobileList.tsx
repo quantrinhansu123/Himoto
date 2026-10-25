@@ -9,6 +9,7 @@ import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
 import { GpsEvidence } from './GpsEvidence';
 import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
 import { ContractRentalPeriod } from './ContractRentalPeriod';
+import { ContractHoldStatus } from './ContractHoldStatus';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
   vehicles: ['license', 'holder_name', 'store_name', 'overdue_days'],
@@ -70,11 +71,12 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
           {selectable&&<label className="mg-mobile-card-select"><input type="checkbox" aria-label={`Chọn ${label}`} checked={Boolean(selectedIds?.has(row.id))} onChange={event=>onSelectionChange?.([row.id],event.target.checked)}/></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={()=>onView(row)}>
             <strong className="mg-mobile-card-title">{row.code} · {title}</strong>
+            {row.status==='reserved'&&<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>}
             <span className="mg-monitoring-card-meta">{visible('license')&&<span>{row.license||'—'}</span>}{visible('contract_signed_at')&&<span>Ký: {formatValue(row.contract_signed_at,'date')}</span>}{visible('deposit_amount')&&<span>Cọc: {formatValue(row.deposit_amount,'money')}</span>}</span>
             {visible('rental_period')&&<ContractRentalPeriod row={row}/>}
             <span className="mg-monitoring-card-amounts">{monitoring?<>{visible('overdue_minutes')&&<strong>Quá hạn: {formatValue(row.overdue_minutes,'duration')}</strong>}{visible('monitoring_amount')&&<ContractMonitoringAmount row={row}/>}</>:columns.filter(column=>['total_amount','billing_next_due_at','billing_due_amount'].includes(column.key)).map(column=><span key={column.key}>{column.label}: <strong>{formatValue(row[column.key],column.format)}</strong></span>)}</span>
             {columns.filter(column=>!['rental_period','code','customer_name','license','contract_signed_at','deposit_amount','start_date','end_date','total_amount','billing_next_due_at','billing_due_amount','overdue_minutes','monitoring_amount','status','contract_gps_status'].includes(column.key)).map(column=><span className="mg-mobile-card-extra" key={column.key}>{column.label}: {optionLabel(config,column.key,formatValue(row[column.key],column.format))}</span>)}
-            {visible('status')&&<span className={`mg-status mg-status-${statusTone(row.status)}`}><span/>{optionLabel(config,'status',row.status)}</span>}
+            {visible('status')&&row.status!=='reserved'&&<span className={`mg-status mg-status-${statusTone(row.status)}`}><span/>{optionLabel(config,'status',row.status)}</span>}
             {visible('contract_gps_status')&&<ContractGpsIndicator row={row}/>}
           </button>
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId===row.id}/></div>
@@ -99,7 +101,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
               <span>Phí quá hạn (tạm tính): {row.overdue_fee_estimate===undefined?'Cần đối chiếu':formatValue(row.overdue_fee_estimate,'money')}</span>
               <span>Tiền thuê còn thiếu: {formatValue(row.rental_debt_amount,'money')}</span>
             </span>}
-            <span className="mg-mobile-card-footer"><span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
+            <span className="mg-mobile-card-footer">{config.kind==='contracts'&&row.status==='reserved'?<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>:<span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>}
               {config.kind === 'vehicles' && row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
               {summary[2] && <span className="mg-mobile-card-extra" title={`${summary[2].label}: ${summary[2].value}`}>{summary[2].value}{summary[3] && ` · ${summary[3].value}`}</span>}
             </span>

@@ -1,6 +1,6 @@
 import { createInstallmentPlan, installmentSchedule, parseInstallmentPlan, type InstallmentPlan } from './contract-billing';
 
-export type ContractLifecycleAction='mark_bad_debt'|'settle'|'hold'|'resume';
+export type ContractLifecycleAction='mark_bad_debt'|'settle'|'hold'|'resume'|'update_hold'|'complete_hold';
 export interface LifecycleItem {id:number;vehicle_id:number;name:string;license:string;rent_at:string|null;return_at:string|null;completed_at:string|null}
 export interface LifecycleEvent {action:string;at:string;recorded_at:string;actor_id:number;actor_name:string;note:string;from:string;to:string;request_id:string;request_hash:string;[key:string]:unknown}
 export interface ContractLifecycleContext {
@@ -9,10 +9,13 @@ export interface ContractLifecycleContext {
   total_amount:number|null;paid_amount:number|null;remaining:number|null;deposit_held:number;overpayment:number|null;
   settled:boolean;can_settle:boolean;settlement_note:string;events:LifecycleEvent[];
   held_at:string|null;resume_vehicle_count:number;plan:InstallmentPlan|null;base_total:number|null;start_at:string|null;end_at:string|null;
+  hold_until?:string|null;hold_expired?:boolean;hold_can_resume?:boolean;hold_was_overdue?:boolean;
+  completed_from_hold?:boolean;waived_amount?:number;
 }
 export interface ContractLifecycleInput {
   action:ContractLifecycleAction;revision:string;request_id:string;note:string;at:string;confirmed:boolean;
   vehicle_ids?:number[];resume_end?:string;resume_package?:string;resume_amount?:string;
+  hold_until?:string;
 }
 /** The stored workflow remains renting while an unpaid, late contract displays overdue. */
 export function lifecycleDisplayStatus(context:Pick<ContractLifecycleContext,'status'|'overdue'>) {
@@ -23,25 +26,36 @@ export function contractHoldDeadline(context:Pick<ContractLifecycleContext,'plan
   return end?new Date(end).getTime():NaN;
 }
 export function canHoldContract(context:Pick<ContractLifecycleContext,'ownership'|'status'|'items'|'plan'|'end_at'>,now=Date.now()) {
+  void now;
   return context.ownership&&['renting','overdue','wait_payment'].includes(context.status)
-    &&context.items.some(item=>!item.completed_at)&&contractHoldDeadline(context)>now;
+    &&context.items.some(item=>!item.completed_at);
 }
-export const lifecycleActionLabel:Record<ContractLifecycleAction,string>={mark_bad_debt:'Chuyển sang Nợ xấu',settle:'Xác nhận tất toán',hold:'Bảo lưu hợp đồng',resume:'Thuê lại từ bảo lưu'};
+export const lifecycleActionLabel:Record<ContractLifecycleAction,string>={mark_bad_debt:'Chuyển sang Nợ xấu',settle:'Xác nhận tất toán',hold:'Bảo lưu hợp đồng',resume:'Tiếp tục thuê',update_hold:'Sửa thời hạn bảo lưu',complete_hold:'Hoàn thành hợp đồng'};
 export const localLifecycleTime=(value=new Date())=>new Date(value.getTime()+7*3600000).toISOString().slice(0,16);
 export function validLifecycleTime(value:unknown):value is string {
   if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value))return false;
   const date=new Date(value+':00+07:00');return Number.isFinite(date.getTime())&&localLifecycleTime(date)===value;
 }
-/** Keep charged periods unchanged and shift only uncharged periods by the pause. */
+/** Keep charged periods unchanged and shift the remaining term by the actual pause. */
 export function resumeInstallmentPlan(raw:unknown,heldAt:string,resumedAt:string) {
   const plan=parseInstallmentPlan(raw);
   if(!plan||!validLifecycleTime(heldAt)||!validLifecycleTime(resumedAt)||resumedAt<=heldAt)throw Error('Ngày thuê lại phải sau ngày bảo lưu và lịch đóng tiền gốc phải hợp lệ.');
   const shift=new Date(resumedAt+':00+07:00').getTime()-new Date(heldAt+':00+07:00').getTime();
   const move=(value:string)=>localLifecycleTime(new Date(new Date(value+':00+07:00').getTime()+shift));
-  const schedule=installmentSchedule(plan);if(!schedule.some(period=>period.due_at>heldAt))throw Error('Lịch gốc không còn kỳ tương lai. Cần đối chiếu thời hạn trước khi thuê lại.');
-  const periods=schedule.map(period=>({due_at:period.due_at>heldAt?move(period.due_at):period.due_at,amount:period.amount}));
-  const next:InstallmentPlan={version:1,start:plan.start,end:move(plan.end),interval:'custom',amount:plan.amount,periods};
+  const schedule=installmentSchedule(plan);if(heldAt>=plan.end)throw Error('Hợp đồng đã hết thời hạn trước khi bảo lưu; chỉ được hoàn thành.');
+  const periods=schedule.map(period=>({due_at:period.due_at>=heldAt?move(period.due_at):period.due_at,amount:period.amount}));
+  const next:InstallmentPlan={version:1,start:heldAt===plan.start?move(plan.start):plan.start,end:move(plan.end),interval:'custom',amount:plan.amount,periods};
   if(!parseInstallmentPlan(next))throw Error('Không lập được lịch đóng tiền còn lại.');return next;
+}
+export function resumedHoldEnd(context:Pick<ContractLifecycleContext,'held_at'|'end_at'|'plan'>,at:string) {
+  if(context.plan)return resumeInstallmentPlan(context.plan,context.held_at||'',at).end;
+  const held=Date.parse(`${context.held_at}:00+07:00`),resumed=Date.parse(`${at}:00+07:00`),end=Date.parse(context.end_at||'');
+  if(!Number.isFinite(held)||!Number.isFinite(resumed)||!Number.isFinite(end)||resumed<=held||end<=held)throw Error('Cần đối chiếu ngày bảo lưu và hạn trả gốc trước khi tiếp tục thuê.');
+  return localLifecycleTime(new Date(end+resumed-held));
+}
+export function expiredOwnershipHold(row:{status:string;rental_type?:unknown;hold_until?:unknown},now=Date.now()) {
+  if(row.status!=='reserved'||!['ownership','ownership_cd'].includes(String(row.rental_type))||!validLifecycleTime(row.hold_until))return false;
+  return Date.parse(`${row.hold_until}:00+07:00`)<=now;
 }
 /** Legacy contracts without a schedule need an explicitly reviewed remaining schedule. */
 export function legacyResumePlan(base:number,start:string,resume:string,end:string,packageName:string,amount:number) {

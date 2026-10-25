@@ -8,7 +8,7 @@ async function main(){const saved=[session.userFromSession,session.readSessionUs
    '@/lib/server/himoto-database':{himotoPool:{connect:async()=>({query:async sql=>{queries.push(sql);return {rows:[]};},release(){}})}},
    '@/lib/server/contract-lifecycle':{ContractLifecycleError:service.ContractLifecycleError,readContractLifecycle:async()=>context,applyContractLifecycle:async(_db,id,actor,body)=>{assert.equal(id,100);assert.equal(actor,70001);service.parseContractLifecycle(body);applied++;if(failure)throw new service.ContractLifecycleError('QA changed',failure);return context;}}};
  const route={exports:{}};new Function('require','module','exports',ts.transpileModule(fs.readFileSync(path.join(root,'app/api/auth/order/car-rental/[id]/lifecycle/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(name=>{assert(name in dependencies,name);return dependencies[name];},route,route.exports);
- const body=action=>({action,revision:'1',request_id:randomUUID(),note:'QA reviewed state',at:'2026-10-24T10:00',confirmed:true});
+ const body=action=>({action,revision:'1',request_id:randomUUID(),note:'QA reviewed state',at:'2026-10-24T10:00',confirmed:true,...(['hold','update_hold'].includes(action)?{hold_until:'2026-10-26T10:00'}:{})});
  const request=(method='GET',input,origin='http://localhost',id='100')=>route.exports[method](new NextRequest('http://localhost/api/auth/order/car-rental/'+id+'/lifecycle',{method,headers:{origin,'content-type':'application/json'},...(input!==undefined?{body:JSON.stringify(input)}:{})}),{params:Promise.resolve({id})});
  try{session.userFromSession=async()=>user;session.readSessionUser=async()=>user;
    user=null;assert.equal((await request()).status,401);assert.equal((await request('POST',body('hold'))).status,401);assert.equal(queries.length,0);
@@ -17,6 +17,8 @@ async function main(){const saved=[session.userFromSession,session.readSessionUs
    checks.push('Anonymous, read-only and cross-origin mutations stop before the database; contract readers can inspect state without writes');
    for(const role of ['branch_staff','ownership_staff','ownership_manager']){user={...user,access_role:role,permissions:['contracts.read','contracts.return']};const response=await request('POST',body('mark_bad_debt'));assert.equal(response.status,200);assert(response.headers.get('cache-control').includes('no-store'));assert(queries.includes('BEGIN')&&queries.includes('COMMIT'));queries=[];}
    checks.push('Operating staff and both ownership roles can submit validated lifecycle actions under their existing contracts.return scope');
+   for(const action of ['hold','update_hold','complete_hold']){queries=[];assert.equal((await request('POST',body(action))).status,200);assert(queries.includes('COMMIT'));}
+   checks.push('Hold, manually edited deadlines and explicit completion use the same operating permission and transactional API');
    user={...user,access_role:'accounting',permissions:['contracts.read','finance.write']};assert.equal((await request('POST',body('settle'))).status,200);assert.equal((await request('POST',body('hold'))).status,403);assert.equal((await request('POST',body('mark_bad_debt'))).status,403);
    checks.push('Accounting may confirm a reconciled settlement, while ownership/vehicle state changes still require operating permissions');
    user={...user,access_role:'branch_staff',permissions:['contracts.read','contracts.return']};

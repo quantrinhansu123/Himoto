@@ -66,7 +66,7 @@ async function readState(db:Database,itemId:number,lock=false) {
   const context:ReturnCorrectionContext={order_id:Number(order.id),code:payment.code,customer:lines[0].customer_name,revision,event_key:notice?.root_event_key||notice?.event_key||`return:${order.id}:${itemIds.join(',')}`,
     lines:lines.map(line=>{const a=existing.find((a:{item_id:number})=>Number(a.item_id)===line.item_id);return {...line,late_fee:Number(a?.late_fee??Math.max(Number(a?.fee||0)+Number(a?.early_discount||0)-Number(a?.repair_fee||0),0)),repair_fee:Number(a?.repair_fee||0),repair_note:String(a?.repair_note||''),early_discount:Number(a?.early_discount||0),hourly_rate:Number(a?.hourly_rate??20000)};}),
     payment:{...payment,paid_amount:payment.paid_amount===null?null:payment.paid_amount-signed,deposit_held:payment.deposit_held+refunded,deposit_refunded:payment.deposit_refunded-refunded},
-    settlement:currentSettlement,previous_adjustment:previousAdjustment,note:String(settlement?.note||''),blocked_reason:blocked?'Lượt này đang gửi, gửi dở hoặc thu hồi Telegram. Đối chiếu và hoàn tất trước khi sửa.':''};
+    settlement:currentSettlement,previous_adjustment:previousAdjustment,note:String(settlement?.note||''),blocked_reason:composer.lifecycle?.hold_completion?'Hợp đồng đã hoàn thành sau bảo lưu; không sửa lại quyết toán đã chốt.':blocked?'Lượt này đang gửi, gửi dở hoặc thu hồi Telegram. Đối chiếu và hoàn tất trước khi sửa.':''};
   return {order,composer,context,itemIds,transactions,existing,signed,settlement};
 }
 

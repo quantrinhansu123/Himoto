@@ -70,7 +70,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
   const [lifecycleOverride,setLifecycleOverride]=useState<Partial<ManagementRow>>({});
   const [recoveryOpen,setRecoveryOpen]=useState(false),[lifecycleReload,setLifecycleReload]=useState(0);
   const applyLifecycle=useCallback((context:ContractLifecycleContext)=>{
-    setLifecycleOverride({status:lifecycleDisplayStatus(context),draft_revision:context.revision,billing_plan_json:context.plan?JSON.stringify(context.plan):'',end_date:context.end_at||undefined,total_amount:context.total_amount??undefined,paid_amount:context.paid_amount??undefined});
+    setLifecycleOverride({status:lifecycleDisplayStatus(context),draft_revision:context.revision,billing_plan_json:context.plan?JSON.stringify(context.plan):'',end_date:context.end_at||undefined,total_amount:context.total_amount??undefined,paid_amount:context.paid_amount??undefined,hold_until:context.hold_until||'',held_at:context.held_at||'',completed_from_hold:context.completed_from_hold?1:0});
   },[]);
   const originalRow=row;
   row={...originalRow,...lifecycleOverride};

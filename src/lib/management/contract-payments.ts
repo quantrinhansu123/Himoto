@@ -42,6 +42,7 @@ export interface RenewalItem {
 }
 export interface PaymentContext {
   id: number; code: string; status: string; store_id: number; revision: string;
+  hold_active?:boolean;completed_from_hold?:boolean;
   total_amount: number | null; paid_amount: number | null; remaining: number | null;
   deposit_paid: number; deposit_refunded: number; deposit_held: number;
   deposit_remaining?:number;

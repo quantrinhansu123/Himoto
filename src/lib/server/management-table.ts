@@ -14,6 +14,7 @@ import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
 import { STORE_SELECT_SQL } from './store-management';
 import { applyInstallmentBilling } from '@/lib/management/contract-billing';
+import { OWNERSHIP_HOLD_FIELDS_SQL } from './ownership-hold-fields';
 import { OVERDUE_BUCKETS,withContractMonitoring,type OverdueBucket } from '@/lib/management/contract-overdue';
 import {contractStatisticsSql,mapContractStatistics,fastContractStatistics} from './contract-table-stats';
 
@@ -157,6 +158,7 @@ function contractHydrateSql() {
   // Legacy imports often have only customer_id. Resolve the linked profile on
   // this bounded page, using the same customer fields as CONTRACT_LIST_SQL.
   return `SELECT o.id, o.contract_number, o.draft_reference,
+    ${OWNERSHIP_HOLD_FIELDS_SQL},
     ${CONTRACT_REVIEW_SQL},
     ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,

@@ -104,6 +104,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY d.id`, [id]);
   return { id: Number(order.id), code: String(order.code), status: String(order.status), store_id: Number(order.store_id), revision: String(order.revision),
+    hold_active:Boolean(order.draft_payload?.management_composer?.lifecycle?.active_hold),completed_from_hold:Boolean(order.draft_payload?.management_composer?.lifecycle?.hold_completion),
     total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0), ...(billing ? {billing, billing_base_total: baseTotal} : {}),
     deposit_paid: depositPaid, deposit_refunded: depositRefunded, deposit_held: Math.max(depositPaid - depositRefunded, 0),
     deposit_remaining:Math.max((money(order.deposit_amount)??0)-depositPaid,0),
@@ -140,6 +141,8 @@ export async function recordContractPayment(client: Database, id: number, actorI
   const locked = await client.query('SELECT xmin::text AS revision,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [id]);
   if (!locked.rowCount) throw new ContractPaymentError('Không tìm thấy hợp đồng.', 404);
   if (locked.rows[0].revision !== input.revision) throw new ContractPaymentError('Hợp đồng hoặc tổng đã thu đã thay đổi. Tải lại thông tin trước khi thanh toán.', 409);
+  if(locked.rows[0].draft_payload?.management_composer?.lifecycle?.hold_completion&&!refund)throw new ContractPaymentError('Hợp đồng đã hoàn thành sau bảo lưu; không thu thêm nợ hoặc kỳ thuê đã miễn.',409);
+  if(locked.rows[0].draft_payload?.management_composer?.lifecycle?.active_hold&&extra)throw new ContractPaymentError('Hợp đồng đang bảo lưu; không cộng phí mới. Chỉ ghi nhận thanh toán khoản đã phát sinh trước bảo lưu.',409);
   const context = await readPaymentContext(client, id);
   const amount = Number(input.amount);
   if (refund) {

@@ -64,10 +64,11 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
     loadPaymentContext(id, controller.signal).then(fresh => {
       setContext(fresh);
       if (restored) return;
-      const payableNow = PAYABLE_STATUSES.includes(fresh.status) && fresh.remaining !== null && fresh.remaining > 0;
+      const payableNow = !fresh.completed_from_hold && PAYABLE_STATUSES.includes(fresh.status) && fresh.remaining !== null && fresh.remaining > 0;
       const renewableNow = !fresh.billing && RENEWABLE_STATUSES.includes(fresh.status) && fresh.items.length > 0;
       let next = initialPurpose;
-      if (next === 'debt' && !payableNow && !fresh.billing&&!backfill) next = renewableNow && fresh.remaining === 0 ? 'renewal' : canAddExtraReceipt(fresh.status) && fresh.remaining !== null ? 'extra' : next;
+      if (next === 'debt' && !payableNow && !fresh.billing&&!backfill) next = renewableNow && fresh.remaining === 0 ? 'renewal' : !fresh.hold_active&&!fresh.completed_from_hold&&canAddExtraReceipt(fresh.status) && fresh.remaining !== null ? 'extra' : next;
+      if (fresh.completed_from_hold && next!=='rental_refund' && fresh.deposit_held>0) next='deposit_refund';
       if (next === 'deposit_refund' && !(canAddExtraReceipt(fresh.status) && fresh.deposit_held > 0)) next = payableNow ? 'debt' : renewableNow ? 'renewal' : next;
       setPurpose(next); setNote(backfill?'':defaultNote(next, fresh.code));
       if (next === 'debt' && fresh.remaining !== null && fresh.remaining > 0) setAmount(String(fresh.remaining));
@@ -84,7 +85,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
   const accounts = context ? paymentAccounts(context, method) : [];
   const effectiveAccount = accountId || (accounts.length === 1 ? paymentAccountKey(accounts[0]) : '');
   const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
-  const payable = Boolean(context && PAYABLE_STATUSES.includes(context.status) && context.remaining !== null && context.remaining > 0);
+  const payable = Boolean(context && !context.completed_from_hold && PAYABLE_STATUSES.includes(context.status) && context.remaining !== null && context.remaining > 0);
   const renewable = Boolean(context && !context.billing && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
   const days = /^\d+$/.test(renewalDays) && Number(renewalDays) >= 1 && Number(renewalDays) <= 365 ? Number(renewalDays) : 0;
   const suggestedFor = (item: RenewalItem) => item.daily_price && days ? String(item.daily_price * days) : '';
@@ -114,13 +115,13 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
       setPicks({ [String(item.id)]: item.daily_price ? String(item.daily_price) : '' });
     }
   }, [purpose, context, picks, pending]);
-  const extraAllowed = Boolean(context && canAddExtraReceipt(context.status) && context.total_amount !== null && context.paid_amount !== null);
+  const extraAllowed = Boolean(context && !context.hold_active && !context.completed_from_hold && canAddExtraReceipt(context.status) && context.total_amount !== null && context.paid_amount !== null);
   const refundAllowed = Boolean(context && canAddExtraReceipt(context.status) && context.deposit_held > 0);
   const rentalRefund=purpose==='rental_refund';
   const rentalRefundAllowed=Boolean(context&&canAddExtraReceipt(context.status)&&(context.rental_refundable||0)>0);
   const refund = purpose === 'deposit_refund'||rentalRefund;
   const refundLimit=rentalRefund?context?.rental_refundable||0:context?.deposit_held||0;
-  const depositAllowed=Boolean(context&&canAddExtraReceipt(context.status)&&(context.deposit_remaining??0)>0);
+  const depositAllowed=Boolean(context&&!context.completed_from_hold&&canAddExtraReceipt(context.status)&&(context.deposit_remaining??0)>0);
   const canCollect = purpose === 'deposit'?depositAllowed:purpose === 'renewal' ? renewable : purpose === 'extra' ? extraAllowed : rentalRefund?rentalRefundAllowed:refund ? refundAllowed : payable;
   const effectiveAmount = purpose === 'renewal' ? String(renewalTotal || '') : amount;
   function choosePurpose(next: PaymentPurpose) {
@@ -268,7 +269,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
             {!accounts.length && <p className="mg-field-wide mg-field-error">{method === 'company_transfer' ? 'Chưa có tài khoản công ty đang hoạt động. Đổi hình thức hoặc thêm TK công ty trong Sổ quỹ.' : 'Chưa có tài khoản nhận đúng cơ sở hợp đồng cho hình thức này (Tiền mặt = két; Chuyển khoản = ngân hàng cơ sở). Đổi Hình thức hoặc chọn TK đúng cơ sở nguồn.'}</p>}
             <label className="mg-field-wide">{refund ? 'Nội dung chi' : 'Nội dung thu / chuyển khoản'}<textarea aria-label="Nội dung thu / chuyển khoản" maxLength={2000} required={purpose === 'extra'} value={note} onChange={event => setNote(event.target.value)} rows={2} /></label>
             {method === 'company_transfer' && !refund && <p className="mg-field-wide">Sau khi ghi nhận, hợp đồng sẽ có trong Hợp đồng VAT và chuyển đến danh sách đó.</p>}
-          </fieldset> : <p>{context.remaining === null ? 'Cần đối chiếu số liệu tiền trước khi thu.' : !extraAllowed ? 'Trạng thái hợp đồng này chưa cho phép thu tiền.' : context.remaining === 0 ? 'Không còn công nợ theo số liệu hiện có. Bấm Thêm phiếu thu để ghi khoản thu khác vào Sổ quỹ.' : 'Trạng thái hợp đồng này chưa cho phép thu công nợ. Bấm Thêm phiếu thu để ghi khoản thu khác vào Sổ quỹ.'}</p>}</>}
+          </fieldset> : <p>{context.completed_from_hold?'Hợp đồng đã hoàn thành sau bảo lưu. Khoản không thu hồi được ghi riêng là Tổn thất công nợ; không thu thêm hoặc tạo phiếu chi cho khoản này.':context.hold_active?'Hợp đồng đang bảo lưu; chỉ thu khoản đã phát sinh trước bảo lưu hoặc đối chiếu tiền cọc.':context.remaining === null ? 'Cần đối chiếu số liệu tiền trước khi thu.' : !extraAllowed ? 'Trạng thái hợp đồng này chưa cho phép thu tiền.' : context.remaining === 0 ? 'Không còn công nợ theo số liệu hiện có. Bấm Thêm phiếu thu để ghi khoản thu khác vào Sổ quỹ.' : 'Trạng thái hợp đồng này chưa cho phép thu công nợ. Bấm Thêm phiếu thu để ghi khoản thu khác vào Sổ quỹ.'}</p>}</>}
           {!refund && <SavedRecordPhotos entity="contracts" recordId={id} slots={contractEvidenceSlots('rental')} title="Ảnh hợp đồng đã ký & bill chuyển khoản" />}
           <div className="mg-payment-history-heading"><h3>Lịch sử phiếu Thu / Chi ({context.history.length})</h3><div className="mg-payment-history-actions">
             {rentalRefundAllowed&&!rentalRefund&&<button type="button" className="mg-button" disabled={locked||loading} onClick={()=>choosePurpose('rental_refund')}><Wallet size={15}/>Hoàn tiền thuê trả sớm</button>}

@@ -15,6 +15,7 @@ export interface InstallmentPlan {
   version: 1; start: string; end: string; interval: BillingInterval; amount: number;
   periods?: { due_at: string; amount: number }[];
   stopped_at?: string;
+  paused_at?: string;
 }
 export interface InstallmentBalance {
   expected_total: number; period_count: number; paid_periods: number;
@@ -81,10 +82,11 @@ export function createInstallmentPlan(start: string, end: string, packageName: s
 export function parseInstallmentPlan(value: unknown): InstallmentPlan | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const plan = value as InstallmentPlan;
-  if (Object.keys(plan).some(key => !['version', 'start', 'end', 'interval', 'amount', 'periods', 'stopped_at'].includes(key)) || plan.version !== 1 ||
+  if (Object.keys(plan).some(key => !['version', 'start', 'end', 'interval', 'amount', 'periods', 'stopped_at','paused_at'].includes(key)) || plan.version !== 1 ||
       typeof plan.start !== 'string' || typeof plan.end !== 'string' || !['day', 'week', 'month', 'custom'].includes(plan.interval)) return null;
   if (plan.stopped_at !== undefined && (typeof plan.stopped_at !== 'string' || !localDate(plan.stopped_at) || plan.stopped_at < plan.start || plan.stopped_at > plan.end)) return null;
-  const stopped = plan.stopped_at ? { stopped_at: plan.stopped_at } : {};
+  if (plan.paused_at !== undefined && (typeof plan.paused_at!=='string'||!localDate(plan.paused_at)||plan.paused_at<plan.start||plan.paused_at>plan.end||plan.stopped_at!==plan.paused_at)) return null;
+  const stopped = plan.stopped_at ? { stopped_at: plan.stopped_at,...(plan.paused_at?{paused_at:plan.paused_at}:{}) } : {};
   if (plan.interval === 'custom') {
     if (!Array.isArray(plan.periods) || !plan.periods.length || plan.periods[0]?.due_at !== plan.start || plan.periods[0]?.amount !== plan.amount ||
         plan.periods.some(item => !item || typeof item !== 'object' || Object.keys(item).some(key => !['due_at', 'amount'].includes(key)) || !Number.isSafeInteger(item.amount))) return null;
@@ -107,7 +109,7 @@ export function installmentSchedule(plan: InstallmentPlan) {
 export function installmentBalance(plan: InstallmentPlan, baseTotal: number | null, paid: number | null, now = Date.now()): InstallmentBalance {
   const schedule = installmentSchedule(plan), realNow = new Date(now + 7 * 3600000).toISOString().slice(0, 16);
   const localNow = plan.stopped_at && plan.stopped_at < realNow ? plan.stopped_at : realNow;
-  const duePeriods = schedule.filter(period => period.due_at <= localNow);
+  const duePeriods = schedule.filter(period => period.due_at <= localNow&&(!plan.paused_at||period.due_at<plan.paused_at));
   const expectedTotal = schedule.reduce((sum, period) => sum + period.amount, 0);
   const valid = baseTotal !== null && paid !== null && Number.isSafeInteger(baseTotal) && baseTotal >= plan.amount && Number.isSafeInteger(paid) && paid >= 0;
   const accrued = valid ? baseTotal + Math.max(0, duePeriods.reduce((sum, period) => sum + period.amount, 0) - plan.amount) : null;
@@ -116,7 +118,7 @@ export function installmentBalance(plan: InstallmentPlan, baseTotal: number | nu
   let paidPeriods = 0, unallocated = rentalPaid;
   while (paidPeriods < schedule.length && unallocated >= schedule[paidPeriods].amount) { unallocated -= schedule[paidPeriods].amount; paidPeriods += 1; }
   const pending = schedule[paidPeriods];
-  const next = plan.stopped_at && pending?.due_at > plan.stopped_at ? undefined : pending;
+  const next = plan.paused_at&&pending?.due_at>=plan.paused_at||plan.stopped_at && pending?.due_at > plan.stopped_at ? undefined : pending;
   const remaining = total === null || paid === null ? null : Math.max(total - paid, 0);
   return { expected_total: expectedTotal, period_count: schedule.length, paid_periods: paidPeriods,
     accrued_total: total, remaining, due_amount: duePeriods.length ? remaining : remaining === null ? null : 0,

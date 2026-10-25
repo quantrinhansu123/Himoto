@@ -10,6 +10,11 @@ async function main(){
  const moved=domain.resumeInstallmentPlan(original,'2026-10-15T10:00','2026-10-24T10:00');
  assert.equal(moved.periods.length,6);assert.equal(moved.periods[0].due_at,'2026-10-01T08:00');assert.equal(moved.periods[1].due_at,'2026-11-10T08:00');assert.equal(moved.end,'2027-04-10T08:00');assert.equal(moved.periods.reduce((sum,p)=>sum+p.amount,0),600000);
  assert.throws(()=>domain.resumeInstallmentPlan(original,'2026-10-15T10:00','2026-10-15T10:00'));
+ const twoMonths=domain.resumeInstallmentPlan(billing.createInstallmentPlan('2026-06-01T08:00','2026-10-01T08:00','Theo tháng',100000),'2026-08-01T08:00','2026-10-01T08:00');assert.equal(twoMonths.end,'2026-12-01T08:00');assert.equal(twoMonths.periods[2].due_at,'2026-10-01T08:00');assert.equal(twoMonths.periods.reduce((s,p)=>s+p.amount,0),400000);
+ const lastPeriod=domain.resumeInstallmentPlan(original,'2027-03-15T08:00','2027-03-24T08:00');assert.equal(lastPeriod.end,'2027-04-10T08:00');
+ const boundary={...original,stopped_at:'2026-11-01T08:00',paused_at:'2026-11-01T08:00'};assert.equal(billing.installmentBalance(boundary,100000,100000,Date.parse('2027-04-01T08:00+07:00')).accrued_total,100000);
+ assert(domain.expiredOwnershipHold({status:'reserved',rental_type:'ownership',hold_until:'2026-10-24T10:00'},Date.parse('2026-10-24T10:00+07:00')));assert(!domain.expiredOwnershipHold({status:'reserved',rental_type:'daily',hold_until:'2026-10-24T10:00'},Date.parse('2026-10-25T10:00+07:00')));
+ checks.push('Two-month hold moves October end to December, freezes a due-at-boundary period, and can extend the last paid period without adding fees or installments');
  const legacy=domain.legacyResumePlan(750000,'2026-10-01T08:00','2026-10-24T10:00','2026-11-24T10:00','Theo tháng',350000);
  assert.equal(legacy.base_total,750000);assert.equal(legacy.plan.periods[0].amount,750000);assert.equal(legacy.plan.periods[1].amount,350000);
  assert.equal(billing.installmentBalance(legacy.plan,750000,100000,Date.parse('2026-10-24T12:00+07:00')).remaining,1000000);
@@ -30,7 +35,7 @@ async function main(){
  await c.query(`INSERT INTO ${schema}.customers(id,name,status,store_id) VALUES(90001,'Lifecycle customer QA',1,80001)`);
  await c.query(`INSERT INTO ${schema}.cash(id,store_id,name,opening_balance,status) VALUES(93001,80001,'Lifecycle cash QA',0,'Active')`);
  for(let id=10;id<=19;id++)await c.query(`INSERT INTO ${schema}.vehicles(id,name,license,type,brand,year,color,odometer,status,store_id,current_store_id,created_by) VALUES($1,'Lifecycle QA',$2,'xe_dien','VinFast',2026,'Red',0,'using',80003,80003,70001)`,[id,'QA-LIFE-'+id]);
- for(const [id,status,total,paid,type,end,payload]of [[100,'renting',1000000,0,'daily','2026-10-10T08:00+07',{}],[101,'renting',1000000,0,'daily','2027-01-01T08:00+07',{}],[102,'bad_debt',1000000,1000000,'daily','2026-10-10T08:00+07',{}],[110,'renting',100000,0,'ownership','2027-04-01T08:00+07',{management_composer:{installment_plan:original}}],[111,'renting',750000,100000,'ownership','2027-04-01T08:00+07',{}]]){
+ for(const [id,status,total,paid,type,end,payload]of [[100,'renting',1000000,0,'daily','2026-10-10T08:00+07',{}],[101,'renting',1000000,0,'daily','2027-01-01T08:00+07',{}],[102,'bad_debt',1000000,1000000,'daily','2026-10-10T08:00+07',{}],[110,'renting',100000,100000,'ownership','2027-04-01T08:00+07',{management_composer:{installment_plan:original}}],[111,'renting',750000,100000,'ownership','2027-04-01T08:00+07',{}]]){
    await c.query(`INSERT INTO ${schema}.orders(id,store_id,customer_id,order_type,order_status,order_mode,contract_number,rent_at,return_at,total,pid,first_deposit_amount,draft_payload) VALUES($1,80001,90001,$5,$2,'standard',$6,'2026-10-01T08:00+07',$7,$3::text,$4,0,$8::json)`,[id,status,total,paid,type,'QA-LIFE-'+id,end,JSON.stringify(payload)]);
  }
  for(const [id,order,vehicle,end]of [[1000,100,10,'2026-10-10T08:00+07'],[1001,100,11,'2026-10-10T08:00+07'],[1010,101,12,'2027-01-01T08:00+07'],[1020,102,13,'2026-10-10T08:00+07'],[1100,110,14,'2027-04-01T08:00+07'],[1101,110,15,'2027-04-01T08:00+07'],[1110,111,16,'2027-04-01T08:00+07']])await c.query(`INSERT INTO ${schema}.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,total_money,hiring_fee) VALUES($1,$2,$3,'2026-10-01T08:00+07',$4,0,0)`,[id,order,vehicle,end]);
@@ -39,7 +44,7 @@ async function main(){
  const staff=async fn=>{await c.query('SAVEPOINT staff');try{await c.query("SELECT set_config('himoto.scope_all','false',true),set_config('himoto.store_id','80001',true),set_config('himoto.actor_id','70001',true),set_config('himoto.operation','',true),set_config('himoto.transfer_vehicle_id','',true)");await c.query('SET LOCAL ROLE himoto_scoped');const value=await dataAccess.run(scope,fn);await c.query('RESET ROLE');await c.query('RELEASE SAVEPOINT staff');return value;}catch(error){await c.query('ROLLBACK TO SAVEPOINT staff');await c.query('RELEASE SAVEPOINT staff');throw error;}};
  const isolated=async fn=>{await c.query('SAVEPOINT example');try{await fn();}finally{await c.query('ROLLBACK TO SAVEPOINT example');await c.query('RELEASE SAVEPOINT example');}};
  const rev=async id=>(await db.query('SELECT xmin::text AS revision FROM himoto.orders WHERE id=$1',[id])).rows[0].revision;
- const input=async(id,action,extra={})=>({action,revision:await rev(id),request_id:randomUUID(),note:'Reviewed physical state and ledger QA',at:'2026-10-24T10:00',confirmed:true,...extra});
+ const input=async(id,action,extra={})=>({action,revision:await rev(id),request_id:randomUUID(),note:'Reviewed physical state and ledger QA',at:'2026-10-24T10:00',confirmed:true,...(action==='hold'?{hold_until:domain.localLifecycleTime(new Date(Date.parse((extra.at||'2026-10-24T10:00')+':00+07:00')+86400000))}:{}),...extra});
  const apply=async(id,action,extra={})=>staff(async()=>life.applyContractLifecycle(db,id,70001,await input(id,action,extra)));
  const recover=async item=>staff(async()=>returns.recordBadDebtRecovery(db,70001,{item_id:item,item_revision:(await db.query('SELECT xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=$1',[item])).rows[0].revision,request_id:randomUUID(),recovered_at:'2026-10-24T11:00',note:'Vehicle physically recovered QA'}));
  await isolated(async()=>{
@@ -52,16 +57,16 @@ async function main(){
    assert.equal(domain.lifecycleDisplayStatus({...context,status:'wait_payment'}),'wait_payment');
  });checks.push('A daily rental managed by an ownership store keeps its actual type and overdue display, and cannot enter ownership hold');
  await isolated(async()=>{
-   const active=await staff(()=>life.readContractLifecycle(db,110));assert(active.overdue);assert(domain.canHoldContract(active));
-   const deadline=domain.contractHoldDeadline(active);assert(!domain.canHoldContract(active,deadline));assert(domain.canHoldContract(active,deadline-1));
-   assert(!domain.canHoldContract({...active,plan:null,end_at:null}));
+   const active=await staff(()=>life.readContractLifecycle(db,110));assert(!active.overdue);assert(domain.canHoldContract(active));
+   const deadline=domain.contractHoldDeadline(active);assert(domain.canHoldContract(active,deadline));assert(domain.canHoldContract(active,deadline-1));
+   assert(domain.canHoldContract({...active,plan:null,end_at:null}));
    const expired=billing.createInstallmentPlan('2026-10-01T08:00','2026-10-24T08:00','Theo tháng',100000);
    await db.query("UPDATE himoto.orders SET return_at='2026-10-24T08:00+07',draft_payload=$2::json WHERE id=$1",[110,JSON.stringify({management_composer:{installment_plan:expired}})]);
    await db.query("UPDATE himoto.order_vehicle_details SET return_at='2026-10-24T08:00+07' WHERE order_id=110");
-   const ended=await staff(()=>life.readContractLifecycle(db,110));assert(ended.overdue);assert(!domain.canHoldContract(ended));
-   await assert.rejects(()=>apply(110,'hold',{at:'2026-10-23T10:00'}),e=>e.status===409&&/còn thời hạn/.test(e.message));
-   assert.equal((await apply(110,'mark_bad_debt')).status,'bad_debt');
- });checks.push('Overdue installments allow hold while the ownership term remains; expiration including equality, unknown deadlines and backdating cannot bypass the hold guard; overdue debt still permits bad debt');
+   const ended=await staff(()=>life.readContractLifecycle(db,110));assert(domain.canHoldContract(ended));
+   const held=await apply(110,'hold',{at:'2026-10-24T09:00',hold_until:'2026-10-24T09:30'});assert.equal(held.status,'reserved');assert(!held.hold_can_resume);
+   await assert.rejects(()=>apply(110,'resume',{vehicle_ids:[14,15]}),e=>e.status===409);
+ });checks.push('Expired ownership contracts can enter hold and remain reserved; expiration does not move them to debt or permit resume');
  await isolated(async()=>{
    const before=(await db.query('SELECT total,pid,customer_id FROM himoto.orders WHERE id=100')).rows[0];
    await staff(async()=>{const body=await input(100,'mark_bad_debt');const result=await life.applyContractLifecycle(db,100,70001,body);assert.equal(result.status,'bad_debt');assert.equal(result.events.length,1);assert.equal((await life.applyContractLifecycle(db,100,70001,body)).events.length,1);await assert.rejects(()=>life.applyContractLifecycle(db,100,70001,{...body,note:'Changed content'}),e=>e.status===409);});
@@ -113,9 +118,9 @@ async function main(){
    await db.query("UPDATE himoto.vehicles SET status='ready' WHERE id IN(17,18)");assert.equal((await apply(110,'resume',{vehicle_ids:[17,18]})).status,'renting');
  });checks.push('A new customer rental blocks reuse during resume; a failure on the second vehicle rolls back the first vehicle and new lines, while different available vehicles can be selected');
  await isolated(async()=>{
-   await apply(111,'hold',{at:'2026-10-15T10:00'});await assert.rejects(()=>apply(111,'resume',{vehicle_ids:[16]}),e=>e.status===409);
-   const resumed=await apply(111,'resume',{vehicle_ids:[16],resume_end:'2026-11-24T10:00',resume_package:'Theo tháng',resume_amount:'350000'});assert.equal(resumed.status,'renting');assert.equal(resumed.plan.periods[0].amount,750000);assert.equal(resumed.remaining,1000000);
- });checks.push('Legacy ownership contracts require an explicit remaining schedule; old debt and deposit remain separate from newly agreed periods');
+   await apply(111,'hold',{at:'2026-10-15T10:00'});await assert.rejects(()=>apply(111,'resume',{vehicle_ids:[16],resume_end:'2026-11-24T10:00',resume_package:'Theo tháng',resume_amount:'350000'}),e=>e.status===409);
+   const resumed=await apply(111,'resume',{vehicle_ids:[16]});assert.equal(resumed.status,'renting');assert.equal(resumed.plan,null);assert.equal(Date.parse(resumed.end_at),Date.parse('2027-04-10T08:00:00+07:00'));assert.equal(resumed.remaining,650000);
+ });checks.push('Legacy ownership resumes extend the original deadline by the pause without inventing a new installment amount or changing old debt');
  await isolated(async()=>{
    await apply(110,'hold',{at:'2026-10-15T10:00'});
    const result=await life.applyContractLifecycle(db,110,70001,await input(110,'resume',{vehicle_ids:[14,15]}));
@@ -128,6 +133,58 @@ async function main(){
    await assert.rejects(()=>apply(110,'resume',{at:'2026-10-20T10:00',vehicle_ids:[14,15]}),e=>e.code==='P0001'||e.status===409);
    const state=await staff(()=>life.readContractLifecycle(db,110));assert.equal(state.status,'reserved');assert.equal(state.items.length,2);
  });checks.push('Backdated resume cannot overlap another branch historical rental even when the selected vehicle is currently ready');
+ await isolated(async()=>{
+   await db.query('UPDATE himoto.orders SET pid=0 WHERE id=110');
+   const held=await apply(110,'hold',{at:'2026-10-15T10:00'});assert(held.hold_was_overdue);assert(!held.hold_can_resume);assert(held.hold_expired);assert.equal(held.status,'reserved');
+   await assert.rejects(()=>staff(()=>payments.recordContractPayment(db,110,70001,payments.parseContractPayment({request_id:randomUUID(),revision:held.revision,amount:'1',method:'cash',account_id:93001,paid_at:'2026-10-24T09:00',purpose:'extra',note:'No extra charge during hold QA'}))),e=>e.status===409);
+   const paid=await staff(()=>payments.recordContractPayment(db,110,70001,payments.parseContractPayment({request_id:randomUUID(),revision:held.revision,amount:'100000',method:'cash',account_id:93001,paid_at:'2026-10-24T09:00',note:'Pay old debt during pause QA'})));assert.equal(paid.context.remaining,0);
+   await assert.rejects(()=>apply(110,'resume',{vehicle_ids:[14,15]}),e=>e.status===409&&/quá hạn/.test(e.message));
+   const closed=await apply(110,'complete_hold');assert.equal(closed.status,'completed');assert.equal(closed.remaining,0);assert(closed.completed_from_hold);assert.equal(closed.waived_amount,0);
+ });checks.push('Overdue-at-entry ownership holds remain in hold after expiration and cannot resume even after the old debt is subsequently paid');
+ await isolated(async()=>{
+   await db.query("INSERT INTO himoto.transactions(order_id,name,type,status,value,store_id,user_id,cash_id,note,created_at) VALUES(110,'order:payment','in','approved',100000,80001,70001,93001,'Later payment QA','2026-10-20T10:00+07')");
+   const held=await apply(110,'hold',{at:'2026-10-15T10:00'});assert(held.hold_was_overdue);assert(!held.hold_can_resume);
+ });checks.push('Backdated holds classify payment lateness at the actual hold start, without letting a later receipt turn that old overdue case into a resumable one');
+ await isolated(async()=>{
+   await db.query("UPDATE himoto.orders SET total='200000',pid=200000 WHERE id=110");
+   await db.query("INSERT INTO himoto.transactions(order_id,name,type,status,value,store_id,user_id,cash_id,note,created_at) VALUES(110,'order:extra','in','approved',100000,80001,70001,93001,'Extra charged after entered hold date QA','2026-10-20T10:00+07')");
+   const held=await apply(110,'hold',{at:'2026-10-15T10:00'});assert(!held.hold_was_overdue);assert(held.hold_can_resume);
+ });checks.push('A later one-time charge and its receipt are excluded together when classifying the earlier hold entry');
+ await isolated(async()=>{
+   await db.query('UPDATE himoto.orders SET pid=1000000 WHERE id=110');
+   await db.query("INSERT INTO himoto.transactions(order_id,name,type,status,value,store_id,user_id,cash_id,note,created_at) VALUES(110,'order:deposit','in','approved',1000000,80001,70001,93001,'Real deposit fixture QA','2026-10-01T08:00+07')");
+   await apply(110,'hold',{at:'2026-10-15T10:00'});const txBefore=(await db.query('SELECT * FROM himoto.transactions WHERE order_id=110 ORDER BY id')).rows;
+   const request=await input(110,'complete_hold'),closed=await staff(()=>life.applyContractLifecycle(db,110,70001,request));assert.equal(closed.status,'completed');assert.equal(closed.waived_amount,100000);assert.equal(closed.total_amount,0);assert.equal(closed.remaining,0);assert.equal(closed.deposit_held,1000000);assert.equal(closed.paid_amount,0);assert.equal(closed.plan,null);
+   assert.deepEqual((await db.query('SELECT * FROM himoto.transactions WHERE order_id=110 ORDER BY id')).rows,txBefore);
+   const snapshot=(await db.query('SELECT total,pid,draft_payload FROM himoto.orders WHERE id=110')).rows[0];assert.equal(Number(snapshot.pid),1000000);assert.equal(snapshot.draft_payload.management_composer.lifecycle.hold_completion.original_total,100000);assert.equal(snapshot.draft_payload.management_composer.lifecycle.hold_completion.hold.plan.end,original.end);
+   const paymentContext=await staff(()=>payments.readPaymentContext(db,110));assert(paymentContext.completed_from_hold);assert(!paymentContext.hold_active);
+   const repeated=await staff(()=>life.applyContractLifecycle(db,110,70001,request));assert.equal(repeated.events.filter(e=>e.action==='complete_hold').length,1);
+   await assert.rejects(()=>apply(110,'resume',{vehicle_ids:[14,15]}),e=>e.status===409);
+   await assert.rejects(()=>staff(()=>payments.recordContractPayment(db,110,70001,payments.parseContractPayment({request_id:randomUUID(),revision:closed.revision,amount:'1',method:'cash',account_id:93001,paid_at:'2026-10-24T11:00',purpose:'extra',note:'Must not revive waived rent QA'}))),e=>e.status===409);
+ });checks.push('Explicit completion waives uncollected accrued rent and cancels future periods, preserves every real receipt/deposit and original terms, closes once and cannot revive waived collections');
+ await isolated(async()=>{
+   await db.query("UPDATE himoto.orders SET total='200000',pid=100000 WHERE id=110");
+   await db.query("INSERT INTO himoto.transactions(order_id,name,type,status,value,store_id,user_id,cash_id,note,created_at) VALUES(110,'order:payment','in','approved',100000,80001,70001,93001,'Actual partial rental receipt QA','2026-10-01T08:00+07')");
+   await apply(110,'hold',{at:'2026-10-15T10:00'});
+   const revenue=load(path.join(root,'lib/server/rental-revenue')).rentalRevenue;
+   const before=await revenue(db,'2026-10-01','2026-10-31',80001);assert.equal(before.total.revenue,100000);
+   const closed=await apply(110,'complete_hold');assert.equal(closed.waived_amount,100000);assert.equal(closed.paid_amount,100000);assert.equal(closed.total_amount,100000);assert.equal(closed.remaining,0);
+   assert.deepEqual(await revenue(db,'2026-10-01','2026-10-31',80001),before);
+   const renewals=load(path.join(root,'lib/server/contract-renewals'));
+   await assert.rejects(()=>staff(()=>renewals.recordContractRenewal(db,110,70001,renewals.parseRenewalInput({item_id:1100,item_revision:'1',order_revision:closed.revision,return_at:'2027-05-01T08:00',amount:'100000',note:'Cannot revive a closed hold through historical renewal QA',occurred_at:'2026-10-14T10:00'}))),e=>e.status===409&&/hoàn thành sau bảo lưu/.test(e.message));
+   const raw=(await db.query(load(path.join(root,'lib/server/contract-drafts')).CONTRACT_LIST_SQL+' AND o.id=$1',[110])).rows[0];
+   const row=load(path.join(root,'lib/management/repository')).mapApiRow('contracts',raw);
+   const monitored=load(path.join(root,'lib/management/contract-overdue')).withContractMonitoring(row,Date.parse('2027-10-01T08:00+07:00'));
+   assert.equal(monitored.status,'completed');assert.equal(monitored.collection_overdue,0);assert.equal(Number(monitored.rental_debt_amount),0);
+ });checks.push('Uncollectible accrued debt is a separate loss: partial real revenue stays unchanged, future periods do not become losses, no expense is invented, and the completed contract leaves debt monitoring');
+ await isolated(async()=>{
+   await apply(110,'hold',{at:'2026-10-15T10:00',hold_until:'2026-10-26T10:00'});
+   await assert.rejects(()=>apply(110,'complete_hold'),e=>e.status===409);await assert.rejects(()=>apply(110,'resume',{vehicle_ids:[14,15]}),e=>e.status===409);
+   const edited=await apply(110,'update_hold',{hold_until:'2026-10-20T10:00'});assert(edited.hold_expired);assert.equal(edited.held_at,'2026-10-15T10:00');assert.equal(edited.plan.stopped_at,'2026-10-15T10:00');assert.equal(edited.status,'reserved');
+   const raw=(await db.query(load(path.join(root,'lib/server/contract-drafts')).CONTRACT_LIST_SQL+' AND o.id=$1',[110])).rows[0];
+   const mapped=load(path.join(root,'lib/management/repository')).mapApiRow('contracts',raw);assert.equal(mapped.hold_until,'2026-10-20T10:00');assert(domain.expiredOwnershipHold(mapped));
+   const monitored=load(path.join(root,'lib/management/contract-overdue')).withContractMonitoring(mapped,Date.parse('2027-01-01T10:00+07:00'));assert.equal(monitored.status,'reserved');assert.equal(monitored.collection_overdue,0);assert.equal(monitored.total_amount,100000);
+ });checks.push('Ending a hold requires its entered deadline; editing that deadline keeps the original freeze and state, and never resumes or completes automatically');
  await isolated(async()=>{
    await db.query('UPDATE himoto.orders SET store_id=80003 WHERE id=100');await assert.rejects(()=>staff(()=>life.readContractLifecycle(db,100)),e=>e.status===404);await assert.rejects(()=>staff(()=>life.applyContractLifecycle(db,100,70001,{action:'mark_bad_debt',revision:'1',request_id:randomUUID(),note:'Foreign contract must fail QA',at:'2026-10-24T10:00',confirmed:true})),e=>e.status===404);
    await assert.rejects(()=>apply(101,'hold'),e=>e.status===409);assert.throws(()=>life.parseContractLifecycle({action:'hold'}));assert.throws(()=>domain.legacyResumePlan(0,'2026-10-01T08:00','2026-10-24T10:00','2026-10-23T10:00','Theo tháng',100000));
