@@ -69,9 +69,9 @@ export async function notificationPhotos(db:Database,orderId:number,phases:strin
   // under statement_timeout when staff attached hồ sơ photos. Dispatch reloads bytes by slot.
   const result=await db.query(`SELECT slot,mime_type,NULL::text AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag
     FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND
-      (slot ~ ANY($2::text[]) OR ($3 AND slot ~ '^plate-[1-9][0-9]{0,14}$' AND EXISTS
-        (SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.vehicle_id::text=substring(slot from 7) AND d.deleted_at IS NULL))) ORDER BY slot`,
-    [orderId,phases.map(phase=>`^${phase}-(?:[1-9][0-9]{0,14}|video-[1-3]|document-[1-9][0-9]{0,14})$`).concat(phases.includes('rental')?['^rental-signed-[1-9][0-9]{0,14}$','^(driver-license|customer-id-front|customer-id-back|customer-driver-license)$']:[]),phases.includes('rental')]);
+      (slot ~ ANY($2::text[]) OR ($3 AND regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','') ~ '^plate-[1-9][0-9]{0,14}$' AND EXISTS
+        (SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.vehicle_id::text=substring(regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','') from 7) AND d.deleted_at IS NULL))) ORDER BY slot`,
+    [orderId,phases.map(phase=>`^${phase}-(?:[1-9][0-9]{0,14}|video-[1-3]|document-[1-9][0-9]{0,14})(?:-extra-[1-9][0-9]{0,14})?$`).concat(phases.includes('rental')?['^rental-signed-[1-9][0-9]{0,14}$','^(driver-license|customer-id-front|customer-id-back|customer-driver-license)(-extra-[1-9][0-9]{0,14})?$']:[]),phases.includes('rental')]);
   // Preserve the legacy payload shape/hash when an attachment has no object reference.
   const photos=(result.rows as Attachment[]).map<Attachment>(({object_bucket,object_key,object_etag,...photo})=>object_key?{...photo,object_bucket,object_key,object_etag}:photo)
     .filter(photo=>photo.slot.startsWith('plate-')||isContractTransactionPhoto(photo.slot));

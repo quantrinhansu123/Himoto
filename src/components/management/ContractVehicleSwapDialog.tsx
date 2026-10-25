@@ -83,9 +83,9 @@ export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { 
     <form onSubmit={submit}>
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
-          <p>Đã đổi xe {done.oldLicense} → {done.newLicense}. Tải 1 ảnh đổi xe bên dưới rồi đóng.</p>
+          <p>Đã đổi xe {done.oldLicense} → {done.newLicense}. Chọn nhiều ảnh đổi xe bên dưới, bấm Lưu ảnh rồi đóng.</p>
           <SavedRecordPhotos entity="contracts" recordId={done.orderId} slots={contractPhotoSlots(`vehicle-swap-${done.swapId}`)}
-            title="Ảnh đổi xe (1 ảnh)" onPendingChange={setPhotosPending} />
+            title="Ảnh đổi xe" compact bulkImageLabel="Chọn nhiều ảnh đổi xe" onPendingChange={setPhotosPending} />
         </div> : <>
           {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
           {!loading && !rows.length && <p>Hợp đồng này không còn xe đang thuê để đổi.</p>}
@@ -97,7 +97,7 @@ export function ContractVehicleSwapDialog({ orderId, contractCode, onClose }: { 
                 monthly={false} ownOrderId={orderId} takenIds={[]} disabled={saving} invalid={!vehicleId}
                 onChange={setVehicleId} />
             </div>
-            <p className="mg-composer-hint">Gõ tên xe hoặc biển số để tìm nhanh. Xe cũ về Lưu kho, xe mới sang Đang thuê; phần xe trên hợp đồng (tên, biển số…) đổi theo xe mới. Khách hàng, thời hạn và giá thuê giữ nguyên. Hạn trả hiện tại: {formatDateTime(selected.scheduled_return_at)}. Sau khi đổi sẽ tải được 1 ảnh đổi xe.</p>
+            <p className="mg-composer-hint">Gõ tên xe hoặc biển số để tìm nhanh. Xe cũ về Lưu kho, xe mới sang Đang thuê; phần xe trên hợp đồng (tên, biển số…) đổi theo xe mới. Khách hàng, thời hạn và giá thuê giữ nguyên. Hạn trả hiện tại: {formatDateTime(selected.scheduled_return_at)}. Sau khi đổi có thể chọn nhiều ảnh và bổ sung sau.</p>
             {!replacements.length && <p className="mg-field-error">Không có xe sẵn sàng để đổi.</p>}
           </>}
           {error && <p className="mg-error-message" role="alert">{error}</p>}

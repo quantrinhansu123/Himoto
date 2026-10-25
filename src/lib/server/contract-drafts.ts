@@ -369,7 +369,7 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   } else {
     // A draft can switch customers. Never retain the previous customer's
     // imported identity documents or separately captured driving licence.
-    if(String(previous?.customer_id||'')!==String(edits.draft.customer_id||''))await client.query("DELETE FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND (slot=ANY($2::text[]) OR slot ~ '^rental-document-')",[id,['customer-id-front','customer-id-back','customer-driver-license','driver-license']]);
+    if(String(previous?.customer_id||'')!==String(edits.draft.customer_id||''))await client.query("DELETE FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND (regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','')=ANY($2::text[]) OR slot ~ '^rental-document-')",[id,['customer-id-front','customer-id-back','customer-driver-license','driver-license']]);
     await client.query(`UPDATE himoto.orders SET store_id=$1, customer_id=$2, customer_name=$3, customer_phone=$4, customer_address=$5,
       customer_idnumber=$6, note=$7, rent_at=$8, return_at=$9, draft_payload=$10, draft_reference=$11, contract_responsible_user_id=$12,
       contract_signed_on=$13, contract_authorization_date=$14, contract_collateral_description=$15, customer_source=$16,

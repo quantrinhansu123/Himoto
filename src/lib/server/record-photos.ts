@@ -3,10 +3,12 @@ import type { PoolClient } from 'pg';
 import { hasRenewalVersion, nextRenewalVersion } from '@/lib/management/contract-renewals';
 import { isVehicleDocumentSlot, MAX_PHOTO_BYTES, type PhotoEntity } from '@/lib/management/record-photos';
 import { isContractTransactionPhoto } from '@/lib/management/contract-photos';
+import { isSupplementalPhotoSlot,photoBaseSlot } from '@/lib/management/photo-slot-groups';
 
 export class RecordPhotoError extends Error { constructor(message: string, public status = 400) { super(message); } }
 const isVehicleTransferPhoto = (slot: string) => /^(transfer|receive)-[1-9]\d{0,14}-1$/.test(slot);
 export function parsePhotoTarget(entity: string, id: string, slot?: string): { entity: PhotoEntity; id: number; slot?: string } {
+  if(slot&&isSupplementalPhotoSlot(slot)){parsePhotoTarget(entity,id,photoBaseSlot(slot));return {entity:entity as PhotoEntity,id:Number(id),slot};}
   if (!['customers', 'contracts', 'vehicles'].includes(entity) || !/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new RecordPhotoError('Hồ sơ không hợp lệ.');
   if (slot !== undefined && !(entity === 'customers' ? ['id_front', 'id_back', 'driver_license'].includes(slot)
     : entity === 'vehicles' ? isVehicleTransferPhoto(slot) || isVehicleDocumentSlot(slot)
@@ -49,6 +51,7 @@ export async function requirePhotoRecord(client: Pick<PoolClient, 'query'>, enti
   if (!result.rowCount) throw new RecordPhotoError('Không tìm thấy hồ sơ.', 404);
 }
 export async function requireContractPhotoSlot(client:Pick<PoolClient,'query'>,entity:PhotoEntity,id:number,slot:string) {
+  slot=photoBaseSlot(slot);
   const transfer=entity==='vehicles'?slot.match(/^(transfer|receive)-([1-9]\d*)-1$/):null;
   if(transfer) {
     const type=transfer[1]==='receive'?'manual_transfer_receive':'manual_transfer';
@@ -57,7 +60,7 @@ export async function requireContractPhotoSlot(client:Pick<PoolClient,'query'>,e
   }
   const swap=entity==='contracts'?slot.match(/^battery-swap-([1-9]\d*)-/):null;
   if(swap&&!(await client.query('SELECT id FROM himoto.management_contract_battery_swaps WHERE id=$1 AND order_id=$2',[Number(swap[1]),id])).rowCount)throw new RecordPhotoError('Lượt đổi pin không thuộc hợp đồng.',404);
-  const vehicleSwap=entity==='contracts'?slot.match(/^vehicle-swap-([1-9]\d*)-1$/):null;
+  const vehicleSwap=entity==='contracts'?slot.match(/^vehicle-swap-([1-9]\d*)-[1-9]\d{0,14}$/):null;
   if(vehicleSwap&&!(await client.query('SELECT id FROM himoto.management_contract_vehicle_swaps WHERE id=$1 AND order_id=$2',[Number(vehicleSwap[1]),id])).rowCount)throw new RecordPhotoError('Lượt đổi xe không thuộc hợp đồng.',404);
   const item=entity==='contracts'?slot.match(/^return-([1-9]\d*)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/):null;
   if(item&&!(await client.query('SELECT id FROM himoto.order_vehicle_details WHERE id=$1 AND order_id=$2 AND deleted_at IS NULL',[Number(item[1]),id])).rowCount)throw new RecordPhotoError('Xe trả không thuộc hợp đồng.',404);

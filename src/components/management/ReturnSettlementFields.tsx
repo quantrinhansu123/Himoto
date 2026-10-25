@@ -10,6 +10,7 @@ import { ContractWorkflowGuide } from './ContractWorkflowGuide';
 import { normalizeRefundAccount,returnRentalRefundable,validRefundAccount } from '@/lib/management/return-refunds';
 import { mergeRefundRecipient } from '@/lib/management/refund-qr';
 import { RefundQrUpload } from './RefundQrUpload';
+import { photoBaseSlot } from '@/lib/management/photo-slot-groups';
 
 type Kind=ReturnReceipt['kind']|'refund'|'rental_refund';
 interface Row {enabled:boolean;amount:string;method:PaymentMethod;account_id:string;request_id:string}
@@ -41,7 +42,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
     const controller=new AbortController();
     void fetch(photoEndpoint('contracts',orderId),{cache:'no-store',credentials:'same-origin',signal:controller.signal})
       .then(async response=>{const body=await response.json();if(!response.ok||body.status!=='success')throw new Error();return body.data as SavedPhoto[];})
-      .then(photos=>{if(!controller.signal.aborted){setHasRefundQr(photos.some(photo=>qrSlots.includes(photo.slot)));setSavedQrSlot(photos.find(photo=>itemKey.split(',').some(id=>returnRefundQrSlot(Number(id))===photo.slot))?.slot);}})
+      .then(photos=>{if(!controller.signal.aborted){setHasRefundQr(photos.some(photo=>qrSlots.includes(photoBaseSlot(photo.slot))));setSavedQrSlot(photos.filter(photo=>itemKey.split(',').some(id=>returnRefundQrSlot(Number(id))===photoBaseSlot(photo.slot))).sort((a,b)=>b.updated_at.localeCompare(a.updated_at))[0]?.slot);}})
       .catch(()=>{if(!controller.signal.aborted)setHasRefundQr(false);});
     return()=>controller.abort();
   },[orderId,qrSlots,photoVersion,qrVersion,itemKey]);

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { VEHICLE_DOCUMENT_SLOTS, photoEndpoint, type PendingPhotos, type SavedPhoto, type VehicleDocumentSlot } from '@/lib/management/record-photos';
+import { VEHICLE_DOCUMENT_SLOTS, photoEndpoint,prepareRecordPhoto,isVehicleDocumentSlot, type PendingPhotos, type SavedPhoto, type VehicleDocumentSlot } from '@/lib/management/record-photos';
+import { expandPhotoGroups,nextPhotoInGroup } from '@/lib/management/photo-slot-groups';
 import { PhotoField } from './RecordPhotoFields';
 import type { PhotoOcrController } from './usePhotoOcr';
 
@@ -12,6 +13,7 @@ export function VehicleDocumentFields({ id, photos, removed, onChange, onBusyCha
 }) {
   const [saved, setSaved] = useState<SavedPhoto[]>([]), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(Boolean(id));
+  const [preparing,setPreparing]=useState(false);
   const callback = useRef(onBusyChange); callback.current = onBusyChange;
   const currentFiles = useRef({ photos, removed, onChange }); currentFiles.current = { photos, removed, onChange };
   useEffect(() => {
@@ -36,18 +38,31 @@ export function VehicleDocumentFields({ id, photos, removed, onChange, onBusyCha
     current.onChange(next, deleted);
     if (slot.startsWith('registration-')) ocr.read(slot, file);
   }
+  async function chooseMany(slot:string,files:File[]){
+    if(disabled||loading||preparing||error||!files.length)return;
+    setPreparing(true);onBusyChange('batch',true);setError('');
+    try{for(const source of files){
+      const file=await prepareRecordPhoto(source),current=currentFiles.current;
+      const key=nextPhotoInGroup(slot,[...saved.filter(photo=>!current.removed.includes(photo.slot as VehicleDocumentSlot)).map(photo=>photo.slot),...Object.keys(current.photos)]);
+      if(!isVehicleDocumentSlot(key))throw Error('Loại giấy tờ xe không hợp lệ.');
+      change(key,file);
+    }}catch(cause){setError(cause instanceof Error?cause.message:'Không xử lý được ảnh.');}
+    finally{setPreparing(false);onBusyChange('batch',false);}
+  }
   return <section className="mg-vehicle-registration" aria-label="Đọc đăng ký xe" aria-busy={loading || ocr.pending}>
     <h3>Đăng ký xe & giấy mua bán</h3>
     <p className="mg-photo-feedback">Chụp đăng ký xe để AI điền biển số, số khung, số máy, màu sắc và năm sản xuất. Giữ thông tin nhập tay; đối chiếu ảnh trước khi lưu.</p>
     {loading && <p role="status">Đang tải giấy tờ đã lưu…</p>}
     {error && <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" onClick={() => setRetry(value => value + 1)}>Thử tải giấy tờ lại</button></p>}
-    <div className="mg-photo-grid">{VEHICLE_DOCUMENT_SLOTS.map(slot => {
+    <div className="mg-photo-grid">{expandPhotoGroups(VEHICLE_DOCUMENT_SLOTS,[...saved.map(photo=>photo.slot),...Object.keys(photos)]).map(slot => {
+      if(!isVehicleDocumentSlot(slot.key))return null;
+      const key=slot.key;
       const photo = saved.find(item => item.slot === slot.key), deleted = removed.includes(slot.key), state = ocr.states[slot.key];
       return <div key={slot.key}><PhotoField slot={slot} file={photos[slot.key]}
         savedUrl={photo && id && !deleted ? `${photoEndpoint('vehicles', id, slot.key)}?v=${encodeURIComponent(photo.updated_at)}` : undefined}
-        disabled={disabled || loading || Boolean(error)} onBusyChange={value => { onBusyChange(slot.key, value); if (value) ocr.cancel(slot.key); }}
+        disabled={disabled || loading || preparing || Boolean(error)} onBusyChange={value => { onBusyChange(slot.key, value); if (value) ocr.cancel(slot.key); }}
         fileHint="Ảnh sẽ được lưu cùng thông tin xe khi bấm Lưu xe / Thêm xe."
-        onChange={file => change(slot.key, file)}/>
+        onSelectMany={files=>void chooseMany(key,files)} onChange={file => change(key, file)}/>
         {deleted && <p className="mg-photo-feedback">Ảnh sẽ được bỏ khi lưu xe. <button type="button" className="mg-button" disabled={disabled} onClick={() => onChange(photos, removed.filter(key => key !== slot.key))}>Giữ ảnh đã lưu</button></p>}
         {state && <div className="mg-photo-feedback"><p role={state.phase === 'error' ? 'alert' : 'status'} className={state.phase === 'error' ? 'mg-field-error' : undefined}>{state.message}</p>
           {state.phase === 'reading' ? <button type="button" className="mg-button" disabled={disabled} onClick={() => ocr.cancel(slot.key)}>Bỏ qua AI</button>

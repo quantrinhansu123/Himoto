@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { readPhotoWithAi, type OcrKind, type OcrResult } from '@/lib/management/photo-ocr';
+import { photoBaseSlot } from '@/lib/management/photo-slot-groups';
 
 interface OcrState { phase: 'reading' | 'done' | 'error'; message: string }
 export interface PhotoOcrController { states: Record<string, OcrState>; pending: boolean; read: (slot: string, file?: File) => void;readMany:(slot:string,files:File[])=>void; cancel: (slot: string) => void }
@@ -19,7 +20,7 @@ export function usePhotoOcr<Snapshot>({ kind, snapshot, apply }: {
   }
   function read(slot: string, file?: File) {
     cancel(slot); if (!file) return;
-    start(slot,file,callbacks.current.kind(slot));
+    start(slot,file,callbacks.current.kind(photoBaseSlot(slot)));
   }
   function readMany(slot:string,files:File[]){
     for(const key of [...jobs.current.keys()])cancel(key);

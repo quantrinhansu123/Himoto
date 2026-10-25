@@ -13,6 +13,7 @@ async function main(){const c=await ownerDatabase.connect();try{
     for(const key of ['scope_all','store_id','actor_id','operation','transfer_vehicle_id'])sql=sql.replaceAll(`${schema}.${key}'`,`himoto.${key}'`);await c.query(sql);}
   for(const file of ['2026-10-17-account-access.sql','2026-10-18-shared-vehicle-inventory.sql','2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-contract-vehicle-labels.sql','2026-10-23-ownership-hq-vehicles.sql','2026-10-19-vehicle-swap-photo.sql','2026-10-23-vehicle-documents.sql'])await migration(file);
   await migration('2026-10-24-global-vehicle-transfers.sql');await migration('2026-10-24-global-vehicle-transfers.sql');
+  await migration('2026-10-25-multiple-record-images.sql');await migration('2026-10-25-multiple-record-images.sql');
   for(const table of tables){
     if(!(await c.query('SELECT 1 FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name=\'id\'',[schema,table])).rowCount)continue;
     await c.query(`CREATE SEQUENCE ${schema}.qa_${table}_seq START 1000000; ALTER TABLE ${schema}.${table} ALTER COLUMN id SET DEFAULT nextval('${schema}.qa_${table}_seq')`);
@@ -62,13 +63,19 @@ async function main(){const c=await ownerDatabase.connect();try{
     await assert.rejects(()=>applyVehicleAction(q,91002,{action:'transfer',to_store_id:80002,note:'',revision:'99999999'},70001),e=>e.status===409);
     await assert.rejects(()=>applyVehicleAction(q,91002,{action:'transfer',to_store_id:80003,note:''},70001),e=>e.status===400);
   });checks.push('Live rental/debt blockers, stale revisions and same-store dispatch still reject');
-  const {deleteRecordPhoto}=load(path.join(root,'lib/server/record-photos'));
+  const {deleteRecordPhoto,requireContractPhotoSlot,writeRecordPhoto}=load(path.join(root,'lib/server/record-photos'));
   await context({operation:'transfer',transfer_vehicle_id:'91001'},async()=>{
     // Exercise actual photo insert/delete through RLS with a generated fixture.
-    await q.query("INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('vehicles',91001,$1,'image/jpeg',$2,70001)",['transfer-'+dispatched.event_id+'-1',Buffer.from([255,216,255,217])]);
-    await deleteRecordPhoto(q,'vehicles',91001,'transfer-'+dispatched.event_id+'-1');
+    for(const suffix of ['', '-extra-2','-extra-3']){
+      const slot='transfer-'+dispatched.event_id+'-1'+suffix;
+      await requireContractPhotoSlot(q,'vehicles',91001,slot);
+      await writeRecordPhoto(q,'vehicles',91001,slot,'image/jpeg',Buffer.from([255,216,255,217]),70001);
+    }
+    assert.equal((await q.query("SELECT entity_id FROM himoto.management_record_photos WHERE entity_type='vehicles' AND entity_id=91001")).rowCount,3);
+    await assert.rejects(()=>requireContractPhotoSlot(q,'vehicles',91002,'transfer-'+dispatched.event_id+'-1-extra-2'),e=>e.status===404);
+    for(const suffix of ['','-extra-2','-extra-3'])await deleteRecordPhoto(q,'vehicles',91001,'transfer-'+dispatched.event_id+'-1'+suffix);
     assert.equal((await q.query("SELECT entity_id FROM himoto.management_record_photos WHERE entity_type='vehicles' AND entity_id=91001")).rowCount,0);
-  });checks.push('Transfer evidence photos can be saved/deleted by a global dispatcher after the vehicle moves');
+  });checks.push('Multiple transfer images can be saved/read/deleted after the vehicle moves; event association and unrelated-vehicle guards remain enforced under real RLS');
   for(const role of Object.keys(ACCESS_ROLES))for(const permission of ['vehicles.read','vehicles.transfer','vehicles.receive'])assert(hasPermission({access_role:role,permissions:[]},permission));
   assert(!hasPermission(null,'vehicles.transfer'));assert(!hasPermission({access_role:'hr',permissions:[]},'vehicles.write'));assert(!hasPermission({access_role:'hr',permissions:[]},'finance.write'));
   checks.push('All seven account roles have fleet read/transfer/receipt; anonymous users and unrelated edit/finance permissions remain denied');

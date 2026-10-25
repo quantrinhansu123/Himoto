@@ -12,6 +12,12 @@ next-env.d.ts
 /.backups/
 # Local operational workbooks must not be published.
 /*.xlsx
+/*.jpg
+/*.png
+/*.mp4
+/*.pdf
+/*.docx
+/form_gui_tin_nhan_nhanh.html
 __pycache__/
 *.pyc
 /docs/HANDOFF-*.md

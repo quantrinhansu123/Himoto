@@ -1,5 +1,6 @@
 import type { PhotoSlot } from './record-photos';
 import type { AccessPermission } from './permissions';
+import { isSupplementalPhotoSlot,photoBaseSlot } from './photo-slot-groups';
 export type ContractPhotoPhase='rental'|'handover'|`return-${number}`|`renewal-${number}`|`renewal-receipt-${number}`|`battery-swap-${number}`|`vehicle-swap-${number}`;
 export const CONTRACT_CUSTOMER_PHOTO_SLOTS:PhotoSlot[]=[{key:'customer-id-front',label:'CCCD mặt trước / Hộ chiếu'},{key:'customer-id-back',label:'CCCD mặt sau / Trang bổ sung'},{key:'customer-driver-license',label:'Giấy phép lái xe'}];
 export function contractDocumentSlots(phase:ContractPhotoPhase):PhotoSlot[] {
@@ -18,13 +19,14 @@ export function returnRefundEvidenceSlots(itemId:number){
   return Array.from({length:15},(_,index)=>`return-${itemId}-document-${index+1}`);
 }
 export function contractPhotoSlots(phase:ContractPhotoPhase):PhotoSlot[] {
-  if(phase.startsWith('vehicle-swap-'))return [{key:`${phase}-1`,label:'Ảnh đổi xe'}];
+  if(phase.startsWith('vehicle-swap-'))return Array.from({length:15},(_,index)=>({key:`${phase}-${index+1}`,label:`Ảnh đổi xe ${index+1}`}));
   if(phase.startsWith('battery-swap-'))return [{key:`${phase}-1`,label:'Biển số xe đổi pin'},{key:`${phase}-2`,label:'Phần trăm pin lúc nhận'},{key:`${phase}-video-1`,label:'Video pin cửa hàng giao cho khách'}];
   const labels=['Toàn cảnh xe','Đầu xe','Đuôi xe','Bên trái','Bên phải','Đồng hồ / phụ kiện'];
   return [...Array.from({length:15},(_,index)=>({key:`${phase}-${index+1}`,label:labels[index]||`Ảnh hồ sơ ${index+1}`})),...Array.from({length:3},(_,index)=>({key:`${phase}-video-${index+1}`,label:`Video tình trạng xe ${index+1}`}))];
 }
 export function isContractTransactionPhoto(slot:string) {
-  return isSignedContractPhoto(slot)||slot==='driver-license'||CONTRACT_CUSTOMER_PHOTO_SLOTS.some(item=>item.key===slot)||/^(rental|handover)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^(return|renewal|renewal-receipt)-[1-9]\d{0,14}-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^battery-swap-[1-9]\d{0,14}-(?:[12]|video-1|document-[1-9]\d{0,14})$/.test(slot)||/^vehicle-swap-[1-9]\d{0,14}-1$/.test(slot);
+  if(isSupplementalPhotoSlot(slot))return isContractTransactionPhoto(photoBaseSlot(slot));
+  return isSignedContractPhoto(slot)||slot==='driver-license'||CONTRACT_CUSTOMER_PHOTO_SLOTS.some(item=>item.key===slot)||/^(rental|handover)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^(return|renewal|renewal-receipt)-[1-9]\d{0,14}-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^battery-swap-[1-9]\d{0,14}-(?:[12]|video-1|document-[1-9]\d{0,14})$/.test(slot)||/^vehicle-swap-[1-9]\d{0,14}-[1-9]\d{0,14}$/.test(slot);
 }
 /** Keep the original first page and the payment bill in their existing slots. */
 export function isSignedContractPhoto(slot:string) {
@@ -44,6 +46,7 @@ export function expandSignedContractPhotoSlots(slots:PhotoSlot[],keys:string[]) 
 }
 /** Match the existing record-photo API's write permission for each contract slot. */
 export function contractPhotoWritePermission(slot:string):AccessPermission|null {
+  if(isSupplementalPhotoSlot(slot))return contractPhotoWritePermission(photoBaseSlot(slot));
   if(!isContractTransactionPhoto(slot)&&!/^plate-[1-9]\d{0,14}$/.test(slot))return null;
   if(slot.startsWith('renewal-')||slot.startsWith('battery-swap-'))return 'contracts.renew';
   if(slot.startsWith('return-'))return 'contracts.return';
@@ -57,7 +60,7 @@ export function contractPhotoDeletePermission(slot:string):AccessPermission|null
 // Expand from actual saved/pending keys; the initial placeholders are not an upload limit.
 export function expandablePhotoPrefix(slots:PhotoSlot[]) {
   const first=slots.find(slot=>!slot.key.includes('-video-'))?.key;
-  if(!first||!isContractTransactionPhoto(first)||/^battery-swap-\d+-[12]$/.test(first)||/^vehicle-swap-\d+-1$/.test(first))return undefined;
+  if(!first||!isContractTransactionPhoto(first)||/^battery-swap-\d+-[12]$/.test(first))return undefined;
   return first.match(/^(.*-)([1-9]\d*)$/)?.[1];
 }
 export function expandContractPhotoSlots(slots:PhotoSlot[],keys:string[]):PhotoSlot[] {
@@ -71,13 +74,14 @@ export function expandContractPhotoSlots(slots:PhotoSlot[],keys:string[]):PhotoS
   }
   return expanded.sort((a,b)=>a.key.localeCompare(b.key,'en',{numeric:true}));
 }
-export function contractPhotoLabel(slot:string) {
+export function contractPhotoLabel(slot:string):string {
+  if(isSupplementalPhotoSlot(slot))return `${contractPhotoLabel(photoBaseSlot(slot))} · Ảnh ${slot.split('-').at(-1)}`;
   if(/^rental-signed-/.test(slot))return `Khi thuê · Hợp đồng đã ký · Trang ${slot.split('-').at(-1)}`;
   if(slot.startsWith('plate-'))return 'Ảnh biển số / khách nhận xe';
   if(slot==='driver-license')return 'Giấy phép lái xe';
   const customerPhoto=CONTRACT_CUSTOMER_PHOTO_SLOTS.find(item=>item.key===slot);if(customerPhoto)return customerPhoto.label;
   const swap=slot.match(/^(battery-swap-[1-9]\d*)-/);if(swap){const phase=swap[1] as ContractPhotoPhase;return `Đổi pin · ${[...contractPhotoSlots(phase),...contractDocumentSlots(phase)].find(item=>item.key===slot)?.label||slot}`;}
-  const vehicleSwap=slot.match(/^(vehicle-swap-[1-9]\d*)-/);if(vehicleSwap){const phase=vehicleSwap[1] as ContractPhotoPhase;return `Đổi xe · ${contractPhotoSlots(phase).find(item=>item.key===slot)?.label||slot}`;}
+  const vehicleSwap=slot.match(/^(vehicle-swap-[1-9]\d*)-/);if(vehicleSwap)return `Đổi xe · Ảnh ${slot.split('-').at(-1)}`;
   const prefix=slot.startsWith('rental-')?'Khi thuê':slot.startsWith('handover-')?'Giao xe':slot.startsWith('return-')?'Trả xe':slot.startsWith('renewal-receipt-')?`Gia hạn · phiếu ${slot.split('-')[2]}`:slot.startsWith('renewal-')?`Gia hạn v${slot.split('-')[1]}`:'Biển số';
   const n=Number(slot.split('-').at(-1));
   if(slot.includes('-document-')){

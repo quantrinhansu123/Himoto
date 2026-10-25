@@ -80,7 +80,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
   const [history, setHistory] = useState<ContractHistory | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
-  const wantsHistory = section === 'changes' || section === 'cashflow';
+  const wantsHistory = section === 'changes' || section === 'cashflow' || section === 'photos';
   const fetchHistory = useCallback((signal?: AbortSignal) => {
     setHistoryLoading(true); setHistoryError('');
     loadContractHistory(row.id, signal).then(value => { if (!signal?.aborted) setHistory(value); }).catch(cause => {
@@ -258,7 +258,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         {history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow} />}
       </>)}
     {panel('lifecycle','Nợ xấu / bảo lưu',section==='lifecycle'&&source==='api'&&row.status!=='draft'&&<ContractLifecyclePanel id={row.id} reloadKey={lifecycleReload} onChanged={applyLifecycle} onRecover={()=>setRecoveryOpen(true)} onPayment={onPayment}/>)}
-    {panel('photos','Ảnh thuê / trả xe',section==='photos'&&<ContractPhotoGallery id={row.id}/>)}
+    {panel('photos','Ảnh thuê / trả xe',section==='photos'&&<ContractPhotoGallery id={row.id} swaps={history?.changes.filter(change=>change.kind==='swap')}/>)}
     {panel('telegram','Gửi thông tin và ảnh vào nhóm Telegram',section==='telegram'&&source==='api'&&(row.status==='draft'?<p role="status">Hợp đồng đang lưu nháp. Bấm Tiếp tục hoàn tất hợp đồng, kiểm tra thanh toán rồi Xác nhận lưu chính thức. Sau khi phát hành mới gửi được thông tin và ảnh lên Telegram.</p>:<>{row.status==='cancelled'&&<p>Hợp đồng đã hủy. Có thể xem lịch sử và thu hồi tin đã gửi.</p>}<ContractTelegramPanel id={row.id}/></>))}
     {source === 'api' && (section === 'vehicle' || section === 'customer') && <>
       {section === 'vehicle' && <SavedRecordPhotos entity="contracts" recordId={row.id} slots={draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))} title="Ảnh biển số xe" />}

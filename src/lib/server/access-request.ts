@@ -4,8 +4,10 @@ import { hasPermission, type AccessPermission } from '@/lib/management/permissio
 import { dataAccess } from './access-context';
 import { SESSION_COOKIE, sameOrigin, userFromSession, readSessionUser } from './management-session';
 import { failureResponse } from './public-failure';
+import { isSupplementalPhotoSlot,photoBaseSlot } from '@/lib/management/photo-slot-groups';
 
 export function requestPermission(path:string,method:string,action=''):AccessPermission|null {
+  if(path.includes('/record-photos/')){const slot=path.split('/').at(-1)!;if(isSupplementalPhotoSlot(slot))path=path.slice(0,-slot.length)+photoBaseSlot(slot);}
   const read=method==='GET';
   if(path.startsWith('/api/auth/shift-reports'))return 'contracts.read';
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';

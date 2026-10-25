@@ -35,6 +35,7 @@ import { rentalQuote, selectedRentalVehicleCount } from '@/lib/management/contra
 import { CustomerInternationalFields } from './CustomerInternationalFields';
 import { contractPhotoSlots, contractEvidenceSlots } from '@/lib/management/contract-photos';
 import { normalizeCustomerLookup,validCustomerLookup } from '@/lib/management/contract-document';
+import { photoBaseSlot,nextPhotoInGroup } from '@/lib/management/photo-slot-groups';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos,copyCustomerPhotosToContract } from '@/lib/management/record-photos';
 import { isAdminAccount } from '@/lib/management/permissions';
@@ -188,16 +189,16 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
         .filter(vehicle => plateKey(String(vehicle.license || '')) === plateKey(license));
       if (matches.length !== 1) throw new Error(`Đọc được biển số ${license}, ${matches.length ? 'có nhiều xe trùng biển số' : 'chưa tìm thấy xe trong kho'}. Kiểm tra và chọn xe thủ công.`);
       const selected = matches[0], current = draftRef.current;
-      if (slot !== 'scan_plate' && slot !== `plate-${selected.id}`) throw new Error(`Ảnh có biển số ${license}, không khớp xe đang chọn. Kiểm tra lại ảnh.`);
+      if (photoBaseSlot(slot) !== 'scan_plate' && photoBaseSlot(slot) !== `plate-${selected.id}`) throw new Error(`Ảnh có biển số ${license}, không khớp xe đang chọn. Kiểm tra lại ảnh.`);
       const existing = current.vehicles.findIndex(vehicle => vehicle.id === String(selected.id));
       if (existing < 0) {
-        if (slot !== 'scan_plate') throw new Error('Xe đã thay đổi trong lúc AI đọc ảnh. Chụp lại ảnh cho xe đang chọn.');
+        if (photoBaseSlot(slot) !== 'scan_plate') throw new Error('Xe đã thay đổi trong lúc AI đọc ảnh. Chụp lại ảnh cho xe đang chọn.');
         const index = before.findIndex(id => !id);
         if (index < 0) throw new Error(`Đọc được biển số ${license}. Bấm Thêm xe để thêm vào hợp đồng, rồi đọc lại ảnh.`);
         if (current.vehicles.length !== before.length || current.vehicles[index]?.id !== before[index]) throw new Error('Lựa chọn xe đã thay đổi trong lúc AI đọc ảnh. Giữ nguyên xe đang chọn; đọc lại ảnh nếu cần.');
         chooseVehicle(index, String(selected.id));
       }
-      setPlatePhotos(previous => { const next = { ...previous, [`plate-${selected.id}`]: file }; if (slot === 'scan_plate') delete next.scan_plate; return next; });
+      setPlatePhotos(previous => { const next = { ...previous }; if(photoBaseSlot(slot)==='scan_plate'){ for(const [key,image]of Object.entries(previous).filter(([key])=>photoBaseSlot(key)==='scan_plate')){delete next[key];next[nextPhotoInGroup(`plate-${selected.id}`,Object.keys(next))]=image;} } else next[slot]=file;return next; });
       return `Đã đọc biển số ${selected.license} và ${existing < 0 ? 'chọn' : 'đối chiếu'} xe ${selected.name}.`;
     },
   });
@@ -740,7 +741,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   const sectionIndex = CONTRACT_FORM_SECTIONS.findIndex(item => item.id === section);
   async function savePhotos(contractId: number) {
     if (draft.customer_id) await saveRecordPhotos(customerPhotosOnContract ? 'contracts' : 'customers', customerPhotosOnContract ? contractId : draft.customer_id, customerPhotoValues);
-    const selectedPlates = Object.fromEntries(Object.entries(platePhotos).filter(([slot]) => draft.vehicles.some(vehicle => slot === `plate-${vehicle.id}`)));
+    const selectedPlates = Object.fromEntries(Object.entries(platePhotos).filter(([slot]) => draft.vehicles.some(vehicle => photoBaseSlot(slot) === `plate-${vehicle.id}`)));
     await saveRecordPhotos('contracts', contractId, selectedPlates);
     await saveRecordPhotos('contracts',contractId,licensePhotos);setLicensePhotos({});
     await saveRecordPhotos('contracts',contractId,transactionMedia);setTransactionMedia({});
@@ -859,7 +860,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
             <CustomerInternationalFields prefix="contract-customer" value={draft.customer} onChange={customer=>{setDraft(previous=>({...previous,customer}));setErrors({});}} disabled={saving} errors={errors}/>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(0, 2).map(customerField)}</div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(item=><Fragment key={item.key}>{customerField(item)}{item.key==='driver_license_number'&&source==='api'&&draft.customer_id&&<div className="mg-field-wide"><RecordPhotoFields entity="contracts" recordId={savedDraft?.id||row?.id} slots={[{key:'driver-license',label:'Giấy phép lái xe'}]} title="Chụp GPLX · Tự điền bằng AI" value={licensePhotos} onChange={setLicensePhotos} disabled={saving} onBusyChange={setProcessingLicense} ocr={customerOcr}/></div>}</Fragment>)}</div>
-            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${customerPhotosOnContract}-${photoVersion}`} entity={customerPhotosOnContract ? 'contracts' : 'customers'} recordId={customerPhotosOnContract ? savedDraft?.id||row?.id : draft.customer_id} slots={customerPhotoSlots} title={draft.customer.customer_type==='foreign'?'Chụp hộ chiếu · Tự điền bằng AI':'Chụp CCCD · Tự điền bằng AI'} value={customerPhotoValues} onChange={photos=>setCustomerPhotos(Object.fromEntries(Object.entries(photos).map(([slot,file])=>[slot.replace(/^customer-/,'').replaceAll('-','_'),file])))} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
+            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${customerPhotosOnContract}-${photoVersion}`} entity={customerPhotosOnContract ? 'contracts' : 'customers'} recordId={customerPhotosOnContract ? savedDraft?.id||row?.id : draft.customer_id} slots={customerPhotoSlots} title={draft.customer.customer_type==='foreign'?'Chụp hộ chiếu · Tự điền bằng AI':'Chụp CCCD · Tự điền bằng AI'} value={customerPhotoValues} onChange={photos=>setCustomerPhotos(Object.fromEntries(Object.entries(photos).map(([slot,file])=>[slot.replace(/^customer-/,'').replace(/^(id-front|id-back|driver-license)/,base=>base.replaceAll('-','_')),file])))} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
             <div className="mg-contract-relatives">{draft.relatives.map((relative, index) => <div className="mg-contract-relative" key={index}>
               <strong>Người thân {index + 1}</strong>
               <div className="mg-form-grid mg-contract-grid-three">{(['name', 'relationship', 'phone'] as const).map(key => {

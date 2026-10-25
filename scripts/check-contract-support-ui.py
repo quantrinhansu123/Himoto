@@ -11,8 +11,6 @@ parser.add_argument('--url', default='http://127.0.0.1:3015')
 parser.add_argument('--session-cookie-file', required=True)
 parser.add_argument('--output', default='.backups/branch-support-20261020/ui')
 args = parser.parse_args()
-manifest = json.loads((Path(__file__).resolve().parents[1] / '.next/react-loadable-manifest.json').read_text(encoding='utf-8'))
-composer_chunk = next(value['files'][-1].rsplit('/', 1)[-1] for key, value in manifest.items() if key.endswith(' -> @/components/contracts/ContractComposer'))
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 checks, errors, writes = [], [], []
@@ -145,11 +143,19 @@ with sync_playwright() as p:
             page.get_by_role('button', name='Thao tác ' + code, exact=True).filter(visible=True).click()
             page.get_by_role('menuitem', name=name, exact=True).click()
 
-        preload_pattern = '**/_next/static/chunks/' + composer_chunk + '*'
+        # Production builds may use different chunk ids/hashes across operating systems.
+        # Identify the composer by its form markers instead of a local build manifest.
+        preload_pattern = '**/_next/static/chunks/*.js*'
         def fail_preload(route):
-            route.abort('failed')
+            response = route.fetch()
+            script = response.text()
+            if 'mg-contract-composer' in script and 'contract-staff-options' in script:
+                state['preload_fail_url'] = route.request.url
+                route.abort('failed')
+            else:
+                route.fulfill(response=response)
         ctx.route(preload_pattern, fail_preload)
-        with page.expect_event('requestfailed', predicate=lambda req: composer_chunk in req.url, timeout=60000):
+        with page.expect_event('requestfailed', predicate=lambda req: req.url == state.get('preload_fail_url'), timeout=60000):
             goto()
         ctx.unroute(preload_pattern, fail_preload)
         page.get_by_role('button', name='Nhập hợp đồng', exact=True).click()

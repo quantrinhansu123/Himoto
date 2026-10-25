@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { isVehicleDocumentSlot, VEHICLE_DOCUMENT_SLOTS, type VehicleDocumentSlot } from '@/lib/management/record-photos';
 import { RecordPhotoError } from './record-photos';
 import { verifyPhotoReceipt, writeCloudinaryPhoto, type CloudPhotoReceipt } from './cloudinary-photos';
+import { photoBaseSlot } from '@/lib/management/photo-slot-groups';
 
 export type VehicleDocuments = Partial<Record<VehicleDocumentSlot, CloudPhotoReceipt | null>>;
 export function parseVehicleDocuments(value: unknown, actor: number): VehicleDocuments {
@@ -23,6 +24,5 @@ export async function writeVehicleDocuments(db: Pick<PoolClient, 'query'>, id: n
   }
 }
 export function vehicleDocumentNote(documents: VehicleDocuments) {
-  return VEHICLE_DOCUMENT_SLOTS.filter(slot => slot.key in documents)
-    .map(slot => `${documents[slot.key] ? 'Lưu' : 'Bỏ'} ảnh ${slot.label.toLowerCase()}`).join('; ');
+  return Object.entries(documents).map(([key,receipt])=>`${receipt?'Lưu':'Bỏ'} ảnh ${VEHICLE_DOCUMENT_SLOTS.find(slot=>slot.key===photoBaseSlot(key))?.label.toLowerCase()||key}`).join('; ');
 }

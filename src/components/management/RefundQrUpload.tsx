@@ -2,7 +2,8 @@
 import { useEffect,useRef,useState } from 'react';
 import { cleanOcrFields } from '@/lib/management/photo-ocr';
 import { combineRefundRecipient,decodeRefundQr,type RefundRecipient,type RefundRecipientFields } from '@/lib/management/refund-qr';
-import { deleteRecordPhoto,photoEndpoint,prepareRecordPhoto,saveRecordPhotos } from '@/lib/management/record-photos';
+import { deleteRecordPhoto,photoEndpoint,prepareRecordPhoto,saveRecordPhotos,type PendingPhotos } from '@/lib/management/record-photos';
+import { nextPhotoInGroup } from '@/lib/management/photo-slot-groups';
 
 export function RefundQrUpload({orderId,slot,savedSlot,recipient,disabled,onRead,onSaved,onRemoved,onBusy}:{
   orderId:number;slot:string;savedSlot?:string;recipient:RefundRecipient;disabled?:boolean;
@@ -10,11 +11,12 @@ export function RefundQrUpload({orderId,slot,savedSlot,recipient,disabled,onRead
 }){
   const [busy,setBusy]=useState(false),[status,setStatus]=useState(''),[error,setError]=useState('');
   const [lastFile,setLastFile]=useState<File>();
+  const lastBatch=useRef<{source:File;photos:PendingPhotos;first:File}|undefined>(undefined);
   const fileInput=useRef<HTMLInputElement>(null),cameraInput=useRef<HTMLInputElement>(null);
   const active=useRef<AbortController|undefined>(undefined),locked=useRef(false),latest=useRef({recipient,onRead,onSaved,onRemoved,onBusy});
   latest.current={recipient,onRead,onSaved,onRemoved,onBusy};
   useEffect(()=>()=>{active.current?.abort();latest.current.onBusy(false);},[]);
-  async function readImage(source?:File){
+  async function readImage(source?:File,additional:File[]=[]){
     if(locked.current||disabled)return;
     locked.current=true;const controller=new AbortController();active.current=controller;
     const before={...latest.current.recipient};setBusy(true);latest.current.onBusy(true);setError('');
@@ -23,9 +25,18 @@ export function RefundQrUpload({orderId,slot,savedSlot,recipient,disabled,onRead
       setStatus(source?'Đang xử lý và lưu ảnh QR…':'Đang tải ảnh QR đã lưu…');
       let photo:File;
       if(source){
-        setLastFile(source);photo=await prepareRecordPhoto(source);
+        setLastFile(source);
+        let batch=lastBatch.current;
+        if(batch?.source!==source){
+          const response=await fetch(photoEndpoint('contracts',orderId),{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+          const body=await response.json();if(!response.ok||body.status!=='success'||!Array.isArray(body.data))throw Error('Không tải được ảnh đã lưu. Thử lại để tránh ghi đè ảnh.');
+          const keys=body.data.map((item:{slot:string})=>item.slot),photos:PendingPhotos={};
+          for(const file of [source,...additional]){const key=nextPhotoInGroup(slot,keys);photos[key]=await prepareRecordPhoto(file);keys.push(key);}
+          batch={source,photos,first:Object.values(photos)[0]};lastBatch.current=batch;
+        }
+        photo=batch.first;
         if(controller.signal.aborted)return;
-        await saveRecordPhotos('contracts',orderId,{[slot]:photo});
+        await saveRecordPhotos('contracts',orderId,batch.photos);
         saved=true;
         if(controller.signal.aborted)return;
         latest.current.onSaved();
@@ -58,20 +69,20 @@ export function RefundQrUpload({orderId,slot,savedSlot,recipient,disabled,onRead
       if(!controller.signal.aborted){setBusy(false);latest.current.onBusy(false);}
     }
   }
-  function choose(files:FileList|null){const file=files?.[0];if(file)void readImage(file);}
+  function choose(files:FileList|null){const selected=Array.from(files||[]);if(selected.length)void readImage(selected[0],selected.slice(1));}
   async function removeSaved(){
     if(!savedSlot||locked.current||disabled)return;
     locked.current=true;setBusy(true);latest.current.onBusy(true);setError('');setStatus('Đang xóa ảnh QR…');
     try{
       await deleteRecordPhoto('contracts',orderId,savedSlot);
-      setLastFile(undefined);setStatus('Đã xóa ảnh QR. Chọn ảnh khác nếu tải nhầm.');
+      setLastFile(undefined);lastBatch.current=undefined;setStatus('Đã xóa ảnh QR. Chọn ảnh khác nếu tải nhầm.');
       latest.current.onRemoved?.();
     }catch(cause){setStatus('');setError(cause instanceof Error?cause.message:'Không xóa được ảnh QR.');}
     finally{locked.current=false;setBusy(false);latest.current.onBusy(false);}
   }
   return <div className="mg-field mg-field-wide" aria-label="Quét ảnh QR nhận hoàn cọc" aria-busy={busy}>
     <strong>Ảnh QR / tài khoản nhận hoàn cọc</strong>
-    <p className="mg-composer-hint">Chọn ảnh mã QR hoặc ảnh thông tin tài khoản. Hệ thống lưu ảnh vào hồ sơ trả xe và tự điền thông tin đọc được; có thể sửa các ô bên dưới.</p>
+    <p className="mg-composer-hint">Có thể chọn nhiều ảnh QR / tài khoản. Tất cả ảnh được lưu vào hồ sơ trả xe; ảnh đầu được dùng để tự điền thông tin người nhận. Kiểm tra lại trước khi xác nhận.</p>
     <div className="mg-actions" style={{display:'flex',flexWrap:'wrap',gap:8}}>
       <button type="button" className="mg-button" disabled={disabled||busy} onClick={()=>fileInput.current?.click()}>Tải ảnh QR để tự điền</button>
       <button type="button" className="mg-button" disabled={disabled||busy} onClick={()=>cameraInput.current?.click()}>Chụp ảnh QR</button>
@@ -79,7 +90,7 @@ export function RefundQrUpload({orderId,slot,savedSlot,recipient,disabled,onRead
       {savedSlot&&<button type="button" className="mg-button" disabled={disabled||busy} onClick={()=>void removeSaved()}>Xóa ảnh QR</button>}
       {error&&lastFile&&<button type="button" className="mg-button" disabled={disabled||busy} onClick={()=>void readImage(lastFile)}>Thử lại ảnh vừa chọn</button>}
     </div>
-    <input ref={fileInput} type="file" accept="image/*" aria-label="Chọn ảnh QR nhận hoàn cọc" hidden disabled={disabled||busy} onChange={event=>{choose(event.currentTarget.files);event.currentTarget.value='';}}/>
+    <input ref={fileInput} type="file" accept="image/*" multiple aria-label="Chọn ảnh QR nhận hoàn cọc" hidden disabled={disabled||busy} onChange={event=>{choose(event.currentTarget.files);event.currentTarget.value='';}}/>
     <input ref={cameraInput} type="file" accept="image/*" capture="environment" aria-label="Chụp mã QR nhận hoàn cọc" hidden disabled={disabled||busy} onChange={event=>{choose(event.currentTarget.files);event.currentTarget.value='';}}/>
     {status&&<p role="status">{status}</p>}
     {error&&<p className="mg-field-error" role="alert">{error}</p>}

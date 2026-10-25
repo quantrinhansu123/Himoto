@@ -1,4 +1,5 @@
 import type { BrowserVideoReceipt, VideoProgressCallback } from './video-media';
+import { isSupplementalPhotoSlot,photoBaseSlot } from './photo-slot-groups';
 export { MAX_VIDEO_BYTES } from './video-media';
 export type MediaUploadReceipt = CloudUploadReceipt | BrowserVideoReceipt;
 export type PhotoEntity = 'customers' | 'contracts' | 'vehicles';
@@ -8,8 +9,9 @@ export const VEHICLE_DOCUMENT_SLOTS = [
   { key: 'purchase-document-1', label: 'Giấy mua bán trang 1' },
   { key: 'purchase-document-2', label: 'Giấy mua bán trang 2' },
 ] as const;
-export type VehicleDocumentSlot = typeof VEHICLE_DOCUMENT_SLOTS[number]['key'];
-export const isVehicleDocumentSlot = (slot: string): slot is VehicleDocumentSlot => VEHICLE_DOCUMENT_SLOTS.some(item => item.key === slot);
+type VehicleDocumentBaseSlot = typeof VEHICLE_DOCUMENT_SLOTS[number]['key'];
+export type VehicleDocumentSlot = VehicleDocumentBaseSlot | `${VehicleDocumentBaseSlot}-extra-${number}`;
+export const isVehicleDocumentSlot = (slot: string): slot is VehicleDocumentSlot => VEHICLE_DOCUMENT_SLOTS.some(item => item.key === slot || isSupplementalPhotoSlot(slot)&&item.key===photoBaseSlot(slot));
 export const VEHICLE_TRANSFER_PHOTO_SLOT = (eventId: number, kind: 'transfer' | 'receive' = 'transfer') => `${kind}-${eventId}-1`;
 export const vehicleTransferPhotoSlots = (eventId: number, kind: 'transfer' | 'receive' = 'transfer') =>
   [{ key: VEHICLE_TRANSFER_PHOTO_SLOT(eventId, kind), label: kind === 'receive' ? 'Ảnh nhận xe' : 'Ảnh chuyển xe' }];
