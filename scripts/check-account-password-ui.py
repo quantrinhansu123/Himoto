@@ -77,6 +77,9 @@ with sync_playwright() as pw:
                     expect(table.get_by_role('button',name='Đặt lại mật khẩu',exact=True)).to_have_count(0)
                     table.get_by_role('button',name='Phân quyền',exact=True).click()
                     dialog=page.get_by_role('dialog',name='Cập nhật tài khoản',exact=True)
+                    assert 'mg-account-editor-dialog' in dialog.get_attribute('class').split()
+                    banking=page.evaluate("""() => {const dialog=document.createElement('dialog');dialog.className='mg-dialog mg-account-dialog';dialog.open=true;document.body.append(dialog);const style=getComputedStyle(dialog),result={width:parseFloat(style.width),overflow:style.overflowY,expected:Math.min(1040,innerWidth-32)};dialog.remove();return result;}""")
+                    assert abs(banking['width']-banking['expected'])<2 and banking['overflow']=='auto',banking
                     expect(dialog.locator('#account-password')).to_have_count(0)
                     dialog.get_by_label('Vai trò',exact=True).select_option('hr')
                     expect(dialog.locator('.mg-account-permission-group')).to_have_count(6)
