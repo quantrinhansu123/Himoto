@@ -25,7 +25,7 @@ import { ContractLifecyclePanel } from './ContractLifecyclePanel';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractEditDialog } from '@/components/contracts/ContractEditDialog';
 import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
-import { loadContractLifecycle,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
+import { lifecycleDisplayStatus,loadContractLifecycle,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 
 const SECTIONS = [
   { id: 'vehicle', label: 'Thông tin phương tiện' },
@@ -69,7 +69,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
   const [lifecycleOverride,setLifecycleOverride]=useState<Partial<ManagementRow>>({});
   const [recoveryOpen,setRecoveryOpen]=useState(false),[lifecycleReload,setLifecycleReload]=useState(0);
   const applyLifecycle=useCallback((context:ContractLifecycleContext)=>{
-    setLifecycleOverride({status:context.status,draft_revision:context.revision,billing_plan_json:context.plan?JSON.stringify(context.plan):'',end_date:context.end_at||undefined,total_amount:context.total_amount??undefined,paid_amount:context.paid_amount??undefined});
+    setLifecycleOverride({status:lifecycleDisplayStatus(context),draft_revision:context.revision,billing_plan_json:context.plan?JSON.stringify(context.plan):'',end_date:context.end_at||undefined,total_amount:context.total_amount??undefined,paid_amount:context.paid_amount??undefined});
   },[]);
   const originalRow=row;
   row={...originalRow,...lifecycleOverride};

@@ -43,6 +43,26 @@ async function main(){
  const apply=async(id,action,extra={})=>staff(async()=>life.applyContractLifecycle(db,id,70001,await input(id,action,extra)));
  const recover=async item=>staff(async()=>returns.recordBadDebtRecovery(db,70001,{item_id:item,item_revision:(await db.query('SELECT xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=$1',[item])).rows[0].revision,request_id:randomUUID(),recovered_at:'2026-10-24T11:00',note:'Vehicle physically recovered QA'}));
  await isolated(async()=>{
+   await db.query("UPDATE himoto.stores SET kind='lease_to_own' WHERE id=80001");
+   const context=await staff(()=>life.readContractLifecycle(db,100));
+   assert.equal(context.rental_type,'daily');assert.equal(context.ownership,false);assert.equal(context.overdue,true);
+   assert.equal(context.status,'renting');assert.equal(domain.lifecycleDisplayStatus(context),'overdue');
+   await assert.rejects(()=>apply(100,'hold'),e=>e.status===409&&/thuê sở hữu/.test(e.message));
+   assert.equal(domain.lifecycleDisplayStatus({...context,status:'bad_debt'}),'bad_debt');
+   assert.equal(domain.lifecycleDisplayStatus({...context,status:'wait_payment'}),'wait_payment');
+ });checks.push('A daily rental managed by an ownership store keeps its actual type and overdue display, and cannot enter ownership hold');
+ await isolated(async()=>{
+   const active=await staff(()=>life.readContractLifecycle(db,110));assert(active.overdue);assert(domain.canHoldContract(active));
+   const deadline=domain.contractHoldDeadline(active);assert(!domain.canHoldContract(active,deadline));assert(domain.canHoldContract(active,deadline-1));
+   assert(!domain.canHoldContract({...active,plan:null,end_at:null}));
+   const expired=billing.createInstallmentPlan('2026-10-01T08:00','2026-10-24T08:00','Theo tháng',100000);
+   await db.query("UPDATE himoto.orders SET return_at='2026-10-24T08:00+07',draft_payload=$2::json WHERE id=$1",[110,JSON.stringify({management_composer:{installment_plan:expired}})]);
+   await db.query("UPDATE himoto.order_vehicle_details SET return_at='2026-10-24T08:00+07' WHERE order_id=110");
+   const ended=await staff(()=>life.readContractLifecycle(db,110));assert(ended.overdue);assert(!domain.canHoldContract(ended));
+   await assert.rejects(()=>apply(110,'hold',{at:'2026-10-23T10:00'}),e=>e.status===409&&/còn thời hạn/.test(e.message));
+   assert.equal((await apply(110,'mark_bad_debt')).status,'bad_debt');
+ });checks.push('Overdue installments allow hold while the ownership term remains; expiration including equality, unknown deadlines and backdating cannot bypass the hold guard; overdue debt still permits bad debt');
+ await isolated(async()=>{
    const before=(await db.query('SELECT total,pid,customer_id FROM himoto.orders WHERE id=100')).rows[0];
    await staff(async()=>{const body=await input(100,'mark_bad_debt');const result=await life.applyContractLifecycle(db,100,70001,body);assert.equal(result.status,'bad_debt');assert.equal(result.events.length,1);assert.equal((await life.applyContractLifecycle(db,100,70001,body)).events.length,1);await assert.rejects(()=>life.applyContractLifecycle(db,100,70001,{...body,note:'Changed content'}),e=>e.status===409);});
    assert.deepEqual((await db.query('SELECT total,pid,customer_id FROM himoto.orders WHERE id=100')).rows[0],before);

@@ -24,7 +24,23 @@ export function contractPhotoSlots(phase:ContractPhotoPhase):PhotoSlot[] {
   return [...Array.from({length:15},(_,index)=>({key:`${phase}-${index+1}`,label:labels[index]||`Ảnh hồ sơ ${index+1}`})),...Array.from({length:3},(_,index)=>({key:`${phase}-video-${index+1}`,label:`Video tình trạng xe ${index+1}`}))];
 }
 export function isContractTransactionPhoto(slot:string) {
-  return slot==='driver-license'||CONTRACT_CUSTOMER_PHOTO_SLOTS.some(item=>item.key===slot)||/^(rental|handover)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^(return|renewal|renewal-receipt)-[1-9]\d{0,14}-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^battery-swap-[1-9]\d{0,14}-(?:[12]|video-1|document-[1-9]\d{0,14})$/.test(slot)||/^vehicle-swap-[1-9]\d{0,14}-1$/.test(slot);
+  return isSignedContractPhoto(slot)||slot==='driver-license'||CONTRACT_CUSTOMER_PHOTO_SLOTS.some(item=>item.key===slot)||/^(rental|handover)-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^(return|renewal|renewal-receipt)-[1-9]\d{0,14}-(?:[1-9]\d{0,14}|video-[1-3]|document-[1-9]\d{0,14})$/.test(slot)||/^battery-swap-[1-9]\d{0,14}-(?:[12]|video-1|document-[1-9]\d{0,14})$/.test(slot)||/^vehicle-swap-[1-9]\d{0,14}-1$/.test(slot);
+}
+/** Keep the original first page and the payment bill in their existing slots. */
+export function isSignedContractPhoto(slot:string) {
+  return slot==='rental-document-1'||/^rental-signed-[1-9]\d{0,14}$/.test(slot);
+}
+export function nextSignedContractPhotoSlot(keys:string[]) {
+  if(!keys.includes('rental-document-1'))return 'rental-document-1';
+  let page=2;while(keys.includes(`rental-signed-${page}`))page++;
+  return `rental-signed-${page}`;
+}
+export function expandSignedContractPhotoSlots(slots:PhotoSlot[],keys:string[]) {
+  if(!slots.some(slot=>slot.key==='rental-document-1'))return slots;
+  const extra=Array.from(new Set(keys)).filter(key=>isSignedContractPhoto(key)&&!slots.some(slot=>slot.key===key))
+    .sort((a,b)=>a.localeCompare(b,'en',{numeric:true})).map(key=>({key,label:`Hợp đồng đã ký · Trang ${key.split('-').at(-1)}`}));
+  const first=slots.findIndex(slot=>slot.key==='rental-document-1');
+  return [...slots.slice(0,first+1),...extra,...slots.slice(first+1)];
 }
 /** Match the existing record-photo API's write permission for each contract slot. */
 export function contractPhotoWritePermission(slot:string):AccessPermission|null {
@@ -56,6 +72,7 @@ export function expandContractPhotoSlots(slots:PhotoSlot[],keys:string[]):PhotoS
   return expanded.sort((a,b)=>a.key.localeCompare(b.key,'en',{numeric:true}));
 }
 export function contractPhotoLabel(slot:string) {
+  if(/^rental-signed-/.test(slot))return `Khi thuê · Hợp đồng đã ký · Trang ${slot.split('-').at(-1)}`;
   if(slot.startsWith('plate-'))return 'Ảnh biển số / khách nhận xe';
   if(slot==='driver-license')return 'Giấy phép lái xe';
   const customerPhoto=CONTRACT_CUSTOMER_PHOTO_SLOTS.find(item=>item.key===slot);if(customerPhoto)return customerPhoto.label;

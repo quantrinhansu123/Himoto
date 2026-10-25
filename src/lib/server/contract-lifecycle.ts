@@ -2,10 +2,9 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { installmentBalance,parseInstallmentPlan } from '@/lib/management/contract-billing';
-import { legacyResumePlan,localLifecycleTime,resumeInstallmentPlan,validLifecycleTime,type ContractLifecycleContext,type ContractLifecycleInput,type LifecycleEvent } from '@/lib/management/contract-lifecycle';
+import { canHoldContract,contractHoldDeadline,legacyResumePlan,localLifecycleTime,resumeInstallmentPlan,validLifecycleTime,type ContractLifecycleContext,type ContractLifecycleInput,type LifecycleEvent } from '@/lib/management/contract-lifecycle';
 import { usesScopedDatabase } from './access-context';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
-import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { closeResolvedBadDebt,readContractResolution } from './contract-resolution';
 
@@ -14,8 +13,12 @@ export class ContractLifecycleError extends Error {constructor(message:string,pu
 const iso=(value:unknown)=>value instanceof Date?value.toISOString():value==null?null:String(value);
 const vn=(value:string)=>localLifecycleTime(new Date(value));
 const stamp=(value:string)=>value+':00+07:00';
+// Operation store kind is used for routing; the agreement's own type controls its lifecycle.
+const rentalTypeSql=`COALESCE(NULLIF(o.draft_payload #>> '{management_composer,rental_type}',''),NULLIF(o.order_type,''),'')`;
 const orderSql=`SELECT o.id,o.order_status,o.draft_payload,o.total,o.rent_at,o.return_at,o.xmin::text AS revision,
-  COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,${OWNERSHIP_ORDER_SQL} AS ownership
+  COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,${rentalTypeSql} AS rental_type,
+  o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
+  ${rentalTypeSql} IN ('ownership','ownership_cd') AS ownership
   FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`;
 export function parseContractLifecycle(raw:unknown):ContractLifecycleInput {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new ContractLifecycleError('Thông tin thao tác không hợp lệ.');
@@ -39,10 +42,11 @@ export async function readContractLifecycle(db:Database,id:number):Promise<Contr
   const overdue=['renting','overdue','wait_payment'].includes(order.order_status)&&(order.ownership&&rawPlan
     ?Boolean(balance&&Number(balance.due_amount)>0&&balance.overdue_at&&balance.overdue_at<localLifecycleTime())
     :items.some(item=>!item.completed_at&&item.return_at&&new Date(item.return_at).getTime()<Date.now())||order.order_status==='overdue'&&state.remaining!==null&&state.remaining>0&&Boolean(order.return_at&&new Date(order.return_at).getTime()<Date.now()));
-  return {id:Number(order.id),code:String(order.code),status:order.order_status,revision:String(order.revision),ownership:Boolean(order.ownership),overdue,
+  return {id:Number(order.id),code:String(order.code),status:order.order_status,revision:String(order.revision),ownership:Boolean(order.ownership),rental_type:String(order.rental_type||''),contract_type_name:String(order.contract_type_name||''),overdue,
     items,all_returned:state.all_returned,returned_count:state.returned_count,total_amount:state.total,paid_amount:state.paid,remaining:state.remaining,deposit_held:state.deposit_held,overpayment:state.overpayment,settled:state.settled,can_settle:state.can_settle,
     settlement_note:state.remaining===null?'Chưa đối chiếu được số tiền hợp đồng.':state.remaining>0?'Còn tiền thuê, phí hoặc kỳ thuê chưa thanh toán.':state.deposit_held>0?'Còn tiền cọc chưa có phiếu xử lý/hoàn cọc.':Number(state.overpayment)>0?'Còn tiền thu dư cần đối chiếu.':'Đủ số liệu tiền để xác nhận tất toán.',
-    events:Array.isArray(lifecycle.events)?lifecycle.events:[],held_at:lifecycle.active_hold?.at||null,resume_vehicle_count:lifecycle.active_hold?.vehicle_ids?.length||0,plan,base_total:state.base,start_at:iso(order.rent_at)||items[0]?.rent_at||null,end_at:iso(order.return_at)};
+    events:Array.isArray(lifecycle.events)?lifecycle.events:[],held_at:lifecycle.active_hold?.at||null,resume_vehicle_count:lifecycle.active_hold?.vehicle_ids?.length||0,plan,base_total:state.base,start_at:iso(order.rent_at)||items[0]?.rent_at||null,
+    end_at:plan?stamp(plan.end):iso(order.return_at)||items.filter(item=>!item.completed_at&&item.return_at).map(item=>item.return_at!).sort().at(-1)||null};
 }
 export async function applyContractLifecycle(db:Database,id:number,actorId:number,raw:unknown){
   const input=parseContractLifecycle(raw);if(!Number.isSafeInteger(id)||id<=0)throw new ContractLifecycleError('Mã hợp đồng không hợp lệ.');
@@ -70,6 +74,7 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
     lifecycle.settlement={at:input.at,recorded_at:new Date().toISOString(),actor_id:actorId,note:input.note,total:context.total_amount,paid:context.paid_amount,deposit_held:context.deposit_held};
   }else if(input.action==='hold'){
     if(!order.ownership||!['renting','overdue','wait_payment'].includes(order.order_status))throw new ContractLifecycleError('Chỉ bảo lưu hợp đồng thuê sở hữu đang thuê hoặc chờ tất toán.',409);
+    if(!canHoldContract(context)||new Date(stamp(input.at)).getTime()>=contractHoldDeadline(context))throw new ContractLifecycleError('Chỉ bảo lưu khi hợp đồng còn thời hạn. Hợp đồng hết hạn cần xử lý Nợ xấu nếu còn khoản quá hạn.',409);
     const active=(await db.query('SELECT id,vehicle_id,rent_at FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL AND completed_at IS NULL ORDER BY vehicle_id,id FOR UPDATE',[id])).rows;
     if(!active.length)throw new ContractLifecycleError('Không còn lượt xe đang thuê để ghi nhận thu hồi và bảo lưu.',409);
     if(active.some(item=>item.rent_at&&new Date(stamp(input.at)).getTime()<new Date(item.rent_at).getTime()))throw new ContractLifecycleError('Ngày bảo lưu không được trước ngày nhận xe.');

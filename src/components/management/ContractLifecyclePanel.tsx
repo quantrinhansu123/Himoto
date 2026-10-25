@@ -6,7 +6,7 @@ import { useManagement } from './ManagementProvider';
 import { VehiclePicker } from '@/components/contracts/VehiclePicker';
 import { mapApiRow } from '@/lib/management/repository';
 import type { ManagementRow } from '@/lib/management/types';
-import { legacyResumePlan,lifecycleActionLabel,loadContractLifecycle,localLifecycleTime,resumeInstallmentPlan,saveContractLifecycle,type ContractLifecycleAction,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
+import { canHoldContract,contractHoldDeadline,legacyResumePlan,lifecycleActionLabel,lifecycleDisplayStatus,loadContractLifecycle,localLifecycleTime,resumeInstallmentPlan,saveContractLifecycle,type ContractLifecycleAction,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 import { formatDateTime,formatMoney } from '@/lib/formatters';
 import { MANAGEMENT_CONFIG,optionLabel } from '@/lib/management/config';
 import { installmentSchedule } from '@/lib/management/contract-billing';
@@ -46,7 +46,7 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
   const money=(value:number|null)=>value===null?'Cần đối chiếu':formatMoney(value);
   return <>
     {loading&&!context?<p role="status">Đang đối chiếu xe, công nợ và tiền cọc…</p>:context&&<>
-      <p><strong>{optionLabel(MANAGEMENT_CONFIG.contracts,'status',context.status)}</strong> · {context.ownership?'Thuê sở hữu':'Thuê xe'}</p>
+      <p><strong>{optionLabel(MANAGEMENT_CONFIG.contracts,'status',lifecycleDisplayStatus(context))}</strong> · {context.contract_type_name||(context.rental_type?optionLabel(MANAGEMENT_CONFIG.contracts,'rental_type',context.rental_type):context.ownership?'Thuê sở hữu':'Thuê xe')}</p>
       <dl className="mg-contract-detail-grid">
         <div><dt>Trả / thu hồi xe</dt><dd>{context.all_returned?'Đã trả tất cả xe':`Đã trả ${context.returned_count}/${context.items.length} lượt xe`}</dd></div>
         <div><dt>Tất toán</dt><dd>{context.settled?'Đã xác nhận tất toán':'Chưa tất toán'}<p>{context.settlement_note}</p></dd></div>
@@ -55,12 +55,13 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
       </dl>
       {context.status==='bad_debt'&&<p>Hợp đồng giữ Nợ xấu đến khi đã trả/thu hồi tất cả xe và xác nhận tất toán. Xe thu hồi xong được cho thuê lại khi Lưu kho và không có hợp đồng khác giữ.</p>}
       {context.status==='reserved'&&<p>Đang bảo lưu từ {context.held_at?formatDateTime(context.held_at+':00+07:00'):'—'}. Đã thu xe về, dừng kỳ thuê mới; nợ và cọc cũ giữ nguyên.</p>}
+      {context.ownership&&['renting','overdue','wait_payment'].includes(context.status)&&<p>Chỉ bảo lưu khi hợp đồng còn thời hạn; quá hạn đóng tiền vẫn được bảo lưu nếu hợp đồng chưa hết hạn.{contractHoldDeadline(context)<=Date.now()?' Hợp đồng đã hết thời hạn, không thể bảo lưu.':''}</p>}
       <div className="mg-heading-actions">
         {can('contracts.return')&&context.overdue&&<button className="mg-button" onClick={()=>open('mark_bad_debt')}>Chuyển sang Nợ xấu</button>}
         {can('contracts.return')&&context.status==='bad_debt'&&!context.all_returned&&<button className="mg-button" onClick={onRecover}>Thu hồi xe nợ xấu</button>}
         {(can('contracts.return')||can('finance.write'))&&context.status==='bad_debt'&&!context.settled&&<button className="mg-button" disabled={!context.can_settle} onClick={()=>open('settle')}>Xác nhận tất toán</button>}
         {onPayment&&['bad_debt','reserved'].includes(context.status)&&<button className="mg-button" onClick={()=>onPayment(Number(context.remaining)>0?'debt':context.deposit_held>0?'deposit_refund':'extra')}>Thanh toán / xử lý cọc</button>}
-        {can('contracts.return')&&context.ownership&&['renting','overdue','wait_payment'].includes(context.status)&&context.items.some(item=>!item.completed_at)&&<button className="mg-button" onClick={()=>open('hold')}>Bảo lưu hợp đồng</button>}
+        {can('contracts.return')&&canHoldContract(context)&&<button className="mg-button" onClick={()=>open('hold')}>Bảo lưu hợp đồng</button>}
         {can('contracts.return')&&context.status==='reserved'&&<button className="mg-button mg-button-primary" onClick={()=>open('resume')}>Thuê lại từ bảo lưu</button>}
         <button className="mg-button" disabled={loading} onClick={()=>void refresh()}>Làm mới tình trạng</button>
       </div>
