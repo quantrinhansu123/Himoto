@@ -49,7 +49,7 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
   return <>
     {loading&&!context?<p role="status">Đang đối chiếu xe, công nợ và tiền cọc…</p>:context&&<>
       <p><strong>{optionLabel(MANAGEMENT_CONFIG.contracts,'status',lifecycleDisplayStatus(context))}</strong> · {context.contract_type_name||(context.rental_type?optionLabel(MANAGEMENT_CONFIG.contracts,'rental_type',context.rental_type):context.ownership?'Thuê sở hữu':'Thuê xe')}</p>
-      <dl className="mg-contract-detail-grid">
+      <dl className="mg-contract-detail-grid mg-contract-lifecycle-summary">
         <div><dt>Trả / thu hồi xe</dt><dd>{context.all_returned?'Đã trả tất cả xe':`Đã trả ${context.returned_count}/${context.items.length} lượt xe`}</dd></div>
         <div><dt>{context.completed_from_hold?'Hoàn thành sau bảo lưu':'Tất toán'}</dt><dd>{context.completed_from_hold?'Đã đóng hợp đồng':context.settled?'Đã xác nhận tất toán':'Chưa tất toán'}<p>{context.completed_from_hold?'Dừng theo dõi công nợ và hủy các kỳ chưa phát sinh. Tiền đã thu/hoàn, cọc và lịch sử được giữ nguyên.':context.settlement_note}</p></dd></div>
         {context.completed_from_hold&&<div><dt>Tổn thất công nợ</dt><dd>{money(context.waived_amount??0)}<p>Khoản đã phát sinh không thu hồi; không tính vào doanh thu đã thu và không tạo phiếu chi.</p></dd></div>}

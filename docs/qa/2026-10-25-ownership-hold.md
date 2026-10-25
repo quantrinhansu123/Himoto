@@ -34,4 +34,6 @@ The database cases use temporary tables or a transactionally rolled back schema 
 
 Local authenticated read checks also passed: anonymous lifecycle 401, ownership table 200, lifecycle 200 with the new hold fields, and completion against a verified nonexistent contract 404. No real contract was changed for this verification.
 
+The production deployment of `ed1727c` also passed the same 54 browser checks and authenticated API checks, with zero real business writes and zero Telegram requests. Visual inspection identified narrow three-column summaries on phones; the follow-up layout uses one column below 640px and normal paragraph weight. Two focused Chromium/WebKit layout checks passed locally, preserving three desktop columns and confirming no horizontal overflow.
+
 Private JSON reports and screenshots are stored under ignored `.backups/ownership-hold-20261025/`; authentication material is removed after verification.
