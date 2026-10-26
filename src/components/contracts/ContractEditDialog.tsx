@@ -6,6 +6,7 @@ import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { createContractDraft, type ContractDraft, type CustomerDetails } from '@/lib/management/contract-document';
 import { CONTRACT_STATUSES } from '@/lib/management/config';
+import { OWNERSHIP_TERMS, type OwnershipTerm } from '@/lib/management/contract-billing';
 import { canEditIssuedContract, contractProfile, issuedContractNumberError, saveContractProfile } from '@/lib/management/contract-profile';
 import { requestManagementTable } from '@/lib/management/management-table';
 import { EMPTY_QUERY } from '@/lib/management/table-utils';
@@ -69,6 +70,12 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
               {numberError&&<p id="edit-contract-number-error" className="mg-field-error">{numberError}</p>}
             </div>
             <div className="mg-field"><label htmlFor="edit-contract-signed">Ngày ký hợp đồng</label><input id="edit-contract-signed" type="date" value={draft.signed_on} onChange={event=>setDraft({...draft,signed_on:event.target.value})}/></div>
+            {draft.ownership && <div className="mg-field"><label htmlFor="edit-contract-ownership-term">Gói thuê sở hữu</label>
+              <select id="edit-contract-ownership-term" value={draft.ownership_term_months || 'custom'} onChange={event=>setDraft({...draft,ownership_term_months:event.target.value as OwnershipTerm})}>
+                {OWNERSHIP_TERMS.map(term=><option key={term.value} value={term.value}>{term.label}</option>)}
+              </select>
+              <small>Chỉ đổi phân loại 6/9/12/18/24 tháng trên hồ sơ; không đổi tiền thuê, hạn trả hay kho xe.</small>
+            </div>}
             <div className="mg-field"><label htmlFor="edit-contract-status">Trạng thái hợp đồng</label>
               <select id="edit-contract-status" value={status} onChange={event=>setStatus(event.target.value)}>
                 {!EDITABLE_STATUSES.some(option=>option.value===status)&&<option value={status}>{status}</option>}

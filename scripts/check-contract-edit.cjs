@@ -29,7 +29,9 @@ async function main(){
  for(const patch of [{store_id:33},{total_amount:1},{paid_amount:1},{status:'draft'},{status:'bogus'},{draft_payload:{}},{notes:'x'.repeat(4001)}])assert.throws(()=>service.parseContractProfile({...body(),...patch}),e=>e.status===400);
  assert.equal(service.parseContractProfile({...body(),status:'completed'}).status,'completed');
  assert.throws(()=>service.parseContractProfile({...body(),profile:{...profile,total_amount:'1'}}),e=>e.status===400);
- checks.push('Paper numbers retain leading zeros; blank/reserved/control/oversized codes and financial/store payloads are rejected; issued status can be corrected; old profile clients remain supported');
+ for(const term of ['custom','6','9','12','18','24'])assert.equal(service.parseContractProfile({...body(),profile:{...profile,ownership_term_months:term}}).profile.ownership_term_months,term);
+ assert.throws(()=>service.parseContractProfile({...body(),profile:{...profile,ownership_term_months:'36'}}),e=>e.status===400);
+ checks.push('Paper numbers retain leading zeros; blank/reserved/control/oversized codes and financial/store payloads are rejected; issued status can be corrected; ownership rental packages stay on the profile path; old profile clients remain supported');
  const history=await load(path.join(root,'lib/server/contract-history')).readContractHistory({query:async sql=>sql.includes('SELECT o.id,o.created_at')?{rowCount:1,rows:[{created_at:'2026-10-24T10:00:00Z',contract_edits:[{at:'2026-10-24T11:00:00Z',actor_id:70001,before:{contract_number:'005986',notes:'',status:'renting'},after:{contract_number:'005987',notes:'Sửa theo giấy',status:'completed'}}]}]}:{rowCount:0,rows:[]}},1);
  const edit=history.changes.find(item=>item.kind==='edit');
  assert(edit);assert.equal(edit.actor,'#70001');assert.match(edit.detail,/005986 → 005987/);assert.match(edit.detail,/ghi chú/);assert.match(edit.detail,/Đang thuê → Hoàn thành/);
