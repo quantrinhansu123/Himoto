@@ -116,7 +116,12 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'profile'->>'staff_name'),''),
       NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),
       (SELECT full_name FROM himoto.staff_profiles WHERE id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'),
-      (SELECT full_name FROM himoto.staff_account_attribution WHERE user_id=o.contract_responsible_user_id ORDER BY CASE WHEN store_id=o.store_id THEN 0 ELSE 1 END,id LIMIT 1)) AS contract_staff,
+      (SELECT full_name FROM himoto.staff_account_attribution WHERE user_id=o.contract_responsible_user_id ORDER BY CASE WHEN store_id=o.store_id THEN 0 ELSE 1 END,id LIMIT 1),
+      -- Prefer the login account tied to the contract, then who issued it, then the viewer sending Telegram.
+      (SELECT name FROM himoto.users WHERE id=o.contract_responsible_user_id AND deleted_at IS NULL),
+      (SELECT name FROM himoto.users WHERE deleted_at IS NULL AND o.draft_payload#>>'{management_composer,finalized,actor_id}' ~ '^[1-9][0-9]{0,14}$'
+        AND id=(o.draft_payload#>>'{management_composer,finalized,actor_id}')::bigint),
+      NULLIF(trim(u.name),'')) AS contract_staff,
     o.total::text,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
     NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND NOT(d.id=ANY($3::bigint[]))) AS return_covers_order,
     (SELECT string_agg(DISTINCT COALESCE(NULLIF(v.license,''),v.name),', ') FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicles,

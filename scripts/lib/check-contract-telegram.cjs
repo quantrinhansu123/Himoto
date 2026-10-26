@@ -34,6 +34,13 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,draft}','{"staff_id":"990101","staff_name":""}')::json WHERE id=1`);
   const selectedStaff=await content.notificationPayload(db,1,'rental',143,['rental']);
   assert.equal(selectedStaff.contract_staff,'Selected employee QA');assert.equal(selectedStaff.actor,'Actor QA');
+  await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,draft}','{}')::json,contract_responsible_user_id=NULL WHERE id=1`);
+  const loginFallback=await content.notificationPayload(db,1,'rental',143,['rental']);
+  assert.equal(loginFallback.contract_staff,'Actor QA');
+  assert(content.contractNotificationText('rental',loginFallback).includes('Nhân viên làm hợp đồng: Actor QA'));
+  await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer,finalized}',$1::jsonb)::json WHERE id=1`,
+    [JSON.stringify({contract_number:'HD-QA-1',actor_id:143})]);
+  assert.equal((await content.notificationPayload(db,1,'handover',143,['handover'])).contract_staff,'Actor QA');
   const refund=await content.notificationPayload(db,1,'return',143,['return-1001']);assert.equal(refund.refunded,450000);assert.equal(refund.method,'Tiền mặt');
   assert.equal((await content.notificationPayload(db,1,'renewal',143,['renewal-2'],renewal)).method,'');
   await c.query('SAVEPOINT linked_renewal_telegram');

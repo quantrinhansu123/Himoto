@@ -304,6 +304,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   const [section, setSection] = useState<ContractSection>('contract');
   const form = useRef<HTMLFormElement>(null);
   const managerUserId = directoryStores.find(store => String(store.id) === staffStoreId)?.user_id;
+  const loginUserId = accessUser?.id != null && Number.isFinite(Number(accessUser.id)) ? Number(accessUser.id) : null;
   useEffect(() => {
     const controller = new AbortController(); let current = true;
     setStaff([]); setStaffError(''); setStaffLoading(Boolean(staffStoreId));
@@ -311,19 +312,23 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
       if (!current) return;
       const branch = staffMatchesStore(rows, staffStoreId);
       setStaff(branch); setStaffLoading(false);
-      // Người phụ trách đi theo cửa hàng xe: tự chọn nhân sự gắn tài khoản phụ trách cơ sở khi đang trống.
-      const manager = managerUserId != null
+      // Default to the logged-in account's staff row; fall back to the store manager only when unset.
+      const loginStaff = loginUserId != null
+        ? branch.find(person => staffIsAvailable(person) && Number(person.user_id) === loginUserId)
+        : undefined;
+      const manager = !loginStaff && managerUserId != null
         ? branch.find(person => staffIsAvailable(person) && Number(person.user_id) === Number(managerUserId))
         : undefined;
-      if (!manager) return;
+      const person = loginStaff || manager;
+      if (!person) return;
       setDraft(previous => {
         if (previous.staff_id || previous.staff_name.trim()) return previous;
         if (contractStaffStoreId(previous) !== staffStoreId) return previous;
-        return { ...previous, staff_id: String(manager.id), staff_name: manager.name };
+        return { ...previous, staff_id: String(person.id), staff_name: person.name };
       });
     }).catch(cause => { if (current) { setStaffError(cause instanceof Error ? cause.message : 'Không tải được nhân sự.'); setStaffLoading(false); } });
     return () => { current = false; controller.abort(); };
-  }, [staffStoreId, contractAutofill, staffRetry, managerUserId]);
+  }, [staffStoreId, contractAutofill, staffRetry, managerUserId, loginUserId]);
   useEffect(() => {
     if (customerModal) return;
     // Opening a copied/saved contract must not replace its snapshot with today's customer profile.

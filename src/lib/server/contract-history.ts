@@ -1,7 +1,9 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { ContractCashflow, ContractChange, ContractHistory } from '@/lib/management/contract-history';
+import { CONTRACT_STATUSES } from '@/lib/management/config';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
+const statusLabel=(value:unknown)=>CONTRACT_STATUSES.find(option=>option.value===value)?.label || String(value||'—');
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractHistoryError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -73,7 +75,10 @@ export async function readContractHistory(client: Database, id: number): Promise
   const changes: ContractChange[] = [created];
   for(const [index,item] of(Array.isArray(order.rows[0].return_corrections)?order.rows[0].return_corrections:[]).entries())changes.push({id:`return-correction-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa hồ sơ trả xe',detail:`${item.reason} · Thay thế ${(item.cancelled_transaction_ids||[]).length} phiếu thu/hoàn; giữ lịch sử và trạng thái xe đã trả.`});
   for(const [index,item] of(Array.isArray(order.rows[0].contract_edits)?order.rows[0].contract_edits:[]).entries())changes.push({id:`edit-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa hợp đồng',
-    detail:[item.before?.contract_number!==item.after?.contract_number?`Số HĐ: ${item.before?.contract_number||'—'} → ${item.after?.contract_number||'—'}`:'Cập nhật hồ sơ hợp đồng',item.before?.notes!==item.after?.notes?'Cập nhật ghi chú':''].filter(Boolean).join(' · ')});
+    detail:[item.before?.contract_number!==item.after?.contract_number?`Số HĐ: ${item.before?.contract_number||'—'} → ${item.after?.contract_number||'—'}`:'',
+      item.before?.status!==item.after?.status?`Trạng thái: ${statusLabel(item.before?.status)} → ${statusLabel(item.after?.status)}`:'',
+      item.before?.notes!==item.after?.notes?'Cập nhật ghi chú':'',
+      item.before?.contract_number===item.after?.contract_number&&item.before?.status===item.after?.status&&item.before?.notes===item.after?.notes?'Cập nhật hồ sơ hợp đồng':''].filter(Boolean).join(' · ')});
   const lifecycleLabels:Record<string,string>={mark_bad_debt:'Chuyển sang Nợ xấu',settle:'Xác nhận tất toán',hold:'Bảo lưu hợp đồng thuê sở hữu',resume:'Tiếp tục thuê sau bảo lưu',update_hold:'Sửa thời hạn bảo lưu',complete_hold:'Hoàn thành hợp đồng sau bảo lưu',closed:'Đóng hợp đồng: đã trả xe và tất toán'};
   for(const [index,item] of(Array.isArray(order.rows[0].lifecycle_events)?order.rows[0].lifecycle_events:[]).entries())changes.push({id:`lifecycle-${index}`,kind:'lifecycle',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,title:lifecycleLabels[item.action]||'Đổi tình trạng hợp đồng',detail:`${item.note||''}${item.hold_until?` · Hạn bảo lưu: ${vietnamTime(item.hold_until+':00+07:00')}`:''}${item.new_end?` · Hạn trả mới: ${vietnamTime(item.new_end)}`:''}${item.action==='complete_hold'?` · Tổn thất công nợ (không thu hồi): ${formatMoney(item.waived_amount)}`:''} · Ghi nhận trên hệ thống: ${vietnamTime(item.recorded_at)}.`});
   for(const [index,item]of(Array.isArray(order.rows[0].vehicle_recoveries)?order.rows[0].vehicle_recoveries:[]).entries())changes.push({id:`vehicle-recovery-${index}`,kind:'return',at:iso(item.recovered_at),actor:`#${item.actor_id}`,amount:null,title:'Thu hồi xe trong hợp đồng nợ xấu',detail:`${item.note||''} · Giữ nguyên khoản nợ, cọc và thu/chi. Ghi nhận trên hệ thống: ${vietnamTime(item.recorded_at)}.`});

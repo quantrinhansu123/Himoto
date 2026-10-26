@@ -8,7 +8,7 @@ export function canEditIssuedContract(account:PermissionAccount|null|undefined,s
 export function issuedContractNumberError(value:string) {
   return contractNumberError(value) || (!value.trim() || !paperContractNumber(value) ? 'Nhập số HĐ giấy, không dùng mã NHAP-/EXCEL-.' : null);
 }
-export type ContractProfileEdits = {contract_number?:string;notes?:string};
+export type ContractProfileEdits = {contract_number?:string;notes?:string;status?:string};
 export type ContractProfile = Pick<ContractDraft,'customer'|'relatives'|'staff_id'|'staff_name'|'signed_on'|'authorization_date'|'collateral_description'|'document_requirements'|'sales_staff_id'|'sales_staff_name'|'tls_staff_id'|'ownership_term_months'> & Partial<Pick<ContractDraft,'customer_source'>>;
 export const PROFILE_KEYS = ['customer','relatives','staff_id','staff_name','signed_on','authorization_date','collateral_description','document_requirements','sales_staff_id','sales_staff_name','tls_staff_id','ownership_term_months','customer_source'] as const;
 export function contractProfile(draft:ContractDraft):ContractProfile {

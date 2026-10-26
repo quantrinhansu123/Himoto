@@ -5,10 +5,12 @@ import { LoaderCircle, Save } from 'lucide-react';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { createContractDraft, type ContractDraft, type CustomerDetails } from '@/lib/management/contract-document';
+import { CONTRACT_STATUSES } from '@/lib/management/config';
 import { canEditIssuedContract, contractProfile, issuedContractNumberError, saveContractProfile } from '@/lib/management/contract-profile';
 import { requestManagementTable } from '@/lib/management/management-table';
 import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import type { ManagementRow } from '@/lib/management/types';
+const EDITABLE_STATUSES = CONTRACT_STATUSES.filter(option => option.value !== 'draft');
 
 const CUSTOMER_FIELDS: {key:keyof CustomerDetails;label:string;type?:string}[] = [
   {key:'name',label:'Tên khách hàng'}, {key:'phone',label:'Số điện thoại',type:'tel'},
@@ -22,6 +24,7 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
   const [record,setRecord]=useState<ManagementRow|null>(null);
   const [draft,setDraft]=useState<ContractDraft|null>(null);
   const [notes,setNotes]=useState('');
+  const [status,setStatus]=useState(String(row.status||'renting'));
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
   const [error,setError]=useState(''),[numberError,setNumberError]=useState('');
   const busy=useRef(false),errorRef=useRef<HTMLParagraphElement>(null);
@@ -35,6 +38,7 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
       if(latest.status==='draft')throw new Error('Mở bản nháp để tiếp tục chỉnh sửa hợp đồng này.');
       if(!latest.draft_revision)throw new Error('Chưa tải được phiên bản hợp đồng. Thử tải lại.');
       setRecord(latest);setDraft(createContractDraft(dataset,'all',latest));setNotes(String(latest.notes||''));
+      setStatus(String(latest.status||'renting'));
     } catch(cause) {if(!signal?.aborted)setError(cause instanceof Error?cause.message:'Không tải được hợp đồng.');}
     finally {if(!signal?.aborted)setLoading(false);}
   },[row.id,dataset,accessUser]);
@@ -48,7 +52,7 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
     if(invalid){document.getElementById('edit-contract-number')?.focus();return;}
     busy.current=true;setSaving(true);
     try {
-      const result=await saveContractProfile(record.id,String(record.draft_revision),contractProfile(draft),{contract_number:draft.contract_number,notes});
+      const result=await saveContractProfile(record.id,String(record.draft_revision),contractProfile(draft),{contract_number:draft.contract_number,notes,status});
       onSaved(result.code||draft.contract_number.trim());
     } catch(cause) {setError(cause instanceof Error?cause.message:'Chưa lưu được hợp đồng.');requestAnimationFrame(()=>errorRef.current?.focus());}
     finally {busy.current=false;setSaving(false);}
@@ -65,6 +69,13 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
               {numberError&&<p id="edit-contract-number-error" className="mg-field-error">{numberError}</p>}
             </div>
             <div className="mg-field"><label htmlFor="edit-contract-signed">Ngày ký hợp đồng</label><input id="edit-contract-signed" type="date" value={draft.signed_on} onChange={event=>setDraft({...draft,signed_on:event.target.value})}/></div>
+            <div className="mg-field"><label htmlFor="edit-contract-status">Trạng thái hợp đồng</label>
+              <select id="edit-contract-status" value={status} onChange={event=>setStatus(event.target.value)}>
+                {!EDITABLE_STATUSES.some(option=>option.value===status)&&<option value={status}>{status}</option>}
+                {EDITABLE_STATUSES.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <small>Chỉ đổi nhãn trạng thái trên hợp đồng; không tự trả xe hay chỉnh kho.</small>
+            </div>
             <div className="mg-field mg-field-wide"><label htmlFor="edit-contract-staff">Người làm hợp đồng</label><input id="edit-contract-staff" maxLength={4000} value={draft.staff_name} onChange={event=>setDraft({...draft,staff_name:event.target.value})}/></div>
             {CUSTOMER_FIELDS.map(field=><div className="mg-field" key={field.key}><label htmlFor={`edit-contract-customer-${field.key}`}>{field.label}</label>
               <input id={`edit-contract-customer-${field.key}`} type={field.type||'text'} maxLength={4000} value={draft.customer[field.key]} onChange={event=>setDraft({...draft,customer:{...draft.customer,[field.key]:event.target.value}})}/></div>)}

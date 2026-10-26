@@ -26,13 +26,14 @@ async function main(){
  assert.equal(service.parseContractProfile(body('1',' 005987 ')).contract_number,'005987');
  assert.equal(service.parseContractProfile({revision:'1',profile:structuredClone(profile)}).contract_number,undefined);
  for(const code of ['', ' ', 'NHAP-1','EXCEL-1','A\nB','0'.repeat(33),5987])assert.throws(()=>service.parseContractProfile(body('1',code)),e=>e.status===400);
- for(const patch of [{store_id:33},{total_amount:1},{paid_amount:1},{status:'completed'},{draft_payload:{}},{notes:'x'.repeat(4001)}])assert.throws(()=>service.parseContractProfile({...body(),...patch}),e=>e.status===400);
+ for(const patch of [{store_id:33},{total_amount:1},{paid_amount:1},{status:'draft'},{status:'bogus'},{draft_payload:{}},{notes:'x'.repeat(4001)}])assert.throws(()=>service.parseContractProfile({...body(),...patch}),e=>e.status===400);
+ assert.equal(service.parseContractProfile({...body(),status:'completed'}).status,'completed');
  assert.throws(()=>service.parseContractProfile({...body(),profile:{...profile,total_amount:'1'}}),e=>e.status===400);
- checks.push('Paper numbers retain leading zeros; blank/reserved/control/oversized codes and financial/store/status payloads are rejected; old profile clients remain supported');
- const history=await load(path.join(root,'lib/server/contract-history')).readContractHistory({query:async sql=>sql.includes('SELECT o.id,o.created_at')?{rowCount:1,rows:[{created_at:'2026-10-24T10:00:00Z',contract_edits:[{at:'2026-10-24T11:00:00Z',actor_id:70001,before:{contract_number:'005986',notes:''},after:{contract_number:'005987',notes:'Sửa theo giấy'}}]}]}:{rowCount:0,rows:[]}},1);
+ checks.push('Paper numbers retain leading zeros; blank/reserved/control/oversized codes and financial/store payloads are rejected; issued status can be corrected; old profile clients remain supported');
+ const history=await load(path.join(root,'lib/server/contract-history')).readContractHistory({query:async sql=>sql.includes('SELECT o.id,o.created_at')?{rowCount:1,rows:[{created_at:'2026-10-24T10:00:00Z',contract_edits:[{at:'2026-10-24T11:00:00Z',actor_id:70001,before:{contract_number:'005986',notes:'',status:'renting'},after:{contract_number:'005987',notes:'Sửa theo giấy',status:'completed'}}]}]}:{rowCount:0,rows:[]}},1);
  const edit=history.changes.find(item=>item.kind==='edit');
- assert(edit);assert.equal(edit.actor,'#70001');assert.match(edit.detail,/005986 → 005987/);assert.match(edit.detail,/ghi chú/);
- checks.push('Contract history exposes the correction with old/new numbers, timestamp, actor and note-change marker');
+ assert(edit);assert.equal(edit.actor,'#70001');assert.match(edit.detail,/005986 → 005987/);assert.match(edit.detail,/ghi chú/);assert.match(edit.detail,/Đang thuê → Hoàn thành/);
+ checks.push('Contract history exposes the correction with old/new numbers, status, timestamp, actor and note-change marker');
 
  if(process.argv.includes('--live-temp')){
   require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
@@ -80,12 +81,18 @@ async function main(){
    assert.equal(composer.draft.contract_number,'005987');assert.deepEqual(composer.finalized,before[0].draft_payload.management_composer.finalized);
    assert.deepEqual(composer.versions,[{version:1}]);assert.equal(saved.draft_payload.kept,'original');
    assert.equal(composer.contract_edits[0].actor_id,staff.id);assert.equal(composer.contract_edits[0].before.contract_number,'005986');assert.equal(composer.contract_edits[0].after.contract_number,'005987');
+   assert.equal(composer.contract_edits[0].before.status,'renting');assert.equal(composer.contract_edits[0].after.status,'renting');
    const numbering=load(path.join(root,'lib/server/contract-number'));
    assert.equal(await numbering.contractNumberAvailable(proxy,'005986',null),true);assert.equal(await numbering.contractNumberAvailable(proxy,'005987',null),false);
    const mapped=load(path.join(root,'lib/management/repository')).mapApiRow('contracts',{...saved,status:saved.order_status,draft_revision:result.revision});
    const reopened=load(path.join(root,'lib/management/contract-document')).createContractDraft(empty,'all',mapped);
    assert.equal(reopened.contract_number,'005987');assert.equal(reopened.customer.name,'Tên khách đã sửa');
    checks.push('Renaming an issued contract frees the mistyped number, reserves the corrected number, updates its snapshot and reopened profile, records before/after and actor, and preserves money, stock references, finalization identity and all other contracts');
+   const statusInput=body(await revision(1));statusInput.status='completed';
+   await apply(staff,1,statusInput);await c.query('RESET ROLE');
+   assert.equal((await rows())[0].order_status,'completed');
+   assert.equal((await rows())[0].draft_payload.management_composer.contract_edits.at(-1).after.status,'completed');
+   checks.push('Issued contract status can be corrected without changing money or vehicle stock');
    await apply({...staff,id:70002,access_role:'admin',scope_all:true},2,body(await revision(2),'000123'));
    await c.query('RESET ROLE');assert.equal((await rows())[1].contract_number,'000123');
    checks.push('Admin can correct a different branch; the entire schema and fixtures roll back');
