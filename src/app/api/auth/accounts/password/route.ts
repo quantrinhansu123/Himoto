@@ -14,9 +14,10 @@ export const POST=withAccessRequest(async(request:NextRequest)=>{
     const raw=await request.text();if(raw.length>4096)throw new AccountPasswordError('Thông tin mật khẩu quá dài.');
     const body=JSON.parse(raw);
     if(body?.action==='reset')throw new AccountPasswordError('Đã bỏ chức năng đặt lại mật khẩu. Nhân viên tự đổi mật khẩu của mình.',403);
-    if(!body||typeof body!=='object'||Array.isArray(body)||body.action!=='reveal'||Object.keys(body).some(key=>!['action','id'].includes(key))||!Number.isSafeInteger(body.id)||body.id<1)throw new AccountPasswordError('Thông tin tài khoản không hợp lệ.');
+    const id=typeof body?.id==='number'?body.id:typeof body?.id==='string'&&/^\d+$/.test(body.id)?Number(body.id):NaN;
+    if(!body||typeof body!=='object'||Array.isArray(body)||body.action!=='reveal'||Object.keys(body).some(key=>!['action','id'].includes(key))||!Number.isSafeInteger(id)||id<1)throw new AccountPasswordError('Thông tin tài khoản không hợp lệ.');
     client=await ownerDatabase.connect();await client.query('BEGIN');
-    const data=await revealAccountPassword(client,actor,body.id);await client.query('COMMIT');
+    const data=await revealAccountPassword(client,actor,id);await client.query('COMMIT');
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'private, no-store','Vary':'Cookie'}});
   }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});
     if(error instanceof SyntaxError)return NextResponse.json({status:'error',message:'Thông tin tài khoản không hợp lệ.'},{status:400});

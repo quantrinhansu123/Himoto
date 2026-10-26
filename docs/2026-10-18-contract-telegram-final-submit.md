@@ -7,6 +7,7 @@
 - **15 trước đây không phải tổng mọi ảnh:** 15 ảnh xe và 15 ảnh bổ sung là hai nhóm riêng; CCCD/GPLX là tệp riêng nữa. Hiện không còn trần số ảnh. Tổng ảnh/video ở bước gửi là toàn bộ tệp thực sự sẽ gửi, sau khi loại bản trùng cùng tham chiếu hoặc cùng dữ liệu binary.
 - Ảnh xe được đưa về phần **Phương tiện**, hiện sẵn toàn cảnh, đầu, đuôi, trái, phải, đồng hồ/phụ kiện và video. Trước đó giao diện chỉ hiện ô trống đầu tiên, làm các góc còn lại bị ẩn; thay đổi này không xóa dữ liệu ảnh.
 - Telegram hiển thị **Nhân viên làm hợp đồng** đã chọn/nhập trong hồ sơ, không lấy tên tài khoản chung của cơ sở thay cho nhân viên. Tên được chốt vào bản nháp khi chọn nhân sự có sẵn. Các giao dịch giao/trả/gia hạn vẫn có dòng riêng cho người thực hiện thao tác.
+- Biển số / loại xe trên tin thuê·trả lấy từ `contract_vehicle_labels()` khi phiên bản chi nhánh (xe kho CS khác hoặc đã trả về CS khác bị RLS `vehicles` che). Preview/gửi lại cũng backfill nếu payload cũ để trống `vehicles` / `vehicle_names`.
 - Danh mục bổ sung nhắc hợp đồng đủ chữ ký, bill theo loại thanh toán, ảnh bàn giao/chìa khóa/mũ, 3 trang CCCD VNeID + GPLX hoặc giấy tờ bản cứng, giấy tờ giảm giá và thông tin tùy khách theo biểu mẫu. Không bắt tải lại giấy tờ đã có.
 - Một lần bấm có thể tạo nhiều album Telegram, mỗi album tối đa 10 tệp. Máy chủ tải lần lượt từng album để không giữ tất cả tệp lớn trong bộ nhớ. Lưu mã tin sau mỗi album; trạng thái gửi một phần/mất phản hồi tiếp tục chặn gửi lại tự động. Chỉ mở lại lượt unknown chưa có mã tin sau khi nhân viên xác nhận đã đối chiếu nhóm.
 

@@ -12,7 +12,7 @@ const iso = (value: unknown) => value instanceof Date ? value.toISOString() : va
 const text = (value: unknown) => value == null ? '' : String(value).trim();
 const statusLabel = (value: string) => VEHICLE_STATUSES.find(option => option.value === value)?.label || value;
 const jsonArray = (path: string) => `jsonb_array_elements(CASE WHEN jsonb_typeof(o.draft_payload::jsonb #> '${path}')='array' THEN o.draft_payload::jsonb #> '${path}' ELSE '[]'::jsonb END)`;
-const TRANSFER_LABELS: Record<string, string> = { transfer_dispatch: 'Xuất chuyển kho', transfer_receive: 'Nhận chuyển kho',manual_transfer_receive:'Nhận xe' };
+const TRANSFER_LABELS: Record<string, string> = { transfer_dispatch: 'Xuất chuyển kho', transfer_receive: 'Nhận chuyển kho',manual_transfer_receive:'Nhận xe',manual_transfer_reject:'Từ chối điều chuyển' };
 const STATUS_ACTION: Record<string, [VehicleEventAction, string]> = { repairing: ['repair', 'Sửa chữa / bảo dưỡng'], broken: ['repair', 'Báo hỏng'] };
 
 export async function readVehicleHistory(client: Database, vehicleId: number): Promise<VehicleEvent[]> {
@@ -78,7 +78,7 @@ export async function readVehicleHistory(client: Database, vehicleId: number): P
       : type === 'note' ? ['note', 'Ghi chú'] : type === 'vehicle_edit' ? ['edit','Chỉnh sửa thông tin xe'] : ['transfer', TRANSFER_LABELS[type] || 'Chuyển kho'];
     const customer = text(row.customer_name), rented = type === 'status_change' && text(row.ref_type) === 'using';
     push({ key: `event-${row.id}`, action, label,
-      ...(['manual_transfer','manual_transfer_receive'].includes(type)?{telegram_event_id:Number(row.id)}:{}),
+      ...(['manual_transfer','manual_transfer_receive','manual_transfer_reject'].includes(type)?{telegram_event_id:type==='manual_transfer_reject'?undefined:Number(row.id)}:{}),
       location: type === 'transfer_dispatch' ? 'Đang điều chuyển' : rented && customer ? `Khách: ${customer}` : action === 'transfer' ? to || from : from || to,
       responsible_store: from, beneficiary_store: action === 'note' ? '' : to,
       note: [text(row.transfer_code), text(row.reason), text(row.notes), !rented && customer ? `Khách: ${customer}` : '',

@@ -61,7 +61,7 @@ export function VehicleTransfersPage() {
           <label>Đến ngày<input type="date" value={filters.to} onChange={event => change('to', event.target.value)} aria-invalid={invalidDates}/></label>
           <label>Cơ sở chuyển đi<select aria-label="Cơ sở chuyển đi" value={filters.fromStore} onChange={event => change('fromStore', event.target.value)}><option value="">Tất cả cơ sở đi</option>{stores.map(store => <option value={store.id} key={store.id}>{store.name}</option>)}</select></label>
           <label>Cơ sở nhận<select aria-label="Cơ sở nhận" value={filters.toStore} onChange={event => change('toStore', event.target.value)}><option value="">Tất cả cơ sở nhận</option>{stores.map(store => <option value={store.id} key={store.id}>{store.name}</option>)}</select></label>
-          <label>Thao tác<select aria-label="Thao tác" value={filters.action} onChange={event => change('action', event.target.value)}><option value="">Tất cả thao tác</option><option value="transfer">Chuyển xe</option><option value="receive">Nhận xe</option></select></label>
+          <label>Thao tác<select aria-label="Thao tác" value={filters.action} onChange={event => change('action', event.target.value)}><option value="">Tất cả thao tác</option><option value="transfer">Chuyển xe</option><option value="receive">Nhận xe</option><option value="reject">Từ chối điều chuyển</option></select></label>
           <label className="mg-transfer-search">Tìm kiếm<input type="search" value={filters.search} maxLength={200} placeholder="Biển số, tên xe, người thao tác…" onChange={event => change('search', event.target.value)}/></label>
           <div className="mg-transfer-filter-actions"><button type="submit" className="mg-button mg-button-primary" disabled={invalidDates}><Search size={16}/>Xem lịch sử</button><button type="button" className="mg-button" onClick={today}>Hôm nay</button></div>
           {invalidDates && <p className="mg-field-error" role="alert">Chọn khoảng ngày hợp lệ; ngày kết thúc phải bằng hoặc sau ngày bắt đầu.</p>}
@@ -77,7 +77,7 @@ export function VehicleTransfersPage() {
                 ["Ngày giờ", formatDateTime(row.at)], ["Người thao tác", dash(row.actor)], ["Nội dung thao tác", <Changes key="changes" row={row} onTelegram={()=>setTelegramRow(row)}/>]]}/>)}</ul></div>
             <div className="mg-table-scroll mg-desktop-records" tabIndex={0} role="region" aria-label="Bảng lịch sử luân chuyển"><table className="mg-table mg-transfer-history-table">
               <thead><tr>{['Ngày giờ','Thao tác','Biển số / Tên xe','Cơ sở chuyển đi','Cơ sở nhận','Người thao tác','Nội dung thao tác'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-              <tbody>{rows.map(row => <tr key={row.id}><td>{formatDateTime(row.at)}</td><td><span className={`mg-status mg-status-${row.action === 'receive' ? 'green' : 'blue'}`}>{row.label}</span></td>
+              <tbody>{rows.map(row => <tr key={row.id}><td>{formatDateTime(row.at)}</td><td><span className={`mg-status mg-status-${row.action === 'receive' ? 'green' : row.action === 'reject' ? 'red' : 'blue'}`}>{row.label}</span></td>
                 <td><strong>{dash(row.license)}</strong><small className="mg-transfer-vehicle-name">{row.vehicle_name}</small></td><td>{dash(row.from_store)}</td><td>{dash(row.to_store)}</td><td>{dash(row.actor)}</td><td><Changes row={row} onTelegram={()=>setTelegramRow(row)}/></td></tr>)}</tbody>
             </table></div>
           </>}

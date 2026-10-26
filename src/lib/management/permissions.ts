@@ -37,7 +37,8 @@ export function canManageAccounts(account:PermissionAccount|null|undefined) {
 }
 /** Explicitly granted to the two primary administrators, never to arbitrary admins. */
 export function canRecoverAccountPasswords(account:PermissionAccount|null|undefined) {
-  return isAdminAccount(account)&&(account?.id===145||account?.id===160);
+  const id=Number(account?.id);
+  return isAdminAccount(account)&&(id===145||id===160);
 }
 export function hasPermission(account:PermissionAccount|null|undefined,permission:AccessPermission) {
   if(!account)return false;

@@ -6,7 +6,7 @@ export function compactContractConfig(config:ManagementConfig, mode:'monitoring'
     {key:'code',label:'Mã HĐ',format:'code'},
     ...rentalDates,
     {key:'deposit_amount',label:'Tiền cọc',format:'money',align:'right'},
-    {key:'customer_name',label:'Khách hàng',format:'person'},
+    {key:'customer_name',label:'Khách hàng',format:'person',secondary:'store_name'},
     {key:'license',label:'Biển số'},
     {key:'overdue_minutes',label:'Quá hạn',format:'duration',align:'right'},
     {key:'monitoring_amount',label:'Số tiền',format:'money',align:'right'},

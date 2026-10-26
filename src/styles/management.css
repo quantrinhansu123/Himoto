@@ -1020,6 +1020,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* VAT / contracts: show the full customer name; store sits on the secondary line. */
+.mg-table-contracts .mg-identity strong,
+.mg-page-contracts-vat .mg-identity strong,
+.mg-page-contracts-vat .mg-mobile-card-title {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: anywhere;
+}
 .mg-identity-vehicle strong { max-width: 210px; }
 
 .mg-avatar {

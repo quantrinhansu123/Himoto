@@ -9,6 +9,8 @@
   .mg-table-scroll > .mg-table .mg-actions-column { width: 60px; min-width: 60px; }
   .mg-table-scroll > .mg-table .mg-identity { gap: 6px; }
   .mg-table-scroll > .mg-table .mg-identity :is(strong, small) { max-width: 160px; }
+  .mg-table-scroll > .mg-table-contracts .mg-identity strong { max-width: none; white-space: normal; overflow: visible; text-overflow: unset; overflow-wrap: anywhere; }
+  .mg-table-scroll > .mg-table-contracts .mg-identity small { max-width: 220px; }
   .mg-table-scroll > .mg-table .mg-avatar { width: 26px; height: 26px; font-size: 10px; }
   .mg-table-scroll > .mg-table .mg-cell-value { max-width: 168px; }
   .mg-table-scroll > .mg-table .mg-numeric { max-width: none; }

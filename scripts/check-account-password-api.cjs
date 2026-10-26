@@ -26,11 +26,12 @@ async function main(){const previous=process.env.MANAGEMENT_SESSION_SECRET;proce
   assert(!JSON.stringify(await changed.json()).includes('QA-new-strong'));
   actor={...admin,id:145};
   const revealed=await request(managed,'POST','/api/auth/accounts/password',{action:'reveal',id:714});assert.equal(revealed.status,200);assert.equal(reveals,1);assert.match(revealed.headers.get('cache-control'),/private, no-store/);assert.equal(revealed.headers.get('vary'),'Cookie');
+  const revealedString=await request(managed,'POST','/api/auth/accounts/password',{action:'reveal',id:'714'});assert.equal(revealedString.status,200);assert.equal(reveals,2);
   const connected=connections;
   const reset=await request(managed,'POST','/api/auth/accounts/password',{action:'reset',id:714,password:'QA-only-reset',revision:'1'});assert.equal(reset.status,403);assert.equal(connections,connected);assert.equal(reset.headers.get('set-cookie'),null);
   assert.equal(passwords.resetAccountPassword,undefined);
   actor={...admin,id:160};
-  const second=await request(managed,'POST','/api/auth/accounts/password',{action:'reveal',id:714});assert.equal(second.status,200);assert.equal(reveals,2);
+  const second=await request(managed,'POST','/api/auth/accounts/password',{action:'reveal',id:714});assert.equal(second.status,200);assert.equal(reveals,3);
   actor={...staff,id:160};const deniedCount=connections;
   assert.equal((await request(managed,'POST','/api/auth/accounts/password',{action:'reveal',id:714})).status,403);assert.equal(connections,deniedCount);
   checks.push('Both primary administrators 145 and 160 can view passwords; other admins and a downgraded primary account cannot; resets stay denied');

@@ -34,7 +34,7 @@ export async function listManagedAccounts(client:Pick<PoolClient,'query'>,user?:
     WHERE u.deleted_at IS NULL AND COALESCE(a.login_name,'')<>'system.sepay' AND (a.user_id IS NOT NULL OR u.role_id IN (1,6))
       AND ($3::bigint IS NULL OR a.store_id=$3 AND NOT a.scope_all) ORDER BY p.id NULLS LAST,u.id`,[JSON.stringify(ACCESS_PERMISSIONS),JSON.stringify(ACCESS_ROLES.accounting.permissions),storeId])).rows.map(record=>{
         const {password_hash,password_fingerprint,...row}=record,recovery=canRecoverAccountPasswords(user);
-        return {...row,...(row.access_role==='admin'?{permissions:[...ACCESS_PERMISSIONS]}:{}),password_available:recovery&&Boolean(password_hash&&password_fingerprint===createHash('sha256').update(password_hash).digest('hex')),can_reset_password:false,
+        return {...row,id:Number(row.id),store_id:row.store_id==null?null:Number(row.store_id),staff_id:row.staff_id==null?undefined:Number(row.staff_id),...(row.access_role==='admin'?{permissions:[...ACCESS_PERMISSIONS]}:{}),password_available:recovery&&Boolean(password_hash&&password_fingerprint===createHash('sha256').update(password_hash).digest('hex')),can_reset_password:false,
           can_edit:true,can_delete:Number(row.id)!==Number(user?.id)};
       });
 }

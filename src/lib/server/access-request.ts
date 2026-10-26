@@ -43,7 +43,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/cashbook')||path.includes('/banks')||path.includes('/cash'))return read?'finance.read':'finance.write';
   if(path.includes('/customers/'))return read?'customers.read':'customers.write';
   if(path==='/api/auth/customers')return read?'customers.read':'customers.write';
-  if(path.includes('/vehicles/')&&path.endsWith('/actions'))return action==='transfer'?'vehicles.transfer':action==='receive'?'vehicles.receive':'vehicles.write';
+  if(path.includes('/vehicles/')&&path.endsWith('/actions'))return action==='transfer'?'vehicles.transfer':action==='receive'||action==='reject'?'vehicles.receive':'vehicles.write';
   if(path.includes('/vehicle/')||path.includes('/vehicles'))return read?'vehicles.read':'vehicles.write';
   if(path==='/api/auth/returns/correction')return 'contracts.return';
   if(path.includes('/returns'))return read?'contracts.read':'contracts.return';
@@ -80,7 +80,7 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     }
     const vehiclePhoto=request.nextUrl.pathname.match(/\/record-photos\/vehicles\/([1-9]\d{0,14})(?:\/|$)/);
     const vehicleAction=request.nextUrl.pathname.match(/^\/api\/auth\/vehicles\/([1-9]\d{0,14})\/actions$/);
-    const transfer_vehicle_id=vehiclePhoto?.[1]||(['transfer','receive'].includes(operation)?vehicleAction?.[1]:'')||'';
+    const transfer_vehicle_id=vehiclePhoto?.[1]||(['transfer','receive','reject'].includes(operation)?vehicleAction?.[1]:'')||'';
     if(vehiclePhoto)operation='transfer';
     // Fleet visibility is local to these read endpoints, never scope_all for
     // the authenticated account or for contract/customer/financial queries.

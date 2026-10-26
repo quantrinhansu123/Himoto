@@ -68,6 +68,8 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     // successful resend becomes the baseline so it stays locked against duplication.
     const baseline:NotificationPayload|undefined=related.some(n=>n.retraction?.state==='done')?delivered?.payload:event.payload;
     const payload=baseline?{...baseline,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,
+      // Cross-branch stock is invisible under vehicle RLS; backfill empty plates from a scoped label read.
+      vehicles:baseline.vehicles||fresh.vehicles||'',vehicle_names:baseline.vehicle_names||fresh.vehicle_names||'',
       ...(fresh.ownership_renewal_note?{ownership_renewal_note:fresh.ownership_renewal_note}:{}),
       ...(event.kind==='return'?{refunded:fresh.refunded,deposit:fresh.deposit,...(fresh.return_fees?{return_fees:fresh.return_fees}:{}),...(fresh.refund_recipient?{refund_recipient:fresh.refund_recipient}:{})}:{}),
       // Legacy payloads predate the detailed templates.

@@ -111,9 +111,15 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   assert.equal(parsePhotoTarget('contracts','1','renewal-2-5').slot,'renewal-2-5');
   await requireContractPhotoSlot(db,'contracts',1,'renewal-2-5');
   await assert.rejects(()=>requireContractPhotoSlot(db,'contracts',1,'renewal-999-1'),e=>e.status===404);
+  // Historical outboxes that lost plates under vehicle RLS must show live labels again.
+  await c.query(`UPDATE ${schema}.management_contract_notifications SET payload=payload||'{"vehicles":"","vehicle_names":""}'::jsonb WHERE event_key='qa-detailed-rental'`);
+  const backfilled=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='qa-detailed-rental');
+  assert(backfilled.text.includes('Bsx: 29B1-123.45'),backfilled.text);
+  assert(backfilled.text.includes('Loại xe: Vehicle QA'),backfilled.text);
   return ['Rental, return and renewal templates match requested figures; only approved receipts identify payment/refund methods',
     'Manual mode holds automatic events; five saved photos form one immutable album followed by one summary; stale previews, duplicate clicks and ambiguous deliveries are blocked',
     'Content hashes survive JSONB key ordering; completed automatic content cannot be manually duplicated; renewal photo ownership and read-only permissions enforced',
     'Confirmed-absent retry records the operator review, rejects unconfirmed/unauthorized/partial sends, queues once and dispatches only the selected contract',
-    'Telegram previews use the current paper contract number after correction while sent snapshots and delivery history remain immutable'];
+    'Telegram previews use the current paper contract number after correction while sent snapshots and delivery history remain immutable',
+    'Empty vehicle labels from cross-branch RLS are backfilled when reading Telegram previews'];
 };

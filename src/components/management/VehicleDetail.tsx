@@ -62,7 +62,7 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
   return <Dialog title={String(row.name)} subtitle={`${row.license || row.code} · ${config.title}`} className="mg-customer-detail mg-vehicle-detail" onClose={onClose}>
     <div className="mg-dialog-body">
       <ContractSectionTabs prefix="vehicle-detail" sections={SECTIONS} active={section} onChange={setSection} />
-      {row.status==='in_transit'&&<div className="mg-transfer-pending" role="status"><strong>Xe đang Chờ luân chuyển</strong><p className="mg-transfer-direction">{vehicleTransferRoute(row)||'Chưa có thông tin cơ sở chuyển đi. Kiểm tra tab Lịch sử.'}</p><p>Khi xe đã đến nơi, bấm <strong>Nhận xe</strong> bên dưới.</p></div>}
+      {row.status==='in_transit'&&<div className="mg-transfer-pending" role="status"><strong>Xe đang Chờ luân chuyển</strong><p className="mg-transfer-direction">{vehicleTransferRoute(row)||'Chưa có thông tin cơ sở chuyển đi. Kiểm tra tab Lịch sử.'}</p><p>Khi xe đã đến nơi, bấm <strong>Nhận xe</strong>. Nếu không nhận, bấm <strong>Từ chối điều chuyển</strong> để trả xe về cơ sở chuyển đi.</p></div>}
       {panel('details', <>
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
         {row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
@@ -105,7 +105,10 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
       </>)}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
-      {can('vehicles.receive')&&source==='api'&&row.status==='in_transit'&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onAction('receive')}><Check size={16}/>Nhận xe</button>}
+      {can('vehicles.receive')&&source==='api'&&row.status==='in_transit'&&<>
+        <button type="button" className="mg-button mg-button-primary" onClick={()=>onAction('receive')}><Check size={16}/>Nhận xe</button>
+        <button type="button" className="mg-button" onClick={()=>onAction('reject')}><RotateCcw size={16}/>Từ chối điều chuyển</button>
+      </>}
       {source === 'api' && <>
         {can('vehicles.transfer')&&row.status!=='in_transit'&&<button type="button" className="mg-button" onClick={() => onAction('transfer')}><ArrowLeftRight size={16} />Chuyển xe</button>}
         {can('vehicles.write')&&<button type="button" className="mg-button" onClick={() => onAction('status')}><RefreshCw size={16} />Đổi trạng thái</button>}</>}

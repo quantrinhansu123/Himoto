@@ -66,11 +66,13 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
         const title = String((config.kind === 'contracts' ? row.customer_name : row.name) || row.code || `#${row.id}`);
         const label = String((config.kind === 'vehicles' ? row.license : row.code) || row.code || title);
         const receive=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='receive'):undefined;
+        const reject=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='reject'):undefined;
         const contractAction=config.kind==='contracts'?actions(row).find(item=>item.key===(row.status==='draft'?'delete':'telegram')):undefined;
         if(compact)return <li key={row.id} className="mg-mobile-record-card mg-mobile-monitoring-card">
           {selectable&&<label className="mg-mobile-card-select"><input type="checkbox" aria-label={`Chọn ${label}`} checked={Boolean(selectedIds?.has(row.id))} onChange={event=>onSelectionChange?.([row.id],event.target.checked)}/></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={()=>onView(row)}>
             <strong className="mg-mobile-card-title">{row.code} · {title}</strong>
+            {config.kind==='contracts'&&row.store_name&&<span className="mg-mobile-card-extra">{row.store_name}</span>}
             {row.status==='reserved'&&<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>}
             <span className="mg-monitoring-card-meta">{visible('license')&&<span>{row.license||'—'}</span>}{visible('contract_signed_at')&&<span>Ký: {formatValue(row.contract_signed_at,'date')}</span>}{visible('deposit_amount')&&<span>Cọc: {formatValue(row.deposit_amount,'money')}</span>}</span>
             {visible('rental_period')&&<ContractRentalPeriod row={row}/>}
@@ -109,6 +111,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             {config.kind==='vehicles'&&<GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/>}
           </button>
           {receive&&<button type="button" className="mg-button mg-button-primary mg-mobile-receive" disabled={busyId===row.id} onClick={receive.onSelect}>Nhận xe</button>}
+          {reject&&<button type="button" className="mg-button" disabled={busyId===row.id} onClick={reject.onSelect}>Từ chối điều chuyển</button>}
           {contractAction&&<button type="button" className={`mg-button${contractAction.danger?' mg-button-danger':''}`} onClick={contractAction.onSelect}>{contractAction.icon}{contractAction.label}</button>}
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId === row.id} /></div>
         </li>;

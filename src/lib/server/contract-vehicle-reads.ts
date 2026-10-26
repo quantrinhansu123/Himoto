@@ -7,6 +7,11 @@ export function contractVehicleReadSource() {
   return usesScopedDatabase() ? 'himoto.vehicle_inventory()' : 'himoto.vehicles';
 }
 
+/** Labels for vehicles on in-scope contracts, including stock that already returned to another branch. */
+export function contractVehicleLabelSource() {
+  return usesScopedDatabase() ? 'himoto.contract_vehicle_labels()' : 'himoto.vehicles';
+}
+
 // List/search/detail reads need the same labels even when physical stock is foreign.
 // The helper is restricted to vehicles attached to contracts in the caller's scope.
 export function contractVehicleDetailsSql(sql: string) {

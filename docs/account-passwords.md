@@ -12,7 +12,7 @@ Hai tài khoản quản trị `quanlyvanhanh` (ID **145**) và `quantri` (ID **1
 
 `management_account_passwords` lưu AES-256-GCM với IV ngẫu nhiên, AAD gắn ID người dùng, khóa tách miền từ `MANAGEMENT_SESSION_SECRET`. Không cấp quyền đọc bảng này cho PUBLIC, anon, authenticated, service_role hoặc himoto_scoped; bật RLS và chỉ truy cập bằng backend owner. Không lưu mật khẩu rõ vào log/audit. Bản sao chứa fingerprint của hash xác thực; thay mật khẩu ngoài đường ứng dụng làm bản sao cũ không còn được xem. Thay khóa phiên cũng cần kế hoạch chuyển mã các bản lưu này.
 
-GET danh sách không trả mật khẩu, hash, ciphertext hoặc fingerprint. Nick 145 bấm **Hiện** để gọi POST riêng có audit, `private, no-store`; UI che mặc định, tự ẩn sau một phút/rời cửa sổ. Khi phiên bản dòng thay đổi, mật khẩu cũ lập tức bị che. Bảng đọc lại metadata mỗi 15 giây và khi quay lại cửa sổ. Không ghi mật khẩu vào localStorage. Người tự đổi được thông báo quyền xem của nick khôi phục ngay trong form.
+GET danh sách không trả mật khẩu, hash, ciphertext hoặc fingerprint; `id` được chuẩn hóa thành số để nút **Hiện** gửi đúng kiểu. Nick 145/160 bấm **Hiện** để gọi POST riêng có audit, `private, no-store`; API chấp nhận `id` số hoặc chuỗi chữ số. UI che mặc định, tự ẩn sau một phút/rời cửa sổ. Khi phiên bản dòng thay đổi, mật khẩu cũ lập tức bị che. Bảng đọc lại metadata mỗi 15 giây và khi quay lại cửa sổ. Không ghi mật khẩu vào localStorage. Người tự đổi được thông báo quyền xem của nick khôi phục ngay trong form.
 
 Không thể khôi phục mật khẩu cũ chỉ có bcrypt. Không cần migration mới để bỏ reset; các bản lưu và lịch sử reset trước đó được giữ. Không thu thập mật khẩu lúc đăng nhập, không sửa mật khẩu thật để thử nghiệm. Bản lưu xuất hiện từ lần cấp hoặc nhân viên tự đổi mật khẩu.
 

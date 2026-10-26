@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { CONTRACT_CUSTOMER_PHOTO_SLOTS,isContractTransactionPhoto } from '@/lib/management/contract-photos';
+import { contractVehicleLabelSource,contractVehicleReadSource } from './contract-vehicle-reads';
 import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null;object_bucket?:string|null;object_key?:string|null;object_etag?:string|null}
@@ -106,7 +107,8 @@ export async function hydrateNotificationPhotos(db:Database,orderId:number|null,
 export async function notificationPayload(db:Database,orderId:number,kind:ContractEventType,actorId:number,phases:string[],renewal?:RenewalNotice):Promise<NotificationPayload&{store_id:number}> {
   const returnIds=kind==='return'?phases.map(phase=>phase.match(/^return-([1-9]\d*)$/)?.[1]).filter(Boolean):[];
   const swapId=kind==='battery_swap'?phases[0]?.match(/^battery-swap-([1-9]\d*)$/)?.[1]:undefined;
-  const swap=swapId?(await db.query(`SELECT s.*,v.license,v.name AS vehicle_name FROM himoto.management_contract_battery_swaps s JOIN himoto.vehicles v ON v.id=s.vehicle_id WHERE s.id=$1 AND s.order_id=$2 AND s.status='confirmed'`,[swapId,orderId])).rows[0]:undefined;
+  const labels=contractVehicleLabelSource(),fleet=contractVehicleReadSource();
+  const swap=swapId?(await db.query(`SELECT s.*,v.license,v.name AS vehicle_name FROM himoto.management_contract_battery_swaps s JOIN ${labels} v ON v.id=s.vehicle_id WHERE s.id=$1 AND s.order_id=$2 AND s.status='confirmed'`,[swapId,orderId])).rows[0]:undefined;
   if(kind==='battery_swap'&&!swap)throw Error('Không tìm thấy lượt đổi pin đã xác nhận.');
   const o=(await db.query(`SELECT o.store_id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
     COALESCE(NULLIF(c.name,''),o.customer_name,'') AS customer,COALESCE(NULLIF(c.phone,''),o.customer_phone,'') AS phone,
@@ -117,8 +119,8 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       (SELECT full_name FROM himoto.staff_account_attribution WHERE user_id=o.contract_responsible_user_id ORDER BY CASE WHEN store_id=o.store_id THEN 0 ELSE 1 END,id LIMIT 1)) AS contract_staff,
     o.total::text,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
     NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND NOT(d.id=ANY($3::bigint[]))) AS return_covers_order,
-    (SELECT string_agg(DISTINCT COALESCE(NULLIF(v.license,''),v.name),', ') FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicles,
-    (SELECT string_agg(DISTINCT v.name,', ') FROM himoto.order_vehicle_details d JOIN himoto.vehicles v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicle_names
+    (SELECT string_agg(DISTINCT COALESCE(NULLIF(v.license,''),v.name),', ') FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicles,
+    (SELECT string_agg(DISTINCT v.name,', ') FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicle_names
     FROM himoto.orders o LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id LEFT JOIN himoto.users u ON u.id=$2
     WHERE o.id=$1 AND o.deleted_at IS NULL`,[orderId,actorId,returnIds.length?returnIds:null])).rows[0];
   if(!o)throw Error('Không tạo được thông báo hợp đồng.');
@@ -126,8 +128,8 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     const id=phases.length===1?phases[0].match(/^vehicle-swap-([1-9]\d{0,14})$/)?.[1]:undefined;
     const changed=id?(await db.query(`SELECT w.created_at,old.license AS from_license,old.name AS from_name,
       next.license AS to_license,next.name AS to_name,u.name AS actor
-      FROM himoto.management_contract_vehicle_swaps w JOIN himoto.vehicles old ON old.id=w.from_vehicle_id
-      JOIN himoto.vehicles next ON next.id=w.to_vehicle_id LEFT JOIN himoto.users u ON u.id=w.actor_id
+      FROM himoto.management_contract_vehicle_swaps w JOIN ${fleet} old ON old.id=w.from_vehicle_id
+      JOIN ${fleet} next ON next.id=w.to_vehicle_id LEFT JOIN himoto.users u ON u.id=w.actor_id
       WHERE w.id=$1 AND w.order_id=$2`,[id,orderId])).rows[0]:undefined;
     if(!changed)throw Error('Không tìm thấy lượt đổi xe của hợp đồng.');
     return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:changed.actor||o.actor,
