@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { dataAccess } from '@/lib/server/access-context';
-import { hasPermission } from '@/lib/management/permissions';
 import { RecordPhotoError } from '@/lib/server/record-photos';
 import { browserVideosEnabled, signBrowserVideo, completeBrowserVideo } from '@/lib/server/browser-videos';
 import { failureResponse } from '@/lib/server/public-failure';
@@ -11,7 +10,7 @@ export const maxDuration = 180;
 async function POSTHandler(request: NextRequest) {
   try {
     const user = dataAccess.getStore()!;
-    if (!(['contracts.draft','contracts.finalize','contracts.return','contracts.renew','finance.write','shift.review'] as const).some(permission => hasPermission(user, permission))) throw new RecordPhotoError('Tài khoản chưa được phép tải video.', 403);
+    // Mọi tài khoản đã đăng nhập đều được tải video lên web.
     const reader = request.body?.getReader();
     if (!reader) throw new RecordPhotoError('Thiếu thông tin video.');
     const chunks: Uint8Array[] = []; let size = 0;

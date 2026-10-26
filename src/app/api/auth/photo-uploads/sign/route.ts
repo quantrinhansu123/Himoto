@@ -17,7 +17,7 @@ async function POSTHandler(request: NextRequest) {
     const input = JSON.parse(body);
     const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
     if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
-    if(!(['customers.write','contracts.draft','contracts.finalize','contracts.return','contracts.renew','finance.write','shift.review'] as const).some(permission=>hasPermission(user,permission)))throw new RecordPhotoError('Tài khoản chưa được phép tải ảnh.',403);
+    // Mọi tài khoản đã đăng nhập đều được tải ảnh lên web.
     if(input.resource_type!==undefined&&input.resource_type!=='video')throw new RecordPhotoError('Loại tệp không hợp lệ.');
     if(input.verify_storage!==undefined&&typeof input.verify_storage!=='boolean')throw new RecordPhotoError('Yêu cầu kiểm tra kho không hợp lệ.');
     if(input.verify_storage===true&&(!hasPermission(user,'settings.write')||input.resource_type!=='video'))throw new RecordPhotoError('Chỉ quản trị viên được kiểm tra kho video.',403);

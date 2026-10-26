@@ -44,19 +44,18 @@ export function expandSignedContractPhotoSlots(slots:PhotoSlot[],keys:string[]) 
   const first=slots.findIndex(slot=>slot.key==='rental-document-1');
   return [...slots.slice(0,first+1),...extra,...slots.slice(first+1)];
 }
-/** Match the existing record-photo API's write permission for each contract slot. */
+/**
+ * Quyền gắn ảnh hợp đồng trên web — mọi tài khoản đã đăng nhập.
+ * Dùng vehicles.read vì hasPermission luôn cho phép (giống chuyển/nhận xe).
+ */
 export function contractPhotoWritePermission(slot:string):AccessPermission|null {
   if(isSupplementalPhotoSlot(slot))return contractPhotoWritePermission(photoBaseSlot(slot));
   if(!isContractTransactionPhoto(slot)&&!/^plate-[1-9]\d{0,14}$/.test(slot))return null;
-  if(slot.startsWith('renewal-')||slot.startsWith('battery-swap-'))return 'contracts.renew';
-  if(slot.startsWith('return-'))return 'contracts.return';
-  if(slot.startsWith('vehicle-swap-'))return 'contracts.return';
-  if(slot.startsWith('handover-'))return 'contracts.finalize';
-  return 'contracts.draft';
+  return 'vehicles.read';
 }
-/** Every contract viewer may remove a saved attachment in their existing scope. */
+/** Mọi tài khoản đăng nhập có thể gỡ ảnh đã lưu trong phạm vi hồ sơ. */
 export function contractPhotoDeletePermission(slot:string):AccessPermission|null {
-  return contractPhotoWritePermission(slot)?'contracts.read':null;
+  return contractPhotoWritePermission(slot)?'vehicles.read':null;
 }
 // Expand from actual saved/pending keys; the initial placeholders are not an upload limit.
 export function expandablePhotoPrefix(slots:PhotoSlot[]) {
