@@ -10,7 +10,9 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   for(const line of ['Khách thuê xe: Bùi Đinh Thành Phát','Bsx: 22B2-374.48','Loại xe: Airblade','Tiền thuê xe: 200.000','Số ngày thuê: 1','Tiền cọc: 1.000.000','Tổng tiền: 1.200.000','Hình thức thanh toán: CK TK cá nhân'])assert(rental.includes(line),line);
   const returned=content.contractNotificationText('return',{...fixture,customer:'Trần Nhật Nam',vehicles:'66G1-729.63',vehicle_names:'Vision',deposit:450000,refunded:450000,method:'Tiền mặt'});
   for(const line of ['Khách trả xe: Trần Nhật Nam','Hoàn cọc: 450.000','Hình thức thanh toán: Tiền mặt'])assert(returned.includes(line));
-  assert(!returned.includes('Phí sửa chữa: 0'));assert(!returned.includes('Nhân viên làm hợp đồng:'));assert(!returned.includes('Thời gian:'));
+  assert(!returned.includes('Phí sửa chữa: 0'));assert(!returned.includes('Nhân viên làm hợp đồng:'));
+  assert(returned.endsWith(`Thời gian: ${new Date(fixture.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`));
+  assert(rental.endsWith(`Thời gian: ${new Date(fixture.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`));
   const renewal={version:2,amount:1500000,before_return_at:'2026-11-01T10:00:00+07:00',return_at:'2026-12-01T10:00:00+07:00',license:'20H1.573.02',vehicle_name:'Wave'};
   const renewed=content.contractNotificationText('renewal',{...fixture,customer:'Đoàn Văn Dũng',renewal});
   for(const line of ['Khách gia hạn: Đoàn Văn Dũng','Loại xe: Wave','Bsx: 20H1.573.02','01/11/2026 - 01/12/2026','Phí gia hạn: 1.500.000 đ'])assert(renewed.includes(line),line);

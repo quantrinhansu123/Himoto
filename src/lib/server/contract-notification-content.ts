@@ -24,18 +24,18 @@ export interface NotificationPayload {
 type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
 const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
-/** Dòng cuối mọi tin Telegram: nhân viên xuất tin = tài khoản đăng nhập (p.actor). */
-function withTelegramSender(body:string,actor:string){
-  const line=`Nhân viên xuất tin Telegram: ${actor?.trim()||'Chưa ghi nhận'}`;
-  const trimmed=body.replace(/\n+$/,'');
-  if(trimmed.split('\n').some(row=>/^Nhân viên xuất tin Telegram:/.test(row)))return trimmed.slice(0,4000);
-  return `${trimmed}\n${line}`.slice(0,4000);
+const telegramClock=(at:string)=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
+/** Cuối mọi tin Telegram: NV xuất tin, rồi Thời gian là dòng cuối cùng. */
+function withTelegramFooter(body:string,actor:string,at:string){
+  const sender=`Nhân viên xuất tin Telegram: ${actor?.trim()||'Chưa ghi nhận'}`;
+  const time=`Thời gian: ${telegramClock(at)}`;
+  const rows=body.replace(/\n+$/,'').split('\n').filter(row=>!/^Nhân viên xuất tin Telegram:/.test(row)&&!/^Thời gian:/.test(row));
+  return [...rows,sender,time].join('\n').slice(0,4000);
 }
 export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive',p:NotificationPayload) {
-  if(kind==='vehicle_swap')return withTelegramSender([`Khách đổi xe: ${p.customer}`,`Xe cũ: ${p.vehicle_swap?.from_license||'—'} · ${p.vehicle_swap?.from_name||'—'}`,
-    `Xe mới: ${p.vehicle_swap?.to_license||'—'} · ${p.vehicle_swap?.to_name||'—'}`,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,
-    `Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n'),p.actor);
-  if(kind==='vehicle_transfer'||kind==='vehicle_receive')return withTelegramSender([`${kind==='vehicle_receive'?'ĐÃ NHẬN XE':'ĐIỀU CHUYỂN XE'}${p.transfer?.ownership===false?'':' SỞ HỮU'}`,`Bsx: ${p.vehicles}`,`Loại xe: ${p.vehicle_names||'—'}`,`Cơ sở chuyển đi: ${p.transfer?.from||'—'}`,`Cơ sở nhận: ${p.transfer?.to||'—'}`,`Trạng thái: ${kind==='vehicle_receive'?'Đã nhận · Lưu kho':'Chờ cơ sở đích xác nhận nhận xe'}`,`Người thực hiện: ${p.actor}`,`Mã lượt: ${p.code}`,...(p.transfer?.note?[`Ghi chú: ${p.transfer.note}`]:[]),`Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n'),p.actor);
+  if(kind==='vehicle_swap')return withTelegramFooter([`Khách đổi xe: ${p.customer}`,`Xe cũ: ${p.vehicle_swap?.from_license||'—'} · ${p.vehicle_swap?.from_name||'—'}`,
+    `Xe mới: ${p.vehicle_swap?.to_license||'—'} · ${p.vehicle_swap?.to_name||'—'}`,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`].join('\n'),p.actor,p.at);
+  if(kind==='vehicle_transfer'||kind==='vehicle_receive')return withTelegramFooter([`${kind==='vehicle_receive'?'ĐÃ NHẬN XE':'ĐIỀU CHUYỂN XE'}${p.transfer?.ownership===false?'':' SỞ HỮU'}`,`Bsx: ${p.vehicles}`,`Loại xe: ${p.vehicle_names||'—'}`,`Cơ sở chuyển đi: ${p.transfer?.from||'—'}`,`Cơ sở nhận: ${p.transfer?.to||'—'}`,`Trạng thái: ${kind==='vehicle_receive'?'Đã nhận · Lưu kho':'Chờ cơ sở đích xác nhận nhận xe'}`,`Người thực hiện: ${p.actor}`,`Mã lượt: ${p.code}`,...(p.transfer?.note?[`Ghi chú: ${p.transfer.note}`]:[])].join('\n'),p.actor,p.at);
   const method=p.method||'Chưa ghi nhận thanh toán';
   const vehicle=[`Bsx: ${p.renewal?.license||p.vehicles||'—'}`,`Loại xe: ${p.renewal?.vehicle_name||p.vehicle_names||'—'}`];
   const refundedAmount=Number(p.refunded||0);
@@ -63,14 +63,13 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
       `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,`Tiền cọc: ${money(p.deposit)}`,
       ...(p.rental_fee!=null&&p.total!=null&&Number(p.total)!==p.rental_fee?[`Phí khác / điều chỉnh: ${money(Number(p.total)-p.rental_fee)}`]:[]),
       `Tổng tiền: ${money(p.grand_total)}`,`Hình thức thanh toán: ${method}`];
-  if(kind==='return')return withTelegramSender([...lines,...(p.return_details?[`Giờ trả: ${p.return_details.returned_at.map(at=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})).join(' · ')}`,
+  if(kind==='return')return withTelegramFooter([...lines,...(p.return_details?[`Giờ trả: ${p.return_details.returned_at.map(at=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})).join(' · ')}`,
     ...(p.refund_recipient&&[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].some(Boolean)?[`Nhận hoàn cọc: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
     ...(p.return_details.rental_refund_recipient?[`Nhận hoàn tiền thuê: ${[p.return_details.rental_refund_recipient.bank,p.return_details.rental_refund_recipient.account,p.return_details.rental_refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
-    ...(p.return_details.note?[`Ghi chú: ${p.return_details.note}`]:[])]:[]),`HĐ: ${p.code}`].join('\n'),p.actor);
-  // Mọi loại tin (thuê / cọc giữ / nhận xe / gia hạn / đổi pin…): dòng cuối = NV xuất tin từ tài khoản đăng nhập.
-  return withTelegramSender([...lines,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,`Nhân viên làm hợp đồng: ${p.contract_staff||'Chưa ghi nhận'}`,
-    ...(!['rental','reservation'].includes(kind)?[`Người thực hiện: ${p.actor}`]:[]),
-    `Thời gian: ${new Date(p.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`].join('\n'),p.actor);
+    ...(p.return_details.note?[`Ghi chú: ${p.return_details.note}`]:[])]:[]),`HĐ: ${p.code}`].join('\n'),p.actor,p.at);
+  // Mọi loại tin (thuê / cọc giữ / nhận xe / gia hạn / đổi pin…): cuối = NV xuất tin, rồi Thời gian.
+  return withTelegramFooter([...lines,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,`Nhân viên làm hợp đồng: ${p.contract_staff||'Chưa ghi nhận'}`,
+    ...(!['rental','reservation'].includes(kind)?[`Người thực hiện: ${p.actor}`]:[])].join('\n'),p.actor,p.at);
 }
 export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
   // Delivery timestamps and the operator clicking Send do not make identical content a new message.
