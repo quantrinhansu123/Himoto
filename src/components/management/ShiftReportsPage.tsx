@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, Save, CheckCircle2, ClipboardList, RefreshCw } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
+import { abortAny, abortTimeout } from '@/lib/abort-signal';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { shiftApi as api,UnconfirmedSaveError,uploadShiftEvidence,type PendingShiftFile,type ShiftUpload } from '@/lib/management/shift-report-client';
 import { ShiftEvidence } from './ShiftEvidence';
@@ -114,7 +115,7 @@ export function ShiftReportsPage() {
     lock.current = true; setBusy(true); setError('');
     try {
       const params = new URLSearchParams({ store_id: String(store), date, section });
-      const response = await fetch(`/api/auth/shift-reports/autofill?${params}`, { cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]) });
+      const response = await fetch(`/api/auth/shift-reports/autofill?${params}`, { cache: 'no-store', credentials: 'same-origin', signal: abortAny([controller.signal, abortTimeout(60_000)]) });
       const body = await response.json().catch(() => null);
       if (!response.ok || !body?.data) throw new Error(body?.message || 'Không tải được số liệu từ DB. Các giá trị đang nhập được giữ nguyên.');
       const result = body.data as ShiftAutofillResult;

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect,useRef,useState } from 'react';
+import { abortAny, abortTimeout } from '@/lib/abort-signal';
 import { cleanOcrFields } from '@/lib/management/photo-ocr';
 import { combineRefundRecipient,decodeRefundQr,type RefundRecipient,type RefundRecipientFields } from '@/lib/management/refund-qr';
 import { deleteRecordPhoto,photoEndpoint,prepareRecordPhoto,saveRecordPhotos,type PendingPhotos } from '@/lib/management/record-photos';
@@ -51,7 +52,7 @@ export function RefundQrUpload({orderId,slot,savedSlot,recipient,disabled,onRead
       if(controller.signal.aborted)return;
       let fields:RefundRecipientFields=decoded||{},aiError='';
       try{
-        const response=await fetch(`/api/auth/order/car-rental/${orderId}/refund-qr`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':photo.type},body:photo,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45_000)])});
+        const response=await fetch(`/api/auth/order/car-rental/${orderId}/refund-qr`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':photo.type},body:photo,signal:abortAny([controller.signal,abortTimeout(45_000)])});
         const body=await response.json().catch(()=>null);
         if(!response.ok||body?.status!=='success')throw new Error(body?.message||'AI chưa đọc được chữ trên ảnh.');
         fields=combineRefundRecipient(decoded,cleanOcrFields(body.data?.fields,'refund_qr'));

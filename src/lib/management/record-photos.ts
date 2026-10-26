@@ -1,4 +1,5 @@
 import type { BrowserVideoReceipt, VideoProgressCallback } from './video-media';
+import { abortTimeout } from '@/lib/abort-signal';
 import { isSupplementalPhotoSlot,photoBaseSlot } from './photo-slot-groups';
 export { MAX_VIDEO_BYTES } from './video-media';
 export type MediaUploadReceipt = CloudUploadReceipt | BrowserVideoReceipt;
@@ -39,7 +40,7 @@ export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploa
     const body = new FormData(); body.append('file', file);
     for (const [key, value] of Object.entries(settings.params)) body.append(key, String(value));
     body.append('api_key', settings.api_key); body.append('signature', settings.signature);
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${settings.cloud_name}/${video?'video':'image'}/upload`, { method: 'POST', body, signal: AbortSignal.timeout(video?180_000:60_000) });
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${settings.cloud_name}/${video?'video':'image'}/upload`, { method: 'POST', body, signal: abortTimeout(video?180_000:60_000) });
     const result = await response.json().catch(() => null);
     if (!response.ok || result?.public_id !== settings.params.public_id || !Number.isSafeInteger(result?.version) || typeof result?.signature !== 'string') throw new Error('Chưa tải được ảnh lên Cloudinary. Ảnh vẫn được giữ trong form để thử lại.');
     return { public_id: result.public_id, version: result.version, signature: result.signature, ...(video?{resource_type:'video' as const}:{}) };

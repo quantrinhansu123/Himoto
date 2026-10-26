@@ -1,3 +1,4 @@
+import { abortTimeout } from '@/lib/abort-signal';
 import { uploadRecordPhoto, type CloudUploadReceipt } from './record-photos';
 import { VideoValidationError, type BrowserVideoReceipt, type VideoProgressCallback } from './video-media';
 
@@ -30,7 +31,7 @@ function processVideo(file: File, maxDuration: number, progress: VideoProgressCa
 
 async function api(input: Record<string, unknown>) {
   const response = await fetch('/api/auth/photo-uploads/video', { method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal: AbortSignal.timeout(input.action === 'verify' ? 120_000 : 30_000) });
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal: abortTimeout(input.action === 'verify' ? 120_000 : 30_000) });
   const body = await response.json().catch(() => null);
   if (!response.ok || body?.status !== 'success') throw new Error(body?.message || 'Chưa xác nhận được video. Tệp vẫn được giữ để thử lại.');
   return body.data;
