@@ -40,6 +40,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [returnAt, setReturnAt] = useState('');
   const [amount, setAmount] = useState('');
   const [amountTouched, setAmountTouched] = useState(false);
+  const [extraName, setExtraName] = useState('Phí VAT');
+  const [extraAmount, setExtraAmount] = useState('');
   const [note, setNote] = useState('');
   const [occurredAt,setOccurredAt]=useState('');
   const [loading, setLoading] = useState(true);
@@ -120,9 +122,11 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     setAccountId(nextAccounts.length === 1 ? paymentAccountKey(nextAccounts[0]) : '');
   }
 
-  const fee = feeReady(amount);
+  const renewalFee = feeReady(amount);
+  const otherFee = feeReady(extraAmount);
+  const fee = renewalFee + otherFee;
   const expectedFee = rate > 0 && unitCount >= 1 && unitCount <= maxCount ? rate * unitCount : null;
-  const amountMismatch = expectedFee !== null && /^\d+$/.test(amount || '') && fee !== expectedFee;
+  const amountMismatch = expectedFee !== null && /^\d+$/.test(amount || '') && renewalFee !== expectedFee;
   const total = selected?.total_amount ?? null;
   const paid = selected?.paid_amount ?? null;
   const nextTotal = total === null ? null : total + fee;
@@ -138,6 +142,9 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     if(backfill&&(!validBackfillTime(occurredAt)||note.trim().length<5)){setError('Nhập ngày giờ gia hạn thực tế và lý do nhập bổ sung ít nhất 5 ký tự.');return;}
     if (!validReturn) { setError('Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
+    if (extraAmount && !/^(0|[1-9]\d{0,12})$/.test(extraAmount)) { setError('Phí khác phải là số tiền nguyên VNĐ.'); return; }
+    if (otherFee > 0 && !extraName.trim()) { setError('Nhập tên khoản phí khác (ví dụ Phí VAT).'); return; }
+    if (fee > 9_999_999_999_999) { setError('Tổng chi phí gia hạn và phí khác vượt giới hạn.'); return; }
     if (canCollect && !collectionChoice) { setError('Chọn đã nhận tiền hoặc chưa nhận tiền gia hạn.'); return; }
     if (collecting) {
       if (!paymentContext) { setError(paymentLoadError || 'Đang tải tài khoản nhận tiền.'); return; }
@@ -146,17 +153,19 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     }
     setSaving(true); setError('');
     try {
+      const extraLabel = otherFee > 0 ? `${extraName.trim()} ${formatMoney(otherFee)}` : '';
+      const combinedNote = [note.trim(), extraLabel ? `Phí khác: ${extraLabel}` : ''].filter(Boolean).join('\n');
       const result = await saveContractRenewal(orderId, {
         request_id: requestId.current ??= crypto.randomUUID(),
         item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
-        return_at: returnAt, amount: amount || '0', note: note.trim(),
+        return_at: returnAt, amount: String(fee), note: combinedNote,
         ...(backfill?{occurred_at:occurredAt}:{}),
-        ...(expectedFee !== null ? { expected_amount: String(expectedFee) } : {}),
+        ...(expectedFee !== null ? { expected_amount: String(expectedFee + otherFee) } : {}),
         ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:paidAt}} : {}),
       });
       let remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
       let collected = false;
-      const mismatchNote = amountMismatch && expectedFee !== null ? ` · cảnh báo: phí ${formatMoney(fee)} khác gợi ý ${formatMoney(expectedFee)}` : '';
+      const mismatchNote = amountMismatch && expectedFee !== null ? ` · cảnh báo: phí gia hạn ${formatMoney(renewalFee)} khác gợi ý ${formatMoney(expectedFee)}` : '';
       if (collecting) {
         const payment = result.payment;
         if (!payment) throw new Error('Chưa xác nhận được phiếu thu gia hạn. Tải lại hợp đồng để kiểm tra trước khi thử lại.');
@@ -175,7 +184,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
         notify(`${result.code}: đã tạo phiên bản v${result.version} — hẹn trả ${formatDateTime(result.return_at)}${result.total_amount !== null ? `, tiền hợp đồng ${formatMoney(result.total_amount)}` : ''}${mismatchNote}.`);
         await reload();
       }
-      setDone({ code: result.code, fee, remaining, version: result.version, collected, mismatch: Boolean(mismatchNote), expected: expectedFee });
+      setDone({ code: result.code, fee, remaining, version: result.version, collected, mismatch: Boolean(mismatchNote), expected: expectedFee === null ? null : expectedFee + otherFee });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được gia hạn hợp đồng.'); }
     finally { setSaving(false); }
   }
@@ -228,7 +237,15 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
             <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn"
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
               <small>{rate ? `Gợi ý: ${formatMoney(rate)} × ${unitCount || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(rate * (unitCount || 0))}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
-            {amountMismatch && expectedFee !== null && <p className="mg-field-error" role="status">Cảnh báo: chi phí {formatMoney(fee)} khác gợi ý theo hợp đồng {formatMoney(expectedFee)}. Vẫn lưu được; cảnh báo sẽ ghi vào lịch sử gia hạn.</p>}
+            {amountMismatch && expectedFee !== null && <p className="mg-field-error" role="status">Cảnh báo: chi phí gia hạn {formatMoney(renewalFee)} khác gợi ý theo hợp đồng {formatMoney(expectedFee)}. Vẫn lưu được; cảnh báo sẽ ghi vào lịch sử gia hạn.</p>}
+            <div className="mg-field-wide mg-renewal-extra">
+              <strong>Phí khác</strong>
+              <label>Tên khoản phí<input value={extraName} maxLength={100} placeholder="Ví dụ: Phí VAT" onChange={event => setExtraName(event.target.value)} /></label>
+              <label>Số tiền phí khác (VNĐ)<input inputMode="numeric" value={groupAmount(extraAmount)} placeholder="Nhập phí VAT hoặc phí phát sinh"
+                onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) setExtraAmount(raw); }} />
+                <small>Cộng vào tổng khi lưu gia hạn. Chọn TK công ty nếu cần vào Hợp đồng VAT.</small></label>
+              {fee > 0 && <p role="status">Tổng cộng lần này: gia hạn {formatMoney(renewalFee)}{otherFee > 0 ? ` + ${extraName.trim() || 'phí khác'} ${formatMoney(otherFee)}` : ''} = <strong>{formatMoney(fee)}</strong></p>}
+            </div>
             {canCollect && <>
               <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='received'} onChange={()=>setCollectionChoice('received')} />Đã thực nhận tiền gia hạn — ghi phiếu thu cùng lúc lưu</label>
               <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='unpaid'} onChange={()=>setCollectionChoice('unpaid')} />Chưa nhận tiền — ghi công nợ gia hạn</label>
@@ -262,8 +279,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(selected?.deposit_held ?? 0)}</dd></div>
           </dl>
           <p className="mg-composer-hint">{collecting
-            ? 'Chi phí gia hạn được cộng vào tiền hợp đồng và ghi phiếu Thu ngay khi lưu.'
-            : 'Chi phí gia hạn được cộng vào tiền hợp đồng. Chỉ chọn đã thực nhận khi tiền đã vào đúng tài khoản hoặc két.'}</p>
+            ? 'Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng và ghi phiếu Thu ngay khi lưu.'
+            : 'Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng. Chỉ chọn đã thực nhận khi tiền đã vào đúng tài khoản hoặc két.'}</p>
           {renewalVersion && <ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending}/>}
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
