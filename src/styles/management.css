@@ -4254,6 +4254,11 @@
 .mg-collection-table { min-width:1120px; }
 .mg-collection-table td { vertical-align:top; max-width:240px; white-space:normal; }
 .mg-collection-table td small { display:block; margin-top:5px; color:#64748b; }
+.mg-collection-table td.mg-collection-note-cell { min-width:280px; max-width:360px; }
+.mg-collection-note textarea { width:100%; min-height:88px; padding:10px; border:1px solid var(--mg-border); border-radius:8px; background:#fff; color:inherit; font:inherit; line-height:1.5; resize:vertical; }
+.mg-collection-note textarea:focus-visible { outline:2px solid var(--mg-brand-600); outline-offset:2px; }
+.mg-collection-note-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.mg-collection-note-conflict { margin-top:8px; padding:10px; border:1px solid #f59e0b; border-radius:8px; background:#fffbeb; color:#78350f; }
 .mg-preserve-lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 .mg-report-preview { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:13px; line-height:1.65; padding:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; max-width:100%; }
 .mg-ownership-report { min-width:0; }

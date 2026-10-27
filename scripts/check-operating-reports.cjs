@@ -67,12 +67,13 @@ try{
   assert.equal((await post({...body,revision:saved.data.revision,status:'draft'})).status,409);assert(callbacks.length>=1);callbacks.length=0;
   checks.push('Submission uses a fresh server financial source, ignores client-forged app balances, locks the report and queues one notification across a lost-response replay.');
   const f={order_id:1,revision:0,contact_status:'unreachable',handling_status:'escalated',customer_condition:'Khách chưa liên lạc được',notes:'24/10 gọi khách'};
-  const patch=async value=>{const r=await debts.PATCH(request('/api/auth/gps/debts','PATCH',value));return {status:r.status,...await r.json()};};
+  const patch=async value=>{const r=await debts.PATCH(request('/api/auth/gps/debts','PATCH',value));return {...await r.json(),status:r.status};};
   assert.equal((await patch(f)).status,200);assert.equal((await patch(f)).status,409);assert.equal((await patch({...f,revision:1,contact_status:'contacted'})).status,200);
   const adminActor=actor;actor={...actor,scope_all:false,access_role:'branch_staff',store_id:23};assert.equal((await patch({...f,revision:2})).status,403);actor=adminActor;
+  actor={...adminActor,access_role:'accounting',permissions:['contracts.read','finance.write']};assert.equal((await patch({...f,revision:2,notes:'Read-only role cannot change notes'})).status,403);actor=adminActor;
   assert.equal((await c.query('SELECT count(*)::int AS n FROM management_collection_history')).rows[0].n,2);assert.throws(()=>collection.parseCollectionFollowup({...f,contact_status:'bad'}));
   await c.query("SELECT set_config('himoto.scope_all','false',true),set_config('himoto.store_id','23',true)");await c.query('SET LOCAL ROLE himoto_scoped');assert.equal((await c.query('SELECT count(*)::int AS n FROM pg_temp.management_collection_followups')).rows[0].n,0);assert.equal((await c.query('SELECT count(*)::int AS n FROM pg_temp.management_report_deliveries')).rows[0].n,0);await c.query('RESET ROLE');
-  checks.push('Customer follow-ups use optimistic revisions, record every update and RLS hides notes/history/deliveries outside the branch.');
+  checks.push('Customer follow-ups use optimistic revisions and history; read-only roles cannot edit notes and RLS hides notes/history/deliveries outside the branch.');
   const bot=sealIntegrationSecret({token:'QA_TOKEN_NOT_REAL'});await c.query('INSERT INTO management_telegram_settings(singleton,bot_cipher) VALUES(true,$1)',[bot]);await c.query("INSERT INTO management_ownership_telegram(route,chat_id,enabled) VALUES('ownership_new','QA_CHAT',true)");
   const send=async(_url,options)=>{calls.push(JSON.parse(options.body));return new Response(JSON.stringify({ok:true,result:{message_id:11}}),{status:200});};
   await telegram.deliverReportTelegram(`shift:${saved.data.id}`,temp,send);await telegram.deliverReportTelegram(`shift:${saved.data.id}`,temp,send);assert.equal(calls.length,1);
