@@ -18,7 +18,7 @@ export function ReturnedVehicleStatus({ rows }: { rows:ReturnableContractItem[] 
   const vehicles=[...new Map(rows.map(row=>[row.vehicle_id,row])).values()];
   return <section aria-label="Trạng thái xe sau trả"><h3>Xe đã trả trong hợp đồng này</h3>
     {vehicles.map(row=>{const vehicle=inventory?.find(item=>Number(item.id)===row.vehicle_id);return <div key={row.vehicle_id} className="mg-return-estimate">
-      <strong>{row.license}</strong><span>{row.return_reconciled?'Đã đối chiếu và xác nhận thu hồi; ngày thu hồi gốc chưa xác định.':`Đã ghi nhận trả: ${formatDateTime(row.completed_at)}`}</span>
+      <strong>{row.license}</strong><span>{row.return_reconciled?'Đã đối chiếu kho; chưa có ngày trả gốc — mở Sửa hồ sơ trả xe để nhập ngày giờ thực tế.':`Đã ghi nhận trả: ${formatDateTime(row.completed_at)}`}</span>
       {vehicle?.available?<p role="status">Xe đã về kho và có thể chọn cho hợp đồng mới.</p>:vehicle?.rental_blockers?.length?<>
         <p role="alert">Xe còn được giữ bởi hợp đồng khác. Cần đối chiếu đúng hợp đồng bên dưới; trả lại lần nữa trên hợp đồng này không gỡ được liên kết đó.</p>
         {vehicle.rental_blockers.map(blocker=><p key={blocker.order_id}><Link href={`/contracts?contract_id=${blocker.order_id}`}>{blocker.code}</Link> · {blocker.store_name}</p>)}

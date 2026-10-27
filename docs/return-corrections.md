@@ -17,7 +17,7 @@ Kiểm tra phiên bản cả hợp đồng, dòng xe và phiếu tiền; bấm l
 
 Lượt đang gửi, gửi dở, chưa rõ kết quả hoặc đang thu hồi Telegram phải đối chiếu xong trước khi sửa tiền. Các tin đã gửi giữ nguyên lịch sử; bản sửa chỉ tạo nội dung mới để người dùng kiểm tra và chủ động gửi. Thêm giờ trả, ghi chú và thông tin nhận hoàn vào bản Telegram đã sửa; giữ khóa chống gửi trùng và cách gửi tiếp phần còn thiếu.
 
-Hồ sơ cũ thiếu liên kết phiếu không được tự đoán khoản tiền thuộc lượt nào. Chỉ các phiếu xác định từ `return_settlements` được sửa trong màn hình này.
+Hồ sơ cũ thiếu liên kết phiếu không được tự đoán khoản tiền thuộc lượt nào. Chỉ các phiếu xác định từ `return_settlements` được sửa trong màn hình này. Xe đã đối chiếu kho nhưng chưa có ngày trả gốc (`actual_recovery_at=null`) vẫn mở được **Sửa hồ sơ trả xe** để nhập ngày giờ thực tế; lần lưu sẽ ghi nhận mốc đó.
 
 ## Triển khai và kiểm tra
 

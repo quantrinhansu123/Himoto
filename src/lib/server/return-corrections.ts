@@ -18,10 +18,17 @@ const idsOf=(value:unknown):number[]=>Array.isArray(value)?value.map(Number).fil
 const sameIds=(a:number[],b:number[])=>a.length===b.length&&a.every((id,i)=>id===b[i]);
 const MAX_MONEY=9_999_999_999_999;
 function noticeItems(notice:{photo_phases?:string[];photo_slots?:string[];event_key:string;root_event_key?:string}) {
+  const extract=(values:unknown[])=>[...new Set(idsOf(values.flatMap(value=>{
+    const match=String(value||'').match(/^return-([1-9]\d*)(?:-|$)/);
+    return match?[match[1]]:[];
+  })))];
   const phases=Array.isArray(notice.photo_phases)?notice.photo_phases:[];
   const slots=Array.isArray(notice.photo_slots)?notice.photo_slots:[];
-  const references=phases.length?phases.map(p=>p.match(/^return-([1-9]\d*)$/)?.[1]):slots.length?slots.map(p=>p.match(/^return-([1-9]\d*)-/)?.[1]):(notice.root_event_key||notice.event_key).split(':').at(-1)!.split(/[,-]/);
-  return [...new Set(idsOf(references))];
+  const fromPhases=extract(phases);
+  if(fromPhases.length)return fromPhases;
+  const fromSlots=extract(slots);
+  if(fromSlots.length)return fromSlots;
+  return [...new Set(idsOf((notice.root_event_key||notice.event_key).split(':').at(-1)!.split(/[,-]/)))];
 }
 
 async function readState(db:Database,itemId:number,lock=false) {
@@ -36,12 +43,25 @@ async function readState(db:Database,itemId:number,lock=false) {
   const composer=order.draft_payload?.management_composer||{};
   const notices=(await db.query(`SELECT event_key,root_event_key,photo_phases,photo_slots,status,message_ids,retraction,content_hash
     FROM himoto.management_contract_notifications WHERE order_id=$1 AND event_type='return' ORDER BY created_at,id`,[order.id])).rows;
-  const notice=notices.find(n=>noticeItems(n).includes(itemId));
   const settlement=Array.isArray(composer.return_settlements)?composer.return_settlements.findLast((s:{item_ids:number[]})=>idsOf(s.item_ids).includes(itemId)):undefined;
-  const itemIds=notice?noticeItems(notice):settlement?idsOf(settlement.item_ids):[itemId];
-  if(!itemIds.length||itemIds.length>20||settlement&&!sameIds(itemIds,idsOf(settlement.item_ids)))throw new ContractReturnError('Nhóm xe trả chưa khớp hồ sơ gốc. Cần đối chiếu trước khi sửa.',409);
+  const settlementIds=settlement?idsOf(settlement.item_ids):[];
+  // Prefer the notice whose vehicle group matches the settlement snapshot for this return.
+  const notice=notices.find(n=>{const ids=noticeItems(n);return ids.includes(itemId)&&(!settlementIds.length||sameIds(ids,settlementIds));})
+    ||notices.find(n=>noticeItems(n).includes(itemId));
+  const itemIds=notice?noticeItems(notice):settlementIds.length?settlementIds:[itemId];
+  if(!itemIds.length||itemIds.length>20||settlementIds.length&&!sameIds(itemIds,settlementIds))throw new ContractReturnError('Nhóm xe trả chưa khớp hồ sơ gốc. Cần đối chiếu trước khi sửa.',409);
   const lines=(await loadContractReturnableItems(db,Number(order.id))).filter(line=>itemIds.includes(line.item_id));
-  if(lines.length!==itemIds.length||lines.some(line=>!line.completed_at||line.return_reconciled))throw new ContractReturnError('Chưa đủ hồ sơ ngày trả thực tế để sửa lượt này.',409);
+  if(lines.length!==itemIds.length){
+    const missing=itemIds.filter(id=>!lines.some(line=>line.item_id===id));
+    throw new ContractReturnError(missing.length
+      ?`Thiếu dòng xe trong nhóm trả (mã ${missing.join(', ')}). Đối chiếu hồ sơ trước khi sửa.`
+      :'Chưa đủ hồ sơ ngày trả thực tế để sửa lượt này.',409);
+  }
+  // Inventory-reconciled returns (unknown original recovery time) stay editable so staff can enter the real datetime.
+  if(lines.some(line=>!line.completed_at)){
+    const pending=lines.filter(line=>!line.completed_at).map(line=>line.license||String(line.item_id));
+    throw new ContractReturnError(`Trong nhóm còn xe chưa có ngày trả thực tế (${pending.join(', ')}). Trả đủ xe trong nhóm hoặc đối chiếu hồ sơ trước khi sửa.`,409);
+  }
   if(lock)await db.query('SELECT id FROM himoto.order_vehicle_details WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE',[itemIds]);
   const relevant=notices.filter(n=>{const references=noticeItems(n);return !references.length||references.some(id=>itemIds.includes(id));});
   const blocked=relevant.some(n=>n.retraction?.state!=='done'&&(n.retraction||['pending','sending','unknown'].includes(n.status)||n.status==='failed'&&n.message_ids?.length));
@@ -122,6 +142,13 @@ export async function correctReturn(db:Database,actor:number,raw:unknown) {
   if(order.total==null||order.total===''||!Number.isSafeInteger(nextTotal)||nextTotal<0||nextTotal>MAX_MONEY)throw new ContractReturnError('Tổng tiền sau điều chỉnh chưa hợp lệ hoặc vượt giới hạn.',409);
   const payload=structuredClone(order.draft_payload||{}),nextComposer=payload.management_composer||{};
   nextComposer.return_adjustments=[...(Array.isArray(composer.return_adjustments)?composer.return_adjustments:[]).filter((a:{item_id:number})=>!itemIds.includes(Number(a.item_id))),...adjustments];
+  if(Array.isArray(composer.vehicle_reconciliations)){
+    nextComposer.vehicle_reconciliations=composer.vehicle_reconciliations.map((entry:{item_id:number;actual_recovery_at:string|null})=>{
+      if(!itemIds.includes(Number(entry.item_id))||entry.actual_recovery_at!=null)return entry;
+      const item=input.items.find(row=>row.item_id===Number(entry.item_id));
+      return item?{...entry,actual_recovery_at:`${item.returned_at}:00+07:00`}:entry;
+    });
+  }
   if(plan){
     const status=(await db.query('SELECT count(*) FILTER(WHERE completed_at IS NULL)::int AS remaining,max(completed_at) AS latest FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL',[order.id])).rows[0];
     if(!Number(status.remaining))nextComposer.installment_plan={...plan,stopped_at:local(status.latest)<plan.end?local(status.latest):plan.end};

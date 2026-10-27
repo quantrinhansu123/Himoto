@@ -128,6 +128,24 @@ async function main(){
   const invalidDiscount=body(correctedPlan);invalidDiscount.items[0].early_discount='1';await rejected(invalidDiscount,400);
   await c.query('ROLLBACK TO SAVEPOINT installment_return');
   checks.push('Ownership return corrections move the installment cutoff, recalculate accrued rent and retain installment-specific refund/discount constraints');
+  await c.query('SAVEPOINT reconciled_return');
+  const reconciledPayload=(await c.query(`SELECT draft_payload FROM ${schema}.orders WHERE id=1`)).rows[0].draft_payload;
+  const lastSettlement=reconciledPayload.management_composer.return_settlements.at(-1);
+  assert.deepEqual(lastSettlement.item_ids.map(Number),[1001]);
+  reconciledPayload.management_composer={...reconciledPayload.management_composer,vehicle_reconciliations:[{item_id:1001,actual_recovery_at:null,note:'QA stock reconcile without original return time'}]};
+  await c.query(`UPDATE ${schema}.orders SET draft_payload=$1::json WHERE id=1`,[JSON.stringify(reconciledPayload)]);
+  let reconciled=await service.readReturnCorrection(proxy,1001);
+  assert.equal(reconciled.lines.length,1);assert.equal(reconciled.lines[0].item_id,1001);
+  const stamp=body(reconciled);stamp.note='QA entered original return time after stock reconcile';
+  stamp.items[0].returned_at=paidAt;
+  reconciled=await service.correctReturn(proxy,143,stamp);
+  const stamped=(await c.query(`SELECT draft_payload #>> '{management_composer,vehicle_reconciliations,0,actual_recovery_at}' AS at FROM ${schema}.orders WHERE id=1`)).rows[0].at;
+  assert.equal(stamped,`${paidAt}:00+07:00`);
+  await c.query(`UPDATE ${schema}.management_contract_notifications SET photo_phases='[]'::json,photo_slots=$1::json`,[JSON.stringify(['return-1001-1','return-1001-2'])]);
+  const slotted=await service.readReturnCorrection(proxy,1001);
+  assert.equal(slotted.lines.length,1);assert.equal(slotted.lines[0].item_id,1001);
+  await c.query('ROLLBACK TO SAVEPOINT reconciled_return');
+  checks.push('Inventory-reconciled returns without an original recovery time remain editable; photo slots still resolve the vehicle group and saving stamps actual_recovery_at');
   // Legacy returns without a notification/settlement still provide a current edit and send entry.
   await c.query('SAVEPOINT legacy');await c.query(`DELETE FROM ${schema}.management_contract_notifications;UPDATE ${schema}.orders SET draft_payload='{}' WHERE id=1`);
   const legacy=await service.readReturnCorrection(proxy,1001);assert.equal(legacy.lines.length,1);assert.equal(legacy.event_key,'return:1:1001');assert.equal(legacy.settlement.receipts.length,0);await c.query('ROLLBACK TO SAVEPOINT legacy');
