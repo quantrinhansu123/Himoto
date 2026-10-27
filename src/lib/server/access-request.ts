@@ -27,6 +27,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.endsWith('/battery-swaps'))return read?'contracts.read':'contracts.renew';
   if(path.includes('/battery-contracts/')&&path.endsWith('/actions'))return read?'contracts.read':action==='return'?'contracts.return':'contracts.renew';
   if(path.endsWith('/reservation-no-show'))return 'contracts.finalize';
+  if(path.endsWith('/reservation')&&!read)return 'contracts.draft';
   // Xem / gắn / gỡ ảnh hồ sơ trên web: mọi tài khoản đã đăng nhập.
   if(path.includes('/record-photos/'))return null;
   if(path.includes('/bulk-delete/staff'))return read?'hr.read':'hr.write';

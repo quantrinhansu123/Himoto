@@ -61,6 +61,7 @@ const VehicleActionDialog = dynamic(() => import('./VehicleActionDialog').then(m
 const VehicleDetail = dynamic(() => import('./VehicleDetail').then(module => module.VehicleDetail), { ssr: false, loading: FeatureLoading });
 const SharedVehicleInventory = dynamic(() => import('./SharedVehicleInventory').then(module => module.SharedVehicleInventory), { ssr: false, loading: FeatureLoading });
 const ContractDraftDeleteDialog = dynamic(() => import('./ContractDraftDeleteDialog').then(module => module.ContractDraftDeleteDialog), { ssr:false, loading:FeatureLoading });
+const ContractDepositDeleteDialog = dynamic(() => import('./ContractDepositDeleteDialog').then(module => module.ContractDepositDeleteDialog), { ssr:false, loading:FeatureLoading });
 const ContractTelegramDialog = dynamic(() => import('./ContractTelegramDialog').then(module => module.ContractTelegramDialog), { ssr:false, loading:FeatureLoading });
 const StoreDetail = dynamic(() => import('./StoreDetail').then(module => module.StoreDetail), { ssr: false, loading: FeatureLoading });
 const StaffDialog = dynamic(() => import('./StaffDialogs').then(module => module.StaffDialog), { ssr: false, loading: FeatureLoading });
@@ -186,6 +187,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [staffDialog, setStaffDialog] = useState<{ row: ManagementRow | null; mode: 'view' | 'edit' | 'delete' | 'create' } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagementRow | null>(null);
   const [draftDeleteTarget,setDraftDeleteTarget]=useState<ManagementRow|null>(null);
+  const [depositDeleteTarget,setDepositDeleteTarget]=useState<ManagementRow|null>(null);
   const [telegramTarget,setTelegramTarget]=useState<{id:number;code:string}|'pending'|null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -417,7 +419,10 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
             else { setEditing(row); setFormOpen(true); }
           }}
           onDelete={canDelete ? row => {
-            if (kind === 'contracts') setDraftDeleteTarget(row);
+            if (kind === 'contracts') {
+              if (row.status === 'deposit_contract') setDepositDeleteTarget(row);
+              else setDraftDeleteTarget(row);
+            }
             else if (kind === 'staff') setStaffDialog({ row, mode: 'delete' });
             else { setDeleteTarget(row); setDeleteError(''); }
           } : undefined} canDelete={canDelete}
@@ -486,6 +491,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={bulkDeleteBusy} onClick={() => setBulkDeleteOpen(false)}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={bulkDeleteBusy} onClick={() => void deleteSelected()}>{bulkDeleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa {selectedIds.size} {config.singular}</>}</button></div>
     </Dialog>}
     {draftDeleteTarget&&<ContractDraftDeleteDialog row={draftDeleteTarget} onClose={()=>setDraftDeleteTarget(null)} onDeleted={()=>{setDraftDeleteTarget(null);invalidateData(['contracts']);void reload(['contracts']);notify('Đã xóa bản nháp khỏi danh sách.');}}/>}
+    {depositDeleteTarget&&<ContractDepositDeleteDialog row={depositDeleteTarget} onClose={()=>setDepositDeleteTarget(null)} onDeleted={()=>{setDepositDeleteTarget(null);invalidateData(['contracts','vehicles']);void reload(['contracts']);notify('Đã xóa hợp đồng cọc khỏi danh sách.');}}/>}
     {telegramTarget&&<ContractTelegramDialog order={telegramTarget==='pending'?undefined:telegramTarget} store={selectedStore} onClose={()=>setTelegramTarget(null)}/>}
     {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} initialQuery={returnTarget.query} onClose={() => setReturnTarget(null)} />}
     {recoveryTarget&&<BadDebtRecoveryDialog id={recoveryTarget.id} code={recoveryTarget.code} onClose={()=>setRecoveryTarget(null)} onRecovered={()=>{table.refresh();invalidateData(['contracts','vehicles']);}}/>}

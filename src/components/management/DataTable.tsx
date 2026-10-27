@@ -118,7 +118,9 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         title: !row.customer_revision ? 'Nhấn Làm mới để tải phiên bản hồ sơ' : undefined,
         icon: blacklistBusyId === row.id ? <LoaderCircle size={16} className="mg-spin" /> : blacklisted ? <ShieldCheck size={16} /> : <ShieldBan size={16} />, onSelect: () => onBlacklist(row) });
     }
-    if (canDelete && onDelete && (!isContract || row.status === 'draft')) actions.push({ key: 'delete', label: isContract ? 'Xóa bản nháp' : `Xóa ${config.singular}`, danger: true, icon: <Trash2 size={16} />, onSelect: () => onDelete(row) });
+    if (canDelete && onDelete && (!isContract || row.status === 'draft' || row.status === 'deposit_contract' && canEditIssuedContract(accessUser, row.store_id))) {
+      actions.push({ key: 'delete', label: isContract ? row.status === 'deposit_contract' ? 'Xóa hợp đồng cọc' : 'Xóa bản nháp' : `Xóa ${config.singular}`, danger: true, icon: <Trash2 size={16} />, onSelect: () => onDelete(row) });
+    }
     return actions;
   };
   return <>{error&&rows.length>0&&<div className="mg-error-message" role="alert">Chưa làm mới được danh sách. Đang giữ dữ liệu đã tải. {error} <button type="button" className="mg-button" onClick={onRetry}>Thử lại</button></div>}
