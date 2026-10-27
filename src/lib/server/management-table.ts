@@ -7,7 +7,7 @@ import { projectManagementTable, type ManagementTableInput, type TableKind } fro
 import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
 import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
-import { contractVehicleDetailsSql,contractVehicleReadSource } from './contract-vehicle-reads';
+import { contractVehicleDetailsSql,contractVehicleReadSource,contractVehicleLabelSource } from './contract-vehicle-reads';
 import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits';
 import { CONTRACT_REVIEW_SQL,EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
@@ -17,6 +17,7 @@ import { applyInstallmentBilling } from '@/lib/management/contract-billing';
 import { OWNERSHIP_HOLD_FIELDS_SQL } from './ownership-hold-fields';
 import { OVERDUE_BUCKETS,withContractMonitoring,type OverdueBucket } from '@/lib/management/contract-overdue';
 import {contractStatisticsSql,mapContractStatistics,fastContractStatistics} from './contract-table-stats';
+import { legacyOwnershipFeeReader } from './legacy-ownership-overdue';
 
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
@@ -59,9 +60,10 @@ function contractPageStatusClause(status:string) {
 /** Only the overdue list needs per-line dates/prices. Reuse the return screen's price source. */
 function overdueDetailsSql(sql:string) {
   return `SELECT listing.*, (SELECT COALESCE(json_agg(json_build_object(
-    'return_at',d.return_at,'daily_price',${dailyPriceSql()} ) ORDER BY d.id),'[]'::json)
+    'return_at',d.return_at,'daily_price',${dailyPriceSql()},'vehicle_type',v.type,'price_type',d.type,
+    'substitute_unit_price',d.substitute_unit_price,'handler_price',d.handler_price ) ORDER BY d.id),'[]'::json)
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-    JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
+    LEFT JOIN ${contractVehicleLabelSource()} v ON v.id=d.vehicle_id
     WHERE d.order_id=listing.id AND d.deleted_at IS NULL AND d.completed_at IS NULL) AS overdue_items
     FROM (${sql}) listing`;
 }
@@ -381,6 +383,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}${all?'':contractDateSql(input.query)}`
     : '';
   const now=Date.now();
+  const legacyFees=legacyOwnershipFeeReader(client);
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   if(!all){
     // Count the permitted list without hydrating other tabs or applying search.
@@ -443,7 +446,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       }
       if(kind==='contracts'){
         batch=batch.map(row=>applyInstallmentBilling(row,now));
-        if(monitoring)batch=batch.map(row=>withContractMonitoring(row,now));
+        if(monitoring)batch=(await legacyFees(batch)).map(row=>withContractMonitoring(row,now));
         if(input.scope==='due')batch=batch.filter(row=>row.billing_overdue_at&&Number(row.billing_due_amount)>0);
       }
       if(filterBeforePaging)batch=input.query.status==='renting'
@@ -464,7 +467,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       if(!stats){
       const base=`${contractStatisticsSql(statsClause,input.scope==='vat')}${search.sql.replaceAll('$3','$1')}`;
       const result=await client.query(monitoring||input.query.overdueDays?overdueDetailsSql(base):base,search.value?[search.value]:[]);
-      const index=result.rows.map(mapContractStatistics).map(row=>['renting','overdue','wait_payment','bad_debt'].includes(row.status)||row.billing_plan_json||input.query.overdueDays?withContractMonitoring(applyInstallmentBilling(row,now),now):row);
+      const index=(await legacyFees(result.rows.map(mapContractStatistics))).map(row=>['renting','overdue','wait_payment','bad_debt'].includes(row.status)||row.billing_plan_json||input.query.overdueDays?withContractMonitoring(applyInstallmentBilling(row,now),now):row);
       // Search is already bound/applied in SQL, including customer and plate
       // EXISTS checks. Those labels need not travel back for a second search.
       stats=projectManagementTable(index,{...input,query:{...input.query,search:''},page:1,size:1},true,now);
@@ -480,5 +483,6 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   }
   const fullSql=kind==='contracts' ? `${CONTRACT_LIST_SQL}${clause}` : CUSTOMER_PROFILE_SQL;
   const result=await client.query(kind==='contracts' ? overdueSql(contractVehicleDetailsSql(fullSql)) : fullSql);
-  return projectManagementTable(mapManagementRows(kind,result.rows),input,all,now);
+  const mapped=mapManagementRows(kind,result.rows);
+  return projectManagementTable(monitoring?await legacyFees(mapped):mapped,input,all,now);
 }

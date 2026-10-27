@@ -33,7 +33,7 @@ export function collectionReportMessages(rows:CollectionRow[],storeName:string,d
   for(const row of rows){
     const f=row.followup;
     const due=row.due_at?new Date(/T\d{2}:\d{2}$/.test(row.due_at)?row.due_at+':00+07:00':row.due_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Chưa có';
-    const text=`\n\n${row.code} · ${row.customer}${row.phone?' · '+row.phone:''}\n${row.vehicle||'Chưa có biển số'} · Hạn ${due} · ${row.days} ngày quá hạn\nNợ đến hạn: ${row.amount===null?'Chưa đối chiếu':row.amount.toLocaleString('vi-VN')}\nGPS: ${row.gps.map(s=>GPS_STATE_LABELS[s]||s).join(', ')||'Chưa có'}\n${CONTACT_STATUSES[f.contact_status]} · ${HANDLING_STATUSES[f.handling_status]}\nTình trạng: ${f.customer_condition||row.customer_status}${f.notes?'\n'+f.notes:''}`;
+    const text=`\n\n${row.code} · ${row.customer}${row.phone?' · '+row.phone:''}\n${row.vehicle||'Chưa có biển số'} · Hạn ${due} · ${row.days} ngày quá hạn\nNợ đến hạn: ${row.amount===null?'Chưa đối chiếu':row.amount.toLocaleString('vi-VN')}${row.late_fee==null?'':`\nPhí quá hạn tạm tính: ${row.late_fee.toLocaleString('vi-VN')}`}\nGPS: ${row.gps.map(s=>GPS_STATE_LABELS[s]||s).join(', ')||'Chưa có'}\n${CONTACT_STATUSES[f.contact_status]} · ${HANDLING_STATUSES[f.handling_status]}\nTình trạng: ${f.customer_condition||row.customer_status}${f.notes?'\n'+f.notes:''}`;
     // Notes stay complete in the app; long notes are abbreviated in Telegram.
     const entry=text.length>2300?text.slice(0,2280)+'… (xem trên web)':text;
     if(chunk.length+entry.length>3800){chunks.push(chunk);chunk=header+' (tiếp)';}chunk+=entry;

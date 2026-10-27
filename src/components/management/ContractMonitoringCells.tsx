@@ -1,5 +1,5 @@
 import type { ManagementRow } from '@/lib/management/types';
-import { isOwnershipContract } from '@/lib/management/contract-overdue';
+import { isOwnershipContract,usesLegacyOwnershipFees } from '@/lib/management/contract-overdue';
 import { formatValue } from '@/lib/management/table-utils';
 import { GPS_STATE_LABELS } from '@/lib/management/gps';
 
@@ -16,6 +16,6 @@ export function contractGpsFields(row:ManagementRow,data:{rows:{vehicle_id:numbe
 export function ContractGpsIndicator({row}:{row:ManagementRow}){return <span className={`mg-status mg-status-${row.contract_gps_tone||'yellow'}`}><span/>{row.contract_gps_status||'Đang kiểm tra…'}</span>;}
 export function ContractMonitoringAmount({row}:{row:ManagementRow}){
   if(row.status==='bad_debt')return <span className="mg-monitoring-amount"><span className="mg-status mg-status-red"><span/>Nợ xấu</span><strong>{row.rental_debt_amount===undefined?'Cần đối chiếu':formatValue(row.rental_debt_amount,'money')}</strong><small>Tiền thuê còn thiếu</small></span>;
-  const owner=isOwnershipContract(row),payment=row.overdue_basis==='payment';
-  return <span className="mg-monitoring-amount"><strong>{row.monitoring_amount===undefined?'Cần đối chiếu':formatValue(row.monitoring_amount,'money')}</strong><small>{payment?'Tiền đến hạn':owner?'Nợ tiền thuê':'Phí trễ tạm tính'}</small>{!owner&&Number(row.rental_debt_amount)>0&&<small>Nợ thuê: {formatValue(row.rental_debt_amount,'money')}</small>}</span>;
+  const owner=isOwnershipContract(row),payment=row.overdue_basis==='payment',legacy=usesLegacyOwnershipFees(row);
+  return <span className="mg-monitoring-amount"><strong>{row.monitoring_amount===undefined?'Cần đối chiếu':formatValue(row.monitoring_amount,'money')}</strong><small>{payment?'Tiền đến hạn':owner&&!legacy?'Nợ tiền thuê':'Phí trễ tạm tính'}</small>{legacy&&<small>Nợ thuê đã ghi nhận: {row.rental_debt_amount===undefined?'Cần đối chiếu':formatValue(row.rental_debt_amount,'money')}</small>}{!owner&&Number(row.rental_debt_amount)>0&&<small>Nợ thuê: {formatValue(row.rental_debt_amount,'money')}</small>}</span>;
 }

@@ -2,6 +2,7 @@ import type { ManagementRow } from './types';
 import { DEFAULT_LATE_HOURLY_RATE,lateReturnFee } from './return-fees';
 import { OWNERSHIP_CONTRACT_TYPES } from './config';
 import { badDebtClock } from './contract-bad-debt';
+import { legacyOwnershipLateFee } from './legacy-ownership-overdue';
 
 export const OVERDUE_BUCKETS=[
   {key:'traditional-overdue',label:'Quá hạn'}, {key:'traditional-3',label:'Trên 3 ngày'}, {key:'traditional-10',label:'Trên 10 ngày'},
@@ -11,6 +12,7 @@ export const OVERDUE_BUCKETS=[
 ] as const;
 export type OverdueBucket=typeof OVERDUE_BUCKETS[number]['key'];
 export function isOwnershipContract(row:ManagementRow){return row.store_kind==='lease_to_own'||OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type));}
+export function usesLegacyOwnershipFees(row:ManagementRow){return Boolean(row.legacy_source_store_id&&row.legacy_source_store_id!=='30'&&isOwnershipContract(row)&&!row.billing_plan_json);}
 export function matchesOverdueBucket(row:ManagementRow,bucket:string){
   if(!bucket)return true;
   const owner=isOwnershipContract(row),minutes=Number(row.overdue_minutes),days=Math.floor(minutes/1440);
@@ -29,7 +31,7 @@ export function matchesOverdueBucket(row:ManagementRow,bucket:string){
   }
 }
 
-interface OverdueItem {return_at?:unknown;completed_at?:unknown;daily_price?:unknown}
+interface OverdueItem {return_at?:unknown;completed_at?:unknown;daily_price?:unknown;legacy_fee_policy?:boolean;legacy_daily_price?:number|null;legacy_hourly_rate?:number|null;legacy_fixed_total?:boolean}
 function itemsFrom(value:unknown):OverdueItem[]|undefined {
   if(typeof value!=='string'||!value)return;
   try {const items=JSON.parse(value);return Array.isArray(items)?items.filter(item=>item&&typeof item==='object'):undefined;}catch{return;}
@@ -50,8 +52,11 @@ export function withContractOverdue(row:ManagementRow,now=Date.now()):Management
     const elapsed=Math.max(clock-due,0);
     minutes=Math.max(minutes??0,Math.floor(elapsed/60000));
     if(!elapsed)continue;
+    if(usesLegacyOwnershipFees(row)&&!item.legacy_fee_policy){unknownFee=true;continue;}
     const price=Number(item.daily_price);
-    const estimate=lateReturnFee(Math.ceil(elapsed/60000),DEFAULT_LATE_HOURLY_RATE,Number.isSafeInteger(price)&&price>0?price:null);
+    const estimate=usesLegacyOwnershipFees(row)&&item.legacy_fee_policy
+      ?legacyOwnershipLateFee(Math.floor(elapsed/60000),item.legacy_daily_price??null,item.legacy_hourly_rate??null,item.legacy_fixed_total)
+      :lateReturnFee(Math.ceil(elapsed/60000),DEFAULT_LATE_HOURLY_RATE,Number.isSafeInteger(price)&&price>0?price:null);
     if(estimate.amount===null)unknownFee=true;else fee+=estimate.amount;
   }
   const total=row.total_amount,paid=row.paid_amount;
@@ -65,7 +70,7 @@ export function withContractMonitoring(row:ManagementRow,now=Date.now()):Managem
   const base=withContractOverdue(row,now);
   if(row.status==='bad_debt')return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:0,monitoring_amount:base.rental_debt_amount};
   const owner=isOwnershipContract(row);
-  if(!owner||!row.billing_plan_json)return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:row.status==='overdue'?1:0,monitoring_amount:owner?base.rental_debt_amount:base.overdue_fee_estimate};
+  if(!owner||!row.billing_plan_json)return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:row.status==='overdue'?1:0,monitoring_amount:owner&&!usesLegacyOwnershipFees(row)?base.rental_debt_amount:base.overdue_fee_estimate};
   if(row.billing_error||row.billing_due_amount===undefined||row.billing_due_amount==='')return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'payment',overdue_minutes:undefined,overdue_days:0,overdue_fee_estimate:undefined,collection_overdue:row.status==='overdue'?1:0,monitoring_amount:undefined};
   const due=String(row.billing_overdue_at||'');
   const dueAt=Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(due)?`${due}:00+07:00`:due);
