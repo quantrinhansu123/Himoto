@@ -5,7 +5,7 @@ const base={start_date:'2026-10-21T09:00',end_date:'2026-10-23T09:00',package_na
 assert.equal(rentalQuote(base).total_amount,400000);
 assert.equal(rentalQuote({...base,vehicles:[{id:'100'},{id:''}]}).total_amount,400000);
 assert.equal(selectedRentalVehicleCount([{id:'100'},{id:'100'},{id:''}]),1);
-assert.equal(rentalQuote({...base,vehicles:[]}).total_amount,0);
+assert.equal(rentalQuote({...base,vehicles:[]}).total_amount,400000);
 assert.equal(rentalQuote({...base,end_date:'2026-10-23T09:01'}).total_amount,600000);
 assert.equal(rentalQuote({...base,package_name:'Theo tuần',end_date:'2026-11-04T09:00',unit_price:'1000000'}).total_amount,2000000);
 assert.equal(rentalQuote({...base,package_name:'Theo tháng',start_date:'2028-01-31T09:00',end_date:'2028-02-29T09:00',unit_price:'3000000'}).total_amount,3000000);

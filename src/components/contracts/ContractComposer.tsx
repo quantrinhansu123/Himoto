@@ -896,6 +896,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
           </>)}
           {panel('vehicle', 'Thông tin phương tiện', <>
             <div className="mg-form-grid mg-contract-grid-two"><DateTime24Field id="contract-start_date" label={reserving ? 'Dự kiến nhận xe' : 'Thuê lúc'} value={draft.start_date} onChange={changeRentalStart} error={errors.start_date} /><DateTime24Field id="contract-end_date" label="Hẹn trả" value={draft.end_date} onChange={changeRentalEnd} error={errors.end_date} /></div>
+            {!reserving && <p className="mg-composer-hint">Có thể chọn ngày trước để khớp doanh thu. Doanh thu theo lượt thuê lấy giờ thuê. Khi hoàn tất, thời điểm nhận tiền lấy cùng giờ đó nếu thuộc ngày trước, và đó là ngày doanh thu thực thu.</p>}
             <div className="mg-form-grid mg-contract-grid-two"><div className="mg-field"><label htmlFor="contract-rental-days">Số ngày thuê</label><input id="contract-rental-days" type="number" min="1" step="1" value={rentalDays} aria-invalid={Boolean(errors.rental_days)} onChange={event=>changeRentalDays(event.target.value)} /><small>Nhập số ngày để tự tính ngày trả, giữ cùng giờ thuê. Có thể sửa hẹn trả trực tiếp.</small>{errors.rental_days && <p className="mg-field-error">{errors.rental_days}</p>}</div>
               <div className="mg-field"><label htmlFor="contract-vehicle-store-filter">Cửa hàng xe</label><select id="contract-vehicle-store-filter" value={staffStoreId} onChange={event=>changeVehicleStore(event.target.value)}><option value="">Chọn cửa hàng xe</option>{vehicleStoreOptions.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select><small>Cửa hàng có xe (mọi cơ sở) và gợi ý nhân viên làm hợp đồng. Lựa chọn được lưu cùng hợp đồng.</small></div></div>
             <button type="button" className="mg-button" disabled={inventoryLoading} onClick={() => setInventoryRetry(value => value + 1)}>{inventoryLoading?'Đang tải kho xe…':'Làm mới kho xe'}</button>
@@ -950,7 +951,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
               {moneyField('total_amount', 'Tổng tiền thuê và phí khác (VNĐ)', true)}
               <div className="mg-field"><label htmlFor="contract-amount-due">Tổng cần thu gồm cọc (VNĐ)</label><input id="contract-amount-due" readOnly value={formatMoneyInput(String((Number(draft.deposit_amount)||0)+(Number(draft.total_amount)||0)))}/><small>Gồm cọc + tiền thuê + phí khác. Đây là số cần thu, chưa phải tiền đã nhận.</small></div>
             </div>
-            <p className="mg-composer-hint">Bấm Hoàn tất & thanh toán để xác nhận tiền đã nhận, chọn tài khoản/tiền mặt và lưu hợp đồng. Có thể ghi nhận đã thanh toán đủ, thu một phần hoặc chưa thu.</p>
+            <p className="mg-composer-hint">Bấm Hoàn tất & thanh toán để xác nhận tiền đã nhận, chọn tài khoản/tiền mặt và lưu hợp đồng. Có thể ghi nhận đã thanh toán đủ, thu một phần hoặc chưa thu. Hợp đồng của ngày trước vẫn lập tại đây; giờ thuê quyết định ngày doanh thu theo lượt, thời điểm nhận quyết định doanh thu thực thu.</p>
             {source === 'api' && <div className="mg-field mg-field-wide"><RecordPhotoFields key={`evidence-payment-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractEvidenceSlots('rental')} title="Ảnh hợp đồng đã ký & bill chuyển khoản" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setMediaBusy('evidence-payment')}/><p>Chụp hợp đồng giấy đã ký và bill CK / tổng tiền mặt. Cùng các ô ở mục Ký kết; lưu với bản nháp, gửi Telegram khi bấm Gửi toàn bộ.</p></div>}
           </>)}
           {panel('signing', 'Ký kết & Ghi chú', <div className="mg-form-grid mg-contract-grid-two">
@@ -984,7 +985,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     {document && <ContractPrintPreview doc={document} contractId={savedDraft?.id || row?.id} onClose={() => setDocument(null)} />}
     {typeManagerOpen && <ContractTypeManager onClose={()=>setTypeManagerOpen(false)} onCreated={type=>{changeRentalType(type);setTypeManagerOpen(false);}} />}
     {finalizeTarget && <ContractFinalizeDialog orderId={finalizeTarget.id} revision={finalizeTarget.revision} code={finalizeTarget.code}
-      total={Number(draft.total_amount) || 0} deposit={Number(draft.deposit_amount) || 0} reservation={reserving}
+      total={Number(draft.total_amount) || 0} deposit={Number(draft.deposit_amount) || 0} reservation={reserving} rentalStart={draft.start_date}
       depositMethods={draftPaymentMethods(draft.deposit_payment_method)} rentalMethods={draftPaymentMethods(draft.payment_method)} charges={draft.extra_charges}
       onClose={() => setFinalizeTarget(null)} onDone={result => { setFinalizeTarget(null); onClose(); onFinalized?.(result); }} />}
   </>;

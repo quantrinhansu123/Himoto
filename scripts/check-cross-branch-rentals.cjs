@@ -6,6 +6,11 @@ async function run() {
   const time = load(path.join(root, 'lib/management/rental-time'));
   const document = load(path.join(root, 'lib/management/contract-document'));
   const checks = [];
+  const receiptNow = new Date('2026-10-27T04:00:00Z');
+  assert.equal(time.historicalReceiptTime('2026-10-25T15:30', receiptNow), '2026-10-25T15:30');
+  assert.equal(time.historicalReceiptTime('2026-10-27T09:00', receiptNow), '2026-10-27T11:00');
+  assert.equal(time.historicalReceiptTime('2026-10-28T09:00', receiptNow), '2026-10-27T11:00');
+  assert.equal(time.historicalReceiptTime('nope', receiptNow), '2026-10-27T11:00');
   assert.equal(time.vietnamRentalTime(new Date('2026-10-11T08:30:00Z')), '2026-10-11T15:30');
   assert.equal(time.vietnamRentalTime(new Date('2026-12-31T17:00:00Z')), '2027-01-01T00:00');
   assert.equal(time.addRentalDuration('2026-10-12T17:00:00.000Z', 1, 'day'), '2026-10-14T00:00');
@@ -28,7 +33,7 @@ async function run() {
   assert.equal(fresh.end_date,time.addRentalDays(fresh.start_date,'1'));
   const existing = document.createContractDraft(empty,'all',{id:1,status:'draft',draft_json:JSON.stringify({...fresh,start_date:'2020-02-29T15:30',end_date:'2020-03-01T15:30'})});
   assert.equal(existing.start_date,'2020-02-29T15:30');
-  checks.push('Vietnam 24-hour defaults, leap days, month/year rollover, invalid durations/dates and saved draft times');
+  checks.push('Vietnam 24-hour defaults, past-day receipt time, leap days, month/year rollover, invalid durations/dates and saved draft times');
 
   if (process.argv.includes('--live-temp')) {
     const db = load(path.join(root,'lib/server/himoto-database')).himotoPool;

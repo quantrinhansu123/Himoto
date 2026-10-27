@@ -5,6 +5,14 @@ export function vietnamRentalTime(now = new Date()): string {
   return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
 }
 
+/** Cash revenue uses the receipt time. A rental that started on an earlier day keeps that time. */
+export function historicalReceiptTime(start: string, now = new Date()): string {
+  const current = vietnamRentalTime(now);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(start) || start.slice(0, 10) >= current.slice(0, 10)) return current;
+  const time = Date.parse(`${start}:00+07:00`);
+  return Number.isFinite(time) && time <= now.getTime() + 5 * 60_000 ? start : current;
+}
+
 function localMilliseconds(value: string): number | null {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
   if (!match) return null;

@@ -52,13 +52,17 @@ const listQueries: Record<string, QueryConfig> = {
             LEFT JOIN himoto.orders o ON o.id=b.order_id
             LEFT JOIN himoto.customers c ON c.id=o.customer_id
             GROUP BY b.vehicle_id
-          ) SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
+          ) SELECT v.id, v.name, v.brand, v.type, v.year, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, v.xmin::text AS vehicle_revision,
                  pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
                  pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
                  pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
                  r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
+                 CASE WHEN r.rentals IS NOT NULL AND jsonb_typeof(r.rentals)='array' AND jsonb_array_length(r.rentals)>0
+                   AND v.status IN ('ready') THEN 'using'
+                   WHEN v.status='rent' THEN 'using' WHEN v.status='maintenance' THEN 'repairing' WHEN v.status='holding' THEN 'pending'
+                   ELSE v.status END AS status,
                  gps.has_device AS gps_has_device,
                  gps.normalized_status AS gps_normalized_status,
                  gps.last_at AS gps_last_at,gps.latitude AS gps_latitude,gps.longitude AS gps_longitude,gps.synced_at AS gps_last_sync,gps.provider AS gps_provider,
@@ -89,7 +93,7 @@ const listQueries: Record<string, QueryConfig> = {
           ) b
           LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
           ${VEHICLE_GPS_JOIN_SQL}
-          WHERE COALESCE(v.current_store_id,v.store_id)>0
+          WHERE v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0
           ORDER BY v.id DESC`,
   },
   'order/car-rental': {

@@ -247,10 +247,10 @@ export function vehiclePageSql(scopeClause:string) {
     v.xmin::text AS vehicle_revision
     FROM himoto.vehicles v
     LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
-    WHERE COALESCE(v.current_store_id,v.store_id)>0${scopeClause}`;
+    WHERE v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${scopeClause}`;
 }
 function vehicleHydrateSql() {
-  return `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer,
+  return `SELECT v.id, v.name, v.brand, v.type, v.year, v.license, v.odometer,
     NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
     v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, v.xmin::text AS vehicle_revision,
     pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
@@ -260,6 +260,10 @@ function vehicleHydrateSql() {
     COALESCE(r.store_id, v.current_store_id, v.store_id) AS beneficiary_store_id,
     COALESCE(bs.store_name, s.store_name) AS beneficiary_store_name,
     COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
+    CASE WHEN r.rentals IS NOT NULL AND jsonb_typeof(r.rentals)='array' AND jsonb_array_length(r.rentals)>0
+      AND v.status IN ('ready') THEN 'using'
+      WHEN v.status='rent' THEN 'using' WHEN v.status='maintenance' THEN 'repairing' WHEN v.status='holding' THEN 'pending'
+      ELSE v.status END AS status,
     gps.has_device AS gps_has_device, gps.normalized_status AS gps_normalized_status, gps.last_at AS gps_last_at,
     gps.latitude AS gps_latitude, gps.longitude AS gps_longitude, gps.synced_at AS gps_last_sync, gps.provider AS gps_provider,
     gps.heartbeat_at AS gps_heartbeat_at, gps.position_recorded_at AS gps_position_at,
@@ -333,7 +337,7 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
   const {kind,store,query}=input;
   const source=kind==='customers'?'himoto.customers c':kind==='vehicles'?'himoto.vehicles v':kind==='staff'?'himoto.staff_profiles p':'himoto.stores s';
   const scope=kind==='customers'?customerPageClause(store,'')
-    :kind==='vehicles'?` AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{})}`
+    :kind==='vehicles'?` AND v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{})}`
     :kind==='staff'?staffPageClause(store,'',{}):'';
   const filters=kind==='vehicles'?`${vehiclePageClause('all','',query.filters)}${vehicleDerivedClause(query)}`:kind==='staff'?staffPageClause('all','',query.filters):'';
   const selected=kind==='customers'?customerPageClause('all',query.status)

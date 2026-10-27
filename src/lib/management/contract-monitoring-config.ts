@@ -12,6 +12,7 @@ export function compactContractConfig(config:ManagementConfig, mode:'monitoring'
     {key:'monitoring_amount',label:'Số tiền',format:'money',align:'right'},
     {key:'contract_gps_status',label:'Định vị',sortable:false},
   ];
+  if(mode==='ownership')columns.splice(5,0,{key:'contract_type_name',label:'Loại hợp đồng'});
   if(mode!=='monitoring'&&mode!=='ownership')columns.splice(5,3,
     ...(mode==='due' ? [
       {key:'billing_next_due_at',label:'Hẹn đóng tiền',format:'date',align:undefined},
@@ -21,5 +22,6 @@ export function compactContractConfig(config:ManagementConfig, mode:'monitoring'
     ] as ManagementColumn[]),
     {key:'status',label:'Trạng thái',format:'status'});
   const optional=(mode==='monitoring'?config.columns:[...config.columns,{key:'contract_gps_status',label:'Định vị',sortable:false}]).filter(column=>!['start_date','end_date'].includes(column.key));
-  return {...config,columns:[...columns,...optional.filter(column=>!columns.some(item=>item.key===column.key)).map(column=>({...column,hidden:true}))]};
+  // Preserve columns the page explicitly un-hid (ownership keeps loại hợp đồng visible).
+  return {...config,columns:[...columns,...optional.filter(column=>!columns.some(item=>item.key===column.key)).map(column=>({...column,hidden:column.hidden===false?false:true}))]};
 }

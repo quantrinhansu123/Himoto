@@ -16,8 +16,8 @@ export function rentalQuote(draft: {
   const price = Number(draft.unit_price), fees = chargeTotal(draft.extra_charges);
   if (!periods || !/^\d+$/.test(draft.unit_price) || !Number.isSafeInteger(price) || price > MAX_PAYMENT_AMOUNT ||
       vehicles > 20 || fees === null) return null;
-  // The entered rate covers every selected vehicle for one billing period.
-  const rental = vehicles ? periods * price : 0, total = rental + fees;
+  // Contract rate covers the whole rental for one period; days/unit update total even before a vehicle is picked.
+  const rental = periods * price, total = rental + fees;
   if (!Number.isSafeInteger(total) || total > MAX_PAYMENT_AMOUNT) return null;
   return { vehicle_count: vehicles, period_count: periods, unit_price: price, rental_amount: rental, extra_amount: fees, total_amount: total };
 }

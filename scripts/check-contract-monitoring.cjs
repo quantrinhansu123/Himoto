@@ -76,7 +76,7 @@ async function main(){
   const ownership=compactContractConfig(MANAGEMENT_CONFIG.contracts,'ownership');
   assert.equal(normal.columns.filter(column=>!column.hidden).length,7);
   assert.deepEqual(normal.columns.filter(column=>!column.hidden).map(column=>column.key),['code','rental_period','deposit_amount','customer_name','license','total_amount','status']);
-  assert.deepEqual(ownership.columns.filter(column=>!column.hidden).map(column=>column.key),['code','rental_period','deposit_amount','customer_name','license','overdue_minutes','monitoring_amount','contract_gps_status']);
+  assert.deepEqual(ownership.columns.filter(column=>!column.hidden).map(column=>column.key),['code','rental_period','deposit_amount','customer_name','license','contract_type_name','overdue_minutes','monitoring_amount','contract_gps_status']);
   for(const key of ['representative_name','sales_staff_name','store_name','return_adjustment_amount'])assert.equal(normal.columns.find(column=>column.key===key).hidden,true);
   const dateSort=projectManagementTable([{...base,id:80,status:'renting',signed_on:'2026-10-20'},{...base,id:81,status:'renting',signed_on:'2026-10-01'}],{...input,scope:'',sort:'contract_signed_at',direction:'asc'},true,now);
   assert.deepEqual(dateSort.rows.map(row=>row.id),[81,80]);

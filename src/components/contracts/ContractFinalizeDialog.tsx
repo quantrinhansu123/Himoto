@@ -8,6 +8,7 @@ import { PAYMENT_METHOD_FALLBACK } from '@/lib/management/contract-finalize';
 import { FinalizeCollection, FinalizeOverlapError, FinalizeResult, balanceCollectionAmounts, finalizeContract } from '@/lib/management/contract-finalize';
 import type { ContractCharge } from '@/lib/management/contract-charges';
 import { DateTime24Field } from './DateTime24Field';
+import { historicalReceiptTime } from '@/lib/management/rental-time';
 import { ContractTransactionPhotos } from '@/components/management/ContractTransactionPhotos';
 import { ContractTelegramPanel } from '@/components/management/ContractTelegramPanel';
 
@@ -16,9 +17,9 @@ const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.'
 interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string; label?: string; automatic?: boolean }
 interface CollectionState { collect: boolean; rows: CollectionRow[] }
 
-export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, onClose, onDone }: {
+export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, rentalStart = '', onClose, onDone }: {
   orderId: number; revision: string; code: string; total: number; deposit: number; depositMethods: PaymentMethod[]; rentalMethods: PaymentMethod[];
-  charges?: ContractCharge[]; reservation?: boolean; onClose: () => void; onDone: (result: FinalizeResult) => void;
+  charges?: ContractCharge[]; reservation?: boolean; rentalStart?: string; onClose: () => void; onDone: (result: FinalizeResult) => void;
 }) {
   const [context,setContext] = useState<PaymentContext|null>(null), [loadError,setLoadError] = useState('');
   const [depositState,setDepositState] = useState<CollectionState>({collect:false,rows:[]});
@@ -31,7 +32,9 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   const busy = useRef(false), nextKey = useRef(0);
   const initialMethods = useRef({deposit:depositMethods,rental:rentalMethods,charges});
   const depositDue = Math.max(deposit-(context?.deposit_paid || 0),0), rentalDue = Math.max(total-(context?.paid_amount || 0),0);
-  const newRow = (method: PaymentMethod, amount = ''): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime()});
+  const paidDefault = useRef(reservation ? vietnamPaymentTime() : historicalReceiptTime(rentalStart)).current;
+  const backdated = paidDefault.slice(0, 10) < vietnamPaymentTime().slice(0, 10);
+  const newRow = (method: PaymentMethod, amount = ''): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:paidDefault});
 
   useEffect(()=>{
     const controller = new AbortController();
@@ -45,7 +48,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
         const fallback = PAYMENT_METHOD_FALLBACK.find(usable);
         return [fallback || 'transfer' as PaymentMethod];
       };
-      const row = (method: PaymentMethod, amount: string, label?: string): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:vietnamPaymentTime(),label});
+      const row = (method: PaymentMethod, amount: string, label?: string): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:paidDefault,label});
       const seed = (due: number, methods: PaymentMethod[], label?: string) => {
         const usableMethods = withAccounts(methods);
         return due>0 ? usableMethods.map((method,index)=>({...row(method,usableMethods.length===1 ? String(due) : '',label),automatic:!reservation && usableMethods.length>1 && index===usableMethods.length-1})) : [];
@@ -64,7 +67,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       setRentalState({collect:rentalDue>0,rows:reservation ? rentalRows.map(item=>({...item,amount:''})) : rentalRows});
     }).catch(cause=>{if(!controller.signal.aborted)setLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');});
     return ()=>controller.abort();
-  },[orderId,deposit,total,reservation]);
+  },[orderId,deposit,total,reservation,paidDefault]);
 
   const accountsFor = (row: CollectionRow) => context ? paymentAccounts(context,row.method) : [];
   const chosenAccount = (row: CollectionRow) => accountsFor(row).find(account => paymentAccountKey(account) === row.account) || accountsFor(row)[0];
@@ -150,7 +153,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   </Dialog>;
   return <Dialog title={`${reservation ? 'Xác nhận cọc giữ xe' : 'Xác nhận thanh toán'} · ${code}`} onClose={saving ? ()=>{} : onClose}>
     <form onSubmit={submit}><div className="mg-dialog-body mg-finalize-dialog">
-      <p className="mg-composer-hint">{reservation ? 'Nhập đúng tiền giữ xe đã nhận (ví dụ 100.000 hoặc 200.000 đ), thời điểm và tài khoản nhận. Khoản này trừ vào tiền thuê, tạo phiếu Thu ngay; xe ở trạng thái chờ giao, chưa Đang thuê.' : 'Ghi đúng từng khoản tiền đã nhận và tài khoản nhận. Cọc trước ghi ngày nhận trước đó; mỗi lần chuyển khoản hoặc nhận tiền mặt thêm một dòng. Sau xác nhận, hợp đồng được phát hành và xe chuyển sang Đang thuê.'}</p>
+      <p className="mg-composer-hint">{reservation ? 'Nhập đúng tiền giữ xe đã nhận (ví dụ 100.000 hoặc 200.000 đ), thời điểm và tài khoản nhận. Khoản này trừ vào tiền thuê, tạo phiếu Thu ngay; xe ở trạng thái chờ giao, chưa Đang thuê.' : 'Ghi đúng từng khoản tiền đã nhận và tài khoản nhận. Cọc trước ghi ngày nhận trước đó; mỗi lần chuyển khoản hoặc nhận tiền mặt thêm một dòng. Thời điểm nhận là ngày doanh thu thực thu. Sau xác nhận, hợp đồng được phát hành và xe chuyển sang Đang thuê.'}</p>
+      {backdated && <p className="mg-billing-reminder">Giờ thuê thuộc ngày trước, nên thời điểm nhận đang lấy theo giờ đó để doanh thu vào đúng ngày. Sửa từng khoản nếu tiền thực nhận vào ngày khác.</p>}
       {charges.length>0 && <p className="mg-composer-hint">Phí khác trong hợp đồng: {charges.filter(item=>Number(item.amount)>0).map(item=>`${item.name}: ${money(Number(item.amount))}`).join(' · ')}</p>}
       {loadError ? <p role="alert" className="mg-field-error">{loadError}</p> : !context ? <p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải tài khoản nhận tiền…</p> : <>
         {!reservation && section('deposit','Tiền cọc',deposit,depositDue,depositState,setDepositState)}
