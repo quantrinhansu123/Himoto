@@ -57,6 +57,7 @@ async function main(){
    assert.equal((await staff(()=>db.query('SELECT id FROM himoto.vehicle_inventory() WHERE id=16'))).rowCount,0);
    const archived=(await staff(()=>returns.loadContractReturnableItems(db,111)))[0];
    assert.equal(archived.item_id,1110);assert.equal(archived.vehicle_id,16);assert.equal(archived.license,'QA-LIFE-16');assert.equal(archived.completed_at,null);
+   const payment=await staff(()=>payments.readPaymentContext(db,111));assert.deepEqual(payment.items.map(i=>i.id),[1110]);assert.equal(payment.items[0].license,'QA-LIFE-16');
    for(const term of ['QA-LIFE-111','QA-LIFE-16'])assert.deepEqual((await staff(()=>returns.searchReturnableItems(db,term))).map(i=>i.item_id),[1110]);
    await db.query("INSERT INTO himoto.orders(id,store_id,order_status,contract_number,total,pid) VALUES(211,80003,'renting','QA-ARCHIVED-FOREIGN','100000',100000)");
    await db.query("INSERT INTO himoto.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,completed_at) VALUES(2110,211,16,'2026-09-01T08:00+07','2026-09-02T08:00+07','2026-09-02T08:00+07')");
@@ -68,6 +69,19 @@ async function main(){
    assert.deepEqual((await db.query('SELECT deleted_at,store_id,current_store_id FROM himoto.vehicles WHERE id=16')).rows[0],before);
    assert.equal((await staff(()=>db.query('SELECT id FROM himoto.vehicle_inventory() WHERE id=16'))).rowCount,0);
  });checks.push('Scoped archived stock stays absent from inventory, but its in-scope rental line and plate search remain returnable; an explicit paid return completes the agreement without restoring the vehicle, exposing foreign contracts or losing its original line ID');
+ await isolated(async()=>{
+   await db.query("UPDATE himoto.vehicles SET store_id=0,current_store_id=0,deleted_at=now() WHERE id IN(10,11)");
+   await db.query('UPDATE himoto.orders SET pid=1000000 WHERE id=100');
+   const complete=load(path.join(root,'lib/server/return-settlements')).completeReturnBatch;
+   for(const [itemId,expectedOpen,expectedStatus]of [[1000,1,'overdue'],[1001,0,'completed']]){
+     const line=(await staff(()=>returns.loadContractReturnableItems(db,100))).find(i=>i.item_id===itemId);
+     const result=await staff(()=>complete(db,70001,[returns.parseReturnInput({item_id:itemId,item_revision:line.item_revision,returned_at:'2026-10-24T11:00',hourly_rate:'50000',fee_override:'0'})],[{order_id:100,revision:line.order_revision,receipts:[]}])) ;
+     assert.equal(result[0].status,expectedStatus);
+     const context=await staff(()=>payments.readPaymentContext(db,100));assert.equal(context.items.length,expectedOpen);assert.equal(context.status,expectedStatus);
+   }
+   const vehicles=(await db.query('SELECT deleted_at,store_id,current_store_id FROM himoto.vehicles WHERE id IN(10,11)')).rows;
+   assert(vehicles.every(v=>v.deleted_at&&Number(v.store_id)===0&&Number(v.current_store_id)===0));
+ });checks.push('A paid multi-vehicle contract with archived stock stays open after the first return; payment context counts the remaining archived line and only the last explicit return completes it without restoring stock');
  const reconcile=async(extra={})=>{
    const entry={kind:'confirmed_prior_recovery',item_id:1110,vehicle_id:16,actual_recovery_at:null,release_checkpoint_at:'2026-10-23T13:35:49.848Z',...extra};
    await db.query("UPDATE himoto.order_vehicle_details SET rent_at='2026-06-10T10:55+07',return_at='2026-09-09T10:55+07',completed_at='2026-10-23T13:35:49.848Z' WHERE id=1110");
