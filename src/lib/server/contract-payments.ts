@@ -226,7 +226,9 @@ export async function recordContractPayment(client: Database, id: number, actorI
   await client.query(`INSERT INTO himoto.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload)
     VALUES ($1,$2,$3,$4,$5,$6::jsonb)`, [input.request_id, id, transactionId, actorId, fingerprint, renewalPayload ? JSON.stringify(renewalPayload) : null]);
   const composer=locked.rows[0].draft_payload?.management_composer;
-  if(!refund&&!deposit&&(composer?.draft?.backfill||composer?.versions?.some((version:{occurred_at?:string})=>version.occurred_at))){
+  // A final debt receipt closes any fully returned contract awaiting settlement.
+  // Bad debt and holds keep their separate explicit settlement/completion workflows.
+  if(!refund&&!deposit){
     const fresh=await readPaymentContext(client,id);
     if(fresh.status==='wait_payment'&&fresh.remaining===0)await client.query(`UPDATE himoto.orders o SET order_status='completed',updated_at=now() WHERE o.id=$1 AND o.order_status='wait_payment'
       AND EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND d.completed_at IS NOT NULL)

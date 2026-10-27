@@ -47,6 +47,27 @@ async function main(){
  const input=async(id,action,extra={})=>({action,revision:await rev(id),request_id:randomUUID(),note:'Reviewed physical state and ledger QA',at:'2026-10-24T10:00',confirmed:true,...(action==='hold'?{hold_until:domain.localLifecycleTime(new Date(Date.parse((extra.at||'2026-10-24T10:00')+':00+07:00')+86400000))}:{}),...extra});
  const apply=async(id,action,extra={})=>staff(async()=>life.applyContractLifecycle(db,id,70001,await input(id,action,extra)));
  const recover=async item=>staff(async()=>returns.recordBadDebtRecovery(db,70001,{item_id:item,item_revision:(await db.query('SELECT xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=$1',[item])).rows[0].revision,request_id:randomUUID(),recovered_at:'2026-10-24T11:00',note:'Vehicle physically recovered QA'}));
+ await isolated(async()=>{
+   await db.query("UPDATE himoto.vehicles SET store_id=0,current_store_id=0,deleted_at=now() WHERE id=16");
+   await db.query("UPDATE himoto.orders SET pid=750000 WHERE id=111");
+   await db.query("UPDATE himoto.order_vehicle_details SET return_at='2026-10-10T08:00+07' WHERE id=1110");
+   const definition=(await c.query("SELECT pg_get_functiondef($1::regprocedure) AS sql",[schema+'.vehicle_inventory()'])).rows[0].sql;
+   const filtered=definition.replace('FROM '+schema+'.vehicles v','FROM (SELECT * FROM '+schema+'.vehicles WHERE deleted_at IS NULL AND COALESCE(current_store_id,store_id)>0) v');
+   assert.notEqual(filtered,definition);await c.query(filtered);
+   assert.equal((await staff(()=>db.query('SELECT id FROM himoto.vehicle_inventory() WHERE id=16'))).rowCount,0);
+   const archived=(await staff(()=>returns.loadContractReturnableItems(db,111)))[0];
+   assert.equal(archived.item_id,1110);assert.equal(archived.vehicle_id,16);assert.equal(archived.license,'QA-LIFE-16');assert.equal(archived.completed_at,null);
+   for(const term of ['QA-LIFE-111','QA-LIFE-16'])assert.deepEqual((await staff(()=>returns.searchReturnableItems(db,term))).map(i=>i.item_id),[1110]);
+   await db.query("INSERT INTO himoto.orders(id,store_id,order_status,contract_number,total,pid) VALUES(211,80003,'renting','QA-ARCHIVED-FOREIGN','100000',100000)");
+   await db.query("INSERT INTO himoto.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,completed_at) VALUES(2110,211,16,'2026-09-01T08:00+07','2026-09-02T08:00+07','2026-09-02T08:00+07')");
+   assert.deepEqual(await staff(()=>returns.loadContractReturnableItems(db,211)),[]);
+   assert.deepEqual((await staff(()=>returns.searchReturnableItems(db,'QA-LIFE-16'))).map(i=>i.item_id),[1110]);
+   const before=(await db.query('SELECT deleted_at,store_id,current_store_id FROM himoto.vehicles WHERE id=16')).rows[0];
+   const result=await staff(()=>returns.recordVehicleReturn(db,70001,returns.parseReturnInput({item_id:1110,item_revision:archived.item_revision,returned_at:'2026-10-24T11:00',hourly_rate:'50000',fee_override:'0'})));
+   assert.equal(result.status,'completed');
+   assert.deepEqual((await db.query('SELECT deleted_at,store_id,current_store_id FROM himoto.vehicles WHERE id=16')).rows[0],before);
+   assert.equal((await staff(()=>db.query('SELECT id FROM himoto.vehicle_inventory() WHERE id=16'))).rowCount,0);
+ });checks.push('Scoped archived stock stays absent from inventory, but its in-scope rental line and plate search remain returnable; an explicit paid return completes the agreement without restoring the vehicle, exposing foreign contracts or losing its original line ID');
  const reconcile=async(extra={})=>{
    const entry={kind:'confirmed_prior_recovery',item_id:1110,vehicle_id:16,actual_recovery_at:null,release_checkpoint_at:'2026-10-23T13:35:49.848Z',...extra};
    await db.query("UPDATE himoto.order_vehicle_details SET rent_at='2026-06-10T10:55+07',return_at='2026-09-09T10:55+07',completed_at='2026-10-23T13:35:49.848Z' WHERE id=1110");

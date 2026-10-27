@@ -1,6 +1,6 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
-import { contractVehicleReadSource } from './contract-vehicle-reads';
+import { contractVehicleLabelSource } from './contract-vehicle-reads';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import type { BadDebtRecoveryInput, BadDebtRecoveryResult, ReturnableContractItem, ReturnInput, ReturnResult } from '@/lib/management/contract-returns';
@@ -55,7 +55,7 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
   COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) AS contract_code,
   CASE WHEN o.order_status='renting' AND d.return_at < now() THEN 'overdue' ELSE o.order_status END AS order_status,
   COALESCE(c.name,o.customer_name,'') AS customer_name,COALESCE(c.id_card::text,o.customer_idnumber::text,'') AS customer_id_card,
-  v.id AS vehicle_id,v.name AS vehicle_name,v.license, o.store_id,s.store_name,
+  d.vehicle_id AS vehicle_id,v.name AS vehicle_name,v.license, o.store_id,s.store_name,
   d.rent_at AS scheduled_start_at,d.return_at AS scheduled_return_at,d.completed_at,d.xmin::text AS item_revision,o.xmin::text AS order_revision,
   NULLIF(o.total::text,'')::numeric AS total_amount,o.draft_payload,${rentalPaidSql()} AS paid_amount,dep.paid AS deposit_paid,dep.paid-dep.refunded AS deposit_held,
   (d.completed_at IS NULL AND d.return_at < now()) AS overdue,
@@ -69,7 +69,9 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
   WHERE d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
     AND o.order_status IN ('renting','overdue','wait_payment','completed','bad_debt')`;
 
-const returnableSql = (includeBadDebt=false) => RETURNABLE_SQL.replace('JOIN himoto.vehicles v', `JOIN ${contractVehicleReadSource()} v`)+(includeBadDebt?'':" AND o.order_status<>'bad_debt'");
+// Stock can be archived or moved after a legacy agreement was issued. The rental
+// line remains returnable; labels are limited to contracts in the caller's scope.
+const returnableSql = (includeBadDebt=false) => RETURNABLE_SQL.replace('JOIN himoto.vehicles v', `LEFT JOIN ${contractVehicleLabelSource()} v`)+(includeBadDebt?'':" AND o.order_status<>'bad_debt'");
 
 function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractItem[] {
   return rows.map(row => {
@@ -103,7 +105,7 @@ export async function searchReturnableItems(client: Database, query: string): Pr
       OR ($2 <> '' AND regexp_replace(COALESCE(NULLIF(c.phone,''),o.customer_phone,''),'\\D','','g')=$2)
       OR o.id IN (
         SELECT matched.order_id FROM himoto.order_vehicle_details matched
-        JOIN ${contractVehicleReadSource()} matched_vehicle ON matched_vehicle.id=matched.vehicle_id
+        JOIN ${contractVehicleLabelSource()} matched_vehicle ON matched_vehicle.id=matched.vehicle_id
         WHERE matched.deleted_at IS NULL
           AND (matched_vehicle.license ILIKE $1 ESCAPE '\\'
             OR ($3 <> '' AND regexp_replace(upper(COALESCE(matched_vehicle.license,'')),'[^A-Z0-9]','','g') LIKE '%'||$3||'%'))))

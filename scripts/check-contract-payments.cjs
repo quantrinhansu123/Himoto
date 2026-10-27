@@ -226,6 +226,37 @@ async function main() {
       assert.equal((await c.query('SELECT count(*)::int AS count FROM qa_payment_transactions WHERE order_id=1')).rows[0].count,1);
       checks.push('TEMP historical renewal and original-date receipt commit together, restore completed status when fully paid, preserve actual vehicle return and replay without a second fee/receipt');
       await c.query('ROLLBACK TO SAVEPOINT historical_renewal_collection');await c.query('RELEASE SAVEPOINT historical_renewal_collection');
+      await c.query('SAVEPOINT ordinary_returned_payment');
+      for(const [id,status,lineCount,open]of [[10,'wait_payment',2,false],[11,'wait_payment',2,true],[12,'renting',1,true],[13,'overdue',1,true],[14,'wait_payment',0,false],[15,'reserved',1,false],[16,'bad_debt',1,false],[17,'wait_payment',1,false],[18,'wait_payment',1,false]]){
+        await c.query("INSERT INTO qa_payment_orders(id,contract_number,order_status,store_id,total,pid,first_deposit_amount,additional_deposit_amount,draft_payload) VALUES($1,$2,$3,23,'1000',0,0,0,'{}')",[id,'QA-RETURNED-'+id,status]);
+        for(let n=0;n<lineCount;n++)await c.query("INSERT INTO qa_payment_order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,completed_at,deleted_at) VALUES($1,$2,$3,'2026-01-01T10:00+07','2026-01-10T10:00+07',$4::timestamptz,$5::timestamptz)",[10000+id*10+n,id,100+n,open&&n===lineCount-1?null:'2026-01-15T10:00+07',id===18?'2026-01-16T10:00+07':null]);
+      }
+      await c.query("UPDATE qa_payment_orders SET pid=700,first_deposit_amount=500 WHERE id=10;UPDATE qa_payment_orders SET pid=1000,first_deposit_amount=500 WHERE id=17");
+      await c.query("INSERT INTO qa_payment_transactions(order_id,name,type,status,value,store_id,user_id,cash_id,note,created_at) VALUES(10,'order:deposit','in','approved',500,23,143,1,'Returned-contract deposit QA','2026-01-01T10:00+07')");
+      const beforeReturnedLines=(await c.query('SELECT * FROM qa_payment_order_vehicle_details WHERE order_id=10 ORDER BY id')).rows;
+      const beforeVehicles=(await c.query('SELECT * FROM qa_payment_vehicles ORDER BY id')).rows;
+      const partialReturned=await pay({amount:'300',paid_at:'2026-01-20T10:01'},10);
+      assert.equal(partialReturned.context.status,'wait_payment');assert.equal(partialReturned.context.remaining,500);
+      const finalKey=randomUUID(),fullReturned=await pay({request_id:finalKey,amount:'500',paid_at:'2026-01-20T10:01'},10);
+      assert.equal(fullReturned.context.status,'completed');assert.equal(fullReturned.context.remaining,0);assert.equal(fullReturned.context.paid_amount,1000);assert.equal(fullReturned.context.deposit_held,500);
+      assert.equal(fullReturned.context.total_amount,1000);
+      assert.deepEqual((await c.query('SELECT * FROM qa_payment_order_vehicle_details WHERE order_id=10 ORDER BY id')).rows,beforeReturnedLines);
+      assert.deepEqual((await c.query('SELECT * FROM qa_payment_vehicles ORDER BY id')).rows,beforeVehicles);
+      const replayReturned=await pay({request_id:finalKey,revision:'0',amount:'500',paid_at:'2026-01-20T10:01'},10);
+      assert(replayReturned.replayed);assert.equal(replayReturned.transaction_id,fullReturned.transaction_id);assert.equal(replayReturned.context.status,'completed');
+      assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_payment_transactions WHERE order_id=10')).rows[0].n,3);
+      checks.push('TEMP ordinary return: partial late payments keep wait_payment, the exact final receipt completes both returned vehicles, and replay preserves one receipt, original returns, inventory, rental total and held deposit');
+      for(const [id,status]of [[11,'wait_payment'],[12,'renting'],[13,'overdue'],[14,'wait_payment'],[15,'reserved'],[16,'bad_debt'],[18,'wait_payment']]){
+        const result=await pay({amount:'1000',paid_at:'2026-01-20T10:01'},id);assert.equal(result.context.remaining,0);assert.equal(result.context.status,status==='renting'?'overdue':status,'Unexpected automatic completion: '+id);
+        assert.equal((await c.query('SELECT order_status FROM qa_payment_orders WHERE id=$1',[id])).rows[0].order_status,status);
+      }
+      checks.push('TEMP full payment never closes an active/unreturned rental, a mixed returned/open contract, an empty/deleted-only contract, a hold or unconfirmed bad debt');
+      const depositOnly=await pay({purpose:'deposit',amount:'500',paid_at:'2026-01-20T10:01'},17);
+      assert.equal(depositOnly.context.status,'wait_payment');assert.equal(depositOnly.context.paid_amount,1000);assert.equal(depositOnly.context.deposit_held,500);
+      const depositRefund=await pay({purpose:'deposit_refund',amount:'500',paid_at:'2026-01-20T10:02'},17);
+      assert.equal(depositRefund.context.status,'wait_payment');assert.equal(depositRefund.context.paid_amount,1000);assert.equal(depositRefund.context.deposit_held,0);
+      checks.push('TEMP deposit collection/refund remains separate and does not trigger a rental-debt completion');
+      await c.query('ROLLBACK TO SAVEPOINT ordinary_returned_payment');await c.query('RELEASE SAVEPOINT ordinary_returned_payment');
     } finally { await c.query('ROLLBACK'); c.release(); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

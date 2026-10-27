@@ -24,6 +24,7 @@ async function main(){
   }
   await c.query(`CREATE VIEW ${schema}.staff_account_attribution AS SELECT id,user_id,full_name,store_id FROM ${schema}.staff_profiles;
    CREATE FUNCTION ${schema}.vehicle_inventory() RETURNS SETOF ${schema}.vehicles LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$SELECT * FROM ${schema}.vehicles$$;
+   CREATE FUNCTION ${schema}.contract_vehicle_labels() RETURNS SETOF ${schema}.vehicles LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$SELECT * FROM ${schema}.vehicles$$;
    GRANT USAGE ON SCHEMA ${schema} TO himoto_scoped;GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA ${schema} TO himoto_scoped;GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO himoto_scoped;
    ALTER TABLE ${schema}.orders ENABLE ROW LEVEL SECURITY;CREATE POLICY scope ON ${schema}.orders TO himoto_scoped USING(himoto.access_store(store_id)) WITH CHECK(himoto.access_store(store_id));
    ALTER TABLE ${schema}.vehicles ENABLE ROW LEVEL SECURITY;CREATE POLICY scope ON ${schema}.vehicles TO himoto_scoped USING(himoto.access_store(current_store_id)) WITH CHECK(himoto.access_store(current_store_id));
