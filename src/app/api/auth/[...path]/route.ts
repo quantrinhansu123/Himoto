@@ -59,7 +59,7 @@ const listQueries: Record<string, QueryConfig> = {
                  pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
                  r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
-                 CASE WHEN r.rentals IS NOT NULL AND jsonb_typeof(r.rentals)='array' AND jsonb_array_length(r.rentals)>0
+                 CASE WHEN r.rentals IS NOT NULL AND json_typeof(r.rentals)='array' AND json_array_length(r.rentals)>0
                    AND v.status IN ('ready') THEN 'using'
                    WHEN v.status='rent' THEN 'using' WHEN v.status='maintenance' THEN 'repairing' WHEN v.status='holding' THEN 'pending'
                    ELSE v.status END AS status,

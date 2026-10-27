@@ -260,7 +260,7 @@ function vehicleHydrateSql() {
     COALESCE(r.store_id, v.current_store_id, v.store_id) AS beneficiary_store_id,
     COALESCE(bs.store_name, s.store_name) AS beneficiary_store_name,
     COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
-    CASE WHEN r.rentals IS NOT NULL AND jsonb_typeof(r.rentals)='array' AND jsonb_array_length(r.rentals)>0
+    CASE WHEN r.rentals IS NOT NULL AND json_typeof(r.rentals)='array' AND json_array_length(r.rentals)>0
       AND v.status IN ('ready') THEN 'using'
       WHEN v.status='rent' THEN 'using' WHEN v.status='maintenance' THEN 'repairing' WHEN v.status='holding' THEN 'pending'
       ELSE v.status END AS status,
