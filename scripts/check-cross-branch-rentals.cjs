@@ -144,12 +144,19 @@ async function run() {
           const tlsOrder=(await c.query('SELECT store_id,draft_payload FROM qa_cross_orders WHERE id=$1',[tlsSaved.id])).rows[0];
           const composer=tlsOrder.draft_payload.management_composer;
           assert.equal(Number(tlsOrder.store_id),36);assert.equal(composer.draft.vehicle_store_id,'32');assert.equal(composer.draft.staff_id,'701');
-          assert.equal(composer.draft.customer_source,'TLS');assert.equal(composer.draft.tls_staff_id,'');assert(!composer.sales_attribution);
+          assert.equal(composer.draft.customer_source,'TLS');
+          if(Number.isSafeInteger(tlsProfileId)&&tlsProfileId>0){
+            assert.equal(composer.draft.tls_staff_id,String(tlsProfileId));
+            assert.equal(composer.sales_attribution?.TLS?.staff_id,tlsProfileId);
+          }else{
+            assert.equal(composer.draft.tls_staff_id,'');assert(!composer.sales_attribution);
+          }
           assert.equal(Number((await vehicle(100)).current_store_id),32);
           const listing=()=>proxy.query(CONTRACT_LIST_SQL+' AND o.id=$1',[tlsSaved.id]);
           let projected=(await listing()).rows[0];
           let reopened=document.createContractDraft(dataset,'all',mapApiRow('contracts',projected));
-          assert.equal(reopened.vehicle_store_id,'32');assert.equal(reopened.staff_id,'701');assert.equal(reopened.tls_staff_id,'');
+          assert.equal(reopened.vehicle_store_id,'32');assert.equal(reopened.staff_id,'701');
+          assert.equal(reopened.tls_staff_id,Number.isSafeInteger(tlsProfileId)&&tlsProfileId>0?String(tlsProfileId):'');
           const profile=load(path.join(root,'lib/management/contract-profile')).contractProfile(tlsDraft);
           profile.customer.address='Địa chỉ hồ sơ bổ sung QA';
           const {updateContractProfile}=load(path.join(root,'lib/server/contract-profile'));
@@ -158,7 +165,7 @@ async function run() {
           reopened=document.createContractDraft(dataset,'all',mapApiRow('contracts',projected));
           assert.equal(reopened.customer.address,'Địa chỉ hồ sơ bổ sung QA');assert.equal(reopened.tls_staff_id,profile.tls_staff_id || '');
           assert.equal(projected.draft_payload.management_composer.draft,undefined,'Issued lists must not restore the full draft blob');
-          checks.push('PostgreSQL TEMP: TLS remains a generic source; supporting staff from another branch, new free-text names and stale IDs with a typed name save; issue preserves the stock/revenue branches');
+          checks.push('PostgreSQL TEMP: TLS source stays valid with or without a chosen TLS employee; supporting staff from another branch, new free-text names and stale IDs with a typed name save; issue preserves the stock/revenue branches');
           checks.push('PostgreSQL TEMP: reopening an issued contract preserves its vehicle branch, representative without a login, TLS and subsequent profile changes without sending the full draft blob');
         } finally {await c.query('ROLLBACK TO SAVEPOINT qa_tls');await c.query('RELEASE SAVEPOINT qa_tls');}
       }

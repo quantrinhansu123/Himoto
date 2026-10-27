@@ -19,8 +19,10 @@ interface ResumableNotice {
 }
 function canResumeNotice(notice:ResumableNotice) {
   const ids=notice.message_ids;
+  // Confirmed message_ids are a safe checkpoint. Timeouts/network after a partial album
+  // may rarely re-send the timed-out batch; ops prefer continue over a dead-end UI.
   return ['failed','unknown'].includes(notice.status)&&!notice.retraction
-    && /^(?:TELEGRAM_(?:400|401|403|404|413|429)|PHOTO_SIZE|MEDIA_FETCH_FAILED)$/.test(notice.error_code||'')
+    && /^(?:TELEGRAM_(?:400|401|403|404|413|429|TIMEOUT|NETWORK)|PHOTO_SIZE|MEDIA_FETCH_FAILED|TELEGRAM_INVALID_RESPONSE|SEND_UNCERTAIN)$/.test(notice.error_code||'')
     && Boolean(notice.delivery_target?.chat_id&&notice.delivery_target.bot_id)
     && Array.isArray(ids)&&ids.length>0&&ids.length<=(notice.payload?.photos?.length||0)
     && new Set(ids).size===ids.length&&ids.every(id=>Number.isSafeInteger(id)&&id>0);

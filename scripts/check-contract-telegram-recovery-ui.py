@@ -22,19 +22,20 @@ key = 'return:901:1001'
 
 def event():
     case = state['case']
-    resume = case in ('legacy-400', 'partial-400', 'summary-only', 'api-error')
+    resume = case in ('legacy-400', 'partial-400', 'summary-only', 'api-error', 'timeout-partial')
     count = 17 if case == 'summary-only' else 0 if case == 'timeout-empty' else 10
     status = 'failed' if case in ('partial-400', 'summary-only', 'api-error') else 'unknown'
     if state.get('resumed'):
         status, resume = 'sent', False
+    definite = case in ('legacy-400', 'partial-400', 'summary-only', 'api-error')
     return dict(key=key, kind='return', label='Trả xe QA', phases=['return-1001'],
                 destination_label='Nhóm cơ sở CS QA', text='Khách trả xe: QA\nHĐ: QA-RECOVERY',
                 hash='a' * 64, photo_count=17, video_count=0, status=status, sent_at=None,
                 can_send=False, unchanged=status == 'sent', attachments=[], notice_id=notice_id,
                 delivery_contract_code='QA-RECOVERY', can_resume=resume,
                 delivery_message_count=count, delivery_attachment_count=17,
-                delivery_error='TELEGRAM_400' if resume else 'TELEGRAM_TIMEOUT',
-                delivery_error_description='Bad Request: failed to get HTTP URL content' if resume else None,
+                delivery_error='TELEGRAM_400' if definite else 'TELEGRAM_TIMEOUT',
+                delivery_error_description='Bad Request: failed to get HTTP URL content' if definite else None,
                 can_retry_confirmed_absent=case == 'timeout-empty', deliveries=[dict(
                     id=notice_id, sent_at=None, message_count=count, text='NỘI DUNG GỐC ĐÃ LƯU\nHĐ: QA-RECOVERY',
                     can_retract=False, blocked_reason='Lượt gửi chưa hoàn tất.', expires_at=None, retraction_state=None)])
@@ -93,7 +94,7 @@ with sync_playwright() as pw:
             dialog = page.get_by_role('dialog', name='Gửi Telegram · QA-RECOVERY', exact=True)
             expect(dialog).to_be_visible()
             expect(dialog.get_by_text('Lần gửi trước dùng mã hợp đồng', exact=False)).to_have_count(0)
-            can_resume = case in ('legacy-400', 'partial-400', 'summary-only', 'api-error')
+            can_resume = case in ('legacy-400', 'partial-400', 'summary-only', 'api-error', 'timeout-partial')
             resume = dialog.get_by_role('button', name='Gửi tiếp nội dung' if case == 'summary-only' else 'Gửi tiếp phần còn thiếu', exact=True)
             if can_resume:
                 expect(resume).to_be_enabled()

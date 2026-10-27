@@ -120,7 +120,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const swap=swapId?(await db.query(`SELECT s.*,v.license,v.name AS vehicle_name FROM himoto.management_contract_battery_swaps s JOIN ${labels} v ON v.id=s.vehicle_id WHERE s.id=$1 AND s.order_id=$2 AND s.status='confirmed'`,[swapId,orderId])).rows[0]:undefined;
   if(kind==='battery_swap'&&!swap)throw Error('Không tìm thấy lượt đổi pin đã xác nhận.');
   const o=(await db.query(`SELECT o.store_id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
-    COALESCE(NULLIF(c.name,''),o.customer_name,'') AS customer,COALESCE(NULLIF(c.phone,''),o.customer_phone,'') AS phone,
+    COALESCE(NULLIF(trim(o.customer_name),''),NULLIF(trim(c.name),''),'') AS customer,COALESCE(NULLIF(trim(o.customer_phone),''),NULLIF(trim(c.phone),''),'') AS phone,
     s.store_name AS store,u.name AS actor,${OWNERSHIP_ORDER_SQL} AS ownership,
     COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'profile'->>'staff_name'),''),
       NULLIF(trim(o.draft_payload->'management_composer'->'draft'->>'staff_name'),''),

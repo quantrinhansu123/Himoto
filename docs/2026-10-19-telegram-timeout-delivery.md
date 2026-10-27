@@ -11,7 +11,7 @@ Lượt trả xe VPS-32090 (hợp đồng #57659, xe 89AB-725.56) đã được 
 - Mỗi lượt chạy dành tối đa 240 giây, chừa thời gian lưu kết quả trước giới hạn 300 giây của các route. Nếu không còn đủ thời gian để bắt đầu tác vụ tiếp theo, lưu các mã tin đã xác nhận và đưa chính lượt đó về `pending / DELIVERY_CONTINUE`. Worker tiếp tục từ tệp chưa gửi, hoặc chỉ gửi tin tổng hợp nếu toàn bộ media đã xong. Không gửi lại tệp đã được xác nhận.
 - Giữ quyền gửi của nhóm cho lượt đang tiếp tục, kể cả khi lease hết hạn. Các lượt khác không xen giữa media và tin tổng hợp. Mỗi lần tiếp tục kiểm tra, gia hạn lease và dùng bản chụp payload gốc trong hàng đợi.
 - Cron trả lời sau phần đồng bộ GPS và chạy gửi Telegram trong `after()`. Request của scheduler giới hạn 55 giây không còn phải chờ toàn bộ media được tải lên. Thời gian xử lý nền vẫn nằm trong `maxDuration=300`.
-- Timeout, lỗi mạng, phản hồi không hợp lệ hoặc gửi một phần vẫn chặn tự gửi lại. Chỉ một lượt chủ động tạm dừng ở ranh giới đã có xác nhận mới được tự tiếp tục; `unknown` không nằm trong phạm vi này. Không có retry POST tự động sau timeout.
+- Timeout/lỗi mạng **không** tự gửi lại. Khi đã có mã tin một phần (`message_ids`), nhân viên được **Gửi tiếp phần còn thiếu** (kể cả `TELEGRAM_TIMEOUT` / `TELEGRAM_NETWORK`) từ checkpoint đã xác nhận; có thể trùng album của lượt vừa timeout nếu Telegram đã nhận mà chưa trả mã. Lượt `unknown` chưa có mã tin vẫn cần đối chiếu nhóm rồi **Gửi lại sau khi đối chiếu**. Không có retry POST tự động sau timeout.
 
 Không cần migration. Dùng `message_ids`, `error_code` và bảng `management_telegram_delivery_leases` hiện có. Không thay đổi trạng thái hoặc gửi lại lượt VPS-32090 khi triển khai. Nhân viên vẫn đối chiếu nhóm và xác nhận chưa nhận trước khi gửi lại lượt cũ.
 

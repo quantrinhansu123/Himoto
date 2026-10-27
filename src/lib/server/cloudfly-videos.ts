@@ -126,6 +126,17 @@ export async function objectVideoUrl(ref: ObjectVideoRef) {
     ResponseCacheControl: 'private, no-store',
   }), { expiresIn: 300 });
 }
+/** Cheap size check so Telegram can receive a signed URL instead of a Vercel re-upload. */
+export async function objectVideoByteLength(ref: ObjectVideoRef) {
+  requireRef(ref);
+  const head = await cloudflyVideoClient().send(new HeadObjectCommand({
+    Bucket: ref.object_bucket, Key: ref.object_key,
+  }), { abortSignal: AbortSignal.timeout(20_000) });
+  if (head.ContentType !== 'video/mp4' || !head.ContentLength || head.ContentLength > MAX_VIDEO_BYTES || head.ETag !== ref.object_etag) {
+    throw new RecordPhotoError('Video trong kho không hợp lệ.', 502);
+  }
+  return head.ContentLength;
+}
 export async function readObjectVideo(ref: ObjectVideoRef) {
   requireRef(ref);
   const remote = await cloudflyVideoClient().send(new GetObjectCommand({ Bucket: ref.object_bucket, Key: ref.object_key, IfMatch: ref.object_etag }), { abortSignal: AbortSignal.timeout(45_000) });

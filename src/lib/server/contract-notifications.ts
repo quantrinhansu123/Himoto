@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { ownerDatabase } from './himoto-database';
 import { openIntegrationSecret } from './integration-secrets';
-import { telegramCall, telegramMediaBatches, canUploadRejectedTelegramMedia, requireTelegramTime, TelegramContinuation, TelegramDeliveryError, TELEGRAM_DISPATCH_BUDGET_MS, TELEGRAM_MEDIA_TIMEOUT_MS, TELEGRAM_TEXT_TIMEOUT_MS, type Media } from './telegram-delivery';
+import { telegramCall, telegramMediaBatches, canUploadRejectedTelegramMedia, requireTelegramTime, TelegramContinuation, TelegramDeliveryError, TELEGRAM_DISPATCH_BUDGET_MS, TELEGRAM_MEDIA_TIMEOUT_MS, TELEGRAM_TEXT_TIMEOUT_MS, TELEGRAM_VIDEO_TIMEOUT_MS, type Media } from './telegram-delivery';
 import { copyContractCustomerPhotos } from './contract-customer-photos';
 import { CONTRACT_TELEGRAM_ROUTE_SQL } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
@@ -86,14 +86,14 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       const text=contractNotificationText(row.event_type,payload);
       const upload=Array.isArray(row.delivery_review)&&row.delivery_review.some((review: {outcome?:string}) => ['media_upload_fallback','resume_remaining'].includes(review.outcome||''));
       const sendBatch=async(batch:Media[])=>{
-        requireTelegramTime(deadline,TELEGRAM_MEDIA_TIMEOUT_MS);
+        const video=batch.length===1&&batch[0].type==='video/mp4';
+        requireTelegramTime(deadline,video?TELEGRAM_VIDEO_TIMEOUT_MS:TELEGRAM_MEDIA_TIMEOUT_MS);
         await database.query("UPDATE himoto.management_telegram_delivery_leases SET expires_at=clock_timestamp()+interval '3 minutes' WHERE lease_id=$1",[leaseId]);
         const form=new FormData();form.append('chat_id',row.chat_id);if(row.thread_id)form.append('message_thread_id',String(row.thread_id));
         // Persist before the POST: a killed worker cannot turn an in-flight send into a replay.
         await database.query("UPDATE himoto.management_contract_notifications SET error_code='DELIVERY_IN_FLIGHT' WHERE id=$1",[row.id]);
         contacted=true;
         if(batch.length===1){
-          const video=batch[0].type==='video/mp4';
           if(batch[0].url)form.append(video?'video':'photo',batch[0].url);
           else form.append(video?'video':'photo',new Blob([new Uint8Array(batch[0].data!)],{type:batch[0].type}),video?'video-hop-dong.mp4':'anh-hop-dong.jpg');
           if(video)form.append('supports_streaming','true');

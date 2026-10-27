@@ -1,13 +1,17 @@
 import 'server-only';
 import { cloudinaryPhotoUrl, readCloudinaryPhoto } from './cloudinary-photos';
-import { readObjectVideo } from './cloudfly-videos';
+import { objectVideoByteLength, objectVideoUrl, readObjectVideo } from './cloudfly-videos';
 import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
 import type { Attachment } from './contract-notification-content';
 
 export const TELEGRAM_MEDIA_TIMEOUT_MS = 120_000;
+/** Multipart sendVideo of large files often needs longer than album URL posts. */
+export const TELEGRAM_VIDEO_TIMEOUT_MS = 180_000;
 export const TELEGRAM_TEXT_TIMEOUT_MS = 30_000;
 export const TELEGRAM_DISPATCH_BUDGET_MS = 240_000;
 export const TELEGRAM_ALBUM_BYTES = 4 * 1024 * 1024;
+/** Telegram downloads URL media itself; non-photo URL payloads cap at 20 MB. */
+export const TELEGRAM_URL_VIDEO_BYTES = 20 * 1024 * 1024;
 const CLEANUP_MS = 10_000;
 
 export class TelegramContinuation extends Error {}
@@ -28,6 +32,11 @@ export function requireTelegramTime(deadline: number, workMs: number) {
   if (Date.now() + workMs + CLEANUP_MS > deadline) throw new TelegramContinuation();
 }
 
+function telegramCallTimeoutMs(method: string) {
+  if (method === 'sendMessage') return TELEGRAM_TEXT_TIMEOUT_MS;
+  if (method === 'sendVideo') return TELEGRAM_VIDEO_TIMEOUT_MS;
+  return TELEGRAM_MEDIA_TIMEOUT_MS;
+}
 /** A success includes valid message IDs and a fully consumed response body. Never retry an ambiguous POST. */
 export async function telegramCall(token: string, method: string, body: FormData | Record<string, unknown>, send: typeof fetch, expectedMessages = 1) {
   const form = body instanceof FormData;
@@ -35,7 +44,7 @@ export async function telegramCall(token: string, method: string, body: FormData
     const response = await send(`https://api.telegram.org/bot${token}/${method}`, {
       method: 'POST', ...(form ? {} : { headers: { 'Content-Type': 'application/json' } }),
       body: form ? body : JSON.stringify(body),
-      signal: AbortSignal.timeout(method === 'sendMessage' ? TELEGRAM_TEXT_TIMEOUT_MS : TELEGRAM_MEDIA_TIMEOUT_MS),
+      signal: AbortSignal.timeout(telegramCallTimeoutMs(method)),
       redirect: 'error', cache: 'no-store',
     });
     const result = await response.json();
@@ -52,12 +61,32 @@ export async function telegramCall(token: string, method: string, body: FormData
 
 export interface Media { data?: Buffer; url?: string; type: string }
 const mediaBytes = (file: Media) => file.data?.length || 0;
+async function videoByUrl(photo: Attachment): Promise<Media | null> {
+  try {
+    if (photo.object_key && photo.object_bucket && photo.object_etag) {
+      const size = await objectVideoByteLength({ object_bucket: photo.object_bucket, object_key: photo.object_key, object_etag: photo.object_etag });
+      if (size > TELEGRAM_URL_VIDEO_BYTES) return null;
+      return { url: await objectVideoUrl({ object_bucket: photo.object_bucket, object_key: photo.object_key, object_etag: photo.object_etag }), type: 'video/mp4' };
+    }
+    if (photo.cloudinary_public_id && photo.cloudinary_cloud_name) {
+      const url = cloudinaryPhotoUrl({ cloudinary_public_id: photo.cloudinary_public_id, cloudinary_cloud_name: photo.cloudinary_cloud_name, mime_type: 'video/mp4' }, 600);
+      const head = await fetch(url, { method: 'HEAD', cache: 'no-store', redirect: 'follow', signal: AbortSignal.timeout(10_000) });
+      const size = Number(head.headers.get('content-length'));
+      if (!head.ok || !Number.isFinite(size) || size <= 0 || size > TELEGRAM_URL_VIDEO_BYTES) return null;
+      return { url, type: 'video/mp4' };
+    }
+  } catch { return null; }
+  return null;
+}
 async function loadMedia(photo: Attachment, upload: boolean): Promise<Media> {
-  // Authenticated Cloudinary photos are handed to Telegram as a signed URL so
-  // Vercel does not download+reupload every file. Videos stay as bytes because
-  // Telegram URL fetches cap below the 45 MB / 60s contract limit.
+  // Authenticated Cloudinary photos (and videos ≤20 MB) go to Telegram as a signed URL so
+  // Vercel does not download+reupload. Larger videos still upload as bytes (Telegram URL cap).
   if (!upload && photo.cloudinary_public_id && photo.cloudinary_cloud_name && photo.mime_type !== 'video/mp4') {
     return { url: cloudinaryPhotoUrl({ cloudinary_public_id: photo.cloudinary_public_id, cloudinary_cloud_name: photo.cloudinary_cloud_name, mime_type: photo.mime_type }), type: photo.mime_type };
+  }
+  if (!upload && photo.mime_type === 'video/mp4') {
+    const remote = await videoByUrl(photo);
+    if (remote) return remote;
   }
   let data: Buffer;
   try { data = photo.object_key
@@ -76,8 +105,11 @@ export async function* telegramMediaBatches(photos: Attachment[], offset: number
     const video = photos[offset].mime_type === 'video/mp4';
     if (video) {
       if (batch.length) { yield batch; batch = []; bytes = 0; }
-      requireTelegramTime(deadline, TELEGRAM_MEDIA_TIMEOUT_MS + 45_000);
-      yield [await loadMedia(photos[offset], upload)];
+      requireTelegramTime(deadline, TELEGRAM_MEDIA_TIMEOUT_MS + 5_000);
+      const media = await loadMedia(photos[offset], upload);
+      if (!media.url) requireTelegramTime(deadline, TELEGRAM_VIDEO_TIMEOUT_MS + 45_000);
+      else requireTelegramTime(deadline, TELEGRAM_VIDEO_TIMEOUT_MS + 5_000);
+      yield [media];
       offset += 1;
       continue;
     }

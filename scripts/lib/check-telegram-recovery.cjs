@@ -45,9 +45,11 @@ module.exports=async function checkRecovery(db,c,schema,notices){
   await c.query(`UPDATE ${schema}.management_contract_notifications SET status='unknown',error_code='TELEGRAM_400',message_ids=$2,sent_at=NULL WHERE id=$1`,[first,JSON.stringify(sent.message_ids.slice(0,10))]);
   assert((await read()).can_resume);
   for(const code of ['TELEGRAM_TIMEOUT','TELEGRAM_NETWORK','TELEGRAM_INVALID_RESPONSE','SEND_UNCERTAIN']){
-    await c.query(`UPDATE ${schema}.management_contract_notifications SET error_code=$2 WHERE id=$1`,[first,code]);assert(!(await read()).can_resume);
-    await assert.rejects(async()=>service.saveContractTelegram(db,3,143,admin,{...command,hash:(await read()).hash,request_id:randomUUID()}),e=>e.status===409);
+    await c.query(`UPDATE ${schema}.management_contract_notifications SET status='unknown',error_code=$2 WHERE id=$1`,[first,code]);
+    assert((await read()).can_resume,code);
   }
+  await c.query(`UPDATE ${schema}.management_contract_notifications SET status='unknown',error_code='TELEGRAM_TIMEOUT',message_ids='[]'::jsonb WHERE id=$1`,[first]);
+  assert(!(await read()).can_resume);
   await c.query(`UPDATE ${schema}.management_contract_notifications SET status='sent',error_code=NULL,message_ids=$2 WHERE id=$1`,[first,JSON.stringify(sent.message_ids)]);
 
   const oldEnv={...process.env},oldFetch=global.fetch;

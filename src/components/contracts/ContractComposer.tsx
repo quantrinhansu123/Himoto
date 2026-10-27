@@ -563,21 +563,21 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     for (const person of [...salesDirectory, ...(dataset?.staff || [])]) byId.set(person.id, person);
     return [...byId.values()];
   })();
+  // One picker: NVKD by store, TPKD + TLS company-wide. Pure TLS → tls_staff_id; NVKD/TPKD → sales_staff_id.
   const salesStaff = commissionPool.filter(person => {
     if (!staffIsAvailable(person)) return false;
     // Placeholder profile named "TLS" (not a real person) must not appear in suggestions.
     if (/^tls$/i.test(String(person.name || '').trim())) return false;
-    if (!hasSalesCommissionRole(person.position)) return false;
-    if (String(person.id) === draft.sales_staff_id) return true;
+    if (String(person.id) === draft.sales_staff_id || String(person.id) === draft.tls_staff_id) return true;
     const roles = staffRoles(person.position);
-    if (roles.includes('TPKD')) return true;
-    if (!roles.includes('NVKD')) return false;
+    if (roles.includes('TPKD') || roles.includes('TLS')) return true;
+    if (!hasSalesCommissionRole(person.position) || !roles.includes('NVKD')) return false;
     if (!person.store_id) return true;
     return Boolean(salesStoreId) && String(person.store_id) === salesStoreId;
   }).sort((a, b) => {
     const rank = (person: ManagementRow) => {
       const roles = staffRoles(person.position);
-      if (roles.includes('TLS')) return 0;
+      if (roles.includes('TLS') && !hasSalesCommissionRole(person.position)) return 0;
       if (roles.includes('TPKD')) return 1;
       return 2;
     };
@@ -587,7 +587,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   const sourceStaff = (() => {
     const byId = new Map<number, ManagementRow>();
     for (const person of [...branchStaff.filter(staffIsAvailable), ...sourceBranchStaff.filter(staffIsAvailable), ...salesStaff]) {
-      if (!staffRoles(person.position).includes('TLS')) byId.set(person.id, person);
+      byId.set(person.id, person);
     }
     return [...byId.values()];
   })();
@@ -611,17 +611,17 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     return partial.length === 1 ? partial[0] : undefined;
   };
   function applyCommissionPick(person: ManagementRow | undefined) {
-    change('sales_staff_name', person ? String(person.name || '') : '');
-    if (!person) { change('sales_staff_id', ''); change('tls_staff_id', ''); return; }
+    if (!person) { change('sales_staff_name', ''); change('sales_staff_id', ''); change('tls_staff_id', ''); return; }
     const roles = staffRoles(person.position);
     const salesOk = hasSalesCommissionRole(person.position);
-    // Dual TLS/NVKD → NVKD credit; pure TLS → tls_staff_id (server rejects TLS on sales_staff_id).
-    if (salesOk) { change('sales_staff_id', String(person.id)); change('tls_staff_id', ''); }
-    else if (roles.includes('TLS')) { change('sales_staff_id', ''); change('tls_staff_id', String(person.id)); }
-    else { change('sales_staff_id', ''); change('tls_staff_id', ''); }
+    // Dual TLS/NVKD → NVKD credit; pure TLS → tls_staff_id + nguồn/nhãn TLS (không ghi tên người vào ô).
+    if (salesOk) { change('sales_staff_name', String(person.name || '')); change('sales_staff_id', String(person.id)); change('tls_staff_id', ''); }
+    else if (roles.includes('TLS')) { change('sales_staff_name', ''); change('sales_staff_id', ''); change('tls_staff_id', String(person.id)); change('customer_source', 'TLS'); }
+    else { change('sales_staff_name', ''); change('sales_staff_id', ''); change('tls_staff_id', ''); }
   }
   const assignedSales = commissionPool.find(person => String(person.id) === draft.sales_staff_id && hasSalesCommissionRole(person.position));
   const assignedTls = commissionPool.find(person => String(person.id) === draft.tls_staff_id && staffRoles(person.position).includes('TLS'));
+  // Pure TLS stays labeled "TLS" in the field — never swap in the person's display name.
   const salesValue = assignedSales ? salesOption(assignedSales) : assignedTls ? 'TLS' : draft.sales_staff_name || '';
   function changeSource(value: string) {
     if (['tls','telesale','telesales'].includes(nameKey(value))) {
@@ -629,14 +629,29 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
       change('tls_staff_id', '');
       return;
     }
+    const matched = findSalesStaff(value);
+    if (matched) {
+      const pureTls = staffRoles(matched.position).includes('TLS') && !hasSalesCommissionRole(matched.position);
+      // Nguồn khách for telesale stays the word TLS, not the employee name.
+      change('customer_source', pureTls ? 'TLS' : value);
+      if (salesFollowsSource.current) applyCommissionPick(matched);
+      return;
+    }
     change('customer_source', value);
     if (!salesFollowsSource.current) return;
-    applyCommissionPick(findSalesStaff(value));
+    applyCommissionPick(undefined);
   }
   function changeSales(value: string) {
     salesFollowsSource.current = !value.trim();
     const needle = nameKey(value);
     if (!needle) { applyCommissionPick(undefined); return; }
+    // Field value for telesale is always the label TLS, not an employee name.
+    if (['tls','telesale','telesales'].includes(needle)) {
+      change('sales_staff_name', '');
+      change('sales_staff_id', '');
+      change('customer_source', 'TLS');
+      return;
+    }
     const exact = salesStaff.filter(person => nameKey(salesOption(person)) === needle || nameKey(person.name) === needle);
     if (exact.length === 1) { applyCommissionPick(exact[0]); return; }
     change('sales_staff_name', value);
@@ -827,9 +842,9 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
               <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" maxLength={191} value={draft.customer_source} placeholder="Tự nhập nguồn khách hoặc chọn gợi ý" onChange={event => changeSource(event.target.value)} />
                 <datalist id="contract-source-staff-options"><option value="TLS"/>{sourceStaff.map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
                 <small>Nguồn telesale ghi chung TLS. Có thể tự nhập nguồn khác.</small></div>
-              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD ghi nhận doanh số</label>
-                <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(salesOption)} placeholder="Chọn hoặc tự nhập họ tên" onChange={changeSales} />
-                <small>Tự nhập họ tên nếu chưa có trong danh sách. Tên nhập được lưu cùng hợp đồng.</small>
+              <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD / TPKD / TLS ghi nhận doanh số</label>
+                <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(person => staffRoles(person.position).includes('TLS') && !hasSalesCommissionRole(person.position) ? 'TLS' : salesOption(person)).filter((label, index, list) => list.indexOf(label) === index)} placeholder="Gõ tên hoặc chọn NVKD / TPKD / TLS" onChange={changeSales} />
+                <small>NVKD theo cửa hàng; TPKD mọi cơ sở. TLS hiện đúng nhãn TLS. Tự nhập họ tên NVKD nếu chưa có trong danh sách.</small>
                 {attributionError && <small role="status">Chưa tải được gợi ý nhân viên; vẫn có thể nhập thủ công.</small>}</div>
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>

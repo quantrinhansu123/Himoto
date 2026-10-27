@@ -4,7 +4,7 @@ This supersedes the earlier same-branch representative restriction in `2026-10-2
 
 ## Behavior
 
-- New telesale sources are saved as `TLS`, with no individual TLS employee requirement. Historical TLS attribution remains readable, and employee-sales reports aggregate TLS into one department. NVKD attribution remains separate.
+- Telesale sources normalize to `TLS`. Staff may leave TLS generic (no person) or pick a company-wide TLS employee; that `tls_staff_id` is kept for attribution. Employee-sales reports still aggregate TLS into one department. NVKD attribution remains separate.
 - Contract representatives can be selected across stores or typed freely. A typed name survives delayed/failed suggestions and vehicle-store changes. A stale deleted staff id with a typed name becomes a name-only snapshot. No HR profile is created by this workflow.
 - Typing unrelated fields reuses the vehicle list instead of re-ranking all stock on every keystroke. Staff suggestions no longer disable saving or trigger a redundant reload when the store directory arrives unchanged.
 - The form offers **Làm mới kho xe** without discarding entered customer/employee/source details.

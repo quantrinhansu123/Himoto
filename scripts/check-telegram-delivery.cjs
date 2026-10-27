@@ -21,15 +21,29 @@ async function main(){
       const remote=await batches(Array.from({length:10},(_,i)=>({slot:`rental-${i+1}`,mime_type:'image/jpeg',bytes:null,cloudinary_public_id:`himoto/management/1/${i}`,cloudinary_cloud_name:'qa-cloud',cloudinary_version:1})));
       assert.equal(remote.length,1);assert.equal(remote[0].length,10);
       assert(remote[0].every(file=>file.url&&!file.data&&String(file.url).includes('qa-cloud')));
-    } finally { for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]; Object.assign(process.env,oldEnv); }
-    checks.push('The reported 7-photo/2-video payload splits into 7/1/1; photo albums obey byte/count caps, preserve all media and reject oversized files');
+      const videoRef={slot:'rental-video-1',mime_type:'video/mp4',bytes:null,cloudinary_public_id:'himoto/management-video/1/qa',cloudinary_cloud_name:'qa-cloud',cloudinary_version:1};
+      global.fetch=async(_url,options)=>{
+        if(options?.method==='HEAD')return new Response(null,{status:200,headers:{'content-length':'1500000'}});
+        throw Error('Real network disabled during QA');
+      };
+      const videoUrl=await batches([videoRef]);
+      assert.equal(videoUrl.length,1);assert(videoUrl[0][0].url&&!videoUrl[0][0].data);
+      global.fetch=async(_url,options)=>{
+        if(options?.method==='HEAD')return new Response(null,{status:200,headers:{'content-length':String(delivery.TELEGRAM_URL_VIDEO_BYTES+1)}});
+        return new Response(Buffer.alloc(2048));
+      };
+      const videoUpload=await batches([videoRef]);
+      assert.equal(videoUpload.length,1);assert.equal(videoUpload[0][0].data?.length,2048);assert(!videoUpload[0][0].url);
+    } finally { for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]; Object.assign(process.env,oldEnv); global.fetch=async()=>{throw Error('Real network disabled during QA');}; }
+    checks.push('The reported 7-photo/2-video payload splits into 7/1/1; photo albums obey byte/count caps; Cloudinary videos ≤20 MB use signed URLs');
     const originalTimeout=AbortSignal.timeout,timeouts=[];
     AbortSignal.timeout=ms=>{timeouts.push(ms);return new AbortController().signal;};
     try{
       const send=async(_url,options)=>{assert.equal(options.redirect,'error');return Response.json({ok:true,result:{message_id:123}});};
       assert.deepEqual(await delivery.telegramCall('qa-only','sendVideo',new FormData(),send),[123]);
+      assert.deepEqual(await delivery.telegramCall('qa-only','sendPhoto',new FormData(),send),[123]);
       assert.deepEqual(await delivery.telegramCall('qa-only','sendMessage',{text:'QA'},send),[123]);
-      assert.deepEqual(timeouts,[120000,30000]);
+      assert.deepEqual(timeouts,[180000,120000,30000]);
       const timeout=()=>{const e=new Error('QA timeout');e.name='TimeoutError';return e;};
       await assert.rejects(delivery.telegramCall('qa-only','sendVideo',new FormData(),async()=>{throw timeout();}),e=>e.message==='TELEGRAM_TIMEOUT'&&!e.definiteFailure);
       await assert.rejects(delivery.telegramCall('qa-only','sendVideo',new FormData(),async()=>({json:async()=>{throw timeout();}})),e=>e.message==='TELEGRAM_TIMEOUT'&&!e.definiteFailure);
@@ -38,7 +52,7 @@ async function main(){
       await assert.rejects(delivery.telegramCall('qa-only','sendPhoto',new FormData(),async()=>Response.json({ok:false,error_code:400},{status:400})),e=>e.message==='TELEGRAM_400'&&e.definiteFailure);
       let attempts=0;await assert.rejects(delivery.telegramCall('qa-only','sendPhoto',new FormData(),async()=>{attempts++;throw timeout();}));assert.equal(attempts,1);
     }finally{AbortSignal.timeout=originalTimeout;}
-    checks.push('Media has 120s and text 30s; body-read timeouts and malformed/partial success responses remain uncertain; confirmed API errors are distinguished; no POST automatically retries');
+    checks.push('Video has 180s, other media 120s and text 30s; body-read timeouts and malformed/partial success responses remain uncertain; confirmed API errors are distinguished; no POST automatically retries');
     assert.throws(()=>delivery.requireTelegramTime(Date.now()+1000,120000),delivery.TelegramContinuation);
     checks.push('Delivery stops at a safe checkpoint before its function time budget is exhausted');
     const callbacks=[];let sends=0,gpsReads=0,historyReads=0;

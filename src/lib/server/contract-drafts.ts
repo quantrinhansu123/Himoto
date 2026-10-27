@@ -285,9 +285,9 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     if (!edits.draft.staff_name.trim()) throw new DraftSaveError('Nhân sự đã thay đổi. Chọn lại hoặc tự nhập tên người làm hợp đồng.');
     edits.draft.staff_id='';
   }
+  // Generic "TLS" source stays allowed without a person; a chosen TLS employee is kept for attribution.
   if (edits.draft.tls_staff_id || /^(tls|telesales?)$/i.test(edits.draft.customer_source.trim())) {
     edits.draft.customer_source='TLS';
-    edits.draft.tls_staff_id='';
   }
   const attribution:Record<string,{staff_id:number|null;name:string}> = {};
   edits.draft.sales_staff_name=edits.draft.sales_staff_name?.trim() || '';
