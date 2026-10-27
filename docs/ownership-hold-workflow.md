@@ -11,6 +11,8 @@ Trong chi tiết hợp đồng → **Nợ xấu / bảo lưu**:
 
 **Sửa thời hạn bảo lưu** chỉ cập nhật mốc cảnh báo có lưu lịch sử; không đổi ngày bắt đầu, phân loại lúc vào bảo lưu, trạng thái hoặc mốc dừng tính tiền. Hồ sơ bảo lưu cũ chưa có ngày kết thúc cần nhập mốc này, không tự đoán thời hạn.
 
+Hồ sơ cũ đã gỡ giữ xe theo đối chiếu có xác nhận (`confirmed_prior_recovery`), còn thiếu ngày thu hồi thực tế và giữ đúng mốc kỹ thuật được phép vào **Bảo lưu**. Màn hình ghi rõ tình trạng này và dùng hạn trả gốc trên dòng xe để nhận diện quá hạn khi hợp đồng thiếu ngày ở phần chung. Ngày bắt đầu bảo lưu không thay cho ngày thu hồi cũ; thao tác không trả xe lần nữa, không sửa kho xe hoặc lượt thuê về sau, không đổi tiền thuê, tiền đã thu hay cọc. Lịch sử bảo lưu lưu riêng các dòng đã gỡ giữ. Hồ sơ này không được tự tiếp tục thuê; hết hạn bảo lưu mới được chủ động hoàn thành theo luồng hiện có. Lượt đã trả thông thường, đã cập nhật ngày thu hồi thực tế hoặc không khớp bằng chứng đối chiếu không được dùng ngoại lệ này.
+
 ## Tiếp tục thuê
 
 Chọn đủ xe đang rảnh. Hạn trả cộng thời gian thực tế từ bắt đầu bảo lưu đến khi nhân viên xác nhận tiếp tục. Ví dụ bảo lưu từ 01/08 đến 01/10: hạn trả 01/10 được dời thành 01/12. Hết hạn bảo lưu mà nhân viên chưa xử lý thì tiếp tục giữ bảo lưu và dừng phát sinh; ngày thuê lại thực tế là mốc kết thúc khoảng dừng.

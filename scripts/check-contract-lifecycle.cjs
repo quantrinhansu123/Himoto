@@ -47,6 +47,50 @@ async function main(){
  const input=async(id,action,extra={})=>({action,revision:await rev(id),request_id:randomUUID(),note:'Reviewed physical state and ledger QA',at:'2026-10-24T10:00',confirmed:true,...(action==='hold'?{hold_until:domain.localLifecycleTime(new Date(Date.parse((extra.at||'2026-10-24T10:00')+':00+07:00')+86400000))}:{}),...extra});
  const apply=async(id,action,extra={})=>staff(async()=>life.applyContractLifecycle(db,id,70001,await input(id,action,extra)));
  const recover=async item=>staff(async()=>returns.recordBadDebtRecovery(db,70001,{item_id:item,item_revision:(await db.query('SELECT xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=$1',[item])).rows[0].revision,request_id:randomUUID(),recovered_at:'2026-10-24T11:00',note:'Vehicle physically recovered QA'}));
+ const reconcile=async(extra={})=>{
+   const entry={kind:'confirmed_prior_recovery',item_id:1110,vehicle_id:16,actual_recovery_at:null,release_checkpoint_at:'2026-10-23T13:35:49.848Z',...extra};
+   await db.query("UPDATE himoto.order_vehicle_details SET rent_at='2026-06-10T10:55+07',return_at='2026-09-09T10:55+07',completed_at='2026-10-23T13:35:49.848Z' WHERE id=1110");
+   await db.query("UPDATE himoto.orders SET order_type='rental',rent_at=NULL,return_at=NULL,total='2500000',pid=9500000,first_deposit_amount=2000000,draft_payload=$1::json WHERE id=111",[JSON.stringify({legacy_migration:{sourceStoreId:'29'},management_composer:{vehicle_reconciliations:[entry]}})]);
+   await db.query("INSERT INTO himoto.transactions(id,order_id,name,type,status,value,store_id,user_id,cash_id,note,created_at) VALUES(11110,111,'order:deposit','in','approved',2000000,80001,70001,93001,'Reconciled deposit QA','2026-06-10T10:55+07') ON CONFLICT(id) DO NOTHING");
+   return entry;
+ };
+ await isolated(async()=>{
+   await reconcile();
+   const context=await staff(()=>life.readContractLifecycle(db,111));
+   assert(context.ownership&&context.overdue&&context.all_returned);assert.equal(domain.lifecycleDisplayStatus(context),'overdue');
+   assert.equal(context.items[0].return_reconciled,true);assert(domain.canHoldContract(context));assert(!domain.canMarkBadDebtContract(context));
+   assert.equal(Date.parse(context.end_at),Date.parse('2026-09-09T10:55:00+07:00'));assert.equal(context.total_amount,2500000);assert.equal(context.paid_amount,7500000);assert.equal(context.deposit_held,2000000);
+   await assert.rejects(()=>apply(111,'mark_bad_debt'),e=>e.status===409);
+ });checks.push('Reconciled legacy ownership with header dates absent uses the original vehicle deadline for overdue display and hold eligibility, while paid balances do not become bad debt');
+ await isolated(async()=>{
+   await reconcile();
+   await db.query("INSERT INTO himoto.orders(id,store_id,order_status,contract_number,total,pid) VALUES(202,80003,'renting','QA-RECONCILED-NEW-CUSTOMER','100000',0)");
+   await db.query("INSERT INTO himoto.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at) VALUES(2020,202,16,'2026-10-24T08:00+07','2027-01-24T08:00+07')");
+   const snapshot=async()=>({order:(await db.query('SELECT total,pid,first_deposit_amount,draft_payload #> \'{management_composer,vehicle_reconciliations}\' AS reconciliations FROM himoto.orders WHERE id=111')).rows[0],vehicles:(await db.query('SELECT *,xmin::text AS revision FROM himoto.vehicles WHERE id=16')).rows,lines:(await db.query('SELECT *,xmin::text AS revision FROM himoto.order_vehicle_details WHERE id IN(1110,2020) ORDER BY id')).rows,transactions:(await db.query('SELECT * FROM himoto.transactions ORDER BY id')).rows});
+   const before=await snapshot(),body=await input(111,'hold');
+   const held=await staff(()=>life.applyContractLifecycle(db,111,70001,body));
+   assert.equal(held.status,'reserved');assert(held.hold_was_overdue&&!held.hold_can_resume);assert.equal(held.events.length,1);assert.deepEqual(held.events[0].reconciled_item_ids,[1110]);
+   assert.deepEqual(await snapshot(),before);
+   assert.equal((await staff(()=>life.applyContractLifecycle(db,111,70001,body))).events.length,1);
+   await assert.rejects(()=>apply(111,'resume',{vehicle_ids:[16]}),e=>e.status===409);
+   const closed=await apply(111,'complete_hold',{at:'2026-10-26T10:00'});
+   assert.equal(closed.status,'completed');assert(closed.completed_from_hold);assert.equal(closed.waived_amount,0);assert.equal(closed.overpayment,5000000);assert.equal(closed.deposit_held,2000000);
+   assert.deepEqual(await snapshot(),before);
+ });checks.push('Explicit hold/completion of a reconciled old agreement preserves its original checkpoint, unknown return date, later foreign rental, vehicle revision, receipts, paid amounts and deposit; hold replay is safe and resume is denied');
+ await isolated(async()=>{
+   for(const extra of [{kind:'other'}, {item_id:9999}, {vehicle_id:9999}, {actual_recovery_at:'2026-09-10T08:00+07'}, {release_checkpoint_at:'2026-10-22T13:35:49.848Z'}]){
+     await reconcile(extra);const context=await staff(()=>life.readContractLifecycle(db,111));assert(!context.items[0].return_reconciled);assert(!domain.canHoldContract(context));
+     await assert.rejects(()=>apply(111,'hold'),e=>e.status===409);
+   }
+   await db.query("UPDATE himoto.orders SET draft_payload='{}' WHERE id=111");
+   assert(!domain.canHoldContract(await staff(()=>life.readContractLifecycle(db,111))));await assert.rejects(()=>apply(111,'hold'),e=>e.status===409);
+ });checks.push('Normal returned vehicles, already corrected recovery dates, mismatched item/vehicle/checkpoint and unrecognized reconciliation records cannot unlock a second hold');
+ await isolated(async()=>{
+   await reconcile();await db.query("UPDATE himoto.order_vehicle_details SET return_at='2027-04-01T08:00+07' WHERE id=1110");
+   const context=await staff(()=>life.readContractLifecycle(db,111));assert(!context.overdue);assert(domain.canHoldContract(context));
+   const held=await apply(111,'hold');assert(!held.hold_can_resume);
+   await assert.rejects(()=>apply(111,'resume',{vehicle_ids:[16]}),e=>e.status===409);
+ });checks.push('A reconciled agreement before its real deadline is not falsely overdue and cannot infer a new rental entitlement from an unknown original recovery date');
  await isolated(async()=>{
    await db.query("UPDATE himoto.stores SET kind='lease_to_own' WHERE id=80001");
    const context=await staff(()=>life.readContractLifecycle(db,100));

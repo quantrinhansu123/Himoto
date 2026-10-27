@@ -14,12 +14,14 @@ original_plan=dict(version=1,start='2026-10-01T08:00',end='2027-04-01T08:00',int
 def initialize():
     global borrowed
     borrowed=False;state.clear()
-    for id,status,own,total,paid,vehicle_ids in [(901,'overdue',False,1000000,0,[101,102]),(902,'renting',True,100000,100000,[201,202]),(903,'renting',True,750000,100000,[301]),(904,'bad_debt',False,1000000,1000000,[401]),(905,'overdue',True,100000,0,[501])]:
+    for id,status,own,total,paid,vehicle_ids in [(901,'overdue',False,1000000,0,[101,102]),(902,'renting',True,100000,100000,[201,202]),(903,'renting',True,750000,100000,[301]),(904,'bad_debt',False,1000000,1000000,[401]),(905,'overdue',True,100000,0,[501]),(906,'renting',True,2500000,7500000,[601])]:
         state[id]=dict(status=status,ownership=own,base=total,total=total,paid=paid,deposit=0,settlement=False,events=[],plan=copy.deepcopy(original_plan) if id in (902,905) else None,held_at=None,resume_vehicle_count=0,items=[dict(id=id*10+i,vehicle_id=v,name='Xe QA',license=f'QA-CAR-{v}',rent_at='2026-10-01T01:00:00Z',return_at='2026-10-10T01:00:00Z' if not own else '2027-04-01T01:00:00Z',completed_at=None) for i,v in enumerate(vehicle_ids)])
+    state[906].update(deposit=2000000,end='2026-09-09T03:55:00Z')
+    state[906]['items'][0].update(rent_at='2026-06-10T03:55:00Z',return_at='2026-09-09T03:55:00Z',completed_at='2026-10-23T13:35:49.848Z',return_reconciled=True)
 
 def context(id):
     s=state[id];remaining=max(s['total']-s['paid'],0);clear=remaining==0 and s['deposit']==0
-    return dict(id=id,code=f'QA-LIFE-{id}',status=s['status'],revision=str(10+len(s['events'])),ownership=s['ownership'],overdue=s['status']=='overdue',items=s['items'],all_returned=all(i['completed_at'] for i in s['items']),returned_count=sum(bool(i['completed_at']) for i in s['items']),total_amount=s['total'],paid_amount=s['paid'],remaining=remaining,deposit_held=s['deposit'],overpayment=max(s['paid']-s['total'],0),settled=s['settlement'] and clear,can_settle=clear,settlement_note='Đủ số liệu tiền để xác nhận tất toán.' if clear else 'Còn công nợ hoặc cọc cần đối chiếu.',events=s['events'],held_at=s['held_at'],hold_until=s.get('hold_until'),hold_expired=bool(s.get('hold_until')),hold_can_resume=not s.get('was_overdue',False),hold_was_overdue=s.get('was_overdue',False),completed_from_hold=s.get('completed_from_hold',False),waived_amount=s.get('waived_amount',0),resume_vehicle_count=s['resume_vehicle_count'],plan=s['plan'],base_total=s['base'],start_at='2026-10-01T01:00:00Z',end_at=(s['plan']['end']+':00+07:00') if s['plan'] else s.get('end','2027-04-01T01:00:00Z'))
+    return dict(id=id,code=f'QA-LIFE-{id}',status=s['status'],revision=str(10+len(s['events'])),ownership=s['ownership'],overdue=s['status']=='overdue' or id==906 and s['status']=='renting',items=s['items'],all_returned=all(i['completed_at'] for i in s['items']),returned_count=sum(bool(i['completed_at']) for i in s['items']),total_amount=s['total'],paid_amount=s['paid'],remaining=remaining,deposit_held=s['deposit'],overpayment=max(s['paid']-s['total'],0),settled=s['settlement'] and clear,can_settle=clear,settlement_note='Đủ số liệu tiền để xác nhận tất toán.' if clear else 'Còn công nợ hoặc cọc cần đối chiếu.',events=s['events'],held_at=s['held_at'],hold_until=s.get('hold_until'),hold_expired=bool(s.get('hold_until')),hold_can_resume=not s.get('was_overdue',False),hold_was_overdue=s.get('was_overdue',False),completed_from_hold=s.get('completed_from_hold',False),waived_amount=s.get('waived_amount',0),resume_vehicle_count=s['resume_vehicle_count'],plan=s['plan'],base_total=s['base'],start_at='2026-10-01T01:00:00Z',end_at=(s['plan']['end']+':00+07:00') if s['plan'] else s.get('end','2027-04-01T01:00:00Z'))
 
 def record(id):
     s=state[id]
@@ -41,7 +43,7 @@ def mock(route):
             if action=='mark_bad_debt':assert old=='overdue';s['status']='bad_debt'
             elif action=='settle':assert s['total']==s['paid'] and s['deposit']==0;s['settlement']=True;close_if_ready(s)
             elif action=='hold':
-                assert s['ownership'];s['was_overdue']=old=='overdue';s['status']='reserved';s['held_at']=body['at'];s['hold_until']=body['hold_until'];s['resume_vehicle_count']=sum(not i['completed_at'] for i in s['items'])
+                assert s['ownership'];s['was_overdue']=old=='overdue' or id==906;s['status']='reserved';s['held_at']=body['at'];s['hold_until']=body['hold_until'];s['resume_vehicle_count']=sum(not i['completed_at'] for i in s['items'])
                 for item in s['items']:
                     if not item['completed_at']:item['completed_at']=body['at']+':00+07:00'
                 if s['plan']:s['plan']['stopped_at']=body['at']
@@ -185,6 +187,24 @@ with sync_playwright() as pw:
                 expect(page.locator('.mg-contract-hold-status.is-expired').filter(visible=True)).to_have_count(1)
                 assert len(writes)==before and state[905]['status']=='reserved'
                 checks.append(engine+'/'+role+': crossing the hold deadline turns the visible badge red while the page stays open, with no mutation request')
+            detail,panel=open_detail(page,906)
+            expect(panel.get_by_text('Quá hạn',exact=True)).to_be_visible()
+            expect(panel).to_contain_text('Đã gỡ giữ xe; chưa có ngày thu hồi thực tế')
+            expect(panel.get_by_role('button',name='Chuyển sang Nợ xấu',exact=True)).to_have_count(0)
+            before={key:copy.deepcopy(state[906][key]) for key in ['base','total','paid','deposit','items']}
+            panel.get_by_role('button',name='Bảo lưu hợp đồng',exact=True).click()
+            dialog,button=confirm(page,'Bảo lưu hợp đồng','2026-10-15T10:00','Ngày giờ bắt đầu bảo lưu')
+            expect(dialog).to_contain_text('không thay cho ngày thu hồi thực tế')
+            expect(dialog.get_by_role('checkbox')).to_have_accessible_name('Tôi xác nhận bảo lưu hồ sơ cũ, giữ nguyên kho xe, tiền và lịch sử')
+            dialog.screenshot(path=str(out/f'{engine}-{role}-reconciled-hold.png'))
+            button.click();expect(dialog).not_to_be_visible()
+            expect(panel.get_by_role('button',name='Tiếp tục thuê',exact=True)).to_have_count(0)
+            for key,value in before.items():assert state[906][key]==value,key
+            panel.get_by_role('button',name='Hoàn thành hợp đồng',exact=True).click()
+            dialog,button=confirm(page,'Hoàn thành hợp đồng','2026-10-24T10:00','Ngày giờ xác nhận')
+            button.click();expect(dialog).not_to_be_visible();expect(panel).to_contain_text('Đã đóng hợp đồng')
+            for key,value in before.items():assert state[906][key]==value,key
+            checks.append(engine+'/'+role+': reconciled legacy deadline displays overdue; hold explains unchanged inventory/history and uses a separate start date; explicit completion preserves all old amounts and creates no second return')
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth+1');ctx.unroute_all(behavior='ignoreErrors');ctx.close()
         browser.close()
 assert not errors,errors

@@ -2,7 +2,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { installmentBalance,parseInstallmentPlan } from '@/lib/management/contract-billing';
-import { canHoldContract,localLifecycleTime,resumeInstallmentPlan,resumedHoldEnd,validLifecycleTime,type ContractLifecycleContext,type ContractLifecycleInput,type LifecycleEvent } from '@/lib/management/contract-lifecycle';
+import { canHoldContract,canMarkBadDebtContract,localLifecycleTime,resumeInstallmentPlan,resumedHoldEnd,validLifecycleTime,type ContractLifecycleContext,type ContractLifecycleInput,type LifecycleEvent } from '@/lib/management/contract-lifecycle';
 import { usesScopedDatabase } from './access-context';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
@@ -26,7 +26,7 @@ async function overdueAtHold(db:Database,id:number,context:ContractLifecycleCont
     if(balance.accrued_total===null)throw new ContractLifecycleError('Chưa đối chiếu được tình trạng thanh toán lúc bắt đầu bảo lưu.',409);
     return {overdue:Number(balance.due_amount)>0&&Boolean(balance.overdue_at&&balance.overdue_at<at),paid,due:balance.due_amount};
   }
-  return {overdue:context.items.some(item=>!item.completed_at&&item.return_at&&Date.parse(item.return_at)<Date.parse(stamp(at))),paid,due:context.remaining};
+  return {overdue:context.items.some(item=>(!item.completed_at||item.return_reconciled)&&item.return_at&&Date.parse(item.return_at)<Date.parse(stamp(at))),paid,due:context.remaining};
 }
 const orderSql=`SELECT o.id,o.order_status,o.draft_payload,o.total,o.rent_at,o.return_at,o.xmin::text AS revision,
   COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
@@ -48,15 +48,20 @@ export function parseContractLifecycle(raw:unknown):ContractLifecycleInput {
 export async function readContractLifecycle(db:Database,id:number):Promise<ContractLifecycleContext>{
   const order=(await db.query(orderSql,[id])).rows[0];if(!order)throw new ContractLifecycleError('Không tìm thấy hợp đồng trong phạm vi tài khoản.',404);
   const state=await readContractResolution(db,id);if(!state)throw new ContractLifecycleError('Không đọc được đối chiếu hợp đồng.',409);
+  // Only a verified, unchanged release checkpoint can stand in for an open legacy line.
+  // An ordinary return or a corrected actual recovery must never unlock another hold.
+  const recordedReconciliations=order.draft_payload?.management_composer?.vehicle_reconciliations;
+  const reconciliations:Array<{kind?:string;item_id?:number;vehicle_id?:number;actual_recovery_at?:string|null;release_checkpoint_at?:string}>=Array.isArray(recordedReconciliations)?recordedReconciliations:[];
   const items=(await db.query(`SELECT d.id,d.vehicle_id,d.rent_at,d.return_at,d.completed_at,v.name,v.license
     FROM himoto.order_vehicle_details d LEFT JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
-    WHERE d.order_id=$1 AND d.deleted_at IS NULL ORDER BY d.id`,[id])).rows.map(row=>({id:Number(row.id),vehicle_id:Number(row.vehicle_id),name:String(row.name||''),license:String(row.license||''),rent_at:iso(row.rent_at),return_at:iso(row.return_at),completed_at:iso(row.completed_at)}));
+    WHERE d.order_id=$1 AND d.deleted_at IS NULL ORDER BY d.id`,[id])).rows.map(row=>({id:Number(row.id),vehicle_id:Number(row.vehicle_id),name:String(row.name||''),license:String(row.license||''),rent_at:iso(row.rent_at),return_at:iso(row.return_at),completed_at:iso(row.completed_at),
+      ...(row.completed_at&&reconciliations.some(entry=>entry&&entry.kind==='confirmed_prior_recovery'&&Number(entry.item_id)===Number(row.id)&&Number(entry.vehicle_id)===Number(row.vehicle_id)&&entry.actual_recovery_at===null&&Date.parse(entry.release_checkpoint_at||'')===Date.parse(iso(row.completed_at)!))?{return_reconciled:true}:{})}));
   const rawPlan=order.draft_payload?.management_composer?.installment_plan,plan=rawPlan?parseInstallmentPlan(rawPlan):null;
   const balance=plan?installmentBalance(plan,state.base,state.paid):null;
   const lifecycle=order.draft_payload?.management_composer?.lifecycle||{};
   const overdue=['renting','overdue','wait_payment'].includes(order.order_status)&&(order.ownership&&rawPlan
     ?Boolean(balance&&Number(balance.due_amount)>0&&balance.overdue_at&&balance.overdue_at<localLifecycleTime())
-    :items.some(item=>!item.completed_at&&item.return_at&&new Date(item.return_at).getTime()<Date.now())||order.order_status==='overdue'&&state.remaining!==null&&state.remaining>0&&Boolean(order.return_at&&new Date(order.return_at).getTime()<Date.now()));
+    :items.some(item=>(!item.completed_at||item.return_reconciled)&&item.return_at&&new Date(item.return_at).getTime()<Date.now())||order.order_status==='overdue'&&state.remaining!==null&&state.remaining>0&&Boolean(order.return_at&&new Date(order.return_at).getTime()<Date.now()));
   return {id:Number(order.id),code:String(order.code),status:order.order_status,revision:String(order.revision),ownership:Boolean(order.ownership),rental_type:String(order.rental_type||''),contract_type_name:String(order.contract_type_name||''),overdue,
     items,all_returned:state.all_returned,returned_count:state.returned_count,total_amount:state.total,paid_amount:state.paid,remaining:state.remaining,deposit_held:state.deposit_held,overpayment:state.overpayment,settled:state.settled,can_settle:state.can_settle,
     settlement_note:state.remaining===null?'Chưa đối chiếu được số tiền hợp đồng.':state.remaining>0?'Còn tiền thuê, phí hoặc kỳ thuê chưa thanh toán.':state.deposit_held>0?'Còn tiền cọc chưa có phiếu xử lý/hoàn cọc.':Number(state.overpayment)>0?'Còn tiền thu dư cần đối chiếu.':'Đủ số liệu tiền để xác nhận tất toán.',
@@ -64,7 +69,7 @@ export async function readContractLifecycle(db:Database,id:number):Promise<Contr
     hold_until:lifecycle.active_hold?.until||null,hold_expired:order.order_status==='reserved'&&validLifecycleTime(lifecycle.active_hold?.until)&&Date.parse(stamp(lifecycle.active_hold.until))<=Date.now(),
     hold_can_resume:lifecycle.active_hold?.can_resume===true,hold_was_overdue:lifecycle.active_hold?.was_overdue===true,
     completed_from_hold:Boolean(lifecycle.hold_completion),waived_amount:lifecycle.hold_completion?.waived_amount,
-    end_at:plan?stamp(plan.end):iso(order.return_at)||items.filter(item=>!item.completed_at&&item.return_at).map(item=>item.return_at!).sort().at(-1)||null};
+    end_at:plan?stamp(plan.end):iso(order.return_at)||items.filter(item=>(!item.completed_at||item.return_reconciled)&&item.return_at).map(item=>item.return_at!).sort().at(-1)||null};
 }
 export async function applyContractLifecycle(db:Database,id:number,actorId:number,raw:unknown){
   const input=parseContractLifecycle(raw);if(!Number.isSafeInteger(id)||id<=0)throw new ContractLifecycleError('Mã hợp đồng không hợp lệ.');
@@ -79,10 +84,10 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
   const context=await readContractLifecycle(db,id);
   let next=order.order_status;let extra:Record<string,unknown>={};
   if(input.action==='mark_bad_debt'){
-    if(!context.overdue)throw new ContractLifecycleError('Chỉ chuyển hợp đồng đã thực sự quá hạn sang Nợ xấu.',409);
+    if(!canMarkBadDebtContract(context))throw new ContractLifecycleError(context.overdue?'Hợp đồng đã gỡ giữ hoặc trả đủ xe và không còn công nợ cần thu. Đối chiếu tiền cũ trước khi xử lý.':'Chỉ chuyển hợp đồng đã thực sự quá hạn sang Nợ xấu.',409);
     const atMs=new Date(stamp(input.at)).getTime();
     if(context.plan){const balance=installmentBalance(context.plan,context.base_total,context.paid_amount,atMs);if(!balance.overdue_at||Number(balance.due_amount)<=0||balance.overdue_at>=input.at)throw new ContractLifecycleError('Thời điểm chuyển phải sau hạn của khoản tiền còn thiếu.',409);}
-    else if(!context.items.some(item=>!item.completed_at&&item.return_at&&new Date(item.return_at).getTime()<atMs)&&!(order.order_status==='overdue'&&order.return_at&&new Date(order.return_at).getTime()<atMs))throw new ContractLifecycleError('Thời điểm chuyển phải sau hạn hợp đồng.',409);
+    else if(!context.items.some(item=>(!item.completed_at||item.return_reconciled)&&item.return_at&&new Date(item.return_at).getTime()<atMs)&&!(order.order_status==='overdue'&&order.return_at&&new Date(order.return_at).getTime()<atMs))throw new ContractLifecycleError('Thời điểm chuyển phải sau hạn hợp đồng.',409);
     next='bad_debt';delete lifecycle.settlement;
     lifecycle.bad_debt={at:stamp(input.at),recorded_at:new Date().toISOString(),actor_id:actorId};
     if(context.plan)composer.installment_plan={...context.plan,stopped_at:input.at<context.plan.end?input.at:context.plan.end};
@@ -92,18 +97,20 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
     lifecycle.settlement={at:input.at,recorded_at:new Date().toISOString(),actor_id:actorId,note:input.note,total:context.total_amount,paid:context.paid_amount,deposit_held:context.deposit_held};
   }else if(input.action==='hold'){
     if(!order.ownership||!['renting','overdue','wait_payment'].includes(order.order_status))throw new ContractLifecycleError('Chỉ bảo lưu hợp đồng thuê sở hữu đang thuê hoặc chờ tất toán.',409);
-    if(!canHoldContract(context))throw new ContractLifecycleError('Chỉ bảo lưu hợp đồng thuê sở hữu còn xe đang thuê.',409);
+    if(!canHoldContract(context))throw new ContractLifecycleError('Chỉ bảo lưu hợp đồng thuê sở hữu còn xe đang thuê hoặc có lượt gỡ giữ xe cũ chưa đối chiếu ngày thu hồi.',409);
     const active=(await db.query('SELECT id,vehicle_id,rent_at FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL AND completed_at IS NULL ORDER BY vehicle_id,id FOR UPDATE',[id])).rows;
-    if(!active.length)throw new ContractLifecycleError('Không còn lượt xe đang thuê để ghi nhận thu hồi và bảo lưu.',409);
-    if(active.some(item=>item.rent_at&&new Date(stamp(input.at)).getTime()<new Date(item.rent_at).getTime()))throw new ContractLifecycleError('Ngày bảo lưu không được trước ngày nhận xe.');
+    const reconciled=context.items.filter(item=>item.return_reconciled),heldItems=[...active,...reconciled];
+    if(!heldItems.length)throw new ContractLifecycleError('Không còn lượt xe đang thuê hoặc hồ sơ gỡ giữ xe để bảo lưu.',409);
+    if(heldItems.some(item=>item.rent_at&&new Date(stamp(input.at)).getTime()<new Date(item.rent_at).getTime()))throw new ContractLifecycleError('Ngày bảo lưu không được trước ngày nhận xe.');
     const planValue=composer.installment_plan,plan=planValue?parseInstallmentPlan(planValue):null;
     if(planValue&&!plan)throw new ContractLifecycleError('Lịch đóng tiền chưa hợp lệ. Cần đối chiếu trước khi bảo lưu.',409);
     if(plan&&input.at<plan.start)throw new ContractLifecycleError('Ngày bảo lưu không được trước ngày bắt đầu lịch đóng tiền.');
     const prior=await overdueAtHold(db,id,context,input.at),deadline=context.end_at?Date.parse(context.end_at):NaN;
-    lifecycle.active_hold={at:input.at,until:input.hold_until,item_ids:active.map(item=>Number(item.id)),vehicle_ids:active.map(item=>Number(item.vehicle_id)),plan:plan||null,prior_end:context.end_at,was_overdue:prior.overdue,paid_at_start:prior.paid,past_due_amount:prior.due,
-      was_term_expired:!Number.isFinite(deadline)||deadline<=Date.parse(stamp(input.at)),can_resume:!prior.overdue&&Number.isFinite(deadline)&&deadline>Date.parse(stamp(input.at))};
+    lifecycle.active_hold={at:input.at,until:input.hold_until,item_ids:heldItems.map(item=>Number(item.id)),vehicle_ids:heldItems.map(item=>Number(item.vehicle_id)),...(reconciled.length?{reconciled_item_ids:reconciled.map(item=>item.id)}:{}),plan:plan||null,prior_end:context.end_at,was_overdue:prior.overdue,paid_at_start:prior.paid,past_due_amount:prior.due,
+      was_term_expired:!Number.isFinite(deadline)||deadline<=Date.parse(stamp(input.at)),can_resume:!reconciled.length&&!prior.overdue&&Number.isFinite(deadline)&&deadline>Date.parse(stamp(input.at))};
     // Resume eligibility is fixed from the original state, never by the later wall clock.
     if(plan)composer.installment_plan={...plan,stopped_at:input.at<plan.end?input.at:plan.end,paused_at:input.at<plan.end?input.at:plan.end};
+    // Previously released lines keep their checkpoint and any subsequent rental untouched.
     for(const item of active){
       if(usesScopedDatabase())await db.query('SELECT himoto.complete_contract_vehicle_return($1,$2::timestamptz)',[item.id,stamp(input.at)]);
       else await db.query('UPDATE himoto.order_vehicle_details SET completed_at=$2::timestamptz,updated_at=now() WHERE id=$1 AND completed_at IS NULL',[item.id,stamp(input.at)]);
@@ -113,7 +120,7 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
       else await db.query(`UPDATE himoto.vehicles v SET status='ready',updated_at=now() WHERE v.id=$1 AND v.status IN('using','rent','bad_debt') AND NOT EXISTS(
         SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id WHERE d.vehicle_id=v.id AND d.completed_at IS NULL AND d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status IN('renting','overdue','wait_payment','pending','deposit_contract','bad_debt'))`,[item.vehicle_id]);
     }
-    extra={items:lifecycle.active_hold.item_ids,stopped_at:composer.installment_plan?.stopped_at||null,hold_until:input.hold_until,was_overdue:prior.overdue,can_resume:lifecycle.active_hold.can_resume};next='reserved';delete lifecycle.settlement;
+    extra={items:lifecycle.active_hold.item_ids,...(reconciled.length?{reconciled_item_ids:lifecycle.active_hold.reconciled_item_ids}:{}),stopped_at:composer.installment_plan?.stopped_at||null,hold_until:input.hold_until,was_overdue:prior.overdue,can_resume:lifecycle.active_hold.can_resume};next='reserved';delete lifecycle.settlement;
   }else if(input.action==='update_hold'){
     const hold=lifecycle.active_hold;
     if(!order.ownership||order.order_status!=='reserved'||!hold)throw new ContractLifecycleError('Hợp đồng không ở trạng thái Bảo lưu.',409);

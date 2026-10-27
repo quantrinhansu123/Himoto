@@ -6,7 +6,7 @@ import { useManagement } from './ManagementProvider';
 import { VehiclePicker } from '@/components/contracts/VehiclePicker';
 import { mapApiRow } from '@/lib/management/repository';
 import type { ManagementRow } from '@/lib/management/types';
-import { canHoldContract,lifecycleActionLabel,lifecycleDisplayStatus,loadContractLifecycle,localLifecycleTime,resumeInstallmentPlan,resumedHoldEnd,saveContractLifecycle,validLifecycleTime,type ContractLifecycleAction,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
+import { canHoldContract,canMarkBadDebtContract,lifecycleActionLabel,lifecycleDisplayStatus,loadContractLifecycle,localLifecycleTime,resumeInstallmentPlan,resumedHoldEnd,saveContractLifecycle,validLifecycleTime,type ContractLifecycleAction,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 import { formatDateTime,formatMoney } from '@/lib/formatters';
 import { MANAGEMENT_CONFIG,optionLabel } from '@/lib/management/config';
 import { installmentSchedule } from '@/lib/management/contract-billing';
@@ -46,11 +46,14 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
     finally{busy.current=false;setSaving(false);}
   }
   const money=(value:number|null)=>value===null?'Cần đối chiếu':formatMoney(value);
+  const hasReconciled=Boolean(context?.items.some(item=>item.return_reconciled));
+  const reconciledOnly=hasReconciled&&context?.all_returned;
+  const atLabel=action==='hold'?(reconciledOnly?'Ngày giờ bắt đầu bảo lưu':'Ngày giờ thực tế thu xe và bảo lưu'):action==='resume'?'Ngày giờ thực tế thuê lại':'Ngày giờ xác nhận';
   return <>
     {loading&&!context?<p role="status">Đang đối chiếu xe, công nợ và tiền cọc…</p>:context&&<>
       <p><strong>{optionLabel(MANAGEMENT_CONFIG.contracts,'status',lifecycleDisplayStatus(context))}</strong> · {context.contract_type_name||(context.rental_type?optionLabel(MANAGEMENT_CONFIG.contracts,'rental_type',context.rental_type):context.ownership?'Thuê sở hữu':'Thuê xe')}</p>
       <dl className="mg-contract-detail-grid mg-contract-lifecycle-summary">
-        <div><dt>Trả / thu hồi xe</dt><dd>{context.all_returned?'Đã trả tất cả xe':`Đã trả ${context.returned_count}/${context.items.length} lượt xe`}</dd></div>
+        <div><dt>Trả / thu hồi xe</dt><dd>{hasReconciled?`Đã đóng ${context.returned_count}/${context.items.length} lượt xe; có lượt gỡ giữ chờ đối chiếu ngày thu hồi`:context.all_returned?'Đã trả tất cả xe':`Đã trả ${context.returned_count}/${context.items.length} lượt xe`}</dd></div>
         <div><dt>{context.completed_from_hold?'Hoàn thành sau bảo lưu':'Tất toán'}</dt><dd>{context.completed_from_hold?'Đã đóng hợp đồng':context.settled?'Đã xác nhận tất toán':'Chưa tất toán'}<p>{context.completed_from_hold?'Dừng theo dõi công nợ và hủy các kỳ chưa phát sinh. Tiền đã thu/hoàn, cọc và lịch sử được giữ nguyên.':context.settlement_note}</p></dd></div>
         {context.completed_from_hold&&<div><dt>Tổn thất công nợ</dt><dd>{money(context.waived_amount??0)}<p>Khoản đã phát sinh không thu hồi; không tính vào doanh thu đã thu và không tạo phiếu chi.</p></dd></div>}
         <div><dt>Tiền thuê / phí còn phải đối chiếu</dt><dd>{money(context.remaining)}</dd></div>
@@ -59,8 +62,9 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
       {context.status==='bad_debt'&&<p>Hợp đồng giữ Nợ xấu đến khi đã trả/thu hồi tất cả xe và xác nhận tất toán. Xe thu hồi xong được cho thuê lại khi Lưu kho và không có hợp đồng khác giữ.</p>}
       {context.status==='reserved'&&<><p>Đang bảo lưu từ {context.held_at?formatDateTime(context.held_at+':00+07:00'):'—'} đến {context.hold_until?formatDateTime(context.hold_until+':00+07:00'):'chưa nhập'}. Không phát sinh tiền thuê hoặc phí quá hạn trong bảo lưu; tiền đã phát sinh trước đó và cọc giữ nguyên.</p>{holdExpired&&<p role="status" className="mg-hold-expiry-alert"><strong>Hết hạn bảo lưu.</strong> Hợp đồng vẫn ở Bảo lưu, chờ nhân viên xác nhận {context.hold_can_resume?'tiếp tục thuê hoặc hoàn thành.':'hoàn thành hợp đồng.'}</p>}{!context.hold_until&&<p role="alert">Hồ sơ cũ chưa có ngày kết thúc bảo lưu. Nhập tại Sửa thời hạn bảo lưu trước khi xử lý tiếp.</p>}{!context.hold_can_resume&&<p>Hợp đồng quá hạn trước bảo lưu hoặc chưa đủ thông tin thời hạn: sau bảo lưu chỉ được hoàn thành.</p>}</>}
       {context.ownership&&['renting','overdue','wait_payment'].includes(context.status)&&<p>Có thể bảo lưu hợp đồng thuê sở hữu, kể cả hợp đồng quá hạn. Nhập ngày bắt đầu và kết thúc; hết bảo lưu chỉ báo đỏ, chờ nhân viên xử lý.</p>}
+      {hasReconciled&&<p role="status">Hồ sơ cũ có xe đã gỡ giữ khi đối chiếu kho, chưa xác định ngày thu hồi thực tế. Bảo lưu giữ nguyên mốc cũ và kho xe hiện tại; không thu hồi xe lần nữa hoặc tự điều chỉnh tiền thuê, tiền đã thu và cọc. Hồ sơ này không tự tiếp tục thuê sau bảo lưu.</p>}
       <div className="mg-heading-actions">
-        {can('contracts.return')&&context.overdue&&<button className="mg-button" onClick={()=>open('mark_bad_debt')}>Chuyển sang Nợ xấu</button>}
+        {can('contracts.return')&&canMarkBadDebtContract(context)&&<button className="mg-button" onClick={()=>open('mark_bad_debt')}>Chuyển sang Nợ xấu</button>}
         {can('contracts.return')&&context.status==='bad_debt'&&!context.all_returned&&<button className="mg-button" onClick={onRecover}>Thu hồi xe nợ xấu</button>}
         {(can('contracts.return')||can('finance.write'))&&context.status==='bad_debt'&&!context.settled&&<button className="mg-button" disabled={!context.can_settle} onClick={()=>open('settle')}>Xác nhận tất toán</button>}
         {onPayment&&['bad_debt','reserved'].includes(context.status)&&<button className="mg-button" onClick={()=>onPayment(Number(context.remaining)>0?'debt':context.deposit_held>0?'deposit_refund':'extra')}>Thanh toán / xử lý cọc</button>}
@@ -68,7 +72,7 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
         {can('contracts.return')&&context.status==='reserved'&&<><button className="mg-button" onClick={()=>open('update_hold')}>Sửa thời hạn bảo lưu</button>{context.hold_can_resume&&<button className="mg-button mg-button-primary" disabled={!holdExpired} onClick={()=>open('resume')}>Tiếp tục thuê</button>}<button className="mg-button" disabled={!holdExpired} onClick={()=>open('complete_hold')}>Hoàn thành hợp đồng</button></>}
         <button className="mg-button" disabled={loading} onClick={()=>void refresh()}>Làm mới tình trạng</button>
       </div>
-      <h4>Tình trạng từng xe</h4><ul>{context.items.map(item=><li key={item.id}>{item.license||item.name} · {item.completed_at?`Đã trả/thu hồi ${formatDateTime(item.completed_at)}`:'Chưa trả xe'}</li>)}</ul>
+      <h4>Tình trạng từng xe</h4><ul>{context.items.map(item=><li key={item.id}>{item.license||item.name} · {item.return_reconciled?'Đã gỡ giữ xe; chưa có ngày thu hồi thực tế':item.completed_at?`Đã trả/thu hồi ${formatDateTime(item.completed_at)}`:'Chưa trả xe'}</li>)}</ul>
       <h4>Lịch sử trạng thái</h4>{context.events.length?<ul>{context.events.map((event,index)=><li key={index}>{formatDateTime(event.at)} · {event.actor_name||`#${event.actor_id}`} · {event.action==='closed'?'Đóng hợp đồng':lifecycleActionLabel[event.action as ContractLifecycleAction]||event.action}<p>{event.note}</p></li>)}</ul>:<p>Chưa có thao tác trạng thái mới.</p>}
     </>}
     {error&&<p role="alert" className="mg-field-error">{error} <button className="mg-button" onClick={()=>void refresh()}>Thử lại</button></p>}
@@ -77,10 +81,10 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
       <form onSubmit={event=>{event.preventDefault();void save();}}><div className="mg-dialog-body">
         <p>{context.code}</p>
         {action==='settle'&&<p>Đối chiếu đủ tiền thuê, phí phát sinh và cọc. {context.all_returned?'Đã trả đủ xe: xác nhận sẽ đóng hợp đồng.':'Chưa trả đủ xe: hợp đồng vẫn Nợ xấu sau khi xác nhận tất toán.'}</p>}
-        {action==='hold'&&<p>Chỉ xác nhận khi đã thực tế thu hồi các xe còn đang thuê. Xe được giải phóng để cho thuê lại; lịch đóng tiền dừng phát sinh kỳ mới, nợ và cọc cũ được giữ nguyên.</p>}
+        {action==='hold'&&<p>{reconciledOnly?'Chuyển hồ sơ đã gỡ giữ xe sang Bảo lưu. Ngày bắt đầu bảo lưu không thay cho ngày thu hồi thực tế chưa xác định; giữ nguyên kho xe, các lượt thuê sau đó, tiền và lịch sử cũ.':'Chỉ xác nhận khi đã thực tế thu hồi các xe còn đang thuê. Xe được giải phóng để cho thuê lại; lịch đóng tiền dừng phát sinh kỳ mới, nợ và cọc cũ được giữ nguyên.'}</p>}
         {action==='update_hold'&&<p>Sửa ngày kết thúc bảo lưu. Hợp đồng tiếp tục giữ Bảo lưu và dừng phát sinh phí; ngày bắt đầu, khoản tiền cũ và lịch sử không thay đổi.</p>}
         {action==='complete_hold'&&<><p>Hoàn thành và dừng theo dõi công nợ hợp đồng này. Khoản đã phát sinh chưa thu được ghi là <strong>Tổn thất công nợ: {money(context.remaining)}</strong>. Không cộng vào doanh thu đã thu, không tạo phiếu thu/chi và không trừ thêm vào doanh thu thực thu.</p><p>Hủy các kỳ chưa phát sinh; không tính tiền trong thời gian bảo lưu. Tiền đã thu/hoàn và tiền cọc giữ đúng lịch sử.</p></>}
-        <div className="mg-field"><label htmlFor="lifecycle-at">{action==='hold'?'Ngày giờ thực tế thu xe và bảo lưu':action==='resume'?'Ngày giờ thực tế thuê lại':'Ngày giờ xác nhận'}</label><DateTime24Controls id="lifecycle-at" label={action==='hold'?'Ngày giờ thực tế thu xe và bảo lưu':action==='resume'?'Ngày giờ thực tế thuê lại':'Ngày giờ xác nhận'} value={at} onChange={setAt}/></div>
+        <div className="mg-field"><label htmlFor="lifecycle-at">{atLabel}</label><DateTime24Controls id="lifecycle-at" label={atLabel} value={at} onChange={setAt}/></div>
         {['hold','update_hold'].includes(action)&&<div className="mg-field"><label htmlFor="lifecycle-hold-until">Bảo lưu đến ngày giờ (24h)</label><DateTime24Controls id="lifecycle-hold-until" label="Bảo lưu đến ngày giờ" value={holdUntil} onChange={setHoldUntil}/></div>}
         {action==='resume'&&<>
           <p>Tiếp tục chính hợp đồng này, giữ toàn bộ nợ/cọc và lịch sử cũ. Chọn đủ xe đang rảnh; xe đã được cho khách khác thuê sẽ bị chặn.</p>
@@ -92,7 +96,7 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
           {preview?.error&&<p className="mg-field-error">{preview.error}</p>}
         </>}
         <div className="mg-field"><label htmlFor="lifecycle-note">Lý do / nội dung đối chiếu</label><textarea id="lifecycle-note" disabled={saving} maxLength={1000} rows={3} value={note} onChange={event=>setNote(event.target.value)}/></div>
-        <label className="mg-checkbox"><input type="checkbox" checked={confirmed} disabled={saving} onChange={event=>setConfirmed(event.target.checked)}/>{action==='hold'?'Tôi xác nhận xe đã thực tế thu về, bảo lưu giữ nợ/cọc và dừng kỳ mới':action==='resume'?'Tôi đã đối chiếu xe bàn giao, lịch đóng tiền còn lại và nợ/cọc cũ':action==='complete_hold'?'Tôi xác nhận khoản chưa thu không thu hồi, ghi nhận tổn thất công nợ và hoàn thành hợp đồng':'Tôi đã đối chiếu tình trạng xe và các khoản tiền thực tế của hợp đồng'}</label>
+        <label className="mg-checkbox"><input type="checkbox" checked={confirmed} disabled={saving} onChange={event=>setConfirmed(event.target.checked)}/>{action==='hold'?(reconciledOnly?'Tôi xác nhận bảo lưu hồ sơ cũ, giữ nguyên kho xe, tiền và lịch sử':'Tôi xác nhận xe đã thực tế thu về, bảo lưu giữ nợ/cọc và dừng kỳ mới'):action==='resume'?'Tôi đã đối chiếu xe bàn giao, lịch đóng tiền còn lại và nợ/cọc cũ':action==='complete_hold'?'Tôi xác nhận khoản chưa thu không thu hồi, ghi nhận tổn thất công nợ và hoàn thành hợp đồng':'Tôi đã đối chiếu tình trạng xe và các khoản tiền thực tế của hợp đồng'}</label>
         {saveError&&<p className="mg-field-error" role="alert">{saveError}</p>}
       </div><div className="mg-dialog-footer"><button className="mg-button" type="button" disabled={saving} onClick={()=>setAction(null)}>Quay lại</button><button className="mg-button mg-button-primary" disabled={saving||!confirmed||note.trim().length<5||!validLifecycleTime(at)||['hold','update_hold'].includes(action)&&!validLifecycleTime(holdUntil)||action==='resume'&&(!preview?.end||stockLoading||Boolean(stockError)||selected.some(value=>!value)||new Set(selected).size!==selected.length)}>{saving?'Đang ghi nhận…':lifecycleActionLabel[action]}</button></div></form>
     </Dialog>}

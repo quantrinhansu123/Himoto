@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Dialog } from './Dialog';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { useManagement } from './ManagementProvider';
-import { loadContractLifecycle, localLifecycleTime, saveContractLifecycle, validLifecycleTime, type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
+import { canMarkBadDebtContract, loadContractLifecycle, localLifecycleTime, saveContractLifecycle, validLifecycleTime, type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 
 export function ContractBadDebtDialog({id,code,onClose,onDone}:{id:number;code?:string;onClose:()=>void;onDone:(context:ContractLifecycleContext)=>void}) {
   const {can,notify,invalidateData}=useManagement();
@@ -22,7 +22,7 @@ export function ContractBadDebtDialog({id,code,onClose,onDone}:{id:number;code?:
     finally {if(!signal?.aborted)setLoading(false);}
   },[id]);
   useEffect(()=>{const controller=new AbortController();if(allowed)void refresh(controller.signal);else setLoading(false);return()=>controller.abort();},[allowed,refresh]);
-  const eligible=Boolean(allowed&&context?.overdue&&['renting','overdue','wait_payment'].includes(context.status));
+  const eligible=Boolean(allowed&&context&&canMarkBadDebtContract(context)&&['renting','overdue','wait_payment'].includes(context.status));
   async function submit(event:FormEvent) {
     event.preventDefault();
     if(busy.current||!eligible||!context||!confirmed||note.trim().length<5||!validLifecycleTime(at))return;
@@ -38,7 +38,7 @@ export function ContractBadDebtDialog({id,code,onClose,onDone}:{id:number;code?:
       <div className="mg-dialog-body">
         {loading&&<p role="status">Đang đối chiếu tình trạng hợp đồng…</p>}
         {!allowed&&<p role="alert" className="mg-field-error">Tài khoản không có quyền chuyển hợp đồng sang Nợ xấu.</p>}
-        {context&&!eligible&&<p role="alert" className="mg-field-error">Hợp đồng không còn ở trạng thái quá hạn để chuyển sang Nợ xấu. Tải lại danh sách để kiểm tra.</p>}
+        {context&&!eligible&&<p role="alert" className="mg-field-error">{context.overdue&&context.all_returned&&Number(context.remaining)===0?'Hợp đồng đã trả hoặc gỡ giữ đủ xe và không còn công nợ cần thu. Đối chiếu tiền thuê, tiền đã thu và cọc trước khi xử lý.':'Hợp đồng không còn ở trạng thái quá hạn để chuyển sang Nợ xấu. Tải lại danh sách để kiểm tra.'}</p>}
         {eligible&&<>
           <p>Chuyển hợp đồng đã quá hạn sang Nợ xấu. Tiền thuê, cọc, phiếu thu/chi và tình trạng xe giữ nguyên.</p>
           <fieldset className="mg-composer-fields" disabled={saving||loading}>

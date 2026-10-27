@@ -1,7 +1,7 @@
 import { createInstallmentPlan, installmentSchedule, parseInstallmentPlan, type InstallmentPlan } from './contract-billing';
 
 export type ContractLifecycleAction='mark_bad_debt'|'settle'|'hold'|'resume'|'update_hold'|'complete_hold';
-export interface LifecycleItem {id:number;vehicle_id:number;name:string;license:string;rent_at:string|null;return_at:string|null;completed_at:string|null}
+export interface LifecycleItem {id:number;vehicle_id:number;name:string;license:string;rent_at:string|null;return_at:string|null;completed_at:string|null;return_reconciled?:boolean}
 export interface LifecycleEvent {action:string;at:string;recorded_at:string;actor_id:number;actor_name:string;note:string;from:string;to:string;request_id:string;request_hash:string;[key:string]:unknown}
 export interface ContractLifecycleContext {
   id:number;code:string;status:string;revision:string;ownership:boolean;overdue:boolean;rental_type?:string;contract_type_name?:string;
@@ -28,7 +28,10 @@ export function contractHoldDeadline(context:Pick<ContractLifecycleContext,'plan
 export function canHoldContract(context:Pick<ContractLifecycleContext,'ownership'|'status'|'items'|'plan'|'end_at'>,now=Date.now()) {
   void now;
   return context.ownership&&['renting','overdue','wait_payment'].includes(context.status)
-    &&context.items.some(item=>!item.completed_at);
+    &&context.items.some(item=>!item.completed_at||item.return_reconciled===true);
+}
+export function canMarkBadDebtContract(context:Pick<ContractLifecycleContext,'overdue'|'all_returned'|'remaining'>) {
+  return context.overdue&&(!context.all_returned||Number(context.remaining)>0);
 }
 export const lifecycleActionLabel:Record<ContractLifecycleAction,string>={mark_bad_debt:'Chuyển sang Nợ xấu',settle:'Xác nhận tất toán',hold:'Bảo lưu hợp đồng',resume:'Tiếp tục thuê',update_hold:'Sửa thời hạn bảo lưu',complete_hold:'Hoàn thành hợp đồng'};
 export const localLifecycleTime=(value=new Date())=>new Date(value.getTime()+7*3600000).toISOString().slice(0,16);
