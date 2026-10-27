@@ -70,6 +70,10 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
               {numberError&&<p id="edit-contract-number-error" className="mg-field-error">{numberError}</p>}
             </div>
             <div className="mg-field"><label htmlFor="edit-contract-signed">Ngày ký hợp đồng</label><input id="edit-contract-signed" type="date" value={draft.signed_on} onChange={event=>setDraft({...draft,signed_on:event.target.value})}/></div>
+            <div className="mg-field"><label htmlFor="edit-contract-created-on">Ngày tạo / nhập hợp đồng</label>
+              <input id="edit-contract-created-on" type="date" required value={draft.created_on} onChange={event=>setDraft({...draft,created_on:event.target.value})}/>
+              <small>Ngày nhập hồ sơ trên hệ thống. Không đổi ngày thuê, tiền hay kho xe.</small>
+            </div>
             {draft.ownership && <div className="mg-field"><label htmlFor="edit-contract-ownership-term">Gói thuê sở hữu</label>
               <select id="edit-contract-ownership-term" value={draft.ownership_term_months || 'custom'} onChange={event=>setDraft({...draft,ownership_term_months:event.target.value as OwnershipTerm})}>
                 {OWNERSHIP_TERMS.map(term=><option key={term.value} value={term.value}>{term.label}</option>)}

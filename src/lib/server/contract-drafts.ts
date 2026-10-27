@@ -18,6 +18,7 @@ import { contractNumberAvailable } from './contract-number';
 import { CONTRACT_REVIEW_SQL,EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { contractVehicleDetailsSql } from './contract-vehicle-reads';
 import { contractFieldLabel } from '@/lib/management/contract-feedback';
+import { validIdentityIssueDate } from '@/lib/management/customer-identity';
 import { OWNERSHIP_HOLD_FIELDS_SQL } from './ownership-hold-fields';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
@@ -218,6 +219,7 @@ export function parseDraftEdits(input: unknown): ContractEdits {
   for (const key of ['sales_staff_id','tls_staff_id'] as const) if (draft[key] !== undefined && (typeof draft[key] !== 'string' || draft[key] && (!/^[1-9]\d*$/.test(draft[key]) || !Number.isSafeInteger(Number(draft[key]))))) throw new DraftSaveError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
   if (draft.sales_staff_name !== undefined && (typeof draft.sales_staff_name !== 'string' || draft.sales_staff_name.length>191)) throw draftFieldError('sales_staff_name','Tên NVKD tối đa 191 ký tự. Kiểm tra tên đã nhập rồi lưu lại.');
   if (draft.ownership_term_months !== undefined && !validOwnershipTerm(draft.ownership_term_months)) throw new DraftSaveError('Thời hạn thuê sở hữu không hợp lệ.');
+  if (draft.created_on && !validIdentityIssueDate(draft.created_on)) throw draftFieldError('created_on','Ngày tạo / nhập hợp đồng chưa hợp lệ.');
   if (draft.custom_installments !== undefined && (!Array.isArray(draft.custom_installments) || draft.custom_installments.length > 3659 || draft.custom_installments.some(item =>
       !item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['due_at','amount'].includes(key)) ||
       typeof item.due_at !== 'string' || item.due_at.length > 16 || typeof item.amount !== 'string' || !/^\d{0,13}$/.test(item.amount)))) throw new DraftSaveError('Lịch đóng tiền tùy chọn không hợp lệ.');
@@ -360,13 +362,14 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     nullable(edits.draft.customer.address), nullable(edits.draft.customer.id_card), nullable(edits.notes),
     localTimestamp(edits.draft.start_date), localTimestamp(edits.draft.end_date), JSON.stringify(payload), reference,
     staff.rows[0]?.user_id ?? null, nullable(edits.draft.signed_on), nullable(edits.draft.authorization_date),
-    nullable(edits.draft.collateral_description), nullable(edits.draft.customer_source), nullable(edits.draft.customer_source_url), edits.rental_type];
+    nullable(edits.draft.collateral_description), nullable(edits.draft.customer_source), nullable(edits.draft.customer_source_url), edits.rental_type,
+    nullable(edits.draft.created_on)];
   let savedId = id;
   if (id === null) {
     const inserted = await client.query(`INSERT INTO himoto.orders (store_id, customer_id, customer_name, customer_phone, customer_address,
       customer_idnumber, note, rent_at, return_at, draft_payload, draft_reference, contract_responsible_user_id, contract_signed_on,
       contract_authorization_date, contract_collateral_description, customer_source, customer_source_url, order_type, order_status, order_mode, created_at, updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'draft','draft',now(),now()) RETURNING id`, values);
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'draft','draft',COALESCE($19::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh',now()),now()) RETURNING id`, values);
     savedId = Number(inserted.rows[0].id);
     if (!reference) await client.query("UPDATE himoto.orders SET draft_reference = 'NHAP-' || id::text WHERE id = $1", [savedId]);
   } else {
@@ -376,7 +379,9 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
     await client.query(`UPDATE himoto.orders SET store_id=$1, customer_id=$2, customer_name=$3, customer_phone=$4, customer_address=$5,
       customer_idnumber=$6, note=$7, rent_at=$8, return_at=$9, draft_payload=$10, draft_reference=$11, contract_responsible_user_id=$12,
       contract_signed_on=$13, contract_authorization_date=$14, contract_collateral_description=$15, customer_source=$16,
-      customer_source_url=$17, order_type=$18, updated_at=now() WHERE id=$19 AND order_status='draft'`, [...values, id]);
+      customer_source_url=$17, order_type=$18,
+      created_at=CASE WHEN NULLIF($19,'') IS NULL THEN created_at ELSE ($19::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') END,
+      updated_at=now() WHERE id=$20 AND order_status='draft'`, [...values, id]);
   }
   const result = await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id = $1`), [savedId]);
   return result.rows[0];

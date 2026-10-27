@@ -28,6 +28,7 @@ export function parseContractProfile(body:unknown):{revision:string;profile:Cont
   for(const key of ['sales_staff_id','tls_staff_id'] as const)if(profile[key] !== undefined && (typeof profile[key] !== 'string' || profile[key] && !/^[1-9]\d{0,14}$/.test(profile[key])))throw new ContractProfileError('Nhân viên ghi nhận doanh số chưa hợp lệ.');
   for(const key of ['sales_staff_name','customer_source'] as const)if(profile[key] !== undefined && (typeof profile[key] !== 'string' || profile[key].length>191))throw new ContractProfileError('Tên NVKD và nguồn khách tối đa 191 ký tự.');
   if(profile.ownership_term_months !== undefined && !validOwnershipTerm(profile.ownership_term_months))throw new ContractProfileError('Phân loại thuê sở hữu chưa hợp lệ.');
+  if(profile.created_on !== undefined && (typeof profile.created_on !== 'string' || !profile.created_on || !validIdentityIssueDate(profile.created_on)))throw new ContractProfileError('Ngày tạo / nhập hợp đồng chưa hợp lệ.');
   if(profile.staff_id && !/^[1-9]\d{0,14}$/.test(profile.staff_id) || !validIdentityIssueDate(profile.signed_on) || !validIdentityIssueDate(profile.authorization_date) || profile.document_requirements !== undefined && !validDocumentRequirements(profile.document_requirements))throw new ContractProfileError('Ngày ký, nhân viên hoặc yêu cầu hồ sơ chưa hợp lệ.');
   return {revision:value.revision,profile:structuredClone(profile),...(typeof value.contract_number==='string'?{contract_number:value.contract_number.trim()}:{}),...(typeof value.notes==='string'?{notes:value.notes}:{}),...(typeof value.status==='string'?{status:value.status}:{})};
 }
@@ -63,15 +64,17 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
   if(!profile.sales_staff_id)attribution.NVKD={staff_id:null,name:profile.sales_staff_name};
   const payload=previous.draft_payload||{},composer=payload.management_composer||{},at=new Date().toISOString();
   const nextNotes=notes??previous.note;
-  const edit={at,actor_id:actor,before:{contract_number:previous.contract_number,notes:previous.note,status:previous.order_status,profile:composer.profile||composer.draft||null},after:{contract_number:code,notes:nextNotes,status:nextStatus,profile}};
+  const beforeCreatedOn=typeof composer.profile?.created_on==='string'?composer.profile.created_on:typeof composer.draft?.created_on==='string'?composer.draft.created_on:null;
+  const edit={at,actor_id:actor,before:{contract_number:previous.contract_number,notes:previous.note,status:previous.order_status,created_on:beforeCreatedOn,profile:composer.profile||composer.draft||null},after:{contract_number:code,notes:nextNotes,status:nextStatus,created_on:profile.created_on??beforeCreatedOn,profile}};
   const updated={...payload,management_composer:{...composer,profile,profile_updated_by:actor,profile_updated_at:at,profile_attribution:attribution,
-    ...(composer.draft?{draft:{...composer.draft,contract_number:code}}:{}),
+    ...(composer.draft?{draft:{...composer.draft,contract_number:code,...(profile.created_on?{created_on:profile.created_on}:{})}}:{}),
     contract_edits:[...(Array.isArray(composer.contract_edits)?composer.contract_edits:[]),edit]}};
-  // Status is a corrective label only; money, vehicles and stock stay on their existing workflows.
+  // Status and created_on are corrective labels only; money, vehicles and stock stay on their existing workflows.
   const result=await client.query(`UPDATE himoto.orders SET customer_name=$2,customer_phone=$3,customer_address=NULLIF($4,''),customer_idnumber=NULLIF($5,''),
     draft_payload=$6::json,updated_at=now(),contract_number=$7,
     draft_reference=CASE WHEN draft_reference=$8 THEN $7 ELSE draft_reference END,note=$9,contract_signed_on=NULLIF($10,'')::date,customer_source=COALESCE($11,customer_source),
-    order_status=$12
-    WHERE id=$1 RETURNING xmin::text AS revision`,[id,profile.customer.name,profile.customer.phone,profile.customer.address,profile.customer.id_card,JSON.stringify(updated),code,previous.contract_number,nextNotes,profile.signed_on,profile.customer_source?.trim(),nextStatus]);
+    order_status=$12,
+    created_at=CASE WHEN NULLIF($13,'') IS NULL THEN created_at ELSE ($13::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') END
+    WHERE id=$1 RETURNING xmin::text AS revision`,[id,profile.customer.name,profile.customer.phone,profile.customer.address,profile.customer.id_card,JSON.stringify(updated),code,previous.contract_number,nextNotes,profile.signed_on,profile.customer_source?.trim(),nextStatus,profile.created_on||null]);
   return {revision:String(result.rows[0].revision),code:String(code||'')};
 }

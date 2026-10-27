@@ -9,7 +9,7 @@ const staff={id:70001,access_role:'branch_staff',store_id:32,scope_all:false,per
 const empty={stores:[],staff:[],contracts:[],customers:[],vehicles:[]};
 const draft=load(path.join(root,'lib/management/contract-document')).createContractDraft(empty,'all');
 draft.customer.name='Khách kiểm tra';draft.customer.phone='0900000001';draft.customer.id_card='001234567890';
-draft.staff_name='Nhân viên kiểm tra';draft.signed_on='2026-10-24';
+draft.staff_name='Nhân viên kiểm tra';draft.signed_on='2026-10-24';draft.created_on='2026-10-24';
 const profile=shared.contractProfile(draft);
 const body=(revision='1',code='005987')=>({revision,profile:structuredClone(profile),contract_number:code,notes:'Đã đối chiếu HĐ giấy'});
 
@@ -28,10 +28,13 @@ async function main(){
  for(const code of ['', ' ', 'NHAP-1','EXCEL-1','A\nB','0'.repeat(33),5987])assert.throws(()=>service.parseContractProfile(body('1',code)),e=>e.status===400);
  for(const patch of [{store_id:33},{total_amount:1},{paid_amount:1},{status:'draft'},{status:'bogus'},{draft_payload:{}},{notes:'x'.repeat(4001)}])assert.throws(()=>service.parseContractProfile({...body(),...patch}),e=>e.status===400);
  assert.equal(service.parseContractProfile({...body(),status:'completed'}).status,'completed');
+ assert.equal(service.parseContractProfile({...body(),profile:{...profile,created_on:'2026-10-01'}}).profile.created_on,'2026-10-01');
+ assert.throws(()=>service.parseContractProfile({...body(),profile:{...profile,created_on:'2026-13-40'}}),e=>e.status===400);
+ assert.throws(()=>service.parseContractProfile({...body(),profile:{...profile,created_on:''}}),e=>e.status===400);
  assert.throws(()=>service.parseContractProfile({...body(),profile:{...profile,total_amount:'1'}}),e=>e.status===400);
  for(const term of ['custom','6','9','12','18','24'])assert.equal(service.parseContractProfile({...body(),profile:{...profile,ownership_term_months:term}}).profile.ownership_term_months,term);
  assert.throws(()=>service.parseContractProfile({...body(),profile:{...profile,ownership_term_months:'36'}}),e=>e.status===400);
- checks.push('Paper numbers retain leading zeros; blank/reserved/control/oversized codes and financial/store payloads are rejected; issued status can be corrected; ownership rental packages stay on the profile path; old profile clients remain supported');
+ checks.push('Paper numbers retain leading zeros; blank/reserved/control/oversized codes and financial/store payloads are rejected; issued status and created_on can be corrected; ownership rental packages stay on the profile path; old profile clients remain supported');
  const history=await load(path.join(root,'lib/server/contract-history')).readContractHistory({query:async sql=>sql.includes('SELECT o.id,o.created_at')?{rowCount:1,rows:[{created_at:'2026-10-24T10:00:00Z',contract_edits:[{at:'2026-10-24T11:00:00Z',actor_id:70001,before:{contract_number:'005986',notes:'',status:'renting'},after:{contract_number:'005987',notes:'Sửa theo giấy',status:'completed'}}]}]}:{rowCount:0,rows:[]}},1);
  const edit=history.changes.find(item=>item.kind==='edit');
  assert(edit);assert.equal(edit.actor,'#70001');assert.match(edit.detail,/005986 → 005987/);assert.match(edit.detail,/ghi chú/);assert.match(edit.detail,/Đang thuê → Hoàn thành/);
@@ -95,6 +98,15 @@ async function main(){
    assert.equal((await rows())[0].order_status,'completed');
    assert.equal((await rows())[0].draft_payload.management_composer.contract_edits.at(-1).after.status,'completed');
    checks.push('Issued contract status can be corrected without changing money or vehicle stock');
+   const createdInput=body(await revision(1));createdInput.profile={...createdInput.profile,created_on:'2026-09-15'};
+   await apply(staff,1,createdInput);await c.query('RESET ROLE');
+   const afterCreated=(await rows())[0];
+   assert.equal(afterCreated.draft_payload.management_composer.profile.created_on,'2026-09-15');
+   assert.equal(new Date(afterCreated.created_at).toLocaleDateString('en-CA',{timeZone:'Asia/Ho_Chi_Minh'}),'2026-09-15');
+   assert.equal(afterCreated.order_status,'completed');
+   assert.deepEqual(afterCreated.rent_at,before[0].rent_at);
+   assert.deepEqual(afterCreated.total,before[0].total);
+   checks.push('Issued contract created_on can be corrected and syncs orders.created_at without changing money or rental dates');
    await apply({...staff,id:70002,access_role:'admin',scope_all:true},2,body(await revision(2),'000123'));
    await c.query('RESET ROLE');assert.equal((await rows())[1].contract_number,'000123');
    checks.push('Admin can correct a different branch; the entire schema and fixtures roll back');

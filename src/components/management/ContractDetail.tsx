@@ -148,7 +148,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         ['Mã hợp đồng / Số HĐ giấy', row.code], ['Trạng thái hợp đồng', optionLabel(MANAGEMENT_CONFIG.contracts, 'status', row.status)],
         ['Loại hợp đồng', draft.contract_type_name || String(row.contract_type_name || '') || (row.rental_type ? optionLabel(MANAGEMENT_CONFIG.contracts, 'rental_type', String(row.rental_type)) : '—')],
         ...(row.rental_type === 'ownership' ? [['Thời hạn sở hữu',optionLabel(MANAGEMENT_CONFIG.contracts,'ownership_term_months',String(row.ownership_term_months || 'custom'))] as [string,string]] : []),
-        ['Ngày ký hợp đồng', date(draft.signed_on)], ['Ngày tạo hợp đồng', date(draft.created_on || String(row.created_at || ''))],
+        ['Ngày ký hợp đồng', date(draft.signed_on)], ['Ngày tạo / nhập hợp đồng', date(draft.created_on || String(row.created_at || ''))],
         ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
       ]))}
       {panel('customer', 'Thông tin khách hàng (Bên B)', fields([

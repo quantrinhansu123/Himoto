@@ -2,7 +2,7 @@ import type { ManagementRow } from './types';
 import { parseInstallmentPlan } from './contract-billing';
 
 const LABELS:Record<string,string>={
-  contract_number:'Mã hợp đồng / Số HĐ giấy',signed_on:'Ngày ký hợp đồng',created_on:'Ngày tạo hợp đồng',
+  contract_number:'Mã hợp đồng / Số HĐ giấy',signed_on:'Ngày ký hợp đồng',created_on:'Ngày tạo / nhập hợp đồng',
   store_id:'Cơ sở ghi nhận doanh thu',vehicle_store_id:'Cửa hàng xe',staff_id:'Nhân viên làm hợp đồng',staff_name:'Tên nhân viên làm hợp đồng',
   name:'Tên khách hàng',phone:'Số điện thoại khách hàng',id_card:'CCCD / Hộ chiếu',address:'Địa chỉ khách hàng',email:'Email khách hàng',
   birthday:'Ngày sinh khách hàng',customer_type:'Loại khách hàng',nationality:'Quốc tịch',contact_channel:'Kênh liên hệ',contact_detail:'Thông tin liên hệ',relatives_text:'Thông tin người thân',warning_note:'Cảnh báo khách hàng',
