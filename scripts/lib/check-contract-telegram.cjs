@@ -24,7 +24,18 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
     (9003,1,'order:deposit_refund','out',450000,'approved',143,23,99,NULL,1,NULL,'QA'),
     (9004,1,'order:deposit_refund','out',999999,'pending',143,23,99,NULL,1,NULL,'QA')`);
   const snapshot=await content.notificationPayload(db,1,'rental',143,['rental']);
-  assert.equal(snapshot.contract_staff,'Named QA employee');assert(content.contractNotificationText('rental',snapshot).includes('Named QA employee'));assert(!content.contractNotificationText('rental',snapshot).includes('Actor QA'));assert.equal(snapshot.grand_total,1200000);assert.equal(snapshot.days,1);assert.equal(snapshot.method,'CK TK cá nhân');
+  assert.equal(snapshot.contract_staff,'Named QA employee');assert(content.contractNotificationText('rental',snapshot).includes('Named QA employee'));assert(!content.contractNotificationText('rental',snapshot).includes('Nhân viên làm hợp đồng: Actor QA'));assert.equal(snapshot.grand_total,1200000);assert.equal(snapshot.days,1);assert.equal(snapshot.method,'CK TK cá nhân');
+  assert.deepEqual(snapshot.payment_amounts,{rental:[{method:'CK TK cá nhân',amount:200000}],deposit:[{method:'CK TK cá nhân',amount:1000000}]});
+  await c.query('SAVEPOINT split_payment_telegram');
+  await c.query(`UPDATE ${schema}.transactions SET value=130000 WHERE id=9001;
+    INSERT INTO ${schema}.transactions(id,order_id,name,type,value,status,user_id,store_id,cash_id,bank_id,payment_method,bank_owner_type,note) VALUES
+      (9005,1,'order:rental_fees','in',10000,'approved',143,23,99,NULL,1,NULL,'QA split cash'),
+      (9006,1,'order:rental_fees','in',99000000,'pending',143,23,NULL,99,2,'company','QA pending');`);
+  const splitSnapshot=await content.notificationPayload(db,1,'rental',143,['rental']);
+  assert.deepEqual(splitSnapshot.payment_amounts.rental,[{method:'Tiền mặt',amount:10000},{method:'CK TK cá nhân',amount:130000}]);
+  assert(content.contractNotificationText('rental',splitSnapshot).includes('Đã thu tiền thuê / phí: Tiền mặt: 10.000 đ · CK TK cá nhân: 130.000 đ'));
+  assert.deepEqual(splitSnapshot.payment_amounts.deposit,snapshot.payment_amounts.deposit);
+  await c.query('ROLLBACK TO SAVEPOINT split_payment_telegram');
   await c.query('SAVEPOINT reservation_telegram_method');
   await c.query(`DELETE FROM ${schema}.transactions WHERE id=9002`);
   const reservationSnap=await content.notificationPayload(db,1,'reservation',143,['rental']);

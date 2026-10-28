@@ -8,10 +8,16 @@ import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null;object_bucket?:string|null;object_key?:string|null;object_etag?:string|null}
 export interface RenewalNotice {version?:number;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;outside_amount?:number;outside_name?:string;items?:RenewalNotice[]}
+export interface PaymentAmount {method:string;amount:number}
+export interface NotificationPaymentAmounts {
+  rental?:PaymentAmount[];deposit?:PaymentAmount[];renewal?:PaymentAmount[];
+  deposit_refund?:PaymentAmount[];rental_refund?:PaymentAmount[];return_fees?:PaymentAmount[];battery_swap?:PaymentAmount[];
+}
 export interface NotificationPayload {
   code:string;customer:string;phone:string;store:string;actor:string;vehicles:string;total:string;at:string;photos:Attachment[];contract_staff?:string;
   vehicle_names?:string;days?:number|null;deposit?:number|null;rental_fee?:number|null;grand_total?:number|null;
   refunded?:number;rental_refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
+  payment_amounts?:NotificationPaymentAmounts;
   ownership_renewal_note?:string;
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
   return_details?:{note:string;returned_at:string[];rental_refund_recipient?:{bank?:string;account?:string;name?:string}};
@@ -25,6 +31,24 @@ type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
 const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
 const telegramClock=(at:string)=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
+/** Sum verified receipts, never infer a split from a draft label or contract
+ * total. Historical mixed vouchers keep their explicitly unknown split. */
+export function notificationPaymentAmounts(rows:{method:string;value:unknown;payment_method?:unknown}[]):PaymentAmount[] {
+  const totals=new Map<string,number>();
+  for(const row of rows){
+    const amount=row.value==null||String(row.value).trim()===''?NaN:Number(row.value);
+    if(!Number.isSafeInteger(amount)||amount<0)throw Error('Số tiền phiếu không hợp lệ để tách hình thức thanh toán.');
+    if(!amount)continue;
+    const method=Number(row.payment_method)===3?'Tiền mặt + CK (chưa tách số tiền)':row.method||'Chưa xác định';
+    const total=(totals.get(method)||0)+amount;
+    if(!Number.isSafeInteger(total))throw Error('Tổng tiền theo hình thức thanh toán vượt giới hạn.');
+    totals.set(method,total);
+  }
+  const priority=['Tiền mặt','CK TK cá nhân','CK TK công ty'];
+  const rank=(method:string)=>{const index=priority.indexOf(method);return index<0?priority.length:index;};
+  return [...totals].sort(([a],[b])=>rank(a)-rank(b)||a.localeCompare(b,'vi')).map(([method,amount])=>({method,amount}));
+}
+const amountLine=(label:string,amounts?:PaymentAmount[])=>amounts?.length?[`${label}: ${amounts.map(row=>`${row.method}: ${money(row.amount)} đ`).join(' · ')}`]:[];
 /** Cuối mọi tin Telegram: NV xuất tin, rồi Thời gian là dòng cuối cùng. */
 function withTelegramFooter(body:string,actor:string,at:string){
   const sender=`Nhân viên xuất tin Telegram: ${actor?.trim()||'Chưa ghi nhận'}`;
@@ -65,6 +89,14 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
       `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,`Tiền cọc: ${money(p.deposit)}`,
       ...(p.rental_fee!=null&&p.total!=null&&Number(p.total)!==p.rental_fee?[`Phí khác / điều chỉnh: ${money(Number(p.total)-p.rental_fee)}`]:[]),
       `Tổng tiền: ${money(p.grand_total)}`,`Hình thức thanh toán: ${method}`];
+  const amounts=p.payment_amounts;
+  const paymentLines=kind==='return'?[
+    ...amountLine('Thu phí / công nợ theo hình thức',amounts?.return_fees),
+    ...amountLine('Hoàn cọc theo hình thức',amounts?.deposit_refund),...amountLine('Hoàn tiền thuê theo hình thức',amounts?.rental_refund)]
+    :kind==='renewal'?amountLine('Đã thu gia hạn',amounts?.renewal)
+    :kind==='battery_swap'?amountLine('Đã thu theo hình thức',amounts?.battery_swap)
+    :[...amountLine(kind==='reservation'?'Đã thu cọc giữ xe':'Đã thu tiền thuê / phí',amounts?.rental),...amountLine('Đã thu tiền cọc',amounts?.deposit)];
+  lines.push(...paymentLines);
   if(kind==='return')return withTelegramFooter([...lines,...(p.return_details?[`Giờ trả: ${p.return_details.returned_at.map(at=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})).join(' · ')}`,
     ...(p.refund_recipient&&[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].some(Boolean)?[`Nhận hoàn cọc: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
     ...(p.return_details.rental_refund_recipient?[`Nhận hoàn tiền thuê: ${[p.return_details.rental_refund_recipient.bank,p.return_details.rental_refund_recipient.account,p.return_details.rental_refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
@@ -79,6 +111,15 @@ export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
   void _at;void _actor;
   const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;
   return createHash('sha256').update(JSON.stringify(canonical({kind,...content}))).digest('hex');
+}
+/** A display upgrade must not unlock another send for a legacy delivered
+ * snapshot. New snapshots hash amounts so real split corrections still count. */
+export function notificationContentMatches(kind:ContractEventType,current:NotificationPayload,saved:NotificationPayload,savedHash?:string|null) {
+  const expected=savedHash||notificationHash(kind,saved);
+  if(notificationHash(kind,current)===expected)return true;
+  if(Object.hasOwn(saved,'payment_amounts'))return false;
+  const {payment_amounts:_amounts,...legacy}=current;void _amounts;
+  return notificationHash(kind,legacy)===expected;
 }
 export async function notificationPhotos(db:Database,orderId:number,phases:string[]):Promise<Attachment[]> {
   // Queue only slot / Cloudinary refs. Embedding multi-MB base64 blobs here made finalize roll back
@@ -153,7 +194,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       vehicles:changed.to_license||'',vehicle_names:changed.to_name||'',total:o.total,at:new Date(changed.created_at).toISOString(),
       photos:await notificationPhotos(db,orderId,phases),vehicle_swap:{from_license:changed.from_license||'',from_name:changed.from_name||'',to_license:changed.to_license||'',to_name:changed.to_name||''}};
   }
-  const tx=(await db.query(`SELECT t.id,t.name,t.type,t.value,t.created_at,t.order_item_id,r.renewal_payload,
+  const tx=(await db.query(`SELECT t.id,t.name,t.type,t.value,t.created_at,t.order_item_id,t.payment_method,r.renewal_payload,
     CASE WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK TK công ty'
       WHEN t.bank_id IS NOT NULL THEN 'CK TK cá nhân'
       WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
@@ -164,7 +205,8 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const renewalNote=kind==='renewal'&&o.ownership===true&&renewal
     ? String((renewal as RenewalNotice & {note?:string}).note ||
       (Array.isArray(composer?.versions)?composer.versions.find((v:{kind:string;version:number})=>v.kind==='renewal'&&v.version===renewal.version)?.note:'') || '').trim() : '';
-  const depositTx=tx.filter(t=>['in','addon'].includes(t.type)&&/^order:deposit(?::|$)/.test(t.name));
+  const isDeposit=(name:string)=>/^order:deposit(?::|$)/.test(name)||name==='order:additional_deposit';
+  const depositTx=tx.filter(t=>['in','addon'].includes(t.type)&&isDeposit(t.name));
   const refunds=tx.filter(t=>t.type==='out'&&/^(order:deposit_refund$|order:complete:)/.test(t.name));
   const settlement=kind==='return'&&Array.isArray(composer?.return_settlements)?composer.return_settlements.findLast((entry:{item_ids:number[]})=>Array.isArray(entry.item_ids)&&entry.item_ids.length===returnIds.length&&entry.item_ids.every(id=>returnIds.includes(String(id)))):undefined;
   // Prefer the settlement-linked refund voucher; otherwise include any deposit refund on the order (e.g. cashbook after return).
@@ -177,7 +219,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const feeReceipts=settlement?tx.filter(t=>t.type!=='out'&&settlement.transaction_ids?.includes(Number(t.id))):[];
   const adjustments=kind==='return'&&Array.isArray(composer?.return_adjustments)?composer.return_adjustments.filter((entry:{item_id:number})=>returnIds.includes(String(entry.item_id))):[];
   const corrected=kind==='return'&&Array.isArray(composer?.return_corrections)&&composer.return_corrections.some((entry:{item_ids:number[]})=>entry.item_ids?.some(id=>returnIds.includes(String(id))));
-  const rental=tx.filter(t=>['in','addon'].includes(t.type)&&!/^order:deposit(?::|$)/.test(t.name));
+  const rental=tx.filter(t=>['in','addon'].includes(t.type)&&!isDeposit(t.name));
   // Date changes are not receipts. Only an explicitly associated renewal receipt supplies a payment method.
   const renewalTx=renewal?tx.filter(t=>['in','addon'].includes(t.type)&&Number(t.value)>0&&(
     renewal.transaction_id!==undefined?Number(t.id)===Number(renewal.transaction_id)
@@ -187,6 +229,16 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   // Rental/handover: cọc + thuê. Reservation (cọc giữ xe) records advance as order:rental_fees, not order:deposit.
   const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?[...eventRefunds,...eventRentalRefunds]:kind==='renewal'?renewalTx
     :kind==='reservation'?rental:[...depositTx,...rental];
+  // Native issue snapshots retain exact original receipt IDs. Later renewals
+  // must not change the amount split shown on the original rental event.
+  const originalIds=Array.isArray(composer?.finalized?.transaction_ids)?new Set(composer.finalized.transaction_ids.map(Number)):null;
+  const originalRental=originalIds?rental.filter(t=>originalIds.has(Number(t.id))):rental;
+  const originalDeposit=originalIds?depositTx.filter(t=>originalIds.has(Number(t.id))):depositTx;
+  const paymentAmounts:NotificationPaymentAmounts=kind==='return'?{
+    deposit_refund:notificationPaymentAmounts(eventRefunds),rental_refund:notificationPaymentAmounts(eventRentalRefunds),return_fees:notificationPaymentAmounts(feeReceipts)}
+    :kind==='renewal'?{renewal:notificationPaymentAmounts(renewalTx)}
+    :kind==='battery_swap'?{battery_swap:notificationPaymentAmounts(selected)}
+    :{rental:notificationPaymentAmounts(originalRental),deposit:notificationPaymentAmounts(originalDeposit)};
   const methods=(rows:typeof tx)=>[...new Set(rows.map(t=>String(t.method)).filter(method=>method&&method!=='Chưa xác định'))].sort().join(', ');
   const fee=o.total_rental_fees==null?null:Number(o.total_rental_fees);
   const deposit=o.first_deposit_amount==null&&o.additional_deposit_amount==null?null:Number(o.first_deposit_amount||0)+Number(o.additional_deposit_amount||0);
@@ -200,6 +252,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     ?{...(settlement.recipient||{}),amount:Math.min(Number(settlement.refund_pending_amount)||heldDeposit,heldDeposit)}:undefined;
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
+    payment_amounts:paymentAmounts,
     ...(renewalNote?{ownership_renewal_note:renewalNote}:{}),
     ...(corrected?{return_details:{note:String(settlement?.note||''),returned_at:[...new Set<string>(adjustments.map((a:{actual_return_at:string})=>a.actual_return_at))].sort(),...(eventRentalRefunds.length&&settlement?.rental_refund_recipient?.account?{rental_refund_recipient:settlement.rental_refund_recipient}:{})}}:{}),
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,

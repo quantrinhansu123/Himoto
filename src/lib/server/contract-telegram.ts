@@ -4,7 +4,7 @@ import type { PoolClient } from 'pg';
 import { nextRenewalVersion } from '@/lib/management/contract-renewals';
 import { canSendContractEvent,CONTRACT_EVENT_LABELS, type ContractEventType, type ContractTelegramState } from '@/lib/management/contract-telegram';
 import { hasPermission, type PermissionAccount } from '@/lib/management/permissions';
-import { contractNotificationText, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
+import { contractNotificationText, notificationContentMatches, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
 import { contractPhotoLabel } from '@/lib/management/contract-photos';
 import { OWNERSHIP_ORDER_SQL,contractTelegramDestination } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
@@ -69,7 +69,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     // Once a bad delivery is retracted, rebuild from the corrected contract. A later
     // successful resend becomes the baseline so it stays locked against duplication.
     const baseline:NotificationPayload|undefined=related.some(n=>n.retraction?.state==='done')?delivered?.payload:event.payload;
-    const payload=baseline?{...baseline,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,
+    const payload=baseline?{...baseline,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,payment_amounts:fresh.payment_amounts,
       // Cross-branch stock is invisible under vehicle RLS; backfill empty plates from a scoped label read.
       vehicles:baseline.vehicles||fresh.vehicles||'',vehicle_names:baseline.vehicle_names||fresh.vehicle_names||'',
       ...(fresh.ownership_renewal_note?{ownership_renewal_note:fresh.ownership_renewal_note}:{}),
@@ -87,7 +87,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     if(delivered&&event.kind==='renewal'&&!delivered.payload?.ownership_renewal_note)delete payload.ownership_renewal_note;
     payloads.set(event.key,payload);
     const hash=notificationHash(event.kind,payload);
-    const same=related.find(n=>n.retraction?.state!=='done'&&(n.content_hash||notificationHash(n.event_type,n.payload))===hash&& !['manual','awaiting_config','failed','unknown'].includes(n.status));
+    const same=related.find(n=>n.retraction?.state!=='done'&&notificationContentMatches(n.event_type,payload,n.payload,n.content_hash)&& !['manual','awaiting_config','failed','unknown'].includes(n.status));
     // An unresolved send for this transaction must be reconciled before a new variant is sent.
     const unresolved=related.find(n=>n.retraction?.state!=='done'&&(['unknown','sending','pending'].includes(n.status)||n.status==='failed'&&n.message_ids?.length||n.retraction));
     const latest=related.find(n=>n.retraction&&n.retraction.state!=='done')||unresolved||same||related[0];
