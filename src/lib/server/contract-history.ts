@@ -62,6 +62,7 @@ export async function readContractHistory(client: Database, id: number): Promise
       COALESCE(o.draft_payload::jsonb #> '{management_composer,vehicle_recoveries}','[]'::jsonb) AS vehicle_recoveries,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,contract_edits}','[]'::jsonb) AS contract_edits,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,return_corrections}','[]'::jsonb) AS return_corrections,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,payment_corrections}','[]'::jsonb) AS payment_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,lifecycle,events}','[]'::jsonb) AS lifecycle_events
     FROM himoto.orders o LEFT JOIN himoto.users u ON u.id=o.contract_responsible_user_id
     WHERE o.id=$1 AND o.deleted_at IS NULL`, [id]);
@@ -74,6 +75,7 @@ export async function readContractHistory(client: Database, id: number): Promise
   const created: ContractChange = { id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
     title: 'Tạo hợp đồng', detail: '', amount: null };
   const changes: ContractChange[] = [created];
+  for(const item of(Array.isArray(order.rows[0].payment_corrections)?order.rows[0].payment_corrections:[]))changes.push({id:`payment-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa thanh toán gia hạn',detail:`Phiếu #${item.transaction_id}: ${item.before?.method||'—'} / ${item.before?.account||'—'} → ${item.after?.method||'—'} / ${item.after?.account||'—'} · ${item.reason}`});
   for(const [index,item] of(Array.isArray(order.rows[0].return_corrections)?order.rows[0].return_corrections:[]).entries())changes.push({id:`return-correction-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa hồ sơ trả xe',detail:`${item.reason} · Thay thế ${(item.cancelled_transaction_ids||[]).length} phiếu thu/hoàn; giữ lịch sử và trạng thái xe đã trả.`});
   for(const [index,item] of(Array.isArray(order.rows[0].contract_edits)?order.rows[0].contract_edits:[]).entries())changes.push({id:`edit-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa hợp đồng',
     detail:[item.before?.contract_number!==item.after?.contract_number?`Số HĐ: ${item.before?.contract_number||'—'} → ${item.after?.contract_number||'—'}`:'',

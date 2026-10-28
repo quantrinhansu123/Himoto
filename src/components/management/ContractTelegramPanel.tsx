@@ -5,10 +5,12 @@ import { LoaderCircle, Send } from 'lucide-react';
 import { contractTelegramRequest, NOTICE_STATUS_LABELS, type ContractTelegramState } from '@/lib/management/contract-telegram';
 import { ContractTelegramRetraction } from './ContractTelegramRetraction';
 import { ContractPhotoCard } from './ContractPhotoCard';
+import { RenewalPaymentEditor } from './RenewalPaymentEditor';
 
 export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyEventKey=false}:{id:number;eventKind?:string;eventKey?:string;returnItemIds?:number[];onlyEventKey?:boolean}) {
   const [data,setData]=useState<ContractTelegramState|null>(null),[selected,setSelected]=useState(''),[loading,setLoading]=useState(false),[actionBusy,setBusy]=useState(false),[photoBusy,setPhotoBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
-  const busy=actionBusy||photoBusy;
+  const [paymentBusy,setPaymentBusy]=useState(false);
+  const busy=actionBusy||photoBusy||paymentBusy;
   const returnItems=returnItemIds?.join(',')||'';
   const [confirmedAbsent,setConfirmedAbsent]=useState(false);
   const refresh=useCallback(async(signal?:AbortSignal)=>{
@@ -31,6 +33,7 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
     {event&&<div key={event.key}>
       {event.destination_label&&<p><strong>Nơi nhận: {event.destination_label}</strong></p>}
       <pre className="mg-telegram-preview">{event.text}</pre>
+      {event.kind==='renewal'&&<RenewalPaymentEditor orderId={id} eventKey={event.key} disabled={actionBusy||photoBusy||loading} onBusyChange={setPaymentBusy} onSaved={()=>{void refresh();}}/>}
       {event.delivery_contract_code&&!event.text.split('\n').some(line=>line===`Hợp đồng: ${event.delivery_contract_code}`||line===`HĐ: ${event.delivery_contract_code}`)&&<p>Lần gửi trước dùng mã hợp đồng {event.delivery_contract_code}. Bản cập nhật bên trên dùng số hợp đồng hiện tại.</p>}
       <p role="status">{event.photo_count} ảnh · {event.video_count||0} video đã lưu · {event.can_resume?'Gửi chưa hoàn tất':event.status?NOTICE_STATUS_LABELS[event.status]:'Chưa gửi'}{event.sent_at?` · ${new Date(event.sent_at).toLocaleString('vi-VN')}`:''}</p>
       {event.can_resume?<div className="mg-billing-reminder" role="alert">

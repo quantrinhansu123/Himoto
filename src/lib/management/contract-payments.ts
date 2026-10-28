@@ -33,7 +33,8 @@ export function paymentAccountMatchesMethod(account: Pick<PaymentAccount, 'kind'
 export interface ContractPayment {
   id: number; type: 'in' | 'out'; deposit: boolean; amount: number; paid_at: string; method: string; account: string;
   note: string; actor: string;
-  renewal?: { license: string; vehicle_name: string; before_return_at?: string; return_at: string } | null;
+  revision?: string; payment_method?: PaymentMethod; account_id?: number;
+  renewal?: { version?: number; license: string; vehicle_name: string; before_return_at?: string; return_at: string } | null;
 }
 export interface RenewalLine { item_id: number; item_revision: string; return_at: string; amount: string }
 export interface RenewalItem {
@@ -59,6 +60,19 @@ export interface PaymentInput {
   renewal_version?: number;
 }
 export interface PaymentResult { context: PaymentContext; transaction_id: number; replayed: boolean; company_transfer: boolean }
+export interface RenewalPaymentCorrection {
+  request_id: string; transaction_id: number; revision: string; method: PaymentMethod; account_id: number; reason: string;
+}
+export async function correctRenewalPayment(id: number, input: RenewalPaymentCorrection): Promise<PaymentContext> {
+  const response = await fetch(`/api/auth/order/car-rental/${id}/renewal-payments`, {
+    method: 'PATCH', credentials: 'same-origin', cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.status !== 'success') throw new PaymentRequestError(result?.message || 'Chưa xác nhận được sửa thanh toán. Tải lại phiếu để kiểm tra.', response.status);
+  if (result.data?.id !== id || !Array.isArray(result.data?.history) || !Array.isArray(result.data?.accounts)) throw new PaymentRequestError('Kết quả sửa thanh toán chưa hợp lệ. Tải lại phiếu để kiểm tra.');
+  return result.data;
+}
 export class PaymentRequestError extends Error {
   constructor(message: string, public status = 0) { super(message); }
 }

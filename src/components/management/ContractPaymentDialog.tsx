@@ -13,6 +13,7 @@ import { transferQr } from '@/lib/management/transfer-qr';
 import { bulkDelete } from '@/lib/management/bulk-delete';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { ContractPaymentQr } from './ContractPaymentQr';
+import { RenewalPaymentEditor } from './RenewalPaymentEditor';
 import { contractTransferMemo } from '@/lib/management/sepay';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { contractEvidenceSlots } from '@/lib/management/contract-photos';
@@ -290,7 +291,8 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
               {receipts.length ? <ul className="mg-payment-history">{receipts.map(receipt => <li key={receipt.id} className={type === 'out' ? 'is-expense' : undefined}>
                 <strong>#{receipt.id}{receipt.deposit ? (type === 'out' ? ' · Trả cọc' : ' · Tiền cọc') : ''} · {type === 'out' ? '−' : ''}{formatMoney(receipt.amount)}</strong>
                 <span>{vietnamText(receipt.paid_at)} · {receipt.method}</span><span>{receipt.account || 'Chưa xác định tài khoản'} · {receipt.actor || '—'}</span>
-                {receipt.note && <p>{receipt.note}</p>}{receipt.renewal && <span>Gia hạn {receipt.renewal.license || receipt.renewal.vehicle_name} đến {vietnamText(receipt.renewal.return_at)}</span>}</li>)}</ul>
+                {receipt.note && <p>{receipt.note}</p>}{receipt.renewal && <span>Gia hạn {receipt.renewal.license || receipt.renewal.vehicle_name} đến {vietnamText(receipt.renewal.return_at)}</span>}
+                {receipt.renewal&&receipt.type==='in'&&!receipt.deposit&&<RenewalPaymentEditor orderId={id} receiptId={receipt.id} disabled={saving||deleting||Boolean(pending)} onBusyChange={value=>{busy.current=value;setSaving(value);}} onSaved={value=>{setContext(value);onPaymentSaved?.();}}/>}</li>)}</ul>
                 : <p className="mg-payment-history-empty">Chưa có phiếu {type === 'out' ? 'chi' : 'thu'}.</p>}
             </section>;
           })}</div>}

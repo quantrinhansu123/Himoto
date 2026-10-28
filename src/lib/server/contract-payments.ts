@@ -83,6 +83,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     UNION ALL SELECT id, 'cash'::text AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,'Két tiền mặt · ' || COALESCE(NULLIF(name,''),'#' || id::text) AS label
     FROM himoto.cash WHERE lower(status)='active' AND store_id=$1 ORDER BY kind,id`, [order.store_id]);
   const history = await client.query(`SELECT t.id,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,
+      t.xmin::text AS revision,t.bank_id,t.cash_id,t.payment_method,
       CASE WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK tài khoản công ty'
         WHEN t.bank_id IS NOT NULL THEN 'CK tài khoản cá nhân'
         WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
@@ -116,7 +117,10 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     accounts: accounts.rows.map(row => ({ ...row, id: Number(row.id), store_id: Number(row.store_id) })),
     history: history.rows.map(row => ({ id: Number(row.id), type: row.type === 'out' ? 'out' as const : 'in' as const,
       deposit: row.name === 'order:deposit' || row.name === 'order:additional_deposit' || String(row.name || '').startsWith('order:deposit:') || row.name === DEPOSIT_REFUND_NAME || String(row.name || '').startsWith('order:complete:'), amount: Number(row.amount), paid_at: row.paid_at instanceof Date ? row.paid_at.toISOString() : String(row.paid_at),
-      note: String(row.note || ''), actor: String(row.actor || ''), method: String(row.method), account: String(row.account || ''), renewal: row.renewal_payload || null })) };
+      note: String(row.note || ''), actor: String(row.actor || ''), method: String(row.method), account: String(row.account || ''),
+      revision: row.revision == null ? undefined : String(row.revision), account_id: Number(row.cash_id ?? row.bank_id) || undefined,
+      payment_method: row.bank_id != null ? row.bank_owner_type === 'company' ? 'company_transfer' as const : 'transfer' as const : row.cash_id != null ? 'cash' as const : undefined,
+      renewal: row.renewal_payload || null })) };
 }
 
 // Caller owns BEGIN/COMMIT. The receipt, income and paid total are atomic.
