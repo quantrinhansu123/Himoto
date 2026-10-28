@@ -24,6 +24,7 @@ import { ReservationNoShowDialog } from './ReservationNoShowDialog';
 import { ContractDepositDeleteDialog } from './ContractDepositDeleteDialog';
 import { ContractLifecyclePanel } from './ContractLifecyclePanel';
 import { ContractReviewNotice } from './ContractReviewNotice';
+import { ContractReceiptSummary } from './ContractReceiptSummary';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractEditDialog } from '@/components/contracts/ContractEditDialog';
 import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
@@ -78,13 +79,14 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
   useEffect(()=>setLifecycleOverride({}),[originalRow.id,originalRow.draft_revision,originalRow.status]);
   const [section, setSection] = useState<DetailSection>('vehicle');
   const [viewingVersion, setViewingVersion] = useState('');
-  const [history, setHistory] = useState<ContractHistory | null>(null);
+  const [historyRecord, setHistory] = useState<{ contractId: number; data: ContractHistory } | null>(null);
+  const history = historyRecord?.contractId === row.id ? historyRecord.data : null;
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
-  const wantsHistory = section === 'changes' || section === 'cashflow' || section === 'photos';
+  const wantsHistory = section === 'payment' || section === 'changes' || section === 'cashflow' || section === 'photos';
   const fetchHistory = useCallback((signal?: AbortSignal) => {
     setHistoryLoading(true); setHistoryError('');
-    loadContractHistory(row.id, signal).then(value => { if (!signal?.aborted) setHistory(value); }).catch(cause => {
+    loadContractHistory(row.id, signal).then(value => { if (!signal?.aborted) setHistory({ contractId: row.id, data: value }); }).catch(cause => {
       if (!signal?.aborted) setHistoryError(cause instanceof Error ? cause.message : 'Không tải được lịch sử hợp đồng.');
     }).finally(() => { if (!signal?.aborted) setHistoryLoading(false); });
   }, [row.id]);
@@ -107,7 +109,12 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
   const [noShow,setNoShow]=useState(false);
   const [depositDeleteOpen,setDepositDeleteOpen]=useState(false);
   const canPay = row.status !== 'draft' && row.status !== 'cancelled' && Boolean(onPayment);
-  const depositHeld = Math.max((Number(row.deposit_paid) || 0) - (Number(row.deposit_refunded) || 0), 0);
+  const receipts = history?.receipts;
+  const depositPaid = receipts?.deposit_received ?? row.deposit_paid;
+  const depositRefunded = receipts?.deposit_refunded ?? row.deposit_refunded;
+  const depositHeld = receipts?.deposit_held ?? (row.deposit_paid == null || row.deposit_refunded == null ? null : Math.max(Number(row.deposit_paid) - Number(row.deposit_refunded), 0));
+  const receiptsPaid = receipts ? Math.max(receipts.rental_received + receipts.renewal_received - receipts.rental_refunded, 0) : null;
+  const paymentMismatch = receiptsPaid !== null && row.paid_amount != null && receiptsPaid !== Number(row.paid_amount);
   const remaining = row.total_amount == null || row.paid_amount == null ? null : Math.max(Number(row.total_amount) - Number(row.paid_amount), 0);
   function fields(values: [string, ReactNode][]) {
     return <dl className="mg-contract-detail-grid">{values.map(([label, value]) => <div key={label}
@@ -164,6 +171,12 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         ['Người thân 2', text(draft.relatives[1] ? `${draft.relatives[1].name}${draft.relatives[1].relationship ? ` (${draft.relatives[1].relationship})` : ''}${draft.relatives[1].phone ? `: ${draft.relatives[1].phone}` : ''}` : '')],
       ]))}
       {panel('payment', 'Chi phí', <>
+        {source === 'api' && row.status !== 'draft' && <>
+          <div className="mg-contract-history-toolbar"><p>Đối chiếu toàn bộ tiền đã thu của khách theo hợp đồng này.</p>{refreshButton}</div>
+          {historyState(false, '')}
+          {!historyError && receipts && <ContractReceiptSummary receipts={receipts}/>}
+          {!historyError && paymentMismatch && <p className="mg-field-error" role="status">Số thu thuê / phí theo phiếu (sau hoàn tiền thuê) là {money(receiptsPaid)}, khác số tổng hợp {money(row.paid_amount)} đang lưu trên hợp đồng. Cần đối chiếu trước khi quyết toán.</p>}
+        </>}
         <div className="mg-contract-cost-section"><h3>Thời gian thuê</h3>{fields([
           ['Thuê lúc', dateTime(draft.start_date)], ['Hẹn trả', dateTime(draft.end_date)], ['Số ngày thuê', rentalDays(draft.start_date, draft.end_date)],
         ])}
@@ -180,13 +193,12 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         </div>
         <div className="mg-contract-cost-section"><h3>Tiền cọc (tách riêng, không trừ vào tiền thuê)</h3>{fields([
           ['Số tiền đặt cọc', money(pricing.deposit_amount)], ['Hình thức đặt cọc', text(pricing.deposit_payment_method)],
-          ['Cọc đã thu', money(row.deposit_paid)], ['Đã trả cọc', money(row.deposit_refunded)],
-          ['Cọc đang giữ', money(Math.max((Number(row.deposit_paid) || 0) - (Number(row.deposit_refunded) || 0), 0))],
+          ['Cọc đã thu', money(depositPaid)], ['Đã trả cọc', money(depositRefunded)], ['Cọc đang giữ', money(depositHeld)],
         ])}</div>
         <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3>{fields([
           ['Gói thuê', text(pricing.package_name)], ['Đơn giá áp dụng', money(pricing.unit_price)],
-          ['Tổng phí thuê xe', money(row.total_amount ?? pricing.total_amount)], ['Phát sinh trả xe (+ trễ / − trả sớm)', money(row.return_adjustment_amount)],
-          ['Đã thu tiền thuê', money(row.paid_amount)], ['Còn thiếu tiền thuê', row.total_amount == null || row.paid_amount == null ? '—' : money(Math.max(Number(row.total_amount) - Number(row.paid_amount), 0))],
+          [paymentMismatch ? 'Tiền hợp đồng đang lưu' : 'Tổng phí thuê xe', money(row.total_amount ?? pricing.total_amount)], ['Phát sinh trả xe (+ trễ / − trả sớm)', money(row.return_adjustment_amount)],
+          [paymentMismatch ? 'Đã thu theo số tổng hợp hợp đồng' : 'Đã thu tiền thuê', money(row.paid_amount)], [paymentMismatch ? 'Còn thiếu tiền thuê (cần đối chiếu)' : 'Còn thiếu tiền thuê', paymentMismatch || row.total_amount == null || row.paid_amount == null ? '—' : money(Math.max(Number(row.total_amount) - Number(row.paid_amount), 0))],
           ['Hình thức thanh toán', text(pricing.payment_method)],
         ])}</div>
         {row.billing_plan_json && <div className="mg-contract-cost-section"><h3>Lịch đóng tiền thuê sở hữu</h3>{fields([
@@ -196,6 +208,11 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
           ['Tiền đến hạn còn thiếu', money(row.billing_due_amount)],
         ])}</div>}
         {draft.extra_charges && draft.extra_charges.length>0 && <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng (đã tính trong tổng phí)</h3>{fields(draft.extra_charges.filter(item=>Number(item.amount)>0).map(item=>[item.name,item.method ? `${money(item.amount)} · ${paymentMethodLabel(item.method)}` : money(item.amount)]))}</div>}
+        {source === 'api' && row.status !== 'draft' && <section className="mg-contract-cost-section" aria-label="Chi tiết từng phiếu thu chi">
+          <h3>Chi tiết từng phiếu thu / chi</h3>
+          {historyState(!history?.cashflow.length, 'Chưa có phiếu thu / chi nào cho hợp đồng này.')}
+          {!historyError && history && history.cashflow.length > 0 && <CashflowColumns items={history.cashflow}/>}
+        </section>}
         {source === 'api' && <SavedRecordPhotos entity="contracts" recordId={row.id} slots={contractEvidenceSlots('rental')} title="Ảnh hợp đồng đã ký & bill chuyển khoản" />}
       </>)}
       {panel('battery', 'Hợp đồng pin / sạc liên kết', section === 'battery' && (source === 'api' && row.status !== 'draft'
@@ -252,7 +269,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
           <button type="button" className="mg-button" disabled={remaining === 0} onClick={() => onPayment?.('debt')}><Wallet size={15} />Thu công nợ{remaining && remaining > 0 ? ` (${formatMoney(remaining)})` : ''}</button>
           {canOperateRental && <button type="button" className="mg-button" onClick={() => onPayment?.('renewal')}><Wallet size={15} />Thu gia hạn</button>}
           <button type="button" className="mg-button" onClick={() => onPayment?.('extra')}><Wallet size={15} />Thu thêm</button>
-          <button type="button" className="mg-button" disabled={depositHeld <= 0} onClick={() => onPayment?.('deposit_refund')}><Wallet size={15} />Trả cọc{depositHeld > 0 ? ` (${formatMoney(depositHeld)})` : ''}</button>
+          <button type="button" className="mg-button" disabled={depositHeld == null || depositHeld <= 0} onClick={() => onPayment?.('deposit_refund')}><Wallet size={15} />Trả cọc{depositHeld != null && depositHeld > 0 ? ` (${formatMoney(depositHeld)})` : ''}</button>
         </div>}
         {history && history.cashflow.length > 0 && <dl className="mg-payment-totals"><div><dt>Tổng thu (đã duyệt)</dt><dd>{formatMoney(incomeTotal)}</dd></div>
           <div><dt>Tổng chi (đã duyệt)</dt><dd>{formatMoney(expenseTotal)}</dd></div><div><dt>Chênh lệch</dt><dd>{formatMoney(incomeTotal - expenseTotal)}</dd></div></dl>}
@@ -289,7 +306,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
       {row.status==='bad_debt'&&can('contracts.return')&&<button type="button" className="mg-button" onClick={()=>setRecoveryOpen(true)}><RotateCcw size={15}/>Thu hồi xe nợ xấu</button>}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('lifecycle')}>Trạng thái &amp; xử lý</button>}
       {canRentBattery && <button type="button" className="mg-button" onClick={onBatteryRent}><BatteryCharging size={15} />Thuê pin / sạc</button>}
-      {canPay && <button type="button" className="mg-button" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : depositHeld > 0 ? 'deposit_refund' : 'extra')}><Wallet size={15} />Điền sổ quỹ</button>}
+      {canPay && <button type="button" className="mg-button" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : depositHeld != null && depositHeld > 0 ? 'deposit_refund' : 'extra')}><Wallet size={15} />Điền sổ quỹ</button>}
       {onQr && row.status !== 'cancelled' && <button type="button" className="mg-button" onClick={onQr}><Wallet size={15} />Nhập phiếu chi</button>}
       <button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
   </Dialog>;

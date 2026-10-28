@@ -168,7 +168,7 @@ function contractHydrateSql() {
     COALESCE(c.name,o.customer_name) AS customer_name, COALESCE(c.phone,o.customer_phone) AS customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind,
     COALESCE(o.rent_at,ov.start_date) AS start_date, COALESCE(o.return_at,ov.end_date) AS end_date, o.total AS total_amount,
-    ${rentalPaidSql()} AS paid_amount,
+    ${rentalPaidSql()} AS paid_amount, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded,
     CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
       ELSE COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) END AS deposit_amount,
     COALESCE(staff.full_name, saved_staff.full_name, fallback_staff.full_name) AS staff_name,

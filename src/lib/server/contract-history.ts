@@ -3,6 +3,9 @@ import type { PoolClient } from 'pg';
 import type { ContractCashflow, ContractChange, ContractHistory } from '@/lib/management/contract-history';
 import { CONTRACT_STATUSES } from '@/lib/management/config';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
+import { depositReceiptSql } from './contract-deposits';
+import { renewalReceiptSql } from './contract-receipts';
+import { summarizeContractReceipts } from '@/lib/management/contract-receipt-summary';
 const statusLabel=(value:unknown)=>CONTRACT_STATUSES.find(option=>option.value===value)?.label || String(value||'—');
 
 type Database = Pick<PoolClient, 'query'>;
@@ -20,7 +23,7 @@ const STATUS_LABELS: Record<string, string> = { approved: 'Đã duyệt', pendin
 
 const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.value,COALESCE(t."desc",t.note) AS note,t.status,u.name AS actor,
     COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||t.order_id::text) AS contract_code,
-    CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn'
+    CASE WHEN ${renewalReceiptSql()} THEN 'Thu tiền gia hạn' WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng'
       WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng'
       WHEN t.name='order:outside' THEN 'Phí thu thêm (thu ngoài)'
       WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách'
@@ -31,6 +34,12 @@ const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.val
       WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản'
       WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt' END AS method,
     CASE WHEN t.cash_id IS NOT NULL THEN COALESCE(NULLIF(cb.name,''),'Két tiền mặt #' || t.cash_id::text) ELSE b.bank_name || ' · ' || b.owner_name || ' · ' || b.account_number END AS account,
+    CASE WHEN ${depositReceiptSql()} THEN 'deposit'
+      WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'deposit_refund'
+      WHEN t.name='order:rental_refund' THEN 'rental_refund'
+      WHEN ${renewalReceiptSql()} THEN 'renewal'
+      WHEN t.name LIKE 'order:rental_fees%' OR t.name IN ('order:payment','order:extra','order:return_late','order:return_repair','order:battery_swap') THEN 'rental'
+      ELSE 'other' END AS category,
     r.renewal_payload
   FROM himoto.transactions t
   JOIN himoto.orders o ON o.id=t.order_id
@@ -40,9 +49,10 @@ const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.val
   LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id`;
 const mapCashflow = (row: Record<string, unknown>): ContractCashflow => ({
   id: Number(row.id), at: iso(row.created_at), type: row.type === 'out' ? 'expense' : 'income', reason: String(row.reason || '—'),
-  note: String(row.note || ''), amount: Number(row.value) || 0, method: String(row.method || '—'), account: String(row.account || '—'),
+  note: String(row.note || ''), amount: row.value == null || String(row.value).trim() === '' ? NaN : Number(row.value), method: String(row.method || '—'), account: String(row.account || '—'),
   actor: String(row.actor || '—'), status: STATUS_LABELS[String(row.status)] || String(row.status || '—'),
   order_id: Number(row.order_id) || undefined, contract_code: String(row.contract_code || ''),
+  status_code: String(row.status || ''), category: row.category as ContractCashflow['category'],
 });
 
 export async function readCustomerCashflow(client: Database, customerId: number): Promise<ContractCashflow[]> {
@@ -170,5 +180,5 @@ export async function readContractHistory(client: Database, id: number): Promise
   if (first) created.version = { label: 'Bản tạo hợp đồng (v1)', return_at: first.return_at, total: first.total, paid: null };
 
   changes.sort((a, b) => (new Date(b.at).getTime() || 0) - (new Date(a.at).getTime() || 0));
-  return { changes, cashflow };
+  return { changes, cashflow, receipts: summarizeContractReceipts(cashflow) };
 }

@@ -2561,6 +2561,13 @@
 .mg-payment-fields .mg-field-wide { grid-column: 1 / -1; }
 .mg-payment-fields p { margin: 0; }
 
+@media (max-width: 600px) {
+  .mg-contract-receipts .mg-contract-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 360px) {
+  .mg-contract-receipts .mg-contract-detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 .mg-battery-dialog { width: 760px; }
 .mg-battery-history-entry { padding: 16px 0; border-bottom: 1px solid var(--mg-line); }
 .mg-battery-history-entry p { margin: 6px 0; overflow-wrap: anywhere; }
