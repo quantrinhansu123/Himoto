@@ -47,7 +47,6 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
       if (field.options && value && !field.options.some(option => option.value === value)) nextErrors[field.key] = 'Giá trị chưa được hỗ trợ.';
     }
     if (config.kind === 'vehicles' && dataset?.vehicles.some(v => v.id !== draft.id && String(v.license).trim().toUpperCase() === String(draft.license).trim().toUpperCase())) nextErrors.license = 'Biển số này đã có trong danh sách.';
-    if (config.kind === 'customers' && draft.status === 'warning' && !String(draft.warning_note || '').trim()) nextErrors.warning_note = 'Nhập ghi chú cho hồ sơ cần lưu ý.';
     if (config.kind === 'customers' && String(draft.id_card || '').trim() && !/^\d{9}$|^\d{12}$/.test(String(draft.id_card).replace(/\s+/g, ''))) nextErrors.id_card = 'CCCD/CMND phải có 9 hoặc 12 chữ số.';
     if (config.kind === 'customers' && !validIdentityIssueDate(String(draft.id_card_issued_on || ''))) nextErrors.id_card_issued_on = 'Ngày cấp CCCD/CMND không hợp lệ.';
     if (config.kind === 'customers' && !validIdentityIssueDate(String(draft.driver_license_issued_on || ''))) nextErrors.driver_license_issued_on = 'Ngày cấp GPLX không hợp lệ.';

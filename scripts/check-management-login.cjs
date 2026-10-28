@@ -187,11 +187,13 @@ async function run() {
         assert.equal((await send({ ...customer, status: 'blacklist', warning_note: '' })).status, 201);
         assert.deepEqual(writes.find(write => write.sql.includes('INSERT INTO himoto.customers')).values.slice(5,8), [2, 2, 'Blacklist']);
         writes.length = 0;
-        assert.equal((await send({ ...customer, warning_note: '' })).status, 400);
+        assert.equal((await send({ ...customer, warning_note: '' })).status, 201);
+        assert.deepEqual(writes.find(write => write.sql.includes('INSERT INTO himoto.customers')).values.slice(5,8), [1, 2, 'Cần lưu ý']);
+        writes.length = 0;
         assert.equal((await send({}, ['hr', 'staff', 'refill-branches'])).status, 404);
         assert.equal(writes.length, 0);
       } finally { Object.defineProperty(pool, 'connect', connectDescriptor); }
-      checks.push('customer API binds branch/status/warning correctly; invalid warnings and removed bulk staff writes never open a transaction (mock database only)');
+      checks.push('customer API binds branch/status/warning correctly, accepts an empty warning note without losing warning status, and rejects removed bulk staff writes (mock database only)');
       checks.push('login handler issues an HttpOnly cookie without password data; session lookup and logout work');
     } finally { Object.defineProperty(pool, 'query', queryDescriptor); Object.defineProperty(dbModule.ownerDatabase,'query',ownerDescriptor); }
   } finally { for (const [name, value] of Object.entries(previousEnv)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; } }

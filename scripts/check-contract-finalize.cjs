@@ -209,7 +209,7 @@ async function main() {
       await c.query('SAVEPOINT historical_backfill');
       await c.query(`INSERT INTO qa_fin_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES
         (108,'History A','Honda','xeso',2026,23,23,'QA-HISTORY-A','using',143),(109,'History B','Honda','xeso',2026,31,31,'QA-HISTORY-B','repairing',143)`);
-      const historicalDraft=draft([108,109],{contract_number:'QA-BACKFILL',unit_price:'470000',total_amount:'1410000',deposit_amount:'0',start_date:'2026-10-01T09:00',end_date:'2026-10-04T09:00',backfill:{note:'Forgot original contract, entered after return',returned_at:'2026-10-04T09:00'}});
+      const historicalDraft=draft([108,109],{contract_number:'QA-BACKFILL',unit_price:'470000',total_amount:'1410000',deposit_amount:'0',start_date:'2026-10-01T09:00',end_date:'2026-10-04T09:00',backfill:{note:'',returned_at:'2026-10-04T09:00'}});
       await c.query(`INSERT INTO qa_fin_orders(id,order_status,order_mode,store_id,customer_id,total,pid,draft_reference,draft_payload) VALUES
         (30,'draft','draft',23,9,'0',0,'QA-BACKFILL',$1),(31,'renting','standard',31,9,'1000000',0,'QA-NOW','{}')`,[historicalDraft]);
       await c.query(`INSERT INTO qa_fin_order_vehicle_details(order_id,vehicle_id,rent_at,return_at) VALUES(31,108,'2026-10-20T09:00+07','2026-10-26T09:00+07')`);

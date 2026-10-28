@@ -61,7 +61,6 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
     event.preventDefault(); if (busy.current || processingPhoto || customerOcr.pending) return;
     const next = incomplete ? validateDepositCustomer(customer,source) : validateCustomer(customer, source);
     if (!dataset?.stores.some(store => String(store.id) === branch)) next.store_id = 'Chọn cơ sở cho khách hàng.';
-    if (status === 'warning' && !customer.warning_note.trim()) next.warning_note = 'Nhập ghi chú cho hồ sơ cần lưu ý.';
     setErrors(next); setError('');
     if (Object.keys(next).length) { requestAnimationFrame(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return; }
     try { parseCustomerRelatives(relatives); }

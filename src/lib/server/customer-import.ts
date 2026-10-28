@@ -45,7 +45,7 @@ export async function importDatabaseCustomers(client: Pick<PoolClient, 'query'>,
   const tuples = result.rows.map(row => {
     const { values, store_id: storeId } = row;
     const status = values.status === 'blacklist' ? 2 : values.status === 'draft' ? 0 : 1;
-    const warning = values.warning_note || (values.status === 'blacklist' ? 'Blacklist' : null);
+    const warning = values.warning_note || (values.status === 'blacklist' ? 'Blacklist' : values.status === 'warning' ? 'Cần lưu ý' : null);
     const start = parameters.length;
     parameters.push(values.name, values.phone, values.email || null, values.address || null, values.id_card || null, status, storeId, warning);
     return `(${Array.from({ length: 8 }, (_, i) => `$${start + i + 1}`).join(', ')}, now(), now())`;

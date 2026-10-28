@@ -38,7 +38,7 @@ export async function createCustomerTemplate(stores: CustomerImportStore[]) {
     'CCCD có 12 chữ số; CMND có 9 chữ số. Không tự thêm số 0 nếu số giấy tờ đã bị Excel làm mất.',
     'Nếu thiếu CCCD/địa chỉ: chọn Chưa hoàn tất ở cột Trạng thái hồ sơ và bật Cho phép hồ sơ Chưa hoàn tất thiếu CCCD/địa chỉ trên màn hình nhập. Tên, điện thoại và cơ sở vẫn bắt buộc.',
     'Cơ sở: chọn tên trong danh sách, hoặc nhập ID / mã tại sheet Cơ sở.',
-    'Trạng thái để trống sẽ là Bình thường. Cần lưu ý bắt buộc có ghi chú / cảnh báo.',
+    'Trạng thái để trống sẽ là Bình thường. Ghi chú / cảnh báo không bắt buộc.',
     'Có ghi chú / cảnh báo sẽ hiển thị Cần lưu ý; hồ sơ Blacklist vẫn giữ Blacklist, hồ sơ Chưa hoàn tất được cho phép vẫn giữ Chưa hoàn tất.',
     'Tối đa 1.000 khách hàng mỗi file, dung lượng tối đa 5 MB; chỉ nhận .xlsx.',
     'Tải file lên để xem trước. Chỉ những dòng hợp lệ được nhập; dòng lỗi và trùng được bỏ qua.',

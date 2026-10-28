@@ -17,9 +17,9 @@ export function ContractTelegramRetraction({deliveries,busy,onRetract}:{deliveri
         {delivery.expires_at&&<p>Thời hạn thu hồi bằng bot: {new Date(delivery.expires_at).toLocaleString('vi-VN')}.</p>}
         {delivery.blocked_reason&&<p role={delivery.retraction_state==='failed'?'alert':'status'}>{delivery.blocked_reason}</p>}
         {delivery.can_retract&&<>
-          <div className="mg-field"><label>Lý do thu hồi<textarea aria-label="Lý do thu hồi" rows={2} maxLength={500} disabled={busy} placeholder="Ví dụ: Nhập nhầm số tiền, cần sửa hợp đồng" value={reason} onChange={event=>setReason(event.target.value)}/></label><small>Nhập 5–500 ký tự. Lý do và người thao tác được lưu trong lịch sử.</small></div>
+          <div className="mg-field"><label>Lý do thu hồi<textarea aria-label="Lý do thu hồi" rows={2} maxLength={500} disabled={busy} placeholder="Ví dụ: Nhập nhầm số tiền, cần sửa hợp đồng" value={reason} onChange={event=>setReason(event.target.value)}/></label><small>Lý do không bắt buộc, tối đa 500 ký tự. Người thao tác được lưu trong lịch sử.</small></div>
           <label className="mg-checkbox"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event=>setConfirmed(event.target.checked)}/>Tôi xác nhận thu hồi đúng lần gửi đã chọn khỏi Telegram</label>
-          <button type="button" className="mg-button mg-button-danger" disabled={busy||!confirmed||reason.trim().length<5} onClick={()=>void onRetract(delivery.id,reason.trim())}>{busy?'Đang yêu cầu thu hồi…':delivery.retraction_state==='failed'?'Thử thu hồi lại':'Xác nhận thu hồi Telegram'}</button>
+          <button type="button" className="mg-button mg-button-danger" disabled={busy||!confirmed} onClick={()=>void onRetract(delivery.id,reason.trim())}>{busy?'Đang yêu cầu thu hồi…':delivery.retraction_state==='failed'?'Thử thu hồi lại':'Xác nhận thu hồi Telegram'}</button>
         </>}
       </>}
       <button type="button" className="mg-button" disabled={busy} onClick={()=>{setOpened(false);setConfirmed(false);}}>Đóng mục thu hồi</button>

@@ -43,7 +43,7 @@ const note=(v:unknown,max=3000)=>{if(typeof v!=='string'||v.length>max)throw Err
 export function parseExternalVehicles(value:unknown):ExternalVehicle[] {
   if(!Array.isArray(value)||value.length>100)throw Error('Danh sách xe giữ bên ngoài không hợp lệ.');
   const rows=value.map(v=>{if(!isObject(v))throw Error('Kiểm tra xe giữ bên ngoài.');return {plate:note(v.plate,30).toUpperCase(),reason:note(v.reason,500)};});
-  if(rows.some(v=>!v.plate||!v.reason)||new Set(rows.map(v=>v.plate.replace(/[^A-Z0-9]/g,''))).size!==rows.length)throw Error('Mỗi xe bên ngoài cần biển số riêng và lý do.');
+  if(rows.some(v=>!v.plate)||new Set(rows.map(v=>v.plate.replace(/[^A-Z0-9]/g,''))).size!==rows.length)throw Error('Mỗi xe bên ngoài cần biển số riêng.');
   return rows;
 }
 export function parseAuditInput(raw:unknown):AuditInput {
@@ -81,17 +81,14 @@ export function validateAuditConfirmation(pgd:ShiftInput,input:AuditInput,snapsh
   const rows=auditComparisons(pgd,input,snapshot);
   if(rows.some(row=>row.missing))throw Error('Điền đủ số liệu Sổ và KTNB trước khi xác nhận.');
   const issues=rows.filter(row=>row.different||row.unavailable);
-  if(issues.some(row=>!input.explanations[row.key]?.trim()))throw Error('Cần giải trình từng khoản chênh lệch hoặc thiếu nguồn app trước khi xác nhận.');
   const transferDiff=transferKey(input.transfers)!==transferKey(snapshot.transfers);
-  if(transferDiff&&!input.explanations.transfers?.trim())throw Error('Cần giải trình điều chuyển khác dữ liệu app.');
-  if((snapshot.unclassified_count??0)>0&&!input.notes)throw Error('Có giao dịch chưa phân loại doanh thu; cần ghi kết quả kiểm tra trong ghi chú.');
   return issues.length||transferDiff||(snapshot.unclassified_count??0)>0?'explained':'matched';
 }
 const amount=(value:number|null)=>value===null?'Chưa ghi nhận':new Intl.NumberFormat('vi-VN').format(value);
 export function auditReportText(store:string,date:string,audit:ShiftAudit,pgd?:ShiftInput):string {
   const {actual,book,external,transfers,explanations,notes}=audit.input;
   const lines=[`BÁO CÁO KTNB ĐỐI SOÁT PGD ${store.toUpperCase()} – NGÀY ${date.split('-').reverse().join('/')}`,
-    `Trạng thái: ${audit.status==='confirmed'?(audit.result==='matched'?'Đã xác nhận – khớp':'Đã xác nhận – có giải trình'):'Bản nháp'}`,
+    `Trạng thái: ${audit.status==='confirmed'?(audit.result==='matched'?'Đã xác nhận – khớp':'Đã xác nhận – có chênh lệch'):'Bản nháp'}`,
     '',`1. Tổng tài sản xe: ${amount(assetTotal(actual))} xe`,`- Thuê ngày: ${amount(actual.daily_vehicles)} | Thuê tháng: ${amount(actual.monthly_vehicles)}`,
     `- Xe tại PGD: ${amount(actual.vehicles)} | Giữ bên ngoài: ${amount(actual.external_vehicles)}`,`- Pin cửa hàng: ${amount(actual.batteries)}`,
     `- Xe khác / thuê sở hữu: ${amount(actual.other_vehicles)}`,

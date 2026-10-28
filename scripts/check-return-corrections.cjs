@@ -43,15 +43,16 @@ async function main(){
   await c.query(`INSERT INTO ${schema}.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,type,hiring_fee) VALUES(1001,1,101,$1,$2,'day',150000)`,[start,deadline]);
   const revision=async table=>(await c.query(`SELECT xmin::text AS r FROM ${schema}.${table} WHERE id=$1`,[table==='orders'?1:1001])).rows[0].r;
   const receipt=(kind,amount,method='cash',account_id=99)=>({kind,amount,method,account_id,request_id:randomUUID(),paid_at:paidAt});
-  const originalItem={item_id:1001,item_revision:await revision('order_vehicle_details'),returned_at:paidAt,hourly_rate:'20000',repair_fee:'200000',repair_note:'QA damage'};
+  const originalItem={item_id:1001,item_revision:await revision('order_vehicle_details'),returned_at:paidAt,hourly_rate:'20000',repair_fee:'200000',repair_note:''};
   await completeReturnBatch(proxy,143,[originalItem],[{order_id:1,revision:await revision('orders'),receipts:[receipt('late_fee','40000'),receipt('repair_fee','200000')],refund:{...receipt(undefined,'1000000'),kind:undefined}}]);
   await queueContractNotification(proxy,1,'return','return:1:1001',143,['return-1001']);
   let ctx=await service.readReturnCorrection(proxy,1001);
   assert.equal(ctx.settlement.refund.method,'cash');assert.equal(ctx.payment.deposit_held,1000000);assert.equal(ctx.payment.paid_amount,150000);assert.equal(ctx.previous_adjustment,240000);
   const body=context=>({item_id:1001,revision:context.revision,request_id:randomUUID(),reason:'QA entered wrong payment method',note:'QA corrected recipient',items:context.lines.map(l=>({item_id:l.item_id,item_revision:l.item_revision,returned_at:local(new Date(l.completed_at)),hourly_rate:String(l.hourly_rate),fee_override:String(l.late_fee),repair_fee:String(l.repair_fee),repair_note:l.repair_note,early_discount:String(l.early_discount)})),settlement:{...structuredClone(context.settlement),receipts:context.settlement.receipts.map(r=>({...r,request_id:randomUUID()})),...(context.settlement.refund?{refund:{...context.settlement.refund,request_id:randomUUID()}}:{}),...(context.settlement.rental_refund?{rental_refund:{...context.settlement.rental_refund,request_id:randomUUID()}}:{})}});
   const snapshot=async()=>JSON.stringify((await c.query(`SELECT (SELECT row_to_json(o) FROM ${schema}.orders o WHERE id=1) AS o,(SELECT json_agg(t ORDER BY id) FROM ${schema}.transactions t) AS t,(SELECT json_agg(v ORDER BY id) FROM ${schema}.vehicles v) AS v,(SELECT json_agg(d ORDER BY id) FROM ${schema}.order_vehicle_details d) AS d`)).rows);
-  for(const patch of [{total:'1'},{store_id:31},{reason:'x'},{revision:'0'},{note:'x'.repeat(1001)},{items:[]}])assert.throws(()=>service.parseReturnCorrection({...body(ctx),...patch}));
-  checks.push('Strict payloads reject forged totals/scope, missing items, bad revisions and unreasoned edits');
+  for(const patch of [{total:'1'},{store_id:31},{reason:'x'.repeat(1001)},{revision:'0'},{note:'x'.repeat(1001)},{items:[]}])assert.throws(()=>service.parseReturnCorrection({...body(ctx),...patch}));
+  for(const reason of ['', ' ', 'x'])assert.equal(service.parseReturnCorrection({...body(ctx),reason}).reason,reason.trim());
+  checks.push('Strict payloads reject forged totals/scope, missing items, bad revisions and oversized notes; blank and short reasons are accepted');
   async function rejected(value,status){await c.query('SAVEPOINT rejected_case');const before=await snapshot();await assert.rejects(()=>service.correctReturn(proxy,143,value),e=>status===undefined||e.status===status);await c.query('ROLLBACK TO SAVEPOINT rejected_case');assert.equal(await snapshot(),before);}
   await rejected({...body(ctx),revision:'0'.repeat(64)},409);
   await rejected({...body(ctx),settlement:{...body(ctx).settlement,order_id:2}},403);

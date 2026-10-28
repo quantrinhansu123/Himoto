@@ -30,7 +30,7 @@ export function parseRenewalInput(body: unknown): RenewalInput {
   const outsideAmount = input.outside_amount === undefined ? 0 : Number(input.outside_amount);
   if (outsideAmount > 0 && (typeof input.outside_name !== 'string' || !input.outside_name.trim())) throw new ContractRenewalError('Nhập tên phí thu thêm (thu ngoài).');
   if (Number(input.amount) + outsideAmount > MAX_PAYMENT_AMOUNT) throw new ContractRenewalError('Tổng chi phí gia hạn và phí thu thêm vượt giới hạn.');
-  if(input.occurred_at!==undefined&&(typeof input.occurred_at!=='string'||!validBackfillTime(input.occurred_at)||input.note.trim().length<5))throw new ContractRenewalError('Nhập ngày giờ gia hạn thực tế và lý do nhập bổ sung ít nhất 5 ký tự.');
+  if(input.occurred_at!==undefined&&(typeof input.occurred_at!=='string'||!validBackfillTime(input.occurred_at)))throw new ContractRenewalError('Nhập ngày giờ gia hạn thực tế hợp lệ.');
   const returnAt = new Date(`${input.return_at}:00+07:00`);
   if (!Number.isFinite(returnAt.getTime()) || new Date(returnAt.getTime() + 7 * 3_600_000).toISOString().slice(0, 16) !== input.return_at) throw new ContractRenewalError('Ngày trả mới không hợp lệ.');
   const result: RenewalInput = { item_id: Number(input.item_id), item_revision: input.item_revision, order_revision: input.order_revision, return_at: input.return_at, amount: input.amount, note: input.note.trim(),...(input.occurred_at?{occurred_at:input.occurred_at as string}:{}),

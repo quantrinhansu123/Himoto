@@ -81,7 +81,6 @@ export function validateCustomerImport(inputs: CustomerImportInput[], stores: Cu
     if (values.id_card && !/^(\d{9}|\d{12})$/.test(values.id_card)) errors.push('CCCD cần 12 chữ số; CMND cần 9 chữ số. Kiểm tra số 0 đầu.');
     if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) errors.push('Email chưa đúng định dạng.');
     if (!['active', 'warning', 'blacklist', 'draft'].includes(values.status)) errors.push('Trạng thái hồ sơ chưa được hỗ trợ.');
-    if (values.status === 'warning' && !values.warning_note) errors.push('Hồ sơ Cần lưu ý phải có ghi chú / cảnh báo.');
     const matches = stores.filter(store => String(store.id) === values.store || importText(store.name) === importText(values.store) || (store.code && importText(store.code) === importText(values.store)));
     const storeId = matches.length === 1 ? Number(matches[0].id) : null;
     if (values.store && storeId === null) errors.push('Cơ sở không tồn tại hoặc tên bị trùng. Dùng ID tại sheet Cơ sở.');

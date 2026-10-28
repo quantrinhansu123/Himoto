@@ -36,7 +36,8 @@ async function main() {
   for (const patch of [{ purpose:'advance' },{ item_id:0 },{ item_revision:'' },{ return_at:'2026-02-30T10:01' },{ return_at:'' }]) assert.throws(() => server.parseContractPayment({...renewalInput,...patch}));
   assert.throws(() => server.parseContractPayment({...base,item_id:101}));
   assert.equal(server.parseContractPayment({ ...base, purpose: 'extra' }).purpose, 'extra');
-  for (const patch of [{ note: '  ' }, { item_id: 101 }, { return_at: '2026-01-20T10:01' }]) assert.throws(() => server.parseContractPayment({ ...base, purpose: 'extra', ...patch }));
+  for (const note of ['', '  ', 'x']) assert.equal(server.parseContractPayment({...base,purpose:'extra',note}).note,note.trim());
+  for (const patch of [{ item_id: 101 }, { return_at: '2026-01-20T10:01' }]) assert.throws(() => server.parseContractPayment({ ...base, purpose: 'extra', ...patch }));
   assert.equal(shared.canAddExtraReceipt('completed'), true); assert.equal(shared.canAddExtraReceipt('draft'), false); assert.equal(shared.canAddExtraReceipt('cancelled'), false);
   checks.push('strict positive integer money, UUID, revision, Vietnam dates and allowlisted fields; actor and totals cannot be supplied');
 
@@ -171,10 +172,10 @@ async function main() {
       checks.push('PostgreSQL TEMP: legacy paid greater than original total accepts a new company renewal and updates explicit parent date; old outstanding debt stays unchanged on renewal');
       await c.query("UPDATE qa_payment_orders SET order_status='completed' WHERE id=4");
       const extraBefore=await server.readPaymentContext(proxy,4);
-      const extraReceipt=await pay({purpose:'extra',amount:'150',note:'Phụ thu QA'},4);
+      const extraReceipt=await pay({purpose:'extra',amount:'150',note:''},4);
       assert.equal(extraReceipt.context.total_amount,extraBefore.total_amount+150);assert.equal(extraReceipt.context.paid_amount,extraBefore.paid_amount+150);assert.equal(extraReceipt.context.remaining,extraBefore.remaining);
       const extraRow=(await c.query('SELECT * FROM qa_payment_transactions WHERE id=$1',[extraReceipt.transaction_id])).rows[0];
-      assert.equal(extraRow.name,'order:extra');assert.equal(extraRow.type,'in');assert.equal(extraRow.status,'approved');assert.equal(extraRow.note,'Phụ thu QA');
+      assert.equal(extraRow.name,'order:extra');assert.equal(extraRow.type,'in');assert.equal(extraRow.status,'approved');assert.equal(extraRow.note,'Gia hạn hợp đồng_QA-4');
       const extraCount=await count('transactions');
       for(const status of ['draft','cancelled']){await c.query('UPDATE qa_payment_orders SET order_status=$1 WHERE id=4',[status]);await assert.rejects(pay({purpose:'extra',amount:'150',note:'Phụ thu QA'},4),e=>e.status===409);}
       assert.equal(await count('transactions'),extraCount);
@@ -217,7 +218,7 @@ async function main() {
         UPDATE qa_payment_orders SET order_status='completed',total='1000',pid=1000,first_deposit_amount=0,additional_deposit_amount=0 WHERE id=1;
         UPDATE qa_payment_order_vehicle_details SET rent_at='2026-01-01T10:00+07',return_at='2026-01-10T10:00+07',completed_at='2026-01-15T10:00+07' WHERE order_id=1`);
       const beforeHistory=await server.readPaymentContext(proxy,1),lineRevision=(await c.query('SELECT xmin::text AS revision FROM qa_payment_order_vehicle_details WHERE id=101')).rows[0].revision;
-      const historicalInput={request_id:randomUUID(),item_id:101,item_revision:lineRevision,order_revision:beforeHistory.revision,occurred_at:'2026-01-09T10:00',return_at:'2026-01-12T10:00',amount:'300',note:'Forgot renewal and received payment',receipt:{method:'cash',account_id:1,paid_at:'2026-01-09T11:00'}};
+      const historicalInput={request_id:randomUUID(),item_id:101,item_revision:lineRevision,order_revision:beforeHistory.revision,occurred_at:'2026-01-09T10:00',return_at:'2026-01-12T10:00',amount:'300',note:'',receipt:{method:'cash',account_id:1,paid_at:'2026-01-09T11:00'}};
       const collector=load(path.join(root,'lib/server/contract-renewal-collection'));
       const historicalResult=await transaction(()=>collector.renewContractAndCollect(proxy,1,143,historicalInput));
       assert.equal(historicalResult.payment.context.status,'completed');assert.equal(historicalResult.payment.context.total_amount,1300);assert.equal(historicalResult.payment.context.paid_amount,1300);

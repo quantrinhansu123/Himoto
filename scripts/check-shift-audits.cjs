@@ -14,11 +14,13 @@ async function main(){
   const rows=d.auditComparisons(pgd,input,snapshot),personal=rows.find(r=>r.key==='personal');
   assert(personal.different);assert.equal(personal.pgd,64300134);assert.equal(personal.actual-personal.pgd,410000);
   assert.equal(rows.find(r=>r.key==='assets_total').different,false);
-  assert.throws(()=>d.validateAuditConfirmation(pgd,input,snapshot),/giải trình/);
+  assert.equal(d.validateAuditConfirmation(pgd,input,snapshot),'explained');
+  assert.equal(d.validateAuditConfirmation(pgd,input,{...snapshot,unclassified_count:1,transfers:[{plate:'QA-TRANSFER',from:'QA A',to:'QA B'}]}),'explained');
+  assert.equal(d.parseExternalVehicles([{plate:'QA-OUTSIDE',reason:''}])[0].reason,'');
   input.explanations={vehicles:'Có một xe CA giữ, tách khỏi 19 xe tại PGD.',personal:'PGD nhập sai, đã đối chiếu ảnh và sổ.'};
   assert.equal(d.validateAuditConfirmation(pgd,input,snapshot),'explained');
   assert.equal(pgd.personal,64300134);assert.equal(pgd.vehicles,19);
-  checks.push('Sample: 19 physical + 1 external + 23 rented = 43; 410,000 VND difference requires an explanation and never changes the PGD report.');
+  checks.push('Sample: 19 physical + 1 external + 23 rented = 43; differences remain flagged while explanations, external-vehicle reasons and notes are optional; PGD report remains unchanged.');
   assert.throws(()=>d.parseAuditInput({...input,external:[...input.external,...input.external]}));
   assert.throws(()=>d.parseAuditInput({...input,actual:{...values,external_vehicles:2}}));
   assert.throws(()=>d.parseAuditInput({...input,book:{...values,cash:-1}}));

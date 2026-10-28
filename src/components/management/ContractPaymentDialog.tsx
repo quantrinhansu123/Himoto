@@ -172,7 +172,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy.current || !context) return;
-    if(backfill&&!pending&&(!backfillConfirmed||!validBackfillTime(paidAt)||note.trim().length<5)){setError('Nhập ngày giờ giao dịch thực tế, ghi chú ít nhất 5 ký tự và xác nhận khoản tiền đã phát sinh.');return;}
+    if(backfill&&!pending&&(!backfillConfirmed||!validBackfillTime(paidAt))){setError('Nhập ngày giờ giao dịch thực tế và xác nhận khoản tiền đã phát sinh.');return;}
     const input: PaymentInput = pending || transferReview?.input || { request_id: crypto.randomUUID(), revision: context.revision, amount: effectiveAmount, method, account_id: effectiveAccountId, paid_at: paidAt, note: note.trim(),
       ...(purpose === 'renewal' ? { purpose: 'renewal', items: renewalLines.map(line => ({ item_id: line.item.id, item_revision: line.item.revision, return_at: line.return_at, amount: line.amount || '0' })) }
         : purpose==='deposit'?{purpose:'deposit'}:purpose === 'extra' ? { purpose: 'extra' } : rentalRefund?{purpose:'rental_refund'}:refund ? { purpose: 'deposit_refund' } : {}) };
@@ -181,7 +181,6 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
         || (purpose==='deposit'&&Number(effectiveAmount)>(context.deposit_remaining??0)) || (refund && Number(effectiveAmount) > refundLimit) || !accounts.some(account => account.id === input.account_id))) {
       setError(rentalRefund?'Số tiền hoàn vượt tiền thuê được phép hoàn; kiểm tra tài khoản chi.':refund ? 'Số tiền trả cọc không được vượt tiền cọc đang giữ; chọn tài khoản chi.' : 'Kiểm tra số tiền còn thiếu và tài khoản nhận.'); return;
     }
-    if (!pending && purpose === 'extra' && !note.trim()) { setError('Nhập nội dung cho phiếu thu thêm.'); return; }
     if (!pending && !refund && input.method !== 'cash' && !transferReview&&!backfill) {
       try {
         const account = accounts.find(row => row.id === input.account_id)!;
@@ -267,7 +266,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
               <option value="">{refund ? 'Chọn tài khoản chi' : 'Chọn tài khoản nhận'}</option>{accounts.map(account => <option key={paymentAccountKey(account)} value={paymentAccountKey(account)}>{account.label}</option>)}
             </select></label>
             {!accounts.length && <p className="mg-field-wide mg-field-error">{method === 'company_transfer' ? 'Chưa có tài khoản công ty đang hoạt động. Đổi hình thức hoặc thêm TK công ty trong Sổ quỹ.' : 'Chưa có tài khoản nhận đúng cơ sở hợp đồng cho hình thức này (Tiền mặt = két; Chuyển khoản = ngân hàng cơ sở). Đổi Hình thức hoặc chọn TK đúng cơ sở nguồn.'}</p>}
-            <label className="mg-field-wide">{refund ? 'Nội dung chi' : 'Nội dung thu / chuyển khoản'}<textarea aria-label="Nội dung thu / chuyển khoản" maxLength={2000} required={purpose === 'extra'} value={note} onChange={event => setNote(event.target.value)} rows={2} /></label>
+            <label className="mg-field-wide">{refund ? 'Nội dung chi' : 'Nội dung thu / chuyển khoản'}<textarea aria-label="Nội dung thu / chuyển khoản" maxLength={2000} value={note} onChange={event => setNote(event.target.value)} rows={2} /></label>
             {method === 'company_transfer' && !refund && <p className="mg-field-wide">Sau khi ghi nhận, hợp đồng sẽ có trong Hợp đồng VAT và chuyển đến danh sách đó.</p>}
           </fieldset> : <p>{context.completed_from_hold?'Hợp đồng đã hoàn thành sau bảo lưu. Khoản không thu hồi được ghi riêng là Tổn thất công nợ; không thu thêm hoặc tạo phiếu chi cho khoản này.':context.hold_active?'Hợp đồng đang bảo lưu; chỉ thu khoản đã phát sinh trước bảo lưu hoặc đối chiếu tiền cọc.':context.remaining === null ? 'Cần đối chiếu số liệu tiền trước khi thu.' : !extraAllowed ? 'Trạng thái hợp đồng này chưa cho phép thu tiền.' : context.remaining === 0 ? 'Không còn công nợ theo số liệu hiện có. Bấm Thêm phiếu thu để ghi khoản thu khác vào Sổ quỹ.' : 'Trạng thái hợp đồng này chưa cho phép thu công nợ. Bấm Thêm phiếu thu để ghi khoản thu khác vào Sổ quỹ.'}</p>}</>}
           {!refund && <SavedRecordPhotos entity="contracts" recordId={id} slots={contractEvidenceSlots('rental')} title="Ảnh hợp đồng đã ký & bill chuyển khoản" />}

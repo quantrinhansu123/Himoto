@@ -88,7 +88,6 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
     if (!selected) return setError('Chọn xe cần thao tác.');
     if (transferBlocked) return setError('Chỉ chuyển xe đang Lưu kho. Kiểm tra trạng thái xe rồi thao tác lại.');
     if(receiveBlocked)return setError(mode==='reject'?'Không xác định được lần chuyển xe đang chờ xử lý. Nhấn Làm mới rồi kiểm tra lịch sử.':'Không xác định được lần chuyển xe đang chờ nhận. Nhấn Làm mới rồi kiểm tra lịch sử.');
-    if (mode === 'reject' && !note.trim()) return setError('Nhập lý do từ chối điều chuyển.');
     if (mode === 'transfer' && !storeId) return setError('Chọn cơ sở chuyển đến.');
     if (mode === 'transfer' && storeId === String(selected.store_id)) return setError('Xe đang ở cơ sở này. Chọn cơ sở khác.');
     if (mode === 'status' && status !== 'ready' && status !== 'using') return setError('Chọn trạng thái Đang thuê hoặc Lưu kho.');
@@ -149,7 +148,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <p className="mg-transfer-direction mg-field-wide">{selected?vehicleTransferRoute(selected):''}</p>
         <div className="mg-field"><label htmlFor="vehicle-receive-from">Cơ sở chuyển đi</label><input id="vehicle-receive-from" value={String(selected?.transfer_from_store_name||'')} readOnly disabled/></div>
         <div className="mg-field"><label htmlFor="vehicle-receive-to">Cơ sở nhận xe</label><input id="vehicle-receive-to" value={String(selected?.transfer_to_store_name||selected?.store_name||'')} readOnly disabled/></div>
-        <p className="mg-composer-hint mg-field-wide">{mode==='reject'?'Từ chối khi cơ sở đích không nhận xe. Xe về Lưu kho tại cơ sở chuyển đi và lần điều chuyển được đóng. Nhập lý do từ chối bên dưới.':'Chỉ xác nhận khi xe đã đến cơ sở nhận. Xe chuyển từ Chờ luân chuyển sang Lưu kho; sau đó có thể chọn nhiều ảnh nhận xe. Ngày giờ và người nhận được lưu trong Lịch sử.'}</p>
+        <p className="mg-composer-hint mg-field-wide">{mode==='reject'?'Từ chối khi cơ sở đích không nhận xe. Xe về Lưu kho tại cơ sở chuyển đi và lần điều chuyển được đóng. Có thể thêm lý do từ chối bên dưới.':'Chỉ xác nhận khi xe đã đến cơ sở nhận. Xe chuyển từ Chờ luân chuyển sang Lưu kho; sau đó có thể chọn nhiều ảnh nhận xe. Ngày giờ và người nhận được lưu trong Lịch sử.'}</p>
         {receiveBlocked&&<p className="mg-field-error mg-field-wide" role="alert">Lần chuyển xe không còn chờ xử lý hoặc thiếu thông tin. Đóng hộp thoại, nhấn Làm mới rồi kiểm tra lịch sử.</p>}
       </>:mode === 'transfer' ? <>
         <div className="mg-field"><label htmlFor="vehicle-action-from">Cơ sở hiện tại</label><input id="vehicle-action-from" value={String(selected?.store_name || otherStock?.store_name || '')} readOnly disabled /></div>

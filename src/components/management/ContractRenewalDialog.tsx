@@ -142,7 +142,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!selected || saving || photosPending) return;
-    if(backfill&&(!validBackfillTime(occurredAt)||note.trim().length<5)){setError('Nhập ngày giờ gia hạn thực tế và lý do nhập bổ sung ít nhất 5 ký tự.');return;}
+    if(backfill&&(!validBackfillTime(occurredAt))){setError('Nhập ngày giờ gia hạn thực tế hợp lệ.');return;}
     if (!validReturn) { setError('Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
     if (extraAmount && !/^(0|[1-9]\d{0,12})$/.test(extraAmount)) { setError('Phí khác phải là số tiền nguyên VNĐ.'); return; }

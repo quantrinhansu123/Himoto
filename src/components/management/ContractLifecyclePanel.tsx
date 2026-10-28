@@ -37,7 +37,7 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
   },[action,context,at]);
   function open(next:ContractLifecycleAction){setAction(next);setAt(localLifecycleTime());setNote('');setConfirmed(false);setSaveError('');setSelected(Array.from({length:context?.resume_vehicle_count||1},()=>''));setHoldUntil(next==='update_hold'?context?.hold_until||'':'');request.current=crypto.randomUUID();}
   async function save(){
-    if(!context||!action||busy.current||!confirmed||note.trim().length<5)return;
+    if(!context||!action||busy.current||!confirmed)return;
     busy.current=true;setSaving(true);setSaveError('');
     try{const next=await saveContractLifecycle(id,{action,revision:context.revision,request_id:request.current,note:note.trim(),at,confirmed,
       ...(action==='resume'?{vehicle_ids:selected.map(Number)}:{}),...(['hold','update_hold'].includes(action)?{hold_until:holdUntil}:{})});
@@ -95,10 +95,10 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
           {preview?.plan&&<details><summary>Xem lịch đóng tiền sau khi thuê lại</summary><p>Tiền đã đóng tiếp tục được đối chiếu với lịch này; cọc tính riêng.</p><ul>{installmentSchedule(preview.plan).slice(0,120).map(period=><li key={period.number}>{formatDateTime(period.due_at+':00+07:00')} · {formatMoney(period.amount)}{context.held_at&&period.due_at<=context.held_at?' · Khoản cũ giữ nguyên':''}</li>)}</ul>{installmentSchedule(preview.plan).length>120&&<p>Hiển thị 120 kỳ đầu trên tổng {installmentSchedule(preview.plan).length} kỳ.</p>}</details>}
           {preview?.error&&<p className="mg-field-error">{preview.error}</p>}
         </>}
-        <div className="mg-field"><label htmlFor="lifecycle-note">Lý do / nội dung đối chiếu</label><textarea id="lifecycle-note" disabled={saving} maxLength={1000} rows={3} value={note} onChange={event=>setNote(event.target.value)}/></div>
+        <div className="mg-field"><label htmlFor="lifecycle-note">Lý do / nội dung đối chiếu (không bắt buộc)</label><textarea id="lifecycle-note" disabled={saving} maxLength={1000} rows={3} value={note} onChange={event=>setNote(event.target.value)}/></div>
         <label className="mg-checkbox"><input type="checkbox" checked={confirmed} disabled={saving} onChange={event=>setConfirmed(event.target.checked)}/>{action==='hold'?(reconciledOnly?'Tôi xác nhận bảo lưu hồ sơ cũ, giữ nguyên kho xe, tiền và lịch sử':'Tôi xác nhận xe đã thực tế thu về, bảo lưu giữ nợ/cọc và dừng kỳ mới'):action==='resume'?'Tôi đã đối chiếu xe bàn giao, lịch đóng tiền còn lại và nợ/cọc cũ':action==='complete_hold'?'Tôi xác nhận khoản chưa thu không thu hồi, ghi nhận tổn thất công nợ và hoàn thành hợp đồng':'Tôi đã đối chiếu tình trạng xe và các khoản tiền thực tế của hợp đồng'}</label>
         {saveError&&<p className="mg-field-error" role="alert">{saveError}</p>}
-      </div><div className="mg-dialog-footer"><button className="mg-button" type="button" disabled={saving} onClick={()=>setAction(null)}>Quay lại</button><button className="mg-button mg-button-primary" disabled={saving||!confirmed||note.trim().length<5||!validLifecycleTime(at)||['hold','update_hold'].includes(action)&&!validLifecycleTime(holdUntil)||action==='resume'&&(!preview?.end||stockLoading||Boolean(stockError)||selected.some(value=>!value)||new Set(selected).size!==selected.length)}>{saving?'Đang ghi nhận…':lifecycleActionLabel[action]}</button></div></form>
+      </div><div className="mg-dialog-footer"><button className="mg-button" type="button" disabled={saving} onClick={()=>setAction(null)}>Quay lại</button><button className="mg-button mg-button-primary" disabled={saving||!confirmed||!validLifecycleTime(at)||['hold','update_hold'].includes(action)&&!validLifecycleTime(holdUntil)||action==='resume'&&(!preview?.end||stockLoading||Boolean(stockError)||selected.some(value=>!value)||new Set(selected).size!==selected.length)}>{saving?'Đang ghi nhận…':lifecycleActionLabel[action]}</button></div></form>
     </Dialog>}
   </>;
 }

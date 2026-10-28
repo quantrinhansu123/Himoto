@@ -6,7 +6,7 @@ export class ReservationNoShowError extends Error {constructor(message:string,pu
 export async function closeReservationNoShow(db:Pick<PoolClient,'query'>,orderId:number,actor:number,input:unknown){
  if(!input||typeof input!=='object'||Array.isArray(input))throw new ReservationNoShowError('Thông tin khách không đến chưa hợp lệ.');
  const body=input as Record<string,unknown>;
- if(Object.keys(body).some(key=>!['revision','reason'].includes(key))||typeof body.revision!=='string'||!/^\d{1,20}$/.test(body.revision)||typeof body.reason!=='string'||!body.reason.trim()||body.reason.length>1000)throw new ReservationNoShowError('Nhập lý do và phiên bản hợp đồng hợp lệ.');
+ if(Object.keys(body).some(key=>!['revision','reason'].includes(key))||typeof body.revision!=='string'||!/^\d{1,20}$/.test(body.revision)||typeof body.reason!=='string'||body.reason.length>1000)throw new ReservationNoShowError('Kiểm tra phiên bản hợp đồng và lý do tối đa 1.000 ký tự.');
  const order=(await db.query('SELECT id,order_status,draft_payload,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[orderId])).rows[0];
  if(!order)throw new ReservationNoShowError('Không tìm thấy hợp đồng giữ xe.',404);
  if(order.order_status!=='deposit_contract'||order.draft_payload?.management_composer?.handover)throw new ReservationNoShowError('Chỉ chốt khách không đến cho hợp đồng giữ xe chưa bàn giao.',409);

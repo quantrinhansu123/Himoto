@@ -25,7 +25,7 @@ export function ContractBadDebtDialog({id,code,onClose,onDone}:{id:number;code?:
   const eligible=Boolean(allowed&&context&&canMarkBadDebtContract(context)&&['renting','overdue','wait_payment'].includes(context.status));
   async function submit(event:FormEvent) {
     event.preventDefault();
-    if(busy.current||!eligible||!context||!confirmed||note.trim().length<5||!validLifecycleTime(at))return;
+    if(busy.current||!eligible||!context||!confirmed||!validLifecycleTime(at))return;
     busy.current=true;setSaving(true);setError('');
     try {
       const next=await saveContractLifecycle(id,{action:'mark_bad_debt',revision:context.revision,request_id:request.current,note:note.trim(),at,confirmed});
@@ -45,7 +45,7 @@ export function ContractBadDebtDialog({id,code,onClose,onDone}:{id:number;code?:
             <div className="mg-field"><label htmlFor="lifecycle-at">Ngày giờ xác nhận</label><DateTime24Controls id="lifecycle-at" label="Ngày giờ xác nhận" value={at} onChange={setAt}/></div>
             <div className="mg-field"><label htmlFor="lifecycle-note">Lý do / nội dung đối chiếu</label>
               <textarea id="lifecycle-note" rows={3} maxLength={1000} aria-describedby="bad-debt-note-hint" value={note} onChange={event=>setNote(event.target.value)} placeholder="Ví dụ: Khách quá hạn, chưa thanh toán"/>
-              <small id="bad-debt-note-hint">Nhập lý do ít nhất 5 ký tự để bật nút xác nhận.</small>
+              <small id="bad-debt-note-hint">Không bắt buộc, có thể để trống.</small>
             </div>
             <label className="mg-checkbox"><input type="checkbox" checked={confirmed} onChange={event=>setConfirmed(event.target.checked)}/>Tôi đã đối chiếu tình trạng xe và các khoản tiền thực tế của hợp đồng</label>
           </fieldset>
@@ -55,7 +55,7 @@ export function ContractBadDebtDialog({id,code,onClose,onDone}:{id:number;code?:
       <div className="mg-dialog-footer">
         {allowed&&(error||context&&!eligible)&&<button type="button" className="mg-button" disabled={loading||saving} onClick={()=>void refresh()}>Tải lại tình trạng</button>}
         <button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button>
-        <button type="submit" className="mg-button mg-button-primary" disabled={loading||saving||!eligible||!confirmed||note.trim().length<5||!validLifecycleTime(at)}>{saving?'Đang ghi nhận…':'Chuyển sang Nợ xấu'}</button>
+        <button type="submit" className="mg-button mg-button-primary" disabled={loading||saving||!eligible||!confirmed||!validLifecycleTime(at)}>{saving?'Đang ghi nhận…':'Chuyển sang Nợ xấu'}</button>
       </div>
     </form>
   </Dialog>;

@@ -35,7 +35,6 @@ export function parseContractPayment(body: unknown): PaymentInput {
   if (input.purpose !== undefined && !renewal && !extra && !refund&&!deposit) throw new ContractPaymentError('Nghiệp vụ thanh toán không hợp lệ.');
   if ('renewal_version' in input && (input.purpose !== undefined || !Number.isSafeInteger(input.renewal_version) || Number(input.renewal_version) < 2)) throw new ContractPaymentError('Chọn phiên bản gia hạn đã lưu để ghi nhận phiếu thu.');
   if (!renewal && ['item_id', 'item_revision', 'return_at', 'items'].some(key => key in input)) throw new ContractPaymentError('Chỉ truyền xe và ngày hẹn trả khi thu tiền gia hạn.');
-  if (extra && !input.note.trim()) throw new ContractPaymentError('Nhập nội dung cho phiếu thu thêm.');
   const base = { request_id: input.request_id.toLowerCase(), revision: input.revision, amount: input.amount, method: input.method as PaymentInput['method'], account_id: Number(input.account_id), paid_at: input.paid_at, note: input.note.trim() };
   if (renewal) {
     const validReturn = (value: unknown) => {

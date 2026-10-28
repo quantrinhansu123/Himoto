@@ -29,7 +29,7 @@ export async function queueTelegramRetraction(db:Database,orderId:number,actorId
   const uuid=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
   if(Object.keys(input).some(key=>!['action','notice_id','event_key','request_id','reason','confirmed'].includes(key))||typeof input.notice_id!=='string'||!uuid.test(input.notice_id)
     ||typeof input.request_id!=='string'||!uuid.test(input.request_id)||typeof input.event_key!=='string'||input.event_key.length>256||input.confirmed!==true
-    ||typeof input.reason!=='string'||input.reason.trim().length<5||input.reason.length>500)throw new TelegramRetractionError('Chọn đúng lần gửi, nhập lý do 5–500 ký tự và xác nhận thu hồi.');
+    ||typeof input.reason!=='string'||input.reason.length>500)throw new TelegramRetractionError('Chọn đúng lần gửi, xác nhận thu hồi; lý do tối đa 500 ký tự.');
   const order=await db.query('SELECT id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[orderId]);
   if(!order.rowCount)throw new TelegramRetractionError('Không tìm thấy hợp đồng.',404);
   const row=(await db.query(`SELECT id,event_type,status,message_ids,delivery_target,retraction,COALESCE(root_event_key,event_key) AS root_key

@@ -78,7 +78,8 @@ async function run() {
   assert.equal(result.valid, 1); assert.equal(result.rows[0].store_id, 2); assert.equal(result.rows[0].values.status, 'active');
   assert.equal(shared.validateCustomerImport([input({ store: '2', status: 'Nợ xấu' })], stores, []).rows[0].values.status, 'blacklist');
   assert.equal(shared.validateCustomerImport([input({ store: 'cs-qa', warning_note: 'Ghi chú QA' })], stores, []).rows[0].values.status, 'warning');
-  for (const patch of [{ phone: '090' }, { id_card: '1234567890' }, { name: '' }, { address: '' }, { email: 'x' }, { store: 'Missing' }, { status: 'Unsupported' }, { status: 'Cần lưu ý' }, { name: 'x'.repeat(192) }, { address: 'x'.repeat(192) }, { warning_note: 'x'.repeat(192) }]) {
+  assert.equal(shared.validateCustomerImport([input({status:'Cần lưu ý',warning_note:''})],stores,[]).rows[0].errors.length,0);
+  for (const patch of [{ phone: '090' }, { id_card: '1234567890' }, { name: '' }, { address: '' }, { email: 'x' }, { store: 'Missing' }, { status: 'Unsupported' }, { name: 'x'.repeat(192) }, { address: 'x'.repeat(192) }, { warning_note: 'x'.repeat(192) }]) {
     assert.equal(shared.validateCustomerImport([input(patch)], stores, []).invalid, 1);
   }
   result = shared.validateCustomerImport([input(), input({ name: 'Other' }, 4)], stores, []);

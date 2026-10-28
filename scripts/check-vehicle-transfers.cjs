@@ -8,7 +8,7 @@ const pool=load(path.join(root,'lib/server/himoto-database')).himotoPool;
 const checks=[];
 async function main(){
   const c=await pool.connect();
-  const tables=['vehicles','vehicle_location_events','stores','users','customers','orders','order_vehicle_details','staff_profiles','transactions','vehicle_transfers','activity_logs','management_contract_vehicle_swaps'];
+  const tables=['vehicles','vehicle_location_events','stores','users','customers','orders','order_vehicle_details','staff_profiles','staff_account_attribution','transactions','vehicle_transfers','activity_logs','management_contract_vehicle_swaps'];
   let failAudit=false;
   const proxy={query(sql,params){
     let query=sql;for(const table of tables)query=query.replaceAll(`himoto.${table}`,`pg_temp.qa_transfer_${table}`);

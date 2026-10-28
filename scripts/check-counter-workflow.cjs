@@ -35,7 +35,7 @@ async function main(){
  await c.query(`INSERT INTO ${schema}.banks(id,store_id,bank_name,account_number,owner_name,account_type,owner_type,status) VALUES(15,23,'QA','000123','QA',1,'unknown','Active'),(16,31,'QA','000456','QA',1,'personal','Active'); INSERT INTO ${schema}.cash(id,store_id,opening_balance,status) VALUES(99,23,0,'Active')`);
  await c.query(`INSERT INTO ${schema}.transactions(id,order_id,name,type,value,status,store_id,cash_id,bank_id,bank_owner_type,payment_method,note,user_id) VALUES(501,1,'order:deposit','in',1000000,'approved',23,NULL,15,'unknown',2,'QA',143),(502,1,'order:rental_fees','in',150000,'approved',23,99,NULL,NULL,1,'QA',143)`);
  const revision=(await c.query(`SELECT xmin::text AS r FROM ${schema}.orders WHERE id=1`)).rows[0].r,itemRevision=(await c.query(`SELECT xmin::text AS r FROM ${schema}.order_vehicle_details WHERE id=1001`)).rows[0].r;
- const item={item_id:1001,item_revision:itemRevision,returned_at:paidAt,hourly_rate:'20000',repair_fee:'200000',repair_note:'Hỏng tay phanh QA'};assert.throws(()=>parseReturnInput({...item,repair_note:''}));
+ const item={item_id:1001,item_revision:itemRevision,returned_at:paidAt,hourly_rate:'20000',repair_fee:'200000',repair_note:''};assert.equal(parseReturnInput(item).repair_note,'');
  const {recordVehicleReturn}=load(path.join(root,'lib/server/contract-returns'));
  for(const minutes of [480,481,1440,1441,1920,1921,4562]){
   await c.query('SAVEPOINT fee_boundary');
@@ -76,7 +76,7 @@ async function main(){
  await c.query(`UPDATE ${schema}.orders SET order_status='deposit_contract' WHERE id=1`);
  const beforeNoShow=(await c.query(`SELECT count(*)::int AS n FROM ${schema}.transactions`)).rows[0].n;
  await c.query('SAVEPOINT future_no_show');await c.query(`UPDATE ${schema}.order_vehicle_details SET rent_at=now()+interval '1 day' WHERE id=1001`);await assert.rejects(()=>closeReservationNoShow(proxy,1,143,{revision:state.revision||confirm.order_revision,reason:'QA chưa đến giờ'}));await c.query('ROLLBACK TO SAVEPOINT future_no_show');
- const noShow=await closeReservationNoShow(proxy,1,143,{revision:await revisionNow(),reason:'QA khách không đến'});assert.equal(noShow.status,'completed');assert(noShow.retained_amount>0);
+ const noShow=await closeReservationNoShow(proxy,1,143,{revision:await revisionNow(),reason:''});assert.equal(noShow.status,'completed');assert(noShow.retained_amount>0);
  assert.equal((await c.query(`SELECT count(*)::int AS n FROM ${schema}.transactions`)).rows[0].n,beforeNoShow);assert.equal((await c.query(`SELECT status FROM ${schema}.vehicles WHERE id=101`)).rows[0].status,'ready');
  checks.push('No-show closes only an unhanded reservation after pickup time, retains existing advance as branch revenue and releases stock without creating or duplicating cash receipts');
  }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}

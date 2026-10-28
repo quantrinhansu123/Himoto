@@ -301,7 +301,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
   if (!name || !foreign && !incomplete && !address || !phoneOk || (idCard ? foreign ? idCard.length>100 : !/^\d{9}$|^\d{12}$/.test(idCard) : !incomplete) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
       !validIdentityIssueDate(driverLicenseIssuedOn) || driverLicenseNumber.length > 100 ||
-      (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
+      (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
     return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, điện thoại, CCCD/CMND, địa chỉ và email.' }, { status: 400 });
   }
 
@@ -327,7 +327,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
                  CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
                       WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,
                  warning, created_at, xmin::text AS customer_revision, id_card_issued_on, id_card_issued_by, relatives, store_id, customer_type, nationality, contact_channel, contact_detail`,
-      [name, phone, email, address, idCard, status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1, storeId, status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning : null, driverLicenseNumber, driverLicenseIssuedOn, JSON.stringify(relatives), idCardIssuedOn, idCardIssuedBy, customerType, nationality, contactChannel, contactDetail],
+      [name, phone, email, address, idCard, status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1, storeId, status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning || 'Cần lưu ý' : null, driverLicenseNumber, driverLicenseIssuedOn, JSON.stringify(relatives), idCardIssuedOn, idCardIssuedBy, customerType, nationality, contactChannel, contactDetail],
     );
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data: result.rows[0] }, { status: 201 });
@@ -401,7 +401,7 @@ async function PATCHHandler(request: NextRequest, { params }: Params) {
   if (!name || !phoneOk || (idCard && (foreign?idCard.length>100:!/^\d{9}$|^\d{12}$/.test(idCard))) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
       !validIdentityIssueDate(driverLicenseIssuedOn) || driverLicenseNumber.length > 100 ||
-      (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
+      (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
     return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, số điện thoại, giấy tờ, email, cơ sở và trạng thái hồ sơ.' }, { status: 400 });
   }
 
@@ -419,7 +419,7 @@ async function PATCHHandler(request: NextRequest, { params }: Params) {
       return NextResponse.json({ status: 'error', message: 'Số CCCD/CMND này đã thuộc hồ sơ khách hàng khác.' }, { status: 409 });
     }
     const dbStatus = status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1;
-    const dbWarning = status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning : null;
+    const dbWarning = status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning || 'Cần lưu ý' : null;
     const result = await client.query(
       `UPDATE himoto.customers SET name=$2, phone=$3, address=NULLIF($4,''),
          id_card=NULLIF($5,''), status=$6, warning=$7, store_id=$8,

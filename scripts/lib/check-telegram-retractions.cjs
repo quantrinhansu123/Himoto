@@ -22,8 +22,9 @@ module.exports=async function checkRetractions(db,c,schema){
   const fresh=await fixture(201);
   assert(r.retractionEligibility(await read(fresh.id),user).can_retract);
   await assert.rejects(()=>service.saveContractTelegram(db,1,143,reader,fresh.input),e=>e.status===403);
-  for(const patch of [{confirmed:false},{reason:'abc'},{chat_id:'-100000000999'},{notice_id:randomUUID()},{event_key:'foreign-root'}])await assert.rejects(()=>service.saveContractTelegram(db,1,143,user,{...fresh.input,...patch}));
-  checks.push('Retraction requires matching notice/root/order, original event permission, explicit confirmation and reason; arbitrary chat IDs are rejected');
+  for(const patch of [{confirmed:false},{reason:'x'.repeat(501)},{chat_id:'-100000000999'},{notice_id:randomUUID()},{event_key:'foreign-root'}])await assert.rejects(()=>service.saveContractTelegram(db,1,143,user,{...fresh.input,...patch}));
+  checks.push('Retraction requires matching notice/root/order, original event permission and explicit confirmation; arbitrary chat IDs and oversized reasons are rejected');
+  fresh.input.reason='';
   await service.saveContractTelegram(db,1,143,user,fresh.input);await service.saveContractTelegram(db,1,143,user,fresh.input);
   assert.equal((await read(fresh.id)).retraction.state,'pending');
   assert.equal((await read(fresh.id)).delivery_review.filter(item=>item.outcome==='retraction_requested').length,1);

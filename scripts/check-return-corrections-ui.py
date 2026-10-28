@@ -39,7 +39,7 @@ def mock(route):
             assert body['items'][0]['fee_override']=='40000'
             refund=body['settlement']['refund'];assert refund['method']=='company_transfer' and refund['account_id']==17
             assert refund['recipient_account']=='000123456' and refund['recipient_name']=='Khách nhận hoàn QA'
-            assert body['reason']=='Nhập nhầm hình thức hoàn cọc QA'
+            assert body['reason']==''
             assert body['note']=='Hoàn cọc theo bill đã đối chiếu QA'
             if state.get('fail_once'):
                 state['fail_once']=False;state['failed_request']=body['request_id'];route.fulfill(status=409,json=dict(status='error',message='QA hồ sơ đã thay đổi. Giữ form để đối chiếu.'));return
@@ -86,7 +86,7 @@ with sync_playwright() as pw:
         refund.get_by_label('Số tài khoản nhận hoàn',exact=True).fill('000123456')
         refund.get_by_label('Tên người nhận hoàn',exact=True).fill('Khách nhận hoàn QA')
         editor.get_by_label('Ghi chú gửi cùng Telegram',exact=True).fill('Hoàn cọc theo bill đã đối chiếu QA')
-        editor.get_by_label('Lý do chỉnh sửa (bắt buộc)',exact=True).fill('Nhập nhầm hình thức hoàn cọc QA')
+        editor.get_by_label('Lý do chỉnh sửa (không bắt buộc)',exact=True).fill('')
         refund.scroll_into_view_if_needed();editor.screenshot(path=str(out/f'{engine}-{width}-refund-method.png'))
         expect(editor.get_by_role('button',name='2. Kiểm tra & gửi Telegram',exact=True)).to_be_disabled()
         editor.get_by_role('button',name='Lưu thay đổi',exact=True).click()
