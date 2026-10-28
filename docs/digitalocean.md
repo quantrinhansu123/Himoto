@@ -8,6 +8,8 @@ The Next.js standalone artifact runs as `himoto-next`, bound only to localhost. 
 
 `.github/workflows/digitalocean.yml` builds Linux artifacts from `main` using Node 22 LTS. SSH keys and pinned host keys come from the `DIGITALOCEAN_HOST`, `DIGITALOCEAN_DEPLOY_KEY`, and `DIGITALOCEAN_KNOWN_HOSTS` repository secrets. The deployment key can invoke only the root-owned release wrapper; it cannot request a general SSH shell. Secrets are injected at runtime from `/etc/himoto-web/runtime.env`, outside the artifact and repository.
 
+The previous Vercel alias redirects browser pages to the canonical domain and proxies old `/api/*` callbacks to DigitalOcean without caching private responses. This keeps existing provider callback addresses working while all application execution moves to the VPS.
+
 Server files:
 
 - `/srv/himoto-web/releases/<git-sha>`: immutable application code.

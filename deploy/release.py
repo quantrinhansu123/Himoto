@@ -44,8 +44,10 @@ def activate(port,sha):
     atomic(SETTINGS/'active.json',json.dumps({'port':port,'sha':sha}))
     other=3101 if port==3100 else 3100
     run(['systemctl','enable',f'himoto-web@{port}.service'])
-    # Established proxy requests finish on the previous process before retirement.
-    time.sleep(15)
+    # The existing after-response delivery budget is 240s. Let already-started
+    # work drain before stopping the old process, including queued media sends.
+    if subprocess.run(['systemctl','is-active','--quiet',f'himoto-web@{other}.service'],capture_output=True).returncode==0:
+        time.sleep(250)
     subprocess.run(['systemctl','disable',f'himoto-web@{other}.service'],capture_output=True)
     subprocess.run(['systemctl','stop',f'himoto-web@{other}.service'],capture_output=True)
 

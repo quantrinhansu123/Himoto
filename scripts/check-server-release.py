@@ -34,11 +34,13 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=pathlib.Path(folder);site=root/'site';upstream=root/'upstream';settings=root/'settings';settings.mkdir()
             site.write_text('old site');upstream.write_text('old upstream');(settings/'nginx-app.template').write_text('new site')
-            with patch.multiple(release,SITE=site,UPSTREAM=upstream,SETTINGS=settings,BASE=root),patch.object(release,'run') as run,patch.object(release.subprocess,'run') as stop,patch.object(release.time,'sleep'),patch.object(release,'link') as link:
+            with patch.multiple(release,SITE=site,UPSTREAM=upstream,SETTINGS=settings,BASE=root),patch.object(release,'run') as run,patch.object(release.subprocess,'run') as stop,patch.object(release.time,'sleep') as sleep,patch.object(release,'link') as link:
+                stop.return_value=types.SimpleNamespace(returncode=0)
                 release.activate(3101,'c'*40)
             self.assertIn('3101',upstream.read_text());self.assertEqual(site.read_text(),'new site')
             self.assertEqual(json.loads((settings/'active.json').read_text())['sha'],'c'*40)
             link.assert_called_once_with(root/'current',root/'releases'/('c'*40))
+            sleep.assert_called_once_with(250)
             run.assert_any_call(['systemctl','enable','himoto-web@3101.service'])
             stop.assert_any_call(['systemctl','stop','himoto-web@3100.service'],capture_output=True)
 
