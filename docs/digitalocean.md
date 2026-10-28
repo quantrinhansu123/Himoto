@@ -1,5 +1,17 @@
 # Production on DigitalOcean
 
+## Current applications — original hosting restored 28/10/2026
+
+At the owner's request, `https://app.himoto.vn` again serves the original Laravel application from `/var/www/app.himoto.vn/public`, using the existing MySQL database `himoto`, PHP pool `himoto-app`, and original scheduler. The Next.js cutover was a misunderstanding of the request to copy the separate WordPress website. No database restore or merge was performed during this reversal.
+
+The separate Next.js management application belongs at `https://himoto.vercel.app`, with its existing Supabase database and accounts. Vercel serves both its pages and API directly; do not redirect its pages or proxy its API to the Laravel hostname. Its integration scheduler and generated GPS callbacks must use the Vercel origin.
+
+`/etc/himoto-web/cutover-enabled` has been removed, so the release wrapper cannot automatically replace the restored Laravel virtual host. Next.js releases, Supabase data and private configuration are retained. The DigitalOcean workflow is manual-only; normal pushes deploy through the existing Vercel integration. Do not recreate that marker or reactivate Next.js on the Laravel hostname without explicit authorization. The health timer now uses the existing Laravel monitor through `/etc/systemd/system/himoto-health.service.d/legacy-restore.conf`.
+
+Pre-restore configuration and a fresh legacy database backup are under `/root/himoto-app-restore-20261028`; the original cutover archive remains under `/root/himoto-next-cutover-20261028`. Both WordPress sites, `himoto.vn` and the independent development copy `himoto.com.vn`, were left unchanged by this application restoration. The following sections describe the earlier Next.js deployment and remain as its reference runbook.
+
+## Previous Next.js deployment reference
+
 Public application: `https://app.himoto.vn`. The application uses the existing Supabase database, accounts, integration encryption key and external media storage. The separate `himoto.vn` marketing site stays on its existing PHP pool.
 
 The Next.js standalone artifact runs as `himoto-next`, bound only to localhost. Nginx terminates HTTPS with the existing certificate. Two systemd instances use ports 3100/3101: deployment warms the unused instance, verifies its release ID, reloads Nginx, and retires the prior instance after a grace period. A failed health check leaves the current upstream serving traffic.

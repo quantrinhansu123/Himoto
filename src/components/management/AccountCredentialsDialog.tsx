@@ -5,7 +5,7 @@ import { Dialog } from './Dialog';
 
 export function AccountCredentialsDialog({value,onClose}:{value:IssuedAccountCredentials;onClose:()=>void}) {
   const [copied,setCopied]=useState(false),[error,setError]=useState('');
-  const origin=typeof window==='undefined'?'https://app.himoto.vn':window.location.origin;
+  const origin=typeof window==='undefined'?'https://himoto.vercel.app':window.location.origin;
   const text=`Tài khoản: ${value.login_name}\nMật khẩu: ${value.password}\nĐăng nhập: ${origin}/login\n${value.enabled?'Đã được phép đăng nhập.':'Chờ quản lý phân cơ sở/mở quyền đăng nhập.'}`;
   return <Dialog title="Tài khoản nhân sự vừa tạo" onClose={onClose}><div className="mg-dialog-body">
     <p>Lưu thông tin để bàn giao cho nhân viên. Mật khẩu chỉ hiển thị ở lần cấp này.</p>

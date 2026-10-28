@@ -9,22 +9,5 @@
       {"key": "Cache-Control", "value": "private, no-store"},
       {"key": "CDN-Cache-Control", "value": "no-store"}
     ]}
-  ],
-  "redirects": [
-    {"source": "/", "destination": "https://app.himoto.vn/", "permanent": false},
-    {"source": "/login", "destination": "https://app.himoto.vn/login", "permanent": false},
-    {"source": "/accounts/:path*", "destination": "https://app.himoto.vn/accounts/:path*", "permanent": false},
-    {"source": "/cashbook/:path*", "destination": "https://app.himoto.vn/cashbook/:path*", "permanent": false},
-    {"source": "/contracts/:path*", "destination": "https://app.himoto.vn/contracts/:path*", "permanent": false},
-    {"source": "/customers/:path*", "destination": "https://app.himoto.vn/customers/:path*", "permanent": false},
-    {"source": "/debt-reminders/:path*", "destination": "https://app.himoto.vn/debt-reminders/:path*", "permanent": false},
-    {"source": "/duty-roster/:path*", "destination": "https://app.himoto.vn/duty-roster/:path*", "permanent": false},
-    {"source": "/gps/:path*", "destination": "https://app.himoto.vn/gps/:path*", "permanent": false},
-    {"source": "/integrations/:path*", "destination": "https://app.himoto.vn/integrations/:path*", "permanent": false},
-    {"source": "/operations/:path*", "destination": "https://app.himoto.vn/operations/:path*", "permanent": false},
-    {"source": "/shift-reports/:path*", "destination": "https://app.himoto.vn/shift-reports/:path*", "permanent": false},
-    {"source": "/staff/:path*", "destination": "https://app.himoto.vn/staff/:path*", "permanent": false},
-    {"source": "/stores/:path*", "destination": "https://app.himoto.vn/stores/:path*", "permanent": false},
-    {"source": "/vehicles/:path*", "destination": "https://app.himoto.vn/vehicles/:path*", "permanent": false}
   ]
 }
