@@ -26,7 +26,7 @@ export const RENTAL_REVENUE_CTE=`WITH scoped_orders AS MATERIALIZED (
     COALESCE(t."desc",t.note,'') AS note,
     CASE WHEN t.type='out' THEN CASE WHEN t.name='order:rental_refund' THEN 'early'
       WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'excluded' ELSE 'unclassified' END
-    WHEN ${depositReceiptSql()} OR t.name IN('order:return_repair','order:extra') THEN 'excluded'
+    WHEN ${depositReceiptSql()} OR t.name IN('order:return_repair','order:extra','order:outside') THEN 'excluded'
     WHEN t.name='order:return_late' THEN 'late'
     WHEN ${renewalReceiptSql()} THEN 'renewal'
     WHEN t.name LIKE 'order:rental_fees%' OR t.name='order:payment' THEN 'rental'

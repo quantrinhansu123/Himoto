@@ -7,7 +7,7 @@ import { contractVehicleLabelSource,contractVehicleReadSource } from './contract
 import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null;object_bucket?:string|null;object_key?:string|null;object_etag?:string|null}
-export interface RenewalNotice {version?:number;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;items?:RenewalNotice[]}
+export interface RenewalNotice {version?:number;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;outside_amount?:number;outside_name?:string;items?:RenewalNotice[]}
 export interface NotificationPayload {
   code:string;customer:string;phone:string;store:string;actor:string;vehicles:string;total:string;at:string;photos:Attachment[];contract_staff?:string;
   vehicle_names?:string;days?:number|null;deposit?:number|null;rental_fee?:number|null;grand_total?:number|null;
@@ -57,7 +57,9 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
     ...(p.refund_pending?[`Chờ kế toán hoàn cọc: ${money(p.refund_pending.amount)}`,`Thông tin nhận hoàn: ${pendingRecipient}`]:[])]
     :kind==='renewal'?[`Khách gia hạn: ${p.customer}`,...vehicle,
       ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${day(item.before_return_at)} - ${day(item.return_at)}`):[`Gia hạn: ${day(p.renewal?.before_return_at||null)} - ${day(p.renewal?.return_at||null)}`]),
-      `Phí gia hạn: ${money(p.renewal?.amount)} đ`,`Hình thức thanh toán: ${method}`,
+      `Phí gia hạn: ${money(p.renewal?.amount)} đ`,
+      ...(Number(p.renewal?.outside_amount)>0?[`Phí thu thêm (thu ngoài): ${money(p.renewal?.outside_amount)} đ${p.renewal?.outside_name?` · ${p.renewal.outside_name}`:''}`]:[]),
+      `Hình thức thanh toán: ${method}`,
       ...(p.ownership_renewal_note?[`Ghi chú: ${p.ownership_renewal_note}`]:[])]
     :[`${kind==='reservation'?'Khách đặt cọc giữ xe':kind==='handover'?'Khách nhận xe':'Khách thuê xe'}: ${p.customer}`,...vehicle,
       `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,`Tiền cọc: ${money(p.deposit)}`,

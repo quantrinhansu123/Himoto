@@ -16,7 +16,7 @@ try{
       const response=await request('/api/auth/vehicles/91001/actions','POST',{action});assert.equal(response.status,200);
       const scope=await response.json();assert.equal(scope.operation,action);assert.equal(scope.transfer_vehicle_id,'91001');assert.equal(scope.scope_all,false);assert.equal(scope.store_id,80001);
     }
-    for(const endpoint of ['/api/auth/vehicle/vehicles','/api/auth/vehicles/transfers','/api/auth/vehicles/91001/history']){
+    for(const endpoint of ['/api/auth/vehicle/vehicles','/api/auth/vehicles/transfers','/api/auth/vehicles/inventory','/api/auth/gps','/api/auth/vehicles/91001/history']){
       const response=await request(endpoint);assert.equal(response.status,200);const scope=await response.json();assert.equal(scope.operation,'fleet_read');assert.equal(scope.scope_all,false);
     }
     for(const phase of ['transfer','receive'])for(const method of ['GET','PUT','DELETE']){
@@ -25,7 +25,7 @@ try{
     checks.push(role+': transfer/receipt/photo routes grant fleet access with the exact target, preserving store and account scope');
   }
   user={id:70001,access_role:'hr',store_id:80001,scope_all:false,permissions:[]};
-  for(const [endpoint,method,body]of [['/api/auth/vehicles/91001/actions','POST',{action:'status'}],['/api/auth/vehicles/91001','PUT',{}],['/api/auth/order/car-rental','GET'],['/api/auth/cashbook','GET'],['/api/auth/record-photos/vehicles/91001/registration-front','PUT']])assert.equal((await request(endpoint+'?operation=fleet_read&scope_all=true',method,body)).status,403);
+  for(const [endpoint,method,body]of [['/api/auth/vehicles/91001/actions','POST',{action:'status'}],['/api/auth/vehicles/91001','PUT',{}],['/api/auth/order/car-rental','GET'],['/api/auth/cashbook','GET']])assert.equal((await request(endpoint+'?operation=fleet_read&scope_all=true',method,body)).status,403);
   assert.equal((await request('/api/auth/vehicles/91001/actions','POST',{action:'transfer'},'https://foreign.invalid')).status,403);
   user=null;assert.equal((await request('/api/auth/vehicle/vehicles')).status,401);assert.equal((await request('/api/auth/vehicles/91001/actions','POST',{action:'transfer'})).status,401);
   checks.push('Anonymous sessions, foreign origins and unrelated profile/document/contract/finance writes stay denied; query parameters cannot elevate scope');

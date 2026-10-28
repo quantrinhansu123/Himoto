@@ -213,6 +213,13 @@ export function validateOperationalCustomer(customer: CustomerDetails,source: 'd
   if (!customer.address.trim()) delete errors.address;
   return errors;
 }
+/** Deposit hold before handover: a name is enough. Phone and identity can be filled in later. */
+export function validateDepositCustomer(customer: CustomerDetails, source: 'demo' | 'api') {
+  const errors = validateOperationalCustomer(customer, source);
+  if (!customer.phone.trim()) delete errors.phone;
+  if (!customer.name.trim()) errors.name = 'Nhập họ và tên khách hàng.';
+  return errors;
+}
 export function validateContractDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
   const errors: Record<string, string> = {};
   const numberError = contractNumberError(draft.contract_number);
@@ -256,9 +263,13 @@ export function validateOperationalDraft(draft: ContractDraft,dataset: Managemen
   return errors;
 }
 export function validateReservationDraft(draft: ContractDraft, dataset: ManagementDataset, staff: ManagementRow[], source: 'demo' | 'api') {
-  const errors = validateContractDraft(draft, dataset, staff, source);
-  // Legal signatures and relatives are completed before printing the rental contract.
-  for (const key of Object.keys(errors)) if (key === 'signed_on' || key === 'address' || key.startsWith('relative_')) delete errors[key];
+  const errors = validateContractDraft({ ...draft, document_requirements: { phone: false, id_card: false, address: false, representative: false, relatives: 0 } }, dataset, staff, source);
+  // CCCD, phone, address and relatives are filled when the customer actually takes the vehicle.
+  for (const key of Object.keys(errors)) if (key === 'signed_on' || key === 'address' || key.startsWith('relative_') || key === 'id_card_issued_on' || key === 'id_card_issued_by') delete errors[key];
+  if (!draft.customer.phone.trim()) delete errors.phone;
+  if (!draft.customer.id_card.trim()) delete errors.id_card;
+  if (!draft.customer.name.trim()) errors.name = 'Nhập tên khách để nhận cọc.';
+  if (!draft.customer_id) errors.id_card = 'Tạo hồ sơ khách (chỉ cần tên) trước khi nhận cọc.';
   if (!draft.total_amount || Number(draft.total_amount) <= 0) errors.total_amount = 'Nhập tiền thuê dự kiến để đối chiếu khoản giữ xe.';
   return errors;
 }

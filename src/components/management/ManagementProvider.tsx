@@ -62,7 +62,7 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   const refreshing = requiredKinds.some(kind => resources[kind].loaded && resources[kind].loading);
   const resourceError = requiredKinds.map(kind => resources[kind].error).filter(Boolean).join(' ');
   const contractAutofill = useMemo(() => createApiAutofillRepository('/api'), []);
-  const fleetPage=pathname==='/vehicles'||pathname.startsWith('/vehicles/transfers');
+  const fleetPage=pathname==='/vehicles'||pathname.startsWith('/vehicles/transfers')||pathname==='/gps';
   const [branchStore, setBranchStore] = useState(user&&!user.scope_all&&user.store_id?String(user.store_id):'all');
   const [fleetStore,setFleetStore]=useState('all');
   const [fleetStores,setFleetStores]=useState<ManagementRow[]|null>(null);

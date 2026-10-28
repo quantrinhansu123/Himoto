@@ -22,6 +22,7 @@ const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.val
     COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||t.order_id::text) AS contract_code,
     CASE WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng' WHEN t.name='order:renewal' THEN 'Thu tiền gia hạn'
       WHEN t.name='order:extra' THEN 'Phiếu thu thêm hợp đồng'
+      WHEN t.name='order:outside' THEN 'Phí thu thêm (thu ngoài)'
       WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'Trả cọc cho khách'
       WHEN t.name LIKE 'order:deposit%' THEN 'Thu tiền cọc'
       WHEN t.name LIKE 'order:rental_fees%' THEN 'Thu tiền thuê xe' ELSE t.name END AS reason,
@@ -104,6 +105,9 @@ export async function readContractHistory(client: Database, id: number): Promise
     } else if (row.name === 'order:extra') {
       changes.push({ id: `extra-${row.id}`, kind: 'extra', at: iso(row.created_at), actor: String(row.actor || '—'), amount: Number(row.value) || 0,
         title: 'Thu thêm', detail: `${row.note ? `${row.note} · ` : ''}Cộng vào tiền hợp đồng · Phiếu Thu #${row.id}` });
+    } else if (row.name === 'order:outside') {
+      changes.push({ id: `outside-${row.id}`, kind: 'extra', at: iso(row.created_at), actor: String(row.actor || '—'), amount: Number(row.value) || 0,
+        title: 'Phí thu thêm (thu ngoài)', detail: `${row.note ? `${row.note} · ` : ''}Không cộng vào tiền hợp đồng · Phiếu Thu #${row.id}` });
     }
   }
 
@@ -154,6 +158,7 @@ export async function readContractHistory(client: Database, id: number): Promise
           overdue ? `Quá hạn ${Math.floor(overdue / 1440)} ngày ${Math.ceil((overdue % 1440) / 60)} giờ` : '',
           before !== null && after !== null && before !== after ? `Tiền hợp đồng ${formatMoney(before)} → ${formatMoney(after)}` : '',
           item.amount_mismatch && item.warning ? String(item.warning) : '',
+          Number(item.outside_amount) > 0 ? `Phí thu thêm (thu ngoài) ${formatMoney(Number(item.outside_amount))}${item.outside_name ? ` · ${item.outside_name}` : ''}` : '',
           item.note ? String(item.note) : ''].filter(Boolean).join(' · '),
         version: { label: `Phiên bản v${item.version}`, return_at: item.return_at ? iso(item.return_at) : null, total: after, paid: amountOrNull(item.paid) } });
       originals.push({ at: new Date(iso(item.occurred_at||item.created_at)).getTime(), return_at: item.before_return_at ? iso(item.before_return_at) : null, total: before });

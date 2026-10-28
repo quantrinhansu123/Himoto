@@ -42,6 +42,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [amountTouched, setAmountTouched] = useState(false);
   const [extraName, setExtraName] = useState('Phí VAT');
   const [extraAmount, setExtraAmount] = useState('');
+  const [outsideName, setOutsideName] = useState('Phí thu thêm');
+  const [outsideAmount, setOutsideAmount] = useState('');
   const [note, setNote] = useState('');
   const [occurredAt,setOccurredAt]=useState('');
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     void contractTelegramRequest(orderId, undefined, controller.signal).then(data => setRenewalVersion(data.next_renewal_version)).catch(() => {});
     return () => controller.abort();
   }, [orderId]);
-  const [done, setDone] = useState<{ code: string; fee: number; remaining: number | null; version: number; collected: boolean; mismatch?: boolean; expected?: number | null } | null>(null);
+  const [done, setDone] = useState<{ code: string; fee: number; outside: number; remaining: number | null; version: number; collected: boolean; mismatch?: boolean; expected?: number | null } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -102,7 +104,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const accounts = paymentContext ? paymentAccounts(paymentContext, method) : [];
   const effectiveAccount = accountId || (accounts.length === 1 ? paymentAccountKey(accounts[0]) : '');
   const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
-  const canCollect = canReceiveRenewal && feeReady(amount) > 0;
+  const canCollect = canReceiveRenewal && (feeReady(amount) + feeReady(extraAmount) + feeReady(outsideAmount)) > 0;
   const collecting = canCollect && collect;
 
   useEffect(() => {
@@ -124,6 +126,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
 
   const renewalFee = feeReady(amount);
   const otherFee = feeReady(extraAmount);
+  const outsideFee = feeReady(outsideAmount);
   const fee = renewalFee + otherFee;
   const expectedFee = rate > 0 && unitCount >= 1 && unitCount <= maxCount ? rate * unitCount : null;
   const amountMismatch = expectedFee !== null && /^\d+$/.test(amount || '') && renewalFee !== expectedFee;
@@ -144,7 +147,10 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
     if (extraAmount && !/^(0|[1-9]\d{0,12})$/.test(extraAmount)) { setError('Phí khác phải là số tiền nguyên VNĐ.'); return; }
     if (otherFee > 0 && !extraName.trim()) { setError('Nhập tên khoản phí khác (ví dụ Phí VAT).'); return; }
-    if (fee > 9_999_999_999_999) { setError('Tổng chi phí gia hạn và phí khác vượt giới hạn.'); return; }
+    if (outsideAmount && !/^(0|[1-9]\d{0,12})$/.test(outsideAmount)) { setError('Phí thu thêm phải là số tiền nguyên VNĐ.'); return; }
+    if (outsideFee > 0 && !outsideName.trim()) { setError('Nhập tên phí thu thêm (thu ngoài).'); return; }
+    if (fee + outsideFee > 9_999_999_999_999) { setError('Tổng chi phí gia hạn và phí thu thêm vượt giới hạn.'); return; }
+    if (collecting && outsideFee > 0 && method === 'company_transfer') { setError('Phí thu thêm (thu ngoài) không ghi vào tài khoản công ty. Chọn tiền mặt hoặc chuyển khoản cá nhân.'); return; }
     if (canCollect && !collectionChoice) { setError('Chọn đã nhận tiền hoặc chưa nhận tiền gia hạn.'); return; }
     if (collecting) {
       if (!paymentContext) { setError(paymentLoadError || 'Đang tải tài khoản nhận tiền.'); return; }
@@ -154,11 +160,13 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     setSaving(true); setError('');
     try {
       const extraLabel = otherFee > 0 ? `${extraName.trim()} ${formatMoney(otherFee)}` : '';
-      const combinedNote = [note.trim(), extraLabel ? `Phí khác: ${extraLabel}` : ''].filter(Boolean).join('\n');
+      const outsideLabel = outsideFee > 0 ? `${outsideName.trim()} ${formatMoney(outsideFee)} (thu ngoài, không cộng tiền hợp đồng)` : '';
+      const combinedNote = [note.trim(), extraLabel ? `Phí khác: ${extraLabel}` : '', outsideLabel ? `Phí thu thêm: ${outsideLabel}` : ''].filter(Boolean).join('\n');
       const result = await saveContractRenewal(orderId, {
         request_id: requestId.current ??= crypto.randomUUID(),
         item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
         return_at: returnAt, amount: String(fee), note: combinedNote,
+        ...(outsideFee > 0 ? { outside_amount: String(outsideFee), outside_name: outsideName.trim() } : {}),
         ...(backfill?{occurred_at:occurredAt}:{}),
         ...(expectedFee !== null ? { expected_amount: String(expectedFee + otherFee) } : {}),
         ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:paidAt}} : {}),
@@ -168,13 +176,15 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
       const mismatchNote = amountMismatch && expectedFee !== null ? ` · cảnh báo: phí gia hạn ${formatMoney(renewalFee)} khác gợi ý ${formatMoney(expectedFee)}` : '';
       if (collecting) {
         const payment = result.payment;
-        if (!payment) throw new Error('Chưa xác nhận được phiếu thu gia hạn. Tải lại hợp đồng để kiểm tra trước khi thử lại.');
-        acceptContractPayment(payment.context);
-        remaining = payment.context.remaining;
+        if (fee > 0 && !payment) throw new Error('Chưa xác nhận được phiếu thu gia hạn. Tải lại hợp đồng để kiểm tra trước khi thử lại.');
+        if (outsideFee > 0 && !result.outside_collected) throw new Error('Chưa ghi được phiếu thu phí thu thêm. Tải lại hợp đồng để kiểm tra trước khi thử lại.');
+        if (payment) acceptContractPayment(payment.context);
+        if (payment) remaining = payment.context.remaining;
         collected = true;
-        notify(`${result.code}: đã tạo phiên bản v${result.version} và ghi phiếu Thu #${payment.transaction_id} · ${formatMoney(fee)}${mismatchNote}.`);
+        const outsideNote = outsideFee > 0 ? ` · thu ngoài ${formatMoney(outsideFee)}` : '';
+        notify(`${result.code}: đã tạo phiên bản v${result.version}${payment ? ` và ghi phiếu Thu #${payment.transaction_id}` : ''} · ${formatMoney(fee)}${outsideNote}${mismatchNote}.`);
         await reload();
-        if (payment.company_transfer) {
+        if (payment?.company_transfer) {
           selectStore('all');
           onClose();
           router.push(`/contracts/vat?contract_id=${orderId}`);
@@ -184,7 +194,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
         notify(`${result.code}: đã tạo phiên bản v${result.version} — hẹn trả ${formatDateTime(result.return_at)}${result.total_amount !== null ? `, tiền hợp đồng ${formatMoney(result.total_amount)}` : ''}${mismatchNote}.`);
         await reload();
       }
-      setDone({ code: result.code, fee, remaining, version: result.version, collected, mismatch: Boolean(mismatchNote), expected: expectedFee === null ? null : expectedFee + otherFee });
+      setDone({ code: result.code, fee, outside: outsideFee, remaining, version: result.version, collected, mismatch: Boolean(mismatchNote), expected: expectedFee === null ? null : expectedFee + otherFee });
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được gia hạn hợp đồng.'); }
     finally { setSaving(false); }
   }
@@ -204,9 +214,10 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     <form onSubmit={submit}>
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">
-          <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí ${formatMoney(done.fee)}` : ''}{done.collected ? ' · đã ghi phiếu Thu vào sổ quỹ.' : '.'}</p>
+          <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí hợp đồng ${formatMoney(done.fee)}` : ''}{done.outside > 0 ? ` · thu ngoài ${formatMoney(done.outside)}` : ''}{done.collected ? ' · đã ghi phiếu Thu vào sổ quỹ.' : '.'}</p>
           {done.mismatch && done.expected != null && <p className="mg-field-error" role="status">Cảnh báo đã ghi: chi phí gia hạn {formatMoney(done.fee)} khác gợi ý theo hợp đồng {formatMoney(done.expected)}.</p>}
           {!done.collected&&done.fee>0&&<p role="alert">Đã dời hạn trả nhưng chưa ghi nhận thu {formatMoney(done.fee)} phí gia hạn. Khoản này còn trong công nợ và cần thu trước khi hoàn cọc.</p>}
+          {!done.collected&&done.outside>0&&<p role="alert">Phí thu thêm {formatMoney(done.outside)} chưa ghi phiếu thu. Khoản này không vào công nợ hợp đồng.</p>}
           {error && <p className="mg-error-message" role="alert">{error}</p>}
           <ContractTelegramPanel id={orderId} eventKey={`renewal:${orderId}:${done.version}`}/>
           {done.collected && (done.remaining === null || done.remaining <= 0) ? <p>Đã thu phí gia hạn trong lượt này.</p>
@@ -244,7 +255,15 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
               <label>Số tiền phí khác (VNĐ)<input inputMode="numeric" value={groupAmount(extraAmount)} placeholder="Nhập phí VAT hoặc phí phát sinh"
                 onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) setExtraAmount(raw); }} />
                 <small>Cộng vào tổng khi lưu gia hạn. Chọn TK công ty nếu cần vào Hợp đồng VAT.</small></label>
-              {fee > 0 && <p role="status">Tổng cộng lần này: gia hạn {formatMoney(renewalFee)}{otherFee > 0 ? ` + ${extraName.trim() || 'phí khác'} ${formatMoney(otherFee)}` : ''} = <strong>{formatMoney(fee)}</strong></p>}
+              {fee > 0 && <p role="status">Cộng vào tiền hợp đồng: gia hạn {formatMoney(renewalFee)}{otherFee > 0 ? ` + ${extraName.trim() || 'phí khác'} ${formatMoney(otherFee)}` : ''} = <strong>{formatMoney(fee)}</strong></p>}
+            </div>
+            <div className="mg-field-wide mg-renewal-extra">
+              <strong>Phí thu thêm (thu ngoài)</strong>
+              <label>Tên khoản thu ngoài<input value={outsideName} maxLength={100} placeholder="Ví dụ: Phí gửi xe" onChange={event => setOutsideName(event.target.value)} /></label>
+              <label>Số tiền thu ngoài (VNĐ)<input inputMode="numeric" value={groupAmount(outsideAmount)} placeholder="Không cộng vào tiền hợp đồng"
+                onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) setOutsideAmount(raw); }} />
+                <small>Ghi phiếu thu khi đã nhận tiền. Không cộng vào tiền hợp đồng và không vào tài khoản công ty.</small></label>
+              {outsideFee > 0 && collect && method === 'company_transfer' && <p className="mg-field-error" role="alert">Phí thu thêm không ghi vào tài khoản công ty. Chọn tiền mặt hoặc chuyển khoản cá nhân.</p>}
             </div>
             {canCollect && <>
               <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='received'} onChange={()=>setCollectionChoice('received')} />Đã thực nhận tiền gia hạn — ghi phiếu thu cùng lúc lưu</label>
@@ -275,19 +294,20 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
             <div><dt>Tiền thuê hợp đồng</dt><dd>{total === null ? 'Chưa đối chiếu' : formatMoney(total)}{fee > 0 && nextTotal !== null && <> → <strong>{formatMoney(nextTotal)}</strong></>}</dd></div>
             <div><dt>Đã thu tiền thuê</dt><dd>{paid === null ? '—' : formatMoney(paid)}{collecting && fee > 0 && previewPaid !== null && <> → <strong>{formatMoney(previewPaid)}</strong></>}</dd></div>
             <div><dt>Còn thiếu sau gia hạn (không trừ cọc)</dt><dd>{previewRemaining === null ? '—' : formatMoney(previewRemaining)}</dd></div>
+            {outsideFee > 0 && <div><dt>Phí thu thêm (thu ngoài)</dt><dd>{formatMoney(outsideFee)} · không cộng vào tiền hợp đồng</dd></div>}
             <div><dt>Tiền cọc đã thu</dt><dd>{formatMoney(selected?.deposit_paid ?? 0)}</dd></div>
             <div><dt>Cọc đang giữ</dt><dd>{formatMoney(selected?.deposit_held ?? 0)}</dd></div>
           </dl>
           <p className="mg-composer-hint">{collecting
-            ? 'Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng và ghi phiếu Thu ngay khi lưu.'
-            : 'Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng. Chỉ chọn đã thực nhận khi tiền đã vào đúng tài khoản hoặc két.'}</p>
+            ? `Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng và ghi phiếu Thu ngay khi lưu.${outsideFee > 0 ? ` Phí thu thêm ${formatMoney(outsideFee)} ghi phiếu riêng, không cộng vào tiền hợp đồng.` : ''}`
+            : 'Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng. Phí thu thêm (thu ngoài) chỉ ghi phiếu khi đã thực nhận, và không thành công nợ hợp đồng.'}</p>
           {renewalVersion && <ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending}/>}
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={close}>{done ? 'Đóng' : 'Hủy'}</button>
-        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn || (collecting && (!paymentContext || !accounts.length))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : collecting ? 'Lưu gia hạn và thu tiền' : 'Lưu gia hạn'}</button>}</div>
+        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn || (collecting && (!paymentContext || !accounts.length || (outsideFee > 0 && method === 'company_transfer')))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : collecting ? 'Lưu gia hạn và thu tiền' : 'Lưu gia hạn'}</button>}</div>
     </form>
   </Dialog>;
 }

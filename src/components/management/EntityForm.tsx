@@ -38,7 +38,8 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
     for (const field of config.fields) {
       if (config.kind === 'customers' && field.key === 'relatives_text') continue;
       const value = String(draft[field.key] ?? '').trim();
-      if (field.required && !value) nextErrors[field.key] = `Vui lòng nhập ${field.label.toLowerCase()}.`;
+      const draftProfile = config.kind === 'customers' && draft.status === 'draft' && ['phone', 'id_card', 'address'].includes(field.key);
+      if (field.required && !value && !draftProfile) nextErrors[field.key] = `Vui lòng nhập ${field.label.toLowerCase()}.`;
       else if (value && field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) nextErrors[field.key] = 'Email chưa đúng định dạng.';
       else if (value && field.type === 'tel' && !/^\+?\d{9,13}$/.test(value.replace(/[\s.()-]/g, ''))) nextErrors[field.key] = 'Nhập số điện thoại từ 9 đến 13 chữ số.';
       else if (value && field.type === 'number' && (!Number.isFinite(Number(value)) || Number(value) < 0 || !Number.isInteger(Number(value)))) nextErrors[field.key] = 'Nhập một số nguyên không âm.';

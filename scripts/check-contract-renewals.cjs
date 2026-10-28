@@ -11,6 +11,12 @@ async function main() {
   assert.equal(server.parseRenewalInput(base).note, 'QA');
   assert.equal(server.parseRenewalInput({ ...base, amount: '0' }).amount, '0');
   assert.equal(server.parseRenewalInput({ ...base, expected_amount: '280' }).expected_amount, '280');
+  const outside = server.parseRenewalInput({ ...base, outside_amount: '50000', outside_name: ' Phí gửi xe ' });
+  assert.equal(outside.outside_amount, '50000');
+  assert.equal(outside.outside_name, 'Phí gửi xe');
+  assert.throws(() => server.parseRenewalInput({ ...base, outside_amount: '50000' }));
+  assert.throws(() => server.parseRenewalInput({ ...base, outside_amount: '01', outside_name: 'X' }));
+  assert.throws(() => server.parseRenewalInput({ ...base, request_id: '11111111-1111-4111-8111-111111111111', outside_amount: '1000', outside_name: 'Phí gửi', receipt: { method: 'company_transfer', account_id: 1, paid_at: '2026-10-27T10:00' } }), /tài khoản công ty/);
   for (const patch of [{ amount: '-1' }, { amount: '1.5' }, { amount: '01' }, { amount: 300 }, { expected_amount: '01' }, { expected_amount: 280 }, { return_at: '2026-02-30T10:00' }, { return_at: '' }, { item_id: 0 }, { item_revision: '' }, { order_revision: 'x' }, { total: '1' }, { note: 'a'.repeat(2001) }]) {
     assert.throws(() => server.parseRenewalInput({ ...base, ...patch }));
   }

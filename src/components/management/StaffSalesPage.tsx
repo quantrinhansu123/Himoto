@@ -78,7 +78,7 @@ export function StaffSalesPage() {
   function choosePreset(id:typeof PRESETS[number]['id']){const [start,end]=presetRange(id,today);setFrom(start);setTo(end);}
   function changeFrom(value:string){if(!value)return;setFrom(value);if(value>to)setTo(value);}
   function changeTo(value:string){if(!value)return;setTo(value);if(value<from)setFrom(value);}
-  const scope='Hợp đồng có ngày bắt đầu thuê trong kỳ; không tính nháp, giữ xe / chờ nhận xe và đã hủy.';
+  const scope='Hợp đồng có ngày bắt đầu thuê trong kỳ; gồm nháp đã điền số tiền; không tính giữ xe / chờ nhận xe và đã hủy.';
   function exportCsv(){downloadCsv([['Nhân viên','Bộ phận','Cách tính','Hợp đồng','Khách','Khách mới','Doanh số'],...rows.map(row=>[row.name,row.department,row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên',row.contracts,row.customers,row.new_customers,row.revenue])],`doanh-so-${from}-${to}.csv`);}
   return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Báo cáo doanh thu thuê xe</h1><p>Doanh thu thực thu, doanh thu từng xe và tổng quan thuê xe theo cơ sở / ngày.</p></div><div className="mg-heading-actions"><button className="mg-button" type="button" onClick={()=>{setRetry(v=>v+1);void reload();}}><RotateCcw size={16}/>Tải lại</button></div></div>
     <div className="mg-data-panel"><div className="mg-sales-filter" role="search" aria-label="Bộ lọc doanh số">

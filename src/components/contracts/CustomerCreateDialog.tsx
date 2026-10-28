@@ -5,7 +5,7 @@ import { Check, LoaderCircle } from 'lucide-react';
 import { CustomerInternationalFields } from './CustomerInternationalFields';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
-import { ContractRelative, CustomerDetails, customerDetails, pairRelatives, formatRelatives, validateCustomer, validateOperationalCustomer } from '@/lib/management/contract-document';
+import { ContractRelative, CustomerDetails, customerDetails, pairRelatives, formatRelatives, validateCustomer, validateDepositCustomer } from '@/lib/management/contract-document';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { CustomerRelativesFields } from './CustomerRelativesFields';
 import { VietnamDateField } from './VietnamDateField';
@@ -17,10 +17,10 @@ import { usePhotoOcr } from '@/components/management/usePhotoOcr';
 import { mergeOcrCustomer, type OcrFields } from '@/lib/management/photo-ocr';
 import { CustomerDocumentBatch } from '@/components/management/CustomerDocumentBatch';
 
-export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowIncomplete = false, onCreated, onClose }: { idCard: string; storeId?: string; foreign?:boolean; allowIncomplete?: boolean; onCreated: (row: ManagementRow) => void; onClose: () => void }) {
+export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowIncomplete = false, startDraft = false, onCreated, onClose }: { idCard: string; storeId?: string; foreign?:boolean; allowIncomplete?: boolean; startDraft?: boolean; onCreated: (row: ManagementRow) => void; onClose: () => void }) {
   const { source, dataset, selectedStore, createCustomer } = useManagement();
   const [branch, setBranch] = useState(storeId || (selectedStore !== 'all' ? selectedStore : String(dataset?.stores[0]?.id || '')));
-  const [status, setStatus] = useState('active');
+  const [status, setStatus] = useState(startDraft ? 'draft' : 'active');
   const incomplete = allowIncomplete && status === 'draft';
   const [customer, setCustomer] = useState<CustomerDetails>(() => ({ ...customerDetails(), customer_type:foreign?'foreign':'vietnam', id_card: idCard }));
   const [relatives, setRelatives] = useState<[ContractRelative, ContractRelative]>(() => pairRelatives(null));
@@ -59,7 +59,7 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
   ];
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy.current || processingPhoto || customerOcr.pending) return;
-    const next = incomplete ? validateOperationalCustomer(customer,source) : validateCustomer(customer, source);
+    const next = incomplete ? validateDepositCustomer(customer,source) : validateCustomer(customer, source);
     if (!dataset?.stores.some(store => String(store.id) === branch)) next.store_id = 'Chọn cơ sở cho khách hàng.';
     if (status === 'warning' && !customer.warning_note.trim()) next.warning_note = 'Nhập ghi chú cho hồ sơ cần lưu ý.';
     setErrors(next); setError('');
@@ -80,12 +80,12 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
   const fieldsDisabled = saving || Boolean(savedCustomer);
   return <Dialog title="Thêm khách hàng tại chỗ" onClose={() => { if (!busy.current) onClose(); }}>
     <form ref={form} noValidate onSubmit={submit}>
-      <div className="mg-dialog-body">{incomplete && <p className="mg-composer-hint">Hồ sơ tạm: cần tên và số điện thoại để nhận diện khách. CCCD, địa chỉ và người thân có thể bổ sung sau.</p>}<div className="mg-form-grid"><CustomerInternationalFields prefix="new-customer" value={customer} onChange={next=>{setCustomer(next);setErrors({});}} disabled={fieldsDisabled} errors={errors}/>{fields.map(field => {
+      <div className="mg-dialog-body">{incomplete && <p className="mg-composer-hint">Hồ sơ tạm cho khách cọc, chưa thuê xe: chỉ cần họ tên. CCCD, số điện thoại, địa chỉ và người thân bổ sung khi giao xe và lập hợp đồng.</p>}<div className="mg-form-grid"><CustomerInternationalFields prefix="new-customer" value={customer} onChange={next=>{setCustomer(next);setErrors({});}} disabled={fieldsDisabled} errors={errors}/>{fields.map(field => {
         const fieldId = `new-customer-${field.key}`;
         const setValue = (next: string) => { setCustomer(current => ({ ...current, [field.key]: next })); setErrors(current => ({ ...current, [field.key]: '' })); };
         const foreign=customer.customer_type==='foreign';
         const label=foreign?field.key==='id_card'?'Hộ chiếu / Giấy tờ quốc tế':field.key==='phone'?'Số điện thoại quốc tế (nếu có)':field.label.replace('CCCD / CMND','giấy tờ'):field.label;
-        const required = field.required && !(foreign&&['phone','address'].includes(field.key)) && !(incomplete && ['id_card', 'address'].includes(field.key));
+        const required = field.required && !(foreign&&['phone','address'].includes(field.key)) && !(incomplete && ['id_card', 'address', 'phone'].includes(field.key));
         return <Fragment key={field.key}><div className={`mg-field ${field.wide ? 'mg-field-wide' : ''}`}>
         <label htmlFor={fieldId}>{label}{required && <span aria-hidden="true"> *</span>}</label>
         {field.type === 'date'

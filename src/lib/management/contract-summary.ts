@@ -2,7 +2,7 @@ import type { ManagementRow } from './types';
 
 // These are estimates from recorded contract amounts, not a settlement ledger.
 const RECEIVABLE_STATUSES = new Set(['renting', 'overdue', 'wait_payment','reserved']);
-const EXCLUDED_TOTAL_STATUSES = new Set(['draft', 'cancelled','bad_debt']);
+const EXCLUDED_TOTAL_STATUSES = new Set(['cancelled','bad_debt']);
 
 export interface ContractSummary {
   contractCount: number;
@@ -25,7 +25,9 @@ export function summarizeContracts(rows: ManagementRow[], customers: ManagementR
   for (const row of rows) {
     const customerId = Number(row.customer_id);
     if (row.customer_status === undefined ? blacklist.has(customerId) : row.customer_status === 'blacklist') matchedBlacklist.add(customerId);
-    if (!EXCLUDED_TOTAL_STATUSES.has(row.status)) {
+    // Drafts only join Tổng tiền after an amount is typed; empty drafts stay out without making the total unknown.
+    const draftPending = row.status === 'draft' && String(row.total_amount ?? '').trim() === '';
+    if (!EXCLUDED_TOTAL_STATUSES.has(row.status) && !draftPending) {
       const total = amount(row.total_amount);
       totalAmount = totalAmount === null || total === null ? null : totalAmount + total;
     }

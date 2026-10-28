@@ -32,6 +32,17 @@ async function main(){const c=await ownerDatabase.connect(),checks=[];
   assert.equal(start.kpis.contracts,1);assert.equal(end.kpis.contracts,1);
   assert(sqls.some(sql=>sql.includes('WITH scoped AS MATERIALIZED')&&!sql.includes('company_payment_count')&&!sql.includes('AS vehicles')));
   checks.push('Vietnam midnight and final-minute rentals stay in the correct day; a summary never hydrates vehicle/document/company-payment payloads');
+  const beforeDrafts=await readSalesSummary(db,new URLSearchParams({from:'2026-10-16',to:'2026-10-16',store:'1'}));
+  await c.query(`INSERT INTO qa_summary_orders(id,store_id,customer_id,order_status,total,pid,first_deposit_amount,draft_payload,rent_at,return_at)
+    VALUES(101,1,1,'draft',NULL,700,NULL,$1,'2026-10-16T10:00:00+07:00','2026-10-20T12:00:00+07:00'),
+           (102,1,1,'draft',NULL,700,NULL,$2,'2026-10-16T11:00:00+07:00','2026-10-20T12:00:00+07:00')`,
+    [JSON.stringify({management_composer:{rental_type:'daily',draft:{total_amount:'2500',sales_staff_id:'8'},sales_attribution:{NVKD:{name:'QA saved'}}}}),
+     JSON.stringify({management_composer:{rental_type:'daily',draft:{sales_staff_id:'8'},sales_attribution:{NVKD:{name:'QA saved'}}}})]);
+  const afterDrafts=await readSalesSummary(db,new URLSearchParams({from:'2026-10-16',to:'2026-10-16',store:'1'}));
+  assert.equal(afterDrafts.kpis.contracts,beforeDrafts.kpis.contracts+1);
+  assert.equal(afterDrafts.kpis.revenue,beforeDrafts.kpis.revenue+2500);
+  checks.push('Drafts with typed total_amount join doanh số; empty-amount drafts stay out');
+
  }finally{await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
  console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));
 }

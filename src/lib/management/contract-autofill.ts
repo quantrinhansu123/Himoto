@@ -1,4 +1,4 @@
-import { normalizeCustomerLookup,validCustomerLookup, CustomerDetails, normalizeIdCard, staffMatchesStore, validateCustomer, validateOperationalCustomer, pairRelatives, relativesFromRow } from './contract-document';
+import { normalizeCustomerLookup,validCustomerLookup, CustomerDetails, normalizeIdCard, staffMatchesStore, validateCustomer, validateDepositCustomer, pairRelatives, relativesFromRow } from './contract-document';
 import { mapApiRow, READ_ENDPOINTS } from './repository';
 import { CustomerAssignment, ManagementRepository, ManagementRow } from './types';
 import { CUSTOMER_STATUSES } from './config';
@@ -33,14 +33,16 @@ export function createDemoAutofillRepository(repository: ManagementRepository): 
     async loadStaff(storeId, signal) { signal?.throwIfAborted(); return staffMatchesStore((await repository.load()).staff, storeId); },
     async loadSalesStaff(signal) { signal?.throwIfAborted(); return (await repository.load()).staff; },
     async createCustomer(customer, assignment) {
-      const errors = assignment?.allow_incomplete ? validateOperationalCustomer(customer,'demo') : validateCustomer(customer, 'demo');
+      const errors = assignment?.allow_incomplete ? validateDepositCustomer(customer,'demo') : validateCustomer(customer, 'demo');
       if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
       const dataset = await repository.load();
       const store_id = assignment?.store_id ?? dataset.stores[0]?.id;
       const status = assignment?.status ?? (customer.warning_note ? 'warning' : 'active');
       if (!dataset.stores.some(store => store.id === store_id)) throw new Error('Chọn một cơ sở hợp lệ cho khách hàng.');
       if (!CUSTOMER_STATUSES.some(option => option.value === status)) throw new Error('Trạng thái khách hàng không hợp lệ.');
-      if (dataset.customers.some(row => customer.id_card ? normalizeIdCard(String(row.id_card || '')) === normalizeIdCard(customer.id_card) : String(row.phone || '').replace(/\D/g,'') === customer.phone.replace(/\D/g,''))) throw new Error('Khách hàng này đã có. Hãy tra cứu thay vì tạo thêm.');
+      const phoneDigits = customer.phone.replace(/\D/g,'');
+      const idCard = normalizeIdCard(customer.id_card);
+      if ((idCard || phoneDigits) && dataset.customers.some(row => idCard ? normalizeIdCard(String(row.id_card || '')) === idCard : String(row.phone || '').replace(/\D/g,'') === phoneDigits)) throw new Error('Khách hàng này đã có. Hãy tra cứu thay vì tạo thêm.');
       const id = Math.max(0, ...dataset.customers.map(row => row.id)) + 1;
       const row: ManagementRow = { ...customer, id, code: `KH-${String(id).padStart(3, '0')}`, status, store_id, store_name: dataset.stores.find(store => store.id === store_id)?.name,
         id_card: normalizeIdCard(customer.id_card), created_at: new Date().toISOString().slice(0, 10) };
@@ -113,9 +115,10 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       return payload.map(row => mapApiRow('staff', row));
     },
     async createCustomer(customer, assignment) {
-      const errors = assignment?.allow_incomplete ? validateOperationalCustomer(customer,'api') : validateCustomer(customer, 'api');
+      const errors = assignment?.allow_incomplete ? validateDepositCustomer(customer,'api') : validateCustomer(customer, 'api');
       if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
-      if (customer.id_card ? await this.lookupCustomer(customer.id_card) : (await this.searchCustomers(customer.phone.replace(/\D/g,''))).length) throw new Error('Khách hàng này đã có. Hãy tra cứu thay vì tạo thêm.');
+      const phoneDigits = customer.phone.replace(/\D/g,'');
+      if (customer.id_card ? await this.lookupCustomer(customer.id_card) : phoneDigits && (await this.searchCustomers(phoneDigits)).length) throw new Error('Khách hàng này đã có. Hãy tra cứu thay vì tạo thêm.');
       // The Supabase adapter stores branch and profile status on customer creation.
       const payload = await request(READ_ENDPOINTS.customers, { method: 'POST', body: JSON.stringify({
         customer_type:customer.customer_type||'vietnam',nationality:customer.nationality||'',contact_channel:customer.contact_channel||'',contact_detail:customer.contact_detail||'',
@@ -129,7 +132,7 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       if (!object(payload)) throw new Error('API chưa trả về hồ sơ khách hàng đã tạo. Không thể xác nhận kết quả.');
       const row = mapApiRow('customers', payload);
       if (normalizeIdCard(String(row.id_card || '')) !== normalizeIdCard(customer.id_card)) throw new Error('Hồ sơ được trả về không khớp số giấy tờ đã nhập.');
-      if (!customer.id_card && String(row.phone || '').replace(/\D/g,'') !== customer.phone.replace(/\D/g,'')) throw new Error('Hồ sơ được trả về không khớp số điện thoại đã nhập.');
+      if (!customer.id_card && phoneDigits && String(row.phone || '').replace(/\D/g,'') !== phoneDigits) throw new Error('Hồ sơ được trả về không khớp số điện thoại đã nhập.');
       return row;
     },
     async updateCustomer(customer) {

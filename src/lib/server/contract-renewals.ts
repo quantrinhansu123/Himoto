@@ -17,18 +17,24 @@ const iso = (value: unknown) => value instanceof Date ? value.toISOString() : va
 export function parseRenewalInput(body: unknown): RenewalInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractRenewalError('Thông tin gia hạn không hợp lệ.');
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['item_id', 'item_revision', 'order_revision', 'return_at', 'amount', 'expected_amount', 'note', 'request_id', 'receipt','occurred_at'].includes(key)) ||
+  if (Object.keys(input).some(key => !['item_id', 'item_revision', 'order_revision', 'return_at', 'amount', 'expected_amount', 'note', 'request_id', 'receipt','occurred_at','outside_amount','outside_name'].includes(key)) ||
       !Number.isSafeInteger(input.item_id) || Number(input.item_id) <= 0 ||
       typeof input.item_revision !== 'string' || !/^\d{1,20}$/.test(input.item_revision) ||
       typeof input.order_revision !== 'string' || !/^\d{1,20}$/.test(input.order_revision) ||
       typeof input.return_at !== 'string' || !LOCAL_MINUTE.test(input.return_at) ||
       typeof input.amount !== 'string' || !/^(0|[1-9]\d{0,12})$/.test(input.amount) || Number(input.amount) > MAX_PAYMENT_AMOUNT ||
+      (input.outside_amount !== undefined && (typeof input.outside_amount !== 'string' || !/^(0|[1-9]\d{0,12})$/.test(input.outside_amount) || Number(input.outside_amount) > MAX_PAYMENT_AMOUNT)) ||
+      (input.outside_name !== undefined && (typeof input.outside_name !== 'string' || input.outside_name.trim().length > 100)) ||
       (input.expected_amount !== undefined && (typeof input.expected_amount !== 'string' || !/^(0|[1-9]\d{0,12})$/.test(input.expected_amount) || Number(input.expected_amount) > MAX_PAYMENT_AMOUNT)) ||
       typeof input.note !== 'string' || input.note.trim().length > 2000) throw new ContractRenewalError('Kiểm tra xe, ngày trả mới và chi phí gia hạn.');
+  const outsideAmount = input.outside_amount === undefined ? 0 : Number(input.outside_amount);
+  if (outsideAmount > 0 && (typeof input.outside_name !== 'string' || !input.outside_name.trim())) throw new ContractRenewalError('Nhập tên phí thu thêm (thu ngoài).');
+  if (Number(input.amount) + outsideAmount > MAX_PAYMENT_AMOUNT) throw new ContractRenewalError('Tổng chi phí gia hạn và phí thu thêm vượt giới hạn.');
   if(input.occurred_at!==undefined&&(typeof input.occurred_at!=='string'||!validBackfillTime(input.occurred_at)||input.note.trim().length<5))throw new ContractRenewalError('Nhập ngày giờ gia hạn thực tế và lý do nhập bổ sung ít nhất 5 ký tự.');
   const returnAt = new Date(`${input.return_at}:00+07:00`);
   if (!Number.isFinite(returnAt.getTime()) || new Date(returnAt.getTime() + 7 * 3_600_000).toISOString().slice(0, 16) !== input.return_at) throw new ContractRenewalError('Ngày trả mới không hợp lệ.');
   const result: RenewalInput = { item_id: Number(input.item_id), item_revision: input.item_revision, order_revision: input.order_revision, return_at: input.return_at, amount: input.amount, note: input.note.trim(),...(input.occurred_at?{occurred_at:input.occurred_at as string}:{}),
+    ...(outsideAmount > 0 ? { outside_amount: String(outsideAmount), outside_name: String(input.outside_name).trim() } : {}),
     ...(input.expected_amount === undefined ? {} : { expected_amount: input.expected_amount }) };
   if (input.request_id !== undefined) {
     if (typeof input.request_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.request_id)) throw new ContractRenewalError('Mã lần gia hạn không hợp lệ.');
@@ -37,8 +43,11 @@ export function parseRenewalInput(body: unknown): RenewalInput {
   if (input.receipt !== undefined) {
     const receipt = input.receipt as Record<string, unknown>;
     if (!result.request_id || !receipt || typeof receipt !== 'object' || Array.isArray(receipt) || Object.keys(receipt).some(key => !['method','account_id','paid_at'].includes(key))) throw new ContractRenewalError('Khoản thu gia hạn không hợp lệ.');
+    if (Number(result.amount) === 0 && outsideAmount === 0) throw new ContractRenewalError('Chưa có khoản thu để ghi phiếu.');
+    if (outsideAmount > 0 && receipt.method === 'company_transfer') throw new ContractRenewalError('Phí thu thêm (thu ngoài) không ghi vào tài khoản công ty. Chọn tiền mặt hoặc chuyển khoản cá nhân.');
     try {
-      const parsed = parseContractPayment({...receipt,request_id:result.request_id,revision:result.order_revision,amount:result.amount,note:result.note});
+      // A zero contract fee still needs a valid receipt when only the outside fee is collected.
+      const parsed = parseContractPayment({...receipt,request_id:result.request_id,revision:result.order_revision,amount:Number(result.amount) > 0 ? result.amount : '1',note:result.note || 'Gia hạn'});
       result.receipt = {method:parsed.method,account_id:parsed.account_id,paid_at:parsed.paid_at};
     } catch (error) { if (error instanceof ContractPaymentError) throw new ContractRenewalError(error.message,error.status); throw error; }
   }
@@ -89,6 +98,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
     item_id: input.item_id, vehicle_id: Number(item.vehicle_id), vehicle_name: String(item.vehicle_name || ''), license: String(item.license || ''),
     rent_at: iso(item.rent_at), before_return_at: beforeReturn, return_at: newReturn, overdue_minutes: overdueMinutes,
     amount, before_total: beforeTotal, total, paid, note: input.note,
+    ...(input.outside_amount ? { outside_amount: Number(input.outside_amount), outside_name: input.outside_name } : {}),
     ...(expected === null ? {} : { expected_amount: expected, amount_mismatch: mismatch, ...(warning ? { warning } : {}) }) };
   payload.management_composer = { ...composer, versions: [...versions, version] };
 

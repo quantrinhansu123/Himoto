@@ -116,6 +116,7 @@ async function deleteTransactions(client: Client, ids: number[]) {
   for (const row of rows) {
     const rentalRefund=row.type==='out'&&row.name==='order:rental_refund'&&row.status==='approved';
     if (row.order_id == null || !rentalRefund&&!['in', 'addon'].includes(String(row.type))) continue;
+    if (row.name === 'order:outside') continue;
     const order = byOrder.get(Number(row.order_id)) || { paid: 0, total: 0 };
     order.paid += (rentalRefund?-1:1)*Number(row.value || 0);
     if (['order:extra', 'order:renewal'].includes(String(row.name))) order.total += Number(row.value || 0);

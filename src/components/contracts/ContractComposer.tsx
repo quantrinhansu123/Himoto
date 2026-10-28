@@ -814,7 +814,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
             {Object.values(errors).some(Boolean)&&<ul>{Object.entries(errors).filter(([,message])=>message).map(([key,message])=><li key={key}><button type="button" className="mg-inline-button" onClick={()=>openErrorField(key)}>{contractFieldLabel(key)}: {message}</button></li>)}</ul>}
             <p>Thông tin đang nhập được giữ trên form. {Object.values(errors).some(Boolean)?'Bấm vào mục cảnh báo để kiểm tra và sửa, sau đó thử lưu lại.':'Làm theo hướng dẫn ở trên rồi thử lưu lại. Nếu vẫn lỗi, báo người phụ trách kèm số hợp đồng và nội dung cảnh báo.'}</p>
           </div>}
-          <div className="mg-composer-notice">{reserving ? 'Chọn khách, cơ sở giữ xe, xe và ngày dự kiến nhận. Tiền giữ xe được trừ vào tiền thuê; chỉ vào Sổ quỹ sau khi xác nhận khoản đã nhận. Lưu nháp chưa ghi tiền.' : canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Hợp đồng nháp để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách; bản in là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
+          <div className="mg-composer-notice">{reserving ? 'Khách cọc chưa thuê xe: bấm Thêm mới và chỉ cần họ tên. CCCD, số điện thoại, địa chỉ và giấy tờ bổ sung khi giao xe. Tiền giữ xe được trừ vào tiền thuê; chỉ vào Sổ quỹ sau khi xác nhận khoản đã nhận.' : canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Hợp đồng nháp để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách; bản in là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
           <fieldset className="mg-composer-fields" disabled={saving}>
           <ContractSectionTabs prefix="contract-composer" active={section} onChange={setSection} />
           {panel('contract', 'Thông tin hợp đồng & Pháp lý', <>
@@ -864,7 +864,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
                 {errors.staff_id && <p className="mg-field-error">{errors.staff_id}</p>}<small id="contract-staff-help">Có thể nhập nhân viên mới hoặc nhân viên cơ sở khác đến hỗ trợ. Tên được lưu cùng hợp đồng.{staffError ? <><br/>Chưa tải được gợi ý; chị vẫn có thể tự nhập tên. <button type="button" className="mg-inline-button" onClick={()=>setStaffRetry(value=>value+1)}>Tải lại gợi ý</button></> : null}</small></div>
             </div>
             <div className="mg-contract-customer-toolbar">
-              <div className="mg-field mg-contract-lookup"><label htmlFor="contract-id-card">Tra cứu theo CCCD / hộ chiếu / SĐT / liên hệ *</label><div className="mg-lookup-controls"><input id="contract-id-card" autoComplete="off" value={idInput} aria-invalid={Boolean(errors.id_card)} aria-describedby="contract-lookup-status" placeholder="CCCD, hộ chiếu, SĐT hoặc liên hệ" onChange={event => changeIdentity(event.target.value)} />
+              <div className="mg-field mg-contract-lookup"><label htmlFor="contract-id-card">{reserving ? 'Tra cứu nếu đã có CCCD / SĐT — hoặc Thêm mới chỉ với tên' : 'Tra cứu theo CCCD / hộ chiếu / SĐT / liên hệ *'}</label><div className="mg-lookup-controls"><input id="contract-id-card" autoComplete="off" value={idInput} aria-invalid={Boolean(errors.id_card)} aria-describedby="contract-lookup-status" placeholder="CCCD, hộ chiếu, SĐT hoặc liên hệ" onChange={event => changeIdentity(event.target.value)} />
                 <button className="mg-button" type="button" disabled={!canSearchCustomer || lookupState === 'loading'} onClick={() => { preserveCustomer.current = false; setLookupRetry(value => value + 1); }}>{lookupState === 'loading' ? <LoaderCircle size={16} className="mg-spin" /> : <Search size={16} />}Tra cứu</button></div>
                 <div id="contract-lookup-status" className={`mg-lookup-status is-${lookupState}`} role={lookupState === 'error' ? 'alert' : 'status'}>{lookupState === 'error' ? lookupError : lookupText}</div>{lookupState === 'found' && <span className={`mg-customer-status ${selectedCustomerStatus.includes('Cảnh báo') ? 'is-blocked' : selectedCustomerStatus === 'Có cảnh báo' ? 'is-warning' : selectedCustomerStatus === 'Đang hoạt động' ? 'is-active' : ''}`}>{selectedCustomerStatus}</span>}
                 {lookupState === 'found' && selectedCustomer && <div className="mg-customer-origin">
@@ -891,7 +891,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
                   {errors[errorKey] && <p className="mg-field-error">{errors[errorKey]}</p>}</div>;
               })}</div>
             </div>)}</div>
-            {reserving && <p className="mg-composer-hint">Có thể bổ sung địa chỉ, người thân và ngày ký trước khi in hợp đồng.</p>}
+            {reserving && <p className="mg-composer-hint">Chưa có CCCD, số điện thoại hay người thân vẫn nhận cọc được. Bổ sung các mục đó khi khách nhận xe và lập hợp đồng thuê.</p>}
             <p className="mg-composer-hint">Thông tin chỉnh tại đây {mode === 'edit' ? 'được lưu riêng cho hợp đồng và mẫu in' : 'dùng trên bản in'}, không cập nhật hồ sơ khách hàng đã có.</p>
           </>)}
           {panel('vehicle', 'Thông tin phương tiện', <>
@@ -981,7 +981,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>
     </Dialog>
-    {customerModal && <CustomerCreateDialog allowIncomplete foreign={draft.customer.customer_type==='foreign'} idCard={draft.customer.customer_type==='foreign'?normalizeIdCard(idInput):/^\d{9}$|^\d{12}$/.test(normalizeIdCard(idInput)) ? normalizeIdCard(idInput) : ''} storeId={customerStoreId} onCreated={customerCreated} onClose={() => setCustomerModal(false)} />}
+    {customerModal && <CustomerCreateDialog allowIncomplete startDraft={reserving} foreign={draft.customer.customer_type==='foreign'} idCard={draft.customer.customer_type==='foreign'?normalizeIdCard(idInput):/^\d{9}$|^\d{12}$/.test(normalizeIdCard(idInput)) ? normalizeIdCard(idInput) : ''} storeId={customerStoreId} onCreated={customerCreated} onClose={() => setCustomerModal(false)} />}
     {document && <ContractPrintPreview doc={document} contractId={savedDraft?.id || row?.id} onClose={() => setDocument(null)} />}
     {typeManagerOpen && <ContractTypeManager onClose={()=>setTypeManagerOpen(false)} onCreated={type=>{changeRentalType(type);setTypeManagerOpen(false);}} />}
     {finalizeTarget && <ContractFinalizeDialog orderId={finalizeTarget.id} revision={finalizeTarget.revision} code={finalizeTarget.code}

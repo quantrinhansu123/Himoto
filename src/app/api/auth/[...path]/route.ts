@@ -288,6 +288,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
   const status = String(body.status || 'active');
   const incomplete = body.allow_incomplete === true && status === 'draft';
   if (body.allow_incomplete !== undefined && (typeof body.allow_incomplete !== 'boolean' || body.allow_incomplete && status !== 'draft')) return NextResponse.json({status:'error',message:'Hồ sơ tạm cần chọn trạng thái Chưa hoàn tất.'},{status:400});
+  const phoneOk = foreign || (!phone && incomplete) || /^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, ''));
   const warning = typeof body.warning_note === 'string' ? body.warning_note.trim() : '';
   const driverLicenseNumber = typeof body.driver_license_number === 'string' ? body.driver_license_number.trim() : '';
   const driverLicenseIssuedOn = typeof body.driver_license_issued_on === 'string' ? body.driver_license_issued_on.trim() : '';
@@ -297,7 +298,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
   let relatives: ReturnType<typeof parseCustomerRelatives>;
   try { relatives = parseCustomerRelatives(body.relatives ?? []); }
   catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
-  if (!name || !foreign && !incomplete && !address || !foreign && !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || (idCard ? foreign ? idCard.length>100 : !/^\d{9}$|^\d{12}$/.test(idCard) : !incomplete) ||
+  if (!name || !foreign && !incomplete && !address || !phoneOk || (idCard ? foreign ? idCard.length>100 : !/^\d{9}$|^\d{12}$/.test(idCard) : !incomplete) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
       !validIdentityIssueDate(driverLicenseIssuedOn) || driverLicenseNumber.length > 100 ||
       (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
@@ -396,7 +397,8 @@ async function PATCHHandler(request: NextRequest, { params }: Params) {
   let relatives: ReturnType<typeof parseCustomerRelatives> | undefined;
   try { relatives = body.relatives === undefined ? undefined : parseCustomerRelatives(body.relatives); }
   catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
-  if (!name || !foreign && !/^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, '')) || (idCard && (foreign?idCard.length>100:!/^\d{9}$|^\d{12}$/.test(idCard))) ||
+  const phoneOk = foreign || (status === 'draft' && !phone) || /^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, ''));
+  if (!name || !phoneOk || (idCard && (foreign?idCard.length>100:!/^\d{9}$|^\d{12}$/.test(idCard))) ||
       (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
       !validIdentityIssueDate(driverLicenseIssuedOn) || driverLicenseNumber.length > 100 ||
       (status === 'warning' && !warning) || (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {

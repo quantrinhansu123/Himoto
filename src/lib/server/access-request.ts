@@ -77,9 +77,9 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     const vehicleAction=request.nextUrl.pathname.match(/^\/api\/auth\/vehicles\/([1-9]\d{0,14})\/actions$/);
     const transfer_vehicle_id=vehiclePhoto?.[1]||(['transfer','receive','reject'].includes(operation)?vehicleAction?.[1]:'')||'';
     if(vehiclePhoto)operation='transfer';
-    // Fleet visibility is local to these read endpoints, never scope_all for
-    // the authenticated account or for contract/customer/financial queries.
-    if(request.method==='GET'&&(request.nextUrl.pathname==='/api/auth/vehicle/vehicles'||request.nextUrl.pathname==='/api/auth/vehicles/transfers'||/^\/api\/auth\/vehicles\/[1-9]\d{0,14}\/history$/.test(request.nextUrl.pathname)))operation='fleet_read';
+    // Fleet / GPS reads unlock every store's vehicles for the request only.
+    // Never flip scope_all: contracts, customers and money stay branch-scoped.
+    if(request.method==='GET'&&(request.nextUrl.pathname==='/api/auth/vehicle/vehicles'||request.nextUrl.pathname==='/api/auth/vehicles/transfers'||request.nextUrl.pathname==='/api/auth/vehicles/inventory'||request.nextUrl.pathname==='/api/auth/gps'||/^\/api\/auth\/vehicles\/[1-9]\d{0,14}\/history$/.test(request.nextUrl.pathname)))operation='fleet_read';
     const permission=requestPermission(request.nextUrl.pathname,request.method,request.nextUrl.pathname==='/api/auth/photo-ocr'?request.headers.get('x-photo-kind')||'':operation);
     // Own branch option list is required for every workspace role; mutation remains an admin setting.
     const branchOptions=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/stores';

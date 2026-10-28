@@ -4,6 +4,9 @@ export interface RenewalInput {
   occurred_at?:string;
   item_id: number; item_revision: string; order_revision: string;
   return_at: string; amount: string; note: string;
+  /** Cash collected beside the contract. Not added to the contract total. */
+  outside_amount?: string;
+  outside_name?: string;
   /** Suggested fee from contract unit price × duration; mismatch still saves with a warning. */
   expected_amount?: string;
   request_id?: string;
@@ -15,10 +18,11 @@ export interface RenewalVersion {
   item_id: number; vehicle_id: number; vehicle_name: string; license: string;
   rent_at: string | null; before_return_at: string | null; return_at: string; overdue_minutes: number;
   amount: number; before_total: number | null; total: number | null; paid: number | null; note: string;
+  outside_amount?: number; outside_name?: string;
   expected_amount?: number; amount_mismatch?: boolean; warning?: string;
   request_id?: string; request_hash?: string;
 }
-export interface RenewalResult { order_id: number; code: string; version: number; return_at: string; total_amount: number | null; amount: number; payment?: PaymentResult; replayed?: boolean }
+export interface RenewalResult { order_id: number; code: string; version: number; return_at: string; total_amount: number | null; amount: number; outside_amount?: number; outside_collected?: boolean; payment?: PaymentResult; replayed?: boolean }
 
 /** Original contract is v1; renewals start at v2. Ignore non-renewal junk and coerce string version ids from older payloads. */
 export function nextRenewalVersion(versions: unknown): number {

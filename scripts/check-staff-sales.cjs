@@ -77,6 +77,10 @@ async function main(){
     const dataset={stores:[{id:35}],vehicles:[{id:101}],staff:[],customers:[],contracts:[]};
     const draft={...doc.createContractDraft(dataset,'35'),customer_id:77,customer,vehicles:[{...doc.emptyVehicle(),id:'101'}],start_date:'2026-10-13T09:00',end_date:'2026-10-14T09:00',total_amount:'300000',unit_price:'300000',deposit_amount:'3000000'};
     assert.deepEqual(doc.validateOperationalDraft(draft,dataset,[],'api'),{});
+    const depositCustomer={...customer,phone:'',id_card:'',address:''};
+    assert.deepEqual(doc.validateDepositCustomer(depositCustomer,'api'),{});
+    assert.deepEqual(doc.validateReservationDraft({...draft,reservation:true,customer:depositCustomer},dataset,[],'api'),{});
+    assert(doc.validateOperationalDraft({...draft,customer:depositCustomer},dataset,[],'api').phone);
     assert(doc.validateContractDraft(draft,dataset,[],'api').relative_0_name);
     const requirements={phone:true,id_card:false,address:false,representative:false,relatives:0};
     assert.deepEqual(doc.validateContractDraft({...draft,document_requirements:requirements},dataset,[],'api'),{});

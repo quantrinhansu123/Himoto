@@ -11,8 +11,8 @@ const pool=load(path.join(root,'lib/server/himoto-database')).ownerDatabase;
 global.fetch=async()=>{throw Error('No provider/Telegram requests in this test');};
 const checks=[];
 async function main(){const c=await pool.connect();
-const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles'];
-const db={query:(sql,args)=>{for(const table of tables)sql=sql.replaceAll(`himoto.${table}`,`pg_temp.qa_atomic_${table}`);assert(!sql.includes('himoto.'),'Only TEMP business SQL');return c.query(sql,args);}};
+const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles','staff_account_attribution'];
+const db={query:(sql,args)=>{for(const table of tables)sql=sql.replaceAll(`himoto.${table}`,`pg_temp.qa_atomic_${table}`);assert(!sql.includes('himoto.'),`Only TEMP business SQL: ${[...sql.matchAll(/himoto\.\w+/g)].map(m=>m[0]).join(',')}`);return c.query(sql,args);}};
 const atomic=async(fn)=>{await c.query('SAVEPOINT action');try{const value=await fn();await c.query('RELEASE SAVEPOINT action');return value;}catch(e){await c.query('ROLLBACK TO SAVEPOINT action');await c.query('RELEASE SAVEPOINT action');throw e;}};
 const local=ms=>new Date(ms+7*3600000).toISOString().slice(0,16);
 const revisions=async()=>{const {rows}=await db.query('SELECT o.xmin::text AS order_revision,d.xmin::text AS item_revision FROM himoto.orders o JOIN himoto.order_vehicle_details d ON d.order_id=o.id WHERE o.id=1');return rows[0];};
@@ -74,7 +74,21 @@ try{
  const over=await atomic(()=>renewContractAndCollect(db,1,153,overBody));
  assert.equal(over.amount,500000);assert.equal(over.payment.context.total_amount,780000);
  assert.equal(over.payment.context.paid_amount,1080000);
- checks.push('Paid renewal receipt still saves when rental remaining is 0 after prior overpayment; fee is capped by the renewal version, not remaining debt');
+  checks.push('Paid renewal receipt still saves when rental remaining is 0 after prior overpayment; fee is capped by the renewal version, not remaining debt');
+  await c.query('ROLLBACK TO SAVEPOINT baseline');
+  const outsideBody={...body,...await revisions(),request_id:randomUUID(),amount:'140000',outside_amount:'50000',outside_name:'Phí gửi xe'};
+  const withOutside=await atomic(()=>renewContractAndCollect(db,1,153,outsideBody));
+  assert.equal(withOutside.outside_collected,true);
+  assert.equal(withOutside.payment.context.total_amount,420000);
+  assert.equal(withOutside.payment.context.paid_amount,420000);
+  const outsideRows=await db.query("SELECT name,value FROM himoto.transactions WHERE name='order:outside'");
+  assert.equal(outsideRows.rows.length,1);assert.equal(Number(outsideRows.rows[0].value),50000);
+  const kept=(await db.query('SELECT total,pid FROM himoto.orders WHERE id=1')).rows[0];
+  assert.equal(kept.total,'420000');assert.equal(Number(kept.pid),1420000);
+  const outsideVersion=(await db.query('SELECT draft_payload FROM himoto.orders WHERE id=1')).rows[0].draft_payload.management_composer.versions[0];
+  assert.equal(outsideVersion.outside_amount,50000);
+  assert(/Phí thu thêm \(thu ngoài\): 50[.,]000/.test(contractNotificationText('renewal',await notificationPayload(db,1,'renewal',153,['renewal-2'],outsideVersion))));
+  checks.push('Outside fee is its own receipt and does not change the contract total or rental paid balance');
 }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
 console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,productionSequenceChanges:0,realTelegramRequests:0},null,2));}
 main().catch(e=>{console.error(e.name,e.code||'',e.message);process.exitCode=1;});

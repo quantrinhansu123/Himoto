@@ -102,18 +102,18 @@ with sync_playwright() as playwright:
         for label, value in zip(['Số hợp đồng', 'Số Blacklist', 'Tổng tiền', 'Công nợ', 'Nợ xấu'], [str(count), str(blacklist), total, debt, bad]):
             expect(metric(label)).to_have_text(re.compile('^' + re.escape(value).replace(r'\ ', r'\s*') + '$'))
 
-    check_values(20, 1, '20.700 ₫', '12.300 ₫', '1.500 ₫')
+    check_values(20, 1, '28.699 ₫', '10.800 ₫', '1.500 ₫')
     assert page.locator('.mg-table tbody tr').count() == 10
     page.get_by_role('button', name='Trang sau', exact=True).click()
-    check_values(20, 1, '20.700 ₫', '12.300 ₫', '1.500 ₫')
+    check_values(20, 1, '28.699 ₫', '10.800 ₫', '1.500 ₫')
     page.get_by_label('Số dòng mỗi trang').select_option('20')
     page.get_by_role('button', name='Sắp xếp theo Tiền thuê', exact=True).click()
-    check_values(20, 1, '20.700 ₫', '12.300 ₫', '1.500 ₫')
+    check_values(20, 1, '28.699 ₫', '10.800 ₫', '1.500 ₫')
     page.screenshot(path=str(output / 'summary-1440.png'), full_page=True)
     checks.append('all filtered contracts aggregate before pagination; page, size and sort preserve all five values')
 
     page.get_by_label('Cơ sở đang xem').select_option('23')
-    check_values(18, 1, '19.000 ₫', '11.300 ₫', '1.500 ₫')
+    check_values(18, 1, '26.999 ₫', '9.800 ₫', '1.500 ₫')
     page.get_by_label('Lọc trạng thái', exact=True).select_option('renting')
     page.get_by_label('Tất cả loại hợp đồng', exact=True).select_option('monthly')
     page.get_by_role('searchbox').fill('dang qa')
@@ -123,13 +123,13 @@ with sync_playwright() as playwright:
     page.get_by_role('searchbox').fill('khong co ket qua')
     check_values(0, 0, '0 ₫', '0 ₫', '0 ₫')
     page.locator('.mg-filter-summary').get_by_role('button', name='Xóa bộ lọc').click()
-    check_values(20, 1, '20.700 ₫', '12.300 ₫', '1.500 ₫')
+    check_values(20, 1, '28.699 ₫', '10.800 ₫', '1.500 ₫')
     checks.append('branch, status, type, accent-free search and inclusive dates combine; empty/reset values are accurate')
 
     mode['missing'] = True
     page.reload(wait_until='domcontentloaded')
     expect(metric('Công nợ')).to_have_text('—')
-    expect(metric('Tổng tiền')).to_have_text(re.compile(r'20\.700\s*₫'))
+    expect(metric('Tổng tiền')).to_have_text(re.compile(r'28\.699\s*₫'))
     expect(summary.get_by_text('Chưa đủ số liệu', exact=False)).to_be_visible()
     mode['missing'] = False
     mode['hold_reads'] = True
@@ -141,7 +141,7 @@ with sync_playwright() as playwright:
     for route in held[:]:
         mock_api(route)
     held.clear()
-    check_values(20, 1, '20.700 ₫', '12.300 ₫', '1.500 ₫')
+    check_values(20, 1, '28.699 ₫', '10.800 ₫', '1.500 ₫')
     mode['read_error'] = True
     page.reload(wait_until='domcontentloaded')
     expect(page.get_by_text('Không tải được dữ liệu', exact=True)).to_be_visible()
@@ -149,21 +149,21 @@ with sync_playwright() as playwright:
     expect(metric('Tổng tiền')).to_have_text('—')
     mode['read_error'] = False
     page.get_by_role('button', name='Thử lại', exact=True).click()
-    check_values(20, 1, '20.700 ₫', '12.300 ₫', '1.500 ₫')
+    check_values(20, 1, '28.699 ₫', '10.800 ₫', '1.500 ₫')
     checks.append('missing paid data remains unknown; page reload displays unavailable/loading placeholders, then recovers')
 
     page.goto(args.url + '/contracts?customer_id=2', wait_until='domcontentloaded')
-    check_values(1, 0, '2.000 ₫', '1.500 ₫', '1.500 ₫')
+    check_values(1, 0, '0 ₫', '0 ₫', '1.500 ₫')
     page.goto(args.url + '/contracts/drafts', wait_until='domcontentloaded')
-    check_values(1, 1, '0 ₫', '0 ₫', '0 ₫')
-    checks.append('customer URL filter narrows counts; Log counts drafts but excludes their money from financial metrics')
+    check_values(1, 1, '9.999 ₫', '0 ₫', '0 ₫')
+    checks.append('customer URL filter narrows counts; drafts with filled amounts join Tổng tiền')
 
     page.goto(args.url + '/customers', wait_until='domcontentloaded')
     mark = page.get_by_role('button', name='Đưa vào Blacklist: Khách cảnh báo QA', exact=True)
     mark.click()
     expect(page.get_by_role('button', name='Bỏ Blacklist cho Khách cảnh báo QA', exact=True)).to_be_enabled()
     page.locator('a[href="/contracts"]').first.click()
-    check_values(20, 2, '20.700 ₫', '12.300 ₫', '1.500 ₫')
+    check_values(20, 2, '28.699 ₫', '10.800 ₫', '1.500 ₫')
     page.locator('a[href="/customers"]').first.click()
     page.get_by_role('button', name='Bỏ Blacklist cho Khách cảnh báo QA', exact=True).click()
     expect(mark).to_be_enabled()
@@ -197,7 +197,7 @@ with sync_playwright() as playwright:
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     mode['large'] = True
     page.goto(args.url + '/contracts', wait_until='domcontentloaded')
-    expect(metric('Tổng tiền')).to_contain_text('10.000.000.019.699')
+    expect(metric('Tổng tiền')).to_contain_text('10.000.000.027.698')
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     summary.scroll_into_view_if_needed()
     page.screenshot(path=str(output / 'summary-375.png'), full_page=True)

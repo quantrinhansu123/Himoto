@@ -17,7 +17,7 @@ export function parseRevenueLedger(params:URLSearchParams){
  return {from,to,store,search,category,method,page:integer('page',1,1000000),size:integer('size',20,100),all:params.get('all')==='1'};
 }
 const REVENUE_AMOUNT=`CASE WHEN category='rental' THEN GREATEST(regular_total-initial_fees,0)-GREATEST(regular_total-value-initial_fees,0) WHEN category='early' THEN -value WHEN category IN('renewal','late') THEN value ELSE 0 END`;
-const categorySql=`CASE WHEN category<>'excluded' THEN category WHEN name='order:deposit_refund' OR name LIKE 'order:complete:%' THEN 'deposit_refund' WHEN name='order:return_repair' THEN 'repair' WHEN name='order:extra' THEN 'extra' ELSE 'deposit' END`;
+const categorySql=`CASE WHEN category<>'excluded' THEN category WHEN name='order:deposit_refund' OR name LIKE 'order:complete:%' THEN 'deposit_refund' WHEN name='order:return_repair' THEN 'repair' WHEN name IN('order:extra','order:outside') THEN 'extra' ELSE 'deposit' END`;
 const methodSql=`CASE WHEN payment_method=3 THEN 'mixed' WHEN bank_owner_type='company' AND (bank_id IS NOT NULL OR payment_method=2) THEN 'company' WHEN bank_id IS NOT NULL OR payment_method=2 THEN CASE WHEN bank_owner_type='personal' THEN 'personal' ELSE 'unknown' END WHEN cash_id IS NOT NULL OR payment_method=1 THEN 'cash' ELSE 'unknown' END`;
 const number=(value:unknown)=>{const n=Number(value);if(value==null||!Number.isSafeInteger(n))throw new RevenueLedgerError('Số tiền trong phiếu chưa hợp lệ; cần đối chiếu.',409);return n;};
 
