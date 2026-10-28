@@ -77,13 +77,14 @@
     "jsqr": "1.4.0",
     "lucide-react": "^1.52.0",
     "mediabunny": "1.62.1",
-    "next": "^15.1.7",
+    "next": "^15.5.28",
     "pg": "^8.23.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sass": "^1.85.0"
   },
   "overrides": {
+    "zod": "^4.6.7",
     "exceljs": {
       "uuid": "^11.1.1"
     },
