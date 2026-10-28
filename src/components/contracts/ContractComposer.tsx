@@ -22,6 +22,7 @@ import { ContractPrintPreview } from './ContractPrintPreview';
 import { VehiclePicker } from './VehiclePicker';
 import { ContractFinalizeDialog } from './ContractFinalizeDialog';
 import { FinalizeResult, draftPaymentMethods } from '@/lib/management/contract-finalize';
+import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { PAYMENT_METHODS, paymentMethodLabel, type PaymentMethod } from '@/lib/management/contract-payments';
 import { CONTRACT_FORM_SECTIONS, ContractSection, ContractSectionTabs } from './ContractSectionTabs';
@@ -107,6 +108,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   const [lookupState, setLookupState] = useState<LookupState>(row && draft.customer_id && draft.customer.name.trim() ? 'found' : 'idle');
   const [status, setStatus] = useState(row?.status || 'pending');
   const [rentalType, setRentalType] = useState(String(row?.rental_type || (ownershipPage ? 'ownership' : 'daily')));
+  const ownershipApproval=requiresOwnershipApproval(rentalType),canIssue=canFinalizeContracts&&canFinalizeRentalContract(accessUser,rentalType);
   // Ownership / single-branch accounts often open the form before picking a store; seed from their assigned branch so Thêm mới is usable.
   useEffect(() => {
     if (row || !dataset?.stores.length) return;
@@ -495,6 +497,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     if (!dataset || busy.current || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending) return;
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const action = submitter instanceof HTMLButtonElement ? submitter.value : '';
+    if(action==='finalize'&&!canIssue){setSaveError('Hợp đồng thuê sở hữu cần quản lý duyệt. Lưu nháp để quản lý kiểm tra và phát hành.');return;}
     const finalizing = action === 'finalize' && canSaveDraft;
     const savingDraft = !finalizing && (action === 'draft' || (editingDraft && action !== 'preview'));
     const savingRecord = mode === 'edit' && action !== 'preview';
@@ -830,7 +833,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
                 {catalog.error && <p role="alert" className="mg-field-error">{catalog.error} <button type="button" className="mg-button" onClick={()=>void catalog.load(true)}>Thử lại</button></p>}
                 {canSaveDraft && catalog.canManage && <div className="mg-contract-type-actions"><button type="button" className="mg-button" onClick={()=>setTypeManagerOpen(true)}><Plus size={16}/>Thêm / quản lý loại hợp đồng</button></div>}
               </div>
-              {ownership && canSaveDraft && <p className="mg-composer-hint mg-field-wide">Kiểm tra thông tin rồi bấm Hoàn tất & thanh toán để duyệt và phát hành hợp đồng thuê sở hữu.</p>}
+              {ownershipApproval && canSaveDraft && <p className="mg-composer-hint mg-field-wide">{canIssue?'Kiểm tra hồ sơ, chọn Duyệt hợp đồng rồi xác nhận các khoản tiền để phát hành.':'Lưu nháp chờ quản lý duyệt. Hợp đồng chỉ chuyển sang Đang thuê sau khi quản lý xác nhận duyệt.'}</p>}
               {ownership && <div className="mg-field"><label htmlFor="contract-ownership-term">Phân loại thuê sở hữu</label><select id="contract-ownership-term" value={draft.ownership_term_months || 'custom'} onChange={event=>change('ownership_term_months',event.target.value as ContractDraft['ownership_term_months'])}>{OWNERSHIP_TERMS.map(term=><option key={term.value} value={term.value}>{term.label}</option>)}</select></div>}
               {field('contract_number', 'Mã hợp đồng / Số HĐ giấy')}
               {field('signed_on', 'Ngày ký hợp đồng', 'date', !reserving)}
@@ -970,14 +973,14 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
           </div>
           </fieldset>{profileMessage && <p className="mg-payment-success" role="status">{profileMessage}</p>}
         </div>
-        <div className="mg-dialog-footer"><span className="mg-form-note">{row?.status==='deposit_contract'?'Điền thông tin khách, giấy tờ và người làm hợp đồng → Lưu hồ sơ hợp đồng → Tiếp tục giao xe. Tiền cọc và tiền thuê giữ theo giao dịch đã ghi.':canSaveDraft ? 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span>
+        <div className="mg-dialog-footer"><span className="mg-form-note">{row?.status==='deposit_contract'?'Điền thông tin khách, giấy tờ và người làm hợp đồng → Lưu hồ sơ hợp đồng → Tiếp tục giao xe. Tiền cọc và tiền thuê giữ theo giao dịch đã ghi.':canSaveDraft ? ownershipApproval ? canIssue ? 'Duyệt hợp đồng sau khi kiểm tra hồ sơ và các khoản tiền đã nhận.' : 'Lưu nháp chờ quản lý duyệt. Bản nháp chưa phát hành hợp đồng.' : 'Hoàn tất & thanh toán để phát hành hợp đồng và xác nhận tiền đã nhận.' : '* Theo yêu cầu hồ sơ khi in'}</span>
           <ReloadButton name="Làm mới bản nháp" busy={reloading} disabled={saving} onClick={() => { void reloadRecord(); }} />
           <button type="button" className="mg-button" disabled={saving || reloading} onClick={onClose}>Đóng</button>
-          {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu nháp'}</button>}
-          {canSaveDraft && source === 'api' && canSaveContractDrafts && canFinalizeContracts && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : 'Hoàn tất & thanh toán'}</button>}
+          {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : ownershipApproval&&!canIssue?'Lưu nháp chờ duyệt':'Lưu nháp'}</button>}
+          {canSaveDraft && source === 'api' && canSaveContractDrafts && canIssue && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading'} title={reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê'}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : ownershipApproval?'Duyệt hợp đồng':'Hoàn tất & thanh toán'}</button>}
           {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
           {row && !canSaveDraft && source === 'api' && canEditIssuedContract(accessUser,row.store_id) && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
-          {row?.status==='deposit_contract'&&canFinalizeContracts&&onHandover&&<button type="button" className="mg-button mg-button-primary" disabled={saving||!profileMessage||savedProfile.current!==JSON.stringify(contractProfile(draft))} onClick={onHandover}><CheckCircle2 size={16}/>Tiếp tục giao xe</button>}
+          {row?.status==='deposit_contract'&&canIssue&&onHandover&&<button type="button" className="mg-button mg-button-primary" disabled={saving||!profileMessage||savedProfile.current!==JSON.stringify(contractProfile(draft))} onClick={onHandover}><CheckCircle2 size={16}/>Tiếp tục giao xe</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>
     </Dialog>
@@ -985,7 +988,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     {document && <ContractPrintPreview doc={document} contractId={savedDraft?.id || row?.id} onClose={() => setDocument(null)} />}
     {typeManagerOpen && <ContractTypeManager onClose={()=>setTypeManagerOpen(false)} onCreated={type=>{changeRentalType(type);setTypeManagerOpen(false);}} />}
     {finalizeTarget && <ContractFinalizeDialog orderId={finalizeTarget.id} revision={finalizeTarget.revision} code={finalizeTarget.code}
-      total={Number(draft.total_amount) || 0} deposit={Number(draft.deposit_amount) || 0} reservation={reserving} rentalStart={draft.start_date}
+      total={Number(draft.total_amount) || 0} deposit={Number(draft.deposit_amount) || 0} reservation={reserving} ownershipApproval={ownershipApproval} rentalStart={draft.start_date}
       depositMethods={draftPaymentMethods(draft.deposit_payment_method)} rentalMethods={draftPaymentMethods(draft.payment_method)} charges={draft.extra_charges}
       onClose={() => setFinalizeTarget(null)} onDone={result => { setFinalizeTarget(null); onClose(); onFinalized?.(result); }} />}
   </>;

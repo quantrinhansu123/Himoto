@@ -69,6 +69,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
         const receive=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='receive'):undefined;
         const reject=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='reject'):undefined;
         const contractAction=config.kind==='contracts'?actions(row).find(item=>item.key===(row.status==='draft'?'delete':'telegram')):undefined;
+        const approval=config.kind==='contracts'?actions(row).find(item=>item.key==='approve'):undefined;
         if(compact)return <li key={row.id} className="mg-mobile-record-card mg-mobile-monitoring-card">
           {selectable&&<label className="mg-mobile-card-select"><input type="checkbox" aria-label={`Chọn ${label}`} checked={Boolean(selectedIds?.has(row.id))} onChange={event=>onSelectionChange?.([row.id],event.target.checked)}/></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={()=>onView(row)}>
@@ -82,7 +83,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             {visible('status')&&row.status!=='reserved'&&<span className={`mg-status mg-status-${statusTone(row.status)}`}><span/>{optionLabel(config,'status',row.status)}</span>}
             {visible('contract_gps_status')&&<ContractGpsIndicator row={row}/>}
           </button>
-          {visible('collection_notes')&&<div className="mg-mobile-collection-note"><strong>Ghi chú tình trạng khách</strong><ContractCollectionNote row={row}/></div>}
+          {(approval||visible('collection_notes'))&&<div className="mg-mobile-collection-note">{approval&&<button type="button" className="mg-button mg-button-primary mg-contract-approve" onClick={approval.onSelect}>{approval.icon}Duyệt hợp đồng</button>}{visible('collection_notes')&&<><strong>Ghi chú tình trạng khách</strong><ContractCollectionNote row={row}/></>}</div>}
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId===row.id}/></div>
         </li>;
         const summary = SUMMARY_KEYS[config.kind].filter(key => row[key] !== undefined && row[key] !== '').map(key => {

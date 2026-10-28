@@ -3,7 +3,8 @@ import { VEHICLE_ORDER_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import { ContractFinalizeError } from './contract-finalize';
 import { readPaymentContext } from './contract-payments';
-import { usesScopedDatabase } from './access-context';
+import { dataAccess,usesScopedDatabase } from './access-context';
+import { canApproveOwnershipContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
 
 type Database = Pick<PoolClient, 'query'>;
 export function parseHandoverInput(body: unknown): { revision: string } {
@@ -19,9 +20,11 @@ export async function handoverReservation(client: Database, id: number, actorId:
   parseHandoverInput({revision});
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
-  const order = (await client.query(`SELECT id,order_status,draft_payload,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`,[id])).rows[0];
+  const order = (await client.query(`SELECT id,order_status,draft_payload,order_type,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`,[id])).rows[0];
   if (!order) throw new ContractFinalizeError('Không tìm thấy đơn giữ xe.',404);
   if (order.order_status !== 'deposit_contract' || order.revision !== revision) throw new ContractFinalizeError('Đơn đã thay đổi hoặc đã giao xe. Tải lại trước khi xác nhận.',409);
+  const payload=order.draft_payload||{},composer=payload.management_composer||{},approvalRequired=requiresOwnershipApproval(composer.rental_type)||requiresOwnershipApproval(order.order_type),approver=dataAccess.getStore();
+  if(approvalRequired&&approver&&!canApproveOwnershipContract(approver))throw new ContractFinalizeError('Hợp đồng thuê sở hữu cần quản lý duyệt và xác nhận giao xe.',403);
   const items = await client.query(`SELECT d.id,d.vehicle_id FROM himoto.order_vehicle_details d
     WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY d.vehicle_id FOR UPDATE OF d`,[id]);
   const vehicleIds = items.rows.map(row=>Number(row.vehicle_id));
@@ -46,8 +49,8 @@ export async function handoverReservation(client: Database, id: number, actorId:
       return `xe ${row.license} · hợp đồng ${row.code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}`;
     }).join('; ')}. Kiểm tra lại trước khi giao.`,409);
   }
-  const payload = order.draft_payload || {}, composer = payload.management_composer || {};
   const next = {...payload,management_composer:{...composer,draft:{...composer.draft,reservation:false},handover:{at:new Date().toISOString(),actor_id:actorId}}};
+  if(approvalRequired&&!composer.approval)next.management_composer.approval={at:next.management_composer.handover.at,actor_id:actorId,actor_role:approver?.access_role||null};
   await client.query(`UPDATE himoto.orders SET order_status='renting',draft_payload=$2,updated_at=now() WHERE id=$1`,[id,JSON.stringify(next)]);
   if (usesScopedDatabase()) await client.query('SELECT himoto.mark_vehicles_using($1::bigint[])',[vehicleIds]);
   else await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=ANY($1::bigint[])`,[vehicleIds]);

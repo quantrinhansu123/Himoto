@@ -4273,6 +4273,7 @@
 .mg-mobile-monitoring-card:has(> .mg-mobile-collection-note) > .mg-mobile-card-actions { grid-column:3; grid-row:1; }
 .mg-mobile-collection-note > strong { display:block; font-size:12px; margin-bottom:6px; }
 .mg-mobile-collection-note .mg-contract-collection-note { max-width:none; }
+.mg-contract-approve { margin-bottom:12px; }
 .mg-preserve-lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 .mg-report-preview { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:13px; line-height:1.65; padding:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; max-width:100%; }
 .mg-ownership-report { min-width:0; }

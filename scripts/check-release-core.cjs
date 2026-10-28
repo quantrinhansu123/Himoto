@@ -2,7 +2,7 @@ const path=require('node:path'),{spawnSync}=require('node:child_process');
 const cases=[
  'management-login','account-management-api','account-password-api','global-vehicle-access',
  'contract-autofill','contract-billing','contract-summary','contract-finalize','contract-payments',
- 'contract-overdue','legacy-ownership-overdue','contract-branch-flows','contract-lifecycle-api','contract-edit-api','contract-followups-api',
+ 'contract-overdue','legacy-ownership-overdue','contract-branch-flows','contract-lifecycle-api','contract-edit-api','contract-followups-api','ownership-approval',
  'contract-clone','contract-documents','contract-feedback','contract-photo-delete','draft-optional-sales',
  'customer-order-excel','management-data','management-loading','management-table-timeouts','contract-tabs',
  'shift-audits','vehicle-import','vehicle-documents','vehicle-registration-ocr','public-failure',

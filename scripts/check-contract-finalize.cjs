@@ -73,6 +73,20 @@ async function main() {
         [draft([100, 101]), draft([103]), draft([102]), `${day}-0007`, draft([101], { deposit_amount: '', total_amount: '300000' })]);
       await c.query(`INSERT INTO qa_fin_order_vehicle_details(order_id,vehicle_id,rent_at,return_at) VALUES (2,103,'2026-10-01T08:00:00+07:00','2026-10-05T08:00:00+07:00')`);
 
+      await c.query('SAVEPOINT ownership_approval');
+      const ownershipDraft=JSON.parse(draft([100],{deposit_amount:'0'}));ownershipDraft.management_composer.rental_type='ownership';
+      await c.query("UPDATE qa_fin_orders SET order_type='ownership',draft_payload=$1 WHERE id=1",[JSON.stringify(ownershipDraft)]);
+      const {dataAccess}=load(path.join(root,'lib/server/access-context'));
+      const protectedBefore=(await c.query('SELECT (SELECT row_to_json(o) FROM qa_fin_orders o WHERE id=1) AS contract,(SELECT jsonb_agg(v ORDER BY id) FROM qa_fin_vehicles v) AS vehicles,(SELECT count(*) FROM qa_fin_transactions) AS receipt_count')).rows[0];
+      const operator={id:143,access_role:'headquarters_sales',permissions:['contracts.read','contracts.draft','contracts.finalize'],scope_all:true,store_id:null,operation:''};
+      await assert.rejects(dataAccess.run(operator,()=>finalize(1,{deposit:null,rental:null})),error=>error.status===403);
+      assert.deepEqual((await c.query('SELECT (SELECT row_to_json(o) FROM qa_fin_orders o WHERE id=1) AS contract,(SELECT jsonb_agg(v ORDER BY id) FROM qa_fin_vehicles v) AS vehicles,(SELECT count(*) FROM qa_fin_transactions) AS receipt_count')).rows[0],protectedBefore);
+      const approved=await dataAccess.run({...operator,access_role:'admin'},()=>finalize(1,{deposit:null,rental:null}));assert.equal(approved.status,'renting');
+      const approval=(await c.query("SELECT draft_payload #> '{management_composer,approval}' AS approval FROM qa_fin_orders WHERE id=1")).rows[0].approval;
+      assert.equal(approval.actor_id,143);assert.equal(approval.actor_role,'admin');assert(approval.at);
+      await c.query('ROLLBACK TO SAVEPOINT ownership_approval');await c.query('RELEASE SAVEPOINT ownership_approval');
+      checks.push('TEMP ownership: staff with a broad finalize grant cannot issue or change stock/money; manager/admin approval records its actor and is required before renting');
+
       await c.query('SAVEPOINT stale_multi_total');
       await c.query(`UPDATE qa_fin_orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,draft,total_amount}','"500000"')::json WHERE id=1`);
       await assert.rejects(finalize(1, { rental: { method: 'transfer', account_id: 6 } }),error=>error.status===409&&/2 xe/.test(error.message));

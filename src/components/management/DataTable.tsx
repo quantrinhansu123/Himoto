@@ -2,7 +2,7 @@
 
 import { ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, BatteryCharging, Bike, CalendarPlus, Copy, Eye, FileSearch, LoaderCircle, MessageCircle, Pencil, Printer, RefreshCw, RotateCcw, ShieldBan, ShieldCheck, Trash2, TriangleAlert, Wallet } from 'lucide-react';
 import { ManagementColumn, ManagementConfig, ManagementRow } from '@/lib/management/types';
-import { optionLabel, statusTone, OWNERSHIP_CONTRACT_TYPES } from '@/lib/management/config';
+import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
 import { RowAction, RowActionsMenu } from './RowActionsMenu';
 import { ManagementMobileList } from './ManagementMobileList';
@@ -14,6 +14,7 @@ import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
+import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
@@ -102,14 +103,17 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if(isContract&&onQr&&row.status!=='cancelled')actions.push({key:'qr',label:'Nhập phiếu chi',icon:<Wallet size={16}/>,onSelect:()=>onQr(row)});
     if(isContract&&onReminder&&isRemindableContract(row))actions.push({key:'reminder',label:'Nhắc nợ',icon:<MessageCircle size={16}/>,onSelect:()=>onReminder(row)});
     if (isContract && onPayment && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'payment', label: 'Thanh toán', icon: <Wallet size={16} />, onSelect: () => onPayment(row) });
-    if (isContract && onHandover && row.status === 'deposit_contract') actions.push({key:'handover',label:'Giao xe',icon:<Bike size={16}/>,onSelect:()=>onHandover(row)});
-    if(isContract&&onPrint&&can('contracts.finalize')&&row.status==='deposit_contract')actions.push({key:'continue-reservation',label:'Bổ sung hồ sơ / Tiếp tục hợp đồng cọc',icon:<Pencil size={16}/>,onSelect:()=>onPrint(row)});
+    if (isContract && onHandover && row.status === 'deposit_contract' && canFinalizeRentalContract(accessUser,row.rental_type)) actions.push({key:'handover',label:'Giao xe',icon:<Bike size={16}/>,onSelect:()=>onHandover(row)});
+    if(isContract&&onPrint&&canFinalizeRentalContract(accessUser,row.rental_type)&&row.status==='deposit_contract')actions.push({key:'continue-reservation',label:'Bổ sung hồ sơ / Tiếp tục hợp đồng cọc',icon:<Pencil size={16}/>,onSelect:()=>onPrint(row)});
     if (isActiveContract && onReturn) actions.push({ key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
     if(isActiveContract&&onMarkBadDebt&&can('contracts.return')&&(row.status==='overdue'||row.collection_overdue===1))actions.push({key:'mark-bad-debt',label:'Chuyển sang Nợ xấu',icon:<TriangleAlert size={16}/>,onSelect:()=>onMarkBadDebt(row)});
     if (isActiveContract && !row.billing_plan_json && onRenew) actions.push({ key: 'renew', label: 'Gia hạn', title: 'Gia hạn trực tiếp trên hợp đồng', icon: <CalendarPlus size={16} />, onSelect: () => onRenew(row) });
     if (isActiveContract && onVehicleChange) actions.push({ key: 'vehicle', label: 'Đổi xe', title: 'Đổi xe trực tiếp trên hợp đồng', icon: <Bike size={16} />, onSelect: () => onVehicleChange(row) });
     if (isContract && onBatteryRent && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'battery', label: 'Thuê pin / sạc', title: 'Lập hợp đồng thuê pin hoặc sạc theo khách và xe của hợp đồng này', icon: <BatteryCharging size={16} />, onSelect: () => onBatteryRent(row) });
-    if (isContract && (canEditContract && row.status!=='draft' && canEditIssuedContract(accessUser,row.store_id) || canEditDraft && row.status === 'draft')) actions.push({ key: 'edit', label: row.status === 'draft' ? OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type)) || row.store_kind === 'lease_to_own' ? 'Duyệt & hoàn tất hợp đồng' : 'Tiếp tục sửa bản nháp' : 'Sửa hợp đồng', icon: <Pencil size={16} />, onSelect: () => onEdit(row) });
+    if (isContract && (canEditContract && row.status!=='draft' && canEditIssuedContract(accessUser,row.store_id) || canEditDraft && row.status === 'draft')) {
+      const approve=row.status==='draft'&&requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type);
+      actions.push({key:approve?'approve':'edit',label:approve?'Duyệt hợp đồng':row.status==='draft'?'Tiếp tục sửa bản nháp':'Sửa hợp đồng',icon:approve?<ShieldCheck size={16}/>:<Pencil size={16}/>,onSelect:()=>onEdit(row)});
+    }
     if (!isContract && canEdit) actions.push({ key: 'edit', label: 'Chỉnh sửa', icon: <Pencil size={16} />, onSelect: () => onEdit(row) });
     if (isContract && onClone) actions.push({ key: 'clone', label: cloningId === row.id ? 'Đang sao chép…' : 'Sao chép hợp đồng', disabled: cloningId != null,
       icon: cloningId === row.id ? <LoaderCircle size={16} className="mg-spin" /> : <Copy size={16} />, onSelect: () => onClone(row) });
@@ -143,6 +147,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : rows.map((row, index) => <tr key={row.id} className={selectedIds?.has(row.id) ? 'is-selected' : undefined}>{selectable && <td className="mg-select-column"><input type="checkbox" aria-label={`Chọn ${row.code || row.name || `#${row.id}`}`}
           checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}<td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} data-column={column.key} data-format={column.format} className={`${column.align === 'right' ? 'mg-align-right' : ''}${column.key === 'code' ? ' mg-record-code' : ''}`}><Cell row={row} column={column} config={config} /></td>)}
           <td className="mg-actions-column"><div className="mg-row-actions">
+            {config.kind==='contracts'&&row.status==='draft'&&canEditDraft&&requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type)&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onEdit(row)}><ShieldCheck size={16}/>Duyệt hợp đồng</button>}
             {config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive')&&<>
               <button type="button" className="mg-button mg-button-primary" onClick={()=>onVehicleAction(row,'receive')}>Nhận xe</button>
               <button type="button" className="mg-button" onClick={()=>onVehicleAction(row,'reject')}>Từ chối điều chuyển</button>

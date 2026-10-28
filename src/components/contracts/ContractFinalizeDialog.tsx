@@ -17,9 +17,9 @@ const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.'
 interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string; label?: string; automatic?: boolean }
 interface CollectionState { collect: boolean; rows: CollectionRow[] }
 
-export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, rentalStart = '', onClose, onDone }: {
+export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, ownershipApproval = false, rentalStart = '', onClose, onDone }: {
   orderId: number; revision: string; code: string; total: number; deposit: number; depositMethods: PaymentMethod[]; rentalMethods: PaymentMethod[];
-  charges?: ContractCharge[]; reservation?: boolean; rentalStart?: string; onClose: () => void; onDone: (result: FinalizeResult) => void;
+  charges?: ContractCharge[]; reservation?: boolean; ownershipApproval?: boolean; rentalStart?: string; onClose: () => void; onDone: (result: FinalizeResult) => void;
 }) {
   const [context,setContext] = useState<PaymentContext|null>(null), [loadError,setLoadError] = useState('');
   const [depositState,setDepositState] = useState<CollectionState>({collect:false,rows:[]});
@@ -151,7 +151,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
     <div className="mg-dialog-body"><p role="status">Đã lưu chính thức hợp đồng {completed.code}. Kiểm tra ảnh và trạng thái gửi bên dưới; bấm Gửi toàn bộ Telegram để gửi cả bộ.</p><ContractTelegramPanel id={orderId} eventKind={reservation?'reservation':'rental'}/></div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>onDone(completed)}>Đóng</button></div>
   </Dialog>;
-  return <Dialog title={`${reservation ? 'Xác nhận cọc giữ xe' : 'Xác nhận thanh toán'} · ${code}`} onClose={saving ? ()=>{} : onClose}>
+  return <Dialog title={`${reservation ? 'Xác nhận cọc giữ xe' : ownershipApproval?'Duyệt hợp đồng thuê sở hữu':'Xác nhận thanh toán'} · ${code}`} onClose={saving ? ()=>{} : onClose}>
     <form onSubmit={submit}><div className="mg-dialog-body mg-finalize-dialog">
       <p className="mg-composer-hint">{reservation ? 'Nhập đúng tiền giữ xe đã nhận (ví dụ 100.000 hoặc 200.000 đ), thời điểm và tài khoản nhận. Khoản này trừ vào tiền thuê, tạo phiếu Thu ngay; xe ở trạng thái chờ giao, chưa Đang thuê.' : 'Ghi đúng từng khoản tiền đã nhận và tài khoản nhận. Cọc trước ghi ngày nhận trước đó; mỗi lần chuyển khoản hoặc nhận tiền mặt thêm một dòng. Thời điểm nhận là ngày doanh thu thực thu. Sau xác nhận, hợp đồng được phát hành và xe chuyển sang Đang thuê.'}</p>
       {backdated && <p className="mg-billing-reminder">Giờ thuê thuộc ngày trước, nên thời điểm nhận đang lấy theo giờ đó để doanh thu vào đúng ngày. Sửa từng khoản nếu tiền thực nhận vào ngày khác.</p>}
@@ -169,6 +169,6 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       </div>}
       {missingAccounts && <p className="mg-field-error" role="alert">{noAccountMessage}</p>}
       {error && <p className="mg-field-error" role="alert">{error}</p>}
-    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context||photosPending||missingAccounts || (Boolean(overlapWarning) && !acknowledgeOverlap)}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : 'Xác nhận lưu chính thức'}</button></div></form>
+    </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Quay lại</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || !context||photosPending||missingAccounts || (Boolean(overlapWarning) && !acknowledgeOverlap)}>{saving ? <LoaderCircle size={16} className="mg-spin"/> : <CheckCircle2 size={16}/>}{saving ? 'Đang lưu…' : reservation ? 'Xác nhận đã nhận cọc giữ xe' : ownershipApproval?'Xác nhận duyệt hợp đồng':'Xác nhận lưu chính thức'}</button></div></form>
   </Dialog>;
 }

@@ -4,7 +4,8 @@ import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, findPaymentAccount, paymentAccount
 import { draftPaymentMethod, PAYMENT_METHOD_LABELS, type FinalizeInput, type FinalizeReceipt, type FinalizeCollection, type FinalizeResult } from '@/lib/management/contract-finalize';
 import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management/contract-charges';
 import { readPaymentContext } from './contract-payments';
-import { usesScopedDatabase } from './access-context';
+import { dataAccess,usesScopedDatabase } from './access-context';
+import { canApproveOwnershipContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { loadCommissionStaff } from './commission-staff';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
@@ -94,7 +95,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractFinalizeError('Hợp đồng hoặc người thực hiện không hợp lệ.');
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
-  const locked = await client.query(`SELECT id, order_status, store_id, customer_id, pid, contract_number, draft_reference, draft_payload, xmin::text AS revision
+  const locked = await client.query(`SELECT id, order_status, store_id, customer_id, pid, contract_number, draft_reference, draft_payload, order_type, xmin::text AS revision
     FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, [id]);
   const order = locked.rows[0];
   if (!order) throw new ContractFinalizeError('Không tìm thấy bản nháp.', 404);
@@ -103,6 +104,8 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
 
   const payload = order.draft_payload && typeof order.draft_payload === 'object' ? order.draft_payload as Record<string, unknown> : {};
   const composer = payload.management_composer && typeof payload.management_composer === 'object' ? payload.management_composer as Record<string, unknown> : {};
+  const approvalRequired=requiresOwnershipApproval(composer.rental_type)||requiresOwnershipApproval(order.order_type),approver=dataAccess.getStore();
+  if(approvalRequired&&approver&&!canApproveOwnershipContract(approver))throw new ContractFinalizeError('Hợp đồng thuê sở hữu cần quản lý duyệt. Nhân viên lưu nháp để quản lý kiểm tra và phát hành.',403);
   const draft = composer.draft && typeof composer.draft === 'object' ? composer.draft as Record<string, unknown> : null;
   if (!draft) throw new ContractFinalizeError('Bản nháp chưa có thông tin hợp đồng. Lưu nháp lại trước khi lưu chính thức.', 409);
   if(draft.sales_staff_name !== undefined && (typeof draft.sales_staff_name !== 'string' || draft.sales_staff_name.length>191))throw new ContractFinalizeError('Tên NVKD tối đa 191 ký tự.',409);
@@ -311,6 +314,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     ...(backfill?{backfill:{...backfill,recorded_at:new Date().toISOString(),actor_id:actorId}}:{}),
     ...(soft.length ? { reservation_overlap_acknowledged: true, reservation_overlap_codes: soft.map(row => String(row.code)) } : {}),
     ...(retiredItemIds.length ? { retired_legacy_item_ids: retiredItemIds } : {}) };
+  if(approvalRequired)composer.approval={at:finalized.at,actor_id:actorId,actor_role:approver?.access_role||null};
   const finalStatus=reservation?'deposit_contract':historical?(oldRentalPaid+rentalCollected<total?'wait_payment':'completed'):'renting';
   await client.query(`UPDATE himoto.orders SET order_status=$12, order_mode='standard', contract_number=$2,
       contract_issued_at=now() AT TIME ZONE 'Asia/Ho_Chi_Minh', rent_at=$3, return_at=$4, total=$5, total_rental_fees=$6, first_deposit_amount=$7,
