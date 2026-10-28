@@ -19,7 +19,12 @@ jobs:
           node-version: 22.x
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:release
+      - run: npm audit --omit=dev --audit-level=high
       - run: python3 scripts/check-server-release.py
+      - run: python3 scripts/check-production-ops.py
       - run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: '1'

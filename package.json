@@ -10,6 +10,7 @@
     "local": "next build && next start -H 127.0.0.1 -p 3001",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
+    "test:release": "node scripts/check-release-core.cjs",
     "test:management": "node scripts/check-management-data.cjs",
     "test:management-loading": "node scripts/check-management-loading.cjs",
     "test:management-table": "node scripts/check-management-table.cjs",

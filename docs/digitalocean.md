@@ -23,6 +23,18 @@ Check `systemctl status himoto-web@3100 himoto-web@3101`, `journalctl -u himoto-
 
 The login page must render at request time because build jobs do not receive database credentials. Packaging rejects a prerendered `/login`, and the server checks that the login fields and submit button are enabled before activating a release.
 
+Every deployment also runs type checking, ESLint, 34 offline business/authentication test suites, release and operations checks, and an audit of production dependencies. Test processes cannot contact external services. An unsuccessful check leaves the serving release unchanged.
+
+## Monitoring and backups
+
+`himoto-health.timer` checks every five minutes. Its service uses `deploy/monitor.py` to verify the selected application release through Nginx, an enabled and uncached login form, the marketing origin, required services, the firewall, and recent backups. `/` intentionally redirects to `/login`; it is not the application health endpoint. Results remain private in `/var/lib/himoto-monitor/health-latest.json`.
+
+The new Supabase application has a separate daily backup from the archived Laravel/MySQL application. `himoto-web-backup.timer` runs at 04:00 Asia/Ho_Chi_Minh with up to ten minutes of jitter and retains fourteen successful snapshots under `/var/backups/himoto-web`, accessible only to root. The backup uses PostgreSQL client 18, verified TLS, and a read-only source session; it dumps the `himoto` schema and privately copies the runtime environment needed to decrypt integration credentials. It never prints credentials or puts database passwords in command arguments.
+
+An incomplete dump or archive validation cannot replace `latest`. Before publishing a snapshot, `pg_restore --file=/dev/null` reads/decompresses the entire archive and SHA-256 is recorded in `manifest.json`. This verifies archive readability; an isolated full database restore is a separate recovery rehearsal. Restore business data into an isolated database first, apply the required roles/grants, and compare counts before considering a production restore. Never restore the legacy MySQL snapshot over current Supabase data.
+
+Root-managed files are installed separately from app releases: `deploy/backup.py` → `/usr/local/sbin/himoto-web-backup`, `deploy/monitor.py` → `/usr/local/sbin/himoto-web-monitor`, and their service/timer files → `/etc/systemd/system/`. Preserve the previous monitor's integrity service. `/etc/himoto-web/database-ca.pem` combines system trust roots with the Supabase CA. After changing these files, validate units, reload systemd, run the backup once, then run the health service and inspect its private result. Do not add these operational secrets or backups to release artifacts.
+
 ## Initial switch and rollback
 
 The first automated deployment only warms the application until `/etc/himoto-web/cutover-enabled` exists. After authenticated read-only verification, the operator switches Nginx to the staged port and enables subsequent automatic deployments. The previous Laravel application is removed from public serving and its own scheduler/PHP pool is retired; the source tree and database backup remain private for recovery.

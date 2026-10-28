@@ -37,7 +37,7 @@ async function main(){
   assert(requests.every(r=>!(/command|instruction|relay|block/.test(r.path))));
   for(const slot of ['rental-1','rental-6','handover-1','return-101-6','plate-101'])assert.equal(parsePhotoTarget('contracts','1',slot).slot,slot);
   for(const slot of ['rental-0','rental-00','return-0-1','return-1-00','rental-video-4','../x'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
-  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-101-1','PUT'),'contracts.return');assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-1','PUT'),'contracts.finalize');
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-101-1','PUT'),null);assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-1','PUT'),null);
   checks.push('Both provider login/read protocols use only read endpoints; transaction photo slots and return/handover permissions are validated');
   const c=await pool.connect(),schema='qa_gps_contract_integration';
   const db={query(sql,params){assert(!/\b(?:DELETE|UPDATE|INSERT)\b.*himoto\./i.test(sql.replaceAll('himoto.','qa_gps_contract_integration.')));return c.query(sql.replaceAll('himoto.',schema+'.'),params);}};

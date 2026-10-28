@@ -1,0 +1,11 @@
+[Unit]
+Description=Himoto application, login and backup health check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/sbin/himoto-web-monitor
+TimeoutStartSec=90
+UMask=0077

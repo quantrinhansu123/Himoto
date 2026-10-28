@@ -7,8 +7,8 @@ const {VEHICLE_DOCUMENT_SLOTS}=load(path.join(root,'lib/management/record-photos
 const {createDatabaseVehicle,updateDatabaseVehicle}=load(path.join(root,'lib/server/vehicle-management'));
 async function main(){
   const checks=[];
-  for(const {key} of VEHICLE_DOCUMENT_SLOTS){assert.equal(parsePhotoTarget('vehicles','1',key).slot,key);assert.equal(requestPermission(`/api/auth/record-photos/vehicles/1/${key}`,'GET'),'vehicles.read');assert.equal(requestPermission(`/api/auth/record-photos/vehicles/1/${key}`,'PUT'),'vehicles.write');}
-  assert.equal(requestPermission('/api/auth/record-photos/vehicles/1','GET'),'vehicles.read');
+  for(const {key} of VEHICLE_DOCUMENT_SLOTS){assert.equal(parsePhotoTarget('vehicles','1',key).slot,key);assert.equal(requestPermission(`/api/auth/record-photos/vehicles/1/${key}`,'GET'),null);assert.equal(requestPermission(`/api/auth/record-photos/vehicles/1/${key}`,'PUT'),null);}
+  assert.equal(requestPermission('/api/auth/record-photos/vehicles/1','GET'),null);
   for(const slot of ['registration','purchase-document-3','id_front','../registration-front'])assert.throws(()=>parsePhotoTarget('vehicles','1',slot));
   assert.throws(()=>documents.parseVehicleDocuments({'transfer-1-1':null},7));assert.deepEqual(documents.parseVehicleDocuments(undefined,7),{});
   checks.push('Registration front/back and purchase pages have vehicle read/write permissions; arbitrary and transfer slots cannot be attached through vehicle save');

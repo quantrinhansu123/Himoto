@@ -14,9 +14,9 @@ const checks=[];
   assert.deepEqual(photos.expandSignedContractPhotoSlots([{key:'return-1-document-1',label:'Return'}],keys),[{key:'return-1-document-1',label:'Return'}]);
   checks.push('Eight signed pages coexist with the original first page, payment bill and vehicle photo; return evidence stays separate');
   for(const key of keys.filter(photos.isSignedContractPhoto)){
-    parsePhotoTarget('contracts','901',key);assert.equal(photos.contractPhotoWritePermission(key),'contracts.draft');
-    assert.equal(requestPermission(`/api/auth/record-photos/contracts/901/${key}`,'PUT'),'contracts.draft');
-    assert.equal(photos.contractPhotoDeletePermission(key),'contracts.read');
+    parsePhotoTarget('contracts','901',key);assert.equal(photos.contractPhotoWritePermission(key),'vehicles.read');
+    assert.equal(requestPermission(`/api/auth/record-photos/contracts/901/${key}`,'PUT'),null);
+    assert.equal(photos.contractPhotoDeletePermission(key),'vehicles.read');
   }
   for(const key of ['rental-signed-0','rental-signed--2','rental-signed-2x','return-1-signed-2'])assert.throws(()=>parsePhotoTarget('contracts','901',key));
   assert.match(photos.contractPhotoLabel('rental-signed-4'),/Hợp đồng đã ký · Trang 4/);

@@ -30,7 +30,7 @@ async function main(){
   const db={async query(sql,params){calls.push({sql,params});
     if(sql.startsWith('SET LOCAL'))return {rows:[]};
     if(sql.includes('SELECT DISTINCT order_id'))return {rows:[{order_id:1}]};
-    if(sql.includes('WITH classified'))return {rows:[{day:date,category:'rental',amount:200000,staff_id:null,staff_name:null},{day:date,category:'renewal',amount:570000,staff_id:null,staff_name:null}]};
+    if(sql.includes('WITH scoped_orders AS MATERIALIZED'))return {rows:[{day:date,category:'rental',amount:200000,staff_id:null,staff_name:null},{day:date,category:'renewal',amount:570000,staff_id:null,staff_name:null}]};
     if(sql.includes('WITH accounts'))return {rows:[{kind:'cash',balance:1865000},{kind:'personal',balance},{kind:'company',balance:26790959}]};
     if(sql.includes('WITH inventory AS MATERIALIZED'))return {rows:Array.from({length:43},(_,i)=>({id:i+1,status:i<23?'using':'ready',available:i>=23,rental_type:i<16?'daily':i<23?'monthly':null}))};
     if(sql.includes('vehicle_location_events'))return {rows:[]};
@@ -52,7 +52,7 @@ async function main(){
   calls.length=0;
   const inventoryOnly=await readShiftSnapshot(db,{payload:{...pgd,date}},true);
   assert.equal(inventoryOnly.assets_total,43);assert.equal(inventoryOnly.values.revenue_day,null);assert.equal(inventoryOnly.revenue,null);
-  assert(!calls.some(c=>c.sql.includes('WITH classified')||c.sql.includes('WITH accounts')));
+  assert(!calls.some(c=>c.sql.includes('WITH scoped_orders AS MATERIALIZED')||c.sql.includes('WITH accounts')));
   checks.push('PGD submission captures stock independently of financial analytics; missing finance values remain unknown until KTNB requests the financial source.');
   const {hasPermission,ACCESS_ROLES}=load(path.join(root,'lib/management/permissions'));
   const auditor={permissions:[...ACCESS_ROLES.internal_control.permissions]};

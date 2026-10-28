@@ -10,7 +10,7 @@ const {isTransientSessionRead} = load(path.join(root,'lib/server/session-read'))
 const input = {kind:'contracts',query:EMPTY_QUERY,scope:'',store:'all',page:1,size:1,sort:'code',direction:'desc'};
 async function main() {
   const checks=[];
-  assert.deepEqual(CONTRACT_STATUS_TABS.map(tab=>[tab.value,tab.label]),[['','Tất cả'],['renting','Đang thuê'],['draft','Nháp'],['overdue','Quá hạn'],['completed','Hoàn thành']]);
+  assert.deepEqual(CONTRACT_STATUS_TABS.map(tab=>[tab.value,tab.label]),[['','Tất cả'],['renting','Đang thuê'],['draft','Nháp'],['overdue','Quá hạn'],['bad_debt','Nợ xấu'],['reserved','Bảo lưu'],['wait_payment','Chờ tất toán'],['deposit_contract','Đặt cọc'],['completed','Hoàn thành'],['cancelled','Đã hủy']]);
   for(const status of ['', 'renting','draft','completed']) {
     const commands=[];
     const row={id:9,contract_number:'QA-9',status:status||'renting',vehicles:[],__total_count:1};
@@ -27,22 +27,22 @@ async function main() {
     assert.match(commands[1].sql,/COALESCE\(o\.rent_at,ov\.start_date\) AS start_date/);
     assert.match(commands[1].sql,/COALESCE\(o\.return_at,ov\.end_date\) AS end_date/);
   }
-  checks.push('Five permanent status tabs; each simple tab reads only its own current page and hydrates only that page');
+  checks.push('Ten permanent status tabs preserve all lifecycle states; each simple tab reads only its own current page and hydrates only that page');
   const future=new Date(Date.now()+86400000).toISOString(),past=new Date(Date.now()-86400000).toISOString();
-  const candidates=Array.from({length:52},(_,i)=>({id:100-i,contract_number:`QA-${i}`,status:i<50?'renting':'overdue',rental_type:'daily',start_date:past,end_date:i<50?future:past,total_amount:100,paid_amount:0,vehicles:[],overdue_items:[{return_at:i<50?future:past,daily_price:100}]}));
+  const candidates=Array.from({length:252},(_,i)=>({id:1000-i,contract_number:`QA-${i}`,status:i<250?'renting':'overdue',rental_type:'daily',start_date:past,end_date:i<250?future:past,total_amount:100,paid_amount:0,vehicles:[],overdue_items:[{return_at:i<250?future:past,daily_price:100}]}));
   const commands=[];
   const database={query:async(sql,args)=>{
     commands.push({sql,args});
     return {rows:sql.includes('LIMIT $1 OFFSET $2')?candidates.slice(args[1],args[1]+args[0]):candidates.filter(row=>args[0].includes(row.id))};
   }};
   const first=await readManagementTable(database,'contracts',managementTableQuery({...input,query:{...EMPTY_QUERY,status:'overdue'}}));
-  assert.deepEqual(first.rows.map(row=>row.id),[49]);assert.equal(first.pages,2);
-  assert.deepEqual(commands.filter(row=>row.sql.includes('LIMIT')).map(row=>row.args),[[50,0],[50,50]]);
+  assert.deepEqual(first.rows.map(row=>row.id),[749]);assert.equal(first.pages,2);
+  assert.deepEqual(commands.filter(row=>row.sql.includes('LIMIT $1 OFFSET $2')).map(row=>row.args),[[250,0],[250,250]]);
   const second=await readManagementTable(database,'contracts',managementTableQuery({...input,page:2,query:{...EMPTY_QUERY,status:'overdue'}}));
-  assert.deepEqual(second.rows.map(row=>row.id),[50]);assert.equal(second.pages,2);
-  candidates[50].overdue_items[0].return_at=new Date(Date.now()-2*86400000).toISOString();
+  assert.deepEqual(second.rows.map(row=>row.id),[750]);assert.equal(second.pages,2);
+  candidates[250].overdue_items[0].return_at=new Date(Date.now()-2*86400000).toISOString();
   const oldest=await readManagementTable(database,'contracts',managementTableQuery({...input,sort:'overdue_minutes',direction:'desc',query:{...EMPTY_QUERY,status:'overdue'}}));
-  assert.deepEqual(oldest.rows.map(row=>row.id),[50]);
+  assert.deepEqual(oldest.rows.map(row=>row.id),[750]);
   const bucket=await readManagementTable(database,'contracts',managementTableQuery({...input,query:{...EMPTY_QUERY,status:'overdue',overdueBucket:'traditional-3'}}));
   assert.equal(bucket.rows.length,0);
   checks.push('Overdue filters run before pagination across bounded candidate batches; future rentals never fill overdue slots and age buckets are respected');

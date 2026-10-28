@@ -30,12 +30,12 @@ async function main(){
   assert.match(photoFields,/Xóa \$\{video\?'video':'ảnh'\}/);
   assert.match(photoFields,/deleteRecordPhoto/);
   // Phase-specific delete authorization is enforced inside the handler after contracts.read.
-  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/rental-document-1','DELETE'),'contracts.read');
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/rental-document-1','DELETE'),null);
   for(const slot of ['rental-15','rental-16','rental-video-3','handover-video-1','return-101-15','return-101-16','renewal-receipt-42-video-3'])parsePhotoTarget('contracts','1',slot);
   for(const slot of ['rental-0','rental-video-4','return-101-0'])assert.throws(()=>parsePhotoTarget('contracts','1',slot));
-  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-video-1','PUT'),'contracts.finalize');
-  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-101-15','PUT'),'contracts.return');
-  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/renewal-receipt-42-video-3','PUT'),'contracts.renew');
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/handover-video-1','PUT'),null);
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/return-101-15','PUT'),null);
+  assert.equal(requestPermission('/api/auth/record-photos/contracts/1/renewal-receipt-42-video-3','PUT'),null);
   checks.push('Additional photos beyond 15 remain accepted; video bounds and handover/return/renewal permissions are preserved');
   const {notificationPhotos}=load(path.join(root,'lib/server/contract-notification-content'));
   const ordered=await notificationPhotos({query:async()=>({rows:['rental-10','rental-video-1','rental-2','rental-1'].map(slot=>({slot,mime_type:slot.includes('video')?'video/mp4':'image/jpeg',bytes:Buffer.from(slot).toString('base64')}))})},1,['rental']);

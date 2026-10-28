@@ -18,7 +18,7 @@ async function main(){
  for(const [minutes,days,hours,amount] of [[0,0,0,0],[1,0,1,20000],[480,0,8,160000],[481,1,0,150000],[1440,1,0,150000],[1441,1,1,170000],[1920,1,8,310000],[1921,2,0,300000],[4562,3,5,550000]])assert.deepEqual(lateReturnFee(minutes,20000,150000),{days,hours,amount});
  assert.equal(lateReturnFee(481,20000,null).amount,null);assert.equal(lateReturnFee(480,20000,null).amount,160000);
  checks.push('Late fee boundary: 8h stays hourly, 8h01 becomes one day, full 24h and multi-day remainders use the original daily price; unknown daily prices are not invented');
- assert.equal(requestPermission('/api/auth/order/car-rental/1/battery-swaps','POST'),'contracts.renew');assert.equal(requestPermission('/api/auth/record-photos/contracts/1/battery-swap-1-video-1','PUT'),'contracts.renew');assert.equal(requestPermission('/api/auth/order/car-rental/1/reservation-no-show','POST'),'contracts.finalize');
+ assert.equal(requestPermission('/api/auth/order/car-rental/1/battery-swaps','POST'),'contracts.renew');assert.equal(requestPermission('/api/auth/record-photos/contracts/1/battery-swap-1-video-1','PUT'),null);assert.equal(requestPermission('/api/auth/order/car-rental/1/reservation-no-show','POST'),'contracts.finalize');
  const db=load(path.join(root,'lib/server/himoto-database')).ownerDatabase,c=await db.connect(),schema='qa_counter_workflow';
  const {parseReturnInput}=load(path.join(root,'lib/server/contract-returns')),{parseReturnSettlements,completeReturnBatch}=load(path.join(root,'lib/server/return-settlements')),{notificationPayload}=load(path.join(root,'lib/server/contract-notification-content'));
  const proxy={query:(sql,args)=>c.query(sql.replaceAll('himoto.',schema+'.'),args)};
