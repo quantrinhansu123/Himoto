@@ -21,6 +21,8 @@ Server files:
 
 Check `systemctl status himoto-web@3100 himoto-web@3101`, `journalctl -u himoto-web@3100`, and `/api/health`. Keep release/environment contents out of support logs.
 
+The login page must render at request time because build jobs do not receive database credentials. Packaging rejects a prerendered `/login`, and the server checks that the login fields and submit button are enabled before activating a release.
+
 ## Initial switch and rollback
 
 The first automated deployment only warms the application until `/etc/himoto-web/cutover-enabled` exists. After authenticated read-only verification, the operator switches Nginx to the staged port and enables subsequent automatic deployments. The previous Laravel application is removed from public serving and its own scheduler/PHP pool is retired; the source tree and database backup remain private for recovery.

@@ -9,6 +9,27 @@ spec=importlib.util.spec_from_file_location('release',pathlib.Path(__file__).res
 release=importlib.util.module_from_spec(spec);spec.loader.exec_module(release)
 
 class ReleaseTests(unittest.TestCase):
+    def test_login_requires_usable_form_not_just_http_success(self):
+        enabled='<input id="login-email"><input id="login-password"><button class="hm-login-submit">Log in</button>'
+        class Response:
+            def __init__(self,body):self.body=body
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self):return self.body.encode()
+        with patch.object(release.urllib.request,'urlopen',return_value=Response(enabled)):
+            release.verify_login(3100)
+        for html in [enabled.replace('id="login-email"','id="login-email" disabled'),enabled.replace('class="hm-login-submit"','class="hm-login-submit" disabled'),'<html>Temporary outage</html>']:
+            with self.subTest(html=html),patch.object(release.urllib.request,'urlopen',return_value=Response(html)):
+                with self.assertRaisesRegex(RuntimeError,'login form'):release.verify_login(3100)
+
+    def test_matching_release_still_checks_login_before_ready(self):
+        class Response:
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self):return json.dumps({'status':'ok','release':'a'*40}).encode()
+        with patch.object(release.urllib.request,'urlopen',return_value=Response()),patch.object(release,'verify_login',side_effect=RuntimeError('disabled')),patch.object(release.time,'sleep'):
+            with self.assertRaisesRegex(RuntimeError,'health'):release.ready(3100,'a'*40)
+
     def test_health_requires_exact_commit(self):
         class Response:
             def __enter__(self):return self

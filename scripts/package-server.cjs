@@ -4,6 +4,8 @@ if(!destination||!sha||!/^[a-f0-9]{40}$/.test(sha))throw Error('Usage: node scri
 const output=path.resolve(destination),source=path.resolve('.next/standalone');
 if(fs.existsSync(output))throw Error('Output directory must not already exist');
 if(!fs.existsSync(path.join(source,'server.js')))throw Error('Build standalone output first');
+const prerender=JSON.parse(fs.readFileSync('.next/prerender-manifest.json','utf8'));
+if(Object.hasOwn(prerender.routes,'/login'))throw Error('Login must render at request time with the server runtime configuration');
 fs.cpSync(source,output,{recursive:true,filter:name=>!path.basename(name).startsWith('.env')});
 fs.cpSync('.next/static',path.join(output,'.next/static'),{recursive:true});
 fs.cpSync('public',path.join(output,'public'),{recursive:true});

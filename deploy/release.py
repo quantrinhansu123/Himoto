@@ -5,6 +5,7 @@ The first release stays private until /etc/himoto-web/cutover-enabled exists.
 Run this root-owned file only through the restricted SSH deployment command.
 """
 import fcntl,json,os,pathlib,pwd,re,shutil,subprocess,sys,tarfile,tempfile,time,urllib.request
+from html.parser import HTMLParser
 
 BASE=pathlib.Path('/srv/himoto-web')
 SETTINGS=pathlib.Path('/etc/himoto-web')
@@ -19,12 +20,30 @@ def link(path,target):
     temporary=path.with_name(path.name+'.new')
     if temporary.is_symlink():temporary.unlink()
     temporary.symlink_to(target,target_is_directory=True);os.replace(temporary,path)
+
+class LoginFormParser(HTMLParser):
+    def __init__(self):
+        super().__init__();self.controls={}
+    def handle_starttag(self,tag,attrs):
+        attrs=dict(attrs)
+        if tag=='input' and attrs.get('id') in ('login-email','login-password'):
+            self.controls[attrs['id']]='disabled' not in attrs
+        if tag=='button' and 'hm-login-submit' in attrs.get('class','').split():
+            self.controls['submit']='disabled' not in attrs
+
+def verify_login(port):
+    with urllib.request.urlopen(f'http://127.0.0.1:{port}/login',timeout=5) as response:
+        form=LoginFormParser();form.feed(response.read().decode('utf-8'))
+    if not all(form.controls.get(name) for name in ('login-email','login-password','submit')):
+        raise RuntimeError('New release login form is missing or disabled')
+
 def ready(port,sha):
     for _ in range(60):
         try:
             with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health',timeout=3) as response:
                 body=json.load(response)
-            if body.get('status')=='ok' and body.get('release')==sha:return
+            if body.get('status')=='ok' and body.get('release')==sha:
+                verify_login(port);return
         except Exception:pass
         time.sleep(1)
     raise RuntimeError('New release failed health verification')

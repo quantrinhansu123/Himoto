@@ -4,6 +4,8 @@ import { currentSessionUser, isManagementConfigured } from '@/lib/server/managem
 import '@/styles/login.css';
 
 export const metadata = { title: 'Đăng nhập — HIMOTO' };
+// Production credentials are injected at runtime, after the artifact is built.
+export const dynamic = 'force-dynamic';
 
 export default async function LoginPage() {
   const connected = isManagementConfigured();
