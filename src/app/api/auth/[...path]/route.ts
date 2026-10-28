@@ -57,7 +57,7 @@ const listQueries: Record<string, QueryConfig> = {
                  pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
                  pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
                  pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
-                 r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, b.beneficiary_store_id, bs.store_name AS beneficiary_store_name,
+                 r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, rental_source.store_id AS beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
                  CASE WHEN r.rentals IS NOT NULL AND json_typeof(r.rentals)='array' AND json_array_length(r.rentals)>0
                    AND v.status IN ('ready') THEN 'using'
@@ -83,15 +83,8 @@ const listQueries: Record<string, QueryConfig> = {
             WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
               AND o.order_status IN ('renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract')
           ) r ON true
-          LEFT JOIN LATERAL (
-            SELECT e.ref_type, e.to_store_id FROM himoto.vehicle_location_events e
-            WHERE e.vehicle_id = v.id AND e.event_type = 'status_change'
-            ORDER BY e.created_at DESC, e.id DESC LIMIT 1
-          ) ev ON true
-          CROSS JOIN LATERAL (
-            SELECT COALESCE(r.store_id, CASE WHEN v.status = 'using' AND ev.ref_type = 'using' THEN ev.to_store_id END, v.current_store_id, v.store_id) AS beneficiary_store_id
-          ) b
-          LEFT JOIN himoto.stores bs ON bs.id = b.beneficiary_store_id
+          LEFT JOIN himoto.vehicle_rental_sources(ARRAY(SELECT id FROM himoto.vehicles WHERE deleted_at IS NULL AND COALESCE(current_store_id,store_id)>0)) rental_source ON rental_source.vehicle_id=v.id
+          LEFT JOIN himoto.stores bs ON bs.id = rental_source.store_id
           ${VEHICLE_GPS_JOIN_SQL}
           WHERE v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0
           ORDER BY v.id DESC`,

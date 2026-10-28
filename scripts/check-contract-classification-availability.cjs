@@ -14,12 +14,12 @@ const sql=text=>text.replaceAll('himoto.',schema+'.').replaceAll('pg_catalog,him
 const db={query:(text,args)=>c.query(sql(text),args)};
 try{
  await c.query('BEGIN');await c.query('CREATE SCHEMA '+schema);
- const tables=['orders','order_vehicle_details','vehicles','stores','users','staff_profiles','vehicle_location_events','customers','transactions','battery_contracts','gps_devices','management_gps_accounts'];
+ const tables=['orders','order_vehicle_details','vehicles','stores','users','staff_profiles','staff_account_attribution','vehicle_location_events','customers','transactions','battery_contracts','gps_devices','management_gps_accounts'];
  for(const table of tables)await c.query(`CREATE TABLE ${schema}.${table}(LIKE himoto.${table} INCLUDING DEFAULTS)`);
  const migration=fs.readFileSync('docs/sql/2026-10-19-contract-classification-availability.sql','utf8').replace(/^BEGIN;|^COMMIT;/gm,'');
  await db.query(migration);await db.query(migration);
  await db.query('DROP FUNCTION himoto.vehicle_rental_blockers(bigint[])');
- for(const file of ['2026-10-20-returned-vehicle-availability.sql','2026-10-20-reservation-window-conflicts.sql'])await db.query(fs.readFileSync('docs/sql/'+file,'utf8').replace(/^BEGIN;|^COMMIT;/gm,''));
+ for(const file of ['2026-10-20-returned-vehicle-availability.sql','2026-10-20-reservation-window-conflicts.sql','2026-10-29-vehicle-rental-sources.sql'])await db.query(fs.readFileSync('docs/sql/'+file,'utf8').replace(/^BEGIN;|^COMMIT;/gm,''));
  await c.query(`INSERT INTO ${schema}.stores(id,store_name,kind) VALUES(1,'CS Nguyễn Hoàng QA','physical'),(2,'CS Hà Đông QA','physical'),(35,'CS Sở hữu QA','lease_to_own');
    INSERT INTO ${schema}.vehicles(id,name,license,type,status,store_id,current_store_id,year,created_by) VALUES
     (369,'VISION QA','12T1-217.42','scooter','ready',1,1,2026,143),(370,'FELIZ QA','QA-PIN','electric','ready',1,1,2026,143),(371,'XE QA','QA-NATIVE','scooter','ready',1,1,2026,143);

@@ -225,7 +225,8 @@ function vehicleRentalSql(field:'customer'|'store') {
       AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')
     ORDER BY d.rent_at DESC,d.id DESC LIMIT 1)`;
 }
-const vehicleBeneficiarySql=()=>`COALESCE(${vehicleRentalSql('store')},v.current_store_id,v.store_id)`;
+const vehicleBeneficiarySql=()=>`rental_source.store_id`;
+const VEHICLE_RENTAL_SOURCE_JOIN_SQL=`LEFT JOIN himoto.vehicle_rental_sources(ARRAY(SELECT id FROM himoto.vehicles WHERE deleted_at IS NULL AND COALESCE(current_store_id,store_id)>0)) rental_source ON rental_source.vehicle_id=v.id`;
 function vehicleDerivedClause(query:ManagementTableInput['query']) {
   const op=query.overdueCompare==='gt'?'>':query.overdueCompare==='lt'?'<':'=';
   const days=query.overdueDays?` AND ${vehicleOverdueSql()}${op}${Number(query.overdueDays)}`:'';
@@ -249,6 +250,7 @@ export function vehiclePageSql(scopeClause:string) {
     v.xmin::text AS vehicle_revision
     FROM himoto.vehicles v
     LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
+    ${VEHICLE_RENTAL_SOURCE_JOIN_SQL}
     WHERE v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${scopeClause}`;
 }
 function vehicleHydrateSql() {
@@ -259,8 +261,8 @@ function vehicleHydrateSql() {
     pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
     pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
     r.rentals, COALESCE(r.rentals,'[]'::json) AS rental_blockers,
-    COALESCE(r.store_id, v.current_store_id, v.store_id) AS beneficiary_store_id,
-    COALESCE(bs.store_name, s.store_name) AS beneficiary_store_name,
+    rental_source.store_id AS beneficiary_store_id,
+    bs.store_name AS beneficiary_store_name,
     NULLIF(r.rentals #>> '{0,customer}', '') AS holder_name,
     CASE WHEN r.rentals IS NOT NULL AND json_typeof(r.rentals)='array' AND json_array_length(r.rentals)>0
       AND v.status IN ('ready') THEN 'using'
@@ -285,7 +287,8 @@ function vehicleHydrateSql() {
       WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
         AND o.order_status IN ('renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract')
     ) r ON true
-    LEFT JOIN himoto.stores bs ON bs.id=COALESCE(r.store_id, v.current_store_id, v.store_id)
+    LEFT JOIN himoto.vehicle_rental_sources($1::bigint[]) rental_source ON rental_source.vehicle_id=v.id
+    LEFT JOIN himoto.stores bs ON bs.id=rental_source.store_id
     ${VEHICLE_GPS_JOIN_SQL}
     WHERE v.id=ANY($1::bigint[])`;
 }
@@ -351,7 +354,7 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
     :`CASE s.status WHEN '1' THEN 'active' WHEN 'opening' THEN 'active' WHEN '0' THEN 'inactive' ELSE s.status END`;
   const result=await client.query(`WITH counted AS MATERIALIZED (
     SELECT ${status} AS status,(true${filters}${search.sql.replaceAll('$3','$1')}) AS matches,(true${selected}) AS selected
-    FROM ${source} WHERE true${scope}
+    FROM ${source} ${kind==='vehicles'&&query.filters.beneficiary_store_id?VEHICLE_RENTAL_SOURCE_JOIN_SQL:''} WHERE true${scope}
   ) SELECT count(*)::int AS scope_count,count(*) FILTER (WHERE matches)::int AS tab_count,
     count(*) FILTER (WHERE matches AND selected)::int AS total,
     COALESCE((SELECT jsonb_agg(jsonb_build_array(status,n) ORDER BY status) FROM (

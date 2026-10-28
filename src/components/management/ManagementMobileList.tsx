@@ -97,6 +97,10 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={() => onView(row)}>
             <strong className="mg-mobile-card-title">{title}</strong>
             <span className="mg-mobile-card-summary">{summary.slice(0, 2).map(item => <span key={item.key} title={`${item.label}: ${item.value}`}>{item.value}</span>)}</span>
+            {config.kind==='vehicles'&&<>
+              <span className="mg-mobile-card-extra" style={{whiteSpace:'normal'}}>Kho quản lý: {row.store_name||'—'}</span>
+              <span className="mg-mobile-card-extra" style={{whiteSpace:'normal'}}>Cơ sở nguồn khách: {row.beneficiary_store_name||(['using','rent'].includes(row.status)?'Chưa xác định':'—')}</span>
+            </>}
             {config.kind === 'contracts' && row.billing_overdue_at && Number(row.billing_due_amount) > 0 && <span className="mg-mobile-card-billing">
               <span>Hẹn đóng: {formatValue(row.billing_overdue_at, 'date')} {String(row.billing_overdue_at).slice(11, 16)}</span>
               <strong>Còn thiếu đến hạn: {formatValue(row.billing_due_amount, 'money')}</strong>
@@ -108,7 +112,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             </span>}
             <span className="mg-mobile-card-footer">{config.kind==='contracts'&&row.status==='reserved'?<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>:<span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>}
               {config.kind === 'vehicles' && row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
-              {summary[2] && <span className="mg-mobile-card-extra" title={`${summary[2].label}: ${summary[2].value}`}>{summary[2].value}{summary[3] && ` · ${summary[3].value}`}</span>}
+              {config.kind==='vehicles' ? Number(row.overdue_days)>0&&<span className="mg-mobile-card-extra">Quá hạn: {row.overdue_days} ngày</span> : summary[2] && <span className="mg-mobile-card-extra" title={`${summary[2].label}: ${summary[2].value}`}>{summary[2].value}{summary[3] && ` · ${summary[3].value}`}</span>}
             </span>
             {receive&&vehicleTransferRoute(row)&&<span className="mg-transfer-direction">{vehicleTransferRoute(row)}</span>}
             {config.kind==='vehicles'&&<GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/>}

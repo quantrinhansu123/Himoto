@@ -8,6 +8,8 @@
 
 Ví dụ nguồn Láng, xe Nguyễn Hoàng: lập hợp đồng có nguồn/doanh thu Láng, chọn xe kho Nguyễn Hoàng. Nguyễn Hoàng vẫn thấy xe trong kho của mình với trạng thái Đang thuê; doanh thu và phiếu thu của hợp đồng về Láng. Không cần chuyển xe sang Láng.
 
+Danh sách xe hiển thị mặc định **Cơ sở nguồn khách** cạnh tên khách và **Kho quản lý** riêng; điện thoại cũng ghi rõ hai nhãn. Chọn kho ở đầu trang, trạng thái Đang thuê và bộ lọc cơ sở nguồn khách để đếm xe đang phục vụ khách từng cơ sở. Nguồn lấy từ `orders.store_id` của hợp đồng đang thuê có dòng xe chưa trả, không lấy kho xe hay hồ sơ khách cũ. Không có hợp đồng phù hợp thì để trống/Chưa xác định; cọc đặt trước không thay nguồn của khách đang thuê. Migration `docs/sql/2026-10-29-vehicle-rental-sources.sql` bổ sung hàm chỉ đọc ID xe/cơ sở, giúp tài khoản cơ sở thấy nguồn khách ngoài cơ sở mà vẫn giữ giới hạn đọc hợp đồng và tài chính.
+
 Nếu Nguyễn Hoàng khớp kho trước lúc Láng nhập hợp đồng, có thể sửa xe sang Đang thuê khi xe chưa có hợp đồng mở. Láng sau đó chọn đúng xe này và phát hành trực tiếp. Server khóa xe và kiểm tra hợp đồng mở: chỉ chấp nhận Lưu kho hoặc Đang thuê chưa gắn hợp đồng; xe sửa chữa, bán, tạm ngừng hoặc đang thuộc hợp đồng khác bị chặn. Xe đã có hợp đồng mở không cho sửa trạng thái/chuyển kho thủ công. Trả xe trên hợp đồng giải phóng xe tại kho hiện tại.
 
 ## Ngày giờ và thanh toán

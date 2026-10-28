@@ -19,6 +19,7 @@ import { vehicleHolderLabel } from '@/lib/management/vehicle-holder';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
+  if(config.kind==='vehicles'&&column.key==='beneficiary_store_name')return <span className="mg-cell-value" title={String(value||'')}>{value||(['using','rent'].includes(row.status)?'Chưa xác định':'—')}</span>;
   if(config.kind==='contracts'&&column.key==='collection_notes')return <ContractCollectionNote row={row}/>;
   if(config.kind==='contracts'&&column.key==='status'&&row.status==='reserved')return <ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>;
   if(column.key==='rental_period')return <ContractRentalPeriod row={row}/>;

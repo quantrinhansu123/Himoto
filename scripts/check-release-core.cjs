@@ -5,7 +5,7 @@ const cases=[
  'contract-overdue','legacy-ownership-overdue','contract-branch-flows','contract-lifecycle-api','contract-edit-api','contract-followups-api','ownership-approval','ownership-stock',
  'contract-clone','contract-documents','contract-feedback','contract-photo-delete','draft-optional-sales',
  'customer-order-excel','management-data','management-loading','management-table-timeouts','contract-tabs',
- 'shift-audits','vehicle-import','vehicle-documents','vehicle-registration-ocr','public-failure',
+ 'shift-audits','vehicle-import','vehicle-documents','vehicle-registration-ocr','vehicle-rental-sources','public-failure',
  'load-performance','refund-qr','telegram-delivery','telegram-retraction-api','vehicle-transfer-telegram-api',
 ];
 for(const name of cases){
