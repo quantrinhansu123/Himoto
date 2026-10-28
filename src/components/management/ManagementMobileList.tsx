@@ -11,6 +11,7 @@ import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitor
 import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
+import {ContractBranches} from './ContractBranches';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
   vehicles: ['license', 'holder_name', 'store_name', 'overdue_days'],
@@ -74,7 +75,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
           {selectable&&<label className="mg-mobile-card-select"><input type="checkbox" aria-label={`Chọn ${label}`} checked={Boolean(selectedIds?.has(row.id))} onChange={event=>onSelectionChange?.([row.id],event.target.checked)}/></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={()=>onView(row)}>
             <strong className="mg-mobile-card-title">{row.code} · {title}</strong>
-            {config.kind==='contracts'&&row.store_name&&<span className="mg-mobile-card-extra">{row.store_name}</span>}
+            {config.kind==='contracts'&&<ContractBranches row={row}/>}
             {row.status==='reserved'&&<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>}
             <span className="mg-monitoring-card-meta">{visible('license')&&<span>{row.license||'—'}</span>}{visible('contract_signed_at')&&<span>Ký: {formatValue(row.contract_signed_at,'date')}</span>}{visible('deposit_amount')&&<span>Cọc: {formatValue(row.deposit_amount,'money')}</span>}</span>
             {visible('rental_period')&&<ContractRentalPeriod row={row}/>}

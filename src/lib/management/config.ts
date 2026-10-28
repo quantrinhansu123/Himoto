@@ -86,7 +86,7 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     kind: 'contracts', title: 'Danh sách hợp đồng', singular: 'hợp đồng',
     description: 'Tra cứu, sao chép và chỉnh sửa thông tin hợp đồng.',
     searchPlaceholder: 'Tìm mã hợp đồng, khách hàng hoặc biển số…', statuses: CONTRACT_STATUSES,
-    filters: [{ key: 'rental_type', label: 'Tất cả loại hợp đồng', options: CONTRACT_TYPES }, {key:'ownership_term_months',label:'Tất cả thời hạn sở hữu',options:OWNERSHIP_TERMS}],
+    filters: [{ key: 'rental_type', label: 'Tất cả loại hợp đồng', options: CONTRACT_TYPES }, {key:'ownership_term_months',label:'Tất cả thời hạn sở hữu',options:OWNERSHIP_TERMS}, {key:'store_id',label:'Tất cả nguồn khách',options:[],storeOptions:true}],
     columns: [{ ...codeColumn, label: 'Mã hợp đồng' }, { key: 'customer_name', label: 'Khách hàng', format: 'person', secondary: 'customer_phone' },
       { key: 'vehicle_name', label: 'Xe / biển số', format: 'vehicle', secondary: 'license' }, { ...branchColumn, label: 'Nguồn / doanh thu' },
       { key: 'representative_name', label: 'Nhân viên nguồn khách' }, { key: 'sales_staff_name', label: 'NVKD ghi nhận doanh số' },

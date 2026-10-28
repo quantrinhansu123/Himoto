@@ -16,6 +16,7 @@ import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
 import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { vehicleHolderLabel } from '@/lib/management/vehicle-holder';
+import {ContractBranches} from './ContractBranches';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
@@ -39,7 +40,7 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
     {column.format === 'person' && <span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{String(value || '').split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span>}
     <div>
       <strong title={String(value || '')}>{value || '—'}</strong>
-      {column.secondary && <small title={String(row[column.secondary] || '')}>{row[column.secondary] || '—'}</small>}
+      {config.kind==='contracts'&&column.key==='customer_name'?<ContractBranches row={row}/>:column.secondary && <small title={String(row[column.secondary] || '')}>{row[column.secondary] || '—'}</small>}
       {config.kind === 'vehicles' && column.key === 'name' && <small title={vehicleHolderLabel(row.status,row.holder_name)}>{vehicleHolderLabel(row.status,row.holder_name)}</small>}
     </div></div>;
   const display = optionLabel(config, column.key, formatValue(value, column.format));

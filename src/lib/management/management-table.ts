@@ -6,6 +6,7 @@ import { mapApiRow, READ_ENDPOINTS } from './repository';
 import type { ManagementKind, ManagementRow } from './types';
 import { isRemindableContract } from './debt-reminders';
 import { withContractMonitoring,OVERDUE_BUCKETS,matchesOverdueBucket } from './contract-overdue';
+import {contractMatchesWarehouse} from './contract-warehouses';
 
 export type TableKind = ManagementKind;
 export interface ManagementTableInput {
@@ -13,6 +14,7 @@ export interface ManagementTableInput {
   sort: string; direction: 'asc' | 'desc';
   /** When set, SQL only indexes recent + open contracts before paging. */
   recentDays?: number;
+  storeBasis?:'warehouse';
 }
 export interface ManagementTableResult {
   rows: ManagementRow[]; total: number; scopeCount: number; tabCount: number;
@@ -26,6 +28,7 @@ export function managementTableQuery(input: ManagementTableInput, all = false) {
   const params = new URLSearchParams({table:'1',page:String(input.page),size:String(input.size),sort:input.sort,direction:input.direction,store:input.store});
   if (all) params.set('all','1');
   if (input.scope) params.set('scope',input.scope);
+  if(input.storeBasis)params.set('store_basis',input.storeBasis);
   if(input.query.overdueBucket)params.set('overdue_bucket',input.query.overdueBucket);
   if (input.recentDays) params.set('recent',String(input.recentDays));
   for (const [key,value] of Object.entries({search:input.query.search,status:input.query.status,from:input.query.startDate,to:input.query.endDate,overdue_days:input.query.overdueDays,overdue_compare:input.query.overdueCompare})) if (value) params.set(key,value);
@@ -53,9 +56,12 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if (input.scope === 'renewable') rows=rows.filter(row=>['renting','overdue'].includes(row.status)&&!row.billing_plan_json);
   if (input.scope === 'remindable') rows=rows.filter(isRemindableContract);
   if (input.scope === 'overdue') rows=rows.filter(row=>row.status==='overdue'||row.status==='bad_debt'||row.collection_overdue===1);
-  const bucketRows=filterRows(rows,{...input.query,status:'',overdueBucket:undefined},input.store);
+  const warehouseScope=input.kind==='contracts'&&input.storeBasis==='warehouse';
+  if(warehouseScope)rows=rows.filter(row=>contractMatchesWarehouse(row,input.store));
+  const sourceStore=warehouseScope?'all':input.store;
+  const bucketRows=filterRows(rows,{...input.query,status:'',overdueBucket:undefined},sourceStore);
   const overdueCounts=Object.fromEntries(OVERDUE_BUCKETS.map(bucket=>[bucket.key,bucketRows.filter(row=>matchesOverdueBucket(row,bucket.key)).length]));
-  const scoped=filterRows(rows,EMPTY_QUERY,input.store),tabRows=filterRows(scoped,{...input.query,status:'',overdueBucket:undefined},'all');
+  const scoped=filterRows(rows,EMPTY_QUERY,sourceStore),tabRows=filterRows(scoped,{...input.query,status:'',overdueBucket:undefined},'all');
   const counts=new Map<string,number>();for(const row of tabRows)counts.set(row.status,(counts.get(row.status)||0)+1);
   if(monitoring)for(const row of tabRows)if(row.status!=='overdue'&&row.collection_overdue===1)counts.set('overdue',(counts.get('overdue')||0)+1);
   // Overdue vehicles are still on rent until the actual handover is recorded.

@@ -18,6 +18,7 @@ import { OWNERSHIP_HOLD_FIELDS_SQL } from './ownership-hold-fields';
 import { OVERDUE_BUCKETS,withContractMonitoring,type OverdueBucket } from '@/lib/management/contract-overdue';
 import {contractStatisticsSql,mapContractStatistics,fastContractStatistics} from './contract-table-stats';
 import { legacyOwnershipFeeReader } from './legacy-ownership-overdue';
+import {contractWarehouseJoinSql,contractWarehouseStoreSql} from './contract-warehouses';
 
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
@@ -27,6 +28,8 @@ export function parseManagementTable(kind:TableKind,params:URLSearchParams):Mana
   const sort=params.get('sort')||'code',allowed=new Set([...MANAGEMENT_CONFIG[kind].columns.map(column=>column.key),'code','contract_type_name','overdue_days','overdue_minutes','overdue_fee_estimate','rental_debt_amount','contract_signed_at','monitoring_amount','contract_gps_status','billing_next_due_at','billing_due_amount','company_paid_amount']);
   if(!allowed.has(sort))throw new ManagementTableError('Cột sắp xếp không hợp lệ.');
   const store=params.get('store')||'all';if(store!=='all'&&(!/^[1-9]\d*$/.test(store)||!Number.isSafeInteger(Number(store))))throw new ManagementTableError('Cơ sở không hợp lệ.');
+  const storeBasis=params.get('store_basis')||'source';
+  if(!['source','warehouse'].includes(storeBasis)||storeBasis==='warehouse'&&kind!=='contracts')throw new ManagementTableError('Cách lọc cơ sở không hợp lệ.');
   const filters:Record<string,string>={};const keys=new Set([...MANAGEMENT_CONFIG[kind].filters.map(filter=>filter.key),'contract_type_id','customer_id','id']);
   for(const[key,value]of params)if(key.startsWith('filter_')){const field=key.slice(7);if(!keys.has(field)||value.length>100)throw new ManagementTableError('Bộ lọc không hợp lệ.');filters[field]=value;}
   const from=params.get('from')||'',to=params.get('to')||'';for(const date of [from,to])if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))))throw new ManagementTableError('Khoảng ngày không hợp lệ.');
@@ -36,7 +39,7 @@ export function parseManagementTable(kind:TableKind,params:URLSearchParams):Mana
   if(bucket&&(kind!=='contracts'||!OVERDUE_BUCKETS.some(item=>item.key===bucket)))throw new ManagementTableError('Nhóm quá hạn không hợp lệ.');
   if(search.length>500||status.length>100||days&&!/^\d{1,5}$/.test(days)||!['eq','gt','lt'].includes(compare)||params.has('all')&&params.get('all')!=='1')throw new ManagementTableError('Bộ lọc không hợp lệ.');
   if(recent&&(!/^[1-9]\d{0,3}$/.test(recent)||Number(recent)>3660))throw new ManagementTableError('Khoảng ngày gần đây không hợp lệ.');
-  return {kind,page,size,sort,direction:direction as 'asc'|'desc',scope,store,...(recent?{recentDays:Number(recent)}:{}),query:{...EMPTY_QUERY,filters,search,status,startDate:from,endDate:to,overdueDays:days,overdueCompare:compare as 'eq'|'gt'|'lt',...(bucket?{overdueBucket:bucket as OverdueBucket}:{})}};
+  return {kind,page,size,sort,direction:direction as 'asc'|'desc',scope,store,...(storeBasis==='warehouse'?{storeBasis:'warehouse' as const}:{}),...(recent?{recentDays:Number(recent)}:{}),query:{...EMPTY_QUERY,filters,search,status,startDate:from,endDate:to,overdueDays:days,overdueCompare:compare as 'eq'|'gt'|'lt',...(bucket?{overdueBucket:bucket as OverdueBucket}:{})}};
 }
 function contractScopeClause(scope:string):string {
   // Return dates can live only on legacy vehicle lines. Hydrated monitoring
@@ -113,6 +116,7 @@ function contractFilterSql(filters:Record<string,string>) {
   let sql='';
   if(/^[1-9]\d{0,14}$/.test(filters.customer_id||''))sql+=` AND o.customer_id=${Number(filters.customer_id)}`;
   if(/^[1-9]\d{0,14}$/.test(filters.id||''))sql+=` AND o.id=${Number(filters.id)}`;
+  if(/^[1-9]\d{0,14}$/.test(filters.store_id||''))sql+=` AND o.store_id=${Number(filters.store_id)}`;
   const type=filters.contract_type_id||filters.rental_type;
   if(type)sql+=` AND COALESCE(NULLIF(o.draft_payload #>> '{management_composer,draft,contract_type_id}',''),${EFFECTIVE_RENTAL_TYPE_SQL})='${type.replaceAll("'","''")}'`;
   if(filters.ownership_term_months)sql+=` AND ${EFFECTIVE_RENTAL_TYPE_SQL}='ownership'
@@ -195,9 +199,11 @@ function contractHydrateSql() {
       ON fallback_staff.user_id=o.contract_responsible_user_id
     LEFT JOIN LATERAL (
       SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
-        'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color) ORDER BY d.id) AS vehicles,
+        'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
+        'warehouse_store_id',warehouse.store_id,'warehouse_store_name',warehouse.store_name,'completed_at',d.completed_at) ORDER BY d.id) AS vehicles,
         min(d.rent_at) AS start_date, max(d.return_at) AS end_date
       FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
+      ${contractWarehouseJoinSql()}
       WHERE d.order_id=o.id AND d.deleted_at IS NULL
     ) ov ON true
     WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.id=ANY($1::bigint[])`;
@@ -381,7 +387,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const monitoring=kind==='contracts'&&(input.scope==='overdue'||input.scope==='ownership'||input.query.status==='overdue'||input.query.status==='bad_debt'||Boolean(input.query.overdueBucket));
   const recentDays=input.recentDays&&!input.scope&&!input.query.search.trim()&&!input.query.startDate&&!input.query.endDate
     &&!input.query.filters.customer_id&&!input.query.filters.id ? input.recentDays : undefined;
-  const storeSql=kind==='contracts'?contractStoreSql(input.store):'';
+  const storeSql=kind==='contracts'?(input.storeBasis==='warehouse'?contractWarehouseStoreSql(input.store):contractStoreSql(input.store)):'';
   const listWindow=all&&recentDays?contractRecentClause(recentDays):'';
   const clause=kind==='contracts'
     ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}${all?'':contractDateSql(input.query)}`
@@ -474,7 +480,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       const index=(await legacyFees(result.rows.map(mapContractStatistics))).map(row=>['renting','overdue','wait_payment','bad_debt'].includes(row.status)||row.billing_plan_json||input.query.overdueDays?withContractMonitoring(applyInstallmentBilling(row,now),now):row);
       // Search is already bound/applied in SQL, including customer and plate
       // EXISTS checks. Those labels need not travel back for a second search.
-      stats=projectManagementTable(index,{...input,query:{...input.query,search:''},page:1,size:1},true,now);
+      stats=projectManagementTable(index,{...input,...(input.storeBasis==='warehouse'?{store:'all'}:{}),query:{...input.query,search:''},page:1,size:1},true,now);
       }
     }
     return {

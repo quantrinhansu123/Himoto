@@ -1,4 +1,5 @@
 import 'server-only';
+import {CONTRACT_WAREHOUSE_JOIN_SQL} from './contract-warehouses';
 import { validDocumentRequirements } from '@/lib/management/contract-requirements';
 import type { PoolClient } from 'pg';
 import { loadCommissionStaff } from './commission-staff';
@@ -100,13 +101,15 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   LEFT JOIN himoto.staff_profiles saved_staff ON saved_staff.id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'
   LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_account_attribution ORDER BY user_id,id) fallback_staff ON fallback_staff.user_id=o.contract_responsible_user_id
   LEFT JOIN LATERAL (
-    SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license${compact ? '' : `,
+    SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
+      'warehouse_store_id',warehouse.store_id,'warehouse_store_name',warehouse.store_name,'completed_at',d.completed_at${compact ? '' : `,
       'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,
       'driver_license_issued_on', d.driver_license_issued_on, 'borrow_hats', d.borrow_hats,
-      'borrow_raincoats', d.borrow_raincoats, 'rent_at', d.rent_at, 'return_at', d.return_at, 'completed_at', d.completed_at`} ) ORDER BY d.id) AS vehicles,
+      'borrow_raincoats', d.borrow_raincoats, 'rent_at', d.rent_at, 'return_at', d.return_at`} ) ORDER BY d.id) AS vehicles,
       min(d.rent_at) AS start_date, max(d.return_at) AS end_date
     FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
+    ${CONTRACT_WAREHOUSE_JOIN_SQL}
     WHERE d.order_id=o.id AND d.deleted_at IS NULL
   ) ov ON true
   WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`; }

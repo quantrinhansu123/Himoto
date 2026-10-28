@@ -9,6 +9,7 @@ import { badDebtCutoff } from './contract-bad-debt';
 import { applyInstallmentBilling } from './contract-billing';
 import { ContractDraftRequestError,contractErrorFields } from './contract-feedback';
 import { vehicleHolderLabel } from './vehicle-holder';
+import {contractWarehouses} from './contract-warehouses';
 
 export function createDemoRepository(draftStorage?: DraftStorage): ManagementRepository {
   let dataset = createDemoDataset();
@@ -144,9 +145,11 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
   const payload = object(raw.draft_payload);
   const saved = object(payload.management_composer);
   const snapshot = object(saved.draft);
+  const warehouses=contractWarehouses(vehicles.length?vehicles:Array.isArray(snapshot.vehicles)?snapshot.vehicles.map(object):[]);
   const salesStaffId = text(raw.sales_staff_id ?? object(saved.profile).sales_staff_id ?? snapshot.sales_staff_id);
   const salesAttribution = object(object(saved.profile_attribution).NVKD ?? object(saved.sales_attribution).NVKD);
   const mapped: ManagementRow = { ...base, code, name: code,
+    warehouse_store_ids_json:JSON.stringify(warehouses.ids),warehouse_store_name:warehouses.names.join(', '),
     sales_staff_id: /^[1-9]\d{0,14}$/.test(salesStaffId) ? Number(salesStaffId) : undefined, sales_staff_name: text(raw.sales_staff_name ?? salesAttribution.name ?? object(saved.profile).sales_staff_name ?? snapshot.sales_staff_name),
     store_id: base.store_id ?? number(store.id), store_name: base.store_name || text(store.store_name || store.name),
     store_kind: text(raw.store_kind),

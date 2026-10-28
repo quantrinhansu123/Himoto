@@ -78,7 +78,7 @@ export async function fastContractStatistics(db:Pick<PoolClient,'query'>,input:M
  const amount=Number(result.closed_amount);
  if(!Number.isSafeInteger(amount))return; // Preserve the original addition semantics for unusually large totals.
  const detailed=result.detailed.map(mapContractStatistics).map((row:ManagementRow)=>withContractMonitoring(applyInstallmentBilling(row,now),now));
- const stats=projectManagementTable(detailed,{...input,page:1,size:1},true,now);
+ const stats=projectManagementTable(detailed,{...input,...(input.storeBasis==='warehouse'?{store:'all'}:{}),page:1,size:1},true,now);
  const counts=new Map(stats.statusCounts);
  for(const [status,count] of result.closed_counts as [string,number][])counts.set(status,(counts.get(status)||0)+count);
  const blacklist=new Set<number>(result.blacklist.map(Number));
