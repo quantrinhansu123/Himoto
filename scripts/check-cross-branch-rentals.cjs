@@ -176,6 +176,7 @@ async function run() {
       }
       await c.query('SAVEPOINT qa_manual_sales');
       try {
+        await c.query("UPDATE qa_cross_stores SET kind='lease_to_own',store_name='CS Thuê sở hữu QA' WHERE id=32");
         const billing=load(path.join(root,'lib/management/contract-billing'));
         const manualDraft={...structuredClone(draft),sales_staff_id:'',sales_staff_name:'  NVKD chưa có hồ sơ QA  ',customer_source:'Giới thiệu ngoài danh sách QA',ownership:true,ownership_term_months:'12',package_name:'Theo tháng',end_date:billing.addRentalMonths(draft.start_date,1)};
         const edits={draft:manualDraft,status:'draft',rental_type:'ownership',notes:'QA manual source'};

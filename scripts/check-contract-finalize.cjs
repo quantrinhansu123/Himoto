@@ -81,6 +81,14 @@ async function main() {
       const operator={id:143,access_role:'headquarters_sales',permissions:['contracts.read','contracts.draft','contracts.finalize'],scope_all:true,store_id:null,operation:''};
       await assert.rejects(dataAccess.run(operator,()=>finalize(1,{deposit:null,rental:null})),error=>error.status===403);
       assert.deepEqual((await c.query('SELECT (SELECT row_to_json(o) FROM qa_fin_orders o WHERE id=1) AS contract,(SELECT jsonb_agg(v ORDER BY id) FROM qa_fin_vehicles v) AS vehicles,(SELECT count(*) FROM qa_fin_transactions) AS receipt_count')).rows[0],protectedBefore);
+      await assert.rejects(dataAccess.run({...operator,access_role:'admin'},()=>finalize(1,{deposit:null,rental:null})),error=>error.status===409&&/kho Thuê sở hữu/.test(error.message));
+      assert.deepEqual((await c.query('SELECT (SELECT row_to_json(o) FROM qa_fin_orders o WHERE id=1) AS contract,(SELECT jsonb_agg(v ORDER BY id) FROM qa_fin_vehicles v) AS vehicles,(SELECT count(*) FROM qa_fin_transactions) AS receipt_count')).rows[0],protectedBefore);
+      await c.query("INSERT INTO qa_fin_stores(id,store_name,kind) VALUES(23,'CS Thuê sở hữu QA','lease_to_own') ON CONFLICT DO NOTHING");
+      await c.query("UPDATE qa_fin_stores SET kind='lease_to_own' WHERE id=23");
+      await c.query('SAVEPOINT ownership_transit');
+      await c.query("UPDATE qa_fin_vehicles SET status='in_transit' WHERE id=100");
+      await assert.rejects(dataAccess.run({...operator,access_role:'admin'},()=>finalize(1,{deposit:null,rental:null})),error=>error.status===409&&/xác nhận nhận xe/.test(error.message));
+      await c.query('ROLLBACK TO SAVEPOINT ownership_transit');await c.query('RELEASE SAVEPOINT ownership_transit');
       const approved=await dataAccess.run({...operator,access_role:'admin'},()=>finalize(1,{deposit:null,rental:null}));assert.equal(approved.status,'renting');
       const approval=(await c.query("SELECT draft_payload #> '{management_composer,approval}' AS approval FROM qa_fin_orders WHERE id=1")).rows[0].approval;
       assert.equal(approval.actor_id,143);assert.equal(approval.actor_role,'admin');assert(approval.at);

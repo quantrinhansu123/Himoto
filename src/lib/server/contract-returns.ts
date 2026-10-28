@@ -9,6 +9,8 @@ import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contr
 import { usesScopedDatabase } from './access-context';
 import { lateReturnFee } from '@/lib/management/return-fees';
 import { closeResolvedBadDebt } from './contract-resolution';
+import { checkOwnershipVehicleStock } from './ownership-stock';
+import { requiresOwnershipApproval } from '@/lib/management/contract-approval';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractReturnError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -243,7 +245,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
 
 export async function replaceContractVehicle(client: Database, actorId: number, input: { item_id: number; item_revision: string; vehicle_id: number }) {
   await client.query("SET LOCAL lock_timeout = '5s'");
-  const result = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.xmin::text AS item_revision,o.store_id,o.draft_payload
+  const result = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.xmin::text AS item_revision,o.store_id,o.draft_payload,o.order_type
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status IN ('renting','overdue','wait_payment') FOR UPDATE OF d,o`, [input.item_id]);
@@ -251,10 +253,13 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   if (!item) throw new ContractReturnError('Không tìm thấy xe đang thuê cần đổi.', 404);
   if (String(item.item_revision) !== input.item_revision) throw new ContractReturnError('Chi tiết xe đã thay đổi. Tải lại danh sách trước khi đổi.', 409);
   if (Number(item.vehicle_id) === input.vehicle_id) throw new ContractReturnError('Biển số xe đang chọn không thay đổi.');
-  const newVehicle = await client.query(`SELECT v.id,v.name,v.license,v.brand,v.type,v.color,v.year,v.store_id,s.store_name
-    FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=v.store_id
+  const newVehicle = await client.query(`SELECT v.id,v.name,v.license,v.brand,v.type,v.color,v.year,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name
+    FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
     WHERE v.id=$1 AND v.status='ready' FOR UPDATE OF v`, [input.vehicle_id]);
   if (!newVehicle.rowCount) throw new ContractReturnError('Xe mới phải đang Lưu kho.', 409);
+  const rentalType=item.draft_payload?.management_composer?.rental_type;
+  const stockError=await checkOwnershipVehicleStock(client,requiresOwnershipApproval(item.order_type)?item.order_type:rentalType,newVehicle.rows);
+  if(stockError)throw new ContractReturnError(stockError,409);
   const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [input.vehicle_id]);

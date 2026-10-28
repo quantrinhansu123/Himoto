@@ -37,7 +37,9 @@ export function vehicleAvailability(
   proposedStart = '',
   proposedEnd = '',
   historical = false,
+  ownershipStoreIds?:string[],
 ): VehicleAvailability {
+  if(!historical&&ownershipStoreIds&&(!ownershipStoreIds.includes(String(vehicle.store_id))||vehicle.status==='in_transit'))return {tone:'danger',label:'Chưa vào kho Thuê sở hữu',detail:'Chuyển xe sang kho Thuê sở hữu và xác nhận nhận xe trước khi chọn xe lập hợp đồng.',selectable:false};
   if(historical)return {tone:'warn',label:'Chỉ nhập lịch sử',detail:'Bổ sung lượt thuê đã trả xe; trạng thái kho hiện tại được giữ nguyên. Hệ thống kiểm tra trùng lịch khi lưu chính thức.',selectable:true};
   const all = rentalsOf(vehicle);
   const classified = classifyReservationWindow(all, proposedStart, proposedEnd, ownOrderId);
@@ -74,10 +76,10 @@ export function vehicleAvailability(
     selectable: true };
 }
 
-export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, ownOrderId, takenIds, disabled, invalid, proposedStart, proposedEnd, onChange, directory, historical=false }: {
+export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, ownOrderId, takenIds, disabled, invalid, proposedStart, proposedEnd, onChange, directory, historical=false,ownershipStoreIds }: {
   id: string; index: number; vehicles: ManagementRow[]; value: string; storeName: string; monthly: boolean; ownOrderId?: number;
   takenIds: string[]; disabled: boolean; invalid: boolean; proposedStart?: string; proposedEnd?: string; onChange: (id: string) => void;
-  directory?: ManagementRow[];historical?:boolean;
+  directory?: ManagementRow[];historical?:boolean;ownershipStoreIds?:string[];
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -87,13 +89,13 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
   const end = proposedEnd || '';
   const selected = vehicles.find(item => String(item.id) === value) || directory?.find(item => String(item.id) === value);
   const ranked = useMemo(() => vehicles
-    .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId, start, end, historical) }))
+    .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId, start, end, historical,ownershipStoreIds) }))
     .sort((a, b) => TONE_ORDER[a.availability.tone] - TONE_ORDER[b.availability.tone] || String(a.item.name).localeCompare(String(b.item.name), 'vi')),
-  [vehicles, ownOrderId, start, end, historical]);
+  [vehicles, ownOrderId, start, end, historical,ownershipStoreIds]);
   const term = normalize(query);
   const plateTerm = term.replace(/[^a-z0-9]/g, '');
   const extraMatches = term ? (directory || []).filter(item => !vehicles.some(vehicle => String(vehicle.id) === String(item.id)) && matchesVehicleSearch(item, query))
-    .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId, start, end, historical) })) : [];
+    .map(item => ({ item, availability: vehicleAvailability(item, ownOrderId, start, end, historical,ownershipStoreIds) })) : [];
   const matches = [...(term ? ranked.filter(({ item }) => matchesVehicleSearch(item, query)) : ranked), ...extraMatches]
     .sort((a, b) => {
       if (plateTerm) {
@@ -105,11 +107,11 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
   const exactPlate = plateTerm ? matches.filter(({ item }) => plateKey(item.license) === plateTerm) : [];
   const exactIds = new Set(exactPlate.map(row => String(row.item.id)));
   const shown = [...exactPlate, ...matches.filter(row => !exactIds.has(String(row.item.id)))].slice(0, Math.max(MAX_OPTIONS, exactPlate.length));
-  const selectedAvailability = selected ? vehicleAvailability(selected, ownOrderId, start, end, historical) : null;
+  const selectedAvailability = selected ? vehicleAvailability(selected, ownOrderId, start, end, historical,ownershipStoreIds) : null;
 
   function choose(next: string) {
     const vehicle = vehicles.find(item => String(item.id) === next) || directory?.find(item => String(item.id) === next);
-    if (next && (!vehicle || !vehicleAvailability(vehicle, ownOrderId, start, end, historical).selectable || takenIds.includes(next) && next !== value)) return;
+    if (next && (!vehicle || !vehicleAvailability(vehicle, ownOrderId, start, end, historical,ownershipStoreIds).selectable || takenIds.includes(next) && next !== value)) return;
     onChange(next);
     setQuery(''); setOpen(false); setActive(0);
   }
@@ -132,7 +134,7 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
     <div className="mg-vehicle-picker-input">
       <input id={id} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" autoComplete="off" disabled={disabled}
         aria-invalid={invalid} aria-activedescendant={open && shown[active] ? `${listId}-${shown[active].item.id}` : undefined}
-        placeholder={disabled ? 'Chọn cửa hàng xe trước' : `Gõ tên xe hoặc biển số tại ${storeName}. Gõ biển số để tìm cả cửa hàng khác`}
+        placeholder={disabled ? 'Chọn cửa hàng xe trước' : ownershipStoreIds?'Gõ tên xe hoặc biển số trong kho Thuê sở hữu':`Gõ tên xe hoặc biển số tại ${storeName}. Gõ biển số để tìm cả cửa hàng khác`}
         value={open ? query : selected ? `${selected.name} · ${selected.license}` : ''}
         onFocus={() => { setOpen(true); setQuery(''); setActive(0); }}
         onBlur={() => { setOpen(false); setQuery(''); }}

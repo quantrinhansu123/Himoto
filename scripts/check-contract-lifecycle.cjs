@@ -47,6 +47,7 @@ async function main(){
  const input=async(id,action,extra={})=>({action,revision:await rev(id),request_id:randomUUID(),note:'',at:'2026-10-24T10:00',confirmed:true,...(action==='hold'?{hold_until:domain.localLifecycleTime(new Date(Date.parse((extra.at||'2026-10-24T10:00')+':00+07:00')+86400000))}:{}),...extra});
  const apply=async(id,action,extra={})=>staff(async()=>life.applyContractLifecycle(db,id,70001,await input(id,action,extra)));
  const recover=async item=>staff(async()=>returns.recordBadDebtRecovery(db,70001,{item_id:item,item_revision:(await db.query('SELECT xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=$1',[item])).rows[0].revision,request_id:randomUUID(),recovered_at:'2026-10-24T11:00',note:''}));
+ const receiveOwnershipStock=async ids=>{await db.query("UPDATE himoto.stores SET kind='lease_to_own' WHERE id=80001");await db.query('UPDATE himoto.vehicles SET current_store_id=80001 WHERE id=ANY($1::bigint[])',[ids]);};
  await isolated(async()=>{
    await db.query("UPDATE himoto.vehicles SET store_id=0,current_store_id=0,deleted_at=now() WHERE id=16");
    await db.query("UPDATE himoto.orders SET pid=750000 WHERE id=111");
@@ -187,22 +188,24 @@ async function main(){
    assert.equal(billing.installmentBalance(held.plan,held.base_total,held.paid_amount,Date.parse('2027-02-01T12:00+07:00')).accrued_total,100000);
    assert.deepEqual((await db.query('SELECT total,pid FROM himoto.orders WHERE id=110')).rows[0],before);
    for(const id of [14,15])assert.equal((await db.query('SELECT status FROM himoto.vehicles WHERE id=$1',[id])).rows[0].status,'ready');
+   await assert.rejects(()=>apply(110,'resume',{vehicle_ids:[14,15]}),e=>e.status===409&&/kho Thuê sở hữu/.test(e.message));
+   await receiveOwnershipStock([14,15]);
    const resumed=await apply(110,'resume',{vehicle_ids:[14,15]});assert.equal(resumed.status,'renting');assert(!resumed.all_returned);assert.equal(resumed.plan.periods[1].due_at,'2026-11-10T08:00');assert.equal(resumed.items.length,4);assert.equal(resumed.items.filter(i=>i.completed_at).length,2);
    assert.deepEqual((await db.query('SELECT total,pid FROM himoto.orders WHERE id=110')).rows[0],before);
- });checks.push('Ownership hold returns every vehicle and freezes future accrual; cross-branch multi-vehicle resume appends new rental lines, preserves old debt/receipts/history, and shifts only remaining periods');
+ });checks.push('Ownership hold freezes future accrual; resume blocks foreign stock until received by ownership, then appends new rental lines and preserves debt/receipts/history');
  await isolated(async()=>{
-   await apply(110,'hold',{at:'2026-10-15T10:00'});await db.query("INSERT INTO himoto.orders(id,store_id,order_status,contract_number,total,pid) VALUES(200,80003,'renting','QA-NEW-CUSTOMER','100000',0)");await db.query("INSERT INTO himoto.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at) VALUES(2000,200,15,'2026-10-20T08:00+07','2026-11-20T08:00+07')");
+   await apply(110,'hold',{at:'2026-10-15T10:00'});await receiveOwnershipStock([14,15,17,18]);await db.query("INSERT INTO himoto.orders(id,store_id,order_status,contract_number,total,pid) VALUES(200,80003,'renting','QA-NEW-CUSTOMER','100000',0)");await db.query("INSERT INTO himoto.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at) VALUES(2000,200,15,'2026-10-20T08:00+07','2026-11-20T08:00+07')");
    await assert.rejects(()=>apply(110,'resume',{vehicle_ids:[14,15]}),e=>e.code==='P0001'||e.status===409);
    const state=await staff(()=>life.readContractLifecycle(db,110));assert.equal(state.status,'reserved');assert.equal(state.items.length,2);assert.equal((await db.query('SELECT status FROM himoto.vehicles WHERE id=14')).rows[0].status,'ready');
    await db.query("UPDATE himoto.vehicles SET status='ready' WHERE id IN(17,18)");assert.equal((await apply(110,'resume',{vehicle_ids:[17,18]})).status,'renting');
  });checks.push('A new customer rental blocks reuse during resume; a failure on the second vehicle rolls back the first vehicle and new lines, while different available vehicles can be selected');
  await isolated(async()=>{
    await apply(111,'hold',{at:'2026-10-15T10:00'});await assert.rejects(()=>apply(111,'resume',{vehicle_ids:[16],resume_end:'2026-11-24T10:00',resume_package:'Theo tháng',resume_amount:'350000'}),e=>e.status===409);
-   const resumed=await apply(111,'resume',{vehicle_ids:[16]});assert.equal(resumed.status,'renting');assert.equal(resumed.plan,null);assert.equal(Date.parse(resumed.end_at),Date.parse('2027-04-10T08:00:00+07:00'));assert.equal(resumed.remaining,650000);
+   await receiveOwnershipStock([16]);const resumed=await apply(111,'resume',{vehicle_ids:[16]});assert.equal(resumed.status,'renting');assert.equal(resumed.plan,null);assert.equal(Date.parse(resumed.end_at),Date.parse('2027-04-10T08:00:00+07:00'));assert.equal(resumed.remaining,650000);
  });checks.push('Legacy ownership resumes extend the original deadline by the pause without inventing a new installment amount or changing old debt');
  await isolated(async()=>{
    await apply(110,'hold',{at:'2026-10-15T10:00'});
-   const result=await life.applyContractLifecycle(db,110,70001,await input(110,'resume',{vehicle_ids:[14,15]}));
+   await receiveOwnershipStock([14,15]);const result=await life.applyContractLifecycle(db,110,70001,await input(110,'resume',{vehicle_ids:[14,15]}));
    assert.equal(result.status,'renting');assert.equal(result.items.length,4);assert.equal(result.items.filter(i=>i.completed_at).length,2);
  });checks.push('The administrator/owner database path also resumes atomically while preserving both historical vehicle lines');
  await isolated(async()=>{

@@ -6,6 +6,7 @@ import { chargeErrors, chargeTotal, type ContractCharge } from '@/lib/management
 import { readPaymentContext } from './contract-payments';
 import { dataAccess,usesScopedDatabase } from './access-context';
 import { canApproveOwnershipContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
+import { checkOwnershipVehicleStock } from './ownership-stock';
 import { loadCommissionStaff } from './commission-staff';
 import { contractNumberError, paperContractNumber } from '@/lib/management/contract-number';
 import { contractNumberAvailable } from './contract-number';
@@ -160,6 +161,8 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
     WHERE v.id = ANY($1::bigint[]) ORDER BY v.id FOR UPDATE OF v`, [vehicleIds]);
   if (vehicles.rowCount !== vehicleIds.length) throw new ContractFinalizeError('Có xe trong bản nháp không còn tồn tại.', 409);
+  const stockError=await checkOwnershipVehicleStock(client,approvalRequired?'ownership':composer.rental_type,vehicles.rows,historical);
+  if(stockError)throw new ContractFinalizeError(stockError,409);
   const conflictLabel = (row: { license: string; code: string; store_name?: string | null; manager_name?: string | null; status?: string | null; rent_at?: Date | string | null; severity?: string | null }) => {
     const store = String(row.store_name || '').trim();
     const manager = String(row.manager_name || '').trim();

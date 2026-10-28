@@ -8,6 +8,7 @@ import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { closeResolvedBadDebt,readContractResolution } from './contract-resolution';
 import { depositReceiptSql } from './contract-deposits';
+import { checkOwnershipVehicleStock } from './ownership-stock';
 
 type Database=Pick<PoolClient,'query'>;
 export class ContractLifecycleError extends Error {constructor(message:string,public status=400){super(message);}}
@@ -156,6 +157,10 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
     }catch(error){throw new ContractLifecycleError(error instanceof Error?error.message:'Không lập được lịch thuê lại.',409);}
     const nextEnd=nextPlan?.end||resumedHoldEnd(context,input.at);
     const ids=[...input.vehicle_ids!].sort((a,b)=>a-b),itemIds:number[]=[];
+    const stock=await db.query('SELECT id,license,status,COALESCE(current_store_id,store_id) AS store_id FROM himoto.vehicles WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE',[ids]);
+    if(stock.rowCount!==ids.length)throw new ContractLifecycleError('Xe phải được nhận vào kho Thuê sở hữu trước khi tiếp tục thuê.',409);
+    const stockError=await checkOwnershipVehicleStock(db,'ownership',stock.rows);
+    if(stockError)throw new ContractLifecycleError(stockError,409);
     // The scoped RPC locks and validates the same cross-branch stock used by issuance.
     if(usesScopedDatabase()){
       const rows=(await db.query('SELECT * FROM himoto.resume_reserved_vehicles($1,$2::bigint[],$3::timestamptz,$4::timestamptz)',[id,ids,stamp(input.at),stamp(nextEnd)])).rows;itemIds.push(...rows.map(row=>Number(row.item_id)));

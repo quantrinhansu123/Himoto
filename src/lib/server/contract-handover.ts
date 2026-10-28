@@ -5,6 +5,7 @@ import { ContractFinalizeError } from './contract-finalize';
 import { readPaymentContext } from './contract-payments';
 import { dataAccess,usesScopedDatabase } from './access-context';
 import { canApproveOwnershipContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
+import { checkOwnershipVehicleStock } from './ownership-stock';
 
 type Database = Pick<PoolClient, 'query'>;
 export function parseHandoverInput(body: unknown): { revision: string } {
@@ -29,8 +30,10 @@ export async function handoverReservation(client: Database, id: number, actorId:
     WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY d.vehicle_id FOR UPDATE OF d`,[id]);
   const vehicleIds = items.rows.map(row=>Number(row.vehicle_id));
   const stock=usesScopedDatabase()
-    ?await client.query('SELECT id,status FROM himoto.lock_vehicles_for_contract($1::bigint[])',[vehicleIds])
-    :await client.query('SELECT id,status FROM himoto.vehicles WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE',[vehicleIds]);
+    ?await client.query('SELECT id,status,license,store_id,store_name FROM himoto.lock_vehicles_for_contract($1::bigint[])',[vehicleIds])
+    :await client.query('SELECT id,status,license,COALESCE(current_store_id,store_id) AS store_id FROM himoto.vehicles WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE',[vehicleIds]);
+  const stockError=await checkOwnershipVehicleStock(client,approvalRequired?'ownership':composer.rental_type,stock.rows);
+  if(stockError)throw new ContractFinalizeError(stockError,409);
   if(!items.rowCount||stock.rowCount!==items.rowCount||stock.rows.some(row=>row.status!=='ready'))throw new ContractFinalizeError('Xe phải đang Lưu kho và đã được cơ sở nhận xác nhận trước khi giao.',409);
   const conflicts = usesScopedDatabase()
     ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts($1::bigint[],$2)', [vehicleIds, id])

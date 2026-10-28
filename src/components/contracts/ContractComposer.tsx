@@ -31,7 +31,8 @@ import { contractBackfillErrors } from '@/lib/management/contract-backfill';
 import { VietnamDateField } from './VietnamDateField';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
-import { addRentalMonths, billingUnitLabel, isHeadquartersStore, isOwnershipStore, OWNERSHIP_TERM_MONTHS, OWNERSHIP_TERMS } from '@/lib/management/contract-billing';
+import { addRentalMonths, billingUnitLabel, isHeadquartersStore, OWNERSHIP_TERM_MONTHS, OWNERSHIP_TERMS } from '@/lib/management/contract-billing';
+import { isOwnershipVehicleStore,ownershipVehicleStockError } from '@/lib/management/ownership-stock';
 import { rentalQuote, selectedRentalVehicleCount } from '@/lib/management/contract-pricing';
 import { CustomerInternationalFields } from './CustomerInternationalFields';
 import { contractPhotoSlots, contractEvidenceSlots } from '@/lib/management/contract-photos';
@@ -515,6 +516,11 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
         return [...byId.values()];
       })(),
     };
+    if(savingDraft||finalizing){
+      const selected=validationDataset.vehicles.filter(vehicle=>draft.vehicles.some(line=>line.id===String(vehicle.id)));
+      const stockError=ownershipVehicleStockError(rentalType,selected,validationDataset.stores,Boolean(draft.backfill?.returned_at));
+      if(stockError){setSaveError(stockError);return;}
+    }
     const next = savingDraft ? validateDraftSave(draft, validationDataset) : finalizing
       ? { ...validateDraftSave(draft, validationDataset), ...contractBackfillErrors(draft.backfill,draft.start_date), ...(reserving ? validateReservationDraft(draft,validationDataset,staff,source) : validateOperationalDraft(draft,validationDataset,staff,source)) }
       : validateContractDraft(draft,validationDataset,staff,source);
@@ -671,13 +677,15 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     for (const vehicle of [...(dataset?.vehicles || []), ...inventoryVehicles]) byId.set(vehicle.id, vehicle);
     return [...byId.values()];
   }, [dataset?.vehicles, inventoryVehicles]);
+  const ownershipStockRequired=ownershipApproval&&!draft.backfill?.returned_at;
+  const ownershipStoreIds=vehicleStoreOptions.filter(isOwnershipVehicleStore).map(store=>String(store.id));
+  const selectableVehicleStores=ownershipStockRequired?vehicleStoreOptions.filter(isOwnershipVehicleStore):vehicleStoreOptions;
   const branchVehicles = useMemo(() => {
-    const staffStore = vehicleStoreOptions.find(store => String(store.id) === staffStoreId);
-    const allowHeadquarters = isOwnershipStore(staffStore?.name) || staffStore?.kind === 'lease_to_own';
-    const headquartersIds = new Set(vehicleStoreOptions.filter(store => isHeadquartersStore(store.name)).map(store => String(store.id)));
-    return allVehicles.filter(vehicle => !staffStoreId || String(vehicle.store_id) === staffStoreId
-      || (allowHeadquarters && headquartersIds.has(String(vehicle.store_id)))
-      || draft.vehicles.some(item=>item.id===String(vehicle.id)));
+    const staffStore=vehicleStoreOptions.find(store=>String(store.id)===staffStoreId);
+    const allowHeadquarters=Boolean(staffStore&&isOwnershipVehicleStore(staffStore));
+    const headquartersIds=new Set(vehicleStoreOptions.filter(store=>isHeadquartersStore(store.name)).map(store=>String(store.id)));
+    return allVehicles.filter(vehicle=>!staffStoreId||String(vehicle.store_id)===staffStoreId
+      ||allowHeadquarters&&headquartersIds.has(String(vehicle.store_id))||draft.vehicles.some(item=>item.id===String(vehicle.id)));
   }, [allVehicles, staffStoreId, draft.vehicles, vehicleStoreOptions]);
   const branchName = dataset?.stores.find(store => String(store.id) === draft.store_id)?.name
     || directoryStores.find(store => String(store.id) === draft.store_id)?.name || '';
@@ -720,6 +728,8 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   }
   function chooseVehicle(index: number, id: string) {
     const selected = allVehicles.find(item => String(item.id) === id);
+    const stockError=selected?ownershipVehicleStockError(rentalType,[selected],vehicleStoreOptions,Boolean(draft.backfill?.returned_at)):'';
+    if(stockError){setSaveError(stockError);return;}
     const previous = draftRef.current;
     const next = {
       ...previous,
@@ -856,7 +866,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
           {panel('customer', 'Thông tin khách hàng (Bên B)', <>
             <div className="mg-form-grid mg-contract-grid-two">
               <div className="mg-field"><label htmlFor="contract-store">Cửa hàng xe *</label><select id="contract-store" value={staffStoreId} aria-invalid={Boolean(errors.vehicle_store_id)} onChange={event => changeVehicleStore(event.target.value)}>
-                <option value="">Chọn cửa hàng xe</option>{vehicleStoreOptions.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select><small>Chọn cửa hàng có xe (mọi cơ sở).</small>{errors.vehicle_store_id && <p className="mg-field-error">{errors.vehicle_store_id}</p>}</div>
+                <option value="">Chọn cửa hàng xe</option>{ownershipStockRequired&&staffStoreId&&!ownershipStoreIds.includes(staffStoreId)&&<option value={staffStoreId} disabled>{vehicleStoreOptions.find(store=>String(store.id)===staffStoreId)?.name||'Kho hiện tại'} · Chưa vào kho Thuê sở hữu</option>}{selectableVehicleStores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select><small>{ownershipStockRequired?'Xe phải được chuyển đến và xác nhận nhận tại kho Thuê sở hữu trước khi lập hợp đồng.':'Chọn cửa hàng có xe (mọi cơ sở).'}</small>{errors.vehicle_store_id && <p className="mg-field-error">{errors.vehicle_store_id}</p>}</div>
                 <div className="mg-field"><label htmlFor="contract-staff">Người làm hợp đồng / đại diện Bên A{requirements.representative ? ' · cần khi in' : ''}</label><input id="contract-staff" list="contract-staff-options" value={draft.staff_name || ([...staff,...salesDirectory,...(dataset?.staff || [])].find(person => String(person.id) === draft.staff_id)?.name || '')} aria-invalid={Boolean(errors.staff_id)} aria-describedby="contract-staff-help" placeholder={staffLoading?'Đang tải gợi ý; có thể tự nhập họ tên':'Chọn hoặc tự nhập họ tên'} onChange={event => {
                   const name = event.target.value;
                   const matches = [...new Map([...staff,...salesDirectory,...(dataset?.staff || [])].map(person=>[person.id,person])).values()].filter(person => person.name.toLocaleLowerCase('vi') === name.trim().toLocaleLowerCase('vi') && staffIsAvailable(person));
@@ -901,14 +911,14 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
             <div className="mg-form-grid mg-contract-grid-two"><DateTime24Field id="contract-start_date" label={reserving ? 'Dự kiến nhận xe' : 'Thuê lúc'} value={draft.start_date} onChange={changeRentalStart} error={errors.start_date} /><DateTime24Field id="contract-end_date" label="Hẹn trả" value={draft.end_date} onChange={changeRentalEnd} error={errors.end_date} /></div>
             {!reserving && <p className="mg-composer-hint">Có thể chọn ngày trước để khớp doanh thu. Doanh thu theo lượt thuê lấy giờ thuê. Khi hoàn tất, thời điểm nhận tiền lấy cùng giờ đó nếu thuộc ngày trước, và đó là ngày doanh thu thực thu.</p>}
             <div className="mg-form-grid mg-contract-grid-two"><div className="mg-field"><label htmlFor="contract-rental-days">Số ngày thuê</label><input id="contract-rental-days" type="number" min="1" step="1" value={rentalDays} aria-invalid={Boolean(errors.rental_days)} onChange={event=>changeRentalDays(event.target.value)} /><small>Nhập số ngày để tự tính ngày trả, giữ cùng giờ thuê. Có thể sửa hẹn trả trực tiếp.</small>{errors.rental_days && <p className="mg-field-error">{errors.rental_days}</p>}</div>
-              <div className="mg-field"><label htmlFor="contract-vehicle-store-filter">Cửa hàng xe</label><select id="contract-vehicle-store-filter" value={staffStoreId} onChange={event=>changeVehicleStore(event.target.value)}><option value="">Chọn cửa hàng xe</option>{vehicleStoreOptions.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select><small>Cửa hàng có xe (mọi cơ sở) và gợi ý nhân viên làm hợp đồng. Lựa chọn được lưu cùng hợp đồng.</small></div></div>
+              <div className="mg-field"><label htmlFor="contract-vehicle-store-filter">Cửa hàng xe</label><select id="contract-vehicle-store-filter" value={staffStoreId} onChange={event=>changeVehicleStore(event.target.value)}><option value="">Chọn cửa hàng xe</option>{ownershipStockRequired&&staffStoreId&&!ownershipStoreIds.includes(staffStoreId)&&<option value={staffStoreId} disabled>{vehicleStoreOptions.find(store=>String(store.id)===staffStoreId)?.name||'Kho hiện tại'} · Chưa vào kho Thuê sở hữu</option>}{selectableVehicleStores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select><small>{ownershipStockRequired?'Chỉ chọn xe đã được nhận tại kho Thuê sở hữu.':'Cửa hàng có xe (mọi cơ sở) và gợi ý nhân viên làm hợp đồng. Lựa chọn được lưu cùng hợp đồng.'}</small></div></div>
             <button type="button" className="mg-button" disabled={inventoryLoading} onClick={() => setInventoryRetry(value => value + 1)}>{inventoryLoading?'Đang tải kho xe…':'Làm mới kho xe'}</button>
             {inventoryError && <p className="mg-field-error" role="alert">{inventoryError} <button type="button" className="mg-inline-button" onClick={() => setInventoryRetry(value => value + 1)}>Thử lại</button></p>}
             <p className="mg-composer-hint">Thời gian thuê và hẹn trả áp dụng cho các xe trong hợp đồng.</p>
             {draft.vehicles.map((vehicle, index) => {
               return <div key={index} className="mg-composer-vehicle"><div className="mg-composer-vehicle-header"><strong>Thông tin xe thuê số {index + 1}</strong>{draft.vehicles.length > 1 && <button className="mg-icon-button" type="button" aria-label={`Bỏ xe ${index + 1}`} onClick={() => change('vehicles', draft.vehicles.filter((_, i) => i !== index))}><Trash2 size={16} /></button>}</div>
               <div className="mg-field"><label htmlFor={`contract-vehicle-${index}`}>Chọn xe thuê *</label>
-                <VehiclePicker id={`contract-vehicle-${index}`} index={index} vehicles={branchVehicles} directory={allVehicles} value={vehicle.id} storeName={!staffStoreId ? 'tất cả cơ sở' : vehicleStoreName || 'cửa hàng xe'} monthly={monthlyPackage} historical={draft.backfill?.returned_at!==undefined}
+                <VehiclePicker id={`contract-vehicle-${index}`} index={index} vehicles={branchVehicles} directory={allVehicles} ownershipStoreIds={ownershipStockRequired?ownershipStoreIds:undefined} value={vehicle.id} storeName={!staffStoreId ? 'tất cả cơ sở' : vehicleStoreName || 'cửa hàng xe'} monthly={monthlyPackage} historical={draft.backfill?.returned_at!==undefined}
                   ownOrderId={row?.id} takenIds={draft.vehicles.map(item => item.id).filter(Boolean)} disabled={false} invalid={Boolean(errors[`vehicle_${index}`])}
                   proposedStart={draft.start_date} proposedEnd={draft.end_date} onChange={id => chooseVehicle(index, id)} />
                 {errors[`vehicle_${index}`] && <p className="mg-field-error">{errors[`vehicle_${index}`]}</p>}</div>

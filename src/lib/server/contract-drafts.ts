@@ -20,6 +20,7 @@ import { contractVehicleDetailsSql } from './contract-vehicle-reads';
 import { contractFieldLabel } from '@/lib/management/contract-feedback';
 import { validIdentityIssueDate } from '@/lib/management/customer-identity';
 import { OWNERSHIP_HOLD_FIELDS_SQL } from './ownership-hold-fields';
+import { checkOwnershipVehicleStock } from './ownership-stock';
 
 const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
     CASE WHEN (r.value->>'fee') ~ '^-?\\d+(\\.\\d+)?$' THEN (r.value->>'fee')::numeric ELSE 0 END)
@@ -303,9 +304,11 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
   if(!edits.draft.sales_staff_id && edits.draft.sales_staff_name)attribution.NVKD={staff_id:null,name:edits.draft.sales_staff_name};
   const ids = edits.draft.vehicles.map(vehicle => vehicle.id).filter(Boolean);
   const vehicles = usesScopedDatabase()
-    ? await client.query(`SELECT id, store_id, store_name FROM himoto.vehicle_inventory() WHERE id = ANY($1::bigint[])`, [ids])
-    : await client.query(`SELECT v.id, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
+    ? await client.query(`SELECT id, license, status, store_id, store_name FROM himoto.vehicle_inventory() WHERE id = ANY($1::bigint[])`, [ids])
+    : await client.query(`SELECT v.id, v.license, v.status, COALESCE(v.current_store_id, v.store_id) AS store_id, s.store_name
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id) WHERE v.id = ANY($1::bigint[])`, [ids]);
+  const stockError=await checkOwnershipVehicleStock(client,edits.rental_type,vehicles.rows,Boolean(edits.draft.backfill?.returned_at));
+  if(stockError)throw new DraftSaveError(stockError,409);
   if (edits.draft.customer_id) {
     const scope = dataAccess.getStore();
     // A branch may rent to a customer found by global lookup without acquiring
