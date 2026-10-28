@@ -15,6 +15,7 @@ import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
 import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
+import { vehicleHolderLabel } from '@/lib/management/vehicle-holder';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
@@ -28,8 +29,9 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
   if (column.format === 'status') return <span className={`mg-status mg-status-${statusTone(String(value))}`}><span />{optionLabel(config, column.key, String(value || ''))}</span>;
   if (column.format === 'code') return config.kind==='contracts'&&row.status==='reserved'?<span className="mg-contract-code-hold"><span className="mg-code">{value||'—'}</span><ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/></span>:<span className="mg-code">{value || '—'}</span>;
   if (config.kind === 'vehicles' && column.key === 'holder_name') {
-    const holder = String(value || 'Lưu kho');
+    const holder = vehicleHolderLabel(row.status,value);
     if (holder === 'Lưu kho') return <span className="mg-status mg-status-green"><span />Lưu kho</span>;
+    if (holder === 'Chưa xác định khách' || holder === '—') return <span className="mg-cell-value">{holder}</span>;
     return <div className="mg-identity"><span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{holder.split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span><div><strong title={holder}>{holder}</strong></div></div>;
   }
   if (column.format === 'person' || column.format === 'vehicle') return <div className={`mg-identity ${column.format === 'vehicle' ? 'mg-identity-vehicle' : ''}`}>
@@ -37,7 +39,7 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
     <div>
       <strong title={String(value || '')}>{value || '—'}</strong>
       {column.secondary && <small title={String(row[column.secondary] || '')}>{row[column.secondary] || '—'}</small>}
-      {config.kind === 'vehicles' && column.key === 'name' && <small title={String(row.holder_name || 'Lưu kho')}>{row.holder_name || 'Lưu kho'}</small>}
+      {config.kind === 'vehicles' && column.key === 'name' && <small title={vehicleHolderLabel(row.status,row.holder_name)}>{vehicleHolderLabel(row.status,row.holder_name)}</small>}
     </div></div>;
   const display = optionLabel(config, column.key, formatValue(value, column.format));
   return <span className={`mg-cell-value ${column.format === 'money' || column.format === 'number' ? 'mg-numeric' : ''}`} title={display}>{display}</span>;

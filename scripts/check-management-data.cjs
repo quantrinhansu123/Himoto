@@ -75,6 +75,16 @@ async function run() {
     assert.throws(() => mapApiRow('vehicles', { name: 'Missing ID' }), /ID/);
   });
   const originalFetch = global.fetch;
+  check('Missing rental customers never label a rented vehicle as stock', () => {
+    for (const status of ['using','rent']) {
+      const row=mapApiRow('vehicles',{id:1226,status,holder_name:'Lưu kho',rentals:[]});
+      assert.equal(row.status,'using');assert.equal(row.holder_name,'Chưa xác định khách');
+      assert.equal(mapApiRow('vehicles',{id:1232,status,rentals:[]}).holder_name,'Chưa xác định khách');
+      assert.equal(mapApiRow('vehicles',{id:331,status,holder_name:'Lưu kho',rentals:[{customer:'Khách QA'}]}).holder_name,'Khách QA');
+    }
+    assert.equal(mapApiRow('vehicles',{id:1,status:'ready',rentals:[]}).holder_name,'Lưu kho');
+    for(const status of ['repairing','in_transit','sold','future'])assert.equal(mapApiRow('vehicles',{id:2,status}).holder_name,'—');
+  });
   const requests = [];
   try {
     global.fetch = async (url, options) => {

@@ -8,6 +8,7 @@ import { normalizeStaffPosition } from './staff-positions';
 import { badDebtCutoff } from './contract-bad-debt';
 import { applyInstallmentBilling } from './contract-billing';
 import { ContractDraftRequestError,contractErrorFields } from './contract-feedback';
+import { vehicleHolderLabel } from './vehicle-holder';
 
 export function createDemoRepository(draftStorage?: DraftStorage): ManagementRepository {
   let dataset = createDemoDataset();
@@ -122,7 +123,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     transfer_from_store_name:text(raw.transfer_from_store_name),transfer_to_store_name:text(raw.transfer_to_store_name),transfer_receivable:number(raw.transfer_receivable),
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
     rentals_json: Array.isArray(raw.rental_blockers) ? JSON.stringify(raw.rental_blockers) : Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
-    holder_name: text(raw.holder_name) || latestCustomer || 'Lưu kho',
+    holder_name: vehicleHolderLabel(base.status,latestCustomer || text(raw.holder_name)),
     beneficiary_store_id: number(raw.beneficiary_store_id ?? raw.current_store_id ?? raw.store_id), beneficiary_store_name: text(raw.beneficiary_store_name || raw.store_name),
     odometer: number(raw.odometer), daily_price: number(raw.daily_price), monthly_price: number(raw.monthly_price), year: text(raw.year),
     status: ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[base.status] || base.status,
