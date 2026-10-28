@@ -104,6 +104,8 @@ function collectionMethods(collections: ContractCollection[] | undefined, purpos
   return [...new Set((collections || []).filter(item => item.purpose === purpose).map(item => item.method))].join(', ') || fallback;
 }
 export function createContractDraft(dataset: ManagementDataset, storeId: string, row?: ManagementRow | null): ContractDraft {
+  const createdOn=dateInput(dateTimeInput(row?.created_at)||row?.created_at);
+  const defaultDate=row?'':nowDate();
   const sales = { sales_staff_id: value(row?.sales_staff_id), sales_staff_name: value(row?.sales_staff_name) };
   const profile = row?.profile_json ? JSON.parse(String(row.profile_json)) as Partial<ContractDraft> : {};
   if(profile.customer)profile.customer={...customerDetails(profile.customer as unknown as ManagementRow),...profile.customer};
@@ -124,7 +126,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
         deposit_payment_method:collectionMethods(collections, 'deposit', snapshot.deposit_payment_method),
       } : {}), staff_name: snapshot.staff_name || '', customer: { ...customerDetails(snapshot.customer as unknown as ManagementRow), ...snapshot.customer },
       vehicles: snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })), contract_number: row.status === 'draft' ? paperContractNumber(snapshot.contract_number) : row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
-      created_on: dateInput(snapshot.created_on) || dateInput(row.created_at) || nowDate(), ...profile };
+      created_on: dateInput(snapshot.created_on) || createdOn || defaultDate, ...profile };
   }
   const sourceCustomer = row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
     name: value(row.customer_name), phone: value(row.customer_phone), id_card: value(row.customer_id_card),
@@ -156,7 +158,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   const vehicle = row ? dataset.vehicles.find(item => item.id === row.vehicle_id) : null;
   const startDate = row ? dateTimeInput(row.start_date) : vietnamRentalTime();
   const collections = row?.collections_json ? JSON.parse(String(row.collections_json)) as ContractCollection[] : undefined;
-  return { ...sales, contract_number: row?.status === 'draft' ? paperContractNumber(row.code) : row?.code || '', signed_on: dateInput(row?.signed_on || row?.created_at) || nowDate(),
+  return { ...sales, contract_number: row?.status === 'draft' ? paperContractNumber(row.code) : row?.code || '', signed_on: dateInput(row?.signed_on || createdOn) || defaultDate,
     ...(row?.contract_type_id ? { contract_type_id: value(row.contract_type_id), contract_type_name: value(row.contract_type_name), contract_type_months: value(row.contract_type_months) } : {}),
     store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId),
     vehicle_store_id: value(row?.store_id) || (storeId === 'all' ? '' : storeId), staff_id: value(row?.staff_id), staff_name: value(row?.staff_name),
@@ -168,7 +170,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     ...(row?.rental_type === 'ownership' ? { ownership: true, ownership_term_months: value(row.ownership_term_months) as OwnershipTerm || 'custom' } : {}),
     payment_method: collectionMethods(collections, 'rental', value(row?.payment_method)), deposit_payment_method: collectionMethods(collections, 'deposit', value(row?.deposit_payment_method)), collateral_description: value(row?.collateral_description),
     customer_source: value(row?.customer_source), customer_source_url: value(row?.customer_source_url), authorization_date: dateInput(row?.authorization_date),
-    created_on: dateInput(row?.created_at) || nowDate(), relatives,
+    created_on: createdOn || defaultDate, relatives,
     ...(collections ? {collections} : {}),
     ...profile,
     ...(row?.deposit_paid != null ? {deposit_paid_amount:value(row.deposit_paid)} : {}), };

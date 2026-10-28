@@ -160,6 +160,7 @@ function contractHydrateSql() {
   // Legacy imports often have only customer_id. Resolve the linked profile on
   // this bounded page, using the same customer fields as CONTRACT_LIST_SQL.
   return `SELECT o.id, o.contract_number, o.draft_reference,
+    o.created_at, o.updated_at, o.contract_signed_on::text AS signed_on,
     ${OWNERSHIP_HOLD_FIELDS_SQL},
     ${CONTRACT_REVIEW_SQL},
     ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,

@@ -1,7 +1,7 @@
 import { createDemoDataset, reconcileDataset } from '@/fixtures/management-data';
 import { CONTRACT_TYPES, resolveLocationStatus } from '@/lib/management/config';
 import { EditableKind, ManagementDataset, ManagementKind, ManagementRepository, ManagementRow } from './types';
-import { dateTimeInput } from './contract-document';
+import { dateInput, dateTimeInput } from './contract-document';
 import { cloneContractRecord, updateContractRecord } from './contract-record';
 import { DraftStorage, readDemoDrafts, saveDraftRecord, writeDemoDrafts, DEMO_DRAFT_STORAGE_KEY } from './contract-drafts';
 import { normalizeStaffPosition } from './staff-positions';
@@ -177,7 +177,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     contract_type_name: text(raw.contract_type_name || snapshot.contract_type_name) || CONTRACT_TYPES.find(type=>type.value===text(raw.rental_type || saved.rental_type))?.label || text(raw.rental_type || saved.rental_type),
     contract_type_months: text(raw.contract_type_months ?? snapshot.contract_type_months ?? /^monthly_(\d+)$/.exec(text(raw.rental_type || saved.rental_type))?.[1]),
     ownership_term_months: [raw.rental_type,saved.rental_type].includes('ownership') ? text(raw.ownership_term_months ?? object(saved.profile).ownership_term_months ?? snapshot.ownership_term_months) || 'custom' : '',
-    signed_on: text(raw.signed_on), authorization_date: text(raw.authorization_date), collateral_description: text(raw.collateral_description),
+    signed_on: dateInput(dateTimeInput(raw.signed_on)||raw.signed_on), authorization_date: text(raw.authorization_date), collateral_description: text(raw.collateral_description),
     customer_source: text(raw.customer_source), customer_source_url: text(raw.customer_source_url),
     legacy_items_json: JSON.stringify(Array.isArray(payload.order_items) ? payload.order_items : []), draft_revision: text(raw.draft_revision),
     draft_json: typeof raw.draft_json === 'string' ? raw.draft_json : snapshot.customer && Array.isArray(snapshot.vehicles) ? JSON.stringify(snapshot) : undefined,
