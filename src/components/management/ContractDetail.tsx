@@ -25,6 +25,8 @@ import { ContractDepositDeleteDialog } from './ContractDepositDeleteDialog';
 import { ContractLifecyclePanel } from './ContractLifecyclePanel';
 import { ContractReviewNotice } from './ContractReviewNotice';
 import { ContractReceiptSummary } from './ContractReceiptSummary';
+import { OwnershipTermsEditor,OwnershipTermsSummary } from './OwnershipTermsEditor';
+import { requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractEditDialog } from '@/components/contracts/ContractEditDialog';
 import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
@@ -153,13 +155,13 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
             ['Số áo mưa', text(savedDraft ? vehicle.borrow_raincoats : sourceVehicles[index]?.borrow_raincoats)]])}
         </div>)}
       </>)}
-      {panel('contract', 'Thông tin hợp đồng & Pháp lý', fields([
+      {panel('contract', 'Thông tin hợp đồng & Pháp lý', <>{fields([
         ['Mã hợp đồng / Số HĐ giấy', row.code], ['Trạng thái hợp đồng', optionLabel(MANAGEMENT_CONFIG.contracts, 'status', row.status)],
         ['Loại hợp đồng', draft.contract_type_name || String(row.contract_type_name || '') || (row.rental_type ? optionLabel(MANAGEMENT_CONFIG.contracts, 'rental_type', String(row.rental_type)) : '—')],
-        ...(row.rental_type === 'ownership' ? [['Thời hạn sở hữu',optionLabel(MANAGEMENT_CONFIG.contracts,'ownership_term_months',String(row.ownership_term_months || 'custom'))] as [string,string]] : []),
+        ...(row.rental_type === 'ownership'&&!(source==='api'&&row.status!=='draft') ? [['Thời hạn sở hữu',optionLabel(MANAGEMENT_CONFIG.contracts,'ownership_term_months',String(row.ownership_term_months || 'custom'))] as [string,string]] : []),
         ['Ngày ký hợp đồng', date(draft.signed_on)], ['Ngày tạo / nhập hợp đồng', date(draft.created_on || String(row.created_at || ''))],
         ['Nguồn khách', text(draft.customer_source)], ['Liên kết nguồn khách', text(draft.customer_source_url)],
-      ]))}
+      ])}{source==='api'&&row.status!=='draft'&&requiresOwnershipApproval(row.rental_type)&&<OwnershipTermsSummary id={row.id} revision={row.draft_revision}/>}</>)}
       {panel('customer', 'Thông tin khách hàng (Bên B)', fields([
         ['Cửa hàng xe', text(dataset?.stores.find(store => String(store.id) === contractStaffStoreId(draft))?.name)],
         ['Cơ sở nguồn khách / doanh thu', text(store?.name || row.store_name)], ['Đại diện ủy quyền Bên A (Nhân viên làm hợp đồng)', text(draft.staff_name || representative?.name || row.staff_name)],
@@ -293,6 +295,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
     <div className="mg-dialog-footer">{row.status==='deposit_contract'&&can('contracts.finalize')&&<><button type="button" className="mg-button" onClick={onPrint}>Bổ sung hồ sơ hợp đồng cọc</button>{onHandover&&<button type="button" className="mg-button mg-button-primary" onClick={onHandover}><Bike size={16}/>Giao xe đã đặt cọc</button>}<button type="button" className="mg-button" onClick={()=>setNoShow(true)}>Khách không đến nhận xe</button></>}<button type="button" className="mg-button" onClick={onClose}>Đóng</button>
       {editing&&<ContractEditDialog row={row} onClose={()=>setEditing(false)} onSaved={code=>{setEditing(false);invalidateData(['contracts']);notify(`Đã lưu hợp đồng ${code}.`);onClose();}}/>}
       {source==='api'&&row.status!=='draft'&&canEditIssuedContract(accessUser,row.store_id)&&<button type="button" className="mg-button" onClick={()=>setEditing(true)}><Pencil size={16}/>Sửa hợp đồng</button>}
+      {source==='api'&&!['draft','cancelled'].includes(row.status)&&requiresOwnershipApproval(row.rental_type)&&<OwnershipTermsEditor id={row.id} code={row.code} onSaved={value=>{setLifecycleOverride(previous=>({...previous,ownership_term_months:value.term_months,draft_revision:value.revision}));fetchHistory();}}/>}
       {source==='api'&&row.status==='deposit_contract'&&can('contracts.draft')&&canEditIssuedContract(accessUser,row.store_id)&&<button type="button" className="mg-button mg-button-danger" onClick={()=>setDepositDeleteOpen(true)}><Trash2 size={16}/>Xóa hợp đồng cọc</button>}
       {row.status==='draft'&&can('contracts.draft')&&onEditDraft&&<button type="button" className="mg-button mg-button-primary" onClick={onEditDraft}>Tiếp tục hoàn tất hợp đồng</button>}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('telegram')}><MessageCircle size={15}/>Gửi Telegram</button>}
