@@ -6,7 +6,7 @@ const cases=[
  'contract-clone','contract-documents','contract-feedback','contract-photo-delete','draft-optional-sales',
  'customer-order-excel','management-data','management-loading','management-table-timeouts','contract-tabs',
  'shift-audits','vehicle-import','vehicle-documents','vehicle-registration-ocr','vehicle-rental-sources','public-failure',
- 'load-performance','refund-qr','telegram-delivery','telegram-retraction-api','vehicle-transfer-telegram-api',
+ 'load-performance','refund-qr','telegram-delivery','telegram-retraction-api','vehicle-transfer-telegram-api','legacy-rental-integrity',
 ];
 for(const name of cases){
  const result=spawnSync(process.execPath,['--require',path.join(__dirname,'lib/offline-tests.cjs'),path.join(__dirname,'check-'+name+'.cjs')],{encoding:'utf8',timeout:60000,windowsHide:true});
