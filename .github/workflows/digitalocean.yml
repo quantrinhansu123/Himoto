@@ -1,0 +1,50 @@
+name: Deploy DigitalOcean
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: digitalocean-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - run: python3 scripts/check-server-release.py
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Package standalone server
+        run: |
+          node scripts/package-server.cjs /tmp/himoto-release "$GITHUB_SHA"
+          tar -czf /tmp/himoto-release.tar.gz -C /tmp/himoto-release .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: himoto-server-${{ github.sha }}
+          path: /tmp/himoto-release.tar.gz
+          retention-days: 7
+      - name: Deploy verified release
+        env:
+          DEPLOY_HOST: ${{ secrets.DIGITALOCEAN_HOST }}
+          DEPLOY_KEY: ${{ secrets.DIGITALOCEAN_DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DIGITALOCEAN_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/himoto-ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/himoto-ssh/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/himoto-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/himoto-ssh/key" "$RUNNER_TEMP/himoto-ssh/known_hosts"
+          ssh -T -i "$RUNNER_TEMP/himoto-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o UserKnownHostsFile="$RUNNER_TEMP/himoto-ssh/known_hosts" "himoto-deploy@$DEPLOY_HOST" "deploy $GITHUB_SHA" < /tmp/himoto-release.tar.gz
+      - name: Remove ephemeral SSH files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/himoto-ssh/key" "$RUNNER_TEMP/himoto-ssh/known_hosts"

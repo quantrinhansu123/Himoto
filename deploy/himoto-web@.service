@@ -1,0 +1,33 @@
+[Unit]
+Description=Himoto Next.js production on port %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=himoto-next
+Group=himoto-next
+WorkingDirectory=/srv/himoto-web/instances/%i
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=%i
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=NODE_OPTIONS=--max-old-space-size=1024
+EnvironmentFile=/etc/himoto-web/runtime.env
+EnvironmentFile=/etc/himoto-web/release-%i.env
+ExecStart=/opt/himoto-node/current/bin/node server.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=45
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/cache/himoto-web
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryMax=1536M
+
+[Install]
+WantedBy=multi-user.target

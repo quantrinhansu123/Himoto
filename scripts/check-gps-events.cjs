@@ -6,6 +6,7 @@ const history=load(path.join(root,'lib/server/gps-history-providers'));
 const hooks=load(path.join(root,'lib/server/gps-webhooks'));
 const {syncGpsEventHistory}=load(path.join(root,'lib/server/gps-history-sync'));
 const {configureIopGpsWebhooks}=load(path.join(root,'lib/server/gps-iop-webhook-registration'));
+const {applicationOrigin}=load(path.join(root,'lib/server/application-origin'));
 const {sealIntegrationSecret}=load(path.join(root,'lib/server/integration-secrets'));
 const pool=load(path.join(root,'lib/server/himoto-database')).ownerDatabase;
 const checks=[];
@@ -48,7 +49,7 @@ async function main(){
     return {rows:[],rowCount:1};
   }};
   const registrationSend=async(input,init={})=>{
-    const url=new URL(input);if(url.hostname==='himoto.vercel.app')return Response.json({status:'success'});
+    const url=new URL(input);if(url.origin===applicationOrigin()){assert.match(url.pathname,/^\/api\/webhooks\/gps\/iopgps\//);return Response.json({status:'success'});}
     assert.equal(url.hostname,'iopgps.com');assert.equal(init.headers.Cookie,'USER_TOKEN=qa-only');
     if(url.pathname==='/rest/event/webhook/inspect')return Response.json({code:0});
     if(url.pathname==='/rest/event/list'){const name=url.searchParams.get('eventName');return Response.json({code:0,data:[...managed.values()].filter(row=>!name||row.eventName===name)});}

@@ -2,6 +2,7 @@ import 'server-only';
 import { ownerDatabase } from './himoto-database';
 import { openIntegrationSecret } from './integration-secrets';
 import type { GpsSession } from './gps-providers';
+import { applicationOrigin } from './application-origin';
 
 const types=[4,25,27,44,45,62,72];
 export const iopManagedEventPrefix=(accountId:string)=>`HIMOTO-sync-${accountId.slice(0,8)}-`;
@@ -19,7 +20,7 @@ export async function configureIopGpsWebhooks(accountId:string,send:typeof fetch
     JOIN himoto.management_gps_event_channels c ON c.account_id=a.id WHERE a.id=$1 AND a.provider='iopgps' AND a.enabled`,[accountId])).rows[0];
   if(!account?.session_cipher||!account.webhook_cipher)throw new Error('IOPGPS_WEBHOOK_NOT_PREPARED');
   const session=openIntegrationSecret<GpsSession>(account.session_cipher),secret=openIntegrationSecret<{key:string}>(account.webhook_cipher);
-  const webhookUrl=`https://himoto.vercel.app/api/webhooks/gps/iopgps/${accountId}?key=${secret.key}`;
+  const webhookUrl=`${applicationOrigin()}/api/webhooks/gps/iopgps/${accountId}?key=${secret.key}`;
   const verified=await send(webhookUrl,{redirect:'error',signal:AbortSignal.timeout(10000),cache:'no-store'});
   if(verified.status!==200)throw new Error('IOPGPS_WEBHOOK_ENDPOINT_NOT_READY');await verified.body?.cancel();
   const devices=(await database.query(`SELECT d.external_device_id FROM himoto.management_gps_account_devices m JOIN himoto.gps_devices d ON d.id=m.gps_device_id
