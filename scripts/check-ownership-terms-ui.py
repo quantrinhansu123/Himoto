@@ -97,8 +97,8 @@ with sync_playwright() as pw:
                 ctx.close()
                 continue
             expect(entry).to_be_visible()
-            detail.get_by_role('tab', name='Thông tin hợp đồng & Pháp lý', exact=False).click()
-            summary = detail.get_by_role('tabpanel', name='Thông tin hợp đồng & Pháp lý', exact=False)
+            detail.locator('#contract-detail-tab-contract').click()
+            summary = detail.locator('#contract-detail-panel-contract')
             expect(summary).to_contain_text('Chưa xác định')
             entry.click()
             editor = page.get_by_role('dialog', name='Thời hạn & mức đóng thuê sở hữu · VPS-QA-901', exact=True)

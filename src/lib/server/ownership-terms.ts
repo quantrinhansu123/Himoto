@@ -33,12 +33,12 @@ async function state(db:Database,row:Record<string,any>,user:PermissionAccount):
   const savedTerm=profile.ownership_term_months??draft.ownership_term_months;
   let daily:number|null;
   if(Object.hasOwn(terms,'daily_amount'))daily=money(terms.daily_amount);
-  else if(draft.package_name==='Theo ngày'&&money(draft.unit_price)!==null)daily=money(draft.unit_price);
   else {
-    const lines=(await db.query('SELECT substitute_unit_price FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL ORDER BY id',[row.id])).rows;
-    const values=lines.map(line=>money(line.substitute_unit_price));
-    daily=values.length&&values.every(value=>value!==null)?values.reduce<number>((sum,value)=>sum+value!,0):null;
-    if(daily!==null&&!Number.isSafeInteger(daily))daily=null;
+    const lines=(await db.query('SELECT substitute_unit_price,type FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL ORDER BY id',[row.id])).rows;
+    const values=lines.map(line=>line.type==='day'?money(line.substitute_unit_price):null);
+    if(lines.length&&lines.every(line=>line.type==='day')&&draft.package_name==='Theo ngày'&&money(draft.unit_price)!==null)daily=money(draft.unit_price)!*lines.length;
+    else daily=values.length&&values.every(value=>value!==null)?values.reduce<number>((sum,value)=>sum+value!,0):null;
+    if(daily!==null&&(!Number.isSafeInteger(daily)||daily>9_999_999_999_999))daily=null;
   }
   const edits=Array.isArray(composer.ownership_terms_history)?composer.ownership_terms_history:[];
   return {id:Number(row.id),code:String(row.contract_number||row.draft_reference||`#${row.id}`),revision:String(row.revision),status:String(row.order_status),

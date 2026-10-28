@@ -17,7 +17,7 @@ async function main(){
  let queries=[],mutations=0,actor=manager;
  const fake={release(){},async query(sql,args=[]){queries.push(sql);
   if(sql.includes('FROM himoto.orders o WHERE o.id=$1'))return{rows:[structuredClone(row)],rowCount:1};
-  if(sql.startsWith('SELECT substitute_unit_price'))return{rows:[{substitute_unit_price:null}],rowCount:1};
+  if(sql.startsWith('SELECT substitute_unit_price'))return{rows:[{substitute_unit_price:null,type:'day'}],rowCount:1};
   if(sql.startsWith('UPDATE himoto.orders SET draft_payload=')){mutations++;row={...row,draft_payload:JSON.parse(args[1]),revision:String(Number(row.revision)+1)};return{rows:[{revision:row.revision}],rowCount:1};}
   return{rows:[],rowCount:0};}};
  const original={row:structuredClone(row),user:session.userFromSession,read:session.readSessionUser,connect:Object.getOwnPropertyDescriptor(db.himotoPool,'connect')};
@@ -50,9 +50,13 @@ async function main(){
    const sql=text=>text.replaceAll('himoto.orders','pg_temp.qa_terms_orders').replaceAll('himoto.order_vehicle_details','pg_temp.qa_terms_order_vehicle_details');
    const proxy={async query(text,args){const rewritten=sql(text);assert(!rewritten.includes('himoto.'),'All SQL must stay in TEMP');return c.query(rewritten,args);}};
    await c.query(`INSERT INTO qa_terms_orders(id,store_id,order_type,order_status,total,pid,first_deposit_amount,draft_payload) VALUES(901,35,'rental','renting','3000000',2200000,2000000,$1::json)`,[JSON.stringify(original.row.draft_payload)]);
-   await c.query('INSERT INTO qa_terms_order_vehicle_details(id,order_id,vehicle_id,substitute_unit_price,rent_at,return_at) VALUES(501,901,100,120000,now()-interval \'7 days\',now())');
+   await c.query('INSERT INTO qa_terms_order_vehicle_details(id,order_id,vehicle_id,substitute_unit_price,type,rent_at,return_at) VALUES(501,901,100,120000,\'day\',now()-interval \'7 days\',now())');
    const snapshot=async()=>({order:(await c.query('SELECT total,pid,first_deposit_amount,store_id,order_status FROM qa_terms_orders WHERE id=901')).rows[0],details:(await c.query('SELECT * FROM qa_terms_order_vehicle_details')).rows});
    const before=await snapshot(),read=await service.readOwnershipTerms(proxy,901,manager);assert.equal(read.daily_amount,120000);assert.equal(read.term_months,'custom');
+   await c.query("UPDATE qa_terms_order_vehicle_details SET type='week'");assert.equal((await service.readOwnershipTerms(proxy,901,manager)).daily_amount,null,'A weekly amount must not be presented as daily');await c.query("UPDATE qa_terms_order_vehicle_details SET type='day'");
+   await c.query("INSERT INTO qa_terms_order_vehicle_details(id,order_id,vehicle_id,substitute_unit_price,type,rent_at,return_at) VALUES(502,901,101,120000,'day',now()-interval '7 days',now())");assert.equal((await service.readOwnershipTerms(proxy,901,manager)).daily_amount,240000);
+   const multi=structuredClone(original.row.draft_payload);Object.assign(multi.management_composer.draft,{package_name:'Theo ngày',unit_price:'135000'});await c.query('UPDATE qa_terms_orders SET draft_payload=$1::json',[JSON.stringify(multi)]);assert.equal((await service.readOwnershipTerms(proxy,901,manager)).daily_amount,270000,'Daily price is per vehicle');
+   await c.query('DELETE FROM qa_terms_order_vehicle_details WHERE id=502');await c.query('UPDATE qa_terms_orders SET draft_payload=$1::json',[JSON.stringify(original.row.draft_payload)]);
    const update=body(read.revision);const saved=await service.updateOwnershipTerms(proxy,901,manager,update);assert.equal(saved.daily_amount,135000);assert.equal(saved.term_months,'12');assert.deepEqual(await snapshot(),before);
    assert.equal((await service.updateOwnershipTerms(proxy,901,manager,update)).history.length,1);await assert.rejects(service.updateOwnershipTerms(proxy,901,manager,body('1')),e=>e.status===409);
    checks.push('PostgreSQL TEMP: legacy source type inference, explicit daily rate fallback, audit persistence, retry and protected financial fields all hold');
