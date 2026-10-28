@@ -15,6 +15,8 @@ import { ManagementColumn, ManagementKind, ManagementRow } from '@/lib/managemen
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { DataTable } from './DataTable';
+import { ContractCollectionNotesProvider } from './ContractCollectionNotes';
+import { loadCollectionFollowups } from '@/lib/management/collection-report';
 import { Dialog } from './Dialog';
 import { StaffOrganizationChart } from './StaffOrganizationChart';
 import { ContractSummary } from './ContractSummary';
@@ -69,6 +71,8 @@ const ContractQrDialog=dynamic(()=>import('./ContractPaymentQr').then(module=>mo
 const DebtReminderDialog=dynamic(()=>import('./DebtReminderDialog').then(module=>module.DebtReminderDialog),{ssr:false,loading:FeatureLoading});
 const BulkDebtReminderDialog=dynamic(()=>import('./BulkDebtReminderDialog').then(module=>module.BulkDebtReminderDialog),{ssr:false,loading:FeatureLoading});
 
+const DebtReportPanel=dynamic(()=>import('./DebtReportPanel').then(module=>module.DebtReportPanel),{ssr:false,loading:FeatureLoading});
+
 const EMPTY_ROWS: ManagementRow[] = [];
 const overdueDays = (returnAt: unknown, now: number) => { const due = Date.parse(String(returnAt ?? '')); return Number.isFinite(due) ? Math.max(0, Math.floor((now - due) / 86_400_000)) : undefined; };
 function vehicleOverdueDays(row: ManagementRow, now: number) {
@@ -92,6 +96,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const statusFromUrl = MANAGEMENT_CONFIG.contracts.statuses.some(option=>option.value===requestedStatus)?requestedStatus:'';
   const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl,status:statusFromUrl,...(overdueOnly?{status:statusFromUrl||'overdue',overdueBucket:'traditional-overdue' as const}:{})}));
   const compactContracts=kind==='contracts';
+  const collectionNotes=compactContracts&&!draftsOnly;
+  const [debtReportOpen,setDebtReportOpen]=useState(false);
   const monitoringContracts=compactContracts&&(ownershipOnly||overdueOnly||query.status==='overdue'||query.status==='bad_debt'||Boolean(query.overdueBucket));
   const columnMode=ownershipOnly?'ownership':monitoringContracts?'monitoring':paymentDueOnly?'due':'rental';
   const catalog = useContractTypes(kind === 'contracts');
@@ -107,7 +113,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const baseConfig = paymentDueOnly ? { ...configured, title: 'Đến hạn đóng tiền', description: 'Khoản thuê sở hữu đã đến hẹn và chưa đóng đủ. Liên hệ khách để thu tiền theo lịch.', columns: [...configured.columns,
     { key: 'billing_next_due_at', label: 'Ngày hẹn đóng tiền', format: 'date' as const }, { key: 'billing_due_amount', label: 'Tiền đến hạn còn thiếu', format: 'money' as const, align: 'right' as const }] } : configured;
   const fullConfig = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money' as const, align: 'right' as const }] } : overdueOnly ? { ...baseConfig, title: 'Hợp đồng quá hạn', description: 'Thời gian trễ của xe chưa trả; phí tạm tính theo giá ngày và 20.000đ/giờ, chốt theo thực tế khi trả xe. Tiền thuê còn thiếu chưa gồm phí tạm tính, không trừ cọc.', columns: [baseConfig.columns[0], ...overdueColumns, ...baseConfig.columns.slice(1)] } : ownershipOnly ? { ...baseConfig, title: 'Hợp đồng thuê sở hữu', description: 'Hợp đồng thuộc cơ sở thuê sở hữu hoặc loại Thuê sở hữu / Thuê sở hữu( cd). Bản nháp và loại sở hữu được ưu tiên lên đầu danh sách.', columns: baseConfig.columns.map(column => column.key === 'contract_type_name' ? { ...column, hidden: false } : column) } : baseConfig;
-  const config = compactContracts ? compactContractConfig(fullConfig,columnMode) : fullConfig;
+  const contractConfig=compactContracts?compactContractConfig(fullConfig,columnMode):fullConfig;
+  const config=collectionNotes?{...contractConfig,columns:[...contractConfig.columns,{key:'collection_notes',label:'Ghi chú tình trạng khách',sortable:false}]}:contractConfig;
   const { dataset, loading:datasetLoading, refreshing:datasetRefreshing, error:datasetError, resources, source, canSaveContractDrafts, canPayContracts, can, accessUser, selectedStore, selectStore, reload:reloadDataset, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
   const paged = true;
   const router = useRouter();
@@ -322,7 +329,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   async function exportCsv() {
     if (!filteredRows.length) return;
     let exportRows=filteredRows;
-    try {if(paged)exportRows=(await table.exportAll()).rows;} catch(cause){notify(cause instanceof Error?cause.message:'Không xuất được danh sách.');return;}
+    try {if(paged)exportRows=(await table.exportAll()).rows;
+      if(collectionNotes&&columns.some(column=>column.key==='collection_notes')){const followups=new Map((await loadCollectionFollowups(exportRows.map(row=>row.id))).map(row=>[row.id,row.followup.notes]));exportRows=exportRows.map(row=>({...row,collection_notes:followups.get(row.id)||''}));}} catch(cause){notify(cause instanceof Error?cause.message:'Không xuất được danh sách.');return;}
     const csv = [columns.map(column => csvCell(column.label)).join(','), ...exportRows.map(row => columns.map(column => csvCell(column.key==='rental_period'?`Bắt đầu: ${formatValue(row.start_date,'datetime')} / Dự kiến trả: ${formatValue(row.end_date,'datetime')}`:optionLabel(config, column.key, formatValue(row[column.key], column.format)))).join(','))].join('\r\n');
     const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a'); link.href = url; link.download = `himoto-${kind}-${source}.csv`; link.click();
@@ -342,7 +350,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder"><p>Đang xem {table.data.recentDays} ngày gần đây và các hợp đồng đang mở.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
     {!loading&&!error&&dueCount>0&&<div className="mg-billing-reminder"><p>{dueCount} hợp đồng đến hạn đóng tiền.</p><Link href="/contracts/due" className="mg-button">Xem khoản đến hạn</Link></div>}
   </OptionalTools>:null;
-  return <section className={`mg-page mg-page-${kind}${vatOnly?' mg-page-contracts-vat':''}${compactContracts?' mg-compact-contracts':''}${monitoringContracts?' mg-monitoring-contracts':''}`} aria-label={config.title}>
+  return <ContractCollectionNotesProvider rows={allRows} enabled={collectionNotes&&visibleKeys.includes('collection_notes')}><section className={`mg-page mg-page-${kind}${vatOnly?' mg-page-contracts-vat':''}${compactContracts?' mg-compact-contracts':''}${monitoringContracts?' mg-monitoring-contracts':''}`} aria-label={config.title}>
     {inventoryOpen&&<SharedVehicleInventory onClose={()=>setInventoryOpen(false)}/>}
     <div className="mg-page-content">
       <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label="Toàn bộ hợp đồng" count={table.data ? scopeCount : null} loading={loading} className="mg-contract-total"/>{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Toàn bộ xe',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{config.description}</p></div>}
@@ -409,6 +417,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         {kind==='contracts'&&!compactContracts&&!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder" role="status"><p>Đang tải nhanh hợp đồng khoảng <strong>{table.data.recentDays} ngày</strong> gần đây và các hợp đồng đang mở. Phân trang trong tập này trước.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
         {kind === 'contracts' && !compactContracts && !loading && !error && dueCount > 0 && <div className="mg-billing-reminder" role="status"><p><strong>{dueCount} hợp đồng thuê sở hữu đến hạn đóng tiền.</strong> {paymentDueOnly && canBulkRemind ? 'Chọn nhiều hợp đồng rồi bấm Gửi nhắc nợ để gửi tin Zalo tới từng số khách.' : 'Khoản chưa đóng đủ tiếp tục hiện để kế toán giục nợ.'}</p>{!paymentDueOnly && <button className="mg-button" type="button" onClick={() => router.push('/contracts/due')}>Xem khoản đến hạn</button>}{paymentDueOnly && canBulkRemind && selectedIds.size > 0 && <button className="mg-button mg-button-primary" type="button" onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ ({selectedIds.size})</button>}</div>}
         {!compactContracts&&summaryPanel}
+        {collectionNotes&&<details className="mg-debt-report" onToggle={event=>setDebtReportOpen(event.currentTarget.open)}><summary>Báo cáo nợ chậm · Khách quá hạn và tình trạng xử lý</summary>{debtReportOpen&&<DebtReportPanel/>}</details>}
         {kind === 'customers' && blacklistError && <p className="mg-blacklist-error" role="alert">{blacklistError}</p>}
         <DataTable config={config} columns={columns} rows={paged ? filteredRows : filteredRows.slice(offset, offset + pageSize)} offset={offset} sortKey={sort.key} sortDirection={sort.direction}
           onSort={key => { setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); setPage(1); }}
@@ -548,7 +557,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           {config.fields.filter(field => !config.columns.some(column => column.key === field.key) && field.key !== 'store_id').map(field => <div key={field.key}><dt>{field.label}</dt><dd>{viewing[field.key] || '—'}</dd></div>)}</dl></div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={() => setViewing(null)}>Đóng</button>{canEdit && <button type="button" className="mg-button mg-button-primary" onClick={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }}>Chỉnh sửa thông tin</button>}</div>
     </Dialog>}
-  </section>;
+  </section></ContractCollectionNotesProvider>;
 }
 
 const navigationNumber = (kind: ManagementKind) => ['staff', 'customers', 'contracts', 'stores', 'vehicles'].indexOf(kind) + 1;

@@ -10,13 +10,11 @@ import { isAdminAccount } from '@/lib/management/permissions';
 import { integrationRequest } from '@/lib/management/integrations';
 import { formatDateTime } from '@/lib/formatters';
 import { GpsEvidence } from './GpsEvidence';
-import { DebtReportPanel } from './DebtReportPanel';
 type GpsEvent={id:number;license:string;from_status:string|null;to_status:string|null;observed_at:string;event_at:string;event_kind:string;source:string};
 const eventLabels:Record<string,string>={connection_online:'Thiết bị kết nối',connection_offline:'Thiết bị mất kết nối',ignition_on:'Bật khóa điện',ignition_off:'Tắt khóa điện'};
 const eventSources:Record<string,string>={poll:'Lấy mẫu',history:'Đọc bù lịch sử',webhook:'Sự kiện trực tiếp'};
 export function GpsPage() {
-  const {selectedStore,accessUser,dataset,ensureData,can}=useManagement(),admin=isAdminAccount(accessUser);
-  const [debtsOpen,setDebtsOpen]=useState(false);
+  const {selectedStore,accessUser,dataset,ensureData}=useManagement(),admin=isAdminAccount(accessUser);
   const [data,setData]=useState<{devices:GpsVehicle[];events:GpsEvent[]}>({devices:[],events:[]}),[loading,setLoading]=useState(true),[error,setError]=useState(''),[version,setVersion]=useState(0),[syncing,setSyncing]=useState(false);
   useReloadAction(useCallback(()=>setVersion(value=>value+1),[]));
   const [search,setSearch]=useState(''),[state,setState]=useState(''),[provider,setProvider]=useState(''),[now,setNow]=useState(()=>Date.now());
@@ -44,7 +42,6 @@ export function GpsPage() {
   const stopDuration=(row:GpsVehicle)=>{const elapsed=gpsStoppedDurationMs(row,now),evidence=gpsStopEvidence(row,now);return elapsed===null||!evidence?<span>{displayedGpsState(row.management_status,row.sync_received_at,now)==='stopped'?'Chưa đủ dữ liệu':'—'}</span>:<div><strong>{Math.floor(elapsed/86_400_000)} ngày {Math.floor(elapsed/3_600_000)%24} giờ</strong><p>Từ {formatDateTime(evidence.since)}</p><small>{evidence.source==='protrack'?'Theo Protrack':'Himoto ghi nhận'}</small></div>;};
   const speed=(row:GpsVehicle)=>{const state=displayedGpsState(row.management_status,row.sync_received_at,now);return state==='stopped'?'Đang dừng':state==='online'&&row.last_speed!==null?`${row.last_speed} km/h`:'Chưa có tốc độ hiện tại';};
   return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Định vị GPS</h1><p>Tự cập nhật ON, OFF và Dừng; ghi lịch sử khi trạng thái thay đổi.</p></div><button className="mg-button mg-button-primary" disabled={syncing} onClick={()=>void sync()}><RefreshCw size={16} className={syncing?'mg-spin':''}/>{syncing?'Đang đồng bộ…':'Đồng bộ ngay'}</button></div>
-    {can('contracts.read')&&<details className="mg-debt-report" onToggle={event=>setDebtsOpen(event.currentTarget.open)}><summary>Báo cáo nợ chậm · Khách quá hạn và tình trạng xử lý</summary>{debtsOpen&&<DebtReportPanel/>}</details>}
     <div className="mg-gps-summary"><button className={`mg-button ${!state?'mg-button-primary':''}`} onClick={()=>{setState('');setProvider('');setSearch('');}}>Toàn bộ xe <strong>{loading?'…':fleetCount}</strong></button>{['online','stopped','long_stopped','offline','warning','stale','unavailable','none'].map(key=><button className={`mg-button ${state===key?'mg-button-primary':''}`} key={key} onClick={()=>setState(state===key?'':key)} aria-pressed={state===key}>{GPS_STATE_LABELS[key]} <strong>{loading?'…':counts[key]||0}</strong></button>)}</div>
     <p className="mg-reminder-help">{data.devices.filter(row=>row.vehicle_id===null).length} thiết bị chưa ghép xe. Một xe có thể có nhiều thiết bị; số trạng thái tính theo thiết bị, tổng xe và nhóm dừng trên 3 ngày không đếm trùng.</p>
     <div className="mg-toolbar"><label className="mg-search"><Search size={16}/><span className="mg-sr-only">Tìm GPS</span><input type="search" placeholder="Biển số, tên GPS hoặc IMEI" value={search} onChange={event=>setSearch(event.target.value)}/></label><label className="mg-field">Nền tảng<select value={provider} onChange={event=>setProvider(event.target.value)}><option value="">Tất cả</option><option value="protrack">Protrack</option><option value="iopgps">IOPGPS</option></select></label></div>

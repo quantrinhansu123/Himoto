@@ -56,7 +56,7 @@ try{
   const calls=[];
   Object.defineProperty(db.himotoPool,'connect',{configurable:true,value:async()=>({release(){},async query(sql,args){if(sql==='BEGIN'){await c.query('SAVEPOINT request_test');return {rows:[]};}if(sql==='COMMIT'){await c.query('RELEASE SAVEPOINT request_test');return {rows:[]};}if(sql==='ROLLBACK'){await c.query('ROLLBACK TO SAVEPOINT request_test');await c.query('RELEASE SAVEPOINT request_test');return {rows:[]};}return temp.query(sql,args);}})});
   session.userFromSession=async()=>actor;session.readSessionUser=async()=>actor;
-  const routes=load(root+'/app/api/auth/shift-reports/route'),debts=load(root+'/app/api/auth/gps/debts/route');
+  const routes=load(root+'/app/api/auth/shift-reports/route'),debts=load(root+'/app/api/auth/gps/debts/route'),followups=load(root+'/app/api/auth/order/car-rental/followups/route');
   const request=(url,method,body,key)=>new next.NextRequest('http://localhost'+url,{method,headers:{origin:'http://localhost','content-type':'application/json',...(key?{'x-shift-request-id':key}:{})},body:JSON.stringify(body)});
   const base={store_id:35,date:today,staff:'QA',vehicles:0,batteries:0,charged:0,transfers:0,cash:0,personal:0,company:0,electricity_off:true,notes:'',ownership_report:complete};
   const post=async(body,key=randomUUID())=>{const r=await routes.POST(request('/api/auth/shift-reports','POST',body,key));return {status:r.status,...await r.json()};};
@@ -67,11 +67,15 @@ try{
   assert.equal((await post({...body,revision:saved.data.revision,status:'draft'})).status,409);assert(callbacks.length>=1);callbacks.length=0;
   checks.push('Submission uses a fresh server financial source, ignores client-forged app balances, locks the report and queues one notification across a lost-response replay.');
   const f={order_id:1,revision:0,contact_status:'unreachable',handling_status:'escalated',customer_condition:'Khách chưa liên lạc được',notes:'24/10 gọi khách'};
-  const patch=async value=>{const r=await debts.PATCH(request('/api/auth/gps/debts','PATCH',value));return {...await r.json(),status:r.status};};
+  const patch=async value=>{const r=await followups.PATCH(request('/api/auth/order/car-rental/followups','PATCH',value));return {...await r.json(),status:r.status};};
   assert.equal((await patch(f)).status,200);assert.equal((await patch(f)).status,409);assert.equal((await patch({...f,revision:1,contact_status:'contacted'})).status,200);
   const adminActor=actor;actor={...actor,scope_all:false,access_role:'branch_staff',store_id:23};assert.equal((await patch({...f,revision:2})).status,403);actor=adminActor;
   actor={...adminActor,access_role:'accounting',permissions:['contracts.read','finance.write']};assert.equal((await patch({...f,revision:2,notes:'Read-only role cannot change notes'})).status,403);actor=adminActor;
   assert.equal((await c.query('SELECT count(*)::int AS n FROM management_collection_history')).rows[0].n,2);assert.throws(()=>collection.parseCollectionFollowup({...f,contact_status:'bad'}));
+  const notesService=load(root+'/lib/server/collection-followups');
+  const noteRows=await notesService.readCollectionFollowups(temp,[1,2]);assert.equal(noteRows[0].followup.notes,f.notes);assert.equal(noteRows[1].followup.notes,'');
+  assert.equal((await followups.GET(request('/api/auth/order/car-rental/followups?ids=1,invalid','GET'))).status,400);
+  assert.equal((await debts.PATCH(request('/api/auth/gps/debts','PATCH',{...f,revision:1}))).status,409);
   await c.query("SELECT set_config('himoto.scope_all','false',true),set_config('himoto.store_id','23',true)");await c.query('SET LOCAL ROLE himoto_scoped');assert.equal((await c.query('SELECT count(*)::int AS n FROM pg_temp.management_collection_followups')).rows[0].n,0);assert.equal((await c.query('SELECT count(*)::int AS n FROM pg_temp.management_report_deliveries')).rows[0].n,0);await c.query('RESET ROLE');
   checks.push('Customer follow-ups use optimistic revisions and history; read-only roles cannot edit notes and RLS hides notes/history/deliveries outside the branch.');
   const bot=sealIntegrationSecret({token:'QA_TOKEN_NOT_REAL'});await c.query('INSERT INTO management_telegram_settings(singleton,bot_cipher) VALUES(true,$1)',[bot]);await c.query("INSERT INTO management_ownership_telegram(route,chat_id,enabled) VALUES('ownership_new','QA_CHAT',true)");

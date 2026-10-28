@@ -56,7 +56,10 @@ with sync_playwright() as p:
             state = dict(rows=[fixture(1), fixture(2)], fail=False, conflict=False, lost=False, patches=[], sends=0, phase='load')
             def mock(route):
                 req, path = route.request, urlparse(route.request.url).path
-                if path == '/api/auth/gps/debts':
+                if path in ['/api/auth/gps/debts','/api/auth/order/car-rental/followups']:
+                    if req.method == 'GET' and path.endswith('/followups'):
+                        route.fulfill(json=dict(data=[dict(id=row['id'],followup=row['followup']) for row in state['rows']]))
+                        return
                     if req.method == 'GET':
                         route.fulfill(json=dict(data=dict(rows=state['rows'], read_at='2026-10-27T08:00:00Z', messages=['Báo cáo QA\n' + '\n'.join(r['followup']['notes'] for r in state['rows'])], hash='a'*64, deliveries=[])))
                         return
@@ -107,7 +110,7 @@ with sync_playwright() as p:
             ctx.route('**/api/**', mock)
             page = ctx.new_page()
             page.on('pageerror', lambda e, browser=engine.name, role=role, state=state: errors.append(dict(browser=browser, role=role, phase=state['phase'], message=str(e), stack='\n'.join(e.stack.splitlines()[:3]))))
-            page.goto(args.url + '/gps', wait_until='domcontentloaded', timeout=60000)
+            page.goto(args.url + '/contracts/overdue', wait_until='domcontentloaded', timeout=60000)
             page.wait_for_load_state('networkidle')
             store = page.get_by_label('Cơ sở đang xem', exact=True)
             if store.count() and store.input_value() != '35':
@@ -190,7 +193,7 @@ with sync_playwright() as p:
             page.close()
             page = ctx.new_page()
             page.on('pageerror', lambda e, browser=engine.name, role=role, state=state: errors.append(dict(browser=browser, role=role, phase=state['phase'], message=str(e), stack='\n'.join(e.stack.splitlines()[:3]))))
-            page.goto(args.url + '/gps', wait_until='domcontentloaded', timeout=60000)
+            page.goto(args.url + '/contracts/overdue', wait_until='domcontentloaded', timeout=60000)
             page.wait_for_load_state('networkidle')
             store = page.get_by_label('Cơ sở đang xem', exact=True)
             if store.count() and store.input_value() != '35':

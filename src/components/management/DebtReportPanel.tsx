@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 import { shiftApi } from '@/lib/management/shift-report-client';
-import { CONTACT_STATUSES,HANDLING_STATUSES,type CollectionRow,type CollectionFollowup } from '@/lib/management/collection-report';
+import { COLLECTION_FOLLOWUP_SAVED,CONTACT_STATUSES,HANDLING_STATUSES,type CollectionRow,type CollectionFollowup } from '@/lib/management/collection-report';
 import { GPS_STATE_LABELS } from '@/lib/management/gps';
 import { formatDateTime,formatMoney } from '@/lib/formatters';
 import { CollectionNoteField } from './CollectionNoteField';
@@ -24,9 +24,10 @@ export function DebtReportPanel(){
     void shiftApi<Report>(`/api/auth/gps/debts?store=${selectedStore}`,{signal:controller.signal}).then(value=>{if(!controller.signal.aborted)setReport({store:selectedStore,value});}).catch(e=>{if(!controller.signal.aborted)setError(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
   },[selectedStore,version]);
+  useEffect(()=>{window.addEventListener(COLLECTION_FOLLOWUP_SAVED,refresh);return()=>window.removeEventListener(COLLECTION_FOLLOWUP_SAVED,refresh);},[refresh]);
   const rows=(data?.rows||[]).filter(row=>(!handling||row.followup.handling_status===handling)&&(!search||[row.code,row.customer,row.phone,row.vehicle,row.followup.customer_condition,row.followup.notes].join(' ').toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))));
   async function save(){if(!editing||!followup||saving)return;setSaving(true);setSaveError('');
-    try{await shiftApi('/api/auth/gps/debts',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_id:editing.id,...followup,updated_at:undefined})});setEditing(null);setVersion(v=>v+1);notify('Đã lưu tình trạng khách và lịch sử xử lý.');}
+    try{const result=await shiftApi<{revision:number}>('/api/auth/order/car-rental/followups',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_id:editing.id,...followup,updated_at:undefined})});window.dispatchEvent(new CustomEvent(COLLECTION_FOLLOWUP_SAVED,{detail:{id:editing.id,followup:{...followup,revision:result.revision}}}));setEditing(null);setVersion(v=>v+1);notify('Đã lưu tình trạng khách và lịch sử xử lý.');}
     catch(e){setSaveError((e as Error).message);}finally{setSaving(false);}}
   async function send(){if(!data||selectedStore==='all'||sending||editingNotes.size)return;setSending(true);setError('');try{
     await shiftApi('/api/auth/gps/debts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:Number(selectedStore),hash:data.hash})});notify('Đã đưa báo cáo vào hàng đợi Telegram của PGD.');setPreview(false);setVersion(v=>v+1);

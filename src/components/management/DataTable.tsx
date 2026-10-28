@@ -13,9 +13,11 @@ import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitor
 import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractHoldStatus } from './ContractHoldStatus';
+import { ContractCollectionNote } from './ContractCollectionNotes';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
+  if(config.kind==='contracts'&&column.key==='collection_notes')return <ContractCollectionNote row={row}/>;
   if(config.kind==='contracts'&&column.key==='status'&&row.status==='reserved')return <ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>;
   if(column.key==='rental_period')return <ContractRentalPeriod row={row}/>;
   if(column.key==='monitoring_amount')return <ContractMonitoringAmount row={row}/>;

@@ -4258,10 +4258,21 @@
 .mg-collection-table td { vertical-align:top; max-width:240px; white-space:normal; }
 .mg-collection-table td small { display:block; margin-top:5px; color:#64748b; }
 .mg-collection-table td.mg-collection-note-cell { min-width:280px; max-width:360px; }
-.mg-collection-note textarea { width:100%; min-height:88px; padding:10px; border:1px solid var(--mg-border); border-radius:8px; background:#fff; color:inherit; font:inherit; line-height:1.5; resize:vertical; }
+.mg-collection-note textarea { width:100%; min-height:88px; padding:10px; border:1px solid var(--mg-border, #dbe3ea); border-radius:8px; background:#fff; color:inherit; font:inherit; line-height:1.5; resize:vertical; }
 .mg-collection-note textarea:focus-visible { outline:2px solid var(--mg-brand-600); outline-offset:2px; }
 .mg-collection-note-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .mg-collection-note-conflict { margin-top:8px; padding:10px; border:1px solid #f59e0b; border-radius:8px; background:#fffbeb; color:#78350f; }
+.mg-compact-contracts .mg-table [data-column="collection_notes"] { width:320px; min-width:280px; max-width:360px; white-space:normal; vertical-align:top; }
+.mg-contract-collection-note { min-width:0; max-width:360px; white-space:normal; }
+.mg-contract-collection-note small,.mg-contract-followup-status { display:block; color:var(--mg-text-muted, #64748b); font-size:12px; margin:4px 0; }
+.mg-contract-collection-note p { overflow-wrap:anywhere; }
+.mg-mobile-collection-note { grid-column:1/-1; grid-row:2; padding:10px 14px 14px; min-width:0; border-top:1px solid var(--mg-border, #dbe3ea); }
+.mg-mobile-monitoring-card:has(> .mg-mobile-collection-note) { display:grid; grid-template-columns:auto minmax(0,1fr) auto; }
+.mg-mobile-monitoring-card:has(> .mg-mobile-collection-note) > .mg-mobile-card-select { grid-column:1; grid-row:1; }
+.mg-mobile-monitoring-card:has(> .mg-mobile-collection-note) > .mg-mobile-card-main { grid-column:2; grid-row:1; }
+.mg-mobile-monitoring-card:has(> .mg-mobile-collection-note) > .mg-mobile-card-actions { grid-column:3; grid-row:1; }
+.mg-mobile-collection-note > strong { display:block; font-size:12px; margin-bottom:6px; }
+.mg-mobile-collection-note .mg-contract-collection-note { max-width:none; }
 .mg-preserve-lines { white-space:pre-wrap; overflow-wrap:anywhere; }
 .mg-report-preview { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:13px; line-height:1.65; padding:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; max-width:100%; }
 .mg-ownership-report { min-width:0; }

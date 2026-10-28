@@ -10,6 +10,7 @@ import { GpsEvidence } from './GpsEvidence';
 import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
 import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { ContractHoldStatus } from './ContractHoldStatus';
+import { ContractCollectionNote } from './ContractCollectionNotes';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
   vehicles: ['license', 'holder_name', 'store_name', 'overdue_days'],
@@ -77,10 +78,11 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             <span className="mg-monitoring-card-meta">{visible('license')&&<span>{row.license||'—'}</span>}{visible('contract_signed_at')&&<span>Ký: {formatValue(row.contract_signed_at,'date')}</span>}{visible('deposit_amount')&&<span>Cọc: {formatValue(row.deposit_amount,'money')}</span>}</span>
             {visible('rental_period')&&<ContractRentalPeriod row={row}/>}
             <span className="mg-monitoring-card-amounts">{monitoring?<>{visible('overdue_minutes')&&<strong>Quá hạn: {formatValue(row.overdue_minutes,'duration')}</strong>}{visible('monitoring_amount')&&<ContractMonitoringAmount row={row}/>}</>:columns.filter(column=>['total_amount','billing_next_due_at','billing_due_amount'].includes(column.key)).map(column=><span key={column.key}>{column.label}: <strong>{formatValue(row[column.key],column.format)}</strong></span>)}</span>
-            {columns.filter(column=>!['rental_period','code','customer_name','license','contract_signed_at','deposit_amount','start_date','end_date','total_amount','billing_next_due_at','billing_due_amount','overdue_minutes','monitoring_amount','status','contract_gps_status'].includes(column.key)).map(column=><span className="mg-mobile-card-extra" key={column.key}>{column.label}: {optionLabel(config,column.key,formatValue(row[column.key],column.format))}</span>)}
+            {columns.filter(column=>!['rental_period','code','customer_name','license','contract_signed_at','deposit_amount','start_date','end_date','total_amount','billing_next_due_at','billing_due_amount','overdue_minutes','monitoring_amount','status','contract_gps_status','collection_notes'].includes(column.key)).map(column=><span className="mg-mobile-card-extra" key={column.key}>{column.label}: {optionLabel(config,column.key,formatValue(row[column.key],column.format))}</span>)}
             {visible('status')&&row.status!=='reserved'&&<span className={`mg-status mg-status-${statusTone(row.status)}`}><span/>{optionLabel(config,'status',row.status)}</span>}
             {visible('contract_gps_status')&&<ContractGpsIndicator row={row}/>}
           </button>
+          {visible('collection_notes')&&<div className="mg-mobile-collection-note"><strong>Ghi chú tình trạng khách</strong><ContractCollectionNote row={row}/></div>}
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId===row.id}/></div>
         </li>;
         const summary = SUMMARY_KEYS[config.kind].filter(key => row[key] !== undefined && row[key] !== '').map(key => {
