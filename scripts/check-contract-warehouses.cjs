@@ -16,10 +16,10 @@ async function main(){
  const input={kind:'contracts',query:{...EMPTY_QUERY},store:'32',storeBasis:'warehouse',scope:'',page:1,size:10,sort:'code',direction:'asc'};
  const rows=[row,swapped,unknown,{...row,id:4,store_id:32,store_name:'CS Nguyễn Hoàng'}];
  assert.equal(projectManagementTable(rows,input).total,2);
- assert.equal(projectManagementTable(rows,{...input,store:'31'}).total,3);
+ assert.equal(projectManagementTable(rows,{...input,store:'31'}).total,0);
  const source=projectManagementTable(rows,{...input,query:{...EMPTY_QUERY,filters:{store_id:'31'}}});assert.equal(source.total,1);assert.equal(source.scopeCount,2);assert.equal(source.rows[0].id,1);
  const legacy=projectManagementTable(rows,{...input,storeBasis:undefined});assert.equal(legacy.total,1);assert.equal(legacy.rows[0].id,4);
- checks.push('Branch picker matches warehouse or customer source; active replacement lines override returned vehicles; missing stock never inherits the customer source');
+ checks.push('Warehouse/source stay separate; active replacement lines override returned vehicles; missing stock never inherits the customer source');
  const many=Array.from({length:21},(_,i)=>({...row,id:i+10,code:`QA-${i}`}));
  const p1=projectManagementTable(many,input),p2=projectManagementTable(many,{...input,page:2});assert.equal(p1.total,21);assert.equal(p2.total,21);assert.equal(p1.scopeCount,21);assert(!p1.rows.some(a=>p2.rows.some(b=>a.id===b.id)));
  assert.equal(projectManagementTable(many,input,true).rows.length,21);
@@ -44,19 +44,21 @@ async function main(){
       INSERT INTO qa_warehouse_lines VALUES(1,1,NULL,NULL),(2,1,now(),NULL),(2,2,NULL,NULL),(3,1,now(),NULL),(6,1,NULL,now()),(7,1,NULL,NULL),(7,2,NULL,NULL),(8,1,NULL,NULL);`);
     const rewrite=sql=>sql.replaceAll('himoto.order_vehicle_details','pg_temp.qa_warehouse_lines').replaceAll('himoto.orders','pg_temp.qa_warehouse_orders').replaceAll('himoto.vehicles','pg_temp.qa_warehouse_vehicles').replaceAll('himoto.stores','pg_temp.qa_warehouse_stores');
     const select=async(store,source='')=>(await c.query(rewrite(`SELECT o.id FROM himoto.orders o WHERE true${contractWarehouseStoreSql(store)}${source?' AND o.store_id='+Number(source):''} ORDER BY o.id`))).rows.map(r=>Number(r.id));
-    assert.deepEqual(await select('32'),[1,3,4,7,8]);assert.deepEqual(await select('32','31'),[1,3,4,7]);assert.deepEqual(await select('23'),[2,7]);assert.deepEqual(await select('31'),[1,2,3,4,5,6,7]);
-    await c.query('ROLLBACK');checks.push('TEMP PostgreSQL: branch picker matches warehouse or source; ignore returned swap/deleted lines; include closed history and planned draft stock; deduplicate multi-vehicle orders');
+    assert.deepEqual(await select('32'),[1,3,4,7,8]);assert.deepEqual(await select('32','31'),[1,3,4,7]);assert.deepEqual(await select('23'),[2,7]);assert.deepEqual(await select('31'),[]);
+    await c.query('ROLLBACK');checks.push('TEMP PostgreSQL: filter current warehouses, ignore returned swap lines/deleted lines, include closed history and planned draft stock, and deduplicate multi-vehicle orders');
    }
    if(process.argv.includes('--live-read')){
     await c.query('BEGIN READ ONLY');await c.query("SET LOCAL statement_timeout='25s'");
     for(const [code,id] of [['VPS-28521',56598],['VPS-28404',56548]]){
+     const bySource=await readManagementTable(c,'contracts',new URLSearchParams({search:code,store:'31',scope_count:'1',status_counts:'1'}));
+     assert.equal(bySource.total,1);assert.equal(bySource.rows[0].id,id);assert.equal(bySource.rows[0].store_id,31);assert.equal(bySource.rows[0].warehouse_store_name,'CS Nguyễn Hoàng');
      for(const store of ['32','31']){
       const page=await readManagementTable(c,'contracts',new URLSearchParams({search:code,store,store_basis:'warehouse',filter_store_id:'31',scope_count:'1',status_counts:'1'}));
-      assert.equal(page.total,1);assert.equal(page.rows[0].id,id);assert.equal(page.rows[0].warehouse_store_name,'CS Nguyễn Hoàng');assert.equal(page.rows[0].store_id,31);assert.equal(new Map(page.statusCounts).get('renting'),1);
+      assert.equal(page.total,store==='32'?1:0);if(page.total){assert.equal(page.rows[0].id,id);assert.equal(page.rows[0].warehouse_store_name,'CS Nguyễn Hoàng');assert.equal(page.rows[0].store_id,31);assert.equal(new Map(page.statusCounts).get('renting'),1);}
      }
-     const full=await readManagementTable(c,'contracts',new URLSearchParams({all:'1',store:'31',store_basis:'warehouse',filter_id:String(id)}));assert.equal(full.total,1);assert.equal(full.rows[0].warehouse_store_name,'CS Nguyễn Hoàng');assert.equal(full.rows[0].store_id,31);
+     const full=await readManagementTable(c,'contracts',new URLSearchParams({all:'1',store:'31',filter_id:String(id)}));assert.equal(full.total,1);assert.equal(full.rows[0].warehouse_store_name,'CS Nguyễn Hoàng');assert.equal(full.rows[0].store_id,31);
     }
-    await c.query('ROLLBACK');checks.push('READ ONLY: both reported contracts appear under Nguyễn Hoàng stock and under Láng customer source; labels keep warehouse/source distinct');
+    await c.query('ROLLBACK');checks.push('READ ONLY: contract list by source shows Láng rentals; optional warehouse mode still scopes Nguyễn Hoàng stock separately');
    }
   }finally{await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
  }

@@ -4,7 +4,6 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState,type ReactN
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import {contractMatchesWarehouse} from '@/lib/management/contract-warehouses';
 import { CONTRACT_DATA_KINDS, VEHICLE_DATA_KINDS } from '@/lib/management/data-loader';
 import { ManagementDataBoundary } from './ManagementDataBoundary';
 import { ArrowDownToLine, ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, ListFilter, MessageCircle, Plus, RefreshCw, RotateCcw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
@@ -146,7 +145,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => store.kind === 'lease_to_own').map(store => store.id)), [dataset?.stores]);
   const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
   const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
-  const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(kind==='contracts'&&!draftsOnly?{storeBasis:'warehouse' as const}:{}),...(recentWindow?{recentDays:30}:{})};
+  const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:30}:{})};
   const resourceRevision=resources[kind].revision;
   const tableRevision=useMemo(()=>({revision:resourceRevision}),[resourceRevision]);
   const contractsRevision=useMemo(()=>({revision:resources.contracts.revision}),[resources.contracts.revision]);
@@ -257,7 +256,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const gpsAllowed=can('vehicles.read');
   const listGps=useSelectedVehicleGps(compactContracts&&gpsAllowed&&visibleKeys.includes('contract_gps_status')?allRows.flatMap(contractVehicleIds):[]);
   const rows:ManagementRow[] = useMemo(() => kind === 'vehicles' ? allRows.map(row => ({...row,overdue_days:vehicleOverdueDays(row,openedAt)})) : compactContracts?allRows.map(row=>({...row,contract_signed_at:row.signed_on||row.start_date,...contractGpsFields(row,listGps,gpsAllowed)})):allRows,[allRows,kind,openedAt,compactContracts,listGps,gpsAllowed]);
-  const scopedRows = useMemo(() => kind==='contracts'&&!draftsOnly?rows.filter(row=>contractMatchesWarehouse(row,selectedStore)):filterRows(rows, EMPTY_QUERY, selectedStore), [rows, selectedStore,kind,draftsOnly]);
+  const scopedRows = useMemo(() => filterRows(rows, EMPTY_QUERY, selectedStore), [rows, selectedStore]);
   const dueCount = paged ? table.data?.dueCount || 0 : scopedRows.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0).length;
   const filteredRows = useMemo(() => paged ? rows : sortRows(filterRows(scopedRows,query,'all'),sort.key,sort.direction),[paged,rows,scopedRows,query,sort]);
   const tabRows = useMemo(() => filterRows(scopedRows, { ...query, status: '' }, 'all'), [scopedRows, query]);
@@ -359,7 +358,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   return <ContractCollectionNotesProvider rows={allRows} enabled={collectionNotes&&visibleKeys.includes('collection_notes')}><section className={`mg-page mg-page-${kind}${vatOnly?' mg-page-contracts-vat':''}${compactContracts?' mg-compact-contracts':''}${monitoringContracts?' mg-monitoring-contracts':''}`} aria-label={config.title}>
     {inventoryOpen&&<SharedVehicleInventory onClose={()=>setInventoryOpen(false)}/>}
     <div className="mg-page-content">
-      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label="Toàn bộ hợp đồng" count={table.data ? scopeCount : null} loading={loading} className="mg-contract-total"/>{!draftsOnly&&<p>Cơ sở đang xem gồm hợp đồng nguồn khách của cơ sở đó và hợp đồng xe đang ở kho cơ sở đó. Mỗi dòng ghi rõ Kho xe / Nguồn khách.</p>}{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Toàn bộ xe',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{config.description}</p></div>}
+      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label="Toàn bộ hợp đồng" count={table.data ? scopeCount : null} loading={loading} className="mg-contract-total"/>{!draftsOnly&&<p>Cơ sở đang xem lọc theo nguồn khách. Kho xe ghi riêng trên từng hợp đồng.</p>}{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Toàn bộ xe',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{config.description}</p></div>}
         {kind==='contracts'&&<div className="mg-heading-actions mg-contract-flow">
           {(canSaveContractDrafts||can('contracts.renew')||canPayContracts)&&<button type="button" className="mg-button" onClick={()=>setBackfillOpen(true)}><Plus size={17}/>Nhập bổ sung giao dịch</button>}
           {canSaveContractDrafts&&<><button type="button" className="mg-button" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}}><Plus size={17}/>Nhập hợp đồng</button></>}

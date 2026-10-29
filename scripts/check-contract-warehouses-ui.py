@@ -1,4 +1,4 @@
-"""Warehouse-filtered contracts with a separate customer source. API fixtures only."""
+"""Contract list filters by customer source; warehouse remains a label. API fixtures only."""
 import argparse
 import json
 from pathlib import Path
@@ -38,9 +38,9 @@ def mock(route):
         route.abort()
         return
     if u.path == '/api/auth/order/car-rental':
-        assert q.get('store_basis') == 'warehouse', 'Contract list must request warehouse filtering'
-        stock = q.get('store', 'all')
-        scoped = [r for r in rows if stock == 'all' or int(stock) in json.loads(r['warehouse_store_ids_json']) or str(r['store_id']) == stock]
+        assert q.get('store_basis') in (None, 'source'), 'Contract list must filter by customer source'
+        branch = q.get('store', 'all')
+        scoped = [r for r in rows if branch == 'all' or str(r['store_id']) == branch]
         filtered = [r for r in scoped if not q.get('filter_store_id') or str(r['store_id']) == q['filter_store_id']]
         data = dict(rows=filtered, total=len(filtered), scopeCount=len(scoped), tabCount=len(filtered), page=1, pages=1, statuses=['renting'],
                     statusCounts=[['renting', len(filtered)]], dueCount=0,
@@ -65,7 +65,7 @@ with sync_playwright() as pw:
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.goto(a.url + '/contracts', wait_until='networkidle', timeout=120000)
         branch = page.get_by_role('combobox', name='Cơ sở đang xem', exact=True)
-        branch.select_option('32')
+        branch.select_option('31')
         records = page.locator('tbody tr') if width > 600 else page.locator('.mg-mobile-record-card')
         expect(records).to_have_count(3)
         expect(page.get_by_text('3 kết quả phù hợp', exact=True)).to_be_visible()
@@ -76,22 +76,14 @@ with sync_playwright() as pw:
             if width > 600:
                 assert record.locator('td[data-column="customer_name"]').evaluate('e => e.getBoundingClientRect().width >= 200'), 'Customer/branch column is squeezed'
                 assert record.evaluate('e => e.getBoundingClientRect().height < 180'), 'Branch labels wrap into an unreadable column'
-        page.screenshot(path=str(out / f'{engine}-{width}-nh.png'), full_page=True)
-        checks.append(f'{engine} {width}px: selecting Nguyễn Hoàng includes both Láng-source rentals and labels both branches')
-        page.get_by_text('Bộ lọc nâng cao', exact=True).click()
-        source = page.get_by_role('combobox', name='Tất cả nguồn khách', exact=True)
-        source.select_option('31')
-        expect(records).to_have_count(2)
-        expect(page.get_by_text('2 kết quả phù hợp', exact=True)).to_be_visible()
-        source.select_option('')
-        branch.select_option('31')
-        expect(records).to_have_count(3)
-        expect(page.get_by_text('3 kết quả phù hợp', exact=True)).to_be_visible()
-        for code in ['VPS-28521', 'VPS-28404', 'QA-OTHER-STOCK']:
-            expect(records.filter(has_text=code)).to_be_visible()
-        expect(records.filter(has_text='QA-NH-SOURCE')).to_have_count(0)
+        page.screenshot(path=str(out / f'{engine}-{width}-lang.png'), full_page=True)
+        checks.append(f'{engine} {width}px: selecting Láng source shows Láng rentals even when stock is elsewhere')
+        branch.select_option('32')
+        expect(records).to_have_count(1)
+        expect(records.filter(has_text='QA-NH-SOURCE')).to_be_visible()
+        expect(records.filter(has_text='VPS-28521')).to_have_count(0)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Page overflows viewport'
-        checks.append(f'{engine} {width}px: source filter is independent; selecting Láng also shows Láng-source contracts whose stock is elsewhere')
+        checks.append(f'{engine} {width}px: selecting Nguyễn Hoàng source hides Láng-source stock and keeps warehouse labels')
         ctx.close()
         browser.close()
 assert not errors, errors

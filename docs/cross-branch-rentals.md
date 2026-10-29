@@ -8,7 +8,7 @@
 
 Ví dụ nguồn Láng, xe Nguyễn Hoàng: lập hợp đồng có nguồn/doanh thu Láng, chọn xe kho Nguyễn Hoàng. Nguyễn Hoàng vẫn thấy xe trong kho của mình với trạng thái Đang thuê; doanh thu và phiếu thu của hợp đồng về Láng. Không cần chuyển xe sang Láng.
 
-Từ 29/10/2026, **Danh sách hợp đồng** và các danh sách hợp đồng đã phát hành dùng cơ sở đang xem với `store_basis=warehouse`: hiện hợp đồng **nguồn khách** của cơ sở đó **hoặc** xe đang ở **kho** cơ sở đó. Mỗi dòng/thẻ ghi rõ **Kho xe** và **Nguồn khách**; bộ lọc **Tất cả nguồn khách** vẫn lọc độc lập theo `orders.store_id`. Ví dụ VPS-28521 / VPS-28404 (kho Nguyễn Hoàng, nguồn Láng) hiện khi chọn Nguyễn Hoàng **và** khi chọn Láng. Bộ đếm, phân trang, tổng tiền và xuất CSV dùng cùng điều kiện. Xe đã đổi/trả không thay kho của xe đang thuê; hợp đồng đã trả hết dùng các dòng xe lịch sử; nháp có kho dự kiến dùng lựa chọn đã lưu.
+Từ 29/10/2026, **Danh sách hợp đồng** lọc cơ sở đang xem theo **nguồn khách** (`orders.store_id`). Mỗi dòng/thẻ vẫn ghi rõ **Kho xe** và **Nguồn khách**. Ví dụ VPS-28521 / VPS-28404 (kho Nguyễn Hoàng, nguồn Láng) hiện khi chọn Láng, không hiện khi chỉ chọn Nguyễn Hoàng theo nguồn. API tùy chọn `store_basis=warehouse` vẫn lọc theo kho xe cho báo cáo/tích hợp cần kho. Bộ đếm, phân trang, tổng tiền và xuất CSV của trang Hợp đồng theo nguồn. Xe đã đổi/trả không thay kho của xe đang thuê; hợp đồng đã trả hết dùng các dòng xe lịch sử; nháp có kho dự kiến dùng lựa chọn đã lưu.
 
 API không gửi `store_basis=warehouse` vẫn lọc theo nguồn để giữ các báo cáo và tích hợp hiện có. Trang Hợp đồng nháp riêng tiếp tục theo nguồn vì có thể chưa chọn xe. Giới hạn đọc hợp đồng/tài chính theo tài khoản vẫn áp dụng; đọc vị trí kho từ kho chung không mở quyền đọc hợp đồng cơ sở khác.
 
