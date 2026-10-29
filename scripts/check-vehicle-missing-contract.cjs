@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict'),path=require('node:path');
+const {load,root}=require('./lib/load-typescript.cjs');
+const {vehicleMissingOpenContract,vehicleHolderLabel}=load(path.join(root,'lib/management/vehicle-holder'));
+const checks=[];
+assert.equal(vehicleMissingOpenContract({status:'using',rentals_json:'[]'}),true);
+assert.equal(vehicleMissingOpenContract({status:'rent',rentals_json:''}),true);
+assert.equal(vehicleMissingOpenContract({status:'using',rentals_json:'[{"order_id":1}]'}),false);
+assert.equal(vehicleMissingOpenContract({status:'ready',rentals_json:'[]'}),false);
+assert.equal(vehicleMissingOpenContract({status:'using',rentals_json:'{bad'}),true);
+assert.equal(vehicleHolderLabel('using',''),'Chưa xác định khách');
+checks.push('Đang thuê without open rentals is flagged; ready and rented vehicles stay quiet');
+console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));

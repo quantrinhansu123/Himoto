@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowUp, FileSearch, LoaderCircle, RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowUp, FileSearch, LoaderCircle, RotateCcw, TriangleAlert } from 'lucide-react';
 import { ManagementColumn, ManagementConfig, ManagementKind, ManagementRow } from '@/lib/management/types';
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
@@ -12,6 +12,7 @@ import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
 import {ContractBranches} from './ContractBranches';
+import { vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
   vehicles: ['license', 'holder_name', 'store_name', 'overdue_days'],
@@ -111,8 +112,9 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
               <span>Phí quá hạn (tạm tính): {row.overdue_fee_estimate===undefined?'Cần đối chiếu':formatValue(row.overdue_fee_estimate,'money')}</span>
               <span>Tiền thuê còn thiếu: {formatValue(row.rental_debt_amount,'money')}</span>
             </span>}
-            <span className="mg-mobile-card-footer">{config.kind==='contracts'&&row.status==='reserved'?<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>:<span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>}
+            <span className="mg-mobile-card-footer">{config.kind==='contracts'&&row.status==='reserved'?<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>:<span className={`mg-status mg-status-${vehicleMissingOpenContract(row)?'yellow':statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>}
               {config.kind === 'vehicles' && row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
+              {config.kind==='vehicles'&&vehicleMissingOpenContract(row)&&<span className="mg-vehicle-badge is-warn" role="status"><TriangleAlert size={12} aria-hidden="true"/> Không có HĐ</span>}
               {config.kind==='vehicles' ? Number(row.overdue_days)>0&&<span className="mg-mobile-card-extra">Quá hạn: {row.overdue_days} ngày</span> : summary[2] && <span className="mg-mobile-card-extra" title={`${summary[2].label}: ${summary[2].value}`}>{summary[2].value}{summary[3] && ` · ${summary[3].value}`}</span>}
             </span>
             {receive&&vehicleTransferRoute(row)&&<span className="mg-transfer-direction">{vehicleTransferRoute(row)}</span>}

@@ -15,7 +15,7 @@ import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
 import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
-import { vehicleHolderLabel } from '@/lib/management/vehicle-holder';
+import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 import {ContractBranches} from './ContractBranches';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
@@ -28,6 +28,12 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
   if(column.key==='contract_gps_status')return <ContractGpsIndicator row={row}/>;
   if(column.key==='overdue_fee_estimate'&&value===undefined)return <span className="mg-cell-value" title="Thiếu hạn trả hoặc giá thuê ngày; nhập phí thực tế khi trả xe.">Cần đối chiếu</span>;
   if(config.kind==='vehicles'&&column.key==='location_status')return <><span className={`mg-status mg-status-${statusTone(String(value))}`}><span/>{optionLabel(config,column.key,String(value||''))}</span><GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/></>;
+  if(config.kind==='vehicles'&&column.key==='status'){
+    const missing=vehicleMissingOpenContract(row);
+    return <div className="mg-vehicle-status-cell"><span className={`mg-status mg-status-${missing?'yellow':statusTone(String(value))}`}><span />{optionLabel(config,column.key,String(value||''))}</span>
+      {missing&&<span className="mg-vehicle-badge is-warn" role="status" title="Xe đang ở trạng thái Đang thuê nhưng không gắn hợp đồng mở. Chuyển Lưu kho hoặc lập hợp đồng."><TriangleAlert size={12} aria-hidden="true"/> Không có HĐ</span>}
+    </div>;
+  }
   if (column.format === 'status') return <span className={`mg-status mg-status-${statusTone(String(value))}`}><span />{optionLabel(config, column.key, String(value || ''))}</span>;
   if (column.format === 'code') return config.kind==='contracts'&&row.status==='reserved'?<span className="mg-contract-code-hold"><span className="mg-code">{value||'—'}</span><ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/></span>:<span className="mg-code">{value || '—'}</span>;
   if (config.kind === 'vehicles' && column.key === 'holder_name') {
@@ -42,6 +48,7 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
       <strong title={String(value || '')}>{value || '—'}</strong>
       {config.kind==='contracts'&&column.key==='customer_name'?<ContractBranches row={row}/>:column.secondary && <small title={String(row[column.secondary] || '')}>{row[column.secondary] || '—'}</small>}
       {config.kind === 'vehicles' && column.key === 'name' && <small title={vehicleHolderLabel(row.status,row.holder_name)}>{vehicleHolderLabel(row.status,row.holder_name)}</small>}
+      {config.kind === 'vehicles' && column.key === 'name' && vehicleMissingOpenContract(row) && <small className="mg-vehicle-missing-contract" role="status">Đang thuê · không có hợp đồng mở</small>}
     </div></div>;
   const display = optionLabel(config, column.key, formatValue(value, column.format));
   return <span className={`mg-cell-value ${column.format === 'money' || column.format === 'number' ? 'mg-numeric' : ''}`} title={display}>{display}</span>;

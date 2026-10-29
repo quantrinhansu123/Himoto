@@ -7,7 +7,8 @@ import Link from 'next/link';
 import {contractMatchesWarehouse} from '@/lib/management/contract-warehouses';
 import { CONTRACT_DATA_KINDS, VEHICLE_DATA_KINDS } from '@/lib/management/data-loader';
 import { ManagementDataBoundary } from './ManagementDataBoundary';
-import { ArrowDownToLine, ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, ListFilter, MessageCircle, Plus, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, ListFilter, MessageCircle, Plus, RefreshCw, RotateCcw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
+import { vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 import { RowActionsMenu } from './RowActionsMenu';
 import type { VehicleActionMode } from './VehicleActionDialog';
 import { MANAGEMENT_CONFIG, optionLabel, statusTone } from '@/lib/management/config';
@@ -259,6 +260,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const filteredRows = useMemo(() => paged ? rows : sortRows(filterRows(scopedRows,query,'all'),sort.key,sort.direction),[paged,rows,scopedRows,query,sort]);
   const tabRows = useMemo(() => filterRows(scopedRows, { ...query, status: '' }, 'all'), [scopedRows, query]);
   const statusCounts = useMemo(() => { if(paged)return new Map(table.data?.statusCounts || []); const counts = new Map<string, number>(); for (const row of tabRows) counts.set(row.status, (counts.get(row.status) || 0) + 1); return counts; }, [tabRows,paged,table.data]);
+  const missingContractVehicles=useMemo(()=>kind==='vehicles'?filteredRows.filter(vehicleMissingOpenContract):EMPTY_ROWS,[kind,filteredRows]);
   const resultCount=paged ? table.data?.total || 0 : filteredRows.length;
   const scopeCount=paged ? table.data?.scopeCount || 0 : scopedRows.length;
   const tabCount=paged ? table.data?.tabCount || 0 : tabRows.length;
@@ -415,6 +417,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           </OptionalTools>
         </div>
         {isFiltered && <div className="mg-filter-summary"><span><strong>{resultCount}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
+        {kind==='vehicles'&&!loading&&!error&&missingContractVehicles.length>0&&<div className="mg-billing-reminder" role="status"><p><TriangleAlert size={16} aria-hidden="true"/> <strong>{missingContractVehicles.length} xe</strong> đang ở trạng thái Đang thuê nhưng không có hợp đồng mở. Kiểm tra và chuyển Lưu kho hoặc lập hợp đồng.</p>{query.status!=='using'&&<button type="button" className="mg-button" onClick={()=>updateQuery({status:'using'})}>Lọc Đang thuê</button>}{can('vehicles.write')&&<button type="button" className="mg-button" onClick={()=>setVehicleAction({mode:'status',vehicle:missingContractVehicles[0]||null})}><RefreshCw size={16}/>Đổi trạng thái xe</button>}</div>}
         {kind==='contracts'&&!compactContracts&&query.search.trim()&&(draftsOnly?<div className="mg-billing-reminder"><p>Chỉ tìm trong hợp đồng nháp.</p><Link className="mg-button" href={`/contracts?search=${encodeURIComponent(query.search.trim())}`}>Tìm trong tất cả hợp đồng</Link></div>:!tableInput.scope&&<p className="mg-reminder-help">Kết quả ưu tiên hợp đồng đang thuê / quá hạn gần nhất để mở trả xe; các bản nháp và lịch sử vẫn ở bên dưới.</p>)}
         {kind==='contracts'&&!compactContracts&&!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder" role="status"><p>Đang tải nhanh hợp đồng khoảng <strong>{table.data.recentDays} ngày</strong> gần đây và các hợp đồng đang mở. Phân trang trong tập này trước.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
         {kind === 'contracts' && !compactContracts && !loading && !error && dueCount > 0 && <div className="mg-billing-reminder" role="status"><p><strong>{dueCount} hợp đồng thuê sở hữu đến hạn đóng tiền.</strong> {paymentDueOnly && canBulkRemind ? 'Chọn nhiều hợp đồng rồi bấm Gửi nhắc nợ để gửi tin Zalo tới từng số khách.' : 'Khoản chưa đóng đủ tiếp tục hiện để kế toán giục nợ.'}</p>{!paymentDueOnly && <button className="mg-button" type="button" onClick={() => router.push('/contracts/due')}>Xem khoản đến hạn</button>}{paymentDueOnly && canBulkRemind && selectedIds.size > 0 && <button className="mg-button mg-button-primary" type="button" onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ ({selectedIds.size})</button>}</div>}

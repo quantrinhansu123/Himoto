@@ -32,7 +32,7 @@ def envelope(query):
     status = query.get('status', '')
     source = [dict(fixtures[0],id=1000-i,code=f'QA-NEW-{i}' if i<5 else f'QA-VPS-{i}',
                    status='renting' if i<146 else 'completed' if i<237 else 'wait_payment') for i in range(239)] if state.get('history') else fixtures
-    rows = [row for row in source if (not status or row['status']==status or status=='renting' and row['status']=='overdue')
+    rows = [row for row in source if (not status or row['status']==status)
             and (not query.get('search') or query['search'].lower() in row['code'].lower())]
     total=len(rows)
     size=int(query.get('size',10))

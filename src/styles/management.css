@@ -1666,8 +1666,13 @@
   box-shadow: inset 3px 0 0 var(--mg-brand-600);
 }
 .mg-vehicle-option-main { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mg-vehicle-status-cell { display: grid; gap: 6px; justify-items: start; }
+.mg-vehicle-missing-contract { color: #92400e; font-weight: 600; }
 .mg-vehicle-badge {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid transparent;
