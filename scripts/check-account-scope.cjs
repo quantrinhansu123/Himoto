@@ -22,10 +22,11 @@ async function main(){const c=await pool.connect();try{
   await c.query(numbering);await c.query(numbering);
   const inventoryMigration=fs.readFileSync('docs/sql/2026-10-18-shared-vehicle-inventory.sql','utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;|^COMMIT;/gm,'');
   await c.query(inventoryMigration);await c.query(inventoryMigration);
-  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-cross-branch-renewals.sql','2026-10-21-contract-return-and-draft-release.sql','2026-10-21-contract-vehicle-labels.sql','2026-10-22-cross-branch-rental-lines.sql','2026-10-23-ownership-hq-vehicles.sql']) {
+  for(const file of ['2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-cross-branch-renewals.sql','2026-10-21-contract-return-and-draft-release.sql','2026-10-21-contract-vehicle-labels.sql','2026-10-22-cross-branch-rental-lines.sql','2026-10-23-ownership-hq-vehicles.sql','2026-10-29-contract-vehicle-owner-labels.sql']) {
     let sql=fs.readFileSync(path.join('docs/sql',file),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replaceAll("'himoto'","'qa_access_scope'").replace(/^BEGIN;|^COMMIT;/gm,'');
     for(const key of ['scope_all','store_id','actor_id','operation','transfer_vehicle_id'])sql=sql.replaceAll(`qa_access_scope.${key}'`,`himoto.${key}'`);
     await c.query(sql);
+    if(file==='2026-10-29-contract-vehicle-owner-labels.sql')await c.query(sql);
   }
   const duplicates=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-customer-duplicate-lookup.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   await c.query(duplicates);await c.query(duplicates);
@@ -144,10 +145,11 @@ async function main(){const c=await pool.connect();try{
   const findCross=(extra={})=>dataAccess.run(scope,()=>readTable(proxy,'contracts',new URLSearchParams({table:'1',search:'QA-CROSS',...extra})));
   const crossPage=await findCross();assert.equal(crossPage.total,1);assert.equal(crossPage.rows[0].id,92020);
   assert.equal(crossPage.rows[0].license,'QA-CROSS');assert.equal(crossPage.rows[0].vehicle_name,'Xe chéo QA');
-  const crossDescription=JSON.parse(crossPage.rows[0].vehicles_json)[0];assert.equal(crossDescription.brand,'Honda');assert.equal(crossDescription.year,2024);assert.equal(crossDescription.color,'Đỏ');
+  const crossDescription=JSON.parse(crossPage.rows[0].vehicles_json)[0];assert.equal(crossDescription.brand,'Honda');assert.equal(crossDescription.year,2024);assert.equal(crossDescription.color,'Đỏ');assert.equal(Number(crossDescription.owner_store_id),80001);
   const crossExport=await findCross({all:'1'});assert.equal(crossExport.rows[0].license,'QA-CROSS');
   const labels=(await proxy.query('SELECT * FROM himoto.contract_vehicle_labels() WHERE id=91103')).rows;
-  assert.deepEqual(Object.keys(labels[0]).sort(),['id','name','license','brand','type','year','color'].sort());
+  assert.deepEqual(Object.keys(labels[0]).sort(),['id','name','license','brand','type','year','color','store_id'].sort());
+  assert.equal(Number(labels[0].store_id),80001);
   assert.equal((await c.query('SELECT id FROM qa_access_scope.vehicles WHERE id=91103')).rowCount,0);
   await dataAccess.run(scope,()=>returns(proxy,70002,{item_id:92021,item_revision:crossReturnable[0].item_revision,returned_at:paidAt,hourly_rate:'0'}));
   const completedCross=await findCross({status:'completed'});assert.equal(completedCross.total,1);assert.equal(completedCross.rows[0].license,'QA-CROSS');
