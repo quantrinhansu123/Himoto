@@ -256,8 +256,8 @@ function vehicleDerivedClause(query:ManagementTableInput['query']) {
   return `${days}${missing}`;
 }
 export function vehiclePageClause(store:string,status:string,filters:Record<string,string>) {
-  // Branch picker on /vehicles scopes by ownership store (v.store_id), not current stock.
-  const storeSql=store==='all'?'':` AND (v.store_id=${Number(store)} OR himoto.ownership_may_use_headquarters_vehicle(v.store_id))`;
+  // Branch picker on /vehicles scopes by current physical warehouse (COALESCE(v.current_store_id, v.store_id)).
+  const storeSql=store==='all'?'':` AND (COALESCE(v.current_store_id,v.store_id)=${Number(store)} OR himoto.ownership_may_use_headquarters_vehicle(v.store_id))`;
   const mapped:Record<string,string>={using:"'using','rent'",repairing:"'repairing','maintenance'",pending:"'pending','holding'"};
   const statusSql=!status?'':mapped[status]?` AND v.status IN (${mapped[status]})`
     :/^[a-z][a-z0-9_]{0,63}$/.test(status)?` AND v.status='${status}'`:'';

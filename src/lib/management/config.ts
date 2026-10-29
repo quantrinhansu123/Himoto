@@ -112,7 +112,7 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     kind: 'vehicles', title: 'Danh sách xe', singular: 'xe', addLabel: 'Thêm xe',
     description: 'Theo dõi thông tin, tình trạng và cơ sở hiện tại của từng xe.',
     searchPlaceholder: 'Tìm mã xe, tên xe, biển số hoặc tên khách hàng…', statuses: VEHICLE_STATUSES,
-    filters: [{ key: 'type', label: 'Tất cả loại xe', options: VEHICLE_TYPES }, { key: 'beneficiary_store_id', label: 'Tất cả cơ sở nguồn khách', options: [], storeOptions: true }],
+    filters: [{ key: 'type', label: 'Tất cả loại xe', options: VEHICLE_TYPES }, { key: 'beneficiary_store_id', label: 'Nguồn khách: Tất cả cơ sở', options: [], storeOptions: true }],
     columns: [codeColumn,
       { key: 'name', label: 'Tên xe', format: 'vehicle', secondary: 'brand' }, { key: 'license', label: 'Biển số' },
       { key: 'holder_name', label: 'Tên khách hàng', format: 'person', hidden: true },

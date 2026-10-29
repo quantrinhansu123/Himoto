@@ -4,7 +4,7 @@ import { displayedGpsState } from '@/lib/management/gps';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 export function selectedVehicleIds(value:string){
   const values=value.split(',');
-  if(!values.length||values.length>20||values.some(id=>!/^[1-9]\d{0,14}$/.test(id)))throw new Error('Chọn từ 1 đến 20 xe hợp lệ.');
+  if(!values.length||values.length>50||values.some(id=>!/^[1-9]\d{0,14}$/.test(id)))throw new Error('Chọn từ 1 đến 50 xe hợp lệ.');
   return [...new Set(values.map(Number))];
 }
 export async function readSelectedVehicleGps(db:Pick<PoolClient,'query'>,ids:number[]){

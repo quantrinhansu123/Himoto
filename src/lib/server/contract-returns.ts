@@ -26,7 +26,7 @@ function toIso(value: unknown): string | null {
 export function parseReturnBatch(body: unknown): ReturnInput[] {
   if (body && typeof body === 'object' && !Array.isArray(body) && 'items' in body) {
     const { items, settlements: _settlements, ...rest } = body as Record<string, unknown>;void _settlements;
-    if (Object.keys(rest).length || !Array.isArray(items) || !items.length || items.length > 20) throw new ContractReturnError('Chọn từ 1 đến 20 xe cần trả.');
+    if (Object.keys(rest).length || !Array.isArray(items) || !items.length || items.length > 50) throw new ContractReturnError('Chọn từ 1 đến 50 xe cần trả.');
     const parsed = items.map(parseReturnInput);
     if (new Set(parsed.map(item => item.item_id)).size !== parsed.length) throw new ContractReturnError('Mỗi xe chỉ được trả một lần.');
     return parsed;

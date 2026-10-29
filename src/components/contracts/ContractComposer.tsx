@@ -439,7 +439,13 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     return <div className="mg-field" key={key}><label htmlFor={inputId}>{label}</label>
       <input id={inputId} name={key} type="text" inputMode="numeric" value={formatMoneyInput(draft[key])} readOnly={readOnly}
         aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `${inputId}-error` : undefined}
-        onChange={event => change(key, event.target.value.replace(/\D/g, ''))} />
+        onChange={event => {
+          const val = event.target.value.replace(/\D/g, '');
+          change(key, val);
+          if (reserving && key === 'unit_price' && (!draft.total_amount || draft.total_amount === '0')) {
+            change('total_amount', val);
+          }
+        }} />
       {errors[key] && <p id={`${inputId}-error`} className="mg-field-error">{errors[key]}</p>}</div>;
   }
   function paymentMethodField(key: 'payment_method' | 'deposit_payment_method', label: string) {
@@ -939,20 +945,31 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
               })}</div>
             </div>;
             })}
-            <button className="mg-button" type="button" onClick={() => change('vehicles', [...draft.vehicles, emptyVehicle()])}><Plus size={16} />Thêm xe</button>
+            <button className="mg-button" type="button" disabled={draft.vehicles.length >= 50} onClick={() => change('vehicles', [...draft.vehicles, emptyVehicle()])}><Plus size={16} />Thêm xe</button>
             {source === 'api' && <RecordPhotoFields key={`plates-${photoVersion}`} entity="contracts" recordId={savedDraft?.id || row?.id} slots={[{ key: 'scan_plate', label: 'Biển số để tự chọn xe' }, ...draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))]} title="Chụp biển số · Tự chọn xe bằng AI" value={platePhotos} onChange={setPlatePhotos} onBusyChange={setProcessingPlatePhoto} disabled={saving} ocr={plateOcr} />}
             <div className="mg-field mg-field-wide"><RecordPhotoFields key={`transaction-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractPhotoSlots('rental')} title="Ảnh xe 4 góc, toàn cảnh & video" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setMediaBusy('vehicle')}/><p>Ảnh/video được lưu cùng bản nháp và tập hợp ở bước cuối với CCCD, GPLX và ảnh biển số. Chỉ gửi Telegram khi chủ động bấm Gửi toàn bộ.</p></div>
           </>)}
           {panel('payment', 'Chi phí', <>
-            {!reserving && <div className="mg-contract-cost-section"><h3>Tiền cọc</h3><div className="mg-form-grid mg-contract-grid-two">
-              {moneyField('deposit_amount', 'Số tiền đặt cọc (VNĐ)')}{paymentMethodField('deposit_payment_method', 'Hình thức dự kiến nhận cọc')}
-            </div></div>}
+            <div className="mg-contract-cost-section"><h3>{reserving ? 'Tiền giữ xe / Đặt cọc' : 'Tiền cọc'}</h3><div className="mg-form-grid mg-contract-grid-two">
+              {moneyField('deposit_amount', reserving ? 'Số tiền cọc giữ xe (VNĐ)' : 'Số tiền đặt cọc (VNĐ)')}{paymentMethodField('deposit_payment_method', 'Hình thức dự kiến nhận cọc')}
+            </div></div>
             <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3><div className="mg-form-grid mg-contract-grid-two">
               <div className="mg-field"><label htmlFor="contract-package_name">Gói thuê</label><select id="contract-package_name" value={draft.package_name} onChange={event => change('package_name',event.target.value)}>{['Theo ngày','Theo tuần','Theo tháng'].filter(value=>!canSaveDraft || ownership || (rentalType.startsWith('monthly') ? value === 'Theo tháng' : value !== 'Theo tháng')).map(value=><option key={value} value={value}>{value}</option>)}</select></div>
               {moneyField('unit_price', 'Đơn giá áp dụng (VNĐ)')}
               <div className="mg-field"><label htmlFor="contract-rental-base">Tiền thuê xe (VNĐ)</label><input id="contract-rental-base" readOnly value={formatMoneyInput(String(Math.max((Number(draft.total_amount)||0)-otherFees,0)))}/></div>
               {paymentMethodField('payment_method', 'Hình thức dự kiến thu thuê/phí')}
-            </div><p className="mg-composer-hint">{canSaveDraft?`Đơn giá cho toàn bộ xe trong hợp đồng / ${billingUnitLabel(draft.package_name)}. Không nhân thêm số xe.`:'Đơn giá và tổng tiền theo hợp đồng đã lưu.'}</p>{quote&&(canSaveDraft||quotedTotal===draft.total_amount)&&<p role="status" className="mg-composer-hint">{quote.period_count} {billingUnitLabel(draft.package_name)} × {formatMoneyInput(String(quote.unit_price))} đ = {formatMoneyInput(String(quote.rental_amount))} đ tiền thuê cho {quote.vehicle_count} xe. Phí khác và tiền cọc tính riêng theo hợp đồng.</p>}</div>
+            </div><p className="mg-composer-hint">{canSaveDraft?`Đơn giá cho toàn bộ xe trong hợp đồng / ${billingUnitLabel(draft.package_name)}. Không nhân thêm số xe.`:'Đơn giá và tổng tiền theo hợp đồng đã lưu.'}</p>
+            {draft.vehicles.length > 1 && canSaveDraft && Number(draft.unit_price) > 0 && (
+              <div style={{margin:'6px 0 10px'}}>
+                <button type="button" className="mg-button" onClick={() => {
+                  const calculated = String(Number(draft.unit_price) * draft.vehicles.length);
+                  change('unit_price', calculated);
+                }}>
+                  Tính đơn giá cho cả {draft.vehicles.length} xe ({formatMoneyInput(String(Number(draft.unit_price) * draft.vehicles.length))} đ)
+                </button>
+              </div>
+            )}
+            {quote&&(canSaveDraft||quotedTotal===draft.total_amount)&&<p role="status" className="mg-composer-hint">{quote.period_count} {billingUnitLabel(draft.package_name)} × {formatMoneyInput(String(quote.unit_price))} đ = {formatMoneyInput(String(quote.rental_amount))} đ tiền thuê cho {quote.vehicle_count} xe. Phí khác và tiền cọc tính riêng theo hợp đồng.</p>}</div>
             <div className="mg-contract-cost-section"><h3>Phí khác trong hợp đồng</h3>
               {(draft.extra_charges || []).map((item,index)=><div className="mg-extra-charge-row" key={index}>
                 <div className="mg-field"><label htmlFor={`contract-charge-${index}-name`}>Tên khoản phí {index+1}</label><input id={`contract-charge-${index}-name`} value={item.name} maxLength={100} placeholder="Ví dụ: Phí ship" aria-invalid={Boolean(errors[`charge_${index}_name`])} onChange={event=>changeCharges((draft.extra_charges || []).map((row,i)=>i===index ? {...row,name:event.target.value} : row))}/>{errors[`charge_${index}_name`] && <p className="mg-field-error">{errors[`charge_${index}_name`]}</p>}</div>
@@ -964,7 +981,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
               {errors.extra_charges && <p className="mg-field-error">{errors.extra_charges}</p>}
             </div>
             <div className="mg-form-grid mg-contract-grid-two">
-              {moneyField('total_amount', 'Tổng tiền thuê và phí khác (VNĐ)', true)}
+              {moneyField('total_amount', 'Tổng tiền thuê và phí khác (VNĐ)', !canSaveDraft || (quotedTotal !== null && !reserving && draft.package_name !== 'Tùy chọn'))}
               <div className="mg-field"><label htmlFor="contract-amount-due">Tổng cần thu gồm cọc (VNĐ)</label><input id="contract-amount-due" readOnly value={formatMoneyInput(String((Number(draft.deposit_amount)||0)+(Number(draft.total_amount)||0)))}/><small>Gồm cọc + tiền thuê + phí khác. Đây là số cần thu, chưa phải tiền đã nhận.</small></div>
             </div>
             <p className="mg-composer-hint">Bấm Hoàn tất & thanh toán để xác nhận tiền đã nhận, chọn tài khoản/tiền mặt và lưu hợp đồng. Có thể ghi nhận đã thanh toán đủ, thu một phần hoặc chưa thu. Hợp đồng của ngày trước vẫn lập tại đây; giờ thuê quyết định ngày doanh thu theo lượt, thời điểm nhận quyết định doanh thu thực thu.</p>

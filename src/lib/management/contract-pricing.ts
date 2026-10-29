@@ -15,7 +15,7 @@ export function rentalQuote(draft: {
   const vehicles = selectedRentalVehicleCount(draft.vehicles);
   const price = Number(draft.unit_price), fees = chargeTotal(draft.extra_charges);
   if (!periods || !/^\d+$/.test(draft.unit_price) || !Number.isSafeInteger(price) || price > MAX_PAYMENT_AMOUNT ||
-      vehicles > 20 || fees === null) return null;
+      vehicles > 50 || fees === null) return null;
   // Contract rate covers the whole rental for one period; days/unit update total even before a vehicle is picked.
   const rental = periods * price, total = rental + fees;
   if (!Number.isSafeInteger(total) || total > MAX_PAYMENT_AMOUNT) return null;

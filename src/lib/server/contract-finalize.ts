@@ -71,7 +71,7 @@ export function parseFinalizeInput(body: unknown): FinalizeInput {
   }
   if ('receipts' in input) {
     if (Object.keys(input).some(key=>!['revision','receipts','reservation','acknowledge_reservation_overlap'].includes(key)) || (input.reservation !== undefined && input.reservation !== true) || typeof input.revision !== 'string' || !/^\d{1,20}$/.test(input.revision) ||
-      !Array.isArray(input.receipts) || input.receipts.length > 40) throw new ContractFinalizeError('Thông tin các khoản thu không hợp lệ.');
+      !Array.isArray(input.receipts) || input.receipts.length > 100) throw new ContractFinalizeError('Thông tin các khoản thu không hợp lệ.');
     const receipts: FinalizeCollection[] = input.receipts.map(value=>{
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ContractFinalizeError('Khoản thu không hợp lệ.');
       const row = value as Record<string,unknown>;

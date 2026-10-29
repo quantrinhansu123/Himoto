@@ -7,11 +7,11 @@ import { parseContractPayment,readPaymentContext,recordContractPayment } from '.
 type Database=Pick<PoolClient,'query'>;
 export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
   if(value===undefined)return [];
-  if(!Array.isArray(value)||value.length>20)throw new ContractReturnError('Thông tin thu phí / hoàn cọc chưa hợp lệ.');
+  if(!Array.isArray(value)||value.length>50)throw new ContractReturnError('Thông tin thu phí / hoàn cọc chưa hợp lệ.');
   const result=value.map(raw=>{
     if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new ContractReturnError('Thông tin quyết toán trả xe chưa hợp lệ.');
     const row=raw as Record<string,unknown>;
-    if(Object.keys(row).some(key=>!['order_id','revision','receipts','refund','rental_refund','refund_deferred','refund_recipient'].includes(key))||!Number.isSafeInteger(row.order_id)||Number(row.order_id)<=0||typeof row.revision!=='string'||!/^\d{1,20}$/.test(row.revision)||!Array.isArray(row.receipts)||row.receipts.length>20)throw new ContractReturnError('Chọn đúng hợp đồng, phiên bản và các khoản đã thu.');
+    if(Object.keys(row).some(key=>!['order_id','revision','receipts','refund','rental_refund','refund_deferred','refund_recipient'].includes(key))||!Number.isSafeInteger(row.order_id)||Number(row.order_id)<=0||typeof row.revision!=='string'||!/^\d{1,20}$/.test(row.revision)||!Array.isArray(row.receipts)||row.receipts.length>50)throw new ContractReturnError('Chọn đúng hợp đồng, phiên bản và các khoản đã thu.');
     if(row.refund_deferred!==undefined&&(row.refund_deferred!==true||row.refund!==undefined))throw new ContractReturnError('Chọn đã hoàn cọc hoặc chưa hoàn cọc, không chọn cả hai.');
     let pendingRecipient:ReturnSettlement['refund_recipient'];
     if(row.refund_recipient!==undefined){

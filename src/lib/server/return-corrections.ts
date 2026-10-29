@@ -49,7 +49,7 @@ async function readState(db:Database,itemId:number,lock=false) {
   const notice=notices.find(n=>{const ids=noticeItems(n);return ids.includes(itemId)&&(!settlementIds.length||sameIds(ids,settlementIds));})
     ||notices.find(n=>noticeItems(n).includes(itemId));
   const itemIds=notice?noticeItems(notice):settlementIds.length?settlementIds:[itemId];
-  if(!itemIds.length||itemIds.length>20||settlementIds.length&&!sameIds(itemIds,settlementIds))throw new ContractReturnError('Nhóm xe trả chưa khớp hồ sơ gốc. Cần đối chiếu trước khi sửa.',409);
+  if(!itemIds.length||itemIds.length>50||settlementIds.length&&!sameIds(itemIds,settlementIds))throw new ContractReturnError('Nhóm xe trả chưa khớp hồ sơ gốc. Cần đối chiếu trước khi sửa.',409);
   const lines=(await loadContractReturnableItems(db,Number(order.id))).filter(line=>itemIds.includes(line.item_id));
   if(lines.length!==itemIds.length){
     const missing=itemIds.filter(id=>!lines.some(line=>line.item_id===id));
@@ -95,7 +95,7 @@ export async function readReturnCorrection(db:Database,itemId:number) {return (a
 export function parseReturnCorrection(raw:unknown):ReturnCorrectionInput {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new ContractReturnError('Thông tin sửa trả xe chưa hợp lệ.');
   const body=raw as Record<string,unknown>;
-  if(Object.keys(body).some(k=>!['item_id','revision','request_id','reason','note','items','settlement'].includes(k))||!Number.isSafeInteger(body.item_id)||Number(body.item_id)<=0||typeof body.revision!=='string'||!/^[a-f0-9]{64}$/.test(body.revision)||typeof body.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id)||typeof body.reason!=='string'||body.reason.trim().length>1000||typeof body.note!=='string'||body.note.trim().length>1000||!Array.isArray(body.items)||!body.items.length||body.items.length>20)throw new ContractReturnError('Chọn lượt trả hợp lệ; lý do và ghi chú tối đa 1.000 ký tự.');
+  if(Object.keys(body).some(k=>!['item_id','revision','request_id','reason','note','items','settlement'].includes(k))||!Number.isSafeInteger(body.item_id)||Number(body.item_id)<=0||typeof body.revision!=='string'||!/^[a-f0-9]{64}$/.test(body.revision)||typeof body.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id)||typeof body.reason!=='string'||body.reason.trim().length>1000||typeof body.note!=='string'||body.note.trim().length>1000||!Array.isArray(body.items)||!body.items.length||body.items.length>50)throw new ContractReturnError('Chọn lượt trả hợp lệ; lý do và ghi chú tối đa 1.000 ký tự.');
   const items=body.items.map(parseReturnInput);
   if(new Set(items.map(i=>i.item_id)).size!==items.length)throw new ContractReturnError('Mỗi xe chỉ xuất hiện một lần.');
   return {item_id:Number(body.item_id),revision:body.revision,request_id:body.request_id.toLowerCase(),reason:body.reason.trim(),note:body.note.trim(),items,settlement:parseReturnSettlements([body.settlement])[0]};

@@ -46,7 +46,7 @@ export function parseContractPayment(body: unknown): PaymentInput {
     const validItem = (item: Record<string, unknown>) => Number.isSafeInteger(item.item_id) && Number(item.item_id) > 0 && typeof item.item_revision === 'string' && /^\d{1,20}$/.test(item.item_revision) && validReturn(item.return_at);
     if ('items' in input) {
       const items = input.items;
-      if ('item_id' in input || 'item_revision' in input || 'return_at' in input || !Array.isArray(items) || !items.length || items.length > 20 ||
+      if ('item_id' in input || 'item_revision' in input || 'return_at' in input || !Array.isArray(items) || !items.length || items.length > 50 ||
           items.some(item => !item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['item_id', 'item_revision', 'return_at', 'amount'].includes(key)) ||
             !validItem(item as Record<string, unknown>) || typeof (item as Record<string, unknown>).amount !== 'string' || !/^(0|[1-9]\d{0,12})$/.test(String((item as Record<string, unknown>).amount))) ||
           new Set(items.map(item => (item as Record<string, unknown>).item_id)).size !== items.length) throw new ContractPaymentError('Chọn xe, phiên bản chi tiết xe và ngày hẹn trả mới hợp lệ.');
