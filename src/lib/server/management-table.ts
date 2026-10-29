@@ -56,8 +56,7 @@ function contractPageScopeClause(scope:string):string {
 }
 function contractPageStatusClause(status:string) {
   if(!status)return '';
-  // Đang thuê = còn hạn trả. Quá hạn / nợ xấu dùng tab riêng.
-  if(status==='renting')return ` AND o.order_status='renting' AND (o.return_at IS NULL OR o.return_at >= now())`;
+  if(status==='renting')return ` AND o.order_status IN ('renting','overdue','bad_debt')`;
   if(status==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment')`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
   return ` AND o.order_status='${status}'`;
@@ -75,7 +74,7 @@ function overdueDetailsSql(sql:string) {
 /** Push status tabs into SQL so Đang thuê does not index every open/historical row first. */
 export function contractStatusClause(status:string) {
   if(!status)return '';
-  if(status==='renting')return ` AND o.order_status='renting' AND (o.return_at IS NULL OR o.return_at >= now())`;
+  if(status==='renting')return ` AND o.order_status IN ('renting','overdue','bad_debt')`;
   if(status==='overdue')return ` AND (o.order_status='overdue' OR o.order_status='renting' AND o.return_at < now()
     OR o.order_status IN ('renting','wait_payment') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL)`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');

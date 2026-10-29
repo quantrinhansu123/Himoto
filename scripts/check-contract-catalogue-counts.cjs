@@ -4,6 +4,7 @@ const {load,root}=require('./lib/load-typescript.cjs');
 const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database'));
 const {readManagementTable}=load(path.join(root,'lib/server/management-table'));
 const billing=load(path.join(root,'lib/management/contract-billing'));
+const {contractActiveRentalCount}=load(path.join(root,'lib/management/contract-tabs'));
 const schema='qa_contract_catalogue',checks=[];
 async function main(){const c=await ownerDatabase.connect();try{
  await c.query('BEGIN');await c.query(`CREATE SCHEMA ${schema}`);
@@ -19,12 +20,17 @@ async function main(){const c=await ownerDatabase.connect();try{
  const db={query:(sql,args)=>{const rewritten=sql.replaceAll('himoto.',schema+'.');assert(!rewritten.includes('himoto.'));return c.query(rewritten,args);}};
  const read=params=>readManagementTable(db,'contracts',new URLSearchParams({size:'2',scope_count:'1',status_counts:'1',...params}));
  const first=await read({}),second=await read({page:'2'});assert.equal(first.total,10);assert.equal(first.tabCount,10);assert.equal(first.scopeCount,10);assert.deepEqual(second.statusCounts,first.statusCounts);assert.deepEqual(second.summary,first.summary);
- const counts=new Map(first.statusCounts);assert.equal(counts.get('bad_debt'),2);assert.equal(counts.get('overdue'),2);assert.equal(counts.get('renting'),4);assert.equal(counts.get('reserved'),1);assert.equal(counts.get('draft'),1);
- checks.push('Contract tab counts and financial totals cover all pages; active overdue rentals overlap renting intentionally, while bad debt remains separate');
+ const counts=new Map(first.statusCounts);assert.equal(counts.get('bad_debt'),2);assert.equal(counts.get('overdue'),2);assert.equal(counts.get('renting'),2);assert.equal(counts.get('reserved'),1);assert.equal(counts.get('draft'),1);
+ const rentingPages=[];for(let page=1;page<=3;page++){const active=await read({status:'renting',page:String(page)});assert.equal(active.total,6);assert.equal(active.total,contractActiveRentalCount(active.statusCounts));assert.equal(active.summary.contractCount,6);assert.equal(active.pages,3);rentingPages.push(...active.rows);}
+ assert.equal(new Set(rentingPages.map(row=>row.id)).size,6);assert.deepEqual([...new Set(rentingPages.map(row=>row.status))].sort(),['bad_debt','overdue','renting']);
+ const exported=await read({status:'renting',all:'1'});assert.equal(exported.rows.length,6);assert.deepEqual(exported.rows.map(r=>r.id).sort(),rentingPages.map(r=>r.id).sort());
+ checks.push('Đang thuê badge, every page, export and summary include current, overdue and bad-debt rentals exactly once; other lifecycle states are excluded');
  const late=await read({status:'overdue'});assert.equal(late.total,2);assert.equal(late.summary.contractCount,2);assert.equal(late.summary.totalAmount,400000);assert.equal(late.summary.badDebtAmount,0);assert.deepEqual(late.statusCounts,first.statusCounts);
  const bad=await read({status:'bad_debt'});assert.equal(bad.total,2);assert.equal(bad.summary.totalAmount,0);assert.equal(bad.summary.receivableAmount,0);assert.equal(bad.summary.badDebtAmount,300000);
  checks.push('Unpaid ownership installments are classified before counting/paging; overdue excludes bad debt and bad-debt totals freeze at their own cutoff');
- const branch=await read({store:'80001'});assert.equal(branch.total,9);assert.equal(branch.scopeCount,9);assert.equal(new Map(branch.statusCounts).get('renting'),3);
+ const branch=await read({store:'80001'});assert.equal(branch.total,9);assert.equal(branch.scopeCount,9);assert.equal(new Map(branch.statusCounts).get('renting'),1);
+ const branchRenting=await read({store:'80001',status:'renting'});assert.equal(branchRenting.total,5);assert.equal(contractActiveRentalCount(branchRenting.statusCounts),5);
+ const badInRenting=await read({status:'renting',search:'MATCH BAD'});assert.equal(badInRenting.total,1);assert.equal(contractActiveRentalCount(badInRenting.statusCounts),1);assert.equal(badInRenting.rows[0].status,'bad_debt');
  const search=await read({search:'MATCH BAD'});assert.equal(search.total,1);assert.equal(search.tabCount,1);assert.equal(search.scopeCount,10);assert.equal(new Map(search.statusCounts).get('bad_debt'),1);
  const type=await read({filter_rental_type:'ownership'});assert.equal(type.total,2);assert.equal(type.tabCount,2);assert.equal(new Map(type.statusCounts).get('overdue'),1);
  const empty=await read({store:'99999'});assert.equal(empty.total,0);assert.equal(empty.tabCount,0);assert.equal(empty.scopeCount,0);assert.equal(empty.summary.totalAmount,0);

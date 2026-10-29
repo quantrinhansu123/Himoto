@@ -37,7 +37,7 @@ import { compactContractConfig } from '@/lib/management/contract-monitoring-conf
 import { OVERDUE_BUCKETS } from '@/lib/management/contract-overdue';
 import { useSelectedVehicleGps } from './SelectedVehicleGps';
 import { contractVehicleIds,contractGpsFields } from './ContractMonitoringCells';
-import { CONTRACT_STATUS_TABS } from '@/lib/management/contract-tabs';
+import { CONTRACT_STATUS_TABS, contractActiveRentalCount } from '@/lib/management/contract-tabs';
 import { ContractStatusTotals } from './ContractStatusTotals';
 import { RecordTotal } from './RecordTotal';
 
@@ -401,7 +401,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       <div className="mg-data-panel">
         {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&!overdueOnly&&<ContractStatusTotals counts={statusCounts} loading={loading}/>}
         <div className="mg-status-tabs" aria-label="Lọc theo trạng thái" aria-busy={loading}>{contractTabs ? <>
-          {CONTRACT_STATUS_TABS.map(tab => <button type="button" key={tab.value} className={query.status === tab.value ? 'is-active' : ''} aria-pressed={query.status === tab.value} onClick={() => updateQuery({ status: tab.value,overdueBucket:undefined,overdueDays:'' })}>{tab.label}<span>{loading?'—':tab.value?statusCounts.get(tab.value)||0:tabCount}</span></button>)}
+          {CONTRACT_STATUS_TABS.map(tab => <button type="button" key={tab.value} className={query.status === tab.value ? 'is-active' : ''} aria-pressed={query.status === tab.value} onClick={() => updateQuery({ status: tab.value,overdueBucket:undefined,overdueDays:'' })}>{tab.label}<span>{loading?'—':tab.value==='renting'?contractActiveRentalCount(statusCounts):tab.value?statusCounts.get(tab.value)||0:tabCount}</span></button>)}
           {query.status && !CONTRACT_STATUS_TABS.some(tab => tab.value === query.status) && <button type="button" className="is-active" aria-pressed="true">{optionLabel(config,'status',query.status)}<span>{loading?'—':statusCounts.get(query.status)||0}</span></button>}
         </> : <><button type="button" className={!query.status ? 'is-active' : ''} aria-pressed={!query.status} onClick={() => updateQuery({ status: '',overdueBucket:undefined })}>{draftsOnly?'Tất cả bản nháp':'Tất cả'}<span>{tabCount}</span></button>
           {statusOptions.filter(option => (kind === 'contracts' && !overdueOnly && option.value === 'draft') || statusCounts.has(option.value) || query.status === option.value).map(option => <button type="button" key={option.value} className={query.status === option.value ? 'is-active' : ''} aria-pressed={query.status === option.value} onClick={() => updateQuery({ status: option.value,overdueBucket:undefined })}>{option.label}<span>{statusCounts.get(option.value) || 0}</span></button>)}</>}</div>

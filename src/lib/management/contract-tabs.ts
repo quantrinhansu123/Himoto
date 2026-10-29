@@ -11,7 +11,7 @@ export const CONTRACT_STATUS_TABS = [
   { value: 'completed', label: 'Hoàn thành' },
   { value: 'cancelled', label: 'Đã hủy' },
 ] as const;
-/** Open rentals still on the road — used by the status totals strip, not the Đang thuê tab. */
+/** The Đang thuê tab and its total include current, overdue and bad-debt rentals. */
 export const CONTRACT_ACTIVE_RENTAL_STATUSES = ['renting', 'overdue', 'bad_debt'] as const;
 export function isContractActiveRentalStatus(status:string) {
   return (CONTRACT_ACTIVE_RENTAL_STATUSES as readonly string[]).includes(status);

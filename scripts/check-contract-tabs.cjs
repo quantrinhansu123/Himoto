@@ -21,7 +21,7 @@ async function main() {
     assert.equal(commands[0].args[0],1);
     assert.match(commands[0].sql,/count\(\*\) OVER\(\)::int AS __total_count/);
     assert.doesNotMatch(commands[0].sql,/GROUP BY/i);
-    if(status==='renting')assert.match(commands[0].sql,/order_status='renting' AND \(o\.return_at IS NULL OR o\.return_at >= now\(\)\)/);
+    if(status==='renting')assert.match(commands[0].sql,/order_status IN \('renting','overdue','bad_debt'\)/);
     if(status==='draft'||status==='completed')assert(commands[0].sql.includes(`o.order_status='${status}'`));
     assert.deepEqual(commands[1].args,[[9]]);
     assert.match(commands[1].sql,/COALESCE\(o\.rent_at,ov\.start_date\) AS start_date/);
