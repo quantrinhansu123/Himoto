@@ -40,7 +40,7 @@ def mock(route):
     if u.path == '/api/auth/order/car-rental':
         assert q.get('store_basis') == 'warehouse', 'Contract list must request warehouse filtering'
         stock = q.get('store', 'all')
-        scoped = [r for r in rows if stock == 'all' or int(stock) in json.loads(r['warehouse_store_ids_json'])]
+        scoped = [r for r in rows if stock == 'all' or int(stock) in json.loads(r['warehouse_store_ids_json']) or str(r['store_id']) == stock]
         filtered = [r for r in scoped if not q.get('filter_store_id') or str(r['store_id']) == q['filter_store_id']]
         data = dict(rows=filtered, total=len(filtered), scopeCount=len(scoped), tabCount=len(filtered), page=1, pages=1, statuses=['renting'],
                     statusCounts=[['renting', len(filtered)]], dueCount=0,
@@ -85,9 +85,13 @@ with sync_playwright() as pw:
         expect(page.get_by_text('2 kết quả phù hợp', exact=True)).to_be_visible()
         source.select_option('')
         branch.select_option('31')
-        expect(page.get_by_text('Không tìm thấy kết quả', exact=True).filter(visible=True)).to_be_visible()
+        expect(records).to_have_count(3)
+        expect(page.get_by_text('3 kết quả phù hợp', exact=True)).to_be_visible()
+        for code in ['VPS-28521', 'VPS-28404', 'QA-OTHER-STOCK']:
+            expect(records.filter(has_text=code)).to_be_visible()
+        expect(records.filter(has_text='QA-NH-SOURCE')).to_have_count(0)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Page overflows viewport'
-        checks.append(f'{engine} {width}px: source filter is independent; selecting Láng warehouse does not include Nguyễn Hoàng vehicles')
+        checks.append(f'{engine} {width}px: source filter is independent; selecting Láng also shows Láng-source contracts whose stock is elsewhere')
         ctx.close()
         browser.close()
 assert not errors, errors

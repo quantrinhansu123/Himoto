@@ -30,11 +30,17 @@ try{
   INSERT INTO himoto.cash(id,store_id,name,status,opening_balance) VALUES(5,32,'Két QA','Active',2000000);`);
  const paidAt=local(Date.now()-60_000),returnAt=local(Date.now()+86400_000);
  const body={...await revisions(),request_id:randomUUID(),item_id:101,return_at:returnAt,amount:'140000',note:'QA gia hạn',receipt:{method:'transfer',account_id:15,paid_at:paidAt}};
+ const putEvidence=async(version=2)=>db.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,$1,'image/jpeg',decode('ffd8ff','hex'),153)`,[`renewal-${version}-document-1`]);
  assert.equal(requestPermission('/api/auth/order/car-rental/1/renewals','POST'),'contracts.renew');
  assert.equal(requestPermission('/api/auth/order/car-rental/1/payments','POST'),'finance.write');
  for(const patch of [{receipt:{...body.receipt,amount:'1'}},{receipt:{...body.receipt,purpose:'deposit_refund'}},{receipt:{...body.receipt,paid_at:local(Date.now()+86400_000)}},{amount:'0'},{request_id:undefined}])assert.throws(()=>parseRenewalInput({...body,...patch}));
  checks.push('Renewal permission stays distinct from generic finance; receipt amount is derived from the exact fee and forged purposes/extra fields/future dates are rejected');
  await c.query('SAVEPOINT baseline');
+ const missingPhoto=await snapshot();
+ await assert.rejects(()=>atomic(async()=>renewContractAndCollect(db,1,153,{...body,...await revisions(),request_id:randomUUID()})),e=>e.status===409&&/bill|tiền mặt|ảnh/i.test(e.message));
+ assert.equal(await snapshot(),missingPhoto);
+ checks.push('Paid renewal without a saved transfer/cash bill photo is rejected before extending or collecting');
+ await putEvidence();
  const paid=await atomic(()=>renewContractAndCollect(db,1,153,body));
  assert.equal(paid.payment.context.total_amount,420000);assert.equal(paid.payment.context.paid_amount,420000);assert.equal(paid.payment.context.remaining,0);
  let tx=(await db.query('SELECT value,bank_id,bank_owner_type FROM himoto.transactions WHERE id=$1',[paid.payment.transaction_id])).rows[0];
@@ -53,8 +59,10 @@ try{
  assert.equal(result[0].late_fee,0);const closed=await readPaymentContext(db,1);assert.equal(closed.status,'completed');assert.equal(closed.remaining,0);assert.equal(closed.deposit_held,0);
  checks.push('A paid extension returned before its new deadline has no late fee and permits the 1m deposit refund without collecting the 140000 again');
  await c.query('ROLLBACK TO SAVEPOINT baseline');const original=await snapshot();
+ await putEvidence();
  await assert.rejects(()=>atomic(async()=>renewContractAndCollect(db,1,153,{...body,...await revisions(),request_id:randomUUID(),receipt:{...body.receipt,account_id:16}})),e=>e.status===409);
  assert.equal(await snapshot(),original);
+ await putEvidence();
  const failing={query(sql,args){if(sql.startsWith('UPDATE himoto.orders SET draft_payload=jsonb_set'))throw Error('Injected after receipt');return db.query(sql,args);}};
  await assert.rejects(()=>atomic(async()=>renewContractAndCollect(failing,1,153,{...body,...await revisions(),request_id:randomUUID()})),/Injected/);assert.equal(await snapshot(),original);
  checks.push('Wrong-branch accounts and failures after receipt insertion roll back the new deadline, version, fee, receipt and paid total together');
@@ -69,6 +77,7 @@ try{
  checks.push('Explicit unpaid extension preserves 140000 as rental debt; refund without collecting it is rejected atomically without fabricating a receipt');
  await c.query('ROLLBACK TO SAVEPOINT baseline');
  await db.query(`UPDATE himoto.orders SET total='280000',pid=1580000 WHERE id=1`);
+ await putEvidence();
  const overpaid=await readPaymentContext(db,1);assert.equal(overpaid.remaining,0);assert.equal(overpaid.paid_amount,580000);
  const overBody={...body,...await revisions(),request_id:randomUUID(),amount:'500000'};
  const over=await atomic(()=>renewContractAndCollect(db,1,153,overBody));
@@ -76,6 +85,7 @@ try{
  assert.equal(over.payment.context.paid_amount,1080000);
   checks.push('Paid renewal receipt still saves when rental remaining is 0 after prior overpayment; fee is capped by the renewal version, not remaining debt');
   await c.query('ROLLBACK TO SAVEPOINT baseline');
+  await putEvidence();
   const outsideBody={...body,...await revisions(),request_id:randomUUID(),amount:'140000',outside_amount:'50000',outside_name:'Phí gửi xe'};
   const withOutside=await atomic(()=>renewContractAndCollect(db,1,153,outsideBody));
   assert.equal(withOutside.outside_collected,true);

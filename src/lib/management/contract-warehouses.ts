@@ -9,6 +9,7 @@ export function contractWarehouses(vehicles:Record<string,unknown>[]) {
 }
 export function contractMatchesWarehouse(row:ManagementRow,store:string) {
   if(store==='all'||!store)return true;
+  if(Number(row.store_id)===Number(store))return true;
   try {
     if(row.warehouse_store_ids_json)return (JSON.parse(String(row.warehouse_store_ids_json)) as number[]).includes(Number(store));
     return contractWarehouses(JSON.parse(String(row.vehicles_json||'[]'))).ids.includes(Number(store));

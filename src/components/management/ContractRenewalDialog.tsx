@@ -51,6 +51,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [error, setError] = useState('');
   const [renewalVersion, setRenewalVersion] = useState<number | null>(null);
   const [photosPending, setPhotosPending] = useState(false);
+  const [hasPaymentEvidence, setHasPaymentEvidence] = useState(false);
   const [paymentContext, setPaymentContext] = useState<PaymentContext | null>(null);
   const [paymentLoadError, setPaymentLoadError] = useState('');
   const [collectionChoice, setCollectionChoice] = useState<'' | 'received' | 'unpaid'>('');
@@ -156,6 +157,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
       if (!paymentContext) { setError(paymentLoadError || 'Đang tải tài khoản nhận tiền.'); return; }
       if (!accounts.some(account => account.id === effectiveAccountId)) { setError('Chọn tài khoản nhận tiền gia hạn.'); return; }
       if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt)) { setError('Ngày giờ thu tiền gia hạn không hợp lệ.'); return; }
+      if (!hasPaymentEvidence) { setError('Lưu ảnh bill chuyển khoản hoặc tiền mặt trước khi hoàn thành gia hạn đã thu tiền.'); return; }
     }
     setSaving(true); setError('');
     try {
@@ -301,13 +303,14 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
           <p className="mg-composer-hint">{collecting
             ? `Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng và ghi phiếu Thu ngay khi lưu.${outsideFee > 0 ? ` Phí thu thêm ${formatMoney(outsideFee)} ghi phiếu riêng, không cộng vào tiền hợp đồng.` : ''}`
             : 'Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng. Phí thu thêm (thu ngoài) chỉ ghi phiếu khi đã thực nhận, và không thành công nợ hợp đồng.'}</p>
-          {renewalVersion && <ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending}/>}
+          {collecting && !hasPaymentEvidence && <p className="mg-field-error" role="status">Lưu ảnh bill chuyển khoản hoặc tiền mặt ở mục bên dưới trước khi hoàn thành gia hạn đã thu tiền.</p>}
+          {renewalVersion && <ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending} onEvidenceChange={setHasPaymentEvidence}/>}
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={close}>{done ? 'Đóng' : 'Hủy'}</button>
-        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn || (collecting && (!paymentContext || !accounts.length || (outsideFee > 0 && method === 'company_transfer')))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : collecting ? 'Lưu gia hạn và thu tiền' : 'Lưu gia hạn'}</button>}</div>
+        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn || (collecting && (!hasPaymentEvidence || !paymentContext || !accounts.length || (outsideFee > 0 && method === 'company_transfer')))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : collecting ? 'Lưu gia hạn và thu tiền' : 'Lưu gia hạn'}</button>}</div>
     </form>
   </Dialog>;
 }

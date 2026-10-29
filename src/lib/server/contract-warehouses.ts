@@ -12,7 +12,9 @@ export function contractWarehouseJoinSql(){return `LEFT JOIN ${warehouseSource(u
 export function contractWarehouseStoreSql(store:string) {
   if(store==='all')return '';
   const id=Number(store);
-  return ` AND (EXISTS (SELECT 1 FROM himoto.order_vehicle_details stock_line
+  // Show contracts owned by this branch (customer source) or with stock currently here.
+  return ` AND (o.store_id=${id}
+    OR EXISTS (SELECT 1 FROM himoto.order_vehicle_details stock_line
     JOIN ${warehouseSource(usesScopedDatabase())} warehouse ON warehouse.id=stock_line.vehicle_id
     WHERE stock_line.order_id=o.id AND stock_line.deleted_at IS NULL AND warehouse.store_id=${id}
       AND (stock_line.completed_at IS NULL OR NOT EXISTS (SELECT 1 FROM himoto.order_vehicle_details active_line

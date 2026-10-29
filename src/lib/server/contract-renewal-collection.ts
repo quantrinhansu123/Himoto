@@ -23,6 +23,8 @@ export async function renewContractAndCollect(db:Pick<PoolClient,'query'>,id:num
   const result:RenewalResult = previous
     ? {order_id:id,code:(await readPaymentContext(db,id)).code,version:previous.version,return_at:previous.return_at,total_amount:previous.total,amount:previous.amount,replayed:true}
     : await recordContractRenewal(db,id,actor,input);
+  // Paid renewals need a saved transfer/cash bill before the receipt can complete.
+  if (input.receipt && !previous) await requireRenewalPaymentEvidence(db,id,result.version);
   if (input.receipt && Number(input.amount) > 0) {
     const context = await readPaymentContext(db,id);
     result.payment = await recordContractPayment(db,id,actor,{...input.receipt,request_id:input.request_id,revision:context.revision,amount:input.amount,renewal_version:result.version,note:input.note||`Gia hạn hợp đồng_${result.code}`});
@@ -42,6 +44,20 @@ export async function renewContractAndCollect(db:Pick<PoolClient,'query'>,id:num
     if (result.payment) result.payment.context = await readPaymentContext(db,id);
   }
   return result;
+}
+
+async function requireRenewalPaymentEvidence(db:Pick<PoolClient,'query'>,orderId:number,version:number) {
+  const primary = `renewal-${version}-document-1`;
+  const found = await db.query(
+    `SELECT 1 FROM himoto.management_record_photos
+     WHERE entity_type='contracts' AND entity_id=$1
+       AND (slot=$2 OR slot LIKE $3 OR regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','')=$2)
+     LIMIT 1`,
+    [orderId, primary, `renewal-${version}-document-%`],
+  );
+  if (!found.rowCount) {
+    throw new ContractRenewalError('Cần lưu ảnh bill chuyển khoản hoặc tiền mặt trước khi hoàn thành gia hạn đã thu tiền.', 409);
+  }
 }
 
 // Outside cash is a real receipt. It does not raise the contract total or the rental paid balance.
