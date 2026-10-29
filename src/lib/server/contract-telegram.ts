@@ -52,6 +52,10 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     }
     const receipts=(await db.query('SELECT transaction_id,renewal_payload FROM himoto.management_contract_payments WHERE order_id=$1 AND renewal_payload IS NOT NULL',[id])).rows;
     for(const receipt of receipts) {
+      if(receipt.renewal_payload.version!==undefined){
+        const existing=events.find(event=>event.key===`renewal:${id}:${receipt.renewal_payload.version}`);
+        if(existing)existing.renewal=receipt.renewal_payload;
+      }
       if(receipt.renewal_payload.version!==undefined&&versions.some((v:RenewalNotice&{kind:string})=>v.kind==='renewal'&&Number(v.version)===Number(receipt.renewal_payload.version)&&sameRenewalPeriod(v,receipt.renewal_payload)))continue;
       add({key:`renewal-receipt:${id}:${receipt.transaction_id}`,kind:'renewal',phases:[`renewal-receipt-${receipt.transaction_id}`],renewal:{...receipt.renewal_payload,transaction_id:Number(receipt.transaction_id)}});
     }
@@ -76,7 +80,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const payload=baseline?{...baseline,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,payment_amounts:fresh.payment_amounts,
       // Cross-branch stock is invisible under vehicle RLS; backfill empty plates from a scoped label read.
       vehicles:baseline.vehicles||fresh.vehicles||'',vehicle_names:baseline.vehicle_names||fresh.vehicle_names||'',
-      ...(event.kind==='renewal'&&event.renewal&&fresh.renewal?{renewal:fresh.renewal}:{}),
+      ...(event.kind==='renewal'&&(event.renewal||fresh.renewal)?{renewal:fresh.renewal}:{}),
       ...(fresh.rental_correction?{rental_correction:fresh.rental_correction,total:fresh.total,days:fresh.days,rental_fee:fresh.rental_fee,deposit:fresh.deposit,grand_total:fresh.grand_total}:{}),
       ...(fresh.ownership_renewal_note?{ownership_renewal_note:fresh.ownership_renewal_note}:{}),
       ...(event.kind==='return'?{refunded:fresh.refunded,deposit:fresh.deposit,...(fresh.return_fees?{return_fees:fresh.return_fees}:{}),...(fresh.refund_recipient?{refund_recipient:fresh.refund_recipient}:{})}:{}),

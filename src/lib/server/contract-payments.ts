@@ -84,7 +84,7 @@ export async function readPaymentContext(client: Database, id: number): Promise<
     FROM himoto.banks WHERE lower(status) = 'active' AND (store_id=$1 OR owner_type='company')
     UNION ALL SELECT id, 'cash'::text AS kind, store_id, '' AS owner_type,NULL AS bank_name,NULL AS account_number,NULL AS owner_name,'Két tiền mặt · ' || COALESCE(NULLIF(name,''),'#' || id::text) AS label
     FROM himoto.cash WHERE lower(status)='active' AND store_id=$1 ORDER BY kind,id`, [order.store_id]);
-  const history = await client.query(`SELECT t.id,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,
+  const history = await client.query(`SELECT t.id,t.status as tx_status,t.type,t.name,t.value AS amount,t.created_at AS paid_at,t.note,u.name AS actor,
       t.xmin::text AS revision,t.bank_id,t.cash_id,t.payment_method,
       CASE WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK tài khoản công ty'
         WHEN t.bank_id IS NOT NULL THEN 'CK tài khoản cá nhân'
@@ -95,11 +95,11 @@ export async function readPaymentContext(client: Database, id: number): Promise<
       t.bank_owner_type,r.renewal_payload
     FROM himoto.transactions t LEFT JOIN himoto.users u ON u.id=t.user_id LEFT JOIN himoto.banks b ON b.id=t.bank_id LEFT JOIN himoto.cash cb ON cb.id=t.cash_id
     LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id
-    WHERE t.order_id=$1 AND t.type IN ('in','addon','out') AND t.status='approved' ORDER BY t.created_at DESC,t.id DESC`, [id]);
-  const company = history.rows.filter(row => row.type !== 'out' && row.bank_owner_type === 'company');
+    WHERE t.order_id=$1 AND t.type IN ('in','addon','out') AND (t.status='approved' OR (r.renewal_payload IS NOT NULL AND t.status IN ('approved','cancelled'))) ORDER BY t.created_at DESC,t.id DESC`, [id]);
+  const company = history.rows.filter(row => row.type !== 'out' && row.bank_owner_type === 'company' && row.tx_status === 'approved');
   const adjustments=order.draft_payload?.management_composer?.return_adjustments;
   const earlyDiscount=Array.isArray(adjustments)?adjustments.reduce((sum:number,row:{early_discount?:unknown})=>sum+(money(row?.early_discount)??0),0):0;
-  const rentalRefunded=history.rows.filter(row=>row.type==='out'&&row.name==='order:rental_refund').reduce((sum,row)=>sum+Number(row.amount),0);
+  const rentalRefunded=history.rows.filter(row=>row.type==='out'&&row.name==='order:rental_refund'&&row.tx_status==='approved').reduce((sum,row)=>sum+Number(row.amount),0);
   const rentalRefundable=total===null||paid===null||!Number.isSafeInteger(earlyDiscount)||!Number.isSafeInteger(rentalRefunded)?0:Math.max(Math.min(earlyDiscount-rentalRefunded,paid-total),0);
   const items = await client.query(`SELECT d.id,d.vehicle_id,v.name,v.license,
       ${dailyPriceSql()} AS daily_price,d.return_at,d.total_renewal_amount,d.xmin::text AS revision
