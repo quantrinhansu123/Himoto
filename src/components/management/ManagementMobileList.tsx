@@ -11,7 +11,7 @@ import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitor
 import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
-import {ContractBranches} from './ContractBranches';
+import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
 import { vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
@@ -78,7 +78,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             <strong className="mg-mobile-card-title">{row.code} · {title}</strong>
             {config.kind==='contracts'&&<ContractBranches row={row}/>}
             {row.status==='reserved'&&<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>}
-            <span className="mg-monitoring-card-meta">{visible('license')&&<span>{row.license||'—'}</span>}{visible('contract_signed_at')&&<span>Ký: {formatValue(row.contract_signed_at,'date')}</span>}{visible('deposit_amount')&&<span>Cọc: {formatValue(row.deposit_amount,'money')}</span>}</span>
+            <span className="mg-monitoring-card-meta">{visible('license')&&<span className="mg-plate-cell"><span>{row.license||'—'}</span><VehicleOwnerBranch row={row}/></span>}{visible('contract_signed_at')&&<span>Ký: {formatValue(row.contract_signed_at,'date')}</span>}{visible('deposit_amount')&&<span>Cọc: {formatValue(row.deposit_amount,'money')}</span>}</span>
             {visible('rental_period')&&<ContractRentalPeriod row={row}/>}
             <span className="mg-monitoring-card-amounts">{monitoring?<>{visible('overdue_minutes')&&<strong>Quá hạn: {formatValue(row.overdue_minutes,'duration')}</strong>}{visible('monitoring_amount')&&<ContractMonitoringAmount row={row}/>}</>:columns.filter(column=>['total_amount','billing_next_due_at','billing_due_amount'].includes(column.key)).map(column=><span key={column.key}>{column.label}: <strong>{formatValue(row[column.key],column.format)}</strong></span>)}</span>
             {columns.filter(column=>!['rental_period','code','customer_name','license','contract_signed_at','deposit_amount','start_date','end_date','total_amount','billing_next_due_at','billing_due_amount','overdue_minutes','monitoring_amount','status','contract_gps_status','collection_notes'].includes(column.key)).map(column=><span className="mg-mobile-card-extra" key={column.key}>{column.label}: {optionLabel(config,column.key,formatValue(row[column.key],column.format))}</span>)}
@@ -100,6 +100,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             <strong className="mg-mobile-card-title">{title}</strong>
             <span className="mg-mobile-card-summary">{summary.slice(0, 2).map(item => <span key={item.key} title={`${item.label}: ${item.value}`}>{item.value}</span>)}</span>
             {config.kind==='vehicles'&&<>
+              <VehicleOwnerBranch row={row}/>
               <span className="mg-mobile-card-extra" style={{whiteSpace:'normal'}}>Kho quản lý: {row.store_name||'—'}</span>
               <span className="mg-mobile-card-extra" style={{whiteSpace:'normal'}}>Cơ sở nguồn khách: {row.beneficiary_store_name||(['using','rent'].includes(row.status)?'Chưa xác định':'—')}</span>
             </>}

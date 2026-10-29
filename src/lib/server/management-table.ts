@@ -254,17 +254,18 @@ export function vehiclePageClause(store:string,status:string,filters:Record<stri
 }
 export function vehiclePageSql(scopeClause:string) {
   return `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer,
-    v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name,
+    v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, os.store_name AS owner_store_name,
     v.xmin::text AS vehicle_revision
     FROM himoto.vehicles v
     LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
+    LEFT JOIN himoto.stores os ON os.id=v.store_id
     ${VEHICLE_RENTAL_SOURCE_JOIN_SQL}
     WHERE v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${scopeClause}`;
 }
 function vehicleHydrateSql() {
   return `SELECT v.id, v.name, v.brand, v.type, v.year, v.license, v.odometer,
     NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
-    v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, v.xmin::text AS vehicle_revision,
+    v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, os.store_name AS owner_store_name, v.xmin::text AS vehicle_revision,
     pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
     pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
     pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
@@ -282,6 +283,7 @@ function vehicleHydrateSql() {
     gps.provider_reported_at AS gps_reported_at, gps.last_ignition AS gps_ignition
     FROM himoto.vehicles v
     LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
+    LEFT JOIN himoto.stores os ON os.id=v.store_id
     ${VEHICLE_TRANSFER_JOIN_SQL}
     LEFT JOIN LATERAL (
       SELECT json_agg(json_build_object('order_id', o.id,

@@ -71,8 +71,8 @@ with sync_playwright() as pw:
         expect(page.get_by_text('3 kết quả phù hợp', exact=True)).to_be_visible()
         for code in ['VPS-28521', 'VPS-28404']:
             record = records.filter(has_text=code)
-            expect(record.get_by_text('Kho xe: CS Nguyễn Hoàng', exact=True)).to_be_visible()
             expect(record.get_by_text('Nguồn khách: CS Láng', exact=True)).to_be_visible()
+            expect(record.get_by_text('Sở hữu: CS Nguyễn Hoàng', exact=True)).to_be_visible()
             if width > 600:
                 assert record.locator('td[data-column="customer_name"]').evaluate('e => e.getBoundingClientRect().width >= 200'), 'Customer/branch column is squeezed'
                 assert record.evaluate('e => e.getBoundingClientRect().height < 180'), 'Branch labels wrap into an unreadable column'

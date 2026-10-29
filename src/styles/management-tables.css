@@ -1,6 +1,7 @@
 /* Shared screen density. Documents and print previews retain their own layout. */
 .mg-contract-branches { display: flex; flex-direction: column; gap: 3px; color: var(--mg-slate-600); font-size: 11px; font-weight: 400; line-height: 1.4; }
 .mg-contract-branches > span { white-space: normal; overflow-wrap: anywhere; }
+.mg-plate-cell { display: grid; gap: 3px; justify-items: start; }
 @media screen and (min-width: 768px) {
   .mg-table-scroll > .mg-table :is(th, td) { padding: 6px 8px; height: 40px; line-height: 1.35; }
   .mg-table-scroll > .mg-table th { font-size: 12px; }

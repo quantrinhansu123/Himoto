@@ -125,6 +125,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
     rentals_json: Array.isArray(raw.rental_blockers) ? JSON.stringify(raw.rental_blockers) : Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
     holder_name: vehicleHolderLabel(base.status,latestCustomer || text(raw.holder_name)),
+    owner_store_name: text(raw.owner_store_name),
     beneficiary_store_id: number(raw.beneficiary_store_id), beneficiary_store_name: text(raw.beneficiary_store_name),
     odometer: number(raw.odometer), daily_price: number(raw.daily_price), monthly_price: number(raw.monthly_price), year: text(raw.year),
     status: ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[base.status] || base.status,
