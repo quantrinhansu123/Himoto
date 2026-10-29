@@ -41,18 +41,25 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
     const holder = vehicleHolderLabel(row.status,value);
     if (holder === 'Lưu kho') return <span className="mg-status mg-status-green"><span />Lưu kho</span>;
     if (holder === 'Chưa xác định khách' || holder === '—') return <span className="mg-cell-value">{holder}</span>;
-    return <div className="mg-identity"><span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{holder.split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span><div><strong title={holder}>{holder}</strong></div></div>;
+    return <div className="mg-identity"><span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{holder.split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span><div><strong title={holder}>{holder}</strong><ContractBranches row={{...row,store_name:row.beneficiary_store_name}}/></div></div>;
   }
   if((config.kind==='contracts'||config.kind==='vehicles')&&column.key==='license')return <div className="mg-plate-cell"><span className="mg-cell-value" title={String(value||'')}>{value||'—'}</span><VehicleOwnerBranch row={row}/></div>;
-  if (column.format === 'person' || column.format === 'vehicle') return <div className={`mg-identity ${column.format === 'vehicle' ? 'mg-identity-vehicle' : ''}`}>
+  if (column.format === 'person' || column.format === 'vehicle') {
+    const holder=config.kind==='vehicles'&&column.key==='name'?vehicleHolderLabel(row.status,row.holder_name):'';
+    return <div className={`mg-identity ${column.format === 'vehicle' ? 'mg-identity-vehicle' : ''}`}>
     {column.format === 'person' && <span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{String(value || '').split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span>}
     <div>
       <strong title={String(value || '')}>{value || '—'}</strong>
       {config.kind==='contracts'&&column.key==='customer_name'?<ContractBranches row={row}/>:column.secondary && <small title={String(row[column.secondary] || '')}>{row[column.secondary] || '—'}</small>}
       {config.kind==='contracts'&&column.key==='vehicle_name'&&<VehicleOwnerBranch row={row}/>}
-      {config.kind === 'vehicles' && column.key === 'name' && <small title={vehicleHolderLabel(row.status,row.holder_name)}>{vehicleHolderLabel(row.status,row.holder_name)}</small>}
+      {config.kind === 'vehicles' && column.key === 'name' && holder==='Lưu kho' && <span className="mg-status mg-status-green" style={{marginTop:4}}><span />Lưu kho</span>}
+      {config.kind === 'vehicles' && column.key === 'name' && holder && holder!=='Lưu kho' && holder!=='—' && holder!=='Chưa xác định khách' && <>
+        <small title={holder}>{holder}</small>
+        <ContractBranches row={{...row,store_name:row.beneficiary_store_name}}/>
+      </>}
       {config.kind === 'vehicles' && column.key === 'name' && vehicleMissingOpenContract(row) && <small className="mg-vehicle-missing-contract" role="status">Đang thuê · không có hợp đồng mở</small>}
     </div></div>;
+  }
   const display = optionLabel(config, column.key, formatValue(value, column.format));
   return <span className={`mg-cell-value ${column.format === 'money' || column.format === 'number' ? 'mg-numeric' : ''}`} title={display}>{display}</span>;
 }

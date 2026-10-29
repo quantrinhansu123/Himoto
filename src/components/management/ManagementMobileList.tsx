@@ -12,10 +12,10 @@ import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
 import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
-import { vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
+import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 
 const SUMMARY_KEYS: Record<ManagementKind, string[]> = {
-  vehicles: ['license', 'holder_name', 'store_name', 'overdue_days'],
+  vehicles: ['license', 'store_name', 'overdue_days'],
   contracts: ['code', 'customer_phone', 'license', 'end_date'],
   customers: ['phone', 'id_card', 'store_name'],
   staff: ['phone', 'position', 'store_name'],
@@ -100,9 +100,9 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             <strong className="mg-mobile-card-title">{title}</strong>
             <span className="mg-mobile-card-summary">{summary.slice(0, 2).map(item => <span key={item.key} title={`${item.label}: ${item.value}`}>{item.value}</span>)}</span>
             {config.kind==='vehicles'&&<>
-              <VehicleOwnerBranch row={row}/>
+              <span className="mg-plate-cell"><span>{row.license||'—'}</span><VehicleOwnerBranch row={row}/></span>
+              {(()=>{const holder=vehicleHolderLabel(row.status,row.holder_name);return holder&&holder!=='—'&&holder!=='Chưa xác định khách'?(holder==='Lưu kho'?<span className="mg-status mg-status-green"><span/>Lưu kho</span>:<><span className="mg-mobile-card-extra" style={{whiteSpace:'normal'}}>{holder}</span><ContractBranches row={{...row,store_name:row.beneficiary_store_name}}/></>):null;})()}
               <span className="mg-mobile-card-extra" style={{whiteSpace:'normal'}}>Kho quản lý: {row.store_name||'—'}</span>
-              <span className="mg-mobile-card-extra" style={{whiteSpace:'normal'}}>Cơ sở nguồn khách: {row.beneficiary_store_name||(['using','rent'].includes(row.status)?'Chưa xác định':'—')}</span>
             </>}
             {config.kind === 'contracts' && row.billing_overdue_at && Number(row.billing_due_amount) > 0 && <span className="mg-mobile-card-billing">
               <span>Hẹn đóng: {formatValue(row.billing_overdue_at, 'date')} {String(row.billing_overdue_at).slice(11, 16)}</span>

@@ -102,6 +102,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   LEFT JOIN (SELECT DISTINCT ON (user_id) user_id,full_name FROM himoto.staff_account_attribution ORDER BY user_id,id) fallback_staff ON fallback_staff.user_id=o.contract_responsible_user_id
   LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
+      'owner_store_id',v.store_id,'owner_store_name',owner_store.store_name,
       'warehouse_store_id',warehouse.store_id,'warehouse_store_name',warehouse.store_name,'completed_at',d.completed_at${compact ? '' : `,
       'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
       'driver_name', d.driver_name, 'driver_license_number', d.driver_license_number,
@@ -109,6 +110,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
       'borrow_raincoats', d.borrow_raincoats, 'rent_at', d.rent_at, 'return_at', d.return_at`} ) ORDER BY d.id) AS vehicles,
       min(d.rent_at) AS start_date, max(d.return_at) AS end_date
     FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
+    LEFT JOIN himoto.stores owner_store ON owner_store.id=v.store_id
     ${CONTRACT_WAREHOUSE_JOIN_SQL}
     WHERE d.order_id=o.id AND d.deleted_at IS NULL
   ) ov ON true

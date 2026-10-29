@@ -115,8 +115,8 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
     filters: [{ key: 'type', label: 'Tất cả loại xe', options: VEHICLE_TYPES }, { key: 'beneficiary_store_id', label: 'Tất cả cơ sở nguồn khách', options: [], storeOptions: true }],
     columns: [codeColumn,
       { key: 'name', label: 'Tên xe', format: 'vehicle', secondary: 'brand' }, { key: 'license', label: 'Biển số' },
-      { key: 'holder_name', label: 'Tên khách hàng', format: 'person' },
-      { key: 'beneficiary_store_name', label: 'Cơ sở nguồn khách' },
+      { key: 'holder_name', label: 'Tên khách hàng', format: 'person', hidden: true },
+      { key: 'beneficiary_store_name', label: 'Cơ sở nguồn khách', hidden: true },
       { key: 'overdue_days', label: 'Số ngày quá hạn', format: 'number', align: 'right' },
       { key: 'color', label: 'Màu sắc' }, { key: 'type', label: 'Loại xe' }, { ...branchColumn, label: 'Kho quản lý' },
 

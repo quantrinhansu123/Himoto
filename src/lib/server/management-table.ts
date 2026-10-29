@@ -30,7 +30,7 @@ export function parseManagementTable(kind:TableKind,params:URLSearchParams):Mana
   const store=params.get('store')||'all';if(store!=='all'&&(!/^[1-9]\d*$/.test(store)||!Number.isSafeInteger(Number(store))))throw new ManagementTableError('Cơ sở không hợp lệ.');
   const storeBasis=params.get('store_basis')||'source';
   if(!['source','warehouse'].includes(storeBasis)||storeBasis==='warehouse'&&kind!=='contracts')throw new ManagementTableError('Cách lọc cơ sở không hợp lệ.');
-  const filters:Record<string,string>={};const keys=new Set([...MANAGEMENT_CONFIG[kind].filters.map(filter=>filter.key),'contract_type_id','customer_id','id']);
+  const filters:Record<string,string>={};const keys=new Set([...MANAGEMENT_CONFIG[kind].filters.map(filter=>filter.key),'contract_type_id','customer_id','id',...(kind==='vehicles'?['missing_contract']:[])]);
   for(const[key,value]of params)if(key.startsWith('filter_')){const field=key.slice(7);if(!keys.has(field)||value.length>100)throw new ManagementTableError('Bộ lọc không hợp lệ.');filters[field]=value;}
   const from=params.get('from')||'',to=params.get('to')||'';for(const date of [from,to])if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))))throw new ManagementTableError('Khoảng ngày không hợp lệ.');
   const search=params.get('search')||'',status=params.get('status')||'',days=params.get('overdue_days')||'',compare=params.get('overdue_compare')||'eq';
@@ -55,7 +55,7 @@ function contractPageScopeClause(scope:string):string {
 }
 function contractPageStatusClause(status:string) {
   if(!status)return '';
-  // Đang thuê = còn hạn; quá hạn (kể cả order_status=renting nhưng đã quá giờ trả) vào tab Quá hạn.
+  // Đang thuê = còn hạn trả. Quá hạn / nợ xấu dùng tab riêng.
   if(status==='renting')return ` AND o.order_status='renting' AND (o.return_at IS NULL OR o.return_at >= now())`;
   if(status==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment')`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
@@ -207,9 +207,11 @@ function contractHydrateSql() {
     LEFT JOIN LATERAL (
       SELECT json_agg(json_build_object('id', v.id, 'name', v.name, 'license', v.license,
         'brand', v.brand, 'type', v.type, 'year', v.year, 'color', v.color,
+        'owner_store_id',v.store_id,'owner_store_name',owner_store.store_name,
         'warehouse_store_id',warehouse.store_id,'warehouse_store_name',warehouse.store_name,'completed_at',d.completed_at) ORDER BY d.id) AS vehicles,
         min(d.rent_at) AS start_date, max(d.return_at) AS end_date
       FROM himoto.order_vehicle_details d LEFT JOIN himoto.vehicles v ON v.id = d.vehicle_id
+      LEFT JOIN himoto.stores owner_store ON owner_store.id=v.store_id
       ${contractWarehouseJoinSql()}
       WHERE d.order_id=o.id AND d.deleted_at IS NULL
     ) ov ON true
@@ -241,13 +243,21 @@ function vehicleRentalSql(field:'customer'|'store') {
 }
 const vehicleBeneficiarySql=()=>`rental_source.store_id`;
 const VEHICLE_RENTAL_SOURCE_JOIN_SQL=`LEFT JOIN himoto.vehicle_rental_sources(ARRAY(SELECT id FROM himoto.vehicles WHERE deleted_at IS NULL AND COALESCE(current_store_id,store_id)>0)) rental_source ON rental_source.vehicle_id=v.id`;
+function vehicleMissingOpenContractSql() {
+  return `v.status IN ('using','rent') AND NOT EXISTS (
+    SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+    WHERE d.vehicle_id=v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
+      AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract'))`;
+}
 function vehicleDerivedClause(query:ManagementTableInput['query']) {
   const op=query.overdueCompare==='gt'?'>':query.overdueCompare==='lt'?'<':'=';
   const days=query.overdueDays?` AND ${vehicleOverdueSql()}${op}${Number(query.overdueDays)}`:'';
-  return days;
+  const missing=query.filters.missing_contract==='1'?` AND ${vehicleMissingOpenContractSql()}`:'';
+  return `${days}${missing}`;
 }
 export function vehiclePageClause(store:string,status:string,filters:Record<string,string>) {
-  const storeSql=store==='all'?'':` AND (COALESCE(v.current_store_id,v.store_id)=${Number(store)} OR himoto.ownership_may_use_headquarters_vehicle(COALESCE(v.current_store_id,v.store_id)))`;
+  // Branch picker on /vehicles scopes by ownership store (v.store_id), not current stock.
+  const storeSql=store==='all'?'':` AND (v.store_id=${Number(store)} OR himoto.ownership_may_use_headquarters_vehicle(v.store_id))`;
   const mapped:Record<string,string>={using:"'using','rent'",repairing:"'repairing','maintenance'",pending:"'pending','holding'"};
   const statusSql=!status?'':mapped[status]?` AND v.status IN (${mapped[status]})`
     :/^[a-z][a-z0-9_]{0,63}$/.test(status)?` AND v.status='${status}'`:'';
@@ -360,7 +370,10 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
   const scope=kind==='customers'?customerPageClause(store,'')
     :kind==='vehicles'?` AND v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{})}`
     :kind==='staff'?staffPageClause(store,'',{}):'';
-  const filters=kind==='vehicles'?`${vehiclePageClause('all','',query.filters)}${vehicleDerivedClause(query)}`:kind==='staff'?staffPageClause('all','',query.filters):'';
+  // missing_contract narrows the page total only; tab/status badges and the banner count stay on the broader catalogue.
+  const vehicleFilters=kind==='vehicles'?Object.fromEntries(Object.entries(query.filters).filter(([key])=>key!=='missing_contract')):query.filters;
+  const missingOnly=kind==='vehicles'&&query.filters.missing_contract==='1';
+  const filters=kind==='vehicles'?`${vehiclePageClause('all','',vehicleFilters)}${vehicleDerivedClause({...query,filters:vehicleFilters})}`:kind==='staff'?staffPageClause('all','',query.filters):'';
   const selected=kind==='customers'?customerPageClause('all',query.status)
     :kind==='vehicles'?vehiclePageClause('all',query.status,{})
     :kind==='staff'?staffPageClause('all',query.status,{}):storePageClause(query.status);
@@ -368,18 +381,23 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
     :kind==='vehicles'?`CASE v.status WHEN 'rent' THEN 'using' WHEN 'maintenance' THEN 'repairing' WHEN 'holding' THEN 'pending' ELSE v.status END`
     :kind==='staff'?`CASE p.status WHEN '1' THEN 'active' WHEN '0' THEN 'inactive' ELSE p.status END`
     :`CASE s.status WHEN '1' THEN 'active' WHEN 'opening' THEN 'active' WHEN '0' THEN 'inactive' ELSE s.status END`;
+  const missingFlag=kind==='vehicles'?`,(${vehicleMissingOpenContractSql()}) AS missing_open_contract`:'';
+  const missingSelect=kind==='vehicles'?',count(*) FILTER (WHERE matches AND missing_open_contract)::int AS missing_open_contract_count':'';
+  const totalFilter=missingOnly?'matches AND selected AND missing_open_contract':'matches AND selected';
   const result=await client.query(`WITH counted AS MATERIALIZED (
-    SELECT ${status} AS status,(true${filters}${search.sql.replaceAll('$3','$1')}) AS matches,(true${selected}) AS selected
+    SELECT ${status} AS status,(true${filters}${search.sql.replaceAll('$3','$1')}) AS matches,(true${selected}) AS selected${missingFlag}
     FROM ${source} ${kind==='vehicles'&&query.filters.beneficiary_store_id?VEHICLE_RENTAL_SOURCE_JOIN_SQL:''} WHERE true${scope}
   ) SELECT count(*)::int AS scope_count,count(*) FILTER (WHERE matches)::int AS tab_count,
-    count(*) FILTER (WHERE matches AND selected)::int AS total,
+    count(*) FILTER (WHERE ${totalFilter})::int AS total${missingSelect},
     COALESCE((SELECT jsonb_agg(jsonb_build_array(status,n) ORDER BY status) FROM (
       SELECT status,count(*)::int AS n FROM counted WHERE matches GROUP BY status
     ) grouped),'[]'::jsonb) AS status_counts FROM counted`,search.value?[search.value]:[]);
   const row=result.rows[0];
   if(!row||['scope_count','tab_count','total'].some(key=>!Number.isSafeInteger(row[key])||row[key]<0)
     ||!Array.isArray(row.status_counts))throw new Error('Không đọc được tổng số bản ghi. Vui lòng thử lại.');
-  return {scopeCount:row.scope_count as number,tabCount:row.tab_count as number,total:row.total as number,statusCounts:row.status_counts as [string,number][]};
+  if(kind==='vehicles'&&(!Number.isSafeInteger(row.missing_open_contract_count)||row.missing_open_contract_count<0))throw new Error('Không đọc được số xe thiếu hợp đồng. Vui lòng thử lại.');
+  return {scopeCount:row.scope_count as number,tabCount:row.tab_count as number,total:row.total as number,statusCounts:row.status_counts as [string,number][],
+    ...(kind==='vehicles'?{missingOpenContractCount:row.missing_open_contract_count as number}:{})};
 }
 function mapManagementRows(kind:TableKind,rows:unknown[]) {
   const mapped=[];
@@ -495,6 +513,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       statusCounts:stats?.statusCounts??catalogue?.statusCounts??[],statuses:stats?.statuses??(catalogue?catalogue.statusCounts.map(([status])=>status):[...new Set(rows.map(row=>row.status))].sort()),dueCount:stats?.dueCount??0,
       summary:stats?.summary??(kind==='contracts'?{contractCount:total,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null),
       ...(stats?.overdueCounts?{overdueCounts:stats.overdueCounts}:{}),
+      ...(catalogue&&'missingOpenContractCount' in catalogue?{missingOpenContractCount:catalogue.missingOpenContractCount}:{}),
       recentDays:kind==='contracts'?recentDays??null:undefined,
     };
   }

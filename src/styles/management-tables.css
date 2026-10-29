@@ -1,7 +1,31 @@
 /* Shared screen density. Documents and print previews retain their own layout. */
-.mg-contract-branches { display: flex; flex-direction: column; gap: 3px; color: var(--mg-slate-600); font-size: 11px; font-weight: 400; line-height: 1.4; }
-.mg-contract-branches > span { white-space: normal; overflow-wrap: anywhere; }
-.mg-plate-cell { display: grid; gap: 3px; justify-items: start; }
+.mg-contract-branches {
+  display: block;
+  max-width: 168px;
+  margin-top: 2px;
+  color: var(--mg-slate-600);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.mg-contract-branches > span {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mg-plate-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  max-width: 168px;
+}
+.mg-plate-cell > .mg-cell-value,
+.mg-plate-cell > span:first-child {
+  white-space: nowrap;
+}
 @media screen and (min-width: 768px) {
   .mg-table-scroll > .mg-table :is(th, td) { padding: 6px 8px; height: 40px; line-height: 1.35; }
   .mg-table-scroll > .mg-table th { font-size: 12px; }
@@ -10,12 +34,12 @@
   .mg-table-scroll > :is(.mg-table-vehicles, .mg-table-customers, .mg-table-staff, .mg-table-stores, .mg-table-contracts) { min-width: 0; }
   .mg-table-scroll > .mg-table :is(.mg-index, .mg-select-column) { width: 34px; padding-left: 6px !important; padding-right: 6px !important; }
   .mg-table-scroll > .mg-table .mg-actions-column { width: 60px; min-width: 60px; }
-  .mg-table-scroll > .mg-table .mg-identity { gap: 6px; }
+  .mg-table-scroll > .mg-table .mg-identity { gap: 6px; align-items: flex-start; }
   .mg-table-scroll > .mg-table .mg-identity :is(strong, small) { max-width: 160px; }
   .mg-table-scroll > .mg-table-contracts .mg-identity strong { max-width: none; white-space: normal; overflow: visible; text-overflow: unset; overflow-wrap: anywhere; }
   .mg-table-scroll > .mg-table-contracts .mg-identity small { max-width: 220px; }
   .mg-table-scroll > .mg-table-contracts [data-column='customer_name'] { width: 220px; min-width: 220px; }
-  .mg-table-scroll > .mg-table .mg-avatar { width: 26px; height: 26px; font-size: 10px; }
+  .mg-table-scroll > .mg-table .mg-avatar { width: 26px; height: 26px; font-size: 10px; margin-top: 1px; }
   .mg-table-scroll > .mg-table .mg-cell-value { max-width: 168px; }
   .mg-table-scroll > .mg-table .mg-numeric { max-width: none; }
   .mg-table-scroll > .mg-table .mg-status { font-size: 11.5px; gap: 4px; padding: 3px 6px; }
@@ -31,6 +55,24 @@
   .mg-table-scroll > .mg-table [data-column='location_status'] { width: 184px; min-width: 176px; }
   .mg-table-scroll .mg-gps-evidence.is-compact { display: grid; gap: 1px; max-width: 180px; margin-top: 3px; font-size: 10.5px; line-height: 1.3; }
   .mg-table-scroll .mg-gps-evidence.is-compact > span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  /* Rows with branch meta under plate/customer need room and top alignment. */
+  .mg-table-scroll > :is(.mg-table-vehicles, .mg-table-contracts) :is(th, td) {
+    height: auto;
+    min-height: 40px;
+    vertical-align: top;
+  }
+  .mg-table-scroll > :is(.mg-table-vehicles, .mg-table-contracts) [data-column='license'] {
+    width: 148px;
+    min-width: 136px;
+  }
+  .mg-table-scroll > .mg-table-vehicles [data-column='holder_name'] {
+    width: 180px;
+    min-width: 160px;
+  }
+  .mg-table-scroll > .mg-table-vehicles [data-column='holder_name'] .mg-identity {
+    align-items: flex-start;
+  }
 
   .mg-table-scroll > .mg-cashbook-table { min-width: 1500px; }
   .mg-cashbook-table th.mg-cashbook-col-id { width: 66px; }

@@ -38,6 +38,7 @@ import { OVERDUE_BUCKETS } from '@/lib/management/contract-overdue';
 import { useSelectedVehicleGps } from './SelectedVehicleGps';
 import { contractVehicleIds,contractGpsFields } from './ContractMonitoringCells';
 import { CONTRACT_STATUS_TABS } from '@/lib/management/contract-tabs';
+import { ContractStatusTotals } from './ContractStatusTotals';
 import { RecordTotal } from './RecordTotal';
 
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
@@ -168,13 +169,17 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const defaultVisibleKeys = useMemo(() => columnSignature?columnSignature.split('|'):[],[columnSignature]);
   const [visibleKeys, setVisibleKeys] = useState<string[]>(() => defaultVisibleKeys);
   const previousMode=useRef(columnMode);
-  // Hot reload / new default columns (e.g. Tên khách hàng) must appear without clearing the page.
+  const previousDefaults=useRef(defaultVisibleKeys);
+  // Hot reload / new default columns must appear; columns dropped from defaults are hidden again.
   useEffect(() => {
-    if(previousMode.current!==columnMode){previousMode.current=columnMode;setVisibleKeys(defaultVisibleKeys);return;}
+    if(previousMode.current!==columnMode){previousMode.current=columnMode;previousDefaults.current=defaultVisibleKeys;setVisibleKeys(defaultVisibleKeys);return;}
+    const removed=previousDefaults.current.filter(key=>!defaultVisibleKeys.includes(key));
+    previousDefaults.current=defaultVisibleKeys;
     setVisibleKeys(current => {
-      const missing = defaultVisibleKeys.filter(key => !current.includes(key));
-      if (!missing.length) return current;
-      const next = [...current];
+      let next=removed.length?current.filter(key=>!removed.includes(key)):current;
+      const missing = defaultVisibleKeys.filter(key => !next.includes(key));
+      if (!missing.length) return next===current?current:next;
+      next = [...next];
       for (const key of missing) {
         const at = defaultVisibleKeys.indexOf(key);
         let insertAt = next.length;
@@ -256,20 +261,25 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const gpsAllowed=can('vehicles.read');
   const listGps=useSelectedVehicleGps(compactContracts&&gpsAllowed&&visibleKeys.includes('contract_gps_status')?allRows.flatMap(contractVehicleIds):[]);
   const rows:ManagementRow[] = useMemo(() => kind === 'vehicles' ? allRows.map(row => ({...row,overdue_days:vehicleOverdueDays(row,openedAt)})) : compactContracts?allRows.map(row=>({...row,contract_signed_at:row.signed_on||row.start_date,...contractGpsFields(row,listGps,gpsAllowed)})):allRows,[allRows,kind,openedAt,compactContracts,listGps,gpsAllowed]);
-  const scopedRows = useMemo(() => filterRows(rows, EMPTY_QUERY, selectedStore), [rows, selectedStore]);
+  const scopedRows = useMemo(() => {
+    if(kind==='vehicles')return rows.filter(row=>selectedStore==='all'||String(row.owner_store_id??row.store_id??'')===selectedStore);
+    return filterRows(rows, EMPTY_QUERY, selectedStore);
+  }, [rows, selectedStore, kind]);
   const dueCount = paged ? table.data?.dueCount || 0 : scopedRows.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0).length;
   const filteredRows = useMemo(() => paged ? rows : sortRows(filterRows(scopedRows,query,'all'),sort.key,sort.direction),[paged,rows,scopedRows,query,sort]);
   const tabRows = useMemo(() => filterRows(scopedRows, { ...query, status: '' }, 'all'), [scopedRows, query]);
   const statusCounts = useMemo(() => { if(paged)return new Map(table.data?.statusCounts || []); const counts = new Map<string, number>(); for (const row of tabRows) counts.set(row.status, (counts.get(row.status) || 0) + 1); return counts; }, [tabRows,paged,table.data]);
   const missingContractVehicles=useMemo(()=>kind==='vehicles'?filteredRows.filter(vehicleMissingOpenContract):EMPTY_ROWS,[kind,filteredRows]);
+  const missingOpenContractCount=kind==='vehicles'
+    ?(paged?table.data?.missingOpenContractCount??missingContractVehicles.length:scopedRows.filter(vehicleMissingOpenContract).length)
+    :0;
   const resultCount=paged ? table.data?.total || 0 : filteredRows.length;
   const scopeCount=paged ? table.data?.scopeCount || 0 : scopedRows.length;
   const tabCount=paged ? table.data?.tabCount || 0 : tabRows.length;
   const pageCount = paged ? table.data?.pages || 1 : Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safePage = paged ? table.data?.page || 1 : Math.min(page, pageCount);
   const offset = (safePage - 1) * pageSize;
-  // Always keep vehicle customer holder visible even if an older column-menu state hid it.
-  const columns = config.columns.filter(c => visibleKeys.includes(c.key) || (kind === 'vehicles' && c.key === 'holder_name'));
+  const columns = config.columns.filter(c => visibleKeys.includes(c.key));
   const statusOptions = [...config.statuses, ...Array.from(new Set(paged?table.data?.statuses || []:rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const contractTabs = kind === 'contracts' && !draftsOnly;
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || query.overdueDays.trim() || query.overdueBucket || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
@@ -358,7 +368,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   return <ContractCollectionNotesProvider rows={allRows} enabled={collectionNotes&&visibleKeys.includes('collection_notes')}><section className={`mg-page mg-page-${kind}${vatOnly?' mg-page-contracts-vat':''}${compactContracts?' mg-compact-contracts':''}${monitoringContracts?' mg-monitoring-contracts':''}`} aria-label={config.title}>
     {inventoryOpen&&<SharedVehicleInventory onClose={()=>setInventoryOpen(false)}/>}
     <div className="mg-page-content">
-      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label="Toàn bộ hợp đồng" count={table.data ? scopeCount : null} loading={loading} className="mg-contract-total"/>{!draftsOnly&&<p>Cơ sở đang xem lọc theo nguồn khách. Kho xe ghi riêng trên từng hợp đồng.</p>}{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Toàn bộ xe',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{config.description}</p></div>}
+      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label="Toàn bộ hợp đồng" count={table.data ? scopeCount : null} loading={loading} className="mg-contract-total"/>{!draftsOnly&&<p>Cơ sở đang xem lọc theo nguồn khách (cơ sở tạo hợp đồng). Dưới biển số ghi cơ sở sở hữu xe.</p>}{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Toàn bộ xe',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{kind==='vehicles'?'Cơ sở đang xem lọc theo cơ sở sở hữu xe. Dưới tên khách ghi nguồn khách; kho quản lý vẫn hiện riêng.':config.description}</p></div>}
         {kind==='contracts'&&<div className="mg-heading-actions mg-contract-flow">
           {(canSaveContractDrafts||can('contracts.renew')||canPayContracts)&&<button type="button" className="mg-button" onClick={()=>setBackfillOpen(true)}><Plus size={17}/>Nhập bổ sung giao dịch</button>}
           {canSaveContractDrafts&&<><button type="button" className="mg-button" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}}><Plus size={17}/>Nhập hợp đồng</button></>}
@@ -389,6 +399,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       {kind === 'staff' && <StaffOrganizationChart />}
 
       <div className="mg-data-panel">
+        {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&!overdueOnly&&<ContractStatusTotals counts={statusCounts} loading={loading}/>}
         <div className="mg-status-tabs" aria-label="Lọc theo trạng thái" aria-busy={loading}>{contractTabs ? <>
           {CONTRACT_STATUS_TABS.map(tab => <button type="button" key={tab.value} className={query.status === tab.value ? 'is-active' : ''} aria-pressed={query.status === tab.value} onClick={() => updateQuery({ status: tab.value,overdueBucket:undefined,overdueDays:'' })}>{tab.label}<span>{loading?'—':tab.value?statusCounts.get(tab.value)||0:tabCount}</span></button>)}
           {query.status && !CONTRACT_STATUS_TABS.some(tab => tab.value === query.status) && <button type="button" className="is-active" aria-pressed="true">{optionLabel(config,'status',query.status)}<span>{loading?'—':statusCounts.get(query.status)||0}</span></button>}
@@ -418,7 +429,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           </OptionalTools>
         </div>
         {isFiltered && <div className="mg-filter-summary"><span><strong>{resultCount}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
-        {kind==='vehicles'&&!loading&&!error&&missingContractVehicles.length>0&&<div className="mg-billing-reminder" role="status"><p><TriangleAlert size={16} aria-hidden="true"/> <strong>{missingContractVehicles.length} xe</strong> đang ở trạng thái Đang thuê nhưng không có hợp đồng mở. Kiểm tra và chuyển Lưu kho hoặc lập hợp đồng.</p>{query.status!=='using'&&<button type="button" className="mg-button" onClick={()=>updateQuery({status:'using'})}>Lọc Đang thuê</button>}{can('vehicles.write')&&<button type="button" className="mg-button" onClick={()=>setVehicleAction({mode:'status',vehicle:missingContractVehicles[0]||null})}><RefreshCw size={16}/>Đổi trạng thái xe</button>}</div>}
+        {kind==='vehicles'&&!loading&&!error&&missingOpenContractCount>0&&<div className="mg-billing-reminder" role="status"><p><TriangleAlert size={16} aria-hidden="true"/> <strong>{missingOpenContractCount} xe</strong> đang ở trạng thái Đang thuê nhưng không có hợp đồng mở. Kiểm tra và chuyển Lưu kho hoặc lập hợp đồng.</p>{query.filters.missing_contract!=='1'&&<button type="button" className="mg-button" onClick={()=>updateQuery({status:'using',filters:{...query.filters,missing_contract:'1'}})}>Lọc xe thiếu HĐ</button>}{query.filters.missing_contract==='1'&&<button type="button" className="mg-button" onClick={()=>{const next={...query.filters};delete next.missing_contract;updateQuery({filters:next});}}>Bỏ lọc thiếu HĐ</button>}{can('vehicles.write')&&missingContractVehicles[0]&&<button type="button" className="mg-button" onClick={()=>setVehicleAction({mode:'status',vehicle:missingContractVehicles[0]})}><RefreshCw size={16}/>Đổi trạng thái xe</button>}</div>}
         {kind==='contracts'&&!compactContracts&&query.search.trim()&&(draftsOnly?<div className="mg-billing-reminder"><p>Chỉ tìm trong hợp đồng nháp.</p><Link className="mg-button" href={`/contracts?search=${encodeURIComponent(query.search.trim())}`}>Tìm trong tất cả hợp đồng</Link></div>:!tableInput.scope&&<p className="mg-reminder-help">Kết quả ưu tiên hợp đồng đang thuê / quá hạn gần nhất để mở trả xe; các bản nháp và lịch sử vẫn ở bên dưới.</p>)}
         {kind==='contracts'&&!compactContracts&&!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder" role="status"><p>Đang tải nhanh hợp đồng khoảng <strong>{table.data.recentDays} ngày</strong> gần đây và các hợp đồng đang mở. Phân trang trong tập này trước.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
         {kind === 'contracts' && !compactContracts && !loading && !error && dueCount > 0 && <div className="mg-billing-reminder" role="status"><p><strong>{dueCount} hợp đồng thuê sở hữu đến hạn đóng tiền.</strong> {paymentDueOnly && canBulkRemind ? 'Chọn nhiều hợp đồng rồi bấm Gửi nhắc nợ để gửi tin Zalo tới từng số khách.' : 'Khoản chưa đóng đủ tiếp tục hiện để kế toán giục nợ.'}</p>{!paymentDueOnly && <button className="mg-button" type="button" onClick={() => router.push('/contracts/due')}>Xem khoản đến hạn</button>}{paymentDueOnly && canBulkRemind && selectedIds.size > 0 && <button className="mg-button mg-button-primary" type="button" onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ ({selectedIds.size})</button>}</div>}

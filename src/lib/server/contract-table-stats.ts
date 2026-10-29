@@ -67,7 +67,7 @@ export async function fastContractStatistics(db:Pick<PoolClient,'query'>,input:M
    split AS MATERIALIZED (SELECT *,status IN('draft','renting','overdue','wait_payment','reserved','bad_debt') OR installment_plan IS NOT NULL
      OR NOT(total_amount IS NULL OR total_amount='' OR total_amount ~ '^[0-9]{1,13}$') AS needs_detail FROM source),
    closed AS MATERIALIZED (SELECT * FROM split WHERE NOT needs_detail),
-   selected AS (SELECT * FROM closed WHERE $1::text='' OR status=$1 OR $1='renting' AND status='overdue')
+   selected AS (SELECT * FROM closed WHERE $1::text='' OR status=$1)
    SELECT COALESCE((SELECT jsonb_agg(to_jsonb(s)) FROM split s WHERE needs_detail),'[]'::jsonb) AS detailed,
      (SELECT count(*)::int FROM closed) AS closed_total,(SELECT count(*)::int FROM selected) AS closed_selected,
      COALESCE((SELECT jsonb_agg(jsonb_build_array(status,n) ORDER BY status) FROM (SELECT status,count(*)::int AS n FROM closed GROUP BY status) c),'[]'::jsonb) AS closed_counts,

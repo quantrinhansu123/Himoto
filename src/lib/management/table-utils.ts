@@ -1,6 +1,7 @@
 import { CellValue, ManagementRow } from './types';
 import { staffRoles } from './staff-positions';
 import { matchesOverdueBucket,type OverdueBucket } from './contract-overdue';
+import { vehicleMissingOpenContract } from './vehicle-holder';
 import { formatDate, formatDateTime } from '@/lib/formatters';
 
 export type OverdueCompare = 'gt' | 'lt' | 'eq';
@@ -39,8 +40,10 @@ export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: st
   const licenseNeedle = needle.replace(/[\s.-]/g, '');
   return rows.filter(row => {
     if (storeId && storeId !== 'all' && String(row.store_id ?? row.id) !== storeId) return false;
-    if (query.status && row.status !== query.status && !(query.status==='overdue'&&row.collection_overdue===1)) return false;
-    if (Object.entries(query.filters).some(([key, value]) => value && String(row[key] ?? '') !== value && !(key === 'position' && staffRoles(row.position).includes(value)))) return false;
+    if (query.status && row.status !== query.status
+      && !(query.status==='overdue'&&row.collection_overdue===1)) return false;
+    if (query.filters.missing_contract === '1' && !vehicleMissingOpenContract(row)) return false;
+    if (Object.entries(query.filters).some(([key, value]) => key!=='missing_contract' && value && String(row[key] ?? '') !== value && !(key === 'position' && staffRoles(row.position).includes(value)))) return false;
     const date = String(row.start_date ?? '').slice(0, 10);
     if (query.startDate && (!date || date < query.startDate)) return false;
     if (query.endDate && (!date || date > query.endDate)) return false;

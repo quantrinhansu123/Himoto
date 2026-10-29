@@ -9,7 +9,7 @@ import { badDebtCutoff } from './contract-bad-debt';
 import { applyInstallmentBilling } from './contract-billing';
 import { ContractDraftRequestError,contractErrorFields } from './contract-feedback';
 import { vehicleHolderLabel } from './vehicle-holder';
-import {contractWarehouses} from './contract-warehouses';
+import {contractOwnerStores,contractWarehouses} from './contract-warehouses';
 
 export function createDemoRepository(draftStorage?: DraftStorage): ManagementRepository {
   let dataset = createDemoDataset();
@@ -125,6 +125,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
     rentals_json: Array.isArray(raw.rental_blockers) ? JSON.stringify(raw.rental_blockers) : Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
     holder_name: vehicleHolderLabel(base.status,latestCustomer || text(raw.holder_name)),
+    owner_store_id: number(raw.store_id),
     owner_store_name: text(raw.owner_store_name),
     beneficiary_store_id: number(raw.beneficiary_store_id), beneficiary_store_name: text(raw.beneficiary_store_name),
     odometer: number(raw.odometer), daily_price: number(raw.daily_price), monthly_price: number(raw.monthly_price), year: text(raw.year),
@@ -146,11 +147,14 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
   const payload = object(raw.draft_payload);
   const saved = object(payload.management_composer);
   const snapshot = object(saved.draft);
-  const warehouses=contractWarehouses(vehicles.length?vehicles:Array.isArray(snapshot.vehicles)?snapshot.vehicles.map(object):[]);
+  const vehicleRows=vehicles.length?vehicles:Array.isArray(snapshot.vehicles)?snapshot.vehicles.map(object):[];
+  const warehouses=contractWarehouses(vehicleRows);
+  const owners=contractOwnerStores(vehicleRows);
   const salesStaffId = text(raw.sales_staff_id ?? object(saved.profile).sales_staff_id ?? snapshot.sales_staff_id);
   const salesAttribution = object(object(saved.profile_attribution).NVKD ?? object(saved.sales_attribution).NVKD);
   const mapped: ManagementRow = { ...base, code, name: code,
     warehouse_store_ids_json:JSON.stringify(warehouses.ids),warehouse_store_name:warehouses.names.join(', '),
+    owner_store_name:owners.names.join(', '),
     sales_staff_id: /^[1-9]\d{0,14}$/.test(salesStaffId) ? Number(salesStaffId) : undefined, sales_staff_name: text(raw.sales_staff_name ?? salesAttribution.name ?? object(saved.profile).sales_staff_name ?? snapshot.sales_staff_name),
     store_id: base.store_id ?? number(store.id), store_name: base.store_name || text(store.store_name || store.name),
     store_kind: text(raw.store_kind),
