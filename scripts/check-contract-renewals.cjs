@@ -11,6 +11,11 @@ async function main() {
   assert.equal(server.parseRenewalInput(base).note, 'QA');
   assert.equal(server.parseRenewalInput({ ...base, amount: '0' }).amount, '0');
   assert.equal(server.parseRenewalInput({ ...base, expected_amount: '280' }).expected_amount, '280');
+  assert.equal(shared.renewalDurationUnits('2026-10-29T18:09','2026-11-02T18:09'),4);
+  assert.equal(shared.renewalDurationUnits('2026-10-29T11:09:00Z','2026-10-29T20:09','hour'),2);
+  assert.equal(shared.renewalDurationUnits('2026-10-29T18:09','2026-10-28T18:09'),null);
+  assert.match(shared.renewalFeeWarning(250000,1000000),/750.000/);
+  assert.equal(shared.renewalFeeWarning(1000000,250000),'');
   const outside = server.parseRenewalInput({ ...base, outside_amount: '50000', outside_name: ' Phí gửi xe ' });
   assert.equal(outside.outside_amount, '50000');
   assert.equal(outside.outside_name, 'Phí gửi xe');
@@ -31,7 +36,7 @@ async function main() {
     const tables = ['order_vehicle_details', 'orders', 'vehicles','transactions'];
     const proxy = { query: async (sql, params) => {
       let rewritten = sql;
-      for (const table of tables) rewritten = rewritten.replaceAll(`himoto.${table}`, `pg_temp.qa_renewal_${table}`);
+      for (const table of [...tables,'management_contract_notifications','management_contract_payments']) rewritten = rewritten.replaceAll(`himoto.${table}`, `pg_temp.qa_renewal_${table}`);
       assert(!rewritten.includes('himoto.'), 'All business SQL must use TEMP');
       return c.query(rewritten, params);
     } };
@@ -47,6 +52,7 @@ async function main() {
         await c.query(`CREATE TEMP TABLE qa_renewal_${table} (LIKE himoto.${table} INCLUDING DEFAULTS) ON COMMIT DROP`);
         await c.query(`ALTER TABLE qa_renewal_${table} ALTER COLUMN id DROP DEFAULT`);
       }
+      for(const table of ['management_contract_notifications','management_contract_payments'])await c.query(`CREATE TEMP TABLE qa_renewal_${table} (LIKE himoto.${table} INCLUDING DEFAULTS) ON COMMIT DROP`);
       await c.query(`INSERT INTO qa_renewal_orders(id,contract_number,order_status,store_id,total,pid,return_at,draft_payload) VALUES
           (1,'QA-1','renting',23,'1000',400,'2026-01-10T10:00:00+07:00','{"order_items":[{"vehicle_id":100}]}'),(2,'QA-2','draft',23,'1000',0,NULL,NULL);
         INSERT INTO qa_renewal_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES(100,'Xe QA','Honda','xeso',2026,23,23,'QA-A','using',143);
@@ -65,6 +71,14 @@ async function main() {
       const item = (await c.query('SELECT return_at,total_renewal_amount FROM qa_renewal_order_vehicle_details WHERE id=101')).rows[0];
       assert.equal(item.return_at.toISOString(), '2026-01-20T03:00:00.000Z'); assert.equal(Number(item.total_renewal_amount), 300);
       checks.push('PostgreSQL TEMP: renewal moves the vehicle and contract return date, adds the fee to the contract total only (paid unchanged), keeps legacy payload and records version v2 with before/after values');
+      await c.query('SAVEPOINT reserved_versions');
+      await c.query(`INSERT INTO qa_renewal_management_contract_notifications(id,order_id,store_id,event_key,root_event_key,event_type,payload,status)
+        VALUES('11111111-1111-4111-8111-111111111111',1,23,'renewal:1:8','renewal:1:8','renewal','{"renewal":{"version":8}}','manual');
+        INSERT INTO qa_renewal_management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload)
+        VALUES('22222222-2222-4222-8222-222222222222',1,999,143,'qa','{"version":12}');`);
+      const reserved=await renew({return_at:'2026-01-25T10:00',amount:'0'});assert.equal(reserved.version,13);
+      await c.query('ROLLBACK TO SAVEPOINT reserved_versions');await c.query('RELEASE SAVEPOINT reserved_versions');
+      checks.push('Renewal versions skip numbers retained by old notice keys and receipts even when the contract JSON lost those versions');
       const second = await renew({ return_at: '2026-01-25T10:00', amount: '0', note: '' });
       assert.equal(second.version, 3); assert.equal(second.total_amount, 1300);
       order = (await c.query('SELECT total,draft_payload FROM qa_renewal_orders WHERE id=1')).rows[0];

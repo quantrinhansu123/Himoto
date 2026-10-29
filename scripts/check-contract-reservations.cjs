@@ -54,7 +54,7 @@ async function run() {
       INSERT INTO himoto.stores VALUES(1,'CS nguồn khách QA'),(2,'CS giữ xe QA');
       INSERT INTO himoto.users VALUES(80,'Nhân viên QA');
       INSERT INTO himoto.staff_profiles VALUES(8,2,80,'Nhân viên giữ xe QA');
-      INSERT INTO himoto.vehicles(id,name,license,current_store_id,store_id,status) VALUES(101,'Xe QA','QA-101',2,1,'ready'),(102,'Xe QA 2','QA-102',2,1,'ready'),(103,'Xe QA 3','QA-103',2,1,'ready');
+      INSERT INTO himoto.vehicles(id,name,license,current_store_id,store_id,status) VALUES(101,'Xe QA','QA-101',1,2,'ready'),(102,'Xe QA 2','QA-102',1,2,'ready'),(103,'Xe QA 3','QA-103',1,2,'ready');
       INSERT INTO himoto.customers(id,name,phone,id_card,status) VALUES(77,'Khách QA','0900000077','001234567877','1');
       INSERT INTO himoto.cash VALUES(1,'Két QA',1,'Active',1000000),(2,'Két kho QA',2,'Active',500000);
       INSERT INTO himoto.banks VALUES(3,'Bank QA','Chủ TK QA','0001',1,'personal','Active',0,2000000);`);

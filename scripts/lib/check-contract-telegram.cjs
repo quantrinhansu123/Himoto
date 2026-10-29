@@ -15,7 +15,8 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   assert(rental.endsWith(`Thời gian: ${new Date(fixture.at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`));
   const renewal={version:2,amount:1500000,before_return_at:'2026-11-01T10:00:00+07:00',return_at:'2026-12-01T10:00:00+07:00',license:'20H1.573.02',vehicle_name:'Wave'};
   const renewed=content.contractNotificationText('renewal',{...fixture,customer:'Đoàn Văn Dũng',renewal});
-  for(const line of ['Khách gia hạn: Đoàn Văn Dũng','Loại xe: Wave','Bsx: 20H1.573.02','01/11/2026 - 01/12/2026','Phí gia hạn: 1.500.000 đ'])assert(renewed.includes(line),line);
+  for(const line of ['Khách gia hạn: Đoàn Văn Dũng','Loại xe: Wave','Bsx: 20H1.573.02','01/11/2026 10:00 - 01/12/2026 10:00','Phí gia hạn: 1.500.000 đ'])assert(renewed.includes(line),line);
+  assert(renewed.includes('(30 ngày)'));
   assert.equal(content.notificationHash('rental',fixture),content.notificationHash('rental',Object.fromEntries(Object.entries({...fixture,at:new Date().toISOString(),actor:'Other sender'}).reverse())));
   await c.query(`UPDATE ${schema}.orders SET total='200000',total_rental_fees=200000,first_deposit_amount=1000000,rent_at='2026-11-01T10:00:00+07:00',return_at='2026-11-02T10:00:00+07:00',draft_payload=$1 WHERE id=1`,[JSON.stringify({management_composer:{finalized:{contract_number:'HD-QA-1'},draft:{staff_name:'Named QA employee'},versions:[{...renewal,kind:'renewal'}]}})]);
   await c.query(`INSERT INTO ${schema}.transactions(id,order_id,name,type,value,status,user_id,store_id,cash_id,bank_id,payment_method,bank_owner_type,note) VALUES
@@ -66,6 +67,16 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   assert.equal((await content.notificationPayload(db,1,'renewal',143,['renewal-3'],{...renewal,version:3})).method,'');
   const linkedEvents=(await telegram.readContractTelegram(db,1,143,admin)).state.events.filter(e=>e.kind==='renewal');
   assert.equal(linkedEvents.length,1);assert.equal(linkedEvents[0].key,'renewal:1:2');assert(linkedEvents[0].text.includes('CK TK cá nhân'));
+  await c.query('SAVEPOINT stale_renewal_snapshot');
+  const currentRenewal={...renewal,kind:'renewal',created_at:'2026-10-29T12:00:00Z',before_return_at:'2026-11-01T10:00:00+07:00',return_at:'2026-11-05T10:00:00+07:00'};
+  await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,versions}',$1::jsonb)::json WHERE id=1`,[JSON.stringify([currentRenewal])]);
+  await notices.queueContractNotification(db,1,'renewal','renewal:1:2',143,'renewal-2',renewal);
+  const corrected=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');
+  assert(corrected.text.includes('01/11/2026 10:00 - 05/11/2026 10:00 (4 ngày)'),corrected.text);
+  assert(!corrected.text.includes('01/12/2026'));
+  const unrelated=(await content.notificationPayload(db,1,'renewal',143,['renewal-2'],currentRenewal));
+  assert.deepEqual(unrelated.payment_amounts.renewal,[],'An older receipt reusing v2 but with another period is not payment for the current renewal');
+  await c.query('ROLLBACK TO SAVEPOINT stale_renewal_snapshot');await c.query('RELEASE SAVEPOINT stale_renewal_snapshot');
   await c.query('ROLLBACK TO SAVEPOINT linked_renewal_telegram');
   await telegram.saveContractTelegram(db,1,143,admin,{action:'auto',enabled:false});
   await notices.queueContractNotification(db,1,'renewal','renewal:1:2',143,'renewal-2',renewal);
@@ -141,5 +152,6 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
     'Content hashes survive JSONB key ordering; completed automatic content cannot be manually duplicated; renewal photo ownership and read-only permissions enforced',
     'Confirmed-absent retry records the operator review, rejects unconfirmed/unauthorized/partial sends, queues once and dispatches only the selected contract',
     'Telegram previews use the current paper contract number after correction while sent snapshots and delivery history remain immutable',
-    'Empty vehicle labels from cross-branch RLS are backfilled when reading Telegram previews'];
+    'Empty vehicle labels from cross-branch RLS are backfilled when reading Telegram previews',
+    'A reused renewal version reads the current four-day interval instead of a stale notice; another period with the same number cannot supply its receipts'];
 };

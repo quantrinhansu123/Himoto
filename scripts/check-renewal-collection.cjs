@@ -11,7 +11,7 @@ const pool=load(path.join(root,'lib/server/himoto-database')).ownerDatabase;
 global.fetch=async()=>{throw Error('No provider/Telegram requests in this test');};
 const checks=[];
 async function main(){const c=await pool.connect();
-const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles','staff_account_attribution'];
+const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','management_contract_notifications','stores','users','management_record_photos','customers','staff_profiles','staff_account_attribution'];
 const db={query:(sql,args)=>{for(const table of tables)sql=sql.replaceAll(`himoto.${table}`,`pg_temp.qa_atomic_${table}`);assert(!sql.includes('himoto.'),`Only TEMP business SQL: ${[...sql.matchAll(/himoto\.\w+/g)].map(m=>m[0]).join(',')}`);return c.query(sql,args);}};
 const atomic=async(fn)=>{await c.query('SAVEPOINT action');try{const value=await fn();await c.query('RELEASE SAVEPOINT action');return value;}catch(e){await c.query('ROLLBACK TO SAVEPOINT action');await c.query('RELEASE SAVEPOINT action');throw e;}};
 const local=ms=>new Date(ms+7*3600000).toISOString().slice(0,16);

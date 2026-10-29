@@ -7,7 +7,7 @@ import { contractVehicleLabelSource,contractVehicleReadSource } from './contract
 import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null;object_bucket?:string|null;object_key?:string|null;object_etag?:string|null}
-export interface RenewalNotice {version?:number;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;outside_amount?:number;outside_name?:string;items?:RenewalNotice[]}
+export interface RenewalNotice {version?:number;item_id?:number;created_at?:string;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;outside_amount?:number;outside_name?:string;items?:RenewalNotice[]}
 export interface PaymentAmount {method:string;amount:number}
 export interface NotificationPaymentAmounts {
   rental?:PaymentAmount[];deposit?:PaymentAmount[];renewal?:PaymentAmount[];
@@ -19,6 +19,7 @@ export interface NotificationPayload {
   refunded?:number;rental_refunded?:number;method?:string;deposit_method?:string;renewal?:RenewalNotice;
   payment_amounts?:NotificationPaymentAmounts;
   ownership_renewal_note?:string;
+  rental_correction?:{request_id:string;start_at:string;end_at:string};
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
   return_details?:{note:string;returned_at:string[];rental_refund_recipient?:{bank?:string;account?:string;name?:string}};
   refund_recipient?:{bank?:string;account?:string;name?:string};
@@ -30,6 +31,20 @@ export interface NotificationPayload {
 type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
 const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
+const renewalClock=(value:string|null|undefined)=>value?`${day(value)} ${new Date(value).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}`:'Chưa đối chiếu';
+const renewalPeriod=(item:RenewalNotice)=>`${renewalClock(item.before_return_at)} - ${renewalClock(item.return_at)}`;
+export function sameRenewalPeriod(a:Partial<RenewalNotice>,b:Partial<RenewalNotice>) {
+  if(a.item_id&&b.item_id&&Number(a.item_id)!==Number(b.item_id))return false;
+  if(a.created_at&&b.created_at)return Date.parse(a.created_at)===Date.parse(b.created_at);
+  return ['before_return_at','return_at'].every(key=>{
+    const x=a[key as 'return_at'],y=b[key as 'return_at'];return !x||!y||new Date(x).getTime()===new Date(y).getTime();
+  });
+}
+export function renewalDurationText(item:RenewalNotice) {
+  const minutes=Math.ceil((Date.parse(item.return_at)-Date.parse(item.before_return_at||''))/60_000);
+  if(!Number.isFinite(minutes)||minutes<=0)return '';
+  return [Math.floor(minutes/1440)?`${Math.floor(minutes/1440)} ngày`:'',Math.floor(minutes%1440/60)?`${Math.floor(minutes%1440/60)} giờ`:'',minutes%60?`${minutes%60} phút`:''].filter(Boolean).join(' ');
+}
 const telegramClock=(at:string)=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
 /** Sum verified receipts, never infer a split from a draft label or contract
  * total. Historical mixed vouchers keep their explicitly unknown split. */
@@ -83,13 +98,14 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
         :[]),
     ...(p.refund_pending?[`Chờ kế toán hoàn cọc: ${money(p.refund_pending.amount)}`,`Thông tin nhận hoàn: ${pendingRecipient}`]:[])]
     :kind==='renewal'?[`Khách gia hạn: ${p.customer}`,...vehicle,
-      ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${day(item.before_return_at)} - ${day(item.return_at)}`):[`Gia hạn: ${day(p.renewal?.before_return_at||null)} - ${day(p.renewal?.return_at||null)}`]),
+      ...(p.renewal?.items?.length?p.renewal.items.map(item=>`Gia hạn ${item.license}: ${renewalPeriod(item)}${renewalDurationText(item)?` (${renewalDurationText(item)})`:''}`):[p.renewal?`Gia hạn: ${renewalPeriod(p.renewal)}${renewalDurationText(p.renewal)?` (${renewalDurationText(p.renewal)})`:''}`:'Gia hạn: Chưa đối chiếu']),
       `Phí gia hạn: ${money(p.renewal?.amount)} đ`,
       ...(Number(p.renewal?.outside_amount)>0?[`Phí thu thêm (thu ngoài): ${money(p.renewal?.outside_amount)} đ${p.renewal?.outside_name?` · ${p.renewal.outside_name}`:''}`]:[]),
       `Hình thức thanh toán: ${method}`,
       ...(p.ownership_renewal_note?[`Ghi chú: ${p.ownership_renewal_note}`]:[])]
     :[`${kind==='reservation'?'Khách đặt cọc giữ xe':kind==='handover'?'Khách nhận xe':'Khách thuê xe'}: ${p.customer}`,...vehicle,
-      `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,`Tiền cọc: ${money(p.deposit)}`,
+      `Tiền thuê xe: ${money(p.rental_fee??p.total)}`,`Số ngày thuê: ${p.days??'Chưa đối chiếu'}`,
+      ...(p.rental_correction?[`Khoảng thuê đã sửa: ${renewalClock(p.rental_correction.start_at)} - ${renewalClock(p.rental_correction.end_at)}`]:[]),`Tiền cọc: ${money(p.deposit)}`,
       ...(p.rental_fee!=null&&p.total!=null&&Number(p.total)!==p.rental_fee?[`Phí khác / điều chỉnh: ${money(Number(p.total)-p.rental_fee)}`]:[]),
       `Tổng tiền: ${money(p.grand_total)}`,`Hình thức thanh toán: ${method}`];
   const amounts=p.payment_amounts;
@@ -173,8 +189,8 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       (SELECT full_name FROM himoto.staff_profiles WHERE id::text=o.draft_payload->'management_composer'->'draft'->>'staff_id'),
       (SELECT full_name FROM himoto.staff_account_attribution WHERE user_id=o.contract_responsible_user_id ORDER BY CASE WHEN store_id=o.store_id THEN 0 ELSE 1 END,id LIMIT 1),
       -- Prefer the login account tied to the contract, then who issued it, then the viewer sending Telegram.
-      (SELECT name FROM himoto.users WHERE id=o.contract_responsible_user_id AND deleted_at IS NULL),
-      (SELECT name FROM himoto.users WHERE deleted_at IS NULL AND o.draft_payload#>>'{management_composer,finalized,actor_id}' ~ '^[1-9][0-9]{0,14}$'
+      (SELECT name FROM himoto.users WHERE id=o.contract_responsible_user_id),
+      (SELECT name FROM himoto.users WHERE o.draft_payload#>>'{management_composer,finalized,actor_id}' ~ '^[1-9][0-9]{0,14}$'
         AND id=(o.draft_payload#>>'{management_composer,finalized,actor_id}')::bigint),
       NULLIF(trim(u.name),'')) AS contract_staff,
     o.total::text,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
@@ -226,7 +242,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   // Date changes are not receipts. Only an explicitly associated renewal receipt supplies a payment method.
   const renewalTx=renewal?tx.filter(t=>['in','addon'].includes(t.type)&&Number(t.value)>0&&(
     renewal.transaction_id!==undefined?Number(t.id)===Number(renewal.transaction_id)
-      :renewal.version!==undefined?Number(t.renewal_payload?.version)===Number(renewal.version)
+      :renewal.version!==undefined?Number(t.renewal_payload?.version)===Number(renewal.version)&&sameRenewalPeriod(t.renewal_payload||{},renewal)
         :t.renewal_payload&&t.renewal_payload.version===undefined&&
           new Date(t.renewal_payload.return_at).getTime()===new Date(renewal.return_at).getTime()&&t.renewal_payload.license===renewal.license)):[];
   // Rental/handover: cọc + thuê. Reservation (cọc giữ xe) records advance as order:rental_fees, not order:deposit.
@@ -256,6 +272,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
     payment_amounts:paymentAmounts,
+    ...(!['return','renewal','battery_swap'].includes(kind)&&composer?.rental_terms_history?.length?{rental_correction:{request_id:composer.rental_terms_history.at(-1).request_id,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString()}}:{}),
     ...(renewalNote?{ownership_renewal_note:renewalNote}:{}),
     ...(corrected?{return_details:{note:String(settlement?.note||''),returned_at:[...new Set<string>(adjustments.map((a:{actual_return_at:string})=>a.actual_return_at))].sort(),...(eventRentalRefunds.length&&settlement?.rental_refund_recipient?.account?{rental_refund_recipient:settlement.rental_refund_recipient}:{})}}:{}),
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,

@@ -25,6 +25,12 @@ def returnable():
 def mock(route):
     req=route.request;path=urlparse(req.url).path;query=parse_qs(urlparse(req.url).query)
     if mock_contract_type_read(route):return
+    if path.endswith('/rental-terms'):
+        data=dict(revision='1',code='QA-32031',total_amount=500000,paid_amount=500000,items=[dict(id=101,revision='1',vehicle_id=700,license='QA-333.71',start_at='2026-10-29T18:09',end_at='2026-10-31T18:09',unit_price=250000,completed_at=None)])
+        if req.method=='PATCH':
+            body=req.post_data_json;writes.append(dict(path=path,body=body))
+            assert body['end_at']=='2026-11-02T18:09' and body['total_amount']=='1000000' and body['reason']=='Sửa số ngày đã nhập nhầm'
+        route.fulfill(json=dict(status='success',data=data));return
     if path=='/api/auth/photo-uploads/sign':
         route.fulfill(json=dict(status='success',data=dict(cloud_name='qa',api_key='qa',signature='qa',params=dict(public_id='qa/fixture',timestamp=1))));return
     if path.startswith('/api/auth/record-photos/'):
@@ -48,6 +54,7 @@ def mock(route):
     if req.method!='GET':unexpected.append(req.method+' '+path);route.abort();return
     if path=='/api/auth/order/car-rental' and query.get('table')==['1']:
         row=dict(id=901,code='QA-32031',name='QA-32031',status='renting',rental_type='daily',contract_type_id='daily',contract_type_name='Thuê ngày',store_id=32,store_name='CS Nguyễn Hoàng QA',customer_name='Khách QA',customer_phone='0900000000',total_amount=context()['total_amount'],paid_amount=context()['paid_amount'],deposit_amount=1000000,deposit_paid=1000000,deposit_refunded=0,return_adjustment_amount=0,vehicle_name='Wave QA',license='QA-333.71',unit_price=140000,start_date=start,end_date=state.get('end',old_end),vehicles_json=json.dumps([dict(id=700,name='Wave QA',license='QA-333.71')]))
+        row['draft_revision']='1'
         data=dict(rows=[row],total=1,scopeCount=1,tabCount=1,page=1,pages=1,statusCounts=[['renting',1]],statuses=['renting'],dueCount=0,summary=dict(contractCount=1,blacklistCount=0,totalAmount=context()['total_amount'],receivableAmount=context()['remaining'],badDebtAmount=0))
     elif path=='/api/auth/stores':data=[dict(id=32,store_name='CS Nguyễn Hoàng QA',kind='physical',status='opening')]
     elif path=='/api/auth/returns':data=[returnable()]
@@ -65,6 +72,36 @@ with sync_playwright() as pw:
         ctx.add_cookies([dict(name='himoto_management_session',value=Path(a.branch_cookie_file).read_text().strip(),url=a.url,httpOnly=True,sameSite='Strict')]);ctx.route('**/api/**',mock)
         ctx.route('https://api.cloudinary.com/**',lambda route:route.fulfill(json=dict(public_id='qa/fixture',version=1,signature='qa')))
         page=ctx.new_page();page.set_default_timeout(30000);page.on('pageerror',lambda e:errors.append(str(e)))
+        state.clear();state['collect']=False
+        page.goto(a.url+'/contracts',wait_until='networkidle',timeout=90000)
+        page.locator('button.mg-row-menu-trigger:visible').first.click();page.get_by_role('menuitem',name='Gia hạn',exact=True).click()
+        form=page.get_by_role('dialog',name='Gia hạn · QA-32031')
+        expect(form.get_by_label('Số ngày gia hạn',exact=True)).to_have_value('1')
+        form.locator('#renewal-return-at').fill((now-timedelta(hours=1)+timedelta(days=4)).strftime('%Y-%m-%d'))
+        expect(form.get_by_label('Số ngày gia hạn',exact=True)).to_have_value('4')
+        fee=form.get_by_label('Chi phí gia hạn (VNĐ)',exact=False)
+        expect(fee).to_have_value('560.000');fee.fill('500.000')
+        expect(form.locator('#renewal-fee-warning')).to_contain_text('60.000')
+        form.locator('#renewal-return-at').fill((now-timedelta(hours=1)+timedelta(days=5)).strftime('%Y-%m-%d'))
+        expect(form.get_by_label('Số ngày gia hạn',exact=True)).to_have_value('5')
+        expect(fee).to_have_value('500.000')
+        expect(form.locator('#renewal-fee-warning')).to_contain_text('200.000')
+        form.screenshot(path=str(out/f'{name}-{width}-renewal-date-warning.png'))
+        form.get_by_role('button',name='Hủy',exact=True).click()
+        page.locator('button.mg-row-menu-trigger:visible').first.click();page.get_by_role('menuitem',name='Sửa hợp đồng',exact=True).click()
+        page.get_by_role('button',name='Sửa tiền / ngày thuê',exact=True).click()
+        terms=page.get_by_role('dialog',name='Sửa tiền / ngày thuê',exact=True)
+        expect(terms.get_by_label('Số ngày thuê cần sửa',exact=True)).to_have_value('2')
+        terms.get_by_label('Số ngày thuê cần sửa',exact=True).fill('4')
+        expect(terms.locator('#rental-terms-end')).to_have_value('2026-11-02')
+        expect(terms.get_by_label('Giờ ngày giờ hẹn trả (24h)',exact=True)).to_have_value('18')
+        terms.get_by_label('Tiền thuê hợp đồng cần sửa',exact=True).fill('1000000')
+        terms.get_by_label('Lý do sửa tiền ngày thuê',exact=True).fill('Sửa số ngày đã nhập nhầm')
+        assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
+        terms.screenshot(path=str(out/f'{name}-{width}-rental-terms.png'))
+        terms.get_by_role('button',name='Lưu tiền / ngày thuê',exact=True).click()
+        expect(terms).not_to_be_visible()
+        checks.append(dict(browser=name,width=width,manualDateDurationAndWarning=True,auditedTermsCorrection=True))
         for collect in [True,False]:
             state.clear();state['collect']=collect
             page.goto(a.url+'/contracts',wait_until='networkidle',timeout=90000)

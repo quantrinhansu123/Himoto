@@ -1,4 +1,5 @@
 import 'server-only';
+import { renewalDurationUnits,renewalFeeWarning } from '@/lib/management/contract-renewals';
 import { badDebtClock,badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { extendContractVehicleLine } from './contract-renewal-line';
 import { contractVehicleLabelSource } from './contract-vehicle-reads';
@@ -9,6 +10,7 @@ import type { RenewalVersion } from '@/lib/management/contract-renewals';
 import { dailyPriceSql, DEPOSIT_REFUND_NAME, depositLateral, rentalPaidSql } from './contract-deposits';
 import { MAX_PAYMENT_AMOUNT, PAYABLE_STATUSES, canAddExtraReceipt, RENEWABLE_STATUSES, PAYMENT_METHODS, PaymentContext, PaymentInput, findPaymentAccount, paymentAccountMatchesMethod } from '@/lib/management/contract-payments';
 import { closeResolvedBadDebt } from './contract-resolution';
+import { sameRenewalPeriod } from './contract-notification-content';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractPaymentError extends Error {
@@ -170,10 +172,11 @@ export async function recordContractPayment(client: Database, id: number, actorI
     const versions = locked.rows[0].draft_payload?.management_composer?.versions;
     linkedRenewal = Array.isArray(versions) ? versions.find((version: RenewalVersion) => version.kind === 'renewal' && Number(version.version) === input.renewal_version) : undefined;
     if (!linkedRenewal || !Number.isSafeInteger(linkedRenewal.amount) || linkedRenewal.amount <= 0) throw new ContractPaymentError('Không tìm thấy phí của phiên bản gia hạn đã chọn.', 409);
-    const collected = await client.query(`SELECT COALESCE(SUM(t.value),0) AS amount FROM himoto.management_contract_payments r
+    const collected = await client.query(`SELECT t.value,r.renewal_payload FROM himoto.management_contract_payments r
       JOIN himoto.transactions t ON t.id=r.transaction_id AND t.order_id=r.order_id
       WHERE r.order_id=$1 AND r.renewal_payload->>'version'=$2 AND t.status='approved' AND t.type='in'`, [id, String(input.renewal_version)]);
-    if (Number(collected.rows[0].amount) + amount > linkedRenewal.amount) throw new ContractPaymentError('Số tiền thu vượt phí còn thiếu của lần gia hạn này.', 409);
+    const collectedAmount=collected.rows.filter(row=>sameRenewalPeriod(row.renewal_payload,linkedRenewal!)).reduce((sum,row)=>sum+Number(row.value),0);
+    if (collectedAmount + amount > linkedRenewal.amount) throw new ContractPaymentError('Số tiền thu vượt phí còn thiếu của lần gia hạn này.', 409);
     renewalPayload = { ...linkedRenewal, collected_amount: amount };
   }
   if (renewal) {
@@ -188,10 +191,13 @@ export async function recordContractPayment(client: Database, id: number, actorI
       if (!detail.rowCount || !item || detail.rows[0].revision !== line.item_revision) throw new ContractPaymentError('Xe đã thay đổi, đã trả hoặc không thuộc hợp đồng. Tải lại trước khi gia hạn.', 409);
       if (!item.return_at || !Number.isFinite(new Date(item.return_at).getTime()) || new Date(`${line.return_at}+07:00`).getTime() <= new Date(item.return_at).getTime()) throw new ContractPaymentError(`Ngày hẹn trả mới của xe ${item.license || item.name} phải sau ngày hẹn trả hiện tại.`, 409);
       const lineAmount = Number(line.amount);
+      const units=renewalDurationUnits(item.return_at,`${line.return_at}:00+07:00`),expected=units&&item.daily_price?units*item.daily_price:null;
+      const warning=renewalFeeWarning(lineAmount,expected);
       if (item.renewal_amount === null || item.renewal_amount + lineAmount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tiền gia hạn hoặc tổng phí chưa hợp lệ / vượt giới hạn lưu trữ.', 409);
       renewed.push({ item_id: item.id, vehicle_id: item.vehicle_id, vehicle_name: item.name, license: item.license,
         before_return_at: item.return_at, return_at: `${line.return_at}:00+07:00`,
-        before_renewal_amount: item.renewal_amount, renewal_amount: item.renewal_amount + lineAmount, amount: lineAmount });
+        before_renewal_amount: item.renewal_amount, renewal_amount: item.renewal_amount + lineAmount, amount: lineAmount,
+        ...(expected!==null?{expected_amount:expected}:{}),...(warning?{warning,amount_shortfall:true}:{}) });
     }
     const totals = { amount, before_total: context.total_amount, total: context.total_amount + amount, before_paid: context.paid_amount, paid: context.paid_amount + amount };
     renewalPayload = renewed.length === 1 ? { ...renewed[0], ...totals }

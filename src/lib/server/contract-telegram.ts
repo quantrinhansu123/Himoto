@@ -1,10 +1,10 @@
 import 'server-only';
+import { nextContractRenewalVersion } from './contract-renewal-version';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { nextRenewalVersion } from '@/lib/management/contract-renewals';
 import { canSendContractEvent,CONTRACT_EVENT_LABELS, type ContractEventType, type ContractTelegramState } from '@/lib/management/contract-telegram';
 import { hasPermission, type PermissionAccount } from '@/lib/management/permissions';
-import { contractNotificationText, notificationContentMatches, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
+import { contractNotificationText, notificationContentMatches, notificationHash, notificationPayload, sameRenewalPeriod, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
 import { contractPhotoLabel } from '@/lib/management/contract-photos';
 import { OWNERSHIP_ORDER_SQL,contractTelegramDestination } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
@@ -39,16 +39,20 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
   const versions=Array.isArray(composer.versions)?composer.versions:[];
   const events:Event[]=notices.filter(n=>n.delivery_mode==='auto').map(n=>({key:n.event_key,kind:n.event_type,payload:n.payload,
     phases:n.photo_phases?.length?n.photo_phases:[...new Set((n.photo_slots||[]).map((slot:string)=>slot.replace(/-[1-6]$/,'')))]}));
-  const add=(e:Event)=>{if(!events.some(old=>old.key===e.key))events.push(e);};
+  const add=(e:Event)=>{const old=events.find(old=>old.key===e.key);if(!old)events.push(e);else if(e.renewal)old.renewal=e.renewal;};
   if(!['draft','cancelled'].includes(o.order_status)) {
     const reservation=Boolean(composer.reservation)||o.order_status==='deposit_contract';
     const key=composer.finalized?`finalize:${id}:${composer.finalized.contract_number}`:`legacy:rental:${id}`;
     if(!events.some(e=>['rental','reservation'].includes(e.kind)))add({key,kind:reservation?'reservation':'rental',phases:['rental']});
     if(composer.handover)add({key:`handover:${id}`,kind:'handover',phases:['handover']});
-    for(const v of versions)if(v.kind==='renewal')add({key:`renewal:${id}:${v.version}`,kind:'renewal',phases:[`renewal-${v.version}`],renewal:v});
+    for(const v of versions)if(v.kind==='renewal'){
+      const key=`renewal:${id}:${v.version}`,existing=events.find(event=>event.key===key);
+      if(existing)existing.renewal=v;
+      else add({key,kind:'renewal',phases:[`renewal-${v.version}`],renewal:v});
+    }
     const receipts=(await db.query('SELECT transaction_id,renewal_payload FROM himoto.management_contract_payments WHERE order_id=$1 AND renewal_payload IS NOT NULL',[id])).rows;
     for(const receipt of receipts) {
-      if(receipt.renewal_payload.version!==undefined&&versions.some((v:{kind:string;version:number})=>v.kind==='renewal'&&Number(v.version)===Number(receipt.renewal_payload.version)))continue;
+      if(receipt.renewal_payload.version!==undefined&&versions.some((v:RenewalNotice&{kind:string})=>v.kind==='renewal'&&Number(v.version)===Number(receipt.renewal_payload.version)&&sameRenewalPeriod(v,receipt.renewal_payload)))continue;
       add({key:`renewal-receipt:${id}:${receipt.transaction_id}`,kind:'renewal',phases:[`renewal-receipt-${receipt.transaction_id}`],renewal:{...receipt.renewal_payload,transaction_id:Number(receipt.transaction_id)}});
     }
     const returned=composer.reservation_no_show?[]:(await db.query('SELECT id FROM himoto.order_vehicle_details WHERE order_id=$1 AND completed_at IS NOT NULL AND deleted_at IS NULL ORDER BY id DESC',[id])).rows;
@@ -59,7 +63,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
   // Sent history stays reachable even after a contract was cancelled or its event shape changed.
   for(const notice of notices)if(notice.message_ids?.length)add({key:notice.root_event_key||notice.event_key,kind:notice.event_type,phases:notice.photo_phases||[],payload:notice.payload});
   const payloads=new Map<string,NotificationPayload>();
-  const result:ContractTelegramState={auto_enabled:false,next_renewal_version:nextRenewalVersion(versions),events:[]};
+  const result:ContractTelegramState={auto_enabled:false,next_renewal_version:await nextContractRenewalVersion(db,id,versions),events:[]};
   // Snapshot business facts for an existing transaction; refresh saved photos and verified payment/refund receipts.
   for(const event of events) {
     if(!event.phases.length)event.phases=event.kind==='return'?event.key.split(':').at(-1)!.split('-').map(n=>`return-${n}`):[event.kind==='handover'?'handover':'rental'];
@@ -72,6 +76,8 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const payload=baseline?{...baseline,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,payment_amounts:fresh.payment_amounts,
       // Cross-branch stock is invisible under vehicle RLS; backfill empty plates from a scoped label read.
       vehicles:baseline.vehicles||fresh.vehicles||'',vehicle_names:baseline.vehicle_names||fresh.vehicle_names||'',
+      ...(event.kind==='renewal'&&event.renewal&&fresh.renewal?{renewal:fresh.renewal}:{}),
+      ...(fresh.rental_correction?{rental_correction:fresh.rental_correction,total:fresh.total,days:fresh.days,rental_fee:fresh.rental_fee,deposit:fresh.deposit,grand_total:fresh.grand_total}:{}),
       ...(fresh.ownership_renewal_note?{ownership_renewal_note:fresh.ownership_renewal_note}:{}),
       ...(event.kind==='return'?{refunded:fresh.refunded,deposit:fresh.deposit,...(fresh.return_fees?{return_fees:fresh.return_fees}:{}),...(fresh.refund_recipient?{refund_recipient:fresh.refund_recipient}:{})}:{}),
       // Legacy payloads predate the detailed templates.

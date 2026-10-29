@@ -28,6 +28,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/battery-contracts/')&&path.endsWith('/actions'))return read?'contracts.read':action==='return'?'contracts.return':'contracts.renew';
   if(path.endsWith('/reservation-no-show'))return 'contracts.finalize';
   if(path.endsWith('/reservation')&&!read)return 'contracts.draft';
+  if(method==='POST'&&/^\/api\/auth\/record-photos\/contracts\/[1-9]\d{0,14}$/.test(path))return 'contracts.draft';
   // Xem / gắn / gỡ ảnh hồ sơ trên web: mọi tài khoản đã đăng nhập.
   if(path.includes('/record-photos/'))return null;
   if(path.includes('/bulk-delete/staff'))return read?'hr.read':'hr.write';
@@ -44,6 +45,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/returns'))return read?'contracts.read':'contracts.return';
   if(path.includes('/staff-sales')||path==='/api/auth/rental-revenue'||path==='/api/auth/rental-revenue/transactions')return 'contracts.read';
   if(path.includes('/order/car-rental/')) {
+    if(path.endsWith('/rental-terms'))return read?'contracts.read':'contracts.draft';
     if(path.endsWith('/ownership-terms'))return read?'contracts.read':'contracts.draft';
     if(path.endsWith('/renewal-payments'))return 'contracts.renew';
     if(path.endsWith('/lifecycle'))return read?'contracts.read':'contracts.return';

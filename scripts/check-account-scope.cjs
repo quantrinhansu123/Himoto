@@ -8,6 +8,7 @@ async function main(){const c=await pool.connect();try{
   await c.query('BEGIN');await c.query("SET LOCAL lock_timeout='5s'; CREATE SCHEMA qa_access_scope");
   const tables=['users','roles','stores','staff_profiles','customers','orders','vehicles','banks','cash','transactions','order_vehicle_details','activity_logs','battery_contracts','store_duty_schedules','management_contract_payments','management_contract_vehicle_swaps','management_record_photos','gps_devices','gps_positions','vehicle_location_events','vehicle_transfers','management_contract_types'];
   for(const table of tables)await c.query(`CREATE TABLE qa_access_scope.${table} (LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING INDEXES)`);
+  await c.query('CREATE TABLE qa_access_scope.management_contract_notifications(order_id bigint,event_key text,root_event_key text,payload jsonb,event_type text);GRANT SELECT ON qa_access_scope.management_contract_notifications TO himoto_scoped');
   await c.query(fs.readFileSync('docs/sql/2026-10-20-battery-contract-actions.sql','utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;|^COMMIT;/gm,''));
   let migration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-17-account-access.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replaceAll('SCHEMA himoto','SCHEMA qa_access_scope').replaceAll('pg_catalog,himoto','pg_catalog,qa_access_scope').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   for(const key of ['scope_all','store_id','actor_id','operation','transfer_vehicle_id'])migration=migration.replaceAll(`qa_access_scope.${key}'`,`himoto.${key}'`);
@@ -170,6 +171,8 @@ async function main(){const c=await pool.connect();try{
   await c.query("INSERT INTO qa_access_scope.orders(id,store_id,order_status,total,pid,contract_number) VALUES(92022,80002,'deposit_contract','100',0,'QA-CROSS-HANDOVER')");
   await c.query("INSERT INTO qa_access_scope.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,type,hiring_fee) VALUES(92023,92022,91103,now(),now()+interval '1 day','day',100)");
   await c.query("SELECT set_config('himoto.store_id','80002',true),set_config('himoto.actor_id','70002',true)");await c.query('SET LOCAL ROLE himoto_scoped');
+  await assert.rejects(()=>dataAccess.run(scope,async()=>load(path.join(root,'lib/server/contract-handover')).handoverReservation(proxy,92022,70002,await revision('orders',92022))),e=>e.status===409&&/Điều chuyển/.test(e.message));
+  await c.query('RESET ROLE');await c.query('UPDATE qa_access_scope.vehicles SET current_store_id=80002 WHERE id=91103');await c.query('SET LOCAL ROLE himoto_scoped');
   const handed=await dataAccess.run(scope,async()=>load(path.join(root,'lib/server/contract-handover')).handoverReservation(proxy,92022,70002,await revision('orders',92022)));
   assert.equal(handed.status,'renting');
   await proxy.query('SELECT himoto.release_returned_contract_vehicle(92021)');
@@ -195,7 +198,7 @@ async function main(){const c=await pool.connect();try{
   await c.query(customerMigration);await c.query(customerMigration);
   const documentsMigration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-contract-document-photos.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   await c.query(documentsMigration);await c.query(documentsMigration);
-  await c.query('CREATE TABLE qa_access_scope.management_contract_notifications(event_type text)');
+  await c.query('CREATE TABLE IF NOT EXISTS qa_access_scope.management_contract_notifications(event_type text)');
   const batterySwapMigration=fs.readFileSync(path.resolve(__dirname,'../docs/sql/2026-10-18-battery-swap-workflow.sql'),'utf8').replaceAll('himoto.','qa_access_scope.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');
   await c.query(batterySwapMigration);await c.query(batterySwapMigration);
   await c.query("INSERT INTO qa_access_scope.staff_profiles(id,staff_code,full_name,phone,store_id,user_id,status) VALUES(94001,'QA94001','Nhân sự A QA','0900000091',80001,70001,'active')");

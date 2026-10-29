@@ -7,6 +7,7 @@ import { depositReceiptSql } from './contract-deposits';
 import { renewalReceiptSql } from './contract-receipts';
 import { summarizeContractReceipts } from '@/lib/management/contract-receipt-summary';
 const statusLabel=(value:unknown)=>CONTRACT_STATUSES.find(option=>option.value===value)?.label || String(value||'—');
+const utcDate=(value:unknown)=>typeof value==='string'&&value?`${value}:00+07:00`:'';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractHistoryError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -71,6 +72,7 @@ export async function readContractHistory(client: Database, id: number): Promise
       COALESCE(o.draft_payload::jsonb #> '{management_composer,reservation_releases}','[]'::jsonb) AS reservation_releases,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,vehicle_recoveries}','[]'::jsonb) AS vehicle_recoveries,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,contract_edits}','[]'::jsonb) AS contract_edits,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,rental_terms_history}','[]'::jsonb) AS rental_terms_history,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,return_corrections}','[]'::jsonb) AS return_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,payment_corrections}','[]'::jsonb) AS payment_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,ownership_terms_history}','[]'::jsonb) AS ownership_terms_history,
@@ -95,6 +97,7 @@ export async function readContractHistory(client: Database, id: number): Promise
       item.before?.notes!==item.after?.notes?'Cập nhật ghi chú':'',
       item.before?.contract_number===item.after?.contract_number&&item.before?.status===item.after?.status&&item.before?.notes===item.after?.notes?'Cập nhật hồ sơ hợp đồng':''].filter(Boolean).join(' · ')});
   const lifecycleLabels:Record<string,string>={mark_bad_debt:'Chuyển sang Nợ xấu',settle:'Xác nhận tất toán',hold:'Bảo lưu hợp đồng thuê sở hữu',resume:'Tiếp tục thuê sau bảo lưu',update_hold:'Sửa thời hạn bảo lưu',complete_hold:'Hoàn thành hợp đồng sau bảo lưu',closed:'Đóng hợp đồng: đã trả xe và tất toán'};
+  for(const item of(Array.isArray(order.rows[0].rental_terms_history)?order.rows[0].rental_terms_history:[]))changes.push({id:`rental-terms-${item.request_id}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa tiền / ngày thuê',detail:`${vietnamTime(utcDate(item.before?.start_at))} → ${vietnamTime(utcDate(item.before?.end_at))} thành ${vietnamTime(utcDate(item.after?.start_at))} → ${vietnamTime(utcDate(item.after?.end_at))} · Tiền hợp đồng ${formatMoney(Number(item.before?.total_amount||0))} → ${formatMoney(Number(item.after?.total_amount||0))} · ${item.reason}`});
   for(const [index,item] of(Array.isArray(order.rows[0].lifecycle_events)?order.rows[0].lifecycle_events:[]).entries())changes.push({id:`lifecycle-${index}`,kind:'lifecycle',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,title:lifecycleLabels[item.action]||'Đổi tình trạng hợp đồng',detail:`${item.note||''}${item.hold_until?` · Hạn bảo lưu: ${vietnamTime(item.hold_until+':00+07:00')}`:''}${item.new_end?` · Hạn trả mới: ${vietnamTime(item.new_end)}`:''}${item.action==='complete_hold'?` · Tổn thất công nợ (không thu hồi): ${formatMoney(item.waived_amount)}`:''} · Ghi nhận trên hệ thống: ${vietnamTime(item.recorded_at)}.`});
   for(const [index,item]of(Array.isArray(order.rows[0].vehicle_recoveries)?order.rows[0].vehicle_recoveries:[]).entries())changes.push({id:`vehicle-recovery-${index}`,kind:'return',at:iso(item.recovered_at),actor:`#${item.actor_id}`,amount:null,title:'Thu hồi xe trong hợp đồng nợ xấu',detail:`${item.note||''} · Giữ nguyên khoản nợ, cọc và thu/chi. Ghi nhận trên hệ thống: ${vietnamTime(item.recorded_at)}.`});
   for(const [index,item] of (Array.isArray(order.rows[0].reservation_releases)?order.rows[0].reservation_releases:[]).entries()) {

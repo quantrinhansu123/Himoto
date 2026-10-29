@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarPlus, LoaderCircle, Wallet } from 'lucide-react';
 import { loadContractReturnableItems, ReturnableContractItem } from '@/lib/management/contract-returns';
-import { overdueParts, saveContractRenewal } from '@/lib/management/contract-renewals';
+import { overdueParts, saveContractRenewal, renewalDurationUnits, renewalFeeWarning } from '@/lib/management/contract-renewals';
 import {
   cashbookPaymentPath, loadPaymentContext, PAYMENT_METHODS, paymentAccountKey, paymentAccounts,
   paymentMethodLabel, PaymentContext, PaymentMethod, vietnamPaymentTime,
@@ -36,6 +36,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [itemId, setItemId] = useState('');
   const [unit, setUnit] = useState<'day' | 'hour'>('day');
   const [count, setCount] = useState('1');
+  const [durationSource,setDurationSource]=useState<'count'|'date'>('count');
   const [rateInput, setRateInput] = useState('');
   const [returnAt, setReturnAt] = useState('');
   const [amount, setAmount] = useState('');
@@ -109,13 +110,15 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const collecting = canCollect && collect;
 
   useEffect(() => {
-    if (!selected || !Number.isFinite(dueMs) || unitCount < 1 || unitCount > maxCount) return;
+    if (durationSource!=='count'||!selected || !Number.isFinite(dueMs) || unitCount < 1 || unitCount > maxCount) return;
     setReturnAt(addRentalDuration(selected.scheduled_return_at || '', unitCount, unit));
-    if (!amountTouched && rate) setAmount(String(rate * unitCount));
-  }, [selected, dueMs, unit, unitCount, maxCount, rate, amountTouched]);
+  }, [selected, dueMs, unit, unitCount, maxCount, durationSource]);
+  const durationUnits=renewalDurationUnits(dueStamp,returnAt,unit);
+  useEffect(()=>{if(!amountTouched&&rate&&durationUnits&&durationUnits<=maxCount)setAmount(String(rate*durationUnits));},[amountTouched,rate,durationUnits,maxCount]);
+  function changeReturnAt(value:string){setDurationSource('date');setReturnAt(value);const units=renewalDurationUnits(dueStamp,value,unit);if(units)setCount(String(units));}
 
   function changeUnit(next: 'day' | 'hour') {
-    setUnit(next); setCount('1'); setAmountTouched(false); setAmount('');
+    setUnit(next); setCount('1'); setDurationSource('count'); setAmountTouched(false); setAmount('');
     setRateInput(defaultRate(selected, next, unitPrice));
   }
 
@@ -129,13 +132,14 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const otherFee = feeReady(extraAmount);
   const outsideFee = feeReady(outsideAmount);
   const fee = renewalFee + otherFee;
-  const expectedFee = rate > 0 && unitCount >= 1 && unitCount <= maxCount ? rate * unitCount : null;
+  const expectedFee = rate > 0 && durationUnits && durationUnits <= maxCount ? rate * durationUnits : null;
+  const underchargeWarning=/^\d+$/.test(amount)?renewalFeeWarning(renewalFee,expectedFee):'';
   const amountMismatch = expectedFee !== null && /^\d+$/.test(amount || '') && renewalFee !== expectedFee;
   const total = selected?.total_amount ?? null;
   const paid = selected?.paid_amount ?? null;
   const nextTotal = total === null ? null : total + fee;
   const returnMs = returnAt ? new Date(`${returnAt}:00+07:00`).getTime() : NaN;
-  const validReturn = Number.isFinite(returnMs) && (!Number.isFinite(dueMs) || returnMs > dueMs);
+  const validReturn = Number.isFinite(returnMs) && durationUnits!==null && durationUnits<=maxCount && (!Number.isFinite(dueMs) || returnMs > dueMs);
   const stillOverdue = !selected?.completed_at&&validReturn && returnMs < Date.now();
   const previewPaid = collecting ? (paid === null ? null : paid + fee) : paid;
   const previewRemaining = nextTotal === null || previewPaid === null ? null : Math.max(nextTotal - previewPaid, 0);
@@ -231,7 +235,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
         </div> : <>
         {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && !rows.length && !error && <p>Hợp đồng này không còn xe đang thuê để gia hạn.</p>}
-        {rows.length > 1 && <div className="mg-field"><label htmlFor="renewal-item">Xe cần gia hạn</label><select id="renewal-item" value={itemId} onChange={event => { setItemId(event.target.value); setAmountTouched(false); setAmount(''); setRateInput(defaultRate(rows.find(row => String(row.item_id) === event.target.value) || null, unit, unitPrice)); }}><option value="">Chọn xe</option>{rows.map(row => <option key={row.item_id} value={row.item_id}>{row.vehicle_name} · {row.license}</option>)}</select></div>}
+        {rows.length > 1 && <div className="mg-field"><label htmlFor="renewal-item">Xe cần gia hạn</label><select id="renewal-item" value={itemId} onChange={event => { setItemId(event.target.value); setDurationSource('count'); setAmountTouched(false); setAmount(''); setRateInput(defaultRate(rows.find(row => String(row.item_id) === event.target.value) || null, unit, unitPrice)); }}><option value="">Chọn xe</option>{rows.map(row => <option key={row.item_id} value={row.item_id}>{row.vehicle_name} · {row.license}</option>)}</select></div>}
         {selected && <>
           <dl className="mg-renewal-facts">
             <div><dt>Xe</dt><dd>{selected.vehicle_name || '—'} · {selected.license || '—'}</dd></div>
@@ -243,14 +247,15 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
           <fieldset className="mg-payment-fields" disabled={saving}>
             <legend>Thông tin gia hạn</legend>
             <label>Gia hạn theo<select value={unit} onChange={event => changeUnit(event.target.value as 'day' | 'hour')}><option value="day">Ngày</option><option value="hour">Giờ</option></select></label>
-            <label>{unit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}<input type="number" min={1} max={maxCount} value={count} onChange={event => setCount(event.target.value)} /></label>
+            <label>{unit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}<input type="number" min={1} max={maxCount} value={count} onChange={event => {setDurationSource('count');setCount(event.target.value);}} /></label>
             <label>{unit === 'day' ? 'Đơn giá / ngày (VNĐ)' : 'Đơn giá / giờ (VNĐ)'}<input inputMode="numeric" value={groupAmount(rateInput)} placeholder={unit === 'day' ? 'Nhập đơn giá/ngày' : 'Nhập đơn giá/giờ'}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,9}$/.test(raw)) { setRateInput(raw); setAmountTouched(false); } }} /></label>
-            <label className="mg-field-wide">Ngày trả mới (24h)<DateTime24Controls id="renewal-return-at" label="Ngày trả mới" value={returnAt} onChange={setReturnAt} error={Boolean(returnAt) && !validReturn} /></label>
-            <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn"
+            <label className="mg-field-wide">Ngày trả mới (24h)<DateTime24Controls id="renewal-return-at" label="Ngày trả mới" value={returnAt} onChange={changeReturnAt} error={Boolean(returnAt) && !validReturn} /></label>
+            <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn" aria-describedby={underchargeWarning?'renewal-fee-warning':undefined}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
-              <small>{rate ? `Gợi ý: ${formatMoney(rate)} × ${unitCount || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(rate * (unitCount || 0))}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
-            {amountMismatch && expectedFee !== null && <p className="mg-field-error" role="status">Cảnh báo: chi phí gia hạn {formatMoney(renewalFee)} khác gợi ý theo hợp đồng {formatMoney(expectedFee)}. Vẫn lưu được; cảnh báo sẽ ghi vào lịch sử gia hạn.</p>}
+              <small>{rate ? `Gợi ý theo ngày trả mới: ${formatMoney(rate)} × ${durationUnits || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(expectedFee||0)}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
+            {underchargeWarning&&<p id="renewal-fee-warning" className="mg-field-error" role="alert">{underchargeWarning} Cảnh báo được lưu vào lịch sử; vẫn lưu được theo thỏa thuận.</p>}
+            {amountMismatch&&!underchargeWarning&&expectedFee!==null&&<p role="status">Phí gia hạn cao hơn gợi ý {formatMoney(expectedFee)}; phần chênh sẽ được lưu trong lịch sử.</p>}
             <div className="mg-field-wide mg-renewal-extra">
               <strong>Phí khác</strong>
               <label>Tên khoản phí<input value={extraName} maxLength={100} placeholder="Ví dụ: Phí VAT" onChange={event => setExtraName(event.target.value)} /></label>

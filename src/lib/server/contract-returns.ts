@@ -10,6 +10,7 @@ import { usesScopedDatabase } from './access-context';
 import { lateReturnFee } from '@/lib/management/return-fees';
 import { closeResolvedBadDebt } from './contract-resolution';
 import { checkOwnershipVehicleStock } from './ownership-stock';
+import { rentalStockError } from '@/lib/management/rental-stock';
 import { requiresOwnershipApproval } from '@/lib/management/contract-approval';
 
 type Database = Pick<PoolClient, 'query'>;
@@ -260,6 +261,8 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   const rentalType=item.draft_payload?.management_composer?.rental_type;
   const stockError=await checkOwnershipVehicleStock(client,requiresOwnershipApproval(item.order_type)?item.order_type:rentalType,newVehicle.rows);
   if(stockError)throw new ContractReturnError(stockError,409);
+  const branchStockError=rentalStockError(requiresOwnershipApproval(item.order_type)?item.order_type:rentalType,item.store_id,newVehicle.rows);
+  if(branchStockError)throw new ContractReturnError(branchStockError,409);
   const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [input.vehicle_id]);

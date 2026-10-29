@@ -111,6 +111,10 @@ async function run() {
       checks.push('PostgreSQL TEMP: source Láng saves an NH vehicle already using, inventory snapshot is verified by the server and drafts create no receipts');
       // Current issue policy requires ready stock even when a previous using flag has no open contract.
       await updateDatabaseVehicle(proxy,100,values(100,'ready'),143);
+      await assert.rejects(isolated(()=>finalizeContractDraft(proxy,id,143,{revision:saved.draft_revision,paid_at:time.vietnamRentalTime(new Date(Date.now()-60000)),deposit:{method:'cash',account_id:5},rental:{method:'cash',account_id:5}})),/Điều chuyển/);
+      assert.equal(Number((await vehicle(100)).current_store_id),32);
+      await c.query('UPDATE qa_cross_vehicles SET current_store_id=31 WHERE id=100');
+      checks.push('A ready NH vehicle cannot issue for a Láng customer before transfer/receipt; rejection leaves stock and money unchanged');
       await c.query('SAVEPOINT qa_old_draft_sales');
       try {
         const oldDraft={...structuredClone(draft),contract_number:'005807'};
@@ -144,6 +148,7 @@ async function run() {
           tlsDraft.staff_id='701';
           tlsDraft.staff_name='';
           const tlsSaved=await tlsSave();
+          await c.query('UPDATE qa_cross_vehicles SET current_store_id=36 WHERE id=100');
           const issued=await finalizeContractDraft(proxy,Number(tlsSaved.id),143,{revision:tlsSaved.draft_revision,paid_at:time.vietnamRentalTime(new Date(Date.now()-60000)),deposit:{method:'cash',account_id:16},rental:{method:'cash',account_id:16}});
           assert.equal(issued.transaction_ids.length,2);
           const tlsOrder=(await c.query('SELECT store_id,draft_payload FROM qa_cross_orders WHERE id=$1',[tlsSaved.id])).rows[0];
@@ -156,7 +161,7 @@ async function run() {
           }else{
             assert.equal(composer.draft.tls_staff_id,'');assert(!composer.sales_attribution);
           }
-          assert.equal(Number((await vehicle(100)).current_store_id),32);
+          assert.equal(Number((await vehicle(100)).current_store_id),36);
           const listing=()=>proxy.query(CONTRACT_LIST_SQL+' AND o.id=$1',[tlsSaved.id]);
           let projected=(await listing()).rows[0];
           let reopened=document.createContractDraft(dataset,'all',mapApiRow('contracts',projected));
@@ -177,6 +182,7 @@ async function run() {
       await c.query('SAVEPOINT qa_manual_sales');
       try {
         await c.query("UPDATE qa_cross_stores SET kind='lease_to_own',store_name='CS Thuê sở hữu QA' WHERE id=32");
+        await c.query('UPDATE qa_cross_vehicles SET current_store_id=32 WHERE id=100');
         const billing=load(path.join(root,'lib/management/contract-billing'));
         const manualDraft={...structuredClone(draft),sales_staff_id:'',sales_staff_name:'  NVKD chưa có hồ sơ QA  ',customer_source:'Giới thiệu ngoài danh sách QA',ownership:true,ownership_term_months:'12',package_name:'Theo tháng',end_date:billing.addRentalMonths(draft.start_date,1)};
         const edits={draft:manualDraft,status:'draft',rental_type:'ownership',notes:'QA manual source'};
@@ -217,27 +223,29 @@ async function run() {
       assert.equal(Number(order.store_id),31); assert.equal(order.order_status,'renting');
       const receipts = (await c.query('SELECT store_id,cash_id,value FROM qa_cross_transactions WHERE order_id=$1 ORDER BY id',[id])).rows;
       assert.deepEqual(receipts.map(r=>[Number(r.store_id),Number(r.cash_id),Number(r.value)]),[[31,5,1000000],[31,5,150000]]);
-      assert.equal(Number((await vehicle(100)).current_store_id),32); assert.equal((await vehicle(100)).status,'using');
+      assert.equal(Number((await vehicle(100)).current_store_id),31); assert.equal((await vehicle(100)).status,'using');
       assert.equal(Number((await c.query('SELECT store_id FROM qa_cross_customers WHERE id=7')).rows[0].store_id),31);
       const { filterRows, EMPTY_QUERY } = load(path.join(root,'lib/management/table-utils'));
       const { summarizeContracts } = load(path.join(root,'lib/management/contract-summary'));
       const mappedOrder = mapApiRow('contracts',order);
       assert.equal(summarizeContracts(filterRows([mappedOrder],EMPTY_QUERY,'31'),[customer]).totalAmount,150000);
       assert.equal(summarizeContracts(filterRows([mappedOrder],EMPTY_QUERY,'32'),[customer]).totalAmount,0);
-      checks.push('PostgreSQL TEMP: ready stock finalizes without transfer; rental revenue and deposit receipts use Láng accounts, NH accounts are rejected and customer ownership stays Láng');
+      checks.push('PostgreSQL TEMP: received Láng stock finalizes while owner remains NH; rental revenue and deposit receipts use Láng accounts and customer source stays Láng');
 
       await assert.rejects(isolated(()=>finalizeContractDraft(proxy,Number(duplicate.id),143,{...input,revision:duplicate.draft_revision})),/hợp đồng/);
       await assert.rejects(isolated(()=>updateDatabaseVehicle(proxy,100,values(100,'ready'),143)),/hợp đồng mở/);
-      await assert.rejects(isolated(()=>updateDatabaseVehicle(proxy,100,values(100,'using',31),143)),/không được đổi cơ sở/);
-      await updateDatabaseVehicle(proxy,100,{...values(100,'using'),color:'Black'},143);
+      await assert.rejects(isolated(()=>updateDatabaseVehicle(proxy,100,values(100,'using',32),143)),/không được đổi cơ sở/);
+      await updateDatabaseVehicle(proxy,100,{...values(100,'using',31),color:'Black'},143);
       checks.push('PostgreSQL TEMP: an actual open contract blocks double rental, manual status reset and stock transfer; harmless profile edits remain possible');
       const line = (await c.query('SELECT id,xmin::text AS revision FROM qa_cross_order_vehicle_details WHERE order_id=$1',[id])).rows[0];
+      await assert.rejects(isolated(()=>replaceContractVehicle(proxy,143,{item_id:Number(line.id),item_revision:line.revision,vehicle_id:101})),/Điều chuyển/);
+      await c.query('UPDATE qa_cross_vehicles SET current_store_id=31 WHERE id=101');
       await replaceContractVehicle(proxy,143,{item_id:Number(line.id),item_revision:line.revision,vehicle_id:101});
-      assert.equal((await vehicle(100)).status,'ready'); assert.equal(Number((await vehicle(100)).current_store_id),32);
-      assert.equal((await vehicle(101)).status,'using'); assert.equal(Number((await vehicle(101)).current_store_id),34);
+      assert.equal((await vehicle(100)).status,'ready'); assert.equal(Number((await vehicle(100)).current_store_id),31);
+      assert.equal((await vehicle(101)).status,'using'); assert.equal(Number((await vehicle(101)).current_store_id),31);
       const revision = (await c.query('SELECT xmin::text AS r FROM qa_cross_order_vehicle_details WHERE id=$1',[line.id])).rows[0].r;
       await recordVehicleReturn(proxy,143,{item_id:Number(line.id),item_revision:revision,returned_at:time.vietnamRentalTime(),hourly_rate:'0'});
-      assert.equal((await vehicle(101)).status,'ready'); assert.equal(Number((await vehicle(101)).current_store_id),34);
+      assert.equal((await vehicle(101)).status,'ready'); assert.equal(Number((await vehicle(101)).current_store_id),31);
       assert.equal(Number((await c.query('SELECT store_id FROM qa_cross_orders WHERE id=$1',[id])).rows[0].store_id),31);
       checks.push('PostgreSQL TEMP: replacement from a third stock branch and return release vehicles at their physical branches while all revenue remains Láng');
     } finally { await c.query('ROLLBACK'); c.release(); }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { LoaderCircle, Save } from 'lucide-react';
+import {RentalTermsEditor} from '@/components/management/RentalTermsEditor';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { createContractDraft, type ContractDraft, type CustomerDetails } from '@/lib/management/contract-document';
@@ -28,6 +29,7 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
   const [status,setStatus]=useState(String(row.status||'renting'));
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
   const [error,setError]=useState(''),[numberError,setNumberError]=useState('');
+  const [editingTerms,setEditingTerms]=useState(false);
   const busy=useRef(false),errorRef=useRef<HTMLParagraphElement>(null);
   const load=useCallback(async(signal?:AbortSignal)=>{
     if(!dataset)return;
@@ -58,10 +60,12 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
     } catch(cause) {setError(cause instanceof Error?cause.message:'Chưa lưu được hợp đồng.');requestAnimationFrame(()=>errorRef.current?.focus());}
     finally {busy.current=false;setSaving(false);}
   }
+  if(editingTerms)return <RentalTermsEditor id={row.id} onClose={()=>setEditingTerms(false)} onSaved={()=>onSaved(String(record?.code||row.code))}/>;
   return <Dialog title="Sửa hợp đồng" subtitle={`${row.code} · ${row.store_name||'Cơ sở hợp đồng'}`} onClose={()=>{if(!busy.current)onClose();}}>
     <form onSubmit={submit} noValidate>
       <div className="mg-dialog-body">
         {loading&&<p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải hợp đồng…</p>}
+        {draft&&!draft.ownership&&<p><button type="button" className="mg-button" disabled={saving||loading} onClick={()=>setEditingTerms(true)}>Sửa tiền / ngày thuê</button></p>}
         {draft&&<fieldset className="mg-composer-fields" disabled={saving||loading}>
           <div className="mg-form-grid">
             <div className="mg-field"><label htmlFor="edit-contract-number">Số HĐ giấy *</label>

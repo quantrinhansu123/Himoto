@@ -3,7 +3,8 @@ import { validBackfillTime } from '@/lib/management/contract-backfill';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
 import type { PoolClient } from 'pg';
 import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
-import { nextRenewalVersion, type RenewalInput, type RenewalResult, type RenewalVersion } from '@/lib/management/contract-renewals';
+import { renewalFeeWarning, type RenewalInput, type RenewalResult, type RenewalVersion } from '@/lib/management/contract-renewals';
+import { nextContractRenewalVersion } from './contract-renewal-version';
 import { rentalPaid } from './contract-deposits';
 import { parseContractPayment, ContractPaymentError } from './contract-payments';
 import { extendContractVehicleLine } from './contract-renewal-line';
@@ -90,10 +91,10 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   const paid = await rentalPaid(client, orderId, item.pid);
   const expected = input.expected_amount === undefined ? null : Number(input.expected_amount);
   const mismatch = expected !== null && amount !== expected;
-  const warning = mismatch
+  const warning = renewalFeeWarning(amount,expected)||(mismatch
     ? `Cảnh báo: chi phí gia hạn ${amount.toLocaleString('vi-VN')} đ khác gợi ý theo hợp đồng ${expected.toLocaleString('vi-VN')} đ.`
-    : undefined;
-  const version: RenewalVersion = { version: nextRenewalVersion(versions), kind: 'renewal', created_at: new Date().toISOString(), actor_id: actorId,
+    : undefined);
+  const version: RenewalVersion = { version: await nextContractRenewalVersion(client,orderId,versions), kind: 'renewal', created_at: new Date().toISOString(), actor_id: actorId,
     ...(occurred?{occurred_at:occurred}:{}),
     item_id: input.item_id, vehicle_id: Number(item.vehicle_id), vehicle_name: String(item.vehicle_name || ''), license: String(item.license || ''),
     rent_at: iso(item.rent_at), before_return_at: beforeReturn, return_at: newReturn, overdue_minutes: overdueMinutes,

@@ -1,4 +1,5 @@
 'use client';
+import { renewalFeeWarning } from '@/lib/management/contract-renewals';
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -243,6 +244,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
                     <small>Hẹn trả: {item.return_at ? vietnamText(item.return_at) : 'chưa có'}{checked && line?.return_at ? ` → ${vietnamText(`${line.return_at}:00+07:00`)}` : ''}{item.daily_price ? ` · ${formatMoney(item.daily_price)}/ngày` : ' · chưa có đơn giá/ngày'}</small>
                     {checked && <input aria-label={`Tiền gia hạn ${item.license}`} inputMode="numeric" placeholder="Tiền gia hạn" value={groupAmount(picks[key] || '')}
                       onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) setPicks(current => ({ ...current, [key]: raw })); }} />}
+                    {checked&&/^\d+$/.test(picks[key]||'')&&renewalFeeWarning(Number(picks[key]),item.daily_price&&days?item.daily_price*days:null)&&<p className="mg-field-error" role="alert">{renewalFeeWarning(Number(picks[key]),item.daily_price&&days?item.daily_price*days:null)}</p>}
                   </div>;
                 })}</div>
               <p className="mg-field-wide">Phí gia hạn được cộng vào tiền thuê hợp đồng và tổng đã thu. Chỉ đổi ngày trả của các xe đã chọn.</p>

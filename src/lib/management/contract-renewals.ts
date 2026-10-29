@@ -41,6 +41,19 @@ export function hasRenewalVersion(versions: unknown, version: number): boolean {
     && Number((item as { version?: unknown }).version) === version);
 }
 
+function renewalTime(value: string) {
+  return Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? `${value}:00+07:00` : value);
+}
+export function renewalDurationUnits(before: string, after: string, unit: 'day' | 'hour' = 'day'): number | null {
+  const minutes = Math.ceil((renewalTime(after) - renewalTime(before)) / 60_000);
+  return Number.isFinite(minutes) && minutes > 0 ? Math.ceil(minutes / (unit === 'day' ? 1440 : 60)) : null;
+}
+export function renewalFeeWarning(actual: number, expected: number | null): string {
+  if (expected === null || actual >= expected) return '';
+  const money = (amount: number) => `${amount.toLocaleString('vi-VN')} đ`;
+  return `Cảnh báo thu thấp hơn gợi ý: phí gia hạn ${money(actual)}, gợi ý ${money(expected)}, chênh thiếu ${money(expected - actual)}. Kiểm tra lại số ngày và thỏa thuận với khách trước khi lưu.`;
+}
+
 export function overdueParts(returnAt: string | null, now = Date.now()) {
   const due = returnAt ? new Date(returnAt).getTime() : NaN;
   const minutes = Number.isFinite(due) ? Math.max(0, Math.floor((now - due) / 60_000)) : 0;

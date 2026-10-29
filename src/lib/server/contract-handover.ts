@@ -6,6 +6,7 @@ import { readPaymentContext } from './contract-payments';
 import { dataAccess,usesScopedDatabase } from './access-context';
 import { canApproveOwnershipContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { checkOwnershipVehicleStock } from './ownership-stock';
+import { rentalStockError } from '@/lib/management/rental-stock';
 
 type Database = Pick<PoolClient, 'query'>;
 export function parseHandoverInput(body: unknown): { revision: string } {
@@ -21,7 +22,7 @@ export async function handoverReservation(client: Database, id: number, actorId:
   parseHandoverInput({revision});
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
-  const order = (await client.query(`SELECT id,order_status,draft_payload,order_type,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`,[id])).rows[0];
+  const order = (await client.query(`SELECT id,store_id,order_status,draft_payload,order_type,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`,[id])).rows[0];
   if (!order) throw new ContractFinalizeError('Không tìm thấy đơn giữ xe.',404);
   if (order.order_status !== 'deposit_contract' || order.revision !== revision) throw new ContractFinalizeError('Đơn đã thay đổi hoặc đã giao xe. Tải lại trước khi xác nhận.',409);
   const payload=order.draft_payload||{},composer=payload.management_composer||{},approvalRequired=requiresOwnershipApproval(composer.rental_type)||requiresOwnershipApproval(order.order_type),approver=dataAccess.getStore();
@@ -34,6 +35,8 @@ export async function handoverReservation(client: Database, id: number, actorId:
     :await client.query('SELECT id,status,license,COALESCE(current_store_id,store_id) AS store_id FROM himoto.vehicles WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE',[vehicleIds]);
   const stockError=await checkOwnershipVehicleStock(client,approvalRequired?'ownership':composer.rental_type,stock.rows);
   if(stockError)throw new ContractFinalizeError(stockError,409);
+  const branchStockError=rentalStockError(approvalRequired?'ownership':composer.rental_type,order.store_id,stock.rows);
+  if(branchStockError)throw new ContractFinalizeError(branchStockError,409);
   if(!items.rowCount||stock.rowCount!==items.rowCount||stock.rows.some(row=>row.status!=='ready'))throw new ContractFinalizeError('Xe phải đang Lưu kho và đã được cơ sở nhận xác nhận trước khi giao.',409);
   const conflicts = usesScopedDatabase()
     ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts($1::bigint[],$2)', [vehicleIds, id])
