@@ -17,7 +17,8 @@ import { ContractCollectionNote } from './ContractCollectionNotes';
 import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { canEditOwnershipTerms } from '@/lib/management/ownership-terms';
 import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
-import { contractHandoverBlockReason, contractRenewBlockReason, contractReturnBlockReason } from '@/lib/management/blocked-actions';
+import { contractHandoverBlockReason, contractRenewBlockReason, contractReturnBlockReason, vehicleTransferBlockReason } from '@/lib/management/blocked-actions';
+import type { OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
@@ -118,7 +119,20 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     const actions: RowAction[] = [{ key: 'view', label: 'Xem chi tiết', icon: <Eye size={16} />, onSelect: () => onView(row) }];
     if(isContract&&onTelegram&&row.status!=='draft')actions.push({key:'telegram',label:row.status==='cancelled'?'Lịch sử Telegram / Thu hồi tin':'Gửi Telegram',icon:<MessageCircle size={16}/>,onSelect:()=>onTelegram(row)});
     if (config.kind === 'vehicles' && onVehicleAction){
-      if(can('vehicles.transfer'))actions.push({ key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') });
+      if (can('vehicles.transfer')) {
+        let rentals: OpenVehicleRental[] = [];
+        try { rentals = JSON.parse(String(row.rentals_json || '[]')) as OpenVehicleRental[]; } catch { rentals = []; }
+        const transferBlock = vehicleTransferBlockReason({
+          selected: true,
+          status: String(row.status) === 'rent' ? 'using' : String(row.status || ''),
+          rentals,
+          sameDestination: false,
+          storeName: String(row.store_name || ''),
+        });
+        actions.push(transferBlock
+          ? { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, disabled: true, title: transferBlock, onSelect: () => {} }
+          : { key: 'transfer', label: 'Chuyển xe', icon: <ArrowLeftRight size={16} />, onSelect: () => onVehicleAction(row, 'transfer') });
+      }
       if(can('vehicles.write'))actions.push({ key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') });
     }
     if(config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive')){actions.splice(1,0,{key:'receive',label:'Nhận xe',icon:<Bike size={16}/>,onSelect:()=>onVehicleAction(row,'receive')},{key:'reject',label:'Từ chối điều chuyển',icon:<RotateCcw size={16}/>,onSelect:()=>onVehicleAction(row,'reject')});}

@@ -1,7 +1,52 @@
-import { CONTRACT_STATUSES } from './config';
+import { CONTRACT_STATUSES, VEHICLE_STATUSES } from './config';
+import type { OpenVehicleRental } from './vehicle-reservation-window';
 
 function statusLabel(status: string) {
   return CONTRACT_STATUSES.find(option => option.value === status)?.label || status || 'không xác định';
+}
+
+function vehicleStatusLabel(status: string) {
+  return VEHICLE_STATUSES.find(option => option.value === status)?.label || status || 'không xác định';
+}
+
+function openRentalSummary(rentals: Pick<OpenVehicleRental, 'code' | 'customer' | 'status'>[]) {
+  const first = rentals[0];
+  if (!first) return '';
+  const code = String(first.code || '').trim() || 'mở';
+  const customer = String(first.customer || '').trim();
+  const extra = rentals.length > 1 ? ` (+${rentals.length - 1} HĐ khác)` : '';
+  return `HĐ ${code}${customer ? ` · ${customer}` : ''}${extra}`;
+}
+
+/** null = được chuyển xe. */
+export function vehicleTransferBlockReason(input: {
+  selected: boolean;
+  status: string;
+  rentals: Pick<OpenVehicleRental, 'code' | 'customer' | 'status'>[];
+  sameDestination: boolean;
+  storeName?: string;
+}): string | null {
+  if (!input.selected) return 'Chọn xe cần chuyển.';
+  if (input.rentals.length) {
+    return `Xe đang thuộc ${openRentalSummary(input.rentals)}. Trả xe trên hợp đồng trước khi chuyển xe.`;
+  }
+  if (input.status === 'in_transit') {
+    return 'Xe đang Chờ luân chuyển. Cơ sở đích cần Nhận xe hoặc Từ chối trước khi chuyển tiếp.';
+  }
+  if (input.status !== 'ready') {
+    return `Chỉ chuyển xe đang Lưu kho. Hiện tại: “${vehicleStatusLabel(input.status)}”.`;
+  }
+  if (input.sameDestination) {
+    return `Xe đang ở ${input.storeName || 'cơ sở này'}. Chọn cơ sở khác để chuyển.`;
+  }
+  return null;
+}
+
+export function vehicleReceiveBlockReason(mode: 'receive' | 'reject', blocked: boolean): string | null {
+  if (!blocked) return null;
+  return mode === 'reject'
+    ? 'Lần chuyển xe không còn chờ xử lý hoặc thiếu thông tin. Đóng hộp thoại, nhấn Làm mới rồi kiểm tra lịch sử.'
+    : 'Lần chuyển xe không còn chờ nhận hoặc thiếu thông tin. Đóng hộp thoại, nhấn Làm mới rồi kiểm tra lịch sử.';
 }
 
 /** null = không chặn trả xe theo trạng thái HĐ. */

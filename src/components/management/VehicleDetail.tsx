@@ -17,6 +17,8 @@ import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
 import { GpsEvidence } from './GpsEvidence';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { VEHICLE_DOCUMENT_SLOTS } from '@/lib/management/record-photos';
+import { vehicleTransferBlockReason } from '@/lib/management/blocked-actions';
+import type { OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 
 const SECTIONS = [
   { id: 'details', label: 'Thông tin xe' },
@@ -110,7 +112,22 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
         <button type="button" className="mg-button" onClick={()=>onAction('reject')}><RotateCcw size={16}/>Từ chối điều chuyển</button>
       </>}
       {source === 'api' && <>
-        {can('vehicles.transfer')&&row.status!=='in_transit'&&<button type="button" className="mg-button" onClick={() => onAction('transfer')}><ArrowLeftRight size={16} />Chuyển xe</button>}
+        {can('vehicles.transfer') && (() => {
+          let rentals: OpenVehicleRental[] = [];
+          try { rentals = JSON.parse(String(row.rentals_json || '[]')) as OpenVehicleRental[]; } catch { rentals = []; }
+          const transferBlock = vehicleTransferBlockReason({
+            selected: true,
+            status: String(row.status) === 'rent' ? 'using' : String(row.status || ''),
+            rentals,
+            sameDestination: false,
+            storeName: String(row.store_name || ''),
+          });
+          return <button type="button" className="mg-button" disabled={Boolean(transferBlock)} title={transferBlock || undefined}
+            aria-label={transferBlock ? `Chuyển xe. ${transferBlock}` : undefined}
+            onClick={() => { if (!transferBlock) onAction('transfer'); }}>
+            <ArrowLeftRight size={16} />Chuyển xe
+          </button>;
+        })()}
         {can('vehicles.write')&&<button type="button" className="mg-button" onClick={() => onAction('status')}><RefreshCw size={16} />Đổi trạng thái</button>}</>}
       {canEdit && <button type="button" className="mg-button mg-button-primary" onClick={onEdit}>Chỉnh sửa thông tin</button>}</div>
   </Dialog>;
