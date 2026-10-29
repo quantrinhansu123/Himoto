@@ -7,10 +7,10 @@ export function ContractBranches({row}:{row:ManagementRow}) {
   </span>;
 }
 
-/** Vehicle ownership / stock branch under the plate. */
+/** Vehicle warehouse under the plate. */
 export function VehicleOwnerBranch({row}:{row:ManagementRow}) {
-  const name=String(row.warehouse_store_name||row.owner_store_name||'').trim();
+  const name=String(row.warehouse_store_name||row.owner_store_name||row.store_name||'').trim();
   return <span className="mg-contract-branches">
-    <span>Sở hữu: {name||'Chưa xác định'}</span>
+    <span>Kho xe: {name||'Chưa xác định'}</span>
   </span>;
 }

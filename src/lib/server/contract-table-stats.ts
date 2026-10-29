@@ -20,7 +20,7 @@ export function contractStatisticsSql(scopeClause:string,company:boolean){
    o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
    COALESCE(o.rent_at,dates.start_date) AS start_date,COALESCE(o.return_at,dates.end_date) AS end_date,
    o.contract_signed_on AS signed_on,
-   CASE WHEN o.order_status='draft' AND (o.total IS NULL OR o.total='')
+   CASE WHEN o.order_status='draft'
      AND o.draft_payload #>> '{management_composer,draft,total_amount}' ~ '^[0-9]{1,13}$'
      THEN o.draft_payload #>> '{management_composer,draft,total_amount}' ELSE o.total END AS total_amount,
    CASE WHEN ${needsPaid} THEN ${rentalPaidSql()} ELSE NULL END AS paid_amount,

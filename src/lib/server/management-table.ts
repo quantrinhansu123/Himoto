@@ -129,7 +129,10 @@ export function contractPageSql(scopeClause:string,includeTotal=false) {
     CASE WHEN o.order_status='renting' AND o.return_at < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, o.customer_name, o.customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind, o.rent_at AS start_date, o.return_at AS end_date,
-    o.total AS total_amount, '[]'::json AS vehicles,
+    CASE WHEN o.order_status='draft'
+      AND o.draft_payload #>> '{management_composer,draft,total_amount}' ~ '^[0-9]{1,13}$'
+      THEN o.draft_payload #>> '{management_composer,draft,total_amount}' ELSE o.total END AS total_amount,
+    '[]'::json AS vehicles,
     o.xmin::text AS draft_revision,
     CASE WHEN o.order_status='draft' THEN o.draft_payload ELSE NULL END AS draft_payload
     FROM himoto.orders o
@@ -173,7 +176,10 @@ function contractHydrateSql() {
     o.customer_id, c.status AS customer_status,
     COALESCE(c.name,o.customer_name) AS customer_name, COALESCE(c.phone,o.customer_phone) AS customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind,
-    COALESCE(o.rent_at,ov.start_date) AS start_date, COALESCE(o.return_at,ov.end_date) AS end_date, o.total AS total_amount,
+    COALESCE(o.rent_at,ov.start_date) AS start_date, COALESCE(o.return_at,ov.end_date) AS end_date,
+    CASE WHEN o.order_status='draft'
+      AND o.draft_payload #>> '{management_composer,draft,total_amount}' ~ '^[0-9]{1,13}$'
+      THEN o.draft_payload #>> '{management_composer,draft,total_amount}' ELSE o.total END AS total_amount,
     ${rentalPaidSql()} AS paid_amount, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded,
     CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
       ELSE COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) END AS deposit_amount,

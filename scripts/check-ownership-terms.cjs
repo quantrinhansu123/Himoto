@@ -10,9 +10,9 @@ const checks=[];
 async function main(){
  for(const invalid of [{term_months:'13'},{daily_amount:'0'},{daily_amount:'-1'},{daily_amount:'1.5'},{daily_amount:135000},{daily_amount:undefined},{request_id:'bad'},{total:9000000},{store_id:35},{revision:'-1'}])assert.throws(()=>service.parseOwnershipTerms(body('7',invalid)));
  assert.equal(service.parseOwnershipTerms(body('7',{daily_amount:null})).daily_amount,null);
- for(const role of ['ownership_staff','branch_staff','branch_manager','headquarters_sales','headquarters_debt','accounting','internal_control'])assert.equal(domain.canEditOwnershipTerms({...manager,access_role:role}),false);
- assert(domain.canEditOwnershipTerms(manager));assert(domain.canEditOwnershipTerms({...manager,access_role:'admin'}));assert(!domain.canEditOwnershipTerms({...manager,permissions:['contracts.read']}));
- checks.push('Only ownership managers/admins with draft permission may edit; invalid terms, amounts, request IDs and unrelated financial fields are rejected');
+ for(const role of ['branch_staff','branch_manager','headquarters_sales','headquarters_debt','accounting','internal_control'])assert.equal(domain.canEditOwnershipTerms({...manager,access_role:role}),false);
+ assert(domain.canEditOwnershipTerms(manager));assert(domain.canEditOwnershipTerms({...manager,access_role:'admin'}));assert(domain.canEditOwnershipTerms({...manager,access_role:'ownership_staff'}));assert(!domain.canEditOwnershipTerms({...manager,permissions:['contracts.read']}));
+ checks.push('Ownership staff/managers/admins with draft permission may edit; invalid terms, amounts, request IDs and unrelated financial fields are rejected');
  let row={id:901,contract_number:'VPS-QA-901',order_status:'renting',store_id:35,rental_type:'ownership',revision:'7',total:'3000000',pid:2200000,draft_payload:{legacy_migration:{sourceStoreId:'29',sourceOrderId:'32039'},management_composer:{profile:{staff_name:'Người làm hồ sơ QA'},draft:{total_amount:'3000000'},installment_plan:{version:1,start:'2026-10-01T08:00',end:'2027-10-01T08:00',interval:'month',amount:3000000}}}};
  let queries=[],mutations=0,actor=manager;
  const fake={release(){},async query(sql,args=[]){queries.push(sql);
@@ -29,11 +29,13 @@ async function main(){
   session.userFromSession=async()=>actor;session.readSessionUser=async()=>actor;Object.defineProperty(db.himotoPool,'connect',{configurable:true,value:async()=>fake});
   actor=null;assert.equal((await invoke('GET')).status,401);assert.equal(queries.length,0);
   actor=manager;assert.equal((await invoke('PATCH',body(),'https://foreign.invalid')).status,403);assert.equal(queries.length,0);
-  for(const role of ['ownership_staff','branch_manager','accounting']){actor={...manager,access_role:role};assert.equal((await invoke('PATCH',body())).status,403);assert.equal(mutations,0);}
+  for(const role of ['branch_manager','accounting']){actor={...manager,access_role:role};assert.equal((await invoke('PATCH',body())).status,403);assert.equal(mutations,0);}
+  actor={...manager,access_role:'ownership_staff'};assert.equal((await invoke('PATCH',body())).status,200);assert.equal(mutations,1);
+  row=structuredClone(original.row);mutations=0;
   actor={...manager,scope_all:false,store_id:33};assert.equal((await invoke('GET')).status,404);assert.equal((await invoke('PATCH',body())).status,404);assert.equal(mutations,0);
   actor=manager;row.rental_type='daily';assert.equal((await invoke('GET')).status,409);row.rental_type='ownership';
   for(const status of ['draft','cancelled']){row.order_status=status;assert.equal((await invoke('PATCH',body())).status,409);}row.order_status='renting';
-  checks.push('Actual APIs reject anonymous, cross-origin, wrong roles/branches, ordinary rentals and draft/cancelled writes without changing records');
+  checks.push('Actual APIs reject anonymous, cross-origin, wrong roles/branches, ordinary rentals and draft/cancelled writes without changing records; ownership staff may correct terms');
   const read=await invoke('GET');assert.equal(read.status,200);assert(read.headers.get('cache-control').includes('no-store'));assert(queries.includes('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY'));assert.equal((await read.json()).data.daily_amount,null);
   const input=body();let response=await invoke('PATCH',input);assert.equal(response.status,200);let saved=(await response.json()).data;assert.equal(saved.daily_amount,135000);assert.equal(saved.term_months,'12');assert.equal(saved.history.length,1);assert.equal(mutations,1);
   assert.deepEqual(row.draft_payload.legacy_migration,original.row.draft_payload.legacy_migration);assert.deepEqual(row.draft_payload.management_composer.installment_plan,original.row.draft_payload.management_composer.installment_plan);assert.deepEqual(row.draft_payload.management_composer.draft,original.row.draft_payload.management_composer.draft);assert.equal(row.draft_payload.management_composer.profile.staff_name,'Người làm hồ sơ QA');assert.equal(row.total,original.row.total);assert.equal(row.pid,original.row.pid);

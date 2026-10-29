@@ -2,7 +2,7 @@ import { hasPermission,isAdminAccount,type PermissionAccount } from './permissio
 import type { OwnershipTerm } from './contract-billing';
 
 export function canEditOwnershipTerms(account:PermissionAccount|null|undefined) {
-  return hasPermission(account,'contracts.draft')&&(isAdminAccount(account)||account?.access_role==='ownership_manager');
+  return hasPermission(account,'contracts.draft')&&(isAdminAccount(account)||account?.access_role==='ownership_manager'||account?.access_role==='ownership_staff');
 }
 export interface OwnershipTermsState {
   id:number;code:string;revision:string;status:string;term_months:OwnershipTerm;daily_amount:number|null;

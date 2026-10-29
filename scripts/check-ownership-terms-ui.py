@@ -21,7 +21,7 @@ with sync_playwright() as pw:
     for engine, width in [('chromium', 1440), ('webkit', 390)]:
         browser = getattr(pw, engine).launch()
         for role in ['ownership_manager', 'admin', 'ownership_staff', 'accounting']:
-            allowed = role in ['ownership_manager', 'admin']
+            allowed = role in ['ownership_manager', 'admin', 'ownership_staff']
             state = dict(id=901, code='VPS-QA-901', revision='7', status='renting', term_months='custom',
                          daily_amount=None, can_edit=allowed, history=[])
             requests, flags = {}, {}

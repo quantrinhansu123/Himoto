@@ -68,6 +68,9 @@ check('API numeric money and customer statuses map consistently; draft payload a
   const draft = mapApiRow('contracts', { id: 2, status: 'draft', total_amount: 0, paid_amount: 0, draft_payload: { management_composer: { version: 1, draft: { customer: {}, vehicles: [], total_amount: '900000', paid_amount: '100' } } } });
   assert.equal(draft.total_amount, 900000);
   assert.equal(summarizeContracts([draft], []).totalAmount, 900000);
+  const legacyDraft = mapApiRow('contracts', { id: 3, status: 'draft', total_amount: 0, paid_amount: 0, draft_payload: { management_composer: { draft: { total_amount: '450000' } } } });
+  assert.equal(legacyDraft.total_amount, 450000);
+  assert.equal(summarizeContracts([legacyDraft], []).totalAmount, 450000);
   assert.equal(summarizeContracts([contract(1, { status: 'future' })], customers).badDebtAmount, 0);
 });
 console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

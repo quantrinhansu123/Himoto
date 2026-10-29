@@ -15,6 +15,7 @@ import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
 import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
+import { canEditOwnershipTerms } from '@/lib/management/ownership-terms';
 import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
 
@@ -77,6 +78,7 @@ interface Props {
   onRenew?: (row: ManagementRow) => void;
   onVehicleChange?: (row: ManagementRow) => void;
   onBatteryRent?: (row: ManagementRow) => void;
+  onOwnershipTerms?: (row: ManagementRow) => void;
   onClone?: (row: ManagementRow) => void;
   onVehicleAction?: (row: ManagementRow, mode: 'transfer' | 'status' | 'receive' | 'reject') => void;
   cloningId?: number | null;
@@ -95,7 +97,7 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onRenew, onVehicleChange, onBatteryRent, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onRenew, onVehicleChange, onBatteryRent, onOwnershipTerms, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const {can,accessUser}=useManagement();
   const blockingError=rows.length?'':error;
   const selectable = Boolean(selectedIds && onSelectionChange);
@@ -123,6 +125,9 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (isActiveContract && !row.billing_plan_json && onRenew) actions.push({ key: 'renew', label: 'Gia hạn', title: 'Gia hạn trực tiếp trên hợp đồng', icon: <CalendarPlus size={16} />, onSelect: () => onRenew(row) });
     if (isActiveContract && onVehicleChange) actions.push({ key: 'vehicle', label: 'Đổi xe', title: 'Đổi xe trực tiếp trên hợp đồng', icon: <Bike size={16} />, onSelect: () => onVehicleChange(row) });
     if (isContract && onBatteryRent && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'battery', label: 'Thuê pin / sạc', title: 'Lập hợp đồng thuê pin hoặc sạc theo khách và xe của hợp đồng này', icon: <BatteryCharging size={16} />, onSelect: () => onBatteryRent(row) });
+    if (isContract && onOwnershipTerms && !['draft', 'cancelled'].includes(row.status) && requiresOwnershipApproval(row.rental_type) && canEditOwnershipTerms(accessUser)) {
+      actions.push({ key: 'ownership-terms', label: 'Sửa thời hạn / mức đóng', title: 'Sửa loại hợp đồng thuê sở hữu (6/12/24 tháng,…) và số tiền đóng mỗi ngày', icon: <Pencil size={16} />, onSelect: () => onOwnershipTerms(row) });
+    }
     if (isContract && (canEditContract && row.status!=='draft' && canEditIssuedContract(accessUser,row.store_id) || canEditDraft && row.status === 'draft')) {
       const approve=row.status==='draft'&&requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type);
       actions.push({key:approve?'approve':'edit',label:approve?'Duyệt hợp đồng':row.status==='draft'?'Tiếp tục sửa bản nháp':'Sửa hợp đồng',icon:approve?<ShieldCheck size={16}/>:<Pencil size={16}/>,onSelect:()=>onEdit(row)});

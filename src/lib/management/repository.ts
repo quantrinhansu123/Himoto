@@ -192,14 +192,15 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     profile_json: saved.profile ? JSON.stringify(saved.profile) : '',
     // Keep numeric/unrecognized statuses visible until the API contract is agreed.
   };
-  if (mapped.status === 'draft' && saved.version === 1 && snapshot.customer && Array.isArray(snapshot.vehicles)) {
+  if (mapped.status === 'draft' && snapshot && (saved.version === 1 || snapshot.total_amount !== undefined || snapshot.customer || Array.isArray(snapshot.vehicles))) {
     const customer = object(snapshot.customer);
-    const vehicles = snapshot.vehicles.map(object);
-    return { ...mapped, draft_json: JSON.stringify(snapshot), rental_type: text(saved.rental_type), notes: text(saved.notes),
-      staff_id: number(snapshot.staff_id), customer_id: number(snapshot.customer_id), customer_name: text(customer.name),
-      customer_phone: text(customer.phone), customer_id_card: text(customer.id_card), vehicle_id: number(vehicles[0]?.id),
-      vehicle_name: vehicles.map(vehicle => text(vehicle.name)).filter(Boolean).join(', '), license: vehicles.map(vehicle => text(vehicle.license)).filter(Boolean).join(', '),
-      total_amount: number(snapshot.total_amount), deposit_amount: number(snapshot.deposit_amount), paid_amount: number(raw.paid_amount) ?? 0 };
+    const vehicles = Array.isArray(snapshot.vehicles) ? snapshot.vehicles.map(object) : [];
+    return { ...mapped, draft_json: snapshot.customer || vehicles.length ? JSON.stringify(snapshot) : mapped.draft_json, rental_type: text(saved.rental_type) || mapped.rental_type, notes: text(saved.notes) || mapped.notes,
+      staff_id: number(snapshot.staff_id) ?? mapped.staff_id, customer_id: number(snapshot.customer_id) ?? mapped.customer_id, customer_name: text(customer.name) || mapped.customer_name,
+      customer_phone: text(customer.phone) || mapped.customer_phone, customer_id_card: text(customer.id_card) || mapped.customer_id_card, vehicle_id: number(vehicles[0]?.id) ?? mapped.vehicle_id,
+      vehicle_name: vehicles.map(vehicle => text(vehicle.name)).filter(Boolean).join(', ') || mapped.vehicle_name, license: vehicles.map(vehicle => text(vehicle.license)).filter(Boolean).join(', ') || mapped.license,
+      // Draft money lives in the composer payload until finalize; keep it for list totals / doanh thu.
+      total_amount: number(snapshot.total_amount) ?? mapped.total_amount, deposit_amount: number(snapshot.deposit_amount) ?? mapped.deposit_amount, paid_amount: number(raw.paid_amount) ?? mapped.paid_amount ?? 0 };
   }
   return applyInstallmentBilling(mapped);
 }

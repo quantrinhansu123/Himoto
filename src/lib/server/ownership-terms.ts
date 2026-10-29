@@ -50,7 +50,7 @@ export async function readOwnershipTerms(db:Database,id:number,user:PermissionAc
   return state(db,await readRow(db,id,user),user);
 }
 export async function updateOwnershipTerms(db:Database,id:number,user:PermissionAccount,raw:unknown) {
-  if(!Number.isSafeInteger(Number(user.id))||Number(user.id)<=0||!canEditOwnershipTerms(user))throw new OwnershipTermsError('Chỉ quản lý Thuê sở hữu hoặc quản trị viên được sửa thời hạn và mức đóng.',403);
+  if(!Number.isSafeInteger(Number(user.id))||Number(user.id)<=0||!canEditOwnershipTerms(user))throw new OwnershipTermsError('Chỉ nhân viên / quản lý Thuê sở hữu hoặc quản trị viên được sửa thời hạn và mức đóng.',403);
   const input=parseOwnershipTerms(raw);await db.query("SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='15s'");
   const row=await readRow(db,id,user,true);
   if(['draft','cancelled'].includes(String(row.order_status)))throw new OwnershipTermsError('Hợp đồng chưa phát hành hoặc đã hủy. Sửa bản nháp bằng luồng lập hợp đồng.',409);

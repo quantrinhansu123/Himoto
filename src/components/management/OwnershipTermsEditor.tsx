@@ -21,12 +21,14 @@ export function OwnershipTermsSummary({id,revision}:{id:number;revision:unknown}
   if(!data)return <p role="status">Đang tải thời hạn và mức đóng thuê sở hữu…</p>;
   return <dl className="mg-contract-detail-grid"><div><dt>Thời hạn sở hữu</dt><dd>{termLabel(data.term_months)}</dd></div><div><dt>Số tiền đóng mỗi ngày</dt><dd>{dailyLabel(data.daily_amount)}</dd></div></dl>;
 }
-export function OwnershipTermsEditor({id,code,onSaved}:{id:number;code:string;onSaved?:(value:OwnershipTermsState)=>void}) {
+export function OwnershipTermsEditor({id,code,onSaved,startOpen=false,onClose}:{id:number;code:string;onSaved?:(value:OwnershipTermsState)=>void;startOpen?:boolean;onClose?:()=>void}) {
   const {accessUser,invalidateData,notify}=useManagement();
-  const [open,setOpen]=useState(false),[loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState('');
+  const [open,setOpen]=useState(startOpen),[loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState('');
   const [data,setData]=useState<OwnershipTermsState|null>(null),[term,setTerm]=useState<OwnershipTerm>('custom'),[daily,setDaily]=useState(''),[retry,setRetry]=useState(0),[uncertain,setUncertain]=useState(false);
   const pending=useRef<OwnershipTermsInput|null>(null),busy=useRef(false);
   const allowed=canEditOwnershipTerms(accessUser);
+  function close(){if(saving)return;setOpen(false);onClose?.();}
+  useEffect(()=>{if(startOpen&&!allowed)onClose?.();},[startOpen,allowed,onClose]);
   useEffect(()=>{
     if(!open||!allowed)return;
     const controller=new AbortController();setLoading(true);setError('');setData(null);
@@ -44,7 +46,7 @@ export function OwnershipTermsEditor({id,code,onSaved}:{id:number;code:string;on
     }
     busy.current=true;setSaving(true);setError('');
     try {
-      const value=await saveOwnershipTerms(id,pending.current);pending.current=null;setUncertain(false);setData(value);setOpen(false);
+      const value=await saveOwnershipTerms(id,pending.current);pending.current=null;setUncertain(false);setData(value);setOpen(false);onClose?.();
       invalidateData(['contracts']);notify(`Đã lưu thời hạn và mức đóng hằng ngày của HĐ ${value.code}.`);onSaved?.(value);
     }catch(cause){
       if(cause instanceof OwnershipTermsRequestError&&cause.status>=400&&cause.status<500){pending.current=null;setUncertain(false);}
@@ -52,8 +54,8 @@ export function OwnershipTermsEditor({id,code,onSaved}:{id:number;code:string;on
       setError(cause instanceof Error?cause.message:'Chưa xác nhận được kết quả lưu. Tải lại để kiểm tra.');
     }finally{busy.current=false;setSaving(false);}
   }
-  return <><button type="button" className="mg-button" onClick={()=>setOpen(true)}><Pencil size={16}/>Sửa thời hạn / mức đóng</button>
-    {open&&<Dialog title={`Thời hạn & mức đóng thuê sở hữu · ${code}`} onClose={()=>{if(!saving)setOpen(false);}}>
+  return <>{!startOpen&&<button type="button" className="mg-button" onClick={()=>setOpen(true)}><Pencil size={16}/>Sửa thời hạn / mức đóng</button>}
+    {open&&<Dialog title={`Thời hạn & mức đóng thuê sở hữu · ${code}`} onClose={close}>
       <form onSubmit={save}><div className="mg-dialog-body">
         <p>Bổ sung thông tin đúng của hợp đồng cũ để theo dõi. Thời hạn này là phân loại sở hữu; các kỳ thuê, khoản phải thu và phiếu thu / chi đã ghi giữ nguyên.</p>
         {loading&&<p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải thời hạn và mức đóng…</p>}
@@ -67,7 +69,7 @@ export function OwnershipTermsEditor({id,code,onSaved}:{id:number;code:string;on
         </>}
         {uncertain&&<p role="status">Chưa xác nhận được kết quả lưu. Bấm Lưu để kiểm tra lại kết quả, hoặc Tải lại dữ liệu.</p>}
         {error&&<p className="mg-field-error" role="alert">{error}</p>}
-      </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving||loading} onClick={()=>setRetry(value=>value+1)}><RotateCcw size={16}/>Tải lại</button><button type="button" className="mg-button" disabled={saving} onClick={()=>setOpen(false)}>Đóng</button><button type="submit" className="mg-button mg-button-primary" disabled={saving||loading||!data?.can_edit}>{saving?<LoaderCircle size={16} className="mg-spin"/>:<Save size={16}/>}Lưu thời hạn và mức đóng</button></div></form>
+      </div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving||loading} onClick={()=>setRetry(value=>value+1)}><RotateCcw size={16}/>Tải lại</button><button type="button" className="mg-button" disabled={saving} onClick={close}>Đóng</button><button type="submit" className="mg-button mg-button-primary" disabled={saving||loading||!data?.can_edit}>{saving?<LoaderCircle size={16} className="mg-spin"/>:<Save size={16}/>}Lưu thời hạn và mức đóng</button></div></form>
     </Dialog>}
   </>;
 }
