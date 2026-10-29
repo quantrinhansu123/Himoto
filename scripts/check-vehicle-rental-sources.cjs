@@ -13,13 +13,13 @@ async function main(){
  const ready=mapApiRow('vehicles',{...raw,id:3,status:'ready',beneficiary_store_id:null,beneficiary_store_name:null});assert.equal(ready.beneficiary_store_name,'');
  checks.push('Warehouse stays independent of contract source; missing/returned rentals never inherit the warehouse as customer source');
  const config=MANAGEMENT_CONFIG.vehicles;
- assert.equal(config.columns.find(c=>c.key==='beneficiary_store_name').hidden,undefined);
+ assert.equal(config.columns.find(c=>c.key==='beneficiary_store_name').hidden,true);
  assert.equal(config.columns.find(c=>c.key==='store_name').label,'Kho quản lý');
  const rows=[rented,{...rented,id:2,beneficiary_store_id:23,beneficiary_store_name:'CS Giáp Bát'},ready];
  const input={kind:'vehicles',query:{...EMPTY_QUERY,status:'using',filters:{beneficiary_store_id:'34'}},store:'23',scope:'',page:1,size:10,sort:'code',direction:'asc'};
  const filtered=projectManagementTable(rows,input);
  assert.equal(filtered.total,1);assert.equal(filtered.rows[0].beneficiary_store_name,'CS Hàng Bút');assert.equal(filtered.scopeCount,3);
- checks.push('Source column is visible by default and combining stock/status/source filters gives the correct customer-branch count');
+ checks.push('Source column follows the compact branch-label layout and combined stock/status/source filters give the correct customer-branch count');
  if(process.argv.includes('--live-temp')){
   require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
   const db=load(path.join(root,'lib/server/himoto-database')).ownerDatabase,c=await db.connect(),schema='qa_vehicle_rental_sources';

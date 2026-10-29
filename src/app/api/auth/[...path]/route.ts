@@ -14,6 +14,7 @@ import { ManagementTableError, readManagementTable } from '@/lib/server/manageme
 import { PageSummaryError, readOperationsSummary, readSalesSummary } from '@/lib/server/page-summaries';
 import { VEHICLE_TRANSFER_JOIN_SQL } from '@/lib/server/vehicle-transfers';
 import { VEHICLE_GPS_JOIN_SQL } from '@/lib/server/vehicle-gps-query';
+import { VEHICLE_STATUS_SQL } from '@/lib/server/vehicle-status';
 import { normalizeCustomerLookup, validCustomerLookup } from '@/lib/management/contract-document';
 import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
@@ -59,10 +60,7 @@ const listQueries: Record<string, QueryConfig> = {
                  pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
                  r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, rental_source.store_id AS beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
-                 CASE WHEN r.rentals IS NOT NULL AND json_typeof(r.rentals)='array' AND json_array_length(r.rentals)>0
-                   AND v.status IN ('ready') THEN 'using'
-                   WHEN v.status='rent' THEN 'using' WHEN v.status='maintenance' THEN 'repairing' WHEN v.status='holding' THEN 'pending'
-                   ELSE v.status END AS status,
+                 ${VEHICLE_STATUS_SQL} AS status,
                  gps.has_device AS gps_has_device,
                  gps.normalized_status AS gps_normalized_status,
                  gps.last_at AS gps_last_at,gps.latitude AS gps_latitude,gps.longitude AS gps_longitude,gps.synced_at AS gps_last_sync,gps.provider AS gps_provider,

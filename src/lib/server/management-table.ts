@@ -12,6 +12,7 @@ import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits'
 import { CONTRACT_REVIEW_SQL,EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
+import { VEHICLE_STATUS_SQL } from './vehicle-status';
 import { STORE_SELECT_SQL } from './store-management';
 import { applyInstallmentBilling } from '@/lib/management/contract-billing';
 import { OWNERSHIP_HOLD_FIELDS_SQL } from './ownership-hold-fields';
@@ -289,10 +290,7 @@ function vehicleHydrateSql() {
     rental_source.store_id AS beneficiary_store_id,
     bs.store_name AS beneficiary_store_name,
     NULLIF(r.rentals #>> '{0,customer}', '') AS holder_name,
-    CASE WHEN r.rentals IS NOT NULL AND json_typeof(r.rentals)='array' AND json_array_length(r.rentals)>0
-      AND v.status IN ('ready') THEN 'using'
-      WHEN v.status='rent' THEN 'using' WHEN v.status='maintenance' THEN 'repairing' WHEN v.status='holding' THEN 'pending'
-      ELSE v.status END AS status,
+    ${VEHICLE_STATUS_SQL} AS status,
     gps.has_device AS gps_has_device, gps.normalized_status AS gps_normalized_status, gps.last_at AS gps_last_at,
     gps.latitude AS gps_latitude, gps.longitude AS gps_longitude, gps.synced_at AS gps_last_sync, gps.provider AS gps_provider,
     gps.heartbeat_at AS gps_heartbeat_at, gps.position_recorded_at AS gps_position_at,
@@ -378,7 +376,7 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
     :kind==='vehicles'?vehiclePageClause('all',query.status,{})
     :kind==='staff'?staffPageClause('all',query.status,{}):storePageClause(query.status);
   const status=kind==='customers'?`CASE WHEN c.status=2 THEN 'blacklist' WHEN c.status=0 THEN 'draft' WHEN NULLIF(BTRIM(c.warning),'') IS NOT NULL THEN 'warning' ELSE 'active' END`
-    :kind==='vehicles'?`CASE v.status WHEN 'rent' THEN 'using' WHEN 'maintenance' THEN 'repairing' WHEN 'holding' THEN 'pending' ELSE v.status END`
+    :kind==='vehicles'?VEHICLE_STATUS_SQL
     :kind==='staff'?`CASE p.status WHEN '1' THEN 'active' WHEN '0' THEN 'inactive' ELSE p.status END`
     :`CASE s.status WHEN '1' THEN 'active' WHEN 'opening' THEN 'active' WHEN '0' THEN 'inactive' ELSE s.status END`;
   const missingFlag=kind==='vehicles'?`,(${vehicleMissingOpenContractSql()}) AS missing_open_contract`:'';
