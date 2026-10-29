@@ -56,7 +56,10 @@ function withTelegramFooter(body:string,actor:string,at:string){
   const rows=body.replace(/\n+$/,'').split('\n').filter(row=>!/^Nhân viên xuất tin Telegram:/.test(row)&&!/^Thời gian:/.test(row));
   return [...rows,sender,time].join('\n').slice(0,4000);
 }
-export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive',p:NotificationPayload) {
+export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive'|'battery_return'|'battery_renewal',p:NotificationPayload) {
+  if(kind==='battery_return')return withTelegramFooter([`Khách trả pin / sạc: ${p.customer}`,`Pin / sạc: ${p.vehicle_names||'—'}`,`Mã HĐ: ${p.code}`,`Cơ sở: ${p.store}`,
+    `Nhận lại lúc: ${p.return_details?.returned_at?.[0]?telegramClock(p.return_details.returned_at[0]):telegramClock(p.at)}`,`Cọc: ${money(p.deposit)}`,
+    ...(Number(p.total)>0?[`Nợ gia hạn còn: ${money(p.total)}`]:[]),...(p.return_details?.note?[`Ghi chú: ${p.return_details.note}`]:[])].join('\n'),p.actor,p.at);
   if(kind==='vehicle_swap')return withTelegramFooter([`Khách đổi xe: ${p.customer}`,`Xe cũ: ${p.vehicle_swap?.from_license||'—'} · ${p.vehicle_swap?.from_name||'—'}`,
     `Xe mới: ${p.vehicle_swap?.to_license||'—'} · ${p.vehicle_swap?.to_name||'—'}`,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`].join('\n'),p.actor,p.at);
   if(kind==='vehicle_transfer'||kind==='vehicle_receive')return withTelegramFooter([`${kind==='vehicle_receive'?'ĐÃ NHẬN XE':'ĐIỀU CHUYỂN XE'}${p.transfer?.ownership===false?'':' SỞ HỮU'}`,`Bsx: ${p.vehicles}`,`Loại xe: ${p.vehicle_names||'—'}`,`Cơ sở chuyển đi: ${p.transfer?.from||'—'}`,`Cơ sở nhận: ${p.transfer?.to||'—'}`,`Trạng thái: ${kind==='vehicle_receive'?'Đã nhận · Lưu kho':'Chờ cơ sở đích xác nhận nhận xe'}`,`Người thực hiện: ${p.actor}`,`Mã lượt: ${p.code}`,...(p.transfer?.note?[`Ghi chú: ${p.transfer.note}`]:[])].join('\n'),p.actor,p.at);

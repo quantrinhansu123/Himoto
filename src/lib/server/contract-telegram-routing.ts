@@ -8,6 +8,7 @@ export const OWNERSHIP_ORDER_SQL = `(${VEHICLE_ORDER_SQL} AND (s.kind='lease_to_
 export const CONTRACT_TELEGRAM_ROUTE_SQL = `CASE
   WHEN n.event_type IN ('vehicle_transfer','vehicle_receive') AND n.event_key LIKE '%:store' THEN 'store'
   WHEN n.event_type IN ('vehicle_transfer','vehicle_receive') THEN 'ownership_new'
+  WHEN n.event_type IN ('battery_return','battery_renewal') AND EXISTS(SELECT 1 FROM himoto.stores bs WHERE bs.id=n.store_id AND bs.kind='lease_to_own') THEN 'ownership_new'
   WHEN ${OWNERSHIP_ORDER_SQL} AND n.event_type='renewal' THEN 'ownership_renewal'
   WHEN ${OWNERSHIP_ORDER_SQL} AND n.event_type IN ('rental','reservation','handover','return','vehicle_swap') THEN 'ownership_new'
   ELSE 'store' END`;

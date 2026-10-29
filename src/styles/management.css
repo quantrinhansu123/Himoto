@@ -1753,6 +1753,9 @@
   border-radius: var(--mg-radius-md);
   box-shadow: var(--mg-shadow-popover);
 }
+.mg-row-action-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; text-align: left; }
+.mg-row-action-copy > small { color: var(--mg-slate-500); font-size: 12px; font-weight: 500; line-height: 1.35; white-space: normal; }
+.mg-row-menu > button:disabled .mg-row-action-copy > small { color: var(--mg-slate-600); opacity: 1; }
 .mg-row-menu > button {
   display: flex;
   align-items: center;
@@ -1787,7 +1790,7 @@
   background: var(--mg-red-bg);
   color: var(--mg-red-text);
 }
-.mg-row-menu > button:disabled { opacity: 0.45; cursor: not-allowed; }
+.mg-row-menu > button:disabled { opacity: 0.72; cursor: not-allowed; white-space: normal; align-items: flex-start; }
 
 .mg-blacklist-button {
   flex-basis: 100%;

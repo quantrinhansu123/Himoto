@@ -17,6 +17,7 @@ import { ContractCollectionNote } from './ContractCollectionNotes';
 import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { canEditOwnershipTerms } from '@/lib/management/ownership-terms';
 import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
+import { contractHandoverBlockReason, contractRenewBlockReason, contractReturnBlockReason } from '@/lib/management/blocked-actions';
 import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
@@ -125,11 +126,28 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if(isContract&&onQr&&row.status!=='cancelled')actions.push({key:'qr',label:'Nhập phiếu chi',icon:<Wallet size={16}/>,onSelect:()=>onQr(row)});
     if(isContract&&onReminder&&isRemindableContract(row))actions.push({key:'reminder',label:'Nhắc nợ',icon:<MessageCircle size={16}/>,onSelect:()=>onReminder(row)});
     if (isContract && onPayment && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'payment', label: 'Thanh toán', icon: <Wallet size={16} />, onSelect: () => onPayment(row) });
-    if (isContract && onHandover && row.status === 'deposit_contract' && canFinalizeRentalContract(accessUser,row.rental_type)) actions.push({key:'handover',label:'Giao xe',icon:<Bike size={16}/>,onSelect:()=>onHandover(row)});
+    if (isContract && onHandover) {
+      const handoverBlock = row.status === 'deposit_contract' && !canFinalizeRentalContract(accessUser, row.rental_type)
+        ? 'Tài khoản chưa có quyền giao xe cho loại hợp đồng này.'
+        : contractHandoverBlockReason(String(row.status || ''));
+      actions.push(handoverBlock
+        ? { key: 'handover', label: 'Giao xe', icon: <Bike size={16} />, disabled: true, title: handoverBlock, onSelect: () => {} }
+        : { key: 'handover', label: 'Giao xe', icon: <Bike size={16} />, onSelect: () => onHandover(row) });
+    }
     if(isContract&&onPrint&&canFinalizeRentalContract(accessUser,row.rental_type)&&row.status==='deposit_contract')actions.push({key:'continue-reservation',label:'Bổ sung hồ sơ / Tiếp tục hợp đồng cọc',icon:<Pencil size={16}/>,onSelect:()=>onPrint(row)});
-    if (isActiveContract && onReturn) actions.push({ key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
+    if (isContract && onReturn) {
+      const returnBlock = contractReturnBlockReason(String(row.status || ''));
+      actions.push(returnBlock
+        ? { key: 'return', label: 'Trả xe', icon: <RotateCcw size={16} />, disabled: true, title: returnBlock, onSelect: () => {} }
+        : { key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
+    }
     if(isActiveContract&&onMarkBadDebt&&can('contracts.return')&&(row.status==='overdue'||row.collection_overdue===1))actions.push({key:'mark-bad-debt',label:'Chuyển sang Nợ xấu',icon:<TriangleAlert size={16}/>,onSelect:()=>onMarkBadDebt(row)});
-    if (isActiveContract && !row.billing_plan_json && onRenew) actions.push({ key: 'renew', label: 'Gia hạn', title: 'Gia hạn trực tiếp trên hợp đồng', icon: <CalendarPlus size={16} />, onSelect: () => onRenew(row) });
+    if (isContract && onRenew) {
+      const renewBlock = contractRenewBlockReason(String(row.status || ''), Boolean(row.billing_plan_json));
+      actions.push(renewBlock
+        ? { key: 'renew', label: 'Gia hạn', icon: <CalendarPlus size={16} />, disabled: true, title: renewBlock, onSelect: () => {} }
+        : { key: 'renew', label: 'Gia hạn', title: 'Gia hạn trực tiếp trên hợp đồng', icon: <CalendarPlus size={16} />, onSelect: () => onRenew(row) });
+    }
     if (isActiveContract && onVehicleChange) actions.push({ key: 'vehicle', label: 'Đổi xe', title: 'Đổi xe trực tiếp trên hợp đồng', icon: <Bike size={16} />, onSelect: () => onVehicleChange(row) });
     if (isContract && onBatteryRent && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'battery', label: 'Thuê pin / sạc', title: 'Lập hợp đồng thuê pin hoặc sạc theo khách và xe của hợp đồng này', icon: <BatteryCharging size={16} />, onSelect: () => onBatteryRent(row) });
     if (isContract && onOwnershipTerms && !['draft', 'cancelled'].includes(row.status) && requiresOwnershipApproval(row.rental_type) && canEditOwnershipTerms(accessUser)) {

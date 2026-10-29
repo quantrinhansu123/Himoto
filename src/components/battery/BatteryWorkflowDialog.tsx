@@ -9,6 +9,7 @@ import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
+import { BatteryTelegramPanel } from './BatteryTelegramPanel';
 
 export type BatteryWorkflowMode = 'renew' | 'return' | 'history';
 const now = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16);
@@ -21,6 +22,7 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
   const [mode, setMode] = useState<BatteryWorkflowMode | 'collect_renewal'>(initialMode);
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState('');
   const [uncertain, setUncertain] = useState(false);
+  const [telegramRequestId, setTelegramRequestId] = useState('');
   const [unit, setUnit] = useState<'month' | 'day'>('month'), [count, setCount] = useState('1');
   const [endsAt, setEndsAt] = useState(''), [returnedAt, setReturnedAt] = useState(now);
   const [amount, setAmount] = useState(''), [amountTouched, setAmountTouched] = useState(false);
@@ -68,8 +70,9 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
     try {
       const result = await batteryRequest<BatteryWorkflowContext>(`/api/auth/battery-contracts/${id}/actions`, 'POST', input);
       setContext({ ...result, accounts: context.accounts }); setMode('history');
+      if (mode === 'return') setTelegramRequestId(input.request_id);
       requestId.current = crypto.randomUUID(); setNote('');
-      notify(mode === 'return' ? `Đã nhận lại pin / sạc · ${code}.` : collecting ? `Đã lưu và ghi phiếu thu gia hạn · ${code}.` : `Đã gia hạn pin / sạc · ${code}${hasFee ? ' · còn công nợ gia hạn' : ''}.`);
+      notify(mode === 'return' ? `Đã nhận lại pin / sạc · ${code}. Kiểm tra và gửi Telegram.` : collecting ? `Đã lưu và ghi phiếu thu gia hạn · ${code}.` : `Đã gia hạn pin / sạc · ${code}${hasFee ? ' · còn công nợ gia hạn' : ''}.`);
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chưa lưu được thao tác.');
@@ -95,7 +98,9 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
             {entry.action === 'collect_renewal' && <p>Đã thu: {formatMoney(entry.collected || 0)}</p>}
             {entry.transaction_id && <p>Phiếu thu #{entry.transaction_id}{entry.receipt ? ` · ${BATTERY_COLLECTION_METHODS.find(m => m.value === entry.receipt?.method)?.label}` : ''}</p>}
             {entry.note && <p className="mg-battery-history-note">Ghi chú: {entry.note}</p>}
+            {entry.action === 'return' && can('contracts.return') && <button type="button" className="mg-button" onClick={() => setTelegramRequestId(entry.request_id)}>Gửi / xem Telegram</button>}
           </article>)}
+          {telegramRequestId && can('contracts.return') && <BatteryTelegramPanel batteryId={id} requestId={telegramRequestId} />}
         </> : <fieldset className="mg-payment-fields" disabled={saving || uncertain}>
           <legend>{title}</legend>
           {mode === 'renew' && <>

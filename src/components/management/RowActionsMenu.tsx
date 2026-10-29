@@ -89,8 +89,9 @@ export function RowActionsMenu({ label, actions, busy, triggerLabel, disabled }:
     {open && createPortal(<div ref={menuRef} id={menuId} role="menu" aria-label={label} className="mg-row-menu"
       style={{ ...position, maxHeight: `calc(100dvh - ${position.top ?? position.bottom ?? 0}px - 12px)` }} onKeyDown={onMenuKeyDown}>
       {actions.map(action => <button key={action.key} type="button" role="menuitem" className={action.danger ? 'is-danger' : undefined}
-        disabled={action.disabled} title={action.title} onClick={() => { close(true); action.onSelect(); }}>
-        {action.icon}<span>{action.label}</span>
+        disabled={action.disabled} title={action.title} aria-label={action.disabled && action.title ? `${action.label}. ${action.title}` : undefined}
+        onClick={() => { if (action.disabled) return; close(true); action.onSelect(); }}>
+        {action.icon}<span className="mg-row-action-copy"><span>{action.label}</span>{action.disabled && action.title ? <small>{action.title}</small> : null}</span>
       </button>)}
     </div>, triggerRef.current?.closest('dialog') || document.body)}
   </>;

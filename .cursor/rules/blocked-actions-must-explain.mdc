@@ -1,0 +1,39 @@
+---
+description: Mọi hành vi chặn phải kèm lý do cụ thể (UI + API)
+alwaysApply: true
+---
+
+# Chặn thao tác phải nói rõ lý do
+
+Khi hệ thống **không cho** làm một thao tác (nút disabled, ẩn action, `return` sớm, HTTP 4xx, validation), người dùng phải thấy **lý do cụ thể bằng tiếng Việt** — không chỉ im lặng hoặc “Không hợp lệ”.
+
+## Bắt buộc
+
+- **Nút/menu disabled**: luôn có `title` (desktop) và chữ lý do hiện được trên mobile (nhãn phụ / dòng trạng thái cạnh nút).
+- **API từ chối**: `message` nêu điều kiện cụ thể (trạng thái, thiếu quyền, thiếu ảnh, đã hoàn thành…).
+- **Form submit bị chặn**: hiện `role="status"` / `role="alert"` trước khi user bấm mù.
+- Lý do phải **phân biệt được case** (đã hoàn thành ≠ đang bảo lưu ≠ thiếu quyền).
+
+## Cấm
+
+- `disabled` mà không có lý do nhìn thấy được
+- Ẩn hẳn action quan trọng (Trả xe, Gia hạn, Gửi Telegram…) khi user đang kỳ vọng — nên để **disabled + lý do**
+- Message chung: “Không hợp lệ”, “Thao tác thất bại”, “Error” không kèm nguyên nhân
+
+## Gợi ý code
+
+```ts
+// ✅
+actions.push({
+  key: 'return',
+  label: 'Trả xe',
+  disabled: true,
+  title: 'Hợp đồng đã hoàn thành; không trả xe lại.',
+  onSelect: () => {},
+});
+
+// ❌
+if (canReturn) actions.push({ key: 'return', ... }); // ẩn hoàn toàn khi không được
+```
+
+Dùng helper sẵn có trong `src/lib/management/blocked-actions.ts` khi thêm chặn mới cho hợp đồng/xe.

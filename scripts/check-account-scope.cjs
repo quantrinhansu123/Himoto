@@ -313,6 +313,8 @@ async function main(){const c=await pool.connect();try{
   assert(hasPermission({access_role:'ownership_staff',permissions:[...ACCESS_ROLES.ownership_staff.permissions]},'vehicles.transfer'));
   const {requestPermission}=load(path.join(root,'lib/server/access-request'));
   for(const [method,action,permission] of [['GET','','contracts.read'],['POST','renew','contracts.renew'],['POST','collect_renewal','contracts.renew'],['POST','return','contracts.return']])assert.equal(requestPermission('/api/auth/battery-contracts/1/actions',method,action),permission);
+  assert.equal(requestPermission('/api/auth/battery-contracts/1/telegram','GET'),'contracts.read');
+  assert.equal(requestPermission('/api/auth/battery-contracts/1/telegram','POST'),'contracts.read');
   assert(hasPermission({access_role:'ownership_manager',permissions:[...ACCESS_ROLES.ownership_manager.permissions]},'contracts.finalize'));
   assert(!hasPermission({role_id:1,access_role:'branch_staff',permissions:[]},'accounts.manage'));
   assert.throws(()=>parseAccountValues({name:'QA',login_name:'qa',password:'secret-password',access_role:'branch_staff',store_id:80001,scope_all:false,permissions:[],enabled:true},true),AccountAccessError);

@@ -21,8 +21,8 @@ export async function queueContractNotification(client:Database,orderId:number,k
     VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,'manual') ON CONFLICT(event_key) DO NOTHING`,[randomUUID(),orderId,store_id,eventKey,kind,JSON.stringify(payload),JSON.stringify(payload.photos.map(photo=>photo.slot)),JSON.stringify(phases),notificationHash(kind,payload)]);
 }
 /** Claims are committed before calling Telegram. An uncertain send is never retried automatically. */
-export async function dispatchContractNotifications(send:typeof fetch=fetch,limit=5,database:Database=ownerDatabase,orderIds?:number[],vehicleEventIds?:number[],deadline=Date.now()+TELEGRAM_DISPATCH_BUDGET_MS) {
-  if(!vehicleEventIds)await dispatchTelegramRetractions(send,Math.min(limit,3),database,orderIds,Math.min(deadline,Date.now()+90_000));
+export async function dispatchContractNotifications(send:typeof fetch=fetch,limit=5,database:Database=ownerDatabase,orderIds?:number[],vehicleEventIds?:number[],deadline=Date.now()+TELEGRAM_DISPATCH_BUDGET_MS,batteryContractIds?:number[]) {
+  if(!vehicleEventIds&&!batteryContractIds)await dispatchTelegramRetractions(send,Math.min(limit,3),database,orderIds,Math.min(deadline,Date.now()+90_000));
   const settings=(await database.query('SELECT bot_cipher FROM himoto.management_telegram_settings WHERE singleton=true')).rows[0];
   if(!settings?.bot_cipher){await database.query("UPDATE himoto.management_contract_notifications SET status='awaiting_config' WHERE status='pending' AND delivery_mode='manual'");return {sent:0,configured:false};}
   const {token}=openIntegrationSecret<{token:string}>(settings.bot_cipher);let sent=0;
@@ -50,6 +50,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       SELECT target.* FROM routed target JOIN himoto.management_contract_notifications n ON n.id=target.id
       WHERE ($1::bigint[] IS NULL OR n.order_id=ANY($1))
         AND ($3::bigint[] IS NULL OR n.vehicle_event_id=ANY($3))
+        AND ($4::bigint[] IS NULL OR n.battery_contract_id=ANY($4))
     ), candidate AS MATERIALIZED (
       SELECT n.id,target.chat_id,target.thread_id FROM himoto.management_contract_notifications n
       JOIN routed target ON target.id=n.id
@@ -71,7 +72,7 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       ON CONFLICT(chat_id,thread_id) DO UPDATE SET lease_id=EXCLUDED.lease_id,notice_id=EXCLUDED.notice_id,expires_at=EXCLUDED.expires_at
       WHERE management_telegram_delivery_leases.expires_at<=clock_timestamp() RETURNING lease_id
     ) UPDATE himoto.management_contract_notifications n SET status='sending' FROM candidate c
-      WHERE n.id=c.id AND (c.chat_id IS NULL OR EXISTS(SELECT 1 FROM lease)) RETURNING n.*,c.chat_id,c.thread_id`,[orderIds||null,leaseId,vehicleEventIds||null])).rows[0];
+      WHERE n.id=c.id AND (c.chat_id IS NULL OR EXISTS(SELECT 1 FROM lease)) RETURNING n.*,c.chat_id,c.thread_id`,[orderIds||null,leaseId,vehicleEventIds||null,batteryContractIds||null])).rows[0];
     if(!row)break;
     if(!row.chat_id){await database.query("UPDATE himoto.management_contract_notifications SET status='awaiting_config' WHERE id=$1",[row.id]);continue;}
     const payload=row.payload as NotificationPayload,ids:number[]=Array.isArray(row.message_ids)?[...row.message_ids]:[];

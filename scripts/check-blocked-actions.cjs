@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { load, root } = require('./lib/load-typescript.cjs');
+const { contractReturnBlockReason, contractRenewBlockReason, contractHandoverBlockReason } = load(path.join(root, 'lib/management/blocked-actions'));
+const checks = [];
+assert.equal(contractReturnBlockReason('renting'), null);
+assert.equal(contractReturnBlockReason('overdue'), null);
+assert.match(contractReturnBlockReason('completed'), /đã hoàn thành/i);
+assert.match(contractReturnBlockReason('deposit_contract'), /Giao xe/);
+assert.match(contractRenewBlockReason('renting', true), /lịch đóng tiền/);
+assert.equal(contractRenewBlockReason('renting', false), null);
+assert.equal(contractHandoverBlockReason('deposit_contract'), null);
+assert.match(contractHandoverBlockReason('completed'), /đã hoàn thành/i);
+checks.push('Blocked contract actions expose concrete Vietnamese reasons instead of silent omission');
+console.log(JSON.stringify({ passed: checks.length, checks, realBusinessWrites: 0 }, null, 2));
