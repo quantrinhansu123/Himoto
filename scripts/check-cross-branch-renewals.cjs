@@ -8,10 +8,11 @@ const { dataAccess } = load(path.join(root, 'lib/server/access-context'));
 const pool = load(path.join(root, 'lib/server/himoto-database')).ownerDatabase;
 global.fetch = async () => { throw Error('No provider/Telegram calls allowed'); };
 const scope = { id: 151, access_role: 'branch_staff', store_id: 23, scope_all: false, operation: '' };
-const tables = ['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles','management_contract_notifications'];
+const tables = ['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles','staff_account_attribution','management_contract_notifications'];
 const table = name => `pg_temp.qa_xrenew_${name}`;
 const rewrite = sql => tables.reduce((value, name) => value.replaceAll(`himoto.${name}`, table(name)), sql)
   .replaceAll('himoto.vehicle_inventory()', 'pg_temp.qa_xrenew_inventory()')
+  .replaceAll('himoto.contract_vehicle_labels()', 'pg_temp.qa_xrenew_inventory()')
   .replaceAll('himoto.extend_contract_vehicle_line', 'pg_temp.qa_xrenew_extend');
 const local = value => new Date(value + 7 * 3600000).toISOString().slice(0, 16);
 
@@ -19,7 +20,7 @@ async function main() {
   const c = await pool.connect(), checks = [];
   const db = { query(sql, args) {
     sql = rewrite(sql);
-    assert(!/himoto\.(?!access_store|access_actor)/.test(sql), 'Every business query must target isolated TEMP tables');
+    assert(!/himoto\.(?!access_store|access_actor)/.test(sql), `Every business query must target isolated TEMP tables: ${[...sql.matchAll(/himoto\.\w+/g)].map(row=>row[0]).join(',')}`);
     return c.query(sql, args);
   } };
   const atomic = async work => {
@@ -71,6 +72,7 @@ async function main() {
     await assert.rejects(() => atomic(() => db.query("UPDATE himoto.order_vehicle_details SET return_at=now()+interval '1 day' WHERE id=101")), error => error.code === '42501');
     checks.push('Reproduces production RLS failure: own contract is visible, foreign stock is hidden, direct rental-line UPDATE is rejected');
     await c.query('SAVEPOINT baseline');
+    await db.query("INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,'renewal-2-document-1','image/jpeg',$1,151)",[Buffer.from([255,216,255])]);
     const input = { ...await revisions(), request_id: randomUUID(), item_id: 101, return_at: local(Date.now()+86400000), amount: '140000', note: 'QA', receipt: { method: 'cash', account_id: 5, paid_at: local(Date.now()-60000) } };
     const renew = body => dataAccess.run(scope, () => renewContractAndCollect(db, 1, 151, body));
     const paid = await atomic(() => renew(input));
@@ -103,6 +105,7 @@ async function main() {
     assert.equal(await snapshot(), once);
     checks.push('Foreign contract, wrong contract/line pair, completed line, stale revision, missing actor, invalid fees/earlier dates are rejected; foreign vehicle writes stay blocked');
     await c.query('ROLLBACK TO SAVEPOINT baseline');
+    await db.query("INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,'renewal-2-document-1','image/jpeg',$1,151)",[Buffer.from([255,216,255])]);
     const original = await snapshot();
     const failing = { query(sql, args) { if (sql.startsWith('UPDATE himoto.orders SET draft_payload=jsonb_set')) throw Error('Injected after receipt'); return db.query(sql,args); } };
     await assert.rejects(() => atomic(() => dataAccess.run(scope, () => renewContractAndCollect(failing,1,151,input))), /Injected/);

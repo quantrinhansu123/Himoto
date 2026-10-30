@@ -87,8 +87,9 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   }
   if (receipt.revision !== input.revision) throw new ContractPaymentError('Phiếu đã được cập nhật. Tải lại rồi sửa trên thông tin mới.',409);
   const eventKey = receipt.renewal_payload.version !== undefined ? `renewal:${orderId}:${receipt.renewal_payload.version}` : `renewal-receipt:${orderId}:${input.transaction_id}`;
+  const eventKeys=[...new Set([eventKey,`renewal-receipt:${orderId}:${input.transaction_id}`])];
   const notices = (await db.query(`SELECT status,message_ids,retraction FROM himoto.management_contract_notifications
-    WHERE order_id=$1 AND (event_key=$2 OR root_event_key=$2) FOR UPDATE`,[orderId,eventKey])).rows;
+    WHERE order_id=$1 AND (event_key=ANY($2::text[]) OR root_event_key=ANY($2::text[])) FOR UPDATE`,[orderId,eventKeys])).rows;
   if (notices.some(notice => notice.retraction?.state !== 'done' && (['pending','sending','unknown'].includes(notice.status) ||
     notice.status === 'failed' && notice.message_ids?.length || notice.retraction))) {
     throw new ContractPaymentError('Telegram của lượt gia hạn đang gửi hoặc chưa đối chiếu xong. Xử lý lượt gửi trước khi sửa thanh toán.',409);
@@ -136,6 +137,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   if (amountChanged && (!old?.renewal_fee_editable || idx < 0)) throw new ContractPaymentError('Chỉ sửa phí của kỳ gia hạn đã đối chiếu khi xe còn đang thuê. Phiếu đã hủy hoặc xe đã trả không làm thay đổi tiền hợp đồng tại đây.',409);
   const delta = newAmount - currentAmount;
   if (amountChanged && (![currentAmount,Number(order.total),Number(order.total)+delta].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=MAX_PAYMENT_AMOUNT))) throw new ContractPaymentError('Tiền hợp đồng hiện tại chưa hợp lệ để sửa phí gia hạn.',409);
+  const affectedTransactionIds=[input.transaction_id];
 
   if (newBefore !== currentBefore || newReturn !== currentReturn) {
     periodChanged = true;
@@ -162,6 +164,22 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
     };
     await db.query(`UPDATE himoto.management_contract_payments SET renewal_payload=$3::jsonb WHERE transaction_id=$1 AND order_id=$2`,
       [input.transaction_id, orderId, JSON.stringify(updatedRenewalPayload)]);
+    // Several receipts may collect one fee in parts. Keep their coverage/fee
+    // snapshots together; each voucher's value, collected_amount and date stay intact.
+    if(receipt.status==='approved'&&idx>=0){
+      const siblings=(await db.query(`SELECT p.transaction_id,p.renewal_payload FROM himoto.management_contract_payments p
+        JOIN himoto.transactions t ON t.id=p.transaction_id AND t.order_id=p.order_id
+        WHERE p.order_id=$1 AND p.transaction_id<>$2 AND p.renewal_payload IS NOT NULL
+          AND t.status='approved' AND t.type IN('in','addon') ORDER BY t.id FOR UPDATE OF t,p`,[orderId,input.transaction_id])).rows;
+      for(const sibling of siblings){
+        if(Number(sibling.renewal_payload.version)!==Number(receipt.renewal_payload.version)||!sameRenewalPeriod(sibling.renewal_payload,receipt.renewal_payload))continue;
+        const changed=await db.query(`UPDATE himoto.management_contract_payments SET renewal_payload=$3::jsonb
+          WHERE transaction_id=$1 AND order_id=$2 RETURNING transaction_id`,[sibling.transaction_id,orderId,JSON.stringify({...sibling.renewal_payload,amount:newAmount,before_return_at:newBefore,return_at:newReturn})]);
+        if(changed.rowCount!==1)throw new ContractPaymentError('Phiếu thu cùng kỳ đã thay đổi. Tải lại để kiểm tra.',409);
+        await db.query('UPDATE himoto.transactions SET updated_at=now() WHERE id=$1 AND order_id=$2',[sibling.transaction_id,orderId]);
+        affectedTransactionIds.push(Number(sibling.transaction_id));
+      }
+    }
 
     const renewalVersion = receipt.renewal_payload.version;
     if (renewalVersion !== undefined && idx >= 0) {
@@ -197,6 +215,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   payload.management_composer = { ...composer, payment_corrections: [...edits, {
     request_id: input.request_id, request_hash: hash, at: new Date().toISOString(), actor_id: actorId, reason: input.reason,
     transaction_id: input.transaction_id, renewal_version: receipt.renewal_payload.version ?? null, amount: Number(receipt.value),
+    affected_transaction_ids:affectedTransactionIds,
     before: {
       bank_id: receipt.bank_id, cash_id: receipt.cash_id, payment_method: receipt.payment_method, bank_owner_type: receipt.bank_owner_type,
       method: old?.method || '', account: old?.account || '',

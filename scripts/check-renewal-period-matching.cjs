@@ -1,0 +1,16 @@
+const assert=require('node:assert/strict'),path=require('node:path');
+const {load,root}=require('./lib/load-typescript.cjs');
+const {sameRenewalPeriod}=load(path.join(root,'lib/server/contract-notification-content'));
+const a={version:2,item_id:101,created_at:'2026-10-24T13:59:00Z',before_return_at:'2026-10-23T08:04:00Z',return_at:'2026-10-27T08:04:00Z'};
+assert.equal(sameRenewalPeriod(a,{...a,before_return_at:'2026-10-24T08:04:00Z'}),false,'Equal creation time cannot join different rental starts');
+assert.equal(sameRenewalPeriod(a,{...a,return_at:'2026-10-28T08:04:00Z'}),false,'Equal creation time cannot join different due dates');
+assert.equal(sameRenewalPeriod(a,{...a,item_id:102}),false,'Different vehicles remain separate');
+assert.equal(sameRenewalPeriod(a,{...a,created_at:'2026-10-25T13:59:00Z'}),false,'Different event identities remain separate even with equal coverage');
+assert.equal(sameRenewalPeriod(a,{...a,before_return_at:'2026-10-23T15:04:00+07:00',return_at:'2026-10-27T15:04:00+07:00'}),true,'Offsets representing the same instant match');
+assert.equal(sameRenewalPeriod(a,{before_return_at:a.before_return_at,return_at:a.return_at}),true,'Legacy entries missing creation time match full coverage');
+assert.equal(sameRenewalPeriod(a,{}),false,'Empty payload is not a matching receipt');
+assert.equal(sameRenewalPeriod(a,{created_at:a.created_at}),false,'Creation time alone is not rental coverage');
+assert.equal(sameRenewalPeriod(a,{return_at:a.return_at}),false,'One deadline without event identity cannot identify a period');
+assert.equal(sameRenewalPeriod(a,{created_at:a.created_at,return_at:a.return_at}),true,'Older payload with event identity and one shared bound is supported');
+assert.equal(sameRenewalPeriod(a,{...a,return_at:'invalid'}),false,'Invalid explicit periods are not matches');
+console.log(JSON.stringify({passed:11,realBusinessWrites:0,checks:['Date equality and event identity are checked together','Missing/invalid periods do not match arbitrary receipts','Vietnam offsets and legacy bounded event identity remain supported']},null,2));

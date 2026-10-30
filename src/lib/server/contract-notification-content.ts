@@ -39,10 +39,16 @@ export function renewalPeriodStart(item:Pick<RenewalNotice,'created_at'|'before_
 const renewalPeriod=(item:RenewalNotice)=>`${renewalClock(renewalPeriodStart(item))} - ${renewalClock(item.return_at)}`;
 export function sameRenewalPeriod(a:Partial<RenewalNotice>,b:Partial<RenewalNotice>) {
   if(a.item_id&&b.item_id&&Number(a.item_id)!==Number(b.item_id))return false;
-  if(a.created_at&&b.created_at)return Date.parse(a.created_at)===Date.parse(b.created_at);
-  return ['before_return_at','return_at'].every(key=>{
-    const x=a[key as 'return_at'],y=b[key as 'return_at'];return !x||!y||new Date(x).getTime()===new Date(y).getTime();
-  });
+  let bounds=0;
+  for(const key of ['before_return_at','return_at'] as const){
+    const x=a[key],y=b[key];
+    if(x&&!Number.isFinite(Date.parse(x))||y&&!Number.isFinite(Date.parse(y)))return false;
+    if(x&&y){if(Date.parse(x)!==Date.parse(y))return false;bounds++;}
+  }
+  // An edit can retain created_at while changing coverage. Creation time alone
+  // must never attach an older receipt to a different period or an empty payload.
+  if(a.created_at&&b.created_at)return bounds>0&&Number.isFinite(Date.parse(a.created_at))&&Date.parse(a.created_at)===Date.parse(b.created_at);
+  return bounds===2;
 }
 export function renewalDurationText(item:RenewalNotice) {
   const minutes=Math.ceil((Date.parse(item.return_at)-Date.parse(renewalPeriodStart(item)||''))/60_000);
