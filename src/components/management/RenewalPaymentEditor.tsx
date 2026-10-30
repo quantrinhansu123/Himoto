@@ -114,9 +114,14 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
   }
 
   const durationText = getDurationLabel(beforeReturnAt, returnAt);
+  function openEditor(){
+    // Clear the previous form before rendering it. A late context read must not
+    // overwrite edits made against briefly visible data from the last opening.
+    setLoading(true);setContext(null);setSelected('');setError('');setOpen(true);
+  }
 
   return <div className="mg-renewal-payment-editor">
-    {!open ? <button type="button" className="mg-button" disabled={disabled} onClick={() => setOpen(true)}><Pencil size={15}/> Sửa thời gian, phí / thanh toán</button>
+    {!open ? <button type="button" className="mg-button" disabled={disabled} onClick={openEditor}><Pencil size={15}/> Sửa thời gian, phí / thanh toán</button>
       : <fieldset className="mg-payment-fields" aria-label="Sửa kỳ gia hạn & thanh toán" disabled={saving || disabled}>
         <legend>Sửa kỳ gia hạn & thanh toán</legend>
         {loading && <p role="status"><LoaderCircle size={15} className="mg-spin"/> Đang tải phiếu thu…</p>}
@@ -166,7 +171,7 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
         </>}
         <button type="button" className="mg-button" disabled={saving} onClick={() => { setOpen(false); pending.current = null; setUncertain(false); }}>Đóng sửa thông tin</button>
         {error && <p className="mg-field-wide mg-field-error" role="alert">{error}</p>}
-        {!loading && <button type="button" className="mg-button" disabled={saving} onClick={() => setRetry(value => value + 1)}>Tải lại phiếu</button>}
+        {!loading && <button type="button" className="mg-button" disabled={saving} onClick={() => {setLoading(true);setContext(null);setSelected('');setRetry(value => value + 1);}}>Tải lại phiếu</button>}
       </fieldset>}
   </div>;
 }

@@ -15,6 +15,7 @@
 - Editing a fee on an active rental changes only the contract charge, vehicle line renewal amount and saved renewal amount by the fee difference. Returned vehicles and closed contracts cannot have their charge edited here. Receipt value, receipt date and paid total are preserved. A reason is required, the change is audited, revisions change for metadata edits, and UUID retries are idempotent.
 - Changing the current deadline also updates the explicit parent deadline when present. Editing a historical period cannot move a vehicle back from a later renewal. Errors roll back the whole transaction.
 - Mobile dates use separate date and 24-hour controls. Preview refresh does not send, edit or retract any Telegram message.
+- Reopening/reloading an editor clears the old form synchronously. A late context response cannot overwrite edits entered into briefly visible data from the previous opening; this race was detected when checking the optimized deployment.
 
 ## Read-only checks on the reported contracts
 

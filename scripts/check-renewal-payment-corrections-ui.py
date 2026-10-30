@@ -100,7 +100,7 @@ with sync_playwright() as pw:
         state.update(method='cash', revision=1, applied=[], fail_once=True,fee=1500000,start='2026-10-23T08:04:00Z',end='2026-10-27T08:04:00Z')
         browser = getattr(pw, engine).launch()
         ctx = browser.new_context(viewport=dict(width=width, height=950), timezone_id='Asia/Ho_Chi_Minh', reduced_motion='reduce')
-        ctx.add_init_script("const f=fetch;window.fetch=function(i,o){const u=new URL(typeof i==='string'?i:i.url,location.href);return u.pathname==='/api/auth/payment-events'?Promise.resolve(Response.json({status:'success',data:[]})):f.call(this,i,o);};")
+        ctx.add_init_script("const f=fetch;window.fetch=async function(i,o){const u=new URL(typeof i==='string'?i:i.url,location.href);if(u.pathname==='/api/auth/payment-events')return Response.json({status:'success',data:[]});const r=await f.call(this,i,o);if(u.pathname.endsWith('/payments')&&(!o?.method||o.method==='GET'))await new Promise(done=>setTimeout(done,250));return r;};")
         ctx.add_cookies([dict(name='himoto_management_session', value=Path(args.cookie_file).read_text().strip(), url=args.url, httpOnly=True, sameSite='Strict')])
         ctx.route('**/api/**', mock)
         ctx.route('https://api.telegram.org/**', lambda route: (unexpected.append('REAL TELEGRAM'), route.abort()))
