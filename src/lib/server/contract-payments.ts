@@ -191,11 +191,12 @@ export async function recordContractPayment(client: Database, id: number, actorI
       if (!detail.rowCount || !item || detail.rows[0].revision !== line.item_revision) throw new ContractPaymentError('Xe đã thay đổi, đã trả hoặc không thuộc hợp đồng. Tải lại trước khi gia hạn.', 409);
       if (!item.return_at || !Number.isFinite(new Date(item.return_at).getTime()) || new Date(`${line.return_at}+07:00`).getTime() <= new Date(item.return_at).getTime()) throw new ContractPaymentError(`Ngày hẹn trả mới của xe ${item.license || item.name} phải sau ngày hẹn trả hiện tại.`, 409);
       const lineAmount = Number(line.amount);
-      const units=renewalDurationUnits(item.return_at,`${line.return_at}:00+07:00`),expected=units&&item.daily_price?units*item.daily_price:null;
+      // Suggested fee follows the voucher window (paid_at → new return), not the prior due date.
+      const units=renewalDurationUnits(`${input.paid_at}:00+07:00`,`${line.return_at}:00+07:00`),expected=units&&item.daily_price?units*item.daily_price:null;
       const warning=renewalFeeWarning(lineAmount,expected);
       if (item.renewal_amount === null || item.renewal_amount + lineAmount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tiền gia hạn hoặc tổng phí chưa hợp lệ / vượt giới hạn lưu trữ.', 409);
       renewed.push({ item_id: item.id, vehicle_id: item.vehicle_id, vehicle_name: item.name, license: item.license,
-        before_return_at: item.return_at, return_at: `${line.return_at}:00+07:00`,
+        created_at: `${input.paid_at}:00+07:00`, before_return_at: item.return_at, return_at: `${line.return_at}:00+07:00`,
         before_renewal_amount: item.renewal_amount, renewal_amount: item.renewal_amount + lineAmount, amount: lineAmount,
         ...(expected!==null?{expected_amount:expected}:{}),...(warning?{warning,amount_shortfall:true}:{}) });
     }

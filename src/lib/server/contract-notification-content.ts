@@ -32,7 +32,11 @@ type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
 const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
 const renewalClock=(value:string|null|undefined)=>value?`${day(value)} ${new Date(value).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}`:'Chưa đối chiếu';
-const renewalPeriod=(item:RenewalNotice)=>`${renewalClock(item.before_return_at)} - ${renewalClock(item.return_at)}`;
+/** Telegram span starts at the renewal voucher time (occurred/created), not the prior due date. */
+export function renewalPeriodStart(item:Pick<RenewalNotice,'created_at'|'before_return_at'>&{occurred_at?:string}) {
+  return item.occurred_at || item.created_at || item.before_return_at || null;
+}
+const renewalPeriod=(item:RenewalNotice)=>`${renewalClock(renewalPeriodStart(item))} - ${renewalClock(item.return_at)}`;
 export function sameRenewalPeriod(a:Partial<RenewalNotice>,b:Partial<RenewalNotice>) {
   if(a.item_id&&b.item_id&&Number(a.item_id)!==Number(b.item_id))return false;
   if(a.created_at&&b.created_at)return Date.parse(a.created_at)===Date.parse(b.created_at);
@@ -41,7 +45,7 @@ export function sameRenewalPeriod(a:Partial<RenewalNotice>,b:Partial<RenewalNoti
   });
 }
 export function renewalDurationText(item:RenewalNotice) {
-  const minutes=Math.ceil((Date.parse(item.return_at)-Date.parse(item.before_return_at||''))/60_000);
+  const minutes=Math.ceil((Date.parse(item.return_at)-Date.parse(renewalPeriodStart(item)||''))/60_000);
   if(!Number.isFinite(minutes)||minutes<=0)return '';
   return [Math.floor(minutes/1440)?`${Math.floor(minutes/1440)} ngày`:'',Math.floor(minutes%1440/60)?`${Math.floor(minutes%1440/60)} giờ`:'',minutes%60?`${minutes%60} phút`:''].filter(Boolean).join(' ');
 }

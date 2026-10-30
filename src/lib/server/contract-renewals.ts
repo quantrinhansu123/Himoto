@@ -94,7 +94,9 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   const warning = renewalFeeWarning(amount,expected)||(mismatch
     ? `Cảnh báo: chi phí gia hạn ${amount.toLocaleString('vi-VN')} đ khác gợi ý theo hợp đồng ${expected.toLocaleString('vi-VN')} đ.`
     : undefined);
-  const version: RenewalVersion = { version: await nextContractRenewalVersion(client,orderId,versions), kind: 'renewal', created_at: new Date().toISOString(), actor_id: actorId,
+  // Telegram "thời gian gia hạn" starts at the voucher time: paid_at when collecting now, else save time.
+  const voucherAt = input.receipt?.paid_at ? `${input.receipt.paid_at}:00+07:00` : new Date().toISOString();
+  const version: RenewalVersion = { version: await nextContractRenewalVersion(client,orderId,versions), kind: 'renewal', created_at: voucherAt, actor_id: actorId,
     ...(occurred?{occurred_at:occurred}:{}),
     item_id: input.item_id, vehicle_id: Number(item.vehicle_id), vehicle_name: String(item.vehicle_name || ''), license: String(item.license || ''),
     rent_at: iso(item.rent_at), before_return_at: beforeReturn, return_at: newReturn, overdue_minutes: overdueMinutes,

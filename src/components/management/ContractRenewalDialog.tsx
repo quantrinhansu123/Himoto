@@ -60,6 +60,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [accountId, setAccountId] = useState('');
   const [paidAt, setPaidAt] = useState(()=>backfill?'':vietnamPaymentTime());
+  const [openedAt] = useState(() => vietnamPaymentTime());
   useEffect(() => {
     const controller = new AbortController();
     void contractTelegramRequest(orderId, undefined, controller.signal).then(data => setRenewalVersion(data.next_renewal_version)).catch(() => {});
@@ -108,14 +109,19 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
   const canCollect = canReceiveRenewal && (feeReady(amount) + feeReady(extraAmount) + feeReady(outsideAmount)) > 0;
   const collecting = canCollect && collect;
+  // New return date = voucher time (paid / occurred / opened) + duration, not prior due + duration.
+  const renewalBase = collecting && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt) ? paidAt
+    : backfill && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(occurredAt) ? occurredAt
+    : openedAt;
+  const baseMs = Date.parse(`${renewalBase}:00+07:00`);
 
   useEffect(() => {
-    if (durationSource!=='count'||!selected || !Number.isFinite(dueMs) || unitCount < 1 || unitCount > maxCount) return;
-    setReturnAt(addRentalDuration(selected.scheduled_return_at || '', unitCount, unit));
-  }, [selected, dueMs, unit, unitCount, maxCount, durationSource]);
-  const durationUnits=renewalDurationUnits(dueStamp,returnAt,unit);
+    if (durationSource!=='count'||!selected || !Number.isFinite(baseMs) || unitCount < 1 || unitCount > maxCount) return;
+    setReturnAt(addRentalDuration(renewalBase, unitCount, unit));
+  }, [selected, renewalBase, baseMs, unit, unitCount, maxCount, durationSource]);
+  const durationUnits=renewalDurationUnits(renewalBase,returnAt,unit);
   useEffect(()=>{if(!amountTouched&&rate&&durationUnits&&durationUnits<=maxCount)setAmount(String(rate*durationUnits));},[amountTouched,rate,durationUnits,maxCount]);
-  function changeReturnAt(value:string){setDurationSource('date');setReturnAt(value);const units=renewalDurationUnits(dueStamp,value,unit);if(units)setCount(String(units));}
+  function changeReturnAt(value:string){setDurationSource('date');setReturnAt(value);const units=renewalDurationUnits(renewalBase,value,unit);if(units)setCount(String(units));}
 
   function changeUnit(next: 'day' | 'hour') {
     setUnit(next); setCount('1'); setDurationSource('count'); setAmountTouched(false); setAmount('');
@@ -139,7 +145,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const paid = selected?.paid_amount ?? null;
   const nextTotal = total === null ? null : total + fee;
   const returnMs = returnAt ? new Date(`${returnAt}:00+07:00`).getTime() : NaN;
-  const validReturn = Number.isFinite(returnMs) && durationUnits!==null && durationUnits<=maxCount && (!Number.isFinite(dueMs) || returnMs > dueMs);
+  const validReturn = Number.isFinite(returnMs) && Number.isFinite(baseMs) && returnMs > baseMs
+    && durationUnits!==null && durationUnits<=maxCount && (!Number.isFinite(dueMs) || returnMs > dueMs);
   const stillOverdue = !selected?.completed_at&&validReturn && returnMs < Date.now();
   const previewPaid = collecting ? (paid === null ? null : paid + fee) : paid;
   const previewRemaining = nextTotal === null || previewPaid === null ? null : Math.max(nextTotal - previewPaid, 0);
@@ -148,7 +155,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     event.preventDefault();
     if (!selected || saving || photosPending) return;
     if(backfill&&(!validBackfillTime(occurredAt))){setError('Nhập ngày giờ gia hạn thực tế hợp lệ.');return;}
-    if (!validReturn) { setError('Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
+    if (!validReturn) { setError(!Number.isFinite(baseMs) || !(returnMs > baseMs) ? 'Ngày trả mới phải sau ngày lập phiếu gia hạn.' : 'Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
     if (extraAmount && !/^(0|[1-9]\d{0,12})$/.test(extraAmount)) { setError('Phí khác phải là số tiền nguyên VNĐ.'); return; }
     if (otherFee > 0 && !extraName.trim()) { setError('Nhập tên khoản phí khác (ví dụ Phí VAT).'); return; }
@@ -250,10 +257,11 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
             <label>{unit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}<input type="number" min={1} max={maxCount} value={count} onChange={event => {setDurationSource('count');setCount(event.target.value);}} /></label>
             <label>{unit === 'day' ? 'Đơn giá / ngày (VNĐ)' : 'Đơn giá / giờ (VNĐ)'}<input inputMode="numeric" value={groupAmount(rateInput)} placeholder={unit === 'day' ? 'Nhập đơn giá/ngày' : 'Nhập đơn giá/giờ'}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,9}$/.test(raw)) { setRateInput(raw); setAmountTouched(false); } }} /></label>
-            <label className="mg-field-wide">Ngày trả mới (24h)<DateTime24Controls id="renewal-return-at" label="Ngày trả mới" value={returnAt} onChange={changeReturnAt} error={Boolean(returnAt) && !validReturn} /></label>
+            <label className="mg-field-wide">Ngày trả mới (24h)<DateTime24Controls id="renewal-return-at" label="Ngày trả mới" value={returnAt} onChange={changeReturnAt} error={Boolean(returnAt) && !validReturn} />
+              <small>Cộng số {unit === 'day' ? 'ngày' : 'giờ'} gia hạn kể từ ngày lập phiếu{collecting ? ' thu' : backfill ? ' / ngày thực tế' : ''}{Number.isFinite(dueMs) ? '; phải sau hẹn trả hiện tại' : ''}.</small></label>
             <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn" aria-describedby={underchargeWarning?'renewal-fee-warning':undefined}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
-              <small>{rate ? `Gợi ý theo ngày trả mới: ${formatMoney(rate)} × ${durationUnits || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(expectedFee||0)}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
+              <small>{rate ? `Gợi ý theo khoảng lập phiếu → trả mới: ${formatMoney(rate)} × ${durationUnits || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(expectedFee||0)}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
             {underchargeWarning&&<p id="renewal-fee-warning" className="mg-field-error" role="alert">{underchargeWarning} Cảnh báo được lưu vào lịch sử; vẫn lưu được theo thỏa thuận.</p>}
             {amountMismatch&&!underchargeWarning&&expectedFee!==null&&<p role="status">Phí gia hạn cao hơn gợi ý {formatMoney(expectedFee)}; phần chênh sẽ được lưu trong lịch sử.</p>}
             <div className="mg-field-wide mg-renewal-extra">

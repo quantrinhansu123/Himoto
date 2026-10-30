@@ -91,9 +91,10 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
   const renewable = Boolean(context && !context.billing && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
   const days = /^\d+$/.test(renewalDays) && Number(renewalDays) >= 1 && Number(renewalDays) <= 365 ? Number(renewalDays) : 0;
   const suggestedFor = (item: RenewalItem) => item.daily_price && days ? String(item.daily_price * days) : '';
+  const paidMs = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt) ? Date.parse(`${paidAt}:00+07:00`) : NaN;
   const renewalLines = (context?.items || []).filter(item => String(item.id) in picks).map(item => {
-    const due = item.return_at ? new Date(item.return_at).getTime() : NaN;
-    return { item, amount: picks[String(item.id)], return_at: Number.isFinite(due) && days ? vietnamLocal(due + days * 86_400_000) : '' };
+    // New return = ngày lập phiếu (paid_at) + số ngày gia hạn.
+    return { item, amount: picks[String(item.id)], return_at: Number.isFinite(paidMs) && days ? vietnamLocal(paidMs + days * 86_400_000) : '' };
   });
   const renewalTotal = renewalLines.reduce((sum, line) => sum + (/^\d+$/.test(line.amount) ? Number(line.amount) : 0), 0);
   function togglePick(item: RenewalItem, checked: boolean) {
@@ -247,7 +248,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
                     {checked&&/^\d+$/.test(picks[key]||'')&&renewalFeeWarning(Number(picks[key]),item.daily_price&&days?item.daily_price*days:null)&&<p className="mg-field-error" role="alert">{renewalFeeWarning(Number(picks[key]),item.daily_price&&days?item.daily_price*days:null)}</p>}
                   </div>;
                 })}</div>
-              <p className="mg-field-wide">Phí gia hạn được cộng vào tiền thuê hợp đồng và tổng đã thu. Chỉ đổi ngày trả của các xe đã chọn.</p>
+              <p className="mg-field-wide">Ngày trả mới = ngày giờ thu trên phiếu + số ngày gia hạn. Phí được cộng vào tiền thuê hợp đồng và tổng đã thu; chỉ đổi ngày trả của xe đã chọn.</p>
             </>}
             {purpose === 'extra' && <p className="mg-field-wide">Khoản thu thêm (phụ thu, phí phát sinh…) được cộng vào tiền hợp đồng và tổng đã thu, ghi thành phiếu Thu trong Sổ quỹ / Sổ két. Công nợ còn thiếu không đổi.</p>}
             {purpose==='deposit'&&<p className="mg-field-wide">Thu phần cọc còn thiếu theo hợp đồng, tối đa {formatMoney(context.deposit_remaining||0)}. Tiền cọc được tách riêng, không làm giảm nợ tiền thuê.</p>}
