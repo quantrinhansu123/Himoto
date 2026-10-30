@@ -1,7 +1,7 @@
 import { vietnamDate } from './duty-roster';
 import type { VehicleChange } from './vehicle-history';
 
-export type TransferHistoryAction = '' | 'transfer' | 'receive' | 'reject';
+export type TransferHistoryAction = '' | 'transfer' | 'receive' | 'reject' | 'cancel';
 export interface TransferHistoryQuery {
   from: string; to: string; fromStore: string; toStore: string; store: string;
   action: TransferHistoryAction; search: string; page: number;
@@ -9,7 +9,7 @@ export interface TransferHistoryQuery {
 export interface TransferHistoryRow {
   id: number; vehicle_id: number; vehicle_name: string; license: string;
   from_store_id: number | null; to_store_id: number | null; from_store: string; to_store: string;
-  action: 'transfer' | 'receive' | 'reject'; label: string; at: string | null; actor: string; note: string;
+  action: 'transfer' | 'receive' | 'reject' | 'cancel'; label: string; at: string | null; actor: string; note: string;
   changes: VehicleChange[];
   telegram_event_id?:number;
 }

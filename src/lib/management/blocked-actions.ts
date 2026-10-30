@@ -42,9 +42,9 @@ export function vehicleTransferBlockReason(input: {
   return null;
 }
 
-export function vehicleReceiveBlockReason(mode: 'receive' | 'reject', blocked: boolean): string | null {
+export function vehicleReceiveBlockReason(mode: 'receive' | 'reject' | 'cancel', blocked: boolean): string | null {
   if (!blocked) return null;
-  return mode === 'reject'
+  return mode !== 'receive'
     ? 'Lần chuyển xe không còn chờ xử lý hoặc thiếu thông tin. Đóng hộp thoại, nhấn Làm mới rồi kiểm tra lịch sử.'
     : 'Lần chuyển xe không còn chờ nhận hoặc thiếu thông tin. Đóng hộp thoại, nhấn Làm mới rồi kiểm tra lịch sử.';
 }

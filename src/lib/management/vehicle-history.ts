@@ -14,6 +14,10 @@ export function vehicleEventRoute(event:VehicleEvent) {
 export function vehicleTransferRoute(row:Record<string,unknown>) {
   return row.transfer_event_id ? `${row.transfer_from_store_name||'Chưa rõ cơ sở đi'} → ${row.transfer_to_store_name||row.store_name||'Chưa rõ cơ sở đến'}` : '';
 }
+export function canCancelVehicleTransfer(row:Record<string,unknown>, actorId:unknown) {
+  return row.status==='in_transit' && Number(row.transfer_event_id)>0 && Number(row.transfer_receivable)===1
+    && Number(actorId)>0 && Number(row.transfer_created_by)===Number(actorId);
+}
 
 export const VEHICLE_EVENT_ACTIONS: { value: VehicleEventAction; label: string }[] = [
   { value: 'rent', label: 'Thuê' }, { value: 'return', label: 'Trả xe' }, { value: 'transfer', label: 'Chuyển kho' },

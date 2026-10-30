@@ -20,7 +20,7 @@ export function parseTransferHistory(params: URLSearchParams): TransferHistoryQu
     return value;
   };
   const action = params.get('action') || '', search = (params.get('search') || '').trim(), page = params.get('page') || '1';
-  if (!['', 'transfer', 'receive', 'reject'].includes(action) || search.length > 200) throw new TransferHistoryError('Bộ lọc không hợp lệ.');
+  if (!['', 'transfer', 'receive', 'reject', 'cancel'].includes(action) || search.length > 200) throw new TransferHistoryError('Bộ lọc không hợp lệ.');
   if (!/^[1-9]\d*$/.test(page) || Number(page) > 1000000) throw new TransferHistoryError('Phân trang không hợp lệ.');
   return { from, to, fromStore: id('from_store', ''), toStore: id('to_store', ''), store: id('store', 'all'),
     action: action as TransferHistoryQuery['action'], search, page: Number(page) };
@@ -45,7 +45,7 @@ export async function readTransferHistory(client: Pick<PoolClient, 'query'>, par
       WHERE e.event_type='status_change' AND p.vehicle_id=e.vehicle_id AND p.id<e.id
         AND p.event_type='manual_transfer' AND p.to_store_id=e.to_store_id ORDER BY p.id DESC LIMIT 1
     ) original ON true
-    WHERE (e.event_type IN ('manual_transfer','manual_transfer_receive','manual_transfer_reject','transfer_dispatch','transfer_receive')
+    WHERE (e.event_type IN ('manual_transfer','manual_transfer_receive','manual_transfer_reject','manual_transfer_cancel','transfer_dispatch','transfer_receive')
       OR (e.event_type='status_change' AND e.ref_type='ready' AND EXISTS (
         SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(e.audit_snapshot->'changes')='array' THEN e.audit_snapshot->'changes' ELSE '[]'::jsonb END) change
         WHERE change->>'field'='status' AND change->>'from_value'='in_transit' AND change->>'to_value'='ready'
@@ -57,7 +57,7 @@ export async function readTransferHistory(client: Pick<PoolClient, 'query'>, par
       e.origin_store_id AS from_store_id,e.to_store_id,
       COALESCE(NULLIF(e.origin_snapshot->>'from_store_name',''),NULLIF(e.audit_snapshot->>'from_store_name',''),fs.store_name,'') AS from_store,
       COALESCE(NULLIF(e.audit_snapshot->>'to_store_name',''),ts.store_name,'') AS to_store,
-      CASE WHEN e.event_type IN ('manual_transfer','transfer_dispatch') THEN 'transfer' WHEN e.event_type='manual_transfer_reject' THEN 'reject' ELSE 'receive' END AS action,
+      CASE WHEN e.event_type IN ('manual_transfer','transfer_dispatch') THEN 'transfer' WHEN e.event_type='manual_transfer_reject' THEN 'reject' WHEN e.event_type='manual_transfer_cancel' THEN 'cancel' ELSE 'receive' END AS action,
       e.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS at,
       COALESCE(NULLIF(e.audit_snapshot->>'actor_name',''),u.name,'') AS actor,
       concat_ws(' · ',NULLIF(t.transfer_code,''),NULLIF(t.reason,''),NULLIF(e.notes,'')) AS note
@@ -74,13 +74,13 @@ export async function readTransferHistory(client: Pick<PoolClient, 'query'>, par
     COALESCE(jsonb_agg(paged ORDER BY at DESC NULLS LAST,id DESC),'[]'::jsonb) AS rows FROM paged`, values);
   const row = result.rows[0];
   if(!Number.isSafeInteger(row.scope_count)||row.scope_count<0)throw new Error('Không đọc được tổng lịch sử luân chuyển.');
-  const actionLabel=(value:string)=>value==='transfer'?'Chuyển xe':value==='reject'?'Từ chối điều chuyển':'Nhận xe';
+  const actionLabel=(value:string)=>value==='transfer'?'Chuyển xe':value==='reject'?'Từ chối điều chuyển':value==='cancel'?'Huỷ điều chuyển':'Nhận xe';
   return { total: Number(row.total), scopeCount:row.scope_count, page: input.page, size: TRANSFER_HISTORY_SIZE,
     rows: row.rows.map((event: Record<string, unknown>) => ({ id: Number(event.id), vehicle_id: Number(event.vehicle_id),
       ...(['manual_transfer','manual_transfer_receive'].includes(String(event.event_type))?{telegram_event_id:Number(event.id)}:{}),
       vehicle_name: String(event.vehicle_name), license: String(event.license), from_store_id: event.from_store_id == null ? null : Number(event.from_store_id),
       to_store_id: event.to_store_id == null ? null : Number(event.to_store_id), from_store: String(event.from_store), to_store: String(event.to_store),
-      action: event.action === 'transfer' ? 'transfer' : event.action === 'reject' ? 'reject' : 'receive', label: actionLabel(String(event.action)),
+      action: event.action === 'transfer' ? 'transfer' : event.action === 'reject' ? 'reject' : event.action === 'cancel' ? 'cancel' : 'receive', label: actionLabel(String(event.action)),
       at: event.at == null ? null : String(event.at), actor: String(event.actor), note: String(event.note),
       changes: readVehicleAudit(event.audit_snapshot)?.changes || [],
     })) };

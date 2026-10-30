@@ -11,14 +11,14 @@ import { formatDateTime } from '@/lib/formatters';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
 import { mapApiRow } from '@/lib/management/repository';
-import { vehicleTransferRoute } from '@/lib/management/vehicle-history';
+import { vehicleTransferRoute, canCancelVehicleTransfer } from '@/lib/management/vehicle-history';
 import { vehicleReceiveBlockReason, vehicleTransferBlockReason } from '@/lib/management/blocked-actions';
 import type { OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 import Link from 'next/link';
 import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 
-export type VehicleActionMode = 'transfer' | 'status' | 'receive' | 'reject';
+export type VehicleActionMode = 'transfer' | 'status' | 'receive' | 'reject' | 'cancel';
 const STATUS_CHOICES = [{ value: 'using', label: 'Lập hợp đồng nháp' }, { value: 'ready', label: 'Lưu kho' }] as const;
 const vehicleOption = (row: ManagementRow) => `${row.license || row.code} — ${row.name}`;
 const plateKey=(value:string)=>value.toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -30,7 +30,7 @@ function resolveVehicle(rows:ManagementRow[],value:string){
 }
 
 export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleActionMode; vehicle: ManagementRow | null; onClose: () => void }) {
-  const { dataset, ensureData, notify } = useManagement();
+  const { dataset, ensureData, notify, accessUser } = useManagement();
   const reloadVehicles = () => { setError(''); void ensureData(['vehicles'], true).catch(() => setError('Không tải lại được danh sách xe.')); };
   const router = useRouter();
   const stores = dataset?.stores || [];
@@ -85,7 +85,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
   })();
   const rented = openRentals.length > 0;
   const sameDestination = mode === 'transfer' && Boolean(selected) && Boolean(storeId) && storeId === String(selected?.store_id);
-  const receiveBlocked = (mode === 'receive' || mode === 'reject') && (!selected || currentStatus !== 'in_transit' || !selected.transfer_event_id || selected.transfer_receivable === 0);
+  const receiveBlocked = (mode === 'receive' || mode === 'reject' || mode === 'cancel') && (!selected || currentStatus !== 'in_transit' || !selected.transfer_event_id || selected.transfer_receivable === 0);
   const transferBlock = mode === 'transfer'
     ? vehicleTransferBlockReason({
       selected: Boolean(selected),
@@ -95,12 +95,13 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
       storeName: String(selected?.store_name || ''),
     })
     : null;
-  const receiveBlock = (mode === 'receive' || mode === 'reject') ? vehicleReceiveBlockReason(mode, receiveBlocked) : null;
+  const receiveBlock = (mode === 'receive' || mode === 'reject' || mode === 'cancel') ? vehicleReceiveBlockReason(mode, receiveBlocked) : null;
+  const cancelBlock = mode==='cancel'&&selected&&!canCancelVehicleTransfer(selected,accessUser?.id)?'Chỉ người đã tạo lượt điều chuyển còn chờ xử lý được tự huỷ. Nhấn Làm mới để kiểm tra.':null;
   const statusOpenBlock = mode === 'status' && rented
     ? `Xe đang thuộc ${openRentals[0]?.code ? `HĐ ${openRentals[0].code}${openRentals[0].customer ? ` · ${openRentals[0].customer}` : ''}` : 'hợp đồng mở'}. Trả xe trên hợp đồng trước khi đổi trạng thái.`
     : null;
-  const submitBlockReason = transferBlock || receiveBlock || statusOpenBlock;
-  const title = mode === 'transfer' ? 'Chuyển xe' : mode === 'receive' ? 'Nhận xe' : mode === 'reject' ? 'Từ chối điều chuyển' : 'Đổi trạng thái';
+  const submitBlockReason = transferBlock || receiveBlock || cancelBlock || statusOpenBlock;
+  const title = mode === 'transfer' ? 'Chuyển xe' : mode === 'receive' ? 'Nhận xe' : mode === 'reject' ? 'Từ chối điều chuyển' : mode === 'cancel' ? 'Huỷ điều chuyển' : 'Đổi trạng thái';
 
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy.current) return;
@@ -117,9 +118,10 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
       const saved = await applyVehicleAction(selected.id, mode === 'transfer' ? { action: 'transfer', to_store_id: storeId, note, revision }
         : mode==='receive'?{action:'receive',transfer_event_id:String(selected.transfer_event_id),note,revision}
         : mode==='reject'?{action:'reject',transfer_event_id:String(selected.transfer_event_id),note,revision}
+        : mode==='cancel'?{action:'cancel',transfer_event_id:String(selected.transfer_event_id),note,revision}
         : { action: 'status', status: status as 'ready' | 'using', beneficiary_store_id: storeId, customer_name: customer.name, customer_phone: customer.phone, customer_id_card: customer.idCard, note, revision });
-      await ensureData(saved.customer ? ['vehicles', 'customers', 'contracts'] : mode==='transfer'||mode==='receive'||mode==='reject'?['vehicles','stores']:['vehicles'], true).catch(() => {});
-      notify(mode === 'transfer' ? `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${stores.find(store=>String(store.id)===storeId)?.name || 'cơ sở đích'}. Đã lưu lịch sử.` : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho. Đã lưu lịch sử.`:mode==='reject'?`Đã từ chối điều chuyển xe ${selected.license}. Xe về Lưu kho tại ${selected.transfer_from_store_name||'cơ sở chuyển đi'}.` :saved.draft?'Đã tạo hợp đồng nháp. Xe vẫn Lưu kho đến khi phát hành hợp đồng.':`Đã đổi trạng thái xe ${selected.license}.`);
+      await ensureData(saved.customer ? ['vehicles', 'customers', 'contracts'] : mode==='transfer'||mode==='receive'||mode==='reject'||mode==='cancel'?['vehicles','stores']:['vehicles'], true).catch(() => {});
+      notify(mode === 'transfer' ? `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${stores.find(store=>String(store.id)===storeId)?.name || 'cơ sở đích'}. Đã lưu lịch sử.` : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho. Đã lưu lịch sử.`:mode==='reject'||mode==='cancel'?`Đã ${mode==='cancel'?'huỷ':'từ chối'} điều chuyển xe ${selected.license}. Xe về Lưu kho tại ${selected.transfer_from_store_name||'cơ sở chuyển đi'}.` :saved.draft?'Đã tạo hợp đồng nháp. Xe vẫn Lưu kho đến khi phát hành hợp đồng.':`Đã đổi trạng thái xe ${selected.license}.`);
       if (saved.draft || saved.telegram_event_id || mode === 'transfer' || mode === 'receive') setResult({ ...saved, mode }); else onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được thao tác xe.'); }
     finally { busy.current = false; setSaving(false); }
@@ -160,11 +162,11 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         {selected && !rented && ['using','rent'].includes(currentStatus) && <small>Không còn hợp đồng mở. Chọn Lưu kho nếu cần phát hành hợp đồng mới.</small>}
         {selected&&rented&&<Link className="mg-button" href={`/contracts?action=return&query=${encodeURIComponent(String(selected.license||''))}`} onClick={onClose}>Tìm hợp đồng đang thuê · Trả xe & hoàn cọc</Link>}
         </div>
-      {mode==='receive'||mode==='reject'?<>
+      {mode==='receive'||mode==='reject'||mode==='cancel'?<>
         <p className="mg-transfer-direction mg-field-wide">{selected?vehicleTransferRoute(selected):''}</p>
         <div className="mg-field"><label htmlFor="vehicle-receive-from">Cơ sở chuyển đi</label><input id="vehicle-receive-from" value={String(selected?.transfer_from_store_name||'')} readOnly disabled/></div>
         <div className="mg-field"><label htmlFor="vehicle-receive-to">Cơ sở nhận xe</label><input id="vehicle-receive-to" value={String(selected?.transfer_to_store_name||selected?.store_name||'')} readOnly disabled/></div>
-        <p className="mg-composer-hint mg-field-wide">{mode==='reject'?'Từ chối khi cơ sở đích không nhận xe. Xe về Lưu kho tại cơ sở chuyển đi và lần điều chuyển được đóng. Có thể thêm lý do từ chối bên dưới.':'Chỉ xác nhận khi xe đã đến cơ sở nhận. Xe chuyển từ Chờ luân chuyển sang Lưu kho; sau đó có thể chọn nhiều ảnh nhận xe. Ngày giờ và người nhận được lưu trong Lịch sử.'}</p>
+        <p className="mg-composer-hint mg-field-wide">{mode==='cancel'?`Xác nhận huỷ lượt chuyển xe ${selected?.license||''}? Xe sẽ về Lưu kho tại ${selected?.transfer_from_store_name||'cơ sở chuyển đi'}. Chỉ người tạo lệnh được huỷ khi bên nhận chưa xác nhận. Lệnh gốc và lịch sử huỷ được giữ lại.`:mode==='reject'?'Từ chối khi cơ sở đích không nhận xe. Xe về Lưu kho tại cơ sở chuyển đi và lần điều chuyển được đóng. Có thể thêm lý do từ chối bên dưới.':'Chỉ xác nhận khi xe đã đến cơ sở nhận. Xe chuyển từ Chờ luân chuyển sang Lưu kho; sau đó có thể chọn nhiều ảnh nhận xe. Ngày giờ và người nhận được lưu trong Lịch sử.'}</p>
       </>:mode === 'transfer' ? <>
         <div className="mg-field"><label htmlFor="vehicle-action-from">Cơ sở hiện tại</label><input id="vehicle-action-from" value={String(selected?.store_name || otherStock?.store_name || '')} readOnly disabled /></div>
         <div className="mg-field"><label htmlFor="vehicle-action-to">Chuyển đến cơ sở<span aria-hidden="true"> *</span></label>
@@ -196,13 +198,13 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
           {submitBlockReason || 'Ngày giờ và người nhập được ghi tự động khi lưu.'}
         </span>
         <button type="button" className="mg-button" disabled={saving} onClick={reloadVehicles}><RotateCcw size={16}/>Làm mới</button>
-        <button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
-        <button type="submit" className={`mg-button ${mode==='reject'?'mg-button-danger':'mg-button-primary'}`}
+        <button type="button" className="mg-button" disabled={saving} onClick={onClose}>{mode==='cancel'?'Quay lại':'Hủy'}</button>
+        <button type="submit" className={`mg-button ${mode==='reject'||mode==='cancel'?'mg-button-danger':'mg-button-primary'}`}
           disabled={saving || Boolean(submitBlockReason) || (mode === 'transfer' && !storeId)}
           title={submitBlockReason || (mode === 'transfer' && !storeId ? 'Chọn cơ sở chuyển đến.' : undefined)}
           aria-label={submitBlockReason ? `${title}. ${submitBlockReason}` : undefined}>
           {saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}
-          {saving ? 'Đang lưu…' : mode==='receive'?'Xác nhận đã nhận xe':mode==='reject'?'Xác nhận từ chối điều chuyển':title}
+          {saving ? 'Đang lưu…' : mode==='receive'?'Xác nhận đã nhận xe':mode==='reject'?'Xác nhận từ chối điều chuyển':mode==='cancel'?'Xác nhận huỷ điều chuyển':title}
         </button></div>
     </form>
   </Dialog>;

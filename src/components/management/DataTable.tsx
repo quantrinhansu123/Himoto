@@ -20,6 +20,7 @@ import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management
 import { contractHandoverBlockReason, contractRenewBlockReason, contractReturnBlockReason, vehicleTransferBlockReason } from '@/lib/management/blocked-actions';
 import type { OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
+import { canCancelVehicleTransfer } from '@/lib/management/vehicle-history';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
@@ -89,7 +90,7 @@ interface Props {
   onBatteryRent?: (row: ManagementRow) => void;
   onOwnershipTerms?: (row: ManagementRow) => void;
   onClone?: (row: ManagementRow) => void;
-  onVehicleAction?: (row: ManagementRow, mode: 'transfer' | 'status' | 'receive' | 'reject') => void;
+  onVehicleAction?: (row: ManagementRow, mode: 'transfer' | 'status' | 'receive' | 'reject' | 'cancel') => void;
   cloningId?: number | null;
   canEditContract?: boolean;
   canEditDraft?: boolean;
@@ -135,7 +136,10 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
       }
       if(can('vehicles.write'))actions.push({ key: 'status', label: 'Đổi trạng thái', icon: <RefreshCw size={16} />, onSelect: () => onVehicleAction(row, 'status') });
     }
-    if(config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive')){actions.splice(1,0,{key:'receive',label:'Nhận xe',icon:<Bike size={16}/>,onSelect:()=>onVehicleAction(row,'receive')},{key:'reject',label:'Từ chối điều chuyển',icon:<RotateCcw size={16}/>,onSelect:()=>onVehicleAction(row,'reject')});}
+    if(config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction){
+      if(canCancelVehicleTransfer(row,accessUser?.id)&&can('vehicles.transfer'))actions.splice(1,0,{key:'cancel',label:'Huỷ điều chuyển',icon:<RotateCcw size={16}/>,danger:true,onSelect:()=>onVehicleAction(row,'cancel')});
+      else if(!canCancelVehicleTransfer(row,accessUser?.id)&&can('vehicles.receive'))actions.splice(1,0,{key:'receive',label:'Nhận xe',icon:<Bike size={16}/>,onSelect:()=>onVehicleAction(row,'receive')},{key:'reject',label:'Từ chối điều chuyển',icon:<RotateCcw size={16}/>,onSelect:()=>onVehicleAction(row,'reject')});
+    }
     if (isContract && onPrint) actions.push({ key: 'print', label: 'Điền và in hợp đồng', icon: <Printer size={16} />, onSelect: () => onPrint(row) });
     if(isContract&&onQr&&row.status!=='cancelled')actions.push({key:'qr',label:'Nhập phiếu chi',icon:<Wallet size={16}/>,onSelect:()=>onQr(row)});
     if(isContract&&onReminder&&isRemindableContract(row))actions.push({key:'reminder',label:'Nhắc nợ',icon:<MessageCircle size={16}/>,onSelect:()=>onReminder(row)});
@@ -205,7 +209,8 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
           checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}<td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} data-column={column.key} data-format={column.format} className={`${column.align === 'right' ? 'mg-align-right' : ''}${column.key === 'code' ? ' mg-record-code' : ''}`}><Cell row={row} column={column} config={config} /></td>)}
           <td className="mg-actions-column"><div className="mg-row-actions">
             {config.kind==='contracts'&&row.status==='draft'&&canEditDraft&&requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type)&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onEdit(row)}><ShieldCheck size={16}/>Duyệt hợp đồng</button>}
-            {config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive')&&<>
+            {config.kind==='vehicles'&&onVehicleAction&&can('vehicles.transfer')&&canCancelVehicleTransfer(row,accessUser?.id)&&<button type="button" className="mg-button mg-button-danger" onClick={()=>onVehicleAction(row,'cancel')}>Huỷ điều chuyển</button>}
+            {config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive')&&!canCancelVehicleTransfer(row,accessUser?.id)&&<>
               <button type="button" className="mg-button mg-button-primary" onClick={()=>onVehicleAction(row,'receive')}>Nhận xe</button>
               <button type="button" className="mg-button" onClick={()=>onVehicleAction(row,'reject')}>Từ chối điều chuyển</button>
             </>}

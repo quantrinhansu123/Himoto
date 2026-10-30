@@ -17,6 +17,7 @@ export type VehicleActionInput = (
   | { action: 'transfer'; to_store_id: number; note: string }
   | { action: 'receive'; transfer_event_id: number; note: string }
   | { action: 'reject'; transfer_event_id: number; note: string }
+  | { action: 'cancel'; transfer_event_id: number; note: string }
   | { action: 'status'; status: 'ready' | 'using'; beneficiary_store_id: number; customer_name: string; customer_phone: string; customer_id_card: string; note: string }) & { revision?: string };
 
 const text = (value: unknown, label: string, max: number) => {
@@ -39,6 +40,7 @@ export function parseVehicleAction(body: unknown): VehicleActionInput {
   const note = text(raw.note, 'Ghi chú', 500);
   if (raw.action === 'receive') return {action:'receive',transfer_event_id:storeId(raw.transfer_event_id,'lần chuyển xe cần nhận'),note,...(revision?{revision}:{})};
   if (raw.action === 'reject') return {action:'reject',transfer_event_id:storeId(raw.transfer_event_id,'lần chuyển xe cần từ chối'),note,...(revision?{revision}:{})};
+  if (raw.action === 'cancel') return {action:'cancel',transfer_event_id:storeId(raw.transfer_event_id,'lần chuyển xe cần huỷ'),note,...(revision?{revision}:{})};
   if (raw.action === 'transfer') return { action: 'transfer', to_store_id: storeId(raw.to_store_id, 'cơ sở chuyển đến'), note, ...(revision ? {revision} : {}) };
   if (raw.action !== 'status') throw new VehicleActionError('Thao tác không hợp lệ.');
   if (raw.status !== 'ready' && raw.status !== 'using') throw new VehicleActionError('Chọn trạng thái Đang thuê hoặc Lưu kho.');
@@ -116,21 +118,23 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
   if (open.rowCount) {
     const store = String(open.rows[0].store_name || '').trim();
     const manager = String(open.rows[0].manager_name || '').trim();
-    throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}. Trả xe trên hợp đồng trước khi ${input.action === 'transfer' ? 'chuyển xe' : input.action==='receive'?'nhận xe':input.action==='reject'?'từ chối điều chuyển':'đổi trạng thái'}.`, 409);
+    throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}. Trả xe trên hợp đồng trước khi ${input.action === 'transfer' ? 'chuyển xe' : input.action==='receive'?'nhận xe':input.action==='cancel'?'huỷ điều chuyển':input.action==='reject'?'từ chối điều chuyển':'đổi trạng thái'}.`, 409);
   }
-  if(input.action==='receive'||input.action==='reject') {
+  if(input.action==='receive'||input.action==='reject'||input.action==='cancel') {
     if(vehicle.status!=='in_transit')throw new VehicleActionError(input.action==='reject'?'Xe không còn Chờ luân chuyển hoặc đã được xử lý. Nhấn Làm mới để kiểm tra.':'Xe không còn Chờ luân chuyển hoặc đã được nhận. Nhấn Làm mới để kiểm tra.',409);
     const transfer=await readPendingVehicleTransfer(client,vehicleId);
     if(!transfer||Number(transfer.id)!==input.transfer_event_id||Number(transfer.to_store_id)!==Number(vehicle.store_id))throw new VehicleActionError('Lần chuyển xe đã thay đổi hoặc không khớp cơ sở hiện tại. Nhấn Làm mới rồi kiểm tra lịch sử.',409);
-    if(Number(transfer.created_by)===actorId)throw new VehicleActionError(input.action==='reject'?'Người chuyển xe không được từ chối cùng lượt chuyển. Cần cơ sở đích từ chối hoặc người khác tại cơ sở nhận thao tác.':'Người chuyển xe không được xác nhận nhận cùng lượt chuyển. Cần người nhận tại cơ sở đích xác nhận.',403);
+    if(input.action==='cancel') {
+      if(Number(transfer.created_by)!==actorId)throw new VehicleActionError('Chỉ người đã tạo lượt điều chuyển này được tự huỷ. Cơ sở nhận có thể dùng Từ chối điều chuyển.',403);
+    } else if(Number(transfer.created_by)===actorId)throw new VehicleActionError(input.action==='reject'?'Người chuyển xe không được từ chối cùng lượt chuyển. Dùng Huỷ điều chuyển nếu muốn huỷ lệnh của mình.':'Người chuyển xe không được xác nhận nhận cùng lượt chuyển. Cần người nhận tại cơ sở đích xác nhận.',403);
     if(!Number(transfer.receivable))throw new VehicleActionError(input.action==='reject'?'Lần chuyển xe này đã được nhận/từ chối hoặc thuộc phiếu điều chuyển của hệ thống cũ. Kiểm tra lại lịch sử.':'Lần chuyển xe này đã được nhận hoặc thuộc phiếu điều chuyển của hệ thống cũ. Kiểm tra lại lịch sử.',409);
-    if(!(await client.query('SELECT id FROM himoto.stores WHERE id=$1 FOR SHARE',[input.action==='reject'?transfer.from_store_id:vehicle.store_id])).rowCount)throw new VehicleActionError(input.action==='reject'?'Cơ sở chuyển đi không còn tồn tại. Kiểm tra lại trước khi từ chối.':'Cơ sở nhận xe không còn tồn tại. Kiểm tra lại trước khi nhận.',409);
-    if(input.action==='reject'){
+    if(!(await client.query('SELECT id FROM himoto.stores WHERE id=$1 FOR SHARE',[input.action!=='receive'?transfer.from_store_id:vehicle.store_id])).rowCount)throw new VehicleActionError(input.action!=='receive'?'Cơ sở chuyển đi không còn tồn tại. Kiểm tra lại trước khi huỷ hoặc từ chối.':'Cơ sở nhận xe không còn tồn tại. Kiểm tra lại trước khi nhận.',409);
+    if(input.action==='reject'||input.action==='cancel'){
       if(scope)await client.query("SELECT set_config('himoto.transfer_vehicle_id',$1,true)",[String(vehicleId)]);
       await client.query("UPDATE himoto.vehicles SET current_store_id=$2,status='ready',updated_at=now() WHERE id=$1",[vehicleId,transfer.from_store_id]);
       const eventId=await writeVehicleAudit(client,{vehicleId,before:vehicle,after:{...vehicle,store_id:transfer.from_store_id,status:'ready'},actorId,
-        type:'manual_transfer_reject',fromStoreId:transfer.from_store_id,toStoreId:transfer.to_store_id,
-        routeNames:{from:transfer.from_store_name,to:transfer.to_store_name},refType:'vehicle_location_events',refId:Number(transfer.id),note:input.note||'Từ chối điều chuyển'});
+        type:input.action==='cancel'?'manual_transfer_cancel':'manual_transfer_reject',fromStoreId:transfer.from_store_id,toStoreId:transfer.to_store_id,
+        routeNames:{from:transfer.from_store_name,to:transfer.to_store_name},refType:'vehicle_location_events',refId:Number(transfer.id),note:input.note||(input.action==='cancel'?'Người chuyển huỷ điều chuyển':'Từ chối điều chuyển')});
       return {id:vehicleId,event_id:eventId};
     }
     await client.query("UPDATE himoto.vehicles SET status='ready',updated_at=now() WHERE id=$1",[vehicleId]);

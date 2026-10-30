@@ -7,7 +7,7 @@ import { Dialog } from './Dialog';
 import type { VehicleActionMode } from './VehicleActionDialog';
 import { useManagement } from './ManagementProvider';
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
-import { loadVehicleHistory, VEHICLE_EVENT_ACTIONS, VehicleEvent, VehicleEventAction, vehicleEventRoute, vehicleTransferRoute } from '@/lib/management/vehicle-history';
+import { loadVehicleHistory, VEHICLE_EVENT_ACTIONS, VehicleEvent, VehicleEventAction, vehicleEventRoute, vehicleTransferRoute, canCancelVehicleTransfer } from '@/lib/management/vehicle-history';
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
 import { ManagementConfig, ManagementRow } from '@/lib/management/types';
@@ -28,7 +28,8 @@ type VehicleSection = (typeof SECTIONS)[number]['id'];
 const ACTION_TONE: Record<VehicleEventAction, string> = { rent: 'blue', return: 'green', transfer: 'amber', repair: 'red', status: 'gray', swap: 'amber', note: 'gray', create: 'green', edit:'gray' };
 
 export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction }: { row: ManagementRow; config: ManagementConfig; canEdit: boolean; onEdit: () => void; onClose: () => void; onAction: (mode: VehicleActionMode) => void }) {
-  const { source,can } = useManagement();
+  const { source,can,accessUser } = useManagement();
+  const cancellable=canCancelVehicleTransfer(row,accessUser?.id);
   const [section, setSection] = useState<VehicleSection>('details');
   const [events, setEvents] = useState<VehicleEvent[] | null>(null);
   const [action, setAction] = useState<VehicleEventAction | ''>('');
@@ -64,7 +65,7 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
   return <Dialog title={String(row.name)} subtitle={`${row.license || row.code} · ${config.title}`} className="mg-customer-detail mg-vehicle-detail" onClose={onClose}>
     <div className="mg-dialog-body">
       <ContractSectionTabs prefix="vehicle-detail" sections={SECTIONS} active={section} onChange={setSection} />
-      {row.status==='in_transit'&&<div className="mg-transfer-pending" role="status"><strong>Xe đang Chờ luân chuyển</strong><p className="mg-transfer-direction">{vehicleTransferRoute(row)||'Chưa có thông tin cơ sở chuyển đi. Kiểm tra tab Lịch sử.'}</p><p>Khi xe đã đến nơi, bấm <strong>Nhận xe</strong>. Nếu không nhận, bấm <strong>Từ chối điều chuyển</strong> để trả xe về cơ sở chuyển đi.</p></div>}
+      {row.status==='in_transit'&&<div className="mg-transfer-pending" role="status"><strong>Xe đang Chờ luân chuyển</strong><p className="mg-transfer-direction">{vehicleTransferRoute(row)||'Chưa có thông tin cơ sở chuyển đi. Kiểm tra tab Lịch sử.'}</p>{cancellable?<p>Bạn đã tạo lượt chuyển này. Bấm <strong>Huỷ điều chuyển</strong> nếu chọn nhầm; chỉ huỷ được trước khi bên nhận xác nhận.</p>:<p>Khi xe đã đến nơi, bấm <strong>Nhận xe</strong>. Nếu không nhận, bấm <strong>Từ chối điều chuyển</strong> để trả xe về cơ sở chuyển đi.</p>}</div>}
       {panel('details', <>
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
         {row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
@@ -107,7 +108,8 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
       </>)}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
-      {can('vehicles.receive')&&source==='api'&&row.status==='in_transit'&&<>
+      {can('vehicles.transfer')&&source==='api'&&cancellable&&<button type="button" className="mg-button mg-button-danger" onClick={()=>onAction('cancel')}><RotateCcw size={16}/>Huỷ điều chuyển</button>}
+      {can('vehicles.receive')&&source==='api'&&row.status==='in_transit'&&!cancellable&&<>
         <button type="button" className="mg-button mg-button-primary" onClick={()=>onAction('receive')}><Check size={16}/>Nhận xe</button>
         <button type="button" className="mg-button" onClick={()=>onAction('reject')}><RotateCcw size={16}/>Từ chối điều chuyển</button>
       </>}

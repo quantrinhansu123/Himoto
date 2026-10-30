@@ -57,7 +57,7 @@ const listQueries: Record<string, QueryConfig> = {
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, os.store_name AS owner_store_name, v.xmin::text AS vehicle_revision,
                  pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
                  pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
-                 pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,
+                 pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,pending_transfer.created_by AS transfer_created_by,
                  r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, rental_source.store_id AS beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
                  ${VEHICLE_STATUS_SQL} AS status,

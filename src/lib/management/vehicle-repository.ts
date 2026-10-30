@@ -6,6 +6,7 @@ export type VehicleAction = (
   | { action: 'transfer'; to_store_id: string; note: string }
   | { action: 'receive'; transfer_event_id: string; note: string }
   | { action: 'reject'; transfer_event_id: string; note: string }
+  | { action: 'cancel'; transfer_event_id: string; note: string }
   | { action: 'status'; status: 'ready' | 'using'; beneficiary_store_id: string; customer_name: string; customer_phone: string; customer_id_card: string; note: string }) & { revision?: string };
 
 export interface VehicleActionResult {

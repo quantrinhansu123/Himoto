@@ -14,6 +14,7 @@ async function main(){const c=await ownerDatabase.connect();try{
   for(const file of ['2026-10-17-account-access.sql','2026-10-18-shared-vehicle-inventory.sql','2026-10-20-reservation-window-conflicts.sql','2026-10-20-returned-vehicle-availability.sql','2026-10-20-cross-branch-contract-vehicles.sql','2026-10-21-contract-vehicle-labels.sql','2026-10-23-ownership-hq-vehicles.sql','2026-10-19-vehicle-swap-photo.sql','2026-10-23-vehicle-documents.sql'])await migration(file);
   await migration('2026-10-24-global-vehicle-transfers.sql');await migration('2026-10-24-global-vehicle-transfers.sql');
   await migration('2026-10-25-multiple-record-images.sql');await migration('2026-10-25-multiple-record-images.sql');
+  await migration('2026-10-30-vehicle-transfer-cancel.sql');await migration('2026-10-30-vehicle-transfer-cancel.sql');
   for(const table of tables){
     if(!(await c.query('SELECT 1 FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name=\'id\'',[schema,table])).rowCount)continue;
     await c.query(`CREATE SEQUENCE ${schema}.qa_${table}_seq START 1000000; ALTER TABLE ${schema}.${table} ALTER COLUMN id SET DEFAULT nextval('${schema}.qa_${table}_seq')`);
@@ -76,6 +77,23 @@ async function main(){const c=await ownerDatabase.connect();try{
     for(const suffix of ['','-extra-2','-extra-3'])await deleteRecordPhoto(q,'vehicles',91001,'transfer-'+dispatched.event_id+'-1'+suffix);
     assert.equal((await q.query("SELECT entity_id FROM himoto.management_record_photos WHERE entity_type='vehicles' AND entity_id=91001")).rowCount,0);
   });checks.push('Multiple transfer images can be saved/read/deleted after the vehicle moves; event association and unrelated-vehicle guards remain enforced under real RLS');
+  const cancellationTransfer=await context({operation:'transfer',transfer_vehicle_id:'91002'},()=>applyVehicleAction(q,91002,{action:'transfer',to_store_id:80002,note:'Wrong branch fixture'},70001));
+  await context({id:70002,operation:'cancel',transfer_vehicle_id:'91002'},async()=>{
+    await assert.rejects(()=>applyVehicleAction(q,91002,{action:'cancel',transfer_event_id:cancellationTransfer.event_id,note:''},70002),e=>e.status===403);
+  });
+  await context({operation:'cancel',transfer_vehicle_id:'91002'},async()=>{
+    assert.equal((await q.query("UPDATE himoto.vehicles SET name='Forbidden' WHERE id=91001")).rowCount,0);
+    assert.equal((await q.query('SELECT id FROM himoto.orders')).rowCount,0);assert.equal((await q.query('SELECT id FROM himoto.customers')).rowCount,0);
+    await c.query('SAVEPOINT cancel_store_guard');
+    await assert.rejects(()=>q.query("UPDATE himoto.stores SET store_name='Forbidden' WHERE id=80003"),e=>e.code==='42501');
+    await c.query('ROLLBACK TO SAVEPOINT cancel_store_guard');await c.query('RELEASE SAVEPOINT cancel_store_guard');
+    const cancelled=await applyVehicleAction(q,91002,{action:'cancel',transfer_event_id:cancellationTransfer.event_id,note:'Wrong account fixture'},70001);
+    const restored=(await q.query('SELECT status,current_store_id,store_id FROM himoto.vehicles WHERE id=91002')).rows[0];
+    assert.equal(restored.status,'ready');assert.equal(Number(restored.current_store_id),80003);assert.equal(Number(restored.store_id),80003);
+    const event=(await q.query('SELECT * FROM himoto.vehicle_location_events WHERE id=$1',[cancelled.event_id])).rows[0];
+    assert.equal(event.event_type,'manual_transfer_cancel');assert.equal(Number(event.created_by),70001);assert.equal(Number(event.ref_id),cancellationTransfer.event_id);
+    await assert.rejects(()=>applyVehicleAction(q,91002,{action:'cancel',transfer_event_id:cancellationTransfer.event_id,note:''},70001),e=>e.status===409);
+  });checks.push('Real RLS allows only the pinned vehicle sender to cancel outside both route branches; original owner, audit linkage and unrelated-vehicle protection remain intact');
   for(const role of Object.keys(ACCESS_ROLES))for(const permission of ['vehicles.read','vehicles.transfer','vehicles.receive'])assert(hasPermission({access_role:role,permissions:[]},permission));
   assert(!hasPermission(null,'vehicles.transfer'));assert(!hasPermission({access_role:'hr',permissions:[]},'vehicles.write'));assert(!hasPermission({access_role:'hr',permissions:[]},'finance.write'));
   checks.push('All seven account roles have fleet read/transfer/receipt; anonymous users and unrelated edit/finance permissions remain denied');

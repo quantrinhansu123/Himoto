@@ -7,7 +7,7 @@ const SELECT_TRANSFER = `SELECT e.id,e.event_type,e.from_store_id,e.to_store_id,
   CASE WHEN e.event_type='manual_transfer'
     AND COALESCE(e.audit_snapshot #> '{reconciliation,superseded}','false'::jsonb)<>'true'::jsonb AND NOT EXISTS (
     SELECT 1 FROM himoto.vehicle_location_events r WHERE r.vehicle_id=e.vehicle_id
-      AND r.event_type IN ('manual_transfer_receive','manual_transfer_reject') AND r.ref_type='vehicle_location_events' AND r.ref_id=e.id
+      AND r.event_type IN ('manual_transfer_receive','manual_transfer_reject','manual_transfer_cancel') AND r.ref_type='vehicle_location_events' AND r.ref_id=e.id
   ) THEN 1 ELSE 0 END AS receivable
   FROM himoto.vehicle_location_events e
   LEFT JOIN himoto.stores fs ON fs.id=e.from_store_id LEFT JOIN himoto.stores ts ON ts.id=e.to_store_id`;

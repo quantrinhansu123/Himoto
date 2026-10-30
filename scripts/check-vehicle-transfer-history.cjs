@@ -62,6 +62,12 @@ async function main(){
     assert.equal((await query({search:"' OR 1=1 --"})).total,0);assert.equal((await query({search:'%'})).total,0);
     assert.equal((await query({page:'99'})).total,32);assert.deepEqual((await query({page:'99'})).rows,[]);
     checks.push('Search matches frozen history literally, safely binds SQL-like text and keeps totals for empty pages');
+    await event(130,'manual_transfer_cancel','2026-10-16 14:00:00',701,31,32,{...snapshot,actor_name:'Người huỷ QA'},'vehicle_location_events',9);
+    const cancelled=await query({action:'cancel'});
+    assert.equal(cancelled.total,1);assert.equal(cancelled.rows[0].id,130);assert.equal(cancelled.rows[0].action,'cancel');
+    assert.equal(cancelled.rows[0].label,'Huỷ điều chuyển');assert.equal(cancelled.rows[0].actor,'Người huỷ QA');
+    assert.equal(cancelled.rows[0].telegram_event_id,undefined);assert.equal((await query({action:'transfer'})).total,29);
+    checks.push('Cancellation has its own action filter, frozen authenticated actor and label, without being mistaken for a receipt or a Telegram send');
     for(const values of [{from:'2026-02-30'},{from:'2026-10-17',to:'2026-10-16'},{to:''},{page:'0'},{page:'1000001'},{from_store:'-1'},{to_store:'1;SELECT'},{store:'0'},{action:'delete'},{search:'a'.repeat(201)}]){
       assert.throws(()=>parseTransferHistory(new URLSearchParams(values)),TransferHistoryError);
     }

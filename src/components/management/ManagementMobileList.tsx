@@ -70,6 +70,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
         const label = String((config.kind === 'vehicles' ? row.license : row.code) || row.code || title);
         const receive=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='receive'):undefined;
         const reject=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='reject'):undefined;
+        const cancel=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='cancel'):undefined;
         const contractAction=config.kind==='contracts'?actions(row).find(item=>item.key===(row.status==='draft'?'delete':'telegram')):undefined;
         const approval=config.kind==='contracts'?actions(row).find(item=>item.key==='approve'):undefined;
         if(compact)return <li key={row.id} className="mg-mobile-record-card mg-mobile-monitoring-card">
@@ -118,11 +119,12 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
               {config.kind==='vehicles'&&vehicleMissingOpenContract(row)&&<span className="mg-vehicle-badge is-warn" role="status"><TriangleAlert size={12} aria-hidden="true"/> Không có HĐ</span>}
               {config.kind==='vehicles' ? Number(row.overdue_days)>0&&<span className="mg-mobile-card-extra">Quá hạn: {row.overdue_days} ngày</span> : summary[2] && <span className="mg-mobile-card-extra" title={`${summary[2].label}: ${summary[2].value}`}>{summary[2].value}{summary[3] && ` · ${summary[3].value}`}</span>}
             </span>
-            {receive&&vehicleTransferRoute(row)&&<span className="mg-transfer-direction">{vehicleTransferRoute(row)}</span>}
+            {(receive||cancel)&&vehicleTransferRoute(row)&&<span className="mg-transfer-direction">{vehicleTransferRoute(row)}</span>}
             {config.kind==='vehicles'&&<GpsEvidence compact syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/>}
           </button>
           {receive&&<button type="button" className="mg-button mg-button-primary mg-mobile-receive" disabled={busyId===row.id} onClick={receive.onSelect}>Nhận xe</button>}
           {reject&&<button type="button" className="mg-button" disabled={busyId===row.id} onClick={reject.onSelect}>Từ chối điều chuyển</button>}
+          {cancel&&<button type="button" className="mg-button mg-button-danger mg-mobile-receive" disabled={busyId===row.id} onClick={cancel.onSelect}>Huỷ điều chuyển</button>}
           {contractAction&&<button type="button" className={`mg-button${contractAction.danger?' mg-button-danger':''}`} onClick={contractAction.onSelect}>{contractAction.icon}{contractAction.label}</button>}
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId === row.id} /></div>
         </li>;
