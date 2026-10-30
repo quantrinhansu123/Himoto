@@ -31,3 +31,19 @@ Detailed per-order CSVs, per-period CSVs, snapshots and the Vietnamese report re
 - TypeScript, ESLint and a production build are release checks. Browser emulation does not replace physical iPhone/Android testing.
 
 The audit does not bulk-reconcile imported contract amounts, change historical deadlines, revive cancelled receipts, or alter previously sent Telegram messages.
+
+## Deployment follow-up: receipt status and correction history
+
+The payment dialog still summed cancelled renewal vouchers together with approved vouchers. Its bulk-delete selection included cancelled vouchers too, and the server then deducted their amounts from paid/total a second time. This was reproduced against TEMP fixtures before the fix: deleting a cancelled 900,000 VND renewal reduced paid from 2,000,000 to 1,100,000 and total from 3,000,000 to 2,100,000.
+
+The dialog now labels cancelled vouchers, sums approved vouchers only, and selects only approved IDs for its explicitly named delete action. The server independently excludes every nonapproved voucher from financial reversal, including deletion requests from other screens. Cancelled voucher history remains visible in the payment dialog.
+
+Renewal correction history now includes before/after coverage and fee changes, all affected voucher IDs and the reason, rather than showing unchanged receiving accounts for a date/fee correction. Authorized historical fee adjustments stored separately in the audit payload are also projected, with their support actor and explicit receipt/contract-total preservation.
+
+- `node scripts/check-bulk-delete-receipts.cjs`: 4 TEMP groups covering cancelled/pending/rejected vouchers, mixed batches, approved refunds/outside collections, rollback, missing IDs and cross-branch RLS. No permanent business writes.
+- `node scripts/check-renewal-correction-history.cjs`: 3 read-only fixture groups for date/fee edits, older routing-only audits and historical fee corrections. The date/fee history case failed before the projection change.
+- `python scripts/check-payment-history-status-ui.py --cookie-file <private-session-file>`: 6 Chromium/WebKit cases, fixture-only deletion and 320px layout; zero real business writes or Telegram requests.
+- `node scripts/check-contract-receipt-summary.cjs --live-temp`: 5 groups, including approved-only totals, deposits, refunds and RLS.
+- The repeated read-only audit passed all 140 renewal orders / 358 events at this follow-up snapshot. Payment and renewal-correction regressions also passed 20 and 10 TEMP groups, respectively; the receipt-summary UI passed 6 Chromium/WebKit cases. The production build completed successfully.
+
+Historical source discrepancies remain review findings. These code fixes do not authorize bulk financial corrections or selection of a different contractual deadline.

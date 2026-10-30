@@ -22,6 +22,23 @@ const vietnamTime = (value: unknown) => {
 const amountOrNull = (value: unknown) => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
 const STATUS_LABELS: Record<string, string> = { approved: 'Đã duyệt', pending: 'Chờ duyệt', rejected: 'Từ chối', cancelled: 'Đã hủy' };
 
+function renewalCorrectionDetail(item: Record<string, unknown>) {
+  const before = (item.before || {}) as Record<string, unknown>, after = (item.after || {}) as Record<string, unknown>;
+  const ids = Array.isArray(item.affected_transaction_ids) ? item.affected_transaction_ids : [item.transaction_id];
+  const beforeFee = amountOrNull(before.renewal_amount), afterFee = amountOrNull(after.renewal_amount);
+  const periodChanged = (['before_return_at', 'return_at'] as const).some(key =>
+    (before[key] || after[key]) && Date.parse(iso(before[key])) !== Date.parse(iso(after[key])));
+  return [
+    `Phiếu ${ids.map(id => `#${id}`).join(', ')}`,
+    periodChanged ? `Kỳ gia hạn: ${vietnamTime(before.before_return_at)} → ${vietnamTime(before.return_at)} thành ${vietnamTime(after.before_return_at)} → ${vietnamTime(after.return_at)}` : '',
+    beforeFee !== null && afterFee !== null && beforeFee !== afterFee ? `Phí gia hạn: ${formatMoney(beforeFee)} → ${formatMoney(afterFee)}` : '',
+    (before.method !== after.method || before.account !== after.account) ? `Thanh toán: ${before.method || '—'} / ${before.account || '—'} → ${after.method || '—'} / ${after.account || '—'}` : '',
+    'Giữ nguyên số tiền trên phiếu thu',
+    item.affects_contract_total === false ? 'Giữ nguyên tổng tiền hợp đồng' : '',
+    item.reason ? String(item.reason) : '',
+  ].filter(Boolean).join(' · ');
+}
+
 const CASHFLOW_SELECT = `SELECT t.id,t.order_id,t.created_at,t.type,t.name,t.value,COALESCE(t."desc",t.note) AS note,t.status,u.name AS actor,
     COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||t.order_id::text) AS contract_code,
     CASE WHEN ${renewalReceiptSql()} THEN 'Thu tiền gia hạn' WHEN t.name='order:payment' THEN 'Thanh toán hợp đồng'
@@ -75,6 +92,7 @@ export async function readContractHistory(client: Database, id: number): Promise
       COALESCE(o.draft_payload::jsonb #> '{management_composer,rental_terms_history}','[]'::jsonb) AS rental_terms_history,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,return_corrections}','[]'::jsonb) AS return_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,payment_corrections}','[]'::jsonb) AS payment_corrections,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,historical_fee_corrections}','[]'::jsonb) AS historical_fee_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,ownership_terms_history}','[]'::jsonb) AS ownership_terms_history,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,lifecycle,events}','[]'::jsonb) AS lifecycle_events
     FROM himoto.orders o LEFT JOIN himoto.users u ON u.id=o.contract_responsible_user_id
@@ -89,7 +107,8 @@ export async function readContractHistory(client: Database, id: number): Promise
     title: 'Tạo hợp đồng', detail: '', amount: null };
   const changes: ContractChange[] = [created];
   for(const [index,item]of(Array.isArray(order.rows[0].ownership_terms_history)?order.rows[0].ownership_terms_history:[]).entries())changes.push({id:`ownership-terms-${index}`,kind:'edit',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,title:'Sửa thời hạn và mức đóng thuê sở hữu',detail:`Thời hạn: ${item.before?.term_months==='custom'?'Chưa phân loại':`${item.before?.term_months} tháng`} → ${item.after?.term_months==='custom'?'Chưa phân loại':`${item.after?.term_months} tháng`} · Mỗi ngày: ${item.before?.daily_amount==null?'Chưa xác định':formatMoney(item.before.daily_amount)} → ${item.after?.daily_amount==null?'Chưa xác định':formatMoney(item.after.daily_amount)}.`});
-  for(const item of(Array.isArray(order.rows[0].payment_corrections)?order.rows[0].payment_corrections:[]))changes.push({id:`payment-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa thanh toán gia hạn',detail:`Phiếu #${item.transaction_id}: ${item.before?.method||'—'} / ${item.before?.account||'—'} → ${item.after?.method||'—'} / ${item.after?.account||'—'} · ${item.reason}`});
+  for(const item of(Array.isArray(order.rows[0].payment_corrections)?order.rows[0].payment_corrections:[]))changes.push({id:`payment-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa kỳ gia hạn / thanh toán',detail:renewalCorrectionDetail(item)});
+  for(const item of(Array.isArray(order.rows[0].historical_fee_corrections)?order.rows[0].historical_fee_corrections:[]))changes.push({id:`historical-fee-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:String(item.actor_name||(item.actor_id?`#${item.actor_id}`:'Hỗ trợ kỹ thuật')),amount:null,title:'Sửa phí gia hạn trong lịch sử',detail:renewalCorrectionDetail(item)});
   for(const [index,item] of(Array.isArray(order.rows[0].return_corrections)?order.rows[0].return_corrections:[]).entries())changes.push({id:`return-correction-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa hồ sơ trả xe',detail:`${item.reason} · Thay thế ${(item.cancelled_transaction_ids||[]).length} phiếu thu/hoàn; giữ lịch sử và trạng thái xe đã trả.`});
   for(const [index,item] of(Array.isArray(order.rows[0].contract_edits)?order.rows[0].contract_edits:[]).entries())changes.push({id:`edit-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa hợp đồng',
     detail:[item.before?.contract_number!==item.after?.contract_number?`Số HĐ: ${item.before?.contract_number||'—'} → ${item.after?.contract_number||'—'}`:'',

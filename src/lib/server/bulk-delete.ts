@@ -114,6 +114,9 @@ async function deleteTransactions(client: Client, ids: number[]) {
   }
   const byOrder = new Map<number, { paid: number; total: number }>();
   for (const row of rows) {
+    // Cancelled/rejected/pending vouchers never contributed to the totals.
+    // Removing their history must not reverse the collection a second time.
+    if (row.status !== 'approved') continue;
     const rentalRefund=row.type==='out'&&row.name==='order:rental_refund'&&row.status==='approved';
     if (row.order_id == null || !rentalRefund&&!['in', 'addon'].includes(String(row.type))) continue;
     if (row.name === 'order:outside') continue;

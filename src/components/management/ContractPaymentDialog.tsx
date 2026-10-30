@@ -29,6 +29,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
   const { acceptContractPayment, notify, selectStore } = useManagement();
   const router = useRouter();
   const [context, setContext] = useState<PaymentContext | null>(null);
+  const approvedHistory = (context?.history || []).filter(receipt => receipt.status === 'approved');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -152,10 +153,10 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
   }
 
   async function deleteAllReceipts() {
-    if (busy.current || !context?.history.length) return;
+    if (busy.current || !approvedHistory.length) return;
     busy.current = true; setDeleting(true); setError(''); setSuccess('');
     try {
-      const deleted = await bulkDelete('transactions', context.history.map(receipt => receipt.id));
+      const deleted = await bulkDelete('transactions', approvedHistory.map(receipt => receipt.id));
       const fresh = await loadPaymentContext(id);
       setContext(fresh); acceptContractPayment(fresh); setConfirmDeleteAll(false);
       const message = `Đã xóa ${deleted.length} phiếu Thu / Chi của hợp đồng ${fresh.code}.`;
@@ -276,21 +277,22 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
             {rentalRefundAllowed&&!rentalRefund&&<button type="button" className="mg-button" disabled={locked||loading} onClick={()=>choosePurpose('rental_refund')}><Wallet size={15}/>Hoàn tiền thuê trả sớm</button>}
             {refundAllowed && !refund && <button type="button" className="mg-button" disabled={locked || loading} onClick={() => choosePurpose('deposit_refund')}><Wallet size={15} />Trả cọc</button>}
             {extraAllowed && !(purpose === 'extra' && canCollect) && <button type="button" className="mg-button mg-button-primary" disabled={locked || loading} onClick={() => choosePurpose('extra')}><Plus size={15} />Thêm phiếu thu</button>}
-            {context.history.length > 0 && <button type="button" className="mg-button mg-button-danger" disabled={locked || loading || deleting} onClick={() => setConfirmDeleteAll(true)}><Trash2 size={15} />Xóa hết phiếu</button>}
+            {approvedHistory.length > 0 && <button type="button" className="mg-button mg-button-danger" disabled={locked || loading || deleting} onClick={() => setConfirmDeleteAll(true)}><Trash2 size={15} />Xóa phiếu đã duyệt</button>}
             <button type="button" className="mg-button" disabled={locked || loading} onClick={() => void refresh()}><RotateCcw size={15} />Làm mới</button></div></div>
-          {confirmDeleteAll && context.history.length > 0 && <div className="mg-payment-delete-confirm" role="alertdialog" aria-label="Xác nhận xóa hết phiếu">
-            <p>Xóa vĩnh viễn <strong>{context.history.length} phiếu</strong> của hợp đồng {context.code} (thu {formatMoney(context.history.filter(receipt => receipt.type !== 'out').reduce((sum, receipt) => sum + receipt.amount, 0))}, chi {formatMoney(context.history.filter(receipt => receipt.type === 'out').reduce((sum, receipt) => sum + receipt.amount, 0))}) khỏi Sổ quỹ / Sổ két?
+          {confirmDeleteAll && approvedHistory.length > 0 && <div className="mg-payment-delete-confirm" role="alertdialog" aria-label="Xác nhận xóa phiếu đã duyệt">
+            <p>Xóa vĩnh viễn <strong>{approvedHistory.length} phiếu đã duyệt</strong> của hợp đồng {context.code} (thu {formatMoney(approvedHistory.filter(receipt => receipt.type !== 'out').reduce((sum, receipt) => sum + receipt.amount, 0))}, chi {formatMoney(approvedHistory.filter(receipt => receipt.type === 'out').reduce((sum, receipt) => sum + receipt.amount, 0))}) khỏi Sổ quỹ / Sổ két?
               Tổng đã thu của hợp đồng giảm tương ứng; phiếu gia hạn / thu thêm cũng trừ khỏi tiền hợp đồng. Không hoàn tác được.</p>
             <div><button type="button" className="mg-button" disabled={deleting} onClick={() => setConfirmDeleteAll(false)}>Hủy</button>
               <button type="button" className="mg-button mg-button-danger" disabled={deleting} onClick={() => void deleteAllReceipts()}>{deleting ? <LoaderCircle size={15} className="mg-spin" /> : <Trash2 size={15} />}{deleting ? 'Đang xóa…' : 'Xóa hết'}</button></div>
           </div>}
           {context.history.length > 0 && <div className="mg-payment-history-columns">{(['in', 'out'] as const).map(type => {
             const receipts = context.history.filter(receipt => (receipt.type === 'out' ? 'out' : 'in') === type);
-            const sum = receipts.reduce((total, receipt) => total + receipt.amount, 0);
+            const sum = receipts.filter(receipt => receipt.status === 'approved').reduce((total, receipt) => total + receipt.amount, 0);
             return <section key={type} className={type === 'out' ? 'is-expense' : 'is-income'}>
-              <h4>{type === 'out' ? 'Phiếu Chi' : 'Phiếu Thu'} ({receipts.length}) · {type === 'out' ? '−' : ''}{formatMoney(sum)}</h4>
+              <h4>{type === 'out' ? 'Phiếu Chi' : 'Phiếu Thu'} ({receipts.length}) · Đã duyệt: {type === 'out' ? '−' : ''}{formatMoney(sum)}</h4>
               {receipts.length ? <ul className="mg-payment-history">{receipts.map(receipt => <li key={receipt.id} className={type === 'out' ? 'is-expense' : undefined}>
                 <strong>#{receipt.id}{receipt.deposit ? (type === 'out' ? ' · Trả cọc' : ' · Tiền cọc') : ''} · {type === 'out' ? '−' : ''}{formatMoney(receipt.amount)}</strong>
+                {receipt.status === 'cancelled' && <span className="mg-field-error">Đã hủy · Không tính vào tổng đã duyệt</span>}
                 <span>{vietnamText(receipt.paid_at)} · {receipt.method}</span><span>{receipt.account || 'Chưa xác định tài khoản'} · {receipt.actor || '—'}</span>
                 {receipt.note && <p>{receipt.note}</p>}{receipt.renewal && <span>Gia hạn {receipt.renewal.license || receipt.renewal.vehicle_name} đến {vietnamText(receipt.renewal.return_at)}</span>}
                 {receipt.renewal&&receipt.type==='in'&&!receipt.deposit&&<RenewalPaymentEditor orderId={id} receiptId={receipt.id} disabled={saving||deleting||Boolean(pending)} onBusyChange={value=>{busy.current=value;setSaving(value);}} onSaved={value=>{setContext(value);onPaymentSaved?.();}}/>}</li>)}</ul>
