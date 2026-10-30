@@ -31,7 +31,26 @@ assert.match(vehicleTransferBlockReason({
 assert.equal(vehicleTransferBlockReason({
   selected: true, status: 'ready', rentals: [], sameDestination: false,
 }), null);
+assert.equal(vehicleTransferBlockReason({
+  selected: true, status: 'ready',
+  rentals: [{ code: 'NHAP-1', customer: 'Khách nháp', status: 'draft' }],
+  sameDestination: false,
+}), null);
+assert.match(vehicleTransferBlockReason({
+  selected: true, status: 'ready',
+  rentals: [{ code: 'COC-1', customer: 'Khách cọc', status: 'deposit_contract' }],
+  sameDestination: false,
+}), /COC-1/);
 assert.match(vehicleReceiveBlockReason('receive', true), /chờ nhận|Làm mới/i);
 assert.equal(vehicleReceiveBlockReason('receive', false), null);
-checks.push('Blocked contract and vehicle transfer actions expose concrete Vietnamese reasons');
+const { classifyReservationWindow } = load(path.join(root, 'lib/management/vehicle-reservation-window'));
+const draftWarn = classifyReservationWindow(
+  [{ order_id: 9, code: 'NHAP-9', status: 'draft', customer: 'Khách nháp', rent_at: '2026-11-05T09:00' }],
+  '2026-10-30T08:00', '2026-11-01T08:00',
+);
+assert.equal(draftWarn.kind, 'overlap_warn');
+assert.match(draftWarn.detail, /hợp đồng nháp.*NHAP-9/i);
+assert.match(draftWarn.detail, /khách lấy xe/i);
+assert.match(draftWarn.detail, /Lưu kho/i);
+checks.push('Blocked contract and vehicle transfer actions expose concrete Vietnamese reasons; draft soft-holds stay rentable/transferable with pickup notice');
 console.log(JSON.stringify({ passed: checks.length, checks, realBusinessWrites: 0 }, null, 2));

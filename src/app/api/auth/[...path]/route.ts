@@ -19,6 +19,7 @@ import { normalizeCustomerLookup, validCustomerLookup } from '@/lib/management/c
 import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
 import { VEHICLE_ORDER_SQL } from '@/lib/server/contract-classification';
+import { DRAFT_VEHICLE_HOLDS_CTE_SQL } from '@/lib/server/draft-vehicle-rentals';
 import { contractVehicleDetailsSql } from '@/lib/server/contract-vehicle-reads';
 import { failureResponse } from '@/lib/server/public-failure';
 
@@ -53,12 +54,14 @@ const listQueries: Record<string, QueryConfig> = {
             LEFT JOIN himoto.orders o ON o.id=b.order_id
             LEFT JOIN himoto.customers c ON c.id=o.customer_id
             GROUP BY b.vehicle_id
-          ) SELECT v.id, v.name, v.brand, v.type, v.year, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
+          ), ${DRAFT_VEHICLE_HOLDS_CTE_SQL}
+          SELECT v.id, v.name, v.brand, v.type, v.year, v.license, v.odometer, NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
                  v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, os.store_name AS owner_store_name, v.xmin::text AS vehicle_revision,
                  pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
                  pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
                  pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,pending_transfer.created_by AS transfer_created_by,
-                 r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, rental_source.store_id AS beneficiary_store_id, bs.store_name AS beneficiary_store_name,
+                 r.rentals, COALESCE(blockers.rentals,'[]'::jsonb) AS rental_blockers, COALESCE(drafts.draft_rentals,'[]'::jsonb) AS draft_rentals,
+                 rental_source.store_id AS beneficiary_store_id, bs.store_name AS beneficiary_store_name,
                  COALESCE(NULLIF(r.rentals #>> '{0,customer}', ''), 'Lưu kho') AS holder_name,
                  ${VEHICLE_STATUS_SQL} AS status,
                  gps.has_device AS gps_has_device,
@@ -67,6 +70,7 @@ const listQueries: Record<string, QueryConfig> = {
                  gps.heartbeat_at AS gps_heartbeat_at,gps.position_recorded_at AS gps_position_at,gps.provider_reported_at AS gps_reported_at,gps.last_ignition AS gps_ignition
           FROM himoto.vehicles v
           LEFT JOIN rental_blockers blockers ON blockers.vehicle_id=v.id
+          LEFT JOIN draft_vehicle_rentals drafts ON drafts.vehicle_id=v.id
           LEFT JOIN himoto.stores s ON s.id = COALESCE(v.current_store_id, v.store_id)
           LEFT JOIN himoto.stores os ON os.id=v.store_id
           ${VEHICLE_TRANSFER_JOIN_SQL}

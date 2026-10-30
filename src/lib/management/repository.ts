@@ -117,13 +117,20 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     customer_revision: text(raw.customer_revision), contract_count: number(raw.contract_count), status: ['blacklist', 'bad_debt'].includes(base.status) ? 'blacklist' : ['draft', '0'].includes(base.status) ? 'draft' : raw.warning || raw.warning_note ? 'warning' :
       (({ '1': 'active', '0': 'draft' } as Record<string, string>)[base.status] || base.status) };
   if (kind === 'vehicles') {
-    const openRentals = (Array.isArray(raw.rentals) ? raw.rentals : Array.isArray(raw.rental_blockers) ? raw.rental_blockers : []).map(object);
-    const latestCustomer = openRentals.map(rental => text(rental.customer || rental.customer_name)).find(Boolean) || '';
+    const blockers = (Array.isArray(raw.rental_blockers) ? raw.rental_blockers : Array.isArray(raw.rentals) ? raw.rentals : []).map(object);
+    const drafts = (Array.isArray(raw.draft_rentals) ? raw.draft_rentals : []).map(object);
+    const seen = new Set(blockers.map(item => Number(item.order_id)).filter(id => Number.isSafeInteger(id) && id > 0));
+    const softDrafts = drafts.filter(item => {
+      const id = Number(item.order_id);
+      return Number.isSafeInteger(id) && id > 0 && !seen.has(id);
+    });
+    const latestCustomer = blockers.map(rental => text(rental.customer || rental.customer_name)).find(Boolean) || '';
     return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type), vehicle_revision: text(raw.vehicle_revision),
     transfer_event_id:number(raw.transfer_event_id),transfer_from_store_id:number(raw.transfer_from_store_id),transfer_to_store_id:number(raw.transfer_to_store_id),
     transfer_from_store_name:text(raw.transfer_from_store_name),transfer_to_store_name:text(raw.transfer_to_store_name),transfer_receivable:number(raw.transfer_receivable),transfer_created_by:number(raw.transfer_created_by),
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
-    rentals_json: Array.isArray(raw.rental_blockers) ? JSON.stringify(raw.rental_blockers) : Array.isArray(raw.rentals) ? JSON.stringify(raw.rentals) : '',
+    // Draft soft-holds ride alongside blockers for picker warnings; holder stays on real open rentals.
+    rentals_json: JSON.stringify([...blockers, ...softDrafts]),
     holder_name: vehicleHolderLabel(base.status,latestCustomer || text(raw.holder_name)),
     owner_store_id: number(raw.store_id),
     owner_store_name: text(raw.owner_store_name),
@@ -203,7 +210,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
       staff_id: number(snapshot.staff_id) ?? mapped.staff_id, customer_id: number(snapshot.customer_id) ?? mapped.customer_id, customer_name: text(customer.name) || mapped.customer_name,
       customer_phone: text(customer.phone) || mapped.customer_phone, customer_id_card: text(customer.id_card) || mapped.customer_id_card, vehicle_id: number(vehicles[0]?.id) ?? mapped.vehicle_id,
       vehicle_name: vehicles.map(vehicle => text(vehicle.name)).filter(Boolean).join(', ') || mapped.vehicle_name, license: vehicles.map(vehicle => text(vehicle.license)).filter(Boolean).join(', ') || mapped.license,
-      // Draft money lives in the composer payload until finalize; keep it for list totals / doanh thu.
+      // Draft money lives in the composer payload until finalize; keep it for draft list display (not doanh thu).
       total_amount: number(snapshot.total_amount) ?? mapped.total_amount, deposit_amount: number(snapshot.deposit_amount) ?? mapped.deposit_amount, paid_amount: number(raw.paid_amount) ?? mapped.paid_amount ?? 0 };
   }
   return applyInstallmentBilling(mapped);

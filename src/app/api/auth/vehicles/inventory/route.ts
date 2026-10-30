@@ -1,6 +1,7 @@
 import { NextRequest,NextResponse } from 'next/server';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { himotoPool } from '@/lib/server/himoto-database';
+import { readDraftVehicleRentals } from '@/lib/server/draft-vehicle-rentals';
 import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime='nodejs';
@@ -11,7 +12,8 @@ export const GET=withAccessRequest(async(_request:NextRequest)=>{
     const blockers=ids.length
       ? await himotoPool.query('SELECT * FROM himoto.vehicle_rental_blockers($1::bigint[])',[ids])
       : { rows: [] as { vehicle_id: number }[] };
-    const byVehicle=new Map<number,{order_id:number;code:string;status:string;store_name:string;rent_at:string|null;return_at:string|null}[]>();
+    const drafts=ids.length ? await readDraftVehicleRentals(himotoPool, ids) : [];
+    const byVehicle=new Map<number,{order_id:number;code:string;status:string;store_name:string;customer?:string;rent_at:string|null;return_at:string|null}[]>();
     for(const row of blockers.rows){
       const vehicleId=Number(row.vehicle_id);
       const list=byVehicle.get(vehicleId)||[];
@@ -21,9 +23,19 @@ export const GET=withAccessRequest(async(_request:NextRequest)=>{
       });
       byVehicle.set(vehicleId,list);
     }
+    const draftsByVehicle=new Map<number,typeof drafts>();
+    for(const row of drafts){
+      const list=draftsByVehicle.get(row.vehicle_id)||[];
+      list.push(row);
+      draftsByVehicle.set(row.vehicle_id,list);
+    }
     const data=inventory.rows.map(row=>({
       ...row,
       rental_blockers:byVehicle.get(Number(row.id))||[],
+      draft_rentals:(draftsByVehicle.get(Number(row.id))||[]).map(item=>({
+        order_id:item.order_id,code:item.code,status:item.status,customer:item.customer,store_name:item.store_name,
+        rent_at:item.rent_at,return_at:item.return_at,
+      })),
     }));
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'private, no-store'}});
   }catch(error){

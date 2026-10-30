@@ -22,6 +22,15 @@ function isDeposit(item: OpenVehicleRental) {
   return statusOf(item) === 'deposit_contract';
 }
 
+function isDraft(item: OpenVehicleRental) {
+  return statusOf(item) === 'draft';
+}
+
+/** Soft holds: still rentable / transferable with a visible notice. */
+export function isSoftVehicleHold(item: OpenVehicleRental) {
+  return isDeposit(item) || isDraft(item);
+}
+
 function asTime(value: string | null | undefined): number | null {
   if (!value) return null;
   const raw = String(value).trim();
@@ -60,13 +69,24 @@ export function classifyReservationWindow(
   }
 
   const deposits = others.filter(isDeposit);
-  const unknown = others.filter(item => !isDeposit(item) && !HARD_STATUSES.has(statusOf(item)));
-  if (!deposits.length) {
+  const drafts = others.filter(isDraft);
+  const unknown = others.filter(item => !isSoftVehicleHold(item) && !HARD_STATUSES.has(statusOf(item)));
+  if (!deposits.length && !drafts.length) {
     const [first] = unknown.length ? unknown : others;
     return {
       kind: 'hard',
       rental: first,
       detail: `HĐ ${first.code}${first.store_name?` · ${first.store_name}`:''} đang mở. Cơ sở quản lý cần xác nhận trả xe trên đúng hợp đồng này trước khi chọn xe.`,
+    };
+  }
+
+  if (!deposits.length) {
+    const item = drafts[0];
+    const when = formatPickup(item.rent_at);
+    return {
+      kind: 'overlap_warn',
+      rental: item,
+      detail: `Xe đang trong hợp đồng nháp (HĐ ${item.code}${when ? `, khách lấy xe ${when}` : ''}). Vẫn cho thuê được; chỉ phát hành HĐ nháp khi xe đã Lưu kho.`,
     };
   }
 

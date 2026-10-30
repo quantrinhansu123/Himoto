@@ -27,8 +27,10 @@ export function vehicleTransferBlockReason(input: {
   storeName?: string;
 }): string | null {
   if (!input.selected) return 'Chọn xe cần chuyển.';
-  if (input.rentals.length) {
-    return `Xe đang thuộc ${openRentalSummary(input.rentals)}. Trả xe trên hợp đồng trước khi chuyển xe.`;
+  // HĐ nháp không khóa kho — vẫn chuyển/cho thuê được.
+  const blocking = input.rentals.filter(item => String(item.status || '').toLowerCase() !== 'draft');
+  if (blocking.length) {
+    return `Xe đang thuộc ${openRentalSummary(blocking)}. Trả xe trên hợp đồng trước khi chuyển xe.`;
   }
   if (input.status === 'in_transit') {
     return 'Xe đang Chờ luân chuyển. Cơ sở đích cần Nhận xe hoặc Từ chối trước khi chuyển tiếp.';

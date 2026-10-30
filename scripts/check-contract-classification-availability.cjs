@@ -54,6 +54,8 @@ try{
  const apiSource=fs.readFileSync('src/app/api/auth/[...path]/route.ts','utf8');
  const vehicleSql=apiSource.match(/'vehicle\/vehicles':\s*\{\s*sql:\s*`([\s\S]*?)`,\s*\},/)[1];
  const fragments={VEHICLE_ORDER_SQL,
+   DRAFT_VEHICLE_HOLDS_CTE_SQL:load(path.join(root,'lib/server/draft-vehicle-rentals')).DRAFT_VEHICLE_HOLDS_CTE_SQL,
+   VEHICLE_STATUS_SQL:load(path.join(root,'lib/server/vehicle-status')).VEHICLE_STATUS_SQL,
    VEHICLE_TRANSFER_JOIN_SQL:load(path.join(root,'lib/server/vehicle-transfers')).VEHICLE_TRANSFER_JOIN_SQL,
    VEHICLE_GPS_JOIN_SQL:load(path.join(root,'lib/server/vehicle-gps-query')).VEHICLE_GPS_JOIN_SQL};
  const listingSql=sql(vehicleSql.replace(/\$\{(\w+)\}/g,(_,key)=>{assert(key in fragments,key);return fragments[key];}));

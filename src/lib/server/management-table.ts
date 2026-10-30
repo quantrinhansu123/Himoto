@@ -10,6 +10,7 @@ import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource,contractVehicleLabelSource } from './contract-vehicle-reads';
 import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits';
 import { CONTRACT_REVIEW_SQL,EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
+import { draftVehicleRentalsLateralSql } from './draft-vehicle-rentals';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
 import { VEHICLE_STATUS_SQL } from './vehicle-status';
@@ -286,6 +287,7 @@ function vehicleHydrateSql() {
     pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
     pending_transfer.to_store_name AS transfer_to_store_name,pending_transfer.receivable AS transfer_receivable,pending_transfer.created_by AS transfer_created_by,
     r.rentals, COALESCE(r.rentals,'[]'::json) AS rental_blockers,
+    COALESCE(draft_holds.draft_rentals,'[]'::json) AS draft_rentals,
     rental_source.store_id AS beneficiary_store_id,
     bs.store_name AS beneficiary_store_name,
     NULLIF(r.rentals #>> '{0,customer}', '') AS holder_name,
@@ -310,6 +312,7 @@ function vehicleHydrateSql() {
       WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
         AND o.order_status IN ('renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract')
     ) r ON true
+    ${draftVehicleRentalsLateralSql('v.id')}
     LEFT JOIN himoto.vehicle_rental_sources($1::bigint[]) rental_source ON rental_source.vehicle_id=v.id
     LEFT JOIN himoto.stores bs ON bs.id=rental_source.store_id
     ${VEHICLE_GPS_JOIN_SQL}

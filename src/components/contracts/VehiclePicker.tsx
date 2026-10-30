@@ -13,7 +13,8 @@ export interface VehicleAvailability { tone: Tone; label: string; detail: string
 
 const RENTAL_LABELS: Record<string, string> = {
   renting: 'Đang được thuê', overdue: 'Quá hạn chưa trả', wait_payment: 'Hợp đồng cũ chưa đóng (chờ tất toán)',
-  pending: 'Đã đặt, chờ giao xe', deposit_contract: 'Đã đặt cọc giữ xe', bad_debt: 'Hợp đồng cũ chưa đóng (nợ xấu)',
+  pending: 'Đã đặt, chờ giao xe', deposit_contract: 'Đã đặt cọc giữ xe', draft: 'Đang trong hợp đồng nháp',
+  bad_debt: 'Hợp đồng cũ chưa đóng (nợ xấu)',
 };
 const TONE_ORDER: Record<Tone, number> = { ok: 0, warn: 1, danger: 2 };
 const MAX_OPTIONS = 60;
@@ -55,9 +56,10 @@ export function vehicleAvailability(
     };
   }
   if (classified.kind === 'overlap_warn') {
+    const draft = classified.rental?.status === 'draft';
     return {
       tone: 'warn',
-      label: 'Cọc giữ xe · cần xác nhận',
+      label: draft ? 'Đang trong hợp đồng nháp' : 'Cọc giữ xe · cần xác nhận',
       detail: classified.detail,
       selectable: true,
     };

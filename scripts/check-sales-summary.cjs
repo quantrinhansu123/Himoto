@@ -39,9 +39,9 @@ async function main(){const c=await ownerDatabase.connect(),checks=[];
     [JSON.stringify({management_composer:{rental_type:'daily',draft:{total_amount:'2500',sales_staff_id:'8'},sales_attribution:{NVKD:{name:'QA saved'}}}}),
      JSON.stringify({management_composer:{rental_type:'daily',draft:{sales_staff_id:'8'},sales_attribution:{NVKD:{name:'QA saved'}}}})]);
   const afterDrafts=await readSalesSummary(db,new URLSearchParams({from:'2026-10-16',to:'2026-10-16',store:'1'}));
-  assert.equal(afterDrafts.kpis.contracts,beforeDrafts.kpis.contracts+1);
-  assert.equal(afterDrafts.kpis.revenue,beforeDrafts.kpis.revenue+2500);
-  checks.push('Drafts with typed total_amount join doanh số; empty-amount drafts stay out');
+  assert.equal(afterDrafts.kpis.contracts,beforeDrafts.kpis.contracts);
+  assert.equal(afterDrafts.kpis.revenue,beforeDrafts.kpis.revenue);
+  checks.push('Drafts never join doanh số, even when staff typed total_amount');
 
  }finally{await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
  console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0},null,2));

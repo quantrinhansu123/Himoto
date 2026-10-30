@@ -16,7 +16,7 @@ export function reportDays(from: string, to: string): string[] {
   return days.reverse();
 }
 
-const EXCLUDED_STATUSES = new Set(['pending', 'deposit_contract', 'cancelled', 'cancel_pending_settlement']);
+const EXCLUDED_STATUSES = new Set(['draft', 'pending', 'deposit_contract', 'cancelled', 'cancel_pending_settlement']);
 export const UNASSIGNED_SOURCE = 'Chưa phân công NVKD';
 export const UNASSIGNED_STORE = 'Chưa có cơ sở doanh thu';
 
@@ -24,14 +24,8 @@ const RECEIVABLE_STATUSES = new Set(['renting', 'overdue', 'wait_payment', 'bad_
 const OVERDUE_STATUSES = new Set(['overdue', 'bad_debt']);
 
 const tidy = (value: unknown) => String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ');
-const hasRentalAmount = (contract: ManagementRow) => {
-  const raw = String(contract.total_amount ?? '').trim();
-  return raw !== '' && Number.isFinite(Number(raw));
-};
 const startedInPeriod = (contract: ManagementRow, from: string, to: string, store: string) => {
   if (EXCLUDED_STATUSES.has(contract.status) || store !== 'all' && String(contract.store_id ?? '') !== store) return false;
-  // Drafts enter revenue only after staff filled in a rental amount.
-  if (contract.status === 'draft' && !hasRentalAmount(contract)) return false;
   const date = String(contract.start_date ?? '').slice(0, 10);
   return Boolean(date) && date >= from && date <= to;
 };

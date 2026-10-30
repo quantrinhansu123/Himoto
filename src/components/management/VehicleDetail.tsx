@@ -66,6 +66,25 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
     <div className="mg-dialog-body">
       <ContractSectionTabs prefix="vehicle-detail" sections={SECTIONS} active={section} onChange={setSection} />
       {row.status==='in_transit'&&<div className="mg-transfer-pending" role="status"><strong>Xe đang Chờ luân chuyển</strong><p className="mg-transfer-direction">{vehicleTransferRoute(row)||'Chưa có thông tin cơ sở chuyển đi. Kiểm tra tab Lịch sử.'}</p>{cancellable?<p>Bạn đã tạo lượt chuyển này. Bấm <strong>Huỷ điều chuyển</strong> nếu chọn nhầm; chỉ huỷ được trước khi bên nhận xác nhận.</p>:<p>Khi xe đã đến nơi, bấm <strong>Nhận xe</strong>. Nếu không nhận, bấm <strong>Từ chối điều chuyển</strong> để trả xe về cơ sở chuyển đi.</p>}</div>}
+      {(() => {
+        let rentals: OpenVehicleRental[] = [];
+        try { rentals = JSON.parse(String(row.rentals_json || '[]')) as OpenVehicleRental[]; } catch { rentals = []; }
+        const drafts = rentals.filter(item => String(item.status || '').toLowerCase() === 'draft');
+        if (!drafts.length) return null;
+        const formatPickup = (value?: string | null) => {
+          if (!value) return '';
+          const raw = String(value).trim();
+          const stamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw) ? `${raw}+07:00` : raw;
+          const ms = new Date(stamp).getTime();
+          return Number.isFinite(ms) ? new Date(ms).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '';
+        };
+        return <div className="mg-transfer-pending" role="status"><strong>Xe đang trong hợp đồng nháp</strong>
+          <ul>{drafts.map(item => {
+            const when = formatPickup(item.rent_at);
+            return <li key={item.order_id}>HĐ {item.code}{item.customer ? ` · ${item.customer}` : ''}{when ? ` · khách lấy xe ${when}` : ''}. Vẫn cho thuê được; phát hành HĐ nháp khi xe đã Lưu kho.</li>;
+          })}</ul>
+        </div>;
+      })()}
       {panel('details', <>
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
         {row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
