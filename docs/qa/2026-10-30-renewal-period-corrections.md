@@ -16,6 +16,7 @@
 - Changing the current deadline also updates the explicit parent deadline when present. Editing a historical period cannot move a vehicle back from a later renewal. Errors roll back the whole transaction.
 - Mobile dates use separate date and 24-hour controls. Preview refresh does not send, edit or retract any Telegram message.
 - Reopening/reloading an editor clears the old form synchronously. A late context response cannot overwrite edits entered into briefly visible data from the previous opening; this race was detected when checking the optimized deployment.
+- Follow-up review of future renewals found the creation dialogs still derived new deadlines from entry/receipt time. Both **Gia hạn** and **Thu tiền gia hạn** now add days/hours to each vehicle's previous deadline, including fee suggestions and manual date durations. The server's direct renewal receipt fee warning also quotes the previous-to-new deadline interval. Changing payment date or switching received/unpaid cannot move coverage. Missing deadlines cannot fall back to today's date.
 
 ## Read-only checks on the reported contracts
 
@@ -32,7 +33,8 @@ These are database facts, not independent confirmation of bank settlement. The s
 
 - `node scripts/check-renewal-payment-corrections.cjs --live-temp`: 8 groups, including fee/paid separation, no-op, revision conflicts, UUID replay, reused version/cancelled voucher, deadline preservation, injected rollback failure, and PostgreSQL RLS.
 - `python scripts/check-renewal-payment-corrections-ui.py ...`: 10 checks across Chromium and WebKit; widths 320/375/390px; routing corrections, 409 recovery, lost-response replay, period/fee changes, receipt selection under reused versions and cancelled receipt guards. All API mutations mocked; no JavaScript errors or real Telegram requests.
-- `node scripts/check-contract-payments.cjs --live-temp`: 19 groups. TEMP fixtures updated for retained notification versions and mandatory bill evidence.
+- `node scripts/check-contract-payments.cjs --live-temp`: 20 groups, including unchanged coverage/expected fee for receipts dated before and after that coverage. TEMP fixtures include retained notification versions and mandatory bill evidence.
+- `python scripts/check-renewal-coverage-ui.py ...`: 12 checks across Chromium/WebKit for seven-day late collection, four-day late collection, early collection, hours across midnight, multiple bikes with different deadlines, and a missing deadline. Payment date changes and received/unpaid switches preserve dates and fees; synthetic save payloads are asserted. All writes mocked.
 - `node scripts/check-contract-renewals.cjs --live-temp`: 6 groups.
 - `node scripts/check-gps-contract-integrations.cjs --telegram-controls-only`: 13 groups. Corrected the obsolete 21-item limit assertion to the existing 50-item limit.
 - Local authenticated GETs against the two production contracts verified current previews, exact receipt IDs, four/seven-day coverage and cancelled receipt send guards without writes.

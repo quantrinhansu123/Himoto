@@ -143,6 +143,18 @@ async function main() {
         return pay({purpose:'renewal',item_id:item?.id,item_revision:item?.revision,return_at:'2026-01-20T10:01',...patch},id);
       };
       const originalItems=(await c.query('SELECT * FROM qa_payment_order_vehicle_details WHERE order_id=1 ORDER BY id')).rows;
+      for(const paid_at of ['2026-01-01T10:01','2026-01-25T10:01']){
+        await c.query('SAVEPOINT coverage_quote');
+        await c.query("UPDATE qa_payment_order_vehicle_details SET type='day',hiring_fee=30 WHERE id=101");
+        const request_id=randomUUID();
+        await renew({request_id,paid_at});
+        const period=(await c.query('SELECT renewal_payload FROM qa_payment_management_contract_payments WHERE request_id=$1',[request_id])).rows[0].renewal_payload;
+        assert.equal(period.expected_amount,300,'Ten days of coverage remain ten days for both early and late collections');
+        assert.equal(period.before_return_at,'2026-01-10T03:01:00.000Z');assert.equal(period.return_at,'2026-01-20T10:01:00+07:00');
+        assert.equal(period.created_at,paid_at+':00+07:00');
+        await c.query('ROLLBACK TO SAVEPOINT coverage_quote; RELEASE SAVEPOINT coverage_quote');
+      }
+      checks.push('TEMP early and late receipt dates preserve the same renewal coverage and expected fee; receipt time stays separate');
       const renewalId=randomUUID();
       const renewed=await renew({request_id:renewalId});
       assert.equal(renewed.context.total_amount,1300);assert.equal(renewed.context.paid_amount,1300);assert.equal(renewed.context.remaining,0);

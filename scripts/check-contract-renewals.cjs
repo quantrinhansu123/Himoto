@@ -6,6 +6,10 @@ const root = path.resolve(__dirname, '../src');
 async function main() {
   const server = load(path.join(root, 'lib/server/contract-renewals'));
   const shared = load(path.join(root, 'lib/management/contract-renewals'));
+  const {addRentalDuration}=load(path.join(root,'lib/management/rental-time'));
+  assert.equal(addRentalDuration('2026-10-15T09:30:00Z',7,'day'),'2026-10-22T16:30');
+  assert.equal(addRentalDuration('2026-10-23T08:04:00Z',4,'day'),'2026-10-27T15:04');
+  assert.equal(addRentalDuration('2026-10-23T16:30:00Z',2,'hour'),'2026-10-24T01:30');
   const checks = [];
   const base = { item_id: 101, item_revision: '1', order_revision: '2', return_at: '2026-01-20T10:00', amount: '300', note: ' QA ' };
   assert.equal(server.parseRenewalInput(base).note, 'QA');

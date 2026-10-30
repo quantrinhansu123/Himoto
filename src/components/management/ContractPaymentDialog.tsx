@@ -19,10 +19,10 @@ import { contractTransferMemo } from '@/lib/management/sepay';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 import { contractEvidenceSlots } from '@/lib/management/contract-photos';
 import { validBackfillTime } from '@/lib/management/contract-backfill';
+import { addRentalDuration } from '@/lib/management/rental-time';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const defaultNote = (purpose: PaymentPurpose, code: string) => purpose==='deposit'?`Thu cọc hợp đồng_${code}`:purpose==='rental_refund'?`Hoàn tiền thuê trả sớm_${code}`:purpose === 'extra' ? `Thu thêm hợp đồng_${code}` : purpose === 'deposit_refund' ? `Trả cọc hợp đồng_${code}` : purpose === 'debt' ? contractTransferMemo(code) : `Gia hạn hợp đồng_${code}`;
-const vietnamLocal = (ms: number) => new Date(ms + 7 * 3_600_000).toISOString().slice(0, 16);
 const vietnamText = (value: string) => formatDateTime(value);
 
 export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void }) {
@@ -91,10 +91,8 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
   const renewable = Boolean(context && !context.billing && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
   const days = /^\d+$/.test(renewalDays) && Number(renewalDays) >= 1 && Number(renewalDays) <= 365 ? Number(renewalDays) : 0;
   const suggestedFor = (item: RenewalItem) => item.daily_price && days ? String(item.daily_price * days) : '';
-  const paidMs = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt) ? Date.parse(`${paidAt}:00+07:00`) : NaN;
   const renewalLines = (context?.items || []).filter(item => String(item.id) in picks).map(item => {
-    // New return = ngày lập phiếu (paid_at) + số ngày gia hạn.
-    return { item, amount: picks[String(item.id)], return_at: Number.isFinite(paidMs) && days ? vietnamLocal(paidMs + days * 86_400_000) : '' };
+    return { item, amount: picks[String(item.id)], return_at: days ? addRentalDuration(item.return_at || '',days,'day') : '' };
   });
   const renewalTotal = renewalLines.reduce((sum, line) => sum + (/^\d+$/.test(line.amount) ? Number(line.amount) : 0), 0);
   function togglePick(item: RenewalItem, checked: boolean) {
