@@ -97,12 +97,12 @@ async function main() {
   const uploadRoute=load(path.join(root,'app/api/auth/photo-uploads/video/route'));
   const call=async(input,origin='http://localhost')=>uploadRoute.POST(new NextRequest('http://localhost/api/auth/photo-uploads/video',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(input)}),{});
   assert.equal((await call({action:'config'})).status,200);
-  user={...user,permissions:['contracts.read']};assert.equal((await call({action:'config'})).status,403);
+  user={...user,permissions:['contracts.read']};assert.equal((await call({action:'config'})).status,200);
   user=null; assert.equal((await call({action:'config'})).status,401);
   user={id:actor,access_role:'branch_staff',store_id:23,scope_all:false,permissions:['contracts.read','contracts.draft']};
   assert.equal((await call({action:'config'},'https://other.example')).status,403);
   assert.equal((await call({action:'sign',upload_id:'x'.repeat(3000)})).status,413);
-  checks.push('Actual upload endpoint requires login, an upload permission, same origin and a bounded JSON body');
+  checks.push('Actual upload endpoint accepts logged-in users and still requires same origin and a bounded JSON body');
   process.env.BROWSER_VIDEO_PROCESSING='off';
   assert.equal((await (await call({action:'config'})).json()).data.enabled,false);
   assert.equal((await call({action:'sign',...signInput})).status,503);

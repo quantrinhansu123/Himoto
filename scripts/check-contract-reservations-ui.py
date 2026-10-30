@@ -17,9 +17,9 @@ out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 checks, errors, unexpected, writes = [], [], [], []
 stores = [dict(id=i, store_name=name, status='opening') for i, name in [(1, 'CS nguồn khách QA'), (2, 'CS giữ xe QA')]]
-staff = [dict(id=8, store_id=2, full_name='Nhân viên giữ xe QA', status='active')]
+staff = [dict(id=8, store_id=1, full_name='Nhân viên giữ xe QA', status='active')]
 customer = dict(id=77, store_id=1, name='Khách đặt xe QA', phone='0900000077', id_card='001234567877', address='', relatives=[], status='active')
-vehicle = dict(id=101, name='Xe giữ chỗ QA', license='QA-101', store_id=1, current_store_id=2, store_name='CS giữ xe QA', status='ready', daily_price=300000)
+vehicle = dict(id=101, name='Xe giữ chỗ QA', license='QA-101', store_id=1, current_store_id=1, store_name='CS nguồn khách QA', status='ready', daily_price=300000)
 state = {}
 
 def payment_context():
@@ -33,6 +33,9 @@ def mock_api(route):
     req = route.request
     path = urlparse(req.url).path.rstrip('/')
     query = parse_qs(urlparse(req.url).query)
+    if path == '/api/auth/order/car-rental/followups' and req.method == 'GET':
+        route.fulfill(json={'data': []})
+        return
     if path.startswith('/api/auth/record-photos/'):
         if req.method=='POST':data=dict(copied=0)
         elif req.method=='GET':data=[]
@@ -66,7 +69,7 @@ def mock_api(route):
         writes.append(dict(path=path, body=copy.deepcopy(body)))
         if path in ['/api/auth/order/car-rental', '/api/auth/order/car-rental/901']:
             assert body['draft']['reservation'] is True
-            assert body['draft']['store_id'] == '1' and body['draft']['vehicle_store_id'] == '2' and body['draft']['staff_id'] == '8', {key:body['draft'].get(key) for key in ['store_id','vehicle_store_id','staff_id','staff_name']}
+            assert body['draft']['store_id'] == '1' and body['draft']['vehicle_store_id'] == '1' and body['draft']['staff_id'] == '8', {key:body['draft'].get(key) for key in ['store_id','vehicle_store_id','staff_id','staff_name']}
             state['revision'] = state.get('revision', 0)+1
             state['record'] = dict(id=901, draft_reference='NHAP-QA-901', status='draft', store_id=1, draft_revision=str(state['revision']),
                 draft_payload=dict(management_composer=dict(version=1, **body)))
@@ -102,8 +105,14 @@ def mock_api(route):
         unexpected.append(req.method+' '+path)
         route.abort()
         return
-    if path == '/api/auth/hr/staff':
-        data = staff if query.get('store_id', [''])[0] == '2' else []
+    if path == '/api/auth/contract-staff':
+        data = staff
+    elif path == '/api/auth/store-directory':
+        data = stores
+    elif path == '/api/auth/vehicles/inventory':
+        data = [dict(vehicle, available=True)]
+    elif path == '/api/auth/hr/staff':
+        data = staff if query.get('store_id', [''])[0] == '1' else []
     elif path == '/api/auth/customers/search':
         data = [customer]
     elif path.endswith('/901/payments'):
@@ -134,24 +143,32 @@ with sync_playwright() as p:
     context = browser.new_context(timezone_id='Asia/Ho_Chi_Minh', reduced_motion='reduce')
     context.add_cookies(json.loads(Path(args.session_cookie_file).read_text(encoding='utf-8-sig')))
     context.route('**/api/**', mock_api)
-    page = context.new_page()
-    page.on('pageerror', lambda error: errors.append(str(error)))
-    page.set_default_timeout(15000)
-    page.set_default_navigation_timeout(45000)
+    def open_contracts(previous, width, height):
+        # WebKit can classify reads started during document replacement as access-control
+        # pageerrors (microsoft/playwright#43120). Reopen for reload checks; keep the error guard strict.
+        if previous:
+            previous.close()
+        opened = context.new_page()
+        opened.on('pageerror', lambda error: errors.append(str(error)))
+        opened.set_default_timeout(15000)
+        opened.set_default_navigation_timeout(45000)
+        opened.set_viewport_size(dict(width=width, height=height))
+        opened.goto(args.url+'/contracts', wait_until='networkidle')
+        return opened
+    page = None
     for width, height in [(320, 740), (375, 812), (1440, 1000)]:
         state.clear()
-        page.set_viewport_size(dict(width=width, height=height))
-        page.goto(args.url+'/contracts', wait_until='networkidle')
+        page = open_contracts(page, width, height)
         page.get_by_role('button', name='Nhận cọc giữ xe', exact=True).click()
         form = page.locator('dialog.mg-contract-composer')
         expect(form.get_by_role('heading', name='Nhận cọc giữ xe', exact=True)).to_be_visible()
         form.get_by_role('tab', name='Khách hàng', exact=False).click()
-        form.locator('#contract-store').select_option('2')
+        form.locator('#contract-store').select_option('1')
         expect(form.locator('#contract-staff-options option')).to_have_attribute('value', staff[0]['full_name'])
         form.locator('#contract-staff').fill(staff[0]['full_name'])
         form.locator('#contract-id-card').fill(customer['phone'])
         expect(form.locator('#contract-customer-name')).to_have_value(customer['name'])
-        expect(form.locator('#contract-store')).to_have_value('2')
+        expect(form.locator('#contract-store')).to_have_value('1')
         # The source is an explicit choice; selecting a customer preserves an existing source.
         form.get_by_role('tab',name='Hợp đồng & pháp lý',exact=False).click()
         form.locator('#contract-customer-source-store').select_option('CS nguồn khách QA')
@@ -160,7 +177,7 @@ with sync_playwright() as p:
             form.locator('#contract-vehicle-store-filter').select_option('')
         form.locator('#contract-vehicle-0').click()
         form.locator('#contract-vehicle-0-options-101').click()
-        expect(form.locator('#contract-vehicle-store-filter')).to_have_value('2')
+        expect(form.locator('#contract-vehicle-store-filter')).to_have_value('1')
         if width == 320:
             form.get_by_role('tab', name='Khách hàng', exact=False).click()
             expect(form.locator('#contract-staff-options option')).to_have_attribute('value', staff[0]['full_name'])
@@ -168,17 +185,23 @@ with sync_playwright() as p:
             form.locator('#contract-staff').fill(staff[0]['full_name'])
         form.get_by_role('tab', name='Chi phí', exact=False).click()
         expect(form.locator('#contract-total_amount')).to_have_value('300.000')
-        expect(form.locator('#contract-deposit_amount')).to_have_count(0)
+        expect(form.locator('#contract-deposit_amount')).to_be_visible()
+        if width != 320:
+            form.locator('#contract-deposit_amount').fill('100000')
+        expect(form.locator('#contract-amount-due')).to_have_value('300.000')
         form.get_by_role('button', name='Ghi nhận cọc giữ xe', exact=True).click()
         confirm = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Xác nhận cọc giữ xe', exact=False))
         assert confirm.evaluate('(el)=>el.scrollWidth<=el.clientWidth')
-        expect(confirm.locator('#rental-collection-0-amount')).to_have_value('')
-        writes_before_empty_amount = len(writes)
-        confirm.get_by_role('button', name='Xác nhận đã nhận cọc giữ xe', exact=True).click()
-        expect(confirm.get_by_role('alert')).to_contain_text('Nhập số tiền lớn hơn 0')
-        assert len(writes) == writes_before_empty_amount
-        confirm.locator('#rental-collection-0-amount').fill('100000')
-        expect(confirm.locator('#rental-collection-0-account')).to_have_value('1')
+        if width == 320:
+            expect(confirm.locator('#rental-collection-0-amount')).to_have_value('')
+            writes_before_empty_amount = len(writes)
+            confirm.get_by_role('button', name='Xác nhận đã nhận cọc giữ xe', exact=True).click()
+            expect(confirm.get_by_role('alert')).to_contain_text('Nhập số tiền lớn hơn 0')
+            assert len(writes) == writes_before_empty_amount
+            confirm.locator('#rental-collection-0-amount').fill('100000')
+        else:
+            expect(confirm.locator('#rental-collection-0-amount')).to_have_value('100.000')
+        expect(confirm.locator('#rental-collection-0-account')).to_have_value('cash:1')
         if width in [375, 1440]:
             confirm.screenshot(path=str(out/f'advance-{width}.png'))
         confirm.get_by_role('button', name='Xác nhận đã nhận cọc giữ xe', exact=True).click()
@@ -188,7 +211,7 @@ with sync_playwright() as p:
         expect(form).to_have_count(0)
         expect(page).to_have_url(args.url+'/contracts?contract_id=901')
         page.wait_for_load_state('networkidle')
-        page.goto(args.url+'/contracts',wait_until='networkidle')
+        page = open_contracts(page, width, height)
         page.locator('button.mg-row-menu-trigger:visible').first.click()
         expect(page.get_by_role('menuitem', name='Trả xe', exact=True)).to_have_count(0)
         page.get_by_role('menuitem', name='Giao xe', exact=True).click()
@@ -206,17 +229,16 @@ with sync_playwright() as p:
         pay = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Thanh toán hợp đồng HD-QA-901', exact=True))
         expect(pay).to_contain_text('200.000')
         pay.get_by_label('Số tiền thu (VNĐ)', exact=True).fill('200000')
-        expect(pay.get_by_label('Tài khoản nhận', exact=True)).to_have_value('1')
+        expect(pay.get_by_label('Tài khoản nhận', exact=True)).to_have_value('cash:1')
         pay.get_by_role('button', name='Ghi nhận thanh toán', exact=True).click()
         expect(pay).to_contain_text('Phiếu Thu')
         assert state['paid'] == 300000 and len(state['history']) == 2
         pay.get_by_role('button', name='Đóng', exact=True).click()
         expect(page.locator('body')).to_contain_text('1.300.000')
-        checks.append(f'{width}px: minimal registered customer, staff of actual holding branch, blank advance requires amount, 100k booking/reload/handover/200k remaining receipt reconcile to 300k and cash balance 1.3m')
+        checks.append(f'{width}px: holding advance is separate from the 300k rental total, entered 100k carries to confirmation, blank advance requires an amount, booking/handover/200k remaining receipt reconcile without duplicate collection')
     state.update(status='deposit_contract', revision=5)
     state['record'].update(status='deposit_contract', draft_revision='5')
-    page.set_viewport_size(dict(width=375, height=812))
-    page.goto(args.url+'/contracts', wait_until='networkidle')
+    page = open_contracts(page, 375, 812)
     page.locator('button.mg-row-menu-trigger:visible').first.click()
     page.get_by_role('menuitem', name='Giao xe', exact=True).click()
     delivery = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Giao xe đã đặt cọc', exact=True))

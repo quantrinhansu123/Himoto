@@ -17,9 +17,9 @@ const formatInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g,'.'
 interface CollectionRow { key: number; amount: string; method: PaymentMethod; account: string; paid_at: string; label?: string; automatic?: boolean }
 interface CollectionState { collect: boolean; rows: CollectionRow[] }
 
-export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, ownershipApproval = false, rentalStart = '', onClose, onDone }: {
+export function ContractFinalizeDialog({ orderId, revision, code, total, deposit, depositMethods, rentalMethods, charges = [], reservation = false, reservationAdvance = 0, ownershipApproval = false, rentalStart = '', onClose, onDone }: {
   orderId: number; revision: string; code: string; total: number; deposit: number; depositMethods: PaymentMethod[]; rentalMethods: PaymentMethod[];
-  charges?: ContractCharge[]; reservation?: boolean; ownershipApproval?: boolean; rentalStart?: string; onClose: () => void; onDone: (result: FinalizeResult) => void;
+  charges?: ContractCharge[]; reservation?: boolean; reservationAdvance?: number; ownershipApproval?: boolean; rentalStart?: string; onClose: () => void; onDone: (result: FinalizeResult) => void;
 }) {
   const [context,setContext] = useState<PaymentContext|null>(null), [loadError,setLoadError] = useState('');
   const [depositState,setDepositState] = useState<CollectionState>({collect:false,rows:[]});
@@ -64,10 +64,11 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
           })]
         : seed(rentalDue,rentalMethods);
       setDepositState(reservation ? {collect:false,rows:[]} : {collect:depositDue>0,rows:seed(depositDue,initialMethods.current.deposit)});
-      setRentalState({collect:rentalDue>0,rows:reservation ? rentalRows.map(item=>({...item,amount:''})) : rentalRows});
+      const advanceRows=reservation?seed(rentalDue,initialMethods.current.deposit):[];
+      setRentalState({collect:rentalDue>0,rows:reservation ? advanceRows.map(item=>({...item,amount:advanceRows.length===1&&reservationAdvance>0 ? String(Math.max(reservationAdvance-(value.paid_amount||0),0)) : ''})) : rentalRows});
     }).catch(cause=>{if(!controller.signal.aborted)setLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');});
     return ()=>controller.abort();
-  },[orderId,deposit,total,reservation,paidDefault]);
+  },[orderId,deposit,total,reservation,reservationAdvance,paidDefault]);
 
   const accountsFor = (row: CollectionRow) => context ? paymentAccounts(context,row.method) : [];
   const chosenAccount = (row: CollectionRow) => accountsFor(row).find(account => paymentAccountKey(account) === row.account) || accountsFor(row)[0];

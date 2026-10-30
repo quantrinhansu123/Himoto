@@ -137,10 +137,12 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   const lines = Array.isArray(draft.vehicles) ? draft.vehicles as Record<string, unknown>[] : [];
   const vehicleIds = lines.map(line => Number(line?.id));
   if (!lines.length || vehicleIds.some(value => !Number.isSafeInteger(value) || value <= 0) || new Set(vehicleIds).size !== vehicleIds.length) throw new ContractFinalizeError('Bản nháp cần chọn đủ xe, không trùng xe.', 409);
-  const total = amountOf(draft.total_amount), deposit = amountOf(draft.deposit_amount), unitPrice = amountOf(draft.unit_price);
+  const total = amountOf(draft.total_amount), enteredDeposit = amountOf(draft.deposit_amount), unitPrice = amountOf(draft.unit_price);
+  // In a reservation, the form's holding amount is an advance against rent, not refundable collateral.
+  const deposit = reservation ? 0 : enteredDeposit;
   const otherFees = chargeTotal(draft.extra_charges);
   if (otherFees === null || Object.keys(chargeErrors(draft.extra_charges as ContractCharge[] | undefined,true)).length || (total !== null && otherFees > total)) throw new ContractFinalizeError('Kiểm tra tên, số tiền và tổng các khoản phí khác.',409);
-  if (total === null || deposit === null || unitPrice === null || total + deposit > MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Số tiền thuê / tiền cọc của bản nháp không hợp lệ.', 409);
+  if (total === null || enteredDeposit === null || deposit === null || unitPrice === null || total + deposit > MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Số tiền thuê / tiền cọc của bản nháp không hợp lệ.', 409);
   if (lines.length > 1 && unitPrice > 0 && draft.package_name !== 'Tùy chọn') {
     const quote = rentalQuote({ start_date: start, end_date: end, package_name: String(draft.package_name || ''), unit_price: String(unitPrice), vehicles: lines, extra_charges: draft.extra_charges });
     if (!quote || quote.total_amount !== total) throw new ContractFinalizeError(`Tổng tiền chưa khớp đơn giá cho cả ${lines.length} xe. Mở lại bản nháp, kiểm tra đơn giá toàn hợp đồng và lưu lại trước khi phát hành.`, 409);
@@ -314,6 +316,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
     ...receipts.filter(row=>row.purpose===purpose).map(row=>PAYMENT_METHOD_LABELS[row.method]),
   ])].join(', ');
   draft.paid_amount=String(oldRentalPaid+rentalCollected); draft.deposit_paid_amount=String(oldDepositPaid+depositCollected);
+  if (reservation) draft.deposit_amount='0';
   draft.payment_method=actualMethods('rental') || draft.payment_method; draft.deposit_payment_method=actualMethods('deposit') || draft.deposit_payment_method;
 
   const finalized = { at: new Date().toISOString(), actor_id: actorId, contract_number: code, item_ids: itemIds, transaction_ids: transactionIds,

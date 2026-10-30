@@ -982,7 +982,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
             </div>
             <div className="mg-form-grid mg-contract-grid-two">
               {moneyField('total_amount', 'Tổng tiền thuê và phí khác (VNĐ)', !canSaveDraft || (quotedTotal !== null && !reserving && draft.package_name !== 'Tùy chọn'))}
-              <div className="mg-field"><label htmlFor="contract-amount-due">Tổng cần thu gồm cọc (VNĐ)</label><input id="contract-amount-due" readOnly value={formatMoneyInput(String((Number(draft.deposit_amount)||0)+(Number(draft.total_amount)||0)))}/><small>Gồm cọc + tiền thuê + phí khác. Đây là số cần thu, chưa phải tiền đã nhận.</small></div>
+              <div className="mg-field"><label htmlFor="contract-amount-due">{reserving ? 'Tổng tiền thuê và phí (VNĐ)' : 'Tổng cần thu gồm cọc (VNĐ)'}</label><input id="contract-amount-due" readOnly value={formatMoneyInput(String((reserving?0:Number(draft.deposit_amount)||0)+(Number(draft.total_amount)||0)))}/><small>{reserving ? 'Tiền giữ xe được trừ vào tiền thuê, không cộng thêm vào tổng. Xác nhận ở bước tiếp theo để ghi phiếu thu.' : 'Gồm cọc + tiền thuê + phí khác. Đây là số cần thu, chưa phải tiền đã nhận.'}</small></div>
             </div>
             <p className="mg-composer-hint">Bấm Hoàn tất & thanh toán để xác nhận tiền đã nhận, chọn tài khoản/tiền mặt và lưu hợp đồng. Có thể ghi nhận đã thanh toán đủ, thu một phần hoặc chưa thu. Hợp đồng của ngày trước vẫn lập tại đây; giờ thuê quyết định ngày doanh thu theo lượt, thời điểm nhận quyết định doanh thu thực thu.</p>
             {source === 'api' && <div className="mg-field mg-field-wide"><RecordPhotoFields key={`evidence-payment-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractEvidenceSlots('rental')} title="Ảnh hợp đồng đã ký & bill chuyển khoản" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setMediaBusy('evidence-payment')}/><p>Chụp hợp đồng giấy đã ký và bill CK / tổng tiền mặt. Cùng các ô ở mục Ký kết; lưu với bản nháp, gửi Telegram khi bấm Gửi toàn bộ.</p></div>}
@@ -1020,6 +1020,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     {typeManagerOpen && <ContractTypeManager onClose={()=>setTypeManagerOpen(false)} onCreated={type=>{changeRentalType(type);setTypeManagerOpen(false);}} />}
     {finalizeTarget && <ContractFinalizeDialog orderId={finalizeTarget.id} revision={finalizeTarget.revision} code={finalizeTarget.code}
       total={Number(draft.total_amount) || 0} deposit={Number(draft.deposit_amount) || 0} reservation={reserving} ownershipApproval={ownershipApproval} rentalStart={draft.start_date}
+      reservationAdvance={reserving ? Number(draft.deposit_amount) || 0 : 0}
       depositMethods={draftPaymentMethods(draft.deposit_payment_method)} rentalMethods={draftPaymentMethods(draft.payment_method)} charges={draft.extra_charges}
       onClose={() => setFinalizeTarget(null)} onDone={result => { setFinalizeTarget(null); onClose(); onFinalized?.(result); }} />}
   </>;

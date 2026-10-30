@@ -1,5 +1,6 @@
 """Exercise the production UI and its real bundled worker; intercept every business/storage write."""
 import argparse
+import base64
 import hashlib
 import json
 import re
@@ -33,15 +34,17 @@ probe = Path('.backups/browser-video-20261025/tools/npm/node_modules/@ffprobe-in
 
 with sync_playwright() as playwright:
     browser = getattr(playwright, args.browser).launch()
-    for filename, no_worker, retry_upload, stuck_worker in [
-        ('avc.mov', False, True, False), ('rotated.mov', False, False, False), ('silent.mp4', False, False, False),
-        ('hevc.mov', False, False, False), ('silent.webm', False, False, False), ('vp9.webm', False, False, False),
-        ('avc.mov', True, False, False), ('avc.mov', False, False, True), ('long61.mp4', False, False, False),
+    for filename, no_worker, retry_upload, stuck_worker, mime_type in [
+        ('avc.mov', False, True, False, None), ('rotated.mov', False, False, False, None), ('silent.mp4', False, False, False, None),
+        ('hevc.mov', False, False, False, None), ('silent.webm', False, False, False, None), ('vp9.webm', False, False, False, None),
+        ('avc.mov', True, False, False, None), ('avc.mov', False, False, True, None), ('long61.mp4', False, False, False, None),
+        ('avc.mov', False, False, False, ''), ('silent.mp4', False, False, False, ''),
+        ('avc.mov', False, False, False, 'application/octet-stream'),
     ]:
         namespace['state'].clear()
         namespace['unexpected'].clear()
         namespace['writes'].clear()
-        context = browser.new_context(viewport={'width': 390, 'height': 844}, timezone_id='Asia/Ho_Chi_Minh')
+        context = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, timezone_id='Asia/Ho_Chi_Minh')
         token = Path(args.session_cookie_file).read_text().strip()
         context.add_cookies([{'name': 'himoto_management_session', 'value': token, 'url': args.url, 'httpOnly': True, 'sameSite': 'Strict'}])
         # WebKit's interception protocol can omit Blob request bodies. Capture the same
@@ -61,6 +64,9 @@ with sync_playwright() as playwright:
         def mock(route):
             req = route.request
             path = urlparse(req.url).path
+            if path == '/api/auth/order/car-rental/followups' and req.method == 'GET':
+                route.fulfill(json={'data': []})
+                return
             if path == '/api/auth/photo-uploads/video':
                 body = req.post_data_json
                 if body['action'] == 'config': data = {'enabled': True}
@@ -98,6 +104,7 @@ with sync_playwright() as playwright:
         context.route('https://api.cloudinary.com/**', cloud)
         context.route('https://api.telegram.org/**', lambda route: route.abort())
         page = context.new_page()
+        page.set_default_navigation_timeout(90000 if urlparse(args.url).hostname == '127.0.0.1' else 45000)
         page.on('pageerror', lambda error: errors.append(str(error)))
         def worker_created(worker): state['workers'] += 1
         page.on('worker', worker_created)
@@ -116,7 +123,17 @@ with sync_playwright() as playwright:
         form.locator('#contract-vehicle-0-options-101').click()
         media = form.get_by_role('group', name='Ảnh xe 4 góc, toàn cảnh & video', exact=True)
         started = time.monotonic()
-        media.get_by_label('Chọn video Video tình trạng xe 1', exact=True).set_input_files(str(fixture_dir / filename))
+        picker = media.get_by_label('Quay Video tình trạng xe 1' if mime_type == 'application/octet-stream' else 'Chọn video Video tình trạng xe 1', exact=True)
+        if mime_type is None:
+            picker.set_input_files(str(fixture_dir / filename))
+        else:
+            picker.evaluate('''(input, data) => {
+              const bytes = Uint8Array.from(atob(data.bytes), c => c.charCodeAt(0));
+              const transfer = new DataTransfer();
+              transfer.items.add(new File([bytes], data.name, {type: data.mime}));
+              input.files = transfer.files;
+              input.dispatchEvent(new Event('change', {bubbles: true}));
+            }''', {'name': filename, 'mime': mime_type, 'bytes': base64.b64encode((fixture_dir / filename).read_bytes()).decode()})
         if filename == 'long61.mp4':
             expect(media).to_contain_text('tối đa 60 giây', timeout=20000)
             assert not state['uploads'] and not state['fallbacks']
@@ -162,7 +179,7 @@ with sync_playwright() as playwright:
             assert any('-video-' in key for key in namespace['state'].get('photos', {}))
             assert 'telegram-send' not in namespace['writes']
             checks.append(f'{filename}: ready receipt attaches before final confirmation; no Telegram send')
-            outcomes.append({'file': filename, 'workerDisabled': no_worker, 'path': 'browser' if state['output'] else 'fallback', 'elapsedMs': elapsed})
+            outcomes.append({'file': filename, 'mimeType': mime_type, 'camera': mime_type == 'application/octet-stream', 'workerDisabled': no_worker, 'path': 'browser' if state['output'] else 'fallback', 'elapsedMs': elapsed})
             page.screenshot(path=str(out / (filename.replace('.', '-') + ('-fallback' if no_worker else '') + '.png')))
         assert not namespace['unexpected'], namespace['unexpected']
         context.close()

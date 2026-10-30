@@ -21,7 +21,7 @@ export interface SavedPhoto { slot: string; updated_at: string; mime_type?: stri
 export type PendingPhotos = Record<string, File>;
 export const CUSTOMER_PHOTO_SLOTS: PhotoSlot[] = [{ key: 'id_front', label: 'CCCD mặt trước' }, { key: 'id_back', label: 'CCCD mặt sau' }];
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
-import { MAX_VIDEO_BYTES } from './video-media';
+import { MAX_VIDEO_BYTES, normalizeVideoFile } from './video-media';
 export const isVideoSlot = (slot:string) => /-video-[1-3]$/.test(slot);
 export interface CloudUploadReceipt { public_id: string; version: number; signature: string; resource_type?: 'video' }
 const uploads = new WeakMap<File, { id: string; promise: Promise<CloudUploadReceipt> }>();
@@ -93,16 +93,17 @@ export async function saveRecordPhotos(entity: PhotoEntity, id: number, photos: 
 }
 
 export async function prepareRecordVideo(file:File):Promise<File> {
+  file=normalizeVideoFile(file);
   if(!file.type.startsWith('video/')||file.size>MAX_VIDEO_BYTES||!file.size)throw new Error('Chọn video MP4/MOV/WebM, tối đa 45 MB.');
   const url=URL.createObjectURL(file);
+  const video=document.createElement('video');video.preload='metadata';video.playsInline=true;
   try {
-    const video=document.createElement('video');video.preload='metadata';
     // iPhone HEVC/MOV can be uploaded even when this browser cannot decode it.
     // Cloudinary converts it to H.264; the server verifies the real duration.
     const duration=await new Promise<number>(resolve=>{const timer=setTimeout(()=>resolve(NaN),10000);video.onloadedmetadata=()=>{clearTimeout(timer);resolve(video.duration);};video.onerror=()=>{clearTimeout(timer);resolve(NaN);};video.src=url;});
     if(Number.isFinite(duration)&&(duration<=0||duration>60))throw new Error('Mỗi video tối đa 60 giây; nên quay 10–30 giây.');
-    video.onloadedmetadata=null;video.onerror=null;video.removeAttribute('src');video.load();return file;
-  } finally {URL.revokeObjectURL(url);}
+    return file;
+  } finally {video.onloadedmetadata=null;video.onerror=null;video.removeAttribute('src');video.load();URL.revokeObjectURL(url);}
 }
 
 // A camera photo can exceed the hosting request limit. Resize locally before uploading.
