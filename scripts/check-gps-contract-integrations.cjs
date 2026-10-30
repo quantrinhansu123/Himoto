@@ -76,7 +76,7 @@ async function main(){
     const observation=providers.normalizeProtrackDevice(raw,now);await persistGpsObservations(db,'protrack',[observation]);
     checks.push(await require('./lib/check-gps-long-stops.cjs')(db,c,schema,observation));
     let gps=(await c.query(`SELECT * FROM ${schema}.gps_devices`)).rows[0];assert.equal(Number(gps.vehicle_id),101);assert.equal(gps.management_status,'online');
-    const selected=load(path.join(root,'lib/server/selected-vehicle-gps'));assert.deepEqual(selected.selectedVehicleIds('101,102,101'),[101,102]);for(const invalid of ['', '0', '101,abc',Array(21).fill('101').join(',')])assert.throws(()=>selected.selectedVehicleIds(invalid));
+    const selected=load(path.join(root,'lib/server/selected-vehicle-gps'));assert.deepEqual(selected.selectedVehicleIds('101,102,101'),[101,102]);for(const invalid of ['', '0', '101,abc',Array(51).fill('101').join(',')])assert.throws(()=>selected.selectedVehicleIds(invalid));
     const gpsRows=await selected.readSelectedVehicleGps(db,[101,102]);assert.equal(gpsRows[0].status,'online');assert.equal(gpsRows[1].status,'none');
     const beforeTuple=(await c.query(`SELECT (SELECT ctid::text FROM ${schema}.gps_devices LIMIT 1) AS device,(SELECT ctid::text FROM ${schema}.gps_positions LIMIT 1) AS position`)).rows[0];
     await persistGpsObservations(db,'protrack',[observation]);assert.equal((await c.query(`SELECT * FROM ${schema}.management_gps_status_events`)).rowCount,1);

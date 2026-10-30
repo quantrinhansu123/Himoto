@@ -32,8 +32,9 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
     {Boolean(events.length)&&<label className="mg-telegram-event-label">Giao dịch cần gửi<select aria-label="Giao dịch cần gửi Telegram" value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value);setMessage('');}}>{events.map(e=><option key={e.key} value={e.key}>{e.label} · {e.photo_count} ảnh · {e.video_count||0} video · {e.can_resume?'Gửi chưa hoàn tất':e.status?NOTICE_STATUS_LABELS[e.status]:'Chưa gửi'}</option>)}</select></label>}
     {event&&<div key={event.key}>
       {event.destination_label&&<p><strong>Nơi nhận: {event.destination_label}</strong></p>}
+      {event.renewal_receipts_cancelled&&<p className="mg-field-error" role="status">Phiếu thu của kỳ này đã hủy. Kiểm tra và chọn kỳ có phiếu thu đang có hiệu lực trong “Giao dịch cần gửi”.</p>}
       <pre className="mg-telegram-preview">{event.text}</pre>
-      {event.kind==='renewal'&&<RenewalPaymentEditor orderId={id} eventKey={event.key} disabled={actionBusy||photoBusy||loading} onBusyChange={setPaymentBusy} onSaved={()=>{void refresh();}}/>}
+      {event.kind==='renewal'&&<RenewalPaymentEditor orderId={id} eventKey={event.key} receiptIds={event.renewal_receipt_ids} disabled={actionBusy||photoBusy||loading} onBusyChange={setPaymentBusy} onSaved={()=>{void refresh();}}/>}
       {event.delivery_contract_code&&!event.text.split('\n').some(line=>line===`Hợp đồng: ${event.delivery_contract_code}`||line===`HĐ: ${event.delivery_contract_code}`)&&<p>Lần gửi trước dùng mã hợp đồng {event.delivery_contract_code}. Bản cập nhật bên trên dùng số hợp đồng hiện tại.</p>}
       <p role="status">{event.photo_count} ảnh · {event.video_count||0} video đã lưu · {event.can_resume?'Gửi chưa hoàn tất':event.status?NOTICE_STATUS_LABELS[event.status]:'Chưa gửi'}{event.sent_at?` · ${new Date(event.sent_at).toLocaleString('vi-VN')}`:''}</p>
       {event.can_resume?<div className="mg-billing-reminder" role="alert">

@@ -122,6 +122,8 @@ export async function readPaymentContext(client: Database, id: number): Promise<
       note: String(row.note || ''), actor: String(row.actor || ''), method: String(row.method), account: String(row.account || ''),
       revision: row.revision == null ? undefined : String(row.revision), account_id: Number(row.cash_id ?? row.bank_id) || undefined,
       payment_method: row.bank_id != null ? row.bank_owner_type === 'company' ? 'company_transfer' as const : 'transfer' as const : row.cash_id != null ? 'cash' as const : undefined,
+      status: row.tx_status,
+      renewal_fee_editable: row.tx_status === 'approved' && !plan && ['renting','overdue','wait_payment'].includes(String(order.status)) && Boolean(row.renewal_payload && items.rows.some(item=>Number(item.id)===Number(row.renewal_payload.item_id)) && order.draft_payload?.management_composer?.versions?.some((v:RenewalVersion)=>v?.kind==='renewal'&&Number(v.version)===Number(row.renewal_payload.version)&&sameRenewalPeriod(v,row.renewal_payload))),
       renewal: row.renewal_payload || null })) };
 }
 

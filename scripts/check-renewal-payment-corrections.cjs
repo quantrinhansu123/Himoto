@@ -1,78 +1,111 @@
-const assert = require('node:assert/strict');
-const path = require('node:path');
-require('@next/env').loadEnvConfig(process.cwd(), false, {info(){}, error(){}});
-const {load, root} = require('./lib/load-typescript.cjs');
-const {ownerDatabase} = load(path.join(root, 'lib/server/himoto-database'));
-const {updateRenewalPayment} = load(path.join(root, 'lib/server/renewal-payment-corrections'));
-const {readContractTelegram} = load(path.join(root, 'lib/server/contract-telegram'));
-
-async function main() {
-  console.log('Testing renewal payment and period corrections...');
-  const orderId = 53213; // VPS-19881
-  const actorId = 153;
-  const user = { id: actorId, name: 'Tester', permissions: ['contracts.renew', 'contracts.telegram', 'finance.write'] };
-
-  // 1. Kiểm tra đọc Telegram trước khi sửa
-  const beforeTelegram = await readContractTelegram(ownerDatabase, orderId, actorId, user);
-  const v3Event = beforeTelegram.state.events.find(e => e.key === 'renewal:53213:3');
-  console.log('V3 Event before:', {
-    key: v3Event?.key,
-    label: v3Event?.label,
-    textPreview: v3Event?.text?.split('\n').slice(0, 5)
-  });
-
-  // 2. Lấy receipt v3 (Tx #172946)
-  const receipt = (await ownerDatabase.query(`
-    SELECT t.id, t.xmin::text as revision, p.renewal_payload
-    FROM himoto.transactions t
-    JOIN himoto.management_contract_payments p ON p.transaction_id = t.id
-    WHERE t.id = 172946 AND t.order_id = $1
-  `, [orderId])).rows[0];
-
-  assert(receipt, 'Receipt 172946 must exist');
-  console.log('Current renewal_payload:', receipt.renewal_payload);
-
-  // 3. Test sửa thời gian gia hạn từ 3 ngày (20/10 -> 23/10) thành 4 ngày (20/10/2026 15:04 -> 24/10/2026 15:04)
-  const requestId = require('node:crypto').randomUUID();
-  const newReturnAt = '2026-10-24T08:04:00.000Z'; // 24/10 15:04 GMT+7
-  const newBeforeReturnAt = '2026-10-20T08:04:00.000Z'; // 20/10 15:04 GMT+7
-
-  console.log('Updating renewal period to 4 days (20/10 - 24/10)...');
-  await ownerDatabase.query('BEGIN');
-  try {
-    const updatedContext = await updateRenewalPayment(ownerDatabase, orderId, actorId, {
-      request_id: requestId,
-      transaction_id: receipt.id,
-      revision: receipt.revision,
-      reason: 'Sửa ngày hẹn trả thành 4 ngày theo hợp đồng',
-      before_return_at: newBeforeReturnAt,
-      return_at: newReturnAt,
-    });
-    console.log('Update successful, context returned.');
-
-    // 4. Kiểm tra renewal_payload trong DB
-    const updatedPayment = (await ownerDatabase.query(`
-      SELECT renewal_payload FROM himoto.management_contract_payments WHERE transaction_id = 172946
-    `)).rows[0];
-    console.log('Updated renewal_payload in DB:', updatedPayment.renewal_payload);
-    assert.equal(updatedPayment.renewal_payload.return_at, newReturnAt);
-    assert.equal(updatedPayment.renewal_payload.before_return_at, newBeforeReturnAt);
-
-    // 5. Kiểm tra readContractTelegram sinh nội dung mới
-    const afterTelegram = await readContractTelegram(ownerDatabase, orderId, actorId, user);
-    const updatedV3Event = afterTelegram.state.events.find(e => e.key === 'renewal:53213:3');
-    console.log('\nV3 Event text after update:\n' + updatedV3Event?.text);
-    assert(updatedV3Event?.text.includes('24/10/2026 15:04 (4 ngày)'), 'Telegram preview must show 4 ngày and 24/10/2026');
-
-    await ownerDatabase.query('COMMIT');
-    console.log('\nAll checks passed and committed successfully!');
-  } catch (err) {
-    await ownerDatabase.query('ROLLBACK');
-    throw err;
-  }
+// All writes target isolated TEMP tables on one pinned connection and roll back.
+const assert=require('node:assert/strict'),path=require('node:path'),{randomUUID}=require('node:crypto');
+const {load,root}=require('./lib/load-typescript.cjs');
+const {parseRenewalPaymentCorrection:parse,updateRenewalPayment:update}=load(path.join(root,'lib/server/renewal-payment-corrections'));
+const {readPaymentContext}=load(path.join(root,'lib/server/contract-payments'));
+const {readContractTelegram,saveContractTelegram}=load(path.join(root,'lib/server/contract-telegram'));
+const {contractNotificationText,renewalPeriodStart}=load(path.join(root,'lib/server/contract-notification-content'));
+global.fetch=async()=>{throw Error('External requests are forbidden in this suite');};
+const base={request_id:randomUUID(),transaction_id:51,revision:'1',reason:'QA correction'};
+const renewal={kind:'renewal',version:2,item_id:101,amount:900000,license:'QA-1',vehicle_name:'Vision QA',created_at:'2026-10-29T11:00:00Z',before_return_at:'2026-10-23T08:04:00Z',return_at:'2026-10-27T08:04:00Z'};
+async function main(){
+ const checks=[];
+ for(const amount of ['-1','01','1.5','1e6','10000000000000',1200000,null])assert.throws(()=>parse({...base,amount}));
+ assert.equal(parse({...base,amount:'1200000'}).amount,'1200000');
+ assert.throws(()=>parse({...base,account_id:1}));
+ for(const before_return_at of ['2026-02-30T10:00:00Z','2026-10-23T08:00','',null])assert.throws(()=>parse({...base,before_return_at}));
+ assert.throws(()=>parse({...base,before_return_at:renewal.return_at,return_at:renewal.before_return_at}));
+ assert.equal(renewalPeriodStart(renewal),renewal.before_return_at);
+ const text=contractNotificationText('renewal',{renewal,photos:[],at:renewal.created_at});
+ assert(text.includes('23/10/2026 15:04 - 27/10/2026 15:04 (4 ngày)'));
+ checks.push('Strict fee/routing/date inputs; late collection preserves the four-day rental period');
+ if(process.argv.includes('--live-temp')){
+  require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
+  const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database'));
+  const c=await ownerDatabase.connect();
+  const tables=['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles','management_contract_notifications','management_contract_vehicle_swaps'];
+  const db={query(sql,args){for(const table of [...tables,'staff_account_attribution'])sql=sql.replaceAll('himoto.'+table,'pg_temp.qa_rc_'+table);assert(!sql.includes('himoto.'),'No business SQL may escape TEMP tables');return c.query(sql,args);}};
+  const atomic=async work=>{await c.query('SAVEPOINT rc_case');try{const result=await work();await c.query('RELEASE SAVEPOINT rc_case');return result;}catch(e){await c.query('ROLLBACK TO SAVEPOINT rc_case');await c.query('RELEASE SAVEPOINT rc_case');throw e;}};
+  const context=()=>readPaymentContext(db,1);
+  const edit=async patch=>{const ctx=await context();return atomic(()=>update(db,1,143,{...base,request_id:randomUUID(),revision:ctx.history.find(t=>t.id===51).revision,...patch}));};
+  const preview=async()=> (await readContractTelegram(db,1,143,{access_role:'admin'})).state.events;
+  try{
+   await c.query('BEGIN');
+   for(const table of tables)await c.query(`CREATE TEMP TABLE qa_rc_${table}(LIKE himoto.${table} INCLUDING DEFAULTS) ON COMMIT DROP`);
+   await c.query('CREATE TEMP VIEW qa_rc_staff_account_attribution AS SELECT id,user_id,full_name,store_id FROM qa_rc_staff_profiles');
+   await db.query(`INSERT INTO himoto.stores(id,store_name) VALUES(23,'Branch QA');
+    INSERT INTO himoto.users(id,name,email,password,role_id) VALUES(143,'Actor QA','renewal-qa@example.invalid','unused-test-fixture',1);
+    INSERT INTO himoto.orders(id,store_id,contract_number,order_status,total,pid,return_at)
+      VALUES(1,23,'QA-RENEWAL','renting','1500000',900000,'2026-10-27T08:04:00Z');
+    INSERT INTO himoto.vehicles(id,name,license,type,year,store_id,current_store_id,status,created_by) VALUES(100,'Vision QA','QA-1','xega',2026,23,23,'using',143);
+    INSERT INTO himoto.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,total_money,total_renewal_amount)
+      VALUES(101,1,100,'2026-10-01T08:04:00Z','2026-10-27T08:04:00Z',600000,900000);
+    INSERT INTO himoto.cash(id,store_id,name,status,opening_balance) VALUES(1,23,'Cash QA','Active',0);`);
+   await db.query('UPDATE himoto.orders SET draft_payload=$1 WHERE id=1',[JSON.stringify({management_composer:{versions:[renewal]}})]);
+   await db.query(`INSERT INTO himoto.transactions(id,order_id,name,type,value,status,user_id,store_id,cash_id,payment_method,created_at,note)
+    VALUES(51,1,'order:payment','in',900000,'approved',143,23,1,1,'2026-10-29T11:00:00Z','QA');`);
+   await db.query('INSERT INTO himoto.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload) VALUES($1,1,51,143,$2,$3)',[randomUUID(),'qa',JSON.stringify(renewal)]);
+   const before=await context();
+   assert.equal(before.history[0].renewal_fee_editable,true);
+   const unchanged=await edit({before_return_at:renewal.before_return_at,return_at:renewal.return_at});
+   assert.equal(unchanged.total_amount,1500000);
+   assert((await preview()).find(e=>e.key==='renewal:1:2').text.includes('(4 ngày)'));
+   checks.push('Unchanged saved dates refresh successfully; preview uses persisted coverage, no fake audit or money mutation');
+   const request={...base,request_id:randomUUID(),revision:before.history[0].revision,amount:'1200000'};
+   const updated=await atomic(()=>update(db,1,143,request));
+   assert.equal(updated.total_amount,1800000);assert.equal(updated.paid_amount,900000);assert.equal(updated.remaining,900000);
+   assert.equal(updated.history[0].amount,900000);assert.equal(updated.history[0].renewal.amount,1200000);
+   assert.equal(updated.history[0].paid_at,before.history[0].paid_at);
+   assert.notEqual(updated.history[0].revision,before.history[0].revision);
+   assert.equal(Number((await db.query('SELECT total_renewal_amount FROM himoto.order_vehicle_details WHERE id=101')).rows[0].total_renewal_amount),1200000);
+   const afterPreview=(await preview()).find(e=>e.key==='renewal:1:2');
+   assert(afterPreview.text.includes('Phí gia hạn: 1.200.000 đ'));assert(afterPreview.text.includes('900.000 đ'));
+   assert.deepEqual(afterPreview.renewal_receipt_ids,[51]);
+   await atomic(()=>update(db,1,143,request));assert.equal((await context()).total_amount,1800000);
+   await assert.rejects(()=>atomic(()=>update(db,1,143,{...request,amount:'1300000'})),e=>e.status===409);
+   await assert.rejects(()=>atomic(()=>update(db,1,143,{...base,revision:before.history[0].revision,request_id:randomUUID(),amount:'1300000'})),e=>e.status===409);
+   checks.push('Fee changes update charge/line/version/preview atomically, preserve actual receipt/date, bump revision; UUID retries cannot duplicate or change content');
+   await edit({return_at:'2026-10-28T08:04:00Z'});
+   assert.equal((await context()).end_date,'2026-10-28T08:04:00.000Z');
+   await db.query("UPDATE himoto.order_vehicle_details SET return_at='2026-11-01T08:04:00Z' WHERE id=101; UPDATE himoto.orders SET return_at='2026-11-01T08:04:00Z' WHERE id=1");
+   await edit({before_return_at:'2026-10-22T08:04:00Z',return_at:'2026-10-27T08:04:00Z'});
+   assert.equal((await context()).end_date,'2026-11-01T08:04:00.000Z');
+   checks.push('Current deadline follows corrections; editing an older period preserves a later renewal deadline');
+   const legacy={...renewal,created_at:'2026-10-20T08:04:00Z',before_return_at:'2026-10-15T08:04:00Z',return_at:'2026-10-20T08:04:00Z',amount:1500000};
+   await db.query("INSERT INTO himoto.transactions(id,order_id,name,type,value,status,user_id,store_id,cash_id,payment_method,note) VALUES(50,1,'order:payment','in',1500000,'cancelled',143,23,1,1,'QA')");
+   await db.query('INSERT INTO himoto.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload) VALUES($1,1,50,143,$2,$3)',[randomUUID(),'qa',JSON.stringify(legacy)]);
+   const events=await preview();
+   const current=events.find(e=>e.key==='renewal:1:2'),old=events.find(e=>e.key==='renewal-receipt:1:50');
+   assert(current.text.includes('1.200.000'));assert.deepEqual(current.renewal_receipt_ids,[51]);
+   assert(old.text.includes('1.500.000'));assert.deepEqual(old.renewal_receipt_ids,[50]);
+   assert.equal(old.renewal_receipts_cancelled,true);assert.equal(old.can_send,false);
+   await assert.rejects(()=>atomic(()=>saveContractTelegram(db,1,143,{access_role:'admin'},{action:'send',event_key:old.key,hash:old.hash,request_id:randomUUID()})),e=>e.status===409&&e.message.includes('đã hủy'));
+   const cancelled=(await context()).history.find(t=>t.id===50);assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.renewal_fee_editable,false);
+   await assert.rejects(()=>atomic(()=>update(db,1,143,{...base,transaction_id:50,revision:cancelled.revision,request_id:randomUUID(),amount:'1200000'})),e=>e.status===409);
+   checks.push('Reused version numbers cannot mix periods, charge amounts or editor receipt IDs; cancelled vouchers cannot inflate charges');
+   assert.equal((await db.query('SELECT count(*)::int n FROM himoto.management_contract_notifications')).rows[0].n,0);
+   checks.push('No Telegram notification is queued by any correction');
+   await c.query('SAVEPOINT returned_fee');
+   await db.query("UPDATE himoto.order_vehicle_details SET completed_at=now() WHERE id=101; UPDATE himoto.orders SET order_status='completed' WHERE id=1");
+   const returned=(await context()).history.find(t=>t.id===51);assert.equal(returned.renewal_fee_editable,false);
+   await assert.rejects(()=>atomic(()=>update(db,1,143,{...base,revision:returned.revision,request_id:randomUUID(),amount:'1400000'})),e=>e.status===409);
+   await c.query('ROLLBACK TO SAVEPOINT returned_fee; RELEASE SAVEPOINT returned_fee');
+   const snapshot=JSON.stringify(await context());
+   await assert.rejects(()=>atomic(()=>update({query(sql,args){if(sql.startsWith('UPDATE himoto.orders SET draft_payload='))throw Error('Injected final-write failure');return db.query(sql,args);}},1,143,{...base,revision:(JSON.parse(snapshot)).history.find(t=>t.id===51).revision,request_id:randomUUID(),amount:'1250000'})),/Injected/);
+   assert.equal(JSON.stringify(await context()),snapshot);
+   checks.push('A failure after changing receipt metadata and line fees rolls back every change');
+   await db.query("INSERT INTO himoto.orders(id,store_id,contract_number,order_status,total,pid) VALUES(2,31,'QA-FOREIGN','renting','900000',0)");
+   for(const table of tables)await c.query(`GRANT SELECT,INSERT,UPDATE,DELETE ON pg_temp.qa_rc_${table} TO himoto_scoped`);
+   await c.query('GRANT SELECT ON pg_temp.qa_rc_staff_account_attribution TO himoto_scoped');
+   await c.query('ALTER TABLE qa_rc_orders ENABLE ROW LEVEL SECURITY; CREATE POLICY qa_rc_scope ON qa_rc_orders TO himoto_scoped USING(store_id=23) WITH CHECK(store_id=23)');
+   await c.query('ALTER TABLE qa_rc_order_vehicle_details ENABLE ROW LEVEL SECURITY; CREATE POLICY qa_rc_line ON qa_rc_order_vehicle_details TO himoto_scoped USING(EXISTS(SELECT 1 FROM qa_rc_orders o WHERE o.id=order_id)) WITH CHECK(EXISTS(SELECT 1 FROM qa_rc_orders o WHERE o.id=order_id))');
+   await c.query('SET LOCAL ROLE himoto_scoped');
+   assert.equal((await edit({amount:'1300000'})).total_amount,1900000);
+   await assert.rejects(()=>atomic(()=>update(db,2,143,{...base,request_id:randomUUID()})),e=>e.status===404);
+   await c.query('RESET ROLE');
+   checks.push('PostgreSQL RLS permits corrections on the contract branch and hides foreign contracts without weakening policies');
+  }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
+ }
+ console.log(JSON.stringify({passed:checks.length,checks},null,2));
 }
-
-main().catch(err => {
-  console.error('Test failed:', err);
-  process.exitCode = 1;
-}).finally(() => process.exit());
+main().catch(e=>{console.error(e);process.exitCode=1;});

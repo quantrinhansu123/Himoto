@@ -72,8 +72,8 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,versions}',$1::jsonb)::json WHERE id=1`,[JSON.stringify([currentRenewal])]);
   await notices.queueContractNotification(db,1,'renewal','renewal:1:2',143,'renewal-2',renewal);
   const corrected=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');
-  // Period starts at voucher created_at (29/10 19:00 VN), not the prior due date.
-  assert(corrected.text.includes('29/10/2026 19:00 - 05/11/2026 10:00 (6 ngày 15 giờ)'),corrected.text);
+  // A late receipt does not move the start of the rental coverage.
+  assert(corrected.text.includes('01/11/2026 10:00 - 05/11/2026 10:00 (4 ngày)'),corrected.text);
   assert(!corrected.text.includes('01/12/2026'));
   const unrelated=(await content.notificationPayload(db,1,'renewal',143,['renewal-2'],currentRenewal));
   assert.deepEqual(unrelated.payment_amounts.renewal,[],'An older receipt reusing v2 but with another period is not payment for the current renewal');

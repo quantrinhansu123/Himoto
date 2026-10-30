@@ -13,6 +13,8 @@ export interface ContractTelegramEvent {
   can_resume?:boolean;delivery_attachment_count?:number;delivery_error_description?:string;
   delivery_contract_code?:string;
   destination_label?:string;
+  renewal_receipt_ids?:number[];
+  renewal_receipts_cancelled?:boolean;
   attachments?:{slot:string;mime_type:string;label:string}[];
   deliveries?:ContractTelegramDelivery[];
 }

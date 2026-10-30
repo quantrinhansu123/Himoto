@@ -69,7 +69,7 @@ async function main() {
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });
     const c = await load(path.join(root, 'lib/server/himoto-database')).himotoPool.connect();
-    const tables = ['management_contract_payments', 'order_vehicle_details', 'transactions', 'orders', 'banks', 'cash', 'users', 'vehicles'];
+    const tables = ['management_record_photos','management_contract_notifications','management_contract_payments', 'order_vehicle_details', 'transactions', 'orders', 'banks', 'cash', 'users', 'vehicles'];
     let failAfterIncome = false;
     const proxy = { query: async (sql, params) => {
       let rewritten = sql;
@@ -87,6 +87,8 @@ async function main() {
     const count = async table => Number((await c.query(`SELECT count(*) n FROM pg_temp.qa_payment_${table}`)).rows[0].n);
     try {
       await c.query('BEGIN');
+      await c.query('CREATE TEMP TABLE qa_payment_management_contract_notifications (LIKE himoto.management_contract_notifications INCLUDING DEFAULTS) ON COMMIT DROP');
+      await c.query('CREATE TEMP TABLE qa_payment_management_record_photos (LIKE himoto.management_record_photos INCLUDING DEFAULTS) ON COMMIT DROP');
       for (const table of ['orders', 'transactions', 'banks', 'cash', 'order_vehicle_details', 'vehicles']) {
         await c.query(`CREATE TEMP TABLE qa_payment_${table} (LIKE himoto.${table} INCLUDING DEFAULTS) ON COMMIT DROP`);
         await c.query(`ALTER TABLE qa_payment_${table} ALTER COLUMN id DROP DEFAULT`);
@@ -220,6 +222,9 @@ async function main() {
       const beforeHistory=await server.readPaymentContext(proxy,1),lineRevision=(await c.query('SELECT xmin::text AS revision FROM qa_payment_order_vehicle_details WHERE id=101')).rows[0].revision;
       const historicalInput={request_id:randomUUID(),item_id:101,item_revision:lineRevision,order_revision:beforeHistory.revision,occurred_at:'2026-01-09T10:00',return_at:'2026-01-12T10:00',amount:'300',note:'',receipt:{method:'cash',account_id:1,paid_at:'2026-01-09T11:00'}};
       const collector=load(path.join(root,'lib/server/contract-renewal-collection'));
+      const savedVersions=(await c.query('SELECT draft_payload FROM qa_payment_orders WHERE id=1')).rows[0].draft_payload?.management_composer?.versions;
+      const billVersion=await load(path.join(root,'lib/server/contract-renewal-version')).nextContractRenewalVersion(proxy,1,savedVersions);
+      await c.query("INSERT INTO qa_payment_management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,$1,'image/jpeg',$2,143)",[ `renewal-${billVersion}-document-1`,Buffer.from([255,216,255])]);
       const historicalResult=await transaction(()=>collector.renewContractAndCollect(proxy,1,143,historicalInput));
       assert.equal(historicalResult.payment.context.status,'completed');assert.equal(historicalResult.payment.context.total_amount,1300);assert.equal(historicalResult.payment.context.paid_amount,1300);
       assert.equal((await c.query('SELECT completed_at FROM qa_payment_order_vehicle_details WHERE id=101')).rows[0].completed_at.toISOString(),'2026-01-15T03:00:00.000Z');

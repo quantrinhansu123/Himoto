@@ -34,7 +34,9 @@ export interface ContractPayment {
   id: number; type: 'in' | 'out'; deposit: boolean; amount: number; paid_at: string; method: string; account: string;
   note: string; actor: string;
   revision?: string; payment_method?: PaymentMethod; account_id?: number;
-  renewal?: { version?: number; license: string; vehicle_name: string; before_return_at?: string; return_at: string } | null;
+  status?: 'approved' | 'cancelled';
+  renewal_fee_editable?: boolean;
+  renewal?: { version?: number; amount?: number; license: string; vehicle_name: string; before_return_at?: string; return_at: string } | null;
 }
 export interface RenewalLine { item_id: number; item_revision: string; return_at: string; amount: string }
 export interface RenewalItem {
@@ -62,7 +64,7 @@ export interface PaymentInput {
 export interface PaymentResult { context: PaymentContext; transaction_id: number; replayed: boolean; company_transfer: boolean }
 export interface RenewalPaymentCorrection {
   request_id: string; transaction_id: number; revision: string; method?: PaymentMethod; account_id?: number; reason: string;
-  before_return_at?: string; return_at?: string;
+  before_return_at?: string; return_at?: string; amount?: string;
 }
 export async function correctRenewalPayment(id: number, input: RenewalPaymentCorrection): Promise<PaymentContext> {
   const response = await fetch(`/api/auth/order/car-rental/${id}/renewal-payments`, {

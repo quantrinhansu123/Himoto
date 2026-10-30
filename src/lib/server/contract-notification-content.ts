@@ -32,9 +32,9 @@ type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
 const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
 const renewalClock=(value:string|null|undefined)=>value?`${day(value)} ${new Date(value).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}`:'Chưa đối chiếu';
-/** Telegram span starts at the renewal voucher time (occurred/created), not the prior due date. */
+/** Rental coverage and receipt creation are separate clocks, including late collections. */
 export function renewalPeriodStart(item:Pick<RenewalNotice,'created_at'|'before_return_at'>&{occurred_at?:string}) {
-  return item.occurred_at || item.created_at || item.before_return_at || null;
+  return item.before_return_at || item.occurred_at || item.created_at || null;
 }
 const renewalPeriod=(item:RenewalNotice)=>`${renewalClock(renewalPeriodStart(item))} - ${renewalClock(item.return_at)}`;
 export function sameRenewalPeriod(a:Partial<RenewalNotice>,b:Partial<RenewalNotice>) {
