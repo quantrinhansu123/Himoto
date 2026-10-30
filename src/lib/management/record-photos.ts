@@ -93,8 +93,11 @@ export async function saveRecordPhotos(entity: PhotoEntity, id: number, photos: 
 }
 
 export async function prepareRecordVideo(file:File):Promise<File> {
-  file=normalizeVideoFile(file);
-  if(!file.type.startsWith('video/')||file.size>MAX_VIDEO_BYTES||!file.size)throw new Error('Chọn video MP4/MOV/WebM, tối đa 45 MB.');
+  if(!file.size)throw new Error('Video đang trống hoặc ứng dụng chưa cấp quyền đọc. Lưu video vào Ảnh/Tệp rồi chọn lại; nếu vẫn lỗi, mở web bằng Safari hoặc Chrome.');
+  if(file.size>MAX_VIDEO_BYTES)throw new Error(`Video có dung lượng ${(file.size/1024/1024).toLocaleString('vi-VN',{maximumFractionDigits:1})} MB, vượt giới hạn 45 MB. Chọn video nhỏ hơn hoặc quay ngắn lại.`);
+  try { file=await normalizeVideoFile(file); }
+  catch { throw new Error('Không đọc được video từ ứng dụng này. Lưu video vào Ảnh/Tệp rồi chọn lại, hoặc mở web bằng Safari/Chrome.'); }
+  if(!file.type.startsWith('video/'))throw new Error('Không nhận diện được video. Chọn tệp MP4/MOV/WebM từ Ảnh/Tệp; nếu đang mở trong ứng dụng khác, mở web bằng Safari hoặc Chrome rồi chọn lại.');
   const url=URL.createObjectURL(file);
   const video=document.createElement('video');video.preload='metadata';video.playsInline=true;
   try {
