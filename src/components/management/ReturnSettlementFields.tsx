@@ -46,14 +46,18 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
       .catch(()=>{if(!controller.signal.aborted)setHasRefundQr(false);});
     return()=>controller.abort();
   },[orderId,qrSlots,photoVersion,qrVersion,itemKey]);
-  const due=context?.remaining===null?null:Math.max((context?.total_amount||0)+netAdjustment-(context?.paid_amount||0),0);
+  // remaining (đã thu đủ) + điều chỉnh trả xe; làm tròn để khỏi chặn hoàn cọc vì lệch số lẻ / thu dư trên UI.
+  const dueRaw=context?.remaining===null||context===undefined?null:Number(context.remaining)+Number(netAdjustment||0);
+  const due=dueRaw===null||!Number.isFinite(dueRaw)?(context?.remaining===null?null:0):Math.max(Math.round(dueRaw),0);
   const debt=due===null?0:Math.max(due-lateFee-repairFee,0);
   const rentalRefundable=context?returnRentalRefundable(context,earlyDiscount,netAdjustment):0;
   const limits:Record<Kind,number>=useMemo(()=>({late_fee:lateFee,repair_fee:repairFee,rental_debt:debt,refund:context?.deposit_held||0,rental_refund:rentalRefundable}),[lateFee,repairFee,debt,context?.deposit_held,rentalRefundable]);
   const amount=(kind:Kind)=>rows[kind]?.amount??String(limits[kind]);
   // A waived fee must not leave a previously selected, now-hidden receipt in the submission.
   const collected=(['late_fee','repair_fee','rental_debt'] as const).reduce((sum,kind)=>sum+(limits[kind]>0&&rows[kind]?.enabled?Number(amount(kind))||0:0),0);
-  const refundAllowed=closes&&due!==null&&collected===due;
+  // Còn 0 đ (hoặc đã tick thu đủ/dư) → cho «Đã hoàn cọc»; không đòi collected === due từng đồng.
+  const outstanding=due===null?null:Math.max(due-collected,0);
+  const refundAllowed=closes&&outstanding===0;
   const refundRow=rows.refund;
   const refundMethod=refundRow?.method||'cash';
   const accountValue=normalizeRefundAccount(recipient.recipient_account);
@@ -77,8 +81,10 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
   const refundReady=!refundRow?.enabled || (refundAllowed && refundAccountReady && !refundAmountError && refundRecipientReady);
   const refundBlockReason=!refundAllowed&&(context?.deposit_held||0)>0
     ? (!closes ? 'Chưa thể tick đã hoàn cọc vì hợp đồng còn xe chưa nhận lại.'
-      : due===null ? 'Chưa thể tick đã hoàn cọc: cần đối chiếu tiền hợp đồng.'
-      : `Chưa thể tick «Đã hoàn cọc»: còn ${formatMoney(Math.max(due-collected,0))} chưa ghi nhận thu. Công nợ tiền thuê có thể gồm phí gia hạn; gia hạn ngày trả không đồng nghĩa đã thu tiền. Nếu đã nhận, tick khoản thu phía trên rồi hoàn cọc; nếu chưa thu thì chọn chưa hoàn cọc.`)
+      : outstanding===null ? 'Chưa thể tick đã hoàn cọc: cần đối chiếu tiền hợp đồng.'
+      : outstanding>0
+        ? `Chưa thể tick «Đã hoàn cọc»: còn ${formatMoney(outstanding)} chưa ghi nhận thu. Công nợ tiền thuê có thể gồm phí gia hạn; gia hạn ngày trả không đồng nghĩa đã thu tiền. Nếu đã nhận, tick khoản thu phía trên rồi hoàn cọc; nếu chưa thu thì chọn chưa hoàn cọc.`
+        : '')
     : '';
   const recipientError='Số tài khoản khách nhận chưa hợp lệ. Kiểm tra lại số tài khoản hoặc để trống nếu chưa có.';
   const blockReason=!context ? error||'Đang tải số tiền và tài khoản thu / hoàn…'
@@ -167,7 +173,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
     {refundRow?.enabled&&!refundReady&&!refundAmountError&&<p className="mg-field-error" role="alert">{blockReason}</p>}
     {rentalRefundRow?.enabled&&!rentalRefundReady&&!rentalRefundAmountError&&<p className="mg-field-error" role="alert">{blockReason}</p>}
     {(rentalRefundable>0||rentalRefundRow?.enabled)&&<p role="status"><strong>Tổng tiền đã chọn hoàn: {formatMoney(depositRefundSelected+rentalRefundSelected)}</strong> · Hoàn cọc: {formatMoney(depositRefundSelected)} · Hoàn thuê trả sớm: {formatMoney(rentalRefundSelected)}</p>}
-    <p role="status">Đã chọn thu: {formatMoney(collected)} · Còn phải thu sau lượt này: {due===null?'Chưa đối chiếu':formatMoney(Math.max(due-collected,0))}</p>
+    <p role="status">Đã chọn thu: {formatMoney(collected)} · Còn phải thu sau lượt này: {outstanding===null?'Chưa đối chiếu':formatMoney(outstanding)}</p>
     <p>Chuyển khoản hoàn tiền: đối chiếu QR / số tài khoản khách trong ảnh hồ sơ. Ứng dụng ghi nhận khoản đã hoàn, không tự chuyển tiền ngân hàng.</p>
   </section>;
 }
