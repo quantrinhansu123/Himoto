@@ -108,9 +108,12 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
   const canCollect = canReceiveRenewal && (feeReady(amount) + feeReady(extraAmount) + feeReady(outsideAmount)) > 0;
   const collecting = canCollect && collect;
-  // Coverage extends the previous deadline. Receipt/entry dates never move it.
-  const renewalBase = dueStamp;
-  const baseMs = dueMs;
+  // Hẹn trả mới = ngày lập phiếu (thu tiền / giờ hiện tại / ngày nhập bổ sung) + số ngày/giờ gia hạn.
+  const voucherAt = backfill && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(occurredAt) ? occurredAt
+    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt) ? paidAt
+    : '';
+  const renewalBase = voucherAt;
+  const baseMs = voucherAt ? Date.parse(`${voucherAt}:00+07:00`) : NaN;
 
   useEffect(() => {
     if (durationSource!=='count'||!selected || !Number.isFinite(baseMs) || unitCount < 1 || unitCount > maxCount) return;
@@ -143,8 +146,9 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const nextTotal = total === null ? null : total + fee;
   const returnMs = returnAt ? new Date(`${returnAt}:00+07:00`).getTime() : NaN;
   const validReturn = Number.isFinite(returnMs) && Number.isFinite(baseMs) && returnMs > baseMs
-    && durationUnits!==null && durationUnits<=maxCount && (!Number.isFinite(dueMs) || returnMs > dueMs);
+    && durationUnits!==null && durationUnits<=maxCount;
   const stillOverdue = !selected?.completed_at&&validReturn && returnMs < Date.now();
+  const endsBeforePriorDue = validReturn && Number.isFinite(dueMs) && returnMs < dueMs;
   const previewPaid = collecting ? (paid === null ? null : paid + fee) : paid;
   const previewRemaining = nextTotal === null || previewPaid === null ? null : Math.max(nextTotal - previewPaid, 0);
 
@@ -152,7 +156,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     event.preventDefault();
     if (!selected || saving || photosPending) return;
     if(backfill&&(!validBackfillTime(occurredAt))){setError('Nhập ngày giờ gia hạn thực tế hợp lệ.');return;}
-    if (!validReturn) { setError(!Number.isFinite(baseMs) ? 'Chưa có hẹn trả hiện tại hợp lệ để tính gia hạn.' : 'Ngày trả mới phải sau ngày hẹn trả hiện tại.'); return; }
+    if (!validReturn) { setError(!Number.isFinite(baseMs) ? 'Chưa có ngày lập phiếu / ngày thu hợp lệ để tính gia hạn.' : 'Ngày trả mới phải sau ngày lập phiếu gia hạn.'); return; }
+    if (endsBeforePriorDue) { setError('Ngày trả mới không được sớm hơn hẹn trả hiện tại của hợp đồng.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
     if (extraAmount && !/^(0|[1-9]\d{0,12})$/.test(extraAmount)) { setError('Phí khác phải là số tiền nguyên VNĐ.'); return; }
     if (otherFee > 0 && !extraName.trim()) { setError('Nhập tên khoản phí khác (ví dụ Phí VAT).'); return; }
@@ -255,10 +260,10 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
             <label>{unit === 'day' ? 'Đơn giá / ngày (VNĐ)' : 'Đơn giá / giờ (VNĐ)'}<input inputMode="numeric" value={groupAmount(rateInput)} placeholder={unit === 'day' ? 'Nhập đơn giá/ngày' : 'Nhập đơn giá/giờ'}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,9}$/.test(raw)) { setRateInput(raw); setAmountTouched(false); } }} /></label>
             <label className="mg-field-wide">Ngày trả mới (24h)<DateTime24Controls id="renewal-return-at" label="Ngày trả mới" value={returnAt} onChange={changeReturnAt} error={Boolean(returnAt) && !validReturn} />
-              <small>Cộng số {unit === 'day' ? 'ngày' : 'giờ'} gia hạn từ hẹn trả cũ{Number.isFinite(dueMs) ? `: ${formatDateTime(dueStamp)}` : ' (chưa có ngày hợp lệ)'}. Ngày thu tiền không đổi kỳ gia hạn.</small></label>
+              <small>Cộng số {unit === 'day' ? 'ngày' : 'giờ'} gia hạn từ ngày lập phiếu{Number.isFinite(baseMs) ? `: ${formatDateTime(`${renewalBase}:00+07:00`)}` : ''}. Có thể sửa tay ngày trả và số tiền.</small></label>
             <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn" aria-describedby={underchargeWarning?'renewal-fee-warning':undefined}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
-              <small>{rate ? `Gợi ý từ hẹn trả cũ → trả mới: ${formatMoney(rate)} × ${durationUnits || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(expectedFee||0)}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
+              <small>{rate ? `Gợi ý từ ngày lập phiếu → trả mới: ${formatMoney(rate)} × ${durationUnits || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(expectedFee||0)}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
             {underchargeWarning&&<p id="renewal-fee-warning" className="mg-field-error" role="alert">{underchargeWarning} Cảnh báo được lưu vào lịch sử; vẫn lưu được theo thỏa thuận.</p>}
             {amountMismatch&&!underchargeWarning&&expectedFee!==null&&<p role="status">Phí gia hạn cao hơn gợi ý {formatMoney(expectedFee)}; phần chênh sẽ được lưu trong lịch sử.</p>}
             <div className="mg-field-wide mg-renewal-extra">
@@ -302,6 +307,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
             <label className="mg-field-wide">{backfill?'Lý do nhập bổ sung':'Ghi chú'}<textarea aria-label={backfill?'Lý do nhập bổ sung':'Ghi chú'} rows={2} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} placeholder="Lý do gia hạn, thỏa thuận với khách…" /></label>
           </fieldset>
           {stillOverdue && <p className="mg-field-error">Ngày trả mới vẫn ở quá khứ, hợp đồng sẽ tiếp tục quá hạn.</p>}
+          {endsBeforePriorDue && <p className="mg-field-error" role="status">Ngày trả mới ({formatDateTime(`${returnAt}:00+07:00`)}) sớm hơn hẹn trả hiện tại ({formatDateTime(dueStamp)}). Tăng số {unit === 'day' ? 'ngày' : 'giờ'} hoặc sửa ngày trả mới.</p>}
           <dl className="mg-payment-totals">
             <div><dt>Tiền thuê hợp đồng</dt><dd>{total === null ? 'Chưa đối chiếu' : formatMoney(total)}{fee > 0 && nextTotal !== null && <> → <strong>{formatMoney(nextTotal)}</strong></>}</dd></div>
             <div><dt>Đã thu tiền thuê</dt><dd>{paid === null ? '—' : formatMoney(paid)}{collecting && fee > 0 && previewPaid !== null && <> → <strong>{formatMoney(previewPaid)}</strong></>}</dd></div>
@@ -320,7 +326,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
         </>}
       </div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={close}>{done ? 'Đóng' : 'Hủy'}</button>
-        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn || (collecting && (!hasPaymentEvidence || !paymentContext || !accounts.length || (outsideFee > 0 && method === 'company_transfer')))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : collecting ? 'Lưu gia hạn và thu tiền' : 'Lưu gia hạn'}</button>}</div>
+        {!done && selected && <button type="submit" className="mg-button mg-button-primary" disabled={loading || saving || photosPending || !validReturn || endsBeforePriorDue || (collecting && (!hasPaymentEvidence || !paymentContext || !accounts.length || (outsideFee > 0 && method === 'company_transfer')))} title={collecting && !hasPaymentEvidence ? 'Lưu ảnh bill chuyển khoản hoặc tiền mặt trước khi hoàn thành gia hạn đã thu tiền.' : endsBeforePriorDue ? 'Ngày trả mới không được sớm hơn hẹn trả hiện tại.' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <CalendarPlus size={16} />}{saving ? 'Đang lưu…' : collecting ? 'Lưu gia hạn và thu tiền' : 'Lưu gia hạn'}</button>}</div>
     </form>
   </Dialog>;
 }

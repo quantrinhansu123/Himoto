@@ -7,7 +7,7 @@ const {readContractTelegram,saveContractTelegram}=load(path.join(root,'lib/serve
 const {contractNotificationText,renewalPeriodStart}=load(path.join(root,'lib/server/contract-notification-content'));
 global.fetch=async()=>{throw Error('External requests are forbidden in this suite');};
 const base={request_id:randomUUID(),transaction_id:51,revision:'1',reason:'QA correction'};
-const renewal={kind:'renewal',version:2,item_id:101,amount:900000,license:'QA-1',vehicle_name:'Vision QA',created_at:'2026-10-29T11:00:00Z',before_return_at:'2026-10-23T08:04:00Z',return_at:'2026-10-27T08:04:00Z'};
+const renewal={kind:'renewal',version:2,item_id:101,amount:900000,license:'QA-1',vehicle_name:'Vision QA',created_at:'2026-10-23T08:04:00Z',before_return_at:'2026-10-20T08:04:00Z',return_at:'2026-10-27T08:04:00Z'};
 async function main(){
  const checks=[];
  for(const amount of ['-1','01','1.5','1e6','10000000000000',1200000,null])assert.throws(()=>parse({...base,amount}));
@@ -15,10 +15,10 @@ async function main(){
  assert.throws(()=>parse({...base,account_id:1}));
  for(const before_return_at of ['2026-02-30T10:00:00Z','2026-10-23T08:00','',null])assert.throws(()=>parse({...base,before_return_at}));
  assert.throws(()=>parse({...base,before_return_at:renewal.return_at,return_at:renewal.before_return_at}));
- assert.equal(renewalPeriodStart(renewal),renewal.before_return_at);
+ assert.equal(renewalPeriodStart(renewal),renewal.created_at);
  const text=contractNotificationText('renewal',{renewal,photos:[],at:renewal.created_at});
  assert(text.includes('23/10/2026 15:04 - 27/10/2026 15:04 (4 ngày)'));
- checks.push('Strict fee/routing/date inputs; late collection preserves the four-day rental period');
+ checks.push('Strict fee/routing/date inputs; Telegram gia hạn spans voucher date → new return');
  if(process.argv.includes('--live-temp')){
   require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
   const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database'));

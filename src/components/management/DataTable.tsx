@@ -169,7 +169,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (isActiveContract && onVehicleChange) actions.push({ key: 'vehicle', label: 'Đổi xe', title: 'Đổi xe trực tiếp trên hợp đồng', icon: <Bike size={16} />, onSelect: () => onVehicleChange(row) });
     if (isContract && onBatteryRent && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'battery', label: 'Thuê pin / sạc', title: 'Lập hợp đồng thuê pin hoặc sạc theo khách và xe của hợp đồng này', icon: <BatteryCharging size={16} />, onSelect: () => onBatteryRent(row) });
     if (isContract && onOwnershipTerms && !['draft', 'cancelled'].includes(row.status) && requiresOwnershipApproval(row.rental_type) && canEditOwnershipTerms(accessUser)) {
-      actions.push({ key: 'ownership-terms', label: 'Sửa thời hạn / mức đóng', title: 'Sửa loại hợp đồng thuê sở hữu (6/12/24 tháng,…) và số tiền đóng mỗi ngày', icon: <Pencil size={16} />, onSelect: () => onOwnershipTerms(row) });
+      actions.push({ key: 'ownership-terms', label: 'Sửa loại HĐ / mức đóng ngày', title: 'Sửa loại hợp đồng thuê sở hữu (6/9/12/18/24 tháng) và cập nhật số tiền đóng mỗi ngày', icon: <Pencil size={16} />, onSelect: () => onOwnershipTerms(row) });
     }
     if (isContract && (canEditContract && row.status!=='draft' && canEditIssuedContract(accessUser,row.store_id) || canEditDraft && row.status === 'draft')) {
       const approve=row.status==='draft'&&requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type);

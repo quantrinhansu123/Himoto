@@ -68,11 +68,11 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   const linkedEvents=(await telegram.readContractTelegram(db,1,143,admin)).state.events.filter(e=>e.kind==='renewal');
   assert.equal(linkedEvents.length,1);assert.equal(linkedEvents[0].key,'renewal:1:2');assert(linkedEvents[0].text.includes('CK TK cá nhân'));
   await c.query('SAVEPOINT stale_renewal_snapshot');
-  const currentRenewal={...renewal,kind:'renewal',created_at:'2026-10-29T12:00:00Z',before_return_at:'2026-11-01T10:00:00+07:00',return_at:'2026-11-05T10:00:00+07:00'};
+  const currentRenewal={...renewal,kind:'renewal',created_at:'2026-11-01T03:00:00Z',before_return_at:'2026-10-28T10:00:00+07:00',return_at:'2026-11-05T10:00:00+07:00'};
   await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,versions}',$1::jsonb)::json WHERE id=1`,[JSON.stringify([currentRenewal])]);
   await notices.queueContractNotification(db,1,'renewal','renewal:1:2',143,'renewal-2',renewal);
   const corrected=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');
-  // A late receipt does not move the start of the rental coverage.
+  // Telegram gia hạn spans ngày lập phiếu → hẹn trả mới.
   assert(corrected.text.includes('01/11/2026 10:00 - 05/11/2026 10:00 (4 ngày)'),corrected.text);
   assert(!corrected.text.includes('01/12/2026'));
   const unrelated=(await content.notificationPayload(db,1,'renewal',143,['renewal-2'],currentRenewal));

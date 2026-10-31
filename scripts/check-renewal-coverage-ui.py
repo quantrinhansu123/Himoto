@@ -1,4 +1,4 @@
-"""New renewal coverage, early/late receipt dates and multi-bike payment regression.
+"""Renewal coverage from voucher/receipt time + day count.
 All business endpoints are fixtures. No customer writes or Telegram calls.
 """
 from pathlib import Path
@@ -23,6 +23,7 @@ def context():
 def returnable():
     data=original_returnable()
     data['scheduled_start_at']='2026-01-01T00:00:00Z'
+    if 'due' in state: data['scheduled_return_at']=state['due']
     data['daily_price']=state.get('rate',130000)
     return data
 
@@ -43,12 +44,19 @@ def mock(route):
         body=req.post_data_json
         assert body['purpose']=='renewal' and body['paid_at']=='2026-10-29T08:10',body
         assert body['amount']=='1720000',body
-        assert [(row['item_id'],row['return_at'],row['amount']) for row in body['items']]==[(101,'2026-10-19T16:30','520000'),(102,'2026-10-27T15:04','1200000')],body
+        # Both bikes share voucher date 2026-10-29T08:10 + 4 days.
+        assert [(row['item_id'],row['return_at'],row['amount']) for row in body['items']]==[(101,'2026-11-02T08:10','520000'),(102,'2026-11-02T08:10','1200000')],body
         writes.append(dict(path=endpoint,body=body))
         state.update(renewed=True,total=2000000,paid=2000000)
         route.fulfill(json=dict(status='success',data=dict(context=context(),transaction_id=99001,replayed=False,company_transfer=False)))
         return
     original_mock(route)
+
+def set_voucher(form, day, hour='08', minute='10'):
+    form.get_by_label('Đã thực nhận tiền gia hạn',exact=False).check()
+    form.locator('#renewal-paid-at').fill(day)
+    form.get_by_label('Giờ ngày giờ thu (24h)',exact=True).select_option(hour)
+    form.get_by_label('Phút ngày giờ thu',exact=True).select_option(minute)
 
 with sync_playwright() as pw:
     for engine,width in [('chromium',1440),('webkit',390)]:
@@ -67,35 +75,39 @@ with sync_playwright() as pw:
             dialog=page.get_by_role('dialog',name='Thanh toán hợp đồng QA-32031' if payment else 'Gia hạn · QA-32031',exact=True)
             expect(dialog).to_be_visible()
             return page,dialog
-        for case,due,count,rate,end,fee,unit in [
-            ('late-seven-days','2026-10-15T09:30:00Z',7,130000,'2026-10-22T16:30',910000,'day'),
-            ('late-four-days','2026-10-23T08:04:00Z',4,300000,'2026-10-27T15:04',1200000,'day'),
-            ('early-seven-days','2026-11-15T09:30:00Z',7,130000,'2026-11-22T16:30',910000,'day'),
-            ('hour-midnight','2026-10-23T16:30:00Z',2,130000,'2026-10-24T01:30',40000,'hour')]:
-            state.clear();state.update(collect=False,rate=rate,expected_end=end,expected_fee=fee)
-            old_end=due
+        # Voucher 2026-10-25 + N days → expected end. Prior due only for display/guard.
+        for case,due,count,rate,voucher,end,fee,unit in [
+            ('late-four-days','2026-10-25T08:00:00+07:00',4,300000,'2026-10-25','2026-10-29T08:10',1200000,'day'),
+            ('late-seven-days','2026-10-15T09:30:00Z',7,130000,'2026-10-22','2026-10-29T08:10',910000,'day'),
+            ('early-guard','2026-11-15T09:30:00Z',7,130000,'2026-11-15','2026-11-22T08:10',910000,'day'),
+            ('hour-from-voucher','2026-10-23T01:00:00+07:00',2,20000,'2026-10-23','2026-10-23T10:10',40000,'hour')]:
+            state.clear();state.update(collect=False,rate=rate,due=due,expected_end=end,expected_fee=fee)
             page,form=open_form()
-            if unit=='hour':form.get_by_label('Gia hạn theo',exact=False).select_option('hour')
-            form.get_by_label('Số ngày gia hạn' if unit=='day' else 'Số giờ gia hạn',exact=True).fill(str(count))
+            if unit=='hour':
+                form.get_by_label('Gia hạn theo',exact=False).select_option('hour')
+                set_voucher(form,voucher,'08','10')
+                form.get_by_label('Số giờ gia hạn',exact=True).fill(str(count))
+            else:
+                set_voucher(form,voucher,'08','10')
+                form.get_by_label('Số ngày gia hạn',exact=True).fill(str(count))
             def assert_quote():
                 expect(form.locator('#renewal-return-at')).to_have_value(end[:10])
                 expect(form.get_by_label('Giờ ngày trả mới (24h)',exact=True)).to_have_value(end[11:13])
                 expect(form.get_by_label('Phút ngày trả mới',exact=True)).to_have_value(end[14:16])
                 expect(form.get_by_label('Chi phí gia hạn (VNĐ)',exact=False)).to_have_value(f'{fee:,}'.replace(',','.'))
             assert_quote()
-            form.get_by_label('Đã thực nhận tiền gia hạn',exact=False).check()
-            form.locator('#renewal-paid-at').fill('2026-10-29')
-            form.get_by_label('Giờ ngày giờ thu (24h)',exact=True).select_option('08')
-            form.get_by_label('Phút ngày giờ thu',exact=True).select_option('10')
-            assert_quote()
+            # Changing unpaid/received keeps the same voucher stamp → same coverage.
             form.get_by_label('Chưa nhận tiền',exact=False).check()
             assert_quote()
+            form.get_by_label('Đã thực nhận tiền gia hạn',exact=False).check()
+            assert_quote()
+            form.get_by_label('Chưa nhận tiền',exact=False).check()
             form.get_by_role('button',name='Lưu gia hạn',exact=True).click()
             expect(form).to_contain_text('Đã lưu gia hạn')
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth+1')
-            checks.append(dict(browser=engine,case=case,coverage=end,fee=fee,receiptDateIndependent=True))
+            checks.append(dict(browser=engine,case=case,coverage=end,fee=fee,fromVoucher=True))
             page.close()
-        state.clear();state.update(payment=True,collect=True)
+        state.clear();state.update(payment=True,collect=True,due='2026-10-15T09:30:00Z')
         page,form=open_form(payment=True)
         form.get_by_label('Nghiệp vụ',exact=True).select_option('renewal')
         form.get_by_role('checkbox',name='Wave QA · QA-333.71',exact=True).check()
@@ -109,14 +121,7 @@ with sync_playwright() as pw:
         expect(form.get_by_label('Tiền gia hạn QA-333.72',exact=True)).to_have_value('1.200.000')
         form.get_by_role('button',name='Thu tiền và gia hạn',exact=True).click()
         expect(form).to_contain_text('Đã xác nhận gia hạn')
-        checks.append(dict(browser=engine,case='multi-bike-payment',separateDeadlines=True,receiptDateIndependent=True))
-        page.close()
-        state.clear();state.update(collect=False)
-        old_end=None
-        page,form=open_form()
-        expect(form).to_contain_text('chưa có ngày hợp lệ')
-        expect(form.get_by_role('button',name='Lưu gia hạn',exact=True)).to_be_disabled()
-        checks.append(dict(browser=engine,case='missing-deadline',noReceiptDateFallback=True))
+        checks.append(dict(browser=engine,case='multi-bike-payment',sharedVoucherDeadline=True))
         page.close()
         ctx.unroute_all(behavior='ignoreErrors');ctx.close();browser.close()
 assert not errors,errors

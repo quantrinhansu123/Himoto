@@ -54,16 +54,16 @@ export function OwnershipTermsEditor({id,code,onSaved,startOpen=false,onClose}:{
       setError(cause instanceof Error?cause.message:'Chưa xác nhận được kết quả lưu. Tải lại để kiểm tra.');
     }finally{busy.current=false;setSaving(false);}
   }
-  return <>{!startOpen&&<button type="button" className="mg-button" onClick={()=>setOpen(true)}><Pencil size={16}/>Sửa thời hạn / mức đóng</button>}
-    {open&&<Dialog title={`Thời hạn & mức đóng thuê sở hữu · ${code}`} onClose={close}>
+  return <>{!startOpen&&<button type="button" className="mg-button" onClick={()=>setOpen(true)}><Pencil size={16}/>Sửa loại HĐ / mức đóng ngày</button>}
+    {open&&<Dialog title={`Loại hợp đồng & mức đóng ngày · ${code}`} onClose={close}>
       <form onSubmit={save}><div className="mg-dialog-body">
-        <p>Bổ sung thông tin đúng của hợp đồng cũ để theo dõi. Thời hạn này là phân loại sở hữu; các kỳ thuê, khoản phải thu và phiếu thu / chi đã ghi giữ nguyên.</p>
-        {loading&&<p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải thời hạn và mức đóng…</p>}
+        <p>Nhân viên thuê sở hữu chọn loại hợp đồng (6 / 9 / 12 / 18 / 24 tháng) và cập nhật số tiền đóng mỗi ngày. Phiếu thu / chi đã ghi giữ nguyên; mức đóng mới dùng cho theo dõi và gợi ý phí.</p>
+        {loading&&<p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải loại hợp đồng và mức đóng…</p>}
         {!loading&&data&&<>
           {!data.can_edit&&<p role="status">Hợp đồng này chưa phát hành hoặc đã hủy, không thể cập nhật ở đây.</p>}
           <fieldset className="mg-form-grid" disabled={saving||uncertain||!data.can_edit}>
-            <div className="mg-field"><label htmlFor="ownership-correct-term">Thời hạn thuê sở hữu</label><select id="ownership-correct-term" value={term} onChange={event=>setTerm(event.target.value as OwnershipTerm)}>{OWNERSHIP_TERMS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-            <div className="mg-field"><label htmlFor="ownership-correct-daily">Số tiền đóng mỗi ngày (VNĐ)</label><input id="ownership-correct-daily" inputMode="numeric" autoComplete="off" value={daily.replace(/\B(?=(\d{3})+(?!\d))/g,'.')} onChange={event=>setDaily(event.target.value.replace(/[.\s,]/g,''))} aria-describedby="ownership-correct-daily-help"/><small id="ownership-correct-daily-help">Mức đóng cho toàn bộ xe của hợp đồng trong một ngày. Để trống nếu chưa xác định.</small></div>
+            <div className="mg-field"><label htmlFor="ownership-correct-term">Loại hợp đồng (thời hạn)</label><select id="ownership-correct-term" value={term} onChange={event=>setTerm(event.target.value as OwnershipTerm)}>{OWNERSHIP_TERMS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+            <div className="mg-field"><label htmlFor="ownership-correct-daily">Số tiền đóng mỗi ngày (VNĐ)</label><input id="ownership-correct-daily" inputMode="numeric" autoComplete="off" value={daily.replace(/\B(?=(\d{3})+(?!\d))/g,'.')} onChange={event=>setDaily(event.target.value.replace(/[.\s,]/g,''))} aria-describedby="ownership-correct-daily-help"/><small id="ownership-correct-daily-help">Nhập lại mức đóng/ngày sau khi đổi loại hợp đồng. Mức này áp dụng cho toàn bộ xe đang thuê của hợp đồng.</small></div>
           </fieldset>
           {data.history.length>0&&<details><summary>Lịch sử sửa thời hạn và mức đóng ({data.history.length})</summary><ul>{data.history.map((edit,index)=><li key={index}><strong>{formatDateTime(edit.at)} · {edit.actor}</strong><p>Thời hạn: {termLabel(edit.before.term_months)} → {termLabel(edit.after.term_months)}<br/>Mức đóng: {dailyLabel(edit.before.daily_amount)} → {dailyLabel(edit.after.daily_amount)}</p></li>)}</ul></details>}
         </>}

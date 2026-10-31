@@ -63,9 +63,16 @@ export async function updateOwnershipTerms(db:Database,id:number,user:Permission
   const current=await state(db,row,user),before={term_months:current.term_months,daily_amount:current.daily_amount};
   if(before.term_months===after.term_months&&before.daily_amount===after.daily_amount)return current;
   const at=new Date().toISOString(),actor_name=String((user as PermissionAccount&{name?:string}).name||`#${user.id}`);
-  const updated={...payload,management_composer:{...composer,profile:{...object(composer.profile),ownership_term_months:after.term_months},
+  const draft={...object(composer.draft),ownership_term_months:after.term_months,
+    ...(after.daily_amount!==null?{unit_price:String(after.daily_amount)}:{})};
+  const updated={...payload,management_composer:{...composer,draft,profile:{...object(composer.profile),ownership_term_months:after.term_months},
     ownership_terms:{version:1,daily_amount:after.daily_amount,updated_at:at,updated_by:user.id},
     ownership_terms_history:[...history,{at,actor_id:user.id,actor_name,request_id:input.request_id,hash,before,after}]}};
   const result=await db.query('UPDATE himoto.orders SET draft_payload=$2::json,updated_at=now() WHERE id=$1 RETURNING xmin::text AS revision',[id,JSON.stringify(updated)]);
+  // Một xe: đồng bộ mức đóng/ngày lên dòng xe. Nhiều xe giữ mức tổng trên ownership_terms / unit_price.
+  if(after.daily_amount!==null){
+    const lines=await db.query('SELECT id FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL AND completed_at IS NULL ORDER BY id',[id]);
+    if(lines.rowCount===1)await db.query(`UPDATE himoto.order_vehicle_details SET substitute_unit_price=$2,type='day',updated_at=now() WHERE id=$1`,[lines.rows[0].id,after.daily_amount]);
+  }
   return state(db,{...row,draft_payload:updated,revision:result.rows[0].revision},user);
 }
