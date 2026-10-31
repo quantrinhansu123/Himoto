@@ -150,7 +150,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
   if (locked.rows[0].revision !== input.revision) throw new ContractPaymentError('Hợp đồng hoặc tổng đã thu đã thay đổi. Tải lại thông tin trước khi thanh toán.', 409);
   if(locked.rows[0].draft_payload?.management_composer?.lifecycle?.hold_completion&&!refund)throw new ContractPaymentError('Hợp đồng đã hoàn thành sau bảo lưu; không thu thêm nợ hoặc kỳ thuê đã miễn.',409);
   if(locked.rows[0].draft_payload?.management_composer?.lifecycle?.active_hold&&extra)throw new ContractPaymentError('Hợp đồng đang bảo lưu; không cộng phí mới. Chỉ ghi nhận thanh toán khoản đã phát sinh trước bảo lưu.',409);
-  const context = await readPaymentContext(client, id);
+  let context = await readPaymentContext(client, id);
   const amount = Number(input.amount);
   if (refund) {
     if (!canAddExtraReceipt(context.status)) throw new ContractPaymentError('Không trả cọc cho hợp đồng nháp hoặc đã hủy.', 409);
@@ -165,7 +165,14 @@ export async function recordContractPayment(client: Database, id: number, actorI
     if (extra && context.total_amount + amount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tiền hợp đồng vượt giới hạn lưu trữ.', 409);
     // Linked renewal receipts are capped by the saved renewal fee below — not by rental remaining
     // (already-paid / overpaid contracts can still have remaining 0 after the fee is added to total).
-    if (!renewal && !extra && input.renewal_version === undefined && amount > context.remaining) throw new ContractPaymentError('Số tiền thu vượt phần còn thiếu của hợp đồng.', 409);
+    // Thu vượt phần còn thiếu: cộng phần dư vào tổng HĐ rồi ghi phiếu (số gợi ý / còn thiếu không khóa số khách đã trả).
+    if (!renewal && !extra && input.renewal_version === undefined && amount > context.remaining) {
+      const excess = amount - context.remaining;
+      if (!Number.isSafeInteger(excess) || context.total_amount + excess > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Số tiền thu vượt giới hạn lưu trữ của hợp đồng.', 409);
+      await client.query(`UPDATE himoto.orders SET total=(COALESCE(NULLIF(BTRIM(total::text),''),'0')::numeric+$2)::text, updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, [id, excess]);
+      context = await readPaymentContext(client, id);
+      if (context.remaining === null || amount > context.remaining) throw new ContractPaymentError('Không cộng được phần thu dư vào tiền hợp đồng. Cần đối chiếu tổng phí trước khi ghi nhận.', 409);
+    }
   }
   const lines = renewal ? renewalLines(input) : [];
   let renewalPayload: Record<string, unknown> | null = null;
