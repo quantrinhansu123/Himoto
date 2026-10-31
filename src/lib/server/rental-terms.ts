@@ -53,7 +53,15 @@ export async function updateRentalTerms(db:Database,id:number,user:PermissionAcc
   if(d.completed_at&&Date.parse(utc(input.start_at))>=new Date(d.completed_at).getTime())throw new RentalTermsError('Ngày thuê phải trước thời điểm thực tế đã trả xe.',409);
   const datesChanged=local(d.rent_at)!==input.start_at||local(d.return_at)!==input.end_at;
   if(datesChanged){
-    const conflicts=await db.query('SELECT vehicle_id FROM himoto.vehicle_history_conflict_ids($1::bigint[],$2,$3::timestamptz,$4::timestamptz)',[[Number(d.vehicle_id)],id,utc(input.start_at),d.completed_at||utc(input.end_at)]);
+    let conflicts;
+    try{
+      conflicts=await db.query('SELECT vehicle_id FROM himoto.vehicle_history_conflict_ids($1::bigint[],$2,$3::timestamptz,$4::timestamptz)',[[Number(d.vehicle_id)],id,utc(input.start_at),d.completed_at||utc(input.end_at)]);
+    }catch(cause){
+      const message=cause instanceof Error?cause.message:'';
+      if(/not authorized/i.test(message)||(cause&&typeof cause==='object'&&'code' in cause&&String((cause as {code?:unknown}).code)==='42501'))
+        throw new RentalTermsError('Không kiểm tra được lịch xe trên cơ sở đang đăng nhập. Cần chạy SQL cập nhật hàm kiểm tra chồng lịch (sửa tiền/ngày thuê HĐ đang thuê).',403);
+      throw cause;
+    }
     if(conflicts.rowCount)throw new RentalTermsError('Khoảng thuê sau sửa chồng với lượt thuê khác của xe. Đối chiếu lịch xe trước khi lưu.',409);
   }
   const sending=await db.query("SELECT 1 FROM himoto.management_contract_notifications WHERE order_id=$1 AND status IN ('pending','sending','unknown') LIMIT 1",[id]);
