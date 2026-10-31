@@ -3,7 +3,6 @@ import type { PoolClient } from 'pg';
 import type { ReturnInput,ReturnReceipt,ReturnResult,ReturnSettlement } from '@/lib/management/contract-returns';
 import { normalizeRefundAccount,validRefundAccount } from '@/lib/management/return-refunds';
 import { ContractReturnError,recordVehicleReturn } from './contract-returns';
-import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
 import { parseContractPayment,readPaymentContext,recordContractPayment } from './contract-payments';
 type Database=Pick<PoolClient,'query'>;
 export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
@@ -84,14 +83,7 @@ export async function settleReturnedItems(db:Database,actor:number,settlement:Re
     for(const receipt of settlement.receipts){
       const label={late_fee:'Thu phí quá hạn',repair_fee:'Thu phí sửa chữa',rental_debt:'Thu công nợ thuê xe'}[receipt.kind];
       const {kind,...payment}=receipt;
-      const amount=Number(receipt.amount);
-      // Thu dư so với phần còn thiếu: cộng thêm vào tổng HĐ rồi ghi phiếu thu (không chặn nghiệp vụ trả xe).
-      if(context.remaining!==null&&context.total_amount!==null&&amount>context.remaining){
-        const excess=amount-context.remaining;
-        if(!Number.isSafeInteger(excess)||context.total_amount+excess>MAX_PAYMENT_AMOUNT)throw new ContractReturnError('Số tiền thu vượt giới hạn lưu trữ của hợp đồng.',409);
-        await db.query(`UPDATE himoto.orders SET total=(COALESCE(NULLIF(BTRIM(total::text),''),'0')::numeric+$2)::text, updated_at=now() WHERE id=$1 AND deleted_at IS NULL`,[settlement.order_id,excess]);
-        context=await readPaymentContext(db,settlement.order_id);
-      }
+      // Thu vượt / HĐ đã thu dư: recordContractPayment cho ghi nhận và đóng, không chặn tại đây.
       const paid=await recordContractPayment(db,settlement.order_id,actor,{...payment,revision:context.revision,note:`${label}_${context.code}`});
       context=paid.context;transactionIds.push(paid.transaction_id);
       await db.query('UPDATE himoto.transactions SET name=$2 WHERE id=$1',[paid.transaction_id,kind==='late_fee'?'order:return_late':kind==='repair_fee'?'order:return_repair':'order:payment']);

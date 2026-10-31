@@ -165,13 +165,16 @@ export async function recordContractPayment(client: Database, id: number, actorI
     if (extra && context.total_amount + amount > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Tiền hợp đồng vượt giới hạn lưu trữ.', 409);
     // Linked renewal receipts are capped by the saved renewal fee below — not by rental remaining
     // (already-paid / overpaid contracts can still have remaining 0 after the fee is added to total).
-    // Thu vượt phần còn thiếu: cộng phần dư vào tổng HĐ rồi ghi phiếu (số gợi ý / còn thiếu không khóa số khách đã trả).
+    // Thu vượt / HĐ đã thu dư (pid >> total, còn thiếu = 0): vẫn cho ghi phiếu và đóng HĐ.
+    // Nếu còn thiếu > 0 thì cộng phần dư vào total; nếu vẫn không đủ remaining (đã thu dư sẵn) thì bỏ qua chặn.
     if (!renewal && !extra && input.renewal_version === undefined && amount > context.remaining) {
-      const excess = amount - context.remaining;
-      if (!Number.isSafeInteger(excess) || context.total_amount + excess > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Số tiền thu vượt giới hạn lưu trữ của hợp đồng.', 409);
-      await client.query(`UPDATE himoto.orders SET total=(COALESCE(NULLIF(BTRIM(total::text),''),'0')::numeric+$2)::text, updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, [id, excess]);
-      context = await readPaymentContext(client, id);
-      if (context.remaining === null || amount > context.remaining) throw new ContractPaymentError('Không cộng được phần thu dư vào tiền hợp đồng. Cần đối chiếu tổng phí trước khi ghi nhận.', 409);
+      if (context.remaining > 0) {
+        const excess = amount - context.remaining;
+        if (!Number.isSafeInteger(excess) || context.total_amount + excess > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Số tiền thu vượt giới hạn lưu trữ của hợp đồng.', 409);
+        await client.query(`UPDATE himoto.orders SET total=(COALESCE(NULLIF(BTRIM(total::text),''),'0')::numeric+$2)::text, updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, [id, excess]);
+        context = await readPaymentContext(client, id);
+      }
+      // remaining === 0 (hoặc vẫn < amount vì đã thu dư): ghi nhận số khách trả, không chặn đóng.
     }
   }
   const lines = renewal ? renewalLines(input) : [];
