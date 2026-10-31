@@ -17,7 +17,6 @@ import { SelectedVehicleGps,useSelectedVehicleGps } from './SelectedVehicleGps';
 import { ReturnedVehicleStatus } from './ReturnedVehicleStatus';
 import { ReturnedContractEditor } from './ReturnedContractEditor';
 
-const localNow = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 16);
 const localMillis = (value: string) => new Date(`${value}:00+07:00`).getTime();
 const digits = (value: string) => value.replace(/\D/g, '').slice(0, 13);
 
@@ -51,8 +50,9 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   const [settlements,setSettlements]=useState<Record<number,ReturnSettlement|undefined>>({});
   const [settlementBlocks,setSettlementBlocks]=useState<Record<number,string>>({});
   const searchGeneration=useRef(0);
-  const [returnedAt, setReturnedAt] = useState(localNow);
-  const lastValidReturnedAt=useRef(returnedAt);
+  // Để trống — NV phải nhập giờ khách trả thực tế (có thể trả trước, giờ mới điền).
+  const [returnedAt, setReturnedAt] = useState('');
+  const lastValidReturnedAt=useRef('');
   const [hourlyRate, setHourlyRate] = useState(String(DEFAULT_LATE_HOURLY_RATE));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -166,8 +166,11 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     if(settlementBlocked){
       showProblem(settlementBlockReason,'.mg-return-settlement[aria-busy="true"], .mg-return-settlement[data-blocked="true"]');return;
     }
+    if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(returnedAt)||!Number.isFinite(localMillis(returnedAt))){
+      showProblem('Nhập ngày giờ khách trả thực tế (có thể khác giờ hiện tại nếu khách trả trước, giờ mới điền).','#contract-returned-at');return;
+    }
     if(invalid){
-      showProblem('Nhập phí quá hạn thực tế; có thể nhập 0đ khi không thu.','.mg-return-line-adjust input');return;
+      showProblem('Nhập phí quá hạn thực tế; có thể nhập 0đ khi không thu. Số gợi ý chỉ để tham khảo.','.mg-return-line-adjust input');return;
     }
     savingRef.current=true;setSaving(true); setError('');
     try {
@@ -246,10 +249,15 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {rows.length > 0 && !openRows.length && <><p role="status">Tất cả xe trong hợp đồng đã được trả. Chọn Sửa hồ sơ trả xe để sửa giờ trả, phí, thu/hoàn và ảnh/video; chọn Gửi Telegram để kiểm tra và gửi hồ sơ đã lưu.</p><details className="mg-return-options"><summary>Xem tình trạng xe sau trả</summary><ReturnedVehicleStatus rows={rows}/></details></>}
         {openRows.length > 0 && <>
           {!contractCode && <p className="mg-composer-hint">Tìm theo một biển số sẽ hiện các xe cùng hợp đồng. Tích chọn những xe khách thực tế trả.</p>}
-          <h3>1. Xe trả và phí thực tế</h3><details className="mg-return-options"><summary>Giờ trả và cách tính phí gợi ý</summary><div className="mg-form-grid mg-contract-grid-two">
-            <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ trả thực tế (24h)</label><DateTime24Controls id="contract-returned-at" label="Ngày giờ trả thực tế" value={returnedAt} onChange={changeReturnedAt} /></div>
-            <div className="mg-field"><label htmlFor="contract-return-hourly-rate">Đơn giá trễ / giờ (VNĐ)</label><input id="contract-return-hourly-rate" type="number" min={0} max={5000000} step={1} placeholder="20000" value={hourlyRate} onBlur={()=>{if(!hourlyRate)setHourlyRate(String(DEFAULT_LATE_HOURLY_RATE));}} onChange={event => setHourlyRate(event.target.value)} /><small>Chỉ dùng tính gợi ý. Giữ nguyên phí thực tế đã nhập, kể cả 0đ.</small></div>
-          </div></details>
+          <h3>1. Xe trả và phí thực tế</h3>
+          <div className="mg-form-grid mg-contract-grid-two">
+            <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ khách trả thực tế (24h)<span aria-hidden="true"> *</span></label>
+              <DateTime24Controls id="contract-returned-at" label="Ngày giờ khách trả thực tế" value={returnedAt} onChange={changeReturnedAt} />
+              <small>Nhập đúng giờ khách trả xe. Không lấy giờ hiện tại nếu khách đã trả trước mà giờ mới ghi nhận.</small>
+              {!returnedAt&&<p className="mg-field-error" role="status">Chưa nhập ngày giờ khách trả.</p>}
+            </div>
+            <div className="mg-field"><label htmlFor="contract-return-hourly-rate">Đơn giá trễ / giờ — gợi ý (VNĐ)</label><input id="contract-return-hourly-rate" type="number" min={0} max={5000000} step={1} placeholder="20000" value={hourlyRate} onBlur={()=>{if(!hourlyRate)setHourlyRate(String(DEFAULT_LATE_HOURLY_RATE));}} onChange={event => setHourlyRate(event.target.value)} /><small>Chỉ để gợi ý phí quá hạn. Số tiền thu thực tế nhập bên dưới / mục thu phí, không bắt khớp gợi ý.</small></div>
+          </div>
           <div className="mg-return-lines" role="group" aria-label="Xe cần trả">
             {openRows.map(row => {
               const id = String(row.item_id);
@@ -263,7 +271,8 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
                 {line && <div className="mg-return-line-adjust">
                   <span>{estimate.late ? lateText(estimate.minutes, estimate.hours,estimate.lateDays) : estimate.early ? `Trả sớm${estimate.unusedDays ? ` ${estimate.unusedDays} ngày` : ' (dưới 1 ngày)'}${row.daily_price ? ` · ${formatMoney(row.daily_price)}/ngày` : ''}` : 'Trả đúng hạn · không điều chỉnh'}</span>
                   {estimate.missingDayPrice&&line?.override===undefined&&<p className="mg-field-error">Chưa có giá ngày để gợi ý. Nhập phí thực tế, kể cả 0đ.</p>}
-                  {(estimate.late || estimate.early) && <label>{estimate.late ? 'Phí quá hạn thực tế (+)' : 'Giảm tiền thuê do trả sớm (−)'}
+                  {estimate.late&&estimate.suggested>0&&<p className="mg-composer-hint" role="status">Gợi ý phí quá hạn: {formatMoney(estimate.suggested)} — chỉ tham khảo, nhập đúng số khách đã trả.</p>}
+                  {(estimate.late || estimate.early) && <label>{estimate.late ? 'Phí quá hạn ghi vào hợp đồng (+)' : 'Giảm tiền thuê do trả sớm (−)'}
                     <input type="text" inputMode="numeric" aria-label={estimate.late?`Phí quá hạn thực tế ${row.license}`:`Giảm doanh thu ${row.license}`} value={value} onChange={event => {setOverrides(current => ({ ...current, [id]: digits(event.target.value) }));setError('');}} /><span>VNĐ</span></label>}
                   {estimate.late&&<button type="button" className="mg-button" onClick={()=>{setOverrides(current=>({...current,[id]:'0'}));setError('');}}>Không thu phí quá hạn (0đ)</button>}
                 </div>}
@@ -286,7 +295,11 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
-      <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}{settlementBlocked&&!photosPending&&<span role="status">{settlementBlockReason}</span>}<button type="button" className="mg-button" disabled={saving} onClick={close}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && <button type="button" onClick={event => { const invalidField=event.currentTarget.form?.querySelector<HTMLInputElement>('input:invalid,select:invalid');if(invalidField){for(let parent=invalidField.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;invalidField.reportValidity();return;}void submit(); }} className="mg-button mg-button-primary" disabled={loading || saving || !lines.length || settlementBlocked || photosPending}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>}</div>
+      <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}{!returnedAt&&lines.length>0&&!photosPending&&<span role="status">Chưa nhập ngày giờ khách trả thực tế.</span>}{settlementBlocked&&!photosPending&&returnedAt&&<span role="status">{settlementBlockReason}</span>}<button type="button" className="mg-button" disabled={saving} onClick={close}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && (()=>{
+        const confirmBlocked=loading||saving||!lines.length||settlementBlocked||photosPending||!returnedAt;
+        const confirmTitle=!lines.length?'Chọn xe cần trả.':!returnedAt?'Nhập ngày giờ khách trả thực tế trước khi xác nhận.':photosPending?'Ảnh/video chưa lưu vào hồ sơ.':settlementBlocked?settlementBlockReason:undefined;
+        return <button type="button" onClick={event => { const invalidField=event.currentTarget.form?.querySelector<HTMLInputElement>('input:invalid,select:invalid');if(invalidField){for(let parent=invalidField.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;invalidField.reportValidity();return;}void submit(); }} className="mg-button mg-button-primary" disabled={confirmBlocked} title={confirmTitle}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <RotateCcw size={16} />}{saving ? 'Đang ghi nhận…' : `Xác nhận trả ${lines.length} xe`}</button>;
+      })()}</div>
     </form>
   </Dialog>;
 }

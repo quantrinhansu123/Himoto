@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { ReturnInput,ReturnReceipt,ReturnResult,ReturnSettlement } from '@/lib/management/contract-returns';
 import { normalizeRefundAccount,validRefundAccount } from '@/lib/management/return-refunds';
 import { ContractReturnError,recordVehicleReturn } from './contract-returns';
+import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
 import { parseContractPayment,readPaymentContext,recordContractPayment } from './contract-payments';
 type Database=Pick<PoolClient,'query'>;
 export function parseReturnSettlements(value:unknown):ReturnSettlement[] {
@@ -77,14 +78,20 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
 
 /** Shared by first return and a correction, after the caller establishes the exact current balance. */
 export async function settleReturnedItems(db:Database,actor:number,settlement:ReturnSettlement,selected:number[],returns:ReturnResult[]) {
-    const late=returns.reduce((sum,result)=>sum+(result.late_fee||0),0),repair=returns.reduce((sum,result)=>sum+(result.repair_fee||0),0);
+    // Phí quá hạn / sửa chữa trên hợp đồng chỉ là gợi ý — số thu thực tế có thể khác; không khóa khớp.
     let context=await readPaymentContext(db,settlement.order_id);
-    const debt=Math.max((context.remaining||0)-late-repair,0),limits={late_fee:late,repair_fee:repair,rental_debt:debt};
-    for(const kind of ['late_fee','repair_fee','rental_debt'] as const)if(settlement.receipts.filter(receipt=>receipt.kind===kind).reduce((sum,receipt)=>sum+Number(receipt.amount),0)>limits[kind])throw new ContractReturnError('Khoản thu vượt phí quá hạn, sửa chữa hoặc công nợ cần thu.',409);
     const transactionIds:number[]=[];
     for(const receipt of settlement.receipts){
       const label={late_fee:'Thu phí quá hạn',repair_fee:'Thu phí sửa chữa',rental_debt:'Thu công nợ thuê xe'}[receipt.kind];
       const {kind,...payment}=receipt;
+      const amount=Number(receipt.amount);
+      // Thu dư so với phần còn thiếu: cộng thêm vào tổng HĐ rồi ghi phiếu thu (không chặn nghiệp vụ trả xe).
+      if(context.remaining!==null&&context.total_amount!==null&&amount>context.remaining){
+        const excess=amount-context.remaining;
+        if(!Number.isSafeInteger(excess)||context.total_amount+excess>MAX_PAYMENT_AMOUNT)throw new ContractReturnError('Số tiền thu vượt giới hạn lưu trữ của hợp đồng.',409);
+        await db.query(`UPDATE himoto.orders SET total=(COALESCE(NULLIF(BTRIM(total::text),''),'0')::numeric+$2)::text, updated_at=now() WHERE id=$1 AND deleted_at IS NULL`,[settlement.order_id,excess]);
+        context=await readPaymentContext(db,settlement.order_id);
+      }
       const paid=await recordContractPayment(db,settlement.order_id,actor,{...payment,revision:context.revision,note:`${label}_${context.code}`});
       context=paid.context;transactionIds.push(paid.transaction_id);
       await db.query('UPDATE himoto.transactions SET name=$2 WHERE id=$1',[paid.transaction_id,kind==='late_fee'?'order:return_late':kind==='repair_fee'?'order:return_repair':'order:payment']);
