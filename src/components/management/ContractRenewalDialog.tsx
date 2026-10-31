@@ -108,12 +108,9 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
   const canCollect = canReceiveRenewal && (feeReady(amount) + feeReady(extraAmount) + feeReady(outsideAmount)) > 0;
   const collecting = canCollect && collect;
-  // Hẹn trả mới = ngày lập phiếu (thu tiền / giờ hiện tại / ngày nhập bổ sung) + số ngày/giờ gia hạn.
-  const voucherAt = backfill && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(occurredAt) ? occurredAt
-    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt) ? paidAt
-    : '';
-  const renewalBase = voucherAt;
-  const baseMs = voucherAt ? Date.parse(`${voucherAt}:00+07:00`) : NaN;
+  // Hẹn trả mới = hẹn trả hiện tại + số ngày/giờ gia hạn (không cộng từ ngày lập phiếu).
+  const renewalBase = dueStamp;
+  const baseMs = dueMs;
 
   useEffect(() => {
     if (durationSource!=='count'||!selected || !Number.isFinite(baseMs) || unitCount < 1 || unitCount > maxCount) return;
@@ -156,7 +153,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     event.preventDefault();
     if (!selected || saving || photosPending) return;
     if(backfill&&(!validBackfillTime(occurredAt))){setError('Nhập ngày giờ gia hạn thực tế hợp lệ.');return;}
-    if (!validReturn) { setError(!Number.isFinite(baseMs) ? 'Chưa có ngày lập phiếu / ngày thu hợp lệ để tính gia hạn.' : 'Ngày trả mới phải sau ngày lập phiếu gia hạn.'); return; }
+    if (!validReturn) { setError(!Number.isFinite(baseMs) ? 'Chưa có hẹn trả hiện tại để tính gia hạn.' : 'Ngày trả mới phải sau hẹn trả hiện tại.'); return; }
     if (endsBeforePriorDue) { setError('Ngày trả mới không được sớm hơn hẹn trả hiện tại của hợp đồng.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
     if (extraAmount && !/^(0|[1-9]\d{0,12})$/.test(extraAmount)) { setError('Phí khác phải là số tiền nguyên VNĐ.'); return; }
@@ -260,10 +257,10 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
             <label>{unit === 'day' ? 'Đơn giá / ngày (VNĐ)' : 'Đơn giá / giờ (VNĐ)'}<input inputMode="numeric" value={groupAmount(rateInput)} placeholder={unit === 'day' ? 'Nhập đơn giá/ngày' : 'Nhập đơn giá/giờ'}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,9}$/.test(raw)) { setRateInput(raw); setAmountTouched(false); } }} /></label>
             <label className="mg-field-wide">Ngày trả mới (24h)<DateTime24Controls id="renewal-return-at" label="Ngày trả mới" value={returnAt} onChange={changeReturnAt} error={Boolean(returnAt) && !validReturn} />
-              <small>Cộng số {unit === 'day' ? 'ngày' : 'giờ'} gia hạn từ ngày lập phiếu{Number.isFinite(baseMs) ? `: ${formatDateTime(`${renewalBase}:00+07:00`)}` : ''}. Có thể sửa tay ngày trả và số tiền.</small></label>
+              <small>Cộng số {unit === 'day' ? 'ngày' : 'giờ'} gia hạn từ hẹn trả hiện tại{Number.isFinite(baseMs) ? `: ${formatDateTime(renewalBase)}` : ''}. Có thể sửa tay ngày trả và số tiền.</small></label>
             <label className="mg-field-wide">Chi phí gia hạn (VNĐ)<input inputMode="numeric" value={groupAmount(amount)} placeholder="Nhập chi phí gia hạn" aria-describedby={underchargeWarning?'renewal-fee-warning':undefined}
               onChange={event => { const raw = event.target.value.replaceAll('.', ''); if (/^\d{0,13}$/.test(raw)) { setAmount(raw); setAmountTouched(true); } }} />
-              <small>{rate ? `Gợi ý từ ngày lập phiếu → trả mới: ${formatMoney(rate)} × ${durationUnits || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(expectedFee||0)}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
+              <small>{rate ? `Gợi ý từ hẹn trả hiện tại → trả mới: ${formatMoney(rate)} × ${durationUnits || 0} ${unit === 'day' ? 'ngày' : 'giờ'} = ${formatMoney(expectedFee||0)}. Có thể sửa.` : 'Nhập đơn giá để có gợi ý, hoặc nhập thẳng chi phí gia hạn.'}</small></label>
             {underchargeWarning&&<p id="renewal-fee-warning" className="mg-field-error" role="alert">{underchargeWarning} Cảnh báo được lưu vào lịch sử; vẫn lưu được theo thỏa thuận.</p>}
             {amountMismatch&&!underchargeWarning&&expectedFee!==null&&<p role="status">Phí gia hạn cao hơn gợi ý {formatMoney(expectedFee)}; phần chênh sẽ được lưu trong lịch sử.</p>}
             <div className="mg-field-wide mg-renewal-extra">

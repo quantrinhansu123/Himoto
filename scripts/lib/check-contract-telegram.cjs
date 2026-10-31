@@ -72,8 +72,8 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   await c.query(`UPDATE ${schema}.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,versions}',$1::jsonb)::json WHERE id=1`,[JSON.stringify([currentRenewal])]);
   await notices.queueContractNotification(db,1,'renewal','renewal:1:2',143,'renewal-2',renewal);
   const corrected=(await telegram.readContractTelegram(db,1,143,admin)).state.events.find(e=>e.key==='renewal:1:2');
-  // Telegram gia hạn spans ngày lập phiếu → hẹn trả mới.
-  assert(corrected.text.includes('01/11/2026 10:00 - 05/11/2026 10:00 (4 ngày)'),corrected.text);
+  // Telegram gia hạn spans hẹn trả cũ → hẹn trả mới.
+  assert(corrected.text.includes('28/10/2026 10:00 - 05/11/2026 10:00 (8 ngày)'),corrected.text);
   assert(!corrected.text.includes('01/12/2026'));
   const unrelated=(await content.notificationPayload(db,1,'renewal',143,['renewal-2'],currentRenewal));
   assert.deepEqual(unrelated.payment_amounts.renewal,[],'An older receipt reusing v2 but with another period is not payment for the current renewal');

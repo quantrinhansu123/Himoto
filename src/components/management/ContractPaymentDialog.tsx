@@ -92,10 +92,10 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
   const renewable = Boolean(context && !context.billing && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
   const days = /^\d+$/.test(renewalDays) && Number(renewalDays) >= 1 && Number(renewalDays) <= 365 ? Number(renewalDays) : 0;
   const suggestedFor = (item: RenewalItem) => item.daily_price && days ? String(item.daily_price * days) : '';
-  // Hẹn trả mới = ngày lập phiếu thu + số ngày gia hạn (không cộng từ hẹn trả cũ).
-  const renewalVoucherAt = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt) ? paidAt : '';
+  // Hẹn trả mới = hẹn trả hiện tại của xe + số ngày gia hạn.
   const renewalLines = (context?.items || []).filter(item => String(item.id) in picks).map(item => {
-    return { item, amount: picks[String(item.id)], return_at: days && renewalVoucherAt ? addRentalDuration(renewalVoucherAt, days, 'day') : '' };
+    const due = item.return_at || '';
+    return { item, amount: picks[String(item.id)], return_at: days && due ? addRentalDuration(due, days, 'day') : '' };
   });
   const renewalTotal = renewalLines.reduce((sum, line) => sum + (/^\d+$/.test(line.amount) ? Number(line.amount) : 0), 0);
   function togglePick(item: RenewalItem, checked: boolean) {

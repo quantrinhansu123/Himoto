@@ -15,10 +15,10 @@ async function main(){
  assert.throws(()=>parse({...base,account_id:1}));
  for(const before_return_at of ['2026-02-30T10:00:00Z','2026-10-23T08:00','',null])assert.throws(()=>parse({...base,before_return_at}));
  assert.throws(()=>parse({...base,before_return_at:renewal.return_at,return_at:renewal.before_return_at}));
- assert.equal(renewalPeriodStart(renewal),renewal.created_at);
+ assert.equal(renewalPeriodStart(renewal),renewal.before_return_at);
  const text=contractNotificationText('renewal',{renewal,photos:[],at:renewal.created_at});
- assert(text.includes('23/10/2026 15:04 - 27/10/2026 15:04 (4 ngày)'));
- checks.push('Strict fee/routing/date inputs; Telegram gia hạn spans voucher date → new return');
+ assert(text.includes('20/10/2026 15:04 - 27/10/2026 15:04 (7 ngày)'));
+ checks.push('Strict fee/routing/date inputs; Telegram gia hạn spans prior due → new return');
  if(process.argv.includes('--live-temp')){
   require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
   const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database'));
