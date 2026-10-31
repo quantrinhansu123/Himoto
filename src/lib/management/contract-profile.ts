@@ -2,8 +2,16 @@ import type { ContractDraft } from './contract-document';
 import { contractNumberError, paperContractNumber } from './contract-number';
 import { hasPermission, isAdminAccount, type PermissionAccount } from './permissions';
 
-export function canEditIssuedContract(account:PermissionAccount|null|undefined,storeId:unknown) {
-  return isAdminAccount(account) || Boolean(hasPermission(account,'contracts.draft') && Number(account?.store_id)>0 && Number(account?.store_id)===Number(storeId));
+/** Nhân viên có contracts.draft được sửa HĐ đã phát hành; phạm vi cơ sở do RLS / phân quyền xem quyết định. */
+export function canEditIssuedContract(account:PermissionAccount|null|undefined,_storeId?:unknown) {
+  return isAdminAccount(account) || hasPermission(account,'contracts.draft');
+}
+
+/** null = được sửa. Lý do tiếng Việt khi nút Sửa bị chặn. */
+export function contractIssuedEditBlockReason(account:PermissionAccount|null|undefined,_storeId?:unknown) {
+  if (canEditIssuedContract(account,_storeId)) return null;
+  if (!account) return 'Đăng nhập để sửa hợp đồng.';
+  return 'Tài khoản chưa được cấp quyền Lập / sửa hợp đồng.';
 }
 export function issuedContractNumberError(value:string) {
   return contractNumberError(value) || (!value.trim() || !paperContractNumber(value) ? 'Nhập số HĐ giấy, không dùng mã NHAP-/EXCEL-.' : null);

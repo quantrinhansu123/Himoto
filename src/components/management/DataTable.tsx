@@ -11,7 +11,7 @@ import { isRemindableContract } from '@/lib/management/debt-reminders';
 import { GpsEvidence } from './GpsEvidence';
 import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
 import { ContractRentalPeriod } from './ContractRentalPeriod';
-import { canEditIssuedContract } from '@/lib/management/contract-profile';
+import { canEditIssuedContract, contractIssuedEditBlockReason } from '@/lib/management/contract-profile';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
 import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
@@ -171,9 +171,14 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (isContract && onOwnershipTerms && !['draft', 'cancelled'].includes(row.status) && requiresOwnershipApproval(row.rental_type) && canEditOwnershipTerms(accessUser)) {
       actions.push({ key: 'ownership-terms', label: 'Sửa loại HĐ / mức đóng ngày', title: 'Sửa loại hợp đồng thuê sở hữu (6/9/12/18/24 tháng) và cập nhật số tiền đóng mỗi ngày', icon: <Pencil size={16} />, onSelect: () => onOwnershipTerms(row) });
     }
-    if (isContract && (canEditContract && row.status!=='draft' && canEditIssuedContract(accessUser,row.store_id) || canEditDraft && row.status === 'draft')) {
-      const approve=row.status==='draft'&&requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type);
-      actions.push({key:approve?'approve':'edit',label:approve?'Duyệt hợp đồng':row.status==='draft'?'Tiếp tục sửa bản nháp':'Sửa hợp đồng',icon:approve?<ShieldCheck size={16}/>:<Pencil size={16}/>,onSelect:()=>onEdit(row)});
+    if (isContract && row.status === 'draft' && canEditDraft) {
+      const approve=requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type);
+      actions.push({key:approve?'approve':'edit',label:approve?'Duyệt hợp đồng':'Tiếp tục sửa bản nháp',icon:approve?<ShieldCheck size={16}/>:<Pencil size={16}/>,onSelect:()=>onEdit(row)});
+    } else if (isContract && row.status !== 'draft' && canEditContract) {
+      const editBlock=contractIssuedEditBlockReason(accessUser,row.store_id);
+      actions.push(editBlock
+        ? {key:'edit',label:'Sửa hợp đồng',icon:<Pencil size={16}/>,disabled:true,title:editBlock,onSelect:()=>{}}
+        : {key:'edit',label:'Sửa hợp đồng',icon:<Pencil size={16}/>,onSelect:()=>onEdit(row)});
     }
     if (!isContract && canEdit) actions.push({ key: 'edit', label: 'Chỉnh sửa', icon: <Pencil size={16} />, onSelect: () => onEdit(row) });
     if (isContract && onClone) actions.push({ key: 'clone', label: cloningId === row.id ? 'Đang sao chép…' : 'Sao chép hợp đồng', disabled: cloningId != null,

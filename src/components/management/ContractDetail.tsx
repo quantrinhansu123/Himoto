@@ -27,7 +27,7 @@ import { ContractReviewNotice } from './ContractReviewNotice';
 import { ContractReceiptSummary } from './ContractReceiptSummary';
 import { OwnershipTermsEditor,OwnershipTermsSummary } from './OwnershipTermsEditor';
 import { requiresOwnershipApproval } from '@/lib/management/contract-approval';
-import { canEditIssuedContract } from '@/lib/management/contract-profile';
+import { contractIssuedEditBlockReason } from '@/lib/management/contract-profile';
 import { ContractEditDialog } from '@/components/contracts/ContractEditDialog';
 import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
 import { lifecycleDisplayStatus,loadContractLifecycle,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
@@ -294,9 +294,19 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
     {recoveryOpen&&<BadDebtRecoveryDialog id={row.id} code={row.code} onClose={()=>setRecoveryOpen(false)} onRecovered={()=>{setLifecycleReload(value=>value+1);void loadContractLifecycle(row.id).then(applyLifecycle).catch(()=>{});}}/>}
     <div className="mg-dialog-footer">{row.status==='deposit_contract'&&can('contracts.finalize')&&<><button type="button" className="mg-button" onClick={onPrint}>Bổ sung hồ sơ hợp đồng cọc</button>{onHandover&&<button type="button" className="mg-button mg-button-primary" onClick={onHandover}><Bike size={16}/>Giao xe đã đặt cọc</button>}<button type="button" className="mg-button" onClick={()=>setNoShow(true)}>Khách không đến nhận xe</button></>}<button type="button" className="mg-button" onClick={onClose}>Đóng</button>
       {editing&&<ContractEditDialog row={row} onClose={()=>setEditing(false)} onSaved={code=>{setEditing(false);invalidateData(['contracts']);notify(`Đã lưu hợp đồng ${code}.`);onClose();}}/>}
-      {source==='api'&&row.status!=='draft'&&canEditIssuedContract(accessUser,row.store_id)&&<button type="button" className="mg-button" onClick={()=>setEditing(true)}><Pencil size={16}/>Sửa hợp đồng</button>}
+      {source==='api'&&row.status!=='draft'&&(()=>{
+        const editBlock=contractIssuedEditBlockReason(accessUser,row.store_id);
+        return <button type="button" className="mg-button" disabled={Boolean(editBlock)} title={editBlock||undefined}
+          aria-label={editBlock?`Sửa hợp đồng. ${editBlock}`:undefined}
+          onClick={()=>{if(!editBlock)setEditing(true);}}><Pencil size={16}/>Sửa hợp đồng</button>;
+      })()}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&requiresOwnershipApproval(row.rental_type)&&<OwnershipTermsEditor id={row.id} code={row.code} onSaved={value=>{setLifecycleOverride(previous=>({...previous,ownership_term_months:value.term_months,draft_revision:value.revision}));fetchHistory();}}/>}
-      {source==='api'&&row.status==='deposit_contract'&&can('contracts.draft')&&canEditIssuedContract(accessUser,row.store_id)&&<button type="button" className="mg-button mg-button-danger" onClick={()=>setDepositDeleteOpen(true)}><Trash2 size={16}/>Xóa hợp đồng cọc</button>}
+      {source==='api'&&row.status==='deposit_contract'&&(()=>{
+        const deleteBlock=contractIssuedEditBlockReason(accessUser,row.store_id);
+        return <button type="button" className="mg-button mg-button-danger" disabled={Boolean(deleteBlock)} title={deleteBlock||undefined}
+          aria-label={deleteBlock?`Xóa hợp đồng cọc. ${deleteBlock}`:undefined}
+          onClick={()=>{if(!deleteBlock)setDepositDeleteOpen(true);}}><Trash2 size={16}/>Xóa hợp đồng cọc</button>;
+      })()}
       {row.status==='draft'&&can('contracts.draft')&&onEditDraft&&<button type="button" className="mg-button mg-button-primary" onClick={onEditDraft}>Tiếp tục hoàn tất hợp đồng</button>}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('telegram')}><MessageCircle size={15}/>Gửi Telegram</button>}
       {onReminder&&isRemindableContract(row)&&<button type="button" className="mg-button" onClick={onReminder}><MessageCircle size={15}/>Nhắc nợ</button>}

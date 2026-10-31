@@ -16,13 +16,14 @@ const body=(revision='1',code='005987')=>({revision,profile:structuredClone(prof
 async function main(){
  for(const role of ['branch_staff','ownership_staff','ownership_manager']){
   const user={...staff,access_role:role,permissions:[...ACCESS_ROLES[role].permissions]};
-  assert(shared.canEditIssuedContract(user,32));assert(!shared.canEditIssuedContract(user,33));
-  assert(!shared.canEditIssuedContract({...user,scope_all:true},33));
+  assert(shared.canEditIssuedContract(user,32));assert(shared.canEditIssuedContract(user,33));
+  assert(shared.canEditIssuedContract({...user,scope_all:true,store_id:null},33));
  }
  for(const role of ['accounting','internal_control','hr'])assert(!shared.canEditIssuedContract({...staff,access_role:role,permissions:[...ACCESS_ROLES[role].permissions]},32));
- assert(!shared.canEditIssuedContract(null,32));assert(!shared.canEditIssuedContract({...staff,store_id:null,scope_all:true},32));
+ assert(!shared.canEditIssuedContract(null,32));
+ assert.equal(shared.contractIssuedEditBlockReason({permissions:['contracts.read']},32), 'Tài khoản chưa được cấp quyền Lập / sửa hợp đồng.');
  assert(shared.canEditIssuedContract({access_role:'admin'},33));
- checks.push('Operating and ownership staff edit only their assigned branch; scope_all does not bypass branch matching; admin can edit all branches');
+ checks.push('Staff with contracts.draft may edit issued contracts on any visible branch; roles without draft stay blocked with a concrete Vietnamese reason');
  assert.equal(service.parseContractProfile(body('1',' 005987 ')).contract_number,'005987');
  assert.equal(service.parseContractProfile({revision:'1',profile:structuredClone(profile)}).contract_number,undefined);
  for(const code of ['', ' ', 'NHAP-1','EXCEL-1','A\nB','0'.repeat(33),5987])assert.throws(()=>service.parseContractProfile(body('1',code)),e=>e.status===400);
@@ -68,14 +69,19 @@ async function main(){
    const scope=async user=>{await c.query('RESET ROLE');await c.query("SELECT set_config('himoto.store_id',$1,true),set_config('himoto.scope_all',$2,true),set_config('himoto.actor_id',$3,true)",[String(user.store_id||''),String(user.scope_all),String(user.id)]);if(user.access_role!=='admin')await c.query('SET LOCAL ROLE himoto_scoped');};
    const apply=async(user,id,input)=>{await scope(user);return dataAccess.run(user,()=>service.updateContractProfile(proxy,id,user.id,input));};
    await assert.rejects(()=>apply(staff,2,body()),e=>e.status===404);
-   await assert.rejects(()=>apply({...staff,scope_all:true},2,body()),e=>e.status===403);
    await assert.rejects(()=>apply({...staff,access_role:'accounting',permissions:[...ACCESS_ROLES.accounting.permissions],scope_all:true},1,body()),e=>e.status===403);
    await assert.rejects(()=>apply(staff,1,body('0')),e=>e.status===409);
    await assert.rejects(()=>apply(staff,3,body()),e=>e.status===409);
    await assert.rejects(()=>apply(staff,4,body()),e=>e.status===404);
    for(const code of ['OTHER-BRANCH','RESERVED-DRAFT','ARCHIVED'])await assert.rejects(async()=>apply(staff,1,body(await revision(1),code)),e=>e.status===409);
    await c.query('RESET ROLE');assert.deepEqual(await rows(),before);
-   checks.push('Real PostgreSQL RLS and service checks reject guessed foreign IDs, broad-scope staff, accounting, stale versions, drafts, deleted contracts and occupied numbers across branches without changing rows');
+   const crossScope={...staff,scope_all:true,store_id:null};
+   const cross=await apply(crossScope,2,body(await revision(2),'CROSS-EDIT'));
+   assert.equal(cross.code,'CROSS-EDIT');
+   await c.query('RESET ROLE');assert.equal((await rows())[1].contract_number,'CROSS-EDIT');
+   await c.query(`UPDATE ${schema}.orders SET contract_number='OTHER-BRANCH',draft_reference='OTHER-BRANCH' WHERE id=2`);
+   await c.query('RESET ROLE');assert.deepEqual(await rows(),before);
+   checks.push('Real PostgreSQL RLS rejects guessed foreign IDs for branch staff; scope_all staff with draft may edit other branches; accounting/stale/draft/deleted/occupied numbers stay blocked');
    const input=body(await revision(1));input.profile.customer.name='Tên khách đã sửa';
    const result=await apply(staff,1,input);assert.equal(result.code,'005987');
    await c.query('RESET ROLE');const after=await rows(),saved=after[0];

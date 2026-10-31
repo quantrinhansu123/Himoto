@@ -14,8 +14,8 @@ const { ownerDatabase } = load(path.join(root, 'lib/server/himoto-database'));
   assert(hasPermission({ permissions: [...ACCESS_ROLES.branch_staff.permissions] }, 'contracts.draft'));
   const staff = { access_role: 'branch_staff', store_id: 32, permissions: [...ACCESS_ROLES.branch_staff.permissions] };
   assert(canEditIssuedContract(staff, 32));
-  assert(!canEditIssuedContract(staff, 33));
-  checks.push('Staff with contracts.draft may delete deposit holds of their own store; reservation DELETE maps to contracts.draft');
+  assert(canEditIssuedContract(staff, 33));
+  checks.push('Staff with contracts.draft may edit/delete deposit holds; reservation DELETE maps to contracts.draft');
 
   const c = await ownerDatabase.connect();
   const tables = ['orders', 'order_vehicle_details', 'vehicles', 'transactions', 'stores'];

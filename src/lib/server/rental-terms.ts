@@ -27,7 +27,7 @@ async function order(db:Database,id:number,user:PermissionAccount&{id:number},lo
   const row=(await db.query(`SELECT o.*,o.xmin::text AS revision,${EFFECTIVE_RENTAL_TYPE_SQL} AS effective_type
     FROM himoto.orders o WHERE o.id=$1 AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${lock?' FOR UPDATE OF o':''}`,[id])).rows[0];
   if(!row)throw new RentalTermsError('Không tìm thấy hợp đồng trong cơ sở được phân quyền.',404);
-  if(!canEditIssuedContract(user,row.store_id))throw new RentalTermsError('Chỉ người được sửa hợp đồng của cơ sở này mới được sửa tiền / ngày thuê.',403);
+  if(!canEditIssuedContract(user,row.store_id))throw new RentalTermsError('Tài khoản chưa được cấp quyền sửa hợp đồng (tiền / ngày thuê).',403);
   if(['draft','cancelled'].includes(row.order_status))throw new RentalTermsError('Hợp đồng nháp cần sửa trong form lập hợp đồng; hợp đồng đã hủy không được sửa tiền / ngày thuê.',409);
   if(OWNERSHIP_CONTRACT_TYPES.has(row.effective_type)||row.draft_payload?.management_composer?.installment_plan)throw new RentalTermsError('Hợp đồng thuê sở hữu cần sửa trong mục thời hạn / lịch đóng tiền.',409);
   if(row.total===null||row.total===''||!Number.isSafeInteger(Number(row.total)))throw new RentalTermsError('Tiền hợp đồng chưa được đối chiếu; cần xác minh số gốc trước khi sửa.',409);

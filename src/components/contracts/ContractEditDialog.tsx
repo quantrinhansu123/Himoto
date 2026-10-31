@@ -37,7 +37,8 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
     try {
       const result=await requestManagementTable({kind:'contracts',query:{...EMPTY_QUERY,filters:{id:String(row.id)}},store:'all',scope:'',page:1,size:1,sort:'code',direction:'desc'},signal);
       const latest=result.rows.find(item=>item.id===row.id);
-      if(!latest || !canEditIssuedContract(accessUser,latest.store_id))throw new Error('Không tìm thấy hợp đồng trong cơ sở được phép sửa.');
+      if(!latest)throw new Error('Không tìm thấy hợp đồng.');
+      if(!canEditIssuedContract(accessUser,latest.store_id))throw new Error('Tài khoản chưa được cấp quyền sửa hợp đồng.');
       if(latest.status==='draft')throw new Error('Mở bản nháp để tiếp tục chỉnh sửa hợp đồng này.');
       if(!latest.draft_revision)throw new Error('Chưa tải được phiên bản hợp đồng. Thử tải lại.');
       setRecord(latest);setDraft(createContractDraft(dataset,'all',latest));setNotes(String(latest.notes||''));

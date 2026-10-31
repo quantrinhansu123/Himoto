@@ -40,7 +40,7 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
   const row=await client.query('SELECT order_status,store_id,contract_number,draft_reference,note,draft_payload,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id]);
   if(!row.rowCount)throw new ContractProfileError('Không tìm thấy hợp đồng.',404);
   const previous=row.rows[0],scope=dataAccess.getStore();
-  if(scope && (scope.id!==actor || !canEditIssuedContract(scope,previous.store_id)))throw new ContractProfileError('Chỉ được sửa hợp đồng của cơ sở mình.',403);
+  if(scope && (scope.id!==actor || !canEditIssuedContract(scope,previous.store_id)))throw new ContractProfileError('Tài khoản chưa được cấp quyền sửa hợp đồng.',403);
   if(row.rows[0].revision !== revision)throw new ContractProfileError('Hợp đồng đã thay đổi; tải lại trước khi lưu hồ sơ.',409);
   if(row.rows[0].order_status === 'draft')throw new ContractProfileError('Lưu nháp để cập nhật hợp đồng này.',409);
   const code=contract_number??previous.contract_number;
