@@ -17,14 +17,22 @@ assert.match(contractRenewBlockReason('renting', true), /lịch đóng tiền/);
 assert.equal(contractRenewBlockReason('renting', false), null);
 assert.equal(contractHandoverBlockReason('deposit_contract'), null);
 assert.match(contractHandoverBlockReason('completed'), /đã hoàn thành/i);
-assert.match(vehicleTransferBlockReason({
+assert.equal(vehicleTransferBlockReason({
   selected: true, status: 'ready',
   rentals: [{ code: '011253', customer: 'Bùi Minh Triết', status: 'renting' }],
   sameDestination: false,
-}), /011253.*Bùi Minh Triết/i);
+}), null);
+assert.equal(vehicleTransferBlockReason({
+  selected: true, status: 'using',
+  rentals: [{ code: 'VPS-1', customer: 'Khách thuê', status: 'renting' }],
+  sameDestination: false,
+}), null);
 assert.match(vehicleTransferBlockReason({
-  selected: true, status: 'using', rentals: [], sameDestination: false,
-}), /Lưu kho/i);
+  selected: true, status: 'sold', rentals: [], sameDestination: false,
+}), /đã bán/i);
+assert.match(vehicleTransferBlockReason({
+  selected: true, status: 'in_transit', rentals: [], sameDestination: false,
+}), /Chờ luân chuyển/i);
 assert.match(vehicleTransferBlockReason({
   selected: true, status: 'ready', rentals: [], sameDestination: true, storeName: 'CS Nguyễn Hoàng',
 }), /CS Nguyễn Hoàng/);
@@ -36,11 +44,11 @@ assert.equal(vehicleTransferBlockReason({
   rentals: [{ code: 'NHAP-1', customer: 'Khách nháp', status: 'draft' }],
   sameDestination: false,
 }), null);
-assert.match(vehicleTransferBlockReason({
+assert.equal(vehicleTransferBlockReason({
   selected: true, status: 'ready',
   rentals: [{ code: 'COC-1', customer: 'Khách cọc', status: 'deposit_contract' }],
   sameDestination: false,
-}), /COC-1/);
+}), null);
 assert.match(vehicleReceiveBlockReason('receive', true), /chờ nhận|Làm mới/i);
 assert.equal(vehicleReceiveBlockReason('receive', false), null);
 const { classifyReservationWindow } = load(path.join(root, 'lib/management/vehicle-reservation-window'));
@@ -52,5 +60,5 @@ assert.equal(draftWarn.kind, 'overlap_warn');
 assert.match(draftWarn.detail, /hợp đồng nháp.*NHAP-9/i);
 assert.match(draftWarn.detail, /khách lấy xe/i);
 assert.match(draftWarn.detail, /Lưu kho/i);
-checks.push('Blocked contract and vehicle transfer actions expose concrete Vietnamese reasons; draft soft-holds stay rentable/transferable with pickup notice');
+checks.push('Transfer stays open with active rentals; only in-transit, sold, and same-destination stay blocked with concrete Vietnamese reasons');
 console.log(JSON.stringify({ passed: checks.length, checks, realBusinessWrites: 0 }, null, 2));

@@ -10,7 +10,7 @@ export type VehicleAction = (
   | { action: 'status'; status: 'ready' | 'using'; beneficiary_store_id: string; customer_name: string; customer_phone: string; customer_id_card: string; note: string }) & { revision?: string };
 
 export interface VehicleActionResult {
-  id:number;event_id:number;telegram_event_id?:number;
+  id:number;event_id:number;telegram_event_id?:number;transfer_completed?:boolean;
   customer?: { id: number; name: string; created: boolean; matched_by: string };
   draft?: { id: number; code: string };
 }

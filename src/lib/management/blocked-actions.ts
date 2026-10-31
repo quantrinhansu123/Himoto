@@ -9,34 +9,21 @@ function vehicleStatusLabel(status: string) {
   return VEHICLE_STATUSES.find(option => option.value === status)?.label || status || 'không xác định';
 }
 
-function openRentalSummary(rentals: Pick<OpenVehicleRental, 'code' | 'customer' | 'status'>[]) {
-  const first = rentals[0];
-  if (!first) return '';
-  const code = String(first.code || '').trim() || 'mở';
-  const customer = String(first.customer || '').trim();
-  const extra = rentals.length > 1 ? ` (+${rentals.length - 1} HĐ khác)` : '';
-  return `HĐ ${code}${customer ? ` · ${customer}` : ''}${extra}`;
-}
-
-/** null = được chuyển xe. */
+/** null = được chuyển xe. HĐ mở / đang thuê không chặn điều chuyển kho. */
 export function vehicleTransferBlockReason(input: {
   selected: boolean;
   status: string;
+  /** Giữ tham số để caller cũ không đổi; HĐ mở không còn chặn điều chuyển. */
   rentals: Pick<OpenVehicleRental, 'code' | 'customer' | 'status'>[];
   sameDestination: boolean;
   storeName?: string;
 }): string | null {
   if (!input.selected) return 'Chọn xe cần chuyển.';
-  // HĐ nháp không khóa kho — vẫn chuyển/cho thuê được.
-  const blocking = input.rentals.filter(item => String(item.status || '').toLowerCase() !== 'draft');
-  if (blocking.length) {
-    return `Xe đang thuộc ${openRentalSummary(blocking)}. Trả xe trên hợp đồng trước khi chuyển xe.`;
-  }
   if (input.status === 'in_transit') {
     return 'Xe đang Chờ luân chuyển. Cơ sở đích cần Nhận xe hoặc Từ chối trước khi chuyển tiếp.';
   }
-  if (input.status !== 'ready') {
-    return `Chỉ chuyển xe đang Lưu kho. Hiện tại: “${vehicleStatusLabel(input.status)}”.`;
+  if (input.status === 'sold') {
+    return `Xe đã bán; không điều chuyển. Hiện tại: “${vehicleStatusLabel(input.status)}”.`;
   }
   if (input.sameDestination) {
     return `Xe đang ở ${input.storeName || 'cơ sở này'}. Chọn cơ sở khác để chuyển.`;

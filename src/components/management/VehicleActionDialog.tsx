@@ -121,8 +121,13 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         : mode==='cancel'?{action:'cancel',transfer_event_id:String(selected.transfer_event_id),note,revision}
         : { action: 'status', status: status as 'ready' | 'using', beneficiary_store_id: storeId, customer_name: customer.name, customer_phone: customer.phone, customer_id_card: customer.idCard, note, revision });
       await ensureData(saved.customer ? ['vehicles', 'customers', 'contracts'] : mode==='transfer'||mode==='receive'||mode==='reject'||mode==='cancel'?['vehicles','stores']:['vehicles'], true).catch(() => {});
-      notify(mode === 'transfer' ? `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${stores.find(store=>String(store.id)===storeId)?.name || 'cơ sở đích'}. Đã lưu lịch sử.` : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho. Đã lưu lịch sử.`:mode==='reject'||mode==='cancel'?`Đã ${mode==='cancel'?'huỷ':'từ chối'} điều chuyển xe ${selected.license}. Xe về Lưu kho tại ${selected.transfer_from_store_name||'cơ sở chuyển đi'}.` :saved.draft?'Đã tạo hợp đồng nháp. Xe vẫn Lưu kho đến khi phát hành hợp đồng.':`Đã đổi trạng thái xe ${selected.license}.`);
-      if (saved.draft || saved.telegram_event_id || mode === 'transfer' || mode === 'receive') setResult({ ...saved, mode }); else onClose();
+      const destName = stores.find(store => String(store.id) === storeId)?.name || 'cơ sở đích';
+      notify(mode === 'transfer'
+        ? saved.transfer_completed
+          ? `Đã chuyển kho xe ${selected.license} sang ${destName}. Giữ nguyên trạng thái “${optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)}”. Đã lưu lịch sử.`
+          : `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${destName}. Đã lưu lịch sử.`
+        : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho. Đã lưu lịch sử.`:mode==='reject'||mode==='cancel'?`Đã ${mode==='cancel'?'huỷ':'từ chối'} điều chuyển xe ${selected.license}. Xe về Lưu kho tại ${selected.transfer_from_store_name||'cơ sở chuyển đi'}.` :saved.draft?'Đã tạo hợp đồng nháp. Xe vẫn Lưu kho đến khi phát hành hợp đồng.':`Đã đổi trạng thái xe ${selected.license}.`);
+      if (saved.draft || saved.telegram_event_id || (mode === 'transfer' && !saved.transfer_completed) || mode === 'receive') setResult({ ...saved, mode }); else onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được thao tác xe.'); }
     finally { busy.current = false; setSaving(false); }
   }
@@ -172,7 +177,9 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         <div className="mg-field"><label htmlFor="vehicle-action-to">Chuyển đến cơ sở<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-to" value={storeId} disabled={saving} onChange={event => setStoreId(event.target.value)}>
             <option value="">Chọn cơ sở</option>{(destinations.length?destinations:stores).filter(store => String(store.id) !== String(selected?.store_id)).map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
-        <p className="mg-composer-hint mg-field-wide">Khi lưu, xe chuyển sang Chờ luân chuyển tại cơ sở đích. Sau đó có thể chọn nhiều ảnh chuyển xe. Khi xe đến nơi, bấm Nhận xe để xác nhận. Mỗi thao tác đều được ghi vào Lịch sử.</p>
+        <p className="mg-composer-hint mg-field-wide">{currentStatus === 'ready'
+          ? 'Xe đang Lưu kho: sau khi lưu sẽ sang Chờ luân chuyển tại cơ sở đích; khi xe đến nơi bấm Nhận xe. Có thể đính ảnh chuyển xe.'
+          : 'Xe không ở Lưu kho (đang thuê, bảo dưỡng…): đổi cơ sở kho ngay, giữ nguyên trạng thái. Hợp đồng mở không chặn điều chuyển.'}</p>
       </> : <>
         <div className="mg-field"><label htmlFor="vehicle-action-status">Trạng thái<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-status" value={status} disabled={saving || !selected} onChange={event => setStatus(event.target.value)}>

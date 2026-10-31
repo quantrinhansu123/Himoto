@@ -116,7 +116,6 @@ async function main(){const c=await pool.connect();try{
   assert.equal((await c.query('SELECT status FROM qa_access_scope.vehicles WHERE id=91001')).rows[0].status,'ready');
   checks.push('Actual finalization, cash receipt, renewal and return services work under branch RLS in the rollback-only schema');
   const actions=load(path.join(root,'lib/server/vehicle-actions')).applyVehicleAction;
-  await assert.rejects(()=>dataAccess.run(scope,()=>actions(proxy,91001,{action:'transfer',to_store_id:80001,note:'QA debt blocks transfer'},70002)),e=>e.status===409);
   await c.query("UPDATE qa_access_scope.orders SET order_status='completed' WHERE id=92001"); // explicitly closed prior contract fixture
   await c.query("SELECT set_config('himoto.operation','transfer',true)");
   const transferred=await dataAccess.run({...scope,operation:'transfer'},()=>actions(proxy,91001,{action:'transfer',to_store_id:80001,note:'QA transfer'},70002));

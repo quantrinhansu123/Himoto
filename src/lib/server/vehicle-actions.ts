@@ -11,7 +11,7 @@ import { dataAccess } from './access-context';
 
 type Client = Pick<PoolClient, 'query'>;
 export interface VehicleActionCustomer { id: number; name: string; created: boolean; matched_by: string }
-export interface VehicleActionResult { id: number; event_id: number; telegram_event_id?:number; customer?: VehicleActionCustomer; draft?: { id: number; code: string } }
+export interface VehicleActionResult { id: number; event_id: number; telegram_event_id?:number; transfer_completed?:boolean; customer?: VehicleActionCustomer; draft?: { id: number; code: string } }
 export class VehicleActionError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export type VehicleActionInput = (
   | { action: 'transfer'; to_store_id: number; note: string }
@@ -105,20 +105,23 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
   }
   if (input.revision && input.revision !== vehicle.revision) throw new VehicleActionError('Thông tin xe đã thay đổi. Nhấn Làm mới rồi thao tác lại.', 409);
   if(vehicle.status==='in_transit'&&input.action==='status')throw new VehicleActionError('Xe đang Chờ luân chuyển. Cơ sở đích cần dùng Xác nhận nhận xe trước khi đổi trạng thái.',409);
-  const open = scope
-    ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts(ARRAY[$1::bigint],NULL) LIMIT 1', [vehicleId])
-    : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) AS code, s.store_name,
-        COALESCE(cu.name, mu.name, '') AS manager_name
-      FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
-      LEFT JOIN himoto.stores s ON s.id=o.store_id
-      LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
-      LEFT JOIN himoto.users mu ON mu.id=s.user_id
-      WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-        AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`, [vehicleId]);
-  if (open.rowCount) {
-    const store = String(open.rows[0].store_name || '').trim();
-    const manager = String(open.rows[0].manager_name || '').trim();
-    throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}. Trả xe trên hợp đồng trước khi ${input.action === 'transfer' ? 'chuyển xe' : input.action==='receive'?'nhận xe':input.action==='cancel'?'huỷ điều chuyển':input.action==='reject'?'từ chối điều chuyển':'đổi trạng thái'}.`, 409);
+  // HĐ mở chỉ chặn đổi trạng thái; điều chuyển / nhận / từ chối / huỷ vẫn làm được (thuê chéo cơ sở).
+  if (input.action === 'status') {
+    const open = scope
+      ? await client.query('SELECT license, code, store_name, manager_name FROM himoto.vehicle_other_rental_conflicts(ARRAY[$1::bigint],NULL) LIMIT 1', [vehicleId])
+      : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) AS code, s.store_name,
+          COALESCE(cu.name, mu.name, '') AS manager_name
+        FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
+        LEFT JOIN himoto.stores s ON s.id=o.store_id
+        LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
+        LEFT JOIN himoto.users mu ON mu.id=s.user_id
+        WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+          AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`, [vehicleId]);
+    if (open.rowCount) {
+      const store = String(open.rows[0].store_name || '').trim();
+      const manager = String(open.rows[0].manager_name || '').trim();
+      throw new VehicleActionError(`Xe đang thuộc hợp đồng ${open.rows[0].code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}. Trả xe trên hợp đồng trước khi đổi trạng thái.`, 409);
+    }
   }
   if(input.action==='receive'||input.action==='reject'||input.action==='cancel') {
     if(vehicle.status!=='in_transit')throw new VehicleActionError(input.action==='reject'?'Xe không còn Chờ luân chuyển hoặc đã được xử lý. Nhấn Làm mới để kiểm tra.':'Xe không còn Chờ luân chuyển hoặc đã được nhận. Nhấn Làm mới để kiểm tra.',409);
@@ -147,27 +150,49 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
   if (!(await client.query('SELECT 1 FROM himoto.stores WHERE id=$1 FOR SHARE', [target])).rowCount) throw new VehicleActionError('Cơ sở đã chọn không còn tồn tại.', 409);
   const current = String(vehicle.status) === 'rent' ? 'using' : String(vehicle.status);
 
-  let customer: VehicleActionCustomer | undefined, draft: VehicleActionResult['draft'];
   if (input.action === 'transfer') {
-    if (current !== 'ready') throw new VehicleActionError('Chỉ chuyển xe đang Lưu kho. Kiểm tra trạng thái xe rồi thao tác lại.', 409);
+    if (current === 'sold') throw new VehicleActionError('Xe đã bán; không điều chuyển kho.', 409);
+    if (current === 'in_transit') throw new VehicleActionError('Xe đang Chờ luân chuyển. Cơ sở đích cần Nhận xe hoặc Từ chối trước khi chuyển tiếp.', 409);
     if (String(vehicle.store_id) === String(input.to_store_id)) throw new VehicleActionError('Xe đang ở cơ sở này. Chọn cơ sở khác để chuyển.');
-    if(scope)await client.query("SELECT set_config('himoto.transfer_vehicle_id',$1,true)",[String(vehicleId)]);
-    await client.query("UPDATE himoto.vehicles SET current_store_id=$2,status='in_transit',updated_at=now() WHERE id=$1", [vehicleId, input.to_store_id]);
-  } else {
-    if (current === input.status) throw new VehicleActionError(`Xe đang ở trạng thái ${statusLabel(current)}.`);
-    if (input.status === 'using') {
-      if(current!=='ready')throw new VehicleActionError('Xe phải đang Lưu kho trước khi lập hợp đồng mới.',409);
-      const found = await findOrCreateCustomer(client, input);
-      customer = { id: found.id, name: found.name, created: found.created, matched_by: found.matched_by };
-      draft = await createRentalDraft(client, vehicleId, input.beneficiary_store_id, found, input.note, actorId);
+    if (scope) await client.query("SELECT set_config('himoto.transfer_vehicle_id',$1,true)", [String(vehicleId)]);
+    // Lưu kho → chờ nhận tại cơ sở đích. Trạng thái khác (đang thuê, bảo dưỡng…) → đổi kho ngay, giữ nguyên status.
+    if (current === 'ready') {
+      await client.query("UPDATE himoto.vehicles SET current_store_id=$2,status='in_transit',updated_at=now() WHERE id=$1", [vehicleId, input.to_store_id]);
+      const after = { ...vehicle, store_id: target, status: 'in_transit', beneficiary_store_id: target };
+      const eventId = await writeVehicleAudit(client, {
+        vehicleId, before: vehicle, after, actorId, toStoreId: target, type: 'manual_transfer', note: input.note,
+      });
+      return { id: vehicleId, event_id: eventId };
     }
-    if(input.status==='ready')await client.query('UPDATE himoto.vehicles SET status=$2, updated_at=now() WHERE id=$1', [vehicleId, input.status]);
+    await client.query('UPDATE himoto.vehicles SET current_store_id=$2, updated_at=now() WHERE id=$1', [vehicleId, input.to_store_id]);
+    const after = { ...vehicle, store_id: target, beneficiary_store_id: target };
+    const note = [input.note, 'Điều chuyển kho giữ nguyên trạng thái (không qua Chờ luân chuyển).'].filter(Boolean).join(' · ');
+    const dispatchId = await writeVehicleAudit(client, {
+      vehicleId, before: vehicle, after, actorId, fromStoreId: vehicle.store_id, toStoreId: target, type: 'manual_transfer', note,
+    });
+    await writeVehicleAudit(client, {
+      vehicleId, before: after, after, actorId, fromStoreId: vehicle.store_id, toStoreId: target,
+      type: 'manual_transfer_receive', refType: 'vehicle_location_events', refId: dispatchId,
+      note: 'Tự nhận điều chuyển kho (xe không ở trạng thái Lưu kho).',
+    });
+    return { id: vehicleId, event_id: dispatchId, transfer_completed: true };
   }
-  const after = input.action === 'transfer' ? {...vehicle,store_id:target,status:'in_transit',beneficiary_store_id:target}
-    : {...vehicle,status:input.status==='using'?'ready':input.status,beneficiary_store_id:input.status==='using'?target:vehicle.store_id};
-  const eventId = await writeVehicleAudit(client, {vehicleId,before:vehicle,after,actorId,toStoreId:input.action==='transfer'||input.status==='using'?target:vehicle.store_id,
-    type:input.action==='transfer'?'manual_transfer':'status_change',refType:input.action==='status'?input.status:null,refId:draft?.id,
-    note:[draft ? `HĐ nháp ${draft.code}` : '',input.note].filter(Boolean).join(' · '),
-    ...(input.action==='status'?{customer:{name:input.customer_name,phone:input.customer_phone,idCard:input.customer_id_card}}:{})});
+
+  let customer: VehicleActionCustomer | undefined, draft: VehicleActionResult['draft'];
+  if (current === input.status) throw new VehicleActionError(`Xe đang ở trạng thái ${statusLabel(current)}.`);
+  if (input.status === 'using') {
+    if (current !== 'ready') throw new VehicleActionError('Xe phải đang Lưu kho trước khi lập hợp đồng mới.', 409);
+    const found = await findOrCreateCustomer(client, input);
+    customer = { id: found.id, name: found.name, created: found.created, matched_by: found.matched_by };
+    draft = await createRentalDraft(client, vehicleId, input.beneficiary_store_id, found, input.note, actorId);
+  }
+  if (input.status === 'ready') await client.query('UPDATE himoto.vehicles SET status=$2, updated_at=now() WHERE id=$1', [vehicleId, input.status]);
+  const after = { ...vehicle, status: input.status === 'using' ? 'ready' : input.status, beneficiary_store_id: input.status === 'using' ? target : vehicle.store_id };
+  const eventId = await writeVehicleAudit(client, {
+    vehicleId, before: vehicle, after, actorId, toStoreId: input.status === 'using' ? target : vehicle.store_id,
+    type: 'status_change', refType: input.status, refId: draft?.id,
+    note: [draft ? `HĐ nháp ${draft.code}` : '', input.note].filter(Boolean).join(' · '),
+    customer: { name: input.customer_name, phone: input.customer_phone, idCard: input.customer_id_card },
+  });
   return { id: vehicleId, event_id: eventId, ...(customer ? { customer } : {}), ...(draft ? { draft } : {}) };
 }
