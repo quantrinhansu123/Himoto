@@ -95,6 +95,8 @@ function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractI
   });
 }
 
+const foldedSql = (value: string) => `lower(translate(regexp_replace(normalize(COALESCE(${value},''),NFD) COLLATE "C",'[\u0300-\u036f]','','g'),'đĐ','dD'))`;
+
 export async function searchReturnableItems(client: Database, query: string): Promise<ReturnableContractItem[]> {
   const text = query.trim().slice(0, 100);
   if (!text) return [];
@@ -103,8 +105,9 @@ export async function searchReturnableItems(client: Database, query: string): Pr
   const plate = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
   const result = await client.query(`${returnableSql()}
     AND (COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) ILIKE $1 ESCAPE '\\'
+      OR ${foldedSql('COALESCE(c.name,o.customer_name)')} LIKE ${foldedSql('$1')}
       OR ($2 <> '' AND regexp_replace(COALESCE(c.id_card::text,o.customer_idnumber::text,''),'\\D','','g')=$2)
-      OR ($2 <> '' AND regexp_replace(COALESCE(NULLIF(c.phone,''),o.customer_phone,''),'\\D','','g')=$2)
+      OR ($2 <> '' AND regexp_replace(COALESCE(NULLIF(c.phone,''),o.customer_phone,''),'\\D','','g') LIKE '%'||$2||'%')
       OR o.id IN (
         SELECT matched.order_id FROM himoto.order_vehicle_details matched
         JOIN ${contractVehicleLabelSource()} matched_vehicle ON matched_vehicle.id=matched.vehicle_id

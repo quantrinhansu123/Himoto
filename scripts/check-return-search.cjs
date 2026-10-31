@@ -30,6 +30,9 @@ async function main(){const c=await db.connect();try{
  for(const query of ['29B1-123.45','29b1 12345','123.45','30C1-678.90','67890','QA-TWO']){
   assert.deepEqual(await ids(query),[201,202],query);
  }
+ assert.deepEqual(await ids('Khách trả nhiều xe QA'),[201,202,203,205],'Customer name returns every open contract of that guest');
+ assert.deepEqual(await ids('khach tra nhieu xe'),[201,202,203,205],'Accent-folded name search matches');
+ assert.deepEqual(await ids('0900000123'),[201,202,203,205],'Phone digits match every open contract of that guest');
  assert.deepEqual(await ids('555.55'),[],'A removed line must not make another vehicle match');
  assert.deepEqual(await ids('999.99'),[203,205],'Separate matching contracts must remain separate');
  for(const query of ['',"%' OR 1=1 --",'_','NO-MATCH'])assert.deepEqual(await ids(query),[],query);
