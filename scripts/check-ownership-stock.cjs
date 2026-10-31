@@ -32,6 +32,9 @@ async function main(){
   assert.equal(ownershipVehicleStockError(type,[{...stock,store_id:35}],stores),'');
   assert.equal(ownershipVehicleStockError(type,[stock],stores,true),'');
   assert.equal(ownershipVehicleStockError(type,[],stores),'');
+  // Kho lease_to_own thiếu trong danh sách form (scope cơ sở) nhưng inventory đã gắn đúng tên kho.
+  assert.equal(ownershipVehicleStockError(type,[{...stock,store_id:35,store_name:'CS Thuê sở hữu'}],[{id:36,name:'Trụ Sở Chính',kind:'physical'}]),'');
+  assert.match(ownershipVehicleStockError(type,[{...stock,store_id:36,store_name:'Trụ Sở Chính'}],[]),/xác nhận nhận xe/);
   for(const [name,work]of [
    ['draft',()=>saveDatabaseDraft(db,null,{draft,status:'draft',rental_type:type,notes:''})],
    ['finalize',()=>{status='draft';return finalizeContractDraft(db,901,143,{revision:'7',receipts:[]});}],

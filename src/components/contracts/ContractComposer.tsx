@@ -269,10 +269,11 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
         const body = await response.json();
         if (!response.ok || body.status !== 'success' || !Array.isArray(body.data)) throw Error(body.message || 'Không tải được danh sách cơ sở.');
         if (!controller.signal.aborted) setDirectoryStores(body.data.map((row: {
-          id: number|string; store_name: string; manager_user_id?: number|string|null; manager_name?: string|null;
+          id: number|string; store_name: string; kind?: string|null; manager_user_id?: number|string|null; manager_name?: string|null;
           store_phone?: string|null; store_address?: string|null;
         }) => ({
           id: Number(row.id), code: String(row.id), name: String(row.store_name || ''), status: 'active',
+          kind: row.kind ? String(row.kind) : undefined,
           user_id: row.manager_user_id == null || row.manager_user_id === '' ? undefined : Number(row.manager_user_id),
           manager_name: row.manager_name ? String(row.manager_name) : undefined,
           phone: row.store_phone ? String(row.store_phone) : undefined,

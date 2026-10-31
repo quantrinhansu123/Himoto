@@ -3,6 +3,7 @@
 import { KeyboardEvent, useMemo, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { VEHICLE_STATUSES } from '@/lib/management/config';
+import { isOwnershipStore } from '@/lib/management/contract-billing';
 import { formatDateTime } from '@/lib/formatters';
 import { normalize } from '@/lib/management/table-utils';
 import type { ManagementRow } from '@/lib/management/types';
@@ -40,7 +41,7 @@ export function vehicleAvailability(
   historical = false,
   ownershipStoreIds?:string[],
 ): VehicleAvailability {
-  if(!historical&&ownershipStoreIds&&(!ownershipStoreIds.includes(String(vehicle.store_id))||vehicle.status==='in_transit'))return {tone:'danger',label:'Chưa vào kho Thuê sở hữu',detail:'Chuyển xe sang kho Thuê sở hữu và xác nhận nhận xe trước khi chọn xe lập hợp đồng.',selectable:false};
+  if(!historical&&ownershipStoreIds&&(vehicle.status==='in_transit'||(!ownershipStoreIds.includes(String(vehicle.store_id))&&!isOwnershipStore(vehicle.store_name))))return {tone:'danger',label:'Chưa vào kho Thuê sở hữu',detail:'Chuyển xe sang kho Thuê sở hữu và xác nhận nhận xe trước khi chọn xe lập hợp đồng.',selectable:false};
   if(historical)return {tone:'warn',label:'Chỉ nhập lịch sử',detail:'Bổ sung lượt thuê đã trả xe; trạng thái kho hiện tại được giữ nguyên. Hệ thống kiểm tra trùng lịch khi lưu chính thức.',selectable:true};
   const all = rentalsOf(vehicle);
   const classified = classifyReservationWindow(all, proposedStart, proposedEnd, ownOrderId);
