@@ -2,7 +2,8 @@
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeftRight, Check, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react';
+import { ArrowLeftRight, Check, FileText, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Dialog } from './Dialog';
 import type { VehicleActionMode } from './VehicleActionDialog';
 import { useManagement } from './ManagementProvider';
@@ -29,7 +30,12 @@ const ACTION_TONE: Record<VehicleEventAction, string> = { rent: 'blue', return: 
 
 export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction }: { row: ManagementRow; config: ManagementConfig; canEdit: boolean; onEdit: () => void; onClose: () => void; onAction: (mode: VehicleActionMode) => void }) {
   const { source,can,accessUser } = useManagement();
+  const router = useRouter();
   const cancellable=canCancelVehicleTransfer(row,accessUser?.id);
+  let openRentals: OpenVehicleRental[] = [];
+  try { openRentals = JSON.parse(String(row.rentals_json || '[]')) as OpenVehicleRental[]; } catch { openRentals = []; }
+  const issuedRentals = openRentals.filter(item => ['renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract'].includes(String(item.status || '').toLowerCase()));
+  const primaryRental = issuedRentals[0];
   const [section, setSection] = useState<VehicleSection>('details');
   const [events, setEvents] = useState<VehicleEvent[] | null>(null);
   const [action, setAction] = useState<VehicleEventAction | ''>('');
@@ -127,6 +133,7 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
       </>)}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>
+      {can('contracts.read')&&primaryRental&&<button type="button" className="mg-button mg-button-primary" title={`Mở ${primaryRental.code}${primaryRental.customer?` · ${primaryRental.customer}`:''}`} onClick={()=>{onClose();router.push(`/contracts?contract_id=${primaryRental.order_id}`);}}><FileText size={16}/>Mở hợp đồng {primaryRental.code}</button>}
       {can('vehicles.transfer')&&source==='api'&&cancellable&&<button type="button" className="mg-button mg-button-danger" onClick={()=>onAction('cancel')}><RotateCcw size={16}/>Huỷ điều chuyển</button>}
       {can('vehicles.receive')&&source==='api'&&row.status==='in_transit'&&!cancellable&&<>
         <button type="button" className="mg-button mg-button-primary" onClick={()=>onAction('receive')}><Check size={16}/>Nhận xe</button>
@@ -134,12 +141,10 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
       </>}
       {source === 'api' && <>
         {can('vehicles.transfer') && (() => {
-          let rentals: OpenVehicleRental[] = [];
-          try { rentals = JSON.parse(String(row.rentals_json || '[]')) as OpenVehicleRental[]; } catch { rentals = []; }
           const transferBlock = vehicleTransferBlockReason({
             selected: true,
             status: String(row.status) === 'rent' ? 'using' : String(row.status || ''),
-            rentals,
+            rentals: openRentals,
             sameDestination: false,
             storeName: String(row.store_name || ''),
           });
@@ -150,6 +155,6 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
           </button>;
         })()}
         {can('vehicles.write')&&<button type="button" className="mg-button" onClick={() => onAction('status')}><RefreshCw size={16} />Đổi trạng thái</button>}</>}
-      {canEdit && <button type="button" className="mg-button mg-button-primary" onClick={onEdit}>Chỉnh sửa thông tin</button>}</div>
+      {canEdit && <button type="button" className="mg-button" onClick={onEdit}>Chỉnh sửa thông tin xe</button>}</div>
   </Dialog>;
 }

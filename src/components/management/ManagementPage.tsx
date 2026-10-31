@@ -232,6 +232,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       return;
     }
     if(kind==='contracts'&&action==='backfill'){handledAction.current=action;setBackfillOpen(true);router.replace(contractPath,{scroll:false});return;}
+    if(kind==='contracts'&&action==='edit')return;
     if (loading || error || !dataset) return;
     handledAction.current = action;
     if (kind === 'contracts' && action === 'new') {setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}
@@ -267,6 +268,22 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   }, [rows, selectedStore, kind]);
   const dueCount = paged ? table.data?.dueCount || 0 : scopedRows.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0).length;
   const filteredRows = useMemo(() => paged ? rows : sortRows(filterRows(scopedRows,query,'all'),sort.key,sort.direction),[paged,rows,scopedRows,query,sort]);
+  useEffect(()=>{
+    if(kind!=='contracts')return;
+    const action=searchParams.get('action');
+    if(action!=='edit')return;
+    if(handledAction.current===action)return;
+    const id=Number(searchParams.get('contract_id')||'');
+    if(!Number.isSafeInteger(id)||id<=0){handledAction.current=action;router.replace(contractPath,{scroll:false});return;}
+    if(loading||error)return;
+    const row=filteredRows.find(item=>item.id===id)||table.data?.rows.find(item=>item.id===id);
+    if(!row)return;
+    handledAction.current=action;
+    if(row.status==='draft'){setPrintRow(row);setComposerMode('draft');setComposerOpen(true);}
+    else if(canEditIssuedContract(accessUser,row.store_id))setContractEditing(row);
+    else notify('Tài khoản chưa được cấp quyền Lập / sửa hợp đồng.');
+    router.replace(`${contractPath}?contract_id=${id}`,{scroll:false});
+  },[kind,searchParams,loading,error,filteredRows,table.data,accessUser,notify,router,contractPath]);
   const tabRows = useMemo(() => filterRows(scopedRows, { ...query, status: '' }, 'all'), [scopedRows, query]);
   const statusCounts = useMemo(() => { if(paged)return new Map(table.data?.statusCounts || []); const counts = new Map<string, number>(); for (const row of tabRows) counts.set(row.status, (counts.get(row.status) || 0) + 1); return counts; }, [tabRows,paged,table.data]);
   const missingContractVehicles=useMemo(()=>kind==='vehicles'?filteredRows.filter(vehicleMissingOpenContract):EMPTY_ROWS,[kind,filteredRows]);
