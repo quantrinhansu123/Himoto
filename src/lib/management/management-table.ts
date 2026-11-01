@@ -1,6 +1,6 @@
 import { EMPTY_QUERY, filterRows, sortContractRows, sortRows, type TableQuery } from './table-utils';
 import { summarizeContracts, type ContractSummary } from './contract-summary';
-import { applyInstallmentBilling } from './contract-billing';
+import { applyInstallmentBilling, isOwnershipCustomerSourceStore } from './contract-billing';
 import { OWNERSHIP_CONTRACT_TYPES } from './config';
 import { mapApiRow, READ_ENDPOINTS } from './repository';
 import type { ManagementKind, ManagementRow } from './types';
@@ -54,7 +54,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if(monitoring)rows=rows.map(row=>withContractMonitoring(row,now));
   if (input.scope === 'drafts') rows=rows.filter(row=>row.status==='draft');
   if (input.scope === 'vat') rows=rows.filter(row=>Number(row.company_payment_count)>0);
-  if (input.scope === 'ownership') rows=rows.filter(row=>row.store_kind==='lease_to_own' || ownershipStores.includes(Number(row.store_id)) || OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type)));
+  if (input.scope === 'ownership') rows=rows.filter(row=>row.store_kind==='lease_to_own' || ownershipStores.includes(Number(row.store_id)) || OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type)) || isOwnershipCustomerSourceStore({ kind: row.store_kind, name: row.store_name }));
   if (input.scope === 'due') rows=rows.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0);
   if (input.scope === 'renewable') rows=rows.filter(row=>['renting','overdue'].includes(row.status)&&!row.billing_plan_json);
   if (input.scope === 'remindable') rows=rows.filter(isRemindableContract);

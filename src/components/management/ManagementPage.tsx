@@ -35,6 +35,7 @@ import { useManagementTable } from './useManagementTable';
 import type { ManagementTableInput } from '@/lib/management/management-table';
 import { compactContractConfig } from '@/lib/management/contract-monitoring-config';
 import { OVERDUE_BUCKETS } from '@/lib/management/contract-overdue';
+import { isOwnershipCustomerSourceStore } from '@/lib/management/contract-billing';
 import { useSelectedVehicleGps } from './SelectedVehicleGps';
 import { contractVehicleIds,contractGpsFields } from './ContractMonitoringCells';
 import { CONTRACT_STATUS_TABS, contractActiveRentalCount } from '@/lib/management/contract-tabs';
@@ -143,7 +144,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [historyAll, setHistoryAll] = useState(false);
   const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' }>(overdueOnly ? { key: 'overdue_minutes', direction: 'desc' } : { key: 'code', direction: 'asc' });
   const [openedAt, setOpenedAt] = useState(() => Date.now());
-  const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => store.kind === 'lease_to_own').map(store => store.id)), [dataset?.stores]);
+  const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => isOwnershipCustomerSourceStore(store)).map(store => store.id)), [dataset?.stores]);
   const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
   const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
   const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:30}:{})};

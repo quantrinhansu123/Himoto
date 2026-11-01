@@ -31,7 +31,7 @@ import { contractBackfillErrors } from '@/lib/management/contract-backfill';
 import { VietnamDateField } from './VietnamDateField';
 import { PaymentMethodPicker } from './PaymentMethodPicker';
 import { addRentalDays, rentalDayCount } from '@/lib/management/rental-time';
-import { addRentalMonths, billingUnitLabel, isHeadquartersStore, OWNERSHIP_TERM_MONTHS, OWNERSHIP_TERMS } from '@/lib/management/contract-billing';
+import { addRentalMonths, billingUnitLabel, isHeadquartersStore, isOwnershipCustomerSourceStore, OWNERSHIP_TERM_MONTHS, OWNERSHIP_TERMS } from '@/lib/management/contract-billing';
 import { isOwnershipVehicleStore,ownershipVehicleStockError } from '@/lib/management/ownership-stock';
 import { rentalStockError } from '@/lib/management/rental-stock';
 import { rentalQuote, selectedRentalVehicleCount } from '@/lib/management/contract-pricing';
@@ -389,7 +389,9 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     setDraft(previous => ({ ...previous, [key]: value })); setErrors(previous => ({ ...previous, [key]: '' })); setSaveError('');
   }
   function changeSourceStore(storeId: string) {
-    setDraft(previous => ({...previous,vehicle_store_id:contractStaffStoreId(previous),store_id:storeId,customer_source_url:dataset?.stores.find(store=>String(store.id)===storeId)?.name || ''}));
+    const sourceName = dataset?.stores.find(store => String(store.id) === storeId)?.name
+      || directoryStores.find(store => String(store.id) === storeId)?.name || '';
+    setDraft(previous => ({...previous,vehicle_store_id:contractStaffStoreId(previous),store_id:storeId,customer_source_url:sourceName}));
     setErrors(previous=>({...previous,store_id:''})); setSaveError('');
   }
   function changeVehicleStore(storeId: string) {
@@ -687,6 +689,17 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     for (const store of [...(dataset?.stores || []), ...directoryStores]) byId.set(store.id, store);
     return [...byId.values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'vi'));
   })();
+  const customerSourceStores = (() => {
+    const byId = new Map<number, ManagementRow>();
+    for (const store of dataset?.stores || []) byId.set(store.id, store);
+    // Thuê sở hữu: Trụ sở chính cũng là nguồn khách / doanh thu (lấy từ directory nếu scope kho thiếu).
+    if (ownershipApproval || rentalType === 'ownership' || rentalType === 'ownership_cd') {
+      for (const store of directoryStores) {
+        if (isOwnershipCustomerSourceStore(store)) byId.set(store.id, store);
+      }
+    }
+    return [...byId.values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'vi'));
+  })();
   const allVehicles = useMemo(() => {
     const byId = new Map<number, ManagementRow>();
     for (const vehicle of [...(dataset?.vehicles || []), ...inventoryVehicles]) byId.set(vehicle.id, vehicle);
@@ -869,10 +882,10 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
               {field('contract_number', 'Mã hợp đồng / Số HĐ giấy')}
               {field('signed_on', 'Ngày ký hợp đồng', 'date', !reserving)}
               <div className="mg-field"><label htmlFor="contract-created-on">Ngày tạo / nhập hợp đồng</label><input id="contract-created-on" type="date" value={draft.created_on} onChange={event => change('created_on', event.target.value)} /><small>Ngày nhập hồ sơ trên hệ thống. Gợi ý hôm nay, có thể chọn ngày khác.</small></div>
-              <div className="mg-field"><label htmlFor="contract-customer-source-store">Liên kết nguồn khách</label><select id="contract-customer-source-store" value={draft.customer_source_url || branchName} aria-invalid={Boolean(errors.store_id)} onChange={event => { const store = dataset?.stores.find(item=>item.name===event.target.value); if(store) changeSourceStore(String(store.id)); else change('customer_source_url',event.target.value); }}>
-                <option value="">Chọn cơ sở</option>{(dataset?.stores || []).map(store => <option key={store.id} value={store.name}>{store.name}</option>)}
-                {draft.customer_source_url && !(dataset?.stores || []).some(store => store.name === draft.customer_source_url) && <option value={draft.customer_source_url}>{draft.customer_source_url}</option>}
-              </select><small>Cơ sở ghi nhận doanh thu hợp đồng, gợi ý theo hồ sơ khách.</small>{errors.store_id && <p className="mg-field-error">{errors.store_id}</p>}</div>
+              <div className="mg-field"><label htmlFor="contract-customer-source-store">Liên kết nguồn khách</label><select id="contract-customer-source-store" value={draft.customer_source_url || branchName} aria-invalid={Boolean(errors.store_id)} onChange={event => { const store = customerSourceStores.find(item=>item.name===event.target.value); if(store) changeSourceStore(String(store.id)); else change('customer_source_url',event.target.value); }}>
+                <option value="">Chọn cơ sở</option>{customerSourceStores.map(store => <option key={store.id} value={store.name}>{store.name}</option>)}
+                {draft.customer_source_url && !customerSourceStores.some(store => store.name === draft.customer_source_url) && <option value={draft.customer_source_url}>{draft.customer_source_url}</option>}
+              </select><small>{ownershipApproval || rentalType === 'ownership' || rentalType === 'ownership_cd' ? 'Gồm kho Thuê sở hữu và Trụ sở chính (cùng nguồn khách thuê sở hữu).' : 'Cơ sở ghi nhận doanh thu hợp đồng, gợi ý theo hồ sơ khách.'}</small>{errors.store_id && <p className="mg-field-error">{errors.store_id}</p>}</div>
               <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" maxLength={191} value={draft.customer_source} placeholder="Tự nhập nguồn khách hoặc chọn gợi ý" onChange={event => changeSource(event.target.value)} />
                 <datalist id="contract-source-staff-options"><option value="TLS"/>{sourceStaff.map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
                 <small>Nguồn telesale ghi chung TLS. Có thể tự nhập nguồn khác.</small></div>

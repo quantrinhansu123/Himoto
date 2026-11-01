@@ -10,6 +10,12 @@ export function isHeadquartersStore(name: unknown) {
   const normalized = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return normalized.includes('nguyen hoang') || normalized.includes('tru so chinh');
 }
+/** Nguồn khách / doanh thu thuộc thuê sở hữu: kho lease_to_own hoặc Trụ sở chính (không gồm PGD Nguyễn Hoàng). */
+export function isOwnershipCustomerSourceStore(store: { kind?: unknown; name?: unknown; store_name?: unknown }) {
+  if (store.kind === 'lease_to_own') return true;
+  const normalized = String(store.name || store.store_name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return normalized.includes('thue so huu') || normalized.includes('tru so chinh');
+}
 export interface CustomInstallment { due_at: string; amount: string }
 export interface InstallmentPlan {
   version: 1; start: string; end: string; interval: BillingInterval; amount: number;
