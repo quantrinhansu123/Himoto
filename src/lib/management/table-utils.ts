@@ -45,7 +45,15 @@ export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: st
       && !(query.status==='renting'&&isContractActiveRentalStatus(row.status))
       && !(query.status==='overdue'&&row.collection_overdue===1)) return false;
     if (query.filters.missing_contract === '1' && !vehicleMissingOpenContract(row)) return false;
-    if (Object.entries(query.filters).some(([key, value]) => key!=='missing_contract' && value && String(row[key] ?? '') !== value && !(key === 'position' && staffRoles(row.position).includes(value)))) return false;
+    if (Object.entries(query.filters).some(([key, value]) => {
+      if (key === 'missing_contract' || !value) return false;
+      if (key === 'position' && staffRoles(row.position).includes(value)) return false;
+      if (key === 'warehouse_store_id') {
+        const warehouse = String(row.current_store_id ?? row.store_id ?? '');
+        return warehouse !== value;
+      }
+      return String(row[key] ?? '') !== value;
+    })) return false;
     const date = String(row.start_date ?? '').slice(0, 10);
     if (query.startDate && (!date || date < query.startDate)) return false;
     if (query.endDate && (!date || date > query.endDate)) return false;

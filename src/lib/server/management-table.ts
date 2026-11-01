@@ -265,9 +265,11 @@ export function vehiclePageClause(store:string,status:string,filters:Record<stri
   const type=filters.type||'';
   const typeSql=!type?'':type==='xe_dien'?` AND v.type IN ('xe_dien','electric')`
     :/^[a-z0-9_]+$/.test(type)?` AND v.type='${type}'`:'';
+  const warehouse=filters.warehouse_store_id||'';
+  const warehouseSql=/^[1-9]\d{0,14}$/.test(warehouse)?` AND COALESCE(v.current_store_id,v.store_id)=${Number(warehouse)}`:'';
   const beneficiary=filters.beneficiary_store_id||'';
   const beneficiarySql=/^[1-9]\d{0,14}$/.test(beneficiary)?` AND ${vehicleBeneficiarySql()}=${Number(beneficiary)}`:'';
-  return `${storeSql}${statusSql}${typeSql}${beneficiarySql}`;
+  return `${storeSql}${statusSql}${typeSql}${warehouseSql}${beneficiarySql}`;
 }
 export function vehiclePageSql(scopeClause:string) {
   return `SELECT v.id, v.name, v.brand, v.type, v.year, v.status, v.license, v.odometer,

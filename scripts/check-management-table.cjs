@@ -76,8 +76,11 @@ async function main(){
     'table=1&page=1&size=10&sort=overdue_minutes&direction=desc&store=all&scope=ownership&overdue_compare=eq',
   ]) assert.equal(server.parseManagementTable('contracts',new URLSearchParams(query)).scope,'ownership');
   assert.match(server.vehiclePageSql(server.vehiclePageClause(35,'','')),/ownership_may_use_headquarters_vehicle/);
+  assert.match(server.vehiclePageClause('all','',{warehouse_store_id:'36'}),/COALESCE\(v\.current_store_id,v\.store_id\)=36/);
+  assert.match(server.vehiclePageClause('all','',{beneficiary_store_id:'35'}),/rental_source\.store_id=35/);
   checks.push('Ownership list page SQL joins stores and keeps the ownership filter self-contained');
   checks.push('Store-scoped vehicle pages include headquarters stock for lease-to-own actors');
+  checks.push('Vehicle pages filter by warehouse store and beneficiary source store');
   const indexSql=drafts.contractIndexSql('');
   assert.doesNotMatch(indexSql,/LEFT JOIN LATERAL/);
   assert.doesNotMatch(indexSql,/GROUP BY order_id/);

@@ -3944,6 +3944,10 @@
 .mg-list-filters { flex: 1 1 540px; flex-wrap: nowrap; justify-content: flex-end; }
 .mg-list-filters > label { flex: 1 1 0; min-width: 0; max-width: 260px; }
 .mg-list-filters select { width: 100%; max-width: none; text-overflow: ellipsis; }
+.mg-list-filters .mg-filter-combobox { position: relative; z-index: 1; }
+.mg-list-filters .mg-filter-combobox:focus-within { z-index: 5; }
+.mg-list-filters .mg-suggestion-control input { height: 40px; }
+.mg-filter-combobox-clear { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 40px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
 @media (max-width: 600px) {
   .mg-list-filters > label { max-width: none; }
   .mg-list-filters > label:last-of-type:nth-of-type(odd) { grid-column: 1 / -1; }
