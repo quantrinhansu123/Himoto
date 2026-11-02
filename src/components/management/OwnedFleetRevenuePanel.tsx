@@ -41,7 +41,7 @@ function FleetVehicleDetails({row,scope,onClose}:{row:FleetStoreRevenue;scope:Re
   const state=useFleetReport(query,0),report=state.report?.view==='vehicles'?state.report:null;
   const ready=report&&!state.loading&&!state.error,unknown=Boolean(report?.total.unassigned_rentals);
   const pages=Math.max(1,Math.ceil((report?.total.vehicles||0)/size)),active=report?.page||page;
-  return <Dialog className="mg-owned-fleet-dialog" title={`Đội xe chủ quản · ${row.store_name}`} subtitle={`${scope.from} – ${scope.to} · Chỉ xem`} onClose={onClose}>
+  return <Dialog className="mg-dialog-fullscreen mg-owned-fleet-dialog" title={`Đội xe chủ quản · ${row.store_name}`} subtitle={`${scope.from} – ${scope.to} · Chỉ xem`} onClose={onClose}>
     <div className="mg-dialog-body"><ReportState {...state}/>{ready&&<>
       <FleetSummary total={report.total}/>
       <p className="mg-rental-revenue-note">Đủ xe thuộc cơ sở này, kể cả xe chưa có doanh thu. Cơ sở đang giữ xe không làm đổi cơ sở chủ quản. Sắp xếp theo doanh thu giảm dần.</p>

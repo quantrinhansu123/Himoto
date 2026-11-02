@@ -12,7 +12,8 @@ import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import { ContractDraft, ContractRelative, CustomerDetails, LegacyContractDocument, buildContractDocument, contractStaffStoreId, createContractDraft, customerDetails, emptyVehicle, formatRelatives, normalizeIdCard, pairRelatives, relativesFromRow, staffIsAvailable, staffMatchesStore, validateContractDraft, validateOperationalDraft, validateReservationDraft, vehicleDetails } from '@/lib/management/contract-document';
 import { documentRequirements } from '@/lib/management/contract-requirements';
 import { hasSalesCommissionRole, staffRoles } from '@/lib/management/staff-positions';
-import { canEditIssuedContract,contractProfile,saveContractProfile } from '@/lib/management/contract-profile';
+import { canEditIssuedContract,contractProfile,issuedContractNumberError,saveContractProfile } from '@/lib/management/contract-profile';
+import { RentalTermsEditor } from '@/components/management/RentalTermsEditor';
 import { ManagementRow } from '@/lib/management/types';
 import { CONTRACT_STATUSES, CONTRACT_TYPES } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
@@ -64,7 +65,7 @@ function customerStatusLabel(status?: string) {
   return status ? `Trạng thái: ${status}` : 'Chưa có trạng thái';
 }
 const formatMoneyInput = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-export function ContractComposer({ row, mode = 'print', backfill=false, onClose, onDraftSaved, onFinalized,onHandover }: { row?: ManagementRow | null; mode?: 'print' | 'edit' | 'draft' | 'reservation';backfill?:boolean; onClose: () => void; onDraftSaved?: () => void; onFinalized?: (result: FinalizeResult) => void;onHandover?:()=>void }) {
+export function ContractComposer({ row, mode = 'print', backfill=false, onClose, onDraftSaved, onSaved, onFinalized,onHandover }: { row?: ManagementRow | null; mode?: 'print' | 'edit' | 'draft' | 'reservation';backfill?:boolean; onClose: () => void; onDraftSaved?: () => void; onSaved?: (code: string) => void; onFinalized?: (result: FinalizeResult) => void;onHandover?:()=>void }) {
   const pathname = usePathname();
   const ownershipPage = pathname.startsWith('/contracts/ownership');
   const { dataset, selectedStore, source, accessUser, canSaveContractDrafts, canFinalizeContracts, contractAutofill, saveContract, saveContractDraft, ensureData } = useManagement();
@@ -84,8 +85,12 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   const [finalizeTarget, setFinalizeTarget] = useState<{ id: number; revision: string; code: string } | null>(null);
   const editingDraft = mode === 'draft' || mode === 'reservation' || row?.status === 'draft';
   const canSaveDraft = !row || row.status === 'draft';
+  const editingIssued = mode === 'edit' && !canSaveDraft;
+  const issuedVehicleBlock = editingIssued ? 'Hợp đồng đã phát hành; dùng Đổi xe trên danh sách để thay xe. Form sửa không đổi kho xe.' : undefined;
+  const issuedMoneyBlock = editingIssued ? 'Hợp đồng đã phát hành; dùng Sửa tiền / ngày thuê để đổi tiền và hạn thuê. Form sửa không đổi sổ quỹ.' : undefined;
   const catalog = useContractTypes();
   const [typeManagerOpen, setTypeManagerOpen] = useState(false);
+  const [editingTerms, setEditingTerms] = useState(false);
   const [draft, setDraft] = useState<ContractDraft>(() => {
     const initial = createContractDraft(dataset!, selectedStore, row);
     if(backfill&&!row)initial.backfill={note:''};
@@ -538,12 +543,18 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
         }
       }
     }
-    const next = savingDraft ? validateDraftSave(draft, validationDataset) : finalizing
+    const next: Record<string, string> = savingRecord ? (() => {
+      const invalid = issuedContractNumberError(draft.contract_number);
+      return {
+        ...(invalid ? { contract_number: invalid } : {}),
+        ...(lookupState !== 'found' ? { id_card: 'Tra cứu hoặc chọn khách hàng trước khi lưu hợp đồng.' } : {}),
+      };
+    })() : savingDraft ? validateDraftSave(draft, validationDataset) : finalizing
       ? { ...validateDraftSave(draft, validationDataset), ...contractBackfillErrors(draft.backfill,draft.start_date), ...(reserving ? validateReservationDraft(draft,validationDataset,staff,source) : validateOperationalDraft(draft,validationDataset,staff,source)) }
       : validateContractDraft(draft,validationDataset,staff,source);
     if (canSaveDraft && (!row && !draft.contract_type_id || draft.contract_type_id && !catalog.types.some(type => type.id === draft.contract_type_id && (type.active || row && (row.contract_type_id || row.rental_type) === type.id)))) next.contract_type_id = catalog.error || 'Chọn loại hợp đồng đang dùng, hoặc thêm loại mới.';
-    if (rentalDays && (!/^\d+$/.test(rentalDays) || !Number.isSafeInteger(Number(rentalDays)) || Number(rentalDays) < 1 || (draft.start_date && !addRentalDays(draft.start_date,rentalDays)))) next.rental_days = 'Nhập số ngày nguyên lớn hơn 0 và ngày thuê hợp lệ.';
-    if (!savingDraft && lookupState !== 'found') next.id_card = 'Tra cứu hoặc tạo khách hàng trước khi lưu / in.';
+    if (!savingRecord && rentalDays && (!/^\d+$/.test(rentalDays) || !Number.isSafeInteger(Number(rentalDays)) || Number(rentalDays) < 1 || (draft.start_date && !addRentalDays(draft.start_date,rentalDays)))) next.rental_days = 'Nhập số ngày nguyên lớn hơn 0 và ngày thuê hợp lệ.';
+    if (!savingDraft && !savingRecord && lookupState !== 'found') next.id_card = 'Tra cứu hoặc tạo khách hàng trước khi lưu / in.';
     setErrors(next); setSaveError('');
     if (Object.keys(next).length) {
       setSaveError(`Chưa thể ${finalizing ? 'lưu chính thức' : savingDraft ? 'lưu nháp' : savingRecord ? 'lưu hợp đồng' : 'tạo bản in'}. Có ${Object.values(next).filter(Boolean).length} mục cần kiểm tra.`);
@@ -565,8 +576,24 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
       return;
     }
     if (savingRecord && row) {
+      if (source === 'api') {
+        if (!canEditIssuedContract(accessUser, row.store_id)) { setSaveError('Tài khoản chưa được cấp quyền Lập / sửa hợp đồng.'); return; }
+        if (!profileRevision) { setSaveError('Chưa tải được phiên bản hợp đồng. Bấm Làm mới rồi thử lại.'); return; }
+        busy.current = true; setSaving(true); setProfileMessage('');
+        try {
+          const profile = contractProfile(draft);
+          const result = await saveContractProfile(row.id, profileRevision, profile, { contract_number: draft.contract_number, notes, status });
+          setProfileRevision(result.revision);
+          await savePhotos(row.id);
+          savedProfile.current = JSON.stringify(profile);
+          onSaved?.(result.code || draft.contract_number.trim() || row.code);
+          onClose();
+        } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Không lưu được hợp đồng. Vui lòng thử lại.'); requestAnimationFrame(()=>errorSummary.current?.focus()); }
+        finally { busy.current = false; setSaving(false); }
+        return;
+      }
       busy.current = true; setSaving(true);
-      try { await saveContract(row.id, { draft, status, rental_type: rentalType, notes }); await savePhotos(row.id); onClose(); }
+      try { await saveContract(row.id, { draft, status, rental_type: rentalType, notes }); await savePhotos(row.id); onSaved?.(draft.contract_number.trim() || row.code); onClose(); }
       catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Không lưu được hợp đồng. Vui lòng thử lại.'); }
       finally { busy.current = false; setSaving(false); }
       return;
@@ -792,10 +819,10 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   function field(key: keyof Omit<ContractDraft, 'customer' | 'vehicles' | 'customer_id'>, label: string, type = 'text', required = false) {
     return <div className="mg-field" key={key}><label htmlFor={`contract-${key}`}>{label}{required && <span aria-hidden="true"> *</span>}</label>
       <input id={`contract-${key}`} name={key} type={type} value={String(draft[key])} required={required} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 1 : undefined}
-        readOnly={Boolean(row) && mode === 'edit' && !editingDraft && key === 'contract_number'}
         maxLength={key === 'contract_number' ? 32 : undefined}
         aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `contract-${key}-error` : undefined} onChange={event => change(key, event.target.value)} />
       {key === 'contract_number' && canSaveDraft && <small>Nhập đúng số HĐ giấy. Khi hoàn tất, hệ thống và Telegram dùng số này, giữ nguyên số 0 đầu. Để trống để cấp số tự động.</small>}
+      {key === 'contract_number' && editingIssued && <small>Nhập đúng số trên hợp đồng giấy, giữ nguyên số 0 đầu.</small>}
       {errors[key] && <p id={`contract-${key}-error`} className="mg-field-error">{errors[key]}</p>}</div>;
   }
   const customerFields: { key: keyof CustomerDetails; label: string; type?: string; wide?: boolean; hint?: string }[] = [
@@ -861,7 +888,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
             {Object.values(errors).some(Boolean)&&<ul>{Object.entries(errors).filter(([,message])=>message).map(([key,message])=><li key={key}><button type="button" className="mg-inline-button" onClick={()=>openErrorField(key)}>{contractFieldLabel(key)}: {message}</button></li>)}</ul>}
             <p>Thông tin đang nhập được giữ trên form. {Object.values(errors).some(Boolean)?'Bấm vào mục cảnh báo để kiểm tra và sửa, sau đó thử lưu lại.':'Làm theo hướng dẫn ở trên rồi thử lưu lại. Nếu vẫn lỗi, báo người phụ trách kèm số hợp đồng và nội dung cảnh báo.'}</p>
           </div>}
-          <div className="mg-composer-notice">{reserving ? 'Khách cọc chưa thuê xe: bấm Thêm mới và chỉ cần họ tên. CCCD, số điện thoại, địa chỉ và giấy tờ bổ sung khi giao xe. Tiền giữ xe được trừ vào tiền thuê; chỉ vào Sổ quỹ sau khi xác nhận khoản đã nhận.' : canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Hợp đồng nháp để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Hợp đồng đã có trong danh sách; bản in là bản nháp.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
+          <div className="mg-composer-notice">{reserving ? 'Khách cọc chưa thuê xe: bấm Thêm mới và chỉ cần họ tên. CCCD, số điện thoại, địa chỉ và giấy tờ bổ sung khi giao xe. Tiền giữ xe được trừ vào tiền thuê; chỉ vào Sổ quỹ sau khi xác nhận khoản đã nhận.' : canSaveDraft ? canSaveContractDrafts ? 'Lưu nháp giữ thông tin đang nhập trên hệ thống, kể cả khi chưa điền đủ. Vào mục Hợp đồng nháp để tiếp tục chỉnh sửa. Bản nháp chưa phát hành hợp đồng.' : 'Đang tra cứu dữ liệu hệ thống. Chức năng ghi bản nháp chưa được kết nối; thông tin đang nhập chưa được lưu.' : mode === 'edit' ? 'Form sửa giống form nhập: chỉnh số HĐ, ngày ký/ngày tạo, trạng thái, khách, người thân, NVKD, người làm HĐ, ảnh và yêu cầu khi in. Tiền / ngày thuê dùng Sửa tiền / ngày thuê; đổi xe dùng Đổi xe. Lưu hợp đồng không đổi kho xe hay sổ quỹ.' : 'Điền thông tin để xem và in mẫu hợp đồng.'}</div>
           <fieldset className="mg-composer-fields" disabled={saving}>
           <ContractSectionTabs prefix="contract-composer" active={section} onChange={setSection} />
           {panel('contract', 'Thông tin hợp đồng & Pháp lý', <>
@@ -895,7 +922,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
                 {attributionError && <small role="status">Chưa tải được gợi ý nhân viên; vẫn có thể nhập thủ công.</small>}</div>
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
-            <div className="mg-contract-record-status">{canSaveDraft ? <><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></> : mode === 'edit' ? <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div> : null}</div>
+            <div className="mg-contract-record-status">{canSaveDraft ? <><span>Trạng thái hợp đồng</span><strong className="mg-status mg-status-amber">Lưu nháp</strong></> : mode === 'edit' ? <div className="mg-field"><label htmlFor="contract-record-status">Trạng thái hợp đồng</label><select id="contract-record-status" value={status} onChange={event => setStatus(event.target.value)}>{!CONTRACT_STATUSES.some(option => option.value === status) && <option value={status}>{status}</option>}{CONTRACT_STATUSES.filter(option => option.value !== 'draft').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small>Chỉ đổi nhãn trạng thái trên hợp đồng; không tự trả xe hay chỉnh kho.</small></div> : null}</div>
           </>)}
           {panel('customer', 'Thông tin khách hàng (Bên B)', <>
             <div className="mg-form-grid mg-contract-grid-two">
@@ -949,12 +976,14 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
             <button type="button" className="mg-button" disabled={inventoryLoading} onClick={() => setInventoryRetry(value => value + 1)}>{inventoryLoading?'Đang tải kho xe…':'Làm mới kho xe'}</button>
             {inventoryError && <p className="mg-field-error" role="alert">{inventoryError} <button type="button" className="mg-inline-button" onClick={() => setInventoryRetry(value => value + 1)}>Thử lại</button></p>}
             <p className="mg-composer-hint">Thời gian thuê và hẹn trả áp dụng cho các xe trong hợp đồng.</p>
+            {editingIssued && <p className="mg-composer-hint" role="status">{issuedVehicleBlock}</p>}
             {draft.vehicles.map((vehicle, index) => {
-              return <div key={index} className="mg-composer-vehicle"><div className="mg-composer-vehicle-header"><strong>Thông tin xe thuê số {index + 1}</strong>{draft.vehicles.length > 1 && <button className="mg-icon-button" type="button" aria-label={`Bỏ xe ${index + 1}`} onClick={() => change('vehicles', draft.vehicles.filter((_, i) => i !== index))}><Trash2 size={16} /></button>}</div>
+              return <div key={index} className="mg-composer-vehicle"><div className="mg-composer-vehicle-header"><strong>Thông tin xe thuê số {index + 1}</strong>{draft.vehicles.length > 1 && <button className="mg-icon-button" type="button" aria-label={issuedVehicleBlock ? `Bỏ xe ${index + 1}. ${issuedVehicleBlock}` : `Bỏ xe ${index + 1}`} title={issuedVehicleBlock} disabled={editingIssued} onClick={() => { if (!editingIssued) change('vehicles', draft.vehicles.filter((_, i) => i !== index)); }}><Trash2 size={16} /></button>}</div>
               <div className="mg-field"><label htmlFor={`contract-vehicle-${index}`}>Chọn xe thuê *</label>
                 <VehiclePicker id={`contract-vehicle-${index}`} index={index} vehicles={branchVehicles} directory={allVehicles} ownershipStoreIds={ownershipStockRequired?ownershipStoreIds:undefined} value={vehicle.id} storeName={!staffStoreId ? 'tất cả cơ sở' : vehicleStoreName || 'cửa hàng xe'} monthly={monthlyPackage} historical={draft.backfill?.returned_at!==undefined}
-                  ownOrderId={row?.id} takenIds={draft.vehicles.map(item => item.id).filter(Boolean)} disabled={false} invalid={Boolean(errors[`vehicle_${index}`])}
-                  proposedStart={draft.start_date} proposedEnd={draft.end_date} onChange={id => chooseVehicle(index, id)} />
+                  ownOrderId={row?.id} takenIds={draft.vehicles.map(item => item.id).filter(Boolean)} disabled={editingIssued} invalid={Boolean(errors[`vehicle_${index}`])}
+                  proposedStart={draft.start_date} proposedEnd={draft.end_date} onChange={id => { if (!editingIssued) chooseVehicle(index, id); }} />
+                {editingIssued && <small>{issuedVehicleBlock}</small>}
                 {errors[`vehicle_${index}`] && <p className="mg-field-error">{errors[`vehicle_${index}`]}</p>}</div>
               {vehicle.id && <div className="mg-composer-vehicle-summary">{vehicle.license} · {vehicle.brand} · {vehicle.type_text} · {vehicle.year || 'Chưa có năm sản xuất'}<br />Cơ sở quản lý xe: {vehicle.stock_store_name || allVehicles.find(item=>String(item.id)===vehicle.id)?.store_name || 'Chưa xác định'} · Doanh thu: {branchName || 'Chưa chọn nguồn khách'}</div>}
               {vehicle.id&&<SelectedVehicleGps vehicleId={vehicle.id} data={selectedGps}/>}
@@ -970,17 +999,19 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
               })}</div>
             </div>;
             })}
-            <button className="mg-button" type="button" disabled={draft.vehicles.length >= 50} onClick={() => change('vehicles', [...draft.vehicles, emptyVehicle()])}><Plus size={16} />Thêm xe</button>
+            <button className="mg-button" type="button" disabled={editingIssued || draft.vehicles.length >= 50} title={issuedVehicleBlock} aria-label={issuedVehicleBlock ? `Thêm xe. ${issuedVehicleBlock}` : undefined} onClick={() => { if (!editingIssued) change('vehicles', [...draft.vehicles, emptyVehicle()]); }}><Plus size={16} />Thêm xe</button>
             {source === 'api' && <RecordPhotoFields key={`plates-${photoVersion}`} entity="contracts" recordId={savedDraft?.id || row?.id} slots={[{ key: 'scan_plate', label: 'Biển số để tự chọn xe' }, ...draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))]} title="Chụp biển số · Tự chọn xe bằng AI" value={platePhotos} onChange={setPlatePhotos} onBusyChange={setProcessingPlatePhoto} disabled={saving} ocr={plateOcr} />}
             <div className="mg-field mg-field-wide"><RecordPhotoFields key={`transaction-${photoVersion}`} entity="contracts" recordId={savedDraft?.id||row?.id} slots={contractPhotoSlots('rental')} title="Ảnh xe 4 góc, toàn cảnh & video" value={transactionMedia} onChange={setTransactionMedia} disabled={saving} onBusyChange={setMediaBusy('vehicle')}/><p>Ảnh/video được lưu cùng bản nháp và tập hợp ở bước cuối với CCCD, GPLX và ảnh biển số. Chỉ gửi Telegram khi chủ động bấm Gửi toàn bộ.</p></div>
           </>)}
           {panel('payment', 'Chi phí', <>
+            {editingIssued && !ownership && row && <p><button type="button" className="mg-button" disabled={saving} onClick={() => setEditingTerms(true)}>Sửa tiền / ngày thuê</button></p>}
+            {editingIssued && <p className="mg-composer-hint" role="status">{issuedMoneyBlock}</p>}
             <div className="mg-contract-cost-section"><h3>{reserving ? 'Tiền giữ xe / Đặt cọc' : 'Tiền cọc'}</h3><div className="mg-form-grid mg-contract-grid-two">
-              {moneyField('deposit_amount', reserving ? 'Số tiền cọc giữ xe (VNĐ)' : 'Số tiền đặt cọc (VNĐ)')}{paymentMethodField('deposit_payment_method', 'Hình thức dự kiến nhận cọc')}
+              {moneyField('deposit_amount', reserving ? 'Số tiền cọc giữ xe (VNĐ)' : 'Số tiền đặt cọc (VNĐ)', editingIssued)}{paymentMethodField('deposit_payment_method', 'Hình thức dự kiến nhận cọc')}
             </div></div>
             <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3><div className="mg-form-grid mg-contract-grid-two">
-              <div className="mg-field"><label htmlFor="contract-package_name">Gói thuê</label><select id="contract-package_name" value={draft.package_name} onChange={event => change('package_name',event.target.value)}>{['Theo ngày','Theo tuần','Theo tháng'].filter(value=>!canSaveDraft || ownership || (rentalType.startsWith('monthly') ? value === 'Theo tháng' : value !== 'Theo tháng')).map(value=><option key={value} value={value}>{value}</option>)}</select></div>
-              {moneyField('unit_price', 'Đơn giá áp dụng (VNĐ)')}
+              <div className="mg-field"><label htmlFor="contract-package_name">Gói thuê</label><select id="contract-package_name" value={draft.package_name} disabled={editingIssued} title={issuedMoneyBlock} onChange={event => change('package_name',event.target.value)}>{['Theo ngày','Theo tuần','Theo tháng'].filter(value=>!canSaveDraft || ownership || (rentalType.startsWith('monthly') ? value === 'Theo tháng' : value !== 'Theo tháng')).map(value=><option key={value} value={value}>{value}</option>)}</select></div>
+              {moneyField('unit_price', 'Đơn giá áp dụng (VNĐ)', editingIssued)}
               <div className="mg-field"><label htmlFor="contract-rental-base">Tiền thuê xe (VNĐ)</label><input id="contract-rental-base" readOnly value={formatMoneyInput(String(Math.max((Number(draft.total_amount)||0)-otherFees,0)))}/></div>
               {paymentMethodField('payment_method', 'Hình thức dự kiến thu thuê/phí')}
             </div><p className="mg-composer-hint">{canSaveDraft?`Đơn giá cho toàn bộ xe trong hợp đồng / ${billingUnitLabel(draft.package_name)}. Không nhân thêm số xe.`:'Đơn giá và tổng tiền theo hợp đồng đã lưu.'}</p>
@@ -1029,17 +1060,18 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
           </fieldset>{profileMessage && <p className="mg-payment-success" role="status">{profileMessage}</p>}
           {canSaveDraft&&finalizeBlockReason&&<p className="mg-field-error" role="status">{finalizeBlockReason}</p>}
         </div>
-        <div className="mg-dialog-footer"><span className="mg-form-note">{row?.status==='deposit_contract'?'Điền thông tin khách, giấy tờ và người làm hợp đồng → Lưu hồ sơ hợp đồng → Tiếp tục giao xe. Tiền cọc và tiền thuê giữ theo giao dịch đã ghi.':canSaveDraft ? ownershipApproval ? canIssue ? 'Duyệt hợp đồng sau khi kiểm tra hồ sơ và các khoản tiền đã nhận. Xe phải đang Lưu kho.' : 'Lưu nháp chờ quản lý duyệt. Bản nháp chưa phát hành; xe vẫn cho thuê được.' : 'Lưu nháp giữ chỗ; xe vẫn cho thuê được. Phát hành hợp đồng thuê khi xe đã Lưu kho.' : '* Theo yêu cầu hồ sơ khi in'}</span>
+        <div className="mg-dialog-footer"><span className="mg-form-note">{row?.status==='deposit_contract'?'Điền thông tin khách, giấy tờ và người làm hợp đồng → Lưu hồ sơ hợp đồng → Tiếp tục giao xe. Tiền cọc và tiền thuê giữ theo giao dịch đã ghi.':editingIssued ? 'Lưu hợp đồng ghi hồ sơ, số HĐ, trạng thái và ảnh. Tiền / ngày thuê và đổi xe dùng thao tác riêng.' : canSaveDraft ? ownershipApproval ? canIssue ? 'Duyệt hợp đồng sau khi kiểm tra hồ sơ và các khoản tiền đã nhận. Xe phải đang Lưu kho.' : 'Lưu nháp chờ quản lý duyệt. Bản nháp chưa phát hành; xe vẫn cho thuê được.' : 'Lưu nháp giữ chỗ; xe vẫn cho thuê được. Phát hành hợp đồng thuê khi xe đã Lưu kho.' : '* Theo yêu cầu hồ sơ khi in'}</span>
           <ReloadButton name="Làm mới bản nháp" busy={reloading} disabled={saving} onClick={() => { void reloadRecord(); }} />
           <button type="button" className="mg-button" disabled={saving || reloading} onClick={onClose}>Đóng</button>
           {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : ownershipApproval&&!canIssue?'Lưu nháp chờ duyệt':'Lưu nháp'}</button>}
           {canSaveDraft && source === 'api' && canSaveContractDrafts && canIssue && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={Boolean(finalizeBlockReason)||saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading'} title={finalizeBlockReason||(reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê')}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : ownershipApproval?'Duyệt hợp đồng':'Hoàn tất & thanh toán'}</button>}
-          {mode === 'edit' && !canSaveDraft && <button type="submit" className="mg-button mg-button-primary" disabled={saving || lookupState === 'loading'}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
-          {row && !canSaveDraft && source === 'api' && canEditIssuedContract(accessUser,row.store_id) && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
+          {editingIssued && <button type="submit" className="mg-button mg-button-primary" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading' || (source === 'api' && (!profileRevision || !canEditIssuedContract(accessUser, row?.store_id)))} title={source === 'api' && !canEditIssuedContract(accessUser, row?.store_id) ? 'Tài khoản chưa được cấp quyền Lập / sửa hợp đồng.' : source === 'api' && !profileRevision ? 'Chưa tải được phiên bản hợp đồng. Bấm Làm mới rồi thử lại.' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
+          {row && !canSaveDraft && !editingIssued && source === 'api' && canEditIssuedContract(accessUser,row.store_id) && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
           {row?.status==='deposit_contract'&&canIssue&&onHandover&&<button type="button" className="mg-button mg-button-primary" disabled={saving||!profileMessage||savedProfile.current!==JSON.stringify(contractProfile(draft))} onClick={onHandover}><CheckCircle2 size={16}/>Tiếp tục giao xe</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
       </form>
     </Dialog>
+    {editingTerms && row && <RentalTermsEditor id={row.id} onClose={() => setEditingTerms(false)} onSaved={() => { setEditingTerms(false); onSaved?.(draft.contract_number.trim() || row.code); onClose(); }} />}
     {customerModal && <CustomerCreateDialog allowIncomplete startDraft={reserving} foreign={draft.customer.customer_type==='foreign'} idCard={draft.customer.customer_type==='foreign'?normalizeIdCard(idInput):/^\d{9}$|^\d{12}$/.test(normalizeIdCard(idInput)) ? normalizeIdCard(idInput) : ''} storeId={customerStoreId} onCreated={customerCreated} onClose={() => setCustomerModal(false)} />}
     {document && <ContractPrintPreview doc={document} contractId={savedDraft?.id || row?.id} onClose={() => setDocument(null)} />}
     {typeManagerOpen && <ContractTypeManager onClose={()=>setTypeManagerOpen(false)} onCreated={type=>{changeRentalType(type);setTypeManagerOpen(false);}} />}

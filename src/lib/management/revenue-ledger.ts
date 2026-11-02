@@ -13,7 +13,7 @@ export interface RevenueLedgerTotals {
  methods:Record<RevenueLedgerMethod,{income:number;expense:number;revenue:number;count:number}>;
 }
 export interface RevenueLedgerReport {rows:RevenueLedgerRow[];total:number;page:number;pages:number;page_size:number;totals:RevenueLedgerTotals;export_all:boolean}
-export interface RevenueLedgerQuery {from:string;to:string;store:string;search:string;category:string;method:string;page:number;size:number}
+export interface RevenueLedgerQuery {from:string;to:string;store:string;search:string;category:string;method:string;page:number;size:number;side?:''|'in'|'out'}
 export function validRevenueLedger(value:unknown):value is RevenueLedgerReport {
  const report=value as RevenueLedgerReport,t=report?.totals;
  const integer=(n:unknown)=>Number.isSafeInteger(n);
@@ -32,7 +32,7 @@ export function validRevenueLedger(value:unknown):value is RevenueLedgerReport {
  return true;
 }
 export async function loadRevenueLedger(query:RevenueLedgerQuery,signal?:AbortSignal,all=false):Promise<RevenueLedgerReport>{
- const params=new URLSearchParams({from:query.from,to:query.to,search:query.search,category:query.category,method:query.method,page:String(query.page),size:String(query.size),...(query.store==='all'?{}:{store_id:query.store}),...(all?{all:'1'}:{})});
+ const params=new URLSearchParams({from:query.from,to:query.to,search:query.search,category:query.category,method:query.method,page:String(query.page),size:String(query.size),...(query.store==='all'?{}:{store_id:query.store}),...(query.side?{side:query.side}:{}),...(all?{all:'1'}:{})});
  const response=await fetch(`/api/auth/rental-revenue/transactions?${params}`,{credentials:'same-origin',cache:'no-store',signal});
  const result=await response.json().catch(()=>null);
  if(!response.ok||result?.status!=='success'||!validRevenueLedger(result.data))throw Error(result?.message||'Không tải được sổ giao dịch hoặc tổng chi tiết chưa khớp.');

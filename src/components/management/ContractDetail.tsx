@@ -28,7 +28,6 @@ import { ContractReceiptSummary } from './ContractReceiptSummary';
 import { OwnershipTermsEditor,OwnershipTermsSummary } from './OwnershipTermsEditor';
 import { requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { contractIssuedEditBlockReason } from '@/lib/management/contract-profile';
-import { ContractEditDialog } from '@/components/contracts/ContractEditDialog';
 import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
 import { lifecycleDisplayStatus,loadContractLifecycle,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 
@@ -68,9 +67,8 @@ function rentalDays(start: unknown, end: unknown) {
 
 export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
 
-export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft,onHandover, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void;onHandover?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
+export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft,onEditIssued,onHandover, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void;onEditIssued?:()=>void;onHandover?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
   const { dataset, source, can, accessUser, invalidateData, notify } = useManagement();
-  const [editing,setEditing]=useState(false);
   const [lifecycleOverride,setLifecycleOverride]=useState<Partial<ManagementRow>>({});
   const [recoveryOpen,setRecoveryOpen]=useState(false),[lifecycleReload,setLifecycleReload]=useState(0);
   const applyLifecycle=useCallback((context:ContractLifecycleContext)=>{
@@ -293,12 +291,11 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
     {depositDeleteOpen&&<ContractDepositDeleteDialog row={row} onClose={()=>setDepositDeleteOpen(false)} onDeleted={()=>{setDepositDeleteOpen(false);invalidateData(['contracts','vehicles']);notify('Đã xóa hợp đồng cọc khỏi danh sách.');onClose();}}/>}
     {recoveryOpen&&<BadDebtRecoveryDialog id={row.id} code={row.code} onClose={()=>setRecoveryOpen(false)} onRecovered={()=>{setLifecycleReload(value=>value+1);void loadContractLifecycle(row.id).then(applyLifecycle).catch(()=>{});}}/>}
     <div className="mg-dialog-footer">{row.status==='deposit_contract'&&can('contracts.finalize')&&<><button type="button" className="mg-button" onClick={onPrint}>Bổ sung hồ sơ hợp đồng cọc</button>{onHandover&&<button type="button" className="mg-button mg-button-primary" onClick={onHandover}><Bike size={16}/>Giao xe đã đặt cọc</button>}<button type="button" className="mg-button" onClick={()=>setNoShow(true)}>Khách không đến nhận xe</button></>}<button type="button" className="mg-button" onClick={onClose}>Đóng</button>
-      {editing&&<ContractEditDialog row={row} onClose={()=>setEditing(false)} onSaved={code=>{setEditing(false);invalidateData(['contracts']);notify(`Đã lưu hợp đồng ${code}.`);onClose();}}/>}
       {source==='api'&&row.status!=='draft'&&(()=>{
-        const editBlock=contractIssuedEditBlockReason(accessUser,row.store_id);
+        const editBlock=contractIssuedEditBlockReason(accessUser,row.store_id) || (!onEditIssued ? 'Chưa mở được form sửa hợp đồng.' : null);
         return <button type="button" className="mg-button" disabled={Boolean(editBlock)} title={editBlock||undefined}
           aria-label={editBlock?`Sửa hợp đồng. ${editBlock}`:undefined}
-          onClick={()=>{if(!editBlock)setEditing(true);}}><Pencil size={16}/>Sửa hợp đồng</button>;
+          onClick={()=>{if(!editBlock)onEditIssued?.();}}><Pencil size={16}/>Sửa hợp đồng</button>;
       })()}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&requiresOwnershipApproval(row.rental_type)&&<OwnershipTermsEditor id={row.id} code={row.code} onSaved={value=>{setLifecycleOverride(previous=>({...previous,ownership_term_months:value.term_months,draft_revision:value.revision}));fetchHistory();}}/>}
       {source==='api'&&row.status==='deposit_contract'&&(()=>{

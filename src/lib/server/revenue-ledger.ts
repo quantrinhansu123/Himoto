@@ -9,12 +9,12 @@ type Database=Pick<PoolClient,'query'>;
 export class RevenueLedgerError extends Error {constructor(message:string,public status=400){super(message);}}
 const validDate=(s:string)=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s))&&new Date(`${s}T00:00Z`).toISOString().slice(0,10)===s;
 export function parseRevenueLedger(params:URLSearchParams){
- const from=params.get('from')||'',to=params.get('to')||'',search=(params.get('search')||'').trim(),category=params.get('category')||'',method=params.get('method')||'';
+ const from=params.get('from')||'',to=params.get('to')||'',search=(params.get('search')||'').trim(),category=params.get('category')||'',method=params.get('method')||'',side=params.get('side')||'';
  const integer=(key:string,defaultValue:number,max:number)=>{const raw=params.get(key)||String(defaultValue);if(!/^[1-9]\d*$/.test(raw)||!Number.isSafeInteger(Number(raw))||Number(raw)>max)throw new RevenueLedgerError('Phân trang sổ giao dịch không hợp lệ.');return Number(raw);};
  if(params.has('store_id')&&!params.get('store_id'))throw new RevenueLedgerError('Cơ sở không hợp lệ.');
  const store=params.has('store_id')?integer('store_id',1,Number.MAX_SAFE_INTEGER):null;
- if(!validDate(from)||!validDate(to)||from>to||search.length>200||Array.from(search).some(c=>c.charCodeAt(0)<32)||category&&!Object.hasOwn(REVENUE_LEDGER_CATEGORIES,category)&&category!=='revenue'||method&&!Object.hasOwn(REVENUE_LEDGER_METHODS,method)||params.has('all')&&params.get('all')!=='1')throw new RevenueLedgerError('Kiểm tra ngày, cơ sở và bộ lọc sổ giao dịch.');
- return {from,to,store,search,category,method,page:integer('page',1,1000000),size:integer('size',20,100),all:params.get('all')==='1'};
+ if(!validDate(from)||!validDate(to)||from>to||search.length>200||Array.from(search).some(c=>c.charCodeAt(0)<32)||category&&!Object.hasOwn(REVENUE_LEDGER_CATEGORIES,category)&&category!=='revenue'||method&&!Object.hasOwn(REVENUE_LEDGER_METHODS,method)||side&&side!=='in'&&side!=='out'||params.has('all')&&params.get('all')!=='1')throw new RevenueLedgerError('Kiểm tra ngày, cơ sở và bộ lọc sổ giao dịch.');
+ return {from,to,store,search,category,method,side:side as ''|'in'|'out',page:integer('page',1,1000000),size:integer('size',20,100),all:params.get('all')==='1'};
 }
 const REVENUE_AMOUNT=`CASE WHEN category='rental' THEN GREATEST(regular_total-initial_fees,0)-GREATEST(regular_total-value-initial_fees,0) WHEN category='early' THEN -value WHEN category IN('renewal','late') THEN value ELSE 0 END`;
 const categorySql=`CASE WHEN category<>'excluded' THEN category WHEN name='order:deposit_refund' OR name LIKE 'order:complete:%' THEN 'deposit_refund' WHEN name='order:return_repair' THEN 'repair' WHEN name IN('order:extra','order:outside') THEN 'extra' ELSE 'deposit' END`;
@@ -33,6 +33,8 @@ export async function revenueLedger(db:Database,params:URLSearchParams):Promise<
  const values:unknown[]=[input.from,input.to,input.store,relevant];
  const bind=(value:unknown)=>{values.push(value);return `$${values.length}`;};
  const where=[`l.created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`,`($3::bigint IS NULL OR l.store_id=$3)`];
+ if(input.side==='in')where.push(`l.type<>'out'`);
+ if(input.side==='out')where.push(`l.type='out'`);
  if(input.category)where.push(input.category==='revenue'?`l.revenue_amount<>0`:`l.ledger_category=${bind(input.category)}`);
  if(input.method)where.push(`l.ledger_method=${bind(input.method)}`);
  const searchParameter=input.search?bind('%'+input.search.replace(/[\\%_]/g,'\\$&')+'%'):null;

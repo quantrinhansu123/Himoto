@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText,Settings, UsersRound, Wallet, X } from 'lucide-react';
+import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LayoutDashboard, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText,Settings, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { ReloadButton, requestReload } from './ReloadButton';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
@@ -18,6 +18,7 @@ import { ChangePasswordDialog } from './ChangePasswordDialog';
 const navigation = [
   {href:'/shift-reports',label:'Báo cáo cuối ca',kind:'shift-reports' as const,icon:ReceiptText},
   {href:'/operations',label:'Thao tác nhanh',kind:'operations' as const,icon:House},
+  {href:'/dashboard',label:'Dashboard',kind:'dashboard' as const,icon:LayoutDashboard},
   {href:'/staff-sales',label:'Báo cáo doanh thu',kind:'staff-sales' as const,icon:ReceiptText},
   { href: '/staff', label: 'Nhân sự', kind: 'staff' as const, icon: UsersRound },
   { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster' as const, icon: CalendarDays },

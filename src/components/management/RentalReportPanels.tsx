@@ -56,7 +56,7 @@ function OverviewTable({ report, days, onStore }: { report: RentalOverviewReport
 function StoreOverview({ scope, row, onClose }: { scope: RentalReportScope; row: RentalOverviewRow; onClose: () => void }) {
   const query = rentalReportQuery({ ...scope, store: row.key }); query.set('view', 'days');
   const state = useReport<RentalOverviewReport>('rental-overview', query, 0);
-  return <Dialog title={`Thuê xe · ${row.name}`} subtitle={`${scope.from} – ${scope.to} · Theo ngày thực thu / chi`} onClose={onClose}>
+  return <Dialog className="mg-dialog-fullscreen" title={`Thuê xe · ${row.name}`} subtitle={`${scope.from} – ${scope.to} · Theo ngày thực thu / chi`} onClose={onClose}>
     <div className="mg-dialog-body"><ReportState {...state}/>{state.report && !state.loading && !state.error && <OverviewTable report={state.report} days/>}</div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button></div>
   </Dialog>;
@@ -67,13 +67,13 @@ export function RentalOverviewPanel({ from, to, store, retry }: RentalReportScop
   const state = useReport<RentalOverviewReport>('rental-overview', query, retry), { report, loading, error } = state;
   const ready = report && !loading && !error;
   const otherIncome = report ? report.total.breakdown.repair_income + report.total.breakdown.extra_income + report.total.breakdown.other_income : 0;
-  return <section className="mg-rental-revenue mg-data-panel" aria-label="Tổng quan báo cáo thuê xe" aria-busy={loading}>
-    <div className="mg-rental-revenue-heading"><div><h2>Tổng quan báo cáo thuê xe</h2><p>Tổng hợp thu / chi hợp đồng thuê xe theo ngày và cơ sở</p></div></div>
-    <div className="mg-report-totals">{OVERVIEW_COLUMNS.slice(0, 3).map(([key, title]) => <div key={key}><span>{title}</span><strong data-overview={key}>{ready ? formatMoney(overviewValue(report.total, key)) : '—'}</strong></div>)}</div>
-    <p className="mg-rental-revenue-note">Doanh thu = Gia hạn + Phí thuê + Trả muộn − Hoàn trả sớm. Tổng thu gồm thêm cọc; tổng chi = Trả cọc + Hoàn trả sớm. Chỉ tính phiếu đã duyệt, theo ngày thu / chi tại Việt Nam. Bấm cơ sở để xem từng ngày.</p>
-    <div className="mg-rental-revenue-toolbar"><div role="group" aria-label="Xem tổng quan theo">{(['stores', 'days'] as const).map(key => <button key={key} type="button" className={`mg-button${view === key ? ' is-active' : ''}`} aria-pressed={view === key} onClick={() => setView(key)}>{key === 'stores' ? 'Theo cơ sở' : 'Theo ngày'}</button>)}</div>
-      <button type="button" className="mg-button" disabled={!ready || !report.rows.length} onClick={() => { if (report) download([[view === 'stores' ? 'Cơ sở' : 'Ngày', ...OVERVIEW_COLUMNS.map(([, title]) => title)], ...[...report.rows, report.total].map(row => [row.name, ...OVERVIEW_COLUMNS.map(([key]) => overviewValue(row, key))])], `tong-quan-thue-xe-${view}-${from}-${to}.csv`); }}><ArrowDownToLine size={15}/>Xuất Excel (CSV)</button>
+  return <section className="mg-rental-revenue mg-data-panel is-compact-report" aria-label="Báo cáo theo cơ sở" aria-busy={loading}>
+    <div className="mg-rental-revenue-heading"><div><h2>Báo cáo theo cơ sở</h2><p>Thu / chi theo ngày thực tế · Bấm cơ sở để xem từng ngày</p></div>
+      <div className="mg-rental-revenue-toolbar is-inline"><div role="group" aria-label="Xem tổng quan theo">{(['stores', 'days'] as const).map(key => <button key={key} type="button" className={`mg-button${view === key ? ' is-active' : ''}`} aria-pressed={view === key} onClick={() => setView(key)}>{key === 'stores' ? 'Theo cơ sở' : 'Theo ngày'}</button>)}</div>
+        <button type="button" className="mg-button" disabled={!ready || !report.rows.length} onClick={() => { if (report) download([[view === 'stores' ? 'Cơ sở' : 'Ngày', ...OVERVIEW_COLUMNS.map(([, title]) => title)], ...[...report.rows, report.total].map(row => [row.name, ...OVERVIEW_COLUMNS.map(([key]) => overviewValue(row, key))])], `bao-cao-theo-co-so-${view}-${from}-${to}.csv`); }}><ArrowDownToLine size={15}/>Xuất CSV</button>
+      </div>
     </div>
+    <div className="mg-report-totals">{OVERVIEW_COLUMNS.slice(0, 3).map(([key, title]) => <div key={key}><span>{title}</span><strong data-overview={key}>{ready ? formatMoney(overviewValue(report.total, key)) : '—'}</strong></div>)}</div>
     <ReportState {...state}/>{ready && <>
       {(otherIncome !== 0 || report.total.breakdown.other_expense !== 0) && <p className="mg-rental-revenue-note">Ngoài công thức: {formatMoney(otherIncome)} thu sửa chữa / thu khác và {formatMoney(report.total.breakdown.other_expense)} chi khác. Xem Sổ quỹ để đối chiếu các khoản này.</p>}
       <OverviewTable report={report} days={view === 'days'} onStore={view === 'stores' ? setSelected : undefined}/>
@@ -84,7 +84,7 @@ export function RentalOverviewPanel({ from, to, store, retry }: RentalReportScop
 function VehicleRevenueDetails({ row, scope, onClose }: { row: VehicleRevenueRow; scope: RentalReportScope; onClose: () => void }) {
   const query = rentalReportQuery(scope); query.set('vehicle_id', String(row.id));
   const state = useReport<VehicleRevenueDetail[]>('vehicle-revenue', query, 0);
-  return <Dialog title={`Doanh thu xe · ${row.license || row.name}`} subtitle={`${row.name} · Lượt thuê bắt đầu ${scope.from} – ${scope.to}`} onClose={onClose}>
+  return <Dialog className="mg-dialog-fullscreen" title={`Doanh thu xe · ${row.license || row.name}`} subtitle={`${row.name} · Lượt thuê bắt đầu ${scope.from} – ${scope.to}`} onClose={onClose}>
     <div className="mg-dialog-body"><ReportState {...state}/>{state.report && !state.loading && !state.error && <>
       <p>Tổng {state.report.length} lượt thuê · <strong>{formatMoney(state.report.reduce((total, line) => total + line.revenue, 0))}</strong></p>
       <div className="mg-table-scroll" role="region" aria-label="Các lượt thuê của xe" tabIndex={0}><table className="mg-table"><thead><tr><th scope="col">Hợp đồng</th><th scope="col">Ngày bắt đầu thuê</th><th scope="col">Dự kiến trả</th><th scope="col">Phí thuê</th><th scope="col">Gia hạn</th><th scope="col">Điều chỉnh muộn / sớm</th><th scope="col">Doanh thu</th></tr></thead><tbody>

@@ -1,37 +1,147 @@
 'use client';
-import {useEffect,useState} from 'react';
-import {ArrowDownToLine} from 'lucide-react';
-import {loadRentalRevenue,type RentalRevenueReport} from '@/lib/management/rental-revenue';
-import {formatMoney} from '@/lib/formatters';
-import {csvCell} from '@/lib/management/table-utils';
-import {RevenueLedger} from './RevenueLedger';
-const labels=[['rental','Phí thuê đã thu'],['renewal','Gia hạn đã thu'],['late','Trả muộn đã thu'],['early','Đã hoàn do trả sớm']] as const;
-export function RentalRevenuePanel({from,to,store,retry}:{from:string;to:string;store:string;retry:number}){
-  const [report,setReport]=useState<RentalRevenueReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[view,setView]=useState<'transactions'|'days'|'staff'>('transactions');
-  useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');
-    loadRentalRevenue(from,to,store,controller.signal).then(value=>{if(!controller.signal.aborted)setReport(value);}).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error?cause.message:'Không tải được doanh thu.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
-    return()=>controller.abort();
-  },[from,to,store,retry]);
-  const ready=!loading&&!error&&report,rows=view==='transactions'?[]:report?.[view]||[];
-  const name=(key:string)=>view==='days'?key.split('-').reverse().join('/'):key;
-  function exportCsv(){
-    if(!ready)return;
-    const data=[[view==='days'?'Ngày thu / hoàn tiền':'NVKD ghi nhận doanh số',...labels.map(([,label])=>label),'Doanh thu thuê xe'],...rows.map(row=>[name(row.name),...labels.map(([key])=>row[key]),row.revenue]),['Tổng',...labels.map(([key])=>report!.total[key]),report!.total.revenue]];
-    const url=URL.createObjectURL(new Blob(['\uFEFF',data.map(row=>row.map(value=>csvCell(String(value))).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
-    const a=document.createElement('a');a.href=url;a.download=`doanh-thu-thue-xe-${view}-${from}-${to}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  }
-  return <section className="mg-rental-revenue mg-data-panel" aria-label="Doanh thu thuê xe thực thu" aria-busy={loading}>
-    <div className="mg-rental-revenue-heading"><div><h2>Doanh thu thuê xe</h2><p>Theo ngày thực thu / thực hoàn tiền · Chưa trừ chi phí</p></div><strong data-revenue-total>{ready?formatMoney(report!.total.revenue):'—'}</strong></div>
-    <dl className="mg-rental-revenue-formula">{labels.map(([key,label])=><div key={key}><dt>{key==='early'?'− ':'+ '}{label}</dt><dd data-revenue={key}>{ready?formatMoney(report!.total[key]):'—'}</dd></div>)}</dl>
-    <p className="mg-rental-revenue-note">Doanh thu = Phí thuê + Gia hạn + Trả muộn − Hoàn tiền thuê trả sớm. Không gồm cọc, hoàn cọc, phí sửa chữa và khoản thu khác. Gia hạn chưa thu tiền chưa tính doanh thu.</p>
-    <div className="mg-rental-revenue-toolbar"><div role="group" aria-label="Xem doanh thu theo"><button type="button" className={`mg-button${view==='transactions'?' is-active':''}`} aria-pressed={view==='transactions'} onClick={()=>setView('transactions')}>Sổ giao dịch</button><button type="button" className={`mg-button${view==='days'?' is-active':''}`} aria-pressed={view==='days'} onClick={()=>setView('days')}>Theo ngày</button><button type="button" className={`mg-button${view==='staff'?' is-active':''}`} aria-pressed={view==='staff'} onClick={()=>setView('staff')}>Theo NVKD</button></div>{view!=='transactions'&&<button type="button" className="mg-button" disabled={!ready||!rows.length} onClick={exportCsv}><ArrowDownToLine size={15}/>Xuất Excel (CSV)</button>}</div>
-    {loading?<p className="mg-table-state" role="status">Đang tải doanh thu…</p>:error?<p className="mg-field-error" role="alert">{error}</p>:<>
-      {report!.unclassified_count>0&&<p className="mg-rental-revenue-note is-incomplete" role="status">Có {report!.unclassified_count} phiếu chưa xác định được loại thu / chi ({formatMoney(report!.unclassified_amount)}). Chưa cộng vào doanh thu; cần đối chiếu Sổ quỹ trước khi chốt KPI.</p>}
-      {view!=='transactions'&&<div className="mg-table-scroll" role="region" aria-label="Chi tiết doanh thu thuê xe" tabIndex={0}><table className="mg-table mg-rental-revenue-table"><thead><tr><th scope="col">{view==='days'?'Ngày thu / hoàn tiền':'NVKD ghi nhận doanh số'}</th>{labels.map(([key,label])=><th scope="col" className="mg-align-right" key={key}>{label}</th>)}<th scope="col" className="mg-align-right">Doanh thu</th></tr></thead>
-        <tbody>{rows.map(row=><tr key={row.key}><th scope="row">{name(row.name)}</th>{labels.map(([key])=><td className="mg-align-right" key={key}>{formatMoney(row[key])}</td>)}<td className="mg-align-right"><strong>{formatMoney(row.revenue)}</strong></td></tr>)}{!rows.length&&<tr><td colSpan={6}>Chưa có khoản thu hoặc hoàn tiền thuê trong kỳ.</td></tr>}</tbody>
-        <tfoot><tr><th scope="row">Tổng</th>{labels.map(([key])=><td className="mg-align-right" key={key}>{formatMoney(report!.total[key])}</td>)}<td className="mg-align-right"><strong>{formatMoney(report!.total.revenue)}</strong></td></tr></tfoot>
-      </table></div>}
-    </>}
-    {view==='transactions'&&<RevenueLedger from={from} to={to} store={store} retry={retry}/>}
-  </section>;
+import { useEffect, useState } from 'react';
+import { loadRentalRevenue, type RentalRevenueReport } from '@/lib/management/rental-revenue';
+import { loadEstimatedSales, type EstimatedSalesReport } from '@/lib/management/estimated-sales';
+import { formatMoney } from '@/lib/formatters';
+
+const labels = [['rental', 'Phí thuê đã thu'], ['renewal', 'Gia hạn đã thu'], ['late', 'Trả muộn đã thu'], ['early', 'Đã hoàn do trả sớm']] as const;
+
+export function RentalRevenuePanel({
+  from, to, store, retry,
+  debt, debtContracts, overdueDebt, overdueContracts, badDebt, debtLoading, debtError,
+}: {
+  from: string; to: string; store: string; retry: number;
+  debt: number; debtContracts: number; overdueDebt: number; overdueContracts: number; badDebt: number;
+  debtLoading: boolean; debtError: string;
+}) {
+  const [report, setReport] = useState<RentalRevenueReport | null>(null);
+  const [estimate, setEstimate] = useState<EstimatedSalesReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [estimateLoading, setEstimateLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [estimateError, setEstimateError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    loadRentalRevenue(from, to, store, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setReport(value); })
+      .catch(cause => {
+        if (!controller.signal.aborted) {
+          setReport(null);
+          setError(cause instanceof Error ? cause.message : 'Không tải được doanh thu.');
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [from, to, store, retry]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setEstimateLoading(true);
+    setEstimateError('');
+    loadEstimatedSales(from, to, store, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setEstimate(value); })
+      .catch(cause => {
+        if (!controller.signal.aborted) {
+          setEstimate(null);
+          setEstimateError(cause instanceof Error ? cause.message : 'Không tải được doanh số ước tính.');
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setEstimateLoading(false); });
+    return () => controller.abort();
+  }, [from, to, store, retry]);
+
+  const ready = !loading && !error && report;
+  const estimateReady = !estimateLoading && !estimateError && estimate;
+  const debtReady = !debtLoading && !debtError;
+
+  return (
+    <section className="mg-rental-revenue" aria-label="Doanh số, doanh thu và công nợ thuê xe" aria-busy={loading || estimateLoading || debtLoading}>
+      <div className="mg-revenue-pair">
+        <article className="mg-data-panel mg-revenue-card is-sales" aria-label="Doanh số ước tính">
+          <div className="mg-rental-revenue-heading">
+            <div>
+              <h2>Doanh số</h2>
+              <p>Ước tính theo HĐ bắt đầu thuê trong bộ lọc</p>
+            </div>
+            <strong data-sales-total>{estimateReady ? formatMoney(estimate!.sales) : '—'}</strong>
+          </div>
+          <dl className="mg-rental-revenue-formula mg-revenue-card-metrics">
+            <div><dt>Hợp đồng trong kỳ</dt><dd>{estimateReady ? estimate!.contracts.toLocaleString('vi-VN') : '—'}</dd></div>
+            <div><dt>Đang thuê (chưa trả)</dt><dd>{estimateReady ? estimate!.active_contracts.toLocaleString('vi-VN') : '—'}</dd></div>
+            <div><dt>Đã trả</dt><dd>{estimateReady ? estimate!.finished_contracts.toLocaleString('vi-VN') : '—'}</dd></div>
+            <div><dt>Ngày·xe trong kỳ</dt><dd>{estimateReady ? estimate!.vehicle_days.toLocaleString('vi-VN') : '—'}</dd></div>
+          </dl>
+          {estimateLoading ? <p className="mg-rental-revenue-note" role="status">Đang tải doanh số…</p>
+            : estimateError ? <p className="mg-field-error" role="alert" style={{ margin: '0 16px 12px' }}>{estimateError}</p>
+            : <p className="mg-rental-revenue-note">Chỉ HĐ có ngày bắt đầu thuê trong khoảng ngày và cơ sở đang chọn. Doanh số ước tính theo ngày·xe còn nằm trong kỳ của các HĐ đó.</p>}
+        </article>
+
+        <article className="mg-data-panel mg-revenue-card is-revenue" aria-label="Doanh thu thuê xe thực thu">
+          <div className="mg-rental-revenue-heading">
+            <div>
+              <h2>Doanh thu</h2>
+              <p>Thực thu trong kỳ của HĐ theo bộ lọc · Chưa trừ chi phí</p>
+            </div>
+            <strong data-revenue-total>{ready ? formatMoney(report!.total.revenue) : '—'}</strong>
+          </div>
+          <dl className="mg-rental-revenue-formula">
+            {labels.map(([key, label]) => (
+              <div key={key}>
+                <dt>{key === 'early' ? '− ' : '+ '}{label}</dt>
+                <dd data-revenue={key}>{ready ? formatMoney(report!.total[key]) : '—'}</dd>
+              </div>
+            ))}
+          </dl>
+          {loading ? <p className="mg-rental-revenue-note" role="status">Đang tải doanh thu…</p>
+            : error ? <p className="mg-field-error" role="alert" style={{ margin: '0 16px 12px' }}>{error}</p>
+            : <p className="mg-rental-revenue-note">Chỉ HĐ bắt đầu thuê trong khoảng ngày và cơ sở đang chọn. Cộng phiếu thực thu / hoàn trong kỳ: thuê + gia hạn + muộn − hoàn sớm. Không gồm cọc, phí sửa.</p>}
+        </article>
+
+        <article className="mg-data-panel mg-revenue-card is-debt" aria-label="Công nợ thuê xe">
+          <div className="mg-rental-revenue-heading">
+            <div>
+              <h2>Công nợ</h2>
+              <p>Tiền thuê còn thiếu của HĐ bắt đầu trong kỳ</p>
+            </div>
+            <strong data-debt-total>{debtReady ? formatMoney(debt) : '—'}</strong>
+          </div>
+          <dl className="mg-rental-revenue-formula mg-revenue-card-metrics">
+            <div><dt>Hợp đồng còn thiếu tiền</dt><dd>{debtReady ? debtContracts.toLocaleString('vi-VN') : '—'}</dd></div>
+            <div><dt>Trong đó quá hạn chưa thu</dt><dd>{debtReady ? overdueContracts.toLocaleString('vi-VN') : '—'}</dd></div>
+          </dl>
+          {debtLoading ? <p className="mg-rental-revenue-note" role="status">Đang tải công nợ…</p>
+            : debtError ? <p className="mg-field-error" role="alert" style={{ margin: '0 16px 12px' }}>{debtError}</p>
+            : <p className="mg-rental-revenue-note">Gồm đơn đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu. Không gồm cọc.</p>}
+        </article>
+
+        <article className="mg-data-panel mg-revenue-card is-overdue" aria-label="Nợ quá hạn">
+          <div className="mg-rental-revenue-heading">
+            <div>
+              <h2>Nợ quá hạn</h2>
+              <p>Hợp đồng quá hạn còn thiếu tiền · Chưa ghi nhận thu đủ</p>
+            </div>
+            <strong data-overdue-total>{debtReady ? formatMoney(overdueDebt) : '—'}</strong>
+          </div>
+          <dl className="mg-rental-revenue-formula mg-revenue-card-metrics">
+            <div><dt>Hợp đồng quá hạn chưa thu đủ</dt><dd>{debtReady ? overdueContracts.toLocaleString('vi-VN') : '—'}</dd></div>
+            <div><dt>Nợ xấu (riêng)</dt><dd>{debtReady ? formatMoney(badDebt) : '—'}</dd></div>
+          </dl>
+          {debtLoading ? <p className="mg-rental-revenue-note" role="status">Đang tải nợ quá hạn…</p>
+            : debtError ? <p className="mg-field-error" role="alert" style={{ margin: '0 16px 12px' }}>{debtError}</p>
+            : <p className="mg-rental-revenue-note">Tổng tiền thuê còn thiếu của HĐ đang Quá hạn trong kỳ; không gồm Nợ xấu và cọc.</p>}
+        </article>
+      </div>
+
+      {ready && report!.unclassified_count > 0 && (
+        <div className="mg-data-panel mg-rental-revenue-detail">
+          <p className="mg-rental-revenue-note is-incomplete" role="status">
+            Có {report!.unclassified_count} phiếu chưa xác định được loại thu / chi ({formatMoney(report!.unclassified_amount)}). Chưa cộng vào doanh thu; cần đối chiếu Sổ quỹ trước khi chốt KPI.
+          </p>
+        </div>
+      )}
+    </section>
+  );
 }

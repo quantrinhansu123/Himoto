@@ -46,7 +46,6 @@ import { FilterCombobox, type FilterOption } from './FilterCombobox';
 function FeatureLoading() { return <div className="mg-toast" role="status">Đang mở chức năng…</div>; }
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
 const ContractDetail = dynamic(() => import('./ContractDetail').then(module => module.ContractDetail), { ssr: false, loading: FeatureLoading });
-const ContractEditDialog = dynamic(() => import('@/components/contracts/ContractEditDialog').then(module=>module.ContractEditDialog), {ssr:false,loading:FeatureLoading});
 const ContractBadDebtDialog = dynamic(() => import('./ContractBadDebtDialog').then(module=>module.ContractBadDebtDialog), {ssr:false,loading:FeatureLoading});
 const loadComposer = () => import('@/components/contracts/ContractComposer');
 const ContractComposer = dynamic(() => loadComposer().then(module => module.ContractComposer), { ssr: false, loading: FeatureLoading });
@@ -195,7 +194,6 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     });
   }, [columnSignature, defaultVisibleKeys,columnMode]);
   const [viewing, setViewing] = useState<ManagementRow | null>(null);
-  const [contractEditing,setContractEditing]=useState<ManagementRow|null>(null);
   const [qrTarget,setQrTarget]=useState<number|null>(null);
   const [reminderTarget,setReminderTarget]=useState<number|null>(null);
   const [bulkReminderIds,setBulkReminderIds]=useState<number[]|null>(null);
@@ -282,7 +280,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     if(!row)return;
     handledAction.current=action;
     if(row.status==='draft'){setPrintRow(row);setComposerMode('draft');setComposerOpen(true);}
-    else if(canEditIssuedContract(accessUser,row.store_id))setContractEditing(row);
+    else if(canEditIssuedContract(accessUser,row.store_id)){setPrintRow(row);setComposerMode('edit');setComposerOpen(true);}
     else notify('Tài khoản chưa được cấp quyền Lập / sửa hợp đồng.');
     router.replace(`${contractPath}?contract_id=${id}`,{scroll:false});
   },[kind,searchParams,loading,error,filteredRows,table.data,accessUser,notify,router,contractPath]);
@@ -476,7 +474,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onView={row => { if (kind === 'staff') setStaffDialog({ row, mode: 'view' }); else view(row); }}
           onEdit={row => {
             if (kind === 'contracts') {
-              if(row.status!=='draft'){if(canEditIssuedContract(accessUser,row.store_id))setContractEditing(row);}
+              if(row.status!=='draft'){if(canEditIssuedContract(accessUser,row.store_id)){setPrintRow(row);setComposerMode('edit');setComposerOpen(true);}}
               else {setPrintRow(row);setComposerMode('draft');setComposerOpen(true);}
             }
             else if (kind === 'staff') setStaffDialog({ row, mode: 'edit' });
@@ -584,13 +582,19 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       onQr={()=>{setQrTarget(viewing.id);setViewing(null);}}
       onHandover={canFinalizeRentalContract(accessUser,viewing.rental_type)?()=>{setHandoverId(viewing.id);setViewing(null);}:undefined}
       onEditDraft={()=>{setPrintRow(viewing);setComposerMode('draft');setViewing(null);setComposerOpen(true);}}
+      onEditIssued={()=>{setPrintRow(viewing);setComposerMode('edit');setViewing(null);setComposerOpen(true);}}
       onReminder={canSendDebtReminder(accessUser)?()=>{setReminderTarget(viewing.id);setViewing(null);}:undefined}
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
-    {contractEditing&&<ContractEditDialog row={contractEditing} onClose={()=>setContractEditing(null)} onSaved={code=>{setContractEditing(null);invalidateData(['contracts']);table.refresh();notify(`Đã lưu hợp đồng ${code}.`);}}/>}
     {qrTarget!==null&&<ContractQrDialog id={qrTarget} onClose={()=>setQrTarget(null)}/>}
     {reminderTarget!==null&&<DebtReminderDialog orderId={reminderTarget} onClose={()=>setReminderTarget(null)}/>}
     {bulkReminderIds&&canBulkRemind&&<BulkDebtReminderDialog orderIds={bulkReminderIds} onClose={()=>setBulkReminderIds(null)} onSent={()=>{setSelectedIds(new Set());notify('Đã gửi nhắc nợ cho các hợp đồng đã chọn.');}}/>}
     {composerOpen && dataset && <ManagementDataBoundary kinds={CONTRACT_DATA_KINDS} title="Mở hợp đồng" onClose={() => {setComposerOpen(false);setBackfillComposer(false);}}><ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} backfill={backfillComposer} onClose={() => {setComposerOpen(false);setBackfillComposer(false);}} onDraftSaved={() => { setBackfillComposer(false);setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); if(draftsOnly&&!searchParams.toString())table.refresh();else router.push('/contracts/drafts'); }}
+      onSaved={code => {
+        setComposerOpen(false);setBackfillComposer(false);
+        invalidateData(['contracts']);
+        if(paged)table.refresh();else void ensureData(['contracts'], true).catch(() => {});
+        notify(`Đã lưu hợp đồng ${code}.`);
+      }}
       onHandover={printRow?.status==='deposit_contract'&&canFinalizeRentalContract(accessUser,printRow.rental_type)?()=>{setComposerOpen(false);setHandoverId(printRow.id);}:undefined}
       onFinalized={result => {
         setBackfillComposer(false);
