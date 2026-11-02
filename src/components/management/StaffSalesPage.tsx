@@ -8,6 +8,7 @@ import {RentalRevenuePanel} from './RentalRevenuePanel';
 import { RevenueLedger } from './RevenueLedger';
 import { RentalOverviewPanel, VehicleRevenuePanel } from './RentalReportPanels';
 import { OwnedFleetRevenuePanel } from './OwnedFleetRevenuePanel';
+import { NewCustomersBySourcePanel } from './NewCustomersBySourcePanel';
 import { canViewOwnedFleetRevenue } from '@/lib/management/permissions';
 import { loadSalesSummary,loadStaffSales,type StaffSalesReport,type SalesSummaryReport } from '@/lib/management/staff-sales';
 import { summarizeBySalesStaff,summarizeByStore,summarizeSalesKpis,type SalesKpis,type SourceSalesSummary } from '@/lib/management/source-sales';
@@ -119,6 +120,7 @@ export function StaffSalesPage() {
     <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền còn thiếu của đơn đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu. Nợ xấu quá hạn = nợ quá hạn (HĐ Quá hạn chưa thu đủ) cộng nợ xấu.</p>
     <SummaryTable title="Theo NVKD ghi nhận doanh số" description={`Tổng hợp từ Danh sách hợp đồng theo cột NVKD ghi nhận doanh số. ${scope}`} column="NVKD ghi nhận doanh số" unit="nhân viên" summary={sources} filename={`doanh-so-nvkd-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
     <SummaryTable title="Doanh thu theo cơ sở" description={`Tổng hợp từ Danh sách hợp đồng theo cột Nguồn / doanh thu. ${scope}`} column="Cơ sở (Nguồn / doanh thu)" unit="cơ sở" summary={stores} filename={`doanh-thu-co-so-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
+    <NewCustomersBySourcePanel from={from} to={to} store={selectedStore} retry={retry}/>
     <div className="mg-source-sales-heading mg-source-sales-heading-sub"><div><h2>Theo NVKD / TLS được phân công</h2></div></div>
     <div className="mg-sales-filter-row"><div className="mg-sales-segmented" role="group" aria-label="Bộ phận báo cáo bổ sung">{DEPARTMENTS.map(item=><button key={item.value||'all'} type="button" aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div><button className="mg-button" type="button" disabled={loading||!rows.length} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất báo cáo bổ sung</button></div>
     {loading ? <p role="status" className="mg-table-state">Đang tải doanh số…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : !rows.length ? <p className="mg-table-state">Chưa có doanh số được gắn nhân viên trong kỳ.</p> :
