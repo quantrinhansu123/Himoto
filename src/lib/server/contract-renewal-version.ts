@@ -2,6 +2,14 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import { hasRenewalVersion, nextRenewalVersion } from '@/lib/management/contract-renewals';
 
+// The upload form only needs the next version, not Telegram messages or media.
+export async function readRenewalPhotoContext(db: Pick<PoolClient, 'query'>, orderId: number) {
+  const order = (await db.query(`SELECT draft_payload #> '{management_composer,versions}' AS versions
+    FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL`, [orderId])).rows[0];
+  if (!order) return null;
+  return { next_renewal_version: await nextContractRenewalVersion(db, orderId, order.versions) };
+}
+
 // Imported/reconciled contracts may no longer have every version in their JSON.
 // Never reuse a number already attached to a saved notice or receipt. Photos for
 // the pending renewal do not reserve a number: they are uploaded before saving.

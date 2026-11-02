@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarPlus, LoaderCircle, Wallet } from 'lucide-react';
 import { loadContractReturnableItems, ReturnableContractItem } from '@/lib/management/contract-returns';
-import { overdueParts, saveContractRenewal, renewalDurationUnits, renewalFeeWarning } from '@/lib/management/contract-renewals';
+import { overdueParts, saveContractRenewal, renewalDurationUnits, renewalFeeWarning, loadRenewalPhotoVersion } from '@/lib/management/contract-renewals';
 import {
   cashbookPaymentPath, loadPaymentContext, PAYMENT_METHODS, paymentAccountKey, paymentAccounts,
   paymentMethodLabel, PaymentContext, PaymentMethod, vietnamPaymentTime,
@@ -16,7 +16,6 @@ import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 import { ContractTransactionPhotos } from './ContractTransactionPhotos';
 import { ContractTelegramPanel } from './ContractTelegramPanel';
-import { contractTelegramRequest } from '@/lib/management/contract-telegram';
 import { validBackfillTime } from '@/lib/management/contract-backfill';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -51,6 +50,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [renewalVersion, setRenewalVersion] = useState<number | null>(null);
+  const [photoContextError, setPhotoContextError] = useState('');
+  const [photoContextAttempt, setPhotoContextAttempt] = useState(0);
   const [photosPending, setPhotosPending] = useState(false);
   const [hasPaymentEvidence, setHasPaymentEvidence] = useState(false);
   const [paymentContext, setPaymentContext] = useState<PaymentContext | null>(null);
@@ -62,9 +63,16 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [paidAt, setPaidAt] = useState(()=>backfill?'':vietnamPaymentTime());
   useEffect(() => {
     const controller = new AbortController();
-    void contractTelegramRequest(orderId, undefined, controller.signal).then(data => setRenewalVersion(data.next_renewal_version)).catch(() => {});
+    setRenewalVersion(null);
+    setPhotoContextError('');
+    setHasPaymentEvidence(false);
+    void loadRenewalPhotoVersion(orderId, controller.signal).then(version => {
+      if (!controller.signal.aborted) setRenewalVersion(version);
+    }).catch(cause => {
+      if (!controller.signal.aborted) setPhotoContextError(cause instanceof Error ? cause.message : 'Không tải được mục ảnh gia hạn.');
+    });
     return () => controller.abort();
-  }, [orderId]);
+  }, [orderId, photoContextAttempt]);
   const [done, setDone] = useState<{ code: string; fee: number; outside: number; remaining: number | null; version: number; collected: boolean; mismatch?: boolean; expected?: number | null } | null>(null);
 
   useEffect(() => {
@@ -316,8 +324,13 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
           <p className="mg-composer-hint">{collecting
             ? `Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng và ghi phiếu Thu ngay khi lưu.${outsideFee > 0 ? ` Phí thu thêm ${formatMoney(outsideFee)} ghi phiếu riêng, không cộng vào tiền hợp đồng.` : ''}`
             : 'Chi phí gia hạn và phí khác được cộng vào tiền hợp đồng. Phí thu thêm (thu ngoài) chỉ ghi phiếu khi đã thực nhận, và không thành công nợ hợp đồng.'}</p>
-          {collecting && !hasPaymentEvidence && <p className="mg-field-error" role="status">Lưu ảnh bill chuyển khoản hoặc tiền mặt ở mục bên dưới trước khi hoàn thành gia hạn đã thu tiền.</p>}
-          {renewalVersion && <ContractTransactionPhotos id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending} onEvidenceChange={setHasPaymentEvidence}/>}
+          {collecting && !hasPaymentEvidence && <p className="mg-field-error" role="status">Chọn và lưu ảnh bill chuyển khoản hoặc biên nhận tiền mặt trong mục Ảnh gia hạn bên dưới.</p>}
+          {renewalVersion ? <ContractTransactionPhotos key={`${orderId}:${renewalVersion}`} id={orderId} phase={`renewal-${renewalVersion}`} title="Ảnh gia hạn" onPendingChange={setPhotosPending} onEvidenceChange={setHasPaymentEvidence}/>
+            : <section className="mg-transaction-photos" aria-label="Ảnh gia hạn">
+              <h3>Ảnh gia hạn</h3>
+              {photoContextError ? <><p className="mg-field-error" role="alert">{photoContextError}</p><button type="button" className="mg-button" onClick={() => { setPhotoContextError(''); setPhotoContextAttempt(value => value + 1); }}>Thử lại mục tải ảnh</button></>
+                : <p role="status"><LoaderCircle size={16} className="mg-spin" /> Đang tải mục chọn ảnh bill / biên nhận…</p>}
+            </section>}
         </>}
         {error && <p className="mg-error-message" role="alert">{error}</p>}
         </>}

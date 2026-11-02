@@ -7,9 +7,29 @@ import { renewContractAndCollect } from '@/lib/server/contract-renewal-collectio
 import { ContractPaymentError } from '@/lib/server/contract-payments';
 import { queueContractNotification } from '@/lib/server/contract-notifications';
 import { failureResponse } from '@/lib/server/public-failure';
+import { readRenewalPhotoContext } from '@/lib/server/contract-renewal-version';
 
 export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
+
+async function GETHandler(_request: NextRequest, { params }: Params) {
+  let client;
+  try {
+    const { id } = await params;
+    if (!/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new ContractRenewalError('Mã hợp đồng không hợp lệ.');
+    client = await himotoPool.connect();
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await client.query("SET LOCAL statement_timeout='15s'");
+    const data = await readRenewalPhotoContext(client, Number(id));
+    await client.query('COMMIT');
+    if (!data) return NextResponse.json({ status: 'error', message: 'Không tìm thấy hợp đồng.' }, { status: 404 });
+    return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'private, no-store' } });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    if (error instanceof ContractRenewalError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    return failureResponse('Không tải được mục ảnh gia hạn. Vui lòng thử lại.', error);
+  } finally { client?.release(); }
+}
 
 async function POSTHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
@@ -39,3 +59,4 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
 }
 
 export const POST = withAccessRequest(POSTHandler);
+export const GET = withAccessRequest(GETHandler);

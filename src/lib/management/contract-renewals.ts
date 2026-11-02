@@ -69,3 +69,15 @@ export async function saveContractRenewal(orderId: number, input: RenewalInput):
   if (!response.ok || result?.status !== 'success' || !Number.isSafeInteger(result?.data?.version)) throw new Error(result?.message || `Không lưu được gia hạn (HTTP ${response.status}).`);
   return result.data as RenewalResult;
 }
+
+export async function loadRenewalPhotoVersion(orderId: number, signal?: AbortSignal): Promise<number> {
+  const response = await fetch(`/api/auth/order/car-rental/${orderId}/renewals`, {
+    cache: 'no-store', credentials: 'same-origin', signal,
+  });
+  const result = await response.json().catch(() => null);
+  const version = result?.data?.next_renewal_version;
+  if (!response.ok || result?.status !== 'success' || !Number.isSafeInteger(version) || version < 2) {
+    throw new Error(result?.message || 'Không tải được mục ảnh gia hạn. Vui lòng thử lại.');
+  }
+  return version;
+}
