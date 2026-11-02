@@ -4,6 +4,15 @@ import { CustomerAssignment, ManagementRepository, ManagementRow } from './types
 import { CUSTOMER_STATUSES } from './config';
 import { parseCustomerRelatives } from './customer-relatives';
 
+export class DuplicateCustomerError extends Error {
+  constructor(public readonly customers: ManagementRow[]) {
+    super('Khách hàng này đã có. Mở hồ sơ bên dưới để kiểm tra hoặc chỉnh sửa thông tin.');
+  }
+}
+class CustomerRequestError extends Error {
+  constructor(message: string, public readonly status: number) { super(message); }
+}
+
 export interface ContractAutofillRepository {
   lookupCustomer(idCard: string, signal?: AbortSignal): Promise<ManagementRow | null>;
   searchCustomers(query: string, signal?: AbortSignal): Promise<ManagementRow[]>;
@@ -42,7 +51,9 @@ export function createDemoAutofillRepository(repository: ManagementRepository): 
       if (!CUSTOMER_STATUSES.some(option => option.value === status)) throw new Error('Trạng thái khách hàng không hợp lệ.');
       const phoneDigits = customer.phone.replace(/\D/g,'');
       const idCard = normalizeIdCard(customer.id_card);
-      if ((idCard || phoneDigits) && dataset.customers.some(row => idCard ? normalizeIdCard(String(row.id_card || '')) === idCard : String(row.phone || '').replace(/\D/g,'') === phoneDigits)) throw new Error('Khách hàng này đã có. Hãy tra cứu thay vì tạo thêm.');
+      const duplicates = dataset.customers.filter(row => Boolean(idCard) && normalizeIdCard(String(row.id_card || '')) === idCard
+        || Boolean(phoneDigits) && String(row.phone || '').replace(/\D/g,'') === phoneDigits);
+      if (duplicates.length) throw new DuplicateCustomerError(duplicates);
       const id = Math.max(0, ...dataset.customers.map(row => row.id)) + 1;
       const row: ManagementRow = { ...customer, id, code: `KH-${String(id).padStart(3, '0')}`, status, store_id, store_name: dataset.stores.find(store => store.id === store_id)?.name,
         id_card: normalizeIdCard(customer.id_card), created_at: new Date().toISOString().slice(0, 10) };
@@ -68,7 +79,7 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
     const envelope: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const message = object(envelope) && typeof envelope.message === 'string' ? envelope.message : '';
-      throw new Error(message || `Không thực hiện được yêu cầu (HTTP ${response.status}). Kiểm tra kết nối và phiên làm việc.`);
+      throw new CustomerRequestError(message || `Không thực hiện được yêu cầu (HTTP ${response.status}). Kiểm tra kết nối và phiên làm việc.`, response.status);
     }
     if (!object(envelope) || envelope.status !== 'success' || !('data' in envelope)) throw new Error('API trả về dữ liệu chưa được hỗ trợ.');
     return envelope.data;
@@ -118,9 +129,12 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       const errors = assignment?.allow_incomplete ? validateDepositCustomer(customer,'api') : validateCustomer(customer, 'api');
       if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
       const phoneDigits = customer.phone.replace(/\D/g,'');
-      if (customer.id_card ? await this.lookupCustomer(customer.id_card) : phoneDigits && (await this.searchCustomers(phoneDigits)).length) throw new Error('Khách hàng này đã có. Hãy tra cứu thay vì tạo thêm.');
+      const existing = customer.id_card ? await this.lookupCustomer(customer.id_card) : null;
+      const matches = existing ? [existing] : !customer.id_card && phoneDigits ? await this.searchCustomers(phoneDigits) : [];
+      if (matches.length) throw new DuplicateCustomerError(matches);
       // The Supabase adapter stores branch and profile status on customer creation.
-      const payload = await request(READ_ENDPOINTS.customers, { method: 'POST', body: JSON.stringify({
+      let payload: unknown;
+      try { payload = await request(READ_ENDPOINTS.customers, { method: 'POST', body: JSON.stringify({
         customer_type:customer.customer_type||'vietnam',nationality:customer.nationality||'',contact_channel:customer.contact_channel||'',contact_detail:customer.contact_detail||'',
         name: customer.name.trim(), phone: customer.phone.trim(), address: customer.address.trim(), id_card: normalizeIdCard(customer.id_card), warning_note: customer.warning_note.trim(),
         driver_license_number: customer.driver_license_number.trim(), driver_license_issued_on: customer.driver_license_issued_on,
@@ -128,7 +142,19 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
         relatives: parseCustomerRelatives(pairRelatives(customer.relatives_json, customer.relatives_text)),
         ...(assignment ? { status: assignment.status, store_id: assignment.store_id } : {}),
         ...(assignment?.allow_incomplete ? {allow_incomplete:true} : {}),
-      }) });
+      }) }); } catch (cause) {
+        if (cause instanceof CustomerRequestError && cause.status === 409) {
+          // A phone conflict or another user creating the same profile can race the preflight.
+          const found: ManagementRow[] = [];
+          try {
+            const byId = customer.id_card ? await this.lookupCustomer(customer.id_card) : null;
+            if (byId) found.push(byId);
+            if (phoneDigits) found.push(...await this.searchCustomers(phoneDigits));
+          } catch { /* Keep the original conflict if the follow-up lookup is unavailable. */ }
+          if (found.length) throw new DuplicateCustomerError([...new Map(found.map(row => [row.id, row])).values()]);
+        }
+        throw cause;
+      }
       if (!object(payload)) throw new Error('API chưa trả về hồ sơ khách hàng đã tạo. Không thể xác nhận kết quả.');
       const row = mapApiRow('customers', payload);
       if (normalizeIdCard(String(row.id_card || '')) !== normalizeIdCard(customer.id_card)) throw new Error('Hồ sơ được trả về không khớp số giấy tờ đã nhập.');

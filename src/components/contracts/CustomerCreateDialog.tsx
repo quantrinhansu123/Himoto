@@ -1,24 +1,29 @@
 'use client';
 
-import { FormEvent, Fragment, useRef, useState } from 'react';
-import { Check, LoaderCircle } from 'lucide-react';
+import { FormEvent, Fragment, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { Check, ChevronRight, LoaderCircle } from 'lucide-react';
 import { CustomerInternationalFields } from './CustomerInternationalFields';
 import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
-import { ContractRelative, CustomerDetails, customerDetails, pairRelatives, formatRelatives, validateCustomer, validateDepositCustomer } from '@/lib/management/contract-document';
+import { ContractRelative, CustomerDetails, customerDetails, pairRelatives, relativesFromRow, formatRelatives, validateCustomer, validateDepositCustomer } from '@/lib/management/contract-document';
 import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { CustomerRelativesFields } from './CustomerRelativesFields';
 import { VietnamDateField } from './VietnamDateField';
 import { ManagementRow } from '@/lib/management/types';
-import { CUSTOMER_STATUSES } from '@/lib/management/config';
+import { CUSTOMER_STATUSES, MANAGEMENT_CONFIG } from '@/lib/management/config';
+import { DuplicateCustomerError } from '@/lib/management/contract-autofill';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos } from '@/lib/management/record-photos';
 import { usePhotoOcr } from '@/components/management/usePhotoOcr';
 import { mergeOcrCustomer, type OcrFields } from '@/lib/management/photo-ocr';
 import { CustomerDocumentBatch } from '@/components/management/CustomerDocumentBatch';
 
+const ExistingCustomerForm = dynamic(() => import('@/components/management/EntityForm').then(module => module.EntityForm), { ssr: false });
+const ExistingCustomerDetail = dynamic(() => import('@/components/management/CustomerDetail').then(module => module.CustomerDetail), { ssr: false });
+
 export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowIncomplete = false, startDraft = false, onCreated, onClose }: { idCard: string; storeId?: string; foreign?:boolean; allowIncomplete?: boolean; startDraft?: boolean; onCreated: (row: ManagementRow) => void; onClose: () => void }) {
-  const { source, dataset, selectedStore, createCustomer } = useManagement();
+  const { source, dataset, selectedStore, createCustomer, can, accessUser } = useManagement();
   const [branch, setBranch] = useState(storeId || (selectedStore !== 'all' ? selectedStore : String(dataset?.stores[0]?.id || '')));
   const [status, setStatus] = useState(startDraft ? 'draft' : 'active');
   const incomplete = allowIncomplete && status === 'draft';
@@ -32,6 +37,17 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
   const photoJobs=useRef(new Set<string>());
   const photoBusy=(slot:string,busy:boolean)=>{if(busy)photoJobs.current.add(slot);else photoJobs.current.delete(slot);setProcessingPhoto(photoJobs.current.size>0);};
   const [savedCustomer, setSavedCustomer] = useState<ManagementRow | null>(null);
+  const [duplicates, setDuplicates] = useState<ManagementRow[]>([]);
+  const [existingCustomer, setExistingCustomer] = useState<ManagementRow | null>(null);
+  useEffect(() => { setDuplicates([]); }, [customer.id_card, customer.phone]);
+  const canEditExisting = can('customers.write') && (source !== 'api' || accessUser?.access_role === 'admin'
+    || accessUser?.scope_all === true || Boolean(existingCustomer?.store_id && String(existingCustomer.store_id) === String(accessUser?.store_id)));
+  function chooseExistingCustomer(row: ManagementRow) {
+    if (!Object.keys(photos).length) { onCreated(row); return; }
+    // Keep captured documents until the user explicitly saves them to the existing profile.
+    setSavedCustomer(row); setCustomer(customerDetails(row)); setRelatives(relativesFromRow(row));
+    setBranch(String(row.store_id || '')); setStatus(String(row.status)); setDuplicates([]); setError(''); setExistingCustomer(null);
+  }
   const customerRef = useRef(customer); customerRef.current = customer;
   const previousAi = useRef<OcrFields>({});
   const customerOcr = usePhotoOcr({
@@ -59,9 +75,16 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
   ];
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy.current || processingPhoto || customerOcr.pending) return;
+    if (savedCustomer) {
+      busy.current = true; setSaving(true); setError('');
+      try { await saveRecordPhotos('customers', savedCustomer.id, photos); onCreated(savedCustomer); }
+      catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được ảnh khách hàng.'); }
+      finally { busy.current = false; setSaving(false); }
+      return;
+    }
     const next = incomplete ? validateDepositCustomer(customer,source) : validateCustomer(customer, source);
     if (!dataset?.stores.some(store => String(store.id) === branch)) next.store_id = 'Chọn cơ sở cho khách hàng.';
-    setErrors(next); setError('');
+    setErrors(next); setError(''); setDuplicates([]);
     if (Object.keys(next).length) { requestAnimationFrame(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return; }
     try { parseCustomerRelatives(relatives); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.'); return; }
@@ -73,10 +96,13 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
       await saveRecordPhotos('customers', created.id, photos);
       onCreated(created);
     }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Không tạo được khách hàng. Vui lòng thử lại.'); }
+    catch (cause) { if (cause instanceof DuplicateCustomerError) setDuplicates(cause.customers); setError(cause instanceof Error ? cause.message : 'Không tạo được khách hàng. Vui lòng thử lại.'); }
     finally { busy.current = false; setSaving(false); }
   }
   const fieldsDisabled = saving || Boolean(savedCustomer);
+  if (existingCustomer) return canEditExisting
+    ? <ExistingCustomerForm config={MANAGEMENT_CONFIG.customers} row={existingCustomer} onClose={() => setExistingCustomer(null)} onSaved={chooseExistingCustomer} />
+    : <ExistingCustomerDetail row={existingCustomer} config={MANAGEMENT_CONFIG.customers} canEdit={false} onEdit={() => {}} onClose={() => setExistingCustomer(null)} />;
   return <Dialog title="Thêm khách hàng tại chỗ" onClose={() => { if (!busy.current) onClose(); }}>
     <form ref={form} noValidate onSubmit={submit}>
       <div className="mg-dialog-body">{incomplete && <p className="mg-composer-hint">Hồ sơ tạm cho khách cọc, chưa thuê xe: chỉ cần họ tên. CCCD, số điện thoại, địa chỉ và người thân bổ sung khi giao xe và lập hợp đồng.</p>}<div className="mg-form-grid"><CustomerInternationalFields prefix="new-customer" value={customer} onChange={next=>{setCustomer(next);setErrors({});}} disabled={fieldsDisabled} errors={errors}/>{fields.map(field => {
@@ -102,7 +128,15 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
         <div className="mg-field"><label htmlFor="new-customer-status">Trạng thái hồ sơ *</label><select id="new-customer-status" value={status} disabled={fieldsDisabled} onChange={event => setStatus(event.target.value)}>{CUSTOMER_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
       </>}<CustomerRelativesFields prefix="new-customer" relatives={relatives} disabled={fieldsDisabled} onChange={setRelatives} /></div>
         {savedCustomer && <p role="status">Đã lưu thông tin khách hàng. Bấm lưu lại để hoàn tất tải ảnh; không tạo thêm hồ sơ.</p>}
-        {error && <p className="mg-error-message" role="alert">{error}</p>}</div>
+        {error && <p className="mg-error-message" role="alert">{error}</p>}
+        {duplicates.length > 0 && <section aria-label="Khách hàng đã tồn tại">
+          {duplicates.map(row => <div className="mg-transaction-photos" key={row.id}>
+            <p><strong>{row.name}</strong>{row.phone ? ` · ${row.phone}` : ''}{row.store_name ? ` · ${row.store_name}` : ''}</p>
+            <button type="button" className="mg-button mg-button-primary" disabled={saving || processingPhoto || customerOcr.pending} onClick={() => setExistingCustomer(row)}><ChevronRight size={16} />Đi tới khách hàng</button>
+            <button type="button" className="mg-button" disabled={saving || processingPhoto || customerOcr.pending} onClick={() => chooseExistingCustomer(row)}>Dùng khách hàng này</button>
+          </div>)}
+          <p className="mg-composer-hint">Mở đúng hồ sơ để chỉnh sửa. Thông tin hợp đồng đang nhập được giữ lại.</p>
+        </section>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>
         <button type="submit" className="mg-button mg-button-primary" disabled={saving || processingPhoto || customerOcr.pending}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : 'Lưu khách hàng'}</button></div>
     </form>

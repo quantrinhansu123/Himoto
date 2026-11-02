@@ -12,7 +12,7 @@ import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
 import { CustomerRelativesFields } from '@/components/contracts/CustomerRelativesFields';
 import { VietnamDateField } from '@/components/contracts/VietnamDateField';
 
-export function EntityForm({ config, row, onClose }: { config: ManagementConfig; row: ManagementRow | null; onClose: () => void }) {
+export function EntityForm({ config, row, onClose, onSaved }: { config: ManagementConfig; row: ManagementRow | null; onClose: () => void; onSaved?: (row: ManagementRow) => void }) {
   const { dataset, selectedStore, source, save, updateCustomer } = useManagement();
   const prefixes = { staff: 'NV', customers: 'KH', stores: 'CS', vehicles: 'XE', contracts: 'HD' };
   const [draft, setDraft] = useState<ManagementRow>(() => {
@@ -75,8 +75,10 @@ export function EntityForm({ config, row, onClose }: { config: ManagementConfig;
     }
     setSaving(true); setSaveError('');
     try {
-      if (config.kind === 'customers' && source === 'api') await updateCustomer(prepared);
-      else await save(config.kind, prepared);
+      if (config.kind === 'customers' && source === 'api') {
+        const updated = await updateCustomer(prepared);
+        onSaved?.(updated);
+      } else { await save(config.kind, prepared); onSaved?.(prepared); }
       onClose();
     } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Không lưu được thay đổi vào Supabase.'); }
     finally { setSaving(false); }

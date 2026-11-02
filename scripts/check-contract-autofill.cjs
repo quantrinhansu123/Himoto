@@ -15,7 +15,7 @@ function load(filename) {
 }
 async function run() {
   const { createDemoRepository, mapApiRow } = load(path.join(root, 'lib/management/repository'));
-  const { createDemoAutofillRepository, createApiAutofillRepository } = load(path.join(root, 'lib/management/contract-autofill'));
+  const { createDemoAutofillRepository, createApiAutofillRepository, DuplicateCustomerError } = load(path.join(root, 'lib/management/contract-autofill'));
   const { createContractDraft, customerDetails, vehicleDetails, buildContractDocument, validateContractDraft, validIdCard, staffMatchesStore, dateTimeInput, relativesFromRow } = load(path.join(root, 'lib/management/contract-document'));
   const { parseCustomerRelatives } = load(path.join(root, 'lib/management/customer-relatives'));
   const checks = [];
@@ -49,7 +49,8 @@ async function run() {
   const details = { ...customerDetails(), name: 'Khách mới mẫu', phone: '0900001234', address: 'Địa chỉ mẫu', email: 'moi@example.test', id_card: '001234567890', id_card_issued_by: 'Nơi cấp mẫu' };
   const created = await demo.createCustomer(details);
   assert.equal(created.id, 33); assert.equal((await demo.lookupCustomer(details.id_card)).id_card, '001234567890');
-  await assert.rejects(demo.createCustomer(details), /đã có/);
+  await assert.rejects(demo.createCustomer(details), error => error instanceof DuplicateCustomerError && error.customers.length === 1 && error.customers[0].id === created.id);
+  await assert.rejects(demo.createCustomer({ ...details, id_card: '001234567899' }), error => error instanceof DuplicateCustomerError && error.customers[0].id === created.id);
   assert.equal((await repository.load()).contracts.length, data.contracts.length);
   checks.push('new customer persists in the shared demo, blocks duplicate identity, and creates no rental order');
   assert.equal((await demo.loadStaff('2')).length, data.staff.filter(row => row.store_id === 2).length);
@@ -109,7 +110,7 @@ async function run() {
     const api = createApiAutofillRepository('/api');
     assert.equal((await api.loadStaff('2'))[0].id, 2); assert.equal((await api.loadStaff('2')).length, 1);
     assert.equal((await api.lookupCustomer('001234567890')).id, 10);
-    await assert.rejects(api.createCustomer(details), /đã có/);
+    await assert.rejects(api.createCustomer(details), error => error instanceof DuplicateCustomerError && error.customers[0].id === 10);
     assert.equal(requests.filter(request => request.method === 'POST').length, 0);
     missing = true;
     const saved = await api.createCustomer(details); assert.equal(saved.id, 99);
@@ -152,6 +153,30 @@ async function run() {
     global.fetch = async () => ({ ok: false, status: 401, json: async () => ({ status: 'error', message: 'Phiên hết hạn' }) });
     await assert.rejects(api.searchCustomers('0900000011'), /Phiên hết hạn/);
     checks.push('global API phone lookup returns every branch and origin metadata; mismatched and unauthorized responses fail explicitly');
+    let posts = 0, identityReads = 0;
+    global.fetch = async (url, options) => {
+      if (options.method === 'POST') { posts++; return { ok: false, status: 409, json: async () => ({ status: 'error', message: 'Khách đã tồn tại.' }) }; }
+      if (url.includes('search-by-id-card')) {
+        identityReads++;
+        return { ok: true, json: async () => ({ status: 'success', data: identityReads === 1 ? null : { id: 10, name: 'Trùng giấy tờ', phone: details.phone, id_card: details.id_card } }) };
+      }
+      return { ok: true, json: async () => ({ status: 'success', data: [
+        { id: 10, name: 'Trùng giấy tờ', phone: details.phone, id_card: details.id_card },
+        { id: 11, name: 'Trùng điện thoại', phone: details.phone, id_card: '001234567899' },
+      ] }) };
+    };
+    await assert.rejects(api.createCustomer(details), error => error instanceof DuplicateCustomerError && error.customers.map(row => row.id).join(',') === '10,11');
+    assert.equal(posts, 1);
+    // A phone-only conflict must still offer the correct profile, not lose the submitted form.
+    global.fetch = async (url, options) => options.method === 'POST'
+      ? { ok: false, status: 409, json: async () => ({ status: 'error', message: 'Trùng điện thoại.' }) }
+      : { ok: true, json: async () => ({ status: 'success', data: url.includes('search-by-id-card') ? null : [{ id: 11, phone: details.phone, id_card: '001234567899' }] }) };
+    await assert.rejects(api.createCustomer(details), error => error instanceof DuplicateCustomerError && error.customers.length === 1 && error.customers[0].id === 11);
+    global.fetch = async (url, options) => options.method === 'POST'
+      ? { ok: false, status: 403, json: async () => ({ status: 'error', message: 'Không có quyền.' }) }
+      : { ok: true, json: async () => ({ status: 'success', data: null }) };
+    await assert.rejects(api.createCustomer(details), error => !(error instanceof DuplicateCustomerError) && /Không có quyền/.test(error.message));
+    checks.push('duplicate errors retain exact profiles for direct editing, including phone conflicts and concurrent creation; authorization errors stay errors');
     for (const response of [
       { ok: false, status: 401 },
       { ok: true, json: async () => ({ status: 'error', data: null }) },
