@@ -124,9 +124,9 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
       const destName = stores.find(store => String(store.id) === storeId)?.name || 'cơ sở đích';
       notify(mode === 'transfer'
         ? saved.transfer_completed
-          ? `Đã chuyển kho xe ${selected.license} sang ${destName}. Giữ nguyên trạng thái “${optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)}”. Đã lưu lịch sử.`
-          : `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${destName}. Đã lưu lịch sử.`
-        : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho. Đã lưu lịch sử.`:mode==='reject'||mode==='cancel'?`Đã ${mode==='cancel'?'huỷ':'từ chối'} điều chuyển xe ${selected.license}. Xe về Lưu kho tại ${selected.transfer_from_store_name||'cơ sở chuyển đi'}.` :saved.draft?'Đã tạo hợp đồng nháp. Xe vẫn Lưu kho đến khi phát hành hợp đồng.':`Đã đổi trạng thái xe ${selected.license}.`);
+          ? `Đã chuyển kho và chủ sở hữu xe ${selected.license} sang ${destName}. Giữ nguyên trạng thái “${optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)}”. Đã lưu lịch sử.`
+          : `Xe ${selected.license} chuyển sang Chờ luân chuyển tại ${destName} (chủ sở hữu đã chuyển theo). Đã lưu lịch sử.`
+        : mode==='receive'?`Đã nhận xe ${selected.license} tại ${selected.transfer_to_store_name||selected.store_name}. Xe chuyển sang Lưu kho; chủ sở hữu tại cơ sở nhận. Đã lưu lịch sử.`:mode==='reject'||mode==='cancel'?`Đã ${mode==='cancel'?'huỷ':'từ chối'} điều chuyển xe ${selected.license}. Xe về Lưu kho và chủ sở hữu tại ${selected.transfer_from_store_name||'cơ sở chuyển đi'}.` :saved.draft?'Đã tạo hợp đồng nháp. Xe vẫn Lưu kho đến khi phát hành hợp đồng.':`Đã đổi trạng thái xe ${selected.license}.`);
       if (saved.draft || saved.telegram_event_id || (mode === 'transfer' && !saved.transfer_completed) || mode === 'receive') setResult({ ...saved, mode }); else onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được thao tác xe.'); }
     finally { busy.current = false; setSaving(false); }
@@ -178,8 +178,8 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
           <select id="vehicle-action-to" value={storeId} disabled={saving} onChange={event => setStoreId(event.target.value)}>
             <option value="">Chọn cơ sở</option>{(destinations.length?destinations:stores).filter(store => String(store.id) !== String(selected?.store_id)).map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
         <p className="mg-composer-hint mg-field-wide">{currentStatus === 'ready'
-          ? 'Xe đang Lưu kho: sau khi lưu sẽ sang Chờ luân chuyển tại cơ sở đích; khi xe đến nơi bấm Nhận xe. Có thể đính ảnh chuyển xe.'
-          : 'Xe không ở Lưu kho (đang thuê, bảo dưỡng…): đổi cơ sở kho ngay, giữ nguyên trạng thái. Hợp đồng mở không chặn điều chuyển.'}</p>
+          ? 'Xe đang Lưu kho: sau khi lưu sẽ sang Chờ luân chuyển tại cơ sở đích và đổi luôn chủ sở hữu; khi xe đến nơi bấm Nhận xe. Có thể đính ảnh chuyển xe.'
+          : 'Xe không ở Lưu kho (đang thuê, bảo dưỡng…): đổi kho và chủ sở hữu ngay, giữ nguyên trạng thái. Hợp đồng mở không chặn điều chuyển.'}</p>
       </> : <>
         <div className="mg-field"><label htmlFor="vehicle-action-status">Trạng thái<span aria-hidden="true"> *</span></label>
           <select id="vehicle-action-status" value={status} disabled={saving || !selected} onChange={event => setStatus(event.target.value)}>

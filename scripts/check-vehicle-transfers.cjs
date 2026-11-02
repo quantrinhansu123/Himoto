@@ -48,7 +48,7 @@ async function main(){
     const before=await vehicle(101);
     const result=await attempt(()=>applyVehicleAction(proxy,101,parseVehicleAction({action:'transfer',to_store_id:32,note:'Chuyển theo yêu cầu QA',revision:before.revision,created_by:999}),143));
     const after=await vehicle(101),event=(await c.query('SELECT * FROM qa_transfer_vehicle_location_events WHERE id=$1',[result.event_id])).rows[0];
-    assert.equal(after.status,'in_transit');assert.equal(Number(after.current_store_id),32);assert.equal(Number(after.store_id),31);
+    assert.equal(after.status,'in_transit');assert.equal(Number(after.current_store_id),32);assert.equal(Number(after.store_id),32);
     assert.equal(Number(event.from_store_id),31);assert.equal(Number(event.to_store_id),32);assert.equal(Number(event.created_by),143);assert(event.created_at);
     assert.equal(event.audit_snapshot.actor_name,'Người thao tác QA');assert.equal(event.notes,'Chuyển theo yêu cầu QA');
     const changes=event.audit_snapshot.changes;
@@ -57,7 +57,7 @@ async function main(){
     const transferJoin=load(path.join(root,'lib/server/vehicle-transfers')).VEHICLE_TRANSFER_JOIN_SQL;
     const pending=(await proxy.query(`SELECT pending_transfer.* FROM himoto.vehicles v ${transferJoin} WHERE v.id=$1`,[101])).rows[0];
     assert.equal(Number(pending.id),result.event_id);assert.equal(pending.from_store_name,'Cơ sở đi QA');assert.equal(pending.to_store_name,'Cơ sở đến QA');assert.equal(Number(pending.receivable),1);
-    checks.push('Transfer atomically changes current branch and ready → in_transit, preserves original owner, and stores authenticated actor/time plus structured old/new values');
+    checks.push('Transfer atomically changes warehouse + owner and ready → in_transit, and stores authenticated actor/time plus structured old/new values');
     await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,{action:'transfer',to_store_id:33,note:'',revision:before.revision},143)),e=>e instanceof VehicleActionError&&e.status===409);
     await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,{action:'transfer',to_store_id:33,note:''},143)),e=>e instanceof VehicleActionError&&e.status===409);
     assert.equal(await count(),1);assert.equal(Number((await vehicle(101)).current_store_id),32);
@@ -65,12 +65,12 @@ async function main(){
     assert.equal(await count(),1);
     const rentedMove=await attempt(()=>applyVehicleAction(proxy,105,{action:'transfer',to_store_id:32,note:'Thuê chéo QA'},143));
     assert.equal(rentedMove.transfer_completed,true);
-    assert.equal((await vehicle(105)).status,'using');assert.equal(Number((await vehicle(105)).current_store_id),32);assert.equal(Number((await vehicle(105)).store_id),31);
+    assert.equal((await vehicle(105)).status,'using');assert.equal(Number((await vehicle(105)).current_store_id),32);assert.equal(Number((await vehicle(105)).store_id),32);
     const repairMove=await attempt(()=>applyVehicleAction(proxy,104,{action:'transfer',to_store_id:32,note:'Bảo dưỡng QA'},143));
     assert.equal(repairMove.transfer_completed,true);
-    assert.equal((await vehicle(104)).status,'repairing');assert.equal(Number((await vehicle(104)).current_store_id),32);
+    assert.equal((await vehicle(104)).status,'repairing');assert.equal(Number((await vehicle(104)).current_store_id),32);assert.equal(Number((await vehicle(104)).store_id),32);
     assert.equal(await count(),5);
-    checks.push('Same/missing destination, missing vehicle and sold stay blocked; using/repairing relocate immediately and keep status');
+    checks.push('Same/missing destination, missing vehicle and sold stay blocked; using/repairing relocate warehouse+owner immediately and keep status');
     const clean=await vehicle(102),oldCount=await count();failAudit=true;
     await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,102,{action:'transfer',to_store_id:32,note:''},143)),/Simulated audit/);
     failAudit=false;assert.equal((await vehicle(102)).status,clean.status);assert.equal((await vehicle(102)).current_store_id,clean.current_store_id);assert.equal(await count(),oldCount);
@@ -88,7 +88,9 @@ async function main(){
     failAudit=true;
     await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,101,ready,144)),/Simulated audit/);failAudit=false;
     assert.equal((await vehicle(101)).status,'in_transit');assert.equal(await count(),beforeReceive);
-    await attempt(()=>applyVehicleAction(proxy,101,ready,144));assert.equal((await vehicle(101)).status,'ready');
+    await attempt(()=>applyVehicleAction(proxy,101,ready,144));
+    assert.equal((await vehicle(101)).status,'ready');
+    assert.equal(Number((await vehicle(101)).current_store_id),32);assert.equal(Number((await vehicle(101)).store_id),32);
     const receivedRow=(await c.query('SELECT * FROM qa_transfer_vehicle_location_events ORDER BY id DESC LIMIT 1')).rows[0],received=receivedRow.audit_snapshot;
     assert.equal(received.changes.find(change=>change.field==='status').from,'Chờ luân chuyển');assert.equal(received.changes.find(change=>change.field==='status').to,'Lưu kho');
     assert.equal(receivedRow.event_type,'manual_transfer_receive');assert.equal(Number(receivedRow.ref_id),result.event_id);assert.equal(Number(receivedRow.from_store_id),31);assert.equal(Number(receivedRow.to_store_id),32);
@@ -138,9 +140,9 @@ async function main(){
     const settled=(await c.query('SELECT total,pid,order_status FROM qa_transfer_orders WHERE id=201')).rows[0];
     // Xe 103 đã về kho 32 sau HĐ mở — nhận rồi chuyển tiếp sang 33 khi HĐ chờ tất toán.
     await attempt(()=>applyVehicleAction(proxy,103,{action:'receive',transfer_event_id:openRentTransfer.event_id,note:'Nhận sau HĐ mở QA'},144));
-    assert.equal((await vehicle(103)).status,'ready');assert.equal(Number((await vehicle(103)).current_store_id),32);
+    assert.equal((await vehicle(103)).status,'ready');assert.equal(Number((await vehicle(103)).current_store_id),32);assert.equal(Number((await vehicle(103)).store_id),32);
     await attempt(()=>applyVehicleAction(proxy,103,{action:'transfer',to_store_id:33,note:'Đã trả xe, hợp đồng cũ còn chờ quyết toán'},143));
-    assert.equal((await vehicle(103)).status,'in_transit');assert.equal(Number((await vehicle(103)).current_store_id),33);
+    assert.equal((await vehicle(103)).status,'in_transit');assert.equal(Number((await vehicle(103)).current_store_id),33);assert.equal(Number((await vehicle(103)).store_id),33);
     assert.deepEqual((await c.query('SELECT total,pid,order_status FROM qa_transfer_orders WHERE id=201')).rows[0],settled);
     checks.push('A returned rental line still allows stock transfer while its old contract awaits settlement; old status and money stay unchanged');
     const cancelTransfer=await attempt(()=>applyVehicleAction(proxy,102,{action:'transfer',to_store_id:32,note:'Cancel fixture'},143));

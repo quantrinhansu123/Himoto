@@ -134,14 +134,16 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
     if(!(await client.query('SELECT id FROM himoto.stores WHERE id=$1 FOR SHARE',[input.action!=='receive'?transfer.from_store_id:vehicle.store_id])).rowCount)throw new VehicleActionError(input.action!=='receive'?'Cơ sở chuyển đi không còn tồn tại. Kiểm tra lại trước khi huỷ hoặc từ chối.':'Cơ sở nhận xe không còn tồn tại. Kiểm tra lại trước khi nhận.',409);
     if(input.action==='reject'||input.action==='cancel'){
       if(scope)await client.query("SELECT set_config('himoto.transfer_vehicle_id',$1,true)",[String(vehicleId)]);
-      await client.query("UPDATE himoto.vehicles SET current_store_id=$2,status='ready',updated_at=now() WHERE id=$1",[vehicleId,transfer.from_store_id]);
+      // Hoàn kho + chủ sở hữu về cơ sở chuyển đi.
+      await client.query("UPDATE himoto.vehicles SET store_id=$2,current_store_id=$2,status='ready',updated_at=now() WHERE id=$1",[vehicleId,transfer.from_store_id]);
       const eventId=await writeVehicleAudit(client,{vehicleId,before:vehicle,after:{...vehicle,store_id:transfer.from_store_id,status:'ready'},actorId,
         type:input.action==='cancel'?'manual_transfer_cancel':'manual_transfer_reject',fromStoreId:transfer.from_store_id,toStoreId:transfer.to_store_id,
         routeNames:{from:transfer.from_store_name,to:transfer.to_store_name},refType:'vehicle_location_events',refId:Number(transfer.id),note:input.note||(input.action==='cancel'?'Người chuyển huỷ điều chuyển':'Từ chối điều chuyển')});
       return {id:vehicleId,event_id:eventId};
     }
-    await client.query("UPDATE himoto.vehicles SET status='ready',updated_at=now() WHERE id=$1",[vehicleId]);
-    const eventId=await writeVehicleAudit(client,{vehicleId,before:vehicle,after:{...vehicle,status:'ready'},actorId,
+    // Nhận xe: chốt kho + chủ sở hữu tại cơ sở đích (đã chuyển sẵn lúc điều chuyển; SET lại để chắc).
+    await client.query("UPDATE himoto.vehicles SET store_id=$2,current_store_id=$2,status='ready',updated_at=now() WHERE id=$1",[vehicleId,transfer.to_store_id]);
+    const eventId=await writeVehicleAudit(client,{vehicleId,before:vehicle,after:{...vehicle,store_id:transfer.to_store_id,status:'ready'},actorId,
       type:'manual_transfer_receive',fromStoreId:transfer.from_store_id,toStoreId:transfer.to_store_id,
       routeNames:{from:transfer.from_store_name,to:transfer.to_store_name},refType:'vehicle_location_events',refId:Number(transfer.id),note:input.note});
     return {id:vehicleId,event_id:eventId};
@@ -155,25 +157,25 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
     if (current === 'in_transit') throw new VehicleActionError('Xe đang Chờ luân chuyển. Cơ sở đích cần Nhận xe hoặc Từ chối trước khi chuyển tiếp.', 409);
     if (String(vehicle.store_id) === String(input.to_store_id)) throw new VehicleActionError('Xe đang ở cơ sở này. Chọn cơ sở khác để chuyển.');
     if (scope) await client.query("SELECT set_config('himoto.transfer_vehicle_id',$1,true)", [String(vehicleId)]);
-    // Lưu kho → chờ nhận tại cơ sở đích. Trạng thái khác (đang thuê, bảo dưỡng…) → đổi kho ngay, giữ nguyên status.
+    // Đổi kho = đổi luôn chủ sở hữu (store_id). Lưu kho → chờ nhận; trạng thái khác → đổi ngay, giữ status.
     if (current === 'ready') {
-      await client.query("UPDATE himoto.vehicles SET current_store_id=$2,status='in_transit',updated_at=now() WHERE id=$1", [vehicleId, input.to_store_id]);
+      await client.query("UPDATE himoto.vehicles SET store_id=$2,current_store_id=$2,status='in_transit',updated_at=now() WHERE id=$1", [vehicleId, input.to_store_id]);
       const after = { ...vehicle, store_id: target, status: 'in_transit', beneficiary_store_id: target };
       const eventId = await writeVehicleAudit(client, {
         vehicleId, before: vehicle, after, actorId, toStoreId: target, type: 'manual_transfer', note: input.note,
       });
       return { id: vehicleId, event_id: eventId };
     }
-    await client.query('UPDATE himoto.vehicles SET current_store_id=$2, updated_at=now() WHERE id=$1', [vehicleId, input.to_store_id]);
+    await client.query('UPDATE himoto.vehicles SET store_id=$2, current_store_id=$2, updated_at=now() WHERE id=$1', [vehicleId, input.to_store_id]);
     const after = { ...vehicle, store_id: target, beneficiary_store_id: target };
-    const note = [input.note, 'Điều chuyển kho giữ nguyên trạng thái (không qua Chờ luân chuyển).'].filter(Boolean).join(' · ');
+    const note = [input.note, 'Điều chuyển kho và chủ sở hữu, giữ nguyên trạng thái (không qua Chờ luân chuyển).'].filter(Boolean).join(' · ');
     const dispatchId = await writeVehicleAudit(client, {
       vehicleId, before: vehicle, after, actorId, fromStoreId: vehicle.store_id, toStoreId: target, type: 'manual_transfer', note,
     });
     await writeVehicleAudit(client, {
       vehicleId, before: after, after, actorId, fromStoreId: vehicle.store_id, toStoreId: target,
       type: 'manual_transfer_receive', refType: 'vehicle_location_events', refId: dispatchId,
-      note: 'Tự nhận điều chuyển kho (xe không ở trạng thái Lưu kho).',
+      note: 'Tự nhận điều chuyển kho và chủ sở hữu (xe không ở trạng thái Lưu kho).',
     });
     return { id: vehicleId, event_id: dispatchId, transfer_completed: true };
   }
