@@ -92,6 +92,7 @@ export async function readContractHistory(client: Database, id: number): Promise
       COALESCE(o.draft_payload::jsonb #> '{management_composer,rental_terms_history}','[]'::jsonb) AS rental_terms_history,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,return_corrections}','[]'::jsonb) AS return_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,payment_corrections}','[]'::jsonb) AS payment_corrections,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,receipt_corrections}','[]'::jsonb) AS receipt_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,historical_fee_corrections}','[]'::jsonb) AS historical_fee_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,ownership_terms_history}','[]'::jsonb) AS ownership_terms_history,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,lifecycle,events}','[]'::jsonb) AS lifecycle_events
@@ -106,6 +107,7 @@ export async function readContractHistory(client: Database, id: number): Promise
   const created: ContractChange = { id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
     title: 'Tạo hợp đồng', detail: '', amount: null };
   const changes: ContractChange[] = [created];
+  for(const item of(Array.isArray(order.rows[0].receipt_corrections)?order.rows[0].receipt_corrections:[]))changes.push({id:`receipt-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa tiền cọc / khoản đã thu',detail:`Cọc thỏa thuận ${formatMoney(Number(item.before_deposit))} → ${formatMoney(Number(item.after_deposit))} · ${item.reason} · Chi tiết phiếu trước–sau được lưu trong hồ sơ đối chiếu.`});
   for(const [index,item]of(Array.isArray(order.rows[0].ownership_terms_history)?order.rows[0].ownership_terms_history:[]).entries())changes.push({id:`ownership-terms-${index}`,kind:'edit',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,title:'Sửa thời hạn và mức đóng thuê sở hữu',detail:`Thời hạn: ${item.before?.term_months==='custom'?'Chưa phân loại':`${item.before?.term_months} tháng`} → ${item.after?.term_months==='custom'?'Chưa phân loại':`${item.after?.term_months} tháng`} · Mỗi ngày: ${item.before?.daily_amount==null?'Chưa xác định':formatMoney(item.before.daily_amount)} → ${item.after?.daily_amount==null?'Chưa xác định':formatMoney(item.after.daily_amount)}.`});
   for(const item of(Array.isArray(order.rows[0].payment_corrections)?order.rows[0].payment_corrections:[]))changes.push({id:`payment-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa kỳ gia hạn / thanh toán',detail:renewalCorrectionDetail(item)});
   for(const item of(Array.isArray(order.rows[0].historical_fee_corrections)?order.rows[0].historical_fee_corrections:[]))changes.push({id:`historical-fee-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:String(item.actor_name||(item.actor_id?`#${item.actor_id}`:'Hỗ trợ kỹ thuật')),amount:null,title:'Sửa phí gia hạn trong lịch sử',detail:renewalCorrectionDetail(item)});

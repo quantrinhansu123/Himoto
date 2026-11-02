@@ -2664,6 +2664,19 @@
 }
 .mg-payment-fields .mg-field-wide { grid-column: 1 / -1; }
 .mg-payment-fields p { margin: 0; }
+.mg-receipt-correction { min-width: 0; padding: 14px; border: 1px solid var(--mg-line); border-radius: var(--mg-radius); }
+.mg-receipt-correction h3 { margin: 0 0 8px; font-size: 15px; }
+.mg-receipt-correction > p { margin-bottom: 10px; }
+.mg-receipt-split { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding: 12px 0; }
+.mg-receipt-corrections-dialog .mg-payment-fields > label { align-content: start; }
+@media(max-width:600px) { .mg-receipt-split { grid-template-columns: minmax(0,1fr); } }
+.mg-rental-terms-dialog .mg-payment-fields { align-items: start; }
+.mg-rental-terms-dialog .mg-payment-fields > .mg-field { min-width: 0; }
+.mg-rental-terms-dialog .mg-payment-fields > label { align-content: start; }
+.mg-rental-terms-dialog .mg-datetime24 { grid-template-columns: minmax(0, 1fr); }
+.mg-rental-terms-dialog .mg-time24 { width: 164px; max-width: 100%; }
+.mg-rental-terms-dialog .mg-payment-fields input,
+.mg-rental-terms-dialog .mg-payment-fields select { box-sizing: border-box; min-height: 40px; }
 .mg-renewal-payment-editor { min-width: 0; width: 100%; }
 .mg-renewal-payment-editor > fieldset { display: block; width: 100%; }
 .mg-renewal-payment-editor > fieldset > * { margin-bottom: 14px; }

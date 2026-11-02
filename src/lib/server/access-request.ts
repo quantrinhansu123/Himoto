@@ -45,6 +45,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/returns'))return read?'contracts.read':'contracts.return';
   if(path.includes('/staff-sales')||path==='/api/auth/dashboard'||path.startsWith('/api/auth/rental-revenue'))return 'contracts.read';
   if(path.includes('/order/car-rental/')) {
+    if(path.endsWith('/receipt-corrections'))return read?'contracts.read':'contracts.draft';
     if(path.endsWith('/rental-terms'))return read?'contracts.read':'contracts.draft';
     if(path.endsWith('/ownership-terms'))return read?'contracts.read':'contracts.draft';
     if(path.endsWith('/renewal-payments'))return 'contracts.renew';
@@ -90,7 +91,8 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     const composerStaff=request.method==='GET'&&request.nextUrl.pathname==='/api/auth/hr/staff'&&request.nextUrl.searchParams.has('store_id')&&hasPermission(user,'contracts.read');
     const lifecycleSettlement=request.method==='POST'&&operation==='settle'&&/^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/lifecycle$/.test(request.nextUrl.pathname)&&hasPermission(user,'contracts.read')&&hasPermission(user,'finance.write');
     const renewalPaymentCorrection=request.method==='PATCH'&&/^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/renewal-payments$/.test(request.nextUrl.pathname)&&hasPermission(user,'contracts.read')&&hasPermission(user,'finance.write');
-    if(!branchOptions&&!composerStaff&&!lifecycleSettlement&&!renewalPaymentCorrection&&permission&&!hasPermission(user,permission))return NextResponse.json({status:'error',message:'Tài khoản không có quyền thực hiện thao tác này.'},{status:403});
+    const receiptCorrection=request.method==='PATCH'&&/^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/receipt-corrections$/.test(request.nextUrl.pathname)&&hasPermission(user,'contracts.read')&&hasPermission(user,'finance.write');
+    if(!branchOptions&&!composerStaff&&!lifecycleSettlement&&!renewalPaymentCorrection&&!receiptCorrection&&permission&&!hasPermission(user,permission))return NextResponse.json({status:'error',message:'Tài khoản không có quyền thực hiện thao tác này.'},{status:403});
     try {
       return await dataAccess.run({...user,store_id:user.store_id??null,scope_all:user.scope_all===true,operation,transfer_vehicle_id},()=>handler(request,context));
     } catch (error) {
