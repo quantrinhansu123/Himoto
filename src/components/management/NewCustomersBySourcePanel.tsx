@@ -113,18 +113,18 @@ export function NewCustomersBySourcePanel({
   const detailRows = ready && detail ? rowsForScope(filtered, detail) : [];
   const sourceRows = useMemo(() => {
     if (!filtered) return [];
-    const rows = filtered.sources.map(item => ({
+    const rows: { key: string; name: string; customers: number; scope: DetailScope }[] = filtered.sources.map(item => ({
       key: item.name,
       name: item.name,
       customers: item.customers,
-      scope: { kind: 'source' as const, source: item.name, title: `Nguồn khách · ${item.name}` },
+      scope: { kind: 'source', source: item.name, title: `Nguồn khách · ${item.name}` },
     }));
     if (filtered.totals.without_source > 0) {
       rows.push({
         key: WITHOUT_SOURCE,
         name: 'Chưa ghi nguồn',
         customers: filtered.totals.without_source,
-        scope: { kind: 'without' as const, title: 'Chưa ghi nguồn khách' },
+        scope: { kind: 'without', title: 'Chưa ghi nguồn khách' },
       });
     }
     return rows;
