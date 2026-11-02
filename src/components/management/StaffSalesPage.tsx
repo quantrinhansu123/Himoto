@@ -23,6 +23,14 @@ const REPORT_TABS: { key: ReportView; label: string }[] = [
   { key: 'overview', label: 'Báo cáo theo cơ sở' },
   { key: 'contracts', label: 'Thống kê hợp đồng' },
 ];
+type ContractsSubView = 'overview' | 'by-staff' | 'by-store' | 'new-customers' | 'assigned';
+const CONTRACTS_SUB_TABS: { key: ContractsSubView; label: string }[] = [
+  { key: 'overview', label: 'Tổng quan' },
+  { key: 'by-staff', label: 'Theo NVKD' },
+  { key: 'by-store', label: 'Theo cơ sở' },
+  { key: 'new-customers', label: 'Khách mới theo nguồn' },
+  { key: 'assigned', label: 'NVKD / TLS phân công' },
+];
 const money=(value:number)=>`${value.toLocaleString('vi-VN')} đ`;
 function downloadCsv(rows:(string|number)[][],filename:string){const data=rows.map(row=>row.map(value=>csvCell(String(value))).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF',data],{type:'text/csv;charset=utf-8;'}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}
 const isoDate=(year:number,month:number,day:number)=>new Date(Date.UTC(year,month,day)).toISOString().slice(0,10);
@@ -72,16 +80,18 @@ export function StaffSalesPage() {
   const canViewFleet=canViewOwnedFleetRevenue(accessUser);
   const [from,setFrom]=useState(`${today.slice(0,7)}-01`),[to,setTo]=useState(today),[department,setDepartment]=useState('');
   const [reportView, setReportView] = useState<ReportView>('actual');
+  const [contractsSubView, setContractsSubView] = useState<ContractsSubView>('overview');
   const toolsOpen=reportView==='contracts';
-  const needKpis=reportView==='actual'||toolsOpen;
+  const needAssigned=toolsOpen&&contractsSubView==='assigned';
+  const needSummary=reportView==='actual'||(toolsOpen&&(contractsSubView==='overview'||contractsSubView==='by-staff'||contractsSubView==='by-store'));
   const [report,setReport]=useState<StaffSalesReport|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useReloadAction(useCallback(()=>{setRetry(value=>value+1);void reload();},[reload]));
-  useEffect(()=>{if(!toolsOpen)return;const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(value=>{if(!controller.signal.aborted)setReport(value);}).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[toolsOpen,from,to,selectedStore,retry]);
+  useEffect(()=>{if(!needAssigned)return;const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(value=>{if(!controller.signal.aborted)setReport(value);}).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[needAssigned,from,to,selectedStore,retry]);
   const rows=(report?.rows || []).filter(row=>!department || row.department === department);
   const [summary,setSummary]=useState<SalesSummaryReport|null>(null),[summaryLoading,setSummaryLoading]=useState(true),[summaryError,setSummaryError]=useState('');
   const staff=dataset?.staff;
-  useEffect(()=>{if(toolsOpen)void ensureData(['staff']).catch(()=>{});},[toolsOpen,ensureData]);
-  useEffect(()=>{if(!needKpis||toolsOpen&&!resources.staff.loaded&&!resources.staff.error)return;const controller=new AbortController();setSummaryLoading(true);setSummaryError('');loadSalesSummary(from,to,selectedStore,staff||[],controller.signal).then(value=>{if(!controller.signal.aborted)setSummary(value);}).catch(cause=>{if(!controller.signal.aborted)setSummaryError(cause instanceof Error?cause.message:'Không tải được thống kê.');}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});return()=>controller.abort();},[needKpis,toolsOpen,from,to,selectedStore,staff,retry,resources.contracts,resources.staff.loaded,resources.staff.error]);
+  useEffect(()=>{if(needSummary)void ensureData(['staff']).catch(()=>{});},[needSummary,ensureData]);
+  useEffect(()=>{if(!needSummary||toolsOpen&&!resources.staff.loaded&&!resources.staff.error)return;const controller=new AbortController();setSummaryLoading(true);setSummaryError('');loadSalesSummary(from,to,selectedStore,staff||[],controller.signal).then(value=>{if(!controller.signal.aborted)setSummary(value);}).catch(cause=>{if(!controller.signal.aborted)setSummaryError(cause instanceof Error?cause.message:'Không tải được thống kê.');}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});return()=>controller.abort();},[needSummary,toolsOpen,from,to,selectedStore,staff,retry,resources.contracts,resources.staff.loaded,resources.staff.error]);
   const sources=summary?.sources||summarizeBySalesStaff([],from,to,selectedStore),stores=summary?.stores||summarizeByStore([],from,to,selectedStore),kpis=summary?.kpis||summarizeSalesKpis([],from,to,selectedStore),contractsError=summaryError||datasetError;
   const activePreset=PRESETS.find(preset=>{const [start,end]=presetRange(preset.id,today);return start===from && end===to;})?.id;
   const periodDays=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;
@@ -114,19 +124,28 @@ export function StaffSalesPage() {
     {reportView === 'vehicles' && <VehicleRevenuePanel key={`vehicles-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {reportView === 'overview' && <RentalOverviewPanel key={`overview-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {canViewFleet&&reportView==='owned-fleet'&&<OwnedFleetRevenuePanel key={`fleet-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
-    {toolsOpen&&<div className="mg-monitor-tools is-tab" aria-label="Thống kê hợp đồng & báo cáo khác">
-    <p className="mg-sales-kpi-note">Các thống kê bên dưới dùng phạm vi và cách tính ghi tại từng mục. Chốt KPI thuê xe theo tab Doanh thu thực thu / NVKD.</p>
-    <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>
-    <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền còn thiếu của đơn đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu. Nợ xấu quá hạn = nợ quá hạn (HĐ Quá hạn chưa thu đủ) cộng nợ xấu.</p>
-    <SummaryTable title="Theo NVKD ghi nhận doanh số" description={`Tổng hợp từ Danh sách hợp đồng theo cột NVKD ghi nhận doanh số. ${scope}`} column="NVKD ghi nhận doanh số" unit="nhân viên" summary={sources} filename={`doanh-so-nvkd-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
-    <SummaryTable title="Doanh thu theo cơ sở" description={`Tổng hợp từ Danh sách hợp đồng theo cột Nguồn / doanh thu. ${scope}`} column="Cơ sở (Nguồn / doanh thu)" unit="cơ sở" summary={stores} filename={`doanh-thu-co-so-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>
-    <NewCustomersBySourcePanel from={from} to={to} store={selectedStore} retry={retry}/>
-    <div className="mg-source-sales-heading mg-source-sales-heading-sub"><div><h2>Theo NVKD / TLS được phân công</h2></div></div>
-    <div className="mg-sales-filter-row"><div className="mg-sales-segmented" role="group" aria-label="Bộ phận báo cáo bổ sung">{DEPARTMENTS.map(item=><button key={item.value||'all'} type="button" aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div><button className="mg-button" type="button" disabled={loading||!rows.length} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất báo cáo bổ sung</button></div>
-    {loading ? <p role="status" className="mg-table-state">Đang tải doanh số…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : !rows.length ? <p className="mg-table-state">Chưa có doanh số được gắn nhân viên trong kỳ.</p> :
-    <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Theo NVKD / TLS được phân công"><table className="mg-table mg-source-sales-table"><thead><tr><th scope="col">Nhân viên</th><th scope="col">Bộ phận</th><th scope="col">Cách tính</th><th scope="col" className="mg-align-right">Hợp đồng</th><th scope="col" className="mg-align-right">Khách</th><th scope="col" className="mg-align-right">Khách mới</th><th scope="col" className="mg-align-right">Doanh số</th></tr></thead>
-      <tbody>{rows.map(row=><tr key={`${row.department}-${row.staff_id}-${row.name}`}><td>{row.name}</td><td>{row.department}</td><td>{row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên'}</td><td className="mg-align-right">{row.contracts}</td><td className="mg-align-right">{row.customers}</td><td className="mg-align-right">{row.new_customers}</td><td className="mg-align-right">{money(row.revenue)}</td></tr>)}</tbody>
-    </table></div>}
+    {toolsOpen&&<div className="mg-monitor-tools is-tab" aria-label="Thống kê hợp đồng">
+    <div className="mg-report-views is-sub" role="tablist" aria-label="Mục thống kê hợp đồng">
+      {CONTRACTS_SUB_TABS.map(({ key, label }) => (
+        <button key={key} type="button" role="tab" className={`mg-button${contractsSubView === key ? ' is-active' : ''}`} aria-selected={contractsSubView === key} onClick={() => setContractsSubView(key)}>{label}</button>
+      ))}
+    </div>
+    {contractsSubView==='overview'&&<>
+      <p className="mg-sales-kpi-note">Các thống kê dùng phạm vi và cách tính ghi tại từng mục. Chốt KPI thuê xe theo tab Doanh thu thực thu / NVKD.</p>
+      <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>
+      <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền còn thiếu của đơn đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu. Nợ xấu quá hạn = nợ quá hạn (HĐ Quá hạn chưa thu đủ) cộng nợ xấu.</p>
+    </>}
+    {contractsSubView==='by-staff'&&<SummaryTable title="Theo NVKD ghi nhận doanh số" description={`Tổng hợp từ Danh sách hợp đồng theo cột NVKD ghi nhận doanh số. ${scope}`} column="NVKD ghi nhận doanh số" unit="nhân viên" summary={sources} filename={`doanh-so-nvkd-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>}
+    {contractsSubView==='by-store'&&<SummaryTable title="Doanh thu theo cơ sở" description={`Tổng hợp từ Danh sách hợp đồng theo cột Nguồn / doanh thu. ${scope}`} column="Cơ sở (Nguồn / doanh thu)" unit="cơ sở" summary={stores} filename={`doanh-thu-co-so-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>}
+    {contractsSubView==='new-customers'&&<NewCustomersBySourcePanel from={from} to={to} store={selectedStore} retry={retry}/>}
+    {contractsSubView==='assigned'&&<>
+      <div className="mg-source-sales-heading mg-source-sales-heading-sub"><div><h2>Theo NVKD / TLS được phân công</h2></div></div>
+      <div className="mg-sales-filter-row"><div className="mg-sales-segmented" role="group" aria-label="Bộ phận báo cáo bổ sung">{DEPARTMENTS.map(item=><button key={item.value||'all'} type="button" className={department===item.value?'is-active':''} aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div><button className="mg-button" type="button" disabled={loading||!rows.length} title={loading?'Đang tải doanh số…':!rows.length?'Chưa có doanh số được gắn nhân viên trong kỳ.':'Xuất CSV báo cáo bổ sung.'} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất báo cáo bổ sung</button></div>
+      {loading ? <p role="status" className="mg-table-state">Đang tải doanh số…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : !rows.length ? <p className="mg-table-state">Chưa có doanh số được gắn nhân viên trong kỳ.</p> :
+      <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Theo NVKD / TLS được phân công"><table className="mg-table mg-source-sales-table"><thead><tr><th scope="col">Nhân viên</th><th scope="col">Bộ phận</th><th scope="col">Cách tính</th><th scope="col" className="mg-align-right">Hợp đồng</th><th scope="col" className="mg-align-right">Khách</th><th scope="col" className="mg-align-right">Khách mới</th><th scope="col" className="mg-align-right">Doanh số</th></tr></thead>
+        <tbody>{rows.map(row=><tr key={`${row.department}-${row.staff_id}-${row.name}`}><td>{row.name}</td><td>{row.department}</td><td>{row.department === 'NVKD' ? 'Tiền thuê thực thu, gồm gia hạn' : 'Tiền thuê HĐ mở mới đầu tiên'}</td><td className="mg-align-right">{row.contracts}</td><td className="mg-align-right">{row.customers}</td><td className="mg-align-right">{row.new_customers}</td><td className="mg-align-right">{money(row.revenue)}</td></tr>)}</tbody>
+      </table></div>}
+    </>}
     </div>}
     </div>
   </div></section>;

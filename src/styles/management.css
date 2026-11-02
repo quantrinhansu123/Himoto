@@ -4368,6 +4368,11 @@
 .mg-cashbook-reconciliation .mg-cashbook-metric-details { max-width:650px; margin-bottom:16px; }
 .mg-report-views { display:flex; gap:8px; flex-wrap:wrap; margin:18px 20px 0; }
 .mg-report-views .is-active { background:var(--mg-yellow-100); border-color:var(--mg-yellow-400); color:var(--mg-heading); }
+.mg-report-views.is-sub { margin:12px 18px 0; gap:6px; padding-bottom:4px; border-bottom:1px solid var(--mg-line); }
+.mg-report-views.is-sub .mg-button { height:32px; padding:0 12px; font-size:12.5px; }
+.mg-monitor-tools.is-tab > .mg-report-views.is-sub + .mg-sales-kpi-note,
+.mg-monitor-tools.is-tab > .mg-report-views.is-sub + .mg-source-sales,
+.mg-monitor-tools.is-tab > .mg-report-views.is-sub + .mg-source-sales-heading { margin-top:8px; }
 .mg-sales-page .mg-rental-revenue { margin-top: 10px; }
 .mg-sales-page .mg-revenue-pair { margin-top: 0; }
 .mg-report-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; padding:20px; }
