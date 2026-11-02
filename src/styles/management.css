@@ -3994,8 +3994,10 @@
 .mg-data-actions > div { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 767px) {
   .mg-main { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
-  .mg-mobile-bottom-nav { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: white; border-top: 1px solid var(--mg-line); }
-  .mg-mobile-bottom-nav a { min-height: 50px; display: grid; align-content: center; justify-items: center; gap: 4px; color: var(--mg-slate-600); text-decoration: none; font-size: 11px; }
+  .mg-mobile-bottom-nav { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: white; border-top: 1px solid var(--mg-line); }
+  .mg-mobile-bottom-nav :is(a,button) { min-height: 50px; display: grid; align-content: center; justify-items: center; gap: 4px; color: var(--mg-slate-600); text-decoration: none; font: inherit; font-size: 12px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+  .mg-mobile-bottom-nav :is(a,button):focus-visible { outline: 2px solid var(--mg-brand-700); outline-offset: -2px; }
+  .mg-mobile-bottom-nav button:disabled { opacity: .55; cursor: wait; }
   .mg-mobile-bottom-nav a[aria-current="page"] { color: var(--mg-brand-700); font-weight: 700; background: var(--mg-brand-50); border-radius: 8px; }
   .mg-data-actions { display: block; width: 100%; }
   .mg-data-actions > summary, .mg-mobile-status-action { display: flex; }

@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AlarmClock, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LayoutDashboard, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText,Settings, UsersRound, Wallet, X } from 'lucide-react';
+import { AlarmClock, ArrowLeft, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LayoutDashboard, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText, RotateCcw,Settings, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { ReloadButton, requestReload } from './ReloadButton';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
@@ -48,6 +48,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const router = useRouter();
   const active = navigation.find(n => pathname === n.href) || navigation.find(n => n.kind === 'vehicles')!;
   const visibleNavigation=navigation.filter(item=>hasPermission(user,navigationPermission(item.kind)));
+  const homeHref=visibleNavigation.find(item=>item.href==='/operations')?.href||visibleNavigation[0]?.href||'/login';
   const pageAllowed=hasPermission(user,navigationPermission(active.kind));
   const writableCustomers = source === 'api' && active.kind === 'customers';
   const writableStores = source === 'api' && active.kind === 'stores';
@@ -149,7 +150,11 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
       </header>
       <main id="management-main" className="mg-content" tabIndex={-1}>{pageAllowed?children:<section className="mg-page"><h1>Không có quyền truy cập</h1><p>Tài khoản chưa được phân quyền cho chức năng này.</p><Link className="mg-button" href={visibleNavigation[0]?.href||'/login'}>Mở chức năng được phân quyền</Link></section>}</main>
       <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{gpsPage?'GPS · Tự đồng bộ mỗi 5 giây':integrationPage?'GPS & Telegram · Cấu hình theo cơ sở':writableBattery ? 'Hợp đồng thuê pin · Ghi trực tiếp vào Supabase' : writableDuties ? 'Lịch trực theo tuần' : writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : writableStores ? 'Cơ sở · Ghi trực tiếp vào Supabase' : writableVehicles ? 'Xe · Đồng bộ có sao lưu' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
-      <nav className="mg-mobile-bottom-nav" aria-label="Thao tác chính trên điện thoại">{visibleNavigation.filter(item=>['/operations','/contracts','/vehicles','/cashbook','/staff'].includes(item.href)).slice(0,4).map(item=><Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined}><item.icon size={20}/><span>{item.href === '/operations' ? 'Thao tác' : item.href === '/contracts' ? 'Hợp đồng' : item.href === '/vehicles' ? 'Xe' : 'Sổ quỹ'}</span></Link>)}</nav>
+      <nav className="mg-mobile-bottom-nav" aria-label="Thao tác chính trên điện thoại">
+        <button type="button" aria-label="Back — Quay lại" onClick={()=>{if(window.history.length>1)router.back();else router.push(homeHref);}}><ArrowLeft size={20}/><span>Back</span></button>
+        <Link href={homeHref} aria-label="Home — Trang chủ" aria-current={pathname===homeHref?'page':undefined}><House size={20}/><span>Home</span></Link>
+        <button type="button" aria-label="Load — Tải lại dữ liệu" disabled={refreshing} onClick={()=>{requestReload();void reload();router.refresh();}}><RotateCcw size={20} className={refreshing?'mg-spin':undefined}/><span>{refreshing?'Đang tải…':'Load'}</span></button>
+      </nav>
       {changingPassword&&<ChangePasswordDialog onClose={()=>setChangingPassword(false)} onChanged={()=>{setChangingPassword(false);notify('Đã đổi mật khẩu.');window.dispatchEvent(new Event('himoto-account-password-changed'));router.refresh();}}/>}
     </div>
   </div>;
