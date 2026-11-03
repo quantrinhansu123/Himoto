@@ -9,7 +9,7 @@ import type { ManagementRow } from '@/lib/management/types';
 import { canHoldContract,canMarkBadDebtContract,lifecycleActionLabel,lifecycleDisplayStatus,loadContractLifecycle,localLifecycleTime,resumeInstallmentPlan,resumedHoldEnd,saveContractLifecycle,validLifecycleTime,type ContractLifecycleAction,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 import { formatDateTime,formatMoney } from '@/lib/formatters';
 import { MANAGEMENT_CONFIG,optionLabel } from '@/lib/management/config';
-import { installmentSchedule } from '@/lib/management/contract-billing';
+import { addRentalMonths, installmentSchedule } from '@/lib/management/contract-billing';
 import { ContractBadDebtDialog } from './ContractBadDebtDialog';
 import { useHoldExpired } from './ContractHoldStatus';
 
@@ -33,10 +33,10 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
   },[action,stockVersion]);
   const preview=useMemo(()=>{
     if(action!=='resume'||!context)return null;
-    try{const plan=context.plan?resumeInstallmentPlan(context.plan,context.held_at||'',at):null;return {plan:plan&&resumeEnd?{...plan,end:resumeEnd}:plan,end:resumeEnd||resumedHoldEnd(context,at),error:''};}
+    try{let plan=null;if(context.plan){try{plan=resumeInstallmentPlan(context.plan,context.held_at||'',at);}catch{if(!resumeEnd)throw Error('Nhập hạn trả mới để tiếp tục hợp đồng cũ.');}}return {plan:plan&&resumeEnd?{...plan,end:resumeEnd}:plan,end:resumeEnd||resumedHoldEnd(context,at),error:''};}
     catch(cause){return {plan:null,end:'',error:cause instanceof Error?cause.message:'Chưa lập được lịch còn lại.'};}
   },[action,context,at,resumeEnd]);
-  function open(next:ContractLifecycleAction){setResumeEnd('');setAction(next);setAt(localLifecycleTime());setNote('');setConfirmed(false);setSaveError('');setSelected(Array.from({length:context?.resume_vehicle_count||1},()=>''));setHoldUntil(next==='update_hold'?context?.hold_until||'':'');request.current=crypto.randomUUID();}
+  function open(next:ContractLifecycleAction){const now=localLifecycleTime();let end='';if(next==='resume'&&context){try{end=resumedHoldEnd(context,now);}catch{end=addRentalMonths(now,1);}}setResumeEnd(end);setAction(next);setAt(now);setNote('');setConfirmed(false);setSaveError('');setSelected(Array.from({length:context?.resume_vehicle_count||1},()=>''));setHoldUntil(next==='update_hold'?context?.hold_until||'':'');request.current=crypto.randomUUID();}
   async function save(){
     if(!context||!action||busy.current||!confirmed)return;
     busy.current=true;setSaving(true);setSaveError('');
@@ -88,6 +88,7 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
         <div className="mg-field"><label htmlFor="lifecycle-at">{atLabel}</label><DateTime24Controls id="lifecycle-at" label={atLabel} value={at} onChange={setAt}/></div>
         {['hold','update_hold'].includes(action)&&<div className="mg-field"><label htmlFor="lifecycle-hold-until">Bảo lưu đến ngày giờ (24h)</label><DateTime24Controls id="lifecycle-hold-until" label="Bảo lưu đến ngày giờ" value={holdUntil} onChange={setHoldUntil}/></div>}
         {action==='resume'&&<>
+          <div className="mg-field"><label htmlFor="lifecycle-resume-end">Hạn trả mới</label><DateTime24Controls id="lifecycle-resume-end" label="Hạn trả mới" value={resumeEnd||preview?.end||''} onChange={setResumeEnd}/></div>
           <p>Tiếp tục chính hợp đồng này, giữ toàn bộ nợ/cọc và lịch sử cũ. Chọn đủ xe đang rảnh; xe đã được cho khách khác thuê sẽ bị chặn.</p>
           <button type="button" className="mg-button" disabled={stockLoading} onClick={()=>setStockVersion(value=>value+1)}>Làm mới kho</button>
           {stockLoading&&<p role="status">Đang tải xe toàn hệ thống…</p>}{stockError&&<p role="alert" className="mg-field-error">{stockError}</p>}

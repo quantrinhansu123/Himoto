@@ -151,7 +151,7 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
         if(input.resume_amount!==undefined||input.resume_package!==undefined)throw Error('Lịch còn lại được dời theo thời gian bảo lưu; giữ nguyên số kỳ và số tiền gốc.');
         nextPlan=resumeInstallmentPlan(hold.plan,hold.at,input.at);
         if(input.resume_end)nextPlan={...nextPlan,end:input.resume_end};
-      }else if(input.resume_end!==undefined||input.resume_amount!==undefined||input.resume_package!==undefined)throw Error('Hạn trả được dời theo thời gian bảo lưu; không thêm gói thuê hoặc khoản tiền mới.');
+      }else if(input.resume_amount!==undefined||input.resume_package!==undefined)throw Error('Không thêm gói thuê hoặc khoản tiền mới khi tiếp tục thuê.');
     }catch(error){throw new ContractLifecycleError(error instanceof Error?error.message:'Không lập được lịch thuê lại.',409);}
     const nextEnd=input.resume_end||nextPlan?.end||resumedHoldEnd(context,input.at);
     if(!validLifecycleTime(nextEnd)||nextEnd<=input.at)throw new ContractLifecycleError('Chọn hạn trả mới sau ngày giờ thuê lại.');
