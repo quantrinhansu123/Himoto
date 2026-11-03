@@ -45,7 +45,7 @@ export function resumeInstallmentPlan(raw:unknown,heldAt:string,resumedAt:string
   if(!plan||!validLifecycleTime(heldAt)||!validLifecycleTime(resumedAt)||resumedAt<=heldAt)throw Error('Ngày thuê lại phải sau ngày bảo lưu và lịch đóng tiền gốc phải hợp lệ.');
   const shift=new Date(resumedAt+':00+07:00').getTime()-new Date(heldAt+':00+07:00').getTime();
   const move=(value:string)=>localLifecycleTime(new Date(new Date(value+':00+07:00').getTime()+shift));
-  const schedule=installmentSchedule(plan);if(heldAt>=plan.end)throw Error('Hợp đồng đã hết thời hạn trước khi bảo lưu; chỉ được hoàn thành.');
+  const schedule=installmentSchedule(plan);
   const periods=schedule.map(period=>({due_at:period.due_at>=heldAt?move(period.due_at):period.due_at,amount:period.amount}));
   const next:InstallmentPlan={version:1,start:heldAt===plan.start?move(plan.start):plan.start,end:move(plan.end),interval:'custom',amount:plan.amount,periods};
   if(!parseInstallmentPlan(next))throw Error('Không lập được lịch đóng tiền còn lại.');return next;

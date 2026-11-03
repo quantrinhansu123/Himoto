@@ -19,6 +19,7 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
   const [action,setAction]=useState<ContractLifecycleAction|null>(null),[at,setAt]=useState(localLifecycleTime),[note,setNote]=useState(''),[confirmed,setConfirmed]=useState(false),[saving,setSaving]=useState(false),[saveError,setSaveError]=useState('');
   const [inventory,setInventory]=useState<ManagementRow[]>([]),[stockLoading,setStockLoading]=useState(false),[stockError,setStockError]=useState(''),[stockVersion,setStockVersion]=useState(0),[selected,setSelected]=useState<string[]>([]);
   const [holdUntil,setHoldUntil]=useState('');
+  const [resumeEnd,setResumeEnd]=useState('');
   const holdExpired=useHoldExpired(context?.hold_until);
   const request=useRef(crypto.randomUUID()),busy=useRef(false);
   const refresh=useCallback((signal?:AbortSignal)=>{setLoading(true);setError('');return loadContractLifecycle(id,signal).then(next=>{if(!signal?.aborted){setContext(next);onChanged(next);}}).catch(cause=>{if(!signal?.aborted)setError(cause instanceof Error?cause.message:'Không đọc được tình trạng hợp đồng.');}).finally(()=>{if(!signal?.aborted)setLoading(false);});},[id,onChanged]);
@@ -32,15 +33,15 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
   },[action,stockVersion]);
   const preview=useMemo(()=>{
     if(action!=='resume'||!context)return null;
-    try{return {plan:context.plan?resumeInstallmentPlan(context.plan,context.held_at||'',at):null,end:resumedHoldEnd(context,at),error:''};}
+    try{const plan=context.plan?resumeInstallmentPlan(context.plan,context.held_at||'',at):null;return {plan:plan&&resumeEnd?{...plan,end:resumeEnd}:plan,end:resumeEnd||resumedHoldEnd(context,at),error:''};}
     catch(cause){return {plan:null,end:'',error:cause instanceof Error?cause.message:'Chưa lập được lịch còn lại.'};}
-  },[action,context,at]);
-  function open(next:ContractLifecycleAction){setAction(next);setAt(localLifecycleTime());setNote('');setConfirmed(false);setSaveError('');setSelected(Array.from({length:context?.resume_vehicle_count||1},()=>''));setHoldUntil(next==='update_hold'?context?.hold_until||'':'');request.current=crypto.randomUUID();}
+  },[action,context,at,resumeEnd]);
+  function open(next:ContractLifecycleAction){setResumeEnd('');setAction(next);setAt(localLifecycleTime());setNote('');setConfirmed(false);setSaveError('');setSelected(Array.from({length:context?.resume_vehicle_count||1},()=>''));setHoldUntil(next==='update_hold'?context?.hold_until||'':'');request.current=crypto.randomUUID();}
   async function save(){
     if(!context||!action||busy.current||!confirmed)return;
     busy.current=true;setSaving(true);setSaveError('');
     try{const next=await saveContractLifecycle(id,{action,revision:context.revision,request_id:request.current,note:note.trim(),at,confirmed,
-      ...(action==='resume'?{vehicle_ids:selected.map(Number)}:{}),...(['hold','update_hold'].includes(action)?{hold_until:holdUntil}:{})});
+      ...(action==='resume'?{vehicle_ids:selected.map(Number),...(resumeEnd?{resume_end:resumeEnd}:{})}:{}),...(['hold','update_hold'].includes(action)?{hold_until:holdUntil}:{})});
       setContext(next);onChanged(next);invalidateData(['contracts','vehicles']);notify(action==='complete_hold'?'Đã hoàn thành; ghi nhận tổn thất công nợ và dừng theo dõi khoản không thu hồi.':next.status==='completed'?'Đã trả đủ xe và tất toán: hợp đồng đã đóng.':lifecycleActionLabel[action]+' thành công.');setAction(null);
     }catch(cause){setSaveError(cause instanceof Error?cause.message:'Chưa lưu được thao tác.');}
     finally{busy.current=false;setSaving(false);}
@@ -60,16 +61,16 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
         <div><dt>Cọc còn giữ / tiền thu dư</dt><dd>{money(context.deposit_held)} / {money(context.overpayment)}</dd></div>
       </dl>
       {context.status==='bad_debt'&&<p>Hợp đồng giữ Nợ xấu đến khi đã trả/thu hồi tất cả xe và xác nhận tất toán. Xe thu hồi xong được cho thuê lại khi Lưu kho và không có hợp đồng khác giữ.</p>}
-      {context.status==='reserved'&&<><p>Đang bảo lưu từ {context.held_at?formatDateTime(context.held_at+':00+07:00'):'—'} đến {context.hold_until?formatDateTime(context.hold_until+':00+07:00'):'chưa nhập'}. Không phát sinh tiền thuê hoặc phí quá hạn trong bảo lưu; tiền đã phát sinh trước đó và cọc giữ nguyên.</p>{holdExpired&&<p role="status" className="mg-hold-expiry-alert"><strong>Hết hạn bảo lưu.</strong> Hợp đồng vẫn ở Bảo lưu, chờ nhân viên xác nhận {context.hold_can_resume?'tiếp tục thuê hoặc hoàn thành.':'hoàn thành hợp đồng.'}</p>}{!context.hold_until&&<p role="alert">Hồ sơ cũ chưa có ngày kết thúc bảo lưu. Nhập tại Sửa thời hạn bảo lưu trước khi xử lý tiếp.</p>}{!context.hold_can_resume&&<p>Hợp đồng quá hạn trước bảo lưu hoặc chưa đủ thông tin thời hạn: sau bảo lưu chỉ được hoàn thành.</p>}</>}
+      {context.status==='reserved'&&<><p>Đang bảo lưu từ {context.held_at?formatDateTime(context.held_at+':00+07:00'):'—'} đến {context.hold_until?formatDateTime(context.hold_until+':00+07:00'):'chưa nhập'}. Không phát sinh tiền thuê hoặc phí quá hạn trong bảo lưu; tiền đã phát sinh trước đó và cọc giữ nguyên.</p>{holdExpired&&<p role="status" className="mg-hold-expiry-alert"><strong>Hết hạn bảo lưu.</strong> Hợp đồng vẫn ở Bảo lưu, chờ nhân viên xác nhận tiếp tục thuê hoặc hoàn thành.</p>}{!context.hold_until&&<p role="alert">Hồ sơ cũ chưa có ngày kết thúc bảo lưu. Có thể chọn Tiếp tục thuê và nhập hạn trả mới.</p>}</>}
       {context.ownership&&['renting','overdue','wait_payment'].includes(context.status)&&<p>Có thể bảo lưu hợp đồng thuê sở hữu, kể cả hợp đồng quá hạn. Nhập ngày bắt đầu và kết thúc; hết bảo lưu chỉ báo đỏ, chờ nhân viên xử lý.</p>}
-      {hasReconciled&&<p role="status">Hồ sơ cũ có xe đã gỡ giữ khi đối chiếu kho, chưa xác định ngày thu hồi thực tế. Bảo lưu giữ nguyên mốc cũ và kho xe hiện tại; không thu hồi xe lần nữa hoặc tự điều chỉnh tiền thuê, tiền đã thu và cọc. Hồ sơ này không tự tiếp tục thuê sau bảo lưu.</p>}
+      {hasReconciled&&<p role="status">Hồ sơ cũ có xe đã gỡ giữ khi đối chiếu kho, chưa xác định ngày thu hồi thực tế. Bảo lưu giữ nguyên mốc cũ và kho xe hiện tại; không thu hồi xe lần nữa hoặc tự điều chỉnh tiền thuê, tiền đã thu và cọc. Chọn Tiếp tục thuê để bàn giao xe khi khách quay lại.</p>}
       <div className="mg-heading-actions">
         {can('contracts.return')&&canMarkBadDebtContract(context)&&<button className="mg-button" onClick={()=>open('mark_bad_debt')}>Chuyển sang Nợ xấu</button>}
         {can('contracts.return')&&context.status==='bad_debt'&&!context.all_returned&&<button className="mg-button" onClick={onRecover}>Thu hồi xe nợ xấu</button>}
         {(can('contracts.return')||can('finance.write'))&&context.status==='bad_debt'&&!context.settled&&<button className="mg-button" disabled={!context.can_settle} onClick={()=>open('settle')}>Xác nhận tất toán</button>}
         {onPayment&&['bad_debt','reserved'].includes(context.status)&&<button className="mg-button" onClick={()=>onPayment(Number(context.remaining)>0?'debt':context.deposit_held>0?'deposit_refund':'extra')}>Thanh toán / xử lý cọc</button>}
         {can('contracts.return')&&canHoldContract(context)&&<button className="mg-button" onClick={()=>open('hold')}>Bảo lưu hợp đồng</button>}
-        {can('contracts.return')&&context.status==='reserved'&&<><button className="mg-button" onClick={()=>open('update_hold')}>Sửa thời hạn bảo lưu</button>{context.hold_can_resume&&<button className="mg-button mg-button-primary" disabled={!holdExpired} onClick={()=>open('resume')}>Tiếp tục thuê</button>}<button className="mg-button" disabled={!holdExpired} onClick={()=>open('complete_hold')}>Hoàn thành hợp đồng</button></>}
+        {can('contracts.return')&&context.status==='reserved'&&<><button className="mg-button" onClick={()=>open('update_hold')}>Sửa thời hạn bảo lưu</button><button className="mg-button mg-button-primary" onClick={()=>open('resume')}>Tiếp tục thuê</button><button className="mg-button" onClick={()=>open('complete_hold')}>Hoàn thành hợp đồng</button></>}
         <button className="mg-button" disabled={loading} onClick={()=>void refresh()}>Làm mới tình trạng</button>
       </div>
       <h4>Tình trạng từng xe</h4><ul>{context.items.map(item=><li key={item.id}>{item.license||item.name} · {item.return_reconciled?'Đã gỡ giữ xe; chưa có ngày thu hồi thực tế':item.completed_at?`Đã trả/thu hồi ${formatDateTime(item.completed_at)}`:'Chưa trả xe'}</li>)}</ul>

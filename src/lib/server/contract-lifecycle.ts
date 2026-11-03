@@ -68,7 +68,7 @@ export async function readContractLifecycle(db:Database,id:number):Promise<Contr
     settlement_note:state.remaining===null?'Chưa đối chiếu được số tiền hợp đồng.':state.remaining>0?'Còn tiền thuê, phí hoặc kỳ thuê chưa thanh toán.':state.deposit_held>0?'Còn tiền cọc chưa có phiếu xử lý/hoàn cọc.':Number(state.overpayment)>0?'Còn tiền thu dư cần đối chiếu.':'Đủ số liệu tiền để xác nhận tất toán.',
     events:Array.isArray(lifecycle.events)?lifecycle.events:[],held_at:lifecycle.active_hold?.at||null,resume_vehicle_count:lifecycle.active_hold?.vehicle_ids?.length||0,plan,base_total:state.base,start_at:iso(order.rent_at)||items[0]?.rent_at||null,
     hold_until:lifecycle.active_hold?.until||null,hold_expired:order.order_status==='reserved'&&validLifecycleTime(lifecycle.active_hold?.until)&&Date.parse(stamp(lifecycle.active_hold.until))<=Date.now(),
-    hold_can_resume:lifecycle.active_hold?.can_resume===true,hold_was_overdue:lifecycle.active_hold?.was_overdue===true,
+    hold_can_resume:order.order_status==='reserved'&&Boolean(lifecycle.active_hold),hold_was_overdue:lifecycle.active_hold?.was_overdue===true,
     completed_from_hold:Boolean(lifecycle.hold_completion),waived_amount:lifecycle.hold_completion?.waived_amount,
     end_at:plan?stamp(plan.end):iso(order.return_at)||items.filter(item=>(!item.completed_at||item.return_reconciled)&&item.return_at).map(item=>item.return_at!).sort().at(-1)||null};
 }
@@ -135,7 +135,6 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
   }else if(input.action==='complete_hold'){
     const hold=lifecycle.active_hold;
     if(!order.ownership||order.order_status!=='reserved'||!hold||!context.all_returned)throw new ContractLifecycleError('Chỉ hoàn thành hợp đồng thuê sở hữu đang bảo lưu đã thu đủ xe.',409);
-    if(!validLifecycleTime(hold.until)||input.at<hold.until)throw new ContractLifecycleError('Chưa hết thời hạn bảo lưu. Kiểm tra hạn bảo lưu trước khi hoàn thành.',409);
     if(context.total_amount===null||context.paid_amount===null)throw new ContractLifecycleError('Chưa đối chiếu được tiền thuê và tiền đã thu; cần kiểm tra trước khi hoàn thành.',409);
     const finalTotal=Math.min(context.total_amount,context.paid_amount),waived=Math.max(context.total_amount-context.paid_amount,0);
     lifecycle.hold_completion={at:stamp(input.at),recorded_at:new Date().toISOString(),actor_id:actorId,note:input.note,waived_amount:waived,original_total:context.total_amount,original_base:context.base_total,paid:context.paid_amount,deposit_held:context.deposit_held,overpayment:context.overpayment,hold,plan:composer.installment_plan||null};
@@ -145,17 +144,18 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
   }else{
     const hold=lifecycle.active_hold;
     if(!order.ownership||order.order_status!=='reserved'||!hold||!context.all_returned)throw new ContractLifecycleError('Hợp đồng không ở trạng thái Bảo lưu đã thu hồi đủ xe.',409);
-    if(!validLifecycleTime(hold.until)||input.at<hold.until)throw new ContractLifecycleError('Chưa hết thời hạn bảo lưu. Kiểm tra hạn bảo lưu trước khi tiếp tục thuê.',409);
-    if(!hold.can_resume)throw new ContractLifecycleError('Hợp đồng đã quá hạn khi bảo lưu; chỉ được hoàn thành hợp đồng.',409);
     if(input.vehicle_ids!.length!==hold.vehicle_ids.length)throw new ContractLifecycleError(`Chọn đủ ${hold.vehicle_ids.length} xe cho lượt thuê lại.`,409);
     let nextPlan;const base=context.base_total;
     try{
       if(hold.plan){
-        if(input.resume_end!==undefined||input.resume_amount!==undefined||input.resume_package!==undefined)throw Error('Lịch còn lại được dời theo thời gian bảo lưu; giữ nguyên số kỳ và số tiền gốc.');
+        if(input.resume_amount!==undefined||input.resume_package!==undefined)throw Error('Lịch còn lại được dời theo thời gian bảo lưu; giữ nguyên số kỳ và số tiền gốc.');
         nextPlan=resumeInstallmentPlan(hold.plan,hold.at,input.at);
+        if(input.resume_end)nextPlan={...nextPlan,end:input.resume_end};
       }else if(input.resume_end!==undefined||input.resume_amount!==undefined||input.resume_package!==undefined)throw Error('Hạn trả được dời theo thời gian bảo lưu; không thêm gói thuê hoặc khoản tiền mới.');
     }catch(error){throw new ContractLifecycleError(error instanceof Error?error.message:'Không lập được lịch thuê lại.',409);}
-    const nextEnd=nextPlan?.end||resumedHoldEnd(context,input.at);
+    const nextEnd=input.resume_end||nextPlan?.end||resumedHoldEnd(context,input.at);
+    if(!validLifecycleTime(nextEnd)||nextEnd<=input.at)throw new ContractLifecycleError('Chọn hạn trả mới sau ngày giờ thuê lại.');
+    if(nextPlan&&!parseInstallmentPlan(nextPlan))throw new ContractLifecycleError('Hạn trả mới phải sau các kỳ đóng tiền đã ghi nhận.');
     const ids=[...input.vehicle_ids!].sort((a,b)=>a-b),itemIds:number[]=[];
     const stock=await db.query('SELECT id,license,status,COALESCE(current_store_id,store_id) AS store_id FROM himoto.vehicles WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE',[ids]);
     if(stock.rowCount!==ids.length)throw new ContractLifecycleError('Xe phải được nhận vào kho Thuê sở hữu trước khi tiếp tục thuê.',409);
