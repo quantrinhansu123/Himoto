@@ -168,8 +168,8 @@ export function StoreDetail({ row, canEdit, onEdit, onClose }: { row: Management
       <ContractSectionTabs prefix="store-detail" label={config.title} sections={SECTIONS} active={section} onChange={setSection} />
       {panel('details', <>
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
-        <dl className="mg-detail-grid">{config.columns.filter(column => column.key !== 'name' && column.key !== 'status').map(column => <div key={column.key}><dt>{column.label}</dt><dd>{optionLabel(config, column.key, formatValue(row[column.key], column.format))}</dd></div>)}
-          {config.fields.filter(field => !config.columns.some(column => column.key === field.key)).map(field => <div key={field.key}><dt>{field.label}</dt><dd>{row[field.key] || '—'}</dd></div>)}</dl>
+        <dl className="mg-detail-grid">{config.columns.filter(column => column.key !== 'name' && column.key !== 'status').map(column => <div key={column.key} data-detail-field={column.key}><dt>{column.label}</dt><dd>{optionLabel(config, column.key, formatValue(row[column.key], column.format))}</dd></div>)}
+          {config.fields.filter(field => !config.columns.some(column => column.key === field.key)).map(field => <div key={field.key} data-detail-field={field.key}><dt>{field.label}</dt><dd>{row[field.key] || '—'}</dd></div>)}</dl>
       </>)}
       {LIST_SECTIONS.map(kind => panel(kind, section === kind && <StoreRelatedList kind={kind} storeId={row.id} onOpenList={() => openList(kind)} onClose={onClose} />))}
       {panel('cashbook', section === 'cashbook' && <StoreCashbook storeId={row.id} onOpenCashbook={() => openList('cashbook')} />)}

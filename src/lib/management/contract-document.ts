@@ -111,9 +111,13 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
   if(profile.customer)profile.customer={...customerDetails(profile.customer as unknown as ManagementRow),...profile.customer};
   if (row?.draft_json) {
     const snapshot = JSON.parse(String(row.draft_json)) as ContractDraft;
-    if (!snapshot.customer || !Array.isArray(snapshot.vehicles) || !snapshot.vehicles.length) throw new Error('Thông tin hợp đồng đã lưu không hợp lệ.');
+    if (!snapshot.customer || !Array.isArray(snapshot.vehicles)) throw new Error('Thông tin hợp đồng đã lưu không hợp lệ.');
     const live = row.status !== 'draft' ? {
+      ...(row.start_date ? { start_date: dateTimeInput(row.start_date) } : {}),
       ...(row.end_date ? { end_date: dateTimeInput(row.end_date) } : {}),
+      ...(row.deposit_amount != null ? { deposit_amount: value(row.deposit_amount) } : {}),
+      ...(row.unit_price != null ? { unit_price: value(row.unit_price) } : {}),
+      ...(row.package_name ? { package_name: value(row.package_name) } : {}),
       ...(row.total_amount != null ? { total_amount: value(row.billing_base_total ?? row.total_amount) } : {}),
     } : {};
     const collections = row.collections_json ? JSON.parse(String(row.collections_json)) as ContractCollection[] : snapshot.collections;
@@ -125,7 +129,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
         payment_method:collectionMethods(collections, 'rental', snapshot.payment_method),
         deposit_payment_method:collectionMethods(collections, 'deposit', snapshot.deposit_payment_method),
       } : {}), staff_name: snapshot.staff_name || '', customer: { ...customerDetails(snapshot.customer as unknown as ManagementRow), ...snapshot.customer },
-      vehicles: snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })), contract_number: row.status === 'draft' ? paperContractNumber(snapshot.contract_number) : row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
+      vehicles: snapshot.vehicles.length ? snapshot.vehicles.map(vehicle => ({ ...emptyVehicle(), ...vehicle })) : [emptyVehicle()], contract_number: row.status === 'draft' ? paperContractNumber(snapshot.contract_number) : row.code, relatives: pairRelatives(snapshot.relatives, snapshot.customer.relatives_text),
       created_on: dateInput(snapshot.created_on) || createdOn || defaultDate, ...profile };
   }
   const sourceCustomer = row ? dataset.customers.find(item => item.id === row.customer_id) || { ...row,
@@ -165,7 +169,7 @@ export function createContractDraft(dataset: ManagementDataset, storeId: string,
     customer_id: row?.customer_id ? Number(row.customer_id) : null, customer,
     vehicles: vehicles.length ? vehicles : [vehicle ? vehicleDetails(vehicle, customer) : emptyVehicle()],
     start_date: startDate, end_date: row ? dateTimeInput(row.end_date) : addRentalDays(startDate, '1'),
-    unit_price: value(vehicle?.daily_price), total_amount: value(row?.total_amount), paid_amount: row ? value(row.paid_amount) : '0',
+    unit_price: value(row?.unit_price ?? vehicle?.daily_price), total_amount: value(row?.total_amount), paid_amount: row ? value(row.paid_amount) : '0',
     deposit_amount: value(row?.deposit_amount), package_name: value(row?.package_name) || (/^(monthly|ownership)/.test(String(row?.rental_type ?? '')) ? 'Theo tháng' : 'Theo ngày'),
     ...(row?.rental_type === 'ownership' ? { ownership: true, ownership_term_months: value(row.ownership_term_months) as OwnershipTerm || 'custom' } : {}),
     payment_method: collectionMethods(collections, 'rental', value(row?.payment_method)), deposit_payment_method: collectionMethods(collections, 'deposit', value(row?.deposit_payment_method)), collateral_description: value(row?.collateral_description),

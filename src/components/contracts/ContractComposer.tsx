@@ -12,7 +12,7 @@ import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import { ContractDraft, ContractRelative, CustomerDetails, LegacyContractDocument, buildContractDocument, contractStaffStoreId, createContractDraft, customerDetails, emptyVehicle, formatRelatives, normalizeIdCard, pairRelatives, relativesFromRow, staffIsAvailable, staffMatchesStore, validateContractDraft, validateOperationalDraft, validateReservationDraft, vehicleDetails } from '@/lib/management/contract-document';
 import { documentRequirements } from '@/lib/management/contract-requirements';
 import { hasSalesCommissionRole, staffRoles } from '@/lib/management/staff-positions';
-import { canEditIssuedContract,contractProfile,issuedContractNumberError,saveContractProfile,saveFullContract } from '@/lib/management/contract-profile';
+import { canEditIssuedContract,contractProfile,saveContractProfile,saveFullContract } from '@/lib/management/contract-profile';
 import { RentalTermsEditor } from '@/components/management/RentalTermsEditor';
 import { ManagementRow } from '@/lib/management/types';
 import { CONTRACT_STATUSES, CONTRACT_TYPES } from '@/lib/management/config';
@@ -508,7 +508,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!dataset || busy.current || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending) return;
+    if (!dataset || busy.current || !editingIssued && (processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending)) return;
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const action = submitter instanceof HTMLButtonElement ? submitter.value : '';
     if(action==='finalize'&&!canIssue){setSaveError('Hợp đồng thuê sở hữu cần quản lý duyệt. Lưu nháp để quản lý kiểm tra và phát hành.');return;}
@@ -541,13 +541,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
         }
       }
     }
-    const next: Record<string, string> = savingRecord ? (() => {
-      const invalid = issuedContractNumberError(draft.contract_number);
-      return {
-        ...(invalid ? { contract_number: invalid } : {}),
-        ...(!editingIssued && lookupState !== 'found' ? { id_card: 'Tra cứu hoặc chọn khách hàng trước khi lưu hợp đồng.' } : {}),
-      };
-    })() : savingDraft ? validateDraftSave(draft, validationDataset) : finalizing
+    const next: Record<string, string> = savingRecord ? {} : savingDraft ? validateDraftSave(draft, validationDataset) : finalizing
       ? { ...validateDraftSave(draft, validationDataset), ...contractBackfillErrors(draft.backfill,draft.start_date), ...(reserving ? validateReservationDraft(draft,validationDataset,staff,source) : validateOperationalDraft(draft,validationDataset,staff,source)) }
       : validateContractDraft(draft,validationDataset,staff,source);
     if (canSaveDraft && (!row && !draft.contract_type_id || draft.contract_type_id && !catalog.types.some(type => type.id === draft.contract_type_id && (type.active || row && (row.contract_type_id || row.rental_type) === type.id)))) next.contract_type_id = catalog.error || 'Chọn loại hợp đồng đang dùng, hoặc thêm loại mới.';
@@ -576,7 +570,6 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     if (savingRecord && row) {
       if (source === 'api') {
         if (!canEditIssuedContract(accessUser, row.store_id)) { setSaveError('Tài khoản chưa được cấp quyền Lập / sửa hợp đồng.'); return; }
-        if (!profileRevision) { setSaveError('Chưa tải được phiên bản hợp đồng. Bấm Làm mới rồi thử lại.'); return; }
         busy.current = true; setSaving(true); setProfileMessage('');
         try {
           const profile = contractProfile(draft);
@@ -763,7 +756,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   const quotedTotal = quote ? String(quote.total_amount) : null;
   const selectedVehicleCount = selectedRentalVehicleCount(draft.vehicles);
   useEffect(() => {
-    if (draft.package_name === 'Tùy chọn') return;
+    if (editingIssued || draft.package_name === 'Tùy chọn') return;
     const selection=`${pricingVehicleId}:${draft.package_name}`;
     const changed=pricingSelection.current!==selection;pricingSelection.current=selection;
     if(!changed&&draft.unit_price!=='')return;
@@ -773,21 +766,22 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
       const nextRate = String(rate);
       setDraft(previous => previous.unit_price === nextRate ? previous : { ...previous, unit_price: nextRate });
     }
-  }, [pricingVehicle, pricingVehicleId, monthlyPackage, draft.package_name, draft.unit_price]);
+  }, [editingIssued, pricingVehicle, pricingVehicleId, monthlyPackage, draft.package_name, draft.unit_price]);
   useEffect(() => {
+    if(editingIssued)return;
     const live = livePricing.current;
     if (live && live.start === draft.start_date && live.end === draft.end_date && live.unit === draft.unit_price && live.count === selectedVehicleCount) return;
     if (quotedTotal !== null) {
       setDraft(previous => previous.total_amount === quotedTotal && Boolean(previous.ownership) === ownership ? previous : { ...previous, ownership, total_amount: quotedTotal });
     }
-  }, [draft.start_date, draft.end_date, draft.unit_price, selectedVehicleCount, ownership, quotedTotal]);
+  }, [editingIssued, draft.start_date, draft.end_date, draft.unit_price, selectedVehicleCount, ownership, quotedTotal]);
   function changeCharges(next: ContractCharge[]) {
     setDraft(previous=>({...previous,extra_charges:next,total_amount:String(Math.max((Number(previous.total_amount)||0)-(chargeTotal(previous.extra_charges)||0),0)+(chargeTotal(next)||0))}));
     setSaveError('');setErrors(previous=>Object.fromEntries(Object.entries(previous).filter(([key])=>!key.startsWith('charge_') && key!=='extra_charges')));
   }
   function chooseVehicle(index: number, id: string) {
     const selected = allVehicles.find(item => String(item.id) === id);
-    const stockError=selected?ownershipVehicleStockError(rentalType,[selected],vehicleStoreOptions,Boolean(draft.backfill?.returned_at)):'';
+    const stockError=selected&&!editingIssued?ownershipVehicleStockError(rentalType,[selected],vehicleStoreOptions,Boolean(draft.backfill?.returned_at)):'';
     if(stockError){setSaveError(stockError);return;}
     const previous = draftRef.current;
     const next = {
@@ -1060,7 +1054,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
           <button type="button" className="mg-button" disabled={saving || reloading} onClick={onClose}>Đóng</button>
           {canSaveDraft && <button type="submit" value="draft" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !canSaveContractDrafts} title={!canSaveContractDrafts ? 'Chưa kết nối API lưu bản nháp' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : ownershipApproval&&!canIssue?'Lưu nháp chờ duyệt':'Lưu nháp'}</button>}
           {canSaveDraft && source === 'api' && canSaveContractDrafts && canIssue && <button type="submit" value="finalize" className="mg-button mg-button-finalize" disabled={Boolean(finalizeBlockReason)||saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading'} title={finalizeBlockReason||(reserving ? 'Xác nhận tiền giữ xe, tạo phiếu thu và chờ giao xe' : 'Xác nhận tiền đã nhận, cấp số hợp đồng và chuyển sang Đang thuê')}><CheckCircle2 size={16} />{reserving ? 'Ghi nhận cọc giữ xe' : ownershipApproval?'Duyệt hợp đồng':'Hoàn tất & thanh toán'}</button>}
-          {editingIssued && <button type="submit" className="mg-button mg-button-primary" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || lookupState === 'loading' || (source === 'api' && (!profileRevision || !canEditIssuedContract(accessUser, row?.store_id)))} title={source === 'api' && !canEditIssuedContract(accessUser, row?.store_id) ? 'Tài khoản chưa được cấp quyền Lập / sửa hợp đồng.' : source === 'api' && !profileRevision ? 'Chưa tải được phiên bản hợp đồng. Bấm Làm mới rồi thử lại.' : undefined}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
+          {editingIssued && <button type="submit" className="mg-button mg-button-primary" disabled={saving || (source==='api' && !canEditIssuedContract(accessUser,row?.store_id))}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu hợp đồng'}</button>}
           {row && !canSaveDraft && !editingIssued && source === 'api' && canEditIssuedContract(accessUser,row.store_id) && <button type="button" className="mg-button" disabled={saving || processingCustomerPhoto || processingPlatePhoto || processingMedia || processingLicense || customerOcr.pending || plateOcr.pending || !profileRevision} onClick={()=>void persistProfile()}><Save size={16}/>Lưu hồ sơ hợp đồng</button>}
           {row?.status==='deposit_contract'&&canIssue&&onHandover&&<button type="button" className="mg-button mg-button-primary" disabled={saving||!profileMessage||savedProfile.current!==JSON.stringify(contractProfile(draft))} onClick={onHandover}><CheckCircle2 size={16}/>Tiếp tục giao xe</button>}
           <button type="submit" value="preview" className={`mg-button${mode === 'print' ? ' mg-button-primary' : ''}`} disabled={saving || lookupState === 'loading'}><Printer size={16} />Xem mẫu in</button></div>
