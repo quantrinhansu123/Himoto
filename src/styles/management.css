@@ -2696,8 +2696,10 @@
 }
 
 .mg-battery-dialog { width: 760px; }
-.mg-battery-history-entry { padding: 16px 0; border-bottom: 1px solid var(--mg-line); }
-.mg-battery-history-entry p { margin: 6px 0; overflow-wrap: anywhere; }
+.mg-battery-history-entry { display: grid; gap: 5px; padding: 12px 14px; margin: 10px 0; border: 1px solid var(--mg-line); border-radius: 10px; background: var(--mg-card); }
+.mg-battery-history-entry > strong { color: var(--mg-slate-900); font-size: 14px; }
+.mg-battery-history-entry p { margin: 0; color: var(--mg-slate-600); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.mg-battery-history-entry > button { justify-self: start; margin-top: 3px; }
 .mg-battery-history-note { white-space: pre-wrap; }
 .mg-battery-dialog .mg-payment-fields { padding-top: 14px; border-top: 1px solid var(--mg-line); }
 .mg-battery-dialog .mg-payment-fields:first-of-type { padding-top: 0; border-top: 0; }
@@ -4227,10 +4229,12 @@
 .mg-telegram-auto label { display: flex; align-items: center; gap: 8px; min-height: 44px; }
 .mg-telegram-auto input { width: 18px; height: 18px; flex: 0 0 auto; }
 .mg-telegram-auto small { display: block; color: var(--mg-slate-500); line-height: 1.6; }
-.mg-telegram-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; padding: 16px; border: 1px solid var(--mg-line); border-radius: 8px; background: var(--mg-bg); }
+.mg-telegram-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; line-height: 1.5; padding: 12px 14px; margin: 8px 0; border: 1px solid var(--mg-line); border-radius: 9px; background: var(--mg-bg); }
 .mg-telegram-event-label { display: grid; gap: 8px; margin-top: 16px; }
 .mg-telegram-event-label select { max-width: 100%; min-width: 0; width: 100%; min-height: 44px; }
-.mg-contract-telegram { min-width: 0; }
+.mg-contract-telegram { min-width: 0; display: grid; gap: 8px; padding-top: 12px; margin-top: 10px; border-top: 1px solid var(--mg-line); }
+.mg-contract-telegram > p { margin: 0; font-size: 13px; line-height: 1.5; }
+.mg-contract-telegram > .mg-button { justify-self: start; }
 .mg-contract-detail > .mg-dialog-footer { flex-wrap: wrap; }
 .mg-gps-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .mg-gps-summary strong { font-variant-numeric: tabular-nums; }
@@ -4597,4 +4601,17 @@
     min-height: var(--mg-dialog-nav-height);
     box-sizing: border-box;
   }
+}
+
+/* Vehicle list header: align the summary and keep each action group together. */
+@media (min-width: 768px) {
+  .mg-page-vehicles .mg-page-heading { align-items: flex-start; gap: 14px 24px; margin-bottom: 18px; }
+  .mg-page-vehicles .mg-page-heading > div:first-child { flex: 1 1 100%; min-width: 0; }
+  .mg-page-vehicles .mg-record-total { margin-top: 10px; padding: 9px 14px; min-width: 216px; }
+  .mg-page-vehicles .mg-heading-actions { flex: 1 1 100%; display: flex; align-items: center; gap: 10px; padding-top: 2px; }
+  .mg-page-vehicles .mg-heading-actions > .mg-data-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .mg-page-vehicles .mg-data-actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mg-page-vehicles .mg-vehicle-flow-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mg-page-vehicles .mg-heading-actions > .mg-page-add { margin-left: auto; }
+  .mg-page-vehicles .mg-page-heading p { max-width: 760px; line-height: 1.5; }
 }

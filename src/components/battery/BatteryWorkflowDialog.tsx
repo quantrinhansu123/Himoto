@@ -11,7 +11,7 @@ import { Dialog } from '@/components/management/Dialog';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { BatteryTelegramPanel } from './BatteryTelegramPanel';
 
-export type BatteryWorkflowMode = 'renew' | 'return' | 'history';
+export type BatteryWorkflowMode = 'renew' | 'return' | 'history' | 'telegram';
 const now = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16);
 const dateLabel = (value?: string) => value ? formatDateTime(value.length === 16 ? value + ':00+07:00' : value) : 'Chưa có';
 const group = (value: string) => value ? Number(value).toLocaleString('vi-VN') : '';
@@ -19,7 +19,7 @@ const group = (value: string) => value ? Number(value).toLocaleString('vi-VN') :
 export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved }: { id: number; code: string; initialMode: BatteryWorkflowMode; onClose: () => void; onSaved: () => void }) {
   const { notify, can } = useManagement();
   const [context, setContext] = useState<BatteryWorkflowContext | null>(null);
-  const [mode, setMode] = useState<BatteryWorkflowMode | 'collect_renewal'>(initialMode);
+  const [mode, setMode] = useState<BatteryWorkflowMode | 'collect_renewal'>(initialMode === 'telegram' ? 'history' : initialMode);
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState('');
   const [uncertain, setUncertain] = useState(false);
   const [telegramRequestId, setTelegramRequestId] = useState('');
@@ -35,11 +35,15 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
     batteryRequest<BatteryWorkflowContext>(`/api/auth/battery-contracts/${id}/actions`, 'GET', undefined, controller.signal).then(data => {
       if (controller.signal.aborted) return;
       setContext(data);
+      if (initialMode === 'telegram') {
+        const latestReturn = [...data.history].reverse().find(entry => entry.action === 'return');
+        setTelegramRequestId(latestReturn?.request_id || '');
+      }
       setUnit(data.contract.price_unit === 'ngày' ? 'day' : 'month');
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được hợp đồng pin.'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [id]);
+  }, [id, initialMode]);
   const contract = context?.contract;
   const base = contract?.ends_at || contract?.starts_at;
   const numberCount = Number(count), validCount = /^\d+$/.test(count) && numberCount >= 1 && numberCount <= (unit === 'month' ? 120 : 365);
@@ -88,6 +92,7 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
         {mode === 'history' ? <>
           <dl className="mg-payment-totals"><div><dt>Tổng phí gia hạn mới</dt><dd>{formatMoney(context.renewal_amount)}</dd></div><div><dt>Đã thu gia hạn</dt><dd>{formatMoney(context.renewal_collected)}</dd></div><div><dt>Nợ gia hạn</dt><dd>{formatMoney(context.renewal_remaining)}</dd></div></dl>
           <p className="mg-composer-hint">Số liệu gia hạn tính từ các lượt mới; tiền và hồ sơ nhập từ app cũ giữ trong hợp đồng và Sổ quỹ.</p>
+          {initialMode === 'telegram' && !context.history.some(entry => entry.action === 'return') && <p role="status">Hợp đồng chưa có lịch sử xác nhận trả pin / sạc trên hệ thống mới để gửi Telegram.</p>}
           {!context.history.length && <p>Chưa có thao tác gia hạn hoặc trả pin / sạc mới.</p>}
           {[...context.history].reverse().map(entry => <article className="mg-battery-history-entry" key={entry.request_id}>
             <strong>{entry.action === 'renew' ? 'Gia hạn' : entry.action === 'return' ? 'Trả pin / sạc' : 'Thu nợ gia hạn'}</strong>

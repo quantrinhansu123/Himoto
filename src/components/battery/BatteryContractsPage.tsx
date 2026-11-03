@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { CalendarPlus, FileSearch, History, LoaderCircle, Pencil, Plus, Printer, RotateCcw, Search, Trash2, Undo2, X } from 'lucide-react';
+import { CalendarPlus, FileSearch, History, LoaderCircle, Pencil, Plus, Printer, RotateCcw, Search, Send, Trash2, Undo2, X } from 'lucide-react';
 import { BATTERY_COLLECTION_METHODS, BATTERY_PRODUCT_PRESETS, BATTERY_STATUSES, BatteryContract, BatteryContractInput, BatteryContractPrefill, batteryPaymentAccounts, batteryProductKind, batteryRequest, BatteryRequestError, batteryStatusLabel, DEFAULT_BATTERY_NAME, type BatteryCollectionMethod } from '@/lib/management/battery-contracts';
 import { loadCashbookAccounts, type CashbookAccount } from '@/lib/management/cashbook-repository';
 import { addRentalMonths, isOwnershipStore } from '@/lib/management/contract-billing';
@@ -96,6 +96,7 @@ export function BatteryContractsPage() {
                 { key: 'print', label: 'Xem / In hợp đồng', icon: <Printer size={16} />, onSelect: () => setPrinting(row) },
                 ...(row.status === 'renting' && can('contracts.renew') ? [{ key: 'renew', label: 'Gia hạn pin / sạc', icon: <CalendarPlus size={16} />, onSelect: () => setWorkflow({ row, mode: 'renew' }) }] : []),
                 ...(row.status === 'renting' && can('contracts.return') ? [{ key: 'return', label: 'Trả pin / sạc', icon: <Undo2 size={16} />, onSelect: () => setWorkflow({ row, mode: 'return' }) }] : []),
+                ...(row.status === 'returned' && can('contracts.return') ? [{ key: 'telegram', label: 'Gửi Telegram trả pin / sạc', icon: <Send size={16} />, onSelect: () => setWorkflow({ row, mode: 'telegram' }) }] : []),
                 { key: 'history', label: 'Lịch sử / Thu gia hạn', icon: <History size={16} />, onSelect: () => setWorkflow({ row, mode: 'history' }) },
                 ...(can('contracts.draft') ? [{ key: 'edit', label: 'Sửa hợp đồng', icon: <Pencil size={16} />, onSelect: () => setEditing(row) },
                   { key: 'delete', label: 'Xóa hợp đồng', danger: true, icon: <Trash2 size={16} />, onSelect: () => { setRemoving(row); setDeleteError(''); } }] : []),
