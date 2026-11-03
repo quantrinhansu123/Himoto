@@ -4615,3 +4615,6 @@
   .mg-page-vehicles .mg-heading-actions > .mg-page-add { margin-left: auto; }
   .mg-page-vehicles .mg-page-heading p { max-width: 760px; line-height: 1.5; }
 }
+
+.mg-contract-history-toolbar > div { flex-wrap: nowrap; align-items: center; overflow-x: auto; padding-bottom: 2px; }
+.mg-contract-history-toolbar > div > .mg-button { flex: 0 0 auto; }
