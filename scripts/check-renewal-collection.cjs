@@ -29,7 +29,8 @@ try{
   INSERT INTO himoto.banks(id,store_id,bank_name,owner_name,account_number,status,owner_type,account_type) VALUES(15,32,'QA','QA','0001','Active','personal',1),(16,31,'QA','QA','0002','Active','personal',1);
   INSERT INTO himoto.cash(id,store_id,name,status,opening_balance) VALUES(5,32,'Két QA','Active',2000000);`);
  const paidAt=local(Date.now()-60_000),returnAt=local(Date.now()+86400_000);
- const body={...await revisions(),request_id:randomUUID(),item_id:101,return_at:returnAt,amount:'140000',note:'QA gia hạn',receipt:{method:'transfer',account_id:15,paid_at:paidAt}};
+ const occurredAt=local(Date.now()-86400_000);
+ const body={...await revisions(),request_id:randomUUID(),item_id:101,return_at:returnAt,amount:'140000',note:'QA gia hạn',occurred_at:occurredAt,receipt:{method:'transfer',account_id:15,paid_at:paidAt}};
  const putEvidence=async(version=2)=>db.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('contracts',1,$1,'image/jpeg',decode('ffd8ff','hex'),153)`,[`renewal-${version}-document-1`]);
  assert.equal(requestPermission('/api/auth/order/car-rental/1/renewals','POST'),'contracts.renew');
  assert.equal(requestPermission('/api/auth/order/car-rental/1/payments','POST'),'finance.write');
@@ -48,6 +49,11 @@ try{
  const linked=(await db.query('SELECT renewal_payload FROM himoto.management_contract_payments WHERE request_id=$1',[body.request_id])).rows[0].renewal_payload;assert.equal(linked.version,2);
  checks.push('Paid renewal extends to the new date and records one linked 140000-VND personal-bank receipt atomically; total and paid become 420000 with zero debt');
  const version=(await db.query('SELECT draft_payload FROM himoto.orders WHERE id=1')).rows[0].draft_payload.management_composer.versions[0];
+ const receiptTime=(await db.query('SELECT created_at FROM himoto.transactions WHERE id=$1',[paid.payment.transaction_id])).rows[0].created_at;
+ assert.equal(new Date(receiptTime).getTime(),Date.parse(`${occurredAt}:00+07:00`));
+ assert.equal(Date.parse(version.created_at),Date.parse(`${occurredAt}:00+07:00`));
+ assert(Date.parse(version.recorded_at)>Date.parse(version.created_at));
+ checks.push('Entering yesterday as the actual renewal time dates the receipt and revenue to yesterday while preserving the later app-entry timestamp');
  const notice=await notificationPayload(db,1,'renewal',153,['renewal-2'],version);
  assert.equal(notice.method,'CK TK cá nhân');assert(contractNotificationText('renewal',notice).includes('Hình thức thanh toán: CK TK cá nhân'));
  checks.push('The renewal Telegram preview sees the linked approved personal-bank receipt in the same transaction, before commit; no message is sent');

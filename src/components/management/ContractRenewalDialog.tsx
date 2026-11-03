@@ -45,7 +45,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [outsideName, setOutsideName] = useState('Phí thu thêm');
   const [outsideAmount, setOutsideAmount] = useState('');
   const [note, setNote] = useState('');
-  const [occurredAt,setOccurredAt]=useState('');
+  const [occurredAt,setOccurredAt]=useState(()=>backfill?'':vietnamPaymentTime());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -60,7 +60,6 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const collect = collectionChoice === 'received';
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [accountId, setAccountId] = useState('');
-  const [paidAt, setPaidAt] = useState(()=>backfill?'':vietnamPaymentTime());
   useEffect(() => {
     const controller = new AbortController();
     setRenewalVersion(null);
@@ -160,7 +159,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!selected || saving || photosPending) return;
-    if(backfill&&(!validBackfillTime(occurredAt))){setError('Nhập ngày giờ gia hạn thực tế hợp lệ.');return;}
+    if(!validBackfillTime(occurredAt)){setError('Nhập ngày giờ gia hạn thực tế hợp lệ.');return;}
     if (!validReturn) { setError(!Number.isFinite(baseMs) ? 'Chưa có hẹn trả hiện tại để tính gia hạn.' : 'Ngày trả mới phải sau hẹn trả hiện tại.'); return; }
     if (endsBeforePriorDue) { setError('Ngày trả mới không được sớm hơn hẹn trả hiện tại của hợp đồng.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
@@ -174,7 +173,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     if (collecting) {
       if (!paymentContext) { setError(paymentLoadError || 'Đang tải tài khoản nhận tiền.'); return; }
       if (!accounts.some(account => account.id === effectiveAccountId)) { setError('Chọn tài khoản nhận tiền gia hạn.'); return; }
-      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(paidAt)) { setError('Ngày giờ thu tiền gia hạn không hợp lệ.'); return; }
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(occurredAt)) { setError('Ngày giờ thu tiền gia hạn không hợp lệ.'); return; }
       if (!hasPaymentEvidence) { setError('Lưu ảnh bill chuyển khoản hoặc tiền mặt trước khi hoàn thành gia hạn đã thu tiền.'); return; }
     }
     setSaving(true); setError('');
@@ -187,9 +186,9 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
         item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,
         return_at: returnAt, amount: String(fee), note: combinedNote,
         ...(outsideFee > 0 ? { outside_amount: String(outsideFee), outside_name: outsideName.trim() } : {}),
-        ...(backfill?{occurred_at:occurredAt}:{}),
+        occurred_at:occurredAt,
         ...(expectedFee !== null ? { expected_amount: String(expectedFee + otherFee) } : {}),
-        ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:paidAt}} : {}),
+        ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:occurredAt}} : {}),
       });
       let remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
       let collected = false;
@@ -304,11 +303,11 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
                   {!accounts.length && <p className="mg-field-wide mg-field-error">{method === 'company_transfer'
                     ? 'Chưa có tài khoản công ty đang hoạt động. Đổi hình thức hoặc thêm TK công ty trong Sổ quỹ.'
                     : 'Chưa có tài khoản nhận đúng cơ sở hợp đồng cho hình thức này (Tiền mặt = két; Chuyển khoản = ngân hàng cơ sở). Đổi Hình thức hoặc chọn TK đúng cơ sở nguồn.'}</p>}
-                  <label className="mg-field-wide">Ngày giờ thu (24h)<DateTime24Controls id="renewal-paid-at" label="Ngày giờ thu" value={paidAt} onChange={setPaidAt} /></label>
+
                 </>}
               </>}
             </>}
-            {backfill&&<label className="mg-field-wide">Ngày giờ gia hạn thực tế<DateTime24Controls id="renewal-occurred-at" label="Ngày giờ gia hạn thực tế" value={occurredAt} onChange={setOccurredAt}/></label>}
+            <label className="mg-field-wide">Ngày giờ thực hiện (24h)<DateTime24Controls id="renewal-occurred-at" label="Ngày giờ thực hiện" value={occurredAt} onChange={setOccurredAt}/><small>Chọn thời điểm gia hạn thực tế, có thể là ngày hôm trước. Nếu đã nhận tiền, phiếu thu và doanh thu ghi nhận vào ngày này. Chưa nhận tiền thì chưa ghi nhận doanh thu.</small></label>
             <label className="mg-field-wide">{backfill?'Lý do nhập bổ sung':'Ghi chú'}<textarea aria-label={backfill?'Lý do nhập bổ sung':'Ghi chú'} rows={2} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} placeholder="Lý do gia hạn, thỏa thuận với khách…" /></label>
           </fieldset>
           {stillOverdue && <p className="mg-field-error">Ngày trả mới vẫn ở quá khứ, hợp đồng sẽ tiếp tục quá hạn.</p>}

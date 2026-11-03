@@ -1,3 +1,4 @@
+import { CONTRACT_CUSTOMER_NAME_SQL, CONTRACT_CUSTOMER_PHONE_SQL } from './contract-customer-read';
 import 'server-only';
 import {CONTRACT_WAREHOUSE_JOIN_SQL} from './contract-warehouses';
 import { validDocumentRequirements } from '@/lib/management/contract-requirements';
@@ -40,7 +41,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
 
   CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
   o.customer_id, c.status AS customer_status, c.customer_type, c.nationality, c.contact_channel, c.contact_detail,
-  COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
+  ${CONTRACT_CUSTOMER_NAME_SQL} AS customer_name, ${CONTRACT_CUSTOMER_PHONE_SQL} AS customer_phone,
   COALESCE(c.id_card, o.customer_idnumber) AS customer_id_card,
   COALESCE(c.address, o.customer_address) AS customer_address, c.email AS customer_email,
   c.id_card_issued_on, c.id_card_issued_by,
@@ -144,7 +145,7 @@ export function contractIndexSql(scopeClause: string, options: { includeVehicleL
     o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
     CASE WHEN o.order_status='renting' AND COALESCE(o.return_at${includeVehicleLabels ? ',ov.end_date' : ''}) < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, c.status AS customer_status,
-    COALESCE(c.name, o.customer_name) AS customer_name, COALESCE(c.phone, o.customer_phone) AS customer_phone,
+    ${CONTRACT_CUSTOMER_NAME_SQL} AS customer_name, ${CONTRACT_CUSTOMER_PHONE_SQL} AS customer_phone,
     COALESCE(c.id_card, o.customer_idnumber) AS customer_id_card,
     o.store_id, s.store_name, s.kind AS store_kind, ${includeVehicleLabels ? 'COALESCE(o.rent_at, ov.start_date) AS start_date, COALESCE(o.return_at, ov.end_date) AS end_date' : 'o.rent_at AS start_date, o.return_at AS end_date'},
     o.total AS total_amount, ${includePaid ? rentalPaidSql() : 'NULL::numeric'} AS paid_amount,

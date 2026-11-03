@@ -49,7 +49,7 @@ export function parseRenewalInput(body: unknown): RenewalInput {
     try {
       // A zero contract fee still needs a valid receipt when only the outside fee is collected.
       const parsed = parseContractPayment({...receipt,request_id:result.request_id,revision:result.order_revision,amount:Number(result.amount) > 0 ? result.amount : '1',note:result.note || 'Gia hạn'});
-      result.receipt = {method:parsed.method,account_id:parsed.account_id,paid_at:parsed.paid_at};
+      result.receipt = {method:parsed.method,account_id:parsed.account_id,paid_at:result.occurred_at || parsed.paid_at};
     } catch (error) { if (error instanceof ContractPaymentError) throw new ContractRenewalError(error.message,error.status); throw error; }
   }
   return result;
@@ -95,8 +95,11 @@ export async function recordContractRenewal(client: Database, orderId: number, a
     ? `Cảnh báo: chi phí gia hạn ${amount.toLocaleString('vi-VN')} đ khác gợi ý theo hợp đồng ${expected.toLocaleString('vi-VN')} đ.`
     : undefined);
   // Receipt/event time is separate from the rental period's before_return_at.
-  const voucherAt = input.receipt?.paid_at ? `${input.receipt.paid_at}:00+07:00` : new Date().toISOString();
+  const recordedAt = new Date().toISOString();
+  const effectiveTime = input.occurred_at || input.receipt?.paid_at;
+  const voucherAt = effectiveTime ? `${effectiveTime}:00+07:00` : recordedAt;
   const version: RenewalVersion = { version: await nextContractRenewalVersion(client,orderId,versions), kind: 'renewal', created_at: voucherAt, actor_id: actorId,
+    recorded_at: recordedAt,
     ...(occurred?{occurred_at:occurred}:{}),
     item_id: input.item_id, vehicle_id: Number(item.vehicle_id), vehicle_name: String(item.vehicle_name || ''), license: String(item.license || ''),
     rent_at: iso(item.rent_at), before_return_at: beforeReturn, return_at: newReturn, overdue_minutes: overdueMinutes,

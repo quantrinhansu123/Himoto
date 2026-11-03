@@ -1,3 +1,4 @@
+import { CONTRACT_CUSTOMER_NAME_SQL, CONTRACT_CUSTOMER_PHONE_SQL } from './contract-customer-read';
 import 'server-only';
 import type { PoolClient } from 'pg';
 import { MANAGEMENT_CONFIG } from '@/lib/management/config';
@@ -175,7 +176,7 @@ function contractHydrateSql() {
     ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, c.status AS customer_status,
-    COALESCE(c.name,o.customer_name) AS customer_name, COALESCE(c.phone,o.customer_phone) AS customer_phone,
+    ${CONTRACT_CUSTOMER_NAME_SQL} AS customer_name, ${CONTRACT_CUSTOMER_PHONE_SQL} AS customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind,
     COALESCE(o.rent_at,ov.start_date) AS start_date, COALESCE(o.return_at,ov.end_date) AS end_date,
     CASE WHEN o.order_status='draft'
@@ -226,7 +227,7 @@ function vehicleSearchSql(search:string) {
     OR EXISTS (SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
       LEFT JOIN himoto.customers c ON c.id=o.customer_id WHERE d.vehicle_id=v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL
       AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')
-      AND ${foldedSql('COALESCE(c.name,o.customer_name)')} LIKE ${foldedSql('$3')}))`,value:likeNeedle(search)};
+      AND ${foldedSql(CONTRACT_CUSTOMER_NAME_SQL)} LIKE ${foldedSql('$3')}))`,value:likeNeedle(search)};
 }
 function vehicleOverdueSql() {
   return `COALESCE((SELECT GREATEST(0,floor(extract(epoch FROM (now()-min(d.return_at)))/86400))::int
@@ -235,7 +236,7 @@ function vehicleOverdueSql() {
       AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')),0)`;
 }
 function vehicleRentalSql(field:'customer'|'store') {
-  return `(SELECT ${field==='customer'?"COALESCE(c.name,o.customer_name,'')":'o.store_id'}
+  return `(SELECT ${field==='customer'?`COALESCE(${CONTRACT_CUSTOMER_NAME_SQL},'')`:'o.store_id'}
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     ${field==='customer'?'LEFT JOIN himoto.customers c ON c.id=o.customer_id':''}
     WHERE d.vehicle_id=v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
@@ -306,7 +307,7 @@ function vehicleHydrateSql() {
       SELECT json_agg(json_build_object('order_id', o.id,
                'code', COALESCE(NULLIF(o.contract_number, ''), NULLIF(o.draft_reference, ''), '#' || o.id::text),
                'status', CASE WHEN o.order_status = 'renting' AND d.return_at < now() THEN 'overdue' ELSE o.order_status END,
-               'customer', COALESCE(c.name, o.customer_name, ''), 'rent_at', d.rent_at, 'return_at', d.return_at) ORDER BY d.rent_at DESC) AS rentals,
+               'customer', COALESCE(${CONTRACT_CUSTOMER_NAME_SQL}, ''), 'rent_at', d.rent_at, 'return_at', d.return_at) ORDER BY d.rent_at DESC) AS rentals,
              (array_agg(o.store_id ORDER BY d.rent_at DESC))[1] AS store_id
       FROM himoto.order_vehicle_details d
       JOIN himoto.orders o ON o.id = d.order_id

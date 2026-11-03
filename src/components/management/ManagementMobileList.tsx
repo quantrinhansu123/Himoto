@@ -99,7 +99,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={() => onView(row)}>
             <strong className="mg-mobile-card-title">{title}</strong>
-            <span className="mg-mobile-card-summary">{summary.slice(0, 2).map(item => <span key={item.key} title={`${item.label}: ${item.value}`}>{item.value}</span>)}</span>
+            {config.kind !== 'vehicles' && <span className="mg-mobile-card-summary">{summary.slice(0, 2).map(item => <span key={item.key} title={`${item.label}: ${item.value}`}>{item.value}</span>)}</span>}
             {config.kind==='vehicles'&&<>
               <span className="mg-plate-cell"><span>{row.license||'—'}</span><VehicleOwnerBranch row={row}/></span>
               {(()=>{const holder=vehicleHolderLabel(row.status,row.holder_name);return holder&&holder!=='—'&&holder!=='Chưa xác định khách'?(holder==='Lưu kho'?<span className="mg-status mg-status-green"><span/>Lưu kho</span>:<><span className="mg-mobile-card-extra" style={{whiteSpace:'normal'}}>{holder}</span><ContractBranches row={{...row,store_name:row.beneficiary_store_name}}/></>):null;})()}

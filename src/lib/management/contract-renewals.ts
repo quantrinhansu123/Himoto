@@ -13,6 +13,7 @@ export interface RenewalInput {
   receipt?: { method: PaymentMethod; account_id: number; paid_at: string };
 }
 export interface RenewalVersion {
+  recorded_at?:string;
   occurred_at?:string;
   version: number; kind: 'renewal'; created_at: string; actor_id: number;
   item_id: number; vehicle_id: number; vehicle_name: string; license: string;

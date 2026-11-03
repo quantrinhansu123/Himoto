@@ -4492,3 +4492,38 @@
   .mg-owned-fleet-counts { gap: 8px; }
   .mg-owned-fleet-counts > li { padding: 10px; }
 }
+
+/* Mobile alignment: give long labels room rather than squeezing equal columns. */
+@media (max-width: 900px) {
+  .mg-mobile-card-title { white-space: normal; overflow-wrap: anywhere; }
+  .mg-mobile-card-main { line-height: 1.5; }
+  .mg-mobile-card-main > .mg-plate-cell { min-width: 0; max-width: 100%; }
+  .mg-mobile-card-main .mg-contract-branches,
+  .mg-mobile-card-main .mg-gps-evidence { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+  .mg-mobile-card-footer .mg-status { font-size: 12px; line-height: 1.5; }
+  .mg-mobile-card-extra { font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+  .mg-vehicle-flow-actions > .mg-button { min-width: 0; height: auto; min-height: 44px; padding: 10px; white-space: normal; text-align: center; line-height: 1.4; }
+  .mg-vehicle-flow-actions > .mg-button:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .mg-toolbar .mg-list-filters { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; width: 100%; }
+  .mg-toolbar .mg-list-filters > label { width: 100%; max-width: none; }
+  .mg-list-filters .mg-suggestion-control input { height: 44px; border-radius: 8px; }
+  .mg-list-filters .mg-suggestion-control > button { min-width: 44px; min-height: 44px; }
+  .mg-toolbar .mg-overdue-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; }
+  .mg-overdue-filters > span { grid-column: 1 / -1; }
+  .mg-overdue-filters > label { min-width: 0; width: 100%; }
+  .mg-overdue-filters .mg-overdue-compare select,
+  .mg-overdue-filters .mg-overdue-days input { width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; }
+  .mg-heading-actions .mg-button { white-space: normal; height: auto; min-height: 44px; line-height: 1.4; }
+  .mg-heading-actions .mg-button svg { flex-shrink: 0; }
+  .mg-mobile-list-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
+  .mg-mobile-sort { width: 100%; }
+  .mg-mobile-sort select { max-width: none; }
+  .mg-record-total { width: 100%; max-width: none; }
+  .mg-record-total small { line-height: 1.5; overflow-wrap: anywhere; }
+}
+@media (max-width: 600px) {
+  .mg-overdue-filters > label { display: block; }
+  .mg-list-filters .mg-suggestion-control input { border: 1px solid var(--mg-line); padding-left: 12px; padding-right: 48px; }
+}
