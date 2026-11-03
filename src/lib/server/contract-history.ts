@@ -109,7 +109,7 @@ export async function readContractHistory(client: Database, id: number): Promise
   const created: ContractChange = { id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
     title: 'Tạo hợp đồng', detail: '', amount: null };
   const changes: ContractChange[] = [created];
-  for(const [index,item] of(Array.isArray(order.rows[0].approval_history)?order.rows[0].approval_history:[]).entries())changes.push({id:`approval-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Duyệt hợp đồng sở hữu',detail:`Đã duyệt HĐ ${item.contract_number||''}.`});
+  for(const [index,item] of(Array.isArray(order.rows[0].approval_history)?order.rows[0].approval_history:[]).entries())changes.push({id:`approval-${index}`,kind:'edit',at:iso(item.at),actor:item.actor_name||`#${item.actor_id}`,amount:null,title:'Duyệt hợp đồng sở hữu',detail:`Đã duyệt HĐ ${item.contract_number||''}.`});
   for(const [index,item] of(Array.isArray(order.rows[0].full_contract_edits)?order.rows[0].full_contract_edits:[]).entries()) {
     const before=item.before||{},after=item.after?.draft||{};
     changes.push({id:`full-edit-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa toàn bộ hợp đồng',detail:[

@@ -23,7 +23,7 @@ function state(row:Record<string,any>,user:PermissionAccount):OwnershipApprovalS
   return {id:Number(row.id),code:String(row.contract_number||row.draft_reference||`#${row.id}`),revision:String(row.revision),status:String(row.order_status),
     customer_name:String(row.customer_name||''),store_name:String(row.store_name||''),rental_type:String(row.rental_type||''),total_amount:amount(row.total),
     deposit_amount:row.first_deposit_amount==null&&row.additional_deposit_amount==null?null:Number(row.first_deposit_amount||0)+Number(row.additional_deposit_amount||0),
-    approved_at:typeof approval?.at==='string'?approval.at:null,approved_by:row.approved_by|| (approval?.actor_id?`#${approval.actor_id}`:null),
+    approved_at:typeof approval?.at==='string'?approval.at:null,approved_by:row.approved_by||approval?.actor_name|| (approval?.actor_id?`#${approval.actor_id}`:null),
     can_approve:canApproveOwnershipContract(user)&&!['draft','cancelled'].includes(String(row.order_status))&&!approval?.at};
 }
 export async function readContractApproval(db:Database,id:number,user:PermissionAccount) {return state(await order(db,id),user);}
