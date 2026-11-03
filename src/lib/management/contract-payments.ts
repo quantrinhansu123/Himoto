@@ -64,7 +64,7 @@ export interface PaymentInput {
 export interface PaymentResult { context: PaymentContext; transaction_id: number; replayed: boolean; company_transfer: boolean }
 export interface RenewalPaymentCorrection {
   request_id: string; transaction_id: number; revision: string; method?: PaymentMethod; account_id?: number; reason: string;
-  before_return_at?: string; return_at?: string; amount?: string;
+  before_return_at?: string; return_at?: string; amount?: string; paid_at?: string; collected_amount?: string;
 }
 export async function correctRenewalPayment(id: number, input: RenewalPaymentCorrection): Promise<PaymentContext> {
   const response = await fetch(`/api/auth/order/car-rental/${id}/renewal-payments`, {

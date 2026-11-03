@@ -77,7 +77,7 @@ async function main(){
    assert.equal(before.history[0].renewal_fee_editable,true);
    const unchanged=await edit({before_return_at:renewal.before_return_at,return_at:renewal.return_at});
    assert.equal(unchanged.total_amount,1500000);
-   assert((await preview()).find(e=>e.key==='renewal:1:2').text.includes('(4 ngày)'));
+   assert((await preview()).find(e=>e.key==='renewal:1:2').text.includes('(7 ngày)'));
    checks.push('Unchanged saved dates refresh successfully; preview uses persisted coverage, no fake audit or money mutation');
    const request={...base,request_id:randomUUID(),revision:before.history[0].revision,amount:'1200000'};
    const updated=await atomic(()=>update(db,1,143,request));
@@ -131,6 +131,14 @@ async function main(){
    assert.equal((await edit({amount:'1300000'})).total_amount,1900000);
    await assert.rejects(()=>atomic(()=>update(db,2,143,{...base,request_id:randomUUID()})),e=>e.status===404);
    await c.query('RESET ROLE');
+   const beforeMoney=await context();const oldReceipt=beforeMoney.history.find(t=>t.id===51);
+   const correctedDate='2026-10-22T08:04:00.000Z';
+   const correctedMoney=await edit({collected_amount:String(oldReceipt.amount+100000),paid_at:correctedDate});
+   assert.equal(correctedMoney.paid_amount,beforeMoney.paid_amount+100000);
+   assert.equal(correctedMoney.history.find(t=>t.id===51).amount,oldReceipt.amount+100000);
+   assert.equal(Date.parse(correctedMoney.history.find(t=>t.id===51).paid_at),Date.parse(correctedDate));
+   assert.equal(correctedMoney.total_amount,beforeMoney.total_amount);
+   checks.push('Correcting the collected amount and date updates the voucher and paid balance without changing the agreed renewal fee');
    checks.push('PostgreSQL RLS permits corrections on the contract branch and hides foreign contracts without weakening policies');
   }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
  }

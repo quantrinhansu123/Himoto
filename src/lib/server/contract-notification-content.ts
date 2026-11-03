@@ -5,6 +5,8 @@ import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { CONTRACT_CUSTOMER_PHOTO_SLOTS,isContractTransactionPhoto } from '@/lib/management/contract-photos';
 import { contractVehicleLabelSource,contractVehicleReadSource } from './contract-vehicle-reads';
 import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
+import { depositLateral,rentalPaidSql } from './contract-deposits';
+import { pendingReturnRefund } from '@/lib/management/return-refunds';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null;object_bucket?:string|null;object_key?:string|null;object_etag?:string|null}
 export interface RenewalNotice {version?:number;item_id?:number;created_at?:string;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;outside_amount?:number;outside_name?:string;items?:RenewalNotice[]}
@@ -204,11 +206,12 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       (SELECT name FROM himoto.users WHERE o.draft_payload#>>'{management_composer,finalized,actor_id}' ~ '^[1-9][0-9]{0,14}$'
         AND id=(o.draft_payload#>>'{management_composer,finalized,actor_id}')::bigint),
       NULLIF(trim(u.name),'')) AS contract_staff,
-    o.total::text,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
+    o.total::text,${rentalPaidSql()} AS rental_paid,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
     NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND NOT(d.id=ANY($3::bigint[]))) AS return_covers_order,
     (SELECT string_agg(DISTINCT COALESCE(NULLIF(v.license,''),v.name),', ') FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicles,
     (SELECT string_agg(DISTINCT v.name,', ') FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicle_names
     FROM himoto.orders o LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id LEFT JOIN himoto.users u ON u.id=$2
+    ${depositLateral()}
     WHERE o.id=$1 AND o.deleted_at IS NULL`,[orderId,actorId,returnIds.length?returnIds:null])).rows[0];
   if(!o)throw Error('Không tạo được thông báo hợp đồng.');
   if(kind==='vehicle_swap'){
@@ -278,8 +281,15 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const duration=start&&end?Math.ceil((new Date(end).getTime()-new Date(start).getTime())/86400000):NaN;
   const effectiveDeposit=kind==='return'?depositTx.reduce((sum,t)=>sum+Number(t.value),0):deposit;
   const heldDeposit=Math.max(Number(effectiveDeposit||0)-refunds.reduce((sum,t)=>sum+Number(t.value),0),0);
-  const pendingRefund=kind==='return'&&settlement?.refund_deferred&&heldDeposit>0
-    ?{...(settlement.recipient||{}),amount:Math.min(Number(settlement.refund_pending_amount)||heldDeposit,heldDeposit)}:undefined;
+  const earlyDiscount=(Array.isArray(composer?.return_adjustments)?composer.return_adjustments:[]).reduce((sum:number,a:{early_discount?:number})=>sum+Number(a.early_discount||0),0);
+  const rentalRefunded=rentalRefunds.reduce((sum,t)=>sum+Number(t.value),0);
+  const rentalPaid=o.rental_paid==null?null:Number(o.rental_paid);
+  const total=o.total==null?null:Number(o.total);
+  const remaining=total===null||rentalPaid===null?null:Math.max(total-rentalPaid,0);
+  const rentalRefundable=total===null||rentalPaid===null?0:Math.max(Math.min(earlyDiscount-rentalRefunded,rentalPaid-total),0);
+  const pendingAmount=pendingReturnRefund(heldDeposit,rentalRefundable,remaining);
+  const pendingRefund=kind==='return'&&settlement?.refund_deferred&&pendingAmount>0
+    ?{...(settlement.recipient||{}),amount:pendingAmount}:undefined;
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
     payment_amounts:paymentAmounts,

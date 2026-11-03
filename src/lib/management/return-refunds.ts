@@ -3,6 +3,10 @@
 export const normalizeRefundAccount = (value: string) => value.trim().replace(/[\s.]/g, '');
 export const validRefundAccount = (value: string) => /^[A-Z0-9-]{3,34}$/i.test(normalizeRefundAccount(value));
 
+export function pendingReturnRefund(depositHeld:number,rentalRefundable:number,remaining:number|null) {
+  return Math.max(0,depositHeld+rentalRefundable-(remaining??0));
+}
+
 // Preview only: the server rechecks the actual refundable balance after recording
 // every return adjustment. A discount on unpaid rent does not create cash to refund.
 export function returnRentalRefundable(context:{total_amount:number|null;paid_amount:number|null;rental_refundable?:number},earlyDiscount:number,netAdjustment:number) {

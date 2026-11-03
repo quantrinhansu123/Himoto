@@ -7,7 +7,7 @@ import { returnRefundEvidenceSlots,returnRefundQrSlot } from '@/lib/management/c
 import { photoEndpoint,type SavedPhoto } from '@/lib/management/record-photos';
 import { formatMoney } from '@/lib/formatters';
 import { ContractWorkflowGuide } from './ContractWorkflowGuide';
-import { normalizeRefundAccount,returnRentalRefundable,validRefundAccount } from '@/lib/management/return-refunds';
+import { normalizeRefundAccount,returnRentalRefundable,validRefundAccount,pendingReturnRefund } from '@/lib/management/return-refunds';
 import { mergeRefundRecipient } from '@/lib/management/refund-qr';
 import { RefundQrUpload } from './RefundQrUpload';
 import { photoBaseSlot } from '@/lib/management/photo-slot-groups';
@@ -131,7 +131,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
       const suggestOnly=kind==='late_fee'||kind==='repair_fee'||kind==='rental_debt';
       return <fieldset key={kind} disabled={disabled}><legend>{kind==='refund'?'Cọc còn giữ':kind==='rental_refund'?'Tiền thuê được hoàn do trả sớm':kind==='late_fee'?'Phí quá hạn':kind==='repair_fee'?'Phí sửa chữa':'Công nợ tiền thuê'}{suggestOnly?` · gợi ý ${formatMoney(limits[kind])}`:`: ${formatMoney(limits[kind])}`}</legend>
         {suggestOnly&&<p className="mg-composer-hint" role="status">Gợi ý {formatMoney(limits[kind])} — có thể sửa theo số khách đã trả; không bắt khớp.</p>}
-        {kind==='refund'&&<label className="mg-checkbox"><input type="radio" name={`return-${orderId}-refund-decision`} checked={refundDeferred} onChange={()=>{setRefundDeferred(true);update('refund',{enabled:false});}}/>Chưa hoàn cọc — trả xe ngay, giữ cọc {formatMoney(context.deposit_held)}</label>}
+        {kind==='refund'&&<label className="mg-checkbox"><input type="radio" name={`return-${orderId}-refund-decision`} checked={refundDeferred} onChange={()=>{setRefundDeferred(true);update('refund',{enabled:false});}}/>Chưa hoàn cọc — trả xe ngay, tổng chờ kế toán hoàn {formatMoney(pendingReturnRefund(context.deposit_held,rentalRefundable-rentalRefundSelected,outstanding))}</label>}
         <label className="mg-checkbox"><input type={kind==='refund'?'radio':'checkbox'} name={kind==='refund'?`return-${orderId}-refund-decision`:undefined} disabled={blocked||kind==='rental_refund'&&!rentalRefundable&&!row?.enabled} title={kind==='refund'?refundBlockReason||undefined:undefined} checked={Boolean(row?.enabled)&&!blocked} onChange={event=>{if(kind==='refund')setRefundDeferred(false);update(kind,{enabled:event.target.checked});}}/>{labels[kind]}</label>
         {kind==='rental_refund'&&<p className="mg-composer-hint">{rentalRefundable>0?'Ghi riêng tiền thuê đã hoàn, cộng với hoàn cọc thành tổng tiền trả khách. Chưa hoàn thì để trống; có thể ghi phiếu chi sau.':'Khoản giảm trả sớm đang cấn trừ tiền thuê chưa thu hoặc phí phát sinh; chưa có tiền thuê thu dư để hoàn.'}</p>}
         {kind==='refund'&&<>

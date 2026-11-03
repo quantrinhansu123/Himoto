@@ -1,4 +1,6 @@
 'use client';
+import { addRentalDuration } from '@/lib/management/rental-time';
+import { renewalDurationUnits } from '@/lib/management/contract-renewals';
 
 import { useEffect, useRef, useState } from 'react';
 import { LoaderCircle, Pencil } from 'lucide-react';
@@ -44,6 +46,8 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
   const [selected, setSelected] = useState(''), [method, setMethod] = useState<PaymentMethod>('cash'), [accountKey, setAccountKey] = useState(''), [reason, setReason] = useState('');
   const [beforeReturnAt, setBeforeReturnAt] = useState(''), [returnAt, setReturnAt] = useState('');
   const [amount, setAmount] = useState('');
+  const [durationUnit,setDurationUnit]=useState<'day'|'hour'>('day');
+  const [paidAt,setPaidAt]=useState(''),[collectedAmount,setCollectedAmount]=useState('');
   const busy = useRef(false), pending = useRef<RenewalPaymentCorrection | null>(null);
   const [uncertain, setUncertain] = useState(false), [retry, setRetry] = useState(0);
   const receiptIdsKey=receiptIds?.join(',');
@@ -68,6 +72,7 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
       setBeforeReturnAt(toVietnamLocal(first?.renewal?.before_return_at));
       setReturnAt(toVietnamLocal(first?.renewal?.return_at));
       setAmount(String(first?.renewal?.amount ?? first?.amount ?? ''));
+      setPaidAt(toVietnamLocal(first?.paid_at));setCollectedAmount(String(first?.amount??''));
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được phiếu gia hạn.'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -80,6 +85,7 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
     if (busy.current || disabled || !receipt?.revision) return;
     if (!pending.current) {
       if (!account) return setError('Chọn tài khoản thực nhận tiền.');
+      if(!paidAt||!fromVietnamLocal(paidAt)||!collectedAmount)return setError('Nhập ngày thực hiện và số tiền thực tế đã thu.');
       if (!reason.trim()) return setError('Nhập lý do sửa thanh toán / thời gian gia hạn.');
       if (beforeReturnAt && returnAt && new Date(`${returnAt}:00+07:00`).getTime() <= new Date(`${beforeReturnAt}:00+07:00`).getTime()) {
         return setError('Thời gian kết thúc gia hạn phải sau thời gian bắt đầu.');
@@ -91,6 +97,8 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
         method,
         account_id: account.id,
         reason: reason.trim(),
+        ...(paidAt!==toVietnamLocal(receipt.paid_at)?{paid_at:fromVietnamLocal(paidAt)}:{}),
+        ...(collectedAmount!==String(receipt.amount)?{collected_amount:collectedAmount}:{}),
         before_return_at: fromVietnamLocal(beforeReturnAt),
         return_at: fromVietnamLocal(returnAt),
         ...(receipt.renewal_fee_editable && amount !== String(receipt.renewal?.amount ?? receipt.amount) ? {amount} : {}),
@@ -133,6 +141,7 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
           setBeforeReturnAt(toVietnamLocal(next?.renewal?.before_return_at));
           setReturnAt(toVietnamLocal(next?.renewal?.return_at));
           setAmount(String(next?.renewal?.amount ?? next?.amount ?? ''));
+          setPaidAt(toVietnamLocal(next?.paid_at));setCollectedAmount(String(next?.amount??''));
         }}>{receipts.map(row => <option key={row.id} value={row.id}>#{row.id} · {formatMoney(row.amount)} · {row.status==='cancelled'?'Đã hủy':row.method}</option>)}</select></label>}
         {!loading && receipt && <>
           <p className="mg-field-wide">Phiếu #{receipt.id} · <strong>{formatMoney(receipt.amount)}</strong><br/>{receipt.method} · {receipt.account || 'Chưa rõ tài khoản'}</p>
@@ -147,13 +156,18 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
               <DateTime24Controls id={`renewal-end-${receipt.id}`} label="Đến ngày giờ gia hạn" value={returnAt} onChange={setReturnAt}/>
             </div>
           </fieldset>
+          <label className="mg-field-wide">Đơn vị gia hạn<select value={durationUnit} onChange={e=>setDurationUnit(e.target.value as 'day'|'hour')} disabled={uncertain}><option value="day">Ngày</option><option value="hour">Giờ</option></select></label>
+          <label className="mg-field-wide">Số ngày / giờ<input aria-label="Số ngày / giờ gia hạn" type="number" min="1" max="8760" disabled={uncertain} value={renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||''} onChange={e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>0&&n<=8760){const rate=Number(amount)/(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1);setReturnAt(addRentalDuration(beforeReturnAt,n,durationUnit));if(receipt.renewal_fee_editable)setAmount(String(Math.round(rate*n)));}}}/></label>
+          <label className="mg-field-wide">Đơn giá (VNĐ / {durationUnit==='day'?'ngày':'giờ'})<input aria-label="Đơn giá gia hạn" inputMode="numeric" disabled={uncertain||!receipt.renewal_fee_editable} value={Math.round(Number(amount)/(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1))||''} onChange={e=>setAmount(String(Number(e.target.value.replace(/\D/g,''))*(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1)))}/></label>
           {beforeReturnAt && returnAt && (
             <p className="mg-field-wide" style={{ margin: '2px 0 8px 0', fontSize: '13px', color: durationText.includes('phải sau') ? '#dc2626' : '#0284c7' }}>
               Thời gian gia hạn mới: <strong>{durationText}</strong>
             </p>
           )}
+          <label className="mg-field-wide">Ngày giờ thực hiện / thu tiền<DateTime24Controls id={`renewal-paid-${receipt.id}`} label="Ngày giờ thực hiện / thu tiền" value={paidAt} onChange={setPaidAt}/></label>
+          <label className="mg-field-wide">Số tiền thực tế đã thu (VNĐ)<input aria-label="Số tiền thực tế đã thu" inputMode="numeric" value={collectedAmount} disabled={uncertain||receipt.status==='cancelled'} onChange={event=>setCollectedAmount(event.target.value.replace(/\D/g,''))}/></label>
           <label className="mg-field-wide">Phí gia hạn (VNĐ)<input aria-label="Phí gia hạn (VNĐ)" inputMode="numeric" value={amount} disabled={uncertain || !receipt.renewal_fee_editable} onChange={event=>setAmount(event.target.value.replace(/\D/g,''))}/></label>
-          <p className="mg-field-wide">Sửa phí chỉ điều chỉnh tiền phải thu. Số tiền trên phiếu thu và ngày thu được giữ nguyên; thu thêm tiền cần lập phiếu riêng.{!receipt.renewal_fee_editable&&' Phí của phiếu đã hủy hoặc kỳ chưa đối chiếu không được sửa tại đây.'}</p>
+          <p className="mg-field-wide">Phí gia hạn là tiền phải thu; số tiền thực tế đã thu là khoản khách đã thanh toán. Sửa ngày và khoản đã thu sẽ cập nhật sổ quỹ, công nợ và doanh thu theo ngày đã chọn.{!receipt.renewal_fee_editable&&' Phí của phiếu đã hủy hoặc kỳ chưa đối chiếu không được sửa tại đây.'}</p>
 
           <label className="mg-field-wide">Hình thức thanh toán mới<select aria-label="Hình thức thanh toán mới" disabled={uncertain} value={method} onChange={event => {
             const next = event.target.value as PaymentMethod, nextAccounts = context ? paymentAccounts(context,next) : [];
@@ -165,7 +179,7 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
           {!accounts.length && <p className="mg-field-wide mg-field-error">Chưa có tài khoản nhận đang hoạt động phù hợp hình thức và cơ sở hợp đồng.</p>}
           <label className="mg-field-wide">Lý do sửa<textarea aria-label="Lý do sửa thanh toán" maxLength={500} disabled={uncertain} placeholder="Ví dụ: Chỉnh lại ngày gia hạn và số ngày theo thỏa thuận với khách" value={reason} onChange={event => setReason(event.target.value)}/></label>
           <p className="mg-field-wide">Bản xem trước Telegram cập nhật sau khi lưu. Tin đã gửi cần được kiểm tra và chủ động thu hồi / gửi lại khi cần.</p>
-          <button type="button" className="mg-button mg-button-primary" disabled={loading || !receipt.revision || (!uncertain && (!account || !reason.trim() || !amount || !beforeReturnAt || !returnAt || durationText.includes('phải sau')))} onClick={() => void save()}>
+          <button type="button" className="mg-button mg-button-primary" disabled={loading || !receipt.revision || (!uncertain && (!account || !reason.trim() || !amount || !paidAt || !collectedAmount || !beforeReturnAt || !returnAt || durationText.includes('phải sau')))} onClick={() => void save()}>
             {saving ? <LoaderCircle size={15} className="mg-spin"/> : null}{saving ? 'Đang lưu…' : uncertain ? 'Thử lại lần sửa này' : 'Lưu sửa thông tin'}
           </button>
         </>}

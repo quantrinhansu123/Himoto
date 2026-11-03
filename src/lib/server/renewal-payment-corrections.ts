@@ -16,7 +16,7 @@ function correctionTime(value:unknown,label:string):string|undefined {
 export function parseRenewalPaymentCorrection(body: unknown): RenewalPaymentCorrection {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractPaymentError('Thông tin sửa thanh toán không hợp lệ.');
   const value = body as Record<string, unknown>;
-  const allowed = ['request_id','transaction_id','revision','method','account_id','reason','before_return_at','return_at','amount'];
+  const allowed = ['request_id','transaction_id','revision','method','account_id','reason','before_return_at','return_at','amount','paid_at','collected_amount'];
   if (Object.keys(value).some(key => !allowed.includes(key)) ||
     typeof value.request_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.request_id) ||
     !Number.isSafeInteger(Number(value.transaction_id)) || Number(value.transaction_id) <= 0 ||
@@ -37,6 +37,9 @@ export function parseRenewalPaymentCorrection(body: unknown): RenewalPaymentCorr
     accountId = Number(value.account_id);
   }
 
+  const paidAt=correctionTime(value.paid_at,'Ngày giờ thực hiện');
+  if(paidAt && Date.parse(paidAt)>Date.now()+300000)throw new ContractPaymentError('Ngày thực hiện không được ở tương lai.');
+  if(value.collected_amount!==undefined && (typeof value.collected_amount!=='string'||!/^[1-9]\d{0,12}$/.test(value.collected_amount)||Number(value.collected_amount)>MAX_PAYMENT_AMOUNT))throw new ContractPaymentError('Số tiền đã thu phải lớn hơn 0 và trong giới hạn.');
   const beforeReturnAt=correctionTime(value.before_return_at,'Ngày giờ bắt đầu gia hạn');
   const returnAt=correctionTime(value.return_at,'Ngày giờ kết thúc gia hạn');
 
@@ -55,6 +58,8 @@ export function parseRenewalPaymentCorrection(body: unknown): RenewalPaymentCorr
     method,
     account_id: accountId,
     reason: value.reason.trim(),
+    ...(paidAt?{paid_at:paidAt}:{}),
+    ...(value.collected_amount===undefined?{}:{collected_amount:value.collected_amount as string}),
     before_return_at: beforeReturnAt,
     return_at: returnAt,
     ...(value.amount === undefined ? {} : {amount: value.amount as string}),
@@ -67,11 +72,11 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   if (![orderId,actorId].every(id => Number.isSafeInteger(id) && id > 0)) throw new ContractPaymentError('Hợp đồng hoặc người sửa không hợp lệ.');
   await db.query("SET LOCAL lock_timeout='5s'");
   await db.query("SET LOCAL statement_timeout='15s'");
-  const order = (await db.query('SELECT store_id,order_status,total,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[orderId])).rows[0];
+  const order = (await db.query('SELECT store_id,order_status,total,pid,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[orderId])).rows[0];
   if (!order) throw new ContractPaymentError('Không tìm thấy hợp đồng trong cơ sở được phân quyền.',404);
   const payload = structuredClone(order.draft_payload || {}), composer = payload.management_composer || {};
   const edits = Array.isArray(composer.payment_corrections) ? composer.payment_corrections : [];
-  const hash = createHash('sha256').update(JSON.stringify({orderId,actorId,transaction:input.transaction_id,method:input.method,account:input.account_id,reason:input.reason,before_return_at:input.before_return_at,return_at:input.return_at,...(input.amount===undefined?{}:{amount:input.amount})})).digest('hex');
+  const hash = createHash('sha256').update(JSON.stringify({orderId,actorId,transaction:input.transaction_id,...(input.paid_at?{paid_at:input.paid_at}:{}),...(input.collected_amount?{collected_amount:input.collected_amount}:{}),method:input.method,account:input.account_id,reason:input.reason,before_return_at:input.before_return_at,return_at:input.return_at,...(input.amount===undefined?{}:{amount:input.amount})})).digest('hex');
   const previous = edits.find((edit: {request_id: string}) => edit.request_id === input.request_id);
   if (previous) {
     if (previous.request_hash !== hash) throw new ContractPaymentError('Mã lần sửa đã dùng cho nội dung khác. Tải lại phiếu để kiểm tra.',409);
@@ -79,7 +84,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   }
   if (['draft','cancelled'].includes(order.order_status)) throw new ContractPaymentError('Không sửa thanh toán của hợp đồng nháp hoặc đã hủy.',409);
   const receipt = (await db.query(`SELECT t.id,t.store_id,t.type,t.status,t.value,t.bank_id,t.cash_id,t.payment_method,t.bank_owner_type,
-      t.xmin::text AS revision,p.renewal_payload
+      t.created_at,t.xmin::text AS revision,p.renewal_payload
     FROM himoto.transactions t JOIN himoto.management_contract_payments p ON p.transaction_id=t.id AND p.order_id=t.order_id
     WHERE t.id=$1 AND t.order_id=$2 FOR UPDATE OF t,p`,[input.transaction_id,orderId])).rows[0];
   if (!receipt || !receipt.renewal_payload || !['in','addon'].includes(receipt.type) || !['approved','cancelled'].includes(receipt.status) || Number(receipt.value) <= 0 || Number(receipt.store_id) !== Number(order.store_id)) {
@@ -137,6 +142,13 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   if (amountChanged && (!old?.renewal_fee_editable || idx < 0)) throw new ContractPaymentError('Chỉ sửa phí của kỳ gia hạn đã đối chiếu khi xe còn đang thuê. Phiếu đã hủy hoặc xe đã trả không làm thay đổi tiền hợp đồng tại đây.',409);
   const delta = newAmount - currentAmount;
   if (amountChanged && (![currentAmount,Number(order.total),Number(order.total)+delta].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=MAX_PAYMENT_AMOUNT))) throw new ContractPaymentError('Tiền hợp đồng hiện tại chưa hợp lệ để sửa phí gia hạn.',409);
+  const newCollected=input.collected_amount===undefined?Number(receipt.value):Number(input.collected_amount);
+  const collectedDelta=newCollected-Number(receipt.value);
+  const newPaidAt=input.paid_at||new Date(receipt.created_at).toISOString();
+  const dateChanged=Boolean(input.paid_at)&&Date.parse(newPaidAt)!==new Date(receipt.created_at).getTime();
+  const receiptChanged=collectedDelta!==0||dateChanged;
+  if(receiptChanged && receipt.status!=='approved')throw new ContractPaymentError('Không sửa số tiền hoặc ngày của phiếu đã hủy.',409);
+  if(collectedDelta && (order.pid==null || !Number.isSafeInteger(Number(order.pid)+collectedDelta)||Number(order.pid)+collectedDelta<0))throw new ContractPaymentError('Không đối chiếu được tổng tiền đã thu.',409);
   const affectedTransactionIds=[input.transaction_id];
 
   if (newBefore !== currentBefore || newReturn !== currentReturn) {
@@ -145,19 +157,20 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
 
   // An unchanged form is already saved. Refreshing it must not create a fake
   // correction or fail just because Telegram previously used the wrong clock.
-  if (!paymentChanged && !periodChanged && !amountChanged) return context;
+  if (!paymentChanged && !periodChanged && !amountChanged && !receiptChanged) return context;
 
   {
     // Bump the receipt revision for metadata-only edits too, so stale editors
     // cannot overwrite a newer period/fee with an unchanged routing revision.
-    const changed = await db.query(`UPDATE himoto.transactions SET bank_id=$3,cash_id=$4,payment_method=$5,bank_owner_type=$6,updated_at=now()
-      WHERE id=$1 AND order_id=$2 RETURNING id`,[input.transaction_id,orderId,afterPayment.bank_id,afterPayment.cash_id,afterPayment.payment_method,afterPayment.bank_owner_type]);
+    const changed = await db.query(`UPDATE himoto.transactions SET bank_id=$3,cash_id=$4,payment_method=$5,bank_owner_type=$6,value=$7,created_at=$8::timestamptz,updated_at=now()
+      WHERE id=$1 AND order_id=$2 RETURNING id`,[input.transaction_id,orderId,afterPayment.bank_id,afterPayment.cash_id,afterPayment.payment_method,afterPayment.bank_owner_type,newCollected,newPaidAt]);
     if (changed.rowCount !== 1) throw new ContractPaymentError('Không cập nhật được phiếu trong cơ sở được phân quyền.',409);
   }
 
-  if (periodChanged || amountChanged) {
+  if (periodChanged || amountChanged || receiptChanged) {
     const updatedRenewalPayload = {
       ...receipt.renewal_payload,
+      ...(receiptChanged?{collected_amount:newCollected,created_at:newPaidAt}:{}),
       amount: newAmount,
       ...(newBefore ? { before_return_at: newBefore } : {}),
       ...(newReturn ? { return_at: newReturn } : {}),
@@ -220,14 +233,14 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
       bank_id: receipt.bank_id, cash_id: receipt.cash_id, payment_method: receipt.payment_method, bank_owner_type: receipt.bank_owner_type,
       method: old?.method || '', account: old?.account || '',
       before_return_at: currentBefore, return_at: currentReturn,
-      renewal_amount: currentAmount,
+      renewal_amount: currentAmount, collected_amount:Number(receipt.value),paid_at:receipt.created_at,
     },
     after: {
       ...afterPayment,
       before_return_at: newBefore, return_at: newReturn,
-      renewal_amount: newAmount,
+      renewal_amount: newAmount, collected_amount:newCollected,paid_at:newPaidAt,
     },
   }] };
-  await db.query('UPDATE himoto.orders SET draft_payload=$2::json,total=CASE WHEN $3::bigint=0 THEN total ELSE (total::numeric+$3)::text END,updated_at=now() WHERE id=$1',[orderId,JSON.stringify(payload),amountChanged?delta:0]);
+  await db.query('UPDATE himoto.orders SET draft_payload=$2::json,pid=CASE WHEN $4::bigint=0 THEN pid ELSE pid+$4::bigint END,total=CASE WHEN $3::bigint=0 THEN total ELSE (total::numeric+$3)::text END,updated_at=now() WHERE id=$1',[orderId,JSON.stringify(payload),amountChanged?delta:0,receipt.status==='approved'?collectedDelta:0]);
   return readPaymentContext(db,orderId);
 }

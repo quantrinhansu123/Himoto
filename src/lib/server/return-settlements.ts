@@ -1,7 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { ReturnInput,ReturnReceipt,ReturnResult,ReturnSettlement } from '@/lib/management/contract-returns';
-import { normalizeRefundAccount,validRefundAccount } from '@/lib/management/return-refunds';
+import { normalizeRefundAccount,validRefundAccount,pendingReturnRefund } from '@/lib/management/return-refunds';
 import { ContractReturnError,recordVehicleReturn } from './contract-returns';
 import { parseContractPayment,readPaymentContext,recordContractPayment } from './contract-payments';
 type Database=Pick<PoolClient,'query'>;
@@ -101,7 +101,7 @@ export async function settleReturnedItems(db:Database,actor:number,settlement:Re
       const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account,refund.recipient_name].filter(Boolean).join(' · ')}`:''}`});
       context=paid.context;refundId=paid.transaction_id;
     }
-    const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(rentalRefundId!==null?{rental_refund_transaction_id:rentalRefundId,rental_refund_recipient:{bank:settlement.rental_refund?.recipient_bank,account:settlement.rental_refund?.recipient_account,name:settlement.rental_refund?.recipient_name}}:{}),...(settlement.refund_deferred?{refund_deferred:true,refund_pending_amount:context.deposit_held,...(settlement.refund_recipient?{recipient:settlement.refund_recipient}:{})}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
+    const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(rentalRefundId!==null?{rental_refund_transaction_id:rentalRefundId,rental_refund_recipient:{bank:settlement.rental_refund?.recipient_bank,account:settlement.rental_refund?.recipient_account,name:settlement.rental_refund?.recipient_name}}:{}),...(settlement.refund_deferred?{refund_deferred:true,refund_pending_amount:pendingReturnRefund(context.deposit_held,context.rental_refundable||0,context.remaining),...(settlement.refund_recipient?{recipient:settlement.refund_recipient}:{})}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
     await db.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer}',
       COALESCE(draft_payload::jsonb->'management_composer','{}'::jsonb)||jsonb_build_object('return_settlements',COALESCE(draft_payload::jsonb #> '{management_composer,return_settlements}','[]'::jsonb)||$2::jsonb),true)::json,
       order_status=CASE WHEN $3 THEN order_status WHEN $4 THEN 'completed' ELSE 'wait_payment' END,updated_at=now() WHERE id=$1`,[settlement.order_id,JSON.stringify([snapshot]),context.items.length>0,context.remaining===0]);
