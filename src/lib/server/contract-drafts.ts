@@ -33,6 +33,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
   ${CONTRACT_REVIEW_SQL},
   ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
   ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
+  o.draft_payload #>> '{management_composer,approval,at}' AS approval_at,
   o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
   o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
   o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,
@@ -120,7 +121,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
 export const CONTRACT_LIST_SQL = contractListSql();
 /** Filtering/summary fields only. Full document/customer/vehicle details are hydrated for the selected page. */
 export function contractTableSql(scopeClause: string) {
-  return `SELECT id,contract_number,draft_reference,rental_type,contract_type_id,contract_type_name,contract_type_months,sales_staff_id,sales_staff_name,hold_until,held_at,completed_from_hold,
+  return `SELECT id,contract_number,draft_reference,rental_type,approval_at,contract_type_id,contract_type_name,contract_type_months,sales_staff_id,sales_staff_name,hold_until,held_at,completed_from_hold,
     status,customer_id,customer_status,customer_name,customer_phone,store_id,store_name,store_kind,start_date,end_date,legacy_source_store_id,legacy_inferred_ownership,
     total_amount,paid_amount,deposit_amount,return_adjustment_amount,company_paid_amount,company_payment_count,representative_name,draft_payload,vehicles
     FROM (${contractListSql(true)}${scopeClause}) listing`;
@@ -140,6 +141,7 @@ export function contractIndexSql(scopeClause: string, options: { includeVehicleL
     ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     o.contract_signed_on AS signed_on,
     ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
+  o.draft_payload #>> '{management_composer,approval,at}' AS approval_at,
     o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
     o.draft_payload #>> '{management_composer,draft,contract_type_name}' AS contract_type_name,
     o.draft_payload #>> '{management_composer,draft,contract_type_months}' AS contract_type_months,

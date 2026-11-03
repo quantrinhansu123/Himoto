@@ -1,4 +1,5 @@
 'use client';
+import { ContractApprovalStatus } from './ContractApproval';
 
 import { ArrowDown, ArrowUp, FileSearch, LoaderCircle, RotateCcw, TriangleAlert } from 'lucide-react';
 import { ManagementColumn, ManagementConfig, ManagementKind, ManagementRow } from '@/lib/management/types';
@@ -84,6 +85,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             <span className="mg-monitoring-card-amounts">{monitoring?<>{visible('overdue_minutes')&&<strong>Quá hạn: {formatValue(row.overdue_minutes,'duration')}</strong>}{visible('monitoring_amount')&&<ContractMonitoringAmount row={row}/>}</>:columns.filter(column=>['total_amount','billing_next_due_at','billing_due_amount'].includes(column.key)).map(column=><span key={column.key}>{column.label}: <strong>{formatValue(row[column.key],column.format)}</strong></span>)}</span>
             {columns.filter(column=>!['rental_period','code','customer_name','license','contract_signed_at','deposit_amount','start_date','end_date','total_amount','billing_next_due_at','billing_due_amount','overdue_minutes','monitoring_amount','status','contract_gps_status','collection_notes'].includes(column.key)).map(column=><span className="mg-mobile-card-extra" key={column.key}>{column.label}: {optionLabel(config,column.key,formatValue(row[column.key],column.format))}</span>)}
             {visible('status')&&row.status!=='reserved'&&<span className={`mg-status mg-status-${statusTone(row.status)}`}><span/>{optionLabel(config,'status',row.status)}</span>}
+            <ContractApprovalStatus row={row}/>
             {visible('contract_gps_status')&&<ContractGpsIndicator row={row}/>}
           </button>
           {(approval||visible('collection_notes'))&&<div className="mg-mobile-collection-note">{approval&&<button type="button" className="mg-button mg-button-primary mg-contract-approve" onClick={approval.onSelect}>{approval.icon}Duyệt hợp đồng</button>}{visible('collection_notes')&&<><strong>Ghi chú tình trạng khách</strong><ContractCollectionNote row={row}/></>}</div>}

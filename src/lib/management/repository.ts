@@ -165,6 +165,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     sales_staff_id: /^[1-9]\d{0,14}$/.test(salesStaffId) ? Number(salesStaffId) : undefined, sales_staff_name: text(raw.sales_staff_name ?? salesAttribution.name ?? object(saved.profile).sales_staff_name ?? snapshot.sales_staff_name),
     store_id: base.store_id ?? number(store.id), store_name: base.store_name || text(store.store_name || store.name),
     store_kind: text(raw.store_kind),
+    approval_at:text(raw.approval_at ?? object(saved.approval).at),
     staff_id: number(raw.staff_id ?? raw.contract_responsible_user_id),
     staff_name: text(raw.staff_name), representative_name: text(raw.representative_name || raw.staff_name),
     customer_id: number(raw.customer_id), customer_name: text(raw.customer_name || customer.name),

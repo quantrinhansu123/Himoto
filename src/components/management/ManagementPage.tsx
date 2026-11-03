@@ -74,6 +74,7 @@ const StaffDialog = dynamic(() => import('./StaffDialogs').then(module => module
 const ContractQrDialog=dynamic(()=>import('./ContractPaymentQr').then(module=>module.ContractQrDialog),{ssr:false,loading:FeatureLoading});
 const DebtReminderDialog=dynamic(()=>import('./DebtReminderDialog').then(module=>module.DebtReminderDialog),{ssr:false,loading:FeatureLoading});
 const BulkDebtReminderDialog=dynamic(()=>import('./BulkDebtReminderDialog').then(module=>module.BulkDebtReminderDialog),{ssr:false,loading:FeatureLoading});
+const ContractApprovalDialog=dynamic(()=>import('./ContractApproval').then(module=>module.ContractApprovalDialog),{ssr:false,loading:FeatureLoading});
 const OwnershipTermsEditor=dynamic(()=>import('./OwnershipTermsEditor').then(module=>module.OwnershipTermsEditor),{ssr:false,loading:FeatureLoading});
 
 const DebtReportPanel=dynamic(()=>import('./DebtReportPanel').then(module=>module.DebtReportPanel),{ssr:false,loading:FeatureLoading});
@@ -137,6 +138,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [renewSearch, setRenewSearch] = useState('');
   const handledAction = useRef('');
   const [batteryRentTarget, setBatteryRentTarget] = useState<ManagementRow | null>(null);
+  const [approvalTarget,setApprovalTarget]=useState<ManagementRow|null>(null);
   const [ownershipTermsTarget, setOwnershipTermsTarget] = useState<ManagementRow | null>(null);
   const [batteryPrinting, setBatteryPrinting] = useState<BatteryContract | null>(null);
   const [page, setPage] = useState(1);
@@ -506,6 +508,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onRenew={can('contracts.renew') && kind === 'contracts' && source === 'api' ? row => setRenewTarget(row) : undefined}
           onVehicleChange={can('contracts.return') && kind === 'contracts' && source === 'api' ? row => setVehicleTarget({ orderId: row.id, code: row.code }) : undefined}
           onBatteryRent={can('contracts.draft') && kind === 'contracts' && source === 'api' ? row => setBatteryRentTarget(row) : undefined}
+          onApproveContract={kind==='contracts'&&source==='api'?row=>setApprovalTarget(row):undefined}
           onOwnershipTerms={kind === 'contracts' && source === 'api' ? row => setOwnershipTermsTarget(row) : undefined}
           onVehicleAction={kind === 'vehicles' && source === 'api' && (can('vehicles.transfer')||can('vehicles.receive')||can('vehicles.write')) ? (row, mode) => setVehicleAction({ mode, vehicle: row }) : undefined}
 
@@ -577,6 +580,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         }} />
     </ManagementDataBoundary>}
     {batteryPrinting && <BatteryPrintPreview doc={batteryPrinting} onClose={() => setBatteryPrinting(null)} />}
+    {approvalTarget&&<ContractApprovalDialog row={approvalTarget} onClose={()=>setApprovalTarget(null)} onSaved={()=>{setApprovalTarget(null);table.refresh();}}/>}
     {ownershipTermsTarget && <OwnershipTermsEditor key={ownershipTermsTarget.id} id={ownershipTermsTarget.id} code={ownershipTermsTarget.code} startOpen onClose={() => setOwnershipTermsTarget(null)} onSaved={() => { setOwnershipTermsTarget(null); table.refresh(); }} />}
     {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { if(viewing.status==='bad_debt')setRecoveryTarget(viewing);else setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onBatteryRent={() => { setBatteryRentTarget(viewing); setViewing(null); }} onPayment={canPayContracts ? (purpose?: PaymentPurpose) => { router.push(cashbookPaymentPath(viewing.id, purpose || 'debt')); setViewing(null); } : undefined} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }}
       onQr={()=>{setQrTarget(viewing.id);setViewing(null);}}

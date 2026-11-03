@@ -45,6 +45,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/returns'))return read?'contracts.read':'contracts.return';
   if(path.includes('/staff-sales')||path==='/api/auth/dashboard'||path.startsWith('/api/auth/rental-revenue'))return 'contracts.read';
   if(path.includes('/order/car-rental/')) {
+    if(path.endsWith('/approval'))return read?'contracts.read':'contracts.finalize';
     if(path.endsWith('/receipt-corrections'))return read?'contracts.read':'contracts.draft';
     if(path.endsWith('/rental-terms'))return read?'contracts.read':'contracts.draft';
     if(path.endsWith('/ownership-terms'))return read?'contracts.read':'contracts.draft';

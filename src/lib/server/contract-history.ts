@@ -89,6 +89,8 @@ export async function readContractHistory(client: Database, id: number): Promise
       COALESCE(o.draft_payload::jsonb #> '{management_composer,reservation_releases}','[]'::jsonb) AS reservation_releases,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,vehicle_recoveries}','[]'::jsonb) AS vehicle_recoveries,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,contract_edits}','[]'::jsonb) AS contract_edits,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,full_contract_edits}','[]'::jsonb) AS full_contract_edits,
+      COALESCE(o.draft_payload::jsonb #> '{management_composer,approval_history}','[]'::jsonb) AS approval_history,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,rental_terms_history}','[]'::jsonb) AS rental_terms_history,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,return_corrections}','[]'::jsonb) AS return_corrections,
       COALESCE(o.draft_payload::jsonb #> '{management_composer,payment_corrections}','[]'::jsonb) AS payment_corrections,
@@ -107,6 +109,16 @@ export async function readContractHistory(client: Database, id: number): Promise
   const created: ContractChange = { id: `created-${id}`, kind: 'created', at: iso(order.rows[0].created_at), actor: String(order.rows[0].actor || '—'),
     title: 'Tạo hợp đồng', detail: '', amount: null };
   const changes: ContractChange[] = [created];
+  for(const [index,item] of(Array.isArray(order.rows[0].approval_history)?order.rows[0].approval_history:[]).entries())changes.push({id:`approval-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Duyệt hợp đồng sở hữu',detail:`Đã duyệt HĐ ${item.contract_number||''}.`});
+  for(const [index,item] of(Array.isArray(order.rows[0].full_contract_edits)?order.rows[0].full_contract_edits:[]).entries()) {
+    const before=item.before||{},after=item.after?.draft||{};
+    changes.push({id:`full-edit-${index}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa toàn bộ hợp đồng',detail:[
+      `Tiền hợp đồng: ${formatMoney(Number(before.total||0))} → ${formatMoney(Number(after.total_amount||0))}`,
+      `Cọc: ${formatMoney(Number(before.deposit||0)+Number(before.additional_deposit||0))} → ${formatMoney(Number(after.deposit_amount||0))}`,
+      `Thời gian: ${vietnamTime(before.rent_at)} → ${vietnamTime(before.return_at)} thành ${vietnamTime(utcDate(after.start_date))} → ${vietnamTime(utcDate(after.end_date))}`,
+      `Xe sau sửa: ${(after.vehicles||[]).map((line:{license?:string;id:string})=>line.license||`#${line.id}`).join(', ')}`,
+    ].join(' · ')});
+  }
   for(const item of(Array.isArray(order.rows[0].receipt_corrections)?order.rows[0].receipt_corrections:[]))changes.push({id:`receipt-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa tiền cọc / khoản đã thu',detail:`Cọc thỏa thuận ${formatMoney(Number(item.before_deposit))} → ${formatMoney(Number(item.after_deposit))} · ${item.reason} · Chi tiết phiếu trước–sau được lưu trong hồ sơ đối chiếu.`});
   for(const [index,item]of(Array.isArray(order.rows[0].ownership_terms_history)?order.rows[0].ownership_terms_history:[]).entries())changes.push({id:`ownership-terms-${index}`,kind:'edit',at:iso(item.at),actor:String(item.actor_name||`#${item.actor_id}`),amount:null,title:'Sửa thời hạn và mức đóng thuê sở hữu',detail:`Thời hạn: ${item.before?.term_months==='custom'?'Chưa phân loại':`${item.before?.term_months} tháng`} → ${item.after?.term_months==='custom'?'Chưa phân loại':`${item.after?.term_months} tháng`} · Mỗi ngày: ${item.before?.daily_amount==null?'Chưa xác định':formatMoney(item.before.daily_amount)} → ${item.after?.daily_amount==null?'Chưa xác định':formatMoney(item.after.daily_amount)}.`});
   for(const item of(Array.isArray(order.rows[0].payment_corrections)?order.rows[0].payment_corrections:[]))changes.push({id:`payment-correction-${item.request_id}`,kind:'edit',at:iso(item.at),actor:`#${item.actor_id}`,amount:null,title:'Sửa kỳ gia hạn / thanh toán',detail:renewalCorrectionDetail(item)});

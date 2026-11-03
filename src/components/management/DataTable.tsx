@@ -15,7 +15,8 @@ import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { canEditIssuedContract, contractIssuedEditBlockReason } from '@/lib/management/contract-profile';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
-import { canFinalizeRentalContract,requiresOwnershipApproval } from '@/lib/management/contract-approval';
+import { ContractApprovalStatus } from './ContractApproval';
+import { canFinalizeRentalContract,requiresOwnershipApproval,canApproveOwnershipContract,isOwnershipApprovalContract } from '@/lib/management/contract-approval';
 import { canEditOwnershipTerms } from '@/lib/management/ownership-terms';
 import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 import { contractHandoverBlockReason, contractRenewBlockReason, contractReturnBlockReason, vehicleTransferBlockReason } from '@/lib/management/blocked-actions';
@@ -40,7 +41,7 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
     </div>;
   }
   if (column.format === 'status') return <span className={`mg-status mg-status-${statusTone(String(value))}`}><span />{optionLabel(config, column.key, String(value || ''))}</span>;
-  if (column.format === 'code') return config.kind==='contracts'&&row.status==='reserved'?<span className="mg-contract-code-hold"><span className="mg-code">{value||'—'}</span><ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/></span>:<span className="mg-code">{value || '—'}</span>;
+  if (column.format === 'code') return config.kind==='contracts'?<span className="mg-contract-code-hold"><span className="mg-code">{value||'—'}</span>{row.status==='reserved'&&<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>}<ContractApprovalStatus row={row}/></span>:<span className="mg-code">{value || '—'}</span>;
   if (config.kind === 'vehicles' && column.key === 'holder_name') {
     const holder = vehicleHolderLabel(row.status,value);
     if (holder === 'Lưu kho') return <span className="mg-status mg-status-green"><span />Lưu kho</span>;
@@ -90,6 +91,7 @@ interface Props {
   onVehicleChange?: (row: ManagementRow) => void;
   onBatteryRent?: (row: ManagementRow) => void;
   onOwnershipTerms?: (row: ManagementRow) => void;
+  onApproveContract?: (row: ManagementRow) => void;
   onClone?: (row: ManagementRow) => void;
   onVehicleAction?: (row: ManagementRow, mode: 'transfer' | 'status' | 'receive' | 'reject' | 'cancel') => void;
   cloningId?: number | null;
@@ -108,7 +110,7 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onRenew, onVehicleChange, onBatteryRent, onOwnershipTerms, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onRenew, onVehicleChange, onBatteryRent, onOwnershipTerms, onApproveContract, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const {can,accessUser}=useManagement();
   const router=useRouter();
   const blockingError=rows.length?'':error;
@@ -190,8 +192,9 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (isContract && onOwnershipTerms && !['draft', 'cancelled'].includes(row.status) && requiresOwnershipApproval(row.rental_type) && canEditOwnershipTerms(accessUser)) {
       actions.push({ key: 'ownership-terms', label: 'Sửa loại HĐ / mức đóng ngày', title: 'Sửa loại hợp đồng thuê sở hữu (6/9/12/18/24 tháng) và cập nhật số tiền đóng mỗi ngày', icon: <Pencil size={16} />, onSelect: () => onOwnershipTerms(row) });
     }
+    if(isContract && row.status!=='draft' && row.status!=='cancelled' && !row.approval_at && onApproveContract && isOwnershipApprovalContract(row) && canApproveOwnershipContract(accessUser))actions.push({key:'approve',label:'Duyệt hợp đồng',icon:<ShieldCheck size={16}/>,onSelect:()=>onApproveContract(row)});
     if (isContract && row.status === 'draft' && canEditDraft) {
-      const approve=requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type);
+      const approve=isOwnershipApprovalContract(row)&&canApproveOwnershipContract(accessUser);
       actions.push({key:approve?'approve':'edit',label:approve?'Duyệt hợp đồng':'Tiếp tục sửa bản nháp',icon:approve?<ShieldCheck size={16}/>:<Pencil size={16}/>,onSelect:()=>onEdit(row)});
     } else if (isContract && row.status !== 'draft' && canEditContract) {
       const editBlock=contractIssuedEditBlockReason(accessUser,row.store_id);
@@ -232,7 +235,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : rows.map((row, index) => <tr key={row.id} className={selectedIds?.has(row.id) ? 'is-selected' : undefined}>{selectable && <td className="mg-select-column"><input type="checkbox" aria-label={`Chọn ${row.code || row.name || `#${row.id}`}`}
           checked={Boolean(selectedIds?.has(row.id))} onChange={event => onSelectionChange?.([row.id], event.target.checked)} /></td>}<td className="mg-index">{offset + index + 1}</td>{columns.map(column => <td key={column.key} data-column={column.key} data-format={column.format} className={`${column.align === 'right' ? 'mg-align-right' : ''}${column.key === 'code' ? ' mg-record-code' : ''}`}><Cell row={row} column={column} config={config} /></td>)}
           <td className="mg-actions-column"><div className="mg-row-actions">
-            {config.kind==='contracts'&&row.status==='draft'&&canEditDraft&&requiresOwnershipApproval(row.rental_type)&&canFinalizeRentalContract(accessUser,row.rental_type)&&<button type="button" className="mg-button mg-button-primary" onClick={()=>onEdit(row)}><ShieldCheck size={16}/>Duyệt hợp đồng</button>}
+            {config.kind==='contracts'&&rowActions(row).find(action=>action.key==='approve')&&<button type="button" className="mg-button mg-button-primary" onClick={()=>rowActions(row).find(action=>action.key==='approve')?.onSelect()}><ShieldCheck size={16}/>Duyệt hợp đồng</button>}
             {config.kind==='vehicles'&&onVehicleAction&&can('vehicles.transfer')&&canCancelVehicleTransfer(row,accessUser?.id)&&<button type="button" className="mg-button mg-button-danger" onClick={()=>onVehicleAction(row,'cancel')}>Huỷ điều chuyển</button>}
             {config.kind==='vehicles'&&row.status==='in_transit'&&onVehicleAction&&can('vehicles.receive')&&!canCancelVehicleTransfer(row,accessUser?.id)&&<>
               <button type="button" className="mg-button mg-button-primary" onClick={()=>onVehicleAction(row,'receive')}>Nhận xe</button>

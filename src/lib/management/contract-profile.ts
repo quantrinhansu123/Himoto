@@ -22,6 +22,12 @@ export const PROFILE_KEYS = ['customer','relatives','staff_id','staff_name','sig
 export function contractProfile(draft:ContractDraft):ContractProfile {
   return Object.fromEntries(PROFILE_KEYS.filter(key=>draft[key] !== undefined).map(key=>[key,draft[key]])) as unknown as ContractProfile;
 }
+export async function saveFullContract(id:number,revision:string,draft:ContractDraft,edits:{notes:string;status:string;rental_type:string}) {
+  const response=await fetch(`/api/auth/order/car-rental/${id}/edit`,{method:'PATCH',cache:'no-store',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,draft,...edits})});
+  const result=await response.json().catch(()=>null);
+  if(!response.ok || result?.status !== 'success' || typeof result.data?.revision !== 'string')throw new Error(result?.message || 'Chưa lưu được hợp đồng.');
+  return result.data as {revision:string;code:string};
+}
 export async function saveContractProfile(id:number,revision:string,profile:ContractProfile,edits:ContractProfileEdits={}) {
   const response=await fetch(`/api/auth/order/car-rental/${id}/profile`,{method:'PATCH',cache:'no-store',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,profile,...edits})});
   const result=await response.json().catch(()=>null);
