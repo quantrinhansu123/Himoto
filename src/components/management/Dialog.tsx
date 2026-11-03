@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
+import { MobileDialogNavigation } from './MobileDialogNavigation';
 
 export function trapFocusWithin(container: HTMLElement) {
   const keydown = (event: KeyboardEvent) => {
@@ -57,5 +58,6 @@ export function Dialog({ title, subtitle, children, onClose, className = '', dis
     <div className="mg-dialog-header"><div><h2 id={titleId}>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>
       <button className="mg-icon-button" type="button" onClick={onClose} aria-label="Đóng hộp thoại"><X size={20} /></button></div>
     {children}
+    <MobileDialogNavigation onBack={onClose}/>
   </dialog>;
 }

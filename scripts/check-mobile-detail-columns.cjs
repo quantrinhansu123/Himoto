@@ -30,7 +30,8 @@ fs.writeFileSync(fixture,`<!doctype html><html lang="vi"><meta charset="utf-8"><
 document.querySelector('dialog').showModal();
 const grid=document.querySelector('.mg-detail-grid'),dialog=document.querySelector('dialog');
 const fields=[...grid.querySelectorAll('dd')];
-document.querySelector('#qa').textContent=JSON.stringify({width:innerWidth,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,overflow:dialog.scrollWidth>dialog.clientWidth+1,fieldOverflow:fields.some(el=>el.scrollWidth>el.clientWidth+1),fields:fields.length});
+const nav=dialog.querySelector('.mg-dialog-mobile-nav'),navRect=nav.getBoundingClientRect(),footer=dialog.querySelector('.mg-dialog-footer');
+document.querySelector('#qa').textContent=JSON.stringify({width:innerWidth,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,overflow:dialog.scrollWidth>dialog.clientWidth+1,fieldOverflow:fields.some(el=>el.scrollWidth>el.clientWidth+1),fields:fields.length,navVisible:navRect.height>0,navButtons:nav.querySelectorAll('button').length,navAtBottom:Math.abs(navRect.bottom-innerHeight)<2,footerAboveNav:footer.getBoundingClientRect().bottom<=navRect.top+1});
 </script></body></html>`);
 const chrome=process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'himoto-detail-qa-'));
@@ -58,6 +59,11 @@ async function main(){
     if(metrics?.width===width)break;
    }
    assert(metrics,'Missing layout metrics');assert.equal(metrics.columns,width<480?2:width<=768?3:2);assert.equal(metrics.overflow,false);assert.equal(metrics.fieldOverflow,false);
+   assert.equal(metrics.navVisible,width<=768);if(width<=768){assert.equal(metrics.navButtons,3);assert(metrics.navAtBottom);assert(metrics.footerAboveNav);}
+   if(width===393){
+    const result=await send('Runtime.evaluate',{expression:`(()=>{const dialog=document.querySelector('dialog');const hit=()=>{const nav=dialog.querySelector('.mg-dialog-mobile-nav'),rect=nav.getBoundingClientRect();return !!document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)?.closest('.mg-dialog-mobile-nav button');};const normal=hit();dialog.classList.add('mg-dialog-fullscreen');const fullscreen=hit()&&dialog.getBoundingClientRect().bottom<=dialog.querySelector('.mg-dialog-mobile-nav').getBoundingClientRect().top+1;dialog.classList.remove('mg-dialog-fullscreen');return {normal,fullscreen};})()`,returnByValue:true});
+    assert(result.result.value.normal,'Modal navigation must receive taps');assert(result.result.value.fullscreen,'Fullscreen dialog must reserve space for navigation');
+   }
    const screenshot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,`vehicle-${width}.png`),Buffer.from(screenshot.data,'base64'));console.log(JSON.stringify(metrics));
   }
  }finally{socket?.close();browser.kill();}

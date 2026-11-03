@@ -4578,3 +4578,23 @@
   .mg-contract-detail-grid:not(.mg-contract-lifecycle-summary),
   .mg-mobile-detail-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+/* Native modal dialogs cover the page navigation; keep controls in the modal's top layer. */
+@media (max-width: 768px) {
+  .mg-dialog,
+  .mg-dialog.mg-dialog-fullscreen[open] {
+    --mg-dialog-nav-height: calc(62px + env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - var(--mg-dialog-nav-height));
+    margin-bottom: var(--mg-dialog-nav-height);
+  }
+  .mg-dialog.mg-dialog-fullscreen[open] { height: calc(100dvh - var(--mg-dialog-nav-height)); }
+  .mg-dialog .mg-dialog-mobile-nav {
+    position: fixed;
+    display: grid;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 6;
+    min-height: var(--mg-dialog-nav-height);
+    box-sizing: border-box;
+  }
+}
