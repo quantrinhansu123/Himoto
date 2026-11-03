@@ -259,6 +259,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
           </dl>
           <fieldset className="mg-payment-fields" disabled={saving}>
             <legend>Thông tin gia hạn</legend>
+            <label className="mg-field-wide" htmlFor="renewal-occurred-at">Ngày gia hạn thực tế (24h)<DateTime24Controls id="renewal-occurred-at" label="Ngày gia hạn thực tế" value={occurredAt} onChange={setOccurredAt}/><small>Sửa ngày, giờ theo giao dịch thực tế. Nếu đã nhận tiền, phiếu thu ghi nhận vào ngày này.</small></label>
             <label>Gia hạn theo<select value={unit} onChange={event => changeUnit(event.target.value as 'day' | 'hour')}><option value="day">Ngày</option><option value="hour">Giờ</option></select></label>
             <label>{unit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}<input type="number" min={1} max={maxCount} value={count} onChange={event => {setDurationSource('count');setCount(event.target.value);}} /></label>
             <label>{unit === 'day' ? 'Đơn giá / ngày (VNĐ)' : 'Đơn giá / giờ (VNĐ)'}<input inputMode="numeric" value={groupAmount(rateInput)} placeholder={unit === 'day' ? 'Nhập đơn giá/ngày' : 'Nhập đơn giá/giờ'}
@@ -307,7 +308,6 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
                 </>}
               </>}
             </>}
-            <label className="mg-field-wide">Ngày giờ thực hiện (24h)<DateTime24Controls id="renewal-occurred-at" label="Ngày giờ thực hiện" value={occurredAt} onChange={setOccurredAt}/><small>Chọn thời điểm gia hạn thực tế, có thể là ngày hôm trước. Nếu đã nhận tiền, phiếu thu và doanh thu ghi nhận vào ngày này. Chưa nhận tiền thì chưa ghi nhận doanh thu.</small></label>
             <label className="mg-field-wide">{backfill?'Lý do nhập bổ sung':'Ghi chú'}<textarea aria-label={backfill?'Lý do nhập bổ sung':'Ghi chú'} rows={2} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} placeholder="Lý do gia hạn, thỏa thuận với khách…" /></label>
           </fieldset>
           {stillOverdue && <p className="mg-field-error">Ngày trả mới vẫn ở quá khứ, hợp đồng sẽ tiếp tục quá hạn.</p>}
