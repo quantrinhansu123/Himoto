@@ -5,7 +5,7 @@ import { ArrowDownToLine, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { bulkDelete } from '@/lib/management/bulk-delete';
 import { Dialog } from './Dialog';
 import { RecordTotal } from './RecordTotal';
-import { CashbookRow, EMPTY_CASHBOOK_FILTERS, CashbookFilters, cashbookCsv, VoucherType } from '@/lib/management/cashbook';
+import { CashbookRow, EMPTY_CASHBOOK_FILTERS, CashbookFilters, CASHBOOK_COLUMNS, cashbookCell, VoucherType } from '@/lib/management/cashbook';
 import { CashbookAccount, CashbookListResult, CashbookPagination, DEFAULT_CASHBOOK_PAGINATION, loadCashbookAccounts, loadCashbookDeleteIds, loadCashbookExport, loadCashbookPage } from '@/lib/management/cashbook-repository';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
@@ -159,16 +159,15 @@ export function CashbookPage() {
     setExporting(true);
     try {
       const rows = await loadCashbookExport(query, selectedStore);
-      const url = URL.createObjectURL(new Blob(['\uFEFF', cashbookCsv(rows)], { type: 'text/csv;charset=utf-8;' }));
-      const link = document.createElement('a'); link.href = url; link.download = `himoto-so-quy-${source}.csv`; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const { downloadFilteredExcel } = await import('@/lib/management/excel-export');
+      await downloadFilteredExcel(CASHBOOK_COLUMNS.map(column => column.label), rows.map(row => CASHBOOK_COLUMNS.map(column => column.key === 'amount' ? row.amount : cashbookCell(row, column.key))), 'himoto-so-quy-' + source);
       notify(`Đã xuất ${rows.length} phiếu.`);
     } catch (cause) { notify(cause instanceof Error ? cause.message : 'Không xuất được sổ quỹ.'); }
     finally { setExporting(false); }
   }
   return <section className="mg-page mg-cashbook-page" aria-label="Sổ quỹ / Sổ két"><div className="mg-page-content">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ THU — CHI <span>/</span> 06</div><h1>Sổ quỹ / Sổ két</h1><RecordTotal label="Toàn bộ phiếu thu / chi" count={loadedFilter === filterKey ? result?.total : null} loading={pending}/><p>Tra cứu phiếu thu và phiếu chi theo cùng một cấu trúc dữ liệu.</p></div>
-      <div className="mg-heading-actions"><button type="button" className="mg-button mg-button-danger" disabled={pending || Boolean(error) || !selectedIds.size} onClick={() => { setDeleteError(''); setDeleteOpen(true); }}><Trash2 size={16} />Xóa phiếu đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button><button type="button" className="mg-button" disabled={pending} onClick={() => setRetry(value => value + 1)}><RotateCcw size={16} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Tải lại'}</button><button type="button" className="mg-button mg-button-primary" disabled={pending || Boolean(error) || invalidDate || !(incomeCount + expenseCount) || exporting} onClick={() => void exportCsv()}><ArrowDownToLine size={17} />{exporting ? 'Đang xuất…' : 'Xuất CSV'}</button></div></div>
+      <div className="mg-heading-actions"><button type="button" className="mg-button mg-button-danger" disabled={pending || Boolean(error) || !selectedIds.size} onClick={() => { setDeleteError(''); setDeleteOpen(true); }}><Trash2 size={16} />Xóa phiếu đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button><button type="button" className="mg-button" disabled={pending} onClick={() => setRetry(value => value + 1)}><RotateCcw size={16} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Tải lại'}</button><button type="button" className="mg-button mg-button-primary" disabled={pending || Boolean(error) || invalidDate || !(incomeCount + expenseCount) || exporting} onClick={() => void exportCsv()}><ArrowDownToLine size={17} />{exporting ? 'Đang xuất…' : 'Tải Excel theo bộ lọc'}</button></div></div>
     <div className="mg-data-panel mg-cashbook-filters"><div className="mg-toolbar"><label className="mg-search" htmlFor="cashbook-search"><Search size={17} /><span className="mg-sr-only">Tìm trên cả hai bảng</span><input id="cashbook-search" type="search" placeholder="Tìm ID, người thực hiện, lý do, nội dung…" value={query.search} onChange={event => update({ search: event.target.value })} />{query.search && <button type="button" aria-label="Xóa từ khóa" onClick={() => update({ search: '' })}><X size={15} /></button>}</label>
       <div className="mg-filter-controls"><label htmlFor="cashbook-actor" className="mg-cashbook-select-label">Người thực hiện<select id="cashbook-actor" value={query.actor} disabled={pending || Boolean(error)} onChange={event => update({ actor: event.target.value })}><option value="">Tất cả người thực hiện</option>{actors.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div></div>
       <div className="mg-date-filters"><span>Ngày phát sinh</span><label htmlFor="cashbook-start">Từ ngày <input id="cashbook-start" type="date" value={query.startDate} aria-invalid={invalidDate} aria-describedby={invalidDate ? 'cashbook-date-error' : undefined} onChange={event => update({ startDate: event.target.value })} /></label>

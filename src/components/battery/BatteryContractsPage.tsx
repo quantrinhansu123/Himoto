@@ -13,6 +13,7 @@ import type { ManagementRow } from '@/lib/management/types';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { useReloadAction } from '@/components/management/ReloadButton';
 import { Dialog } from '@/components/management/Dialog';
+import { FilteredExcelButton } from '@/components/management/FilteredExcelButton';
 import { RecordTotal } from '@/components/management/RecordTotal';
 import { RowActionsMenu } from '@/components/management/RowActionsMenu';
 import { PreviewPage, PrintPreviewDialog } from '@/components/contracts/ContractPrintPreview';
@@ -75,7 +76,7 @@ export function BatteryContractsPage() {
   const filtered = Boolean(search || status);
   return <section className="mg-page mg-battery-page" aria-label="Hợp đồng thuê pin"><div className="mg-page-content">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">HỢP ĐỒNG <span>/</span> THUÊ PIN / SẠC</div><h1>Hợp đồng thuê pin / sạc</h1><RecordTotal label="Toàn bộ hợp đồng pin / sạc" count={scopeCount} loading={loading}/><p>Lập, lưu và in hợp đồng thuê pin hoặc sạc xe điện theo mẫu HIMOTO. Có thể mở sẵn từ hợp đồng thuê xe.</p></div>
-      <div className="mg-heading-actions"><button type="button" className="mg-button" disabled={loading || datasetLoading} onClick={refresh}><RotateCcw size={16} className={loading ? 'mg-spin' : undefined} />{loading ? 'Đang tải…' : 'Làm mới'}</button>{can('contracts.draft') && <button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button>}</div></div>
+      <div className="mg-heading-actions"><FilteredExcelButton disabled={loading || Boolean(error) || !visible.length} filename="himoto-hop-dong-pin" headers={['Mã HĐ','Khách hàng','SĐT','Biển số','Pin','Bắt đầu','Kết thúc','Giá thuê','Cơ sở','Trạng thái']} getRows={() => visible.map(row => [row.code,row.customer_name,row.customer_phone,row.vehicle_license,row.battery_name,moment(row.starts_at),moment(row.ends_at),row.rent_price,row.store_name,batteryStatusLabel(row.status)])}/><button type="button" className="mg-button" disabled={loading || datasetLoading} onClick={refresh}><RotateCcw size={16} className={loading ? 'mg-spin' : undefined} />{loading ? 'Đang tải…' : 'Làm mới'}</button>{can('contracts.draft') && <button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button>}</div></div>
     <div className="mg-data-panel">
       {vehicleContractId && <p className="mg-composer-hint">Pin / sạc của hợp đồng xe #{vehicleContractId}. <Link href="/contracts/battery">Bỏ lọc hợp đồng xe</Link></p>}
       <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!status ? 'is-active' : ''} aria-pressed={!status} onClick={() => setStatus('')}>Tất cả<span>{rows.length}</span></button>

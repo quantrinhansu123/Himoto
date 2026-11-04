@@ -2,6 +2,7 @@
 import { useCallback,useEffect,useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft,ChevronRight,Plus,RefreshCw } from 'lucide-react';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { DebtReminderDialog } from './DebtReminderDialog';
@@ -20,7 +21,12 @@ export function DebtRemindersPage() {
   },[selectedStore,page,version]);
   useEffect(()=>setPage(1),[selectedStore]);
   return <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Gửi nhắc nợ</h1><p>Soạn tin Zalo theo hợp đồng và theo dõi lịch sử gửi của từng cơ sở.</p></div>
-    <div className="mg-heading-actions"><button className="mg-button" onClick={()=>setVersion(value=>value+1)} disabled={loading}><RefreshCw size={16} aria-hidden="true"/>Làm mới</button>{canSendDebtReminder(accessUser)&&<button className="mg-button mg-button-primary" onClick={()=>setOpen(true)}><Plus size={16} aria-hidden="true"/>Tạo mới</button>}</div></div>
+    <div className="mg-heading-actions"><FilteredExcelButton disabled={loading || Boolean(error) || !data?.total} filename="himoto-lich-su-nhac-no" headers={['Thời gian','Hợp đồng','Khách hàng','Cơ sở','Số điện thoại','Số tiền nhắc','Nội dung','Trạng thái','Người gửi']} getRows={async () => {
+      const base = '/api/auth/debt-reminders?store=' + encodeURIComponent(selectedStore) + '&page=';
+      const first = await reminderRequest<History>(base + '1'); const all = [...first.rows];
+      for(let index=2;index<=first.pages;index++) all.push(...(await reminderRequest<History>(base + index)).rows);
+      return all.map(row => [formatDateTime(row.created_at),row.contract_code,row.customer_name,row.store_name,row.phone,row.amount,row.message,REMINDER_STATUS_LABELS[row.status],row.actor_name]);
+    }}/><button className="mg-button" onClick={()=>setVersion(value=>value+1)} disabled={loading}><RefreshCw size={16} aria-hidden="true"/>Làm mới</button>{canSendDebtReminder(accessUser)&&<button className="mg-button mg-button-primary" onClick={()=>setOpen(true)}><Plus size={16} aria-hidden="true"/>Tạo mới</button>}</div></div>
     <p className="mg-reminder-help">“Webhook đã tiếp nhận” là hệ thống gửi tin đã nhận yêu cầu; chưa phải xác nhận khách đã nhận hoặc đọc Zalo.</p>
     {loading?<p role="status">Đang tải lịch sử nhắc nợ…</p>:error?<p role="alert" className="mg-field-error">{error}</p>:!data?.rows.length?<div className="mg-table-state"><strong>Chưa có lịch sử nhắc nợ</strong><p>Bấm Tạo mới hoặc mở Nhắc nợ trên hợp đồng.</p></div>:<>
       <div className="mg-data-panel mg-desktop-records"><div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Lịch sử gửi nhắc nợ"><table className="mg-table"><thead><tr>{['Thời gian','Hợp đồng / Khách hàng','Cơ sở','Số điện thoại','Số tiền nhắc','Nội dung','Trạng thái / Người gửi'].map(label=><th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{data.rows.map(row=><tr key={row.request_id}><td>{formatDateTime(row.created_at)}</td><td><Link href={`/contracts?contract_id=${row.order_id}`}>{row.contract_code}</Link><p>{row.customer_name}</p></td><td>{row.store_name}</td><td>{row.phone}</td><td>{formatMoney(row.amount)}</td><td><details className="mg-reminder-message"><summary>Xem nội dung</summary><p>{row.message}</p></details></td><td><span className={`mg-reminder-status is-${row.status}`}>{REMINDER_STATUS_LABELS[row.status]}</span><p>{row.actor_name}</p></td></tr>)}</tbody></table></div></div>

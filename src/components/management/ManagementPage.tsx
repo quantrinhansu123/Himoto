@@ -11,7 +11,7 @@ import { vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 import { RowActionsMenu } from './RowActionsMenu';
 import type { VehicleActionMode } from './VehicleActionDialog';
 import { MANAGEMENT_CONFIG, optionLabel, statusTone } from '@/lib/management/config';
-import { EMPTY_QUERY, OVERDUE_COMPARE_OPTIONS, TableQuery, csvCell, filterRows, formatValue, sortRows } from '@/lib/management/table-utils';
+import { EMPTY_QUERY, OVERDUE_COMPARE_OPTIONS, TableQuery, filterRows, formatValue, sortRows } from '@/lib/management/table-utils';
 import { ManagementColumn, ManagementKind, ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
@@ -359,16 +359,23 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     updateQuery({...EMPTY_QUERY,...(overdueOnly?{status:'overdue',overdueBucket:'traditional-overdue' as const}:{})}); selectStore('all');
     if (customerId || contractId || searchFromUrl) router.replace(contractPath);
   }
-  async function exportCsv() {
-    if (!filteredRows.length) return;
-    let exportRows=filteredRows;
-    try {if(paged)exportRows=(await table.exportAll()).rows;
-      if(collectionNotes&&columns.some(column=>column.key==='collection_notes')){const followups=new Map((await loadCollectionFollowups(exportRows.map(row=>row.id))).map(row=>[row.id,row.followup.notes]));exportRows=exportRows.map(row=>({...row,collection_notes:followups.get(row.id)||''}));}} catch(cause){notify(cause instanceof Error?cause.message:'Không xuất được danh sách.');return;}
-    const csv = [columns.map(column => csvCell(column.label)).join(','), ...exportRows.map(row => columns.map(column => csvCell(column.key==='rental_period'?`Bắt đầu: ${formatValue(row.start_date,'datetime')} / Dự kiến trả: ${formatValue(row.end_date,'datetime')}`:optionLabel(config, column.key, formatValue(row[column.key], column.format)))).join(','))].join('\r\n');
-    const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' }));
-    const link = document.createElement('a'); link.href = url; link.download = `himoto-${kind}-${source}.csv`; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify(`Đã xuất ${exportRows.length} bản ghi.`);
+  const [exporting, setExporting] = useState(false);
+  async function exportExcel() {
+    if (loading || error || exporting || !resultCount) return;
+    setExporting(true);
+    try {
+      let exportRows = paged ? (await table.exportAll()).rows : filteredRows;
+      if (collectionNotes && columns.some(column => column.key === 'collection_notes')) {
+        const followups = new Map((await loadCollectionFollowups(exportRows.map(row => row.id))).map(row => [row.id, row.followup.notes]));
+        exportRows = exportRows.map(row => ({ ...row, collection_notes: followups.get(row.id) || '' }));
+      }
+      const { downloadFilteredExcel } = await import('@/lib/management/excel-export');
+      await downloadFilteredExcel(columns.map(column => column.label), exportRows.map(row => columns.map(column => column.key === 'rental_period'
+        ? 'Bắt đầu: ' + formatValue(row.start_date, 'datetime') + ' / Dự kiến trả: ' + formatValue(row.end_date, 'datetime')
+        : optionLabel(config, column.key, formatValue(row[column.key], column.format)))), 'himoto-' + kind + '-' + source);
+      notify('Đã xuất ' + exportRows.length + ' bản ghi theo bộ lọc.');
+    } catch (cause) { notify(cause instanceof Error ? cause.message : 'Không xuất được danh sách.'); }
+    finally { setExporting(false); }
   }
   function view(row: ManagementRow) {
     setViewing(row);
@@ -391,7 +398,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           {(canSaveContractDrafts||can('contracts.renew')||canPayContracts)&&<button type="button" className="mg-button" onClick={()=>setBackfillOpen(true)}><Plus size={17}/>Nhập bổ sung giao dịch</button>}
           {canSaveContractDrafts&&<><button type="button" className="mg-button" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}}><Plus size={17}/>Nhập hợp đồng</button></>}
         </div>}
-        <OptionalTools collapsed={compactContracts} label="Thao tác khác"><div className="mg-heading-actions">{kind !== 'contracts' && kind !== 'vehicles' && <ResponsiveDataActions>{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}<button type="button" className="mg-button" onClick={exportCsv} disabled={loading || Boolean(error) || !filteredRows.length}><ArrowDownToLine size={17} />Xuất CSV</button>
+        <button type="button" className="mg-button" onClick={() => void exportExcel()} disabled={loading || Boolean(error) || !resultCount || exporting}><ArrowDownToLine size={17} />{exporting ? 'Đang xuất…' : 'Tải Excel theo bộ lọc'}</button>
+        <OptionalTools collapsed={compactContracts} label="Thao tác khác"><div className="mg-heading-actions">{kind !== 'contracts' && kind !== 'vehicles' && <ResponsiveDataActions>{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}
           {kind === 'customers' && can('settings.write') && <CustomerExcelActions disabled={loading || Boolean(error) || !dataset} />}
           </ResponsiveDataActions>}
           {kind === 'vehicles' && <><div className="mg-vehicle-flow-actions">{source==='api'&&can('vehicles.read')&&<button type="button" className="mg-button" onClick={()=>setInventoryOpen(true)}>Kho xe toàn hệ thống</button>}<Link href="/vehicles/transfers" className="mg-button"><ArrowLeftRight size={16}/>Lịch sử luân chuyển</Link>
