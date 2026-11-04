@@ -77,20 +77,22 @@ export function notificationPaymentAmounts(rows:{method:string;value:unknown;pay
   return [...totals].sort(([a],[b])=>rank(a)-rank(b)||a.localeCompare(b,'vi')).map(([method,amount])=>({method,amount}));
 }
 const amountLine=(label:string,amounts?:PaymentAmount[])=>amounts?.length?[`${label}: ${amounts.map(row=>`${row.method}: ${money(row.amount)} đ`).join(' · ')}`]:[];
-/** Cuối mọi tin Telegram: NV xuất tin, rồi Thời gian là dòng cuối cùng. */
-function withTelegramFooter(body:string,actor:string,at:string){
+/** Cuối mọi tin Telegram: NV xuất tin, rồi Thời gian là dòng cuối cùng.
+ * `sentAt` is the moment the worker actually delivers the message; without it the
+ * payload keeps the time the notification was built. */
+function withTelegramFooter(body:string,actor:string,at:string,sentAt?:string|null){
   const sender=`Nhân viên xuất tin Telegram: ${actor?.trim()||'Chưa ghi nhận'}`;
-  const time=`Thời gian: ${telegramClock(at)}`;
+  const time=`Thời gian: ${telegramClock(sentAt||at)}`;
   const rows=body.replace(/\n+$/,'').split('\n').filter(row=>!/^Nhân viên xuất tin Telegram:/.test(row)&&!/^Thời gian:/.test(row));
   return [...rows,sender,time].join('\n').slice(0,4000);
 }
-export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive'|'battery_return'|'battery_renewal',p:NotificationPayload) {
+export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive'|'battery_return'|'battery_renewal',p:NotificationPayload,sentAt?:string|null) {
   if(kind==='battery_return')return withTelegramFooter([`Khách trả pin / sạc: ${p.customer}`,`Pin / sạc: ${p.vehicle_names||'—'}`,`Mã HĐ: ${p.code}`,`Cơ sở: ${p.store}`,
     `Nhận lại lúc: ${p.return_details?.returned_at?.[0]?telegramClock(p.return_details.returned_at[0]):telegramClock(p.at)}`,`Cọc: ${money(p.deposit)}`,
-    ...(Number(p.total)>0?[`Nợ gia hạn còn: ${money(p.total)}`]:[]),...(p.return_details?.note?[`Ghi chú: ${p.return_details.note}`]:[])].join('\n'),p.actor,p.at);
+    ...(Number(p.total)>0?[`Nợ gia hạn còn: ${money(p.total)}`]:[]),...(p.return_details?.note?[`Ghi chú: ${p.return_details.note}`]:[])].join('\n'),p.actor,p.at,sentAt);
   if(kind==='vehicle_swap')return withTelegramFooter([`Khách đổi xe: ${p.customer}`,`Xe cũ: ${p.vehicle_swap?.from_license||'—'} · ${p.vehicle_swap?.from_name||'—'}`,
-    `Xe mới: ${p.vehicle_swap?.to_license||'—'} · ${p.vehicle_swap?.to_name||'—'}`,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`].join('\n'),p.actor,p.at);
-  if(kind==='vehicle_transfer'||kind==='vehicle_receive')return withTelegramFooter([`${kind==='vehicle_receive'?'ĐÃ NHẬN XE':'ĐIỀU CHUYỂN XE'}${p.transfer?.ownership===false?'':' SỞ HỮU'}`,`Bsx: ${p.vehicles}`,`Loại xe: ${p.vehicle_names||'—'}`,`Cơ sở chuyển đi: ${p.transfer?.from||'—'}`,`Cơ sở nhận: ${p.transfer?.to||'—'}`,`Trạng thái: ${kind==='vehicle_receive'?'Đã nhận · Lưu kho':'Chờ cơ sở đích xác nhận nhận xe'}`,`Người thực hiện: ${p.actor}`,`Mã lượt: ${p.code}`,...(p.transfer?.note?[`Ghi chú: ${p.transfer.note}`]:[])].join('\n'),p.actor,p.at);
+    `Xe mới: ${p.vehicle_swap?.to_license||'—'} · ${p.vehicle_swap?.to_name||'—'}`,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`].join('\n'),p.actor,p.at,sentAt);
+  if(kind==='vehicle_transfer'||kind==='vehicle_receive')return withTelegramFooter([`${kind==='vehicle_receive'?'ĐÃ NHẬN XE':'ĐIỀU CHUYỂN XE'}${p.transfer?.ownership===false?'':' SỞ HỮU'}`,`Bsx: ${p.vehicles}`,`Loại xe: ${p.vehicle_names||'—'}`,`Cơ sở chuyển đi: ${p.transfer?.from||'—'}`,`Cơ sở nhận: ${p.transfer?.to||'—'}`,`Trạng thái: ${kind==='vehicle_receive'?'Đã nhận · Lưu kho':'Chờ cơ sở đích xác nhận nhận xe'}`,`Người thực hiện: ${p.actor}`,`Mã lượt: ${p.code}`,...(p.transfer?.note?[`Ghi chú: ${p.transfer.note}`]:[])].join('\n'),p.actor,p.at,sentAt);
   const method=p.method||'Chưa ghi nhận thanh toán';
   const vehicle=[`Bsx: ${p.renewal?.license||p.vehicles||'—'}`,`Loại xe: ${p.renewal?.vehicle_name||p.vehicle_names||'—'}`];
   const refundedAmount=Number(p.refunded||0);
@@ -132,10 +134,10 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
   if(kind==='return')return withTelegramFooter([...lines,...(p.return_details?[`Giờ trả: ${p.return_details.returned_at.map(at=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})).join(' · ')}`,
     ...(p.refund_recipient&&[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].some(Boolean)?[`Nhận hoàn cọc: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
     ...(p.return_details.rental_refund_recipient?[`Nhận hoàn tiền thuê: ${[p.return_details.rental_refund_recipient.bank,p.return_details.rental_refund_recipient.account,p.return_details.rental_refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
-    ...(p.return_details.note?[`Ghi chú: ${p.return_details.note}`]:[])]:[]),`HĐ: ${p.code}`].join('\n'),p.actor,p.at);
+    ...(p.return_details.note?[`Ghi chú: ${p.return_details.note}`]:[])]:[]),`HĐ: ${p.code}`].join('\n'),p.actor,p.at,sentAt);
   // Mọi loại tin (thuê / cọc giữ / nhận xe / gia hạn / đổi pin…): cuối = NV xuất tin, rồi Thời gian.
   return withTelegramFooter([...lines,`Cơ sở: ${p.store}`,`Hợp đồng: ${p.code}`,`Nhân viên làm hợp đồng: ${p.contract_staff||'Chưa ghi nhận'}`,
-    ...(!['rental','reservation'].includes(kind)?[`Người thực hiện: ${p.actor}`]:[])].join('\n'),p.actor,p.at);
+    ...(!['rental','reservation'].includes(kind)?[`Người thực hiện: ${p.actor}`]:[])].join('\n'),p.actor,p.at,sentAt);
 }
 export function notificationHash(kind:ContractEventType,p:NotificationPayload) {
   // Delivery timestamps and the operator clicking Send do not make identical content a new message.

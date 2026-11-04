@@ -17,6 +17,10 @@ module.exports=async function checkContractTelegram(db,c,schema,notices){
   const renewed=content.contractNotificationText('renewal',{...fixture,customer:'Đoàn Văn Dũng',renewal});
   for(const line of ['Khách gia hạn: Đoàn Văn Dũng','Loại xe: Wave','Bsx: 20H1.573.02','01/11/2026 10:00 - 01/12/2026 10:00','Phí gia hạn: 1.500.000 đ'])assert(renewed.includes(line),line);
   assert(renewed.includes('(30 ngày)'));
+  // The footer clock must be the actual delivery moment, never the transaction date.
+  const delivered=content.contractNotificationText('renewal',{...fixture,renewal,at:'2026-10-27T00:00:00+07:00'},'2026-10-27T08:59:00+07:00');
+  assert(delivered.endsWith(`Thời gian: ${new Date('2026-10-27T08:59:00+07:00').toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}`),delivered);
+  assert(!delivered.includes('Thời gian: 00:00:00 27/10/2026'),'Renewal footer must not fall back to the receipt day');
   assert.equal(content.notificationHash('rental',fixture),content.notificationHash('rental',Object.fromEntries(Object.entries({...fixture,at:new Date().toISOString(),actor:'Other sender'}).reverse())));
   await c.query(`UPDATE ${schema}.orders SET total='200000',total_rental_fees=200000,first_deposit_amount=1000000,rent_at='2026-11-01T10:00:00+07:00',return_at='2026-11-02T10:00:00+07:00',draft_payload=$1 WHERE id=1`,[JSON.stringify({management_composer:{finalized:{contract_number:'HD-QA-1'},draft:{staff_name:'Named QA employee'},versions:[{...renewal,kind:'renewal'}]}})]);
   await c.query(`INSERT INTO ${schema}.transactions(id,order_id,name,type,value,status,user_id,store_id,cash_id,bank_id,payment_method,bank_owner_type,note) VALUES

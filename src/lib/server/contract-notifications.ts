@@ -84,7 +84,8 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
         [row.id,JSON.stringify({chat_id:row.chat_id,thread_id:row.thread_id||null,bot_id:telegramBotIdentity(token),started_at:new Date().toISOString()})]);
       const photos=await hydrateNotificationPhotos(database,row.order_id==null?null:Number(row.order_id),payload.photos||[]);
       if(row.error_code==='DELIVERY_IN_FLIGHT'||ids.some(id=>!Number.isSafeInteger(id)||id<=0)||ids.length>photos.length||ids.length&&row.error_code!=='DELIVERY_CONTINUE')throw new TelegramDeliveryError('SEND_UNCERTAIN');
-      const text=contractNotificationText(row.event_type,payload);
+      // The footer clock is when this message is delivered, not when the row was queued.
+      const text=contractNotificationText(row.event_type,payload,new Date().toISOString());
       const upload=Array.isArray(row.delivery_review)&&row.delivery_review.some((review: {outcome?:string}) => ['media_upload_fallback','resume_remaining'].includes(review.outcome||''));
       const sendBatch=async(batch:Media[])=>{
         const video=batch.length===1&&batch[0].type==='video/mp4';

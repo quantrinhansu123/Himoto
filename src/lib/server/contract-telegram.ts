@@ -98,7 +98,6 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     }
     // A template update must not reopen an already delivered transaction.
     if(delivered&&event.kind==='renewal'&&!delivered.payload?.ownership_renewal_note)delete payload.ownership_renewal_note;
-    if(event.kind==='renewal'&&payload.renewal?.created_at)payload.at=payload.renewal.created_at;
     payloads.set(event.key,payload);
     const hash=notificationHash(event.kind,payload);
     const same=related.find(n=>n.retraction?.state!=='done'&&notificationContentMatches(n.event_type,payload,n.payload,n.content_hash)&& !['manual','awaiting_config','failed','unknown'].includes(n.status));
@@ -111,14 +110,14 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`+(event.kind==='renewal'&&payload.renewal?` · ${new Date(payload.renewal.before_return_at||payload.renewal.return_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} – ${new Date(payload.renewal.return_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · ${payload.renewal.amount.toLocaleString('vi-VN')} đ`:'')+(cancelledReceipts?' · Phiếu thu đã hủy':''),phases:event.phases,
       destination_label:contractTelegramDestination(event.kind,o.ownership===true,o.store_name),
       ...(event.kind==='renewal'?{renewal_receipt_ids:matchingReceipts.map(row=>Number(row.transaction_id)),renewal_receipts_cancelled:cancelledReceipts}:{}),
-      text:contractNotificationText(event.kind,payload),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.retraction?.state==='done'?'retracted':latest?.retraction?.state==='failed'?'retraction_failed':latest?.retraction?'retracting':latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
+      text:contractNotificationText(event.kind,payload,latest?.sent_at?new Date(latest.sent_at).toISOString():undefined),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.retraction?.state==='done'?'retracted':latest?.retraction?.state==='failed'?'retraction_failed':latest?.retraction?'retracting':latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
       attachments:payload.photos.map(photo=>({slot:photo.slot,mime_type:photo.mime_type,label:contractPhotoLabel(photo.slot)})),
       can_send:!['draft','cancelled'].includes(o.order_status)&&!cancelledReceipts&&canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
       delivery_contract_code:latest?.payload?.code,
       can_resume:!cancelledReceipts&&canSendContractEvent(user,event.kind)&&Boolean(latest&&canResumeNotice(latest)),
       delivery_attachment_count:latest?.payload?.photos?.length||0,
       delivery_error_description:telegramErrorDescription(failure?.description),
-      deliveries:related.filter(n=>n.message_ids?.length).map(n=>({id:n.id,sent_at:n.sent_at?new Date(n.sent_at).toISOString():null,message_count:n.message_ids.length,text:contractNotificationText(n.event_type,n.payload),
+      deliveries:related.filter(n=>n.message_ids?.length).map(n=>({id:n.id,sent_at:n.sent_at?new Date(n.sent_at).toISOString():null,message_count:n.message_ids.length,text:contractNotificationText(n.event_type,n.payload,n.sent_at?new Date(n.sent_at).toISOString():null),
         ...retractionEligibility(n,user),retraction_state:n.retraction?.state||null,retraction_reason:n.retraction?.reason,retracted_at:n.retraction?.state==='done'?n.retraction.finished_at:undefined,
         ...(n.retraction?.state==='failed'?{blocked_reason:retractionErrorText(n.retraction.error)}:{})})),
       can_retry_confirmed_absent:!cancelledReceipts&&canSendContractEvent(user,event.kind)&&latest?.status==='unknown'&&!latest?.message_ids?.length});
