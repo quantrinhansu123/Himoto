@@ -23,6 +23,7 @@ import { contractHandoverBlockReason, contractRenewBlockReason, contractReturnBl
 import type { OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
 import { canCancelVehicleTransfer } from '@/lib/management/vehicle-history';
+import { VehicleThumbnail } from './VehicleThumbnail';
 
 export function Cell({ row, column, config }: { row: ManagementRow; column: ManagementColumn; config: ManagementConfig }) {
   const value = row[column.key];
@@ -51,7 +52,8 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
   if((config.kind==='contracts'||config.kind==='vehicles')&&column.key==='license')return <div className="mg-plate-cell"><span className="mg-cell-value" title={String(value||'')}>{value||'—'}</span><VehicleOwnerBranch row={row}/></div>;
   if (column.format === 'person' || column.format === 'vehicle') {
     const holder=config.kind==='vehicles'&&column.key==='name'?vehicleHolderLabel(row.status,row.holder_name):'';
-    return <div className={`mg-identity ${column.format === 'vehicle' ? 'mg-identity-vehicle' : ''}`}>
+     return <div className={`mg-identity ${column.format === 'vehicle' ? 'mg-identity-vehicle' : ''}`}>
+     {config.kind === 'vehicles' && column.key === 'name' && <VehicleThumbnail id={row.id} />}
     {column.format === 'person' && <span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{String(value || '').split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span>}
     <div>
       <strong title={String(value || '')}>{value || '—'}</strong>

@@ -1039,6 +1039,10 @@
   overflow-wrap: anywhere;
 }
 .mg-identity-vehicle strong { max-width: 210px; }
+.mg-vehicle-thumb { width:48px; height:38px; flex:0 0 48px; overflow:hidden; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--mg-border,#e3e7eb); border-radius:6px; background:var(--mg-slate-50,#f8fafc); }
+.mg-vehicle-thumb img { width:100%; height:100%; object-fit:cover; }
+.mg-vehicle-thumb-mobile { position:absolute; right:12px; top:10px; width:56px; height:44px; }
+.mg-mobile-card-main:has(.mg-vehicle-thumb-mobile) { position:relative; padding-right:76px; }
 
 .mg-avatar {
   width: 30px;

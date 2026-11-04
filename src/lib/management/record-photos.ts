@@ -5,6 +5,7 @@ export { MAX_VIDEO_BYTES } from './video-media';
 export type MediaUploadReceipt = CloudUploadReceipt | BrowserVideoReceipt;
 export type PhotoEntity = 'customers' | 'contracts' | 'vehicles';
 export const VEHICLE_DOCUMENT_SLOTS = [
+  { key: 'vehicle-photo', label: 'Ảnh xe' },
   { key: 'registration-front', label: 'Đăng ký xe mặt trước' },
   { key: 'registration-back', label: 'Đăng ký xe mặt sau' },
   { key: 'purchase-document-1', label: 'Giấy mua bán trang 1' },
