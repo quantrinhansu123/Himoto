@@ -27,6 +27,7 @@ const SECTIONS = [
 ] as const;
 type VehicleSection = (typeof SECTIONS)[number]['id'];
 const ACTION_TONE: Record<VehicleEventAction, string> = { rent: 'blue', return: 'green', transfer: 'amber', repair: 'red', status: 'gray', swap: 'amber', note: 'gray', create: 'green', edit:'gray' };
+const RENTAL_STATUS_LABEL: Record<string, string> = { draft:'Bản nháp', renting:'Đang thuê', overdue:'Quá hạn', wait_payment:'Chờ thanh toán', pending:'Chờ xử lý', deposit_contract:'Hợp đồng cọc', bad_debt:'Nợ xấu' };
 
 export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction }: { row: ManagementRow; config: ManagementConfig; canEdit: boolean; onEdit: () => void; onClose: () => void; onAction: (mode: VehicleActionMode) => void }) {
   const { source,can,accessUser } = useManagement();
@@ -93,6 +94,14 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
       })()}
       {panel('details', <>
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
+        {can('contracts.read')&&<section className="mg-vehicle-related-contracts" aria-label="Hợp đồng liên quan">
+          <h3>Hợp đồng liên quan ({openRentals.length})</h3>
+          {openRentals.length ? <ul>{openRentals.map(item=><li key={item.order_id}>
+            <Link href={`/contracts?contract_id=${item.order_id}`} onClick={onClose}><strong>{item.code}</strong></Link>
+            <span>{item.customer||'Chưa có tên khách'} · {RENTAL_STATUS_LABEL[String(item.status||'').toLowerCase()]||item.status}</span>
+            {(item.rent_at||item.return_at)&&<small>{item.rent_at?formatValue(item.rent_at,'date'):'—'} – {item.return_at?formatValue(item.return_at,'date'):'—'}</small>}
+          </li>)}</ul> : <p>Xe chưa có hợp đồng liên quan đang mở.</p>}
+        </section>}
         {row.location_status && <span className={`mg-status mg-status-${statusTone(String(row.location_status))}`}><span />{optionLabel(config, 'location_status', String(row.location_status))}</span>}
         {row.gps_last_sync&&<p>Đồng bộ GPS: {formatDateTime(String(row.gps_last_sync))} · {row.gps_provider}</p>}
         <GpsEvidence syncedAt={String(row.gps_last_sync||'')} heartbeatAt={String(row.gps_heartbeat_at||'')} positionAt={String(row.gps_position_at||'')}/>

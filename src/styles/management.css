@@ -1043,6 +1043,13 @@
 .mg-vehicle-thumb img { width:100%; height:100%; object-fit:cover; }
 .mg-vehicle-thumb-mobile { position:absolute; right:12px; top:10px; width:56px; height:44px; }
 .mg-mobile-card-main:has(.mg-vehicle-thumb-mobile) { position:relative; padding-right:76px; }
+.mg-vehicle-related-contracts { margin:16px 0; padding:14px; border:1px solid var(--mg-border,#e3e7eb); border-radius:9px; }
+.mg-vehicle-related-contracts h3 { margin:0 0 10px; font-size:14px; }
+.mg-vehicle-related-contracts ul { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+.mg-vehicle-related-contracts li { display:flex; flex-wrap:wrap; align-items:center; gap:5px 10px; padding:8px 0; border-bottom:1px solid var(--mg-border,#e3e7eb); }
+.mg-vehicle-related-contracts li:last-child { border-bottom:0; }
+.mg-vehicle-related-contracts li a { color:var(--mg-brand-700,#b91c1c); }
+.mg-vehicle-related-contracts li small { width:100%; color:var(--mg-slate-500,#64748b); }
 
 .mg-avatar {
   width: 30px;

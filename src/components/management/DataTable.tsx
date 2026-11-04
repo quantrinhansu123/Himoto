@@ -1,7 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, BatteryCharging, Bike, CalendarPlus, Copy, Eye, FileSearch, FileText, LoaderCircle, MessageCircle, Pencil, Printer, RefreshCw, RotateCcw, ShieldBan, ShieldCheck, Trash2, TriangleAlert, Wallet } from 'lucide-react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, ArrowUpDown, BatteryCharging, Bike, CalendarPlus, Copy, Eye, FileSearch, LoaderCircle, MessageCircle, Pencil, Printer, RefreshCw, RotateCcw, ShieldBan, ShieldCheck, Trash2, TriangleAlert, Wallet } from 'lucide-react';
 import { ManagementColumn, ManagementConfig, ManagementRow } from '@/lib/management/types';
 import { optionLabel, statusTone } from '@/lib/management/config';
 import { formatValue } from '@/lib/management/table-utils';
@@ -114,7 +113,6 @@ interface Props {
 
 export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onRenew, onVehicleChange, onBatteryRent, onOwnershipTerms, onApproveContract, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const {can,accessUser}=useManagement();
-  const router=useRouter();
   const blockingError=rows.length?'':error;
   const selectable = Boolean(selectedIds && onSelectionChange);
   const columnCount = columns.length + (selectable ? 3 : 2);
@@ -128,23 +126,6 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if(isContract&&onTelegram&&row.status!=='draft')actions.push({key:'telegram',label:row.status==='cancelled'?'Lịch sử Telegram / Thu hồi tin':'Gửi Telegram',icon:<MessageCircle size={16}/>,onSelect:()=>onTelegram(row)});
     if (config.kind === 'vehicles' && onVehicleAction){
       const rentals=openVehicleRentals(row);
-      const issued=rentals.filter(item=>['renting','overdue','wait_payment','pending','deposit_contract'].includes(String(item.status||'').toLowerCase()));
-      if(can('contracts.read')&&issued.length){
-        const primary=issued[0];
-        actions.push({
-          key:'open-contract',
-          label:issued.length===1?`Mở hợp đồng ${primary.code}`:`Mở hợp đồng (${issued.length})`,
-          title:issued.length===1?`Mở ${primary.code}${primary.customer?` · ${primary.customer}`:''} để xem / sửa / trả xe`:issued.map(item=>item.code).join(', '),
-          icon:<FileText size={16}/>,
-          onSelect:()=>router.push(`/contracts?contract_id=${primary.order_id}`),
-        });
-        if(canEditContract&&issued.length===1){
-          const editBlock=contractIssuedEditBlockReason(accessUser);
-          actions.push(editBlock
-            ?{key:'edit-contract',label:'Sửa hợp đồng',icon:<Pencil size={16}/>,disabled:true,title:editBlock,onSelect:()=>{}}
-            :{key:'edit-contract',label:'Sửa hợp đồng',title:`Sửa hồ sơ ${primary.code}`,icon:<Pencil size={16}/>,onSelect:()=>router.push(`/contracts?contract_id=${primary.order_id}&action=edit`)});
-        }
-      }
       if (can('vehicles.transfer')) {
         const transferBlock = vehicleTransferBlockReason({
           selected: true,
