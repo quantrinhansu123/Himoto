@@ -6,7 +6,7 @@ import { vehicleRevision, writeVehicleAudit } from './vehicle-audit';
 
 type Client = Pick<PoolClient, 'query'>;
 export class VehicleSaveError extends Error { constructor(message: string, public status = 400) { super(message); } }
-export interface VehicleValues { name: string; license: string; brand: string; type: string; year: number; store_id: number; status: string; color: string; chassis: string; engine: string; odometer: number | null; note: string; revision?: string }
+export interface VehicleValues { name: string; license: string; brand: string; type: string; year: number; store_id: number; status: string; color: string; chassis: string; engine: string; odometer: number | null; daily_price?: number | null; cost_price?: number | null; note: string; revision?: string }
 
 const text = (value: unknown, label: string, max: number, required = false) => {
   const result = typeof value === 'string' ? value.trim() : value == null ? '' : null;
@@ -28,7 +28,14 @@ export function parseVehicleValues(body: unknown): VehicleValues {
   if (year === null || Number.isNaN(year) || year < 1980 || year > new Date().getFullYear() + 1) throw new VehicleSaveError('Năm sản xuất không hợp lệ.');
   if (storeId === null || Number.isNaN(storeId) || storeId <= 0) throw new VehicleSaveError('Chọn cơ sở cho xe.');
   if (Number.isNaN(odometer) || (odometer !== null && odometer < 0)) throw new VehicleSaveError('Số km phải là số nguyên không âm.');
-  return { name: text(raw.name, 'Tên xe', 255, true), license: text(raw.license, 'Biển số', 25, true).toUpperCase(), brand: text(raw.brand, 'Hãng xe', 255, true),
+  const prices: { daily_price?: number | null; cost_price?: number | null } = {};
+  for (const [key, label] of [['daily_price', 'Giá thuê'], ['cost_price', 'Giá mua xe']] as const) {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
+    const value = typeof raw[key] === 'string' && !raw[key].trim() ? null : integer(raw[key]);
+    if ((raw[key] != null && typeof raw[key] !== 'string' && typeof raw[key] !== 'number') || Number.isNaN(value) || (value !== null && value < 0)) throw new VehicleSaveError(`${label} phải là số tiền nguyên không âm hợp lệ.`);
+    prices[key] = value;
+  }
+  return { ...prices, name: text(raw.name, 'Tên xe', 255, true), license: text(raw.license, 'Biển số', 25, true).toUpperCase(), brand: text(raw.brand, 'Hãng xe', 255, true),
     type, year, store_id: storeId, status, color: text(raw.color, 'Màu sắc', 255), chassis: text(raw.chassis, 'Số khung', 255), engine: text(raw.engine, 'Số máy', 255), odometer, note: text(raw.note, 'Ghi chú', 500), ...(revision?{revision}:{}) };
 }
 
@@ -53,9 +60,9 @@ export async function createDatabaseVehicle(client: Client, values: VehicleValue
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query('LOCK TABLE himoto.vehicles IN SHARE ROW EXCLUSIVE MODE');
   await checkVehicle(client, values, null);
-  const result = await client.query(`INSERT INTO himoto.vehicles (name, brand, type, year, store_id, current_store_id, license, color, chassis, engine, status, odometer, type_of_service_id, created_by, created_at, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$5,$6,NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,$11,0,$12,now(),now()) RETURNING id`,
-    [values.name, values.brand, values.type, values.year, values.store_id, values.license, values.color, values.chassis, values.engine, values.status, values.odometer, actorId]);
+  const result = await client.query(`INSERT INTO himoto.vehicles (name, brand, type, year, store_id, current_store_id, license, color, chassis, engine, status, odometer, daily_price, cost_price, type_of_service_id, created_by, created_at, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$5,$6,NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,$11,$13,$14,0,$12,now(),now()) RETURNING id`,
+    [values.name, values.brand, values.type, values.year, values.store_id, values.license, values.color, values.chassis, values.engine, values.status, values.odometer, actorId, values.daily_price ?? null, values.cost_price == null ? null : String(values.cost_price)]);
   const id = Number(result.rows[0].id);
   if (values.note) await writeVehicleAudit(client, {vehicleId:id,before:{...values},after:{...values},type:'note',note:values.note,actorId});
   return { id };
@@ -70,8 +77,8 @@ export async function updateDatabaseVehicle(client: Client, id: number, values: 
   if(values.revision&&values.revision!==current.rows[0].revision)throw new VehicleSaveError('Thông tin xe đã thay đổi. Nhấn Làm mới rồi mở lại form chỉnh sửa.',409);
   await checkVehicle(client, values, id, current.rows[0].store_id, String(current.rows[0].status));
   await client.query(`UPDATE himoto.vehicles SET name=$2, brand=$3, type=$4, year=$5, current_store_id=$6, license=$7, color=NULLIF($8,''), chassis=NULLIF($9,''),
-    engine=NULLIF($10,''), status=$11, odometer=$12, updated_at=now() WHERE id=$1`,
-    [id, values.name, values.brand, values.type, values.year, values.store_id, values.license, values.color, values.chassis, values.engine, values.status, values.odometer]);
+    engine=NULLIF($10,''), status=$11, odometer=$12, daily_price=CASE WHEN $13::boolean THEN $14::bigint ELSE daily_price END, cost_price=CASE WHEN $15::boolean THEN $16::varchar ELSE cost_price END, updated_at=now() WHERE id=$1`,
+    [id, values.name, values.brand, values.type, values.year, values.store_id, values.license, values.color, values.chassis, values.engine, values.status, values.odometer, values.daily_price !== undefined, values.daily_price ?? null, values.cost_price !== undefined, values.cost_price == null ? null : String(values.cost_price)]);
   const before=current.rows[0],statusChanged=String(before.status)!==values.status;
   await writeVehicleAudit(client,{vehicleId:id,before,after:{...before,...values},actorId,note:values.note,
     type:statusChanged?'status_change':'vehicle_edit',refType:statusChanged?values.status:null});

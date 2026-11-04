@@ -284,7 +284,7 @@ export function vehiclePageSql(scopeClause:string) {
 }
 function vehicleHydrateSql() {
   return `SELECT v.id, v.name, v.brand, v.type, v.year, v.license, v.odometer,
-    NULL::numeric AS daily_price, NULL::numeric AS monthly_price,
+    v.cost_price, v.daily_price, NULL::numeric AS monthly_price,
     v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, os.store_name AS owner_store_name, v.xmin::text AS vehicle_revision,
     pending_transfer.id AS transfer_event_id,pending_transfer.from_store_id AS transfer_from_store_id,
     pending_transfer.to_store_id AS transfer_to_store_id,pending_transfer.from_store_name AS transfer_from_store_name,
@@ -354,7 +354,7 @@ export function storePageSql(scopeClause:string) {
 function catalogueOrder(input:ManagementTableInput) {
   const columns:Record<string,Record<string,string>>={
     customers:{code:'c.id',name:'c.name',phone:'c.phone',id_card:'c.id_card',address:'c.address',store_name:'s.store_name',contract_count:'oc.contract_count',status:'c.status'},
-    vehicles:{code:'v.id',name:'v.name',license:'v.license',brand:'v.brand',type:'v.type',year:'v.year',color:'v.color',chassis:'v.chassis',engine:'v.engine',odometer:'v.odometer',store_name:'s.store_name',status:'v.status',overdue_days:vehicleOverdueSql(),holder_name:`COALESCE(NULLIF(${vehicleRentalSql('customer')},''),'Lưu kho')`,beneficiary_store_name:`(SELECT bs.store_name FROM himoto.stores bs WHERE bs.id=${vehicleBeneficiarySql()})`,location_status:`(SELECT COALESCE(gps.normalized_status,'none') FROM (SELECT 1) anchor ${VEHICLE_GPS_JOIN_SQL})`},
+    vehicles:{cost_price:"CASE WHEN btrim(v.cost_price::text) ~ '^[0-9]+([.][0-9]+)?$' THEN btrim(v.cost_price::text)::numeric END",code:'v.id',name:'v.name',license:'v.license',brand:'v.brand',type:'v.type',year:'v.year',color:'v.color',chassis:'v.chassis',engine:'v.engine',odometer:'v.odometer',store_name:'s.store_name',status:'v.status',overdue_days:vehicleOverdueSql(),holder_name:`COALESCE(NULLIF(${vehicleRentalSql('customer')},''),'Lưu kho')`,beneficiary_store_name:`(SELECT bs.store_name FROM himoto.stores bs WHERE bs.id=${vehicleBeneficiarySql()})`,location_status:`(SELECT COALESCE(gps.normalized_status,'none') FROM (SELECT 1) anchor ${VEHICLE_GPS_JOIN_SQL})`},
     staff:{code:'p.staff_code',name:'p.full_name',phone:'p.phone',email:'p.email',position:'p.position',store_name:'s.store_name',status:'p.status',hire_date:'p.joined_at'},
     stores:{code:'s.code',name:'s.store_name',phone:'s.store_phone',address:'s.store_address',manager_name:'u.name',vehicle_count:'vc.n',staff_count:'pc.n',status:'s.status'},
   };

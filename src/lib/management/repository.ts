@@ -135,6 +135,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     owner_store_id: number(raw.store_id),
     owner_store_name: text(raw.owner_store_name),
     beneficiary_store_id: number(raw.beneficiary_store_id), beneficiary_store_name: text(raw.beneficiary_store_name),
+    cost_price: number(raw.cost_price),
     odometer: number(raw.odometer), daily_price: number(raw.daily_price), monthly_price: number(raw.monthly_price), year: text(raw.year),
     status: ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[base.status] || base.status,
     location_status: (() => {

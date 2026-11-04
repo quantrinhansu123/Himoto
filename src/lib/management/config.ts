@@ -124,6 +124,7 @@ export const MANAGEMENT_CONFIG: Record<ManagementKind, ManagementConfig> = {
       { key: 'overdue_days', label: 'Số ngày quá hạn', format: 'number', align: 'right' },
       { key: 'color', label: 'Màu sắc' }, { key: 'type', label: 'Loại xe' }, { ...branchColumn, label: 'Kho quản lý' },
 
+      { key: 'cost_price', label: 'Giá trị xe', format: 'money', align: 'right' },
       { key: 'daily_price', label: 'Giá thuê / ngày', format: 'money', align: 'right' },
       { key: 'odometer', label: 'Số km', format: 'number', align: 'right' }, statusColumn,
       { key: 'location_status', label: 'Trạng thái định vị', format: 'status' },

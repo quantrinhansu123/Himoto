@@ -32,7 +32,7 @@ function BackupLink({ id }: { id: string }) {
   return <><button type="button" className="mg-button" disabled={busy} onClick={() => void download()}><ArrowDownToLine size={16} />Tải bản sao lưu trước thay đổi</button>{error && <p className="mg-field-error" role="alert">{error}</p>}</>;
 }
 
-export function VehicleExcelActions({ disabled }: { disabled: boolean }) {
+export function VehicleExcelActions({ disabled, hideImportExport = false }: { disabled: boolean; hideImportExport?: boolean }) {
   const { dataset, notify } = useManagement();
   const [action, setAction] = useState<'import' | 'reset' | ''>('');
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -47,8 +47,8 @@ export function VehicleExcelActions({ disabled }: { disabled: boolean }) {
     finally { busyRef.current = false; setBusy(false); }
   }
   return <>
-    <button type="button" className="mg-button" disabled={disabled || busy} onClick={() => void download()}>{busy ? <LoaderCircle size={17} className="mg-spin" /> : <ArrowDownToLine size={17} />}Tải mẫu Excel</button>
-    <button type="button" className="mg-button" disabled={disabled} onClick={() => setAction('import')}><Upload size={17} />Nhập / Đồng bộ Excel</button>
+    {!hideImportExport && <><button type="button" className="mg-button" disabled={disabled || busy} onClick={() => void download()}>{busy ? <LoaderCircle size={17} className="mg-spin" /> : <ArrowDownToLine size={17} />}Tải mẫu Excel</button>
+    <button type="button" className="mg-button" disabled={disabled} onClick={() => setAction('import')}><Upload size={17} />Nhập / Đồng bộ Excel</button></>}
     <button type="button" className="mg-button mg-button-danger" disabled={disabled || !dataset?.vehicles.length} onClick={() => setAction('reset')}><Trash2 size={17} />Xóa hết</button>
     {error && <span className="mg-field-error" role="alert">{error}</span>}
     {action === 'import' && <VehicleImportDialog stores={stores} onClose={() => setAction('')} />}

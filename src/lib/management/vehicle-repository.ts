@@ -1,6 +1,6 @@
 import { uploadRecordPhoto, type CloudUploadReceipt, type PendingPhotos, type VehicleDocumentSlot } from './record-photos';
 
-export interface VehicleEdits { name: string; license: string; brand: string; type: string; year: string; store_id: string; status: string; color: string; chassis: string; engine: string; odometer: string; note: string }
+export interface VehicleEdits { name: string; license: string; brand: string; type: string; year: string; store_id: string; status: string; color: string; chassis: string; engine: string; odometer: string; daily_price: string; cost_price: string; note: string }
 
 export type VehicleAction = (
   | { action: 'transfer'; to_store_id: string; note: string }

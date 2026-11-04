@@ -16,6 +16,7 @@ const FIELDS: { key: keyof VehicleEdits; label: string; required?: boolean; type
   { key: 'name', label: 'Tên / dòng xe', required: true, max: 255 }, { key: 'license', label: 'Biển số', required: true, max: 25 },
   { key: 'brand', label: 'Hãng xe', required: true, max: 255 }, { key: 'color', label: 'Màu sắc', max: 255 },
   { key: 'year', label: 'Năm sản xuất', required: true, type: 'number' }, { key: 'odometer', label: 'Số km', type: 'number' },
+  { key: 'daily_price', label: 'Giá thuê / ngày (VNĐ)', type: 'number' }, { key: 'cost_price', label: 'Giá mua xe (VNĐ)', type: 'number' },
   { key: 'chassis', label: 'Số khung', max: 255 }, { key: 'engine', label: 'Số máy', max: 255 },
 ];
 
@@ -25,7 +26,7 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
   const value = (key: string) => row?.[key] == null ? '' : String(row[key]);
   const [draft, setDraft] = useState<VehicleEdits>({ name: value('name'), license: value('license'), brand: value('brand') || 'honda', color: value('color'),
     type: value('type') || VEHICLE_TYPES[0].value, year: value('year'), store_id: value('store_id') || (selectedStore !== 'all' ? selectedStore : ''),
-    status: value('status') || 'ready', chassis: value('chassis'), engine: value('engine'), odometer: value('odometer'), note: '' });
+    status: value('status') || 'ready', chassis: value('chassis'), engine: value('engine'), odometer: value('odometer'), daily_price: value('daily_price'), cost_price: value('cost_price'), note: '' });
   const initialDraft = useRef(draft);
   const [photos, setPhotos] = useState<PendingPhotos>({});
   const [removed, setRemoved] = useState<VehicleDocumentSlot[]>([]);
@@ -71,6 +72,9 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
     const year = Number(draft.year);
     if (draft.year.trim() && (!Number.isInteger(year) || year < 1980 || year > new Date().getFullYear() + 1)) next.year = 'Năm sản xuất không hợp lệ.';
     if (draft.odometer.trim() && (!Number.isInteger(Number(draft.odometer)) || Number(draft.odometer) < 0)) next.odometer = 'Nhập một số nguyên không âm.';
+    for (const key of ['daily_price', 'cost_price'] as const) {
+      if (draft[key].trim() && (!Number.isSafeInteger(Number(draft[key])) || Number(draft[key]) < 0)) next[key] = 'Nhập số tiền nguyên không âm hợp lệ.';
+    }
     if (!draft.store_id) next.store_id = 'Chọn cơ sở cho xe.';
     const license = draft.license.trim().toUpperCase();
     if (license && dataset?.vehicles.some(vehicle => vehicle.id !== row?.id && String(vehicle.license).trim().toUpperCase() === license)) next.license = 'Biển số này đã có trong danh sách.';

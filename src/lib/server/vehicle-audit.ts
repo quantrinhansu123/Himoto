@@ -7,7 +7,7 @@ type RecordValues = Record<string, unknown>;
 const FIELDS = [
   ['name', 'Tên / dòng xe'], ['license', 'Biển số'], ['brand', 'Hãng xe'], ['type', 'Loại xe'],
   ['year', 'Năm sản xuất'], ['color', 'Màu sắc'], ['chassis', 'Số khung'], ['engine', 'Số máy'],
-  ['odometer', 'Số km'], ['store_id', 'Cơ sở hiện tại'], ['status', 'Trạng thái'],
+  ['odometer', 'Số km'], ['daily_price', 'Giá thuê / ngày'], ['cost_price', 'Giá mua xe'], ['store_id', 'Cơ sở hiện tại'], ['status', 'Trạng thái'],
   ['beneficiary_store_id', 'Cơ sở sử dụng xe'],
 ] as const;
 const text = (value: unknown) => value == null ? '' : String(value);

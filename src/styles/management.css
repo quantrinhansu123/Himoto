@@ -4605,15 +4605,28 @@
 
 /* Vehicle list header: align the summary and keep each action group together. */
 @media (min-width: 768px) {
-  .mg-page-vehicles .mg-page-heading { align-items: flex-start; gap: 14px 24px; margin-bottom: 18px; }
-  .mg-page-vehicles .mg-page-heading > div:first-child { flex: 1 1 100%; min-width: 0; }
-  .mg-page-vehicles .mg-record-total { margin-top: 10px; padding: 9px 14px; min-width: 216px; }
-  .mg-page-vehicles .mg-heading-actions { flex: 1 1 100%; display: flex; align-items: center; gap: 10px; padding-top: 2px; }
-  .mg-page-vehicles .mg-heading-actions > .mg-data-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
-  .mg-page-vehicles .mg-data-actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
-  .mg-page-vehicles .mg-vehicle-flow-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  .mg-page-vehicles .mg-heading-actions > .mg-page-add { margin-left: auto; }
-  .mg-page-vehicles .mg-page-heading p { max-width: 760px; line-height: 1.5; }
+  .mg-page-vehicles .mg-page-heading { display: grid; grid-template-columns: 216px minmax(0, 1fr); align-items: stretch; gap: 8px 16px; margin-bottom: 18px; }
+  .mg-page-vehicles .mg-page-heading > div:first-child { display: contents; }
+  .mg-page-vehicles .mg-page-heading .mg-eyebrow,
+  .mg-page-vehicles .mg-page-heading h1 { grid-column: 1 / -1; margin-bottom: 0; }
+  .mg-page-vehicles .mg-record-total { grid-column: 1; grid-row: 3; margin-top: 2px; padding: 9px 14px; min-width: 0; }
+  .mg-page-vehicles .mg-page-heading > .mg-controls-inline { display: block; grid-column: 2; grid-row: 3; min-width: 0; }
+  .mg-page-vehicles .mg-heading-actions { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 10px 8px; width: 100%; padding-top: 2px; }
+  .mg-page-vehicles .mg-heading-actions > .mg-data-actions { display: block; grid-column: 1 / -1; min-width: 0; }
+  .mg-page-vehicles .mg-data-actions > div { display: flex; flex-wrap: nowrap; gap: 8px; }
+  .mg-page-vehicles .mg-data-actions > div > .mg-button { flex: 1 1 auto; }
+  .mg-page-vehicles .mg-vehicle-flow-actions { display: contents; }
+  .mg-page-vehicles .mg-heading-actions .mg-button { min-width: 0; height: auto; min-height: 36px; padding: 8px 10px; justify-content: center; white-space: normal; text-align: center; line-height: 1.4; }
+  .mg-page-vehicles .mg-heading-actions .mg-button svg { flex-shrink: 0; }
+  .mg-page-vehicles .mg-heading-actions > .mg-page-add { margin-left: 0; }
+  .mg-page-vehicles .mg-page-heading p { grid-column: 1 / -1; grid-row: 4; margin: 0; max-width: 760px; line-height: 1.5; }
+  .mg-page-vehicles .mg-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: center; }
+  .mg-page-vehicles .mg-toolbar > .mg-search { grid-column: 1; grid-row: 1; width: 100%; min-width: 0; max-width: none; }
+  .mg-page-vehicles .mg-toolbar .mg-overdue-filters { grid-column: 2; grid-row: 1; flex-basis: auto; margin: 0; padding: 0; border: 0; background: transparent; flex-wrap: nowrap; }
+  .mg-page-vehicles .mg-toolbar .mg-list-filters { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; width: 100%; gap: 8px; }
+  .mg-page-vehicles .mg-list-filters > label { max-width: none; min-width: 0; }
+  .mg-page-vehicles .mg-list-filters > .mg-filter-icon { display: none; }
+  .mg-page-vehicles .mg-overdue-filters .mg-active-filter { display: none; }
 }
 
 .mg-contract-history-toolbar > div { flex-wrap: nowrap; align-items: center; overflow-x: auto; padding-bottom: 2px; }
