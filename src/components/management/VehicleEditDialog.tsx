@@ -19,6 +19,14 @@ const FIELDS: { key: keyof VehicleEdits; label: string; required?: boolean; type
   { key: 'daily_price', label: 'Giá thuê / ngày (VNĐ)', type: 'number' }, { key: 'cost_price', label: 'Giá mua xe (VNĐ)', type: 'number' },
   { key: 'chassis', label: 'Số khung', max: 255 }, { key: 'engine', label: 'Số máy', max: 255 },
 ];
+/** Amount inputs keep digits only in state and show "1.234.567" while typing. */
+const MONEY_FIELDS = new Set<keyof VehicleEdits>(['daily_price', 'cost_price']);
+const groupThousands = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const displayValue = (key: keyof VehicleEdits, value: string) => {
+  if (!MONEY_FIELDS.has(key) || !value.trim()) return value;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? groupThousands(String(Math.trunc(amount))) : value;
+};
 
 export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null; onClose: () => void }) {
   const { dataset, selectedStore, ensureData, notify } = useManagement();
@@ -108,7 +116,7 @@ export function VehicleEditDialog({ row, onClose }: { row: ManagementRow | null;
         {statusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
         {rented ? <small id="vehicle-status-hint">Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng để đổi trạng thái.</small> : <small>Đã giao xe nhưng chưa nhập hợp đồng: chọn Đang thuê để khớp kho. Sau đó nhập hợp đồng trực tiếp, giữ nguyên cơ sở xe.</small>}</div>
       {FIELDS.slice(4).map(field => <div key={field.key} className="mg-field"><label htmlFor={`vehicle-${field.key}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
-        <input id={`vehicle-${field.key}`} type={field.type || 'text'} min={field.type ? 0 : undefined} step={field.type ? 1 : undefined} value={draft[field.key]} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, event.target.value)} />{fieldError(field.key)}</div>)}
+        <input id={`vehicle-${field.key}`} type={MONEY_FIELDS.has(field.key) ? 'text' : field.type || 'text'} inputMode={MONEY_FIELDS.has(field.key) ? 'numeric' : undefined} min={field.type && !MONEY_FIELDS.has(field.key) ? 0 : undefined} step={field.type && !MONEY_FIELDS.has(field.key) ? 1 : undefined} value={displayValue(field.key, draft[field.key])} maxLength={field.max} disabled={saving} aria-invalid={Boolean(errors[field.key])} aria-describedby={describedBy(field.key)} onChange={event => change(field.key, MONEY_FIELDS.has(field.key) ? event.target.value.replace(/\D/g, '') : event.target.value)} />{fieldError(field.key)}</div>)}
       <div className="mg-field mg-field-wide"><label htmlFor="vehicle-note">Ghi chú</label>
         <textarea id="vehicle-note" value={draft.note} maxLength={500} disabled={saving} placeholder="VD: đưa xe đi sửa phanh, chuyển xe sang cơ sở khác…" onChange={event => change('note', event.target.value)} />
         <small>Mọi trường thay đổi được ghi giá trị cũ → mới trong tab Lịch sử, cùng ngày giờ và người thao tác.</small></div>
