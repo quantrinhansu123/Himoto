@@ -34,6 +34,21 @@ async function main() {
   assert.deepEqual(shared.overdueParts('2026-02-01T10:00:00Z', now), { minutes: 0, days: 0, hours: 0 });
   checks.push('strict renewal input (ids, revisions, Vietnam date, integer VNĐ, allowlisted fields); overdue days/hours split');
 
+  // Stop at revision validation to exercise date bounds without business writes.
+  const rental = { rent_at: '2026-01-01T10:00:00+07:00', completed_at: null, order_status: 'overdue', order_revision: 'changed', item_revision: '1' };
+  const dateDb = { query: async sql => {
+    if (sql.startsWith('SET LOCAL')) return { rows: [] };
+    if (sql.includes('FOR UPDATE OF d,o')) return { rows: [rental] };
+    throw new Error('Unexpected write or query in date-bound test');
+  } };
+  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2026-01-21T09:00' }), error => error.status === 409 && /vừa được cập nhật/.test(error.message));
+  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2025-12-31T09:00' }), error => error.status === 400);
+  rental.completed_at = '2026-01-22T10:00:00+07:00';
+  rental.order_status = 'completed';
+  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2026-01-21T09:00' }), error => error.status === 409 && /vừa được cập nhật/.test(error.message));
+  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2026-01-23T09:00' }), error => error.status === 400);
+  checks.push('Late renewal transaction may follow its scheduled return, while actual rental start/completion bounds remain enforced (no business writes)');
+
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });
     const c = await load(path.join(root, 'lib/server/himoto-database')).himotoPool.connect();

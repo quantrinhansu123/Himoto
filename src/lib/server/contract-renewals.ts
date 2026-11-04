@@ -72,8 +72,10 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   if (item.draft_payload?.management_composer?.installment_plan) throw new ContractRenewalError('Thuê sở hữu đóng tiền theo lịch đã lập. Không cộng kỳ đóng tiền thành phí gia hạn.', 409);
   const historical=Boolean(item.completed_at&&input.occurred_at);
   if (!RENEWAL_STATUSES.includes(String(item.order_status))&&!(historical&&['completed','wait_payment','bad_debt'].includes(String(item.order_status)))) throw new ContractRenewalError('Chỉ gia hạn hợp đồng đang thuê hoặc nhập bổ sung đúng lịch sử của xe đã trả.', 409);
+  // Recording a late renewal can happen after its new scheduled return date.
+  // Validate the transaction against actual rental bounds, separately from the extension.
   const occurred=input.occurred_at?`${input.occurred_at}:00+07:00`:undefined;
-  if(occurred&&(!validBackfillTime(input.occurred_at!)||(item.rent_at&&new Date(occurred).getTime()<new Date(item.rent_at).getTime())||(item.completed_at&&new Date(occurred).getTime()>new Date(item.completed_at).getTime())||new Date(occurred).getTime()>new Date(`${input.return_at}:00+07:00`).getTime()))throw new ContractRenewalError('Ngày gia hạn thực tế phải nằm trong lượt thuê và trước hẹn trả mới.');
+  if(occurred&&(!validBackfillTime(input.occurred_at!)||(item.rent_at&&new Date(occurred).getTime()<new Date(item.rent_at).getTime())||(item.completed_at&&new Date(occurred).getTime()>new Date(item.completed_at).getTime())))throw new ContractRenewalError('Ngày gia hạn thực tế phải từ lúc bắt đầu thuê và không sau lúc trả xe thực tế.');
   if (item.order_revision !== input.order_revision || item.item_revision !== input.item_revision) throw new ContractRenewalError('Hợp đồng vừa được cập nhật. Đóng và mở lại Gia hạn để xem số liệu mới.', 409);
   const beforeReturn = iso(item.return_at);
   const newReturn = `${input.return_at}:00+07:00`;
