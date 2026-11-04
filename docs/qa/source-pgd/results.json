@@ -1,0 +1,19 @@
+{
+  "checks": [
+    {
+      "datalist_options": [
+        "TLS",
+        "Nguyễn Hải Đăng _TPKD",
+        "Nguyễn Thị Vui _TPKD"
+      ]
+    },
+    {
+      "typed_value": "Nguyễn Hải Đăng"
+    },
+    {
+      "picked_value": "Nguyễn Hải Đăng _TPKD",
+      "expected": "Nguyễn Hải Đăng _TPKD"
+    }
+  ],
+  "page_errors": []
+}

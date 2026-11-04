@@ -11,7 +11,7 @@ import { requestManagementTable } from '@/lib/management/management-table';
 import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import { ContractDraft, ContractRelative, CustomerDetails, LegacyContractDocument, buildContractDocument, contractStaffStoreId, createContractDraft, customerDetails, emptyVehicle, formatRelatives, normalizeIdCard, pairRelatives, relativesFromRow, staffIsAvailable, staffMatchesStore, validateContractDraft, validateOperationalDraft, validateReservationDraft, vehicleDetails } from '@/lib/management/contract-document';
 import { documentRequirements } from '@/lib/management/contract-requirements';
-import { hasSalesCommissionRole, staffRoles } from '@/lib/management/staff-positions';
+import { hasSalesCommissionRole, normalizeStaffPosition, staffRoles } from '@/lib/management/staff-positions';
 import { canEditIssuedContract,contractProfile,saveContractProfile,saveFullContract } from '@/lib/management/contract-profile';
 import { RentalTermsEditor } from '@/components/management/RentalTermsEditor';
 import { ManagementRow } from '@/lib/management/types';
@@ -641,16 +641,28 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     return salesStaff.filter(item => nameKey(item.name) === nameKey(person.name)).length > 1
       ? `${person.name} · ${person.code}` : String(person.name || '');
   };
+  // Nguồn khách shows the person together with their department (PGD), e.g. "Nguyễn Hải Đăng _PKD 1".
+  const sourceDepartment = (person: ManagementRow) => {
+    const roles = staffRoles(person.position);
+    return roles.find(role => /^PKD\s*\d+$/i.test(role))
+      || roles.find(role => ['TPKD', 'NVKD', 'QL PTKD', 'TLS'].includes(role))
+      || normalizeStaffPosition(person.position);
+  };
+  const sourceOption = (person: ManagementRow) => {
+    const department = sourceDepartment(person);
+    const name = String(person.name || '').trim();
+    return department ? `${name} _${department}` : name;
+  };
   const findSalesStaff = (text: string) => {
     const needle = nameKey(text);
     if (!needle) return undefined;
-    const exact = salesStaff.filter(person => nameKey(salesOption(person)) === needle || nameKey(person.name) === needle);
+    const exact = salesStaff.filter(person => nameKey(salesOption(person)) === needle || nameKey(sourceOption(person)) === needle || nameKey(person.name) === needle);
     if (exact.length === 1) return exact[0];
     if (exact.length > 1) return undefined;
     const partial = salesStaff.filter(person => {
       const name = nameKey(person.name);
       const option = nameKey(salesOption(person));
-      return name.includes(needle) || option.includes(needle) || name.split(/\s+/).includes(needle) || nameKey(person.code).includes(needle);
+      return name.includes(needle) || option.includes(needle) || nameKey(sourceOption(person)).includes(needle) || name.split(/\s+/).includes(needle) || nameKey(person.code).includes(needle);
     });
     return partial.length === 1 ? partial[0] : undefined;
   };
@@ -676,8 +688,11 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     const matched = findSalesStaff(value);
     if (matched) {
       const pureTls = staffRoles(matched.position).includes('TLS') && !hasSalesCommissionRole(matched.position);
+      const label = sourceOption(matched);
       // Nguồn khách for telesale stays the word TLS, not the employee name.
-      change('customer_source', pureTls ? 'TLS' : value);
+      // Keep the full "Tên _Phòng" label only when it was picked from the list,
+      // so manual typing is never rewritten mid-word.
+      change('customer_source', pureTls ? 'TLS' : nameKey(value) === nameKey(label) ? label : value);
       if (salesFollowsSource.current) applyCommissionPick(matched);
       return;
     }
@@ -906,8 +921,8 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
                 {draft.customer_source_url && !customerSourceStores.some(store => store.name === draft.customer_source_url) && <option value={draft.customer_source_url}>{draft.customer_source_url}</option>}
               </select><small>{ownershipApproval || rentalType === 'ownership' || rentalType === 'ownership_cd' ? 'Gồm kho Thuê sở hữu và Trụ sở chính (cùng nguồn khách thuê sở hữu).' : 'Cơ sở ghi nhận doanh thu hợp đồng, gợi ý theo hồ sơ khách.'}</small>{errors.store_id && <p className="mg-field-error">{errors.store_id}</p>}</div>
               <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" maxLength={191} value={draft.customer_source} placeholder="Tự nhập nguồn khách hoặc chọn gợi ý" onChange={event => changeSource(event.target.value)} />
-                <datalist id="contract-source-staff-options"><option value="TLS"/>{sourceStaff.map(person => <option key={person.id} value={person.name}>{person.code}</option>)}</datalist>
-                <small>Nguồn telesale ghi chung TLS. Có thể tự nhập nguồn khác.</small></div>
+                <datalist id="contract-source-staff-options"><option value="TLS"/>{sourceStaff.map(person => <option key={person.id} value={sourceOption(person)}>{person.code}</option>)}</datalist>
+                <small>Nguồn telesale ghi chung TLS. Tên nhân sự kèm phòng (PGD), ví dụ "Nguyễn Hải Đăng _PKD 1". Có thể tự nhập nguồn khác.</small></div>
               <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD / TPKD / TLS ghi nhận doanh số</label>
                 <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(person => staffRoles(person.position).includes('TLS') && !hasSalesCommissionRole(person.position) ? 'TLS' : salesOption(person)).filter((label, index, list) => list.indexOf(label) === index)} placeholder="Gõ tên hoặc chọn NVKD / TPKD / TLS" onChange={changeSales} />
                 <small>NVKD theo cửa hàng; TPKD mọi cơ sở. TLS hiện đúng nhãn TLS. Tự nhập họ tên NVKD nếu chưa có trong danh sách.</small>
