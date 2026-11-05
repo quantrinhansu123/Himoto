@@ -37,7 +37,7 @@ export async function writeMobileDraftDelete(user: SessionUser, value: string, r
   return withMobileDraft(user, '', async client => {
     await visible(client, id, true);
     const receipt = await idempotentMobileWrite(client, user.id, key, `draft.delete:${id}`, { id, revision: body.revision }, async () => {
-      try { await deleteContractDraft(client, id, body.revision, user.id); }
+      try { await deleteContractDraft(client, id, body.revision, user.id, 'hidden'); }
       catch (error) { if (error instanceof DraftDeleteError) throw new MobileError(error.message, error.status, 'DRAFT_DELETE_CONFLICT'); throw error; }
       return { id, revision: String((await visible(client, id, true)).revision) };
     });
