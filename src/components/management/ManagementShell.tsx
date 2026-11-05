@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AlarmClock, ArrowLeft, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LayoutDashboard, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText, RotateCcw,Settings, UsersRound, Wallet, X } from 'lucide-react';
+import { AlarmClock, ArrowLeft, BookOpen, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LayoutDashboard, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText, RotateCcw,Settings, UsersRound, Wallet, X } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { ReloadButton, requestReload } from './ReloadButton';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
@@ -40,8 +40,9 @@ const navigation = [
   { href: '/integrations', label: 'Tích hợp GPS & Telegram', kind: 'integrations' as const, icon: Settings },
   { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook' as const, icon: Wallet },
   { href: '/accounts', label: 'Tài khoản & Phân quyền', kind: 'accounts' as const, icon: UsersRound },
+  { href: '/huong-dan', label: 'Hướng dẫn sử dụng', kind: 'help' as const, icon: BookOpen },
 ];
-const navigationPermission=(kind:string):AccessPermission|null=>kind==='attendance'?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
+const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();

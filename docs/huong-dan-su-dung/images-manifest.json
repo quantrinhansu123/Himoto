@@ -1,0 +1,43 @@
+{
+  "status": "local_only",
+  "captured_on": "2026-11-05",
+  "source": "Local web UI, empty contract forms",
+  "images": [
+    {
+      "filename": "01-thong-tin-hop-dong.jpg",
+      "local_path": "images/01-thong-tin-hop-dong.jpg",
+      "sha256": "88f523dfb30ff9d1ecd30d2d0fcb091a6196573d722c0ef7371751896a7338e2",
+      "secure_url": null
+    },
+    {
+      "filename": "02-tra-cuu-khach-hang.jpg",
+      "local_path": "images/02-tra-cuu-khach-hang.jpg",
+      "sha256": "c2ab7ff65e0bc8bb4ce768b84b282e6ab96b7b254637edc5ca8c5134e3c2dc89",
+      "secure_url": null
+    },
+    {
+      "filename": "03-khach-moi-quet-qr.jpg",
+      "local_path": "images/03-khach-moi-quet-qr.jpg",
+      "sha256": "721669da52784c2cf9147ada319a9b1161c6b475eef172ad5cbdeb0ab4295151",
+      "secure_url": null
+    },
+    {
+      "filename": "04-chon-xe-va-thoi-gian.jpg",
+      "local_path": "images/04-chon-xe-va-thoi-gian.jpg",
+      "sha256": "5c61c8cf5ce07cc4624789a86c80d19c8a21dee0f3b2fd773bfbe6c735b7b215",
+      "secure_url": null
+    },
+    {
+      "filename": "05-tien-thue-coc-phi-khac.jpg",
+      "local_path": "images/05-tien-thue-coc-phi-khac.jpg",
+      "sha256": "5ddbe83a4fb33ba96ffbc3685bd224af79e70031fbe038aae4b3dc82beb1c33e",
+      "secure_url": null
+    },
+    {
+      "filename": "06-ky-ket-va-luu.jpg",
+      "local_path": "images/06-ky-ket-va-luu.jpg",
+      "sha256": "fb8ea98d7eb037e5ff2f0b978610f3f06caa2167e260966249fb0703e913e7b7",
+      "secure_url": null
+    }
+  ]
+}
