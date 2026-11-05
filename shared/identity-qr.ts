@@ -21,3 +21,10 @@ export function identityQrMessage(value:unknown,nonce:string):IdentityQrScan|nul
   if(typeof value!=='string'||value.length>4096||!/^[0-9a-f-]{36}$/.test(nonce))return null;
   try{const message:unknown=JSON.parse(value);return object(message)&&message.type==='himoto.identity-qr.v1'&&message.nonce===nonce&&isIdentityQrScan(message.scan)?message.scan:null;}catch{return null;}
 }
+/** Android WebMessageListener supplies sourceOrigin; older Android/iOS supply the full page URL. */
+export function identityQrSourceAllowed(source:string,page:string):boolean {
+  try {
+    const expected=new URL(page);
+    return expected.protocol==='https:'&&(source===expected.href||source===expected.origin||source===expected.origin+'/');
+  }catch{return false;}
+}

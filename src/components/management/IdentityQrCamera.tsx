@@ -12,8 +12,11 @@ export function IdentityQrCamera({disabled,onFrame}:{disabled?:boolean;onFrame:(
     if(!open)return;
     let active=true,stream:MediaStream|undefined,timer:ReturnType<typeof setTimeout>|undefined;
     const stop=()=>{active=false;if(timer)clearTimeout(timer);stream?.getTracks().forEach(track=>track.stop());if(video.current)video.current.srcObject=null;};
-    const hide=()=>{if(document.hidden){stop();setOpen(false);}};
+    const pause=()=>{stop();setOpen(false);};
+    const hide=()=>{if(document.hidden)pause();};
     document.addEventListener('visibilitychange',hide);
+    window.addEventListener('himoto:identity-qr-pause',pause);
+    window.addEventListener('pagehide',pause);
     void (async()=>{
       try {
         if(!navigator.mediaDevices?.getUserMedia)throw new Error('Thiết bị không hỗ trợ camera trực tiếp. Hãy chọn ảnh QR hoặc nhập tay.');
@@ -49,7 +52,7 @@ export function IdentityQrCamera({disabled,onFrame}:{disabled?:boolean;onFrame:(
           stop();}
       }
     })();
-    return()=>{document.removeEventListener('visibilitychange',hide);stop();};
+    return()=>{document.removeEventListener('visibilitychange',hide);window.removeEventListener('himoto:identity-qr-pause',pause);window.removeEventListener('pagehide',pause);stop();};
   },[open]);
   return <div className="mg-identity-qr-camera">
     {!open?<button type="button" className="mg-button" disabled={disabled} onClick={()=>{setError('');setOpen(true);}}><Camera size={16}/>Quét QR bằng camera</button>:

@@ -1,7 +1,7 @@
 require('./lib/offline-tests.cjs');
 const assert=require('node:assert/strict'),path=require('node:path');
 const {load}=require('./lib/load-typescript.cjs');
-const {isIdentityQrScan,identityQrMatches,identityQrMessage}=load(path.resolve('shared/identity-qr'));
+const {isIdentityQrScan,identityQrMatches,identityQrMessage,identityQrSourceAllowed}=load(path.resolve('shared/identity-qr'));
 const scan={fields:{id_card:'001200000001',name:'NGUYỄN VĂN QA',id_card_issued_on:'2022-06-05'},identifiers:['001200000001','123456789']};
 assert(isIdentityQrScan(scan));assert(identityQrMatches(scan,'123456789'));assert(identityQrMatches(scan,''));assert(!identityQrMatches(scan,'001200000002'));
 for(const bad of [{...scan,fields:{...scan.fields,address:'never'}},{...scan,fields:{...scan.fields,id_card_issued_on:'2022-02-30'}},{...scan,identifiers:['001200000002']},{...scan,fields:{...scan.fields,name:'\nQA'}},{...scan,identifiers:['001200000001','123456789','999999999']}])assert(!isIdentityQrScan(bad));
@@ -10,4 +10,8 @@ assert.deepEqual(identityQrMessage(payload,nonce),scan);
 assert.equal(identityQrMessage(payload,'00000000-0000-4000-8000-000000000002'),null);
 assert.equal(identityQrMessage(JSON.stringify({type:'foreign',nonce,scan}),nonce),null);
 assert.equal(identityQrMessage('malformed',nonce),null);assert.equal(identityQrMessage('x'.repeat(4097),nonce),null);
-console.log('PASS: QR bridge validates bound messages, actual calendar dates, exact identity fields, legacy matches and rejects unrelated/malformed data.');
+const page='https://himoto.example/mobile-identity-qr#'+nonce;
+for(const source of ['https://himoto.example','https://himoto.example/',page])assert(identityQrSourceAllowed(source,page));
+for(const source of ['https://himoto.example.evil.test','http://himoto.example','https://evil.test','https://himoto.example/other','https://himoto.example/mobile-identity-qr#wrong','about:blank'])assert(!identityQrSourceAllowed(source,page));
+assert(!identityQrSourceAllowed('http://himoto.example','http://himoto.example/mobile-identity-qr#'+nonce));
+console.log('PASS: QR bridge accepts Android origin-only and legacy full-page sources, validates bound messages, dates, fields and legacy matches; unrelated origins/pages and malformed data are rejected.');
