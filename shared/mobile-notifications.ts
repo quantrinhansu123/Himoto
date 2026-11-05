@@ -21,6 +21,10 @@ export function isMobileNotificationList(value: unknown): value is MobileNotific
     && typeof v.observedAt === 'string' && Number.isFinite(Date.parse(v.observedAt));
 }
 export interface MobilePushStatus { configured: boolean; enabled: boolean }
+export interface MobilePushTest {outcome:'sent'|'unknown'}
+export function isMobilePushTest(value:unknown):value is MobilePushTest {
+  return !!value&&typeof value==='object'&&['sent','unknown'].includes((value as MobilePushTest).outcome);
+}
 export function isMobileNotifications(value: unknown): value is MobileNotifications {
   if (!object(value)) return false;
   const v = value as MobileNotifications;

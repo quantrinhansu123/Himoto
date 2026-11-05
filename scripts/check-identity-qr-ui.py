@@ -81,6 +81,16 @@ with sync_playwright() as playwright:
  page.get_by_role('button',name='Dừng quét',exact=True).click()
  page.wait_for_function('window.__lateStream && window.__lateStream.getTracks().every(track=>track.readyState==="ended")',timeout=10000)
  checks.append('Live camera decodes a synthetic QR, stops its tracks and reports denied permission with an image fallback')
+ page.goto(args.url+'/bridge',wait_until='networkidle')
+ frame=page.frame_locator('iframe[title="Bộ quét QR QA"]')
+ frame.get_by_label('Chọn ảnh QR căn cước',exact=True).set_input_files(str(first))
+ expect(page.get_by_label('QR đã nhận',exact=True)).to_contain_text('001200000001',timeout=30000)
+ message=json.loads(page.get_by_label('QR đã nhận',exact=True).inner_text())
+ assert message['nonce']=='00000000-0000-4000-8000-000000000001'
+ assert set(message['scan']['fields'])=={'id_card','name','id_card_issued_on'}
+ assert message['scan']['identifiers']==['001200000001','123456789']
+ expect(frame.get_by_text('Đã đọc QR. Quay lại biểu mẫu để kiểm tra thông tin.',exact=True)).to_be_visible()
+ checks.append('The embedded scanner returns only validated identity fields and matching identifiers through its bound bridge; no card data appears in the URL')
  assert wasm_requests and not blocked and not errors,(blocked,errors)
  context.close()
  # A rejected WASM initialization must not poison every subsequent attempt.

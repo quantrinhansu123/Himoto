@@ -9,8 +9,8 @@ module.exports=async function swapSql({pg,load,root,user,checks,failReceipt,lose
   await pg.exec("ALTER TABLE himoto.orders ADD COLUMN order_type text;"+
     "ALTER TABLE himoto.stores ADD COLUMN kind text;"+
     "ALTER TABLE himoto.vehicles ADD COLUMN brand text,ADD COLUMN type text,ADD COLUMN color text,ADD COLUMN year text,"+
-    "ADD COLUMN store_id bigint,ADD COLUMN current_store_id bigint,ADD COLUMN deleted_at timestamptz;"+
-    "CREATE TABLE himoto.vehicle_location_events(id bigserial,vehicle_id bigint,event_type text,from_store_id bigint,to_store_id bigint);"+
+    "ADD COLUMN store_id bigint,ADD COLUMN current_store_id bigint,ADD COLUMN IF NOT EXISTS deleted_at timestamptz;"+
+    "CREATE TABLE IF NOT EXISTS himoto.vehicle_location_events(id bigserial,vehicle_id bigint,event_type text,from_store_id bigint,to_store_id bigint);"+
     "INSERT INTO himoto.stores VALUES(29,'Kho Thuê sở hữu QA','lease_to_own'),(31,'Trụ sở chính QA','branch');"+
     "UPDATE himoto.stores SET kind='branch' WHERE id IN(23,24);"+
     "CREATE ROLE service_role;");

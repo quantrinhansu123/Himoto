@@ -113,6 +113,14 @@ async function run() {
     await pg.exec(fs.readFileSync(path.resolve(root, '../docs/sql/2026-11-01-mobile-bills.sql'), 'utf8'));
     await pg.exec(fs.readFileSync(path.resolve(root, '../docs/sql/2026-11-01-mobile-renewals.sql'), 'utf8'));
     await pg.exec(fs.readFileSync(path.resolve(root, '../docs/sql/2026-11-01-mobile-renewal-collections.sql'), 'utf8'));
+    if(process.argv.includes('--activity-triggers')){
+      await pg.exec(`ALTER TABLE himoto.vehicles ADD COLUMN deleted_at timestamptz;
+        CREATE TABLE himoto.vehicle_location_events(id bigserial PRIMARY KEY,vehicle_id bigint,from_store_id bigint,to_store_id bigint,event_type text);
+        CREATE TABLE himoto.management_mobile_push_devices(token_hash char(64) PRIMARY KEY);
+        CREATE FUNCTION himoto.access_store(id bigint) RETURNS boolean LANGUAGE sql STABLE AS $$
+          SELECT current_setting('himoto.scope_all',true)='true' OR id=NULLIF(current_setting('himoto.store_id',true),'')::bigint $$;`);
+      await pg.exec(fs.readFileSync(path.resolve(root,'../docs/sql/2026-11-05-mobile-activity-events.sql'),'utf8'));
+    }
     if(process.argv.includes('--qr-only')){
       console.log(JSON.stringify(await require('./lib/mobile_contract_qr_sql.cjs')({pg,load,root,user}),null,2));return;
     }
@@ -603,6 +611,11 @@ async function run() {
       failReceipt:()=>{failBeforeReceipt=true;},loseResponse:()=>{loseCommitResponse=true;}});
     await require('./lib/mobile_record_media_sql.cjs')({pg,load,root,user:returnUser,checks,
       failReceipt:()=>{failBeforeReceipt=true;},loseResponse:()=>{loseCommitResponse=true;}});
+    if(process.argv.includes('--activity-triggers')){
+      const kinds=(await pg.query('SELECT DISTINCT kind FROM himoto.management_mobile_activity_events')).rows.map(row=>row.kind);
+      for(const kind of ['payment','renewal','return','transfer'])assert(kinds.includes(kind),'Actual writer must emit '+kind);
+      checks.push('Actual payment, renewal, return and transfer writers commit their events with the business transaction while the full finance/retry/rollback suite remains unchanged');
+    }
     await pg.exec('DROP TABLE himoto.management_mobile_renewals');
     assert.equal(await versionsApi.nextContractRenewalVersion(raw,101,[]),17);
     assert.equal(await versionsApi.hasContractRenewalVersion(raw,101,[],13),true);

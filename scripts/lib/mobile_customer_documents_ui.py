@@ -15,6 +15,14 @@ def run_document_workflows(page, state, base_url, output, checks):
     def pick(label, count=1):
         with page.expect_file_chooser() as chooser: button(label).click()
         chooser.value.set_files([file]*count)
+    page.context.route('https://mobile-api.example.invalid/mobile-identity-qr',lambda route:route.fulfill(content_type='text/html',body='<html><body>QR bridge fixture</body></html>'))
+    def scan(name='Synthetic QA',during=None):
+        button('Quét QR căn cước').click()
+        frame=page.frame_locator('iframe[title="Camera quét QR căn cước"]').locator('body')
+        expect(frame).to_contain_text('QR bridge fixture')
+        if during:during()
+        frame.evaluate('''(node,name)=>parent.postMessage(JSON.stringify({type:'himoto.identity-qr.v1',nonce:location.hash.slice(1),scan:{fields:{id_card:'001234567890',name,id_card_issued_on:'2022-06-05'},identifiers:['001234567890']}}),'*')''',name)
+        expect(button('Quét QR căn cước')).to_be_visible()
     def new_contract(number):
         button('Thêm bản nháp').click(); field('Số hợp đồng giấy').fill(number)
         button('Bước 3: Phương tiện').click(); button('Thêm xe vào bản nháp').click(); button('Chọn xe QA-003').click()
@@ -33,18 +41,15 @@ def run_document_workflows(page, state, base_url, output, checks):
     page.get_by_role('tab', name='Hợp đồng', exact=True).click();new_contract('93001')
     expect(button('Giấy tờ')).to_have_attribute('aria-expanded', 'true')
     assert field('Số CCCD/CMND').evaluate('(node)=>node.getBoundingClientRect().top') < field('Họ và tên').evaluate('(node)=>node.getBoundingClientRect().top')
-    state['hold_ocr'] = True
-    pick('Chọn nhiều ảnh · AI đọc cùng lúc', 2)
-    expect(button('Bỏ qua AI')).to_be_visible()
-    field('Họ và tên').fill('ManualDuringReadQA');field('Địa chỉ').fill('Manual current address QA')
-    route, status, data, headers = state.pop('held_ocr')
-    route.fulfill(status=status, headers=headers, json=data)
+    pick('Chọn nhiều ảnh giấy tờ', 2)
+    assert state.get('ocr_calls',0)==0
+    scan(during=lambda:(page.locator('[aria-label="Họ và tên"]').fill('ManualDuringReadQA',force=True),page.locator('[aria-label="Địa chỉ"]').fill('Manual current address QA',force=True)))
     expect(field('Số CCCD/CMND')).to_have_value('001234567890')
     expect(field('Họ và tên')).to_have_value('ManualDuringReadQA')
     expect(field('Địa chỉ')).to_have_value('Manual current address QA')
     expect(button('Bỏ qua AI')).to_have_count(0)
-    assert state['ocr_calls'] == 1
-    checks.append('Paper-first form accepts multiple photos; one bound batch OCR fills identity, preserves manual edits in flight and never fills current address')
+    assert state.get('ocr_calls',0) == 0
+    checks.append('Domestic document photos are retained without AI; bound QR result fills identity, preserves manual edits in flight and never fills current address')
     button('Bỏ ảnh id_back').click();button('Tiếp tục chỉnh sửa').click()
     expect(button('Bỏ ảnh id_back')).to_be_visible()
     button('Quay lại hợp đồng').click();button('Tiếp tục chỉnh sửa').click()
@@ -78,8 +83,7 @@ def run_document_workflows(page, state, base_url, output, checks):
     assert saved['customer_id'] == 100 and saved['vehicles'][0]['id'] == '303' and saved['total_amount'] == '1250000'
     checks.append('Completing images returns the exact customer to an unchanged contract; draft save binds ID, selected vehicle and money')
     leave_contract();new_contract('93002');seed_duplicates(state)
-    state['ocr_fields'] = {'id_card': '001234567890', 'name': 'DuplicateDocQA'}
-    pick('Chọn ảnh CCCD mặt trước');expect(field('Họ và tên')).to_have_value('DuplicateDocQA')
+    pick('Chọn ảnh CCCD mặt trước');scan('DuplicateDocQA');expect(field('Họ và tên')).to_have_value('DuplicateDocQA')
     save_profile();expect(button('Dùng khách hàng #501')).to_be_visible()
     button('Dùng khách hàng #501').click()
     expect(page.get_by_role('heading', name='Hoàn tất ảnh khách hàng', exact=True)).to_be_visible()
@@ -99,7 +103,7 @@ def run_document_workflows(page, state, base_url, output, checks):
     leave_contract();new_contract('93003')
     state.pop('ocr_fields', None);state['ocr_failure'] = True
     pick('Chọn ảnh CCCD mặt trước')
-    expect(page.get_by_text('QA không đọc được ảnh. Ảnh được giữ để nhập tay.', exact=True)).to_be_visible()
+    expect(page.get_by_text('Ảnh được giữ để lưu vào hồ sơ. Dùng Quét QR căn cước để điền thông tin, hoặc nhập bằng tay.', exact=True)).to_be_visible()
     expect(button('Bỏ ảnh id_front')).to_be_visible()
     field('Số CCCD/CMND').fill('001234567891');field('Họ và tên').fill('ForeignSelectionQA');save_profile()
     button('Dùng khách hàng #502').click()
@@ -108,17 +112,15 @@ def run_document_workflows(page, state, base_url, output, checks):
     button('Bỏ ảnh đang chọn và tiếp tục với hồ sơ').click();button('Bỏ ảnh chưa lưu và tiếp tục').click()
     expect(field('Họ tên khách thuê')).to_have_value('OtherQA')
     assert state['document_writes'] == 3
-    checks.append('OCR failures keep photos and manual entry available; a foreign profile cannot receive unauthorized photos and explicit discard can continue with its existing data')
+    checks.append('Domestic photos never invoke AI even when the OCR service fails; manual entry and photos remain available and unauthorized photo writes remain blocked')
     leave_contract();new_contract('93004')
-    state['hold_ocr'] = True;pick('Chọn ảnh CCCD mặt trước')
-    expect(button('Bỏ qua AI')).to_be_visible();button('Bỏ qua AI').click()
+    pick('Chọn ảnh CCCD mặt trước');button('Quét QR căn cước').click()
+    button('Đóng quét qr căn cước').click()
     field('Họ và tên').fill('SkipAiManualQA')
-    route, status, data, headers = state.pop('held_ocr')
-    try: route.fulfill(status=status, headers=headers, json=data)
-    except Exception: pass  # Abort is expected when the user explicitly skips AI.
     expect(field('Họ và tên')).to_have_value('SkipAiManualQA')
     expect(field('Số CCCD/CMND')).to_have_value('')
-    checks.append('Skipping AI aborts the request and ignores its late result while retaining the image and manual text')
+    assert state.get('ocr_calls',0)==0
+    checks.append('Cancelling the QR scanner retains images and manual text and makes no OCR request')
     for width, height, scheme in ((320,740,'light'),(375,812,'dark'),(390,844,'light'),(430,932,'dark')):
         page.set_viewport_size({'width':width,'height':height});page.emulate_media(color_scheme=scheme,reduced_motion='reduce')
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')

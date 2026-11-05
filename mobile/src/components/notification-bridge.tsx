@@ -17,15 +17,15 @@ export function NotificationBridge() {
         shouldShowList: !!api && !disposed,shouldPlaySound: !!api && !disposed,shouldSetBadge: false})});
       if (!api) { await n.dismissAllNotificationsAsync(); await n.clearLastNotificationResponseAsync(); return; }
       const refresh = () => { void client.invalidateQueries({queryKey:['notifications']}); };
-      const response = () => { if (!disposed) { refresh(); router.push('/notifications'); } };
+      const response = (activity=false) => { if (!disposed) { refresh(); router.push(activity?'/notification-activity':'/notifications'); } };
       const a = n.addNotificationReceivedListener(refresh);
       const b = n.addNotificationResponseReceivedListener(event => {
-        if (event.notification.request.content.data?.screen === 'notifications') response();
+        if (event.notification.request.content.data?.screen === 'notifications') response(event.notification.request.content.data?.kind==='activity');
       });
       cleanup.push(() => a.remove(), () => b.remove());
       const last = await n.getLastNotificationResponseAsync();
       if (!disposed && last?.notification.request.content.data?.screen === 'notifications') {
-        await n.clearLastNotificationResponseAsync(); response();
+        await n.clearLastNotificationResponseAsync(); response(last.notification.request.content.data?.kind==='activity');
       }
       const register = async () => {
         const status = await api.pushStatus();
