@@ -1,6 +1,6 @@
 # Himoto Android — hướng dẫn vận hành
 
-Bản dự kiến1.0.0, package `vn.himoto.staff`, backend `https://himoto.vercel.app`.
+Bản release1.0.0, package `vn.himoto.staff`, backend `https://himoto.vercel.app`.
 Tài liệu đi cùng hồ sơ nghiệm thu; APK build thành công chưa thay cho nghiệm thu.
 
 ## Cài đặt và đăng nhập
@@ -54,13 +54,14 @@ Thông báo trên màn hình khóa chỉ hiện nhắc việc chung. Hệ thốn
 có thể chậm do mạng hoặc tiết kiệm pin; không cam kết đến ngay khi phát sinh.
 Vuốt đóng app khác với Buộc dừng trong Cài đặt: sau Buộc dừng cần mở app lại.
 Đăng xuất kết thúc đăng ký theo phiên; tài khoản đăng nhập sau tự chọn bật thông báo.
-Push thực trên Samsung vẫn phải nghiệm thu trước khi công bố chức năng đã hoàn tất.
+Push đã được kiểm trên Samsung Note9 với APK release: nhận lúc app mở, nhận sau
+khi tiến trình app đã đóng, và chạm để mở đúng trung tâm công việc sau xác thực.
 
 ## Quản trị backend và nâng cấp
 
 Production API được bật bằng `HIMOTO_MOBILE_ENABLED=true` trên Vercel project
 `congs-projects-f25af77d/himoto`. SQL đã áp dùng chung Supabase với web.
-Không chạy lại toàn bộ SQL lịch sử. Giữ14bảng mobile và lịch sử phiên/receipt
+Không chạy lại toàn bộ SQL lịch sử. Giữ các bảng mobile và lịch sử phiên/receipt
 để các thiết bị còn yêu cầu chưa đối chiếu có thể khôi phục đúng kết quả.
 
 Sau mỗi deployment kiểm web login, API no-bearer401SESSION_EXPIRED, đăng nhập
@@ -68,8 +69,11 @@ quản trị/cơ sở, phạm vi và một thao tác QA có bằng chứng. No-b
 minh route/gate hoạt động. Nếu cần rollback, quay về deployment đã ghi; không
 DROP bảng session/receipt hoặc sửa hồ sơ khách để né lỗi source.
 
-Source triển khai từ ZIP phải được dev web tích hợp vào nhánh chính để lần
-Git auto-deploy sau giữ API mobile. Bản nâng cấp Android phải dùng cùng khóa ký
+Source web và API mobile được tích hợp qua PR#1 của repository
+`quantrinhansu123/Himoto`; chỉ công bố tích hợp hoàn tất sau khi merge và kiểm
+production. Cập nhật từ `main` mới nhất, giữ `src/app/api/mobile`, `shared`, `mobile`
+và các helper đang được dùng. Không deploy ZIP cũ đè source chung. Xem
+`docs/mobile-repository-deployment.md`. Bản nâng cấp Android phải dùng cùng khóa ký
 và tăng versionCode; đối chiếu mã yêu cầu còn chờ trước khi phát hành.
 
 ## Khóa ký và khôi phục
@@ -84,6 +88,11 @@ passphrase do chủ dự án nhập, tối thiểu16ký tự. Lưu file `.himoto
 an toàn; passphrase giữ riêng trong kho mật khẩu. Không gửi key/passphrase vào
 chat hoặc commit repository. Phải xác nhận backup/khôi phục trước bàn giao.
 
-Máy Samsung QA đang giữ binarydevelopment kýdebug. Không cài đè release có
-certificatekhác bằng cách gỡ/xóa app khi còn mã chờ đối chiếu. Bản đầu cho khách
-được cài lên thiết bị chưa có package này; nâng cấp khách sau đó giữ cùng key.
+Samsung QA đã chuyển sang APK release sau khi chủ dự án cho phép. Trước khi gỡ
+bản debug đã xác nhận không có yêu cầu ghi chờ/phiên đăng nhập và sao lưu mã hóa
+332 file bản soạn. Bản soạn cũ không tự chuyển sang release; bản DPAPI cần đúng
+người dùng Windows để khôi phục. Cài đè cùng khóa ký đã giữ được phiên đăng nhập.
+Không gỡ/xóa dữ liệu app khi còn yêu cầu cần đối chiếu.
+
+Bản sao khóa ký `.himoto-key` đã tạo và kiểm tra giải mã; hai bản hiện cùng máy
+Windows. Chủ dự án cần giữ thêm một bản ngoài máy này và giữ passphrase riêng.

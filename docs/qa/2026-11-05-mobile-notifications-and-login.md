@@ -1,8 +1,30 @@
 # Android login và thông báo —05/11/2026
 
-Chưa đủ nghiệm thu Android. Không gọi source/offline test hoặc FCM API accepted là
-bằng chứng điện thoại đã nhận. User yêu cầu tiếp trên Samsung, emulator5556 đã dừng
-sau khi suite release export/upgrade hoàn tất và logout.
+## Kết quả mới nhất trên Samsung release
+
+APK release run5 SHA256
+`3d2b93676e670a4a4dc4ca5f0e8831f080a3c4c2d08fc37c5c8899755f47b258`
+đã cài trên Samsung Note9 theo chấp thuận của chủ dự án. Không dùng emulator.
+Login có logo giữa, bỏ marketing và không còn banner bản phát triển.
+
+- `mobile-samsung-release-push-20261105-run1/results.json`: nhận FCM khi app mở;
+  nhận thông báo mới sau khi tiến trình đóng; chạm mở trung tâm công việc đã xác
+  thực. Payload chung, private; phiên QA đã đăng xuất, không ghi nghiệp vụ.
+- `mobile-samsung-release-cold-start-20261105-run1/results.json`: 5 lần mở đạt,
+  không có crash/ANR mới của app hoặc SystemUI. Không dùng phép đo này để công bố FPS.
+- `mobile-samsung-release-export-20261105-run1/results.json`: cài đè cùng chữ ký
+  giữ phiên; xuất bộ lọc rỗng qua Android SAF, mở lại XLSX hợp lệ, không xuất hàng
+  nghiệp vụ. Đã đăng xuất khi hoàn tất.
+- Production khôi phục tại `dpl_69Tch1swhngTe912VtveDquNwTC2`: public21checks và
+  feed thông báo quản trị/cơ sở đạt. Các phiên QA server đã thu hồi. CI/merge Git
+  tiếp tục được theo dõi trong PR#1 để cập nhật web không làm mất API mobile.
+
+Các kết quả trên thay cho trạng thái chưa triển khai/chưa có bằng chứng FCM ở
+nhật ký cũ bên dưới. Chưa chứng nhận mọi thao tác tài chính/kho thật trên production;
+những nghiệp vụ đó được kiểm trong PostgreSQL cô lập. ANR emulator ở APK cũ còn
+chưa xác định nguyên nhân; không tái hiện trong lượt Samsung release này.
+
+## Nhật ký trước khi hoàn tất bản release mới
 
 ## Đầu ra source
 

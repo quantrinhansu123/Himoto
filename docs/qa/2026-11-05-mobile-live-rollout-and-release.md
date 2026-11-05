@@ -1,8 +1,29 @@
 # Himoto Android — production API và bản ký đầu tiên05/11
 
-Chưa đủ nghiệm thu bàn giao Android. Kết quả dưới đây phân biệt backend thật,
-binary development trên Samsung, và binary release; không dùng kết quả của một
-loại để chứng nhận toàn bộ loại khác.
+## Trạng thái mới nhất
+
+Samsung Note9 đã cài APK release run5 (1.0.0/code1), SHA256
+`3d2b93676e670a4a4dc4ca5f0e8831f080a3c4c2d08fc37c5c8899755f47b258`.
+443 file source khớp build; không debuggable, có Firebase/native notifications,
+chỉ arm64-v8a. Bản APK run2 trong nhật ký cũ bên dưới đã được thay thế.
+
+Push foreground/tiến trình đóng/chạm mở trung tâm đạt trên máy thật; 5 cold start
+không crash/ANR mới; cài đè cùng khóa ký giữ phiên; xuất XLSX qua SAF đạt. Xem
+`2026-11-05-mobile-notifications-and-login.md` cho các đường dẫn bằng chứng.
+Phiên QA đều đã đăng xuất sau các lượt đạt. Bản debug cũ được gỡ theo chấp thuận,
+sau khi xác nhận không có yêu cầu ghi chờ và sao lưu mã hóa 332 file bản soạn.
+
+Đã tạo/kiểm tra backup khóa ký portable; hai bản sao hiện cùng máy Windows,
+chưa có bằng chứng sao lưu ngoài máy. Production khôi phục tại deployment
+`dpl_69Tch1swhngTe912VtveDquNwTC2` và đạt public21checks cùng feed quản trị/cơ sở.
+PR#1 tích hợp với main dd44b8d giữ các thay đổi web mới, đang chờ toàn bộ CI/merge
+và hậu kiểm production. 52 bước SQL cô lập cùng 44 suite core đã đạt local.
+
+Nghiệm thu bàn giao toàn bộ chưa được tuyên bố: chưa thực hiện giao dịch tài
+chính/kho thật, chưa sao lưu khóa ngoài máy; ANR emulator ở APK cũ chưa rõ nguyên
+nhân. Không dùng kiểm tra đọc hoặc SQL cô lập để chứng nhận đã ghi nghiệp vụ thật.
+
+## Nhật ký các bản/lượt kiểm trước
 
 ## Production backend
 
