@@ -85,7 +85,8 @@ def run_document_workflows(page, state, base_url, output, checks):
     expect(page.get_by_role('heading', name='Hoàn tất ảnh khách hàng', exact=True)).to_be_visible()
     assert state['customer_creates'] == 1
     state['mode'] = 'doc-drop';stage_save()
-    expect(button('Đối chiếu ảnh với máy chủ')).to_be_visible()
+    expect(page.get_by_text('QA chưa nhận được ảnh.', exact=True)).to_be_visible()
+    expect(button('Đối chiếu ảnh với máy chủ')).to_be_enabled()
     old_key = state['delayed_document']['headers']['idempotency-key']
     button('Đối chiếu ảnh với máy chủ').click();button('Tải lại ô ảnh, giữ ảnh đang chọn').click()
     assert state['tombstones'][old_key] == 'media.customer:501'

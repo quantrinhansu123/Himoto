@@ -78,6 +78,7 @@ def run_customer_checks(page, state, output, checks, user):
     page.get_by_label("Mật khẩu", exact=True).fill("fixture-password")
     page.get_by_role("button", name="Đăng nhập").click()
     page.get_by_role("button", name="Mở Khách hàng").click()
+    page.get_by_role("button", name="Thêm khách hàng", exact=True).evaluate("node => node.scrollIntoView({block: 'center'})")
     page.get_by_role("button", name="Thêm khách hàng", exact=True).click()
     expect(page.get_by_role("textbox", name="Họ và tên", exact=True)).to_be_visible()
     page.get_by_role("button", name="Lưu khách hàng", exact=True).click()

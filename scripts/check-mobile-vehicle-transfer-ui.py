@@ -90,7 +90,8 @@ def run(base_url,output):
             assert state['vehicles']['7101']['ownerStoreId']==232
             page.screenshot(path=str(output/"sender-original-receipt.png"),full_page=True)
             checks.append("Pagination preserves destination; literal search, trim, readonly/no UUID review, cancelled write/back dialogs and four responsive light/dark viewports; one dispatch receipt")
-            back();tabs();logout();login("qa-receiver")
+            previous=page.url;back();page.wait_for_url(lambda value:str(value)!=previous)
+            tabs();logout();login("qa-receiver")
             tab("Tài khoản").click();expect(page.get_by_text("Không có thao tác chờ đối chiếu trong phạm vi này.",exact=True)).to_be_visible()
             open_editor(7101);expect(button("Hủy điều chuyển")).to_be_disabled();button("Nhận xe").click();review();commit("nhận xe")
             expect(heading("Nhận xe đã được ghi nhận")).to_be_visible();acknowledge()
