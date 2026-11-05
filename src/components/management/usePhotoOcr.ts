@@ -30,7 +30,8 @@ export function usePhotoOcr<Snapshot>({ kind, snapshot, apply }: {
     const controller = new AbortController(); jobs.current.set(slot, controller);
     const before = callbacks.current.snapshot(slot);
     setStates(current => ({ ...current, [slot]: { phase: 'reading', message: ['cccd_front','cccd_back','customer_documents'].includes(kind) ? 'Đang quét QR căn cước…' : 'AI đang đọc ảnh…' } }));
-    const expected=kind==='cccd_back'&&before&&typeof before==='object'&&'id_card' in before?String(before.id_card||''):'';
+    const priorIdentity=before&&typeof before==='object'&&'id_card' in before?String(before.id_card||'').trim():'';
+    const expected=['cccd_front','cccd_back','customer_documents'].includes(kind)&&/^(\d{9}|\d{12})$/.test(priorIdentity)?priorIdentity:'';
     void readPhotoWithAi(kind, input, controller.signal,expected).then(result => {
       if (controller.signal.aborted || jobs.current.get(slot) !== controller) return;
       if (!Object.keys(result.fields).length) throw new Error('Chưa đọc được thông tin rõ ràng. Chụp lại ảnh hoặc nhập tay.');
