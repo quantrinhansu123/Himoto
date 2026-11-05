@@ -75,7 +75,8 @@ async function main() {
     const page=await server.readMobileCashbook(actor,params({from:'2026-11-03',to:'2026-11-03',income_limit:'2',income_sort:'amount',income_direction:'asc'}));
     assert(dto.isCashbookPage(page)); assert.equal(page.income.total,7); assert.equal(page.expense.total,3); assert.equal(page.total,12);
     assert.deepEqual(page.income.rows.map(r=>r.amount),[40,50]); assert.equal(page.income.amount,820); assert.equal(page.expense.amount,190);
-    assert.deepEqual(dto.cashbookRentalTotals(page.breakdown),{revenue:450,income:640,expense:170});
+    // Rental revenue is 200 + 300 - 90; the 40 late fee belongs in receipts only.
+    assert.deepEqual(dto.cashbookRentalTotals(page.breakdown),{revenue:410,income:640,expense:170});
     const second=await server.readMobileCashbook(actor,params({from:'2026-11-03',to:'2026-11-03',income_limit:'2',income_page:'2',income_sort:'amount',income_direction:'asc'})); assert.deepEqual(second.income.rows.map(r=>r.amount),[60,70]);
     const filtered=await server.readMobileCashbook(actor,params({search:'QA-101',actor:'id:7',store_id:'23',from:'2026-11-03',to:'2026-11-03'})); assert.equal(filtered.income.total,7);
     const cash=await server.readMobileCashbookAccount(actor,'cash','1'); assert.equal(cash.income,1829); assert.equal(cash.expense,190); assert.equal(cash.balance,2639); assert.equal(cash.voucherCount,12);

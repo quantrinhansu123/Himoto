@@ -41,6 +41,7 @@ import { contractPhotoSlots, contractEvidenceSlots } from '@/lib/management/cont
 import { normalizeCustomerLookup,validCustomerLookup } from '@/lib/management/contract-document';
 import { photoBaseSlot,nextPhotoInGroup } from '@/lib/management/photo-slot-groups';
 import { RecordPhotoFields } from '@/components/management/RecordPhotoFields';
+import { IdentityQrCamera } from '@/components/management/IdentityQrCamera';
 import { CUSTOMER_PHOTO_SLOTS, PendingPhotos, saveRecordPhotos,copyCustomerPhotosToContract } from '@/lib/management/record-photos';
 import { isAdminAccount } from '@/lib/management/permissions';
 import { usePhotoOcr } from '@/components/management/usePhotoOcr';
@@ -948,6 +949,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
             <CustomerInternationalFields prefix="contract-customer" value={draft.customer} onChange={customer=>{setDraft(previous=>({...previous,customer}));setErrors({});}} disabled={saving} errors={errors}/>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(0, 2).map(customerField)}</div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(item=><Fragment key={item.key}>{customerField(item)}{item.key==='driver_license_number'&&source==='api'&&draft.customer_id&&<div className="mg-field-wide"><RecordPhotoFields entity="contracts" recordId={savedDraft?.id||row?.id} slots={[{key:'driver-license',label:'Giấy phép lái xe'}]} title="Chụp GPLX · Tự điền bằng AI" value={licensePhotos} onChange={setLicensePhotos} disabled={saving} onBusyChange={setProcessingLicense} ocr={customerOcr}/></div>}</Fragment>)}</div>
+            {source === 'api' && draft.customer_id && draft.customer.customer_type!=='foreign' && <div className="mg-field-wide"><IdentityQrCamera disabled={saving||customerOcr.pending} onFrame={file=>customerOcr.read('id_front',file)}/>{customerOcr.states.id_front&&<p role={customerOcr.states.id_front.phase==='error'?'alert':'status'} className={customerOcr.states.id_front.phase==='error'?'mg-field-error':undefined}>{customerOcr.states.id_front.message}</p>}</div>}
             {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${customerPhotosOnContract}-${photoVersion}`} entity={customerPhotosOnContract ? 'contracts' : 'customers'} recordId={customerPhotosOnContract ? savedDraft?.id||row?.id : draft.customer_id} slots={customerPhotoSlots} title={draft.customer.customer_type==='foreign'?'Chụp hộ chiếu · Tự điền bằng AI':'Quét QR căn cước · Tự điền'} value={customerPhotoValues} onChange={photos=>setCustomerPhotos(Object.fromEntries(Object.entries(photos).map(([slot,file])=>[slot.replace(/^customer-/,'').replace(/^(id-front|id-back|driver-license)/,base=>base.replaceAll('-','_')),file])))} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
             <div className="mg-contract-relatives">{draft.relatives.map((relative, index) => <div className="mg-contract-relative" key={index}>
               <strong>Người thân {index + 1}</strong>
