@@ -375,11 +375,16 @@ jobs:
       - run: python3 scripts/check-mobile-native-target.py
       - run: node scripts/check-mobile-contract-import-backup.cjs
       - run: node scripts/check-mobile-telegram-api.cjs
-      - run: python3 scripts/check-mobile-transfer-fixture.py
-      - run: python3 scripts/check-mobile-recovery-fixture.py
-      - run: python3 scripts/check-mobile-contract-flow-fixture.py
-      - run: python3 scripts/check-mobile-customer-matches-fixture.py
-      - run: python3 scripts/check-mobile-gps-fixture.py
+      - name: Prepare Python acceptance runtime
+        run: |
+          python3 -m venv .backups/mobile-qa
+          .backups/mobile-qa/bin/pip install -r scripts/requirements-mobile-qa.txt
+          .backups/mobile-qa/bin/python -m playwright install --with-deps chromium
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-transfer-fixture.py
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-recovery-fixture.py
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-contract-flow-fixture.py
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-customer-matches-fixture.py
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-gps-fixture.py
       - name: Execute mobile financial, bill and renewal SQL in isolated PostgreSQL
         run: |
           npm install --prefix .backups/mobile-sql-qa --no-save --package-lock=false --ignore-scripts @electric-sql/pglite@0.5.14
@@ -447,11 +452,6 @@ jobs:
         env:
           EXPO_PUBLIC_API_URL: https://mobile-api.example.invalid
           EXPO_NO_TELEMETRY: '1'
-      - name: Prepare browser acceptance
-        run: |
-          python3 -m venv .backups/mobile-qa
-          .backups/mobile-qa/bin/pip install -r scripts/requirements-mobile-qa.txt
-          .backups/mobile-qa/bin/python -m playwright install --with-deps chromium
       - name: Build browser acceptance target
         working-directory: mobile
         run: npx expo export --platform web --output-dir .expo/web-preview --max-workers 2
