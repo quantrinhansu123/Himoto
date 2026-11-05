@@ -26,7 +26,7 @@ async function main(){
       CREATE TABLE himoto.stores(id bigint PRIMARY KEY,store_name text);
       CREATE TABLE himoto.users(id bigint PRIMARY KEY,name text);
       CREATE TABLE himoto.customers(id bigint PRIMARY KEY,name text,phone text,id_card text);
-      CREATE TABLE himoto.staff_profiles(id bigint PRIMARY KEY,full_name text);
+      CREATE TABLE himoto.staff_profiles(id bigint PRIMARY KEY,full_name text,position text);
       CREATE TABLE himoto.vehicles(id bigint PRIMARY KEY,name text,license text,type text,year int,store_id bigint,current_store_id bigint,deleted_at timestamptz);
       CREATE FUNCTION himoto.vehicle_inventory() RETURNS SETOF himoto.vehicles LANGUAGE SQL AS 'SELECT * FROM himoto.vehicles';
       CREATE TABLE himoto.orders(id bigint PRIMARY KEY,customer_id bigint,customer_name text,store_id bigint,rent_at timestamptz,return_at timestamptz,created_at timestamptz,updated_at timestamptz,deleted_at timestamptz,order_status text,order_type text,contract_number text,draft_reference text,draft_payload jsonb,total text,pid numeric,total_rental_fees numeric,first_deposit_amount numeric,additional_deposit_amount numeric,customer_source text);
@@ -37,7 +37,7 @@ async function main(){
       CREATE TABLE himoto.battery_contracts(id bigint PRIMARY KEY,code text);
       CREATE TABLE himoto.management_contract_payments(transaction_id bigint,renewal_payload jsonb);
       INSERT INTO himoto.stores VALUES(23,'Cơ sở QA'),(24,'Kho QA khác');INSERT INTO himoto.users VALUES(7,'QA Quản lý');
-      INSERT INTO himoto.staff_profiles VALUES(501,'NVKD QA'),(502,'TLS QA');
+      INSERT INTO himoto.staff_profiles VALUES(501,'NVKD QA','NVKD'),(502,'TLS QA','TLS');
       INSERT INTO himoto.customers VALUES(201,'Khách báo cáo QA','0000000001','QA-REPORT-1'),(202,'Khách cơ sở24 QA','0000000002','QA-REPORT-2'),(203,'Khách chưa ghi nguồn QA','0000000003','QA-REPORT-3');
       INSERT INTO himoto.cash VALUES(1,'Két báo cáo QA');INSERT INTO himoto.banks VALUES(1,'Bank QA','Company QA','QA001'),(2,'Bank QA','Personal QA','QA002');`);
     for(let i=301;i<=312;i++)await query('INSERT INTO himoto.vehicles VALUES($1,$2,$3,$4,2026,23,$5,NULL)',[i,i===312?'=QA Formula':'Xe báo cáo QA '+(i-300),'QA-REPORT-'+i,'xeso',i===302?24:23]);
@@ -53,18 +53,19 @@ async function main(){
     const before=await snapshot();
     if(process.argv.includes('--dashboard-only'))return await require('./lib/mobile_dashboard_sql.cjs')({sql,query,load,root,actor,params,snapshot,before,setExpected:user=>{expectedActor=user;},connections:()=>({ownerConnections,ordinaryConnections})});
     expectedActor=actor;const options=await reports.readMobileReportOptions(actor);assert(dto.isSalesReportOptions(options));assert.equal(options.canViewFleet,false);assert.equal(ownerConnections,0);
-    const actual=await get('actual');assert(dto.isMobileSalesReport(actual));assert.equal(actual.metrics.find(row=>row.label==='Doanh thu').value,1400);
+    const actual=await get('actual');assert(dto.isMobileSalesReport(actual));assert.equal(actual.metrics.find(row=>row.label==='Doanh thu').value,1300);
     const webRental=load(path.join(root,'lib/server/rental-revenue')),webEstimate=load(path.join(root,'lib/server/estimated-sales'));
     const direct=await withMobileData(actor,'',()=>webRental.rentalRevenue({query},base.from,base.to,23,'contracts'));
+    assert.equal(direct.total.late,100);assert.equal(direct.company_fees,520);
     const estimate=await withMobileData(actor,'',()=>webEstimate.estimatedSales({query},base.from,base.to,23));
     assert.equal(actual.metrics.find(row=>row.label==='Doanh thu').value,direct.total.revenue);assert.equal(actual.metrics.find(row=>row.label==='Doanh số').value,estimate.sales);
     const summary=await get('contracts');assert.equal(summary.metrics.find(row=>row.label==='Hợp đồng').value,2);
-    checks.push('Actual rental receipts, estimated day-vehicle sales and contract debt/KPIs use the exact web readers in one unchanged scoped read-only context; rental revenue is1400 and contracts include both in-period customers');
+    checks.push('Actual rental receipts, estimated day-vehicle sales and contract debt/KPIs use the exact web readers in one unchanged scoped read-only context; rental revenue is1300, late fees are accounted to company fees, and contracts include both in-period customers');
     const ledger=await get('ledger',{side:'in',size:'1'}),expense=await get('ledger',{side:'out',size:'1'});assert(dto.isMobileSalesReport(ledger)&&dto.isMobileSalesReport(expense));
-    assert.equal(ledger.metrics.find(row=>row.label==='Tổng thu').value,3020);assert.equal(ledger.metrics.find(row=>row.label==='Tổng chi').value,500);assert.equal(ledger.metrics.find(row=>row.label==='Tính doanh thu').value,1400);
-    assert.equal(expense.metrics.find(row=>row.label==='Tính doanh thu').value,1400);assert.equal(ledger.sections[0].rows.length,1);
+    assert.equal(ledger.metrics.find(row=>row.label==='Tổng thu').value,3020);assert.equal(ledger.metrics.find(row=>row.label==='Tổng chi').value,500);assert.equal(ledger.metrics.find(row=>row.label==='Tính doanh thu').value,1300);
+    assert.equal(expense.metrics.find(row=>row.label==='Tính doanh thu').value,1300);assert.equal(ledger.sections[0].rows.length,1);
     const first=await get('vehicles',{size:'1'}),second=await get('vehicles',{size:'1',page:'2'});assert(first.sections[0].paging.total===11);assert.notEqual(first.sections[0].rows[0].key,second.sections[0].rows[0].key);
-    const vehicleDetail=await get('vehicles',{vehicle_id:'301'});assert.equal(vehicleDetail.sections[0].rows[0].action.query,'id=101');assert.equal(vehicleDetail.sections[0].rows[0].values.at(-1),3400);
+    const vehicleDetail=await get('vehicles',{vehicle_id:'301'});assert.equal(vehicleDetail.sections[0].rows[0].action.query,'id=101');assert.equal(vehicleDetail.sections[0].rows[0].values.at(-1),3300);
     const stores=await get('overview',{view:'stores'}),days=await get('overview',{view:'days'});assert.deepEqual(stores.metrics,days.metrics);assert(stores.sections[0].rows[0].action.query.includes('view=days'));
     checks.push('Ledger shows the combined two-side totals while paging each side independently; vehicle paging/details and store-to-day drilldowns reconcile to actual web amounts without guessing mixed payment allocation');
     for(const kind of ['by-staff','by-store','assigned','new-customers'])assert(dto.isMobileSalesReport(await get(kind)));
@@ -82,7 +83,7 @@ async function main(){
     const exported={};for(const kind of ['vehicles','overview','by-staff','by-store','assigned','new-customers','ledger']){expectedActor=actor;const file=await exportsApi.exportMobileSalesReport(actor,kind,params({}));assert(fileDto.isMobileFileExport(file));exported[kind]=file;}
     assert.equal(exported.vehicles.rowCount,11);assert(exported.vehicles.content.includes("'\u003dQA Formula"));assert(exported['new-customers'].content.includes('Khách hàng","Điện thoại","CCCD"'));
     const ExcelJS=require('exceljs'),book=new ExcelJS.Workbook();await book.xlsx.load(Buffer.from(exported.ledger.contentBase64,'base64'));assert.deepEqual(book.worksheets.map(sheet=>sheet.name),['Phiếu thu','Phiếu chi']);
-    assert.equal(book.worksheets[0].getRow(4).getCell(16).value,'Ghi chú');assert.equal(book.worksheets[0].lastRow.getCell(9).value,2350);assert.equal(book.worksheets[1].lastRow.getCell(9).value,-200);assert.equal(book.worksheets[0].lastRow.getCell(13).value+book.worksheets[1].lastRow.getCell(13).value,1400);
+    assert.equal(book.worksheets[0].getRow(4).getCell(16).value,'Ghi chú');assert.equal(book.worksheets[0].lastRow.getCell(9).value,2350);assert.equal(book.worksheets[1].lastRow.getCell(9).value,-200);assert.equal(book.worksheets[0].lastRow.getCell(13).value+book.worksheets[1].lastRow.getCell(13).value,1300);
     assert(book.worksheets[0].getRows(5,6).some(row=>row.getCell(16).value==='=SUM(1,2)'));assert.equal(exported.ledger.rowCount,8);
     assert.equal(await snapshot(),before);checks.push('CSV exports the complete filtered rows with escaped formulas; shared web/mobile Excel builder produces both16-column sheets, signed payment amounts, totals and text-only note cells; all business tables remain unchanged');
     const outAt=process.argv.indexOf('--fixture-output');if(outAt>=0){

@@ -73,8 +73,8 @@ def run(build, fixture, output):
                     page.get_by_label('Mật khẩu', exact=True).fill('fixture-password')
                     button('Đăng nhập').click()
                     button('Mở Tổng quan giao dịch').click()
-                    expect(page.get_by_text('4.820 ₫', exact=True).first).to_be_visible()
-                    expect(page.get_by_text('1.700 ₫', exact=True).first).to_be_visible()
+                    expect(page.get_by_text('4.370 ₫', exact=True).first).to_be_visible()
+                    expect(page.get_by_text('1.300 ₫', exact=True).first).to_be_visible()
                     page.screenshot(path=str(output / f'dashboard-{width}.png'), full_page=True)
                     with page.expect_download() as event:
                         button('Xuất CSV Tổng quan giao dịch').click()
@@ -87,7 +87,7 @@ def run(build, fixture, output):
                     expect(button('Xuất CSV Tổng quan giao dịch')).to_be_disabled()
                     button('Kỳ Tổng quan giao dịch').click()
                     button('Tháng này').click()
-                    expect(page.get_by_text('4.820 ₫', exact=True).first).to_be_visible()
+                    expect(page.get_by_text('4.370 ₫', exact=True).first).to_be_visible()
                     # Custom dates retain the web's auto-adjust behavior.
                     page.get_by_label('Tổng quan từ ngày', exact=True).fill('2026-11-20')
                     expect(page.get_by_label('Tổng quan đến ngày', exact=True)).to_have_value('2026-11-20')
