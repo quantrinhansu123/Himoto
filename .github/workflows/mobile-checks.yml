@@ -392,7 +392,8 @@ jobs:
           npm install --prefix .backups/mobile-sql-qa --no-save --package-lock=false --ignore-scripts @electric-sql/pglite@0.5.14
           node scripts/check-mobile-web-merge.cjs --suite attendance --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
           node scripts/check-mobile-web-merge.cjs --suite contract-value-sales --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
-          npm run test:mobile:sql -- --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          npm run test:mobile:sql -- --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite --activity-triggers
+          node scripts/check-mobile-finance-sql.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite --activity-triggers --renewal-parity-only
           node scripts/check-mobile-customer-matches.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
           node scripts/check-mobile-customer-documents.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
           node scripts/check-mobile-contract-photos.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
@@ -434,6 +435,7 @@ jobs:
           node scripts/check-mobile-catalogue-export.cjs
           node scripts/check-mobile-list-export.cjs
           node scripts/check-mobile-notifications.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite --output .backups/mobile-ci-notifications
+          node scripts/check-mobile-activity-sql.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
           node scripts/check-mobile-live-notification-runner.cjs
           node scripts/check-mobile-workbook-stream.cjs
           node scripts/check-mobile-print.cjs

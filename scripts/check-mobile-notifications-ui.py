@@ -35,6 +35,9 @@ try:
     if path=='/workspace':respond({'user':actor,'stores':[{'id':23,'name':'QA Cơ sở'}]});return
     if path.startswith('/catalogue/'):respond({'rows':[],'total':0,'page':1,'pages':1,'statusCounts':[],'updatedAt':now});return
     if path=='/notifications/device':respond({'configured':False,'enabled':False});return
+    if path=='/notifications/activity':
+     before=parse_qs(u.query).get('before',[None])[0]
+     respond({'rows':[{'id':1 if before else 2,'kind':'payment' if before else 'renewal','action':None,'resourceId':101,'resourceLabel':'QA-HD-101','createdAt':now}],'nextBefore':None if before else 2});return
     if path=='/notifications':
      if state['fail']:
       state['fail']-=1;respond({'message':'QA lỗi mạng tạm thời','code':'SERVICE_UNAVAILABLE'},503);return
@@ -60,12 +63,22 @@ try:
    expect(page.get_by_role('button',name='Điều chuyển cần nhận: 2')).to_be_visible()
    expect(page.get_by_text('Hệ thống đang chuẩn bị thông báo đẩy.',exact=False)).to_be_visible()
    page.screenshot(path=str(args.output/f'{width}-02-notifications.png'),full_page=True)
+   page.get_by_role('button',name='Mở sự kiện gần đây',exact=True).click()
+   expect(page.get_by_text('Gia hạn hợp đồng',exact=True)).to_be_visible()
+   expect(page.get_by_text('QA-HD-101',exact=True)).to_be_visible()
+   page.get_by_role('button',name='Xem thêm',exact=True).click()
+   expect(page.get_by_text('Thu tiền hợp đồng',exact=True)).to_be_visible()
+   page.get_by_role('button',name='Mở hồ sơ QA-HD-101: Gia hạn hợp đồng',exact=True).click()
+   page.wait_for_url('**/record/contracts/101')
+   page.go_back();page.wait_for_url('**/notification-activity')
+   page.go_back();page.wait_for_url('**/notifications')
+   expect(page.get_by_role('button',name='Hợp đồng chờ duyệt: 21')).to_be_visible()
    page.get_by_role('button',name='Hợp đồng chờ duyệt: 21').click();expect(page.get_by_text('21 công việc · Trang 1/2')).to_be_visible()
    page.get_by_role('button',name='Trang sau',exact=True).click();expect(page.get_by_text('QA-121',exact=True)).to_be_visible()
    expect(page.get_by_role('button',name='Trang sau',exact=True)).to_be_disabled()
    page.screenshot(path=str(args.output/f'{width}-03-paged-approval.png'),full_page=True)
    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
-   checks.append({'width':width,'scheme':scheme,'centeredLogin':True,'groups':4,'paging':True,'retry':True,'pushNotFalselyEnabled':True});context.close()
+   checks.append({'width':width,'scheme':scheme,'centeredLogin':True,'groups':4,'paging':True,'activityFeed':True,'retry':True,'pushNotFalselyEnabled':True});context.close()
   browser.close()
  assert not errors,errors
  result={'ok':True,'flows':checks,'screenshots':8,'pageErrors':errors,'productionWrites':0,'externalPushMessages':0}

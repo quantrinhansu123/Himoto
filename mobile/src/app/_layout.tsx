@@ -59,6 +59,7 @@ function Navigator() {
         </Stack.Protected>
         <Stack.Protected guard={!!session}>
           <Stack.Screen name="notifications" options={{title:'Thông báo công việc'}}/>
+          <Stack.Screen name="notification-activity" options={{title:'Sự kiện gần đây'}}/>
           <Stack.Screen name="notification-list/[kind]" options={{title:'Công việc cần xử lý'}}/>
           <Stack.Screen name="integrations" options={{ title: "Tích hợp GPS và Telegram" }} />
           <Stack.Screen name="integration-result/[key]" options={{ title: "Xác nhận cấu hình tích hợp" }} />

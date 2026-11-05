@@ -4,6 +4,9 @@ on:
     paths:
       - 'package*.json'
       - 'src/lib/management/identity-qr.ts'
+      - 'shared/identity-qr.ts'
+      - 'src/app/mobile-identity-qr/**'
+      - 'mobile/src/components/identity-qr-scanner*'
       - 'src/lib/management/photo-ocr.ts'
       - 'src/components/management/IdentityQrCamera.tsx'
       - 'src/components/management/usePhotoOcr.ts'
@@ -34,6 +37,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:identity-qr
+      - run: node scripts/check-identity-qr-bridge.cjs
       - run: npm run build
       - name: Prepare browser runtime
         run: |

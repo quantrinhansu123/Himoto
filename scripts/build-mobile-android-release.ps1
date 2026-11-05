@@ -5,6 +5,10 @@ $taskOutput=[IO.Path]::GetFullPath((Join-Path $taskRoot $Output))
 if (-not $taskOutput.StartsWith((Join-Path $taskRoot '.backups\'),[StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $taskOutput)) { throw 'Use a new output directory inside .backups.' }
 [void](New-Item -ItemType Directory -Path $taskOutput)
 $taskMobile=Join-Path $taskRoot 'mobile'
+$taskConfig=Get-Content -LiteralPath (Join-Path $taskMobile 'app.json') -Raw | ConvertFrom-Json
+$taskVersion=[string]$taskConfig.expo.version
+$taskVersionCode=[int]$taskConfig.expo.android.versionCode
+if($taskVersion -notmatch '^\d+\.\d+\.\d+$' -or $taskVersionCode -lt 1){throw 'Invalid Android version in app.json.'}
 $taskGoogleHash=$null
 if($GoogleServicesFile){
     $GoogleServicesFile=(Resolve-Path -LiteralPath $GoogleServicesFile).Path
@@ -63,7 +67,7 @@ try {
         $taskCode=$LASTEXITCODE;$ErrorActionPreference='Stop'
         if($taskCode -ne 0){throw 'Android release Gradle build failed. See gradle.log.'}
     } finally { Pop-Location }
-    $taskApk=Join-Path $taskOutput 'Himoto-1.0.0-android-release.apk'
+    $taskApk=Join-Path $taskOutput "Himoto-$taskVersion-android-release.apk"
     Copy-Item -LiteralPath (Join-Path $taskMobile 'android/app/build/outputs/apk/release/app-release.apk') -Destination $taskApk
     $taskTools='E:\Android\Sdk\build-tools\37.0.0'
     $ErrorActionPreference='Continue'
@@ -77,13 +81,13 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Cannot inspect APK manifest.'}
     $taskBadging | Set-Content -LiteralPath (Join-Path $taskOutput 'apk-badging.txt')
     if(@($taskBadging | Where-Object {$_ -match '^application-debuggable'}).Count -gt 0){throw 'Release APK is debuggable.'}
-    if(-not ($taskBadging | Select-String -SimpleMatch "package: name='vn.himoto.staff' versionCode='1' versionName='1.0.0'")){throw 'APK identity/version mismatch.'}
+    if(-not ($taskBadging | Select-String -SimpleMatch "package: name='vn.himoto.staff' versionCode='$taskVersionCode' versionName='$taskVersion'")){throw 'APK identity/version mismatch.'}
     & python (Join-Path $PSScriptRoot 'verify-mobile-release-bundle.py') --apk $taskApk
     if($LASTEXITCODE -ne 0){throw 'Compiled bundle/Firebase/native module verification failed.'}
     & node (Join-Path $PSScriptRoot 'mobile-release-provenance.cjs') --manifest (Join-Path $taskOutput 'source-manifest.json') --verify
     if($LASTEXITCODE -ne 0){throw 'Release source changed during build.'}
     if($GoogleServicesFile -and (Get-FileHash -LiteralPath $GoogleServicesFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $taskGoogleHash){throw 'Firebase configuration changed during build.'}
-    [ordered]@{ok=$true;version='1.0.0';versionCode=1;package='vn.himoto.staff';apk=$taskApk;bytes=(Get-Item -LiteralPath $taskApk).Length;sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $taskApk).Hash.ToLowerInvariant();certificateSha256=$taskSigningManifest.certificateSha256;debuggable=$false;apiOrigin='https://himoto.vercel.app';firebaseAndroidConfigured=[bool]$GoogleServicesFile;firebaseConfigSha256=$taskGoogleHash;dotenvDisabled=$true;sourceUnchanged=$true;installed=$false;nativeAcceptance=$false;portableKeyBackupCompleted=$false;completedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskOutput 'results.json') -Encoding UTF8
+    [ordered]@{ok=$true;version=$taskVersion;versionCode=$taskVersionCode;package='vn.himoto.staff';apk=$taskApk;bytes=(Get-Item -LiteralPath $taskApk).Length;sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $taskApk).Hash.ToLowerInvariant();certificateSha256=$taskSigningManifest.certificateSha256;debuggable=$false;apiOrigin='https://himoto.vercel.app';firebaseAndroidConfigured=[bool]$GoogleServicesFile;firebaseConfigSha256=$taskGoogleHash;dotenvDisabled=$true;sourceUnchanged=$true;installed=$false;nativeAcceptance=$false;portableKeyBackupCompleted=$false;completedAt=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskOutput 'results.json') -Encoding UTF8
     Get-Content -LiteralPath (Join-Path $taskOutput 'results.json')
 } finally {
     foreach($taskName in $taskNames){[Environment]::SetEnvironmentVariable($taskName,$taskPrevious[$taskName],'Process')}

@@ -1,4 +1,5 @@
-import {isMobileNotifications, isMobileNotificationList, isMobilePushStatus, type MobileNotificationKind} from '../../../shared/mobile-notifications';
+import {isMobileNotifications, isMobileNotificationList, isMobilePushStatus, isMobilePushTest, type MobileNotificationKind} from '../../../shared/mobile-notifications';
+import {isMobileActivityPage} from '../../../shared/mobile-activity';
 import {isFleetInventory,type MobileFleetInventory} from '../../../shared/mobile-fleet-inventory';
 import { isMobileVideoReceipt, isMobileVideoSignature, type MobileVideoReceipt, type MobileVideoUploadSignature, type MobileVideoCloudReceipt } from '../../../shared/mobile-video';
 import {isMobileVideoUploadConfig,isMobileVideoDirectResult,isMobileVideoBrowserReceipt,type MobileVideoDirectResult,type MobileVideoBrowserReceipt} from '../../../shared/mobile-video-upload';
@@ -443,10 +444,12 @@ export function createApi(
     logout: () =>
       request<{ success: true }>("/session", isLogout, { method: "DELETE" }),
     notifications: (signal?: AbortSignal) => request('/notifications', isMobileNotifications, {signal}),
+    notificationActivity: (before: number|null, signal?: AbortSignal) => request(`/notifications/activity${before===null?'':`?before=${before}`}`, isMobileActivityPage, {signal}),
     notificationList: (kind: MobileNotificationKind, page: number, signal?: AbortSignal) => request(`/notifications/groups/${kind}?page=${page}`, isMobileNotificationList, {signal}),
     pushStatus: () => request('/notifications/device', isMobilePushStatus),
-    enablePush: (token: string) => request('/notifications/device', isMobilePushStatus, {method: 'POST', body: JSON.stringify({token})}),
+    enablePush: (token: string) => request('/notifications/device', isMobilePushStatus, {method: 'POST', body: JSON.stringify({token,activity:true})}),
     disablePush: () => request('/notifications/device', isMobilePushStatus, {method: 'DELETE'}),
+    testPush: () => request('/notifications/test',isMobilePushTest,{method:'POST',body:'{}'}),
     workspace: (signal?: AbortSignal) =>
       request<MobileWorkspace>("/workspace", isWorkspace, { signal }),
     customer: (id: string, signal?: AbortSignal) =>

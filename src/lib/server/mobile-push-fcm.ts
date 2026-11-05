@@ -39,7 +39,7 @@ export async function federatedFcmToken(c: FcmFederation, subjectToken: () => Pr
   return access.accessToken;
 }
 export type PushOutcome = 'sent' | 'invalid' | 'unknown' | 'failed';
-export async function sendMobilePush(token: string, kind: MobileNotificationKind): Promise<PushOutcome> {
+export async function sendMobilePush(token: string, kind: MobileNotificationKind|'activity'|'test'): Promise<PushOutcome> {
   const c = configuration(); if (!c) return 'failed';
   let auth: string;
   try { auth = await federatedFcmToken(c); } catch { return 'failed'; }
@@ -47,8 +47,8 @@ export async function sendMobilePush(token: string, kind: MobileNotificationKind
     // Generic notification only: current actor/permissions are checked again on open.
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${c.projectId}/messages:send`, {
       method: 'POST', signal: AbortSignal.timeout(10000), headers: {'Authorization': `Bearer ${auth}`, 'Content-Type': 'application/json'},
-      body: JSON.stringify({message: {token, notification: {title: 'Himoto', body: 'Có công việc cần kiểm tra. Mở Himoto để xem.'},
-        data: {screen: 'notifications', kind}, android: {priority: 'normal', ttl: '300s', collapse_key: `himoto-${kind}`,
+      body: JSON.stringify({message: {token, notification: {title: 'Himoto', body: kind==='test'?'Thông báo thử từ Himoto. Thiết bị đã kết nối dịch vụ thông báo.':kind==='activity'?'Có sự kiện mới. Mở Himoto để xem.':'Có công việc cần kiểm tra. Mở Himoto để xem.'},
+        data: {screen: 'notifications', kind}, android: {priority: kind==='test'||kind==='activity'?'high':'normal', ttl: '300s', collapse_key: `himoto-${kind}`,
           notification: {channel_id: 'himoto-work', tag: `himoto-${kind}`, visibility: 'PRIVATE'}}}}),
     });
     const data = await response.json().catch(() => null);

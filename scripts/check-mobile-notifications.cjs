@@ -52,6 +52,10 @@ async function run(){
   await assert.rejects(()=>api.readMobileNotificationList(manager,'bad',new URLSearchParams()),e=>e.status===404);
   checks.push('Real scoped SQL: destination branch only, resolved/superseded transfers excluded; actual web approval helper and contract reader delegation; accounts without contract grants receive only the fleet group granted by web');
   const sql=fs.readFileSync(path.resolve('docs/sql/2026-11-05-mobile-push.sql'),'utf8');await pg.exec(sql);await pg.exec(sql);
+  await pg.exec(`CREATE FUNCTION himoto.access_store(id bigint) RETURNS boolean LANGUAGE sql STABLE AS $$
+    SELECT current_setting('himoto.scope_all',true)='true' OR id=NULLIF(current_setting('himoto.store_id',true),'')::bigint $$;
+    CREATE TABLE himoto.transactions(id bigint PRIMARY KEY,order_id bigint,store_id bigint,status text,type text,name text);`);
+  await pg.exec(fs.readFileSync(path.resolve('docs/sql/2026-11-05-mobile-activity-events.sql'),'utf8'));
   for(const role of ['anon','authenticated','himoto_scoped']){
    const privileges=(await pg.query(`SELECT has_table_privilege($1,'himoto.management_mobile_push_devices','SELECT') AS devices,has_table_privilege($1,'himoto.management_mobile_push_deliveries','SELECT') AS deliveries`,[role])).rows[0];assert.deepEqual(privileges,{devices:false,deliveries:false});
   }
@@ -72,7 +76,7 @@ async function run(){
    const msg=JSON.parse(init.body).message;assert.deepEqual(Object.keys(msg.data).sort(),['kind','screen']);assert.equal(msg.android.notification.visibility,'PRIVATE');
    assert(!JSON.stringify(msg).includes('QA101'));assert(!JSON.stringify(msg).includes('customer'));
    if(provider==='unknown')throw Error('Synthetic lost response');
-   return {ok:provider==='sent',status:provider==='sent'?200:404,json:async()=>provider==='sent'?{name:'projects/offline/messages/1'}:{error:{details:[{errorCode:'UNREGISTERED'}]}}};
+   return {ok:provider==='sent',status:provider==='sent'?200:provider==='failed'?400:404,json:async()=>provider==='sent'?{name:'projects/offline/messages/1'}:provider==='failed'?{error:{}}:{error:{details:[{errorCode:'UNREGISTERED'}]}}};
   };
   const c={projectId:'himoto-offline',projectNumber:'123456789',serviceAccount:'himoto-fcm@himoto-offline.iam.gserviceaccount.com',pool:'himoto-test',provider:'vercel-prod'};
   assert.equal(await fcm.federatedFcmToken(c,async()=>'offline-synthetic-oidc'),'offline-synthetic-access');
@@ -101,6 +105,51 @@ async function run(){
   assert.equal((await pg.query("SELECT count(*)::int AS n FROM himoto.management_mobile_push_deliveries WHERE outcome='unknown'")).rows[0].n,4);
   provider='invalid';await push.registerMobilePush(req('synthetic-device-token-other'),8,otherSession);await push.dispatchMobilePush();
   assert.equal((await pg.query("SELECT count(*)::int AS n FROM himoto.management_mobile_push_devices WHERE enabled AND token='synthetic-device-token-other'")).rows[0].n,0);
+  provider='sent';const activitySession=randomUUID();
+  await pg.query("INSERT INTO himoto.management_mobile_sessions VALUES($1,7,0,$2,now()+interval '1 day',NULL)",[activitySession,'c'.repeat(64)]);
+  const activityRequest=new NextRequest('https://fixture.invalid/notifications/device',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:'synthetic-activity-device-123',activity:true})});
+  await push.registerMobilePush(activityRequest,7,activitySession);
+  await pg.exec("UPDATE himoto.orders SET order_status='renting' WHERE id=103");
+  await pg.exec("INSERT INTO himoto.transactions VALUES(1,103,23,'approved','in','order:payment')");
+  await push.dispatchMobilePush();
+  const activityRows=(await pg.query(`SELECT e.kind,d.outcome FROM himoto.management_mobile_activity_deliveries d
+    JOIN himoto.management_mobile_activity_events e ON e.id=d.event_id ORDER BY e.id`)).rows;
+  assert.deepEqual(activityRows,[{kind:'contract_created',outcome:'sent'}]);
+  const sendsAfterActivity=sends;
+  await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
+  await push.dispatchMobilePush();assert.equal(sends,sendsAfterActivity);
+  provider='unknown';
+  await pg.exec("UPDATE himoto.orders SET draft_payload='{\"management_composer\":{\"versions\":[{\"kind\":\"renewal\",\"version\":2}]}}' WHERE id=103");
+  await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
+  await push.dispatchMobilePush();
+  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries WHERE outcome='unknown'")).rows[0].n,1);
+  const sendsAfterUnknown=sends;
+  await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
+  await push.dispatchMobilePush();assert.equal(sends,sendsAfterUnknown);
+  provider='sent';
+  await push.registerMobilePush(req('synthetic-activity-device-123'),7,activitySession);
+  await pg.exec("UPDATE himoto.orders SET draft_payload='{\"management_composer\":{\"versions\":[{\"kind\":\"renewal\",\"version\":2},{\"kind\":\"renewal\",\"version\":3}]}}' WHERE id=103");
+  await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
+  await push.dispatchMobilePush();
+  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries WHERE outcome='sent'")).rows[0].n,1);
+  const upgradedRequest=new NextRequest('https://fixture.invalid/notifications/device',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:'synthetic-activity-device-123',activity:true})});
+  await push.registerMobilePush(upgradedRequest,7,activitySession);
+  await pg.exec("UPDATE himoto.orders SET draft_payload='{\"management_composer\":{\"versions\":[{\"kind\":\"renewal\",\"version\":2},{\"kind\":\"renewal\",\"version\":3},{\"kind\":\"renewal\",\"version\":4}]}}' WHERE id=103");
+  await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
+  let scopeReads=0;sessions.sessionUserById=async id=>id===7?(++scopeReads===1?manager:{...manager,permissions:['vehicles.read']}):other;
+  await push.dispatchMobilePush();
+  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries d JOIN himoto.management_mobile_activity_events e ON e.id=d.event_id WHERE e.event_key='renewal:103:4'")).rows[0].n,0);
+  sessions.sessionUserById=async id=>id===7?manager:other;
+  await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
+  await push.dispatchMobilePush();
+  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries d JOIN himoto.management_mobile_activity_events e ON e.id=d.event_id WHERE e.event_key='renewal:103:4' AND d.outcome='sent'")).rows[0].n,1);
+  checks.push('Activity-capable devices receive scoped committed events once; unknown sends are not blindly repeated, payment requires finance permission and legacy registration does not opt in');
+  const testRequest=body=>new NextRequest('https://fixture.invalid/notifications/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const testSends=sends;assert.deepEqual(await push.testMobilePush(testRequest({}),7,activitySession),{outcome:'sent'});assert.equal(sends,testSends+1);
+  await assert.rejects(()=>push.testMobilePush(testRequest({}),7,activitySession),e=>e.code==='PUSH_TEST_LIMIT');
+  await assert.rejects(()=>push.testMobilePush(testRequest({}),8,activitySession),e=>e.code==='PUSH_TEST_LIMIT');
+  await assert.rejects(()=>push.testMobilePush(testRequest({token:'foreign-device'}),7,activitySession),e=>e.status===400);
+  assert.equal(sends,testSends+1);checks.push('Self-test targets only the current actor/session device, refuses injected recipients and rate-limits repeated sends without business writes');
   process.env.HIMOTO_MOBILE_ENABLED='false';assert.equal(fcm.mobilePushConfigured(),false);await push.dispatchMobilePush();
   checks.push('Changing account rebinds one device without keeping the prior session subscription; lost provider responses retain original fingerprints with no blind resend; invalid tokens and disabled mobile gate stop dispatch');
   const argOut=process.argv.indexOf('--output');const report={ok:true,groups:checks,productionWrites:0,externalPushMessages:0};

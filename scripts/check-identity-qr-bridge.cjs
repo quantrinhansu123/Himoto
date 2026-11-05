@@ -1,0 +1,13 @@
+require('./lib/offline-tests.cjs');
+const assert=require('node:assert/strict'),path=require('node:path');
+const {load}=require('./lib/load-typescript.cjs');
+const {isIdentityQrScan,identityQrMatches,identityQrMessage}=load(path.resolve('shared/identity-qr'));
+const scan={fields:{id_card:'001200000001',name:'NGUYỄN VĂN QA',id_card_issued_on:'2022-06-05'},identifiers:['001200000001','123456789']};
+assert(isIdentityQrScan(scan));assert(identityQrMatches(scan,'123456789'));assert(identityQrMatches(scan,''));assert(!identityQrMatches(scan,'001200000002'));
+for(const bad of [{...scan,fields:{...scan.fields,address:'never'}},{...scan,fields:{...scan.fields,id_card_issued_on:'2022-02-30'}},{...scan,identifiers:['001200000002']},{...scan,fields:{...scan.fields,name:'\nQA'}},{...scan,identifiers:['001200000001','123456789','999999999']}])assert(!isIdentityQrScan(bad));
+const nonce='00000000-0000-4000-8000-000000000001',payload=JSON.stringify({type:'himoto.identity-qr.v1',nonce,scan});
+assert.deepEqual(identityQrMessage(payload,nonce),scan);
+assert.equal(identityQrMessage(payload,'00000000-0000-4000-8000-000000000002'),null);
+assert.equal(identityQrMessage(JSON.stringify({type:'foreign',nonce,scan}),nonce),null);
+assert.equal(identityQrMessage('malformed',nonce),null);assert.equal(identityQrMessage('x'.repeat(4097),nonce),null);
+console.log('PASS: QR bridge validates bound messages, actual calendar dates, exact identity fields, legacy matches and rejects unrelated/malformed data.');

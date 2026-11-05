@@ -1,4 +1,5 @@
 import type { OcrResult } from './photo-ocr';
+import type { IdentityQrScan } from '../../../shared/identity-qr';
 
 const WASM_PATH = '/vendor/zxing/3.1.6/zxing_reader.wasm';
 const options = { formats: ['QRCode'] as const, tryHarder: true, tryRotate: true,
@@ -46,7 +47,7 @@ export async function containsIdentityQr(pixels: ImageData): Promise<boolean> {
   return (await identities(pixels)).length > 0;
 }
 
-export async function readIdentityQr(files: File[], signal: AbortSignal, expectedIdentity = ''): Promise<OcrResult> {
+export async function readIdentityQr(files: File[], signal: AbortSignal, expectedIdentity = ''): Promise<OcrResult & IdentityQrScan> {
   const found = new Map<string, Identity>();
   for (const file of files) {
     signal.throwIfAborted();
@@ -73,5 +74,5 @@ export async function readIdentityQr(files: File[], signal: AbortSignal, expecte
   const identity = [...found.values()][0];
   if (!identity) throw new Error('Chưa tìm thấy QR căn cước hợp lệ. Chụp rõ mã QR hoặc nhập thông tin bằng tay.');
   if (expectedIdentity && !identity.identifiers.includes(expectedIdentity)) throw new Error('QR thuộc căn cước khác. Kiểm tra lại trước khi cập nhật.');
-  return identity.result;
+  return {...identity.result, fields: identity.result.fields as IdentityQrScan['fields'], identifiers: identity.identifiers};
 }
