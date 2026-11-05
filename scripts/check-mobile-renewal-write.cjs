@@ -50,7 +50,7 @@ async function run(){
     await assert.rejects(()=>server.readMobileRenewalReceipt(who,key),error=>error.status===403);
   }
   for(const broken of [{...input,expected_version:1},{...input,expected_version:'9'},{...input,bill_revision:undefined},{...input,bill_revision:'bad'},
-    {...input,request_id:key},{...input,occurred_at:'2099-10-01T08:00'},{...input,return_at:'2026-02-30T08:00'},
+    {...input,request_id:key},{...input,occurred_at:'2099-10-01T08:00'},{...input,receipt:{...input.receipt,paid_at:'2099-10-01T08:00'}},{...input,return_at:'2026-02-30T08:00'},
     {...input,receipt:{...input.receipt,method:'company_transfer'}},{...input,amount:'-1'},{...input,item_revision:'bad'},
     {...input,receipt:undefined},{...input,note:'x'.repeat(17000)}]){
     await assert.rejects(()=>server.recordMobileRenewal(user,'101',request(broken)),error=>error.status===400||error.status===413);

@@ -1,4 +1,10 @@
 import type { PaymentMethod, PaymentResult } from './contract-payments';
+import { validBackfillTime } from './contract-backfill';
+
+/** Renewal dates may be backdated or scheduled ahead. */
+export function validRenewalTime(value:string) {
+  return validBackfillTime(value,Number.POSITIVE_INFINITY);
+}
 
 export interface RenewalInput {
   occurred_at?:string;

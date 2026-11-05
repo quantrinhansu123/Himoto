@@ -11,6 +11,7 @@ import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { validIdentityIssueDate } from '@/lib/management/customer-identity';
 import { createInstallmentPlan } from '@/lib/management/contract-billing';
 import { CONTRACT_STATUSES, OWNERSHIP_CONTRACT_TYPES } from '@/lib/management/config';
+import { releaseCompletedContractVehicles } from './contract-stock-release';
 
 type Database = Pick<PoolClient, 'query'>;
 const timestamp = (value:string) => value ? `${value}:00+07:00` : null;
@@ -163,5 +164,6 @@ export async function updateIssuedContract(db:Database,id:number,actor:number,bo
     total=$7,total_rental_fees=$8,first_deposit_amount=$9,additional_deposit_amount=0,contract_snapshot=NULL,draft_payload=$10::json,
     contract_authorization_date=NULLIF($11,'')::date,contract_collateral_description=$12,customer_source_url=$13,updated_at=now()
     WHERE id=$1 RETURNING xmin::text AS revision`,[id,Number(draft.store_id),draft.customer_id,input.rental_type,timestamp(draft.start_date),timestamp(draft.end_date),draft.total_amount,Math.max(Number(draft.total_amount)-input.fees,0),draft.deposit_amount,JSON.stringify(payload),draft.authorization_date,draft.collateral_description,draft.customer_source_url]);
+  if(input.status==='completed')await releaseCompletedContractVehicles(db,id);
   return {revision:String(updated.rows[0].revision),code:draft.contract_number.trim()};
 }

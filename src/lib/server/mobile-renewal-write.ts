@@ -17,6 +17,7 @@ import { renewContractAndCollect } from "./contract-renewal-collection";
 import { nextContractRenewalVersion } from "./contract-renewal-version";
 import { queueContractNotification } from "./contract-notifications";
 import { sameRenewalPeriod } from "./contract-notification-content";
+import { validBackfillTime } from "../../../shared/contract-backfill";
 
 async function transaction<T>(user:SessionUser,write:boolean,task:(client:PoolClient)=>Promise<T>){
   requireMobileRenewal(user);
@@ -94,6 +95,9 @@ export async function recordMobileRenewal(user:SessionUser,value:string,request:
   try{
     const fields={...body};delete fields.expected_version;delete fields.bill_revision;
     const input=parseRenewalInput({...fields,request_id:key});
+    const paidAt = body.receipt && typeof body.receipt === "object" && !Array.isArray(body.receipt) ? (body.receipt as Record<string, unknown>).paid_at : undefined;
+    if ((input.occurred_at && !validBackfillTime(input.occurred_at)) || (typeof paidAt === "string" && !validBackfillTime(paidAt)))
+      throw new MobileError("Ngày giờ thực tế không được ở tương lai.",400,"INVALID_RENEWAL");
     return await transaction(user,true,async client=>{
       const saved=await idempotentMobileWrite(client,user.id,key,`renewal.record:${id}`,{id,version,billRevision:billRevision??null,input},async()=>{
         const order=(await client.query("SELECT xmin::text AS revision,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",[id])).rows[0];
@@ -103,6 +107,11 @@ export async function recordMobileRenewal(user:SessionUser,value:string,request:
         const backfill=!!input.occurred_at,items=await mobileRenewalItems(client,id,context,backfill);
         const blocked=mobileRenewalBlockedReason(context,!!composer?.installment_plan,backfill,items.length);
         if(blocked)throw new MobileError(blocked,409,"RENEWAL_CONFLICT");
+        if(input.occurred_at){
+          const item=items.find(row=>row.id===input.item_id),at=Date.parse(`${input.occurred_at}:00+07:00`);
+          if(item && (item.startedAt && at<Date.parse(item.startedAt) || item.completedAt && at>Date.parse(item.completedAt)))
+            throw new MobileError("Ngày bắt đầu gia hạn phải từ lúc bắt đầu thuê và không sau lúc trả xe thực tế.",400,"INVALID_RENEWAL");
+        }
         if(await nextContractRenewalVersion(client,id,composer?.versions)!==version)
           throw new MobileError("Phiên bản gia hạn đã thay đổi. Rà soát lại đúng phiên bản và bill trước khi lưu.",409,"RENEWAL_CONFLICT");
         if(input.receipt){

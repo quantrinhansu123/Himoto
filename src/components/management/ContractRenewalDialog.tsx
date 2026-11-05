@@ -4,19 +4,18 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarPlus, LoaderCircle, Wallet } from 'lucide-react';
 import { loadContractReturnableItems, ReturnableContractItem } from '@/lib/management/contract-returns';
-import { overdueParts, saveContractRenewal, renewalDurationUnits, renewalFeeWarning, loadRenewalPhotoVersion } from '@/lib/management/contract-renewals';
+import { overdueParts, saveContractRenewal, renewalDurationUnits, validRenewalTime, renewalFeeWarning, loadRenewalPhotoVersion } from '@/lib/management/contract-renewals';
 import {
   cashbookPaymentPath, loadPaymentContext, PAYMENT_METHODS, paymentAccountKey, paymentAccounts,
   paymentMethodLabel, PaymentContext, PaymentMethod,
 } from '@/lib/management/contract-payments';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
-import { addRentalDuration } from '@/lib/management/rental-time';
+import { addRentalDuration, vietnamRentalTime } from '@/lib/management/rental-time';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 import { ContractTransactionPhotos } from './ContractTransactionPhotos';
 import { ContractTelegramPanel } from './ContractTelegramPanel';
-import { validBackfillTime } from '@/lib/management/contract-backfill';
 import { buildRenewalNote } from '../../../shared/renewal-note';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -46,7 +45,6 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [outsideName, setOutsideName] = useState('Phí thu thêm');
   const [outsideAmount, setOutsideAmount] = useState('');
   const [note, setNote] = useState('');
-  const [occurredAt,setOccurredAt]=useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -57,7 +55,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [hasPaymentEvidence, setHasPaymentEvidence] = useState(false);
   const [paymentContext, setPaymentContext] = useState<PaymentContext | null>(null);
   const [paymentLoadError, setPaymentLoadError] = useState('');
-  const [collectionChoice, setCollectionChoice] = useState<'' | 'received' | 'unpaid'>('');
+  const [collectionChoice, setCollectionChoice] = useState<'' | 'received' | 'unpaid'>('received');
   const collect = collectionChoice === 'received';
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [accountId, setAccountId] = useState('');
@@ -108,6 +106,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const overdue = useMemo(() => overdueParts(selected?.scheduled_return_at ?? null), [selected?.scheduled_return_at]);
   const dueStamp = selected?.scheduled_return_at || '';
   const dueMs = dueStamp ? Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dueStamp) ? `${dueStamp}:00+07:00` : dueStamp) : NaN;
+  const occurredAt = Number.isFinite(dueMs) ? vietnamRentalTime(new Date(dueMs)) : '';
   const maxCount = unit === 'day' ? 365 : 720;
   const unitCount = /^\d+$/.test(count) ? Number(count) : 0;
   const rate = /^\d{1,9}$/.test(rateInput) ? Number(rateInput) : 0;
@@ -160,8 +159,8 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!selected || saving || photosPending) return;
-    if(!occurredAt){setError('Vui lòng chọn ngày giờ bắt đầu gia hạn.');return;}
-    if(!validBackfillTime(occurredAt)){setError('Nhập ngày giờ bắt đầu gia hạn hợp lệ.');return;}
+    if(!occurredAt){setError('Hợp đồng chưa có hẹn trả xe hợp lệ để bắt đầu gia hạn.');return;}
+    if(!validRenewalTime(occurredAt)){setError('Nhập ngày giờ bắt đầu gia hạn hợp lệ.');return;}
     if (!validReturn) { setError(!Number.isFinite(baseMs) ? 'Chưa có hẹn trả hiện tại để tính gia hạn.' : 'Ngày trả mới phải sau hẹn trả hiện tại.'); return; }
     if (endsBeforePriorDue) { setError('Ngày trả mới không được sớm hơn hẹn trả hiện tại của hợp đồng.'); return; }
     if (!/^(0|[1-9]\d{0,12})$/.test(amount || '0')) { setError('Chi phí gia hạn phải là số tiền nguyên VNĐ.'); return; }
@@ -259,7 +258,6 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
           </dl>
           <fieldset className="mg-payment-fields" disabled={saving}>
             <legend>Thông tin gia hạn</legend>
-            <label className="mg-field-wide" htmlFor="renewal-occurred-at">Ngày bắt đầu gia hạn (24h) *<DateTime24Controls id="renewal-occurred-at" label="Ngày bắt đầu gia hạn" value={occurredAt} onChange={setOccurredAt} requireDateSelection/><small>Chọn ngày, giờ bắt đầu gia hạn. Nếu đã nhận tiền, phiếu thu ghi nhận vào ngày này.</small></label>
             <label>Gia hạn theo<select value={unit} onChange={event => changeUnit(event.target.value as 'day' | 'hour')}><option value="day">Ngày</option><option value="hour">Giờ</option></select></label>
             <label>{unit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}<input type="number" min={1} max={maxCount} value={count} onChange={event => {setDurationSource('count');setCount(event.target.value);}} /></label>
             <label>{unit === 'day' ? 'Đơn giá / ngày (VNĐ)' : 'Đơn giá / giờ (VNĐ)'}<input inputMode="numeric" value={groupAmount(rateInput)} placeholder={unit === 'day' ? 'Nhập đơn giá/ngày' : 'Nhập đơn giá/giờ'}

@@ -27,7 +27,7 @@ export async function renewContractAndCollect(db:Pick<PoolClient,'query'>,id:num
   if (input.receipt && !previous) await requireRenewalPaymentEvidence(db,id,result.version);
   if (input.receipt && Number(input.amount) > 0) {
     const context = await readPaymentContext(db,id,options);
-    result.payment = await recordContractPayment(db,id,actor,{...input.receipt,request_id:input.request_id,revision:context.revision,amount:input.amount,renewal_version:result.version,note:input.note||`Gia hạn hợp đồng_${result.code}`},options);
+    result.payment = await recordContractPayment(db,id,actor,{...input.receipt,request_id:input.request_id,revision:context.revision,amount:input.amount,renewal_version:result.version,note:input.note||`Gia hạn hợp đồng_${result.code}`},options,{allowFutureTime:true});
   }
   const outside = Number(input.outside_amount || 0);
   if (input.receipt && outside > 0) {
