@@ -60,7 +60,7 @@ def run_document_workflows(page, state, base_url, output, checks):
     expect(field('Họ và tên')).to_have_value('ManualDuringReadQA')
     button('Tiếp tục lưu ảnh khách hàng').click()
     stage_save()
-    expect(button('Đối chiếu ảnh với máy chủ')).to_be_visible()
+    expect(button('Đối chiếu ảnh với máy chủ')).to_be_enabled()
     assert state['document_writes'] == 1 and state['customer_creates'] == 1
     first = deepcopy(next(iter(state['document_receipts'].values()))['receipt'])
     button('Đối chiếu ảnh với máy chủ').click()

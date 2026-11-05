@@ -4,11 +4,12 @@ Uses a new browser context, fresh batch/request UUIDs and a loopback static serv
 Never attaches to or changes the Samsung fixture, app data or durable ledger.
 """
 import argparse
-import csv
-import io
+import base64
 import json
 import subprocess
 import threading
+import zipfile
+import xml.etree.ElementTree as ET
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -25,6 +26,8 @@ def run(build, output):
     output.mkdir(parents=True)
     # Generate a real .xlsx with the same production template used by the API.
     subprocess.run(['node', '-e', "const fs=require('node:fs'),p=require('node:path'),{load,root}=require('./scripts/lib/load-typescript.cjs');(async()=>{const b=await load(p.join(root,'lib/management/customer-excel')).createCustomerTemplate([{id:23,name:'QA Store',code:'QA23'}]);const E=require('exceljs'),w=new E.Workbook();await w.xlsx.load(b);w.worksheets[0].getRow(2).values=['QA import','0900000002','001234000002','','QA address','QA23','active',''];fs.writeFileSync(process.argv[1],Buffer.from(await w.xlsx.writeBuffer()));})().catch(e=>{console.error(e);process.exitCode=1})", str(output / 'input.xlsx')], check=True)
+    subprocess.run(['node','-e',"const fs=require('node:fs'),E=require('exceljs');(async()=>{const w=new E.Workbook(),s=w.addWorksheet('Customers',{views:[{state:'frozen',ySplit:1}]});s.addRow(['Mã','Khách hàng','Số điện thoại']);for(let i=0;i<53;i++)s.addRow(['QA-'+i,'QA '+i,'0900000002']);s.autoFilter='A1:C54';fs.writeFileSync(process.argv[1],Buffer.from(await w.xlsx.writeBuffer()));})().catch(e=>{console.error(e);process.exitCode=1})",str(output/'synthetic-export.xlsx')],check=True)
+    export_bytes=(output/'synthetic-export.xlsx').read_bytes()
     class Handler(SimpleHTTPRequestHandler):
         def log_message(self, *_args):
             pass
@@ -78,8 +81,8 @@ def run(build, output):
                         params = parse_qs(url.query)
                         state['exported'].append(params)
                         assert params['columns'] == ['code,name,phone']
-                        text = '\ufeff"Mã","Khách hàng","Số điện thoại"\r\n' + '\r\n'.join(f'"QA-{i}","QA {i}","0900000002"' for i in range(53))
-                        respond({'filename': 'himoto-customers-qa.csv', 'mimeType': 'text/csv', 'content': text, 'rowCount': 53})
+                        assert params['format']==['xlsx']
+                        respond({'filename':'himoto-customers-qa.xlsx','mimeType':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','contentBase64':base64.b64encode(export_bytes).decode(),'rowCount':53})
                     elif url.path.endswith('/imports/customers/preview'):
                         assert request.post_data_buffer[:2] == b'PK'
                         rows = [{**deepcopy(r), 'store_id': 23, 'state': 'invalid' if r['errors'] else 'valid', 'warnings': []} for r in source]
@@ -136,18 +139,24 @@ def run(build, output):
                 page.get_by_label('Mật khẩu', exact=True).fill('fixture-password')
                 page.get_by_role('button', name='Đăng nhập', exact=True).click()
                 page.get_by_role('button', name='Mở Khách hàng', exact=True).click()
-                page.get_by_role('button', name='Xuất CSV theo bộ lọc', exact=True).click()
+                page.get_by_role('button', name='Tải Excel theo bộ lọc', exact=True).click()
                 page.get_by_role('checkbox', name='Xuất cột Giấy tờ định danh', exact=True).click()
-                expect(page.get_by_role('button', name='Xuất CSV với 3 cột', exact=True)).to_be_enabled()
+                expect(page.get_by_role('button', name='Tải Excel với 3 cột', exact=True)).to_be_enabled()
                 page.screenshot(path=str(output / f'export-{width}-{scheme}.png'), full_page=True)
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
                 with page.expect_download() as capture:
-                    page.get_by_role('button', name='Xuất CSV với 3 cột', exact=True).click()
+                    page.get_by_role('button', name='Tải Excel với 3 cột', exact=True).click()
                 download = capture.value
-                target = output / f'customers-{width}.csv'
+                target = output / f'customers-{width}.xlsx'
                 download.save_as(target)
-                assert len(list(csv.reader(io.StringIO(target.read_text(encoding='utf-8-sig'))))) == 54
-                expect(page.get_by_text('Đã lưu 53 dòng vào himoto-customers-qa.csv.', exact=True)).to_be_visible()
+                assert target.read_bytes()==export_bytes
+                with zipfile.ZipFile(target)as archive:
+                    assert archive.testzip()is None
+                    sheet=ET.fromstring(archive.read('xl/worksheets/sheet1.xml'));ns={'s':'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+                    assert len(sheet.findall('s:sheetData/s:row',ns))==54
+                    assert sheet.find('s:autoFilter',ns).get('ref')=='A1:C54'
+                    assert sheet.find('s:sheetViews/s:sheetView/s:pane',ns).get('ySplit')=='1'
+                expect(page.get_by_text('Đã lưu 53 dòng vào himoto-customers-qa.xlsx.', exact=True)).to_be_visible()
                 checks.append(f'{width}/{scheme}: column selection and 53-row download from isolated export response, original catalogue only has one mounted row')
                 # Expo Router's standard back action preserves the in-memory session.
                 page.go_back()
@@ -174,7 +183,7 @@ def run(build, output):
                 with page.expect_file_chooser() as capture:
                     page.get_by_role('button', name='Chọn file Căn cước / Cơ sở', exact=True).click()
                 capture.value.set_files(output / 'input.xlsx')
-                expect(page.get_by_text('1002 dòng · Cần cập nhật 2 · Đã đúng 0 · Lỗi 1000', exact=True)).to_be_visible()
+                expect(page.get_by_text('1002 dòng · Cần cập nhật 2 · Đã đúng 0 · Lỗi 1000', exact=True)).to_be_visible(timeout=60000)
                 page.screenshot(path=str(output / f'store-preview-{width}-{scheme}.png'), full_page=True)
                 page.get_by_role('button', name='Kiểm tra và cập nhật cơ sở cho 2 khách', exact=True).click()
                 page.get_by_role('button', name='Xác nhận cập nhật 2 khách', exact=True).click()

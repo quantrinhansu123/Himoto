@@ -39,7 +39,10 @@ def run(base_url,output):
         def tab(name):return page.get_by_role("tab",name=name,exact=True)
         def back():page.get_by_role("link",name=re.compile(r", back$")).click()
         def tabs():
-            if not tab("Đội xe").is_visible():back()
+            for _ in range(4):
+                expect(tab('Đội xe').or_(page.get_by_role('link',name=re.compile(r', back$'))).first).to_be_visible()
+                if tab('Đội xe').is_visible():break
+                previous=page.url;back();page.wait_for_url(lambda value:str(value)!=previous)
             expect(tab("Đội xe")).to_be_visible()
         def login(name="qa"):
             page.get_by_role("textbox",name="Tài khoản",exact=True).fill(name)
@@ -55,7 +58,9 @@ def run(base_url,output):
         def review():button("Rà soát thao tác kho").click();expect(heading("3. Rà soát thao tác kho")).to_be_visible()
         def commit(action="chuyển kho"):button("Ghi thao tác kho").click();button("Xác nhận "+action).click()
         def acknowledge():button("Xác nhận đã kiểm tra phiếu kho").click();page.wait_for_url(re.compile(r"/record/vehicles/[1-9][0-9]*$"));tabs()
-        def leave():back();button("Rời bước điều chuyển").click();page.wait_for_url(re.compile(r"/record/vehicles/[1-9][0-9]*$"));tabs()
+        def leave():
+            previous=page.url;back();button('Rời bước điều chuyển').click()
+            page.wait_for_url(lambda value:str(value)!=previous);tabs()
         try:
             page.goto(base_url);login();open_editor(7101);button("Chuyển kho").click()
             page.get_by_role("radio",name="Chọn kho đến Kho nhận QA",exact=True).click()

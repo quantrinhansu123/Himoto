@@ -21,6 +21,9 @@ def run_renewal_workflows(page, state, base_url, output, checks):
         page.get_by_role("tab", name="Hợp đồng", exact=True).click()
         button(f"Xem HD-QA-{index}, Khách hợp đồng QA").click(); button("Gia hạn hợp đồng").click()
         expect(button("Rà soát gia hạn")).to_be_enabled()
+        page.get_by_label('Ngày bắt đầu gia hạn',exact=True).fill('2026-11-02')
+        page.get_by_label('Giờ bắt đầu gia hạn',exact=True).fill('08:00')
+        choose('Trạng thái thu tiền gia hạn','Chưa thu tiền')
     def field(name): return page.get_by_role("textbox", name=name, exact=True)
     def confirm(): button("Rà soát gia hạn").click(); button("Xác nhận lưu gia hạn").click()
     def acknowledge():

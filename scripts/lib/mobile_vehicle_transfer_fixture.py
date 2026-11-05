@@ -151,12 +151,21 @@ def response(path,method,body,headers,state):
     if actor is None:return 401,{"message":"Phiên QA hết hạn.","code":"SESSION_EXPIRED"},False
     thumbnail=thumbnail_response(path,method)
     if thumbnail is not None:
-        if thumbnail['target']['id'] not in state['vehicles']:return 404,{'message':'Không có xe QA.'},False
+        if str(thumbnail['target']['id']) not in state['vehicles']:return 404,{'message':'Không có xe QA.'},False
         return 200,thumbnail,False
     if route=="/api/mobile/v1/session":
         if method=="DELETE":state["sessions"][sid]["active"]=False;return 200,{"success":True},False
         return 200,{"user":actor_profile(state,actor),"expiresAt":state["sessions"][sid]["expiresAt"]},False
     if route=="/api/mobile/v1/workspace":return 200,{"user":actor_profile(state,actor),"stores":[{"id":s["id"],"name":s["name"]} for s in state["stores"]]},False
+    profile=re.fullmatch(r'/api/mobile/v1/vehicles/([1-9][0-9]*)',route)
+    if profile and method=='GET':
+        vehicle=state['vehicles'].get(profile[1])
+        if not vehicle:return 404,{'message':'Không có xe QA.'},False
+        values={key:vehicle[key]for key in ['name','license','brand','type','status','color']}
+        values.update(year=int(vehicle['year']),store_id=vehicle['storeId'],chassis='',engine='',note='',odometer=1234,revision=vehicle['revision'])
+        return 200,{'id':vehicle['id'],'revision':vehicle['revision'],'values':values,'storeName':vehicle['storeName'],
+                    'ownerStoreId':vehicle['ownerStoreId'],'ownerStoreName':vehicle['ownerStoreName'],'typeLabel':'Xe điện',
+                    'hasOpenContract':vehicle['status']=='using','inTransit':str(vehicle['id'])in state['pending'],'canEdit':False},False
     if route.startswith("/api/mobile/v1/catalogue/"):
         parts=route.removeprefix("/api/mobile/v1/catalogue/").split("/");kind=parts[0]
         rows=[{"id":v["id"],"code":v["license"],"name":v["name"],"status":v["status"],"storeId":v["storeId"],"storeName":v["storeName"],"license":v["license"],

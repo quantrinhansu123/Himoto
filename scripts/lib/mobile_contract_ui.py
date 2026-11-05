@@ -43,7 +43,7 @@ def run_contract_workflows(page, state, base_url, output, checks):
     review(3001)
     expect(button("Phát hành và giao xe")).to_be_disabled()
     button("Bổ sung bản nháp").click()
-    button("Bước 3: Xe").click()
+    button("Bước 3: Phương tiện").click()
     button("Đồng bộ lịch các xe").click()
     button("Tiếp tục chỉnh sửa").click()
     assert state["draft_profiles"][3001]["input"]["draft"]["vehicles"][0]["return_at"]=="2026-12-01T08:00"

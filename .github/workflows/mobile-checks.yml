@@ -329,6 +329,7 @@ on:
       - 'scripts/lib/mobile_native_keyboard.py'
       - 'scripts/lib/mobile_finance_ui.py'
       - 'scripts/lib/load-typescript.cjs'
+      - 'scripts/lib/mobile_catalogue_media_fixture.py'
       - 'scripts/check-mobile-ui.py'
       - 'scripts/lib/mobile_customer_ui.py'
       - 'scripts/requirements-mobile-qa.txt'
@@ -513,6 +514,8 @@ jobs:
             .backups/mobile-ci-duplicate-ui/
             .backups/mobile-ci-document-ui/
             .backups/mobile-ci-contract-photo-ui/
+            .backups/mobile-ci-customer-photo-copy-ui/
+            .backups/mobile-ci-media-delete-ui/
             .backups/mobile-ci-gps-ui/
             .backups/mobile-session-transition-results-20261103.json
             .backups/mobile-ci-contract-ui/

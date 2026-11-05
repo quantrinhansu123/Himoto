@@ -6,6 +6,7 @@ mobile/.expo/web-preview locally. This never logs in to a real Himoto service.
 import argparse
 import json
 import math
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -26,7 +27,7 @@ def record(kind, index):
             "name": f"Khách QA {index}" if kind != "vehicles" else f"Xe QA {index}", "status": "ready" if kind == "vehicles" else "renting" if kind == "contracts" else "active",
             "storeId": 23, "storeName": "Cơ sở QA", "license": f"QA-{index:03d}" if kind != "customers" else "",
             "vehicleName": "Xe kiểm tra", "phone": "0900000000" if kind != "vehicles" else "", "startsAt": "2026-10-30T08:00:00+07:00",
-            "endsAt": "2026-11-02T08:00:00+07:00", "totalAmount": 500000 if kind == "contracts" else None,
+            "endsAt": "2026-12-02T08:00:00+07:00", "totalAmount": 500000 if kind == "contracts" else None,
             "paidAmount": 100000 if kind == "contracts" else None, "brand": "QA", "color": "Đỏ", "odometer": 1234}
 
 
@@ -56,7 +57,7 @@ def run(base_url, output):
                 if request.method == "OPTIONS":
                     route.fulfill(status=204, headers=headers)
                     return
-                calls.append({"path": url.path, "method": request.method})
+                calls.append({"path": url.path, "method": request.method,"query":parse_qs(url.query)})
 
                 def respond(data, status=200):
                     route.fulfill(status=status, headers=headers, json=data)
@@ -85,6 +86,15 @@ def run(base_url, output):
                         respond({"user": state["user"], "expiresAt": EXPIRY})
                 elif url.path.endswith("/workspace"):
                     respond({"user": state["user"], "stores": STORES})
+                elif request.method == 'GET' and re.fullmatch(r'/api/mobile/v1/contracts/[1-9][0-9]*/approval',url.path):
+                    respond({'id':int(url.path.split('/')[-2]),'approval':None})
+                elif request.method == 'GET' and re.fullmatch(r'/api/mobile/v1/vehicles/[1-9][0-9]*',url.path):
+                    index=int(url.path.rsplit('/',1)[1]);assert 1<=index<=23
+                    row=record('vehicles',index)
+                    values={key:row[key]for key in ['name','license','brand','status','color','odometer']}
+                    values.update(type='motorbike',year=None,store_id=23,chassis='',engine='',note='',revision='1')
+                    respond({'id':index,'revision':'1','values':values,'storeName':'Cơ sở QA','ownerStoreId':23,
+                             'ownerStoreName':'Cơ sở QA','typeLabel':'Xe máy','hasOpenContract':False,'inTransit':False,'canEdit':False})
                 elif "/catalogue/" in url.path:
                     if state["network_failure"]:
                         route.abort("failed")
@@ -104,6 +114,8 @@ def run(base_url, output):
                     search = params.get("search", [""])[0].lower()
                     status = params.get("status", [""])[0]
                     store = params.get("store", ["all"])[0]
+                    if kind=='contracts' and params.get('scope')==['overdue']:
+                        rows=[]  # This dataset contains only future, non-overdue rentals.
                     if search:
                         rows = [row for row in rows if search in (row["name"] + row["code"] + row["license"]).lower()]
                     if status:
@@ -167,7 +179,7 @@ def run(base_url, output):
                 search.fill("QA-023")
                 expect(page.get_by_role("button", name="Xem QA-023, Xe QA 23", exact=True)).to_be_visible()
                 page.get_by_role("button", name="Xem QA-023, Xe QA 23", exact=True).click()
-                expect(page.get_by_text("Nhãn hiệu", exact=True)).to_be_visible()
+                expect(page.get_by_text("Hãng xe", exact=True)).to_be_visible()
                 expect(page.get_by_text("Đỏ", exact=True)).to_be_visible()
                 page.screenshot(path=str(output / "vehicle-detail-375.png"), full_page=True)
                 page.go_back()
@@ -223,8 +235,12 @@ def run(base_url, output):
                 expect(page.get_by_role("textbox", name="Tìm khách hàng", exact=True)).to_be_visible()
                 page.get_by_role("tab", name="Tổng quan").click()
                 page.get_by_role("button", name="Hợp đồng quá hạn", exact=True).click()
-                expect(page.get_by_role("button", name="Quá hạn", exact=True)).to_have_attribute("aria-selected", "true")
+                page.wait_for_url('**/contracts-workspace/overdue')
+                expect(page.get_by_role('heading',name='Hợp đồng quá hạn',exact=True).last).to_be_visible()
                 expect(page.get_by_text("Không có kết quả", exact=True)).to_be_visible()
+                assert any(call['path'].endswith('/catalogue/contracts')and call['query'].get('scope')==['overdue']for call in calls)
+                page.go_back()
+                expect(page.get_by_role('tab',name='Tổng quan',exact=True)).to_be_visible()
                 page.get_by_role("tab", name="Tổng quan").click()
                 page.get_by_role("button", name="Xe lưu kho", exact=True).click()
                 expect(page.get_by_role("button", name="Lưu kho", exact=True)).to_have_attribute("aria-selected", "true")
