@@ -42,12 +42,23 @@ async function main() {
     throw new Error('Unexpected write or query in date-bound test');
   } };
   await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2026-01-21T09:00' }), error => error.status === 409 && /vừa được cập nhật/.test(error.message));
-  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2025-12-31T09:00' }), error => error.status === 400);
+  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2025-12-31T09:00' }), error => error.status === 409);
+  const future = '2099-11-06T16:28';
+  assert.equal(shared.validRenewalTime(future),true);
+  assert.equal(shared.validRenewalTime('2099-02-30T16:28'),false);
+  assert.equal(server.parseRenewalInput({...base,occurred_at:future}).occurred_at,future);
+  const paidFuture=server.parseRenewalInput({...base,occurred_at:future,request_id:'11111111-1111-4111-8111-111111111111',receipt:{method:'cash',account_id:1,paid_at:future}});
+  assert.equal(paidFuture.receipt.paid_at,future);
+  const payments=load(path.join(root,'lib/server/contract-payments'));
+  const paymentInput={...paidFuture.receipt,request_id:paidFuture.request_id,revision:'2',amount:'300',note:'Gia hạn'};
+  assert.throws(()=>payments.parseContractPayment(paymentInput),/tương lai/);
+  assert.equal(payments.parseContractPayment(paymentInput,{allowFutureTime:true}).paid_at,future);
+  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: future }), error => error.status === 409);
   rental.completed_at = '2026-01-22T10:00:00+07:00';
   rental.order_status = 'completed';
   await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2026-01-21T09:00' }), error => error.status === 409 && /vừa được cập nhật/.test(error.message));
-  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2026-01-23T09:00' }), error => error.status === 400);
-  checks.push('Late renewal transaction may follow its scheduled return, while actual rental start/completion bounds remain enforced (no business writes)');
+  await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: '2026-01-23T09:00' }), error => error.status === 409);
+  checks.push('Renewals accept future and shifted dates, including collection; invalid calendar dates and ordinary future payments remain rejected (no business writes)');
 
   if (process.argv.includes('--live-temp')) {
     require('@next/env').loadEnvConfig(path.resolve(__dirname, '..'), false, { info() {}, error() {} });

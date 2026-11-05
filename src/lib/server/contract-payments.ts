@@ -21,7 +21,7 @@ function money(value: unknown): number | null {
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= 0 && number <= MAX_PAYMENT_AMOUNT ? number : null;
 }
-export function parseContractPayment(body: unknown): PaymentInput {
+export function parseContractPayment(body: unknown, options:{allowFutureTime?:boolean}={}): PaymentInput {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractPaymentError('Thông tin thanh toán không hợp lệ.');
   const input = body as Record<string, unknown>;
   if (Object.keys(input).some(key => !['request_id', 'revision', 'amount', 'method', 'account_id', 'paid_at', 'note', 'purpose', 'item_id', 'item_revision', 'return_at', 'items', 'renewal_version'].includes(key)) ||
@@ -32,7 +32,7 @@ export function parseContractPayment(body: unknown): PaymentInput {
       typeof input.note !== 'string' || input.note.trim().length > 2000 || typeof input.paid_at !== 'string' ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.paid_at)) throw new ContractPaymentError('Kiểm tra số tiền nguyên VNĐ, hình thức, tài khoản, ngày giờ và ghi chú thanh toán.');
   const date = new Date(`${input.paid_at}+07:00`);
-  if (!Number.isFinite(date.getTime()) || new Date(date.getTime() + 7 * 3600000).toISOString().slice(0, 16) !== input.paid_at || date.getTime() > Date.now() + 5 * 60000) throw new ContractPaymentError('Ngày giờ thu tiền không hợp lệ hoặc nằm trong tương lai.');
+  if (!Number.isFinite(date.getTime()) || new Date(date.getTime() + 7 * 3600000).toISOString().slice(0, 16) !== input.paid_at || (!options.allowFutureTime && date.getTime() > Date.now() + 5 * 60000)) throw new ContractPaymentError('Ngày giờ thu tiền không hợp lệ hoặc nằm trong tương lai.');
   const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', deposit=input.purpose==='deposit', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
   if (input.purpose !== undefined && !renewal && !extra && !refund&&!deposit) throw new ContractPaymentError('Nghiệp vụ thanh toán không hợp lệ.');
   if ('renewal_version' in input && (input.purpose !== undefined || !Number.isSafeInteger(input.renewal_version) || Number(input.renewal_version) < 2)) throw new ContractPaymentError('Chọn phiên bản gia hạn đã lưu để ghi nhận phiếu thu.');
@@ -128,8 +128,8 @@ export async function readPaymentContext(client: Database, id: number): Promise<
 }
 
 // Caller owns BEGIN/COMMIT. The receipt, income and paid total are atomic.
-export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput) {
-  input = parseContractPayment(input);
+export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput, options:{allowFutureTime?:boolean}={}) {
+  input = parseContractPayment(input,options);
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractPaymentError('Hợp đồng hoặc người thực hiện không hợp lệ.');
   const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', deposit=input.purpose==='deposit', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
   const fingerprint = createHash('sha256').update(JSON.stringify({ id, actorId, amount: input.amount, method: input.method, account_id: input.account_id, paid_at: input.paid_at, note: input.note,

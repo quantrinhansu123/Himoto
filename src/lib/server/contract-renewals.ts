@@ -1,9 +1,8 @@
 import 'server-only';
-import { validBackfillTime } from '@/lib/management/contract-backfill';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
 import type { PoolClient } from 'pg';
 import { MAX_PAYMENT_AMOUNT } from '@/lib/management/contract-payments';
-import { renewalFeeWarning, type RenewalInput, type RenewalResult, type RenewalVersion } from '@/lib/management/contract-renewals';
+import { validRenewalTime, renewalFeeWarning, type RenewalInput, type RenewalResult, type RenewalVersion } from '@/lib/management/contract-renewals';
 import { nextContractRenewalVersion } from './contract-renewal-version';
 import { rentalPaid } from './contract-deposits';
 import { parseContractPayment, ContractPaymentError } from './contract-payments';
@@ -31,7 +30,7 @@ export function parseRenewalInput(body: unknown): RenewalInput {
   const outsideAmount = input.outside_amount === undefined ? 0 : Number(input.outside_amount);
   if (outsideAmount > 0 && (typeof input.outside_name !== 'string' || !input.outside_name.trim())) throw new ContractRenewalError('Nhập tên phí thu thêm (thu ngoài).');
   if (Number(input.amount) + outsideAmount > MAX_PAYMENT_AMOUNT) throw new ContractRenewalError('Tổng chi phí gia hạn và phí thu thêm vượt giới hạn.');
-  if(input.occurred_at!==undefined&&(typeof input.occurred_at!=='string'||!validBackfillTime(input.occurred_at)))throw new ContractRenewalError('Nhập ngày giờ bắt đầu gia hạn hợp lệ.');
+  if(input.occurred_at!==undefined&&(typeof input.occurred_at!=='string'||!validRenewalTime(input.occurred_at)))throw new ContractRenewalError('Nhập ngày giờ bắt đầu gia hạn hợp lệ.');
   const returnAt = new Date(`${input.return_at}:00+07:00`);
   if (!Number.isFinite(returnAt.getTime()) || new Date(returnAt.getTime() + 7 * 3_600_000).toISOString().slice(0, 16) !== input.return_at) throw new ContractRenewalError('Ngày trả mới không hợp lệ.');
   const result: RenewalInput = { item_id: Number(input.item_id), item_revision: input.item_revision, order_revision: input.order_revision, return_at: input.return_at, amount: input.amount, note: input.note.trim(),...(input.occurred_at?{occurred_at:input.occurred_at as string}:{}),
@@ -48,7 +47,7 @@ export function parseRenewalInput(body: unknown): RenewalInput {
     if (outsideAmount > 0 && receipt.method === 'company_transfer') throw new ContractRenewalError('Phí thu thêm (thu ngoài) không ghi vào tài khoản công ty. Chọn tiền mặt hoặc chuyển khoản cá nhân.');
     try {
       // A zero contract fee still needs a valid receipt when only the outside fee is collected.
-      const parsed = parseContractPayment({...receipt,request_id:result.request_id,revision:result.order_revision,amount:Number(result.amount) > 0 ? result.amount : '1',note:result.note || 'Gia hạn'});
+      const parsed = parseContractPayment({...receipt,request_id:result.request_id,revision:result.order_revision,amount:Number(result.amount) > 0 ? result.amount : '1',note:result.note || 'Gia hạn'},{allowFutureTime:true});
       result.receipt = {method:parsed.method,account_id:parsed.account_id,paid_at:result.occurred_at || parsed.paid_at};
     } catch (error) { if (error instanceof ContractPaymentError) throw new ContractRenewalError(error.message,error.status); throw error; }
   }
@@ -73,9 +72,9 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   const historical=Boolean(item.completed_at&&input.occurred_at);
   if (!RENEWAL_STATUSES.includes(String(item.order_status))&&!(historical&&['completed','wait_payment','bad_debt'].includes(String(item.order_status)))) throw new ContractRenewalError('Chỉ gia hạn hợp đồng đang thuê hoặc nhập bổ sung đúng lịch sử của xe đã trả.', 409);
   // Recording a late renewal can happen after its new scheduled return date.
-  // Validate the transaction against actual rental bounds, separately from the extension.
+  // Renewal dates can differ from the rental bounds and current time.
   const occurred=input.occurred_at?`${input.occurred_at}:00+07:00`:undefined;
-  if(occurred&&(!validBackfillTime(input.occurred_at!)||(item.rent_at&&new Date(occurred).getTime()<new Date(item.rent_at).getTime())||(item.completed_at&&new Date(occurred).getTime()>new Date(item.completed_at).getTime())))throw new ContractRenewalError('Ngày bắt đầu gia hạn phải từ lúc bắt đầu thuê và không sau lúc trả xe thực tế.');
+  if(occurred&&!validRenewalTime(input.occurred_at!))throw new ContractRenewalError('Nhập ngày giờ bắt đầu gia hạn hợp lệ.');
   if (item.order_revision !== input.order_revision || item.item_revision !== input.item_revision) throw new ContractRenewalError('Hợp đồng vừa được cập nhật. Đóng và mở lại Gia hạn để xem số liệu mới.', 409);
   const beforeReturn = iso(item.return_at);
   const newReturn = `${input.return_at}:00+07:00`;
