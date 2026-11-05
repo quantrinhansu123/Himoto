@@ -210,10 +210,17 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       NULLIF(trim(u.name),'')) AS contract_staff,
     o.total::text,${rentalPaidSql()} AS rental_paid,o.total_rental_fees,o.first_deposit_amount,o.additional_deposit_amount,o.rent_at,o.return_at,o.draft_payload,
     NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND NOT(d.id=ANY($3::bigint[]))) AS return_covers_order,
-    (SELECT string_agg(DISTINCT COALESCE(NULLIF(v.license,''),v.name),', ') FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicles,
-    (SELECT string_agg(DISTINCT v.name,', ') FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))) AS vehicle_names
+    vehicle_labels.vehicles,vehicle_labels.vehicle_names
     FROM himoto.orders o LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id LEFT JOIN himoto.users u ON u.id=$2
     ${depositLateral()}
+    -- Resolve scoped vehicle labels once for both fields. The security-definer
+    -- source checks contract access across the fleet and is expensive to repeat.
+    LEFT JOIN LATERAL (
+      SELECT string_agg(DISTINCT COALESCE(NULLIF(v.license,''),v.name),', ') AS vehicles,
+        string_agg(DISTINCT v.name,', ') AS vehicle_names
+      FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id
+      WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))
+    ) vehicle_labels ON true
     WHERE o.id=$1 AND o.deleted_at IS NULL`,[orderId,actorId,returnIds.length?returnIds:null])).rows[0];
   if(!o)throw Error('Không tạo được thông báo hợp đồng.');
   if(kind==='vehicle_swap'){
