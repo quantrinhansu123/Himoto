@@ -62,7 +62,7 @@ export function ContractEditDialog({row,onClose,onSaved}:{row:ManagementRow;onCl
     finally {busy.current=false;setSaving(false);}
   }
   if(editingTerms)return <RentalTermsEditor id={row.id} onClose={()=>setEditingTerms(false)} onSaved={()=>onSaved(String(record?.code||row.code))}/>;
-  return <Dialog title="Sửa hợp đồng" subtitle={`${row.code} · ${row.store_name||'Cơ sở hợp đồng'}`} onClose={()=>{if(!busy.current)onClose();}}>
+  return <Dialog dismissOnBackdrop={false} title="Sửa hợp đồng" subtitle={`${row.code} · ${row.store_name||'Cơ sở hợp đồng'}`} onClose={()=>{if(!busy.current)onClose();}}>
     <form onSubmit={submit} noValidate>
       <div className="mg-dialog-body">
         {loading&&<p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải hợp đồng…</p>}

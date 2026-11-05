@@ -36,7 +36,7 @@ export function summarizeSalesKpis(contracts: readonly ManagementRow[], from: st
   for (const contract of contracts) {
     if (!startedInPeriod(contract, from, to, store)) continue;
     const total = Number(contract.total_amount) || 0, paid = Number(contract.paid_amount) || 0;
-    kpis.contracts += 1; kpis.revenue += total; kpis.paid += paid;
+    kpis.contracts += 1; kpis.revenue += Number(contract.rental_sales_amount ?? total) || 0; kpis.paid += paid;
     const debt = RECEIVABLE_STATUSES.has(contract.status) ? Math.max(total - paid, 0) : 0;
     if (!debt) continue;
     kpis.debt += debt; kpis.debtContracts += 1;
@@ -55,7 +55,7 @@ function summarize(contracts: readonly ManagementRow[], from: string, to: string
     const date = String(contract.start_date).slice(0, 10);
     const { key, name } = group(contract);
     const entry = groups.get(key) ?? { row: { key, name: name || unassigned, contracts: 0, customers: 0, rent: 0, paid: 0, deposit: 0, progress: [] }, customers: new Set<string>(), names: new Map<string, number>(), daily: new Map<string, number>() };
-    const rent = Number(contract.total_amount) || 0;
+    const rent = Number(contract.rental_sales_amount ?? contract.total_amount) || 0;
     entry.row.contracts += 1;
     entry.row.rent += rent;
     entry.daily.set(date, (entry.daily.get(date) || 0) + rent);

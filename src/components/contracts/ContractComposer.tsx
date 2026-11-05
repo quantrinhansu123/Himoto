@@ -607,17 +607,14 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     for (const person of [...salesDirectory, ...(dataset?.staff || [])]) byId.set(person.id, person);
     return [...byId.values()];
   })();
-  // One picker: NVKD by store, TPKD + TLS company-wide. Pure TLS → tls_staff_id; NVKD/TPKD → sales_staff_id.
+  // PKD (including numbered departments), NVKD, TPKD and TLS are company-wide.
   const salesStaff = commissionPool.filter(person => {
     if (!staffIsAvailable(person)) return false;
     // Placeholder profile named "TLS" (not a real person) must not appear in suggestions.
     if (/^tls$/i.test(String(person.name || '').trim())) return false;
     if (String(person.id) === draft.sales_staff_id || String(person.id) === draft.tls_staff_id) return true;
     const roles = staffRoles(person.position);
-    if (roles.includes('TPKD') || roles.includes('TLS')) return true;
-    if (!hasSalesCommissionRole(person.position) || !roles.includes('NVKD')) return false;
-    if (!person.store_id) return true;
-    return Boolean(salesStoreId) && String(person.store_id) === salesStoreId;
+    return hasSalesCommissionRole(person.position) || roles.includes('TLS');
   }).sort((a, b) => {
     const rank = (person: ManagementRow) => {
       const roles = staffRoles(person.position);
@@ -876,7 +873,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
     requestAnimationFrame(()=>{target.scrollIntoView({block:'center'});const control=target.matches('input,select,textarea,button')?target:target.querySelector<HTMLElement>('input,select,textarea,button');(control||target).focus();});
   }
   return <>
-    <Dialog title={row?.status==='deposit_contract'?'Bổ sung hồ sơ hợp đồng cọc':reserving ? 'Nhận cọc giữ xe' : editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}` : 'Bản nháp · Chưa phát hành hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
+    <Dialog dismissOnBackdrop={false} title={row?.status==='deposit_contract'?'Bổ sung hồ sơ hợp đồng cọc':reserving ? 'Nhận cọc giữ xe' : editingDraft ? row ? 'Chỉnh sửa bản nháp' : 'Nhập hợp đồng' : mode === 'edit' ? 'Chỉnh sửa hợp đồng' : 'Điền và in hợp đồng'} subtitle={row ? `${row.code} · ID ${row.id}` : 'Bản nháp · Chưa phát hành hợp đồng'} className="mg-contract-composer" onClose={() => { if (!busy.current) onClose(); }}>
       <form ref={form} noValidate onSubmit={submit}>
         <div className="mg-dialog-body mg-composer-body">
           <ContractReviewNotice row={row}/>
@@ -911,11 +908,11 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
                 {draft.customer_source_url && !customerSourceStores.some(store => store.name === draft.customer_source_url) && <option value={draft.customer_source_url}>{draft.customer_source_url}</option>}
               </select><small>{ownershipApproval || rentalType === 'ownership' || rentalType === 'ownership_cd' ? 'Gồm kho Thuê sở hữu và Trụ sở chính (cùng nguồn khách thuê sở hữu).' : 'Cơ sở ghi nhận doanh thu hợp đồng, gợi ý theo hồ sơ khách.'}</small>{errors.store_id && <p className="mg-field-error">{errors.store_id}</p>}</div>
               <div className="mg-field"><label htmlFor="contract-customer-source">Nguồn khách</label><input id="contract-customer-source" list="contract-source-staff-options" maxLength={191} value={draft.customer_source} placeholder="Tự nhập nguồn khách hoặc chọn gợi ý" onChange={event => changeSource(event.target.value)} />
-                <datalist id="contract-source-staff-options"><option value="TLS"/>{sourceStaff.map(person => <option key={person.id} value={sourceOption(person)}>{person.code}</option>)}</datalist>
+                <datalist id="contract-source-staff-options">{['Cửa hàng','TLS','PKD1','PKD2'].map(source=><option key={source} value={source}/>)}{sourceStaff.map(person => <option key={person.id} value={sourceOption(person)}>{person.code}</option>)}</datalist>
                 <small>Nguồn telesale ghi chung TLS. Tên nhân sự kèm phòng (PGD), ví dụ "Nguyễn Hải Đăng _PKD 1". Có thể tự nhập nguồn khác.</small></div>
               <div className="mg-field"><label htmlFor="contract-sales_staff_id">NVKD / TPKD / TLS ghi nhận doanh số</label>
                 <SuggestionInput id="contract-sales_staff_id" value={salesValue} suggestions={salesStaff.map(person => staffRoles(person.position).includes('TLS') && !hasSalesCommissionRole(person.position) ? 'TLS' : salesOption(person)).filter((label, index, list) => list.indexOf(label) === index)} placeholder="Gõ tên hoặc chọn NVKD / TPKD / TLS" onChange={changeSales} />
-                <small>NVKD theo cửa hàng; TPKD mọi cơ sở. TLS hiện đúng nhãn TLS. Tự nhập họ tên NVKD nếu chưa có trong danh sách.</small>
+                <small>PKD và trụ sở chính được chọn mọi cơ sở. TLS hiện đúng nhãn TLS. Tự nhập họ tên NVKD nếu chưa có trong danh sách.</small>
                 {attributionError && <small role="status">Chưa tải được gợi ý nhân viên; vẫn có thể nhập thủ công.</small>}</div>
             </div>
             <details className="mg-document-requirements"><summary>Yêu cầu hồ sơ khi in hợp đồng</summary><p>Lưu vận hành không bắt buộc người thân, địa chỉ hoặc CCCD chưa có. Chị có thể chọn các mục cần hoàn tất khi in; lựa chọn lưu cùng hợp đồng này.</p><div className="mg-form-grid mg-contract-grid-two">{(['phone','id_card','address','representative'] as const).map(key=><label className="mg-checkbox" key={key}><input type="checkbox" checked={requirements[key]} onChange={event=>change('document_requirements',{...requirements,[key]:event.target.checked})} />{{phone:'Số điện thoại khách',id_card:'CCCD/CMND',address:'Địa chỉ khách',representative:'Đại diện Bên A'}[key]}</label>)}<div className="mg-field mg-field-wide"><label htmlFor="contract-required-relatives">Số người thân cần khi in</label><select id="contract-required-relatives" value={requirements.relatives} onChange={event=>change('document_requirements',{...requirements,relatives:Number(event.target.value) as 0|1|2})}><option value={0}>Không bắt buộc</option><option value={1}>1 người thân</option><option value={2}>2 người thân</option></select></div></div></details>
@@ -951,7 +948,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
             <CustomerInternationalFields prefix="contract-customer" value={draft.customer} onChange={customer=>{setDraft(previous=>({...previous,customer}));setErrors({});}} disabled={saving} errors={errors}/>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(0, 2).map(customerField)}</div>
             <div className="mg-form-grid mg-contract-grid-three mg-customer-autofill">{customerFields.slice(2).map(item=><Fragment key={item.key}>{customerField(item)}{item.key==='driver_license_number'&&source==='api'&&draft.customer_id&&<div className="mg-field-wide"><RecordPhotoFields entity="contracts" recordId={savedDraft?.id||row?.id} slots={[{key:'driver-license',label:'Giấy phép lái xe'}]} title="Chụp GPLX · Tự điền bằng AI" value={licensePhotos} onChange={setLicensePhotos} disabled={saving} onBusyChange={setProcessingLicense} ocr={customerOcr}/></div>}</Fragment>)}</div>
-            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${customerPhotosOnContract}-${photoVersion}`} entity={customerPhotosOnContract ? 'contracts' : 'customers'} recordId={customerPhotosOnContract ? savedDraft?.id||row?.id : draft.customer_id} slots={customerPhotoSlots} title={draft.customer.customer_type==='foreign'?'Chụp hộ chiếu · Tự điền bằng AI':'Chụp CCCD · Tự điền bằng AI'} value={customerPhotoValues} onChange={photos=>setCustomerPhotos(Object.fromEntries(Object.entries(photos).map(([slot,file])=>[slot.replace(/^customer-/,'').replace(/^(id-front|id-back|driver-license)/,base=>base.replaceAll('-','_')),file])))} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
+            {source === 'api' && draft.customer_id && <RecordPhotoFields key={`customer-${draft.customer_id}-${customerPhotosOnContract}-${photoVersion}`} entity={customerPhotosOnContract ? 'contracts' : 'customers'} recordId={customerPhotosOnContract ? savedDraft?.id||row?.id : draft.customer_id} slots={customerPhotoSlots} title={draft.customer.customer_type==='foreign'?'Chụp hộ chiếu · Tự điền bằng AI':'Quét QR căn cước · Tự điền'} value={customerPhotoValues} onChange={photos=>setCustomerPhotos(Object.fromEntries(Object.entries(photos).map(([slot,file])=>[slot.replace(/^customer-/,'').replace(/^(id-front|id-back|driver-license)/,base=>base.replaceAll('-','_')),file])))} onBusyChange={setProcessingCustomerPhoto} disabled={saving} ocr={customerOcr} />}
             <div className="mg-contract-relatives">{draft.relatives.map((relative, index) => <div className="mg-contract-relative" key={index}>
               <strong>Người thân {index + 1}</strong>
               <div className="mg-form-grid mg-contract-grid-three">{(['name', 'relationship', 'phone'] as const).map(key => {

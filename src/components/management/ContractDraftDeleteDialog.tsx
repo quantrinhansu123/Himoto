@@ -7,10 +7,11 @@ import { Dialog } from './Dialog';
 
 export function ContractDraftDeleteDialog({ row, onClose, onDeleted }: { row: ManagementRow; onClose: () => void; onDeleted: () => void }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  return <Dialog title="Xóa bản nháp?" subtitle={`${row.code} · ${row.customer_name || 'Chưa có tên khách'}`} onClose={() => { if (!busy) onClose(); }} dismissOnBackdrop={false}>
-    <div className="mg-dialog-body"><p>Bản nháp này sẽ được ẩn khỏi danh sách. Hồ sơ đã lưu được giữ để có thể đối chiếu.</p>
+  const completed=row.status==='completed';
+  return <Dialog title={completed?'Ẩn hợp đồng đã hoàn thành?':'Xóa hẳn bản nháp?'} subtitle={`${row.code} · ${row.customer_name || 'Chưa có tên khách'}`} onClose={() => { if (!busy) onClose(); }} dismissOnBackdrop={false}>
+    <div className="mg-dialog-body"><p>{completed?'Hợp đồng chỉ được ẩn khỏi danh sách. Dữ liệu hợp đồng, lịch sử xe và phiếu thu/chi vẫn được giữ.':'Bản nháp chưa phát hành sẽ bị xóa hẳn.'} Người thao tác và ngày giờ xóa được lưu trong nhật ký.</p>
       {error && <p className="mg-field-error" role="alert">{error}</p>}</div>
-    <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={busy} onClick={onClose}>Giữ bản nháp</button>
+    <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={busy} onClick={onClose}>{completed?'Giữ hợp đồng':'Giữ bản nháp'}</button>
       <button type="button" className="mg-button mg-button-danger" disabled={busy || !row.draft_revision} onClick={async () => {
         setBusy(true); setError('');
         try {
@@ -21,6 +22,6 @@ export function ContractDraftDeleteDialog({ row, onClose, onDeleted }: { row: Ma
           onDeleted();
         } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không xóa được bản nháp.'); }
         finally { setBusy(false); }
-      }}><Trash2 size={16} />{busy ? 'Đang xóa…' : 'Xóa bản nháp'}</button></div>
+      }}><Trash2 size={16} />{busy ? 'Đang xử lý…' : completed?'Ẩn hợp đồng':'Xóa hẳn bản nháp'}</button></div>
   </Dialog>;
 }

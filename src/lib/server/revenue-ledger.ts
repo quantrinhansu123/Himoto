@@ -16,8 +16,8 @@ export function parseRevenueLedger(params:URLSearchParams){
  if(!validDate(from)||!validDate(to)||from>to||search.length>200||Array.from(search).some(c=>c.charCodeAt(0)<32)||category&&!Object.hasOwn(REVENUE_LEDGER_CATEGORIES,category)&&category!=='revenue'||method&&!Object.hasOwn(REVENUE_LEDGER_METHODS,method)||side&&side!=='in'&&side!=='out'||params.has('all')&&params.get('all')!=='1')throw new RevenueLedgerError('Kiểm tra ngày, cơ sở và bộ lọc sổ giao dịch.');
  return {from,to,store,search,category,method,side:side as ''|'in'|'out',page:integer('page',1,1000000),size:integer('size',20,100),all:params.get('all')==='1'};
 }
-const REVENUE_AMOUNT=`CASE WHEN category='rental' THEN GREATEST(regular_total-initial_fees,0)-GREATEST(regular_total-value-initial_fees,0) WHEN category='early' THEN -value WHEN category IN('renewal','late') THEN value ELSE 0 END`;
-const categorySql=`CASE WHEN category<>'excluded' THEN category WHEN name='order:deposit_refund' OR name LIKE 'order:complete:%' THEN 'deposit_refund' WHEN name='order:return_repair' THEN 'repair' WHEN name IN('order:extra','order:outside') THEN 'extra' ELSE 'deposit' END`;
+const REVENUE_AMOUNT=`CASE WHEN category='rental' THEN GREATEST(regular_total-initial_fees,0)-GREATEST(regular_total-value-initial_fees,0) WHEN category='early' THEN -value WHEN category='renewal' THEN value ELSE 0 END`;
+const categorySql=`CASE WHEN category='company_fee' THEN CASE WHEN name='order:return_repair' THEN 'repair' ELSE 'extra' END WHEN category<>'excluded' THEN category WHEN name='order:deposit_refund' OR name LIKE 'order:complete:%' THEN 'deposit_refund' WHEN name='order:return_repair' THEN 'repair' WHEN name IN('order:extra','order:outside') THEN 'extra' ELSE 'deposit' END`;
 const methodSql=`CASE WHEN payment_method=3 THEN 'mixed' WHEN bank_owner_type='company' AND (bank_id IS NOT NULL OR payment_method=2) THEN 'company' WHEN bank_id IS NOT NULL OR payment_method=2 THEN CASE WHEN bank_owner_type='personal' THEN 'personal' ELSE 'unknown' END WHEN cash_id IS NOT NULL OR payment_method=1 THEN 'cash' ELSE 'unknown' END`;
 const number=(value:unknown)=>{const n=Number(value);if(value==null||!Number.isSafeInteger(n))throw new RevenueLedgerError('Số tiền trong phiếu chưa hợp lệ; cần đối chiếu.',409);return n;};
 
@@ -57,7 +57,7 @@ export async function revenueLedger(db:Database,params:URLSearchParams):Promise<
      OFFSET (SELECT ${input.all?'0':`(LEAST(${requestedPage},GREATEST(1,ceil(count::numeric/${limit})))::int-1)*${limit}`} FROM totals)
  ) SELECT (SELECT to_jsonb(totals) FROM totals) AS totals,COALESCE((SELECT jsonb_agg(to_jsonb(p)||jsonb_build_object(
      'code',COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text),'customer',COALESCE(NULLIF(o.customer_name,''),c.name,''),
-     'store_name',COALESCE(s.store_name,''),'person',COALESCE(NULLIF(p.staff_name,''),st.full_name,''),'actor',COALESCE(u.name,''),
+     'store_name',COALESCE(s.store_name,''),'person',CASE WHEN p.category IN ('renewal','late','company_fee') THEN 'Công ty' ELSE COALESCE(NULLIF(p.staff_name,''),st.full_name,'') END,'actor',COALESCE(u.name,''),
      'vehicles',COALESCE((SELECT string_agg(DISTINCT v.license,', ' ORDER BY v.license) FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL),''),
      'start_at',o.rent_at,'end_at',o.return_at) ORDER BY p.created_at DESC,p.id DESC)
      FROM page_rows p JOIN himoto.orders o ON o.id=p.order_id LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=p.store_id

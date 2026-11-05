@@ -306,7 +306,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : kind === 'staff' ? canManageStaff : false;
   const canDelete = source === 'api' && (
     (kind === 'staff' && canManageStaff)
-    || (kind === 'contracts' && canSaveContractDrafts)
+    || (kind === 'contracts' && can('contracts.delete'))
     || (can('settings.write') && (kind === 'customers' || kind === 'stores' || kind === 'vehicles'))
   );
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
@@ -567,7 +567,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       <div className="mg-dialog-body"><p>{bulkDeleteNote[kind]}</p>{bulkDeleteError && <p className="mg-error-message" role="alert">{bulkDeleteError}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={bulkDeleteBusy} onClick={() => setBulkDeleteOpen(false)}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={bulkDeleteBusy} onClick={() => void deleteSelected()}>{bulkDeleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa {selectedIds.size} {config.singular}</>}</button></div>
     </Dialog>}
-    {draftDeleteTarget&&<ContractDraftDeleteDialog row={draftDeleteTarget} onClose={()=>setDraftDeleteTarget(null)} onDeleted={()=>{setDraftDeleteTarget(null);invalidateData(['contracts']);void reload(['contracts']);notify('Đã xóa bản nháp khỏi danh sách.');}}/>}
+    {draftDeleteTarget&&<ContractDraftDeleteDialog row={draftDeleteTarget} onClose={()=>setDraftDeleteTarget(null)} onDeleted={()=>{setDraftDeleteTarget(null);invalidateData(['contracts']);void reload(['contracts']);notify(draftDeleteTarget.status==='completed'?'Đã ẩn hợp đồng; dữ liệu và nhật ký vẫn được giữ.':'Đã xóa hẳn bản nháp và lưu nhật ký.');}}/>}
     {depositDeleteTarget&&<ContractDepositDeleteDialog row={depositDeleteTarget} onClose={()=>setDepositDeleteTarget(null)} onDeleted={()=>{setDepositDeleteTarget(null);invalidateData(['contracts','vehicles']);void reload(['contracts']);notify('Đã xóa hợp đồng cọc khỏi danh sách.');}}/>}
     {telegramTarget&&<ContractTelegramDialog order={telegramTarget==='pending'?undefined:telegramTarget} store={selectedStore} onClose={()=>setTelegramTarget(null)}/>}
     {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} initialQuery={returnTarget.query} onClose={() => setReturnTarget(null)} />}
@@ -609,6 +609,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         invalidateData(['contracts']);
         if(paged)table.refresh();else void ensureData(['contracts'], true).catch(() => {});
         notify(`Đã lưu hợp đồng ${code}.`);
+        if(composerMode==='edit'&&printRow)setTelegramTarget({id:printRow.id,code});
       }}
       onHandover={printRow?.status==='deposit_contract'&&canFinalizeRentalContract(accessUser,printRow.rental_type)?()=>{setComposerOpen(false);setHandoverId(printRow.id);}:undefined}
       onFinalized={result => {

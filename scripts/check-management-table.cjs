@@ -99,7 +99,7 @@ async function main(){
       return {rows:Array.from({length:10},(_,i)=>({id:i+1,status:'renting',contract_number:`HD-${i+1}`,vehicles:[],__total_count:31}))};
     }
     assert.deepEqual(params[0],[1,2,3,4,5,6,7,8,9,10]);
-    return {rows:params[0].map(id=>({id,status:'renting',contract_number:`HD-${id}`,vehicles:[{id:9,name:'Vision',license:'29A-123'}],total:1500000}))};
+    return {rows:params[0].map(id=>({id,status:'renting',contract_number:`HD-${id}`,approval_at:id===1?'2026-11-03T10:14:48.521Z':null,vehicles:[{id:9,name:'Vision',license:'29A-123'}],total:1500000}))};
   }},'contracts',shared.managementTableQuery({...base,recentDays:30}));
   assert.equal(paged.rows.length,10);assert.equal(paged.rows[0].id,1);assert.equal(paged.total,31);assert.equal(paged.pages,4);
   assert.equal(paged.rows[0].license,'29A-123');assert.equal(paged.rows[0].total_amount,1500000);
@@ -110,6 +110,8 @@ async function main(){
   assert.match(sqlCommands[1],/draft_payload::jsonb->'management_composer'/);
   assert.match(sqlCommands[1],/draft_payload::jsonb->'order_items'/);
   assert.match(sqlCommands[1],/xmin::text AS draft_revision/);
+  assert.match(sqlCommands[0],/AS approval_at/);assert.match(sqlCommands[1],/AS approval_at/);
+  assert.equal(paged.rows[0].approval_at,'2026-11-03T10:14:48.521Z');assert.equal(paged.rows[1].approval_at,'');
   checks.push('Default recent list fetches only the current page from orders');
   checks.push('Page hydrate returns the saved composer draft and revision so a reopened draft is not reconstructed empty');
   let called=false;await assert.rejects(()=>server.readManagementTable({query(){called=true;}},'contracts',new URLSearchParams('size=999')),server.ManagementTableError);assert.equal(called,false);

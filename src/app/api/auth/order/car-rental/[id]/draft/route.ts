@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { dataAccess } from '@/lib/server/access-context';
-import { himotoPool } from '@/lib/server/himoto-database';
-import { deleteContractDraft, DraftDeleteError } from '@/lib/server/contract-draft-delete';
+import { ownerDatabase } from '@/lib/server/himoto-database';
+import { DraftDeleteError } from '@/lib/server/contract-draft-delete';
+import { deleteContractRecord } from '@/lib/server/contract-deletion';
 import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime = 'nodejs';
@@ -19,10 +20,10 @@ export const DELETE = withAccessRequest(async (request: NextRequest, { params }:
     if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => key !== 'revision')) {
       throw new DraftDeleteError('Thông tin bản nháp không hợp lệ.');
     }
-    client = await himotoPool.connect();
+    client = await ownerDatabase.connect();
     await client.query('BEGIN');
     await client.query("SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='15s'");
-    await deleteContractDraft(client, Number(id), body.revision, dataAccess.getStore()!.id);
+    await deleteContractRecord(client, Number(id), body.revision, dataAccess.getStore()!);
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data: { id: Number(id) } }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

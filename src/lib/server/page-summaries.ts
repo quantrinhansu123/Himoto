@@ -4,6 +4,7 @@ import { mapApiRow } from '@/lib/management/repository';
 import { summarizeBySalesStaff, summarizeByStore, summarizeSalesKpis } from '@/lib/management/source-sales';
 import { depositLateral,rentalPaidSql } from './contract-deposits';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { rentalSalesValueSql } from './rental-sales-value';
 
 export class PageSummaryError extends Error {}
 export async function readOperationsSummary(client:Pick<PoolClient,'query'>) {
@@ -34,6 +35,7 @@ export async function readSalesSummary(client:Pick<PoolClient,'query'>,params:UR
     CASE WHEN o.order_status='renting' AND o.ended_at<now() THEN 'overdue' ELSE o.order_status END AS status,
     o.started_at AS start_date,
     o.total AS total_amount,
+    ${rentalSalesValueSql()} AS rental_sales_amount,
     ${rentalPaidSql()} AS paid_amount,
     CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
       ELSE COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) END AS deposit_amount,

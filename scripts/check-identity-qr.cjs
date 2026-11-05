@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),path=require('node:path');
+const {load,root}=require('./lib/load-typescript.cjs');
+const {parseIdentityQr}=load(path.join(root,'lib/management/identity-qr'));
+const {mergeOcrCustomer}=load(path.join(root,'lib/management/photo-ocr'));
+const {customerDetails}=load(path.join(root,'lib/management/contract-document'));
+const qr=parseIdentityQr('001200000001|123456789|NGUYỄN VĂN A|01011990|Nam|Hà Nội|05062022');
+assert.deepEqual(qr.fields,{id_card:'001200000001',name:'NGUYỄN VĂN A',id_card_issued_on:'2022-06-05'});
+for(const text of ['https://example.com','001200000001|x|A|x|x|x|31022022','123|x|A|x|x|x|05062022'])assert.equal(parseIdentityQr(text),undefined);
+const before={...customerDetails(),address:'Địa chỉ đang ở'};
+const merged=mergeOcrCustomer(before,qr.fields,before,{});
+assert.equal(merged.customer.name,'NGUYỄN VĂN A');assert.equal(merged.customer.address,before.address);
+const edited={...before,name:'Đã sửa tay'};
+assert.equal(mergeOcrCustomer(edited,qr.fields,before,{}).customer.name,'Đã sửa tay');
+console.log('Passed: QR identity fields, malformed QR/date rejection, current address and concurrent manual edits preserved.');

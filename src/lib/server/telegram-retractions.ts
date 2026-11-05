@@ -15,14 +15,14 @@ export const telegramBotIdentity=(token:string)=>createHash('sha256').update(tok
 const validIds=(ids:unknown):ids is number[]=>Array.isArray(ids)&&ids.length>0&&ids.length<=5000&&ids.every(id=>Number.isSafeInteger(id)&&id>0)&&new Set(ids).size===ids.length;
 export function retractionEligibility(notice:RetractableNotice,user:PermissionAccount,now=Date.now()) {
   const target=notice.delivery_target,start=Date.parse(target?.started_at||'');
-  const expires=Number.isFinite(start)?start+48*3600_000:null;
+  const expires=Number.isFinite(start)?start+24*3600_000:null;
   const reason=!canSendContractEvent(user,notice.event_type)?'Tài khoản chưa có quyền thu hồi giao dịch này.'
     :notice.retraction?.state==='done'?'Đã thu hồi lần gửi này.'
     :['pending','processing'].includes(notice.retraction?.state||'')?'Đang thu hồi. Chờ kết quả từ Telegram.'
     :notice.status!=='sent'?'Chỉ thu hồi lần gửi đã được Telegram xác nhận đầy đủ.'
     :!validIds(notice.message_ids)?'Lần gửi này thiếu mã tin; cần quản trị nhóm đối chiếu.'
     :!target||!/^-[0-9]{5,18}$/.test(target.chat_id)||!/^[0-9a-f]{64}$/.test(target.bot_id)||expires===null?'Tin cũ chưa lưu chính xác nhóm nhận; nhờ quản trị nhóm xóa trực tiếp.'
-    :start>now||expires<=now+60_000?'Đã sát hoặc quá giới hạn thu hồi 48 giờ; nhờ quản trị nhóm xóa trực tiếp.':'';
+    :start>now||expires<=now+60_000?'Đã sát hoặc quá giới hạn thu hồi 24 giờ; nhờ quản trị nhóm xóa trực tiếp.':'';
   return {can_retract:!reason,blocked_reason:reason,expires_at:expires?new Date(expires).toISOString():null};
 }
 export async function queueTelegramRetraction(db:Database,orderId:number,actorId:number,user:PermissionAccount,input:Record<string,unknown>) {
@@ -50,7 +50,7 @@ export function retractionErrorText(code?:string) {
   return code==='BOT_CHANGED'?'Bot đã thay đổi. Cần quản trị nhóm xóa trực tiếp.'
     :code==='TELEGRAM_403'?'Bot không có quyền xóa tin trong nhóm. Nhờ quản trị nhóm kiểm tra quyền bot rồi thử lại.'
     :code==='TELEGRAM_400'?'Telegram chưa cho xóa tin: có thể đã quá hạn hoặc bot không còn quyền trong nhóm. Nhờ quản trị nhóm kiểm tra.'
-    :code==='EXPIRED'?'Đã quá 48 giờ. Nhờ quản trị nhóm xóa trực tiếp.'
+    :code==='EXPIRED'?'Đã quá 24 giờ. Nhờ quản trị nhóm xóa trực tiếp.'
     :code==='NOT_CONFIGURED'?'Chưa có cấu hình bot. Nhờ quản trị kiểm tra.'
     :'Chưa xác nhận thu hồi đủ tin. Có thể thử lại; hệ thống bỏ qua các tin đã gỡ thành công.';
 }
@@ -75,7 +75,7 @@ export async function dispatchTelegramRetractions(send:typeof fetch=fetch,limit=
       if(telegramBotIdentity(token)!==target.bot_id)throw new Error('BOT_CHANGED');
       const remaining=(row.message_ids as number[]).filter(id=>!deleted.includes(id));
       for(let offset=0;offset<remaining.length;offset+=100){
-        if(Date.parse(target.started_at)+48*3600_000<=Date.now()+15_000)throw new Error('EXPIRED');
+        if(Date.parse(target.started_at)+24*3600_000<=Date.now()+15_000)throw new Error('EXPIRED');
         if(Date.now()+20_000>deadline)throw new Error('DEADLINE');
         const batch=remaining.slice(offset,offset+100);
         const response=await send(`https://api.telegram.org/bot${token}/deleteMessages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:target.chat_id,message_ids:batch}),signal:AbortSignal.timeout(15_000),redirect:'error',cache:'no-store'});

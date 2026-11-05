@@ -53,13 +53,13 @@ export function verifySession(token: string | undefined, key = sessionKey(), now
 
 function allowedAccount(account: Account) {
   // Managed accounts require an enabled scope; preserve existing admin/accounting access.
-  return account.status === 'active' && (account.access_role ? account.access_enabled===true && (account.scope_all===true || Number(account.access_store_id)>0) : canRecordContractPayment(account));
+  return account.status === 'active' && (account.access_role ? account.access_enabled===true && (account.scope_all===true || ['headquarters_sales','headquarters_debt'].includes(account.access_role) || Number(account.access_store_id)>0) : canRecordContractPayment(account));
 }
 function safeUser(account: Account): SessionUser {
   const admin=isAdminAccount(account);
   return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
     access_role:account.access_role||(admin?'admin':'accounting'),permissions:admin?[...ACCESS_PERMISSIONS]:(account.permissions||['contracts.read','finance.read','finance.write']).filter(permission=>permission!=='accounts.manage'),
-    store_id:account.access_store_id==null?null:Number(account.access_store_id),scope_all:admin||(!account.access_role)||account.scope_all===true,
+    store_id:['headquarters_sales','headquarters_debt'].includes(account.access_role||'')||account.access_store_id==null?null:Number(account.access_store_id),scope_all:admin||(!account.access_role)||['headquarters_sales','headquarters_debt'].includes(account.access_role)||account.scope_all===true,
     ...(account.management_password_version?{password_version:Number(account.management_password_version)}:{}) };
 }
 const accountFields = 'u.id, u.name, u.email, u.status, u.role, u.role_id, u.management_password_version, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,a.enabled AS access_enabled';

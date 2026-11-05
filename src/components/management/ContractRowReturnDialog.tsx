@@ -75,7 +75,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     setOverrides({});
     setRepairs({});setSettlements({});setSettlementBlocks({});
     const active=result.filter(row=>!row.completed_at);
-    setPicked(new Set(active.map(row=>row.order_id)).size===1?active.map(row => String(row.item_id)):[]);
+    setPicked(active.length===1?[String(active[0].item_id)]:[]);
   }, []);
 
   const loadItems = useCallback(async (term: string, signal?: AbortSignal) => {
@@ -224,7 +224,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
     if(contractId)void loadContractReturnableItems(contractId).then(accept).catch(cause=>setError(cause instanceof Error?cause.message:'Không tải được hồ sơ.'));
     else void loadItems(searchTerm);
   }}/>;
-  return <Dialog title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={close}>
+  return <Dialog dismissOnBackdrop={false} title={contractCode ? `Trả xe · ${contractCode}` : 'Trả xe'} subtitle={subtitle} onClose={close}>
     {/* Only the confirmation button records a return. Enter in a field cannot confirm it. */}
     <form ref={formRef} onSubmit={event => event.preventDefault()}>
       <div className="mg-dialog-body">
@@ -250,6 +250,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         {openRows.length > 0 && <>
           {!contractCode && <p className="mg-composer-hint">Tìm theo một biển số sẽ hiện các xe cùng hợp đồng. Tích chọn những xe khách thực tế trả.</p>}
           <h3>1. Xe trả và phí thực tế</h3>
+          {openRows.length>1&&<p className="mg-composer-hint">Chỉ tích xe khách thực tế trả. Xe chưa chọn tiếp tục thuê; trả từng xe không tự giảm doanh số tổng của hợp đồng.</p>}
           <div className="mg-form-grid mg-contract-grid-two">
             <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ khách trả thực tế (24h)<span aria-hidden="true"> *</span></label>
               <DateTime24Controls id="contract-returned-at" label="Ngày giờ khách trả thực tế" value={returnedAt} onChange={changeReturnedAt} />

@@ -22,6 +22,7 @@ export interface NotificationPayload {
   payment_amounts?:NotificationPaymentAmounts;
   ownership_renewal_note?:string;
   rental_correction?:{request_id:string;start_at:string;end_at:string};
+  contract_edit?:{at:string;previous_code:string;code:string};
   return_fees?:{late:number;repair:number;early_discount:number;collected:number;method:string;returned_at?:string};
   return_details?:{note:string;returned_at:string[];rental_refund_recipient?:{bank?:string;account?:string;name?:string}};
   refund_recipient?:{bank?:string;account?:string;name?:string};
@@ -131,6 +132,7 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
     :kind==='battery_swap'?amountLine('Đã thu theo hình thức',amounts?.battery_swap)
     :[...amountLine(kind==='reservation'?'Đã thu cọc giữ xe':'Đã thu tiền thuê / phí',amounts?.rental),...amountLine('Đã thu tiền cọc',amounts?.deposit)];
   lines.push(...paymentLines);
+  if(p.contract_edit)lines.unshift(`SỬA LẠI HỢP ĐỒNG: ${p.contract_edit.previous_code}${p.contract_edit.previous_code!==p.contract_edit.code?` → ${p.contract_edit.code}`:''}`,`Bản sửa lưu lúc: ${telegramClock(p.contract_edit.at)}`);
   if(kind==='return')return withTelegramFooter([...lines,...(p.return_details?[`Giờ trả: ${p.return_details.returned_at.map(at=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})).join(' · ')}`,
     ...(p.refund_recipient&&[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].some(Boolean)?[`Nhận hoàn cọc: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
     ...(p.return_details.rental_refund_recipient?[`Nhận hoàn tiền thuê: ${[p.return_details.rental_refund_recipient.bank,p.return_details.rental_refund_recipient.account,p.return_details.rental_refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
@@ -244,6 +246,9 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     FROM himoto.transactions t LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id WHERE t.order_id=$1 AND t.status='approved' ORDER BY t.created_at,t.id`,[orderId])).rows;
   const draft=o.draft_payload?.management_composer?.draft;
   const composer=o.draft_payload?.management_composer;
+  const edits=[...(Array.isArray(composer?.contract_edits)?composer.contract_edits:[]),...(Array.isArray(composer?.full_contract_edits)?composer.full_contract_edits:[]),...(Array.isArray(composer?.rental_terms_history)?composer.rental_terms_history:[])];
+  const lastEdit=edits.filter(edit=>Number.isFinite(Date.parse(edit.at))).sort((a,b)=>Date.parse(b.at)-Date.parse(a.at))[0];
+  const previousCode=[...(Array.isArray(composer?.contract_edits)?composer.contract_edits:[])].reverse().find(edit=>edit.before?.contract_number)?.before.contract_number||o.code;
   const renewalNote=kind==='renewal'&&o.ownership===true&&renewal
     ? String((renewal as RenewalNotice & {note?:string}).note ||
       (Array.isArray(composer?.versions)?composer.versions.find((v:{kind:string;version:number})=>v.kind==='renewal'&&v.version===renewal.version)?.note:'') || '').trim() : '';
@@ -302,6 +307,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
     payment_amounts:paymentAmounts,
+    ...(['rental','reservation','handover'].includes(kind)&&lastEdit?{contract_edit:{at:String(lastEdit.at),previous_code:String(previousCode),code:String(o.code)}}:{}),
     ...(!['return','renewal','battery_swap'].includes(kind)&&composer?.rental_terms_history?.length?{rental_correction:{request_id:composer.rental_terms_history.at(-1).request_id,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString()}}:{}),
     ...(renewalNote?{ownership_renewal_note:renewalNote}:{}),
     ...(corrected?{return_details:{note:String(settlement?.note||''),returned_at:[...new Set<string>(adjustments.map((a:{actual_return_at:string})=>a.actual_return_at))].sort(),...(eventRentalRefunds.length&&settlement?.rental_refund_recipient?.account?{rental_refund_recipient:settlement.rental_refund_recipient}:{})}}:{}),

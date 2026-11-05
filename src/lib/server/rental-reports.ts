@@ -4,6 +4,7 @@ import { CASHBOOK_BREAKDOWN_KEYS, type CashbookBreakdown } from '@/lib/managemen
 import { rentalOverviewRow, type VehicleRevenueRow, type VehicleRevenueDetail } from '@/lib/management/rental-reports';
 import { CASHBOOK_LIST_SQL } from './cashbook-list';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { RENTAL_REVENUE_CTE } from './rental-revenue';
 
 type Database = Pick<PoolClient, 'query'>;
 export class RentalReportError extends Error {}
@@ -36,16 +37,14 @@ export const VEHICLE_REVENUE_LINES_CTE = `WITH lines AS (
       trunc(o.total_rental_fees::numeric/c.quantity) + CASE WHEN c.position < mod(o.total_rental_fees::numeric,c.quantity) THEN 1 ELSE 0 END
       WHEN COALESCE(d.handler_price,0)<>0 THEN d.handler_price ELSE COALESCE(d.total_money,0) END AS rental,
     CASE WHEN n.native THEN COALESCE(d.total_renewal_amount,0) ELSE 0 END AS renewal,
-    COALESCE(a.adjustment,0) + CASE WHEN n.native OR COALESCE(d.handler_price,0)<>0 THEN 0 ELSE COALESCE(d.money_out_date,0) END AS adjustment
+    COALESCE(a.adjustment,0) + CASE WHEN n.native OR COALESCE(d.handler_price,0)<>0 THEN 0 ELSE LEAST(COALESCE(d.money_out_date,0),0) END AS adjustment
   FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
   CROSS JOIN LATERAL (SELECT o.draft_payload::jsonb->'legacy_migration' IS NULL
     AND jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,draft}')='object' AS native) n
   LEFT JOIN LATERAL (SELECT count(*) AS quantity,count(*) FILTER(WHERE sibling.id<d.id) AS position
     FROM himoto.order_vehicle_details sibling WHERE sibling.order_id=d.order_id AND sibling.deleted_at IS NULL) c ON n.native
-  LEFT JOIN LATERAL (SELECT sum(CASE WHEN change->>'late_fee' ~ '^[0-9]{1,13}$' THEN (change->>'late_fee')::numeric
-      - CASE WHEN change->>'early_discount' ~ '^[0-9]{1,13}$' THEN (change->>'early_discount')::numeric ELSE 0 END
-      WHEN change->>'fee' ~ '^-?[0-9]{1,13}$' THEN (change->>'fee')::numeric
-      - CASE WHEN change->>'repair_fee' ~ '^[0-9]{1,13}$' THEN (change->>'repair_fee')::numeric ELSE 0 END ELSE 0 END) AS adjustment
+  LEFT JOIN LATERAL (SELECT sum(CASE WHEN change->>'early_discount' ~ '^[0-9]{1,13}$' THEN -(change->>'early_discount')::numeric
+      WHEN change->>'fee' ~ '^-?[0-9]{1,13}$' THEN LEAST((change->>'fee')::numeric,0) ELSE 0 END) AS adjustment
     FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,return_adjustments}')='array'
       THEN o.draft_payload::jsonb #> '{management_composer,return_adjustments}' ELSE '[]'::jsonb END) change
     WHERE change->>'item_id'=d.id::text) a ON true
@@ -101,14 +100,26 @@ export async function rentalOverview(db: Database, params: URLSearchParams) {
   if (!['stores', 'days'].includes(view)) throw invalid();
   const key = view === 'days' ? "to_char(v.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD')" : "COALESCE(v.store_id::text,'unassigned')";
   const name = view === 'days' ? key : "COALESCE(max(v.store_name),'Chưa có cơ sở')";
-  const result = await db.query(`WITH vouchers AS (${CASHBOOK_LIST_SQL}) SELECT ${key} AS key,${name} AS name,
-    ${CASHBOOK_BREAKDOWN_KEYS.map(field => `COALESCE(sum(v.amount) FILTER (WHERE v.amount_category='${field}'),0) AS ${field}`).join(',')}
+  const relevant=await db.query(`SELECT DISTINCT t.order_id FROM himoto.transactions t
+    WHERE t.status='approved' AND t.order_id IS NOT NULL
+      AND t.created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      AND t.created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+      AND ($3::bigint IS NULL OR t.store_id=$3)`,[from,to,store]);
+  const result = await db.query(`${RENTAL_REVENUE_CTE}, original_vouchers AS (${CASHBOOK_LIST_SQL}), vouchers AS (
+    SELECT v.*,CASE WHEN a.category='rental' THEN LEAST(a.regular_total,a.initial_fees)-LEAST(a.regular_total-a.value,a.initial_fees) ELSE 0 END AS company_share
+    FROM original_vouchers v LEFT JOIN allocated a ON a.id=v.id
+  ) SELECT ${key} AS key,${name} AS name,
+    ${CASHBOOK_BREAKDOWN_KEYS.map(field => field==='rental_income'
+      ? `COALESCE(sum(v.amount-v.company_share) FILTER (WHERE v.amount_category='rental_income'),0) AS rental_income`
+      : field==='extra_income'
+        ? `COALESCE(sum(v.amount) FILTER (WHERE v.amount_category='extra_income'),0)+COALESCE(sum(v.company_share),0) AS extra_income`
+        : `COALESCE(sum(v.amount) FILTER (WHERE v.amount_category='${field}'),0) AS ${field}`).join(',')}
     FROM vouchers v WHERE v.type IN ('in','addon','out')
       AND v.created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
       AND v.created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
       AND ($3::bigint IS NULL OR v.store_id=$3)
       AND EXISTS(SELECT 1 FROM himoto.orders o WHERE o.id=v.order_id AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL})
-    GROUP BY ${key} ORDER BY ${view === 'days' ? 'key DESC' : 'name,key'}`, [from, to, store]);
+    GROUP BY ${key} ORDER BY ${view === 'days' ? 'key DESC' : 'name,key'}`, [from, to, store,relevant.rows.map(row=>String(row.order_id))]);
   const total = Object.fromEntries(CASHBOOK_BREAKDOWN_KEYS.map(field => [field, 0])) as CashbookBreakdown;
   const rows = result.rows.map(row => {
     const breakdown = Object.fromEntries(CASHBOOK_BREAKDOWN_KEYS.map(field => [field, amount(row[field])])) as CashbookBreakdown;

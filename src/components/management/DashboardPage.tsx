@@ -142,8 +142,8 @@ export function DashboardPage() {
               { key: 'rental', label: 'Hợp đồng thuê', value: total ? number(total.rental_contracts) : '—', hint: 'Thuê ngày / tháng / thường' },
               { key: 'ownership', label: 'Sở hữu', value: total ? number(total.ownership_contracts) : '—', hint: 'Thuê sở hữu trong kỳ' },
               { key: 'overdue', label: 'Hợp đồng quá hạn', value: total ? number(total.overdue_contracts) : '—', hint: 'Trong các HĐ bắt đầu kỳ' },
-              { key: 'sales', label: 'Doanh số', value: total ? money(total.sales) : '—', hint: 'Tổng tiền thuê trên HĐ' },
-              { key: 'revenue', label: 'Doanh thu', value: total ? money(total.revenue) : '—', hint: 'Thuê + gia hạn + muộn − hoàn' },
+              { key: 'sales', label: 'Doanh số', value: total ? money(total.sales) : '—', hint: 'Tiền thuê trên HĐ, không gồm VAT và phí khác' },
+              { key: 'revenue', label: 'Doanh thu', value: total ? money(total.revenue) : '—', hint: 'Thuê + gia hạn − hoàn' },
               { key: 'repair', label: 'Chi phí sửa', value: total ? money(total.repair) : '—', hint: 'Phí sửa chữa đã thu' },
             ].map(card => (
               <div key={card.key} className={`mg-sales-kpi is-${card.key === 'overdue' ? 'overdue' : card.key === 'revenue' || card.key === 'sales' ? 'revenue' : 'paid'}`}>

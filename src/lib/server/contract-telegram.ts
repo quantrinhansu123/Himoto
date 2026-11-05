@@ -79,7 +79,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const delivered=related.find(n=>n.status==='sent'&&n.retraction?.state!=='done');
     // Once a bad delivery is retracted, rebuild from the corrected contract. A later
     // successful resend becomes the baseline so it stays locked against duplication.
-    const baseline:NotificationPayload|undefined=related.some(n=>n.retraction?.state==='done')?delivered?.payload:event.payload;
+    const baseline:NotificationPayload|undefined=fresh.contract_edit?undefined:related.some(n=>n.retraction?.state==='done')?delivered?.payload:event.payload;
     const payload=baseline?{...baseline,code:fresh.code,contract_staff:fresh.contract_staff,photos:fresh.photos,method:fresh.method,deposit_method:fresh.deposit_method,payment_amounts:fresh.payment_amounts,
       // Cross-branch stock is invisible under vehicle RLS; backfill empty plates from a scoped label read.
       vehicles:baseline.vehicles||fresh.vehicles||'',vehicle_names:baseline.vehicle_names||fresh.vehicle_names||'',
@@ -122,6 +122,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
         ...(n.retraction?.state==='failed'?{blocked_reason:retractionErrorText(n.retraction.error)}:{})})),
       can_retry_confirmed_absent:!cancelledReceipts&&canSendContractEvent(user,event.kind)&&latest?.status==='unknown'&&!latest?.message_ids?.length});
   }
+  result.events.sort((a,b)=>Number(Boolean(payloads.get(b.key)?.contract_edit))-Number(Boolean(payloads.get(a.key)?.contract_edit)));
   return {state:result,payloads,store_id:Number(o.store_id)};
 }
 export async function saveContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount,input:unknown) {
@@ -176,6 +177,13 @@ export async function saveContractTelegram(db:Database,id:number,actorId:number,
   if(event.unchanged)return; // A double click or retried request never sends identical content twice.
   if(!event.can_send)throw new ContractTelegramError('Giao dịch đang gửi hoặc chưa xác định kết quả. Kiểm tra nhóm trước khi gửi lại.',409);
   const payload=read.payloads.get(event.key)!;
+  if(payload.contract_edit){
+    const retractable=event.deliveries?.filter(delivery=>delivery.can_retract)||[];
+    if(retractable.length){
+      for(const delivery of retractable)await queueTelegramRetraction(db,id,actorId,user,{action:'retract',notice_id:delivery.id,event_key:event.key,request_id:randomUUID(),reason:`Sửa lại HĐ ${payload.contract_edit.previous_code}; chuẩn bị gửi bản mới ${payload.code}`,confirmed:true});
+      return;
+    }
+  }
   await db.query(`INSERT INTO himoto.management_contract_notifications(id,order_id,store_id,event_key,root_event_key,event_type,payload,photo_slots,photo_phases,content_hash,delivery_mode,status)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'manual','pending') ON CONFLICT(event_key) DO NOTHING`,
     [randomUUID(),id,read.store_id,`manual:${id}:${body.request_id}`,event.key,event.kind,JSON.stringify(payload),JSON.stringify(payload.photos.map(p=>p.slot)),JSON.stringify(event.phases),event.hash]);

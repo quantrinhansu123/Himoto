@@ -183,7 +183,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     license: vehicles.map(v => text(v.license)).filter(Boolean).join(', '),
     start_date: dateTimeInput(raw.start_date || raw.rent_at) || text(raw.start_date || raw.rent_at),
     end_date: dateTimeInput(raw.end_date || raw.return_at) || text(raw.end_date || raw.return_at),
-    total_amount: number(raw.total_amount ?? raw.total), deposit_amount: number(raw.deposit_amount),
+    total_amount: number(raw.total_amount ?? raw.total), rental_sales_amount: number(raw.rental_sales_amount), deposit_amount: number(raw.deposit_amount),
     paid_amount: number(raw.paid_amount), deposit_paid: number(raw.deposit_paid), deposit_refunded: number(raw.deposit_refunded), return_adjustment_amount: number(raw.return_adjustment_amount), unit_price: number(raw.unit_price), package_name: text(raw.package_name),
     collections_json:Array.isArray(raw.collections) ? JSON.stringify(raw.collections) : '',
     payment_method: text(raw.payment_method), deposit_payment_method: text(raw.deposit_payment_method),

@@ -25,7 +25,7 @@ async function main(){
       for(let i=1;i<=13;i++){
         await c.query("INSERT INTO pg_temp.vehicles(id,name,license,type,year,store_id,current_store_id,status) VALUES($1,$2,$3,'xeso',2022,1,1,'ready')",[1000+i,`Xe QA ${i}`,`29B1-${String(i).padStart(5,'0')}`]);
         await c.query("INSERT INTO pg_temp.orders(id,contract_number,order_status,store_id) VALUES($1,$2,'completed',1)",[7000+i,`QA-${i}`]);
-        const fee=i*100,adjustment=i===3?-20:10,handler=i===2?150:0;expected+=handler||fee+adjustment;
+        const fee=i*100,adjustment=i===3?-20:10,handler=i===2?150:0;expected+=handler||fee+Math.min(adjustment,0);
         await c.query("INSERT INTO pg_temp.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,total_money,money_out_date,handler_price) VALUES($1,$2,$3,'2026-10-23T00:00:00+07:00','2026-10-24T10:00:00+07:00',$4,$5,$6)",[i,7000+i,1000+i,fee,adjustment,handler]);
       }
       await c.query(`INSERT INTO pg_temp.vehicles(id,name,license,type,year,store_id,current_store_id,status) VALUES(2001,'Other branch','29B2-99999','xeso',2023,2,2,'ready');
@@ -58,7 +58,7 @@ async function main(){
         INSERT INTO pg_temp.order_vehicle_details(id,order_id,vehicle_id,rent_at,total_money,total_renewal_amount) VALUES
         (201,8200,1001,'2026-10-23T09:00:00+07:00',151,40),(202,8200,1002,'2026-10-23T09:00:00+07:00',0,60);`);
       const nativeA=(await vehicleRevenue(db,params('vehicle_id=1001'))).find(row=>row.order_id===8200),nativeB=(await vehicleRevenue(db,params('vehicle_id=1002'))).find(row=>row.order_id===8200);
-      assert.deepEqual([nativeA.rental,nativeA.renewal,nativeA.adjustment,nativeA.revenue],[51,40,30,121]);
+      assert.deepEqual([nativeA.rental,nativeA.renewal,nativeA.adjustment,nativeA.revenue],[51,40,0,91]);
       assert.deepEqual([nativeB.rental,nativeB.renewal,nativeB.adjustment,nativeB.revenue],[50,60,-20,90]);
       assert.equal(nativeA.rental+nativeB.rental,101);
       checks.push('TEMP: native multi-vehicle rental base splits exactly including odd dong, per-line renewal and return adjustment are included, repair fees are excluded and totals are not placed on only the first vehicle');
@@ -71,13 +71,16 @@ async function main(){
         (9103,7001,'order:rental_fees','in',99999,'approved',7,1,'2026-10-24T00:00:00+07:00'),
         (9104,8003,'order:rental_fees','in',99999,'approved',7,1,'2026-10-23T10:00:00+07:00');`);
       const stores=await rentalOverview(db,params()),days=await rentalOverview(db,params('view=days'));
-      assert.equal(stores.rows.length,1);assert.equal(stores.total.revenue,170);assert.equal(stores.total.income,1190);assert.equal(stores.total.expense,320);
+      assert.equal(stores.rows.length,1);assert.equal(stores.total.revenue,120);assert.equal(stores.total.income,1190);assert.equal(stores.total.expense,320);
+      const {readDashboardSummary}=load(path.join(root,'lib/server/dashboard'));
+      const dashboard=await readDashboardSummary(db,new URLSearchParams({from:'2026-10-23',to:'2026-10-23',store_id:'1'}));
+      assert.equal(dashboard.total.revenue,120);assert.equal(dashboard.total.repair,7);
       assert.deepEqual(stores.total,days.total);assert.equal(days.rows[0].key,'2026-10-23');assert.equal(stores.total.breakdown.other_income,5);
       assert(validRentalReport('rental-overview',stores,params()));assert(validRentalReport('rental-overview',days,params('view=days')));
       assert(!validRentalReport('rental-overview',{...stores,rows:[]},params()));
       assert(!validRentalReport('rental-overview',{...stores,total:{...stores.total,income:0}},params()));
       assert(!validRentalReport('rental-overview',{...stores,rows:[null]},params()));
-      const actual=await rentalRevenue(db,'2026-10-23','2026-10-23',1);assert.deepEqual(actual.total,{rental:100,renewal:40,late:50,early:20,revenue:170});assert.equal(actual.unclassified_amount,5);
+      const actual=await rentalRevenue(db,'2026-10-23','2026-10-23',1);assert.deepEqual(actual.total,{rental:100,renewal:40,late:50,early:20,revenue:120});assert.equal(actual.unclassified_amount,5);
       checks.push('TEMP: store/day overview obeys all three requested formulas, legacy addon renewal counts once, unknown addons remain separate, approved receipts and Vietnam dates drive actual money');
       checks.push('Client validation rejects missing page records, malformed rows and non-reconciling money before rendering or exporting financial reports');
     }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}

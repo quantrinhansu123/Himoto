@@ -7,7 +7,7 @@ const {bulkDelete}=load(path.join(root,'lib/server/bulk-delete'));
 async function main(){
   const checks=[];
   const summary=summarizeRentalRevenue(['rental','renewal','late','early'].map((category,i)=>({day:'2026-10-21',category,amount:[1000,500,60,200][i],staff_id:i===3?null:'7',staff_name:i===3?null:'QA'})));
-  assert.equal(summary.total.revenue,1360);assert.equal(summary.unassigned.revenue,-200);assert.equal(summary.staff.reduce((n,r)=>n+r.revenue,0),summary.total.revenue);
+  assert.equal(summary.total.revenue,1300);assert.equal(summary.unassigned.revenue,-200);assert.equal(summary.staff.reduce((n,r)=>n+r.revenue,0),summary.total.revenue);
   assert(validRentalRevenue(summary));assert(!validRentalRevenue({...summary,total:{...summary.total,revenue:0}}));assert(!validRentalRevenue({...summary,staff:[]}));
   assert.throws(()=>summarizeRentalRevenue([{day:'2026-10-21',category:'rental',amount:null}]));
   checks.push('Formula reconciles across days and assigned/unassigned staff, supports negative refund-only days, and rejects unknown amounts');
@@ -19,6 +19,13 @@ async function main(){
   ]);
   assert(validRentalRevenue(manual));assert.equal(manual.staff.length,3);assert.equal(manual.staff.find(row=>row.key.startsWith('name:nhân viên nhập')).revenue,800);assert.equal(manual.unassigned.revenue,0);assert.equal(manual.total.revenue,1600);
   checks.push('Manual NVKD names retain receipts/refunds in separate name groups without merging into a same-name employee ID or unassigned revenue');
+  const company=summarizeRentalRevenue([
+    {day:'2026-10-21',category:'renewal',amount:500,staff_id:'7',staff_name:'PKD'},
+    {day:'2026-10-21',category:'renewal',amount:300,staff_id:'8',staff_name:'Phòng khác'},
+  ]);
+  assert.deepEqual(company.staff.map(row=>[row.key,row.name,row.revenue]),[['company','Công ty',800]]);
+  assert.equal(company.unassigned.revenue,0);assert.equal(company.total.renewal,800);assert(validRentalRevenue(company));
+  checks.push('All renewals belong to Công ty, regardless of contract employee or department; never classified as missing staff attribution');
   if(process.argv.includes('--live-temp')){
     require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
     const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database')),c=await ownerDatabase.connect();
@@ -58,16 +65,26 @@ async function main(){
       for(const [id,order,name,type,value,at,status='approved',store=23] of fixtures)await c.query(`INSERT INTO pg_temp.transactions(id,order_id,name,type,value,created_at,status,store_id,user_id,cash_id,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,7,1,'QA')`,[id,order,name,type,value,at,status,store]);
       await c.query(`INSERT INTO pg_temp.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload) VALUES($1,43,3,7,$2,'{"version":2,"amount":300}')`,[randomUUID(),'a'.repeat(64)]);
       const fresh=await payments.readPaymentContext(db,42);assert.equal(fresh.rental_refundable,200);assert.equal(fresh.deposit_held,500);
+      await c.query("INSERT INTO pg_temp.staff_profiles(id,full_name,position) VALUES(7,'PKD QA','NVKD'); UPDATE pg_temp.orders SET customer_id=600,rent_at='2026-10-20T09:00:00+07:00' WHERE id=42; UPDATE pg_temp.orders SET customer_id=600,rent_at='2026-10-21T09:00:00+07:00' WHERE id=43");
       const report=await rentalRevenue(db,'2026-10-21','2026-10-21',23);
-      assert.deepEqual(report.total,{rental:80,renewal:400,late:60,early:0,revenue:540});assert.equal(report.unclassified_amount,70);
+      assert.deepEqual(report.total,{rental:80,renewal:400,late:60,early:0,revenue:480});assert.equal(report.unclassified_amount,70);
+      assert.equal(report.company_fees,280,'Company gets the remaining initial fees 20 + repairs 90 + extras 110 + late fees 60');
+      assert(!report.staff.some(row=>row.key==='7'),'PKD never gets renewals or repeat-contract revenue; branch totals retain them');
+      assert.equal(report.staff.find(row=>row.key==='company').renewal,400);
+      await c.query("UPDATE pg_temp.staff_profiles SET position='Quản lý cơ sở' WHERE id=7");
+      const otherDepartment=await rentalRevenue(db,'2026-10-21','2026-10-21',23);
+      assert.equal(otherDepartment.staff.find(row=>row.key==='company').renewal,400);
+      assert(!otherDepartment.staff.some(row=>row.key==='7'));
+      await c.query("UPDATE pg_temp.staff_profiles SET position='NVKD' WHERE id=7");
       const yesterday=await rentalRevenue(db,'2026-10-20','2026-10-20',23);assert.equal(yesterday.total.renewal,0);assert.equal(yesterday.total.rental,1000);
+      assert.equal(yesterday.staff.find(row=>row.key==='7').rental,1000,'First-contract rent remains attributed to PKD');
       checks.push('TEMP: receipts drive Vietnam dates; unpaid renewal/discount snapshots do not move revenue, linked renewals count once, prior partial fees allocate before date filtering, cọc/repair/other fees excluded');
       const firstInput=input(fresh.revision,80),first=await save(firstInput);
       assert.equal(first.context.rental_refundable,120);assert.equal(first.context.paid_amount,920);assert.equal(first.context.total_amount,800);assert.equal(first.context.deposit_held,500);
       const replay=await save(firstInput);assert.equal(replay.replayed,true);assert.equal(replay.transaction_id,first.transaction_id);
       await assert.rejects(save(input(first.context.revision,121)),e=>e.status===409);
       const second=await save(input(first.context.revision,120));assert.equal(second.context.rental_refundable,0);assert.equal(second.context.paid_amount,800);
-      const after=await rentalRevenue(db,'2026-10-21','2026-10-21',23);assert.equal(after.total.early,200);assert.equal(after.total.revenue,340);
+      const after=await rentalRevenue(db,'2026-10-21','2026-10-21',23);assert.equal(after.total.early,200);assert.equal(after.total.revenue,280);
       checks.push('TEMP: actual early refund reduces paid, cash and same-day KPI once; total and deposit unchanged, partial refund caps and idempotent retry prevent excess/double refund');
       await bulkDelete(db,'transactions',[first.transaction_id,second.transaction_id]);
       const restored=await payments.readPaymentContext(db,42);assert.equal(restored.paid_amount,1000);assert.equal(restored.rental_refundable,200);assert.equal(restored.deposit_held,500);
@@ -80,8 +97,19 @@ async function main(){
         INSERT INTO pg_temp.transactions(id,order_id,name,type,value,created_at,status,store_id,user_id,cash_id,note) VALUES
         (15,45,'order:rental_fees','in',50,'2026-10-20T10:00:00+07:00','approved',31,7,1,'QA'),
         (16,45,'order:payment','in',100,'2026-10-21T10:00:00+07:00','approved',23,7,1,'QA');`);
-      assert.equal((await rentalRevenue(db,'2026-10-21','2026-10-21',23)).total.revenue,640);
+      assert.equal((await rentalRevenue(db,'2026-10-21','2026-10-21',23)).total.revenue,580);
       checks.push('TEMP: selecting only orders with receipts in the requested period retains their complete cross-branch history, so prior fees are not deducted again');
+      const {estimatedSales}=load(path.join(root,'lib/server/estimated-sales'));
+      await c.query(`INSERT INTO pg_temp.orders(id,contract_number,customer_id,rent_at,order_status,store_id,total,pid,total_rental_fees,draft_payload)
+        VALUES(46,'QA-COMPANY-FEES',900,'2026-10-21T09:00:00+07:00','renting',99,'1380',1380,1000,
+          '{"management_composer":{"draft":{"extra_charges":[{"name":"VAT","amount":"100"},{"name":"Bảo hiểm","amount":"10"}]},"return_adjustments":[{"late_fee":50,"repair_fee":200,"early_discount":20}]}}');`);
+      const estimated=await estimatedSales(db,'2026-10-21','2026-10-21',99);
+      assert.equal(estimated.sales,1020,'Rental sales exclude VAT, other initial fees, repairs and late fees, retaining renewals and rental discounts');
+      const {summarizeByStore,summarizeBySalesStaff}=load(path.join(root,'lib/management/source-sales'));
+      const rows=[{id:46,status:'renting',start_date:'2026-10-21',store_id:99,total_amount:1380,rental_sales_amount:1020,sales_staff_id:7}];
+      assert.equal(summarizeByStore(rows,'2026-10-21','2026-10-21','all').total.rent,1020);
+      assert.equal(summarizeBySalesStaff(rows,'2026-10-21','2026-10-21','all').total.rent,1020);
+      checks.push('TEMP: contract sales and staff/store summaries exclude VAT, repairs, late fees and other company charges without changing the contract payable total');
     }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
   }
   console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,productionSequenceChanges:0},null,2));

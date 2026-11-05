@@ -1,9 +1,9 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { DashboardStoreRow, DashboardSummary } from '@/lib/management/dashboard';
-import { CASHBOOK_LIST_SQL } from './cashbook-list';
 import { EFFECTIVE_RENTAL_TYPE_SQL, VEHICLE_ORDER_SQL } from './contract-classification';
-import { rentalReportScope, RentalReportError } from './rental-reports';
+import { rentalOverview, rentalReportScope, RentalReportError } from './rental-reports';
+import { rentalSalesValueSql } from './rental-sales-value';
 
 type Database = Pick<PoolClient, 'query'>;
 
@@ -28,7 +28,7 @@ export async function readDashboardSummary(db: Database, params: URLSearchParams
     db.query(`WITH scoped AS (
       SELECT o.store_id,s.store_name,
         -- orders.total is text in Himoto; never COALESCE it directly with an integer 0.
-        CASE WHEN BTRIM(COALESCE(o.total::text, '')) ~ '^[0-9]{1,13}$' THEN BTRIM(o.total::text)::numeric ELSE 0 END AS total,
+        ${rentalSalesValueSql()} AS total,
         CASE WHEN ${EFFECTIVE_RENTAL_TYPE_SQL} IN ('ownership','ownership_cd') THEN true ELSE false END AS is_ownership,
         CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,dates.end_date)<now() THEN 'overdue' ELSE o.order_status END AS status
       FROM himoto.orders o
@@ -49,18 +49,8 @@ export async function readDashboardSummary(db: Database, params: URLSearchParams
       count(*) FILTER (WHERE status IN ('overdue','bad_debt'))::int AS overdue_contracts,
       COALESCE(sum(total),0)::bigint AS sales
     FROM scoped GROUP BY store_id ORDER BY name,key`, [from, to, store]),
-    db.query(`WITH vouchers AS (${CASHBOOK_LIST_SQL})
-      SELECT COALESCE(v.store_id::text,'unassigned') AS key,COALESCE(max(v.store_name),'Chưa có cơ sở') AS name,
-        COALESCE(sum(v.amount) FILTER (WHERE v.amount_category IN ('rental_income','renewal_income','late_fee_income')),0)
-          - COALESCE(sum(v.amount) FILTER (WHERE v.amount_category='rental_refund_expense'),0) AS revenue,
-        COALESCE(sum(v.amount) FILTER (WHERE v.amount_category='repair_income'),0) AS repair
-      FROM vouchers v
-      WHERE v.type IN ('in','addon','out')
-        AND v.created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-        AND v.created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-        AND ($3::bigint IS NULL OR v.store_id=$3)
-        AND EXISTS(SELECT 1 FROM himoto.orders o WHERE o.id=v.order_id AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL})
-      GROUP BY v.store_id ORDER BY name,key`, [from, to, store]),
+    rentalOverview(db,new URLSearchParams({from,to,view:'stores',...(store===null?{}:{store_id:String(store)})}))
+      .then(report=>({rows:report.rows.map(row=>({key:row.key,name:row.name,revenue:row.revenue,repair:row.breakdown.repair_income}))})),
   ]);
 
   const rows = new Map<string, DashboardStoreRow>();

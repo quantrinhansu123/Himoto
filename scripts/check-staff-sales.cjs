@@ -55,24 +55,24 @@ async function main(){
     await receipt(10,'2026-10-14',1000000);
     let result=await staffSales(proxy,'2026-10-01','2026-10-31');
     const row=role=>result.rows.find(r=>r.department===role);
-    assert.equal(row('NVKD').revenue,10010000);assert.equal(row('TLS').revenue,6000000);
+    assert.equal(row('NVKD').revenue,6010000);assert.equal(row('TLS').revenue,6000000);
     assert.equal(row('TLS').contracts,1);assert.equal(row('TLS').new_customers,1);
-    assert.equal(result.unassigned_revenue,200000);assert.equal(result.unassigned_contracts,1);
-    checks.push('NVKD = real rent + renewals, no deposit/fees/pending receipts; TLS excludes all ownership contracts, including legacy schedules and manual labels');
+    assert.equal(result.unassigned_revenue,2200000);assert.equal(result.unassigned_contracts,3);
+    checks.push('NVKD = first-contract initial rent only, no renewals/repeat contracts/deposit/fees/pending receipts; TLS excludes all ownership contracts, including legacy schedules and manual labels');
     result=await staffSales(proxy,'2026-10-01','2026-10-31',36);
-    assert.equal(row('NVKD').revenue,1000000);assert(!row('TLS'));
+    assert(!row('NVKD'));assert(!row('TLS'));
     checks.push('Repeat customers, including former ownership renters, never become new when filtering branch/date; drafts/cancellations do not consume the first rental');
     await receipt(4,'2026-11-13',3000000,'order:payment');
     result=await staffSales(proxy,'2026-11-01','2026-11-30');
-    assert.equal(row('NVKD').revenue,3000000);assert(!row('TLS'));
-    checks.push('Later installment receipts count once for NVKD; TLS is never credited again when the same contract is paid or renewed');
+    assert(!row('NVKD'));assert(!row('TLS'));
+    checks.push('Receipts beyond the initial rental amount do not count again for NVKD; TLS is never credited again when the same contract is paid or renewed');
     await assert.rejects(()=>staffSales(proxy,'2026-02-30','2026-10-01'),/khoảng ngày/);
     await c.query('UPDATE qa_sales_orders SET total=$1 WHERE id=3',['12000000']);
     result=await staffSales(proxy,'2026-10-01','2026-10-31');assert.equal(row('TLS').revenue,6000000);
     checks.push('Renewals increasing current debt never inflate the original TLS contract value; invalid date filters are rejected');
     await c.query("INSERT INTO qa_sales_transactions(id,order_id,store_id,user_id,note,created_at,value,name,type,status) VALUES($1,1,35,143,'QA legacy renewal','2026-10-11T10:00:00+07:00',50000,'addon','addon','approved')",[tid++]);
-    result=await staffSales(proxy,'2026-10-01','2026-10-31');assert.equal(row('NVKD').revenue,10060000);assert.equal(row('TLS').revenue,6000000);
-    checks.push('Legacy addon/name=addon renewals count once for NVKD without consuming initial non-rental fees or changing first-rental TLS attribution');
+    result=await staffSales(proxy,'2026-10-01','2026-10-31');assert.equal(row('NVKD').revenue,6010000);assert.equal(row('TLS').revenue,6000000);
+    checks.push('Legacy addon/name=addon renewals never count for NVKD without consuming initial non-rental fees or changing first-rental TLS attribution');
 
     const dataset={stores:[{id:35}],vehicles:[{id:101}],staff:[],customers:[],contracts:[]};
     const draft={...doc.createContractDraft(dataset,'35'),customer_id:77,customer,vehicles:[{...doc.emptyVehicle(),id:'101'}],start_date:'2026-10-13T09:00',end_date:'2026-10-14T09:00',total_amount:'300000',unit_price:'300000',deposit_amount:'3000000'};
@@ -94,6 +94,14 @@ async function main(){
     const ownerQuery=Object.getOwnPropertyDescriptor(owner,'query');
     Object.defineProperty(owner,'query',{configurable:true,value:(sql,params)=>proxy.query(sql,params)});
     try {
+    const {hasSalesCommissionRole}=load(path.join(root,'lib/management/staff-positions'));
+    for(const position of ['PKD','PKD1','PKD 1','PKD 2','PKD2 / TPKD','PT, NVKD','PT; NVKD'])assert(hasSalesCommissionRole(position),position);
+    assert(!hasSalesCommissionRole('HCNS'));assert(!hasSalesCommissionRole('TLS'));
+    await c.query("INSERT INTO qa_sales_staff_profiles(id,staff_code,full_name,phone,position,status,store_id) VALUES(30,'QA-30','Trang PKD1 QA','0900000030','PKD 1','active',36),(31,'QA-31','Trang PKD2 QA','0900000031','PKD 2','active',36)");
+    const {loadCommissionStaff}=load(path.join(root,'lib/server/commission-staff'));
+    assert.equal((await loadCommissionStaff('30','NVKD')).name,'Trang PKD1 QA');
+    assert.equal((await loadCommissionStaff('31','NVKD')).name,'Trang PKD2 QA');
+    checks.push('Numbered PKD 1/PKD 2 roles are recognized and accepted for contracts in a different store');
     const updated=await attempt(()=>updateContractProfile(proxy,4,143,{revision:before.revision,profile:{...profile,customer:{...customer,id_card:'001234567877',address:'Địa chỉ bổ sung'}}}));
     assert(updated.revision);
     const after=(await c.query('SELECT total,total_rental_fees,pid,order_status,customer_id,rent_at,return_at,draft_payload FROM qa_sales_orders WHERE id=4')).rows[0];

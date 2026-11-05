@@ -23,9 +23,9 @@ export function CustomerDocumentBatch({ocr,value={},onChange,onBusyChange,disabl
     finally{if(active.current){setBusy(false);callback.current(false);}}
   }
   const state=ocr.states.documents;
-  return <div className="mg-document-batch"><p>Chọn nhiều ảnh CCCD / hộ chiếu và GPLX của cùng một khách. Toàn bộ ảnh được giữ trong hồ sơ; AI đọc tối đa 3 ảnh đầu để tự điền. Kiểm tra lại thông tin trước khi lưu.</p>
+  return <div className="mg-document-batch"><p>Chọn nhiều ảnh CCCD / hộ chiếu và GPLX của cùng một khách. Toàn bộ ảnh được giữ trong hồ sơ; Quét QR căn cước trong tối đa 3 ảnh đầu để tự điền. Kiểm tra lại thông tin trước khi lưu.</p>
     <input hidden ref={picker} type="file" accept="image/*" multiple aria-label="Chọn bộ ảnh CCCD và GPLX" disabled={disabled||busy||ocr.pending} onChange={event=>{const files=Array.from(event.target.files||[]);event.target.value='';void choose(files);}}/>
-    <button type="button" className="mg-button" disabled={disabled||busy||ocr.pending} onClick={()=>picker.current?.click()}>{busy?<LoaderCircle size={16} className="mg-spin"/>:<ImagePlus size={16}/>}Chọn nhiều ảnh · AI đọc cùng lúc</button>
+    <button type="button" className="mg-button" disabled={disabled||busy||ocr.pending} onClick={()=>picker.current?.click()}>{busy?<LoaderCircle size={16} className="mg-spin"/>:<ImagePlus size={16}/>}Chọn ảnh · Quét QR căn cước</button>
     {busy&&<p role="status">Đang chuẩn bị bộ ảnh…</p>}{state&&<p role={state.phase==='error'?'alert':'status'} className={state.phase==='error'?'mg-field-error':undefined}>{state.message}</p>}
     {state?.phase==='reading'&&<button className="mg-button" type="button" onClick={()=>ocr.cancel('documents')}>Bỏ qua AI</button>}
     {error&&<p className="mg-field-error" role="alert">{error}</p>}

@@ -228,7 +228,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     onClose();
   }
 
-  return <Dialog title={`${backfill?'Nhập bổ sung gia hạn':'Gia hạn'} · ${contractCode}`} subtitle={backfill?'Ghi đúng ngày giao dịch thực tế; xe đã trả chỉ bổ sung lịch sử và phí, không đổi kho hiện tại.':'Lưu sẽ tạo phiên bản hợp đồng mới với ngày trả và tiền hợp đồng mới'} className="mg-renewal-dialog" onClose={close}>
+  return <Dialog dismissOnBackdrop={false} title={`${backfill?'Nhập bổ sung gia hạn':'Gia hạn'} · ${contractCode}`} subtitle={backfill?'Ghi đúng ngày giao dịch thực tế; xe đã trả chỉ bổ sung lịch sử và phí, không đổi kho hiện tại.':'Lưu sẽ tạo phiên bản hợp đồng mới với ngày trả và tiền hợp đồng mới'} className="mg-renewal-dialog" onClose={close}>
     <form onSubmit={submit}>
       <div className="mg-dialog-body">
         {done ? <div className="mg-cashbook-followup" role="status">

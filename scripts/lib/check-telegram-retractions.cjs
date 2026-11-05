@@ -21,6 +21,19 @@ module.exports=async function checkRetractions(db,c,schema){
   const read=async id=>(await db.query('SELECT * FROM himoto.management_contract_notifications WHERE id=$1',[id])).rows[0];
   const fresh=await fixture(201);
   assert(r.retractionEligibility(await read(fresh.id),user).can_retract);
+  assert(r.retractionEligibility({...await read(fresh.id),delivery_target:{...target,started_at:new Date(Date.now()-23*3600000).toISOString()}},user).can_retract);
+  assert(!r.retractionEligibility({...await read(fresh.id),delivery_target:{...target,started_at:new Date(Date.now()-25*3600000).toISOString()}},user).can_retract);
+  await c.query('SAVEPOINT latest_edit_preview');
+  await db.query(`UPDATE himoto.orders SET customer_name='LATEST EDIT CUSTOMER QA',draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'),'{management_composer}',
+    COALESCE(draft_payload::jsonb->'management_composer','{}')||jsonb_build_object('contract_edits',jsonb_build_array(jsonb_build_object('at',now(),'before',jsonb_build_object('contract_number','OLD-QA-CODE')))),true)::json WHERE id=1`);
+  const updatedPreview=await service.readContractTelegram(db,1,143,user),editEvent=updatedPreview.state.events.find(item=>item.key===fresh.key);
+  assert(editEvent.text.includes('LATEST EDIT CUSTOMER QA'));assert(editEvent.text.includes('SỬA LẠI HỢP ĐỒNG: OLD-QA-CODE'));
+  assert(!editEvent.text.includes('WRONG SENT CUSTOMER QA'));
+  await service.saveContractTelegram(db,1,143,user,{action:'send',event_key:editEvent.key,hash:editEvent.hash,request_id:randomUUID()});
+  assert.equal((await read(fresh.id)).retraction.state,'pending');
+  assert.equal((await db.query("SELECT id FROM himoto.management_contract_notifications WHERE root_event_key=$1 AND status='pending'",[fresh.key])).rowCount,0);
+  await c.query('ROLLBACK TO SAVEPOINT latest_edit_preview');await c.query('RELEASE SAVEPOINT latest_edit_preview');
+  checks.push('Edited contracts preview the latest saved customer and original contract code; Send queues retraction before a replacement, with a strict 24-hour window');
   await assert.rejects(()=>service.saveContractTelegram(db,1,143,reader,fresh.input),e=>e.status===403);
   for(const patch of [{confirmed:false},{reason:'x'.repeat(501)},{chat_id:'-100000000999'},{notice_id:randomUUID()},{event_key:'foreign-root'}])await assert.rejects(()=>service.saveContractTelegram(db,1,143,user,{...fresh.input,...patch}));
   checks.push('Retraction requires matching notice/root/order, original event permission and explicit confirmation; arbitrary chat IDs and oversized reasons are rejected');
@@ -58,12 +71,12 @@ module.exports=async function checkRetractions(db,c,schema){
    const failed=await fixture();await service.saveContractTelegram(db,1,143,user,failed.input);
    await r.dispatchTelegramRetractions(fake,1,db,[1]);const row=await read(failed.id);assert.equal(row.retraction.state,'failed');assert.equal(row.retraction.deleted_ids.length,0);assert(!JSON.stringify(row.retraction).includes('token URL'));
   }
-  const expired=await fixture(1,{started_at:new Date(Date.now()-48*3600000).toISOString()});await assert.rejects(()=>service.saveContractTelegram(db,1,143,user,expired.input),e=>e.status===409);
+  const expired=await fixture(1,{started_at:new Date(Date.now()-25*3600000).toISOString()});await assert.rejects(()=>service.saveContractTelegram(db,1,143,user,expired.input),e=>e.status===409);
   const legacy=await fixture();await db.query('UPDATE himoto.management_contract_notifications SET delivery_target=NULL WHERE id=$1',[legacy.id]);await assert.rejects(()=>service.saveContractTelegram(db,1,143,user,legacy.input),e=>e.status===409);
   const switched=await fixture();await service.saveContractTelegram(db,1,143,user,switched.input);
   await c.query(`UPDATE ${schema}.management_telegram_settings SET bot_cipher=$1`,[crypto.sealIntegrationSecret({token:'987654321:other-qa-bot'})]);
   await r.dispatchTelegramRetractions(async()=>{throw Error('Must not contact a different bot');},1,db,[1]);assert.equal((await read(switched.id)).retraction.error,'BOT_CHANGED');
-  checks.push('48-hour cutoff, legacy unknown destinations and changed bot are blocked; timeouts/malformed acknowledgements remain failed without leaking provider details');
+  checks.push('24-hour cutoff, legacy unknown destinations and changed bot are blocked; timeouts/malformed acknowledgements remain failed without leaking provider details');
   const scopedOwn=await fixture();
   await c.query(`GRANT USAGE ON SCHEMA ${schema} TO himoto_scoped; GRANT SELECT,UPDATE ON ${schema}.orders TO himoto_scoped; ALTER TABLE ${schema}.orders ENABLE ROW LEVEL SECURITY; CREATE POLICY qa_retraction_order_scope ON ${schema}.orders TO himoto_scoped USING(himoto.access_store(store_id))`);
   await c.query("SELECT set_config('himoto.scope_all','false',true),set_config('himoto.store_id','23',true),set_config('himoto.actor_id','143',true)");

@@ -18,7 +18,7 @@ const aliases: Record<string, string> = {
 /** A branch belongs in store_id, never in the job title. Unknown titles remain editable. */
 export function normalizeStaffPosition(value: unknown): string {
   const text = String(value || '').normalize('NFC').replace(/\s+/g, ' ').trim();
-  return [...new Set(text.split('/').map(part => {
+  return [...new Set(text.split(/[/,;]/).map(part => {
     const title = part.trim().replace(/\s+(?:(?:CS|Cơ sở)\s+)?(?:Giáp Bát|Láng|Nguyễn Hoàng|Thuốc Bắc|Hàng Bút|Hà Đông|Thuê sở hữu)$/iu, '').trim();
     return aliases[key(title)] || title;
   }).filter(Boolean))].join(' / ');
@@ -40,7 +40,7 @@ export const STAFF_DEPARTMENTS = [
 export const staffRoles = (position: unknown) => normalizeStaffPosition(position).split(' / ').filter(Boolean);
 /** Positions allowed on the contract "NVKD ghi nhận doanh số" field (company-wide). */
 export function hasSalesCommissionRole(position: unknown) {
-  return staffRoles(position).some(role => role === 'NVKD' || role === 'TPKD');
+  return staffRoles(position).some(role => role === 'NVKD' || role === 'TPKD' || /^PKD\s*\d*$/i.test(role));
 }
 export function matchesCommissionRole(position: unknown, role: 'NVKD' | 'TLS') {
   return role === 'NVKD' ? hasSalesCommissionRole(position) : staffRoles(position).includes(role);

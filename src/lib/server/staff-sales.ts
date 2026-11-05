@@ -39,7 +39,7 @@ const SALES_CTE = `WITH ranked AS MATERIALIZED (
     AND (o.id IN(SELECT order_id FROM relevant) OR COALESCE(o.rent_at,o.created_at)>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
       AND COALESCE(o.rent_at,o.created_at)<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh'))
 ), receipt_history AS (
-  SELECT t.id,t.order_id,t.value,t.created_at,o.initial_fees,
+  SELECT t.id,t.order_id,t.value,t.created_at,o.initial_fees,o.original_rent,
     ${renewalReceiptSql()} AS is_renewal,
     SUM(CASE WHEN ${renewalReceiptSql()} THEN 0 ELSE t.value END)
       OVER(PARTITION BY t.order_id ORDER BY t.created_at,t.id ROWS UNBOUNDED PRECEDING) AS cumulative_regular
@@ -50,10 +50,13 @@ const SALES_CTE = `WITH ranked AS MATERIALIZED (
 ), receipts AS (
   SELECT order_id,SUM(CASE WHEN is_renewal THEN value
     ELSE GREATEST(cumulative_regular-initial_fees,0)-GREATEST(cumulative_regular-value-initial_fees,0) END) AS revenue
+    ,SUM(CASE WHEN is_renewal THEN 0 ELSE
+      LEAST(GREATEST(cumulative_regular-initial_fees,0),original_rent)
+      -LEAST(GREATEST(cumulative_regular-value-initial_fees,0),original_rent) END) AS initial_revenue
   FROM receipt_history WHERE created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') GROUP BY order_id
 ), attributed AS (
   SELECT o.id,o.customer_id,o.rental_number,a.department,a.staff_id,a.saved_name,
-    CASE WHEN a.department='TLS' THEN o.original_rent ELSE COALESCE(r.revenue,0) END AS revenue,
+    CASE WHEN a.department='TLS' THEN o.original_rent ELSE COALESCE(r.initial_revenue,0) END AS revenue,
     (COALESCE(o.rent_at,o.created_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date AS started_in_range
   FROM eligible o LEFT JOIN receipts r ON r.order_id=o.id
   CROSS JOIN LATERAL (SELECT
@@ -65,7 +68,8 @@ const SALES_CTE = `WITH ranked AS MATERIALIZED (
   ) a(department,staff_id,saved_name)
   WHERE ($3::bigint IS NULL OR o.store_id=$3) AND (a.staff_id IS NOT NULL OR a.department='NVKD' AND NULLIF(trim(a.saved_name),'') IS NOT NULL OR a.department='TLS'
     AND upper(trim(COALESCE(NULLIF(o.customer_source,''),o.draft_payload #>> '{management_composer,draft,customer_source}',''))) IN ('TLS','TELESALE','TELESALES'))
-    AND (a.department='NVKD' OR NOT o.ownership AND o.rental_number=1 AND (COALESCE(o.rent_at,o.created_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date)
+    AND o.rental_number=1
+    AND (a.department='NVKD' OR NOT o.ownership AND (COALESCE(o.rent_at,o.created_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date)
 )
 `;
 export const STAFF_SALES_SQL = `${SALES_CTE}

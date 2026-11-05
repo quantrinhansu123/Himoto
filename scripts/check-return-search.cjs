@@ -38,7 +38,13 @@ async function main(){const c=await db.connect();try{
  for(const query of ['',"%' OR 1=1 --",'_','NO-MATCH'])assert.deepEqual(await ids(query),[],query);
  const both=await service.searchReturnableItems(client,'123.45');
  assert(both.every(row=>row.total_amount===400000&&row.paid_amount===400000));
- await c.query('UPDATE pg_temp.order_vehicle_details SET completed_at=now() WHERE id=202');
+ const returnedAt=new Date(Date.now()+7*3600000).toISOString().slice(0,16);
+ const result=await service.recordVehicleReturn(client,143,{item_id:202,item_revision:both.find(row=>row.item_id===202).item_revision,returned_at:returnedAt,hourly_rate:'20000'});
+ assert.equal(result.status,'renting');assert.equal(result.total_amount,400000);assert.equal(result.fee,0);
+ const order=(await c.query('SELECT total,pid,order_status FROM pg_temp.orders WHERE id=101')).rows[0];
+ assert.equal(Number(order.total),400000);assert.equal(Number(order.pid),400000);assert.equal(order.order_status,'renting');
+ assert.equal((await c.query('SELECT status FROM pg_temp.vehicles WHERE id=11')).rows[0].status,'using');
+ assert.equal((await c.query('SELECT status FROM pg_temp.vehicles WHERE id=12')).rows[0].status,'ready');
  const partial=await service.searchReturnableItems(client,'123.45');
  assert.equal(partial.filter(row=>!row.completed_at).length,1);
  assert.equal(partial.filter(row=>row.completed_at).length,1);

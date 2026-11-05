@@ -1,6 +1,6 @@
 import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
-import { himotoPool } from '@/lib/server/himoto-database';
+import { himotoPool,ownerDatabase } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { BulkDeleteError, bulkDelete, parseBulkDelete } from '@/lib/server/bulk-delete';
 import { failureResponse } from '@/lib/server/public-failure';
@@ -14,7 +14,7 @@ async function DELETEHandler(request: NextRequest, { params }: Params) {
   let client;
   try {
     const { kind, ids } = parseBulkDelete((await params).kind, await request.json());
-    client = await himotoPool.connect();
+    client = await (kind==='contracts'?ownerDatabase:himotoPool).connect();
     await client.query('BEGIN');
     const deleted = await bulkDelete(client, kind, ids);
     await client.query('COMMIT');

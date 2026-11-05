@@ -132,6 +132,7 @@ function contractFilterSql(filters:Record<string,string>) {
 }
 export function contractPageSql(scopeClause:string,includeTotal=false) {
   return `SELECT ${includeTotal?'count(*) OVER()::int AS __total_count, ':''}o.id, o.contract_number, o.draft_reference,
+    o.draft_payload #>> '{management_composer,approval,at}' AS approval_at,
     CASE WHEN o.order_status='renting' AND o.return_at < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, o.customer_name, o.customer_phone,
     o.store_id, s.store_name, s.kind AS store_kind, o.rent_at AS start_date, o.return_at AS end_date,
@@ -174,6 +175,7 @@ function contractHydrateSql() {
   // Legacy imports often have only customer_id. Resolve the linked profile on
   // this bounded page, using the same customer fields as CONTRACT_LIST_SQL.
   return `SELECT o.id, o.contract_number, o.draft_reference,
+    o.draft_payload #>> '{management_composer,approval,at}' AS approval_at,
     o.created_at, o.updated_at, o.contract_signed_on::text AS signed_on,
     ${OWNERSHIP_HOLD_FIELDS_SQL},
     ${CONTRACT_REVIEW_SQL},

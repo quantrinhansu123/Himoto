@@ -7,6 +7,7 @@ import { failureResponse } from './public-failure';
 import { isSupplementalPhotoSlot,photoBaseSlot } from '@/lib/management/photo-slot-groups';
 
 export function requestPermission(path:string,method:string,action=''):AccessPermission|null {
+  if(method==='DELETE'&&(path.includes('/order/car-rental/')||path==='/api/auth/bulk-delete/contracts'))return 'contracts.delete';
   if(path.includes('/record-photos/')){const slot=path.split('/').at(-1)!;if(isSupplementalPhotoSlot(slot))path=path.slice(0,-slot.length)+photoBaseSlot(slot);}
   const read=method==='GET';
   if(path.startsWith('/api/auth/attendance'))return null; // Self-service; handler enforces actor and HR branch scope.

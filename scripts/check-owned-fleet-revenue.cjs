@@ -55,7 +55,7 @@ async function main(){const checks=[];
     INSERT INTO qa_fleet_order_vehicle_details(id,order_id,vehicle_id,rent_at,total_money,total_renewal_amount) VALUES(101,100,1,'2026-10-23T09:00:00+07:00',151,20),(102,100,81,'2026-10-23T09:00:00+07:00',0,30);
     INSERT INTO qa_fleet_orders(id,store_id,contract_number,order_status,draft_payload) VALUES(200,1,'DRAFT','draft',NULL),(201,1,'BATTERY','completed','{"legacy_migration":{"sourceStoreId":30}}'),(202,1,'OLD','completed',NULL);
     INSERT INTO qa_fleet_order_vehicle_details(id,order_id,vehicle_id,rent_at,total_money) VALUES(201,200,1,'2026-10-23T12:00:00+07:00',999999),(202,201,1,'2026-10-23T12:00:00+07:00',999999),(203,202,1,'2026-10-22T23:59:59+07:00',999999),(204,202,1,'2026-10-24T00:00:00+07:00',999999);`);
-   const native=await ownedFleetRevenue(db,query());assert.equal(native.rows.find(r=>r.store_id===1).loan_revenue,8076);assert.equal(native.rows.find(r=>r.store_id===2).direct_revenue,70);
+   const native=await ownedFleetRevenue(db,query());assert.equal(native.rows.find(r=>r.store_id===1).loan_revenue,8071);assert.equal(native.rows.find(r=>r.store_id===2).direct_revenue,70);
    const old=await vehicleRevenue(db,new URLSearchParams({from:'2026-10-23',to:'2026-10-23',mode:'all'}));
    assert.equal(native.total.revenue,old.rows.filter(r=>r.id!==83).reduce((n,r)=>n+r.revenue,0));
    for(const key of FLEET_TOTAL_FIELDS)assert.equal(native.rows.reduce((n,r)=>n+r[key],0),native.total[key]);

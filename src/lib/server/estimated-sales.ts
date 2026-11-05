@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { type EstimatedSalesReport } from '@/lib/management/estimated-sales';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { RentalRevenueError } from './rental-revenue';
+import { rentalSalesValueSql } from './rental-sales-value';
 
 type Database = Pick<PoolClient, 'query'>;
 
@@ -25,7 +26,7 @@ export async function estimatedSales(db: Database, from: string, to: string, sto
   }
 
   const result = await db.query(`WITH scoped AS (
-    SELECT o.id,COALESCE(o.total::numeric,0) AS sales,
+    SELECT o.id,${rentalSalesValueSql()} AS sales,
       COALESCE(lines.vehicles,0) AS vehicles,
       o.order_status IN ('renting','overdue','wait_payment','reserved')
         AND COALESCE(lines.open_lines,0)>0 AS active

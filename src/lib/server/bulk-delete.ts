@@ -1,5 +1,7 @@
 import 'server-only';
-import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { dataAccess } from './access-context';
+import { deleteContractRecord } from './contract-deletion';
+import { DraftDeleteError } from './contract-draft-delete';
 import type { PoolClient } from 'pg';
 import { deleteDatabaseStore, StoreSaveError } from './store-management';
 import { referenceColumns } from './vehicle-import';
@@ -8,7 +10,7 @@ type Client = Pick<PoolClient, 'query'>;
 export const BULK_DELETE_KINDS = ['customers', 'stores', 'vehicles', 'staff', 'contracts', 'transactions'] as const;
 export type BulkDeleteKind = (typeof BULK_DELETE_KINDS)[number];
 export const MAX_BULK_DELETE = 500;
-const OPEN_STATUSES = ['renting', 'overdue', 'wait_payment', 'pending', 'deposit_contract'];
+
 const quote = (name: string) => `"${name.replace(/"/g, '""')}"`;
 const list = (labels: string[]) => `${labels.slice(0, 8).join(', ')}${labels.length > 8 ? `, … (${labels.length})` : ''}`;
 
@@ -87,19 +89,17 @@ async function deleteStaff(client: Client, ids: number[]) {
   await client.query('DELETE FROM himoto.staff_profiles WHERE id = ANY($1::bigint[])', [ids]);
 }
 
-// Soft delete: rows keep their data (restore by clearing deleted_at). Receipts stay in the cashbook.
+// Every contract removal uses the same authorization and audit rules.
 async function deleteContracts(client: Client, ids: number[]) {
-  await lockRows(client, 'orders', ids, 'hợp đồng', 'AND deleted_at IS NULL');
-  const lines = await client.query(`UPDATE himoto.order_vehicle_details SET deleted_at = now(), updated_at = now()
-    WHERE order_id = ANY($1::bigint[]) AND deleted_at IS NULL RETURNING vehicle_id, completed_at`, [ids]);
-  await client.query('UPDATE himoto.orders SET deleted_at = now(), updated_at = now() WHERE id = ANY($1::bigint[])', [ids]);
-  const released = [...new Set(lines.rows.filter(row => !row.completed_at && row.vehicle_id != null).map(row => Number(row.vehicle_id)))];
-  if (released.length) await client.query(`UPDATE himoto.vehicles v SET status = 'ready', updated_at = now()
-    WHERE v.id = ANY($1::bigint[]) AND v.status = 'using' AND NOT EXISTS (
-      SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id = d.order_id
-      WHERE d.vehicle_id = v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status = ANY($2::text[]))`, [released, OPEN_STATUSES]);
+  const user=dataAccess.getStore();
+  if(!user)throw new BulkDeleteError('Không xác định được người xóa hợp đồng.',403);
+  const rows=await lockRows(client,'orders',ids,'hợp đồng','AND deleted_at IS NULL');
+  for(const row of rows){
+    const revision=(await client.query('SELECT xmin::text AS revision FROM himoto.orders WHERE id=$1',[row.id])).rows[0].revision;
+    try{await deleteContractRecord(client,Number(row.id),revision,user);}
+    catch(error){if(error instanceof DraftDeleteError)throw new BulkDeleteError(error.message,error.status);throw error;}
+  }
 }
-
 // Hard delete. Receipts recorded against a contract are taken back out of its collected amount (and out
 // of its total for renewal/extra receipts, which raised the total when collected).
 async function deleteTransactions(client: Client, ids: number[]) {

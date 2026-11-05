@@ -297,7 +297,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
           onClick={()=>{if(!editBlock)onEditIssued?.();}}><Pencil size={16}/>Sửa hợp đồng</button>;
       })()}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&requiresOwnershipApproval(row.rental_type)&&<OwnershipTermsEditor id={row.id} code={row.code} onSaved={value=>{setLifecycleOverride(previous=>({...previous,ownership_term_months:value.term_months,draft_revision:value.revision}));fetchHistory();}}/>}
-      {source==='api'&&row.status==='deposit_contract'&&(()=>{
+      {source==='api'&&row.status==='deposit_contract'&&can('contracts.delete')&&(()=>{
         const deleteBlock=contractIssuedEditBlockReason(accessUser,row.store_id);
         return <button type="button" className="mg-button mg-button-danger" disabled={Boolean(deleteBlock)} title={deleteBlock||undefined}
           aria-label={deleteBlock?`Xóa hợp đồng cọc. ${deleteBlock}`:undefined}
