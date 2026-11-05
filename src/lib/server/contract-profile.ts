@@ -9,6 +9,7 @@ import { loadCommissionStaff } from './commission-staff';
 import { dataAccess,usesScopedDatabase } from './access-context';
 import { contractNumberAvailable } from './contract-number';
 import { validOwnershipTerm } from '@/lib/management/contract-billing';
+import { releaseCompletedContractVehicles } from './contract-stock-release';
 export class ContractProfileError extends Error {constructor(message:string,public status=400){super(message);}}
 const issuedStatus=(value:unknown)=>typeof value==='string'&&value!=='draft'&&CONTRACT_STATUSES.some(option=>option.value===value);
 export function parseContractProfile(body:unknown,allowIncomplete=false):{revision:string;profile:ContractProfile}&ContractProfileEdits {
@@ -69,12 +70,13 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
   const updated={...payload,management_composer:{...composer,profile,profile_updated_by:actor,profile_updated_at:at,profile_attribution:attribution,
     ...(composer.draft?{draft:{...composer.draft,contract_number:code,...(profile.created_on?{created_on:profile.created_on}:{})}}:{}),
     contract_edits:[...(Array.isArray(composer.contract_edits)?composer.contract_edits:[]),edit]}};
-  // Status and created_on are corrective labels only; money, vehicles and stock stay on their existing workflows.
+  // Closing a contract also releases its rental lines and inventory in this transaction.
   const result=await client.query(`UPDATE himoto.orders SET customer_name=$2,customer_phone=$3,customer_address=NULLIF($4,''),customer_idnumber=NULLIF($5,''),
     draft_payload=$6::json,updated_at=now(),contract_number=$7,
     draft_reference=CASE WHEN draft_reference=$8 THEN $7 ELSE draft_reference END,note=$9,contract_signed_on=NULLIF($10,'')::date,customer_source=COALESCE($11,customer_source),
     order_status=$12,
     created_at=CASE WHEN NULLIF($13,'') IS NULL THEN created_at ELSE ($13::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') END
     WHERE id=$1 RETURNING xmin::text AS revision`,[id,profile.customer.name,profile.customer.phone,profile.customer.address,profile.customer.id_card,JSON.stringify(updated),code,previous.contract_number,nextNotes,profile.signed_on,profile.customer_source?.trim(),nextStatus,profile.created_on||null]);
+  if(nextStatus==='completed'&&!options.overwrite)await releaseCompletedContractVehicles(client,id);
   return {revision:String(result.rows[0].revision),code:String(code||'')};
 }
