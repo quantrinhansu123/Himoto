@@ -6,6 +6,7 @@ import re
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
+from lib.mobile_catalogue_media_fixture import thumbnail_response
 
 SCHEMA="himoto.qa.vehicle-transfers.v1"
 ACTIONS=("transfer","receive","reject","cancel")
@@ -148,6 +149,10 @@ def response(path,method,body,headers,state):
         return 200,{"token":token(sid,actor),"user":actor_profile(state,actor),"expiresAt":expires},False
     actor,sid=authenticate(state,headers)
     if actor is None:return 401,{"message":"Phiên QA hết hạn.","code":"SESSION_EXPIRED"},False
+    thumbnail=thumbnail_response(path,method)
+    if thumbnail is not None:
+        if thumbnail['target']['id'] not in state['vehicles']:return 404,{'message':'Không có xe QA.'},False
+        return 200,thumbnail,False
     if route=="/api/mobile/v1/session":
         if method=="DELETE":state["sessions"][sid]["active"]=False;return 200,{"success":True},False
         return 200,{"user":actor_profile(state,actor),"expiresAt":state["sessions"][sid]["expiresAt"]},False

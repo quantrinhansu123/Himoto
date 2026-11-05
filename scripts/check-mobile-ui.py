@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import expect, sync_playwright
 from lib.mobile_customer_ui import customer_response, run_customer_checks
+from lib.mobile_catalogue_media_fixture import thumbnail_response
 
 TOKEN = "hm1_" + "a" * 43
 USER = {"id": 7, "name": "QA Quản lý", "email": "qa@example.invalid", "role": "branch_manager",
@@ -62,6 +63,10 @@ def run(base_url, output):
 
                 if state["unauthorized"]:
                     respond({"message": "Phiên đã hết hạn.", "code": "SESSION_EXPIRED"}, 401)
+                    return
+                thumbnail = thumbnail_response(request.url, request.method)
+                if thumbnail is not None:
+                    respond(thumbnail)
                     return
                 if customer_response(route, request, url, state, respond):
                     return

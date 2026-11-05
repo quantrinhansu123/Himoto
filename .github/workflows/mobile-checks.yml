@@ -471,25 +471,35 @@ jobs:
           .backups/mobile-qa/bin/python scripts/check-mobile-contract-photos-fixture.py
           .backups/mobile-qa/bin/python scripts/check-mobile-customer-photo-copy-fixture.py
           .backups/mobile-qa/bin/python scripts/check-mobile-media-delete-fixture.py
-          .backups/mobile-qa/bin/python scripts/check-mobile-ui.py --output .backups/mobile-ci-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --output .backups/mobile-ci-draft-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --duplicates-only --output .backups/mobile-ci-duplicate-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --documents-only --output .backups/mobile-ci-document-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-contract-photos-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-contract-photo-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-customer-photo-copy-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-customer-photo-copy-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-media-delete-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-media-delete-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-gps-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-gps-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --contracts-only --output .backups/mobile-ci-contract-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --finance-only --output .backups/mobile-ci-finance-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --renewals-only --output .backups/mobile-ci-renewal-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --collections-only --output .backups/mobile-ci-collection-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --returns-only --output .backups/mobile-ci-return-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --swaps-only --output .backups/mobile-ci-swap-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --recoveries-only --output .backups/mobile-ci-recovery-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-vehicle-transfer-ui.py --output .backups/mobile-ci-transfer-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-import-export-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-import-export-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-notifications-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-notifications-ui
-          .backups/mobile-qa/bin/python scripts/check-mobile-vehicle-import-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-vehicle-import-ui --workbook .backups/mobile-ci-import-export-ui/input.xlsx
+          failed_checks=0
+          run_browser_check() {
+            if "$@"; then
+              return 0
+            else
+              failed_checks=$((failed_checks + 1))
+              printf '::error::Browser acceptance failed: %s\n' "$*"
+            fi
+          }
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-ui.py --output .backups/mobile-ci-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --output .backups/mobile-ci-draft-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --duplicates-only --output .backups/mobile-ci-duplicate-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --documents-only --output .backups/mobile-ci-document-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-contract-photos-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-contract-photo-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-customer-photo-copy-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-customer-photo-copy-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-media-delete-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-media-delete-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-gps-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-gps-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --contracts-only --output .backups/mobile-ci-contract-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --finance-only --output .backups/mobile-ci-finance-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --renewals-only --output .backups/mobile-ci-renewal-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --collections-only --output .backups/mobile-ci-collection-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --returns-only --output .backups/mobile-ci-return-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --swaps-only --output .backups/mobile-ci-swap-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --recoveries-only --output .backups/mobile-ci-recovery-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-vehicle-transfer-ui.py --output .backups/mobile-ci-transfer-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-import-export-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-import-export-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-notifications-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-notifications-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-vehicle-import-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-vehicle-import-ui --workbook .backups/mobile-ci-import-export-ui/input.xlsx
+          test "$failed_checks" -eq 0
       - name: Preserve browser acceptance evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

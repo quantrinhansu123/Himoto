@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import expect, sync_playwright
 from lib.mobile_customer_ui import customer_response
+from lib.mobile_catalogue_media_fixture import thumbnail_response
 from lib.mobile_customer_matches_ui import run_duplicate_workflows
 from lib.mobile_customer_documents_fixture import document_response
 from lib.mobile_customer_photo_copy_fixture import response as customer_copy_response
@@ -125,6 +126,9 @@ def run(base_url, output, contracts_only=False, finance_only=False, renewals_onl
                 return route.abort('failed') if lost else respond(data, status)
             if customer_response(route, request, url, state, respond):
                 return
+            thumbnail = thumbnail_response(request.url, request.method)
+            if thumbnail is not None:
+                return respond(thumbnail)
             result = draft_response(request.url.removeprefix("https://mobile-api.example.invalid"), request.method, body, request.headers, state)
             if result:
                 status, data, lost = result
