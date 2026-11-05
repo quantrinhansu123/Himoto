@@ -37,8 +37,10 @@ export function BulkDebtReminderDialog({ orderIds, onClose, onSent }: { orderIds
 
   const ready = items.filter((item): item is Extract<Item, { state: 'ready' }> => item.state === 'ready');
   const loading = items.some(item => item.state === 'loading');
-  const sentCount = items.filter(item => item.state === 'sent').length;
-  const sendFailedCount = items.filter(item => item.state === 'failed').length;
+  const sentCount = items.filter(item => item.state === 'sent' && item.status === 'accepted').length;
+  const processedCount = items.filter(item => item.state === 'sent' || item.state === 'failed').length;
+  const unresolvedCount = items.filter(item => item.state === 'sent' && ['pending', 'unknown'].includes(item.status)).length;
+  const sendFailedCount = items.filter(item => item.state === 'failed' || item.state === 'sent' && item.status === 'failed').length;
   const loadFailedCount = items.filter(item => item.state === 'error').length;
 
   async function sendAll() {
@@ -108,15 +110,15 @@ export function BulkDebtReminderDialog({ orderIds, onClose, onSent }: { orderIds
           </li>;
         })}
       </ul>
-      {done && <div role="status" className={sendFailedCount || loadFailedCount ? 'mg-composer-notice' : 'mg-payment-success'}>
-        <strong>Đã xử lý {sentCount + sendFailedCount}/{sentCount + sendFailedCount || orderIds.length} lượt gửi.</strong>
-        <p>{sentCount} thành công{sendFailedCount || loadFailedCount ? ` · ${sendFailedCount + loadFailedCount} lỗi / không gửi được` : ''}. Kiểm tra lịch sử nhắc nợ nếu cần đối chiếu.</p>
+      {done && <div role="status" className={sendFailedCount || loadFailedCount || unresolvedCount ? 'mg-composer-notice' : 'mg-payment-success'}>
+        <strong>Đã xử lý {processedCount}/{orderIds.length} lượt gửi.</strong>
+        <p>{sentCount} lượt được webhook tiếp nhận{unresolvedCount ? ` · ${unresolvedCount} lượt cần kiểm tra kết quả` : ''}{sendFailedCount || loadFailedCount ? ` · ${sendFailedCount + loadFailedCount} lỗi / không gửi được` : ''}. Webhook tiếp nhận chưa xác nhận khách đã nhận hoặc đọc tin. Kiểm tra lịch sử nhắc nợ để đối chiếu.</p>
       </div>}
     </div>
     <div className="mg-dialog-footer">
       <button type="button" className="mg-button" disabled={sending} onClick={close}>Đóng</button>
       {!done && <button type="button" className="mg-button mg-button-primary" disabled={sending || loading || !ready.length} onClick={() => void sendAll()}>
-        <MessageCircle size={16} aria-hidden="true" />{sending ? 'Đang gửi…' : `Gửi nhắc nợ (${ready.length} số)`}
+        <MessageCircle size={16} aria-hidden="true" />{sending ? 'Đang gửi…' : `Gửi nhắc nợ (${ready.length} lượt)`}
       </button>}
     </div>
   </Dialog>;

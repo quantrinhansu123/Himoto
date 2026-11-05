@@ -46,7 +46,7 @@ export function RentalRevenuePanel({
       .catch(cause => {
         if (!controller.signal.aborted) {
           setEstimate(null);
-          setEstimateError(cause instanceof Error ? cause.message : 'Không tải được doanh số ước tính.');
+          setEstimateError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');
         }
       })
       .finally(() => { if (!controller.signal.aborted) setEstimateLoading(false); });
@@ -60,11 +60,11 @@ export function RentalRevenuePanel({
   return (
     <section className="mg-rental-revenue" aria-label="Doanh số, doanh thu và công nợ thuê xe" aria-busy={loading || estimateLoading || debtLoading}>
       <div className="mg-revenue-pair">
-        <article className="mg-data-panel mg-revenue-card is-sales" aria-label="Doanh số ước tính">
+        <article className="mg-data-panel mg-revenue-card is-sales" aria-label="Doanh số theo giá trị hợp đồng">
           <div className="mg-rental-revenue-heading">
             <div>
               <h2>Doanh số</h2>
-              <p>Ước tính theo HĐ bắt đầu thuê trong bộ lọc</p>
+              <p>Tổng giá trị HĐ bắt đầu thuê trong bộ lọc</p>
             </div>
             <strong data-sales-total>{estimateReady ? formatMoney(estimate!.sales) : '—'}</strong>
           </div>
@@ -72,11 +72,11 @@ export function RentalRevenuePanel({
             <div><dt>Hợp đồng trong kỳ</dt><dd>{estimateReady ? estimate!.contracts.toLocaleString('vi-VN') : '—'}</dd></div>
             <div><dt>Đang thuê (chưa trả)</dt><dd>{estimateReady ? estimate!.active_contracts.toLocaleString('vi-VN') : '—'}</dd></div>
             <div><dt>Đã trả</dt><dd>{estimateReady ? estimate!.finished_contracts.toLocaleString('vi-VN') : '—'}</dd></div>
-            <div><dt>Ngày·xe trong kỳ</dt><dd>{estimateReady ? estimate!.vehicle_days.toLocaleString('vi-VN') : '—'}</dd></div>
+            <div><dt>Số xe trong hợp đồng</dt><dd>{estimateReady ? estimate!.vehicles.toLocaleString('vi-VN') : '—'}</dd></div>
           </dl>
           {estimateLoading ? <p className="mg-rental-revenue-note" role="status">Đang tải doanh số…</p>
             : estimateError ? <p className="mg-field-error" role="alert" style={{ margin: '0 16px 12px' }}>{estimateError}</p>
-            : <p className="mg-rental-revenue-note">Chỉ HĐ có ngày bắt đầu thuê trong khoảng ngày và cơ sở đang chọn. Doanh số ước tính theo ngày·xe còn nằm trong kỳ của các HĐ đó.</p>}
+            : <p className="mg-rental-revenue-note">Cộng toàn bộ giá trị mỗi hợp đồng bắt đầu thuê trong bộ lọc, mỗi hợp đồng một lần. Không chia theo ngày; hợp đồng nhiều xe không bị cộng trùng.</p>}
         </article>
 
         <article className="mg-data-panel mg-revenue-card is-revenue" aria-label="Doanh thu thuê xe thực thu">

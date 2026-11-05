@@ -9,6 +9,7 @@ import { isSupplementalPhotoSlot,photoBaseSlot } from '@/lib/management/photo-sl
 export function requestPermission(path:string,method:string,action=''):AccessPermission|null {
   if(path.includes('/record-photos/')){const slot=path.split('/').at(-1)!;if(isSupplementalPhotoSlot(slot))path=path.slice(0,-slot.length)+photoBaseSlot(slot);}
   const read=method==='GET';
+  if(path.startsWith('/api/auth/attendance'))return null; // Self-service; handler enforces actor and HR branch scope.
   if(path.startsWith('/api/auth/shift-reports'))return 'contracts.read';
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';
   if(path==='/api/auth/password')return null;

@@ -16,6 +16,7 @@ import { TableScrollDock } from './TableScrollDock';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 const navigation = [
+  {href:'/attendance',label:'Chấm công',kind:'attendance' as const,icon:AlarmClock},
   {href:'/shift-reports',label:'Báo cáo cuối ca',kind:'shift-reports' as const,icon:ReceiptText},
   {href:'/operations',label:'Thao tác nhanh',kind:'operations' as const,icon:House},
   {href:'/dashboard',label:'Dashboard',kind:'dashboard' as const,icon:LayoutDashboard},
@@ -40,16 +41,16 @@ const navigation = [
   { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook' as const, icon: Wallet },
   { href: '/accounts', label: 'Tài khoản & Phân quyền', kind: 'accounts' as const, icon: UsersRound },
 ];
-const navigationPermission=(kind:string):AccessPermission=>kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
+const navigationPermission=(kind:string):AccessPermission|null=>kind==='attendance'?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();
   const pathname = usePathname();
   const router = useRouter();
   const active = navigation.find(n => pathname === n.href) || navigation.find(n => n.kind === 'vehicles')!;
-  const visibleNavigation=navigation.filter(item=>hasPermission(user,navigationPermission(item.kind)));
+  const visibleNavigation=navigation.filter(item=>(navigationPermission(item.kind)===null||hasPermission(user,navigationPermission(item.kind)!)));
   const homeHref=visibleNavigation.find(item=>item.href==='/operations')?.href||visibleNavigation[0]?.href||'/login';
-  const pageAllowed=hasPermission(user,navigationPermission(active.kind));
+  const pageAllowed=navigationPermission(active.kind)===null||hasPermission(user,navigationPermission(active.kind)!);
   const writableCustomers = source === 'api' && active.kind === 'customers';
   const writableStores = source === 'api' && active.kind === 'stores';
   const writableDuties = source === 'api' && active.kind === 'duty-roster';

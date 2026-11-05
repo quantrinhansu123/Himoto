@@ -27,7 +27,7 @@ export async function loadEstimatedSales(from: string, to: string, store: string
   const query = new URLSearchParams({ from, to, ...(store === 'all' ? {} : { store_id: store }) });
   const response = await fetch(`/api/auth/rental-revenue/estimated-sales?${query}`, { cache: 'no-store', credentials: 'same-origin', signal });
   const body = await response.json().catch(() => null);
-  if (!response.ok || body?.status !== 'success') throw Error(body?.message || 'Không tải được doanh số ước tính.');
-  if (!validEstimatedSales(body.data)) throw Error('Số liệu doanh số ước tính chưa hợp lệ. Thử tải lại.');
+  if (!response.ok || body?.status !== 'success') throw Error(body?.message || 'Không tải được doanh số.');
+  if (!validEstimatedSales(body.data)) throw Error('Số liệu doanh số chưa hợp lệ. Thử tải lại.');
   return body.data;
 }

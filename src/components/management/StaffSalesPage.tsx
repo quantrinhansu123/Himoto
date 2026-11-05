@@ -6,7 +6,7 @@ import { useReloadAction } from './ReloadButton';
 import { SalesCharts } from './SalesCharts';
 import {RentalRevenuePanel} from './RentalRevenuePanel';
 import { RevenueLedger } from './RevenueLedger';
-import { RentalOverviewPanel, VehicleRevenuePanel } from './RentalReportPanels';
+import { RentalOverviewPanel } from './RentalReportPanels';
 import { OwnedFleetRevenuePanel } from './OwnedFleetRevenuePanel';
 import { NewCustomersBySourcePanel } from './NewCustomersBySourcePanel';
 import { canViewOwnedFleetRevenue } from '@/lib/management/permissions';
@@ -15,11 +15,10 @@ import { summarizeBySalesStaff,summarizeByStore,summarizeSalesKpis,type SalesKpi
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { csvCell } from '@/lib/management/table-utils';
 
-type ReportView = 'actual' | 'ledger' | 'vehicles' | 'overview' | 'owned-fleet' | 'contracts';
+type ReportView = 'actual' | 'ledger' | 'overview' | 'owned-fleet' | 'contracts';
 const REPORT_TABS: { key: ReportView; label: string }[] = [
   { key: 'actual', label: 'Doanh thu thực thu / NVKD' },
   { key: 'ledger', label: 'Sổ thu / chi' },
-  { key: 'vehicles', label: 'Doanh thu từng xe' },
   { key: 'overview', label: 'Báo cáo theo cơ sở' },
   { key: 'contracts', label: 'Thống kê hợp đồng' },
 ];
@@ -121,7 +120,6 @@ export function StaffSalesPage() {
     </div>
     {reportView === 'actual' && <RentalRevenuePanel key={`actual-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry} debt={kpis.debt} debtContracts={kpis.debtContracts} overdueDebt={kpis.overdueDebt} overdueContracts={kpis.overdueContracts} badDebt={kpis.badDebt} debtLoading={summaryLoading} debtError={contractsError}/>}
     {reportView === 'ledger' && <div className="mg-data-panel mg-rental-revenue-detail"><RevenueLedger key={`ledger-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/></div>}
-    {reportView === 'vehicles' && <VehicleRevenuePanel key={`vehicles-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {reportView === 'overview' && <RentalOverviewPanel key={`overview-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {canViewFleet&&reportView==='owned-fleet'&&<OwnedFleetRevenuePanel key={`fleet-${from}-${to}-${selectedStore}`} from={from} to={to} store={selectedStore} retry={retry}/>}
     {toolsOpen&&<div className="mg-monitor-tools is-tab" aria-label="Thống kê hợp đồng">

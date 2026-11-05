@@ -52,6 +52,7 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
   const ids = rows.map(row => row.id);
   const selected = ids.filter(id => selectedIds?.has(id)).length;
   return <div className="mg-mobile-records" aria-busy={loading}>
+    {compact && selectable && <div className="mg-mobile-list-controls"><label className="mg-mobile-select-all"><input type="checkbox" aria-label="Chọn tất cả hợp đồng trên trang này" disabled={loading || Boolean(error) || !rows.length} checked={rows.length > 0 && selected === rows.length} ref={input => { if(input) input.indeterminate = selected > 0 && selected < rows.length; }} onChange={event => onSelectionChange?.(ids,event.target.checked)}/><span>Chọn tất cả trên trang</span></label><span className="mg-selection-page-count">{selected}/{rows.length}</span></div>}
     {!compact&&<div className="mg-mobile-list-controls">
       {selectable && <label className="mg-mobile-select-all"><input type="checkbox" aria-label="Chọn tất cả thẻ trên trang này"
         disabled={loading || Boolean(error) || !rows.length} checked={rows.length > 0 && selected === rows.length}
@@ -75,9 +76,18 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
         const cancel=config.kind==='vehicles'&&row.status==='in_transit'?actions(row).find(item=>item.key==='cancel'):undefined;
         const contractAction=config.kind==='contracts'?actions(row).find(item=>item.key===(row.status==='draft'?'delete':'telegram')):undefined;
         const approval=config.kind==='contracts'?actions(row).find(item=>item.key==='approve'):undefined;
-        if(compact)return <li key={row.id} className="mg-mobile-record-card mg-mobile-monitoring-card">
+        if(compact)return <li key={row.id} data-status={row.status} className={`mg-mobile-record-card mg-mobile-monitoring-card${!monitoring ? ' mg-contract-two-row' : ''}`}>
           {selectable&&<label className="mg-mobile-card-select"><input type="checkbox" aria-label={`Chọn ${label}`} checked={Boolean(selectedIds?.has(row.id))} onChange={event=>onSelectionChange?.([row.id],event.target.checked)}/></label>}
           <button type="button" className="mg-mobile-card-main" aria-label={`Xem chi tiết ${title}`} onClick={()=>onView(row)}>
+            {!monitoring ? <>
+              <span className="mg-contract-card-top"><strong className="mg-mobile-card-title"><span className="mg-contract-card-code">{row.code}</span><span className="mg-contract-card-name">{title}</span></strong>{visible('status') && (row.status === 'reserved' ? <ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/> : <span className={`mg-status mg-status-${statusTone(row.status)}`}><span/>{optionLabel(config,'status',row.status)}</span>)}</span>
+              <span className="mg-contract-card-bottom">
+                {visible('license') && <span title="Biển số">{row.license || '—'}</span>}
+                {visible('total_amount') && <strong title="Tiền thuê">{formatValue(row.total_amount,'money')}</strong>}
+                {visible('rental_period') && <span title={'Dự kiến trả: ' + formatValue(row.end_date,'datetime')}>Trả: {formatValue(row.end_date,'date')}</span>}
+              </span>
+              <ContractApprovalStatus row={row}/>
+            </> : <>
             <strong className="mg-mobile-card-title">{row.code} · {title}</strong>
             {config.kind==='contracts'&&<ContractBranches row={row}/>}
             {row.status==='reserved'&&<ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>}
@@ -88,8 +98,9 @@ export function ManagementMobileList({ config, columns=config.columns.filter(col
             {visible('status')&&row.status!=='reserved'&&<span className={`mg-status mg-status-${statusTone(row.status)}`}><span/>{optionLabel(config,'status',row.status)}</span>}
             <ContractApprovalStatus row={row}/>
             {visible('contract_gps_status')&&<ContractGpsIndicator row={row}/>}
+            </>}
           </button>
-          {(approval||visible('collection_notes'))&&<div className="mg-mobile-collection-note">{approval&&<button type="button" className="mg-button mg-button-primary mg-contract-approve" onClick={approval.onSelect}>{approval.icon}Duyệt hợp đồng</button>}{visible('collection_notes')&&<><strong>Ghi chú tình trạng khách</strong><ContractCollectionNote row={row}/></>}</div>}
+          {(approval||visible('collection_notes'))&&<div className="mg-mobile-collection-note">{approval&&<button type="button" className="mg-button mg-button-primary mg-contract-approve" onClick={approval.onSelect}>{approval.icon}Duyệt hợp đồng</button>}{visible('collection_notes')&&<details className="mg-card-note-disclosure"><summary><span>Ghi chú tình trạng khách</span></summary><ContractCollectionNote row={row}/></details>}</div>}
           <div className="mg-mobile-card-actions"><RowActionsMenu label={`Thao tác ${label}`} actions={actions(row)} busy={busyId===row.id}/></div>
         </li>;
         const summary = SUMMARY_KEYS[config.kind].filter(key => row[key] !== undefined && row[key] !== '').map(key => {

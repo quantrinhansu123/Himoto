@@ -313,7 +313,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     (kind === 'staff' && canManageStaff)
     || (can('settings.write') && kind !== 'contracts' && kind !== 'staff')
   );
-  const canBulkRemind = paymentDueOnly && source === 'api' && canSendDebtReminder(accessUser);
+  const canBulkRemind = kind === 'contracts' && !draftsOnly && source === 'api' && canSendDebtReminder(accessUser);
   const canSelectRows = canBulkDelete || canBulkRemind;
   useEffect(() => {
     if(paged)return;
@@ -323,6 +323,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       return next.size === current.size ? current : next;
     });
   }, [rows,paged]);
+  useEffect(() => { setSelectedIds(new Set()); }, [kind, query, draftsOnly, vatOnly, overdueOnly, ownershipOnly, paymentDueOnly]);
   function changeSelection(ids: number[], selected: boolean) {
     setSelectedIds(current => { const next = new Set(current); for (const id of ids) if (selected) next.add(id); else next.delete(id); return next; });
   }
@@ -416,11 +417,16 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
             else { setEditing(null); setFormOpen(true); }
           }}><Plus size={18} />{config.addLabel}</button>}
           {kind !== 'staff' && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
-          {canBulkRemind && <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}
+
           {kind==='contracts'&&source==='api'&&<button type="button" className="mg-button" onClick={()=>setTelegramTarget('pending')}><MessageCircle size={17}/>Chưa gửi Telegram</button>}
           </div></OptionalTools>
       </div>
 
+      {canBulkRemind && selectedIds.size > 0 && <div className="mg-contract-selection-bar" role="region" aria-label="Thao tác với hợp đồng đã chọn">
+        <strong role="status">Đã chọn {selectedIds.size} hợp đồng</strong>
+        <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error)} onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16}/>Gửi nhắc nợ ({selectedIds.size})</button>
+        <button type="button" className="mg-button" onClick={() => setSelectedIds(new Set())}><X size={15}/>Bỏ chọn</button>
+      </div>}
       {kind === 'staff' && <StaffOrganizationChart />}
 
       <div className="mg-data-panel">
@@ -597,7 +603,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
     {qrTarget!==null&&<ContractQrDialog id={qrTarget} onClose={()=>setQrTarget(null)}/>}
     {reminderTarget!==null&&<DebtReminderDialog orderId={reminderTarget} onClose={()=>setReminderTarget(null)}/>}
-    {bulkReminderIds&&canBulkRemind&&<BulkDebtReminderDialog orderIds={bulkReminderIds} onClose={()=>setBulkReminderIds(null)} onSent={()=>{setSelectedIds(new Set());notify('Đã gửi nhắc nợ cho các hợp đồng đã chọn.');}}/>}
+    {bulkReminderIds&&canBulkRemind&&<BulkDebtReminderDialog orderIds={bulkReminderIds} onClose={()=>setBulkReminderIds(null)} onSent={()=>{setSelectedIds(new Set());notify('Đã xử lý các lượt nhắc nợ. Xem kết quả chi tiết trong danh sách gửi.');}}/>}
     {composerOpen && dataset && <ManagementDataBoundary kinds={CONTRACT_DATA_KINDS} title="Mở hợp đồng" onClose={() => {setComposerOpen(false);setBackfillComposer(false);}}><ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} backfill={backfillComposer} onClose={() => {setComposerOpen(false);setBackfillComposer(false);}} onDraftSaved={() => { setBackfillComposer(false);setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); if(draftsOnly&&!searchParams.toString())table.refresh();else router.push('/contracts/drafts'); }}
       onSaved={code => {
         setComposerOpen(false);setBackfillComposer(false);

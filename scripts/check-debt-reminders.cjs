@@ -76,9 +76,10 @@ async function main(){
     assert.equal((await server.listDebtReminders(db,'23',1)).total,4);assert.equal((await server.listDebtReminders(db,'31',1)).total,0);
     assert.equal(Number((await c.query('SELECT pid FROM qa_reminder_orders WHERE id=1')).rows[0].pid),300);assert.equal((await c.query('SELECT * FROM qa_reminder_transactions')).rowCount,0);
     checks.push('HTTP errors, explicit provider failure and timeouts retained accurately; uncertain sends never auto retry; reminders leave contract debt and receipts unchanged');
-    for(const status of ['draft','cancelled','completed']){await c.query('UPDATE qa_reminder_orders SET order_status=$1 WHERE id=1',[status]);await assert.rejects(()=>server.readDebtReminderContext(db,1),e=>e.status===409);}
+    for(const status of ['draft','cancelled']){await c.query('UPDATE qa_reminder_orders SET order_status=$1 WHERE id=1',[status]);await assert.rejects(()=>server.readDebtReminderContext(db,1),e=>e.status===409);}
+    await c.query("UPDATE qa_reminder_orders SET order_status='completed' WHERE id=1");assert.equal((await server.readDebtReminderContext(db,1)).amount,700);
     await c.query("UPDATE qa_reminder_orders SET order_status='renting',pid=1000 WHERE id=1");await assert.rejects(()=>server.readDebtReminderContext(db,1),e=>e.status===409);
-    checks.push('Draft, cancelled, completed and fully paid contracts cannot send debt reminders');
+    checks.push('Draft, cancelled and fully paid contracts cannot send; completed contracts with outstanding debt remain eligible');
     const localDate=days=>new Date(Date.now()+7*3600000+days*86400000).toISOString().slice(0,16);
     const futurePlan={version:1,start:localDate(1),end:localDate(40),interval:'custom',amount:1000,periods:[{due_at:localDate(1),amount:1000},{due_at:localDate(20),amount:1000}]};
     await c.query("UPDATE qa_reminder_orders SET pid=0,total='1000',draft_payload=$1 WHERE id=1",[JSON.stringify({management_composer:{installment_plan:futurePlan}})]);
@@ -87,6 +88,16 @@ async function main(){
     await c.query('UPDATE qa_reminder_orders SET draft_payload=$1 WHERE id=1',[JSON.stringify({management_composer:{installment_plan:duePlan}})]);
     assert.equal((await server.readDebtReminderContext(db,1)).amount,1000);
     checks.push('Ownership reminder context excludes future installments and includes only the already due installment amount');
+    await c.query("INSERT INTO qa_reminder_customers(id,name,phone,id_card,status,store_id) VALUES(11,'Khách 2 QA','0900000002','000000000002',1,23),(12,'Khách 3 QA','0900000003','000000000003',1,23)");
+    await c.query("INSERT INTO qa_reminder_orders(id,customer_id,contract_number,order_status,store_id,total,pid,created_at,return_at) VALUES(2,11,'HD-QA-2','renting',23,'2000',100,now(),now()+interval '1 day'),(3,12,'HD-QA-3','overdue',23,'3000',200,now(),now()-interval '1 day')");
+    behavior='accepted';
+    for(const id of [2,3]) {
+      const item=await server.readDebtReminderContext(db,id);
+      await server.sendDebtReminder(db,143,{request_id:randomUUID(),order_id:id,revision:item.revision,phone:item.phone,amount:item.amount,message:item.message},fakeFetch);
+    }
+    assert.deepEqual(sent.slice(-2).map(item=>item.phone),['0900000002','0900000003']);
+    assert(sent.at(-2).message.includes('HD-QA-2'));assert(sent.at(-1).message.includes('HD-QA-3'));
+    checks.push('Batch-selected contracts send individual messages to their own customer phones, with the matching contract and debt');
     // Apply the actual migration twice in an isolated rollback-only schema, then exercise RLS.
     await c.query('CREATE SCHEMA qa_reminder_scope');
     for(const table of ['orders','stores','users'])await c.query(`CREATE TABLE qa_reminder_scope.${table}(id bigint PRIMARY KEY)`);
