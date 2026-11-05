@@ -368,6 +368,7 @@ jobs:
       - run: npm run lint
       - run: npm run test:release
       - run: npm run test:login
+      - run: mkdir -p .backups
       - run: npm run test:mobile
       - run: python3 scripts/check-mobile-native-diagnostics.py
       - run: python3 scripts/check-mobile-native-keyboard.py

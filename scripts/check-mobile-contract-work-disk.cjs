@@ -22,6 +22,7 @@ async function run(){
   if(process.argv[2]==='--read'){
     const directory=process.argv[3],workId=process.argv[4];assert(isWorkUuid(workId));const journal=createContractWorkJournal(disk(directory),scope,randomUUID);console.log(JSON.stringify(await journal.load(workId)));return;
   }
+  await fs.mkdir(backups,{recursive:true});
   const directory=path.join(backups,'mobile-contract-work-disk-'+randomUUID());await fs.mkdir(directory);
   const data=path.join(directory,'actor');await fs.mkdir(data);const journal=createContractWorkJournal(disk(data),scope,randomUUID);
   const input=JSON.parse(JSON.stringify(require('./fixtures/mobile-draft.json')));input.draft.customer.name='QA khôi phục tiếng Việt';input.draft.total_amount='1250000';input.draft.vehicles[0].driver_name='Manual QA';
