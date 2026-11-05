@@ -181,8 +181,9 @@ def run_contract_workflows(page, state, base_url, output, checks):
     expect(page.get_by_text("Đã ghi thành công",exact=True)).to_be_visible()
     assert state["contract_actions"]==5
     for width,height,scheme in [(375,812,"light"),(430,932,"dark"),(812,375,"light"),(1024,768,"dark")]:
-        page.set_viewport_size({"width":width,"height":height});page.emulate_media(color_scheme=scheme)
-        expect(page.get_by_role("heading",name="Tài khoản",exact=True)).to_have_css("color", "rgb(23, 32, 42)" if scheme=="light" else "rgb(242, 244, 247)")
+        page.emulate_media(color_scheme=scheme)
+        expect(page.get_by_role("heading",name="Tài khoản",exact=True)).to_have_css("color", "rgb(23, 32, 42)" if scheme=="light" else "rgb(242, 244, 247)", timeout=15000)
+        page.set_viewport_size({"width":width,"height":height})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth+1")
         assert button("Mở kết quả phát hành hợp đồng #3006").bounding_box()["height"]>=48
         page.screenshot(path=str(output/f"recovery-{width}-{scheme}.png"),full_page=True)

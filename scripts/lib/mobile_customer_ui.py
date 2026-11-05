@@ -1,5 +1,6 @@
 """Synthetic customer mutation responses and browser acceptance. No real API."""
 from copy import deepcopy
+import re
 from playwright.sync_api import expect
 from lib.mobile_customer_matches_fixture import duplicate_response
 
@@ -78,7 +79,8 @@ def run_customer_checks(page, state, output, checks, user):
     page.get_by_label("Mật khẩu", exact=True).fill("fixture-password")
     page.get_by_role("button", name="Đăng nhập").click()
     page.get_by_role("button", name="Mở Khách hàng").click()
-    page.get_by_role("button", name="Thêm khách hàng", exact=True).evaluate("node => node.scrollIntoView({block: 'center'})")
+    page.wait_for_url(re.compile(r"/customers/?$"))
+    expect(page.get_by_role("textbox", name="Tìm khách hàng", exact=True)).to_be_visible()
     page.get_by_role("button", name="Thêm khách hàng", exact=True).click()
     expect(page.get_by_role("textbox", name="Họ và tên", exact=True)).to_be_visible()
     page.get_by_role("button", name="Lưu khách hàng", exact=True).click()
