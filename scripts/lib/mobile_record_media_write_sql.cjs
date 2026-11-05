@@ -41,17 +41,17 @@ module.exports=async function mediaWriteSql({pg,load,root,who,checks,read,raw,st
     const beforeInvalid=await state();await assert.rejects(()=>write(invalid),e=>['MEDIA_REVIEW_REQUIRED','NOT_FOUND'].includes(e.code));assert.deepEqual(await state(),beforeInvalid);
   }
   await assert.rejects(()=>writer.readMobileMediaReceipt({...who,store_id:24},key),e=>e.code==='FORBIDDEN');
-  await assert.rejects(()=>resolve(key,'media.contract:290001',{...who,permissions:[]}),e=>e.code==='FORBIDDEN');
+  assert.equal((await resolve(key,'media.contract:290001',{...who,permissions:[]})).status,'committed');
   const noFinance={...who,id:8,permissions:['contracts.read']};
   const other=await write({...input,slot:'return-290021-document-3',expected:'0'},randomUUID(),noFinance);assert(other.current&&other.actorId===8);
   assert.equal((await writer.readMobileMediaReceipt(who,other.requestId)).receipt,null);
-  checks.push('Post-lock stale parent/reference/photo and cross-contract line/swap reject without key/proof/media mutation; receipt visibility and resolver recheck current grants/branch while shared web media entitlement allows a separate non-finance actor');
+  checks.push('Post-lock stale parent/reference/photo and cross-contract line/swap reject without key/proof/media mutation; receipt visibility and resolver recheck current record/branch while shared web media entitlement allows a separate non-finance actor');
   const roleBefore=await state();
   assert.equal((await resolve(other.requestId,'media.contract:290001',noFinance)).status,'committed');
-  await assert.rejects(()=>resolve(other.requestId,'media.contract:290001',{...noFinance,permissions:[]}),e=>e.code==='FORBIDDEN');
+  assert.equal((await resolve(other.requestId,'media.contract:290001',{...noFinance,permissions:[]})).status,'committed');
   await assert.rejects(()=>resolve(other.requestId,'media.contract:290001',{...noFinance,store_id:24}),e=>e.code==='FORBIDDEN');
   assert.deepEqual(await state(),roleBefore);
-  checks.push('A contract-read actor without finance permissions can reconcile its own saved media under the shared fleet entitlement; revoking contract access or changing branch blocks resolution and leaves original proof, photo and ledger rows unchanged');
+  checks.push('An actor can reconcile its own saved media after contract grants change under the web photo entitlement; changing branch blocks resolution and every read preserves original proof, photo and ledger rows');
   for(const [target,newSlot] of [[raw('contracts',290001,'swap',290031),'vehicle-swap-290031-19-extra-2'],[raw('vehicles',290011,'transfer',290041),'transfer-290041-1-extra-3'],[raw('vehicles',290011,'receive',290042),'receive-290042-1-extra-2']]){
     const preparation=await read(target),wire={target,slot:newSlot,revision:preparation.target.revision,referenceRevision:preparation.target.referenceRevision,snapshot:preparation.target.snapshot,expected:'0'};
     const saved=await write(wire);assert(saved.current);assert.equal(saved.slot,newSlot);

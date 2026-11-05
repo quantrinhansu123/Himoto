@@ -85,10 +85,14 @@ class NativeQA:
         # Never reuse an older XML file when UI Automator exits without a dump.
         # Only one UI Automator reader may run on the selected emulator at once.
         for attempt in range(3):
-            dump_path = f"/sdcard/himoto-qa-{time.monotonic_ns()}.xml"
-            message = self.command("shell", "uiautomator", "dump", dump_path)
-            if dump_path in message:
-                return ET.fromstring(self.command("shell", "cat", dump_path))
+            dump_path = f"/data/local/tmp/himoto-qa-{time.monotonic_ns()}.xml"
+            try:
+                message = self.command("shell", "uiautomator", "dump", dump_path)
+                if dump_path in message:
+                    return ET.fromstring(self.command("shell", "cat", dump_path))
+            finally:
+                # Never leave personal-phone accessibility data in shared storage.
+                self.command("shell", "rm", "-f", dump_path)
             if attempt < 2:
                 time.sleep(2)
         raise RuntimeError("UI Automator did not produce a fresh hierarchy: " + message[:500])

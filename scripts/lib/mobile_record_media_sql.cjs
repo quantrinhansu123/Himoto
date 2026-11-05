@@ -75,10 +75,12 @@ module.exports=async function recordMediaSql({pg,load,root,user,checks,failRecei
   assert(!JSON.stringify([p1,p2]).includes('PRIVATE-'));assert.deepEqual(await state(),before);
   checks.push('Record media executes actual photo constraints/RLS: 25-row paging retains all 33 exact-line photos including extras and document/video metadata, foreign stock label, bounded-image gates and no private storage fields or row/xmin/sequence mutation');
   const targets=await api.readMobileMediaTargets(who,{entity:'contracts',id:'290001'},req('?page=1'));
-  assert.deepEqual(targets.rows.map(r=>r.kind+':'+r.referenceId).sort(),['return:290021','return:290022','swap:290031']);
+  // Discovery also includes the implemented contract/handover and plate groups;
+  // these remain bound to the same scoped parent and its exact vehicle IDs.
+  assert.deepEqual(targets.rows.map(r=>r.kind+':'+r.referenceId).sort(),['plate:290011','plate:290012','rental:290001','return:290021','return:290022','swap:290031']);
   assert.equal(targets.rows.find(r=>r.referenceId===290021).snapshot,p1.target.snapshot);
   const targetVehicle=await api.readMobileMediaTargets(who,{entity:'vehicles',id:'290011'},req());
-  assert.deepEqual(targetVehicle.rows.map(r=>r.kind+':'+r.referenceId).sort(),['receive:290042','transfer:290041']);
+  assert.deepEqual(targetVehicle.rows.map(r=>r.kind+':'+r.referenceId).sort(),['receive:290042','transfer:290041','vehicle:290011']);
   const exact=await api.readMobileMediaSlotInfo(who,returned,'return-290021-1',req());assert.equal(exact.photo.slot,'return-290021-1');assert.equal(exact.nextSlot,'return-290021-1-extra-3');
   const empty=await api.readMobileMediaSlotInfo(who,returned,'return-290021-1-extra-3',req());assert.equal(empty.photo,null);assert.equal(empty.target.snapshot,exact.target.snapshot);
   assert.deepEqual(await state(),before);
@@ -88,7 +90,12 @@ module.exports=async function recordMediaSql({pg,load,root,user,checks,failRecei
   const otherActor=await read(returned,1,{...who,id:8});assert.deepEqual(otherActor.rows,p1.rows);
   for(const target of [raw('contracts',290001,'return',290023),raw('contracts',290002,'return',290023),raw('contracts',290001,'swap',290032),raw('contracts',290002,'swap',290032)])
     await assert.rejects(()=>read(target),e=>e.code==='NOT_FOUND');
-  await assert.rejects(()=>read(returned,1,{...who,permissions:[]}),e=>e.code==='FORBIDDEN');
+  // Web photos use the authenticated fleet entitlement rather than the contract
+  // editor grant. Keep exact slot binding and foreign-row RLS denial intact.
+  assert.deepEqual((await read(returned,1,{...who,permissions:[]})).rows,p1.rows);
+  assert.doesNotThrow(()=>api.requireMobileMediaWrite({...who,permissions:[]},{entity:'contracts',id:290001,kind:'return',referenceId:290021},'return-290021-1'));
+  assert.throws(()=>api.requireMobileMediaWrite({...who,permissions:[]},{entity:'contracts',id:290001,kind:'return',referenceId:290021},'return-290022-1'),e=>e.code==='FORBIDDEN');
+  await assert.rejects(()=>read(returned,1,{...who,permissions:[],store_id:24}),e=>e.code==='NOT_FOUND');
   assert.equal((await read(raw('contracts',290002,'return',290023),1,{...who,scope_all:true})).rows.length,1);
   await assert.rejects(()=>read(returned,1,{...who,store_id:24}),e=>e.code==='NOT_FOUND');assert.deepEqual(await state(),before);
   checks.push('Return preparation and completed lines, saved exact swap and second actor share current scoped media; cross-parent line/swap IDs and foreign contracts remain hidden, HQ scope is explicit and contract/financial grants are not widened');
