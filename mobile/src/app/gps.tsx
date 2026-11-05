@@ -9,6 +9,7 @@ import {FormField,ChoiceField} from '@/components/form-fields';
 import {useGps} from '@/hooks/use-gps';
 import {useSession} from '@/providers/session';
 import {useTheme} from '@/theme';
+import {gpsStopDurationLabel} from '@/lib/gps-stop-duration';
 import {defaultGpsQuery,GPS_FILTER_STATES,GPS_STATE_LABELS,GPS_SYNC_STALE_MS,displayedGpsState,gpsMapLink,gpsStopEvidence,gpsStoppedDurationMs,type MobileGpsQuery,type MobileGpsRow,type MobileGpsEvent} from '../../../shared/mobile-gps';
 
 const date=(value:string|null|undefined)=>value?new Date(value).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Chưa có';
@@ -40,11 +41,11 @@ export default function GpsScreen() {
     return <Card style={{gap:10}}>
       <Text style={titleStyle}>{row.license||row.provider_device_name||row.external_device_id||'Xe chưa gắn GPS'}</Text>
       <Text style={{color:state==='online'||state==='stopped'?theme.success:theme.warning,fontSize:15,fontWeight:'700'}}>{GPS_STATE_LABELS[state]||state}</Text>
+      {duration!==null&&evidence?<View style={{gap:3}}><Text accessibilityLabel={`Thời gian dừng: ${gpsStopDurationLabel(duration)}`} style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{gpsStopDurationLabel(duration)}</Text><Text style={muted}>Từ {date(evidence.since)} · {evidence.source==='protrack'?'Theo Protrack':'Himoto ghi nhận'}</Text></View>:current==='stopped'?<Text style={muted}>Chưa đủ dữ liệu thời gian dừng</Text>:null}
       <Text style={muted}>{row.store_name||'Chưa có cơ sở'} · {row.provider||'Chưa ghép thiết bị'}</Text>
       {!!row.external_device_id&&<Text selectable style={muted}>IMEI: {row.external_device_id}</Text>}
       {!!row.provider_device_name&&row.provider_device_name!==row.license&&<Text style={muted}>Tên GPS: {row.provider_device_name}</Text>}
-      <Text style={{color:theme.text,fontSize:15}}>{current==='stopped'?'Đang dừng':current==='online'&&row.last_speed!==null?`${row.last_speed} km/h`:'Chưa có tốc độ hiện tại'}</Text>
-      {duration!==null&&evidence?<View><Text style={{color:theme.text}}>Dừng {Math.floor(duration/86400000)} ngày {Math.floor(duration/3600000)%24} giờ</Text><Text style={muted}>Từ {date(evidence.since)} · {evidence.source==='protrack'?'Theo Protrack':'Himoto ghi nhận'}</Text></View>:current==='stopped'?<Text style={muted}>Chưa đủ dữ liệu thời gian dừng</Text>:null}
+      {current!=='stopped'&&<Text style={{color:theme.text,fontSize:15}}>{current==='online'&&row.last_speed!==null?`${row.last_speed} km/h`:'Chưa có tốc độ hiện tại'}</Text>}
       <View style={{gap:3}}><Text style={muted}>Himoto đọc: {date(row.sync_received_at)}</Text><Text style={muted}>Tín hiệu thiết bị: {date(row.heartbeat_at)}</Text><Text style={[muted,positionOld&&{color:theme.warning}]}>Vị trí: {date(row.position_recorded_at)}{positionOld?' · Vị trí cũ':''}</Text></View>
       {gpsMapLink(row.last_latitude,row.last_longitude)?<Button label={`Mở bản đồ ${row.license||row.external_device_id}`} secondary onPress={()=>void map(row)}/>:<Text style={muted}>Chưa có tọa độ hợp lệ</Text>}
       {data?.canMap&&row.id>0&&<Button label={`Ghép GPS ${row.external_device_id}`} secondary onPress={()=>router.push({pathname:'/gps-mapping/[id]',params:{id:String(row.id)}})}/>}

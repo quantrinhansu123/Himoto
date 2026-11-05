@@ -10,14 +10,10 @@ import { Card } from "./ui";
 export function WorkspaceLinks() {
   const { session } = useSession(), theme = useTheme(), permissions = session?.user.permissions || [];
   const links = [
+    ...(permissions.includes("contracts.read") ? [{ key: "operations", title: "Thao tác nhanh", description: "Làm hợp đồng, trả xe, gia hạn và nhập bổ sung lịch sử", icon: Files, open: () => router.push("/operations") }] : []),
     {key:'notifications',title:'Thông báo công việc',description:'Điều chuyển cần nhận, hợp đồng đến hạn và việc chờ duyệt',icon:CalendarDays,open:()=>router.push('/notifications')},
     ...(permissions.includes('contracts.read')?[{key:'dashboard',title:'Tổng quan giao dịch',description:'Chỉ số hợp đồng, doanh số và doanh thu theo kỳ/cơ sở',icon:ChartNoAxesCombined,open:()=>router.push('/dashboard')}]:[]),
     ...(permissions.includes('contracts.read')?[{key:'telegram-pending',title:'Giao dịch chưa gửi Telegram',description:'Kiểm tra lần gửi lỗi, chưa rõ kết quả hoặc đã thu hồi',icon:Files,open:()=>router.push('/telegram-pending')}]:[]),
-    ...(canManageAccounts(session?.user)?[{key:'import-contracts',title:'Nhập nháp hợp đồng Excel',description:'Khớp cơ sở, kiểm trùng và sao lưu trước khi nhập',icon:Files,open:()=>router.push('/import-contracts')}]:[]),
-    ...(canManageAccounts(session?.user) ? [{ key: "integrations", title: "Tích hợp GPS và Telegram", description: "Tài khoản GPS, nhóm nhận tin và trạng thái đồng bộ", icon: Files, open: () => router.push("/integrations") }] : []),
-    ...(permissions.includes("contracts.read") ? [{ key: "operations", title: "Thao tác nhanh", description: "Làm hợp đồng, trả xe, gia hạn và nhập bổ sung lịch sử", icon: Files, open: () => router.push("/operations") }] : []),
-    ...(canManageAccounts(session?.user) ? [{ key: "managed-accounts", title: "Tài khoản và phân quyền", description: "Vai trò, cơ sở, quyền thao tác và trạng thái đăng nhập", icon: UsersRound, open: () => router.push("/managed-accounts") }] : []),
-    ...(permissions.includes("settings.write")&&permissions.includes("contracts.read") ? [{ key: "contract-types", title: "Loại hợp đồng", description: "Danh mục, cách tính tiền, thời hạn và trạng thái", icon: Files, open: () => router.push("/contract-types") }] : []),
     ...(permissions.includes("contracts.read") ? [{ key: "battery-contracts", title: "Hợp đồng pin / sạc", description: "Thuê pin, cọc, gia hạn và lịch sử thu tiền", icon: Files, open: () => router.push("/battery-contracts") }] : []),
     ...(permissions.includes("contracts.read") ? [{ key: "shift-reports", title: "Báo cáo cuối ca", description: "Kiểm kê, minh chứng PGD và đối soát KTNB", icon: Files, open: () => router.push("/shift-reports") }] : []),
     ...(permissions.includes("contracts.read") ? [{ key: "debt-reminders", title: "Gửi nhắc nợ", description: "Công nợ đến hạn, nội dung Zalo và lịch sử gửi", icon: Files, open: () => router.push("/debt-reminders") }] : []),
@@ -31,6 +27,10 @@ export function WorkspaceLinks() {
       { key: "staff", title: "Nhân sự", description: "Hồ sơ, trạng thái và phân bổ cơ sở", icon: UsersRound, open: () => router.push({ pathname: "/directory/[kind]", params: { kind: "staff" } }) },
     ] : []),
     ...(permissions.includes("contracts.read") ? [{ key: "stores", title: "Cơ sở", description: "Thông tin quản lý và liên hệ cơ sở", icon: Building2, open: () => router.push({ pathname: "/directory/[kind]", params: { kind: "stores" } }) }] : []),
+    ...(canManageAccounts(session?.user)?[{key:'import-contracts',title:'Nhập nháp hợp đồng Excel',description:'Khớp cơ sở, kiểm trùng và sao lưu trước khi nhập',icon:Files,open:()=>router.push('/import-contracts')}]:[]),
+    ...(permissions.includes("settings.write")&&permissions.includes("contracts.read") ? [{ key: "contract-types", title: "Loại hợp đồng", description: "Danh mục, cách tính tiền, thời hạn và trạng thái", icon: Files, open: () => router.push("/contract-types") }] : []),
+    ...(canManageAccounts(session?.user) ? [{ key: "managed-accounts", title: "Tài khoản và phân quyền", description: "Vai trò, cơ sở, quyền thao tác và trạng thái đăng nhập", icon: UsersRound, open: () => router.push("/managed-accounts") }] : []),
+    ...(canManageAccounts(session?.user) ? [{ key: "integrations", title: "Tích hợp GPS và Telegram", description: "Tài khoản GPS, nhóm nhận tin và trạng thái đồng bộ", icon: Files, open: () => router.push("/integrations") }] : []),
   ];
   if (!links.length) return null;
   return <View style={{ gap: 12 }}>

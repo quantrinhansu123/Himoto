@@ -43,6 +43,18 @@ def run(base,output):
         try:
             login('qa-settings')
             expect(page.get_by_text('39 dòng · Trang 1/2',exact=True)).to_be_visible()
+            # One unlinked stopped device has 30 hours of valid provider evidence.
+            since=model.stamp(model.utc()-model.timedelta(hours=30))
+            journal.control(lambda state:model.device(state,8).update(stopped_since=since,provider_stopped_since=since))
+            button('Tải lại GPS').click()
+            duration=page.get_by_label('Thời gian dừng: 1 ngày 6 giờ',exact=True)
+            expect(duration).to_be_visible()
+            card=duration.locator('..').locator('..')
+            status=card.get_by_text('ON · Đang dừng',exact=True)
+            expect(status).to_be_visible()
+            assert duration.bounding_box()['y']>status.bounding_box()['y']
+            expect(page.get_by_text('Chưa đủ dữ liệu thời gian dừng',exact=True)).to_be_visible()
+            checks.append('Thirty-hour stop is shown as 1 ngày 6 giờ directly under ON · Đang dừng; missing evidence stays explicit')
             expect(button('Ghép GPS GPSQA001')).to_have_count(0)
             page.screenshot(path=str(output/'01-staff-gps.png'),full_page=True)
             button('Xe dừng trên 3 ngày · 1').click();expect(page.get_by_text('2 dòng · Trang 1/1',exact=True)).to_be_visible()

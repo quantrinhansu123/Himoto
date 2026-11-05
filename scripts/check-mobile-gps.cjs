@@ -6,6 +6,8 @@ const {load,root}=require('./lib/load-typescript.cjs');
 async function run(){
   const checks=[],dto=load(path.resolve(root,'../shared/mobile-gps')),domain=load(path.join(root,'lib/management/gps'));
   const now=Date.parse('2026-11-03T00:00:00Z'),iso=ms=>new Date(ms).toISOString();
+  const {gpsStopDurationLabel}=load(path.resolve(root,'../mobile/src/lib/gps-stop-duration'));
+  for(const [milliseconds,label] of [[0,'Dưới 1 phút'],[59000,'Dưới 1 phút'],[60000,'1 phút'],[59*60000,'59 phút'],[3600000,'1 giờ 0 phút'],[24*3600000,'1 ngày 0 giờ'],[30*3600000,'1 ngày 6 giờ'],[-1,''],[NaN,''],[Infinity,'']])assert.equal(gpsStopDurationLabel(milliseconds),label);
   const row={id:1,vehicle_id:101,provider:'protrack',external_device_id:'QA001',provider_device_name:'QA GPS',license:'QA-101',store_id:23,store_name:'QA A',
     management_status:'stopped',sync_received_at:iso(now),heartbeat_at:iso(now-1000),last_latitude:0,last_longitude:0,last_speed:0,mapping_status:'manual',
     position_recorded_at:iso(now-900000),stopped_since:iso(now-90*3600000),provider_stopped_since:iso(now-96*3600000)};
