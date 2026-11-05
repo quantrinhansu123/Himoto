@@ -1,0 +1,34 @@
+name: Mobile production smoke
+on:
+  deployment_status:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mobile-production-smoke
+  cancel-in-progress: true
+jobs:
+  public-api:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       (github.event.deployment.environment == 'Production' || github.event.deployment.environment == 'production'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.deployment.sha || github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.x
+      - name: Check deployed mobile routes and public authorization gates
+        run: node scripts/check-mobile-live-public.cjs --output .backups/mobile-production-smoke
+      - name: Preserve public status evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mobile-production-smoke-${{ github.run_id }}
+          path: .backups/mobile-production-smoke/
+          retention-days: 7
+          if-no-files-found: ignore

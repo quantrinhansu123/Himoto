@@ -17,6 +17,7 @@ import { Dialog } from './Dialog';
 import { ContractTransactionPhotos } from './ContractTransactionPhotos';
 import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { validBackfillTime } from '@/lib/management/contract-backfill';
+import { buildRenewalNote } from '../../../shared/renewal-note';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const DEFAULT_HOURLY_RATE = '20000';
@@ -179,9 +180,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     }
     setSaving(true); setError('');
     try {
-      const extraLabel = otherFee > 0 ? `${extraName.trim()} ${formatMoney(otherFee)}` : '';
-      const outsideLabel = outsideFee > 0 ? `${outsideName.trim()} ${formatMoney(outsideFee)} (thu ngoài, không cộng tiền hợp đồng)` : '';
-      const combinedNote = [note.trim(), extraLabel ? `Phí khác: ${extraLabel}` : '', outsideLabel ? `Phí thu thêm: ${outsideLabel}` : ''].filter(Boolean).join('\n');
+      const combinedNote = buildRenewalNote(note,otherFee,extraName,outsideFee,outsideName);
       const result = await saveContractRenewal(orderId, {
         request_id: requestId.current ??= crypto.randomUUID(),
         item_id: selected.item_id, item_revision: selected.item_revision, order_revision: selected.order_revision,

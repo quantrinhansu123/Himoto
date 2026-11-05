@@ -52,6 +52,8 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if(input.kind==='contracts')rows=rows.map(row=>({...applyInstallmentBilling(row,now),contract_signed_at:row.signed_on||row.start_date}));
   const monitoring=input.kind==='contracts'&&(input.scope==='ownership'||input.scope==='overdue'||input.query.status==='overdue'||input.query.status==='bad_debt'||Boolean(input.query.overdueBucket));
   if(monitoring)rows=rows.map(row=>withContractMonitoring(row,now));
+  if (input.scope === 'backfill') rows=rows.filter(row=>!['draft','cancelled'].includes(row.status));
+  if (input.scope === 'active') rows=rows.filter(row=>['renting','overdue','wait_payment'].includes(row.status));
   if (input.scope === 'drafts') rows=rows.filter(row=>row.status==='draft');
   if (input.scope === 'vat') rows=rows.filter(row=>Number(row.company_payment_count)>0);
   if (input.scope === 'ownership') rows=rows.filter(row=>row.store_kind==='lease_to_own' || ownershipStores.includes(Number(row.store_id)) || OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type)) || isOwnershipCustomerSourceStore({ kind: row.store_kind, name: row.store_name }));

@@ -1,0 +1,24 @@
+import type { BatteryContract,BatteryContractFields,BatteryContractPrefill } from "./battery-contracts";
+import type { BatteryWorkflowContext,BatteryActionInput } from "./battery-workflow";
+export * from "./battery-contracts";
+export { parseBatteryInput,BatteryContractError } from "./battery-validation";
+export { addRentalMonths } from "./rental-calendar";
+export type { BatteryWorkflowContext,BatteryActionInput,BatteryWorkflowEvent,BatteryReceipt } from "./battery-workflow";
+export interface MobileBatteryOptions { stores:{id:number;name:string;status:string;address:string}[];accounts:BatteryWorkflowContext['accounts'];defaultStoreId:number|null }
+export interface MobileBatteryStaff {rows:{id:number;name:string}[]}
+export function isMobileBatteryStaff(v:unknown):v is MobileBatteryStaff{return object(v)&&Array.isArray(v.rows)&&v.rows.every(r=>object(r)&&id(r.id)&&typeof r.name==='string');}
+export interface MobileBatteryPage { rows:BatteryContract[];scopeCount:number;total:number;page:number;pages:number;statusCounts:{status:string;count:number}[] }
+export interface MobileBatteryResult {key:string;operation:string;receipt:{id:number;revision:string};current:BatteryContract|null;deleted:boolean}
+export interface MobileBatteryPrefill { sourceId:number;sourceCode:string;values:BatteryContractPrefill }
+export interface MobileBatteryTelegram {eligible:boolean;battery_contract_id:number;request_id:string;destination_label:string;text:string;status:string|null;can_send:boolean;message_count:number}
+export function isBatteryTelegram(v:unknown):v is MobileBatteryTelegram{return object(v)&&typeof v.eligible==='boolean'&&id(v.battery_contract_id)&&typeof v.request_id==='string'&&typeof v.destination_label==='string'&&typeof v.text==='string'&&(v.status===null||typeof v.status==='string')&&typeof v.can_send==='boolean'&&Number.isSafeInteger(v.message_count);}
+export type MobileBatteryInput=BatteryContractFields&{revision?:string};
+type WithoutRequest<T>=T extends unknown?Omit<T,'request_id'>:never;
+export type MobileBatteryAction=WithoutRequest<BatteryActionInput>;
+const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v),id=(v:unknown)=>Number.isSafeInteger(v)&&Number(v)>0;
+export function isBatteryContract(v:unknown):v is BatteryContract {return object(v)&&id(v.id)&&id(v.store_id)&&['renting','returned','cancelled'].includes(String(v.status))&&/^\d{1,20}$/.test(String(v.revision))&&['code','store_name','store_address','store_phone','staff_name','signed_on','signed_place','customer_name','customer_phone','customer_address','customer_id_card','id_card_issued_on','id_card_issued_by','battery_name','vehicle_license','vehicle_brand','vehicle_type','vehicle_color','vehicle_year','starts_at','ends_at','price_unit','package_name','paid_method','deposit_note','deposit_method','notes','created_at'].every(k=>typeof v[k]==="string")&&['rent_price','paid_amount','deposit_amount'].every(k=>v[k]===null||Number.isSafeInteger(v[k]));}
+export function isBatteryWorkflow(v:unknown):v is BatteryWorkflowContext{return object(v)&&isBatteryContract(v.contract)&&Array.isArray(v.history)&&v.history.every(e=>object(e)&&typeof e.request_id==="string"&&['renew','collect_renewal','return'].includes(String(e.action))&&typeof e.at==="string"&&typeof e.note==="string")&&Array.isArray(v.accounts)&&['renewal_amount','renewal_collected','renewal_remaining'].every(k=>Number.isSafeInteger(v[k]));}
+export function isBatteryOptions(v:unknown):v is MobileBatteryOptions{return object(v)&&Array.isArray(v.stores)&&v.stores.every(s=>object(s)&&id(s.id)&&['name','status','address'].every(k=>typeof s[k]==="string"))&&Array.isArray(v.accounts)&&v.accounts.every(a=>object(a)&&id(a.id)&&['cash','bank'].includes(String(a.kind))&&typeof a.label==="string")&&(v.defaultStoreId===null||id(v.defaultStoreId));}
+export function isBatteryPage(v:unknown):v is MobileBatteryPage{return object(v)&&Array.isArray(v.rows)&&v.rows.every(isBatteryContract)&&['scopeCount','total','page','pages'].every(k=>Number.isSafeInteger(v[k]))&&Array.isArray(v.statusCounts);}
+export function isBatteryResult(v:unknown):v is MobileBatteryResult{return object(v)&&typeof v.key==="string"&&typeof v.operation==="string"&&object(v.receipt)&&id(v.receipt.id)&&/^\d{1,20}$/.test(String(v.receipt.revision))&&typeof v.deleted==="boolean"&&(v.deleted?v.current===null:isBatteryContract(v.current)&&v.current.id===v.receipt.id);}
+export function batteryInputFromRow(row:BatteryContract):MobileBatteryInput {const copy={...row} as unknown as Record<string,unknown>;for(const key of ['id','code','store_name','store_address','store_phone','created_at','revision','vehicle_contract_code','legacy_paid_amount','legacy_deposit_amount'])delete copy[key];return copy as unknown as MobileBatteryInput;}

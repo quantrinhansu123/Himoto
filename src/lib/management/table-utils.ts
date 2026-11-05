@@ -128,8 +128,4 @@ export function formatValue(value: CellValue, format?: string): string {
   return String(value);
 }
 
-export function csvCell(value: string): string {
-  // Prevent user-entered values from becoming spreadsheet formulas.
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return `"${safe.replace(/"/g, '""')}"`;
-}
+export {csvCell} from '../../../shared/csv-cell';

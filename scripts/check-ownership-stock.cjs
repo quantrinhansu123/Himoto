@@ -18,7 +18,7 @@ const db={release(){},async query(sql){queries.push(sql);let rows=[];
  else if(sql.includes('FROM himoto.management_contract_types'))rows=[{id:type,label:'Thuê sở hữu QA',rental_type:type,term_months:null,active:true}];
  else if(sql.includes('FROM himoto.orders WHERE id=$1'))rows=[{id:901,store_id:35,customer_id:7,order_status:status,order_type:type,revision:'7',draft_payload:{management_composer:{rental_type:type,draft}}}];
  else if(sql.includes('SELECT d.id,d.vehicle_id FROM himoto.order_vehicle_details'))rows=[{id:501,vehicle_id:100}];
- else if(sql.includes('FROM himoto.order_vehicle_details d JOIN himoto.orders'))rows=[{id:501,order_id:901,vehicle_id:101,item_revision:'7',store_id:35,order_type:type,draft_payload:{management_composer:{rental_type:type}}}];
+ else if(sql.includes('FROM himoto.order_vehicle_details d JOIN himoto.orders'))rows=[{id:501,order_id:901,vehicle_id:101,item_revision:'7',store_id:35,rental_type:type,draft_payload:{management_composer:{rental_type:type}}}];
  else if(sql.includes('FROM himoto.vehicles'))rows=[stock];
  else if(sql.includes('FROM himoto.stores WHERE id = $1'))rows=[stores[0]];
  else if(sql.includes('FROM himoto.store_directory()'))rows=[stores[1]];

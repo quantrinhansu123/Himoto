@@ -1,17 +1,17 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import { contractVehicleLabelSource } from './contract-vehicle-reads';
-import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { VEHICLE_ORDER_SQL, EFFECTIVE_RENTAL_TYPE_SQL } from './contract-classification';
 import type { PoolClient } from 'pg';
 import type { BadDebtRecoveryInput, BadDebtRecoveryResult, ReturnableContractItem, ReturnInput, ReturnResult } from '@/lib/management/contract-returns';
 import { dailyPriceSql, depositLateral, rentalPaid, rentalPaidSql } from './contract-deposits';
-import { installmentBalance, parseInstallmentPlan } from '@/lib/management/contract-billing';
+import { installmentBalance, parseInstallmentPlan, type InstallmentPlan } from '@/lib/management/contract-billing';
+import { badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { usesScopedDatabase } from './access-context';
 import { lateReturnFee } from '@/lib/management/return-fees';
 import { closeResolvedBadDebt } from './contract-resolution';
 import { checkOwnershipVehicleStock } from './ownership-stock';
 import { rentalStockError } from '@/lib/management/rental-stock';
-import { requiresOwnershipApproval } from '@/lib/management/contract-approval';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractReturnError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -124,13 +124,56 @@ export async function loadContractReturnableItems(client: Database, orderId: num
   return mapReturnableRows(result.rows);
 }
 
-export function parseBadDebtRecovery(body:unknown):BadDebtRecoveryInput {
+/** Bounded mobile projection using the same scoped labels and return rules. */
+export async function loadContractReturnablePage(client: Database, orderId: number, page: number) {
+  if (!Number.isSafeInteger(orderId) || orderId <= 0 || !Number.isSafeInteger(page) || page < 1 || page > 100000)
+    throw new ContractReturnError('Trang xe trả không hợp lệ.');
+  const source=`${returnableSql(true)} AND o.id=$1`;
+  const counted=await client.query(`SELECT count(*)::int AS total FROM (${source}) returnable`,[orderId]);
+  const total=Number(counted.rows[0]?.total),pages=Math.max(1,Math.ceil(total/25));
+  if(!Number.isSafeInteger(total)||total<0||total>1000000)throw new ContractReturnError('Lịch sử xe cần đối chiếu trước khi trả.',409);
+  if(page>pages)throw new ContractReturnError('Trang xe không còn tồn tại. Tải lại danh sách.',400);
+  const result=await client.query(`${source} ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id LIMIT 25 OFFSET $2`,[orderId,(page-1)*25]);
+  return{page,pages,total,rows:mapReturnableRows(result.rows)};
+}
+
+/** Load only the explicitly selected lines, including selections across pages. */
+export async function loadContractReturnableSelection(client:Database,orderId:number,ids:number[]) {
+  if(!Number.isSafeInteger(orderId)||orderId<=0||!ids.length||ids.length>50||ids.some(id=>!Number.isSafeInteger(id)||id<=0)||new Set(ids).size!==ids.length)
+    throw new ContractReturnError('Chọn từ 1 đến 50 dòng xe hợp lệ.');
+  const result=await client.query(`${returnableSql()} AND o.id=$1 AND d.id=ANY($2::bigint[]) ORDER BY d.id LIMIT 50`,[orderId,ids]);
+  return mapReturnableRows(result.rows);
+}
+
+export function parseBadDebtRecoveryDetails(body:unknown):Omit<BadDebtRecoveryInput,'request_id'> {
   if(!body||typeof body!=='object'||Array.isArray(body))throw new ContractReturnError('Thông tin thu hồi xe không hợp lệ.');
   const input=body as Record<string,unknown>;
-  if(Object.keys(input).some(key=>!['item_id','item_revision','request_id','recovered_at','note'].includes(key))||!Number.isSafeInteger(input.item_id)||Number(input.item_id)<=0||typeof input.item_revision!=='string'||!/^\d{1,20}$/.test(input.item_revision)||typeof input.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.request_id)||typeof input.recovered_at!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.recovered_at)||typeof input.note!=='string'||input.note.trim().length>1000)throw new ContractReturnError('Chọn xe, ngày giờ thực tế thu hồi hợp lệ và ghi chú tối đa 1.000 ký tự.');
+  if(Object.keys(input).some(key=>!['item_id','item_revision','recovered_at','note'].includes(key))||!Number.isSafeInteger(input.item_id)||Number(input.item_id)<=0||typeof input.item_revision!=='string'||!/^\d{1,20}$/.test(input.item_revision)||typeof input.recovered_at!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.recovered_at)||typeof input.note!=='string'||input.note.trim().length>1000)throw new ContractReturnError('Chọn xe, ngày giờ thực tế thu hồi hợp lệ và ghi chú tối đa 1.000 ký tự.');
   const date=new Date(localTimestamp(input.recovered_at));
   if(!Number.isFinite(date.getTime())||new Date(date.getTime()+7*3600000).toISOString().slice(0,16)!==input.recovered_at||date.getTime()>Date.now()+5*60000)throw new ContractReturnError('Ngày giờ thu hồi không hợp lệ hoặc nằm trong tương lai.');
-  return {item_id:Number(input.item_id),item_revision:input.item_revision,request_id:input.request_id.toLowerCase(),recovered_at:input.recovered_at,note:input.note.trim()};
+  return {item_id:Number(input.item_id),item_revision:input.item_revision,recovered_at:input.recovered_at,note:input.note.trim()};
+}
+export function parseBadDebtRecovery(body:unknown):BadDebtRecoveryInput {
+  if(!body||typeof body!=='object'||Array.isArray(body))throw new ContractReturnError('Thông tin thu hồi xe không hợp lệ.');
+  const {request_id,...details}=body as Record<string,unknown>;
+  if(typeof request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(request_id))
+    throw new ContractReturnError('Mã lần thu hồi không hợp lệ.');
+  return{...parseBadDebtRecoveryDetails(details),request_id:request_id.toLowerCase()};
+}
+
+/** Exact plan gate shared by readonly review and the physical writer. */
+export function badDebtRecoveryPlan(payload:unknown) {
+  const composer=(payload as {management_composer?:{installment_plan?:unknown}}|null)?.management_composer;
+  const value=composer?.installment_plan,plan=value?parseInstallmentPlan(value):null;
+  if(value&&!plan)throw new ContractReturnError('Lịch đóng tiền chưa hợp lệ. Cần đối chiếu trước khi thu hồi.',409);
+  let frozenStop=plan?.stopped_at;
+  if(plan&&!frozenStop){
+    const cutoff=badDebtCutoff(payload);
+    if(!cutoff)throw new ContractReturnError('Chưa có thời điểm chốt Nợ xấu. Đối chiếu mốc nợ trước khi thu hồi xe.',409);
+    const local=new Date(Date.parse(cutoff)+7*3600000).toISOString().slice(0,16);
+    frozenStop=local<plan.start?plan.start:local>plan.end?plan.end:local;
+  }
+  return{plan,frozenStop};
 }
 
 /** Physical recovery only: preserve old bad debt, totals, deposits and all receipts. */
@@ -152,14 +195,15 @@ export async function recordBadDebtRecovery(client:Database,actorId:number,raw:B
   if(row.completed_at)throw new ContractReturnError('Xe đã được ghi nhận trả/thu hồi. Tải lại để kiểm tra kho.',409);
   if(String(row.item_revision)!==input.item_revision)throw new ContractReturnError('Dòng xe đã thay đổi. Mở lại hợp đồng trước khi xác nhận.',409);
   if(row.rent_at&&new Date(result.recovered_at).getTime()<new Date(row.rent_at).getTime())throw new ContractReturnError('Ngày thu hồi không được trước ngày bắt đầu thuê.');
+  const {plan,frozenStop}=badDebtRecoveryPlan(payload);
   if(usesScopedDatabase())await client.query('SELECT himoto.complete_contract_vehicle_return($1,$2::timestamptz)',[input.item_id,result.recovered_at]);
   else await client.query('UPDATE himoto.order_vehicle_details SET completed_at=$2::timestamptz,updated_at=now() WHERE id=$1',[input.item_id,result.recovered_at]);
   composer.vehicle_recoveries=[...events,{...result,request_id:input.request_id,request_hash:hash,recorded_at:new Date().toISOString(),actor_id:actorId,note:input.note}];
-  if(composer.installment_plan){
-    const plan=parseInstallmentPlan(composer.installment_plan);
-    if(!plan)throw new ContractReturnError('Lịch đóng tiền chưa hợp lệ. Cần đối chiếu trước khi thu hồi.',409);
-    const returned=(await client.query('SELECT count(*) FILTER(WHERE completed_at IS NULL)::int AS remaining,max(completed_at) AS latest FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL',[row.order_id])).rows[0];
-    if(Number(returned.remaining)===0){const at=new Date(new Date(returned.latest).getTime()+7*3600000).toISOString().slice(0,16);composer.installment_plan={...plan,stopped_at:at<plan.end?at:plan.end};}
+  if(plan&&!plan.stopped_at){
+    // Physical recovery never moves the original debt clock, including when
+    // the recorded recovery predates it or a settled contract closes below.
+    const returned=(await client.query('SELECT count(*) FILTER(WHERE completed_at IS NULL)::int AS remaining FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL',[row.order_id])).rows[0];
+    if(Number(returned.remaining)===0)composer.installment_plan={...plan,stopped_at:frozenStop};
   }
   payload.management_composer=composer;
   await client.query('UPDATE himoto.orders SET draft_payload=$2,updated_at=now() WHERE id=$1',[row.order_id,JSON.stringify(payload)]);
@@ -172,6 +216,32 @@ export async function recordBadDebtRecovery(client:Database,actorId:number,raw:B
   }
   if(composer.lifecycle?.settlement)await closeResolvedBadDebt(client,Number(row.order_id),actorId);
   return {...result,replayed:false};
+}
+
+/** Exact calculation shared by the writer and read-only mobile review. The
+ * caller validates input/revisions and obtains the actual paid balance. */
+export function calculateVehicleReturn(context:{startsAt:string|null;returnAt:string;dailyPrice:number|null;baseTotal:number|null;paid:number;plan:InstallmentPlan|null},input:ReturnInput) {
+  const scheduledMs=new Date(context.returnAt).getTime(),returnedMs=new Date(localTimestamp(input.returned_at)).getTime();
+  const lateMinutes=Math.max(0,Math.ceil((returnedMs-scheduledMs)/60_000)),chargeableHours=Math.ceil(lateMinutes/60),hourlyRate=Number(input.hourly_rate);
+  if(context.startsAt&&returnedMs<new Date(context.startsAt).getTime())throw new ContractReturnError('Giờ bàn giao thực tế không được trước giờ nhận xe.');
+  if(input.fee_override!==undefined&&chargeableHours===0)throw new ContractReturnError('Chỉ có thể điều chỉnh phí khi xe trả trễ hạn.');
+  const earlyDiscount=input.early_discount===undefined?0:Number(input.early_discount);
+  if(earlyDiscount&&returnedMs>=scheduledMs)throw new ContractReturnError('Chỉ giảm doanh thu khi xe trả sớm hơn hạn.');
+  const suggested=lateReturnFee(lateMinutes,hourlyRate,context.dailyPrice);
+  if(input.fee_override===undefined&&suggested.amount===null)throw new ContractReturnError('Chưa xác định giá thuê ngày của xe. Nhập phí trả muộn đã đối chiếu trước khi xác nhận.',409);
+  const lateFee=input.fee_override===undefined?suggested.amount!:Number(input.fee_override);
+  if(!Number.isSafeInteger(lateFee)||lateFee>MAX_MONEY)throw new ContractReturnError('Tiền trả muộn vượt giới hạn lưu trữ.');
+  const repairFee=Number(input.repair_fee||0),fee=lateFee+repairFee-earlyDiscount;
+  if(!Number.isSafeInteger(fee)||Math.abs(fee)>MAX_MONEY)throw new ContractReturnError('Tổng phí trả xe vượt giới hạn lưu trữ.');
+  const {plan,baseTotal,paid}=context;
+  if(plan&&input.returned_at<plan.start)throw new ContractReturnError('Ngày trả không được trước ngày bắt đầu thuê sở hữu.',409);
+  if(plan&&earlyDiscount)throw new ContractReturnError('Thuê sở hữu cần đối chiếu lịch đóng tiền khi giảm doanh thu trả sớm; không tự trừ vào tiền kỳ đầu.',409);
+  const oldTotal=plan?installmentBalance(plan,baseTotal,paid,returnedMs).accrued_total:baseTotal;
+  if(fee&&(oldTotal===null||!Number.isSafeInteger(oldTotal)||oldTotal+fee>MAX_MONEY))throw new ContractReturnError('Chưa có tổng phí hợp đồng hợp lệ để điều chỉnh khi trả xe.',409);
+  if(oldTotal!==null&&oldTotal+fee<0)throw new ContractReturnError('Số tiền giảm khi trả sớm vượt tổng tiền thuê của hợp đồng.');
+  const nextTotal=oldTotal===null?null:oldTotal+fee;
+  return{lateMinutes,chargeableHours,hourlyRate,earlyDiscount,suggested,lateFee,repairFee,fee,oldTotal,nextTotal,actual:localTimestamp(input.returned_at),
+    storedTotalAfter:fee===0?baseTotal:plan?(baseTotal??0)+fee:nextTotal??0};
 }
 
 export async function recordVehicleReturn(client: Database, actorId: number, input: ReturnInput): Promise<ReturnResult> {
@@ -187,40 +257,18 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   if (!item) throw new ContractReturnError('Không tìm thấy xe đang thuê cần trả.', 404);
   if (String(item.item_revision) !== input.item_revision) throw new ContractReturnError('Chi tiết xe đã thay đổi. Tải lại danh sách trước khi trả.', 409);
   if (!item.return_at) throw new ContractReturnError('Hợp đồng chưa có hạn trả xe. Cập nhật hợp đồng trước khi ghi nhận trả xe.', 409);
-  const scheduledMs = new Date(toIso(item.return_at)!).getTime();
-  const returnedMs = new Date(localTimestamp(input.returned_at)).getTime();
-  const lateMinutes = Math.max(0, Math.ceil((returnedMs - scheduledMs) / 60_000));
-  const chargeableHours = Math.ceil(lateMinutes / 60);
-  const hourlyRate = Number(input.hourly_rate);
-  if(item.rent_at&&returnedMs<new Date(toIso(item.rent_at)!).getTime())throw new ContractReturnError('Giờ bàn giao thực tế không được trước giờ nhận xe.');
-  if (input.fee_override !== undefined && chargeableHours === 0) throw new ContractReturnError('Chỉ có thể điều chỉnh phí khi xe trả trễ hạn.');
-  const earlyDiscount = input.early_discount === undefined ? 0 : Number(input.early_discount);
-  if (earlyDiscount && returnedMs >= scheduledMs) throw new ContractReturnError('Chỉ giảm doanh thu khi xe trả sớm hơn hạn.');
-  const suggested=lateReturnFee(lateMinutes,hourlyRate,Number(item.daily_price)>0?Number(item.daily_price):null);
-  if(input.fee_override===undefined&&suggested.amount===null)throw new ContractReturnError('Chưa xác định giá thuê ngày của xe. Nhập phí trả muộn đã đối chiếu trước khi xác nhận.',409);
-  const lateFee = input.fee_override === undefined ? suggested.amount! : Number(input.fee_override);
-  if (!Number.isSafeInteger(lateFee) || lateFee > MAX_MONEY) throw new ContractReturnError('Tiền trả muộn vượt giới hạn lưu trữ.');
-  const repairFee=Number(input.repair_fee||0);
-  const fee = lateFee + repairFee - earlyDiscount;
-  if(!Number.isSafeInteger(fee)||Math.abs(fee)>MAX_MONEY)throw new ContractReturnError('Tổng phí trả xe vượt giới hạn lưu trữ.');
   const baseTotal = item.total == null || item.total === '' ? null : Number(item.total);
   const planValue = item.draft_payload?.management_composer?.installment_plan;
   const plan = planValue ? parseInstallmentPlan(planValue) : null;
   if (planValue && !plan) throw new ContractReturnError('Lịch đóng tiền chưa hợp lệ. Cần đối chiếu hợp đồng.', 409);
-  if (plan && input.returned_at < plan.start) throw new ContractReturnError('Ngày trả không được trước ngày bắt đầu thuê sở hữu.', 409);
-  if (plan && earlyDiscount) throw new ContractReturnError('Thuê sở hữu cần đối chiếu lịch đóng tiền khi giảm doanh thu trả sớm; không tự trừ vào tiền kỳ đầu.', 409);
   const paid = await rentalPaid(client, Number(item.order_id), item.pid) ?? 0;
-  const oldTotal = plan ? installmentBalance(plan, baseTotal, paid, returnedMs).accrued_total : baseTotal;
-  if (fee && (oldTotal === null || !Number.isSafeInteger(oldTotal) || oldTotal + fee > MAX_MONEY)) throw new ContractReturnError('Chưa có tổng phí hợp đồng hợp lệ để điều chỉnh khi trả xe.', 409);
-  if (oldTotal !== null && oldTotal + fee < 0) throw new ContractReturnError('Số tiền giảm khi trả sớm vượt tổng tiền thuê của hợp đồng.');
-
-  const actual = localTimestamp(input.returned_at);
+  const {lateMinutes,chargeableHours,hourlyRate,earlyDiscount,suggested,lateFee,repairFee,fee,nextTotal,actual}=calculateVehicleReturn({
+    startsAt:toIso(item.rent_at),returnAt:toIso(item.return_at)!,dailyPrice:Number(item.daily_price)>0?Number(item.daily_price):null,baseTotal,paid,plan},input);
   if(usesScopedDatabase())await client.query('SELECT himoto.complete_contract_vehicle_return($1,$2::timestamptz)',[input.item_id,actual]);
   else await client.query('UPDATE himoto.order_vehicle_details SET completed_at=$2::timestamptz,updated_at=now() WHERE id=$1', [input.item_id, actual]);
   const open = await client.query(`SELECT count(*)::int AS count, bool_or(d.return_at < now()) AS has_overdue
     FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL`, [item.order_id]);
   const remainingItems = Number(open.rows[0].count);
-  const nextTotal = oldTotal === null ? null : oldTotal + fee;
   const nextStatus = remainingItems
     ? (open.rows[0].has_overdue ? 'overdue' : item.order_status === 'wait_payment' ? 'wait_payment' : 'renting')
     : nextTotal !== null && nextTotal > paid ? 'wait_payment' : 'completed';
@@ -249,7 +297,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
 
 export async function replaceContractVehicle(client: Database, actorId: number, input: { item_id: number; item_revision: string; vehicle_id: number }) {
   await client.query("SET LOCAL lock_timeout = '5s'");
-  const result = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.xmin::text AS item_revision,o.store_id,o.draft_payload,o.order_type
+  const result = await client.query(`SELECT d.id,d.order_id,d.vehicle_id,d.xmin::text AS item_revision,o.store_id,o.draft_payload,${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status IN ('renting','overdue','wait_payment') FOR UPDATE OF d,o`, [input.item_id]);
@@ -259,27 +307,34 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   if (Number(item.vehicle_id) === input.vehicle_id) throw new ContractReturnError('Biển số xe đang chọn không thay đổi.');
   const newVehicle = await client.query(`SELECT v.id,v.name,v.license,v.brand,v.type,v.color,v.year,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
-    WHERE v.id=$1 AND v.status='ready' FOR UPDATE OF v`, [input.vehicle_id]);
+    WHERE v.id=$1 AND v.deleted_at IS NULL AND v.status='ready' FOR UPDATE OF v`, [input.vehicle_id]);
   if (!newVehicle.rowCount) throw new ContractReturnError('Xe mới phải đang Lưu kho.', 409);
-  const rentalType=item.draft_payload?.management_composer?.rental_type;
-  const stockError=await checkOwnershipVehicleStock(client,requiresOwnershipApproval(item.order_type)?item.order_type:rentalType,newVehicle.rows);
+  const rentalType=item.rental_type;
+  const stockError=await checkOwnershipVehicleStock(client,rentalType,newVehicle.rows);
   if(stockError)throw new ContractReturnError(stockError,409);
-  const branchStockError=rentalStockError(requiresOwnershipApproval(item.order_type)?item.order_type:rentalType,item.store_id,newVehicle.rows);
+  const branchStockError=rentalStockError(rentalType,item.store_id,newVehicle.rows);
   if(branchStockError)throw new ContractReturnError(branchStockError,409);
   const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') LIMIT 1`, [input.vehicle_id]);
-  if (openRental.rowCount || usesScopedDatabase()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[input.vehicle_id])).rows[0]?.blocked) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
+      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`, [input.vehicle_id]);
+  const scopedBlocked=usesScopedDatabase()&&!(await client.query('SELECT available FROM himoto.vehicle_inventory() WHERE id=$1',[input.vehicle_id])).rows[0]?.available;
+  if (openRental.rowCount || scopedBlocked) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
   const duplicate = await client.query(`SELECT 1 FROM himoto.order_vehicle_details
     WHERE order_id=$1 AND vehicle_id=$2 AND id<>$3 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.order_id,input.vehicle_id,input.item_id]);
   if (duplicate.rowCount) throw new ContractReturnError('Xe mới đã nằm trong hợp đồng này.', 409);
-  const oldVehicle = await client.query('SELECT license FROM himoto.vehicles WHERE id=$1 FOR UPDATE', [item.vehicle_id]);
+  const oldVehicle = await client.query(usesScopedDatabase()
+    ? 'SELECT license FROM '+contractVehicleLabelSource()+' WHERE id=$1'
+    : 'SELECT license FROM himoto.vehicles WHERE id=$1 FOR UPDATE', [item.vehicle_id]);
   await client.query('UPDATE himoto.order_vehicle_details SET vehicle_id=$2,updated_at=now() WHERE id=$1', [input.item_id,input.vehicle_id]);
   const swap = await client.query(`INSERT INTO himoto.management_contract_vehicle_swaps(order_id,order_item_id,from_vehicle_id,to_vehicle_id,actor_id)
     VALUES ($1,$2,$3,$4,$5) RETURNING id`, [item.order_id,input.item_id,item.vehicle_id,input.vehicle_id,actorId]);
-  const oldOpen = await client.query(`SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL AND completed_at IS NULL LIMIT 1`, [item.vehicle_id]);
-  const foreignOldOpen=usesScopedDatabase()&&(await client.query('SELECT himoto.vehicle_has_open_rental($1) AS blocked',[item.vehicle_id])).rows[0]?.blocked;
-  if (!oldOpen.rowCount&&!foreignOldOpen) await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`, [item.vehicle_id]);
+  if(usesScopedDatabase())await client.query('SELECT himoto.release_swapped_contract_vehicle($1)',[swap.rows[0].id]);
+  else {
+    const oldOpen=await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+      WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+        AND o.order_status IN('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`,[item.vehicle_id]);
+    if(!oldOpen.rowCount)await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`,[item.vehicle_id]);
+  }
   await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=$1`, [input.vehicle_id]);
 
   // Keep printed/contract draft vehicle fields in sync with the live rental line.

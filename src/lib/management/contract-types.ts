@@ -1,14 +1,7 @@
 import { CONTRACT_TYPES } from './config';
 
-export interface ContractType {
-  id: string; label: string; rental_type: string; term_months: number | null; active: boolean; revision: string;
-}
-export interface ContractTypeInput { label: string; rental_type: 'daily' | 'monthly' | 'ownership'; term_months: number | null; active: boolean }
-export const CONTRACT_TYPE_BILLING = [
-  { value: 'daily', label: 'Thuê theo ngày / tuần' },
-  { value: 'monthly', label: 'Thuê theo tháng' },
-  { value: 'ownership', label: 'Thuê sở hữu, thu theo kỳ' },
-] as const;
+import type { ContractType } from '../../../shared/contract-types';
+export { CONTRACT_TYPE_BILLING,type ContractType,type ContractTypeInput } from '../../../shared/contract-types';
 export const initialContractTypes = (): ContractType[] => CONTRACT_TYPES.map(type => ({
   id: type.value, label: type.label, rental_type: type.value,
   term_months: /^monthly_(\d+)$/.test(type.value) ? Number(type.value.split('_')[1]) : null,

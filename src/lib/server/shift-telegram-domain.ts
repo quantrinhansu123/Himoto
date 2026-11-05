@@ -1,0 +1,5 @@
+import "server-only";
+import type { PoolClient } from "pg";
+import { ShiftRequestError } from "./shift-report-requests";
+export async function readShiftTelegram(client:Pick<PoolClient,"query">,id:string){return(await client.query("SELECT CASE WHEN status='sending' AND updated_at<now()-interval '3 minutes' THEN 'unknown' ELSE status END AS status,message_id,error_code FROM himoto.management_report_deliveries WHERE delivery_key=$1",[`shift:${id}`])).rows[0]||null;}
+export async function retryShiftTelegram(client:Pick<PoolClient,"query">,id:string){const row=(await client.query("SELECT status FROM himoto.management_report_deliveries WHERE delivery_key=$1",[`shift:${id}`])).rows[0];if(!row)throw new ShiftRequestError("Báo cáo chưa chốt / chưa có tin Telegram.",404);if(row.status==='unknown'||row.status==='sending')throw new ShiftRequestError("Chưa rõ kết quả gửi. Kiểm tra nhóm Telegram trước; hệ thống không tự gửi trùng.",409);return {status:String(row.status),deliveryKey:row.status!=='sent'?`shift:${id}`:null};}

@@ -1,0 +1,4 @@
+import { Stack,useLocalSearchParams } from 'expo-router';
+import { CatalogueScreen } from '@/components/catalogue-screen';
+import { StateView } from '@/components/ui';
+export default function Route(){const{action,query,store}=useLocalSearchParams<{action:string;query?:string;store?:string}>();if(!['return','renew','active','overdue'].includes(action))return <StateView title="Không có thao tác hợp đồng này" />;return <><Stack.Screen options={{title:action==='return'?'Chọn hợp đồng để trả xe':action==='renew'?'Chọn hợp đồng để gia hạn':action==='overdue'?'Hợp đồng quá hạn':'Hợp đồng đang thuê'}} /><CatalogueScreen key={`${action}:${query||''}:${store||''}`} kind="contracts" operationsCatalogue initialScope={action==='renew'?'renewable':action==='overdue'?'overdue':'active'} initialSearch={query||''} initialStore={store||undefined} /></>;}

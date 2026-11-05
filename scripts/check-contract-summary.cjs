@@ -51,8 +51,11 @@ check('all table filters combine before aggregation, with inclusive dates and cu
   const rows = [contract(1), contract(2, { store_id: 31 }), contract(3, { status: 'bad_debt' }), contract(4, { rental_type: 'daily' }), contract(5, { customer_name: 'Khách khác' }), contract(6, { start_date: '2026-10-09' }), contract(7, { start_date: '' }), contract(8, { customer_id: 2 })];
   const query = { ...EMPTY_QUERY, search: 'dang qa', status: 'renting', filters: { rental_type: 'monthly', customer_id: '1' }, startDate: '2026-10-08', endDate: '2026-10-08' };
   const filtered = filterRows(rows, query, '23');
-  assert.deepEqual(filtered.map(row => row.id), [1]);
+  // The Đang thuê tab now includes bad-debt contracts as an active rental
+  // status. They retain their separate debt bucket when aggregating totals.
+  assert.deepEqual(filtered.map(row => row.id), [1, 3]);
   assert.equal(summarizeContracts(filtered, customers).receivableAmount, 700);
+  assert.equal(summarizeContracts(filtered, customers).badDebtAmount, 700);
   assert.equal(summarizeContracts(filterRows(rows, { ...query, search: 'no match' }, '23'), customers).contractCount, 0);
 });
 check('multi-page aggregates are independent of sort order; multiple vehicles do not multiply contracts', () => {

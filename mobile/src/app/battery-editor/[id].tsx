@@ -1,0 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
+import { useLocalSearchParams } from "expo-router";
+import { useSession } from "@/providers/session";
+import { StateView } from "@/components/ui";
+import { BatteryForm } from "@/components/battery-form";
+function Editor({id,source}:{id:string;source:string}){const{api,session}=useSession(),allowed=session!.user.permissions.includes('contracts.read')&&session!.user.permissions.includes('contracts.draft'),options=useQuery({queryKey:['battery-options',session!.user.id],queryFn:({signal})=>api!.batteryOptions(signal),enabled:allowed}),record=useQuery({queryKey:['battery',session!.user.id,id],queryFn:({signal})=>api!.battery(id,signal),enabled:allowed&&id!=='new',retry:false}),prefill=useQuery({queryKey:['battery-prefill',session!.user.id,source],queryFn:({signal})=>api!.batteryPrefill(source,signal),enabled:allowed&&id==='new'&&!!source,retry:false});
+  if(!allowed)return <StateView title="Không có quyền lập/sửa hợp đồng pin" />;if(options.isError||id!=='new'&&record.isError||source&&prefill.isError)return <StateView title="Chưa mở được biểu mẫu pin" message={options.error?.message||record.error?.message||prefill.error?.message} retry={()=>{void options.refetch();if(id!=='new')void record.refetch();if(source)void prefill.refetch();}} />;if(options.isPending||id!=='new'&&record.isPending||source&&prefill.isPending)return <StateView title="Đang mở biểu mẫu pin / sạc" loading />;
+  return <BatteryForm key={`${id}:${record.data?.contract.revision||'new'}:${source}`} record={id==='new'?null:record.data!.contract} options={options.data} prefill={prefill.data?.values} />;
+}
+export default function Route(){const{id,source=''}=useLocalSearchParams<{id:string;source?:string}>(),{api,session}=useSession();if(!api||!session||id!=='new'&&!/^[1-9]\d{0,14}$/.test(id)||source&&!/^[1-9]\d{0,14}$/.test(source))return <StateView title="Không mở được biểu mẫu pin" />;return <Editor key={`${id}:${source}:${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(',')}`} id={id} source={source} />;}

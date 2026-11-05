@@ -1,0 +1,12 @@
+const fs=require("node:fs"),path=require("node:path");
+const {load,root}=require("./lib/load-typescript.cjs");
+const {createContractDraft}=load(path.join(root,"lib/management/contract-document"));
+const {mobileDraftDocument}=load(path.join(root,"lib/server/mobile-draft-shape"));
+const {isMobileDraftInput}=load(path.resolve(root,"../shared/mobile-draft-validation"));
+const draft=mobileDraftDocument(createContractDraft({stores:[],staff:[],customers:[],contracts:[],vehicles:[]},"23"));
+Object.assign(draft,{start_date:"2026-11-01T08:00",end_date:"2026-11-02T08:00",signed_on:"2026-11-01",created_on:"2026-11-01",staff_name:"QA Quản lý"});
+const input={draft,rental_type:"daily",status:"draft",notes:""};
+if(!isMobileDraftInput(input))throw Error("Invalid synthetic template");
+const target=path.resolve(root,"../scripts/fixtures/mobile-draft.json");
+fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,JSON.stringify(input,null,2)+"\n");
+console.log("Generated synthetic mobile draft fixture; no DB connection.");

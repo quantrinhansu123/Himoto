@@ -5,7 +5,7 @@ import { RecordPhotoError } from './record-photos';
 import type { PoolClient } from 'pg';
 import type { PhotoEntity } from '@/lib/management/record-photos';
 import { MAX_VIDEO_BYTES } from '@/lib/management/video-media';
-import { cloudflyVideosEnabled, storeConvertedVideo, hasConvertedVideo } from './cloudfly-videos';
+import { cloudflyVideosEnabled, storeConvertedVideo, hasConvertedVideo, objectVideoDetails } from './cloudfly-videos';
 import { ownerDatabase } from './himoto-database';
 
 export interface CloudPhotoReceipt { public_id: string; version: number; signature: string; resource_type?: 'video' }
@@ -36,25 +36,29 @@ export function verifyPhotoReceipt(value: unknown, actorId: number): CloudPhotoR
 }
 export async function writeCloudinaryPhoto(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, slot: string, actor: number, receipt: CloudPhotoReceipt) {
   const video=receipt.resource_type==='video';
+  let videoDetails: { bytes: number; duration: number } | undefined;
   if(video) {
     if(entity!=='contracts'||!/-video-[1-3]$/.test(slot))throw new RecordPhotoError('Video chỉ lưu ở ô video hợp đồng.');
     if (cloudflyVideosEnabled()) {
       const stored = await cloudinaryVideoObject(receipt, 60);
+      const details = await objectVideoDetails(stored, 60);
       await client.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by,object_bucket,object_key,object_etag)
         VALUES($1,$2,$3,'video/mp4',NULL,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,slot)
         DO UPDATE SET mime_type='video/mp4',data=NULL,updated_by=EXCLUDED.updated_by,updated_at=now(),
           cloudinary_public_id=NULL,cloudinary_cloud_name=NULL,cloudinary_version=NULL,
           object_bucket=EXCLUDED.object_bucket,object_key=EXCLUDED.object_key,object_etag=EXCLUDED.object_etag`,
       [entity,id,slot,actor,stored.object_bucket,stored.object_key,stored.object_etag]);
-      return stored;
+      return { ...stored, ...details };
     }
     const asset=await cloudinary.api.resource(receipt.public_id,{...config(),resource_type:'video',type:'authenticated',media_metadata:true});
     if(asset.resource_type!=='video'||asset.format!=='mp4'||Number(asset.version)!==receipt.version||!asset.bytes||asset.bytes>MAX_VIDEO_BYTES||!asset.duration||asset.duration>60)throw new RecordPhotoError('Video cần là MP4 tối đa 45 MB và 60 giây.');
+    videoDetails = { bytes: Number(asset.bytes), duration: Number(asset.duration) };
   } else if(/-video-[1-3]$/.test(slot))throw new RecordPhotoError('Chọn video cho ô này.');
   await client.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version)
     VALUES($1,$2,$3,$8,NULL,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,slot)
     DO UPDATE SET mime_type=EXCLUDED.mime_type,data=NULL,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=EXCLUDED.cloudinary_public_id,cloudinary_cloud_name=EXCLUDED.cloudinary_cloud_name,cloudinary_version=EXCLUDED.cloudinary_version,object_bucket=NULL,object_key=NULL,object_etag=NULL`,
   [entity, id, slot, actor, receipt.public_id, config().cloud_name, receipt.version,video?'video/mp4':'image/jpeg']);
+  return videoDetails;
 }
 type ShiftAssetMetadata={resource_type?:string;format?:string;version?:number;bytes?:number;duration?:number};
 export async function shiftCloudAsset(receipt:CloudPhotoReceipt,readAsset:(id:string,options:Record<string,unknown>)=>Promise<ShiftAssetMetadata>=(id,options)=>cloudinary.api.resource(id,options)) {

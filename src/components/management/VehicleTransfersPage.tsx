@@ -6,6 +6,7 @@ import { ArrowLeftRight, ChevronLeft, ChevronRight, LoaderCircle, RefreshCw, Sea
 import { defaultTransferHistoryQuery, loadTransferHistory, type TransferHistoryQuery, type TransferHistoryResult, type TransferHistoryRow } from '@/lib/management/vehicle-transfer-history';
 import { formatDateTime } from '@/lib/formatters';
 import { vietnamDate } from '@/lib/management/duty-roster';
+import {TRANSFER_EXPORT_HEADERS,transferExportRows} from '@/lib/management/filtered-list-export';
 import { FilteredExcelButton } from './FilteredExcelButton';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
@@ -54,12 +55,12 @@ export function VehicleTransfersPage() {
     <div className="mg-page-content">
       <div className="mg-page-heading"><div><h1>Lịch sử luân chuyển</h1><RecordTotal label="Toàn bộ lượt luân chuyển" count={!loading&&!error?report?.scopeCount:null} loading={loading}/>
         <p>Xem xe chuyển từ cơ sở nào sang cơ sở nào trong ngày. Mỗi dòng là một lần chuyển hoặc nhận xe.</p></div>
-        <div className="mg-heading-actions"><FilteredExcelButton disabled={loading || Boolean(error) || !report?.total} filename="himoto-lich-su-luan-chuyen" headers={['Ngày giờ','Thao tác','Biển số','Tên xe','Cơ sở chuyển đi','Cơ sở nhận','Người thao tác','Ghi chú']} getRows={async () => {
+        <div className="mg-heading-actions"><FilteredExcelButton disabled={loading || Boolean(error) || !report?.total} filename="himoto-lich-su-luan-chuyen" headers={TRANSFER_EXPORT_HEADERS} getRows={async () => {
             const input = { ...query, store: selectedStore, page: 1 };
             const first = await loadTransferHistory(input);
             const all = [...first.rows];
             for (let page = 2; page <= Math.ceil(first.total / first.size); page++) all.push(...(await loadTransferHistory({ ...input, page })).rows);
-            return all.map(row => [formatDateTime(row.at), row.label, row.license, row.vehicle_name, row.from_store, row.to_store, row.actor, row.note]);
+            return transferExportRows(all);
           }}/><Link href="/vehicles" className="mg-button"><ArrowLeftRight size={16}/>Danh sách xe</Link>
           <button type="button" className="mg-button" disabled={loading} onClick={() => setRetry(value => value + 1)}><RefreshCw size={16}/>Làm mới</button></div></div>
       <div className="mg-data-panel">

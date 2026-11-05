@@ -5,7 +5,8 @@ import { Building2, Eye, Network, Pencil, Phone, RotateCcw, Search, Trash2, User
 import { ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
 import { StaffDialog, StaffDialogMode } from './StaffDialogs';
-import { branchStaffPosition, normalizeStaffPosition, STAFF_DEPARTMENTS, staffRoles } from '@/lib/management/staff-positions';
+import { branchStaffPosition, normalizeStaffPosition, staffRoles } from '@/lib/management/staff-positions';
+import {buildStaffOrganization,matchesOrganizationStaff as matchesStaff,scopeOrganizationStaff} from '../../../shared/staff-organization';
 
 function staffGroups(staff: ManagementRow[], branch = false) {
   const groups = new Map<string, ManagementRow[]>();
@@ -17,12 +18,6 @@ function staffGroups(staff: ManagementRow[], branch = false) {
 }
 const initials = (name: string) => name.trim().split(/\s+/).slice(-2).map(part => part[0] || '').join('').toUpperCase() || '?';
 const INACTIVE_LABEL: Record<string, string> = { inactive: 'Tạm nghỉ', leave: 'Đã nghỉ việc' };
-const searchKey = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase();
-const staffHaystack = (person: ManagementRow) => [person.name, person.code, person.phone, person.email, person.position, person.store_name].map(part => String(part || '')).join(' ');
-const matchesStaff = (person: ManagementRow, query: string) => {
-  const needle = searchKey(query.trim());
-  return !needle || searchKey(staffHaystack(person)).includes(needle);
-};
 
 interface PersonProps { person: ManagementRow; position?: string; onAction: (person: ManagementRow, mode: StaffDialogMode) => void }
 function PersonCard({ person, position = normalizeStaffPosition(person.position), onAction }: PersonProps) {
@@ -56,12 +51,7 @@ export function StaffOrganizationChart() {
   const listId = useId();
   const allStores = dataset?.stores || [];
   const allStaff = useMemo(() => dataset?.staff || [],[dataset?.staff]);
-  const scopedStaff = useMemo(() => allStaff.filter(person => {
-    // TLS is company-wide: keep visible when filtering any store.
-    const companyTls = staffRoles(person.position).includes('TLS');
-    if (selectedStore !== 'all' && String(person.store_id || '') !== selectedStore && !companyTls) return false;
-    return showDeparted || person.status !== 'leave' || (search.trim() !== '' && matchesStaff(person, search));
-  }), [allStaff, selectedStore, showDeparted, search]);
+  const scopedStaff = useMemo(() => scopeOrganizationStaff(allStaff,selectedStore,showDeparted,search), [allStaff, selectedStore, showDeparted, search]);
   const suggestions = useMemo(() => {
     const needle = search.trim();
     if (!needle) return [];
@@ -69,16 +59,7 @@ export function StaffOrganizationChart() {
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'vi'))
       .slice(0, 12);
   }, [scopedStaff, search]);
-  const staff = useMemo(() => search.trim() ? scopedStaff.filter(person => matchesStaff(person, search)) : scopedStaff, [scopedStaff, search]);
-  const stores = allStores.filter(store => selectedStore === 'all' || String(store.id) === selectedStore);
-  // TLS stays company-wide: always list that department, even when a store filter is on.
-  const departmentDefs = selectedStore === 'all' ? STAFF_DEPARTMENTS : STAFF_DEPARTMENTS.filter(department => department.role === 'TLS');
-  const departments = departmentDefs.map(department => ({ ...department,
-    people: staff.filter(person => staffRoles(person.position).includes(department.role) && (department.role !== 'NVKD' || !person.store_id)),
-  })).filter(department => department.people.length);
-  const unassigned = selectedStore === 'all' ? staff.filter(person => !allStores.some(store => store.id === person.store_id) && !departments.some(department => department.people.includes(person))) : [];
-  const shown = staff.filter(person => unassigned.includes(person) || departments.some(department => department.people.includes(person)) || stores.some(store => store.id === person.store_id) || staffRoles(person.position).includes('TLS'));
-  const working = shown.filter(person => !INACTIVE_LABEL[person.status]).length;
+  const {stores,departments,unassigned,shown,working}=buildStaffOrganization(allStaff,allStores,selectedStore,showDeparted,search);
   const onAction: PersonProps['onAction'] = (person, mode) => setTarget({ person, mode });
   function pickStaff(person: ManagementRow) {
     setSearch(String(person.name || person.code || ''));
@@ -145,7 +126,7 @@ export function StaffOrganizationChart() {
             <header><h3>{position}</h3><span>{people.length}</span></header><div className="mg-org-people">{people.map(person => <PersonCard key={person.id} person={person} onAction={onAction} />)}</div></article>)}</div></div>}
         <div className="mg-org-tier"><h3 className="mg-org-tier-title">Cơ sở<span>{stores.length}</span></h3>
           <div className="mg-org-grid">{stores.map((store, index) => {
-            const people = staff.filter(person => person.store_id === store.id);
+            const people = store.people;
             return <article className={`mg-org-card mg-org-tone-${index % 6}`} key={store.id}><header><h3>{store.name}</h3><span>{people.length} nhân sự</span></header>
               {people.length ? <Groups people={people} onAction={onAction} /> : <p className="mg-org-empty">{search.trim() ? 'Không có nhân sự khớp tìm kiếm.' : 'Chưa có nhân sự được phân bổ.'}</p>}</article>;
           })}</div></div>

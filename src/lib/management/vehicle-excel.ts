@@ -88,7 +88,7 @@ export async function createVehicleTemplate(stores: CustomerImportStore[], rows:
     'ID xe: để trống đối với xe mới; giữ ID từ file xuất cũ khi đồng bộ. Không tự đặt lại ID đã thuộc xe khác.',
     'Màu sắc có cột riêng. Màu chưa xác định được để trống và có cảnh báo; màu dạng số phải xác nhận và sửa.',
     'Cơ sở dùng tên, mã hoặc ID tại sheet Cơ sở. Mã cơ sở cũ cần khớp lại; không tự chọn một cơ sở thay thế.',
-    'Đồng bộ giữ ID và lịch sử, cơ sở, trạng thái và các trường giá của xe đã có; không xóa xe vắng mặt trong Excel.',
+    'Đồng bộ giữ ID, lịch sử, cơ sở và trạng thái xe đã có. Giá và số km có dữ liệu sẽ được cập nhật, để trống giữ giá trị cũ; không xóa xe vắng mặt trong Excel.',
     'Thay toàn bộ / Xóa hết bị chặn khi có hợp đồng, ảnh, điều chuyển, bảo dưỡng hoặc dữ liệu liên quan.',
     'Cột thừa được liệt kê và bỏ qua. Không tự suy đoán số như 2, 4 là giá, trạng thái hay cơ sở.',
     'Hệ thống kiểm tra toàn bộ file, không bỏ qua dòng lỗi. Mỗi lần ghi đều sao lưu bảng xe trong cùng giao dịch.',

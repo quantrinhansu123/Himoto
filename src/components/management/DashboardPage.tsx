@@ -6,39 +6,14 @@ import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { loadDashboardSummary, type DashboardSummary } from '@/lib/management/dashboard';
 import { vietnamDate } from '@/lib/management/duty-roster';
-import { csvCell } from '@/lib/management/table-utils';
+import {DASHBOARD_PRESETS as PRESETS,dashboardPeriod as presetRange,dashboardCsv,DASHBOARD_METRICS} from '../../../shared/mobile-dashboard';
 
 const money = (value: number) => `${value.toLocaleString('vi-VN')} đ`;
 const number = (value: number) => value.toLocaleString('vi-VN');
-const isoDate = (year: number, month: number, day: number) => new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10);
 const viDate = (value: string) => value.split('-').reverse().join('/');
 
-const PRESETS = [
-  { id: 'today', label: 'Hôm nay' },
-  { id: 'yesterday', label: 'Hôm qua' },
-  { id: '7d', label: '7 ngày qua' },
-  { id: 'month', label: 'Tháng này' },
-  { id: 'last-month', label: 'Tháng trước' },
-  { id: 'quarter', label: 'Quý này' },
-  { id: 'year', label: 'Năm nay' },
-] as const;
-
-function presetRange(id: typeof PRESETS[number]['id'], today: string): [string, string] {
-  const [year, month, day] = today.split('-').map(Number);
-  switch (id) {
-    case 'today': return [today, today];
-    case 'yesterday': return [isoDate(year, month - 1, day - 1), isoDate(year, month - 1, day - 1)];
-    case '7d': return [isoDate(year, month - 1, day - 6), today];
-    case 'month': return [isoDate(year, month - 1, 1), today];
-    case 'last-month': return [isoDate(year, month - 2, 1), isoDate(year, month - 1, 0)];
-    case 'quarter': return [isoDate(year, Math.floor((month - 1) / 3) * 3, 1), today];
-    case 'year': return [isoDate(year, 0, 1), today];
-  }
-}
-
-function downloadCsv(rows: (string | number)[][], filename: string) {
-  const data = rows.map(row => row.map(value => csvCell(String(value))).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['\uFEFF', data], { type: 'text/csv;charset=utf-8;' }));
+function downloadCsv(content:string, filename: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8;' }));
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
@@ -46,7 +21,7 @@ function downloadCsv(rows: (string | number)[][], filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-const HEADERS = ['Số HĐ', 'Hợp đồng thuê', 'Sở hữu', 'Hợp đồng quá hạn', 'Doanh số', 'Doanh thu', 'Chi phí sửa'] as const;
+const HEADERS = DASHBOARD_METRICS.map(metric=>metric.label);
 
 export function DashboardPage() {
   const { selectedStore, dataset, reload } = useManagement();
@@ -108,12 +83,8 @@ export function DashboardPage() {
     if (value < from) setFrom(value);
   }
   function exportCsv() {
-    if (!total) return;
-    downloadCsv([
-      ['Cơ sở', ...HEADERS],
-      ...rows.map(row => [row.name, row.contracts, row.rental_contracts, row.ownership_contracts, row.overdue_contracts, row.sales, row.revenue, row.repair]),
-      ['Tổng', total.contracts, total.rental_contracts, total.ownership_contracts, total.overdue_contracts, total.sales, total.revenue, total.repair],
-    ], `dashboard-giao-dich-${from}-${to}.csv`);
+    if (!report) return;
+    downloadCsv(dashboardCsv(report), `dashboard-giao-dich-${from}-${to}.csv`);
   }
 
   return (

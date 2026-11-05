@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const plugin=require('../mobile/plugins/with-android-release-signing.cjs');
+const source=fs.readFileSync(path.resolve('mobile/android/app/build.gradle'),'utf8');
+const result=plugin.addReleaseSigning(source,'groovy');
+assert.equal(plugin.addReleaseSigning(result,'groovy'),result,'Signing injection is idempotent');
+const builds=result.slice(result.indexOf('buildTypes {'));
+assert(/debug\s*\{\s*signingConfig signingConfigs.debug/.test(builds));
+assert(/release\s*\{[\s\S]*?signingConfig signingConfigs.release/.test(builds));
+assert(!/release\s*\{[\s\S]*?signingConfig signingConfigs.debug/.test(builds));
+assert(result.includes('throw new GradleException'));assert(result.includes("System.getenv('HIMOTO_ANDROID_KEYSTORE_PASSWORD')"));
+assert.throws(()=>plugin.addReleaseSigning(source,'kotlin'));
+assert.throws(()=>plugin.addReleaseSigning(result+'\n// @generated begin himoto-release-signing','groovy'));
+const prior=process.env.HIMOTO_ANDROID_LOCAL_SIGNING;delete process.env.HIMOTO_ANDROID_LOCAL_SIGNING;const config={name:'QA'};assert.equal(plugin(config),config);if(prior!==undefined)process.env.HIMOTO_ANDROID_LOCAL_SIGNING=prior;
+console.log(JSON.stringify({ok:true,checks:4,debugSigningPreserved:true,releaseRequiresOwnKey:true,easDefaultUnchanged:true,keyValuesRead:false}));

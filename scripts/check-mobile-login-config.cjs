@@ -1,0 +1,16 @@
+const assert = require('node:assert/strict');
+const { addLiteralAccountInput } = require('../mobile/plugins/with-literal-account-input.cjs');
+const original = 'class MainActivity {\n  override fun onCreate(savedInstanceState: Bundle?) {\n    SplashScreenManager.registerOnActivity(this)\n    super.onCreate(null)\n  }\n}\n';
+const patched = addLiteralAccountInput(original, 'kt');
+assert.equal(addLiteralAccountInput(patched, 'kt'), patched);
+assert(patched.includes('SplashScreenManager.registerOnActivity(this)\n    super.onCreate(null)'));
+assert.equal((patched.match(/addOnGlobalFocusChangeListener/g) || []).length, 1);
+assert(patched.includes('"himoto-account-input"') && patched.includes('inputClass == 0'));
+assert(!patched.includes('setText') && !patched.includes('setAutofillHints'));
+assert.throws(() => addLiteralAccountInput(original, 'java'), /Kotlin/);
+assert.throws(() => addLiteralAccountInput('different template', 'kt'), /Review/);
+assert.throws(() => addLiteralAccountInput(original + original, 'kt'), /Review/);
+assert.equal(addLiteralAccountInput(patched.replace('val current = account.inputType', 'val current = 0'), 'kt'), patched);
+assert.throws(() => addLiteralAccountInput(original + '// @generated begin himoto-literal-account-input', 'kt'), /incomplete/);
+assert.throws(() => addLiteralAccountInput(patched + '// @generated end himoto-literal-account-input', 'kt'), /duplicated/);
+console.log('PASS account config plugin: idempotent generation, narrow field/flag guard, existing lifecycle preserved, unknown templates fail closed');

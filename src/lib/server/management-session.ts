@@ -92,10 +92,15 @@ export function clearLoginLimit(email: string) { globalSession.managementLoginAt
 export async function userFromSession(token: string | undefined, database: Database = ownerDatabase): Promise<SessionUser | null> {
   const id = verifySession(token);
   if (id === null) return null;
+  const version=JSON.parse(Buffer.from(token!.split('.')[0],'base64url').toString()).password_version??0;
+  return sessionUserById(id, version, database);
+}
+
+/** Revalidate identity and grants for an authenticated server-side session. */
+export async function sessionUserById(id: number, passwordVersion: number, database: Database = ownerDatabase): Promise<SessionUser | null> {
   const result = await database.query(`SELECT ${accountFields} FROM himoto.users u ${accountJoin} WHERE u.id=$1 AND u.deleted_at IS NULL LIMIT 1`, [id]);
   const account = result.rows[0] as Account | undefined;
-  const version=JSON.parse(Buffer.from(token!.split('.')[0],'base64url').toString()).password_version??0;
-  return account && Number(account.management_password_version||0)===version && allowedAccount(account) ? safeUser(account) : null;
+  return account && Number(account.management_password_version||0)===passwordVersion && allowedAccount(account) ? safeUser(account) : null;
 }
 
 // Coalesce only simultaneous reads. Settled lookups are removed immediately so

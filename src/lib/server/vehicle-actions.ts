@@ -54,8 +54,7 @@ export function parseVehicleAction(body: unknown): VehicleActionInput {
 }
 
 // Phone and CCCD must point at the same profile; a match on either reuses it instead of creating a duplicate.
-async function findOrCreateCustomer(client: Client, input: Extract<VehicleActionInput, { action: 'status' }>): Promise<VehicleActionCustomer & { row: ManagementRow }> {
-  await client.query('LOCK TABLE himoto.customers IN SHARE ROW EXCLUSIVE MODE');
+export async function findVehicleActionCustomer(client: Client, input: Extract<VehicleActionInput, { action: 'status' }>) {
   const found = await client.query(`SELECT id,name,phone,email,address,id_card,id_card_issued_on,id_card_issued_by,driver_license_number,driver_license_issued_on,status,
       regexp_replace(COALESCE(phone,''),'\\D','','g')=$1 AS phone_match,regexp_replace(COALESCE(id_card,''),'\\s+','','g')=$2 AS id_match
     FROM himoto.customers WHERE regexp_replace(COALESCE(phone,''),'\\D','','g')=$1 OR regexp_replace(COALESCE(id_card,''),'\\s+','','g')=$2
@@ -69,6 +68,12 @@ async function findOrCreateCustomer(client: Client, input: Extract<VehicleAction
     const matchedBy = existing.phone_match && existing.id_match ? 'SĐT và CCCD' : existing.phone_match ? 'SĐT' : 'CCCD';
     return { id: Number(existing.id), name: String(existing.name), created: false, matched_by: matchedBy, row: { ...existing, id: Number(existing.id) } };
   }
+  return null;
+}
+async function findOrCreateCustomer(client: Client, input: Extract<VehicleActionInput, { action: 'status' }>): Promise<VehicleActionCustomer & { row: ManagementRow }> {
+  await client.query('LOCK TABLE himoto.customers IN SHARE ROW EXCLUSIVE MODE');
+  const existing = await findVehicleActionCustomer(client, input);
+  if (existing) return existing;
   const inserted = await client.query(`INSERT INTO himoto.customers (name,phone,id_card,status,store_id,relatives,created_at,updated_at)
     VALUES ($1,$2,$3,0,$4,'[]'::jsonb,now(),now()) RETURNING id,name,phone,id_card`, [input.customer_name, input.customer_phone, input.customer_id_card, input.beneficiary_store_id]);
   const row = inserted.rows[0];
@@ -95,7 +100,7 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
   const found = await client.query(`SELECT v.name,v.license,v.status,COALESCE(v.current_store_id,v.store_id) AS store_id,v.odometer,v.xmin::text AS revision,
     COALESCE(CASE WHEN v.status IN ('using','rent') THEN (SELECT e.to_store_id FROM himoto.vehicle_location_events e
       WHERE e.vehicle_id=v.id AND e.event_type='status_change' ORDER BY e.created_at DESC,e.id DESC LIMIT 1) END,v.current_store_id,v.store_id) AS beneficiary_store_id
-    FROM himoto.vehicles v WHERE v.id=$1 FOR UPDATE`, [vehicleId]);
+    FROM himoto.vehicles v WHERE v.id=$1 AND v.deleted_at IS NULL FOR UPDATE`, [vehicleId]);
   const vehicle = found.rows[0];
   if (!vehicle) throw new VehicleActionError('Không tìm thấy xe. Nhấn Làm mới để kiểm tra.', 404);
   const scope=dataAccess.getStore();

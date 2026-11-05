@@ -1,3 +1,5 @@
+import { rentalLocalDate as localDate,rentalBoundary as boundary,addRentalMonths } from "../../../shared/rental-calendar";
+export { addRentalMonths };
 import type { ManagementRow } from './types';
 import { badDebtClock } from './contract-bad-debt';
 
@@ -32,29 +34,12 @@ export interface InstallmentBalance {
 const MAX_AMOUNT = 9_999_999_999_999;
 const DAY = 86_400_000;
 
-function localDate(value: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}:00Z`);
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 16) === value ? date : null;
-}
 export const billingInterval = (name: string): BillingInterval | null =>
   name === 'Theo tháng' ? 'month' : name === 'Theo tuần' ? 'week' : name === 'Theo ngày' ? 'day' : name === 'Tùy chọn' ? 'custom' : null;
 export const billingUnitLabel = (name: string) => billingInterval(name) === 'month' ? 'tháng' : billingInterval(name) === 'week' ? 'tuần' : billingInterval(name) === 'custom' ? 'kỳ đầu' : 'ngày';
 export const isOwnershipStore = (name: unknown) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('thue so huu');
 
 /** Every month is anchored to the original day, including month-end and leap years. */
-function boundary(start: Date, interval: BillingInterval, index: number): Date {
-  if (interval !== 'month') return new Date(start.getTime() + index * DAY * (interval === 'week' ? 7 : 1));
-  const date = new Date(start);
-  date.setUTCDate(1); date.setUTCMonth(start.getUTCMonth() + index);
-  const last = new Date(date); last.setUTCMonth(last.getUTCMonth() + 1); last.setUTCDate(0);
-  date.setUTCDate(Math.min(start.getUTCDate(), last.getUTCDate()));
-  return date;
-}
-export function addRentalMonths(value: string, months: number): string {
-  const start = localDate(value);
-  return start && Number.isInteger(months) && months > 0 && months <= 120 ? boundary(start, 'month', months).toISOString().slice(0,16) : '';
-}
 export function ownershipTerm(start: string, end: string): OwnershipTerm {
   return OWNERSHIP_TERM_MONTHS.find(term => addRentalMonths(start, Number(term)) === end && Boolean(end)) || 'custom';
 }

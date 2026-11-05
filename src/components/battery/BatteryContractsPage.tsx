@@ -1,10 +1,11 @@
 'use client';
+import {batteryCustomerValues,missingBatteryCustomer} from '../../../shared/battery-customer';
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { CalendarPlus, FileSearch, History, LoaderCircle, Pencil, Plus, Printer, RotateCcw, Search, Send, Trash2, Undo2, X } from 'lucide-react';
-import { BATTERY_COLLECTION_METHODS, BATTERY_PRODUCT_PRESETS, BATTERY_STATUSES, BatteryContract, BatteryContractInput, BatteryContractPrefill, batteryPaymentAccounts, batteryProductKind, batteryRequest, BatteryRequestError, batteryStatusLabel, DEFAULT_BATTERY_NAME, type BatteryCollectionMethod } from '@/lib/management/battery-contracts';
+import { batteryMatchesSearch,BATTERY_COLLECTION_METHODS, BATTERY_PRODUCT_PRESETS, BATTERY_STATUSES, BatteryContract, BatteryContractInput, BatteryContractPrefill, batteryPaymentAccounts, batteryProductKind, batteryRequest, BatteryRequestError, batteryStatusLabel, DEFAULT_BATTERY_NAME, type BatteryCollectionMethod } from '@/lib/management/battery-contracts';
 import { loadCashbookAccounts, type CashbookAccount } from '@/lib/management/cashbook-repository';
 import { addRentalMonths, isOwnershipStore } from '@/lib/management/contract-billing';
 import { customerDetails } from '@/lib/management/contract-document';
@@ -13,6 +14,7 @@ import type { ManagementRow } from '@/lib/management/types';
 import { useManagement } from '@/components/management/ManagementProvider';
 import { useReloadAction } from '@/components/management/ReloadButton';
 import { Dialog } from '@/components/management/Dialog';
+import {BATTERY_EXPORT_HEADERS,batteryExportRows} from '@/lib/management/filtered-list-export';
 import { FilteredExcelButton } from '@/components/management/FilteredExcelButton';
 import { RecordTotal } from '@/components/management/RecordTotal';
 import { RowActionsMenu } from '@/components/management/RowActionsMenu';
@@ -28,7 +30,6 @@ const money = (value: number | null) => value === null ? '—' : `${value.toLoca
 const moneyInput = (value: number | null) => value === null ? '' : value.toLocaleString('vi-VN');
 const parseMoney = (value: string) => { const digits = value.replace(/\D/g, '').slice(0, 13); return digits ? Number(digits) : null; };
 const STATUS_TONE: Record<BatteryContract['status'], string> = { renting: 'blue', returned: 'green', cancelled: 'gray' };
-const fold = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
 
 export function BatteryContractsPage() {
   const searchParams = useSearchParams();
@@ -60,8 +61,7 @@ export function BatteryContractsPage() {
     return () => { current = false; controller.abort(); };
   }, [selectedStore, reload, vehicleContractId]);
   const visible = useMemo(() => {
-    const term = fold(search.trim());
-    return rows.filter(row => (!status || row.status === status) && (!term || fold([row.code, row.vehicle_contract_code, row.customer_name, row.customer_phone, row.customer_id_card, row.vehicle_license, row.staff_name].join(' ')).includes(term)));
+    return rows.filter(row => (!status || row.status === status) && batteryMatchesSearch(row,search));
   }, [rows, search, status]);
   const unavailable = datasetLoading || Boolean(datasetError);
   const refresh = () => setReload(value => value + 1);
@@ -76,7 +76,7 @@ export function BatteryContractsPage() {
   const filtered = Boolean(search || status);
   return <section className="mg-page mg-battery-page" aria-label="Hợp đồng thuê pin"><div className="mg-page-content">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">HỢP ĐỒNG <span>/</span> THUÊ PIN / SẠC</div><h1>Hợp đồng thuê pin / sạc</h1><RecordTotal label="Toàn bộ hợp đồng pin / sạc" count={scopeCount} loading={loading}/><p>Lập, lưu và in hợp đồng thuê pin hoặc sạc xe điện theo mẫu HIMOTO. Có thể mở sẵn từ hợp đồng thuê xe.</p></div>
-      <div className="mg-heading-actions"><FilteredExcelButton disabled={loading || Boolean(error) || !visible.length} filename="himoto-hop-dong-pin" headers={['Mã HĐ','Khách hàng','SĐT','Biển số','Pin','Bắt đầu','Kết thúc','Giá thuê','Cơ sở','Trạng thái']} getRows={() => visible.map(row => [row.code,row.customer_name,row.customer_phone,row.vehicle_license,row.battery_name,moment(row.starts_at),moment(row.ends_at),row.rent_price,row.store_name,batteryStatusLabel(row.status)])}/><button type="button" className="mg-button" disabled={loading || datasetLoading} onClick={refresh}><RotateCcw size={16} className={loading ? 'mg-spin' : undefined} />{loading ? 'Đang tải…' : 'Làm mới'}</button>{can('contracts.draft') && <button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button>}</div></div>
+      <div className="mg-heading-actions"><FilteredExcelButton disabled={loading || Boolean(error) || !visible.length} filename="himoto-hop-dong-pin" headers={BATTERY_EXPORT_HEADERS} getRows={() => batteryExportRows(visible)}/><button type="button" className="mg-button" disabled={loading || datasetLoading} onClick={refresh}><RotateCcw size={16} className={loading ? 'mg-spin' : undefined} />{loading ? 'Đang tải…' : 'Làm mới'}</button>{can('contracts.draft') && <button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={() => setEditing(null)}><Plus size={16} />Tạo hợp đồng thuê pin / sạc</button>}</div></div>
     <div className="mg-data-panel">
       {vehicleContractId && <p className="mg-composer-hint">Pin / sạc của hợp đồng xe #{vehicleContractId}. <Link href="/contracts/battery">Bỏ lọc hợp đồng xe</Link></p>}
       <div className="mg-status-tabs" aria-label="Lọc theo trạng thái"><button type="button" className={!status ? 'is-active' : ''} aria-pressed={!status} onClick={() => setStatus('')}>Tất cả<span>{rows.length}</span></button>
@@ -192,7 +192,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
         if (controller.signal.aborted) return;
         if (customers.length === 1) choose(customers[0]);
         else if (customers.length > 1) { setMatches(customers); setLookupState('matches'); }
-        else { setMatches([]); setLookupState('missing'); setForm(current => ({ ...current, customer_id: null, ...(/^0\d{8,10}$/.test(digits) ? { customer_phone: current.customer_phone || digits } : { customer_id_card: current.customer_id_card || digits }) })); }
+        else { setMatches([]); setLookupState('missing'); setForm(current => ({ ...current, ...missingBatteryCustomer(current,digits) })); }
       }).catch(cause => { if (!controller.signal.aborted) { setLookupState('error'); setLookupError(cause instanceof Error ? cause.message : 'Không tra cứu được khách hàng.'); } });
     }, 350);
     return () => { window.clearTimeout(timer); controller.abort(); };
@@ -200,8 +200,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
   function choose(customer: ManagementRow) {
     const details = customerDetails(customer);
     setMatches([]); setLookupState('found');
-    setForm(current => ({ ...current, customer_id: Number(customer.id), customer_name: details.name, customer_phone: details.phone, customer_address: details.address,
-      customer_id_card: details.id_card, id_card_issued_on: details.id_card_issued_on, id_card_issued_by: details.id_card_issued_by }));
+    setForm(current => ({ ...current, ...batteryCustomerValues(Number(customer.id),details) }));
   }
   const store = stores.find(item => String(item.id) === form.store_id);
   const printData: BatteryPrintData = { ...form, store_id: Number(form.store_id), code: row?.code || '', store_address: String(store?.address || row?.store_address || ''), store_phone: String(store?.phone || row?.store_phone || '') };

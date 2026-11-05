@@ -1,17 +1,16 @@
 import 'server-only';
-import { createCipheriv,createDecipheriv,createHash,randomBytes } from 'node:crypto';
+import { createCipheriv,createDecipheriv,createHash,createHmac,randomBytes } from 'node:crypto';
 import { compare,hash } from 'bcryptjs';
 import type { PoolClient } from 'pg';
 import { canRecoverAccountPasswords,type PermissionAccount } from '@/lib/management/permissions';
 
 type Database=Pick<PoolClient,'query'>;
-export class AccountPasswordError extends Error {constructor(message:string,public status=400){super(message);}}
-export function validateNewPassword(value:unknown):string {
-  if(typeof value!=='string'||value.length<8||value.length>128||Buffer.byteLength(value,'utf8')>72)throw new AccountPasswordError('Mật khẩu cần ít nhất 8 ký tự và không quá 72 byte.');
-  return value;
-}
+import { AccountPasswordError,validateNewPassword } from '../../../shared/account-password-validation';
+export { AccountPasswordError,validateNewPassword } from '../../../shared/account-password-validation';
 const fingerprint=(passwordHash:string)=>createHash('sha256').update(passwordHash).digest('hex');
 function key(){const secret=process.env.MANAGEMENT_SESSION_SECRET;if(!secret||secret.length<32)throw new Error('Thiếu khóa bảo vệ mật khẩu.');return createHash('sha256').update('himoto-account-passwords-v1:'+secret).digest();}
+// One-way request fingerprint keyed with the server secret, never plaintext in the ledger.
+export function accountPasswordRequestFingerprint(value:string){return createHmac('sha256',key()).update(value).digest('hex');}
 export function sealAccountPassword(id:number,password:string){
   const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key(),iv);cipher.setAAD(Buffer.from(`himoto-account-password:${id}`));
   const body=Buffer.concat([cipher.update(password,'utf8'),cipher.final()]);

@@ -23,7 +23,7 @@ function summarize(batches: CustomerStoreBatch[], committed = false): CustomerSt
   };
 }
 
-export async function previewCustomerStoreBatches(inputs: CustomerStoreInput[], check: CheckStores, onProgress: (progress: CustomerStoreProgress, result: CustomerStoreResult) => void): Promise<CustomerStorePreview> {
+export function prepareCustomerStoreInputs(inputs: CustomerStoreInput[]): CustomerStoreInput[] {
   // Check the whole file before sending its first batch: duplicates in later
   // batches must also exclude their earlier occurrences from any update.
   const counts = new Map<string, number>();
@@ -31,8 +31,11 @@ export async function previewCustomerStoreBatches(inputs: CustomerStoreInput[], 
     const card = input.values.id_card.replace(/\s/g, '');
     if (card) counts.set(card, (counts.get(card) || 0) + 1);
   }
-  const prepared = inputs.map(input => (counts.get(input.values.id_card.replace(/\s/g, '')) || 0) > 1
+  return inputs.map(input => (counts.get(input.values.id_card.replace(/\s/g, '')) || 0) > 1
     ? { ...input, errors: [...new Set([...(input.errors || []), CUSTOMER_STORE_DUPLICATE])] } : input);
+}
+export async function previewCustomerStoreBatches(inputs: CustomerStoreInput[], check: CheckStores, onProgress: (progress: CustomerStoreProgress, result: CustomerStoreResult) => void): Promise<CustomerStorePreview> {
+  const prepared = prepareCustomerStoreInputs(inputs);
   const batches: CustomerStoreBatch[] = [];
   const count = Math.ceil(prepared.length / CUSTOMER_STORE_BATCH_SIZE);
   for (let start = 0; start < prepared.length; start += CUSTOMER_STORE_BATCH_SIZE) {

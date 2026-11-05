@@ -1,3 +1,4 @@
+import { CASHBOOK_ACCOUNTS_SQL } from '@/lib/server/cashbook-account-domain';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { himotoPool, ownerDatabase } from '@/lib/server/himoto-database';
@@ -6,8 +7,7 @@ import { protectDatabaseRequest } from '@/lib/server/management-session';
 import { STORE_SELECT_SQL } from '@/lib/server/store-management';
 import { createAccount, deleteAccount, listAccountTransactions, parseAccountCollectionPath, parseAccountPath, updateAccount,setAccountStatus } from '@/lib/server/cashbook-accounts';
 import { createStaff, parseStaffPath, updateStaff } from '@/lib/server/staff-management';
-import { parseCustomerRelatives } from '@/lib/management/customer-relatives';
-import { validIdentityIssueDate } from '@/lib/management/customer-identity';
+import { CustomerWriteError, parseCustomerWrite, insertCustomer, updateCustomer } from '@/lib/server/customer-writes';
 import { CUSTOMER_PROFILE_SQL, CUSTOMER_SEARCH_SQL } from '@/lib/server/customer-search';
 import { CASHBOOK_LIST_SQL, CashbookQueryError, listCashbook } from '@/lib/server/cashbook-list';
 import { ManagementTableError, readManagementTable } from '@/lib/server/management-table';
@@ -98,29 +98,7 @@ const listQueries: Record<string, QueryConfig> = {
   transactions: {
     sql: `${CASHBOOK_LIST_SQL} ORDER BY t.id DESC`,
   },
-  'cashbook/accounts': {
-    sql: `SELECT a.kind, a.id, a.store_id, s.store_name, a.label, a.name, a.bank_name, a.owner_name, a.account_number, a.owner_type, a.status, a.opening_balance,
-                 COALESCE(t.income, 0) AS income, COALESCE(t.expense, 0) AS expense, COALESCE(t.voucher_count, 0)::int AS voucher_count,
-                 a.opening_balance + COALESCE(t.income, 0) - COALESCE(t.expense, 0) AS balance
-          FROM (
-            SELECT 'bank' AS kind, b.id, b.store_id, concat_ws(' · ', b.bank_name, b.owner_name, b.account_number) AS label, NULL::text AS name,
-                   b.bank_name::text AS bank_name, b.owner_name::text AS owner_name, b.account_number::text AS account_number,
-                   COALESCE(b.owner_type, '') AS owner_type, b.status, COALESCE(b.opening_balance, 0) AS opening_balance
-            FROM himoto.banks b
-            UNION ALL
-            SELECT 'cash', c.id, c.store_id, COALESCE(NULLIF(c.name, ''), 'Két tiền mặt #' || c.id::text), c.name::text, NULL, NULL, NULL, '', c.status, COALESCE(c.opening_balance, 0)
-            FROM himoto.cash c
-          ) a
-          LEFT JOIN himoto.stores s ON s.id = a.store_id
-          LEFT JOIN (
-            SELECT CASE WHEN cash_id IS NOT NULL THEN 'cash' ELSE 'bank' END AS kind, COALESCE(cash_id, bank_id) AS account_id,
-                   sum(value) FILTER (WHERE type IN ('in', 'addon')) AS income, sum(value) FILTER (WHERE type = 'out') AS expense, count(*) AS voucher_count
-            FROM himoto.transactions
-            WHERE status = 'approved' AND (cash_id IS NOT NULL OR bank_id IS NOT NULL)
-            GROUP BY 1, 2
-          ) t ON t.kind = a.kind AND t.account_id = a.id
-          ORDER BY a.kind, a.id`,
-  },
+  'cashbook/accounts': { sql: `${CASHBOOK_ACCOUNTS_SQL} ORDER BY a.kind,a.id` },
 };
 
 async function readAll(query: QueryConfig) {
@@ -250,6 +228,23 @@ async function GETHandler(request: NextRequest, { params }: Params) {
   }
 }
 
+async function writeCustomer(request: NextRequest, id: number | null) {
+  let data: ReturnType<typeof parseCustomerWrite>;
+  try { data = parseCustomerWrite(await request.json(), id === null ? 'create' : 'update'); }
+  catch (error) { return NextResponse.json({ status: 'error', message: error instanceof CustomerWriteError ? error.message : 'Thông tin khách hàng không hợp lệ.' }, { status: 400 }); }
+  const client = await himotoPool.connect();
+  try {
+    await client.query('BEGIN');
+    const row = id === null ? await insertCustomer(client, data) : await updateCustomer(client, id, data);
+    await client.query('COMMIT');
+    return NextResponse.json({ status: 'success', data: row }, { status: id === null ? 201 : 200 });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (error instanceof CustomerWriteError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    return failureResponse(id === null ? 'Không lưu được khách hàng.' : 'Không lưu được thay đổi khách hàng.', error);
+  } finally { client.release(); }
+}
+
 async function POSTHandler(request: NextRequest, { params }: Params) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
@@ -260,79 +255,7 @@ async function POSTHandler(request: NextRequest, { params }: Params) {
   if (newAccountKind) return createAccount(newAccountKind, request);
   if (path.join('/') !== 'customers') return NextResponse.json({ status: 'error' }, { status: 404 });
 
-  let body: Record<string, unknown>;
-  try {
-    const parsed: unknown = await request.json();
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid body');
-    body = parsed as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ status: 'error', message: 'Thông tin khách hàng không hợp lệ.' }, { status: 400 });
-  }
-
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
-  const email = typeof body.email === 'string' ? body.email.trim() : '';
-  const address = typeof body.address === 'string' ? body.address.trim() : '';
-  const idCard = typeof body.id_card === 'string' ? normalizeId(body.id_card) : '';
-  const customerType=body.customer_type==='foreign'?'foreign':'vietnam';
-  const nationality=typeof body.nationality==='string'?body.nationality.trim():'';
-  const contactChannel=typeof body.contact_channel==='string'?body.contact_channel.trim():'';
-  const contactDetail=typeof body.contact_detail==='string'?body.contact_detail.trim():'';
-  const foreign=customerType==='foreign';
-  if(body.customer_type!==undefined&&(typeof body.customer_type!=='string'||!['','vietnam','foreign'].includes(body.customer_type))||[nationality,contactChannel,contactDetail,phone].some(value=>value.length>1000)||foreign&&!phone&&!contactDetail)return NextResponse.json({status:'error',message:'Nhập kênh liên hệ hợp lệ của khách nước ngoài.'},{status:400});
-  const storeId = body.store_id == null || body.store_id === '' ? null : Number(body.store_id);
-  const status = String(body.status || 'active');
-  const incomplete = body.allow_incomplete === true && status === 'draft';
-  if (body.allow_incomplete !== undefined && (typeof body.allow_incomplete !== 'boolean' || body.allow_incomplete && status !== 'draft')) return NextResponse.json({status:'error',message:'Hồ sơ tạm cần chọn trạng thái Chưa hoàn tất.'},{status:400});
-  const phoneOk = foreign || (!phone && incomplete) || /^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, ''));
-  const warning = typeof body.warning_note === 'string' ? body.warning_note.trim() : '';
-  const driverLicenseNumber = typeof body.driver_license_number === 'string' ? body.driver_license_number.trim() : '';
-  const driverLicenseIssuedOn = typeof body.driver_license_issued_on === 'string' ? body.driver_license_issued_on.trim() : '';
-  const idCardIssuedOn = typeof body.id_card_issued_on === 'string' ? body.id_card_issued_on.trim() : '';
-  const idCardIssuedBy = typeof body.id_card_issued_by === 'string' ? body.id_card_issued_by.trim() : '';
-  if (!validIdentityIssueDate(idCardIssuedOn) || idCardIssuedBy.length > 255) return NextResponse.json({ status: 'error', message: 'Ngày cấp hoặc nơi cấp CCCD/CMND không hợp lệ.' }, { status: 400 });
-  let relatives: ReturnType<typeof parseCustomerRelatives>;
-  try { relatives = parseCustomerRelatives(body.relatives ?? []); }
-  catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
-  if (!name || !foreign && !incomplete && !address || !phoneOk || (idCard ? foreign ? idCard.length>100 : !/^\d{9}$|^\d{12}$/.test(idCard) : !incomplete) ||
-      (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
-      !validIdentityIssueDate(driverLicenseIssuedOn) || driverLicenseNumber.length > 100 ||
-      (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
-    return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, điện thoại, CCCD/CMND, địa chỉ và email.' }, { status: 400 });
-  }
-
-  const client = await himotoPool.connect();
-  try {
-    await client.query('BEGIN');
-    // Serialize duplicate preflight with Excel imports and other customer writes.
-    await client.query("SET LOCAL lock_timeout = '5s'");
-    await client.query('LOCK TABLE himoto.customers IN SHARE ROW EXCLUSIVE MODE');
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [idCard]);
-    const duplicate = await client.query(
-      'SELECT id FROM himoto.find_customer_duplicate($1,$2,NULL) AS id WHERE id IS NOT NULL',
-      [idCard,phone.replace(/\D/g,'')],
-    );
-    if (duplicate.rowCount) {
-      await client.query('ROLLBACK');
-      return NextResponse.json({ status: 'error', message: 'Số CCCD/CMND này đã có trong danh sách khách hàng.' }, { status: 409 });
-    }
-    const result = await client.query(
-      `INSERT INTO himoto.customers (name, phone, email, address, id_card, status, store_id, warning, driver_license_number, driver_license_issued_on, relatives, id_card_issued_on, id_card_issued_by, customer_type, nationality, contact_channel, contact_detail, created_at, updated_at)
-       VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5,''), $6, $7, $8, NULLIF($9,''), NULLIF($10,'')::date, $11::jsonb, NULLIF($12,'')::date, NULLIF($13,''), $14, $15, $16, $17, now(), now())
-       RETURNING id, name, phone, email, address, id_card, driver_license_number, driver_license_issued_on::text AS driver_license_issued_on,
-                 CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
-                      WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,
-                 warning, created_at, xmin::text AS customer_revision, id_card_issued_on, id_card_issued_by, relatives, store_id, customer_type, nationality, contact_channel, contact_detail`,
-      [name, phone, email, address, idCard, status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1, storeId, status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning || 'Cần lưu ý' : null, driverLicenseNumber, driverLicenseIssuedOn, JSON.stringify(relatives), idCardIssuedOn, idCardIssuedBy, customerType, nationality, contactChannel, contactDetail],
-    );
-    await client.query('COMMIT');
-    return NextResponse.json({ status: 'success', data: result.rows[0] }, { status: 201 });
-  } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
-    return failureResponse('Không lưu được khách hàng.', error);
-  } finally {
-    client.release();
-  }
+  return writeCustomer(request, null);
 }
 
 async function getCustomerId(params: Params['params']) {
@@ -363,85 +286,7 @@ async function PATCHHandler(request: NextRequest, { params }: Params) {
   const id = await getCustomerId(params);
   if (!id) return NextResponse.json({ status: 'error', message: 'Mã khách hàng không hợp lệ.' }, { status: 400 });
 
-  let body: Record<string, unknown>;
-  try {
-    const parsed: unknown = await request.json();
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid body');
-    body = parsed as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ status: 'error', message: 'Thông tin khách hàng không hợp lệ.' }, { status: 400 });
-  }
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
-  const email = typeof body.email === 'string' ? body.email.trim() : '';
-  const address = typeof body.address === 'string' ? body.address.trim() : '';
-  const idCard = typeof body.id_card === 'string' ? normalizeId(body.id_card) : '';
-  const customerType=body.customer_type==='foreign'?'foreign':'vietnam';
-  const nationality=typeof body.nationality==='string'?body.nationality.trim():'';
-  const contactChannel=typeof body.contact_channel==='string'?body.contact_channel.trim():'';
-  const contactDetail=typeof body.contact_detail==='string'?body.contact_detail.trim():'';
-  const foreign=customerType==='foreign';
-  if(body.customer_type!==undefined&&(typeof body.customer_type!=='string'||!['','vietnam','foreign'].includes(body.customer_type))||[nationality,contactChannel,contactDetail,phone].some(value=>value.length>1000)||foreign&&!phone&&!contactDetail)return NextResponse.json({status:'error',message:'Nhập kênh liên hệ hợp lệ của khách nước ngoài.'},{status:400});
-  const warning = typeof body.warning_note === 'string' ? body.warning_note.trim() : '';
-  const storeId = body.store_id == null || body.store_id === '' ? null : Number(body.store_id);
-  const status = String(body.status || '');
-  const driverLicenseNumber = typeof body.driver_license_number === 'string' ? body.driver_license_number.trim() : '';
-  const driverLicenseIssuedOn = typeof body.driver_license_issued_on === 'string' ? body.driver_license_issued_on.trim() : '';
-  const idCardIssuedOn = typeof body.id_card_issued_on === 'string' ? body.id_card_issued_on.trim() : '';
-  const idCardIssuedBy = typeof body.id_card_issued_by === 'string' ? body.id_card_issued_by.trim() : '';
-  if (!validIdentityIssueDate(idCardIssuedOn) || idCardIssuedBy.length > 255) return NextResponse.json({ status: 'error', message: 'Ngày cấp hoặc nơi cấp CCCD/CMND không hợp lệ.' }, { status: 400 });
-  let relatives: ReturnType<typeof parseCustomerRelatives> | undefined;
-  try { relatives = body.relatives === undefined ? undefined : parseCustomerRelatives(body.relatives); }
-  catch (cause) { return NextResponse.json({ status: 'error', message: cause instanceof Error ? cause.message : 'Thông tin người thân không hợp lệ.' }, { status: 400 }); }
-  const phoneOk = foreign || (status === 'draft' && !phone) || /^\+?\d{9,13}$/.test(phone.replace(/[\s.()-]/g, ''));
-  if (!name || !phoneOk || (idCard && (foreign?idCard.length>100:!/^\d{9}$|^\d{12}$/.test(idCard))) ||
-      (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || !['active', 'warning', 'blacklist', 'draft'].includes(status) ||
-      !validIdentityIssueDate(driverLicenseIssuedOn) || driverLicenseNumber.length > 100 ||
-      (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0))) {
-    return NextResponse.json({ status: 'error', message: 'Kiểm tra họ tên, số điện thoại, giấy tờ, email, cơ sở và trạng thái hồ sơ.' }, { status: 400 });
-  }
-
-  const client = await himotoPool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query("SET LOCAL lock_timeout = '5s'");
-    await client.query('LOCK TABLE himoto.customers IN SHARE ROW EXCLUSIVE MODE');
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`customer:${idCard || `id:${id}`}`]);
-    const duplicate = idCard ? await client.query(
-      'SELECT id FROM himoto.find_customer_duplicate($2,\'\',$1) AS id WHERE id IS NOT NULL', [id, idCard],
-    ) : { rowCount: 0 };
-    if (duplicate.rowCount) {
-      await client.query('ROLLBACK');
-      return NextResponse.json({ status: 'error', message: 'Số CCCD/CMND này đã thuộc hồ sơ khách hàng khác.' }, { status: 409 });
-    }
-    const dbStatus = status === 'blacklist' ? 2 : status === 'draft' ? 0 : 1;
-    const dbWarning = status === 'blacklist' ? warning || 'Blacklist' : status === 'warning' ? warning || 'Cần lưu ý' : null;
-    const result = await client.query(
-      `UPDATE himoto.customers SET name=$2, phone=$3, address=NULLIF($4,''),
-         id_card=NULLIF($5,''), status=$6, warning=$7, store_id=$8,
-         driver_license_number=NULLIF($9,''), driver_license_issued_on=NULLIF($10,'')::date,
-         relatives=COALESCE($11::jsonb, relatives),
-         id_card_issued_on=CASE WHEN $12::boolean THEN NULLIF($13,'')::date ELSE id_card_issued_on END,
-         id_card_issued_by=CASE WHEN $14::boolean THEN NULLIF($15,'') ELSE id_card_issued_by END, customer_type=$16, nationality=$17, contact_channel=$18, contact_detail=$19, updated_at=now()
-       WHERE id=$1
-       RETURNING id, name, email, phone, address, id_card, driver_license_number, driver_license_issued_on::text AS driver_license_issued_on,
-         CASE WHEN status = 2 THEN 'bad_debt' WHEN NULLIF(BTRIM(warning), '') IS NOT NULL THEN 'warning'
-              WHEN status = 0 THEN 'draft' ELSE 'active' END AS status,
-         warning AS warning_note, created_at, xmin::text AS customer_revision, id_card_issued_on, id_card_issued_by, relatives, store_id, customer_type, nationality, contact_channel, contact_detail`,
-      [id, name, phone, address, idCard, dbStatus, dbWarning, storeId, driverLicenseNumber, driverLicenseIssuedOn, relatives === undefined ? null : JSON.stringify(relatives), 'id_card_issued_on' in body, idCardIssuedOn, 'id_card_issued_by' in body, idCardIssuedBy, customerType, nationality, contactChannel, contactDetail],
-    );
-    if (!result.rowCount) {
-      await client.query('ROLLBACK');
-      return NextResponse.json({ status: 'error', message: 'Không tìm thấy khách hàng cần cập nhật.' }, { status: 404 });
-    }
-    await client.query('COMMIT');
-    return NextResponse.json({ status: 'success', data: result.rows[0] });
-  } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
-    return failureResponse('Không lưu được thay đổi khách hàng.', error);
-  } finally {
-    client.release();
-  }
+  return writeCustomer(request, id);
 }
 
 async function DELETEHandler(request: NextRequest, { params }: Params) {
