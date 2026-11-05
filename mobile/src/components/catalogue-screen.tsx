@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -228,11 +229,11 @@ export function CatalogueScreen({
     setTo("");
     setStoreBasis("source");
   }
-  return (
-    <SafeAreaView
-      edges={["top", "left", "right"]}
-      style={{ flex: 1, backgroundColor: theme.background }}
-    >
+  function fetchMore() {
+    if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError)
+      void query.fetchNextPage({ cancelRefetch: false });
+  }
+  const toolbar = (
       <View
         style={[
           styles.toolbar,
@@ -436,14 +437,21 @@ export function CatalogueScreen({
           )}
         </View>
       </View>
+  );
+  return (
+    <SafeAreaView
+      edges={["top", "left", "right"]}
+      style={{ flex: 1, backgroundColor: theme.background }}
+    >
       <FlatList
         ref={list}
+        style={{ flex: 1 }}
         data={records}
         keyExtractor={(record) => String(record.id)}
         renderItem={({ item }) => <RecordCard record={item} kind={kind} scope={scope} />}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+        keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         refreshControl={
           <RefreshControl
@@ -456,16 +464,16 @@ export function CatalogueScreen({
           />
         }
         onEndReachedThreshold={0.4}
-        onEndReached={() => {
-          if (
-            query.hasNextPage &&
-            !query.isFetching &&
-            !query.isFetchNextPageError
-          )
-            void query.fetchNextPage();
+        onEndReached={fetchMore}
+        scrollEventThrottle={100}
+        onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+          // Cached filter results can reuse a content length already reported by
+          // onEndReached. Check the actual scroll distance as well in that case.
+          if (contentSize.height > 0 && contentSize.height - contentOffset.y - layoutMeasurement.height <= layoutMeasurement.height * 0.4)
+            fetchMore();
         }}
         ListHeaderComponent={
-          query.isError && !!records.length ? (
+          <>{toolbar}{query.isError && !!records.length ? (
             <View style={{ gap: 12, marginBottom: 12 }}>
               <InlineError message="Chưa cập nhật được dữ liệu. Thông tin đang hiển thị có thể đã thay đổi." />
               <Button
@@ -476,7 +484,7 @@ export function CatalogueScreen({
                 }}
               />
             </View>
-          ) : undefined
+          ) : null}</>
         }
         ListEmptyComponent={
           !datesValid ? <StateView title="Kiểm tra khoảng ngày" message="Chọn ngày kết thúc từ ngày bắt đầu trở đi." /> : query.isPending ? (
@@ -566,7 +574,6 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
-    paddingHorizontal: 20,
     gap: 10,
   },
   list: {

@@ -242,6 +242,7 @@ on:
       - 'scripts/check-mobile-gps-fixture.py'
       - 'scripts/check-mobile-gps-native.py'
       - 'scripts/check-mobile-gps-ui.py'
+      - 'scripts/check-mobile-list-scroll-ui.py'
       - 'scripts/mobile-gps-fixture-server.py'
       - 'scripts/lib/mobile_gps_fixture.py'
       - 'src/lib/management/gps.ts'
@@ -482,6 +483,7 @@ jobs:
             fi
           }
           run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-ui.py --output .backups/mobile-ci-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-list-scroll-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-list-scroll-ui
           run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --output .backups/mobile-ci-draft-ui
           run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --duplicates-only --output .backups/mobile-ci-duplicate-ui
           run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --documents-only --output .backups/mobile-ci-document-ui
@@ -508,6 +510,7 @@ jobs:
           name: mobile-browser-acceptance
           path: |
             .backups/mobile-ci-ui/
+            .backups/mobile-ci-list-scroll-ui/
             .backups/mobile-ci-notifications/
             .backups/mobile-ci-notifications-ui/
             .backups/mobile-ci-draft-ui/
