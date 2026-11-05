@@ -27,7 +27,7 @@ export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
   const integer=(key:string,fallback:number,max:number)=>{const value=params.get(key);if(value===null)return fallback;if(!/^[1-9]\d*$/.test(value)||!Number.isSafeInteger(Number(value))||Number(value)>max)throw new ManagementTableError('Phân trang không hợp lệ.');return Number(value);};
   const page=integer('page',1,1000000),size=integer('size',10,50),direction=params.get('direction')||'asc',scope=params.get('scope')||'';
-  if(!['asc','desc'].includes(direction)||!['','drafts','vat','overdue','ownership','due','renewable','remindable'].includes(scope)||kind!=='contracts'&&scope)throw new ManagementTableError('Phạm vi hoặc sắp xếp không hợp lệ.');
+  if(!['asc','desc'].includes(direction)||!['','backfill','active','drafts','vat','overdue','ownership','due','renewable','remindable'].includes(scope)||kind!=='contracts'&&scope)throw new ManagementTableError('Phạm vi hoặc sắp xếp không hợp lệ.');
   const sort=params.get('sort')||'code',allowed=new Set([...MANAGEMENT_CONFIG[kind].columns.map(column=>column.key),'code','contract_type_name','overdue_days','overdue_minutes','overdue_fee_estimate','rental_debt_amount','contract_signed_at','monitoring_amount','contract_gps_status','billing_next_due_at','billing_due_amount','company_paid_amount']);
   if(!allowed.has(sort))throw new ManagementTableError('Cột sắp xếp không hợp lệ.');
   const store=params.get('store')||'all';if(store!=='all'&&(!/^[1-9]\d*$/.test(store)||!Number.isSafeInteger(Number(store))))throw new ManagementTableError('Cơ sở không hợp lệ.');
@@ -45,6 +45,8 @@ export function parseManagementTable(kind:TableKind,params:URLSearchParams):Mana
   return {kind,page,size,sort,direction:direction as 'asc'|'desc',scope,store,...(storeBasis==='warehouse'?{storeBasis:'warehouse' as const}:{}),...(recent?{recentDays:Number(recent)}:{}),query:{...EMPTY_QUERY,filters,search,status,startDate:from,endDate:to,overdueDays:days,overdueCompare:compare as 'eq'|'gt'|'lt',...(bucket?{overdueBucket:bucket as OverdueBucket}:{})}};
 }
 function contractScopeClause(scope:string):string {
+  if(scope==='backfill')return ` AND o.order_status NOT IN ('draft','cancelled')`;
+  if(scope==='active')return ` AND o.order_status IN ('renting','overdue','wait_payment')`;
   // Return dates can live only on legacy vehicle lines. Hydrated monitoring
   // applies the actual overdue test; filtering by the header first loses them.
   if(scope==='overdue')return contractPageScopeClause(scope);
@@ -52,6 +54,7 @@ function contractScopeClause(scope:string):string {
     : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
 }
 function contractPageScopeClause(scope:string):string {
+  if(scope==='active'||scope==='backfill')return contractScopeClause(scope);
   if(scope==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment','bad_debt')`;
   if(scope==='due'||scope==='renewable')return contractScopeClause(scope);
   return contractListScopeClause(scope);
@@ -283,7 +286,7 @@ export function vehiclePageSql(scopeClause:string) {
     ${VEHICLE_RENTAL_SOURCE_JOIN_SQL}
     WHERE v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${scopeClause}`;
 }
-function vehicleHydrateSql() {
+export function vehicleHydrateSql() {
   return `SELECT v.id, v.name, v.brand, v.type, v.year, v.license, v.odometer,
     v.cost_price, v.daily_price, NULL::numeric AS monthly_price,
     v.color, v.chassis, v.engine, v.store_id, v.current_store_id, s.store_name, os.store_name AS owner_store_name, v.xmin::text AS vehicle_revision,
@@ -438,7 +441,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     // Installment overdue state and age groups depend on the hydrated balance.
     // Read candidates for this tab in bounded batches and filter BEFORE paging;
     // otherwise a paid/not-yet-due rental can occupy an overdue result slot.
-    const filterBeforePaging=kind==='contracts'&&Boolean(input.scope==='due'||input.query.status==='overdue'||input.query.overdueBucket||input.query.overdueDays||input.query.startDate||input.query.endDate);
+    const filterBeforePaging=kind==='contracts'&&Boolean(input.scope==='due'||input.scope==='overdue'||input.query.status==='overdue'||input.query.overdueBucket||input.query.overdueDays||input.query.startDate||input.query.endDate);
     const take=filterBeforePaging?250:input.size;
     const search=kind==='contracts'?contractSearchSql(input.query.search)
       :kind==='customers'?customerSearchSql(input.query.search)
@@ -489,6 +492,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
         batch=batch.map(row=>applyInstallmentBilling(row,now));
         if(monitoring)batch=(await legacyFees(batch)).map(row=>withContractMonitoring(row,now));
         if(input.scope==='due')batch=batch.filter(row=>row.billing_overdue_at&&Number(row.billing_due_amount)>0);
+        if(input.scope==='overdue')batch=batch.filter(row=>row.status==='overdue'||row.status==='bad_debt'||row.collection_overdue===1);
       }
       if(filterBeforePaging)batch=filterRows(batch,{...input.query,search:''},'all');
       matches.push(...batch);

@@ -1,0 +1,553 @@
+name: Mobile checks
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'mobile/**'
+      - 'shared/**'
+      - 'src/lib/server/mobile-*.ts'
+      - 'src/lib/server/mobile-*.tsx'
+      - 'src/lib/server/customer-import.ts'
+      - 'src/lib/management/customer-import.ts'
+      - 'src/lib/management/customer-excel.ts'
+      - 'src/lib/management/customer-store-batches.ts'
+      - 'src/lib/management/customer-store-import.ts'
+      - 'src/lib/server/customer-store-import.ts'
+      - 'src/lib/server/vehicle-import.ts'
+      - 'src/lib/management/vehicle-import.ts'
+      - 'src/lib/management/vehicle-excel.ts'
+      - 'src/components/management/VehicleExcelActions.tsx'
+      - 'scripts/lib/mobile_vehicle_import_sql.cjs'
+      - 'scripts/check-mobile-vehicle-import-ui.py'
+      - 'scripts/lib/mobile_print_import_fixture.py'
+      - 'scripts/check-mobile-print-import-native.py'
+      - 'scripts/lib/mobile_customer_store_import_sql.cjs'
+      - 'scripts/check-mobile-import-export-ui.py'
+      - 'src/lib/management/management-export.ts'
+      - 'src/components/management/ManagementPage.tsx'
+      - 'src/lib/management/contract-monitoring-config.ts'
+      - 'scripts/check-mobile-catalogue-export.cjs'
+      - 'scripts/check-mobile-workbook-stream.cjs'
+      - 'src/components/contracts/ContractPrintBody.tsx'
+      - 'src/components/contracts/ContractPrintDocument.tsx'
+      - 'src/components/management/ContractPaymentQrMarkup.tsx'
+      - 'src/components/management/ContractPaymentQr.tsx'
+      - 'src/lib/server/contract-qr.ts'
+      - 'src/styles/contract-print.css'
+      - 'next.config.js'
+      - 'scripts/check-mobile-customer-import.cjs'
+      - 'scripts/check-mobile-record-video.cjs'
+      - 'scripts/check-mobile-direct-video.cjs'
+      - 'scripts/lib/mobile_direct_video_sql.cjs'
+      - 'scripts/lib/mobile_media_history_sql.cjs'
+      - 'scripts/check-mobile-record-video-ui.py'
+      - 'scripts/check-mobile-record-video-native.py'
+      - 'src/lib/server/cloudinary-photos.ts'
+      - 'src/lib/server/cloudfly-videos.ts'
+      - 'src/lib/server/browser-videos.ts'
+      - 'src/lib/server/contract-renewal-version.ts'
+      - 'scripts/check-mobile-print.cjs'
+      - 'scripts/lib/mobile_contract_print_sql.cjs'
+      - 'scripts/lib/mobile_contract_qr_sql.cjs'
+      - 'src/lib/server/customer-writes.ts'
+      - 'src/lib/server/contract-payments.ts'
+      - 'src/lib/server/contract-returns.ts'
+      - 'src/lib/server/mobile-recovery-write.ts'
+      - 'src/lib/server/vehicle-actions.ts'
+      - 'src/lib/server/vehicle-transfers.ts'
+      - 'src/lib/server/vehicle-audit.ts'
+      - 'src/lib/management/contract-payments.ts'
+      - 'src/lib/server/contract-renewal-version.ts'
+      - 'src/lib/server/contract-renewals.ts'
+      - 'src/lib/server/contract-renewal-collection.ts'
+      - 'src/lib/server/contract-renewal-line.ts'
+      - 'src/lib/server/renewal-collection-period.ts'
+      - 'src/lib/management/contract-renewals.ts'
+      - 'src/app/api/auth/**'
+      - 'src/lib/server/management-session.ts'
+      - 'src/lib/server/management-table.ts'
+      - 'src/app/api/mobile/**'
+      - 'scripts/check-mobile-api.cjs'
+      - 'scripts/check-mobile-workspaces.cjs'
+      - 'scripts/check-mobile-duty-roster.cjs'
+      - 'scripts/check-mobile-vehicles.cjs'
+      - 'scripts/check-mobile-stores.cjs'
+      - 'scripts/check-mobile-staff.cjs'
+      - 'scripts/check-mobile-cashbook.cjs'
+      - 'scripts/check-mobile-reports.cjs'
+      - 'scripts/check-mobile-debt-reminders.cjs'
+      - 'scripts/check-mobile-shift-reports.cjs'
+      - 'scripts/check-mobile-battery.cjs'
+      - 'scripts/check-mobile-contract-types.cjs'
+      - 'scripts/check-mobile-managed-accounts.cjs'
+      - 'scripts/check-mobile-integrations.cjs'
+      - 'scripts/check-mobile-integrations-native.py'
+      - 'scripts/lib/mobile_integrations_fixture.py'
+      - 'scripts/check-mobile-operations.cjs'
+      - 'scripts/check-mobile-backfill.cjs'
+      - 'scripts/check-mobile-backfill-native.py'
+      - 'scripts/lib/mobile_backfill_fixture.py'
+      - 'scripts/lib/mobile_backfill_sql.cjs'
+      - 'scripts/check-mobile-renewal-parity.cjs'
+      - 'scripts/check-mobile-contract-approval.cjs'
+      - 'scripts/check-mobile-contract-edit.cjs'
+      - 'scripts/check-mobile-contract-edit-native.py'
+      - 'scripts/check-mobile-contract-corrections-native.py'
+      - 'scripts/check-mobile-contract-lifecycle-native.py'
+      - 'scripts/check-mobile-return-corrections-native.py'
+      - 'scripts/lib/mobile_contract_edit_fixture.py'
+      - 'scripts/lib/mobile_contract_corrections_fixture.py'
+      - 'scripts/lib/mobile_contract_lifecycle_fixture.py'
+      - 'scripts/lib/mobile_return_corrections_fixture.py'
+      - 'scripts/lib/mobile_contract_corrections_sql.cjs'
+      - 'scripts/lib/mobile_contract_lifecycle_sql.cjs'
+      - 'scripts/lib/mobile_rental_terms_sql.cjs'
+      - 'scripts/lib/mobile_draft_delete_sql.cjs'
+      - 'scripts/lib/mobile_terms_actions_fixture.py'
+      - 'scripts/check-mobile-terms-actions-native.py'
+      - 'scripts/lib/mobile_return_corrections_sql.cjs'
+      - 'src/lib/server/contract-edit.ts'
+      - 'src/lib/server/contract-profile.ts'
+      - 'src/lib/server/contract-lifecycle.ts'
+      - 'src/lib/server/contract-draft-delete.ts'
+      - 'src/lib/server/rental-terms.ts'
+      - 'src/lib/server/ownership-terms.ts'
+      - 'src/lib/server/contract-history.ts'
+      - 'src/lib/server/receipt-corrections.ts'
+      - 'src/lib/server/renewal-payment-corrections.ts'
+      - 'src/lib/server/return-corrections.ts'
+      - 'scripts/check-mobile-contract-approval-native.py'
+      - 'scripts/lib/mobile_contract_approval_fixture.py'
+      - 'src/lib/server/contract-approval.ts'
+      - 'src/lib/management/contract-approval.ts'
+      - 'scripts/check-mobile-renewal-parity-native.py'
+      - 'scripts/lib/mobile_renewal_parity_sql.cjs'
+      - 'scripts/lib/mobile_renewal_parity_fixture.py'
+      - 'src/lib/management/rental-time.ts'
+      - 'src/components/management/ContractRenewalDialog.tsx'
+      - 'src/lib/server/integration-settings.ts'
+      - 'src/lib/server/integration-secrets.ts'
+      - 'src/lib/management/contract-backfill.ts'
+      - 'src/lib/management/contract-telegram.ts'
+      - 'src/lib/management/telegram-destinations.ts'
+      - 'scripts/check-mobile-managed-accounts-native.py'
+      - 'scripts/audit-mobile-managed-accounts-native.py'
+      - 'scripts/lib/mobile_managed_accounts_fixture.py'
+      - 'src/lib/server/account-management.ts'
+      - 'src/lib/server/account-passwords.ts'
+      - 'src/lib/management/permissions.ts'
+      - 'scripts/check-mobile-contract-types-native.py'
+      - 'scripts/lib/mobile_contract_types_fixture.py'
+      - 'src/lib/server/contract-types.ts'
+      - 'src/lib/server/mobile-text-writes.ts'
+      - 'src/lib/management/contract-types.ts'
+      - 'docs/sql/2026-11-03-mobile-text-receipts.sql'
+      - 'scripts/check-mobile-battery-native.py'
+      - 'scripts/lib/mobile_battery_fixture.py'
+      - 'src/lib/server/battery-*.ts'
+      - 'src/lib/management/battery-*.ts'
+      - 'src/components/battery/BatteryContractsPage.tsx'
+      - 'src/lib/management/contract-billing.ts'
+      - 'scripts/check-mobile-shift-reports-native.py'
+      - 'scripts/lib/mobile_shift_reports_fixture.py'
+      - 'src/lib/server/shift-*.ts'
+      - 'src/lib/management/shift-*.ts'
+      - 'src/app/api/auth/shift-reports/**'
+      - 'scripts/check-mobile-debt-reminders-native.py'
+      - 'scripts/lib/mobile_debt_reminders_fixture.py'
+      - 'src/lib/server/debt-reminders.ts'
+      - 'src/lib/management/debt-reminders.ts'
+      - 'scripts/check-mobile-reports-native.py'
+      - 'scripts/lib/mobile_reports_fixture.py'
+      - 'src/lib/server/rental-revenue.ts'
+      - 'src/lib/server/estimated-sales.ts'
+      - 'src/lib/server/revenue-ledger.ts'
+      - 'src/lib/server/rental-reports.ts'
+      - 'src/lib/server/owned-fleet-revenue.ts'
+      - 'src/lib/server/new-customers-by-source.ts'
+      - 'src/lib/server/staff-sales.ts'
+      - 'src/lib/server/page-summaries.ts'
+      - 'src/lib/management/revenue-ledger-workbook.ts'
+      - 'src/components/management/RevenueLedger.tsx'
+      - 'scripts/check-mobile-cashbook-native.py'
+      - 'scripts/check-mobile-cashbook-export-native.py'
+      - 'scripts/check-mobile-cashbook-delete-native.py'
+      - 'scripts/lib/mobile_cashbook_bulk_fixture.py'
+      - 'scripts/lib/mobile_cashbook_fixture.py'
+      - 'src/lib/server/cashbook-account-domain.ts'
+      - 'src/lib/server/cashbook-accounts.ts'
+      - 'src/lib/server/cashbook-list.ts'
+      - 'src/lib/management/cashbook.ts'
+      - 'scripts/check-mobile-staff-native.py'
+      - 'src/lib/server/staff-management.ts'
+      - 'src/lib/server/staff-profile-write.ts'
+      - 'src/lib/server/staff-accounts.ts'
+      - 'src/lib/management/staff-positions.ts'
+      - 'scripts/check-mobile-stores-native.py'
+      - 'src/lib/server/store-management.ts'
+      - 'src/lib/management/store-management.ts'
+      - 'scripts/check-mobile-vehicles-native.py'
+      - 'scripts/mobile-vehicle-fixture-server.py'
+      - 'scripts/lib/mobile_vehicle_workspace_fixture.py'
+      - 'scripts/lib/mobile_stores_fixture.py'
+      - 'scripts/lib/mobile_staff_fixture.py'
+      - 'src/lib/server/vehicle-management.ts'
+      - 'src/lib/server/vehicle-history.ts'
+      - 'src/lib/server/vehicle-transfer-history.ts'
+      - 'scripts/check-mobile-demo-native.py'
+      - 'scripts/mobile-demo-fixture-server.py'
+      - 'scripts/lib/mobile_demo_workspace_fixture.py'
+      - 'scripts/lib/mobile_work_access_fixture.py'
+      - 'scripts/check-mobile-draft-work-access.cjs'
+      - 'src/lib/server/duty-roster.ts'
+      - 'scripts/check-mobile-accessibility.cjs'
+      - 'scripts/check-mobile-customers.cjs'
+      - 'scripts/check-mobile-customer-matches.cjs'
+      - 'scripts/check-mobile-customer-documents.cjs'
+      - 'scripts/check-mobile-customer-photo-copy-postgres.cjs'
+      - 'scripts/check-mobile-media-delete-postgres.cjs'
+      - 'scripts/check-mobile-media-delete.cjs'
+      - 'scripts/check-mobile-media-delete-fixture.py'
+      - 'scripts/check-mobile-media-delete-ui.py'
+      - 'scripts/check-mobile-media-delete-native.py'
+      - 'scripts/lib/mobile_media_delete_fixture.py'
+      - 'scripts/check-mobile-customer-photo-copy.cjs'
+      - 'scripts/check-mobile-customer-photo-copy-fixture.py'
+      - 'scripts/check-mobile-customer-photo-copy-ui.py'
+      - 'scripts/check-mobile-customer-photo-copy-native.py'
+      - 'scripts/lib/mobile_customer_photo_copy_fixture.py'
+      - 'scripts/check-mobile-contract-photos.cjs'
+      - 'scripts/check-mobile-contract-work.cjs'
+      - 'scripts/check-mobile-draft-work-controller.cjs'
+      - 'scripts/check-mobile-draft-work-native.py'
+      - 'scripts/check-mobile-draft-work-copy-native.py'
+      - 'scripts/check-mobile-draft-work-transitions.cjs'
+      - 'scripts/check-mobile-draft-work-transitions-native.py'
+      - 'scripts/check-mobile-contract-work-native-files.cjs'
+      - 'scripts/check-mobile-contract-work-disk.cjs'
+      - 'scripts/check-mobile-contract-work-native.py'
+      - 'scripts/check-mobile-contract-photos-fixture.py'
+      - 'scripts/check-mobile-contract-photos-native.py'
+      - 'scripts/check-mobile-contract-photos-ui.py'
+      - 'scripts/lib/mobile_contract_photos_fixture.py'
+      - 'src/lib/management/contract-photos.ts'
+      - 'src/lib/management/photo-slot-groups.ts'
+      - 'scripts/check-mobile-gps.cjs'
+      - 'scripts/check-mobile-session-transition.cjs'
+      - 'scripts/fixtures/mobile-session-legacy.sql'
+      - 'docs/sql/2026-11-03-mobile-session-transition.sql'
+      - 'docs/sql/2026-11-03-mobile-gps-mappings.sql'
+      - 'scripts/check-mobile-gps-fixture.py'
+      - 'scripts/check-mobile-gps-native.py'
+      - 'scripts/check-mobile-gps-ui.py'
+      - 'scripts/mobile-gps-fixture-server.py'
+      - 'scripts/lib/mobile_gps_fixture.py'
+      - 'src/lib/management/gps.ts'
+      - 'src/lib/server/gps-workspace.ts'
+      - 'src/lib/server/gps-sync.ts'
+      - 'src/lib/server/gps-history-sync.ts'
+      - 'scripts/check-mobile-customer-documents-fixture.py'
+      - 'scripts/check-mobile-customer-documents-native.py'
+      - 'scripts/lib/mobile_customer_documents_fixture.py'
+      - 'scripts/lib/mobile_customer_documents_ui.py'
+      - 'scripts/check-mobile-customer-matches-fixture.py'
+      - 'scripts/check-mobile-customer-matches-native.py'
+      - 'scripts/check-mobile-contract-flow-fixture.py'
+      - 'scripts/lib/mobile_customer_matches_fixture.py'
+      - 'scripts/lib/mobile_customer_matches_ui.py'
+      - 'scripts/check-mobile-drafts.cjs'
+      - 'scripts/check-mobile-contracts.cjs'
+      - 'scripts/check-mobile-write-recovery.cjs'
+      - 'scripts/check-mobile-finance.cjs'
+      - 'scripts/check-mobile-finance-sql.cjs'
+      - 'scripts/check-mobile-renewals.cjs'
+      - 'scripts/check-mobile-photo-preparation.cjs'
+      - 'scripts/check-mobile-bills.cjs'
+      - 'scripts/check-mobile-renewal-write.cjs'
+      - 'scripts/check-mobile-renewal-form.cjs'
+      - 'scripts/check-mobile-renewal-period.cjs'
+      - 'scripts/check-mobile-renewal-collection.cjs'
+      - 'scripts/check-mobile-returns.cjs'
+      - 'scripts/check-mobile-return-form.cjs'
+      - 'scripts/check-mobile-swaps.cjs'
+      - 'scripts/check-mobile-vehicle-transfers.cjs'
+      - 'scripts/check-mobile-bad-debt-recovery.cjs'
+      - 'scripts/check-mobile-transfer-fixture.py'
+      - 'scripts/check-mobile-recovery-fixture.py'
+      - 'scripts/check-mobile-recovery-native.py'
+      - 'scripts/mobile-recovery-fixture-server.py'
+      - 'scripts/lib/mobile_bad_debt_recovery_fixture.py'
+      - 'scripts/lib/mobile_bad_debt_recovery_model.py'
+      - 'scripts/lib/mobile_bad_debt_recovery_ui.py'
+      - 'scripts/check-mobile-vehicle-transfer-ui.py'
+      - 'scripts/check-mobile-transfer-native.py'
+      - 'scripts/check-mobile-login-native.py'
+      - 'scripts/check-mobile-login-config.cjs'
+      - 'scripts/lib/mobile_vehicle_transfer_fixture.py'
+      - 'scripts/lib/mobile_fixture_journal.py'
+      - 'scripts/mobile-transfer-fixture-server.py'
+      - 'scripts/lib/mobile_vehicle_transfer_sql.cjs'
+      - 'scripts/lib/mobile_return_sql.cjs'
+      - 'scripts/lib/mobile_bad_debt_recovery_sql.cjs'
+      - 'scripts/lib/mobile_swap_sql.cjs'
+      - 'scripts/lib/mobile_swap_fixture.py'
+      - 'scripts/lib/mobile_swap_ui.py'
+      - 'scripts/check-mobile-swap-native.py'
+      - 'scripts/lib/mobile_return_fixture.py'
+      - 'scripts/lib/mobile_return_ui.py'
+      - 'scripts/check-mobile-native.py'
+      - 'scripts/check-mobile-return-native.py'
+      - 'scripts/check-mobile-return-reopen-native.py'
+      - 'scripts/generate-mobile-bill-fixture.cjs'
+      - 'scripts/check-mobile-bill-image.cjs'
+      - 'scripts/mobile-fixture-server.py'
+      - 'scripts/check-mobile-pending-scope.cjs'
+      - 'scripts/check-mobile-draft-form.cjs'
+      - 'scripts/check-mobile-draft-ui.py'
+      - 'scripts/generate-mobile-draft-fixture.cjs'
+      - 'scripts/fixtures/mobile-draft.json'
+      - 'scripts/lib/mobile_draft_fixture.py'
+      - 'scripts/lib/mobile_contract_fixture.py'
+      - 'scripts/lib/mobile_contract_ui.py'
+      - 'scripts/lib/mobile_recovery_fixture.py'
+      - 'scripts/lib/mobile_finance_fixture.py'
+      - 'scripts/lib/mobile_renewal_fixture.py'
+      - 'scripts/lib/mobile_renewal_native.py'
+      - 'scripts/lib/mobile_renewal_ui.py'
+      - 'scripts/lib/mobile_collection_fixture.py'
+      - 'scripts/lib/mobile_collection_ui.py'
+      - 'scripts/lib/mobile_collection_native.py'
+      - 'scripts/lib/mobile_native_provenance.py'
+      - 'scripts/lib/mobile_native_diagnostics.py'
+      - 'scripts/check-mobile-native-diagnostics.py'
+      - 'scripts/check-mobile-native-keyboard.py'
+      - 'scripts/check-mobile-native-target.py'
+      - 'scripts/check-mobile-collection-selected.py'
+      - 'scripts/check-mobile-pending-bill-native.py'
+      - 'scripts/lib/mobile_native_keyboard.py'
+      - 'scripts/lib/mobile_finance_ui.py'
+      - 'scripts/lib/load-typescript.cjs'
+      - 'scripts/lib/mobile_catalogue_media_fixture.py'
+      - 'scripts/check-mobile-ui.py'
+      - 'scripts/lib/mobile_customer_ui.py'
+      - 'scripts/requirements-mobile-qa.txt'
+      - 'docs/sql/2026-10-31-mobile-sessions.sql'
+      - 'docs/sql/2026-10-31-mobile-writes.sql'
+      - 'docs/sql/2026-11-01-mobile-bills.sql'
+      - 'docs/sql/2026-11-01-mobile-renewals.sql'
+      - 'docs/sql/2026-11-01-mobile-renewal-collections.sql'
+      - 'docs/sql/2026-11-02-mobile-returns.sql'
+      - 'docs/sql/2026-11-02-mobile-recoveries.sql'
+      - 'docs/sql/2026-11-02-ownership-scope-helpers.sql'
+      - 'docs/sql/2026-11-02-contract-vehicle-scope.sql'
+      - 'docs/sql/2026-11-02-contract-vehicle-swaps.sql'
+      - 'docs/sql/2026-11-02-mobile-swaps.sql'
+      - 'docs/sql/2026-11-02-mobile-vehicle-transfers.sql'
+      - '.github/workflows/mobile-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPO_NO_DOTENV: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:release
+      - run: npm run test:login
+      - run: mkdir -p .backups
+      - run: npm run test:mobile
+      - run: python3 scripts/check-mobile-native-diagnostics.py
+      - run: python3 scripts/check-mobile-native-keyboard.py
+      - run: python3 scripts/check-mobile-native-target.py
+      - run: node scripts/check-mobile-contract-import-backup.cjs
+      - run: node scripts/check-mobile-telegram-api.cjs
+      - name: Prepare Python acceptance runtime
+        run: |
+          python3 -m venv .backups/mobile-qa
+          .backups/mobile-qa/bin/pip install -r scripts/requirements-mobile-qa.txt
+          .backups/mobile-qa/bin/python -m playwright install --with-deps chromium
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-transfer-fixture.py
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-recovery-fixture.py
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-contract-flow-fixture.py
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-customer-matches-fixture.py
+      - run: .backups/mobile-qa/bin/python scripts/check-mobile-gps-fixture.py
+      - name: Execute mobile financial, bill and renewal SQL in isolated PostgreSQL
+        run: |
+          npm install --prefix .backups/mobile-sql-qa --no-save --package-lock=false --ignore-scripts @electric-sql/pglite@0.5.14
+          node scripts/check-mobile-web-merge.cjs --suite attendance --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-web-merge.cjs --suite contract-value-sales --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          npm run test:mobile:sql -- --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-customer-matches.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-customer-documents.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-photos.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-customer-photo-copy.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-media-delete.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-record-video.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite --history
+          node scripts/check-mobile-direct-video.cjs
+          node scripts/check-mobile-gps.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-session-transition.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-duty-roster.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-vehicles.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-stores.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-staff.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-cashbook.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-reports.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-debt-reminders.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-shift-reports.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-battery.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-types.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-managed-accounts.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-integrations.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-operations.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-backfill.cjs
+          node scripts/check-mobile-renewal-parity.cjs
+          node scripts/check-mobile-contract-approval.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --lifecycle-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --rental-terms-only --print --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --draft-delete-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --contract-import-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --telegram-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --directory-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --bulk-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-contract-edit.cjs --vehicle-status-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-reports.cjs --dashboard-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-customer-import.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-customer-import.cjs --store-match-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-customer-import.cjs --vehicle-import-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-catalogue-export.cjs
+          node scripts/check-mobile-list-export.cjs
+          node scripts/check-mobile-notifications.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite --output .backups/mobile-ci-notifications
+          node scripts/check-mobile-live-notification-runner.cjs
+          node scripts/check-mobile-workbook-stream.cjs
+          node scripts/check-mobile-print.cjs
+          node scripts/check-mobile-finance-sql.cjs --qr-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-finance-sql.cjs --corrections-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-finance-sql.cjs --return-corrections-only --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+          node scripts/check-mobile-finance-sql.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite --renewal-parity-only
+          node scripts/check-mobile-finance-sql.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite --backfill-only
+      - run: npm ci --prefix mobile
+      - run: node scripts/check-mobile-login-config.cjs
+      - run: npm run mobile:typecheck
+      - run: npm run mobile:lint
+      - run: npx --yes expo-doctor@1.21.6
+        working-directory: mobile
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: mobile
+      - run: npm --prefix mobile run export:native
+        env:
+          EXPO_PUBLIC_API_URL: https://mobile-api.example.invalid
+          EXPO_NO_TELEMETRY: '1'
+      - name: Build browser acceptance target
+        working-directory: mobile
+        run: npx expo export --platform web --output-dir .expo/web-preview --max-workers 2
+        env:
+          EXPO_PUBLIC_API_URL: https://mobile-api.example.invalid
+          EXPO_NO_TELEMETRY: '1'
+      - name: Check mobile browser workflows with synthetic data
+        run: |
+          .backups/mobile-qa/bin/python -m http.server 8083 --bind 127.0.0.1 --directory mobile/.expo/web-preview > /tmp/himoto-mobile-ui.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8083/ > /dev/null; then break; fi
+            sleep 1
+          done
+          .backups/mobile-qa/bin/python scripts/check-mobile-customer-documents-fixture.py
+          .backups/mobile-qa/bin/python scripts/check-mobile-contract-photos-fixture.py
+          .backups/mobile-qa/bin/python scripts/check-mobile-customer-photo-copy-fixture.py
+          .backups/mobile-qa/bin/python scripts/check-mobile-media-delete-fixture.py
+          failed_checks=0
+          run_browser_check() {
+            if "$@"; then
+              return 0
+            else
+              failed_checks=$((failed_checks + 1))
+              printf '::error::Browser acceptance failed: %s\n' "$*"
+            fi
+          }
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-ui.py --output .backups/mobile-ci-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --output .backups/mobile-ci-draft-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --duplicates-only --output .backups/mobile-ci-duplicate-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --documents-only --output .backups/mobile-ci-document-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-contract-photos-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-contract-photo-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-customer-photo-copy-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-customer-photo-copy-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-media-delete-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-media-delete-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-gps-ui.py --url http://127.0.0.1:8083 --output .backups/mobile-ci-gps-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --contracts-only --output .backups/mobile-ci-contract-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --finance-only --output .backups/mobile-ci-finance-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --renewals-only --output .backups/mobile-ci-renewal-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --collections-only --output .backups/mobile-ci-collection-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --returns-only --output .backups/mobile-ci-return-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --swaps-only --output .backups/mobile-ci-swap-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-draft-ui.py --recoveries-only --output .backups/mobile-ci-recovery-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-vehicle-transfer-ui.py --output .backups/mobile-ci-transfer-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-import-export-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-import-export-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-notifications-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-notifications-ui
+          run_browser_check .backups/mobile-qa/bin/python scripts/check-mobile-vehicle-import-ui.py --build mobile/.expo/web-preview --output .backups/mobile-ci-vehicle-import-ui --workbook .backups/mobile-ci-import-export-ui/input.xlsx
+          test "$failed_checks" -eq 0
+      - name: Preserve browser acceptance evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mobile-browser-acceptance
+          path: |
+            .backups/mobile-ci-ui/
+            .backups/mobile-ci-notifications/
+            .backups/mobile-ci-notifications-ui/
+            .backups/mobile-ci-draft-ui/
+            .backups/mobile-ci-duplicate-ui/
+            .backups/mobile-ci-document-ui/
+            .backups/mobile-ci-contract-photo-ui/
+            .backups/mobile-ci-customer-photo-copy-ui/
+            .backups/mobile-ci-media-delete-ui/
+            .backups/mobile-ci-gps-ui/
+            .backups/mobile-session-transition-results-20261103.json
+            .backups/mobile-ci-contract-ui/
+            .backups/mobile-ci-finance-ui/
+            .backups/mobile-ci-renewal-ui/
+            .backups/mobile-ci-collection-ui/
+            .backups/mobile-ci-return-ui/
+            .backups/mobile-ci-swap-ui/
+            .backups/mobile-ci-recovery-ui/
+            .backups/mobile-ci-transfer-ui/
+            .backups/mobile-ci-import-export-ui/
+            .backups/mobile-ci-vehicle-import-ui/
+            .backups/mobile-transfer-fixture-results.json
+            .backups/mobile-swaps-results.json
+            .backups/mobile-vehicle-transfers-results.json
+            .backups/mobile-bad-debt-recovery-results.json
+            .backups/mobile-recovery-journal-results.json
+            .backups/mobile-return-form-results.json
+            .backups/mobile-return-preview-results.json
+            .backups/mobile-renewal-collection-results.json
+            .backups/mobile-drafts-api-results.json
+            .backups/mobile-contract-actions-results.json
+            .backups/mobile-write-recovery-results.json
+            .backups/mobile-finance-api-results.json
+            .backups/mobile-finance-sql-results.json
+            .backups/mobile-renewal-preparation-results.json
+            .backups/mobile-photo-preparation-results.json
+            .backups/mobile-bills-api-results.json
+            .backups/mobile-renewal-write-results.json
+            .backups/mobile-renewal-form-results.json
+            .backups/mobile-renewal-period-results.json
+            .backups/mobile-renewal-collection-results.json
+            .backups/mobile-pending-scope-results.json
+          if-no-files-found: ignore
+          retention-days: 7

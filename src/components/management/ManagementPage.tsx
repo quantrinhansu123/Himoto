@@ -11,6 +11,7 @@ import { vehicleMissingOpenContract } from '@/lib/management/vehicle-holder';
 import { RowActionsMenu } from './RowActionsMenu';
 import type { VehicleActionMode } from './VehicleActionDialog';
 import { MANAGEMENT_CONFIG, optionLabel, statusTone } from '@/lib/management/config';
+import {managementExportRows} from '@/lib/management/management-export';
 import { EMPTY_QUERY, OVERDUE_COMPARE_OPTIONS, TableQuery, filterRows, formatValue, sortRows } from '@/lib/management/table-utils';
 import { ManagementColumn, ManagementKind, ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
@@ -371,9 +372,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         exportRows = exportRows.map(row => ({ ...row, collection_notes: followups.get(row.id) || '' }));
       }
       const { downloadFilteredExcel } = await import('@/lib/management/excel-export');
-      await downloadFilteredExcel(columns.map(column => column.label), exportRows.map(row => columns.map(column => column.key === 'rental_period'
-        ? 'Bắt đầu: ' + formatValue(row.start_date, 'datetime') + ' / Dự kiến trả: ' + formatValue(row.end_date, 'datetime')
-        : optionLabel(config, column.key, formatValue(row[column.key], column.format)))), 'himoto-' + kind + '-' + source);
+      await downloadFilteredExcel(columns.map(column => column.label), managementExportRows(config,columns,exportRows), 'himoto-' + kind + '-' + source);
       notify('Đã xuất ' + exportRows.length + ' bản ghi theo bộ lọc.');
     } catch (cause) { notify(cause instanceof Error ? cause.message : 'Không xuất được danh sách.'); }
     finally { setExporting(false); }

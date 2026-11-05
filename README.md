@@ -4,6 +4,10 @@
 Repo chính: https://github.com/quantrinhansu123/Himoto.
 Mã cục bộ: `E:\Himoto`.
 
+App nhân viên/quản lý Android/iOS ở [`mobile/`](mobile/README.md), dùng React Native
+và Expo, kết nối backend hiện tại qua API riêng. Xem [kiến trúc và triển khai](docs/mobile-architecture.md)
+và [kết quả kiểm tra luồng khách hàng](docs/qa/2026-10-31-mobile-customers.md).
+
 ## Chạy local
 
 ```powershell

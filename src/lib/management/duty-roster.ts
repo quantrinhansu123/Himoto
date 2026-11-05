@@ -6,7 +6,8 @@ export interface DutyInput {
   store_id: number; staff_id: number; starts_at: string; ends_at: string; shift_name: string; role_in_shift: string; notes: string;
   revision?: string; request_id?: string;
 }
-export function vietnamDate(now = new Date()) { return new Date(now.getTime() + 7 * 3600000).toISOString().slice(0, 10); }
+import {vietnamDate} from '../../../shared/vietnam-date';
+export {vietnamDate};
 export function addDays(date: string, days: number) { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0,10); }
 export function weekStart(date: string) { const day = new Date(`${date}T00:00:00Z`).getUTCDay(); return addDays(date, -(day + 6) % 7); }
 export function localDutyTime(date: string | null) { return date ? new Date(new Date(date).getTime() + 7 * 3600000).toISOString().slice(0,16) : ''; }

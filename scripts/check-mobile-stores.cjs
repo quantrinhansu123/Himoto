@@ -1,0 +1,71 @@
+// Synthetic in-memory PostgreSQL only; never load env files or contact services.
+require('./lib/offline-tests.cjs');
+const assert = require('node:assert/strict'), path = require('node:path');
+const { randomUUID } = require('node:crypto'), { NextRequest } = require('next/server');
+const { load, root } = require('./lib/load-typescript.cjs');
+async function main() {
+  const at = process.argv.indexOf('--pglite-path');
+  if (at < 0 || !process.argv[at + 1]) throw Error('Provide an existing isolated PGlite installation; no operational DB fallback');
+  const sql = new (require(path.resolve(process.argv[at + 1])).PGlite)();
+  const db = load(path.join(root, 'lib/server/himoto-database')), server = load(path.join(root, 'lib/server/mobile-stores'));
+  const { dataAccess } = load(path.join(root, 'lib/server/access-context'));
+  const { resolveMobileWrite } = load(path.join(root, 'lib/server/mobile-write-recovery'));
+  const dto = load(path.resolve('shared/mobile-stores'));
+  const actor = { id: 7, name: 'QA Settings', access_role: 'custom', role: 'staff', store_id: 23, scope_all: false, permissions: ['contracts.read', 'settings.write'] };
+  const descriptor = Object.getOwnPropertyDescriptor(db.himotoPool, 'connect');
+  const query = async (text, values) => { const r = await sql.query(text, values); return { rows: r.rows, rowCount: r.rows.length || r.affectedRows || 0 }; };
+  Object.defineProperty(db.himotoPool, 'connect', { configurable: true, value: async () => {
+    const scope = dataAccess.getStore(); assert([7,8].includes(scope.id)); assert.equal(scope.store_id, 23); assert.equal(scope.scope_all, false); assert.equal(scope.operation, '');
+    return { query, release() {} };
+  } });
+  const request = (method, key, body) => new NextRequest('https://qa.invalid/api/mobile/v1/stores', { method, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
+  const input = { name: 'QA new store', phone: '0000000000', address: 'Synthetic QA address', status: 'active', user_id: 7, code: '', kind: 'physical' };
+  const checks = [];
+  try {
+    await sql.exec(`CREATE SCHEMA himoto;
+      CREATE TABLE himoto.users(id bigint PRIMARY KEY,name text,status text,deleted_at timestamptz,store_id bigint);
+      CREATE TABLE himoto.stores(id bigserial PRIMARY KEY,store_name text,store_phone text,store_address text,status text,user_id bigint,code text,kind text,created_at timestamptz,updated_at timestamptz);
+      CREATE TABLE himoto.vehicles(id bigint PRIMARY KEY,current_store_id bigint);
+      CREATE TABLE himoto.staff_profiles(id bigint PRIMARY KEY,store_id bigint);
+      CREATE TABLE himoto.unexpected_history(id bigint PRIMARY KEY,original_store_id bigint,deleted_at timestamptz);
+      CREATE TABLE himoto.management_mobile_requests(user_id bigint,request_id uuid,operation varchar(64),fingerprint char(64),resource_id bigint,resource_revision varchar(32),PRIMARY KEY(user_id,request_id));
+      INSERT INTO himoto.users VALUES(7,'QA Manager','active',NULL,23),(8,'Inactive QA','inactive',NULL,24);
+      INSERT INTO himoto.stores(id,store_name,status,kind,code,updated_at) VALUES(23,'QA existing','opening','physical','QA23',now());`);
+    const createKey = randomUUID(), created = await server.saveMobileStore(actor, request('POST', createKey, input), 'POST');
+    assert.equal(created.id, 1); assert(!created.replayed);
+    assert((await server.saveMobileStore(actor, request('POST', createKey, input), 'POST')).replayed);
+    const initial = await server.readMobileStore(actor, '1'); assert(dto.isStoreProfile(initial)); assert.equal(initial.code, 'CS-001'); assert.equal(initial.status, 'active'); assert.equal(initial.managerId, 7);
+    assert(dto.isStoreManagers(await server.readMobileStoreManagers(actor)));
+    assert.deepEqual((await server.readMobileStoreManagers(actor)).managers, [{ id: 7, name: 'QA Manager' }]);
+    await assert.rejects(server.saveMobileStore(actor, request('POST', randomUUID(), input), 'POST'), e => e.status === 409);
+    await assert.rejects(server.saveMobileStore(actor, request('POST', randomUUID(), { ...input, name: 'QA second', user_id: 8 }), 'POST'), e => e.status === 400);
+    await assert.rejects(server.saveMobileStore({ ...actor, permissions: ['contracts.read'] }, request('POST', randomUUID(), input), 'POST'), e => e.status === 403);
+    checks.push('Web store creation/default code/status/active manager checks are reused; one UUID replays one row and missing settings permission rejects');
+    const update = { name: 'QA renamed', phone: '', address: 'QA updated', status: 'inactive', user_id: 7, revision: initial.revision };
+    const updateKey = randomUUID(), saved = await server.saveMobileStore(actor, request('PATCH', updateKey, update), 'PATCH', '1');
+    assert.notEqual(saved.revision, created.revision);
+    const current = await server.readMobileStore(actor, '1'); assert.equal(current.name, 'QA renamed'); assert.equal(current.status, 'inactive'); assert.equal(current.code, initial.code); assert.equal(current.kind, initial.kind);
+    await assert.rejects(server.saveMobileStore(actor, request('PATCH', randomUUID(), update), 'PATCH', '1'), e => e.status === 409);
+    const proof = await server.readMobileStoreResult(actor, createKey); assert(dto.isStoreResult(proof)); assert.equal(proof.receipt.revision, created.revision); assert.equal(proof.current.rowRevision, saved.revision);
+    await assert.rejects(server.readMobileStoreResult({ ...actor, id: 8 }, createKey), e => e.status === 404);
+    checks.push('Web timestamp CAS rejects stale edits; current row and immutable original UUID/xmin receipt remain separate; another actor cannot retrieve the receipt');
+    await sql.exec('INSERT INTO himoto.unexpected_history VALUES(1,1,now())');
+    await assert.rejects(server.saveMobileStore(actor, request('DELETE', randomUUID(), { revision: current.revision }), 'DELETE', '1'), e => e.status === 409 && e.message.includes('unexpected_history'));
+    assert(await server.readMobileStore(actor, '1'));
+    await sql.exec('DELETE FROM himoto.unexpected_history');
+    const deleteKey = randomUUID();
+    await assert.rejects(server.saveMobileStore(actor, request('DELETE', randomUUID(), { revision: initial.revision }), 'DELETE', '1'), e => e.status === 409);
+    const removed = await server.saveMobileStore(actor, request('DELETE', deleteKey, { revision: current.revision }), 'DELETE', '1');
+    assert.equal(removed.id, 1); assert((await server.saveMobileStore(actor, request('DELETE', deleteKey, { revision: current.revision }), 'DELETE', '1')).replayed);
+    const deleted = await server.readMobileStoreResult(actor, deleteKey); assert(dto.isStoreResult(deleted)); assert(deleted.deleted); assert.equal(deleted.current, null);
+    await assert.rejects(server.readMobileStore(actor, '1'), e => e.status === 404);
+    checks.push('Actual web exhaustive store reference discovery blocks archived records in unexpected tables; reviewed revision pins deletion, which replays and returns its own receipt after hard deletion');
+    const resolve = (key, operation) => resolveMobileWrite(actor, key, new NextRequest('https://qa.invalid/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation }) }));
+    const cancelledKey = randomUUID(); assert.equal((await resolve(cancelledKey, 'store.create')).status, 'cancelled');
+    await assert.rejects(server.saveMobileStore(actor, request('POST', cancelledKey, { ...input, name: 'QA late' }), 'POST'), e => e.code === 'REQUEST_CANCELLED');
+    assert.equal((await resolve(deleteKey, 'store.delete:1')).receipt.id, 1);
+    checks.push('Account recovery resolves an actor-owned hard-delete receipt without the deleted row; cancellation blocks late creation using the same UUID');
+    console.log(JSON.stringify({ passed: checks.length, checks, operationalWrites: 0, database: 'isolated in-memory PGlite; no deployed RLS or multi-connection acceptance' }, null, 2));
+  } finally { Object.defineProperty(db.himotoPool, 'connect', descriptor); await sql.close(); }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

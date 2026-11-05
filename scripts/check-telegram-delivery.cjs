@@ -55,7 +55,7 @@ async function main(){
     checks.push('Video has 180s, other media 120s and text 30s; body-read timeouts and malformed/partial success responses remain uncertain; confirmed API errors are distinguished; no POST automatically retries');
     assert.throws(()=>delivery.requireTelegramTime(Date.now()+1000,120000),delivery.TelegramContinuation);
     checks.push('Delivery stops at a safe checkpoint before its function time budget is exhausted');
-    const callbacks=[];let sends=0,gpsReads=0,historyReads=0;
+    const callbacks=[];let sends=0,gpsReads=0,historyReads=0,pushCalls=0,pushFailure=false;
     const route={exports:{}};
     const source=ts.transpileModule(fs.readFileSync(path.join(root,'app/api/cron/integrations/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
     const dependencies={
@@ -65,6 +65,7 @@ async function main(){
       '@/lib/server/himoto-database':{ownerDatabase:{}},
       '@/lib/server/gps-sync':{syncGpsAccounts:async()=>{gpsReads++;return{attempted:0};}},
       '@/lib/server/gps-history-sync':{syncGpsEventHistory:async()=>{historyReads++;}},
+      '@/lib/server/mobile-push':{dispatchMobilePush:async()=>{pushCalls++;if(pushFailure)throw Error('Synthetic push failure');return{checked:0,sent:0};}},
       '@/lib/server/contract-notifications':{dispatchContractNotifications:async(...args)=>{assert(args[5]<=Date.now()+240000);sends++;return{sent:0};}},
       '@/lib/server/telegram-delivery':{TELEGRAM_DISPATCH_BUDGET_MS:240000},
     };
@@ -72,8 +73,15 @@ async function main(){
     assert.equal((await route.exports.POST(new Request('https://qa.invalid/api/cron/integrations',{method:'POST'}))).status,401);assert.equal(callbacks.length,0);
     const cron=await route.exports.POST(new Request('https://qa.invalid/api/cron/integrations',{method:'POST',headers:{Authorization:'Bearer qa-only'}}));
     assert.equal(cron.status,200);assert.deepEqual((await cron.json()).telegram,{queued:true});assert.equal(gpsReads,1);assert.equal(sends,0);assert.equal(callbacks.length,1);
-    await callbacks[0]();assert.equal(sends,1);assert.equal(historyReads,1);
+    assert.equal(pushCalls,0);await callbacks[0]();assert.equal(sends,1);assert.equal(historyReads,1);assert.equal(pushCalls,1);
+    pushFailure=true;
+    const second=await route.exports.POST(new Request('https://qa.invalid/api/cron/integrations',{method:'POST',headers:{Authorization:'Bearer qa-only'}}));
+    assert.equal(second.status,200);assert.equal(pushCalls,1);
+    const originalError=console.error,errors=[];console.error=(...args)=>errors.push(args);
+    try{await callbacks[1]();}finally{console.error=originalError;}
+    assert.equal(sends,2);assert.equal(historyReads,2);assert.equal(pushCalls,2);assert.deepEqual(errors,[['Mobile push dispatch failed.']]);
     checks.push('Authenticated scheduler responds before Telegram upload work; a slow delivery no longer holds its 55s HTTP request open');
+    checks.push('Mobile push runs after the authenticated response; a push failure does not block Telegram or GPS history dispatch');
     const telegramRoute=fs.readFileSync(path.join(root,'app/api/auth/order/car-rental/[id]/telegram/route.ts'),'utf8');
     assert.match(telegramRoute,/writing\|\|pending/);
     assert.match(fs.readFileSync(path.join(root,'lib/server/contract-notifications.ts'),'utf8'),/n\.status='sending'/);

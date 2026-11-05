@@ -1,0 +1,12 @@
+import { useState } from "react";
+import { Text } from "react-native";
+import { useQuery } from "@tanstack/react-query";
+import { useSession } from "@/providers/session";
+import { useTheme } from "@/theme";
+import { Button,Card,InlineError } from "./ui";
+import { ConfirmEdit } from "./editor-sheet";
+const labels:Record<string,string>={pending:"Chờ gửi",sending:"Đang gửi",sent:"Đã gửi",failed:"Gửi thất bại",unknown:"Chưa rõ kết quả gửi",awaiting_config:"Chưa cấu hình nhóm / bot"};
+export function ShiftTelegramStatus({id}:{id:string}){const{api,session}=useSession(),theme=useTheme(),[busy,setBusy]=useState(false),[error,setError]=useState(""),[confirm,setConfirm]=useState(false),query=useQuery({queryKey:["shift-telegram",session!.user.id,id],queryFn:({signal})=>api!.shiftTelegram(id,signal),refetchInterval:query=>query.state.data&&["pending","sending"].includes(query.state.data.status)?4000:false});
+  async function retry(){if(busy||!api)return;setBusy(true);setError("");setConfirm(false);try{await api.retryShiftTelegram(id);void query.refetch();}catch(cause){setError((cause as Error).message);}finally{setBusy(false);}}
+  return <Card style={{gap:12}}><Text style={{color:theme.text,fontSize:20,fontWeight:"700"}}>Telegram: {query.isPending?"Đang kiểm tra":query.data?labels[query.data.status]||query.data.status:"Chưa có tin báo cáo"}</Text>{query.data?.message_id&&<Text style={{color:theme.muted}}>Mã tin: {query.data.message_id}</Text>}{query.data?.status==="unknown"&&<Text style={{color:theme.muted,lineHeight:24}}>Kiểm tra nhóm trước khi gửi thêm. Hệ thống giữ báo cáo và không tự gửi lại tin chưa rõ kết quả.</Text>}{session!.user.permissions.some(p=>p==="contracts.draft"||p==="finance.write")&&query.data&&["pending","failed","awaiting_config"].includes(query.data.status)&&<Button secondary label="Thử gửi Telegram báo cáo ca" loading={busy} onPress={()=>setConfirm(true)} />}<Button secondary label="Kiểm tra Telegram báo cáo ca" loading={query.isFetching} onPress={()=>{void query.refetch();}} />{(error||query.error?.message)&&<InlineError message={error||query.error!.message} />}{confirm&&<ConfirmEdit title="Thử gửi báo cáo ca qua Telegram?" message="Gửi tới nhóm đã cấu hình trên máy chủ. Lần gửi chưa rõ kết quả sẽ không được tự gửi lại." confirmLabel="Xác nhận thử gửi Telegram báo cáo ca" onCancel={()=>setConfirm(false)} onConfirm={()=>{void retry();}} />}</Card>;
+}

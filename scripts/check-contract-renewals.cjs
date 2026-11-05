@@ -53,6 +53,9 @@ async function main() {
   const paymentInput={...paidFuture.receipt,request_id:paidFuture.request_id,revision:'2',amount:'300',note:'Gia hạn'};
   assert.throws(()=>payments.parseContractPayment(paymentInput),/tương lai/);
   assert.equal(payments.parseContractPayment(paymentInput,{allowFutureTime:true}).paid_at,future);
+  const stopAtDatabase = {query: async () => {throw new Error('QA reached database');}};
+  await assert.rejects(payments.recordContractPayment(stopAtDatabase,1,143,paymentInput,{page:1,size:0}),/tương lai/);
+  await assert.rejects(payments.recordContractPayment(stopAtDatabase,1,143,paymentInput,{page:1,size:0},{allowFutureTime:true}),/QA reached database/);
   await assert.rejects(server.recordContractRenewal(dateDb, 1, 143, { ...base, occurred_at: future }), error => error.status === 409);
   rental.completed_at = '2026-01-22T10:00:00+07:00';
   rental.order_status = 'completed';

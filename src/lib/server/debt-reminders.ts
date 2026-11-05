@@ -9,6 +9,8 @@ import { ownerDatabase } from './himoto-database';
 
 type Database=Pick<PoolClient,'query'>;
 type Pool=Database&{connect:()=>Promise<PoolClient>};
+export type ReminderReservation={status:ReminderStatus;replayed:boolean};
+export type ReminderReservationAdapter=(client:PoolClient,input:DebtReminderInput,reserve:()=>Promise<ReminderReservation>)=>Promise<ReminderReservation>;
 export class DebtReminderError extends Error {constructor(message:string,public status=400){super(message);}}
 export function parseDebtReminderInput(raw:unknown):DebtReminderInput {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new DebtReminderError('Thông tin nhắc nợ không hợp lệ.');
@@ -59,17 +61,18 @@ export async function deliverReminder(url:string,input:Pick<DebtReminderInput,'p
   } catch {return {status:'unknown',provider_status:null};}
 }
 /** Reserve and commit before network I/O. Replayed UUIDs never call the provider again. */
-export async function sendDebtReminder(pool:Pool,actorId:number,raw:unknown,send:typeof fetch=fetch) {
+export async function sendDebtReminder(pool:Pool,actorId:number,raw:unknown,send:typeof fetch=fetch,adapter?:ReminderReservationAdapter) {
   const input=parseDebtReminderInput(raw),url=await configuredReminderWebhookUrl();
   if(!Number.isSafeInteger(actorId)||actorId<1)throw new DebtReminderError('Người gửi không hợp lệ.',403);
   const fingerprint=createHash('sha256').update(JSON.stringify([actorId,input.order_id,input.revision,input.amount,input.phone,input.message])).digest('hex');
-  const client=await pool.connect();
+  const client=await pool.connect();let reserved:ReminderReservation;
   try {
     await client.query('BEGIN');
     await client.query("SET LOCAL lock_timeout='5s'");
+    const reserve=async():Promise<ReminderReservation>=>{
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`debt-reminder-request:${input.request_id}`]);
     const previous=(await client.query('SELECT fingerprint,status FROM himoto.management_debt_reminders WHERE request_id=$1',[input.request_id])).rows[0];
-    if(previous){if(previous.fingerprint!==fingerprint)throw new DebtReminderError('Mã lần gửi đã dùng cho thông tin khác.',409);await client.query('COMMIT');return {request_id:input.request_id,status:previous.status as ReminderStatus,replayed:true};}
+    if(previous){if(previous.fingerprint!==fingerprint)throw new DebtReminderError('Mã lần gửi đã dùng cho thông tin khác.',409);return {status:previous.status as ReminderStatus,replayed:true};}
     const locked=await client.query('SELECT id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR SHARE',[input.order_id]);
     if(!locked.rowCount)throw new DebtReminderError('Không tìm thấy hợp đồng.',404);
     const context=await readDebtReminderContext(client,input.order_id);
@@ -79,8 +82,12 @@ export async function sendDebtReminder(pool:Pool,actorId:number,raw:unknown,send
     if(recent.rowCount)throw new DebtReminderError('Hợp đồng vừa được nhắc trong vòng 60 giây. Kiểm tra lịch sử gửi trước khi tạo lần mới.',429);
     await client.query(`INSERT INTO himoto.management_debt_reminders(request_id,order_id,store_id,actor_id,fingerprint,contract_code,customer_name,phone,message,amount)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[input.request_id,input.order_id,context.store_id,actorId,fingerprint,context.code,context.customer_name,input.phone,input.message,input.amount]);
+    return {status:'pending',replayed:false};
+    };
+    reserved=await (adapter?adapter(client,input,reserve):reserve());
     await client.query('COMMIT');
   }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
+  if(reserved.replayed)return {request_id:input.request_id,...reserved};
   const result=await deliverReminder(url,input,send);
   await pool.query('UPDATE himoto.management_debt_reminders SET status=$2,provider_status=$3,updated_at=now() WHERE request_id=$1 AND status=\'pending\'',[input.request_id,result.status,result.provider_status]);
   return {request_id:input.request_id,status:result.status,replayed:false};

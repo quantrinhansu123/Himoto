@@ -43,7 +43,7 @@ export const CONTRACT_TYPES: Option[] = [
   { value: 'ownership', label: 'Thuê sở hữu' },
   { value: 'ownership_cd', label: 'Thuê sở hữu( cd)' },
 ];
-export const OWNERSHIP_CONTRACT_TYPES = new Set(['ownership', 'ownership_cd']);
+export { OWNERSHIP_CONTRACT_TYPES } from '../../../shared/contract-approval';
 
 const branchField = { key: 'store_id', label: 'Cơ sở', type: 'select' as const, storeOptions: true, required: true };
 const codeColumn = { key: 'code', label: 'Mã', format: 'code' as const };

@@ -5,10 +5,15 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Input, BufferSource, MP4 } from 'mediabunny';
 import { MAX_VIDEO_BYTES, type BrowserVideoReceipt } from '@/lib/management/video-media';
 import { RecordPhotoError } from './record-photos';
-import { cloudflyVideosEnabled, cloudflyVideoClient, cloudflyVideoSettings, readVideoBytes, type ObjectVideoRef } from './cloudfly-videos';
+import { requirePhotoRecord } from './record-photos';
+import type { PoolClient } from 'pg';
+import type { PhotoEntity } from '@/lib/management/record-photos';
+import { cloudflyVideosEnabled, cloudflyVideoClient, cloudflyVideoSettings, readVideoBytes, objectVideoDetails, type ObjectVideoRef } from './cloudfly-videos';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 interface UploadTicket { actor: number; id: string; bytes: number; sha256: string; max_duration: number; expires: number }
+/** An otherwise valid upload needs the web conversion path for its codec/size. */
+export class BrowserVideoCompatibilityError extends RecordPhotoError {}
 
 export const browserVideosEnabled = () => cloudflyVideosEnabled() && process.env.BROWSER_VIDEO_PROCESSING !== 'off';
 function signature(value: string) {
@@ -77,23 +82,24 @@ export async function inspectBrowserMp4(bytes: Uint8Array, maxDuration: number) 
     const video = await input.getPrimaryVideoTrack(), audios = await input.getAudioTracks();
     const duration = await input.computeDuration();
     if (!video || await video.getCodec() !== 'avc' || (await input.getVideoTracks()).length !== 1 || audios.length > 1 ||
-      audios.length && await audios[0].getCodec() !== 'aac') throw new RecordPhotoError('Video cần là MP4/H.264 với âm thanh AAC.');
+      audios.length && await audios[0].getCodec() !== 'aac') throw new BrowserVideoCompatibilityError('Video cần là MP4/H.264 với âm thanh AAC.');
     if (!Number.isFinite(duration) || duration <= 0 || duration > maxDuration) throw new RecordPhotoError(`Video tối đa ${maxDuration} giây.`);
     const width = await video.getDisplayWidth(), height = await video.getDisplayHeight();
-    if (!(width > 0 && height > 0) || Math.max(width, height) > 1920) throw new RecordPhotoError('Video cần có cạnh dài tối đa 1920 px.');
+    if (!(width > 0 && height > 0) || Math.max(width, height) > 1920) throw new BrowserVideoCompatibilityError('Video cần có cạnh dài tối đa 1920 px.');
     return { duration: String(duration), codec: 'h264', audio: audios.length ? 'aac' : 'none' };
   } catch (error) {
     if (error instanceof RecordPhotoError) throw error;
-    throw new RecordPhotoError('Không đọc được video MP4. Giữ tệp và chọn lại video.');
+    throw new BrowserVideoCompatibilityError('Không đọc được video MP4. Giữ tệp và chọn lại video.');
   } finally { input.dispose(); }
 }
-export async function completeBrowserVideo(actor: number, ticket: unknown, now = Date.now()) {
+export async function completeBrowserVideo(actor: number, ticket: unknown, now = Date.now(), expected?:{uploadId:string;maxDuration:number}) {
   if (typeof ticket !== 'string' || ticket.length > 1500) throw new RecordPhotoError('Phiên tải video không hợp lệ.');
   const [payload, proof, extra] = ticket.split('.');
   if (extra || !payload || !matches(proof, signature(`upload:${payload}`))) throw new RecordPhotoError('Phiên tải video không hợp lệ.');
   let data: UploadTicket;
   try { data = JSON.parse(Buffer.from(payload, 'base64url').toString()); } catch { throw new RecordPhotoError('Phiên tải video không hợp lệ.'); }
   if (data.actor !== actor || !UUID.test(data.id) || ![60,180].includes(data.max_duration) || data.expires < now) throw new RecordPhotoError('Phiên tải video đã hết hạn. Bấm tải lại.', 409);
+  if(expected&&(data.id!==expected.uploadId||data.max_duration!==expected.maxDuration))throw new RecordPhotoError('Phiên tải video không khớp mã hoặc loại hồ sơ.',409);
   const key = objectKey(actor, data.id), config = cloudflyVideoSettings(), client = cloudflyVideoClient();
   const stored = await head(key);
   if (!stored?.ETag || stored.ContentLength !== data.bytes || stored.Metadata?.sha256 !== data.sha256) throw new RecordPhotoError('Chưa nhận đủ video. Giữ form và bấm tải lại.', 409);
@@ -109,4 +115,17 @@ export async function completeBrowserVideo(actor: number, ticket: unknown, now =
       validation: validation(actor, data.id, data.bytes, data.sha256, media.duration, media.audio) } }), { abortSignal: AbortSignal.timeout(30_000) });
   await readyBrowserVideo(receipt(actor, data.id), actor, data.max_duration);
   return { receipt: receipt(actor, data.id) };
+}
+/** Shared by the actual web and native record-photo writers. */
+export async function writeBrowserVideoPhoto(client:Pick<PoolClient,'query'>,entity:PhotoEntity,id:number,slot:string,actor:number,value:unknown) {
+  if(entity!=='contracts'||!/-video-[1-3]$/.test(slot))throw new RecordPhotoError('Video chỉ lưu ở ô video hợp đồng.');
+  await requirePhotoRecord(client,entity,id);
+  const stored=await readyBrowserVideo(value,actor,60),details=await objectVideoDetails(stored,60);
+  await client.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by,object_bucket,object_key,object_etag)
+    VALUES($1,$2,$3,'video/mp4',NULL,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,slot)
+    DO UPDATE SET mime_type='video/mp4',data=NULL,updated_by=EXCLUDED.updated_by,updated_at=now(),
+      cloudinary_public_id=NULL,cloudinary_cloud_name=NULL,cloudinary_version=NULL,
+      object_bucket=EXCLUDED.object_bucket,object_key=EXCLUDED.object_key,object_etag=EXCLUDED.object_etag`,
+  [entity,id,slot,actor,stored.object_bucket,stored.object_key,stored.object_etag]);
+  return{...stored,...details};
 }

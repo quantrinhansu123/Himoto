@@ -1,7 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 
-const SELECT_TRANSFER = `SELECT e.id,e.event_type,e.from_store_id,e.to_store_id,e.created_by,
+const SELECT_TRANSFER = `SELECT e.id,e.xmin::text AS revision,e.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh' AS recorded_at,e.event_type,e.from_store_id,e.to_store_id,e.created_by,
   COALESCE(NULLIF(e.audit_snapshot->>'from_store_name',''),fs.store_name,'') AS from_store_name,
   COALESCE(NULLIF(e.audit_snapshot->>'to_store_name',''),ts.store_name,'') AS to_store_name,
   CASE WHEN e.event_type='manual_transfer'
@@ -17,7 +17,7 @@ export const VEHICLE_TRANSFER_JOIN_SQL = `LEFT JOIN LATERAL (
   ORDER BY e.id DESC LIMIT 1
 ) pending_transfer ON v.status='in_transit'`;
 
-export async function readPendingVehicleTransfer(client:Pick<PoolClient,'query'>,vehicleId:number) {
+export async function readPendingVehicleTransfer(client:Pick<PoolClient,'query'>,vehicleId:number,lock=true) {
   return (await client.query(`${SELECT_TRANSFER} WHERE e.vehicle_id=$1 AND e.event_type IN ('manual_transfer','transfer_dispatch')
-    ORDER BY e.id DESC LIMIT 1 FOR UPDATE OF e`,[vehicleId])).rows[0];
+    ORDER BY e.id DESC LIMIT 1${lock?' FOR UPDATE OF e':''}`,[vehicleId])).rows[0];
 }

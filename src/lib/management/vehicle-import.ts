@@ -83,7 +83,7 @@ export function validateVehicleImport(inputs: VehicleImportInput[], stores: Cust
     const matches = resolveStores(values.store);
     const storeId = matches.length === 1 ? Number(matches[0].id) : null;
     if (!updating && storeId === null) errors.push('Chưa khớp cơ sở. Chọn lại cơ sở hiện có; không tự suy ra mã cũ.');
-    if (updating) warnings.push('Giữ ID, cơ sở, trạng thái và dữ liệu giá hiện có của xe.');
+    if (updating) warnings.push('Giữ ID, cơ sở và trạng thái của xe. Giá và số km có dữ liệu trong file sẽ được cập nhật; để trống giữ giá trị hiện có.');
     return { rowNumber: input.rowNumber, values, errors, warnings, state: errors.length ? 'invalid' : 'valid', action: updating ? 'update' : 'insert', targetId: current ? Number(current.id) : values.id && validId(values.id) ? Number(values.id) : null, storeId };
   });
 }

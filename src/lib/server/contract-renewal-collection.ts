@@ -4,11 +4,11 @@ import type { PoolClient } from 'pg';
 import type { RenewalInput, RenewalResult, RenewalVersion } from '@/lib/management/contract-renewals';
 import { ContractRenewalError, parseRenewalInput, recordContractRenewal } from './contract-renewals';
 import { findPaymentAccount, paymentAccountMatchesMethod } from '@/lib/management/contract-payments';
-import { readPaymentContext, recordContractPayment } from './contract-payments';
+import { readPaymentContext, recordContractPayment, type PaymentReadOptions } from './contract-payments';
 
 // Caller owns the transaction: extending the date and receiving this renewal's
 // exact fee either both succeed or both roll back. No general finance permission.
-export async function renewContractAndCollect(db:Pick<PoolClient,'query'>,id:number,actor:number,raw:RenewalInput):Promise<RenewalResult> {
+export async function renewContractAndCollect(db:Pick<PoolClient,'query'>,id:number,actor:number,raw:RenewalInput,options?:PaymentReadOptions):Promise<RenewalResult> {
   const input = parseRenewalInput(raw);
   if (!input.request_id) return recordContractRenewal(db,id,actor,input);
   await db.query("SET LOCAL lock_timeout='5s'");
@@ -21,17 +21,17 @@ export async function renewContractAndCollect(db:Pick<PoolClient,'query'>,id:num
   const previous = versions.find(v=>v.kind==='renewal'&&v.request_id===input.request_id);
   if (previous && previous.request_hash!==hash) throw new ContractRenewalError('Mã lần gia hạn đã dùng cho nội dung khác. Tải lại hợp đồng để kiểm tra.',409);
   const result:RenewalResult = previous
-    ? {order_id:id,code:(await readPaymentContext(db,id)).code,version:previous.version,return_at:previous.return_at,total_amount:previous.total,amount:previous.amount,replayed:true}
+    ? {order_id:id,code:(await readPaymentContext(db,id,options)).code,version:previous.version,return_at:previous.return_at,total_amount:previous.total,amount:previous.amount,replayed:true,...(previous.outside_transaction_id?{outside_transaction_id:previous.outside_transaction_id}:{})}
     : await recordContractRenewal(db,id,actor,input);
   // Paid renewals need a saved transfer/cash bill before the receipt can complete.
   if (input.receipt && !previous) await requireRenewalPaymentEvidence(db,id,result.version);
   if (input.receipt && Number(input.amount) > 0) {
-    const context = await readPaymentContext(db,id);
-    result.payment = await recordContractPayment(db,id,actor,{...input.receipt,request_id:input.request_id,revision:context.revision,amount:input.amount,renewal_version:result.version,note:input.note||`Gia hạn hợp đồng_${result.code}`},{allowFutureTime:true});
+    const context = await readPaymentContext(db,id,options);
+    result.payment = await recordContractPayment(db,id,actor,{...input.receipt,request_id:input.request_id,revision:context.revision,amount:input.amount,renewal_version:result.version,note:input.note||`Gia hạn hợp đồng_${result.code}`},options,{allowFutureTime:true});
   }
   const outside = Number(input.outside_amount || 0);
   if (input.receipt && outside > 0) {
-    if (!previous) await recordOutsideCollection(db,id,actor,input,result.code);
+    if (!previous) result.outside_transaction_id=await recordOutsideCollection(db,id,actor,input,result.code,options);
     result.outside_amount = outside;
     result.outside_collected = true;
   }
@@ -39,9 +39,9 @@ export async function renewContractAndCollect(db:Pick<PoolClient,'query'>,id:num
     await db.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,versions}',
       (SELECT jsonb_agg(CASE WHEN v->>'version'=$2::text THEN v||$3::jsonb ELSE v END ORDER BY position)
        FROM jsonb_array_elements(draft_payload::jsonb #> '{management_composer,versions}') WITH ORDINALITY AS entries(v,position)))::json WHERE id=$1`,
-    [id,result.version,JSON.stringify({request_id:input.request_id,request_hash:hash})]);
+    [id,result.version,JSON.stringify({request_id:input.request_id,request_hash:hash,...(result.outside_transaction_id?{outside_transaction_id:result.outside_transaction_id}:{})})]);
     // The metadata update changes xmin: return the final revision to the caller.
-    if (result.payment) result.payment.context = await readPaymentContext(db,id);
+    if (result.payment) result.payment.context = await readPaymentContext(db,id,options);
   }
   return result;
 }
@@ -61,8 +61,8 @@ async function requireRenewalPaymentEvidence(db:Pick<PoolClient,'query'>,orderId
 }
 
 // Outside cash is a real receipt. It does not raise the contract total or the rental paid balance.
-async function recordOutsideCollection(db:Pick<PoolClient,'query'>,id:number,actor:number,input:RenewalInput,code:string) {
-  const context = await readPaymentContext(db,id);
+async function recordOutsideCollection(db:Pick<PoolClient,'query'>,id:number,actor:number,input:RenewalInput,code:string,options?:PaymentReadOptions) {
+  const context = await readPaymentContext(db,id,options);
   const receipt = input.receipt!;
   const table = receipt.method === 'cash' ? 'cash' : 'banks';
   await db.query(`SELECT id FROM himoto.${table} WHERE id=$1 FOR SHARE`,[receipt.account_id]);
@@ -70,8 +70,11 @@ async function recordOutsideCollection(db:Pick<PoolClient,'query'>,id:number,act
   if (!account || !paymentAccountMatchesMethod(account,receipt.method)) throw new ContractRenewalError('Tài khoản nhận phí thu thêm không khớp hình thức (Tiền mặt = két; chuyển khoản = ngân hàng cá nhân).',409);
   const cash = receipt.method === 'cash';
   const note = `${input.outside_name} · thu ngoài, không cộng tiền hợp đồng ${code}`;
-  await db.query(`INSERT INTO himoto.transactions
+  const recorded=await db.query(`INSERT INTO himoto.transactions
     (order_id,created_at,updated_at,name,type,value,note,status,user_id,store_id,bank_id,cash_id,payment_method,bank_owner_type,object_type,object_id)
-    VALUES ($1,$2,now(),'order:outside','in',$3,$4,'approved',$5,$6,$7,$8,$9,$10,'order',$11)`,
+    VALUES ($1,$2,now(),'order:outside','in',$3,$4,'approved',$5,$6,$7,$8,$9,$10,'order',$11) RETURNING id`,
   [id,`${receipt.paid_at}:00+07:00`,Number(input.outside_amount),note,actor,context.store_id,cash?null:account.id,cash?account.id:null,cash?1:2,cash?null:'personal',id]);
+  const transactionId=Number(recorded.rows[0]?.id);
+  if(!Number.isSafeInteger(transactionId)||transactionId<=0)throw new ContractRenewalError('Chưa xác nhận được phiếu thu ngoài. Giữ mã để đối chiếu.',503);
+  return transactionId;
 }

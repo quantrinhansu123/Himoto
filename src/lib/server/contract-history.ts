@@ -26,6 +26,9 @@ function renewalCorrectionDetail(item: Record<string, unknown>) {
   const before = (item.before || {}) as Record<string, unknown>, after = (item.after || {}) as Record<string, unknown>;
   const ids = Array.isArray(item.affected_transaction_ids) ? item.affected_transaction_ids : [item.transaction_id];
   const beforeFee = amountOrNull(before.renewal_amount), afterFee = amountOrNull(after.renewal_amount);
+  const beforeCollected = amountOrNull(before.collected_amount), afterCollected = amountOrNull(after.collected_amount);
+  const collectedChanged = beforeCollected !== null && afterCollected !== null && beforeCollected !== afterCollected;
+  const paidAtChanged = before.paid_at && after.paid_at && Date.parse(iso(before.paid_at)) !== Date.parse(iso(after.paid_at));
   const periodChanged = (['before_return_at', 'return_at'] as const).some(key =>
     (before[key] || after[key]) && Date.parse(iso(before[key])) !== Date.parse(iso(after[key])));
   return [
@@ -33,7 +36,8 @@ function renewalCorrectionDetail(item: Record<string, unknown>) {
     periodChanged ? `Kỳ gia hạn: ${vietnamTime(before.before_return_at)} → ${vietnamTime(before.return_at)} thành ${vietnamTime(after.before_return_at)} → ${vietnamTime(after.return_at)}` : '',
     beforeFee !== null && afterFee !== null && beforeFee !== afterFee ? `Phí gia hạn: ${formatMoney(beforeFee)} → ${formatMoney(afterFee)}` : '',
     (before.method !== after.method || before.account !== after.account) ? `Thanh toán: ${before.method || '—'} / ${before.account || '—'} → ${after.method || '—'} / ${after.account || '—'}` : '',
-    'Giữ nguyên số tiền trên phiếu thu',
+    collectedChanged ? `Tiền thực thu: ${formatMoney(beforeCollected)} → ${formatMoney(afterCollected)}` : 'Giữ nguyên số tiền trên phiếu thu',
+    paidAtChanged ? `Ngày thực thu: ${vietnamTime(before.paid_at)} → ${vietnamTime(after.paid_at)}` : '',
     item.affects_contract_total === false ? 'Giữ nguyên tổng tiền hợp đồng' : '',
     item.reason ? String(item.reason) : '',
   ].filter(Boolean).join(' · ');

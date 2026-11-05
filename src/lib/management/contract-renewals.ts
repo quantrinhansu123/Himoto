@@ -25,11 +25,11 @@ export interface RenewalVersion {
   item_id: number; vehicle_id: number; vehicle_name: string; license: string;
   rent_at: string | null; before_return_at: string | null; return_at: string; overdue_minutes: number;
   amount: number; before_total: number | null; total: number | null; paid: number | null; note: string;
-  outside_amount?: number; outside_name?: string;
+  outside_amount?: number; outside_name?: string; outside_transaction_id?:number;
   expected_amount?: number; amount_mismatch?: boolean; warning?: string;
   request_id?: string; request_hash?: string;
 }
-export interface RenewalResult { order_id: number; code: string; version: number; return_at: string; total_amount: number | null; amount: number; outside_amount?: number; outside_collected?: boolean; payment?: PaymentResult; replayed?: boolean }
+export interface RenewalResult { order_id: number; code: string; version: number; return_at: string; total_amount: number | null; amount: number; outside_amount?: number; outside_collected?: boolean; outside_transaction_id?:number; payment?: PaymentResult; replayed?: boolean }
 
 /** Original contract is v1; renewals start at v2. Ignore non-renewal junk and coerce string version ids from older payloads. */
 export function nextRenewalVersion(versions: unknown): number {
@@ -48,13 +48,7 @@ export function hasRenewalVersion(versions: unknown, version: number): boolean {
     && Number((item as { version?: unknown }).version) === version);
 }
 
-function renewalTime(value: string) {
-  return Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? `${value}:00+07:00` : value);
-}
-export function renewalDurationUnits(before: string, after: string, unit: 'day' | 'hour' = 'day'): number | null {
-  const minutes = Math.ceil((renewalTime(after) - renewalTime(before)) / 60_000);
-  return Number.isFinite(minutes) && minutes > 0 ? Math.ceil(minutes / (unit === 'day' ? 1440 : 60)) : null;
-}
+export { renewalDurationUnits } from '../../../shared/renewal-duration';
 export function renewalFeeWarning(actual: number, expected: number | null): string {
   if (expected === null || actual >= expected) return '';
   const money = (amount: number) => `${amount.toLocaleString('vi-VN')} đ`;

@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "Himoto",
+    "slug": "himoto-staff",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "scheme": "himoto",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "vn.himoto.staff",
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "package": "vn.himoto.staff",
+      "versionCode": 1
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      "./plugins/with-literal-account-input.cjs",
+      "./plugins/with-android-release-signing.cjs",
+      "expo-router",
+      "expo-secure-store",
+      ["expo-notifications", {"defaultChannel": "himoto-work", "color": "#E60019"}],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/logo.png",
+          "imageWidth": 200
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Himoto truy cập ảnh bạn chọn để đính kèm bill và hồ sơ công việc.",
+          "cameraPermission": "Himoto dùng camera để chụp bill và hồ sơ công việc.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-sharing",
+      "expo-video"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

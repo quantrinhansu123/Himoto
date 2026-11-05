@@ -5,6 +5,7 @@ import { syncGpsAccounts } from '@/lib/server/gps-sync';
 import { dispatchContractNotifications } from '@/lib/server/contract-notifications';
 import { TELEGRAM_DISPATCH_BUDGET_MS } from '@/lib/server/telegram-delivery';
 import { syncGpsEventHistory } from '@/lib/server/gps-history-sync';
+import { dispatchMobilePush } from '@/lib/server/mobile-push';
 import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
 export const maxDuration=300;
@@ -15,9 +16,10 @@ export async function POST(request:NextRequest) {
   try{const nonce=integrationSchedulerNonce(authorization!);if(nonce&&!await claimIntegrationSchedulerNonce(ownerDatabase,nonce))return NextResponse.json({status:'error'},{status:409});
     const gps=await syncGpsAccounts();
     // The scheduler has a 55s HTTP timeout. Keep slow media uploads in the function's after-response work.
-    after(async()=>{const results=await Promise.allSettled([dispatchContractNotifications(undefined,2,undefined,undefined,undefined,deadline),syncGpsEventHistory()]);
+    after(async()=>{const results=await Promise.allSettled([dispatchContractNotifications(undefined,2,undefined,undefined,undefined,deadline),syncGpsEventHistory(),dispatchMobilePush()]);
       if(results[0].status==='rejected')console.error('Telegram background dispatch failed.');
-      if(results[1].status==='rejected')console.error('GPS history sync failed.');});
+      if(results[1].status==='rejected')console.error('GPS history sync failed.');
+      if(results[2].status==='rejected')console.error('Mobile push dispatch failed.');});
     return NextResponse.json({status:'success',gps,telegram:{queued:true}},{headers:{'Cache-Control':'no-store'}});}
   catch(error){return failureResponse('Đồng bộ chưa hoàn tất.',error,503);}
 }

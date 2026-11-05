@@ -3,6 +3,7 @@ import { useEffect,useRef,useState } from 'react';
 import { contractVietQr,loadContractQr,type ContractQrData } from '@/lib/management/sepay';
 import { formatMoney } from '@/lib/formatters';
 import { Dialog } from './Dialog';
+import { ContractPaymentQrMarkup } from './ContractPaymentQrMarkup';
 
 export function ContractPaymentQr({id,compact=false,statusOnly=false,accountNumber,onUpdated}:{id:number;compact?:boolean;statusOnly?:boolean;accountNumber?:string;onUpdated?:()=>void}){
   const [data,setData]=useState<ContractQrData|null>(null),[error,setError]=useState(''),[amount,setAmount]=useState(''),[imageError,setImageError]=useState(false);
@@ -26,7 +27,7 @@ export function ContractPaymentQr({id,compact=false,statusOnly=false,accountNumb
   useEffect(()=>setImageError(false),[url]);
   if(accountNumber&&data?.bank?.account_number!==accountNumber)return null;
   if(compact){if(!data)return error?null:<span data-payment-qr-loading="true"/>;if(!data.qr_url||!data.bank)return null;
-    return <div className="contract-payment-qr"><img src={data.qr_url} width={96} height={96} alt={`QR thanh toán hợp đồng ${data.code}`} referrerPolicy="no-referrer"/><div><strong>{data.mode==='test'?'QR thử nghiệm SePay':'Quét QR thanh toán'}</strong><span>{data.amount>0?`${formatMoney(data.amount)} · `:''}{data.bank.bank_code}</span><span>{data.bank.account_number} · {data.bank.account_name}</span><span>{data.memo}</span></div></div>;
+    return <ContractPaymentQrMarkup data={data} />;
   }
   if(!data)return <p role={error?'alert':'status'}>{error||'Đang tải thông tin chuyển khoản…'}</p>;
   const accountPicker=Boolean(data.accounts?.length)&&<label className="mg-field">Tài khoản nhận của cơ sở hợp đồng<select aria-label="Tài khoản nhận của cơ sở hợp đồng" value={data.bank_id??''} onChange={event=>{setData(null);setAccountId(Number(event.target.value));}}><option value="" disabled>Chọn tài khoản nhận</option>{data.accounts?.map(account=><option key={account.id} value={account.id}>{account.bank_code} · {account.account_number} · {account.account_name}{account.owner_type==='company'?' (công ty)':''}</option>)}</select></label>;

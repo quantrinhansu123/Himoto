@@ -11,7 +11,7 @@ import { requestManagementTable } from '@/lib/management/management-table';
 import { EMPTY_QUERY } from '@/lib/management/table-utils';
 import { ContractDraft, ContractRelative, CustomerDetails, LegacyContractDocument, buildContractDocument, contractStaffStoreId, createContractDraft, customerDetails, emptyVehicle, formatRelatives, normalizeIdCard, pairRelatives, relativesFromRow, staffIsAvailable, staffMatchesStore, validateContractDraft, validateOperationalDraft, validateReservationDraft, vehicleDetails } from '@/lib/management/contract-document';
 import { documentRequirements } from '@/lib/management/contract-requirements';
-import { hasSalesCommissionRole, normalizeStaffPosition, staffRoles } from '@/lib/management/staff-positions';
+import { hasSalesCommissionRole, staffCustomerSourceLabel, staffRoles } from '@/lib/management/staff-positions';
 import { canEditIssuedContract,contractProfile,saveContractProfile,saveFullContract } from '@/lib/management/contract-profile';
 import { RentalTermsEditor } from '@/components/management/RentalTermsEditor';
 import { ManagementRow } from '@/lib/management/types';
@@ -642,17 +642,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
       ? `${person.name} · ${person.code}` : String(person.name || '');
   };
   // Nguồn khách shows the person together with their department (PGD), e.g. "Nguyễn Hải Đăng _PKD 1".
-  const sourceDepartment = (person: ManagementRow) => {
-    const roles = staffRoles(person.position);
-    return roles.find(role => /^PKD\s*\d+$/i.test(role))
-      || roles.find(role => ['TPKD', 'NVKD', 'QL PTKD', 'TLS'].includes(role))
-      || normalizeStaffPosition(person.position);
-  };
-  const sourceOption = (person: ManagementRow) => {
-    const department = sourceDepartment(person);
-    const name = String(person.name || '').trim();
-    return department ? `${name} _${department}` : name;
-  };
+  const sourceOption = (person: ManagementRow) => staffCustomerSourceLabel(String(person.name || ''), person.position);
   const findSalesStaff = (text: string) => {
     const needle = nameKey(text);
     if (!needle) return undefined;

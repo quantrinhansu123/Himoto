@@ -137,6 +137,13 @@ export async function objectVideoByteLength(ref: ObjectVideoRef) {
   }
   return head.ContentLength;
 }
+export async function objectVideoDetails(ref: ObjectVideoRef, maxDuration: number) {
+  requireRef(ref);
+  const asset = await cloudflyVideoClient().send(new HeadObjectCommand({ Bucket: ref.object_bucket, Key: ref.object_key }), { abortSignal: AbortSignal.timeout(20_000) });
+  const duration = Number(asset.Metadata?.duration);
+  if (asset.ContentType !== 'video/mp4' || !asset.ContentLength || asset.ContentLength > MAX_VIDEO_BYTES || asset.ETag !== ref.object_etag || !Number.isFinite(duration) || duration <= 0 || duration > maxDuration) throw new RecordPhotoError('Video trong kho không đúng giới hạn hồ sơ.', 409);
+  return { bytes: asset.ContentLength, duration };
+}
 export async function readObjectVideo(ref: ObjectVideoRef) {
   requireRef(ref);
   const remote = await cloudflyVideoClient().send(new GetObjectCommand({ Bucket: ref.object_bucket, Key: ref.object_key, IfMatch: ref.object_etag }), { abortSignal: AbortSignal.timeout(45_000) });
@@ -144,6 +151,13 @@ export async function readObjectVideo(ref: ObjectVideoRef) {
   const bytes = await readVideoBytes(new Response(remote.Body.transformToWebStream() as ReadableStream<Uint8Array>));
   if (bytes.length !== remote.ContentLength) throw new RecordPhotoError('Chưa tải đủ video từ kho.', 502);
   return bytes;
+}
+/** Private range reader for native playback, after the caller's scoped record read. */
+export async function readObjectVideoResponse(ref: ObjectVideoRef, range: string | null) {
+  requireRef(ref);
+  const remote = await cloudflyVideoClient().send(new GetObjectCommand({ Bucket: ref.object_bucket, Key: ref.object_key, IfMatch: ref.object_etag, ...(range ? { Range: range } : {}) }), { abortSignal: AbortSignal.timeout(45_000) });
+  if (!remote.Body || !remote.ContentLength || remote.ContentLength > MAX_VIDEO_BYTES || remote.ETag !== ref.object_etag || remote.ContentType !== 'video/mp4') throw new RecordPhotoError('Video trong kho không khớp phiên bản.', 502);
+  return new Response(remote.Body.transformToWebStream() as ReadableStream<Uint8Array>, { status: remote.$metadata.httpStatusCode === 206 ? 206 : 200, headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(remote.ContentLength), ...(remote.ContentRange ? { 'Content-Range': remote.ContentRange } : {}) } });
 }
 export async function hasConvertedVideo(receipt: CloudPhotoReceipt, cloudName: string) {
   return Boolean(await findVideo(convertedVideoKey(receipt, cloudName), 180));

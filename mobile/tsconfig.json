@@ -1,0 +1,18 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@himoto/mobile-contract": ["../shared/mobile-contract.ts"],
+      "@himoto/mobile-draft-validation": [
+        "../shared/mobile-draft-validation.ts"
+      ],
+      "@himoto/mobile-contract-validation": [
+        "../shared/mobile-contract-validation.ts"
+      ],
+      "@/*": ["./src/*"],
+      "@/assets/*": ["./assets/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+}

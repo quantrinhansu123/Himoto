@@ -1,0 +1,78 @@
+{
+  "draft": {
+    "contract_number": "",
+    "signed_on": "2026-11-01",
+    "store_id": "23",
+    "staff_id": "",
+    "staff_name": "QA Quản lý",
+    "start_date": "2026-11-01T08:00",
+    "end_date": "2026-11-02T08:00",
+    "unit_price": "",
+    "total_amount": "",
+    "paid_amount": "0",
+    "deposit_amount": "",
+    "package_name": "Theo ngày",
+    "payment_method": "",
+    "deposit_payment_method": "",
+    "collateral_description": "",
+    "customer_source": "",
+    "customer_source_url": "",
+    "authorization_date": "",
+    "created_on": "2026-11-01",
+    "vehicle_store_id": "23",
+    "sales_staff_id": "",
+    "sales_staff_name": "",
+    "customer_id": null,
+    "customer": {
+      "name": "",
+      "phone": "",
+      "email": "",
+      "address": "",
+      "id_card": "",
+      "id_card_issued_on": "",
+      "id_card_issued_by": "",
+      "driver_license_number": "",
+      "driver_license_issued_on": "",
+      "birthday": "",
+      "relatives_text": "",
+      "warning_note": "",
+      "customer_type": "",
+      "nationality": "",
+      "contact_channel": "",
+      "contact_detail": ""
+    },
+    "relatives": [
+      {
+        "name": "",
+        "relationship": "",
+        "phone": ""
+      },
+      {
+        "name": "",
+        "relationship": "",
+        "phone": ""
+      }
+    ],
+    "vehicles": [
+      {
+        "id": "",
+        "name": "",
+        "license": "",
+        "brand": "",
+        "type_text": "",
+        "color": "",
+        "year": "",
+        "driver_name": "",
+        "driver_license_number": "",
+        "driver_license_issued_on": "",
+        "borrow_hats": "02",
+        "borrow_raincoats": "02",
+        "rent_at": "",
+        "return_at": ""
+      }
+    ]
+  },
+  "rental_type": "daily",
+  "status": "draft",
+  "notes": ""
+}
