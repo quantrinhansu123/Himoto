@@ -5,6 +5,7 @@ import { ownerDatabase } from '@/lib/server/himoto-database';
 import { hasPermission } from '@/lib/management/permissions';
 import { FAQ_CATEGORIES } from '@/lib/management/guide-faq';
 import { attendancePhotoMime } from '@/lib/server/attendance';
+import { ensureGuideFaqSchema } from '@/lib/server/guide-faq-schema';
 import { failureResponse } from '@/lib/server/public-failure';
 
 export const runtime='nodejs';
@@ -13,6 +14,7 @@ async function handle(request:NextRequest) {
   const user=dataAccess.getStore()! as NonNullable<ReturnType<typeof dataAccess.getStore>> & {name:string};
   let client;
   try {
+    await ensureGuideFaqSchema();
     if(request.method==='GET') {
       const photo=request.nextUrl.searchParams.get('photo');
       if(photo) {
