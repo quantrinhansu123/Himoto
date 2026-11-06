@@ -1,7 +1,7 @@
 # HƯỚNG DẪN SỬ DỤNG HIMOTO
 
 **Dành cho:** nhân viên cơ sở, PKD, quản lý, kế toán và Admin.
-**Cập nhật:** 05/11/2026.
+**Cập nhật:** 06/11/2026.
 **Phạm vi:** giao diện web; tên nút và tính năng hiển thị tùy quyền của tài khoản.
 
 Ảnh trong tài liệu được chụp từ biểu mẫu trống trên giao diện thực tế. Các ví dụ số tiền bên dưới chỉ dùng để giải thích thao tác.
@@ -22,6 +22,10 @@
 12. [Các thao tác quản lý khác](#12-các-thao-tác-quản-lý-khác)
 13. [Xử lý tình huống thường gặp](#13-xử-lý-tình-huống-thường-gặp)
 14. [Danh sách kiểm tra cuối giao dịch](#14-danh-sách-kiểm-tra-cuối-giao-dịch)
+
+15. [Phân ca và mã ca chấm công](#15-phan-ca-va-ma-ca-cham-cong)
+16. [Chấm công vào và ra ca](#16-cham-cong-vao-va-ra-ca)
+17. [Xử lý Telegram chậm hoặc gửi chưa đủ](#17-xu-ly-telegram-cham-hoac-gui-chua-du)
 
 ## 1. Đăng nhập và chọn cơ sở
 
@@ -204,6 +208,12 @@ Nếu mất mạng hoặc chưa có kết quả rõ ràng, tải lại trạng t
 3. Dùng mục **Đến hạn đóng tiền** để theo dõi các khoản đến hẹn.
 4. Thu khoản đến hạn theo công nợ/lịch đã lưu; không dùng gia hạn thuê thường để tự cộng thêm kỳ thuê sở hữu.
 
+### Sửa kỳ gia hạn đã lưu
+
+1. Vào Gửi Telegram, chọn đúng kỳ Gia hạn rồi bấm **Sửa thời gian, phí / thanh toán** nếu có quyền.
+2. Chọn đúng phiếu thu, sửa thông tin cần thiết và ghi lý do; kiểm tra hạn mới, số tiền và tài khoản nhận.
+3. Lưu và chờ xác nhận; làm mới nội dung và ảnh, kiểm tra bản xem trước trước khi gửi. Nếu chưa rõ kết quả lưu, làm mới để kiểm tra trước khi thử lại.
+
 ## 8. Trả xe, đặc biệt hợp đồng nhiều xe
 
 1. Tìm hợp đồng hoặc vào thao tác trả xe.
@@ -295,7 +305,8 @@ Hợp đồng được ẩn khỏi danh sách; dữ liệu gốc, lịch sử xe
 | Theo dõi GPS | Định vị GPS | Tìm xe, xem lần cập nhật gần nhất; không nhầm thiếu tín hiệu với đã trả xe |
 | Xem hồ sơ khách | Khách hàng | Tìm tên/SĐT/CCCD, đối chiếu cơ sở, cảnh báo và hợp đồng |
 | Đối chiếu tiền | Sổ quỹ / Sổ két | Chọn ngày, cơ sở, loại phiếu; đối chiếu mã HĐ và tài khoản nhận/chi |
-| Ghi nhận ca | Chấm công / Báo cáo cuối ca | Chọn ca và điền nội dung theo quyền; kiểm tra trước khi gửi báo cáo |
+| Phân ca | Lịch trực cơ sở | Chọn tuần, cơ sở, nhân viên và mã ca; kiểm tra giờ trước khi lưu |
+| Ghi nhận ca | Chấm công | Chụp ảnh, lấy GPS và xác nhận vào/ra ca; đối chiếu lịch sử |
 
 ## 13. Xử lý tình huống thường gặp
 
@@ -325,6 +336,161 @@ Hợp đồng được ẩn khỏi danh sách; dữ liệu gốc, lịch sử xe
 - [ ] Hệ thống xác nhận lưu thành công.
 - [ ] Đã kiểm tra và gửi Telegram; trạng thái gửi đã rõ ràng.
 - [ ] Khi trả một phần, các xe chưa trả vẫn còn đang thuê.
+
+## 15. Phân ca và mã ca chấm công
+
+Chọn mã ca, nhân viên và cơ sở để đối chiếu chấm công.
+
+### Mở lịch trực đúng tuần và cơ sở
+
+**Mở tại:** Lịch trực cơ sở
+
+1. Chọn ngày trong tuần cần phân ca.
+2. Chọn cơ sở và nhân viên cần xem.
+3. Kiểm tra lịch hiện có trước khi thêm để tránh trùng giờ.
+
+**Kết quả cần thấy:** Đúng tuần, cơ sở và nhân viên.
+
+### Đối chiếu mã ca và công quy định
+
+**Mở tại:** Lịch trực cơ sở → Cài đặt ca chấm công
+
+1. Mở bảng mã ca để kiểm tra giờ bắt đầu, kết thúc và mức công.
+2. Chọn mã phù hợp với lịch làm việc thực tế.
+3. Mã O là nghỉ, hiện chưa hỗ trợ phân lịch nghỉ.
+
+| Ký hiệu | Chú thích | Giờ làm | Tính công |
+| --- | --- | --- | --- |
+| S | Ca sáng | 08:00 – 17:00 | 1 |
+| G1 | Ca sáng | 08:00 – 12:00 | 0,5 |
+| G2 | Ca chiều | 13:00 – 17:00 | 0,5 |
+| G3 | Ca tối | 17:00 – 21:00 | 0,5 |
+| F | Ca cả ngày | 08:00 – 21:00 | 1,5 |
+| O | Nghỉ | — | 0 |
+| C | Ca chiều | 13:00 – 21:00 | 1 |
+
+**Kết quả cần thấy:** Mã ca khớp giờ làm và mức công quy định.
+
+**Lưu ý:** Công quy định dùng để đối chiếu; chưa phải công thực tế đã duyệt.
+
+### Phân ca và kiểm tra lịch đã lưu
+
+**Mở tại:** Lịch trực cơ sở → Thêm ca trực
+
+1. Chọn cơ sở và nhân viên đang hoạt động.
+2. Chọn Ca chấm công để tự điền giờ; kiểm tra lại ngày bắt đầu và kết thúc.
+3. Giữ tên ca là mã đã chọn, kiểm tra vai trò và ghi chú rồi bấm Lưu ca trực.
+
+**Kết quả cần thấy:** Ca xuất hiện đúng ngày, đúng giờ trên lịch.
+
+**Lưu ý:** Sửa giờ riêng thì kiểm tra lại mã ca. Ca qua đêm phải chọn ngày kết thúc kế tiếp. Nếu báo xung đột hoặc chưa rõ kết quả lưu, làm mới lịch để kiểm tra trước khi thêm lại.
+
+
+## 16. Chấm công vào và ra ca
+
+Chụp ảnh, lấy GPS và ghi nhận giờ vào/ra theo giờ Việt Nam.
+
+### Kiểm tra tài khoản và lịch làm việc
+
+**Mở tại:** Chấm công
+
+1. Đăng nhập tài khoản cá nhân đã liên kết hồ sơ nhân viên đang hoạt động.
+2. Kiểm tra tên nhân viên, lịch ca và giờ hiển thị.
+3. Nếu chưa có lịch ca phù hợp, báo quản lý kiểm tra Lịch trực cơ sở.
+
+**Kết quả cần thấy:** Đúng nhân viên và lịch ca cần làm.
+
+**Lưu ý:** Nhân viên xem lịch sử của mình; người có quyền nhân sự xem theo phạm vi cơ sở.
+
+### Chụp ảnh và xác nhận vào ca
+
+**Mở tại:** Chấm công → Vào ca
+
+1. Cho phép camera và vị trí trên thiết bị.
+2. Chụp ảnh hiện tại, kiểm tra ảnh xem trước và vị trí GPS.
+3. Bấm Xác nhận vào ca, chờ lưu thành công rồi kiểm tra Giờ vào.
+
+**Kết quả cần thấy:** Hiển thị Đang trong ca và có giờ vào.
+
+**Lưu ý:** Nếu GPS quá hạn, bấm Lấy lại GPS. Chưa rõ kết quả lưu thì làm mới để kiểm tra; không bấm gửi liên tục.
+
+### Xác nhận ra ca bằng ảnh và GPS mới
+
+**Mở tại:** Chấm công → Ra ca
+
+1. Chụp ảnh hiện tại và lấy lại GPS.
+2. Bấm Xác nhận ra ca, chờ thông báo lưu.
+3. Kiểm tra Giờ ra và dòng lịch sử của ca vừa kết thúc.
+
+**Kết quả cần thấy:** Có đủ giờ vào và giờ ra; ca đã kết thúc.
+
+**Lưu ý:** Phải ra ca trước khi bắt đầu ca mới. Giờ ghi nhận theo máy chủ, giờ Việt Nam.
+
+### Đối chiếu lịch sử chấm công
+
+**Mở tại:** Chấm công → bộ lọc ngày
+
+1. Chọn Từ ngày, Đến ngày hoặc Tháng này; mỗi khoảng tối đa 93 ngày.
+2. Đối chiếu mã ca, giờ dự kiến, giờ vào/ra và số phút đi muộn.
+3. Mở ảnh và vị trí để kiểm tra; báo quản lý nếu lịch ca hoặc bằng chứng chưa khớp.
+
+**Kết quả cần thấy:** Lịch sử đúng người, đúng ngày và có bằng chứng.
+
+**Lưu ý:** Công quy định là mức của mã ca, không tự xác nhận công hưởng lương. Nếu chưa phân ca, hệ thống chưa xác định được đi muộn.
+
+
+## 17. Xử lý Telegram chậm hoặc gửi chưa đủ
+
+Phân biệt ảnh đã lưu, đang gửi, gửi thiếu và mất phản hồi.
+
+### Ảnh đã lưu nhưng chưa gửi Telegram
+
+**Mở tại:** Hợp đồng → Gửi Telegram
+
+1. Chọn đúng giao dịch, đặc biệt đúng kỳ gia hạn.
+2. Đọc nội dung, nơi nhận và kiểm tra đủ ảnh/video.
+3. Bấm Gửi toàn bộ Telegram một lần rồi chờ trạng thái cập nhật.
+
+**Kết quả cần thấy:** Giao dịch chuyển sang hàng đợi hoặc trạng thái gửi.
+
+**Lưu ý:** Chờ bấm gửi chỉ có nghĩa hồ sơ đã lưu, chưa gửi vào nhóm. Lưu ảnh không tự gửi Telegram.
+
+### Xử lý màn hình phản hồi chậm
+
+**Mở tại:** Gửi Telegram → Làm mới nội dung và ảnh
+
+1. Đợi thao tác đang chạy hoàn tất; xem thông báo lỗi nếu có.
+2. Nếu tải quá lâu hoặc mất mạng, kiểm tra kết nối rồi làm mới nội dung và ảnh.
+3. Nếu vừa bấm gửi, kiểm tra trạng thái và nhóm nhận trước khi quyết định gửi lại.
+
+**Kết quả cần thấy:** Đã biết giao dịch đang chờ, đã gửi hay cần xử lý tiếp.
+
+**Lưu ý:** Không đóng rồi tạo lại giao dịch chỉ vì phản hồi chậm. Khi báo lỗi cho quản lý, gửi mã HĐ, kỳ giao dịch, thời điểm và ảnh màn hình.
+
+### Tiếp tục phần Telegram chưa nhận
+
+**Mở tại:** Gửi Telegram → Gửi chưa hoàn tất
+
+1. Đối chiếu số tệp Telegram đã nhận với tổng cần gửi.
+2. Nếu lần trước timeout hoặc mất mạng, kiểm tra album trong nhóm trước.
+3. Dùng Gửi tiếp phần còn thiếu hoặc Gửi tiếp nội dung theo nút hiển thị.
+
+**Kết quả cần thấy:** Telegram xác nhận đủ tệp và nội dung.
+
+**Lưu ý:** Gửi tiếp dùng bộ hồ sơ và nhóm của lần đã lưu. Nếu album mất phản hồi nhưng thực tế đã lên nhóm, có thể trùng một phần khi gửi tiếp.
+
+### Đối chiếu trước khi gửi lại
+
+**Mở tại:** Gửi Telegram → Cần đối chiếu Telegram
+
+1. Tìm đúng mã HĐ và kỳ giao dịch trong nhóm nhận.
+2. Chỉ xác nhận chưa có tin khi đã kiểm tra chắc chắn.
+3. Nếu có lựa chọn Gửi lại sau khi đối chiếu, dùng sau khi xác nhận; nếu không có, báo quản trị kèm mã HĐ.
+
+**Kết quả cần thấy:** Kết quả gửi đã rõ ràng, tránh gửi trùng.
+
+**Lưu ý:** Đã gửi Telegram: hệ thống khóa gửi lại nội dung không đổi. Muốn sửa hồ sơ, cập nhật dữ liệu rồi làm mới và kiểm tra bản mới.
+
 
 ---
 

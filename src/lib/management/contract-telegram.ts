@@ -1,8 +1,9 @@
 import type { ContractTelegramState } from '../../../shared/contract-telegram';
+import { abortAny, abortTimeout } from '@/lib/abort-signal';
 export * from '../../../shared/contract-telegram';
 export async function contractTelegramRequest(id:number,body?:Record<string,unknown>,signal?:AbortSignal):Promise<ContractTelegramState> {
-  const timeout=AbortSignal.timeout(60000);
-  const requestSignal=signal?AbortSignal.any([signal,timeout]):timeout;
+  const timeout=abortTimeout(60000);
+  const requestSignal=signal?abortAny([signal,timeout]):timeout;
   try {
   const response=await fetch(`/api/auth/order/car-rental/${id}/telegram`,{method:body?'POST':'GET',cache:'no-store',credentials:'same-origin',signal:requestSignal,
     ...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
