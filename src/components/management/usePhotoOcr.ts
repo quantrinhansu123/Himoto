@@ -24,14 +24,14 @@ export function usePhotoOcr<Snapshot>({ kind, snapshot, apply }: {
   }
   function readMany(slot:string,files:File[]){
     for(const key of [...jobs.current.keys()])cancel(key);
-    setStates({});if(files.length)start(slot,files,callbacks.current.kind('id_front')==='passport'?'passport':'customer_documents');
+    setStates({});if(files.length)start(slot,files,'customer_documents');
   }
   function start(slot:string,input:File|File[],kind:OcrKind) {
     const controller = new AbortController(); jobs.current.set(slot, controller);
     const before = callbacks.current.snapshot(slot);
-    setStates(current => ({ ...current, [slot]: { phase: 'reading', message: ['cccd_front','cccd_back','customer_documents'].includes(kind) ? 'Đang quét QR căn cước…' : 'AI đang đọc ảnh…' } }));
+    setStates(current => ({ ...current, [slot]: { phase: 'reading', message: 'AI đang đọc ảnh…' } }));
     const priorIdentity=before&&typeof before==='object'&&'id_card' in before?String(before.id_card||'').trim():'';
-    const expected=['cccd_front','cccd_back','customer_documents'].includes(kind)&&/^(\d{9}|\d{12})$/.test(priorIdentity)?priorIdentity:'';
+    const expected=kind==='cccd_back'&&/^(\d{9}|\d{12})$/.test(priorIdentity)?priorIdentity:'';
     void readPhotoWithAi(kind, input, controller.signal,expected).then(result => {
       if (controller.signal.aborted || jobs.current.get(slot) !== controller) return;
       if (!Object.keys(result.fields).length) throw new Error('Chưa đọc được thông tin rõ ràng. Chụp lại ảnh hoặc nhập tay.');

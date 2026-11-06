@@ -4,9 +4,8 @@ import { ImagePlus,LoaderCircle } from 'lucide-react';
 import { prepareRecordPhoto,uploadRecordPhoto,type PendingPhotos } from '@/lib/management/record-photos';
 import type { PhotoOcrController } from './usePhotoOcr';
 import { nextPhotoInGroup } from '@/lib/management/photo-slot-groups';
-import { IdentityQrCamera } from './IdentityQrCamera';
 
-export function CustomerDocumentBatch({ocr,value={},onChange,onBusyChange,disabled=false,qrEnabled=true}:{ocr:PhotoOcrController;value?:PendingPhotos;onChange:(value:PendingPhotos)=>void;onBusyChange:(busy:boolean)=>void;disabled?:boolean;qrEnabled?:boolean}) {
+export function CustomerDocumentBatch({ocr,value={},onChange,onBusyChange,disabled=false}:{ocr:PhotoOcrController;value?:PendingPhotos;onChange:(value:PendingPhotos)=>void;onBusyChange:(busy:boolean)=>void;disabled?:boolean}) {
   const picker=useRef<HTMLInputElement>(null),active=useRef(true);const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const callback=useRef(onBusyChange);callback.current=onBusyChange;
   useEffect(()=>{active.current=true;return()=>{active.current=false;callback.current(false);};},[]);
@@ -24,10 +23,9 @@ export function CustomerDocumentBatch({ocr,value={},onChange,onBusyChange,disabl
     finally{if(active.current){setBusy(false);callback.current(false);}}
   }
   const state=ocr.states.documents||ocr.states.id_front;
-  return <div className="mg-document-batch"><p>{qrEnabled?'Quét QR căn cước để tự điền hoặc chọn ảnh giấy tờ của cùng một khách. Kiểm tra lại thông tin trước khi lưu.':'Chọn ảnh hộ chiếu và giấy phép lái xe của cùng một khách. Kiểm tra lại thông tin trước khi lưu.'}</p>
-    {qrEnabled&&<IdentityQrCamera disabled={disabled||busy||ocr.pending} onFrame={file=>{ocr.cancel('documents');ocr.read('id_front',file);}}/>}
+  return <div className="mg-document-batch"><p>Chọn ảnh CCCD, hộ chiếu hoặc GPLX của cùng một khách. AI đọc tối đa 3 ảnh đầu để tự điền; kiểm tra lại thông tin trước khi lưu. Địa chỉ hiện tại nhập bằng tay.</p>
     <input hidden ref={picker} type="file" accept="image/*" multiple aria-label="Chọn bộ ảnh CCCD và GPLX" disabled={disabled||busy||ocr.pending} onChange={event=>{const files=Array.from(event.target.files||[]);event.target.value='';void choose(files);}}/>
-    <button type="button" className="mg-button" disabled={disabled||busy||ocr.pending} onClick={()=>picker.current?.click()}>{busy?<LoaderCircle size={16} className="mg-spin"/>:<ImagePlus size={16}/>} {qrEnabled?'Chọn ảnh · Quét QR căn cước':'Chọn ảnh giấy tờ'}</button>
+    <button type="button" className="mg-button" disabled={disabled||busy||ocr.pending} onClick={()=>picker.current?.click()}>{busy?<LoaderCircle aria-hidden="true" size={16} className="mg-spin"/>:<ImagePlus aria-hidden="true" size={16}/>} Chọn ảnh · AI đọc giấy tờ</button>
     {busy&&<p role="status">Đang chuẩn bị bộ ảnh…</p>}{state&&<p role={state.phase==='error'?'alert':'status'} className={state.phase==='error'?'mg-field-error':undefined}>{state.message}</p>}
     {state?.phase==='reading'&&<button className="mg-button" type="button" onClick={()=>{ocr.cancel('documents');ocr.cancel('id_front');}}>Bỏ qua đọc giấy tờ</button>}
     {error&&<p className="mg-field-error" role="alert">{error}</p>}

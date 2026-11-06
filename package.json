@@ -59,7 +59,6 @@
     "test:counter-workflow": "node scripts/check-counter-workflow.cjs",
     "test:customer-entry": "node scripts/check-customer-entry.cjs",
     "test:photo-ocr": "node scripts/check-photo-ocr.cjs",
-    "test:identity-qr": "node scripts/check-identity-qr.cjs",
     "test:vehicle-registration-ocr": "node scripts/check-vehicle-registration-ocr.cjs",
     "test:refund-qr": "node scripts/check-refund-qr.cjs",
     "test:telegram-retractions": "node scripts/check-telegram-retraction-api.cjs && node scripts/check-gps-contract-integrations.cjs --retractions-only",
@@ -96,8 +95,7 @@
     "pg": "^8.23.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sass": "^1.85.0",
-    "zxing-wasm": "3.1.6"
+    "sass": "^1.85.0"
   },
   "overrides": {
     "zod": "^4.6.7",

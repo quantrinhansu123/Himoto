@@ -63,10 +63,6 @@ export function mergeOcrCustomer(current: CustomerDetails, result: OcrFields, be
 }
 
 export async function readPhotoWithAi(kind: OcrKind, file: File|File[], signal: AbortSignal,expectedIdentity=''): Promise<OcrResult> {
-  if (kind === 'cccd_front' || kind === 'cccd_back' || kind === 'customer_documents') {
-    const { readIdentityQr } = await import('./identity-qr');
-    return readIdentityQr(Array.isArray(file) ? file : [file], signal, expectedIdentity);
-  }
   const batch=Array.isArray(file);let body:File|FormData;
   if(batch){const form=new FormData();for(const image of file)form.append('photos',image);body=form;}else body=file;
   const response = await fetch('/api/auth/photo-ocr', { method: 'POST', credentials: 'same-origin', signal,
