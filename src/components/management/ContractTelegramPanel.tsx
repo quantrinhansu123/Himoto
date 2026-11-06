@@ -23,8 +23,15 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
   const events=data?.events.filter(e=>(!onlyEventKey||e.key===eventKey)&&(!returnItems||e.kind==='return'&&e.phases.some(phase=>returnItems.split(',').some(item=>phase===`return-${item}`))))||[];
   const event=events.find(e=>e.key===selected);
   useEffect(()=>setConfirmedAbsent(false),[selected,event?.notice_id]);
-  const active=events.some(e=>e.status==='pending'||e.status==='sending'||e.deliveries?.some(delivery=>['pending','processing'].includes(delivery.retraction_state||'')));
-  useEffect(()=>{if(!active||busy)return;const controller=new AbortController();const timer=setTimeout(()=>void refresh(controller.signal),3000);return()=>{clearTimeout(timer);controller.abort();};},[active,busy,data,refresh]);
+  const active=Boolean(event&&(event.status==='pending'||event.status==='sending'||event.deliveries?.some(delivery=>['pending','processing'].includes(delivery.retraction_state||''))));
+  useEffect(()=>{
+    if(!active||busy)return;
+    const controller=new AbortController();
+    let timer:ReturnType<typeof setTimeout>;
+    const poll=async()=>{await refresh(controller.signal);if(!controller.signal.aborted)timer=setTimeout(()=>void poll(),5000);};
+    timer=setTimeout(()=>void poll(),3000);
+    return()=>{clearTimeout(timer);controller.abort();};
+  },[active,busy,refresh]);
   return <section className="mg-contract-telegram">
     <p>Bước cuối · Kiểm tra toàn bộ thông tin, ảnh và video đã lưu từ các bước trước. Chỉ nút Gửi toàn bộ bên dưới mới gửi vào nhóm nhận của giao dịch. Không cần tải lại ảnh đã có.</p>
     <div className="mg-contract-history-toolbar"><button className="mg-button" type="button" disabled={loading||busy} onClick={()=>void refresh()}>{loading?<LoaderCircle size={15} className="mg-spin"/>:null}Làm mới nội dung và ảnh</button></div>

@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, RotateCcw, Pencil, Trash2 } from 'lucide-react';
 import { addDays, DutyInput, dutyRequest, DutyRequestError, DutySchedule, localDutyTime, vietnamDate, weekStart } from '@/lib/management/duty-roster';
+import { ATTENDANCE_SHIFTS, attendanceShift, shiftCreditLabel } from '@/lib/management/attendance-shifts';
 import { formatTime24 } from '@/lib/formatters';
 import { DateTime24Controls } from '@/components/contracts/DateTime24Field';
 import {DUTY_EXPORT_HEADERS,dutyExportRows} from '@/lib/management/filtered-list-export';
@@ -55,6 +56,7 @@ export function DutyRosterPage() {
       <label>Cơ sở<select aria-label="Cơ sở lịch trực" value={selectedStore} onChange={event=>selectStore(event.target.value)}><option value="all">Tất cả cơ sở</option>{dataset?.stores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
       <label>Nhân viên<select aria-label="Lọc nhân viên trực" value={staffFilter} onChange={event=>setStaffFilter(event.target.value)}><option value="">Tất cả nhân viên</option>{staff.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
     </div>
+    <div className="mg-data-panel"><details><summary style={{padding:12,cursor:'pointer'}}>Cài đặt ca chấm công · 7 mã ca</summary><div className="mg-table-scroll"><table className="mg-table"><thead><tr><th>Ký hiệu</th><th>Chú thích</th><th>Tính công</th></tr></thead><tbody>{ATTENDANCE_SHIFTS.map(shift=><tr key={shift.code}><td><strong>{shift.code}</strong></td><td>{shift.name} {shift.start} {shift.end}</td><td>{shiftCreditLabel(shift.credit)}</td></tr>)}</tbody></table></div><p className="mg-attendance-hint" style={{padding:12}}>O: nghỉ, không tạo ca làm việc. Công quy định dùng để đối chiếu, chưa phải công đã duyệt.</p></details></div>
     <p className="mg-duty-range">Tuần {dateLabel(week)} – {dateLabel(addDays(week,6))}</p>
     {(error||datasetError)&&<p className="mg-field-error" role="alert">{error||datasetError} <button type="button" className="mg-button" onClick={refresh}>Thử lại</button></p>}
     {loading&&<p role="status">Đang tải lịch trực…</p>}
@@ -72,7 +74,7 @@ export function DutyRosterPage() {
 
 function DutyForm({row,week,storeId,onClose,onSaved,onRefresh}:{row:DutySchedule|null;week:string;storeId:string;onClose:()=>void;onSaved:()=>void;onRefresh:()=>void}) {
   const {dataset}=useManagement();
-  const [form,setForm]=useState({store_id:row?String(row.store_id):storeId==='all'?'':storeId,staff_id:row?.staff_id?String(row.staff_id):'',starts_at:localDutyTime(row?.starts_at||null)||`${week}T08:00`,ends_at:localDutyTime(row?.ends_at||null)||`${week}T17:00`,shift_name:row?.shift_name||'Ca trực',role_in_shift:row?.role_in_shift||'Nhân viên trực',notes:row?.notes||''});
+  const [form,setForm]=useState({store_id:row?String(row.store_id):storeId==='all'?'':storeId,staff_id:row?.staff_id?String(row.staff_id):'',starts_at:localDutyTime(row?.starts_at||null)||`${week}T08:00`,ends_at:localDutyTime(row?.ends_at||null)||`${week}T17:00`,shift_name:row?.shift_name||'S',role_in_shift:row?.role_in_shift||'Nhân viên trực',notes:row?.notes||''});
   const [saving,setSaving]=useState(false),[error,setError]=useState(''),[uncertain,setUncertain]=useState(false);
   const busy=useRef(false),requestId=useRef(crypto.randomUUID());
   const update=(key:keyof typeof form,value:string)=>setForm(current=>({...current,[key]:value}));
@@ -88,6 +90,7 @@ function DutyForm({row,week,storeId,onClose,onSaved,onRefresh}:{row:DutySchedule
   return <Dialog title={row?'Sửa ca trực':'Thêm ca trực'} onClose={()=>{if(!busy.current)onClose();}}><form onSubmit={submit}><div className="mg-dialog-body"><fieldset className="mg-payment-fields" disabled={saving||uncertain}><legend>Thông tin ca trực</legend>
     <label className="mg-field-wide">Cơ sở<select aria-label="Cơ sở của ca trực" required value={form.store_id} onChange={event=>update('store_id',event.target.value)}><option value="">Chọn cơ sở</option>{dataset?.stores.filter(store=>['active','opening'].includes(store.status)).map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
     <label className="mg-field-wide">Nhân viên<select aria-label="Nhân viên của ca trực" required value={form.staff_id} onChange={event=>update('staff_id',event.target.value)}><option value="">Chọn nhân viên</option>{dataset?.staff.filter(person=>person.status==='active').map(person=><option key={person.id} value={person.id}>{person.name}{person.store_name?` · ${person.store_name}`:''}</option>)}</select></label>
+    <label className="mg-field-wide">Ca chấm công<select aria-label="Ca chấm công" value={attendanceShift(form.shift_name)?.code || ''} onChange={event=>{const shift=attendanceShift(event.target.value);if(shift?.start&&shift.end)setForm(current=>({...current,shift_name:shift.code,starts_at:current.starts_at.slice(0,10)+'T'+shift.start,ends_at:current.starts_at.slice(0,10)+'T'+shift.end}));}}><option value="">Ca tùy chỉnh</option>{ATTENDANCE_SHIFTS.filter(shift=>shift.start).map(shift=><option key={shift.code} value={shift.code}>{shift.code} · {shift.name} · {shift.start}–{shift.end} · {shiftCreditLabel(shift.credit)} công</option>)}</select></label>
     <label className="mg-field-wide">Bắt đầu (24h)<DateTime24Controls id="duty-starts-at" label="Bắt đầu ca trực" value={form.starts_at} onChange={value=>update('starts_at',value)}/></label>
     <label className="mg-field-wide">Kết thúc (24h)<DateTime24Controls id="duty-ends-at" label="Kết thúc ca trực" value={form.ends_at} onChange={value=>update('ends_at',value)}/></label>
     <p className="mg-field-wide">Ca qua đêm: chọn ngày kết thúc kế tiếp. Có thể phân nhân viên trực cơ sở khác; hồ sơ nhân viên giữ nguyên.</p>
