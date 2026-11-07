@@ -20,13 +20,14 @@ async function main(){
  }finally{global.fetch=originalFetch;global.setTimeout=originalSet;global.clearTimeout=originalClear;}
  const commands=[];
  const client={async query(sql){commands.push(sql);
+  if(sql.startsWith('SELECT count(*)::int AS total FROM'))return {rows:[{total:1}]};
   return {rows:[{id:123,status:'renting',contract_number:'QA-123',vehicles:[],__total_count:1}]};
  }};
  const page=await server.readManagementTable(client,'contracts',new URLSearchParams('size=10'));
  assert.equal(page.rows[0].id,123);
- assert.equal(commands.length,2);
- assert(/\bLIMIT \$1\b/.test(commands[0])&&!commands[0].includes('himoto.customers')&&!commands[0].includes('himoto.transactions'));
- assert(commands[1].includes('ANY($1'));
+ assert.equal(commands.length,3);
+ assert(/\bLIMIT \$1\b/.test(commands[1])&&!commands[1].includes('himoto.customers')&&!commands[1].includes('himoto.transactions'));
+ assert(commands[2].includes('ANY($1'));
  console.log('PASS: request timeout, cancellation, retry, cleanup and transaction recovery preserve readable list rows');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

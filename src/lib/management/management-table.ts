@@ -18,6 +18,7 @@ export interface ManagementTableInput {
   storeBasis?:'warehouse';
 }
 export interface ManagementTableResult {
+  statisticsPending?: boolean;
   rows: ManagementRow[]; total: number; scopeCount: number; tabCount: number;
   page: number; pages: number; statusCounts: [string, number][]; statuses: string[];
   dueCount: number; summary: ContractSummary | null;
@@ -79,7 +80,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
     summary:input.kind==='contracts' ? summarizeContracts(filtered,[]) : null,recentDays:input.recentDays??null,...(monitoring?{overdueCounts}:{}),
     ...(missingOpenContractCount===undefined?{}:{missingOpenContractCount})};
 }
-export async function requestManagementTable(input: ManagementTableInput, signal?: AbortSignal, all = false, ownershipStores: number[] = [],statistics?:ManagementTableResult): Promise<ManagementTableResult> {
+export async function requestManagementTable(input: ManagementTableInput, signal?: AbortSignal, all = false, ownershipStores: number[] = [],statistics?:ManagementTableResult,mode:'full'|'page'|'statistics'='full'): Promise<ManagementTableResult> {
   const controller=new AbortController();
   let timedOut=false;
   const cancel=()=>controller.abort(signal?.reason);
@@ -87,9 +88,10 @@ export async function requestManagementTable(input: ManagementTableInput, signal
   const timer=setTimeout(()=>{timedOut=true;controller.abort();},all?120000:45000);
   try {
   const params=managementTableQuery(input,all);
-  if(input.kind==='contracts'&&!all)params.set('scope_count','1');
+  if(input.kind==='contracts'&&!all&&mode!=='page')params.set('scope_count','1');
+  if(mode==='statistics')params.set('statistics_only','1');
   const reuse=input.kind==='contracts'&&!all?statistics:undefined;
-  if(input.kind==='contracts'&&!all&&!reuse)params.set('status_counts','1');
+  if(input.kind==='contracts'&&!all&&!reuse&&mode==='full')params.set('status_counts','1');
   const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${params}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal});
   const result=await response.json().catch(()=>null);
   if (!response.ok || result?.status!=='success') throw new Error(result?.message || 'Không tải được danh sách. Thử lại.');
@@ -99,8 +101,11 @@ export async function requestManagementTable(input: ManagementTableInput, signal
   if(reuse){
     // A concurrent create/delete changed this result set: obtain new counters
     // instead of showing cached counts against a newer number of records.
-    if(result.data.total!==reuse.total)return requestManagementTable(input,signal,all,ownershipStores);
-    return {...result.data,statusCounts:reuse.statusCounts,statuses:reuse.statuses,tabCount:reuse.tabCount,dueCount:reuse.dueCount,summary:reuse.summary,...(reuse.overdueCounts?{overdueCounts:reuse.overdueCounts}:{}),...(reuse.missingOpenContractCount===undefined?{}:{missingOpenContractCount:reuse.missingOpenContractCount})};
+    if(result.data.total!==reuse.total){
+      if(mode==='full')return requestManagementTable(input,signal,all,ownershipStores);
+      return result.data;
+    }
+    return {...result.data,scopeCount:reuse.scopeCount,statusCounts:reuse.statusCounts,statuses:reuse.statuses,tabCount:reuse.tabCount,dueCount:reuse.dueCount,summary:reuse.summary,...(reuse.overdueCounts?{overdueCounts:reuse.overdueCounts}:{}),...(reuse.missingOpenContractCount===undefined?{}:{missingOpenContractCount:reuse.missingOpenContractCount})};
   }
   return result.data;
   } catch(error) {

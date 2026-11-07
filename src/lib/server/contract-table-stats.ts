@@ -83,7 +83,7 @@ export async function fastContractStatistics(db:Pick<PoolClient,'query'>,input:M
  for(const [status,count] of result.closed_counts as [string,number][])counts.set(status,(counts.get(status)||0)+count);
  const blacklist=new Set<number>(result.blacklist.map(Number));
  for(const row of stats.rows)if(row.customer_status==='blacklist')blacklist.add(Number(row.customer_id));
- return {...stats,total:stats.total+result.closed_selected,tabCount:stats.tabCount+result.closed_total,
+ return {...stats,scopeCount:stats.scopeCount+result.closed_total,total:stats.total+result.closed_selected,tabCount:stats.tabCount+result.closed_total,
    statusCounts:[...counts].sort(([a],[b])=>a.localeCompare(b)),statuses:[...new Set([...stats.statuses,...result.closed_counts.map(([status]:[string,number])=>status)])].sort(),
    summary:stats.summary&&{...stats.summary,contractCount:stats.summary.contractCount+result.closed_selected,blacklistCount:blacklist.size,
      totalAmount:stats.summary.totalAmount===null||result.unknown_totals>0?null:stats.summary.totalAmount+amount}};
