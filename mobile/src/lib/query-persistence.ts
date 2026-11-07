@@ -1,6 +1,8 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import type { OfflineStore } from './offline-store';
 import { OFFLINE_TTL } from './offline-policy';
+import { ApiError } from './api';
+import { offlineStatus } from './offline-status';
 
 // Lookup data only. Never restore write receipts, editable preparations, media
 // permissions, signed URLs, credentials or a pending transaction as confirmed.
@@ -50,6 +52,21 @@ export function persistLookupQueries(client: QueryClient, store: OfflineStore, s
   const unsubscribe = client.getQueryCache().subscribe(event => {
     if (event.type !== 'updated' || !persistableLookup(event.query.queryKey)) return;
     const { query } = event, hash = query.queryHash;
+    if (event.action.type === 'error') {
+      const error = event.action.error, { data, dataUpdatedAt } = query.state;
+      if (error instanceof ApiError && [401,403,404].includes(error.status) && data !== undefined)
+        query.setState({ data: undefined, dataUpdatedAt: 0 });
+      if (alive && active() && data !== undefined && Date.now() - dataUpdatedAt < OFFLINE_TTL &&
+        error instanceof ApiError && !['INVALID_RESPONSE','CONFIGURATION','SESSION_CHANGED'].includes(error.code) &&
+        (error.status === 0 || error.status >= 500 || error.status === 429)) {
+        if (error.status === 0) offlineStatus.update({ connected: false });
+        offlineStatus.servedCache(dataUpdatedAt);
+        // Keep a loaded lookup visible when its background refresh fails. Its
+        // original timestamp stays stale; reconnect/focus still revalidates it.
+        client.setQueryData(query.queryKey, data, { updatedAt: dataUpdatedAt });
+        return;
+      }
+    }
     if (event.action.type === 'invalidate' || event.action.type === 'error') {
       writes = writes.then(() => alive && active() ? store.removeQuery(scope, hash) : undefined).catch(() => {});
     } else if (event.action.type === 'success' && !query.state.isInvalidated) {

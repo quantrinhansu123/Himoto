@@ -11,6 +11,7 @@ const { offlineScopeKey, OFFLINE_TTL } = mobile('offline-policy');
 const { rememberRecordPreview, recordPreviewKey } = mobile('record-preview');
 const { lookupSnapshot, persistableLookup, restoreLookupQueries, persistLookupQueries } = mobile('query-persistence');
 const { cachedMobileSession } = mobile('session-bootstrap');
+const { ApiError } = mobile('api');
 const pause = () => new Promise(resolve => setTimeout(resolve, 20));
 async function main() {
   const checks = [], sql = new DatabaseSync(':memory:');
@@ -64,6 +65,17 @@ async function main() {
     client.setQueryData(['overview',7],{total:5}); await pause();
     await store.clearCache(scope); assert.equal((await store.readQueries(scope)).length,0);
     checks.push('Lookup success persists; invalidation and confirmed write cache clearing cannot resurrect an old stored report');
+    const offlineKey=['staff-organization',7], offlineAt=Date.now()-45000;
+    client.setQueryData(offlineKey,{rows:[{id:7}]},{updatedAt:offlineAt});
+    const offlineObserver=new QueryObserver(client,{queryKey:offlineKey,queryFn:async()=>{throw new ApiError('Offline fixture',0,'NETWORK');},retry:false});
+    const unobserve=offlineObserver.subscribe(()=>{});await pause();
+    assert.equal(offlineObserver.getCurrentResult().isSuccess,true);
+    assert.equal(client.getQueryState(offlineKey).dataUpdatedAt,offlineAt);
+    assert.equal(offlineObserver.getCurrentResult().data.rows[0].id,7);unobserve();
+    const deniedKey=['directory',7,'staff'];client.setQueryData(deniedKey,{rows:[{id:7}]},{updatedAt:offlineAt});
+    const denied=new QueryObserver(client,{queryKey:deniedKey,queryFn:async()=>{throw new ApiError('Denied fixture',403,'FORBIDDEN');},retry:false});
+    const undenied=denied.subscribe(()=>{});await pause();assert.equal(denied.getCurrentResult().isError,true);assert.equal(denied.getCurrentResult().data,undefined);undenied();
+    checks.push('Failed background refresh keeps a cached lookup visible without freshening it; permission denial is never converted to cached success');
 
     const stored={origin,token:'hm1_'+'a'.repeat(43),user,expiresAt:new Date(Date.now()+60000).toISOString(),verifiedAt:Date.now()-1000};
     assert.equal(cachedMobileSession(stored).user.id,7);

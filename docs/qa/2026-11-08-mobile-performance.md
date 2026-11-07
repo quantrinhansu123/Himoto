@@ -6,6 +6,7 @@
 
 - Tách preview danh sách khỏi cache chi tiết. Mở hợp đồng/khách gọi cập nhật; không đánh dấu dữ liệu cũ thành mới. Hồ sơ xe hiện preview có sẵn trong lúc lấy profile thật, dùng cùng khóa cho tải trước và màn chi tiết.
 - Cache tra cứu SQLite mã hóa khôi phục vào Query trước khi mở navigator. Giữ timestamp gốc, đánh dấu cần xác minh khi mount. Phạm vi gồm tài khoản/cơ sở/quyền/role/server; giới hạn 40 query, tổng 4 MiB, tối đa ba trang đầu mỗi danh sách, TTL 24 giờ.
+- Lỗi mạng/5xx khi cập nhật nền giữ nội dung tra cứu đã tải và timestamp gốc; hiển thị trạng thái dữ liệu đã lưu. 401/403/404 xóa dữ liệu query đang hiển thị, không chuyển từ chối truy cập thành thành công từ cache.
 - Phục hồi phiên từ quyền offline còn hợp lệ trên máy, sau đó xác thực nền. Không kéo dài hạn xác minh 24 giờ; 401 vẫn thu hồi quyền. Banner báo đang cập nhật/ngoại tuyến. Không phục hồi kết quả ghi, media permission, token, QR, biểu mẫu quyết toán hoặc giao dịch đang chờ như kết quả thành công.
 - Hàng đợi rỗng không gọi API đồng bộ/xác thực hai lần mỗi 15 giây. Giữ kiểm tra foreground định kỳ, khi quay lại app và khi mạng phục hồi.
 - Danh sách chính memo hóa dữ liệu/renderItem và giới hạn cửa sổ/batch render; thumbnail cache trong RAM, khóa riêng theo phiên/quyền, xóa khi đổi phạm vi/đăng xuất. Không lưu ảnh nghiệp vụ vào disk cache chung.
@@ -24,6 +25,7 @@
 - Reports, cashbook, support, notifications và 124 ca SQL tài chính PGlite đạt.
 - 43 ca browser trên bốn kích thước/sáng tối và 6 nhóm nhập/xuất Excel đạt; không page error hoặc ghi dữ liệu production.
 - Hai bộ kiểm tra mới từ pull về danh sách hợp đồng và timeout Telegram đạt.
+- Backend `64e8684` đã deploy Production thành công; 23 kiểm tra route/gate công khai đạt, trang web đăng nhập trả 200. Không dùng kiểm tra gate để thay nghiệm thu đăng nhập admin.
 
 Bằng chứng trong `.backups/mobile-speed-20261108/`. Các ca ghi tiền/kho/chấm công dùng dữ liệu cô lập; không tạo giao dịch thật bằng tài khoản admin trên Samsung.
 
