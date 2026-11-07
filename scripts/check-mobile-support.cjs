@@ -50,6 +50,8 @@ async function main(){
     const second=await(await faq.GET(request('guide-faq?page=2'))).json();assert.equal(second.rows.length,5);assert(!second.hasMore);assert(!second.rows.some(row=>row.id===id));
     const pending=await(await faq.GET(request('guide-faq?status=pending&category='+encodeURIComponent('Hợp đồng')+'&search=question'))).json();assert.equal(pending.total,24);
     assert.equal((await faq.GET(request('guide-faq?page=0'))).status,400);
+    for(const question of ['VAT 100% QA','VAT 1000 QA','Code Q_A','Code QXA']){const form=new FormData();form.set('action','ask');form.set('request_id',randomUUID());form.set('category','Hợp đồng');form.set('question',question);assert.equal((await faq.POST(request('guide-faq','POST',form))).status,200);}
+    for(const search of ['100%','Q_A']){const found=await(await faq.GET(request('guide-faq?search='+encodeURIComponent(search)))).json();assert.equal(found.total,1,'Search punctuation must stay literal like the web filter.');}
     checks.push('Shared FAQ domain: bounded SQL pagination/filter/search, authenticated ask, permission-gated answer with images, stale revision rejection and private image delivery');
     const {ATTENDANCE_SHIFTS}=load(path.resolve(root,'../shared/attendance-shifts'));assert.deepEqual(ATTENDANCE_SHIFTS.map(item=>item.code),['S','G1','G2','G3','F','O','C']);assert.equal(ATTENDANCE_SHIFTS.find(item=>item.code==='O').start,null);
     checks.push('Seven web/app shift definitions share one source, including a non-working rest code');
