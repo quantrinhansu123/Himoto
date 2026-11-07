@@ -1,5 +1,6 @@
 """Inspect the real APK bytes, without environment files or credentials."""
 import hashlib,zipfile
+from .mobile_dex import has_constructor
 def verify_bundle(apk,require_offline=False):
     with zipfile.ZipFile(apk) as archive:
         names=archive.namelist();bundle=archive.read('assets/index.android.bundle')
@@ -10,6 +11,7 @@ def verify_bundle(apk,require_offline=False):
         dex=b''.join(archive.read(n) for n in classes)
         native_features={name:marker in dex for name,marker in [('sqlite',b'expo/modules/sqlite/'),('biometric',b'expo/modules/localauthentication/'),('location',b'expo/modules/location/'),('backgroundTask',b'expo/modules/backgroundtask/')]}
         native_features['sqlCipher']=any(b'cipher_version' in archive.read(n) for n in names if n.startswith('lib/arm64-v8a/') and 'sqlite' in n.lower() and n.endswith('.so'))
+        native_features['workDatabaseConstructor']=any(has_constructor(archive.read(n),'Landroidx/work/impl/WorkDatabase_Impl;') for n in classes)
         if require_offline:assert all(native_features.values()),'Required final-release native modules absent: '+str(native_features)
         assert any(b'expo/modules/notifications/' in archive.read(n) for n in classes),'Native notifications module absent'
         resources=archive.read('resources.arsc')

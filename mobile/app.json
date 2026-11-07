@@ -34,6 +34,7 @@
       "expo-secure-store",
       ["expo-sqlite", {"useSQLCipher": true}],
       "expo-background-task",
+      ["expo-build-properties", {"android": {"extraProguardRules": "# WorkManager/Room instantiate this constructor through reflection.\n-keep class androidx.work.impl.WorkDatabase_Impl { public <init>(); }"}}],
       ["expo-location", {"locationWhenInUsePermission": "Himoto dùng vị trí hiện tại để xác nhận chấm công khi bạn vào hoặc ra ca."}],
       ["expo-local-authentication", {"faceIDPermission": "Himoto dùng Face ID để mở khóa phiên làm việc của bạn."}],
       ["expo-notifications", {"defaultChannel": "himoto-work", "color": "#E60019"}],

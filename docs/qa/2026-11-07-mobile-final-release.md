@@ -53,3 +53,22 @@ Kết quả kiểm tra và artifact sẽ được cập nhật sau khi thực hi
    version/source manifest, nâng cấp Samsung và smoke đọc/mở-hủy chức năng.
 5. Ghi artifact cuối và các giới hạn nghiệm thu; không gọi fixture là nghiệm thu
    toàn bộ nghiệp vụ trên production hoặc sinh trắc học thật.
+
+## Backend và vòng build đầu
+
+- Đã áp migration refresh additive trên production; giữ nguyên dữ liệu nghiệp vụ.
+- Đã push b01235e, 297cb80 và 9125846 lên main; Vercel production thành công.
+  Bản 9125846 giữ thiết bị push hoạt động khi access token hết hạn nhưng refresh
+  session còn hợp lệ. Bảy nhóm notification fixture đạt, không gửi FCM thật.
+- Finance SQL đạt 124 trường hợp; web/mobile typecheck, mobile lint đạt.
+- Build ký vòng đầu 1.0.3/code 4, cùng certificate với 1.0.2; nâng cấp Samsung
+  bằng install -r, không uninstall/clear. Source 475 file giữ nguyên khi build.
+- **Không bàn giao APK vòng đầu**: máy Samsung Android 9 bị lỗi WorkManager
+  ngay khi khởi động. Logcat và R8 usage xác nhận constructor không tham số của
+  `androidx.work.impl.WorkDatabase_Impl` bị loại bỏ.
+- Thêm rule qua expo-build-properties SDK 58 để giữ chính constructor này.
+  Kiểm tra APK nay đọc class_data/method definition của DEX, không chỉ tìm tên
+  module. Kiểm tra mới đã phát hiện đúng APK lỗi vòng đầu.
+- Theo yêu cầu tạo tài khoản test, đã tạo QA giới hạn cơ sở, không cấp quyền
+  tiền/quản trị, không gắn nhân viên thật. Mật khẩu giữ DPAPI ngoài Git;
+  không đưa vào log/artifact. Chỉ kiểm tra đăng nhập và đổi mật khẩu tài khoản QA.
