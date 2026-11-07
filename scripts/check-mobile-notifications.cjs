@@ -52,6 +52,7 @@ async function run(){
   await assert.rejects(()=>api.readMobileNotificationList(manager,'bad',new URLSearchParams()),e=>e.status===404);
   checks.push('Real scoped SQL: destination branch only, resolved/superseded transfers excluded; actual web approval helper and contract reader delegation; accounts without contract grants receive only the fleet group granted by web');
   const sql=fs.readFileSync(path.resolve('docs/sql/2026-11-05-mobile-push.sql'),'utf8');await pg.exec(sql);await pg.exec(sql);
+  await pg.exec(fs.readFileSync(path.resolve('docs/sql/2026-11-06-mobile-refresh-tokens.sql'),'utf8'));
   await pg.exec(`CREATE FUNCTION himoto.access_store(id bigint) RETURNS boolean LANGUAGE sql STABLE AS $$
     SELECT current_setting('himoto.scope_all',true)='true' OR id=NULLIF(current_setting('himoto.store_id',true),'')::bigint $$;
     CREATE TABLE himoto.transactions(id bigint PRIMARY KEY,order_id bigint,store_id bigint,status text,type text,name text);`);
@@ -150,6 +151,22 @@ async function run(){
   await assert.rejects(()=>push.testMobilePush(testRequest({}),8,activitySession),e=>e.code==='PUSH_TEST_LIMIT');
   await assert.rejects(()=>push.testMobilePush(testRequest({token:'foreign-device'}),7,activitySession),e=>e.status===400);
   assert.equal(sends,testSends+1);checks.push('Self-test targets only the current actor/session device, refuses injected recipients and rate-limits repeated sends without business writes');
+  const refreshSession=randomUUID(),refreshToken='d'.repeat(64);
+  await pg.query("INSERT INTO himoto.management_mobile_sessions VALUES($1,7,0,$2,now()+interval '15 minutes',NULL)",[refreshSession,'e'.repeat(64)]);
+  await push.registerMobilePush(req('synthetic-refresh-device-123'),7,refreshSession);
+  await pg.query("UPDATE himoto.management_mobile_sessions SET expires_at=now()-interval '1 minute' WHERE id=$1",[refreshSession]);
+  await pg.query("INSERT INTO himoto.management_mobile_refresh_sessions(session_id,token_hash,expires_at,absolute_expires_at) VALUES($1,$2,now()+interval '30 days',now()+interval '90 days')",[refreshSession,refreshToken]);
+  await push.dispatchMobilePush();
+  const refreshHash=require('node:crypto').createHash('sha256').update('synthetic-refresh-device-123').digest('hex');
+  const delivered=async()=>Number((await pg.query('SELECT count(*) AS n FROM himoto.management_mobile_push_deliveries WHERE token_hash=$1',[refreshHash])).rows[0].n);
+  const refreshDeliveries=await delivered();assert(refreshDeliveries>0);assert((await push.readMobilePushStatus(refreshSession)).enabled);
+  await pg.query("UPDATE himoto.management_mobile_refresh_sessions SET expires_at=now()-interval '1 minute' WHERE session_id=$1",[refreshSession]);
+  await pg.query("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes' WHERE session_id=$1",[refreshSession]);await push.dispatchMobilePush();
+  assert.equal((await push.readMobilePushStatus(refreshSession)).enabled,false);assert.equal(await delivered(),refreshDeliveries);
+  await pg.query("UPDATE himoto.management_mobile_refresh_sessions SET expires_at=now()+interval '30 days' WHERE session_id=$1",[refreshSession]);
+  await push.registerMobilePush(req('synthetic-refresh-device-123'),7,refreshSession);
+  await pg.query('UPDATE himoto.management_mobile_sessions SET revoked_at=now() WHERE id=$1',[refreshSession]);await push.dispatchMobilePush();assert.equal((await push.readMobilePushStatus(refreshSession)).enabled,false);
+  checks.push('Closed-app push survives 15-minute access expiry while refresh is valid; expired refresh and revoked device family stop delivery without extending API access');
   process.env.HIMOTO_MOBILE_ENABLED='false';assert.equal(fcm.mobilePushConfigured(),false);await push.dispatchMobilePush();
   checks.push('Changing account rebinds one device without keeping the prior session subscription; lost provider responses retain original fingerprints with no blind resend; invalid tokens and disabled mobile gate stop dispatch');
   const argOut=process.argv.indexOf('--output');const report={ok:true,groups:checks,productionWrites:0,externalPushMessages:0};

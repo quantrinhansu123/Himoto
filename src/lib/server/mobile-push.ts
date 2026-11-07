@@ -10,12 +10,16 @@ import { readNotificationState, withNotificationSnapshot } from './mobile-notifi
 import {activityGrants,scopedActivity} from './mobile-activity';
 import type { MobilePushStatus,MobilePushTest } from '../../../shared/mobile-notifications';
 
+// Push follows the device session lifetime, while API access still requires a
+// current access token. A valid refresh session keeps a closed app subscribed.
+const PUSH_SESSION_ACTIVE=`(s.expires_at>now() OR EXISTS(SELECT 1 FROM himoto.management_mobile_refresh_sessions r WHERE r.session_id=s.id AND r.expires_at>now() AND r.absolute_expires_at>now()))`;
+
 export async function testMobilePush(request:NextRequest,userId:number,sessionId:string):Promise<MobilePushTest>{
   if(!mobilePushConfigured())throw new MobileError('Thông báo chưa được cấu hình.',503,'PUSH_UNAVAILABLE');
   if(request.nextUrl.searchParams.size||Object.keys(await mobileBody(request,256)).length)throw new MobileError('Yêu cầu thử thông báo không hợp lệ.');
   const device=(await ownerDatabase.query(`WITH target AS (
     SELECT d.token_hash FROM himoto.management_mobile_push_devices d JOIN himoto.management_mobile_sessions s ON s.id=d.session_id
-      WHERE d.user_id=$1 AND d.session_id=$2 AND d.enabled AND s.revoked_at IS NULL AND s.expires_at>now()
+      WHERE d.user_id=$1 AND d.session_id=$2 AND d.enabled AND s.revoked_at IS NULL AND ${PUSH_SESSION_ACTIVE}
       ORDER BY d.updated_at DESC LIMIT 1)
     UPDATE himoto.management_mobile_push_devices d SET test_sent_at=clock_timestamp() FROM target t
     WHERE d.token_hash=t.token_hash AND (d.test_sent_at IS NULL OR d.test_sent_at<now()-interval '1 minute') RETURNING d.token,d.token_hash`,[userId,sessionId])).rows[0];
@@ -67,8 +71,8 @@ export async function dispatchMobilePush(budgetMs = 45000) {
   for (const device of candidates) {
     if (Date.now() > deadline - 12000) break;
     try {
-      const session = (await ownerDatabase.query(`SELECT user_id,password_version FROM himoto.management_mobile_sessions
-        WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at>now() AND token_hash IS NOT NULL`, [device.session_id, device.user_id])).rows[0];
+      const session = (await ownerDatabase.query(`SELECT user_id,password_version FROM himoto.management_mobile_sessions s
+        WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND ${PUSH_SESSION_ACTIVE} AND s.token_hash IS NOT NULL`, [device.session_id, device.user_id])).rows[0];
       const user = session && await sessionUserById(Number(session.user_id), Number(session.password_version), ownerDatabase);
       if (!user) { await ownerDatabase.query('UPDATE himoto.management_mobile_push_devices SET enabled=false WHERE token_hash=$1 AND lease_id=$2', [device.token_hash, lease]); continue; }
       const current = await withNotificationSnapshot(user, db => readNotificationState(db, user));
@@ -81,7 +85,7 @@ export async function dispatchMobilePush(budgetMs = 45000) {
         // opt-out, actor replacement and logout stop the old worker here.
         const still = await ownerDatabase.query(`SELECT 1 FROM himoto.management_mobile_push_devices d
           JOIN himoto.management_mobile_sessions s ON s.id=d.session_id WHERE d.token_hash=$1 AND d.lease_id=$2 AND d.enabled
-          AND s.revoked_at IS NULL AND s.expires_at>now()`, [device.token_hash, lease]);
+          AND s.revoked_at IS NULL AND ${PUSH_SESSION_ACTIVE}`, [device.token_hash, lease]);
         if (!still.rowCount) break;
         const id = randomUUID();
         const claim = await ownerDatabase.query(`WITH claimed AS (
@@ -122,7 +126,7 @@ export async function dispatchMobilePush(budgetMs = 45000) {
               SELECT d.token_hash,$2,CASE WHEN $4::boolean THEN 'sending' ELSE 'ignored' END
               FROM himoto.management_mobile_push_devices d JOIN himoto.management_mobile_sessions s ON s.id=d.session_id
               WHERE d.token_hash=$1 AND d.lease_id=$3 AND d.enabled AND d.activity_enabled_at IS NOT NULL
-                AND s.revoked_at IS NULL AND s.expires_at>now()
+                AND s.revoked_at IS NULL AND ${PUSH_SESSION_ACTIVE}
               ON CONFLICT(token_hash,event_id) DO UPDATE SET outcome=EXCLUDED.outcome,created_at=clock_timestamp(),completed_at=NULL
                 WHERE himoto.management_mobile_activity_deliveries.outcome='failed' RETURNING event_id`,[device.token_hash,eventId,lease,allowed.has(eventId)]);
             if(claim.rowCount&&allowed.has(eventId))claimed.push(eventId);
@@ -133,7 +137,7 @@ export async function dispatchMobilePush(budgetMs = 45000) {
             const latest=await sessionUserById(Number(session.user_id),Number(session.password_version),ownerDatabase);
             const still=await ownerDatabase.query(`SELECT 1 FROM himoto.management_mobile_push_devices d
               JOIN himoto.management_mobile_sessions s ON s.id=d.session_id WHERE d.token_hash=$1 AND d.lease_id=$2 AND d.enabled
-              AND s.revoked_at IS NULL AND s.expires_at>now()`,[device.token_hash,lease]);
+              AND s.revoked_at IS NULL AND ${PUSH_SESSION_ACTIVE}`,[device.token_hash,lease]);
             if(still.rowCount&&latest&&latest.store_id===user.store_id&&latest.scope_all===user.scope_all&&JSON.stringify(activityGrants(latest))===JSON.stringify(grants)){
               const outcome=await sendMobilePush(device.token,'activity');
               await ownerDatabase.query('UPDATE himoto.management_mobile_activity_deliveries SET outcome=$3,completed_at=now() WHERE token_hash=$1 AND event_id=ANY($2::bigint[])',
