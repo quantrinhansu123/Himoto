@@ -67,6 +67,8 @@ export default function Overview() {
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         api!.catalogue(item.kind, `size=1&store=${storeScope(item.kind)}`, signal),
       enabled: !!api,
+      staleTime: 60_000,
+      gcTime: 300_000,
     })),
   });
   const refresh = () => {
@@ -96,6 +98,14 @@ export default function Overview() {
       permission: "contracts.read",
       href: "/(tabs)/contracts" as const,
       status: "overdue",
+    },
+    {
+      label: "Đến hạn đóng tiền",
+      description: "Kỳ thanh toán cần thu",
+      icon: Clock3,
+      permission: "contracts.read",
+      href: "/contracts-workspace/[scope]" as const,
+      status: "due",
     },
     {
       label: "Hợp đồng nháp",
@@ -153,10 +163,40 @@ export default function Overview() {
           </Text>
         </View>
         <View style={{ gap: 10 }}>
-          {session?.user.permissions.includes("contracts.read") && session.user.permissions.includes("contracts.draft") && <Button label="Lập hợp đồng" onPress={() => router.push("/draft/new")} />}
+          {session?.user.permissions.includes("contracts.read") && session.user.permissions.includes("contracts.draft") && (
+            <Button label="Lập hợp đồng mới" onPress={() => router.push("/draft/new")} />
+          )}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-            {session?.user.permissions.includes("customers.read") && session.user.permissions.includes("customers.write") && <View style={{ flex: 1, minWidth: 140 }}><Button label="Thêm khách hàng" secondary onPress={() => router.push("/customer/new")} /></View>}
-            {session?.user.permissions.includes("vehicles.read") && <View style={{ flex: 1, minWidth: 140 }}><Button label="Định vị GPS" secondary onPress={() => router.push("/gps")} /></View>}
+            {session?.user.permissions.includes("contracts.read") && session.user.permissions.includes("contracts.renew") && (
+              <View style={{ flex: 1, minWidth: 140 }}>
+                <Button
+                  label="Gia hạn hợp đồng"
+                  secondary
+                  onPress={() => router.push({ pathname: "/operation-contracts/[action]", params: { action: "renew", store: "all" } })}
+                />
+              </View>
+            )}
+            {session?.user.permissions.includes("contracts.read") && session.user.permissions.includes("contracts.return") && (
+              <View style={{ flex: 1, minWidth: 140 }}>
+                <Button
+                  label="Nhận trả xe"
+                  secondary
+                  onPress={() => router.push({ pathname: "/operation-contracts/[action]", params: { action: "return", store: "all" } })}
+                />
+              </View>
+            )}
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+            {session?.user.permissions.includes("customers.read") && session.user.permissions.includes("customers.write") && (
+              <View style={{ flex: 1, minWidth: 140 }}>
+                <Button label="Thêm khách hàng" secondary onPress={() => router.push("/customer/new")} />
+              </View>
+            )}
+            {session?.user.permissions.includes("vehicles.read") && (
+              <View style={{ flex: 1, minWidth: 140 }}>
+                <Button label="Định vị GPS" secondary onPress={() => router.push("/gps")} />
+              </View>
+            )}
           </View>
         </View>
         <View
@@ -272,12 +312,19 @@ export default function Overview() {
                 key={item.status}
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
-                onPress={() =>
-                  item.status === "overdue" || item.status === "draft" ? router.push({ pathname: "/contracts-workspace/[scope]", params: { scope: item.status === "draft" ? "drafts" : "overdue" } }) : router.push({
-                    pathname: item.href,
-                    params: { status: item.status },
-                  })
-                }
+                onPress={() => {
+                  if (item.status === "overdue" || item.status === "draft" || item.status === "due") {
+                    router.push({
+                      pathname: "/contracts-workspace/[scope]",
+                      params: { scope: item.status === "draft" ? "drafts" : item.status },
+                    });
+                  } else {
+                    router.push({
+                      pathname: item.href,
+                      params: { status: item.status },
+                    } as any);
+                  }
+                }}
                 style={({ pressed }) => [
                   styles.shortcut,
                   {

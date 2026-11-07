@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewInstance } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, Text, View, type ScrollViewInstance } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { MobileCollectionMethod } from "@himoto/mobile-contract";
 import type { MobileRenewalInput } from "../../../shared/mobile-renewal-write";
 import { renewalLocalTime, reviewRenewal } from "@/lib/renewal-form";
@@ -26,7 +26,7 @@ export function RenewalEditor({ id,backfill=false }: { id: string;backfill?:bool
   return <RenewalForm key={`${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}:${id}:${backfill}`} id={id} backfill={backfill} />;
 }
 function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
-  const { api, session } = useSession(), theme = useTheme(), cache = useQueryClient(), reducedMotion = useReducedMotion();
+  const { api, session } = useSession(), theme = useTheme(), reducedMotion = useReducedMotion();
   const [page, setPage] = useState(1), [search, setSearch] = useState(""), [searchDraft, setSearchDraft] = useState("");
   const [itemId, setItemId] = useState(""), [customReturnAt, setReturnAt] = useState<string | null>(null), [customAmount, setAmount] = useState<string | null>(null);
   const [extraAmount,setExtraAmount]=useState(""),[extraName,setExtraName]=useState("Phí VAT");
@@ -40,19 +40,17 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
   const dirty = !!itemId || customReturnAt !== null || customAmount !== null || !!outsideAmount || outsideName !== "Phí thu thêm" || !!extraAmount || extraName!=="Phí VAT" || !!note || collected || collectionChosen || customMethod !== null || !!account || occurredAt !== initialOccurredAt || unit!=="day" || count!=="1" || customRate!==null;
   const action = useRenewalWrite(id, dirty), scroll = useRef<ScrollViewInstance>(null);
   const query = useQuery({ queryKey: ["renewal-preparation", session?.user.id, session?.user.storeId, session?.user.allStores, id, "editor", backfill, page, search],
-    queryFn: ({ signal }) => api!.renewalPreparation(id, page, search, signal,backfill), enabled: !!api, staleTime: 0, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false });
+    queryFn: ({ signal }) => api!.renewalPreparation(id, page, search, signal,backfill), enabled: !!api, staleTime: 30_000, gcTime: 300_000, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const data = query.data;
   const method=customMethod??((["cash","transfer","company_transfer"] as const).find(m=>data?.accounts.some(a=>a.method===m))||"cash");
   const availableAccounts=data?.accounts.filter(a=>a.method===method)||[],effectiveAccount=account||(availableAccounts.length===1?`${method}:${availableAccounts[0].id}`:"");
   const bill = useQuery({ queryKey: ["renewal-bill", session?.user.id, session?.user.storeId, session?.user.allStores, id, data?.nextVersion],
     queryFn: ({ signal }) => api!.renewalBill(id, data!.nextVersion, signal), enabled: !!api && !!data && collected,
-    staleTime: 0, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false });
+    staleTime: 30_000, gcTime: 300_000, refetchOnWindowFocus: false, refetchOnReconnect: false });
   useFocusEffect(useCallback(() => {
-    void cache.invalidateQueries({ queryKey: ["renewal-preparation"] });
-    void cache.invalidateQueries({ queryKey: ["renewal-bill"] });
     // Require a fresh visible bill review after returning from its upload step.
     setReviewedBill("");
-  }, [cache]));
+  }, []));
   useEffect(() => {
     if (!localError && !action.error && !action.key) return;
     const frame = requestAnimationFrame(() => scroll.current?.scrollTo({ y: 0, animated: !reducedMotion }));
@@ -104,7 +102,21 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
   const outside = confirm ? Number(confirm.outside_amount ?? 0) : 0;
   return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
+      <ScrollView
+        ref={scroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ padding: 20, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}
+        refreshControl={
+          <RefreshControl
+            refreshing={query.isRefetching}
+            onRefresh={() => {
+              void query.refetch();
+              if (collected) void bill.refetch();
+            }}
+            tintColor={theme.primary}
+          />
+        }
+      >
         <View style={{ gap: 8 }}>
           <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: "800" }}>{data.code}</Text>
           {backfill&&<Text style={{color:theme.warning,lineHeight:24}}>Nhập bổ sung gia hạn bị quên. Xe đã trả chỉ bổ sung lịch sử và phí, giữ kho hiện tại. Kiểm tra lịch sử để tránh nhập trùng.</Text>}

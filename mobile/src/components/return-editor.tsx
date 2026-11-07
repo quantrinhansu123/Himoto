@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,KeyboardAvoidingView,Platform,Pressable,ScrollView,Text,View,type ScrollViewInstance} from 'react-native';
+import {Keyboard,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,Text,View,type ScrollViewInstance} from 'react-native';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileReturnPreview,MobileReturnPreviewInput} from '../../../shared/mobile-returns';
@@ -34,7 +34,7 @@ function ReturnForm({id}:{id:string}) {
   const action=useReturnWrite(id,lines.length>0||receipts.length>0||!!rentalRefund||!!depositRefund);
   const query=useQuery({queryKey:['return-preparation',session?.user.id,session?.user.storeId,session?.user.allStores,id,page],
     queryFn:({signal})=>api!.returnPreparation(id,page,signal),enabled:!!api&&action.checked&&!action.key,placeholderData:keepPreviousData,
-    staleTime:0,gcTime:0,refetchOnWindowFocus:false,refetchOnReconnect:false});
+    staleTime:30_000,gcTime:300_000,refetchOnWindowFocus:false,refetchOnReconnect:false});
   const data=query.data,locked=previewing||action.busy||!action.checked||!!action.key;
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;abort.current?.abort();};},[]);
   const top=()=>{Keyboard.dismiss();scroll.current?.scrollTo({y:0,animated:!reducedMotion});};
@@ -116,7 +116,19 @@ function ReturnForm({id}:{id:string}) {
   if(!data)return <><StateView title="Chuẩn bị trả xe" loading={query.isPending} message={query.isError?(query.error as Error).message:undefined} retry={query.isError?()=>{void query.refetch();}:undefined}/>{overlays}</>;
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
     <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
+      <ScrollView
+        ref={scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}
+        refreshControl={
+          <RefreshControl
+            refreshing={query.isRefetching}
+            onRefresh={() => { void query.refetch(); }}
+            tintColor={theme.primary}
+          />
+        }
+      >
         <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{['1. Chọn xe trả','2. Phí và giờ nhận xe','3. Tiền thực thu và hoàn','4. Rà soát quyết toán'][step]}</Text>
         <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{data.code} · đã chọn {lines.length} xe{data.ownership?' · thuê sở hữu':''}</Text>
         {!!error&&<InlineError message={error}/>}

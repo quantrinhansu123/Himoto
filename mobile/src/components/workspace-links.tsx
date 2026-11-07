@@ -12,6 +12,7 @@ export function WorkspaceLinks() {
   const links = [
     {key:'attendance',title:'Chấm công',description:'Vào ca, ra ca, ảnh và GPS; xem lịch sử đi làm',icon:CalendarDays,open:()=>router.push('/attendance')},
     {key:'guide',title:'Hướng dẫn và hỏi đáp',description:'Các bước nghiệp vụ, câu hỏi và câu trả lời có ảnh',icon:Files,open:()=>router.push('/guide')},
+    ...(permissions.includes("contracts.read") ? [{ key: "shared-reports", title: "Báo cáo dùng chung", description: "Tổng quan giao dịch, doanh thu NVKD, báo cáo ca và sổ két", icon: ChartNoAxesCombined, open: () => router.push("/reports") }] : []),
     ...(permissions.includes("contracts.read") ? [{ key: "operations", title: "Thao tác nhanh", description: "Làm hợp đồng, trả xe, gia hạn và nhập bổ sung lịch sử", icon: Files, open: () => router.push("/operations") }] : []),
     {key:'notifications',title:'Thông báo công việc',description:'Điều chuyển cần nhận, hợp đồng đến hạn và việc chờ duyệt',icon:CalendarDays,open:()=>router.push('/notifications')},
     ...(permissions.includes('contracts.read')?[{key:'dashboard',title:'Tổng quan giao dịch',description:'Chỉ số hợp đồng, doanh số và doanh thu theo kỳ/cơ sở',icon:ChartNoAxesCombined,open:()=>router.push('/dashboard')}]:[]),

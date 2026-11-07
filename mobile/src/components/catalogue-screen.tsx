@@ -49,16 +49,34 @@ const RecordCard = memo(function RecordCard({
   scope: MobileContractScope;
 }) {
   const theme = useTheme();
+  const cache = useQueryClient();
+  const { session } = useSession();
+
+  const handlePress = () => {
+    if (session?.user.id) {
+      cache.setQueryData(
+        ["record", session.user.id, kind, String(record.id)],
+        (old: any) => old || record
+      );
+    }
+    if (kind === "vehicles") {
+      router.push({
+        pathname: "/vehicle/[id]",
+        params: { id: String(record.id) },
+      });
+    } else {
+      router.push({
+        pathname: "/record/[kind]/[id]",
+        params: { kind, id: String(record.id) },
+      });
+    }
+  };
+
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Xem ${kind === "vehicles" ? record.license || record.name : record.code}, ${record.name}`}
-      onPress={() =>
-        kind === "vehicles" ? router.push({ pathname: "/vehicle/[id]", params: { id: String(record.id) } }) : router.push({
-          pathname: "/record/[kind]/[id]",
-          params: { kind, id: String(record.id) },
-        })
-      }
+      onPress={handlePress}
       style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
     >
       <Card style={{ gap: 12, padding: 16 }}>
@@ -190,6 +208,8 @@ export function CatalogueScreen({
     getNextPageParam: (last) =>
       last.page < last.pages ? last.page + 1 : undefined,
     enabled: !!api && !!allowed && datesValid,
+    staleTime: 30_000,
+    gcTime: 300_000,
   });
   if (!allowed)
     return (

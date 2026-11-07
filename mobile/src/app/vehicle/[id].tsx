@@ -8,7 +8,13 @@ import { useTheme } from "@/theme";
 function VehicleProfile({ id }: { id: string }) {
   const { api, session } = useSession(), theme = useTheme();
   const valid = /^[1-9]\d{0,14}$/.test(id) && session!.user.permissions.includes("vehicles.read");
-  const query = useQuery({ queryKey: ["vehicle-profile", session!.user.id, id], queryFn: ({ signal }) => api!.vehicleProfile(id, signal), enabled: valid });
+  const query = useQuery({
+    queryKey: ["vehicle-profile", session!.user.id, id],
+    queryFn: ({ signal }) => api!.vehicleProfile(id, signal),
+    enabled: valid,
+    staleTime: 30_000,
+    gcTime: 120_000,
+  });
   if (!valid) return <StateView title="Không mở được xe" />;
   if (query.isPending) return <StateView title="Đang tải hồ sơ xe" loading />;
   if (query.isError && !query.data) return <StateView title="Chưa tải được hồ sơ xe" message={query.error.message} retry={() => { void query.refetch(); }} />;
