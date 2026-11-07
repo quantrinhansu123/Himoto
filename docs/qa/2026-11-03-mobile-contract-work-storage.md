@@ -102,3 +102,4 @@ Android đã trả về09:13 hợp đồng QA cũ → Ảnh và hồ sơ nghiệ
 246 file khớp, ledger rỗng, USB8081→8081/8091→8101;1khách/1nháp/0ảnh/0copy/
 0delete,9 phiên QA giữ nguyên chủ ý. SHA checkpoint không đổi qua native test
 và mở watch, không seed/reset hoặc ghi backend. Form recovery chưa tích hợp.
+

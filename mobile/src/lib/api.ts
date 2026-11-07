@@ -1,7 +1,6 @@
 import {isAttendanceSummary,isAttendanceReceipt,isAttendanceResolution,isMobileGuideFaq} from '../../../shared/mobile-support';
 import {isMobileNotifications, isMobileNotificationList, isMobilePushStatus, isMobilePushTest, type MobileNotificationKind} from '../../../shared/mobile-notifications';
 import type { OfflineTransport } from './offline-transport';
-import { cacheableRead } from './offline-policy';
 import {isMobileActivityPage} from '../../../shared/mobile-activity';
 import {isFleetInventory,type MobileFleetInventory} from '../../../shared/mobile-fleet-inventory';
 import { isMobileVideoReceipt, isMobileVideoSignature, type MobileVideoReceipt, type MobileVideoUploadSignature, type MobileVideoCloudReceipt } from '../../../shared/mobile-video';
@@ -173,7 +172,7 @@ export function createApi(
     return current ? { Authorization: `Bearer ${current}` } : undefined;
   };
   function request<T>(path: string, validate: (value: unknown) => value is T, options: RequestInit = {}, timeoutMs = 25000): Promise<T> {
-    const timeout = offline && cacheableRead(path, options.method) ? Math.min(timeoutMs, 8000) : timeoutMs;
+    const timeout = timeoutMs;
     const send = () => networkRequest(path, validate, options, timeout);
     return offline ? offline.execute(path, validate, options, send, timeout) : send();
   }

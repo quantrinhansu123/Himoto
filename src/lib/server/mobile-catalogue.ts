@@ -149,6 +149,9 @@ export async function readMobilePage(
 ): Promise<MobilePage> {
   assertPermission(user, kind);
   const query = mobileTableParams(params, kind);
+  if (!user.scope_all && user.store_id && !query.has('store') && kind !== 'vehicles') {
+    query.set('store', String(user.store_id));
+  }
   return scope(user, kind, async () => {
     const client = await himotoPool.connect();
     try {

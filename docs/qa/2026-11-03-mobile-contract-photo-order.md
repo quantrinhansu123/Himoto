@@ -69,3 +69,4 @@ Android đã mở lại08:27 tại HĐ QA cũ → Ảnh và hồ sơ nghiệp v�
 SHA/generation/digest; sau mở chỉ sessions/sessionSeq đổi (9 phiên QA đang lưu
 chủ ý), giữ1khách/1nháp/0ảnh/0copy/0delete. Không seed/reset hoặc ghi nghiệp vụ;
 đây là QA, chưa kết nối dữ liệu vận hành. Native runner/reader đã kết thúc.
+

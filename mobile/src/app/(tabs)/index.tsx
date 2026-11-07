@@ -52,20 +52,25 @@ const modules = [
 ];
 export default function Overview() {
   const theme = useTheme();
-  const { session, api } = useSession();
+  const { session, api, restore } = useSession();
   const workspace = useWorkspace();
   const available = modules.filter((item) =>
     session?.user.permissions.includes(`${item.kind}.read`),
   );
+  const storeScope = (kind: CatalogueKind) => {
+    if (kind === "vehicles" || session?.user.allStores) return "all";
+    return session?.user.storeId ? String(session.user.storeId) : "all";
+  };
   const queries = useQueries({
     queries: available.map((item) => ({
-      queryKey: ["overview", session?.user.id, item.kind],
+      queryKey: ["overview", session?.user.id, session?.user.storeId, session?.user.allStores, item.kind],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        api!.catalogue(item.kind, "size=1", signal),
+        api!.catalogue(item.kind, `size=1&store=${storeScope(item.kind)}`, signal),
       enabled: !!api,
     })),
   });
   const refresh = () => {
+    void restore(true);
     void workspace.refetch();
     queries.forEach((query) => {
       void query.refetch();

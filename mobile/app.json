@@ -2,7 +2,7 @@
   "expo": {
     "name": "Himoto",
     "slug": "himoto-staff",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "himoto",
@@ -20,7 +20,7 @@
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "package": "vn.himoto.staff",
-      "versionCode": 4,
+      "versionCode": 5,
       "allowBackup": false
     },
     "web": {

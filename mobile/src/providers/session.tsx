@@ -39,7 +39,7 @@ interface SessionContextValue {
   api: MobileApi | null;
   restoring: boolean;
   restoreError: string;
-  restore: () => Promise<void>;
+  restore: (quiet?: boolean) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -186,7 +186,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     let alive = true;
     const update = (state: Network.NetworkState) => {
       if (!alive) return;
-      const connected = state.isConnected !== false && state.isInternetReachable !== false;
+      const connected = state.isConnected !== false;
       offlineStatus.update({ connected });
       if (connected && currentSession.current) void restoreRef.current(true);
     };

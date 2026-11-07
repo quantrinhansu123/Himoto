@@ -141,7 +141,7 @@ export function CatalogueScreen({
   operationsCatalogue?:boolean;
 }) {
   const theme = useTheme();
-  const { session, api } = useSession();
+  const { session, api, restore } = useSession();
   const cache=useQueryClient();
   const workspace = useWorkspace();
   const { height } = useWindowDimensions();
@@ -486,6 +486,7 @@ export function CatalogueScreen({
           <RefreshControl
             refreshing={query.isRefetching && !query.isFetchingNextPage}
             onRefresh={() => {
+              void restore(true);
               void query.refetch();
               if(kind==='vehicles')void cache.invalidateQueries({queryKey:['record-media','vehicle-thumbnail']});
             }}

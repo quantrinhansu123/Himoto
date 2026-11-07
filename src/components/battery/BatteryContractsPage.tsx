@@ -162,8 +162,6 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
     }
     return initial;
   });
-  const formTabs = ['Thông tin chung', 'Khách hàng', 'Pin / sạc', 'Thanh toán'];
-  const [activeTab, setActiveTab] = useState(0);
   const [accounts, setAccounts] = useState<CashbookAccount[]>([]);
   const [accountsError, setAccountsError] = useState('');
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -206,14 +204,6 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
   const printData: BatteryPrintData = { ...form, store_id: Number(form.store_id), code: row?.code || '', store_address: String(store?.address || row?.store_address || ''), store_phone: String(store?.phone || row?.store_phone || '') };
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (busy.current) return;
-    const invalid = event.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(':invalid');
-    if (invalid) {
-      const panel = invalid.closest<HTMLElement>('[data-battery-tab]');
-      if (panel) setActiveTab(Number(panel.dataset.batteryTab));
-      setError(invalid.validationMessage);
-      requestAnimationFrame(() => invalid.focus());
-      return;
-    }
     const print = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'print';
     if (form.ends_at && Date.parse(`${form.ends_at}+07:00`) <= Date.parse(`${form.starts_at}+07:00`)) { setError('Thời điểm kết thúc phải sau thời điểm bắt đầu.'); return; }
     for (const purpose of ['paid','deposit'] as const) {
@@ -247,10 +237,9 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
   };
   const dialogTitle = row ? `Sửa hợp đồng thuê pin ${row.code}` : sourceLabel ? `Thuê pin / sạc · ${sourceLabel}` : 'Tạo hợp đồng thuê pin';
   return <>
-    <Dialog title={dialogTitle} className="mg-battery-dialog" onClose={() => { if (!busy.current) onClose(); }}><form noValidate onSubmit={submit}><div className="mg-dialog-body">
+    <Dialog title={dialogTitle} className="mg-battery-dialog" onClose={() => { if (!busy.current) onClose(); }}><form onSubmit={submit}><div className="mg-dialog-body">
       {(sourceLabel || row?.vehicle_contract_id) && <p className="mg-composer-hint">Liên kết hợp đồng xe {sourceLabel || row?.vehicle_contract_code || `#${row?.vehicle_contract_id}`}. Chọn Pin, Sạc hoặc Pin + Sạc, kiểm tra giá rồi lưu.</p>}
-      <div className="mg-battery-form-tabs" role="tablist" aria-label="Thông tin hợp đồng pin / sạc">{formTabs.map((label, index) => <button key={label} type="button" role="tab" id={'battery-tab-' + index} aria-controls={'battery-panel-' + index} aria-selected={activeTab === index} onClick={() => setActiveTab(index)}>{label}</button>)}</div>
-      <fieldset id="battery-panel-0" role="tabpanel" aria-labelledby="battery-tab-0" data-battery-tab={0} hidden={activeTab !== 0} className="mg-payment-fields" disabled={saving || uncertain}><legend>Thông tin chung</legend>
+      <fieldset className="mg-payment-fields" disabled={saving || uncertain}><legend>Thông tin chung</legend>
         <label>Cơ sở cho thuê *<select required value={form.store_id} onChange={event => update('store_id', event.target.value)}><option value="">Chọn cơ sở</option>{stores.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label>Trạng thái<select value={form.status} onChange={event => update('status', event.target.value as FormState['status'])}>{BATTERY_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         {text('staff_name', 'Nhân viên (NV)', { maxLength: 120, list: 'battery-staff' })}
@@ -258,7 +247,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
         {text('signed_place', 'Nơi ký (Tại)', { wide: true, maxLength: 255, placeholder: store?.address ? `Mặc định: ${store.address}` : 'Mặc định: địa chỉ cơ sở' })}
         <datalist id="battery-staff">{dataset?.staff.filter(person => person.status === 'active').map(person => <option key={person.id} value={person.name} />)}</datalist>
       </fieldset>
-      <fieldset id="battery-panel-1" role="tabpanel" aria-labelledby="battery-tab-1" data-battery-tab={1} hidden={activeTab !== 1} className="mg-payment-fields" disabled={saving || uncertain}><legend>Bên B (Bên thuê)</legend>
+      <fieldset className="mg-payment-fields" disabled={saving || uncertain}><legend>Bên B (Bên thuê)</legend>
         <div className="mg-field-wide mg-battery-lookup"><label>Tra cứu theo CCCD / CMND hoặc SĐT<span className="mg-battery-lookup-input"><input autoComplete="off" inputMode="numeric" placeholder="CCCD/CMND hoặc SĐT · Tất cả cơ sở" value={lookup} onChange={event => setLookup(event.target.value)} />{lookupState === 'loading' ? <LoaderCircle size={16} className="mg-spin" /> : <Search size={16} />}</span></label>
           <p className={`mg-lookup-status is-${lookupState}`} role={lookupState === 'error' ? 'alert' : 'status'}>{lookupText}</p>
           {lookupState === 'matches' && <div className="mg-customer-match-list" role="listbox" aria-label="Chọn khách hàng tìm thấy">{matches.map(customer => <button key={customer.id} type="button" role="option" aria-selected="false" className="mg-customer-match" onClick={() => choose(customer)}><strong>{customer.name}</strong><span>{customer.phone || 'Chưa có SĐT'} · CCCD {customer.id_card || 'Chưa có'}</span></button>)}</div>}</div>
@@ -269,7 +258,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
         <div className="mg-field"><label htmlFor="battery-id-card-issued-on">Cấp ngày</label><VietnamDateField id="battery-id-card-issued-on" label="Cấp ngày" value={form.id_card_issued_on} onChange={next => update('id_card_issued_on', next)} /></div>
         {text('id_card_issued_by', 'Nơi cấp', { wide: true, maxLength: 255, placeholder: 'Mặc định: Cục cảnh sát' })}
       </fieldset>
-      <fieldset id="battery-panel-2" role="tabpanel" aria-labelledby="battery-tab-2" data-battery-tab={2} hidden={activeTab !== 2} className="mg-payment-fields" disabled={saving || uncertain}><legend>Điều 1 · Pin / sạc và xe của khách</legend>
+      <fieldset className="mg-payment-fields" disabled={saving || uncertain}><legend>Điều 1 · Pin / sạc và xe của khách</legend>
         <div className="mg-field-wide"><span className="mg-sr-only">Loại thuê</span>
           <div className="mg-status-tabs" role="group" aria-label="Chọn pin hoặc sạc">{BATTERY_PRODUCT_PRESETS.map(option =>
             <button type="button" key={option.value} className={productKind === option.value ? 'is-active' : ''} aria-pressed={productKind === option.value}
@@ -281,7 +270,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
         {text('vehicle_color', 'Màu sắc', { maxLength: 60 })}
         {text('vehicle_year', 'Năm sản xuất', { maxLength: 10 })}
       </fieldset>
-      <fieldset id="battery-panel-3" role="tabpanel" aria-labelledby="battery-tab-3" data-battery-tab={3} hidden={activeTab !== 3} className="mg-payment-fields" disabled={saving || uncertain}><legend>Điều 2 · Thời hạn, giá thuê, thanh toán</legend>
+      <fieldset className="mg-payment-fields" disabled={saving || uncertain}><legend>Điều 2 · Thời hạn, giá thuê, thanh toán</legend>
         <DateTime24Field id="battery-start" label="Bắt đầu (24h)" value={form.starts_at} onChange={value => setForm(current => ({ ...current, starts_at: value, ...(current.ends_at === addRentalMonths(current.starts_at, 1) ? { ends_at: addRentalMonths(value, 1) } : {}) }))} />
         <DateTime24Field id="battery-end" label="Đến (24h)" value={form.ends_at} onChange={value => update('ends_at', value)} required={false} />
         <div className="mg-field-wide"><button type="button" className="mg-button" onClick={() => setForm(current => ({ ...current, ends_at: addRentalMonths(current.starts_at, 1), price_unit: 'tháng', package_name: '1 tháng' }))}>Gợi ý thuê 1 tháng</button></div>
@@ -301,7 +290,6 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
       </fieldset>
       {error && <p role="alert" className="mg-field-error">{error}</p>}{uncertain && <p>Làm mới danh sách để kiểm tra hợp đồng đã lưu hay chưa trước khi thử lại.</p>}
     </div>
-    <div className="mg-battery-tab-navigation"><button type="button" className="mg-button" disabled={activeTab === 0 || saving} onClick={() => setActiveTab(value => value - 1)}>Quay lại</button><span>{activeTab + 1} / {formTabs.length}</span><button type="button" className="mg-button" disabled={activeTab === formTabs.length - 1 || saving} onClick={() => setActiveTab(value => value + 1)}>Tiếp theo</button></div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
       <button type="button" className="mg-button" disabled={saving} onClick={() => setPreview(true)}><Printer size={16} />Xem mẫu in</button>
       {uncertain ? <button type="button" className="mg-button" onClick={onRefresh}>Làm mới danh sách để kiểm tra</button> : <>
