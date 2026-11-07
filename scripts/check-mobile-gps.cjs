@@ -101,6 +101,22 @@ async function run(){
       const branch=await read({...query,store:'24',event_source:'poll'});assert(branch.rows.every(r=>r.store_id===24));assert.deepEqual(branch.events.map(e=>e.id),[2]);assert.equal(staff.scope_all,false);
       assert.equal((await read({...query,search:'QA00'})).total,6);assert.equal((await read({...query,state:'long_stopped'})).total,2);
       assert(!JSON.stringify(first).includes('secret_cipher'));
+      const workspace=load(path.join(root,'lib/server/gps-workspace'));
+      // Compare every filter against the existing shared JS rules and the exact
+      // web snapshot, including multi-device agreement and literal search text.
+      for(const store of ['all','23','24'])for(const state of dto.GPS_FILTER_STATES)for(const provider of ['all','protrack','iopgps']){
+        const q={...query,store,state,provider,page:99999};
+        const snapshot=await workspace.readGpsWorkspace(raw,store,'all','');
+        const expected=dto.projectGpsRows(snapshot.devices,q,now),actual=await read(q);
+        assert.equal(actual.total,expected.total);assert.equal(actual.page,expected.page);
+        assert.deepEqual(actual.summary,expected.summary);assert.deepEqual(actual.rows.map(r=>[r.id,r.displayState]),expected.rows.map(r=>[r.id,r.displayState]));
+      }
+      for(const search of ['qa00','%','_','QA A','QA-227','no match']){
+        const q={...query,search};const snapshot=await workspace.readGpsWorkspace(raw,'all','all','');
+        const expected=dto.projectGpsRows(snapshot.devices,q,now),actual=await read(q);
+        assert.equal(actual.total,expected.total);assert.deepEqual(actual.rows.map(r=>r.id),expected.rows.map(r=>r.id));
+      }
+      checks.push('SQL GPS pagination matches shared web projection across all stores/states/providers, page clamping and literal percent/underscore search');
       const context=load(path.join(root,'lib/server/mobile-context'));
       const ordinary=await context.withMobileData(staff,'',()=>load(path.join(root,'lib/server/himoto-database')).himotoPool.query('SELECT id FROM himoto.vehicles ORDER BY id'));
       assert(ordinary.rows.every(v=>Number(v.id)%2===1));

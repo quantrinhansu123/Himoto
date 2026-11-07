@@ -14,6 +14,7 @@ import { useSession } from "@/providers/session";
 import { dateTime, money, useTheme } from "@/theme";
 import { contextualStatusLabel } from "@/lib/catalogue-config";
 import { ContractApprovalSummary } from '@/components/contract-approval-summary';
+import { recordPreviewKey } from '@/lib/record-preview';
 export default function RecordDetail() {
   const params = useLocalSearchParams<{ kind: string; id: string }>();
   const { api, session } = useSession();
@@ -30,8 +31,9 @@ export default function RecordDetail() {
     queryFn: ({ signal }) =>
       api!.record(params.kind as CatalogueKind, params.id, signal),
     placeholderData: () =>
-      cache.getQueryData<MobileRecord>(["record", session?.user.id, params.kind, params.id]),
+      api && session ? cache.getQueryData<MobileRecord>(recordPreviewKey(api.origin, session.user, params.kind as CatalogueKind, params.id)) : undefined,
     staleTime: 30_000,
+    refetchOnMount: 'always',
     gcTime: 300_000,
     enabled: !!api && !!allowed,
   });

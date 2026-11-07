@@ -21,9 +21,19 @@ import type { VehicleRevenueRow } from "@/lib/management/rental-reports";
 import { CONTRACT_STATUSES } from "@/lib/management/config";
 import { validOwnedFleetReport } from "@/lib/management/owned-fleet-revenue";
 import { validRevenueLedger, REVENUE_LEDGER_CATEGORIES, REVENUE_LEDGER_METHODS } from "@/lib/management/revenue-ledger";
-import { isSalesReportKind, isMobileSalesReport, SALES_REPORTS, type SalesReportKind, type MobileSalesReport, type ReportSection, type ReportColumn, type ReportMetric, type ReportRow, type ReportValue, type ReportAction } from "../../../shared/mobile-reports";
+import { isSalesReportKind, isMobileSalesReport, paginateReportSections, SALES_REPORTS, type SalesReportKind, type MobileSalesReport, type ReportSection, type ReportColumn, type ReportMetric, type ReportRow, type ReportValue, type ReportAction } from "../../../shared/mobile-reports";
 
-const baseKeys = ["from", "to", "store_id"];
+const baseKeys = ["from", "to", "store_id", "section_pages"];
+export function reportSectionPages(value: string | null): Record<string, number> | null {
+  if (value === null) return null;
+  try {
+    if (value.length > 2048) throw Error();
+    const pages: unknown = JSON.parse(value);
+    if (!pages || typeof pages !== 'object' || Array.isArray(pages) || Object.keys(pages).length > 20 ||
+      !Object.entries(pages).every(([key, page]) => /^[a-zA-Z0-9_-]{1,64}$/.test(key) && Number.isSafeInteger(page) && page >= 1 && page <= 100000)) throw Error();
+    return pages as Record<string, number>;
+  } catch { throw new MobileError('Trang chi tiết báo cáo không hợp lệ.'); }
+}
 const keys: Record<SalesReportKind, string[]> = {
   actual: [], ledger: ["search", "category", "method", "side", "page", "size"], vehicles: ["search", "sort", "direction", "page", "size", "vehicle_id"],
   overview: ["view", "detail"], fleet: ["view", "page", "size"], contracts: [], "by-staff": [], "by-store": [],
@@ -36,6 +46,8 @@ function permission(user: SessionUser, kind?: SalesReportKind) {
 export function reportQuery(kind: SalesReportKind, raw: URLSearchParams) {
   const query = new URLSearchParams(raw);
   for (const [key] of query) if (![...baseKeys, ...keys[kind]].includes(key) || query.getAll(key).length !== 1) throw new MobileError("Bộ lọc báo cáo không hợp lệ.");
+  reportSectionPages(query.get('section_pages'));
+  query.delete('section_pages');
   if (query.get("store_id") === "all") query.delete("store_id");
   if (kind === "ledger" && !query.get("side")) query.set("side", "in");
   if (query.has("detail") && query.get("detail") !== "1") throw new MobileError("Mục chi tiết báo cáo không hợp lệ.");
@@ -164,6 +176,8 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
       }
       doc.sections.push(section("customers", "Khách hàng mới", fields, filtered.rows.map(row => ({ key: String(row.customer_id), values: values({ ...row, customer_source: row.customer_source || "Chưa ghi nguồn", store_name: row.store_name || "Chưa có cơ sở", contract_status: CONTRACT_STATUSES.find(option => option.value === row.contract_status)?.label || row.contract_status || "—" }, fields), action: action("Mở hợp đồng đầu tiên", "contract", new URLSearchParams({ id: String(row.order_id) })) })))); doc.canExport = true;
     }
-    checked(isMobileSalesReport(doc)); return doc;
+    const sectionPages = reportSectionPages(raw.get('section_pages'));
+    const response = sectionPages ? paginateReportSections(doc, sectionPages) : doc;
+    checked(isMobileSalesReport(response)); return response;
   });
 }

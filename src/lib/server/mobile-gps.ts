@@ -8,6 +8,7 @@ import {MobileError} from './mobile-session';
 import {readGpsWorkspace} from './gps-workspace';
 import {parseGpsQuery,projectGpsRows,isMobileGpsWorkspace,type MobileGpsWorkspace} from '../../../shared/mobile-gps';
 import type {GpsVehicle} from '../management/gps';
+import { readMobileGpsPage } from './mobile-gps-page';
 
 export function requireMobileGps(user:SessionUser,mapping=false) {
   if(!hasPermission(user,'vehicles.read')||mapping&&!isAdminAccount(user))throw new MobileError(mapping?'Chỉ quản trị được ghép GPS với xe.':'Tài khoản không có quyền xem GPS.',403,'FORBIDDEN');
@@ -43,9 +44,18 @@ async function readGpsSnapshot(user:SessionUser,request:NextRequest) {
 }
 
 export async function readMobileGps(user:SessionUser,request:NextRequest):Promise<MobileGpsWorkspace>{
-  const {rows,now,...snapshot}=await readGpsSnapshot(user,request),result={...snapshot,...projectGpsRows(rows,snapshot.query,now)};
-  if(!isMobileGpsWorkspace(result,snapshot.query))throw new MobileError('Dữ liệu GPS cần được kiểm tra. Giữ nguyên bộ lọc và tải lại.',503,'INVALID_GPS_DATA');
-  return result;
+  requireMobileGps(user);
+  let query;try{query=parseGpsQuery(request.nextUrl.searchParams);}catch{throw new MobileError('Bộ lọc GPS không hợp lệ.',400,'INVALID_GPS_QUERY');}
+  return withMobileData(user,'fleet_read',async()=>{
+    const db=await himotoPool.connect();
+    try{
+      await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      await db.query("SET LOCAL statement_timeout='20s'");
+      const result={...await readMobileGpsPage(db,query,Date.now()),canMap:isAdminAccount(user)};
+      if(!isMobileGpsWorkspace(result,query))throw new MobileError('Dữ liệu GPS cần được kiểm tra. Giữ nguyên bộ lọc và tải lại.',503,'INVALID_GPS_DATA');
+      await db.query('COMMIT');return result;
+    }catch(error){await db.query('ROLLBACK').catch(()=>{});throw error;}finally{db.release();}
+  });
 }
 export async function readMobileGpsExportRows(user:SessionUser,request:NextRequest){
   const {rows,query,now}=await readGpsSnapshot(user,request);return projectGpsRows(rows,query,now,true).rows;

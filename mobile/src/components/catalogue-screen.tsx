@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import {
@@ -38,6 +38,7 @@ import { catalogueConfig, contextualStatusLabel } from "@/lib/catalogue-config";
 import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { dateTime, money, statuses, useTheme } from "@/theme";
+import { rememberRecordPreview } from '@/lib/record-preview';
 
 const RecordCard = memo(function RecordCard({
   record,
@@ -50,16 +51,15 @@ const RecordCard = memo(function RecordCard({
 }) {
   const theme = useTheme();
   const cache = useQueryClient();
-  const { session } = useSession();
+  const { session, api } = useSession();
 
   const handlePress = () => {
-    if (session?.user.id) {
-      cache.setQueryData(
-        ["record", session.user.id, kind, String(record.id)],
-        (old: any) => old || record
-      );
-    }
+    if (session && api) rememberRecordPreview(cache, api.origin, session.user, kind, record);
     if (kind === "vehicles") {
+      if (api && session) void cache.prefetchQuery({
+        queryKey: ['vehicle-profile', session.user.id, String(record.id)],
+        queryFn: ({ signal }) => api.vehicleProfile(String(record.id), signal), staleTime: 30_000,
+      });
       router.push({
         pathname: "/vehicle/[id]",
         params: { id: String(record.id) },
@@ -211,6 +211,10 @@ export function CatalogueScreen({
     staleTime: 30_000,
     gcTime: 300_000,
   });
+  const records = useMemo(() => [
+    ...new Map(query.data?.pages.flatMap(page => page.rows).map(row => [row.id, row])).values(),
+  ], [query.data]);
+  const renderRecord = useCallback(({ item }: { item: MobileRecord }) => <RecordCard record={item} kind={kind} scope={scope} />, [kind, scope]);
   if (!allowed)
     return (
       <StateView
@@ -218,13 +222,6 @@ export function CatalogueScreen({
         message="Liên hệ quản trị viên nếu cần thay đổi phạm vi công việc."
       />
     );
-  const records = [
-    ...new Map(
-      query.data?.pages
-        .flatMap((page) => page.rows)
-        .map((row) => [row.id, row]),
-    ).values(),
-  ];
   const stores = (workspace.data?.stores || []).filter(
     (item) =>
       kind === "vehicles" ||
@@ -497,7 +494,11 @@ export function CatalogueScreen({
         style={{ flex: 1 }}
         data={records}
         keyExtractor={(record) => String(record.id)}
-        renderItem={({ item }) => <RecordCard record={item} kind={kind} scope={scope} />}
+        renderItem={renderRecord}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={7}
+        updateCellsBatchingPeriod={32}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'}

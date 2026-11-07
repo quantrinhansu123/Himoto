@@ -8,9 +8,9 @@ import { dateTime, useTheme } from '@/theme';
 
 export function OfflineBanner() {
   const theme = useTheme(), state = useOffline(), { session } = useSession();
-  if (!session || (state.connected && !state.pending && !state.cachedAt && !state.error)) return null;
+  if (!session || (state.connected && !state.verifying && !state.pending && !state.cachedAt && !state.error)) return null;
   const Icon = state.conflicts || state.error ? TriangleAlert : state.connected ? RefreshCw : CloudOff;
-  const title = !state.connected ? 'Đang ngoại tuyến' : state.conflicts ? `${state.conflicts} thao tác cần đối chiếu` : state.pending ? `${state.pending} thao tác chờ xác nhận` : state.error ? 'Lưu offline cần kiểm tra' : 'Đang xem dữ liệu đã lưu';
+  const title = !state.connected ? 'Đang ngoại tuyến' : state.conflicts ? `${state.conflicts} thao tác cần đối chiếu` : state.pending ? `${state.pending} thao tác chờ xác nhận` : state.error ? 'Lưu offline cần kiểm tra' : state.verifying ? 'Đang cập nhật dữ liệu' : 'Đang xem dữ liệu đã lưu';
   const subtitle = state.error || (state.cachedAt ? `Dữ liệu lưu lúc ${dateTime(new Date(state.cachedAt).toISOString())}` : state.syncing ? 'Đang đồng bộ với máy chủ' : 'Chạm để xem trạng thái đồng bộ');
   return <SafeAreaView edges={['top']} style={{ backgroundColor: theme.surface }}>
     <Pressable accessibilityRole="button" accessibilityLabel={`${title}. ${subtitle}. Mở trạng thái đồng bộ`} onPress={() => router.navigate('/offline-sync')}

@@ -14,6 +14,15 @@ export interface ReportRow { key: string; values: ReportValue[]; action?: Report
 export interface ReportSection { key: string; title: string; columns: ReportColumn[]; rows: ReportRow[]; total?: ReportValue[]; paging?: { page: number; size: number; total: number }; }
 export interface ReportMetric { group: string; label: string; value: number | null; format: "money" | "count"; action?: ReportAction }
 export interface MobileSalesReport { kind: SalesReportKind; title: string; notes: string[]; metrics: ReportMetric[]; sections: ReportSection[]; canExport: boolean; sources?: { value: string; label: string }[] }
+export type ReportPageChange = (page: number, size: number, section?: string) => void;
+/** Negotiated mobile paging; totals and export readers remain complete. */
+export function paginateReportSections(report: MobileSalesReport, pages: Record<string, number>, size = 20): MobileSalesReport {
+  return { ...report, sections: report.sections.map(section => {
+    if (section.paging || section.rows.length <= size) return section;
+    const total = section.rows.length, page = Math.min(pages[section.key] || 1, Math.max(1, Math.ceil(total / size)));
+    return { ...section, rows: section.rows.slice((page - 1) * size, page * size), paging: { page, size, total } };
+  }) };
+}
 export interface SalesReportOptions { canViewFleet: boolean; stores: { id: number; name: string }[]; ledgerCategories: { value: string; label: string }[]; ledgerMethods: { value: string; label: string }[] }
 export function isSalesReportKind(value: unknown): value is SalesReportKind { return SALES_REPORTS.some(row => row.value === value); }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);

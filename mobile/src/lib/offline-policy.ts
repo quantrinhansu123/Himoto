@@ -11,12 +11,19 @@ export function offlineScopeKey(scope: OfflineScope) {
 export function cacheableRead(path: string, method = 'GET') {
   if (method !== 'GET') return false;
   const route = path.split('?')[0];
+  const query = new URLSearchParams(path.split('?')[1] || '');
+  if (query.has('photo') || query.has('request_id')) return false;
   return route === '/workspace' ||
     /^\/catalogue\/(vehicles|customers|contracts)(\/\d+)?$/.test(route) ||
     /^\/(customers|vehicles)\/(\d+|options)$/.test(route) ||
     /^\/drafts\/(\d+|options|staff|inventory)$/.test(route) ||
     /^\/contracts\/\d+\/(preparation|finance|renewals(?:\/\d+\/collection)?|returns|swaps|vehicle-transfers)$/.test(route) ||
-    route === '/vehicles/inventory';
+    route === '/vehicles/inventory' ||
+    ['/dashboard','/operations','/attendance','/guide-faq','/cashbook','/cashbook/accounts','/duty-roster','/shift-reports','/debt-reminders','/debt-reminders/contracts','/notifications','/notifications/activity','/battery-contracts','/contract-types'].includes(route) ||
+    /^\/reports\/(options|actual|ledger|vehicles|overview|fleet|contracts|by-staff|by-store|new-customers|assigned)$/.test(route) ||
+    /^\/directory\/(staff|stores)$/.test(route) ||
+    /^\/vehicles\/\d+\/(contracts|history|transfers)$/.test(route) ||
+    /^\/notifications\/groups\/[a-z-]+$/.test(route);
 }
 /** Only operations whose server handlers use the durable idempotency ledger. */
 export function offlineOperation(path: string, method: string): string | null {

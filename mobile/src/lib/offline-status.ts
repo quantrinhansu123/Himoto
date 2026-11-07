@@ -1,5 +1,5 @@
-type OfflineStatus = { connected: boolean; cachedAt: number | null; cacheEpoch: number; syncing: boolean; revision: number; error: string };
-let state: OfflineStatus = { connected: true, cachedAt: null, cacheEpoch: 0, syncing: false, revision: 0, error: '' };
+type OfflineStatus = { connected: boolean; verifying: boolean; cachedAt: number | null; cacheEpoch: number; syncing: boolean; revision: number; error: string };
+let state: OfflineStatus = { connected: true, verifying: false, cachedAt: null, cacheEpoch: 0, syncing: false, revision: 0, error: '' };
 const listeners = new Set<() => void>();
 export const offlineStatus = {
   get: () => state,

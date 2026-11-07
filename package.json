@@ -21,6 +21,7 @@
     "test:mobile:offline": "node scripts/check-mobile-offline.cjs && node scripts/check-mobile-token-lifecycle.cjs && node scripts/check-mobile-sync-worker.cjs && node scripts/check-mobile-biometric.cjs",
     "test:mobile:refresh": "node scripts/check-mobile-refresh.cjs",
     "test:mobile:payload": "node scripts/check-mobile-payload.cjs",
+    "test:mobile:performance": "node scripts/check-mobile-performance.cjs && node scripts/check-mobile-export-transport.cjs",
     "test:mobile:support": "node scripts/check-mobile-attendance-pending.cjs && node scripts/check-mobile-support.cjs",
     "mobile:start": "npm --prefix mobile start",
     "mobile:typecheck": "npm --prefix mobile run typecheck",

@@ -1,12 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, router, useLocalSearchParams } from "expo-router";
-import { RefreshControl, ScrollView } from "react-native";
+import { RefreshControl, ScrollView, Text } from "react-native";
+import type { MobileRecord } from '@himoto/mobile-contract';
+import { recordPreviewKey } from '@/lib/record-preview';
 import { useSession } from "@/providers/session";
-import { Button, StateView, InlineError } from "@/components/ui";
+import { Button, Card, StatusBadge, StateView, InlineError } from "@/components/ui";
 import { VehicleProfileCard } from "@/components/vehicle-profile-card";
 import { useTheme } from "@/theme";
 function VehicleProfile({ id }: { id: string }) {
   const { api, session } = useSession(), theme = useTheme();
+  const cache = useQueryClient();
+  const preview = cache.getQueryData<MobileRecord>(recordPreviewKey(api!.origin, session!.user, 'vehicles', id));
   const valid = /^[1-9]\d{0,14}$/.test(id) && session!.user.permissions.includes("vehicles.read");
   const query = useQuery({
     queryKey: ["vehicle-profile", session!.user.id, id],
@@ -16,6 +20,17 @@ function VehicleProfile({ id }: { id: string }) {
     gcTime: 120_000,
   });
   if (!valid) return <StateView title="Không mở được xe" />;
+  if (!query.data && preview) return <ScrollView contentContainerStyle={{ padding: 20, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
+    <Stack.Screen options={{ title: preview.license || 'Hồ sơ xe' }} />
+    <Card style={{ gap: 12 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: '800' }}>{preview.license || preview.code}</Text>
+      <Text style={{ color: theme.text, fontSize: 18 }}>{preview.name}</Text>
+      <StatusBadge status={preview.status} />
+      <Text style={{ color: theme.muted }}>{preview.storeName}</Text>
+    </Card>
+    {query.isError ? <StateView title="Chưa cập nhật được hồ sơ xe" message={query.error.message} retry={() => { void query.refetch(); }} /> :
+      <Text accessibilityLiveRegion="polite" style={{ color: theme.muted }}>Đang cập nhật hồ sơ và quyền thao tác…</Text>}
+  </ScrollView>;
   if (query.isPending) return <StateView title="Đang tải hồ sơ xe" loading />;
   if (query.isError && !query.data) return <StateView title="Chưa tải được hồ sơ xe" message={query.error.message} retry={() => { void query.refetch(); }} />;
   const row = query.data!;

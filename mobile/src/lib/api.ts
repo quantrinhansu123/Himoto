@@ -13,6 +13,7 @@ import {isMobileStoreContracts,type MobileStoreContracts} from '../../../shared/
 import {isMobileBulkReview,isMobileBulkDeletion,type MobileBulkKind,type MobileBulkReview,type MobileBulkDeletion} from '../../../shared/mobile-bulk-delete';
 import { isMobileStoreMatchResult, type CustomerStoreInput, type CustomerStoreResult, type MobileStoreMatchInput, type MobileStoreMatchFilePage } from '../../../shared/mobile-customer-store-import';
 import { readStoreMatchStream } from './read-workbook-stream';
+import { readWorkbookDownload, WORKBOOK_MIME } from './read-workbook-download';
 import { isMobileVehicleWorkbook, isMobileVehicleImportPreview, isMobileVehicleResetPreview, isMobileVehicleImportReceipt, isMobileVehicleImportResolution, isMobileVehicleImportOptions, type MobileVehicleWorkbook, type VehicleImportResult, type VehicleResetPreview, type MobileVehicleImportInput, type MobileVehicleImportReceipt, type MobileVehicleImportResolution, type MobileVehicleImportOptions } from '../../../shared/mobile-vehicle-import';
 import { isMobileContractQr, type MobileContractQr } from '../../../shared/mobile-contract-qr';
 import { isMobilePrintDocument, type MobilePrintDocument, type MobilePrintKind } from '../../../shared/mobile-print';
@@ -208,7 +209,8 @@ export function createApi(
           ...authorization(),
         },
       });
-      const data = await response.json().catch(() => null);
+      const binary = response.ok && response.headers?.get('Content-Type')?.split(';')[0] === WORKBOOK_MIME;
+      const data = binary ? await readWorkbookDownload(response, controller.signal) : await response.json().catch(() => null);
       if (!response.ok) {
         if (response.status === 401 && access && !refreshed) {
           token = await access.token(true);
@@ -325,10 +327,19 @@ export function createApi(
     reminderContext: (id:string,signal?:AbortSignal)=>request<DebtReminderContext>(`/debt-reminders/context/${encodeURIComponent(id)}`,(v):v is DebtReminderContext=>isReminderContext(v)&&String(v.id)===id,{signal}),
     sendReminder: (input:Omit<DebtReminderInput,"request_id">,key:string)=>request<{request_id:string;status:ReminderStatus;replayed:boolean}>("/debt-reminders",(v):v is {request_id:string;status:ReminderStatus;replayed:boolean}=>!!v&&typeof v==="object"&&"request_id" in v&&v.request_id===key&&"status" in v&&isReminderStatus(v.status)&&"replayed" in v&&typeof v.replayed==="boolean",{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},35000),
     reminderResult: (key:string,signal?:AbortSignal)=>request<MobileReminderResult>(`/debt-reminders/requests/${encodeURIComponent(key)}`,(v):v is MobileReminderResult=>isReminderResult(v)&&v.key===key,{signal}),
-    salesReport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileSalesReport>(`/reports/${kind}?${params}`, (value): value is MobileSalesReport => isMobileSalesReport(value) && value.kind === kind, { signal }, 70000),
-    salesReportExport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileFileExport>(`/reports/${kind}/export?${params}`, isMobileFileExport, { signal }, 90000),
+    salesReport: async (kind: SalesReportKind, params: string, signal?: AbortSignal) => {
+      const validate = (value: unknown): value is MobileSalesReport => isMobileSalesReport(value) && value.kind === kind;
+      try { return await request<MobileSalesReport>(`/reports/${kind}?${params}`, validate, { signal }, 70000); }
+      catch (error) {
+        const legacy = new URLSearchParams(params);
+        if (!(error instanceof ApiError) || error.status !== 400 || !legacy.has('section_pages')) throw error;
+        legacy.delete('section_pages');
+        return request<MobileSalesReport>(`/reports/${kind}?${legacy}`, validate, { signal }, 70000);
+      }
+    },
+    salesReportExport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileFileExport>(`/reports/${kind}/export?${params}`, isMobileFileExport, { signal, headers: { Accept: `${WORKBOOK_MIME}, application/json` } }, 90000),
     cashbookExport: (params: string, signal?: AbortSignal) => request<MobileCsvExport>(`/cashbook/export?${params}`, isMobileCsvExport, { signal }, 70000),
-    cashbookExcel: (params:string,signal?:AbortSignal)=>request<MobileFileExport>(`/cashbook/export?${params}&format=xlsx`,isMobileFileExport,{signal},70000),
+    cashbookExcel: (params:string,signal?:AbortSignal)=>request<MobileFileExport>(`/cashbook/export?${params}&format=xlsx`,isMobileFileExport,{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000),
     cashbookDeleteSelection: (params: string, signal?: AbortSignal) => request<VoucherDeleteSelection>(`/cashbook/vouchers/selection?${params}`, isVoucherDeleteSelection, { signal }, 70000),
     deleteCashbookVouchers: (ids: number[], key: string) => request<VoucherDeletion>("/cashbook/vouchers", (value): value is VoucherDeletion => isVoucherDeletion(value) && value.key === key && value.deletedCount === ids.length, { method: "DELETE", body: JSON.stringify({ ids }), headers: { "Idempotency-Key": key } }),
     cashbookDeletion: (key: string, signal?: AbortSignal) => request<VoucherDeletion>(`/cashbook/deletions/requests/${encodeURIComponent(key)}`, (value): value is VoucherDeletion => isVoucherDeletion(value) && value.key === key, { signal }),
@@ -557,9 +568,9 @@ export function createApi(
     storeMatchFile: async (name: string, bytes: ArrayBuffer, onPart: (part: MobileStoreMatchFilePage) => void, signal: AbortSignal) => readStoreMatchStream(origin, access ? await access.token() : token, name, bytes, onPart, signal, onExpired),
     previewStoreMatch: (rows: CustomerStoreInput[], signal?: AbortSignal) => request<CustomerStoreResult>('/imports/customer-stores/preview', isMobileStoreMatchResult, { method: 'POST', body: JSON.stringify({ rows }), signal }, 45000),
     saveStoreMatch: (batch: string, input: MobileStoreMatchInput, key: string) => request<MobileImportReceipt>(`/imports/customer-stores/${batch}`, (v): v is MobileImportReceipt => isMobileImportReceipt(v) && v.kind === 'customer_stores' && v.batchId === batch && v.key === key, { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': key } }, 45000),
-    catalogueExport: (kind: MobileCatalogueExportKind, filters: string, columns: string[], signal?: AbortSignal) => { const query = new URLSearchParams(filters); query.set('columns', columns.join(',')); return request<MobileFileExport>(`/exports/${kind}?${query}`, isMobileFileExport, { signal }, 70000); },
-    catalogueExcel: (kind:MobileCatalogueExportKind,filters:string,columns:string[],signal?:AbortSignal)=>{const query=new URLSearchParams(filters);query.set('columns',columns.join(','));query.set('format','xlsx');return request<MobileFileExport>(`/exports/${kind}?${query}`,isMobileFileExport,{signal},70000);},
-    listExcel:(kind:MobileListExportKind,filters:string,signal?:AbortSignal)=>request<MobileWorkbookExport>(`/list-exports/${kind}?${filters}`,(v):v is MobileWorkbookExport=>isMobileFileExport(v)&&v.mimeType==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',{signal},70000),
+    catalogueExport: (kind: MobileCatalogueExportKind, filters: string, columns: string[], signal?: AbortSignal) => { const query = new URLSearchParams(filters); query.set('columns', columns.join(',')); return request<MobileFileExport>(`/exports/${kind}?${query}`, isMobileFileExport, { signal, headers: { Accept: `${WORKBOOK_MIME}, application/json` } }, 70000); },
+    catalogueExcel: (kind:MobileCatalogueExportKind,filters:string,columns:string[],signal?:AbortSignal)=>{const query=new URLSearchParams(filters);query.set('columns',columns.join(','));query.set('format','xlsx');return request<MobileFileExport>(`/exports/${kind}?${query}`,isMobileFileExport,{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000);},
+    listExcel:(kind:MobileListExportKind,filters:string,signal?:AbortSignal)=>request<MobileWorkbookExport>(`/list-exports/${kind}?${filters}`,(v):v is MobileWorkbookExport=>isMobileFileExport(v)&&v.mimeType==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000),
     customerImportTemplate: (signal?: AbortSignal) => request<MobileFileExport>('/imports/customers/template', isMobileFileExport, { signal }, 60000),
     previewCustomerFile: (name: string, bytes: ArrayBuffer, allowIncomplete: boolean, signal?: AbortSignal) => request<MobileCustomerImportPreview>('/imports/customers/preview', isMobileCustomerImportPreview, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(name), 'X-Allow-Incomplete': allowIncomplete ? '1' : '0' }, body: bytes, signal }, 90000),
     previewCustomerImport: (preview: MobileCustomerImportPreview, allowIncomplete: boolean, signal?: AbortSignal) => request<MobileCustomerImportPreview>('/imports/customers/preview', (v): v is MobileCustomerImportPreview => isMobileCustomerImportPreview(v) && v.batchId === preview.batchId, { method: 'POST', body: JSON.stringify({ batchId: preview.batchId, filename: preview.filename, sha256: preview.sha256, rows: preview.sourceRows, allowIncomplete }), signal }, 60000),

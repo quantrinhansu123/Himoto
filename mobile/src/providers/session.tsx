@@ -32,6 +32,9 @@ import type { StoredSession } from '@/lib/session-codec';
 import { freshSession, rememberAccess, sessionAccess, sessionFamily } from '@/lib/session-refresh';
 import { offlineAccessGuard } from '@/lib/offline-auth';
 import { biometricLock } from '@/lib/biometric-lock';
+import { cachedMobileSession } from '@/lib/session-bootstrap';
+import { restoreLookupQueries, persistLookupQueries } from '@/lib/query-persistence';
+import { Image } from 'expo-image';
 installDraftWorkLedgerGuard(pendingWrites);
 
 interface SessionContextValue {
@@ -78,12 +81,30 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }
   }, []);
   const currentSession = useRef(session);
+  const lookupScope = useRef<string | null>(null);
+  const stopPersistence = useRef<(() => void) | null>(null);
+  const lastVerified = useRef(0);
+  const activateLookups = useCallback(async (user: MobileSession['user'], local: OfflineStore, active: () => boolean) => {
+    const scope = offlineScopeKey({ origin: origin.value, user });
+    if (lookupScope.current === scope) return;
+    stopPersistence.current?.();
+    lookupScope.current = scope;
+    queryClient.clear();
+    void Image.clearMemoryCache().catch(() => {});
+    await restoreLookupQueries(queryClient, local, scope, () => active() && lookupScope.current === scope);
+    if (active() && lookupScope.current === scope)
+      stopPersistence.current = persistLookupQueries(queryClient, local, scope, () => lookupScope.current === scope);
+  }, [origin.value, queryClient]);
+  useEffect(() => () => { stopPersistence.current?.(); }, []);
   const expire = useCallback(
     (token?: string) => {
       if (token && currentSession.current?.token !== token) return;
       const previous = currentSession.current;
+      lookupScope.current = null;
+      stopPersistence.current?.();
+      void Image.clearMemoryCache().catch(() => {});
       if (previous) void openOfflineStore().then(store => store.clearCache(offlineScopeKey({ origin: origin.value, user: previous.user }))).catch(() => {});
-      offlineStatus.update({ cachedAt: null });
+      offlineStatus.update({ cachedAt: null, verifying: false });
       currentSession.current = null;
       const expiredGeneration = ++generation.current;
       queryClient.clear();
@@ -105,10 +126,11 @@ export function SessionProvider({ children }: PropsWithChildren) {
         setRestoreError("");
       }
       let stored: StoredSession | null = null;
+      let local: OfflineStore | null = null;
       try {
         if (origin.error) throw new Error(origin.error);
         if (Platform.OS !== 'web') {
-          const local = await openOfflineStore().catch(error => {
+          local = await openOfflineStore().catch(error => {
             offlineStatus.update({ error: (error as Error).message }); return null;
           });
           if (current !== generation.current) return;
@@ -117,10 +139,25 @@ export function SessionProvider({ children }: PropsWithChildren) {
         stored = await sessionStore.read(origin.value);
         if (current !== generation.current) return;
         if (!stored) {
+          lookupScope.current = null;
+          stopPersistence.current?.();
           await sessionStore.clear();
           currentSession.current = null;
           queryClient.clear();
           setSession(null);
+          return;
+        }
+        const bootstrap = cachedMobileSession(stored);
+        if (bootstrap && !currentSession.current) {
+          if (local) await activateLookups(bootstrap.user, local, () => current === generation.current);
+          if (current !== generation.current) return;
+          currentSession.current = bootstrap;
+          setSession(bootstrap);
+          setRestoring(false);
+          offlineStatus.update({ verifying: true });
+        }
+        if (bootstrap && !offlineStatus.get().connected) {
+          offlineStatus.update({ cachedAt: stored.verifiedAt!, verifying: false });
           return;
         }
         const credentials = await freshSession(origin.value, sessionFamily(stored));
@@ -140,12 +177,14 @@ export function SessionProvider({ children }: PropsWithChildren) {
           token: previous && sessionFamily(previous) === sessionFamily(updated) ? previous.token : updated.token,
           ...(updated.refreshToken ? { refreshToken: updated.refreshToken, refreshExpiresAt: updated.refreshExpiresAt, sessionId: updated.sessionId } : {}),
         };
+        if (local) await activateLookups(restored.user, local, () => current === generation.current);
         if (current !== generation.current) return;
+        lastVerified.current = Date.now();
         currentSession.current = restored;
         setSession(previous => JSON.stringify(previous) === JSON.stringify(restored) ? previous : restored);
         setRestoreError('');
         const recovering = !offlineStatus.get().connected || offlineStatus.get().cachedAt !== null;
-        offlineStatus.update({ connected: true });
+        offlineStatus.update({ connected: true, verifying: false });
         if (recovering) {
           const cacheEpoch = offlineStatus.get().cacheEpoch;
           void queryClient.invalidateQueries().then(() => {
@@ -164,15 +203,16 @@ export function SessionProvider({ children }: PropsWithChildren) {
           currentSession.current = restored;
           setSession(previous => JSON.stringify(previous) === JSON.stringify(restored) ? previous : restored);
           setRestoreError('');
-          offlineStatus.update({ connected: false, cachedAt: stored.verifiedAt });
+          offlineStatus.update({ connected: false, verifying: false, cachedAt: stored.verifiedAt });
         }
         else if (stored?.verifiedAt && Date.now() - stored.verifiedAt >= OFFLINE_TTL) setRestoreError('Đã quá 24 giờ chưa xác thực phiên. Kết nối mạng và thử lại để tiếp tục; bản đang soạn vẫn được giữ.');
         else if (!quiet) setRestoreError((error as Error).message);
       } finally {
+        if (current === generation.current) offlineStatus.update({ verifying: false });
         if (!quiet && current === generation.current) setRestoring(false);
       }
     },
-    [origin, queryClient, expire],
+    [origin, queryClient, expire, activateLookups],
   );
   const restoreRef = useRef(restore);
   useEffect(() => {
@@ -188,7 +228,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       if (!alive) return;
       const connected = state.isConnected !== false;
       offlineStatus.update({ connected });
-      if (connected && currentSession.current) void restoreRef.current(true);
+      if (connected && currentSession.current && !offlineStatus.get().verifying) void restoreRef.current(true);
     };
     void Network.getNetworkStateAsync().then(update).catch(() => {});
     const subscription = Network.addNetworkStateListener(update);
@@ -222,14 +262,15 @@ export function SessionProvider({ children }: PropsWithChildren) {
     let inFlight = false;
     void registerOfflineBackground().catch(() => offlineStatus.update({ error: 'Chưa bật được đồng bộ nền. App vẫn đồng bộ khi đang mở.' }));
     const sync = async () => {
-      if (!alive || inFlight || AppState.currentState !== 'active') return;
+      if (!alive || inFlight || AppState.currentState !== 'active' || !offlineStatus.get().connected || offlineStatus.get().verifying) return;
       inFlight = true;
       const before = offlineStatus.get().revision;
       try {
-        await syncOffline(origin.value);
+        const rows = await offlineStore.listActor(origin.value, session.user.id);
+        if (rows.some(row => row.state === 'queued' || row.state === 'sending')) await syncOffline(origin.value);
         if (alive && currentSession.current?.token === session.token) {
           if (offlineStatus.get().revision !== before) void queryClient.invalidateQueries();
-          await restoreRef.current(true);
+          if (offlineStatus.get().revision !== before || Date.now() - lastVerified.current > 60_000) await restoreRef.current(true);
         }
       } finally { inFlight = false; }
     };
@@ -268,13 +309,18 @@ export function SessionProvider({ children }: PropsWithChildren) {
       }
       if (current !== generation.current) return;
       currentSession.current = next;
+      lastVerified.current = Date.now();
       biometricLock.notePasswordLogin(origin.value, sessionFamily(next));
-      queryClient.clear();
+      const local = Platform.OS === 'web' ? null : await openOfflineStore().catch(() => null);
+      if (current !== generation.current) return;
+      if (local) { setOfflineStore(local); await activateLookups(next.user, local, () => current === generation.current); }
+      else queryClient.clear();
+      if (current !== generation.current) return;
       offlineStatus.update({ connected: true, cachedAt: null });
       setRestoreError("");
       setSession(next);
     },
-    [origin, queryClient],
+    [origin, queryClient, activateLookups],
   );
   const logout = useCallback(async () => {
     if (!api) return;

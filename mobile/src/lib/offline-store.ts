@@ -23,7 +23,26 @@ export async function createOfflineStore(db: OfflineDatabase, changed = () => {}
       created_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
       retry_at INTEGER NOT NULL DEFAULT 0, lease_until INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
     CREATE INDEX IF NOT EXISTS offline_outbox_scope ON offline_outbox(scope,created_at);`);
+  await db.execAsync(`CREATE TABLE IF NOT EXISTS lookup_queries (
+    scope TEXT NOT NULL, hash TEXT NOT NULL, body TEXT NOT NULL, saved_at INTEGER NOT NULL,
+    PRIMARY KEY(scope,hash));`);
   const store = {
+    async cacheQuery(scope: string, hash: string, snapshot: unknown) {
+      const body = JSON.stringify(snapshot);
+      if (body.length > 128 * 1024) return;
+      await db.runAsync('INSERT INTO lookup_queries(scope,hash,body,saved_at) VALUES(?,?,?,?) ON CONFLICT(scope,hash) DO UPDATE SET body=excluded.body,saved_at=excluded.saved_at', scope, hash, body, now());
+      await db.runAsync(`DELETE FROM lookup_queries WHERE saved_at<? OR rowid IN (
+        SELECT rowid FROM (SELECT rowid,row_number() OVER(ORDER BY saved_at DESC,rowid DESC) AS n,
+          sum(length(CAST(body AS BLOB))) OVER(ORDER BY saved_at DESC,rowid DESC) AS bytes FROM lookup_queries)
+        WHERE n>40 OR bytes>4194304)`, now() - OFFLINE_TTL);
+    },
+    async readQueries(scope: string): Promise<unknown[]> {
+      const rows = await db.getAllAsync<{ body: string }>('SELECT body FROM lookup_queries WHERE scope=? AND saved_at>? ORDER BY saved_at DESC LIMIT 40', scope, now() - OFFLINE_TTL);
+      return rows.flatMap(row => { try { return [JSON.parse(row.body) as unknown]; } catch { return []; } });
+    },
+    async removeQuery(scope: string, hash: string) {
+      await db.runAsync('DELETE FROM lookup_queries WHERE scope=? AND hash=?', scope, hash);
+    },
     async cache(scope: string, path: string, data: unknown) {
       const body = JSON.stringify(data);
       if (body.length > 512 * 1024) return;
@@ -37,6 +56,7 @@ export async function createOfflineStore(db: OfflineDatabase, changed = () => {}
     },
     async clearCache(scope?: string) {
       await db.runAsync(scope ? 'DELETE FROM offline_cache WHERE scope=?' : 'DELETE FROM offline_cache', ...(scope ? [scope] : []));
+      await db.runAsync(scope ? 'DELETE FROM lookup_queries WHERE scope=?' : 'DELETE FROM lookup_queries', ...(scope ? [scope] : []));
     },
     async enqueue(scope: string, key: string, path: string, method: string, body: string, leaseMs: number) {
       const operation = offlineOperation(path, method);

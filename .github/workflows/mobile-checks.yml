@@ -454,6 +454,7 @@ jobs:
       - run: node scripts/check-mobile-login-config.cjs
       - run: npm run mobile:typecheck
       - run: npm run mobile:lint
+      - run: npm run test:mobile:performance
       - run: npx expo-doctor
         working-directory: mobile
       - run: npm audit --omit=dev --audit-level=high
