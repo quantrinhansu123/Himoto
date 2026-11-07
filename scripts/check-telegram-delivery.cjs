@@ -83,7 +83,7 @@ async function main(){
     checks.push('Authenticated scheduler responds before Telegram upload work; a slow delivery no longer holds its 55s HTTP request open');
     checks.push('Mobile push runs after the authenticated response; a push failure does not block Telegram or GPS history dispatch');
     const telegramRoute=fs.readFileSync(path.join(root,'app/api/auth/order/car-rental/[id]/telegram/route.ts'),'utf8');
-    assert.match(telegramRoute,/writing\|\|pending/);
+    assert.match(telegramRoute,/!writing&&\(pending\|\|retracting\)/);
     assert.match(fs.readFileSync(path.join(root,'lib/server/contract-notifications.ts'),'utf8'),/n\.status='sending'/);
     checks.push('A pending or orphaned sending notice is dispatched again when staff reopen or refresh the Telegram panel');
   }finally{global.fetch=originalFetch;}
