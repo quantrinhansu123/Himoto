@@ -29,7 +29,7 @@ function canResumeNotice(notice:ResumableNotice) {
 }
 export class ContractTelegramError extends Error {constructor(message:string,public status=400){super(message);}}
 export { canSendContractEvent };
-export async function readContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount) {
+export async function readContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount,eventKey?:string) {
   const o=(await db.query(`SELECT o.store_id,o.order_status,o.contract_number,o.draft_payload,s.store_name,${OWNERSHIP_ORDER_SQL} AS ownership
     FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`,[id])).rows[0];
   if(!o)throw new ContractTelegramError('Không tìm thấy hợp đồng.',404);
@@ -74,6 +74,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
   // Snapshot business facts for an existing transaction; refresh saved photos and verified payment/refund receipts.
   for(const event of events) {
     if(!event.phases.length)event.phases=event.kind==='return'?event.key.split(':').at(-1)!.split('-').map(n=>`return-${n}`):[event.kind==='handover'?'handover':'rental'];
+    if(eventKey&&event.key!==eventKey)continue;
     const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal);void _store;
     const related=notices.filter(n=>(n.root_event_key||n.event_key)===event.key);
     const delivered=related.find(n=>n.status==='sent'&&n.retraction?.state!=='done');
@@ -125,7 +126,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
   result.events.sort((a,b)=>Number(Boolean(payloads.get(b.key)?.contract_edit))-Number(Boolean(payloads.get(a.key)?.contract_edit)));
   return {state:result,payloads,store_id:Number(o.store_id)};
 }
-export async function saveContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount,input:unknown) {
+export async function saveContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount,input:unknown):Promise<'retract'|void> {
   if(!input||typeof input!=='object'||Array.isArray(input))throw new ContractTelegramError('Yêu cầu Telegram không hợp lệ.');
   const body=input as Record<string,unknown>;
   if(body.action==='retract'){await queueTelegramRetraction(db,id,actorId,user,body);return;}
@@ -149,7 +150,7 @@ export async function saveContractTelegram(db:Database,id:number,actorId:number,
     ||(retry||resume)&&(typeof body.notice_id!=='string'||!noticeIdPattern.test(body.notice_id))||retry&&body.confirmed_absent!==true)throw new ContractTelegramError('Yêu cầu gửi không hợp lệ.');
   // Serialize Send and automatic completion on the same contract. The outbox is committed before delivery.
   await db.query('SELECT id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id]);
-  const read=await readContractTelegram(db,id,actorId,user);
+  const read=await readContractTelegram(db,id,actorId,user,body.event_key);
   const event=read.state.events.find(e=>e.key===body.event_key);
   if(!event)throw new ContractTelegramError('Không tìm thấy giao dịch đã hoàn tất.',404);
   if(!canSendContractEvent(user,event.kind))throw new ContractTelegramError('Tài khoản chưa được phép gửi giao dịch này.',403);
@@ -181,7 +182,7 @@ export async function saveContractTelegram(db:Database,id:number,actorId:number,
     const retractable=event.deliveries?.filter(delivery=>delivery.can_retract)||[];
     if(retractable.length){
       for(const delivery of retractable)await queueTelegramRetraction(db,id,actorId,user,{action:'retract',notice_id:delivery.id,event_key:event.key,request_id:randomUUID(),reason:`Sửa lại HĐ ${payload.contract_edit.previous_code}; chuẩn bị gửi bản mới ${payload.code}`,confirmed:true});
-      return;
+      return 'retract';
     }
   }
   await db.query(`INSERT INTO himoto.management_contract_notifications(id,order_id,store_id,event_key,root_event_key,event_type,payload,photo_slots,photo_phases,content_hash,delivery_mode,status)
