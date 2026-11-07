@@ -9,7 +9,7 @@ const mobile = file => load(path.resolve('mobile/src/lib', file));
 const { createOfflineStore } = mobile('offline-store');
 const { offlineScopeKey, OFFLINE_TTL } = mobile('offline-policy');
 const { rememberRecordPreview, recordPreviewKey } = mobile('record-preview');
-const { lookupSnapshot, persistableLookup, restoreLookupQueries, persistLookupQueries } = mobile('query-persistence');
+const { lookupSnapshot, persistableLookup, restoreLookupQueries, persistLookupQueries, refreshActiveLookups } = mobile('query-persistence');
 const { cachedMobileSession } = mobile('session-bootstrap');
 const { ApiError } = mobile('api');
 const pause = () => new Promise(resolve => setTimeout(resolve, 20));
@@ -85,6 +85,15 @@ async function main() {
     assert.equal(cachedMobileSession({...stored,user:undefined}),null);
     assert.equal(cachedMobileSession({...stored,expiresAt:new Date(Date.now()-1).toISOString(),refreshToken:'hmr2_'+'b'.repeat(43),refreshExpiresAt:new Date(Date.now()+86400000).toISOString()}).user.id,7);
     checks.push('Immediate session bootstrap reuses only the existing 24h grant and valid session family; no verification timestamp is extended');
+    const focus=new QueryClient({defaultOptions:{queries:{staleTime:30000,retry:false}}}),callsByKind={old:0,fresh:0,prep:0,inactive:0};
+    const observers=[];
+    for(const [kind,key,age]of [['old',['catalogue',7],60000],['fresh',['overview',7],0],['prep',['return-preparation',7],60000],['inactive',['dashboard',7],60000]]){
+      focus.setQueryData(key,{ok:true},{updatedAt:Date.now()-age});
+      if(kind!=='inactive'){const observer=new QueryObserver(focus,{queryKey:key,refetchOnMount:false,queryFn:async()=>{callsByKind[kind]++;await pause();return{ok:true};}});observers.push(observer.subscribe(()=>{}));}
+    }
+    await Promise.all([refreshActiveLookups(focus),refreshActiveLookups(focus)]);
+    assert.deepEqual(callsByKind,{old:1,fresh:0,prep:0,inactive:0});observers.forEach(unsubscribe=>unsubscribe());focus.clear();
+    checks.push('Returning to a kept-alive tab refreshes stale active lookups once, reuses in-flight reads and excludes fresh/inactive/transaction queries');
     for(let i=0;i<60;i++)await store.cacheQuery(scope,'quota-'+i,{key:['dashboard',7,i],data:{value:'\u0110'.repeat(60000)},updatedAt:Date.now()});
     const quota=sql.prepare('SELECT count(*) AS n, sum(length(CAST(body AS BLOB))) AS bytes FROM lookup_queries').get();
     assert(quota.n<=40 && quota.bytes<=4194304);

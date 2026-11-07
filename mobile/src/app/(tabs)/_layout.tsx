@@ -1,4 +1,6 @@
 import { Tabs } from "expo-router";
+import { useQueryClient } from '@tanstack/react-query';
+import { refreshActiveLookups } from '@/lib/query-persistence';
 import {
   CarFront,
   LayoutDashboard,
@@ -11,6 +13,7 @@ import { useTheme } from "@/theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWindowDimensions } from "react-native";
 export default function TabLayout() {
+  const cache = useQueryClient();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
@@ -18,6 +21,7 @@ export default function TabLayout() {
   const permissions = session?.user.permissions || [];
   return (
     <Tabs
+      screenListeners={{ tabPress: () => { void refreshActiveLookups(cache); } }}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: theme.primary,

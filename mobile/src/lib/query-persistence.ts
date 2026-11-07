@@ -20,6 +20,13 @@ export interface LookupSnapshot { key: QueryKey; data: unknown; updatedAt: numbe
 export function persistableLookup(key: QueryKey) {
   return lookupFamilies.has(String(key[0])) && !/hm1_|hmr2_/.test(JSON.stringify(key));
 }
+/** Tab navigation keeps screens mounted; revalidate stale lookups without
+ * touching transactional preparations or cancelling an already running read. */
+export function refreshActiveLookups(client: QueryClient) {
+  return client.refetchQueries({ type: 'active', stale: true,
+    predicate: query => persistableLookup(query.queryKey),
+  }, { cancelRefetch: false });
+}
 export function lookupSnapshot(key: QueryKey, data: unknown, updatedAt: number): LookupSnapshot | null {
   if (!persistableLookup(key) || data === undefined || !Number.isFinite(updatedAt) || updatedAt <= 0) return null;
   // A long scrolling session must not turn the next launch into a huge hydration.

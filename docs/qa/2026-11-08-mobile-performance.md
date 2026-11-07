@@ -9,6 +9,7 @@
 - Lỗi mạng/5xx khi cập nhật nền giữ nội dung tra cứu đã tải và timestamp gốc; hiển thị trạng thái dữ liệu đã lưu. 401/403/404 xóa dữ liệu query đang hiển thị, không chuyển từ chối truy cập thành thành công từ cache.
 - Phục hồi phiên từ quyền offline còn hợp lệ trên máy, sau đó xác thực nền. Không kéo dài hạn xác minh 24 giờ; 401 vẫn thu hồi quyền. Banner báo đang cập nhật/ngoại tuyến. Không phục hồi kết quả ghi, media permission, token, QR, biểu mẫu quyết toán hoặc giao dịch đang chờ như kết quả thành công.
 - Hàng đợi rỗng không gọi API đồng bộ/xác thực hai lần mỗi 15 giây. Giữ kiểm tra foreground định kỳ, khi quay lại app và khi mạng phục hồi.
+- Chạm tab chính cập nhật nền những query tra cứu đang hoạt động đã stale; giữ dữ liệu hiển thị, gộp request đang chạy và không đụng biểu mẫu giao dịch/query còn mới hoặc không hoạt động.
 - Danh sách chính memo hóa dữ liệu/renderItem và giới hạn cửa sổ/batch render; thumbnail cache trong RAM, khóa riêng theo phiên/quyền, xóa khi đổi phạm vi/đăng xuất. Không lưu ảnh nghiệp vụ vào disk cache chung.
 - GPS phân trang tại PostgreSQL, chỉ trả 25 hàng đầy đủ; giữ đếm tổng, thiết bị không gắn xe/xe chưa gắn GPS, quy tắc nhiều thiết bị, bằng chứng dừng và phạm vi như web. Export vẫn đọc đủ dữ liệu.
 - Báo cáo hỗ trợ phân trang từng mục 20 hàng theo thương lượng với app mới. Giữ nguyên totals và export đầy đủ; client cũ tiếp tục nhận hợp đồng cũ. Bản app mới có fallback cho backend cũ.
