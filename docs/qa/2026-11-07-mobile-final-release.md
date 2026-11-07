@@ -72,3 +72,29 @@ Kết quả kiểm tra và artifact sẽ được cập nhật sau khi thực hi
 - Theo yêu cầu tạo tài khoản test, đã tạo QA giới hạn cơ sở, không cấp quyền
   tiền/quản trị, không gắn nhân viên thật. Mật khẩu giữ DPAPI ngoài Git;
   không đưa vào log/artifact. Chỉ kiểm tra đăng nhập và đổi mật khẩu tài khoản QA.
+
+## Kết quả APK bàn giao
+
+- APK cuối: `Himoto-1.0.3-android-release.apk`, code 4, 45.650.015 byte,
+  arm64-v8a, production API, không debuggable.
+- SHA256: `ed370e3e50a513f31a3740fd9ef5667f66e91440be7b8eb89e6c92e7aebe0770`.
+- Source mobile/shared: 475 file, commit `e29cd0a`, không đổi trong build.
+  Bundle Hermes giữ nguyên hash so với vòng trước; sửa native bằng config plugin.
+- Chứng thư SHA256: `0c0c26eb9e8bf3495e9cc547059a52392a51b52ec7d2034e997658944f6c40a2`.
+  Đã cài đè trên Samsung SM-N960N / Android 9; không uninstall/clear dữ liệu.
+- DEX xác nhận constructor WorkDatabase tồn tại. SQLite, SQLCipher, location,
+  biometric, background-task và notifications có trong chính APK đã ký.
+- Samsung: đăng nhập QA production, đúng phạm vi; chấm công khóa tài khoản chưa
+  liên kết; hướng dẫn/FAQ tải thật; màn đồng bộ; 7 mã ca; cold start giữ phiên.
+- Đã làm hết hạn duy nhất access session của QA 213 trên Samsung; app tự quay
+  access/refresh trong cùng session family, không yêu cầu đăng nhập lại.
+- Đã tắt Wi-Fi/data có kiểm soát, force-stop/mở lại, tra cứu cùng xe đã tải từ
+  cache bền vững; trả đúng cài đặt mạng ban đầu và tải FAQ thật lại thành công.
+- Sau cài bản cuối: không có native crash mới của Himoto trong crash buffer.
+- Gói bàn giao trong `.backups/Himoto-Android-1.0.3-final-20261107/`: APK,
+  source ZIP đúng manifest, hướng dẫn cài, checksum và kết quả kiểm tra.
+
+Giới hạn: chưa xác thực dương tính bằng vân tay của chủ máy; không tạo giao dịch
+tiền/kho/chấm công thật trên production. Các writer/domain và hàng đợi được
+kiểm tra bằng fixture cô lập. Chưa chứng nhận toàn bộ nghiệm thu nhiều thiết bị,
+vai trò hoặc thời điểm tác vụ nền do hệ điều hành điều phối.
