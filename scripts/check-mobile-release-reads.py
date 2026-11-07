@@ -16,8 +16,10 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 qa = module.NativeQA(Path('E:/Android/Sdk/platform-tools/adb.exe'), args.serial, args.output, physical=True)
 from lib.mobile_release_evidence import verify_artifact, verify_installed
+from lib.mobile_native_diagnostics import collect
 proof = verify_artifact(args.apk)
 verify_installed(qa, proof)
+qa.started_epoch = int(qa.command('shell', 'date', '+%s').strip())
 rows = []
 routes = ['reports', 'fleet-inventory', 'gps', 'dashboard', 'staff-sales', 'cashbook', 'shift-reports',
           'duty-roster', 'attendance', 'guide', 'directory/staff', 'directory/stores', 'staff-organization',
@@ -52,5 +54,8 @@ try:
     qa.command('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', 'himoto:///', '-p', module.PACKAGE)
 finally:
     qa.screenshot('final')
+    diagnostics = collect(qa, module.PACKAGE)
 if not all(r['ready'] and not r['error'] for r in rows):
     raise RuntimeError('Some production reads failed; inspect the retained screenshots and route results')
+if diagnostics['errors'] or diagnostics['newAppCrashes'] or diagnostics['newAppAnrs']:
+    raise RuntimeError('Runtime diagnostics need review')

@@ -11,6 +11,12 @@ async function main(){
   assert.equal(response.headers.get('Content-Type'),WORKBOOK_MIME);assert.equal(response.headers.get('Cache-Control'),'private, no-store');
   assert.equal(response.headers.get('Vary'),'Authorization, Accept');assert.equal(Number(response.headers.get('Content-Length')),bytes.length);
   const decoded=await readWorkbookDownload(response);assert.deepEqual(decoded,file);
+  const oldBtoa=global.btoa;global.btoa=undefined;
+  try{for(const size of [4,5,6,49152,49153,49154]){
+    const sample=Buffer.alloc(size,219);sample.set([80,75,3,4]);
+    const part=await readWorkbookDownload(new Response(sample,{headers:{'X-Export-Filename':file.filename,'X-Export-Row-Count':'1','Content-Length':String(size)}}));
+    assert.equal(part.contentBase64,sample.toString('base64'));
+  }}finally{global.btoa=oldBtoa;}
   const headers={'X-Export-Filename':file.filename,'X-Export-Row-Count':'500','Content-Length':String(bytes.length)};
   let offset=0;
   const stream=new ReadableStream({pull(controller){if(offset>=bytes.length){controller.close();return;}controller.enqueue(new Uint8Array(bytes.subarray(offset,offset+7777)));offset+=7777;}});

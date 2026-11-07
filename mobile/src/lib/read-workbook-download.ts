@@ -34,13 +34,19 @@ export async function readWorkbookDownload(response: Response, signal?: AbortSig
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   if (bytes[0] !== 80 || bytes[1] !== 75 || bytes[2] !== 3 || bytes[3] !== 4) throw Error('Nội dung file Excel không hợp lệ.');
   const encoded: string[] = [];
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   // Multiples of three let independently encoded blocks concatenate losslessly.
   for (let at = 0; at < bytes.length; at += 48 * 1024) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const block = bytes.subarray(at, at + 48 * 1024);
     let text = '';
-    for (let i = 0; i < block.length; i += 4096) text += String.fromCharCode(...block.subarray(i, i + 4096));
-    encoded.push(btoa(text));
+    for (let i = 0; i < block.length; i += 3) {
+      const word = block[i] << 16 | (block[i + 1] || 0) << 8 | (block[i + 2] || 0);
+      text += alphabet[word >>> 18 & 63] + alphabet[word >>> 12 & 63] +
+        (i + 1 < block.length ? alphabet[word >>> 6 & 63] : '=') +
+        (i + 2 < block.length ? alphabet[word & 63] : '=');
+    }
+    encoded.push(text);
     if (at + block.length < bytes.length) await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
   return { filename, mimeType: WORKBOOK_MIME, rowCount, contentBase64: encoded.join('') };
