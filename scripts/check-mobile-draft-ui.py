@@ -15,6 +15,7 @@ from lib.mobile_customer_matches_ui import run_duplicate_workflows
 from lib.mobile_customer_documents_fixture import document_response
 from lib.mobile_customer_photo_copy_fixture import response as customer_copy_response
 from lib.mobile_customer_documents_ui import run_document_workflows
+from lib.mobile_support_ui import support_response,run_support_workflows
 from lib.mobile_draft_fixture import TEMPLATE, STORES, draft_customer, draft_record, draft_response
 from lib.mobile_contract_fixture import contract_response
 from lib.mobile_contract_ui import run_contract_workflows
@@ -36,12 +37,12 @@ USER = {"id": 7, "name": "QA Quản lý", "email": "qa@example.invalid", "role":
 TOKEN = "hm1_" + "a" * 43
 EXPIRY = (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()
 
-def run(base_url, output, contracts_only=False, finance_only=False, renewals_only=False, collections_only=False, returns_only=False, swaps_only=False, recoveries_only=False, duplicates_only=False, documents_only=False):
+def run(base_url, output, contracts_only=False, finance_only=False, renewals_only=False, collections_only=False, returns_only=False, swaps_only=False, recoveries_only=False, duplicates_only=False, documents_only=False,support_only=False):
     output.mkdir(parents=True, exist_ok=True)
     checks, errors, unexpected = [], [], []
     state = {"user": deepcopy(USER)}
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(args=['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream'] if support_only else [])
         context = browser.new_context(viewport={"width": 375, "height": 812}, color_scheme="light", reduced_motion="reduce")
         def intercept(route):
             request, url = route.request, urlparse(route.request.url)
@@ -53,6 +54,7 @@ def run(base_url, output, contracts_only=False, finance_only=False, renewals_onl
             headers = {"Access-Control-Allow-Origin": base_url, "Access-Control-Allow-Headers": "authorization,content-type,idempotency-key,x-record-revision,x-reference-revision,x-photo-revision,x-media-snapshot,x-photo-kind,x-ocr-request,x-expected-identity,x-customer-photo-snapshot", "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS"}
             if request.method == "OPTIONS":
                 return route.fulfill(status=204, headers=headers)
+            if support_response(route,state,headers):return
             binary = request.method == 'PUT' or url.path.endswith('/documents/ocr')
             body = {'jpeg': base64.b64encode(request.post_data_buffer).decode()} if binary else request.post_data_json if request.post_data else {}
             def respond(data, status=200):
@@ -411,7 +413,9 @@ def run(base_url, output, contracts_only=False, finance_only=False, renewals_onl
             checks.append("The created customer's exact ID returns to the contract and saving preserves the chosen vehicle, contract number and money")
 
         try:
-            if documents_only:
+            if support_only:
+                run_support_workflows(page,state,base_url,output,checks)
+            elif documents_only:
                 run_document_workflows(page,state,base_url,output,checks)
             elif duplicates_only:
                 run_duplicate_workflows(page,state,base_url,output,checks)
@@ -471,5 +475,6 @@ if __name__ == "__main__":
     mode.add_argument('--recoveries-only', action='store_true')
     mode.add_argument('--duplicates-only', action='store_true')
     mode.add_argument('--documents-only', action='store_true')
+    mode.add_argument('--support-only', action='store_true')
     args = parser.parse_args()
-    run(args.url.rstrip("/"), args.output, args.contracts_only, args.finance_only, args.renewals_only, args.collections_only, args.returns_only, args.swaps_only, args.recoveries_only, args.duplicates_only, args.documents_only)
+    run(args.url.rstrip("/"), args.output, args.contracts_only, args.finance_only, args.renewals_only, args.collections_only, args.returns_only, args.swaps_only, args.recoveries_only, args.duplicates_only, args.documents_only,args.support_only)

@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ShieldCheck, CircleUserRound } from "lucide-react-native";
 import { Button, Card, InlineError } from "@/components/ui";
 import {DraftWorkList} from "@/components/draft-work-list";
+import { BiometricSettings } from '@/components/biometric-settings';
 import { PendingWriteRecovery } from "@/components/pending-write-recovery";
 import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
@@ -74,14 +75,18 @@ export default function Account() {
           </View>
           <View style={{ gap: 6 }}>
             <Text style={{ color: theme.muted, fontSize: 13 }}>
-              Phiên làm việc đến
+              {session?.refreshExpiresAt ? 'Duy trì đăng nhập đến' : 'Phiên làm việc đến'}
             </Text>
             <Text style={{ color: theme.text, fontSize: 17 }}>
-              {dateTime(session?.expiresAt || "")}
+              {dateTime(session?.refreshExpiresAt || session?.expiresAt || "")}
             </Text>
           </View>
         </Card>
         <Button secondary label="Đổi mật khẩu của mình" onPress={()=>router.push("/change-password")} />
+        <Button secondary label="Chấm công vào / ra ca" onPress={()=>router.push('/attendance')} />
+        <Button secondary label="Hướng dẫn và hỏi đáp" onPress={()=>router.push('/guide')} />
+        <Button secondary label="Dữ liệu offline và trạng thái đồng bộ" onPress={()=>router.navigate('/offline-sync')} />
+        <BiometricSettings/>
         {api&&session&&<DraftWorkList key={`${api.origin}:${session.user.id}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(',')}`}/>}
         {api && session && <PendingWriteRecovery key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} />}
         <View style={{ flexDirection: "row", gap: 10 }}>

@@ -14,6 +14,9 @@ export interface MobileSession {
   token: string;
   expiresAt: string;
   user: MobileUser;
+  refreshToken?: string;
+  refreshExpiresAt?: string;
+  sessionId?: string;
 }
 export interface MobileStore {
   id: number;
@@ -43,6 +46,8 @@ export interface MobileRecord {
   customerNote?: string;
   monitoring?: MobileContractMonitoring;
   reminderEligible?: boolean;
+  /** Present in newer vehicle list responses; null means no readable thumbnail. */
+  thumbnailRevision?: string | null;
 }
 export interface MobilePage {
   rows: MobileRecord[];

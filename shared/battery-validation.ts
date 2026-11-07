@@ -63,3 +63,4 @@ export function parseBatteryInput(body: unknown, editing = false, legacyCollecte
     ...(value.vehicle_contract_id !== undefined ? { vehicle_contract_id: value.vehicle_contract_id === null ? null : Number(value.vehicle_contract_id) } : {}),
   };
 }
+

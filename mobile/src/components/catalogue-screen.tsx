@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ChevronRight,
+  ChevronDown,
   Search,
   SlidersHorizontal,
   X,
@@ -62,7 +63,7 @@ const RecordCard = memo(function RecordCard({
     >
       <Card style={{ gap: 12, padding: 16 }}>
         <View style={styles.row}>
-          {kind==='vehicles'&&<VehicleThumbnail id={record.id}/>}
+          {kind==='vehicles'&&<VehicleThumbnail id={record.id} revision={record.thumbnailRevision}/>}
           <Text
             style={{
               flex: 1,
@@ -159,6 +160,7 @@ export function CatalogueScreen({
       : String(session?.user.storeId || "all");
   const [store, setStore] = useState(initialStore || defaultStore);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const list = useRef<FlatList<MobileRecord>>(null);
   const settings = { ...catalogueConfig[kind], ...(kind === "contracts" && scope ? { title: contractWorkspace(scope)!.title } : {}) };
   const allowed = session?.user.permissions.includes(`${kind}.read`);
@@ -233,6 +235,28 @@ export function CatalogueScreen({
     if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError)
       void query.fetchNextPage({ cancelRefetch: false });
   }
+  const actions: { label: string; onPress: () => void; disabled?: boolean }[] = [];
+  if (kind === "vehicles") {
+    actions.push(
+      { label: "Lịch sử điều chuyển", onPress: () => router.push("/vehicle-transfers") },
+      { label: "Kho xe toàn hệ thống", onPress: () => router.push("/fleet-inventory") },
+    );
+    if (session?.user.permissions.includes("settings.write"))
+      actions.push({ label: "Nhập và đồng bộ Excel xe", onPress: () => router.push("/vehicle-import") });
+  }
+  if (kind === "customers" && session?.user.permissions.includes("settings.write")) {
+    actions.push(
+      { label: "Nhập khách hàng từ Excel", onPress: () => router.push("/import-customers") },
+      { label: "Khớp cơ sở khách từ Excel", onPress: () => router.push("/customer-store-import") },
+    );
+  }
+  const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis } : {}) }).toString();
+  if (!operationsCatalogue) {
+    actions.push({ label: "Tải Excel theo bộ lọc", disabled: !datesValid || query.isPending || query.isError,
+      onPress: () => router.push({ pathname: "/catalogue-export/[kind]", params: { kind, filters: exportFilters } }) });
+    if (kind !== "contracts" && session?.user.permissions.includes("settings.write"))
+      actions.push({ label: "Chọn nhiều hồ sơ để xóa", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
+  }
   const toolbar = (
       <View
         style={[
@@ -255,12 +279,7 @@ export function CatalogueScreen({
             </Text>
           </View>
         )}
-        {kind === "vehicles" && <View style={{ gap: 8 }}>
-          {session?.user.permissions.includes("vehicles.write") && <Button secondary label="Thêm xe" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />}
-          {session?.user.permissions.includes('settings.write') && <Button secondary label="Nhập và đồng bộ Excel xe" onPress={() => router.push('/vehicle-import')} />}
-          <Button secondary label="Lịch sử điều chuyển" onPress={() => router.push("/vehicle-transfers")} />
-          <Button secondary label="Kho xe toàn hệ thống" onPress={() => router.push('/fleet-inventory')}/>
-        </View>}
+        {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && <Button label="Thêm xe" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />}
         {kind === "contracts" && (
           <View style={{ gap: 8 }}>
             <ChoiceField label="Nhóm hợp đồng" value={scope} choices={CONTRACT_WORKSPACES.map(item => ({ value: item.key, label: item.title }))} onChange={value => { setScope(value as MobileContractScope); setStatus(""); }} />
@@ -270,23 +289,33 @@ export function CatalogueScreen({
         {kind === "customers" &&
           session?.user.permissions.includes("customers.write") && (
             <Button
-              secondary
               label="Thêm khách hàng"
               onPress={() => router.push("/customer/new")}
             />
           )}
-        {kind === "customers" && session?.user.permissions.includes('settings.write') && <Button secondary label="Nhập khách hàng từ Excel" onPress={() => router.push('/import-customers')} />}
-        {kind === "customers" && session?.user.permissions.includes('settings.write') && <Button secondary label="Khớp cơ sở khách từ Excel" onPress={() => router.push('/customer-store-import')} />}
-        {!operationsCatalogue && <Button secondary label="Tải Excel theo bộ lọc" disabled={!datesValid || query.isPending || query.isError} onPress={() => router.push({ pathname: '/catalogue-export/[kind]', params: { kind, filters: new URLSearchParams({ search, status, store, ...(kind === 'contracts' ? { scope, from, to, store_basis: storeBasis } : {}) }).toString() } })} />}
-        {!operationsCatalogue&&kind!=='contracts'&&session!.user.permissions.includes('settings.write')&&<Button secondary label="Chọn nhiều hồ sơ để xóa" onPress={()=>router.push({pathname:'/bulk-delete/[kind]',params:{kind,filters:new URLSearchParams({search,status,store}).toString()}})}/>}
         {kind === "contracts" &&
           session?.user.permissions.includes("contracts.draft") && (
             <Button
-              secondary
               label="Thêm bản nháp"
               onPress={() => router.push("/draft/new")}
             />
           )}
+        {actions.length > 0 && <View style={{ gap: 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Thao tác khác"
+            accessibilityState={{ expanded: actionsOpen }}
+            aria-expanded={actionsOpen}
+            onPress={() => setActionsOpen(open => !open)}
+            style={({ pressed }) => ({ minHeight: 48, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, opacity: pressed ? 0.72 : 1 })}
+          >
+            <Text style={{ color: theme.muted, fontSize: 15, fontWeight: "600", flex: 1 }}>Thao tác khác</Text>
+            <ChevronDown size={20} color={theme.muted} accessible={false} style={{ transform: [{ rotate: actionsOpen ? "180deg" : "0deg" }] }} />
+          </Pressable>
+          {actionsOpen && <Card style={{ gap: 8, padding: 12 }}>
+            {actions.map(action => <Button key={action.label} secondary {...action} />)}
+          </Card>}
+        </View>}
         <View style={{ flexDirection: "row", gap: 8 }}>
           <View
             style={[

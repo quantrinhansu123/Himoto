@@ -1,4 +1,7 @@
+import {isAttendanceSummary,isAttendanceReceipt,isAttendanceResolution,isMobileGuideFaq} from '../../../shared/mobile-support';
 import {isMobileNotifications, isMobileNotificationList, isMobilePushStatus, isMobilePushTest, type MobileNotificationKind} from '../../../shared/mobile-notifications';
+import type { OfflineTransport } from './offline-transport';
+import { cacheableRead } from './offline-policy';
 import {isMobileActivityPage} from '../../../shared/mobile-activity';
 import {isFleetInventory,type MobileFleetInventory} from '../../../shared/mobile-fleet-inventory';
 import { isMobileVideoReceipt, isMobileVideoSignature, type MobileVideoReceipt, type MobileVideoUploadSignature, type MobileVideoCloudReceipt } from '../../../shared/mobile-video';
@@ -100,6 +103,7 @@ import {
 } from "@himoto/mobile-draft-validation";
 import {
   isLogin,
+  isRefreshSession,
   isLogout,
   isPage,
   isRecord,
@@ -159,13 +163,26 @@ export function createApi(
   origin: string,
   token?: string,
   expired?: () => void,
+  offline?: OfflineTransport,
+  access?: { token: (force?: boolean) => Promise<string>; current: () => string },
 ) {
   let onExpired = expired;
-  async function request<T>(
+  let expiryNotified = false;
+  const authorization = () => {
+    const current = access?.current() || token;
+    return current ? { Authorization: `Bearer ${current}` } : undefined;
+  };
+  function request<T>(path: string, validate: (value: unknown) => value is T, options: RequestInit = {}, timeoutMs = 25000): Promise<T> {
+    const timeout = offline && cacheableRead(path, options.method) ? Math.min(timeoutMs, 8000) : timeoutMs;
+    const send = () => networkRequest(path, validate, options, timeout);
+    return offline ? offline.execute(path, validate, options, send, timeout) : send();
+  }
+  async function networkRequest<T>(
     path: string,
     validate: (value: unknown) => value is T,
     options: RequestInit = {},
     timeoutMs = 25000,
+    refreshed = false,
   ): Promise<T> {
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -177,6 +194,8 @@ export function createApi(
       controller.abort();
     }, timeoutMs);
     try {
+      if (access) token = await access.token();
+      if (controller.signal.aborted) throw new DOMException('Aborted','AbortError');
       const response = await fetch(`${origin}/api/mobile/v1${path}`, {
         ...options,
         signal: controller.signal,
@@ -187,12 +206,15 @@ export function createApi(
           Accept: "application/json",
           ...(options.body && !(typeof FormData !== 'undefined' && options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
           ...options.headers,
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...authorization(),
         },
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        if (response.status === 401 && token) onExpired?.();
+        if (response.status === 401 && access && !refreshed) {
+          token = await access.token(true);
+          return await networkRequest(path, validate, options, timeoutMs, true);
+        }
         throw new ApiError(
           typeof data?.message === "string"
             ? data.message
@@ -224,6 +246,7 @@ export function createApi(
         );
       return data;
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401 && token && !expiryNotified) { expiryNotified = true; onExpired?.(); }
       if (error instanceof ApiError || options.signal?.aborted) throw error;
       throw new ApiError(
         timeout
@@ -238,6 +261,12 @@ export function createApi(
     }
   }
   return {
+    attendance:(params:string,signal?:AbortSignal)=>request(`/attendance?${params}`,isAttendanceSummary,{signal}),
+    clockAttendance:(body:FormData)=>request('/attendance',isAttendanceReceipt,{method:'POST',body},45000),
+    resolveAttendance:(key:string)=>request(`/attendance?request_id=${encodeURIComponent(key)}`,isAttendanceResolution),
+    guideFaq:(params:string,signal?:AbortSignal)=>request(`/guide-faq?${params}`,isMobileGuideFaq,{signal}),
+    saveGuideFaq:(body:FormData)=>request<{success:true}>('/guide-faq',(v):v is {success:true}=>!!v&&typeof v==='object'&&'success'in v&&v.success===true,{method:'POST',body},60000),
+    supportPhoto:(kind:'attendance'|'guide-faq',id:string,side?:'in'|'out')=>({uri:`${origin}/api/mobile/v1/${kind}?photo=${encodeURIComponent(id)}${side?'&side='+side:''}`,headers:authorization()}),
     contractTelegram:(id:string,signal?:AbortSignal)=>request<ContractTelegramState>(`/contracts/${id}/telegram`,isMobileContractTelegram,{signal},60000),
     pendingTelegram:(params:string,signal?:AbortSignal)=>request<MobilePendingTelegram>(`/telegram/pending?${params}`,isMobilePendingTelegram,{signal}),
     saveContractTelegram:(id:string,input:MobileTelegramCommand,key:string)=>request<MobileTelegramResult>(`/contracts/${id}/telegram`,(v):v is MobileTelegramResult=>isMobileTelegramResult(v)&&v.key===key&&v.operation===`telegram.contract:${id}`&&v.action===input.action,{method:'POST',body:JSON.stringify(input),headers:{'Idempotency-Key':key}},90000),
@@ -282,8 +311,8 @@ export function createApi(
     shiftTelegram:(id:string,signal?:AbortSignal)=>request<{status:string;message_id:number|null;error_code:string|null}|null>(`/shift-reports/${encodeURIComponent(id)}/telegram`,(v):v is {status:string;message_id:number|null;error_code:string|null}|null=>v===null||!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string"&&"message_id" in v&&(v.message_id===null||Number.isSafeInteger(v.message_id))&&"error_code" in v&&(v.error_code===null||typeof v.error_code==="string"),{signal}),
     retryShiftTelegram:(id:string)=>request<{status:string}>(`/shift-reports/${encodeURIComponent(id)}/telegram`,(v):v is {status:string}=>!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string",{method:"POST"}),
     saveShiftAudit:(id:string,input:MobileAuditSave,key:string)=>request<MobileWriteReceipt>(`/shift-reports/${encodeURIComponent(id)}/audit`,isWriteReceipt,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},65000),
-    shiftMediaSource:(id:number,file:string,legacy=false)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/${legacy?"photos":"media"}/${encodeURIComponent(file)}`,headers:token?{Authorization:`Bearer ${token}`}:undefined}),
-    shiftVideoSource:(id:number,file:string,revision:number)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/media/${encodeURIComponent(file)}?video=1&revision=${revision}`,headers:token?{Authorization:`Bearer ${token}`}:undefined,useCaching:false}),
+    shiftMediaSource:(id:number,file:string,legacy=false)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/${legacy?"photos":"media"}/${encodeURIComponent(file)}`,headers:authorization()}),
+    shiftVideoSource:(id:number,file:string,revision:number)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/media/${encodeURIComponent(file)}?video=1&revision=${revision}`,headers:authorization(),useCaching:false}),
     shiftVideoConfig:(id:string,review:MobileShiftVideoReview,key:string,signal?:AbortSignal)=>request<{direct:boolean}>(`/shift-reports/${id}/video-upload`,isMobileVideoUploadConfig,{method:'POST',body:JSON.stringify({...review,action:'config',uploadId:key}),headers:{'Idempotency-Key':key},signal}),
     signShiftDirectVideo:(id:string,review:MobileShiftVideoReview,key:string,actor:number,bytes:number,sha256:string,signal?:AbortSignal)=>request<MobileVideoDirectResult>(`/shift-reports/${id}/video-upload`,(v):v is MobileVideoDirectResult=>isMobileVideoDirectResult(v,actor,key,sha256),{method:'POST',body:JSON.stringify({...review,action:'sign',uploadId:key,bytes,sha256}),headers:{'Idempotency-Key':key},signal}),
     verifyShiftDirectVideo:(id:string,review:MobileShiftVideoReview,key:string,ticket:string,signal?:AbortSignal)=>request<{receipt:MobileVideoBrowserReceipt}>(`/shift-reports/${id}/video-upload`,(v):v is {receipt:MobileVideoBrowserReceipt}=>!!v&&typeof v==='object'&&'receipt'in v&&isMobileVideoBrowserReceipt(v.receipt)&&v.receipt.upload_id===key,{method:'POST',body:JSON.stringify({...review,action:'verify',uploadId:key,ticket}),headers:{'Idempotency-Key':key},signal},150000),
@@ -437,8 +466,9 @@ export function createApi(
     ) =>
       request<MobileSession>("/session", isLogin, {
         method: "POST",
-        body: JSON.stringify({ email, password, platform, deviceName }),
+        body: JSON.stringify({ email, password, platform, deviceName, sessionVersion: 2 }),
       }),
+    refreshSession: (refreshToken: string, rotationId: string) => request<MobileSession>('/session/refresh', isRefreshSession, { method: 'POST', body: JSON.stringify({ refreshToken, rotationId }) }),
     session: () =>
       request<{ user: MobileUser; expiresAt: string }>("/session", isSession),
     logout: () =>
@@ -525,7 +555,7 @@ export function createApi(
     vehicleImportResult: (key: string, signal?: AbortSignal) => request<{ receipt: MobileVehicleImportReceipt | null }>(`/imports/vehicles/requests/${key}`, (v): v is { receipt: MobileVehicleImportReceipt | null } => !!v && typeof v === 'object' && 'receipt' in v && (v.receipt === null || isMobileVehicleImportReceipt(v.receipt) && v.receipt.key === key), { signal }),
     resolveVehicleImport: (key: string, operation: string) => request<MobileVehicleImportResolution>(`/imports/vehicles/requests/${key}/resolve`, (v): v is MobileVehicleImportResolution => isMobileVehicleImportResolution(v) && v.key === key && v.operation === operation, { method: 'POST', body: JSON.stringify({ operation }) }),
     vehicleImportBackup: (id: string, signal?: AbortSignal) => request<MobileFileExport>(`/imports/vehicles/backups/${id}`, isMobileFileExport, { signal }, 70000),
-    storeMatchFile: (name: string, bytes: ArrayBuffer, onPart: (part: MobileStoreMatchFilePage) => void, signal: AbortSignal) => readStoreMatchStream(origin, token, name, bytes, onPart, signal, onExpired),
+    storeMatchFile: async (name: string, bytes: ArrayBuffer, onPart: (part: MobileStoreMatchFilePage) => void, signal: AbortSignal) => readStoreMatchStream(origin, access ? await access.token() : token, name, bytes, onPart, signal, onExpired),
     previewStoreMatch: (rows: CustomerStoreInput[], signal?: AbortSignal) => request<CustomerStoreResult>('/imports/customer-stores/preview', isMobileStoreMatchResult, { method: 'POST', body: JSON.stringify({ rows }), signal }, 45000),
     saveStoreMatch: (batch: string, input: MobileStoreMatchInput, key: string) => request<MobileImportReceipt>(`/imports/customer-stores/${batch}`, (v): v is MobileImportReceipt => isMobileImportReceipt(v) && v.kind === 'customer_stores' && v.batchId === batch && v.key === key, { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': key } }, 45000),
     catalogueExport: (kind: MobileCatalogueExportKind, filters: string, columns: string[], signal?: AbortSignal) => { const query = new URLSearchParams(filters); query.set('columns', columns.join(',')); return request<MobileFileExport>(`/exports/${kind}?${query}`, isMobileFileExport, { signal }, 70000); },
@@ -593,7 +623,11 @@ export function createApi(
     recordMediaImageSource:(target:MobileMediaIdentity,photo:MobileMediaPhoto)=>{
       if(!isMobileMediaIdentity(target)||!isMobileMediaPhoto(photo,target)||!photo.readable||photo.kind!=='image')throw new ApiError('Ảnh không thuộc hồ sơ hoặc chưa hỗ trợ xem.',400,'INVALID_MEDIA_TARGET');
       return{uri:`${origin}/api/mobile/v1/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}/${encodeURIComponent(photo.slot)}?revision=${encodeURIComponent(photo.revision)}`,
-        headers:token?{Authorization:`Bearer ${token}`}:undefined};
+        headers:authorization()};
+    },
+    vehicleThumbnailSource: (id: number, revision: string) => {
+      if (!Number.isSafeInteger(id) || id < 1 || !/^[1-9]\d{0,19}$/.test(revision)) throw new ApiError('Ảnh xe không hợp lệ.',400,'INVALID_MEDIA_TARGET');
+      return { uri: `${origin}/api/mobile/v1/vehicles/${id}/thumbnail?revision=${encodeURIComponent(revision)}`, headers: authorization() };
     },
     deleteRecordMedia:(info:MobileMediaSlotInfo,key:string)=>request<MobileMediaDeleteReceipt>(`/record-media/${info.target.entity}/${info.target.id}/${info.target.kind}/${info.target.referenceId}/${encodeURIComponent(info.slot)}`,
       (value):value is MobileMediaDeleteReceipt=>isMediaDeleteReceipt(value)&&value.requestId===key&&matchesMobileMediaTarget(value.target,info.target)&&value.target.revision===info.target.revision&&
@@ -619,7 +653,7 @@ export function createApi(
         {method:'PUT',body:bytes,headers:{'Content-Type':'image/jpeg','Idempotency-Key':key,'X-Record-Revision':target.revision,'X-Reference-Revision':target.referenceRevision,'X-Photo-Revision':expectedPhotoRevision??'0','X-Media-Snapshot':target.snapshot??''}}),
     recordVideoSource:(target:MobileMediaIdentity,photo:MobileMediaPhoto)=>{
       if(!isMobileMediaIdentity(target)||!isMobileMediaPhoto(photo,target)||!photo.readable||photo.kind!=='video')throw new ApiError('Video không thuộc hồ sơ hoặc chưa hỗ trợ xem.',400,'INVALID_MEDIA_TARGET');
-      return{uri:`${origin}/api/mobile/v1/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}/${encodeURIComponent(photo.slot)}/video?revision=${encodeURIComponent(photo.revision)}`,headers:token?{Authorization:`Bearer ${token}`}:undefined,useCaching:false};
+      return{uri:`${origin}/api/mobile/v1/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}/${encodeURIComponent(photo.slot)}/video?revision=${encodeURIComponent(photo.revision)}`,headers:authorization(),useCaching:false};
     },
     signRecordVideo:(info:MobileMediaSlotInfo,key:string)=>request<MobileVideoUploadSignature>(`/record-media/${info.target.entity}/${info.target.id}/${info.target.kind}/${info.target.referenceId}/${encodeURIComponent(info.slot)}/video/sign`,
       (v):v is MobileVideoUploadSignature=>isMobileVideoSignature(v)&&String(v.params.public_id).endsWith('/'+key),

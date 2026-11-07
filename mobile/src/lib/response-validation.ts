@@ -92,6 +92,8 @@ export function isSession(
 }
 export function isLogin(value: unknown): value is MobileSession {
   return (
+    object(value) &&
+    (value.refreshToken === undefined && value.refreshExpiresAt === undefined && value.sessionId === undefined || isRefreshSession(value)) &&
     isSession(value) &&
     "token" in value &&
     typeof value.token === "string" &&
@@ -99,11 +101,18 @@ export function isLogin(value: unknown): value is MobileSession {
     Date.parse(value.expiresAt) > Date.now()
   );
 }
+export function isRefreshSession(value: unknown): value is MobileSession {
+  return object(value) && isMobileUser(value.user) && typeof value.token === 'string' && /^hm1_[A-Za-z0-9_-]{43}$/.test(value.token) &&
+    expiry(value.expiresAt) && typeof value.refreshToken === 'string' && /^hmr2_[A-Za-z0-9_-]{43}$/.test(value.refreshToken) &&
+    typeof value.refreshExpiresAt === 'string' && expiry(value.refreshExpiresAt) && Date.parse(value.refreshExpiresAt) > Date.now() &&
+    typeof value.sessionId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.sessionId);
+}
 export function isRecord(value: unknown): value is MobileRecord {
   return (
     object(value) &&
     (value.monitoring === undefined || isContractMonitoring(value.monitoring)) &&
     (value.reminderEligible === undefined || typeof value.reminderEligible === "boolean") &&
+    (value.thumbnailRevision === undefined || value.thumbnailRevision === null || typeof value.thumbnailRevision === 'string' && /^[1-9]\d{0,19}$/.test(value.thumbnailRevision)) &&
     integer(value.id, 1) &&
     [
       "email",

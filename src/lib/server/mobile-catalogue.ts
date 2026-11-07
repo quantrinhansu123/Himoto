@@ -155,9 +155,17 @@ export async function readMobilePage(
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await client.query("SET LOCAL statement_timeout='20s'");
       const data = await readManagementTable(client, kind, query);
+      const thumbnails = kind === 'vehicles' && data.rows.length ? await client.query(
+        `SELECT entity_id,xmin::text AS revision FROM himoto.management_record_photos
+         WHERE entity_type='vehicles' AND entity_id=ANY($1::bigint[]) AND slot='vehicle-photo'
+         AND mime_type IN ('image/jpeg','image/png','image/webp')
+         AND (data IS NOT NULL OR cloudinary_public_id IS NOT NULL AND cloudinary_cloud_name IS NOT NULL)
+         AND (data IS NULL OR octet_length(data) BETWEEN 1 AND 2097152)`, [data.rows.map(row => row.id)],
+      ) : { rows: [] };
+      const thumbnailRevisions = new Map(thumbnails.rows.map(row => [Number(row.entity_id), String(row.revision)]));
       await client.query("COMMIT");
       return {
-        rows: data.rows.map((row) => mobileRecord(kind, row)),
+        rows: data.rows.map((row) => ({ ...mobileRecord(kind, row), ...(kind === 'vehicles' ? { thumbnailRevision: thumbnailRevisions.get(row.id) ?? null } : {}) })),
         total: data.total,
         page: data.page,
         pages: data.pages,

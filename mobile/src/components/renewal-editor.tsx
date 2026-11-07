@@ -143,7 +143,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           {!!extraAmount&&extraAmount!=="0"&&<FormField label="Tên khoản phí khác" value={extraName} onChangeText={setExtraName} editable={!locked} maxLength={100} />}
           <FormField label="Phí thu ngoài (VND)" value={outsideAmount} onChangeText={setOutsideAmount} editable={!locked} keyboardType="number-pad" maxLength={20} hint="Tùy chọn. Không cộng vào tiền thuê hoặc tổng hợp đồng." />
           {!!outsideAmount && outsideAmount !== "0" && <FormField label="Tên phí thu ngoài" value={outsideName} onChangeText={setOutsideName} editable={!locked} maxLength={100} />}
-
+          
           <FormField label={backfill?"Lý do nhập bổ sung gia hạn":"Ghi chú gia hạn"} value={note} onChangeText={setNote} editable={!locked} multiline maxLength={2000} />
         </Card>
         <Card style={{ gap: 16 }}>

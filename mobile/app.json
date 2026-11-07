@@ -2,7 +2,7 @@
   "expo": {
     "name": "Himoto",
     "slug": "himoto-staff",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "himoto",
@@ -20,7 +20,8 @@
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "package": "vn.himoto.staff",
-      "versionCode": 2
+      "versionCode": 4,
+      "allowBackup": false
     },
     "web": {
       "output": "single",
@@ -31,6 +32,10 @@
       "./plugins/with-android-release-signing.cjs",
       "expo-router",
       "expo-secure-store",
+      ["expo-sqlite", {"useSQLCipher": true}],
+      "expo-background-task",
+      ["expo-location", {"locationWhenInUsePermission": "Himoto dùng vị trí hiện tại để xác nhận chấm công khi bạn vào hoặc ra ca."}],
+      ["expo-local-authentication", {"faceIDPermission": "Himoto dùng Face ID để mở khóa phiên làm việc của bạn."}],
       ["expo-notifications", {"defaultChannel": "himoto-work", "color": "#E60019"}],
       [
         "expo-splash-screen",

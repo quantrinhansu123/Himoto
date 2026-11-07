@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
 from playwright.sync_api import expect, sync_playwright
+from lib.mobile_catalogue_actions_ui import catalogue_action
 
 
 def run(build, output, workbook):
@@ -106,7 +107,7 @@ def run(build, output, workbook):
                 page.get_by_label('Mật khẩu', exact=True).fill('fixture-password')
                 page.get_by_role('button', name='Đăng nhập', exact=True).click()
                 page.get_by_role('button', name='Mở Đội xe', exact=True).click()
-                page.get_by_role('button', name='Nhập và đồng bộ Excel xe', exact=True).click()
+                catalogue_action(page, 'Nhập và đồng bộ Excel xe').click()
                 with page.expect_file_chooser() as capture:
                     page.get_by_role('button', name='Chọn file Excel xe', exact=True).click()
                 capture.value.set_files({'name': 'QA.xlsx', 'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'buffer': workbook.read_bytes()})
@@ -142,7 +143,7 @@ def run(build, output, workbook):
                 page.screenshot(path=str(output / f'sync-result-{width}-{scheme}.png'), full_page=True)
                 page.get_by_role('button', name='Đã xem kết quả, về đội xe', exact=True).click()
                 checks.append(f'{width}/{scheme}: legacy file mapping, replace blocker, warning confirmation, exact sync, immutable result/backup download, ' + ('lost-response UUID recovery and ack' if width == 375 else 'happy path and ack'))
-                page.get_by_role('button', name='Nhập và đồng bộ Excel xe', exact=True).click()
+                catalogue_action(page, 'Nhập và đồng bộ Excel xe').click()
                 page.get_by_role('button', name='Kiểm tra xóa danh sách xe có sao lưu', exact=True).click()
                 expect(page.get_by_role('button', name='Kiểm tra và xóa 4 xe', exact=True)).to_be_disabled()
                 page.get_by_role('textbox', name='Nhập XÓA HẾT XE để xác nhận', exact=True).fill('XÓA HẾT XE')
@@ -151,7 +152,7 @@ def run(build, output, workbook):
                 expect(page.get_by_text('Đã xóa 4 xe', exact=True)).to_be_visible()
                 page.screenshot(path=str(output / f'reset-result-{width}-{scheme}.png'), full_page=True)
                 page.get_by_role('button', name='Đã xem kết quả, về đội xe', exact=True).click()
-                expect(page.get_by_role('button', name='Nhập và đồng bộ Excel xe', exact=True)).to_be_visible()
+                catalogue_action(page, 'Nhập và đồng bộ Excel xe')
                 assert len(state['writes']) == 2 and [r['mode'] for r in state['writes']] == ['sync', 'reset']
                 checks.append(f'{width}/{scheme}: isolated-fixture reset requires exact phrase and second confirmation, returns deletion count and backup, ack returns to vehicles without repeating')
                 context.close()

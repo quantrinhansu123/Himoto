@@ -9,7 +9,7 @@ function load(filename) {
   if (cache.has(file)) return cache.get(file).exports;
   const module = { exports: {} }; cache.set(file, module);
   const localRequire = name => name === 'server-only' ? {} : ['@himoto/mobile-draft-validation','@himoto/mobile-contract-validation'].includes(name) ? load(path.resolve(root, '../shared',name.split('/')[1])) : name.startsWith('@/') ? load(path.join(root, name.slice(2))) : name.startsWith('.') ? load(path.resolve(path.dirname(file), name)) : require(name);
-  new Function('require', 'module', 'exports', ts.transpileModule(fs.readFileSync(file, 'utf8'), { fileName:file, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,esModuleInterop:true,jsx:ts.JsxEmit.ReactJSX } }).outputText)(localRequire, module, module.exports);
+  new Function('require', 'module', 'exports', ts.transpileModule(fs.readFileSync(file, 'utf8'), { fileName: file, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,esModuleInterop:true,jsx:ts.JsxEmit.ReactJSX } }).outputText)(localRequire, module, module.exports);
   return module.exports;
 }
 module.exports = { load, root };

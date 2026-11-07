@@ -508,6 +508,7 @@ async function run() {
     const order = [];
     const secureStore = {
       WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device-only",
+      AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "device-only",
       getItemAsync: async () => nativeValue,
       setItemAsync: async (_key, value, options) => {
         assert.equal(options.keychainAccessible, "device-only");

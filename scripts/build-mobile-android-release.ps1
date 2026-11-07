@@ -82,7 +82,7 @@ try {
     $taskBadging | Set-Content -LiteralPath (Join-Path $taskOutput 'apk-badging.txt')
     if(@($taskBadging | Where-Object {$_ -match '^application-debuggable'}).Count -gt 0){throw 'Release APK is debuggable.'}
     if(-not ($taskBadging | Select-String -SimpleMatch "package: name='vn.himoto.staff' versionCode='$taskVersionCode' versionName='$taskVersion'")){throw 'APK identity/version mismatch.'}
-    & python (Join-Path $PSScriptRoot 'verify-mobile-release-bundle.py') --apk $taskApk
+    & python (Join-Path $PSScriptRoot 'verify-mobile-release-bundle.py') --apk $taskApk --require-offline
     if($LASTEXITCODE -ne 0){throw 'Compiled bundle/Firebase/native module verification failed.'}
     & node (Join-Path $PSScriptRoot 'mobile-release-provenance.cjs') --manifest (Join-Path $taskOutput 'source-manifest.json') --verify
     if($LASTEXITCODE -ne 0){throw 'Release source changed during build.'}

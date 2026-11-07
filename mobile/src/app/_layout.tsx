@@ -8,6 +8,8 @@ import { StateView } from "@/components/ui";
 import { useTheme } from "@/theme";
 import { EnvironmentBanner } from "@/components/environment-banner";
 import { NotificationBridge } from "@/components/notification-bridge";
+import { OfflineBanner } from '@/components/offline-banner';
+import { BiometricGate } from '@/components/biometric-gate';
 
 export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
   return (
@@ -45,7 +47,9 @@ function Navigator() {
     <>
       <StatusBar style="auto" />
       <EnvironmentBanner />
+      <OfflineBanner />
       <NotificationBridge />
+      <SafeAreaProvider style={{ flex: 1 }}>
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: theme.surface },
@@ -58,6 +62,9 @@ function Navigator() {
           <Stack.Screen name="login" options={{ headerShown: false }} />
         </Stack.Protected>
         <Stack.Protected guard={!!session}>
+          <Stack.Screen name="attendance" options={{title:'Chấm công'}}/>
+          <Stack.Screen name="guide" options={{title:'Hướng dẫn và hỏi đáp'}}/>
+          <Stack.Screen name="offline-sync" options={{ title: 'Dữ liệu và đồng bộ' }}/>
           <Stack.Screen name="notifications" options={{title:'Thông báo công việc'}}/>
           <Stack.Screen name="notification-activity" options={{title:'Sự kiện gần đây'}}/>
           <Stack.Screen name="notification-list/[kind]" options={{title:'Công việc cần xử lý'}}/>
@@ -176,6 +183,7 @@ function Navigator() {
           />
         </Stack.Protected>
       </Stack>
+      </SafeAreaProvider>
     </>
   );
 }
@@ -188,7 +196,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <SessionProvider>
-        <Navigator />
+        <BiometricGate><Navigator /></BiometricGate>
       </SessionProvider>
     </SafeAreaProvider>
   );

@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 from playwright.sync_api import expect, sync_playwright
+from lib.mobile_catalogue_actions_ui import catalogue_action
 
 
 def run(build, output):
@@ -139,7 +140,7 @@ def run(build, output):
                 page.get_by_label('Mật khẩu', exact=True).fill('fixture-password')
                 page.get_by_role('button', name='Đăng nhập', exact=True).click()
                 page.get_by_role('button', name='Mở Khách hàng', exact=True).click()
-                page.get_by_role('button', name='Tải Excel theo bộ lọc', exact=True).click()
+                catalogue_action(page, 'Tải Excel theo bộ lọc').click()
                 page.get_by_role('checkbox', name='Xuất cột Giấy tờ định danh', exact=True).click()
                 expect(page.get_by_role('button', name='Tải Excel với 3 cột', exact=True)).to_be_enabled()
                 page.screenshot(path=str(output / f'export-{width}-{scheme}.png'), full_page=True)
@@ -160,7 +161,7 @@ def run(build, output):
                 checks.append(f'{width}/{scheme}: column selection and 53-row download from isolated export response, original catalogue only has one mounted row')
                 # Expo Router's standard back action preserves the in-memory session.
                 page.go_back()
-                page.get_by_role('button', name='Nhập khách hàng từ Excel', exact=True).click()
+                catalogue_action(page, 'Nhập khách hàng từ Excel').click()
                 with page.expect_file_chooser() as capture:
                     page.get_by_role('button', name='Chọn file Excel khách hàng', exact=True).click()
                 capture.value.set_files(output / 'input.xlsx')
@@ -176,7 +177,7 @@ def run(build, output):
                 expect(page.get_by_text('Đã nhập 1 khách hàng', exact=True)).to_be_visible()
                 page.screenshot(path=str(output / f'import-recovered-{width}-{scheme}.png'), full_page=True)
                 page.get_by_role('button', name='Đã xem kết quả, về danh sách khách', exact=True).click()
-                expect(page.get_by_role('button', name='Nhập khách hàng từ Excel', exact=True)).to_be_visible()
+                catalogue_action(page, 'Nhập khách hàng từ Excel')
                 assert state['submitted'] == 1 and state['resolved'] == 1 and len(state['exported']) == 1
                 checks.append(f'{width}/{scheme}: actual picker sends xlsx bytes, exact selected row only, lost commit response resolves original UUID and acknowledgement navigates without a duplicate import')
                 page.get_by_role('button', name='Khớp cơ sở khách từ Excel', exact=True).click()
