@@ -262,7 +262,18 @@ export function SessionProvider({ children }: PropsWithChildren) {
     let inFlight = false;
     void registerOfflineBackground().catch(() => offlineStatus.update({ error: 'Chưa bật được đồng bộ nền. App vẫn đồng bộ khi đang mở.' }));
     const sync = async () => {
-      if (!alive || inFlight || AppState.currentState !== 'active' || !offlineStatus.get().connected || offlineStatus.get().verifying) return;
+      if (!alive || inFlight || AppState.currentState !== 'active' || offlineStatus.get().verifying) return;
+      if (!offlineStatus.get().connected) {
+        inFlight = true;
+        try {
+          if (currentSession.current) await restoreRef.current(true);
+        } catch {
+          // Still offline, retry on next interval
+        } finally {
+          inFlight = false;
+        }
+        return;
+      }
       inFlight = true;
       const before = offlineStatus.get().revision;
       try {
@@ -275,7 +286,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       } finally { inFlight = false; }
     };
     void sync();
-    const timer = setInterval(() => { void sync(); }, 15000);
+    const timer = setInterval(() => { void sync(); }, 10000);
     const unsubscribe = offlineStatus.subscribe(() => {
       if (offlineStatus.get().connected) void sync();
     });

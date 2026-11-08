@@ -10,7 +10,7 @@ import {ChoiceField} from '@/components/form-fields';
 import {DateField} from '@/components/date-field';
 import {EditorSheet} from '@/components/editor-sheet';
 import {captureAttendancePhoto,locateAttendance} from '@/lib/attendance-capture';
-import {loadAttendancePending,storeAttendancePending,clearAttendancePending,refreshAttendancePendingLocation,type AttendancePending} from '@/lib/attendance-pending';
+import {loadAttendancePending,storeAttendancePending,clearAttendancePending,discardAttendancePending,refreshAttendancePendingLocation,type AttendancePending} from '@/lib/attendance-pending';
 import type {RecordMediaPhoto} from '@/lib/record-media-photo';
 import {supportFormData} from '@/lib/support-form-data';
 import {dutyToday} from '../../../shared/mobile-duty-roster';
@@ -31,6 +31,19 @@ export default function Attendance() {
   async function run(job:()=>Promise<void>){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await job();}catch(failure){if(alive.current)setError((failure as Error).message);}finally{lock.current=false;if(alive.current)setBusy(false);}}
   async function acknowledge(id:string){await clearAttendancePending(session!.user.id,id);setPending(null);setAction(null);setLocation(null);photo?.dispose();setPhoto(null);setNotice('Máy chủ đã xác nhận chấm công.');await query.refetch();}
   async function resolve(){if(!pending)return;const result=await api!.resolveAttendance(pending.id);if(result.result)await acknowledge(pending.id);else setNotice('Máy chủ chưa ghi nhận mã này. Thử lại cùng lần chấm; không tạo mã mới.');}
+  async function restartFromPending(){
+    if(!pending)return;
+    const targetAction=pending.action;
+    try {
+      const result=await api!.resolveAttendance(pending.id);
+      if(result.result){await acknowledge(pending.id);return;}
+    } catch {}
+    await discardAttendancePending(session!.user.id,pending.id);
+    setPending(null);
+    setNotice('');
+    setError('');
+    setAction(targetAction);
+  }
   async function save(){
     let attempt=pending;
     if(!attempt){
@@ -45,7 +58,7 @@ export default function Attendance() {
         attempt=await refreshAttendancePendingLocation(actor,origin,attempt.id,refreshed);setPending(attempt);
       }
     }
-    if(attempt.photo.size<=0)throw Error('Ảnh chấm công chờ không còn trên máy. Giữ mã để hỗ trợ đối chiếu; chưa gửi lần chấm mới.');
+    if(attempt.photo.size<=0)throw Error('Ảnh chấm công chờ không còn trên máy. Bấm "Chụp lại ảnh" để tạo lần chấm mới.');
     const body=await supportFormData({action:attempt.action,request_id:attempt.id,location:JSON.stringify(attempt.location)},attempt.photo);
     await api!.clockAttendance(body);await acknowledge(attempt.id);
   }
@@ -59,7 +72,7 @@ export default function Attendance() {
           {copy(query.data?.open?'Đang trong ca · Vào lúc '+dateTime(query.data.open.clock_in_at):'Chưa có ca đang mở')}
           {query.data?.shift&&copy(`Ca ${query.data.shift.shift_name} · ${dateTime(query.data.shift.starts_at)} → ${dateTime(query.data.shift.ends_at)}`)}
           {query.data?.late_minutes!==null&&query.data?.late_minutes!==undefined&&copy(query.data.late_minutes?`Đi muộn ${query.data.late_minutes} phút`:'Đúng giờ theo lịch ca')}
-          {pending?<><InlineError message={`Có lần ${pending.action==='in'?'vào':'ra'} ca chưa xác nhận. Giữ mã ${pending.id} để đối chiếu.`}/><Button label="Đối chiếu lần chấm đang chờ" loading={busy} onPress={()=>{void run(resolve);}}/><Button secondary label="Thử lại cùng lần chấm công" disabled={busy} onPress={()=>{void run(save);}}/></>:<Button label={query.data?.open?'Ra ca':'Vào ca'} disabled={restoring||busy||query.isError||!query.data?.staff} onPress={()=>{setAction(query.data?.open?'out':'in');setError('');setNotice('');}}/>}
+          {pending?<><InlineError message={`Có lần ${pending.action==='in'?'vào':'ra'} ca chưa xác nhận. Giữ mã ${pending.id} để đối chiếu.`}/><Button label="Đối chiếu lần chấm đang chờ" loading={busy} onPress={()=>{void run(resolve);}}/><Button secondary label="Thử lại cùng lần chấm công" disabled={busy} onPress={()=>{void run(save);}}/><Button secondary label={`Chụp lại ảnh để ${pending.action==='in'?'vào ca':'ra ca'} ngay`} disabled={busy} onPress={()=>{void run(restartFromPending);}}/></>:<Button label={query.data?.open?'Ra ca':'Vào ca'} disabled={restoring||busy||query.isError||!query.data?.staff} onPress={()=>{setAction(query.data?.open?'out':'in');setError('');setNotice('');}}/>}
           {query.data&&!query.data.staff&&copy('Tài khoản chưa liên kết với một nhân viên đang hoạt động. Liên hệ quản lý nhân sự.')}
           {copy('Chấm công cần mạng, ảnh hiện tại và GPS. Giờ được ghi theo máy chủ; ảnh không tự gửi nền.')}
         </Card>

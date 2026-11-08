@@ -27,7 +27,7 @@ export async function selectRecordVideo(camera:boolean, signal:AbortSignal,maxDu
   if(!source.exists||source.size<=0||source.size>MOBILE_MAX_VIDEO_BYTES)throw Error('Video cần có dung lượng từ 1 byte đến 45 MB.');
   const owned=new File(Paths.cache,`himoto-video-${uuid.v4()}.${['mp4','mov','m4v','webm'].includes(ext||'')?ext:'mp4'}`);
   try {
-    source.copy(owned);
+    await source.copy(owned);
     if(signal.aborted||!owned.exists||owned.size!==source.size)throw Error('Chưa chuẩn bị được video đầy đủ. Chọn lại tệp.');
     return{uri:owned.uri,name:owned.name,mimeType:asset.mimeType,size:owned.size,duration,blob:owned,sha256:()=>owned.digest('SHA-256'),dispose:()=>{try{if(owned.exists)owned.delete();}catch{}}};
   } catch(error) { try{if(owned.exists)owned.delete();}catch{} throw error; }

@@ -17,9 +17,9 @@ export async function loadAttendancePending(actor:number,origin:string):Promise<
 export async function storeAttendancePending(actor:number,origin:string,pending:AttendancePending):Promise<AttendancePending> {
   if(await SecureStore.getItemAsync(key(actor)))throw Error('Còn lần chấm công chờ. Đối chiếu trước khi tạo lần mới.');
   const dir=folder();dir.create({idempotent:true,intermediates:true});
-  const file=new File(dir,pending.id+'.jpg');new File(pending.photo.uri).copy(file);
+  const file=new File(dir,pending.id+'.jpg');await new File(pending.photo.uri).copy(file);
   try{await SecureStore.setItemAsync(key(actor),JSON.stringify({origin,id:pending.id,action:pending.action,location:pending.location,width:pending.photo.width,height:pending.photo.height}),{keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY});}
-  catch(error){file.delete();throw error;}
+  catch(error){try{if(file.exists)file.delete();}catch{}throw error;}
   return (await loadAttendancePending(actor,origin))!;
 }
 export async function clearAttendancePending(actor:number,id:string) {
@@ -27,6 +27,12 @@ export async function clearAttendancePending(actor:number,id:string) {
   if(JSON.parse(raw).id!==id)throw Error('Lần chấm công đang đối chiếu đã thay đổi.');
   await SecureStore.deleteItemAsync(key(actor));
   const file=new File(folder(),id+'.jpg');if(file.exists)file.delete();
+}
+export async function discardAttendancePending(actor:number,id?:string) {
+  const raw=await SecureStore.getItemAsync(key(actor));if(!raw)return;
+  const saved=JSON.parse(raw);if(id&&saved.id!==id)return;
+  await SecureStore.deleteItemAsync(key(actor));
+  try{const file=new File(folder(),saved.id+'.jpg');if(file.exists)file.delete();}catch{}
 }
 export async function refreshAttendancePendingLocation(actor:number,origin:string,id:string,location:AttendanceLocation) {
   const raw=await SecureStore.getItemAsync(key(actor));if(!raw)throw Error('Không tìm thấy lần chấm công chờ.');

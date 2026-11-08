@@ -20,4 +20,5 @@ next-env.d.ts
 /form_gui_tin_nhan_nhanh.html
 __pycache__/
 *.pyc
+/videos/
 /docs/HANDOFF-*.md
