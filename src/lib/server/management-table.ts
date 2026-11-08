@@ -22,6 +22,7 @@ import { OVERDUE_BUCKETS,withContractMonitoring,type OverdueBucket } from '@/lib
 import {contractStatisticsSql,mapContractStatistics,fastContractStatistics} from './contract-table-stats';
 import { legacyOwnershipFeeReader } from './legacy-ownership-overdue';
 import {contractWarehouseJoinSql,contractWarehouseStoreSql} from './contract-warehouses';
+import {usesScopedDatabase} from './access-context';
 
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
@@ -169,7 +170,7 @@ export function customerPageSql(scopeClause:string) {
          WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
     c.warning, c.store_id, s.store_name, COALESCE(oc.contract_count,0) AS contract_count
     FROM himoto.customers c
-    LEFT JOIN himoto.stores s ON s.id = c.store_id
+    LEFT JOIN ${usesScopedDatabase()?'himoto.store_directory()':'himoto.stores'} s ON s.id = c.store_id
     LEFT JOIN LATERAL (
       SELECT count(*)::int AS contract_count FROM himoto.orders o WHERE o.customer_id=c.id AND o.deleted_at IS NULL
     ) oc ON true

@@ -46,6 +46,8 @@ export function hasPermission(account:PermissionAccount|null|undefined,permissio
   // This privilege cannot be delegated, including through a legacy permission array.
   if(permission==='accounts.manage')return isAdminAccount(account);
   if(permission==='contracts.delete')return isAdminAccount(account)||account.access_role==='accounting'&&Boolean(account.permissions?.includes(permission));
+  // The customer directory is shared across all authenticated workspaces.
+  if(permission==='customers.read')return true;
   // Fleet dispatch and receipt are available to every authenticated workspace
   // account. Profile edits, contracts and money retain their existing grants.
   if(['vehicles.read','vehicles.transfer','vehicles.receive'].includes(permission))return true;
