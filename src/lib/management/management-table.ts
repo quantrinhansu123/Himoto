@@ -83,17 +83,24 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
 export async function requestManagementTable(input: ManagementTableInput, signal?: AbortSignal, all = false, ownershipStores: number[] = [],statistics?:ManagementTableResult,mode:'full'|'page'|'statistics'='full'): Promise<ManagementTableResult> {
   const controller=new AbortController();
   let timedOut=false;
-  const cancel=()=>controller.abort(signal?.reason);
+  // Some mobile browsers/WebViews do not settle fetch/body reads when aborted.
+  // Race the entire read against our own deadline as well as aborting transport.
+  let rejectDeadline!:(error:Error)=>void;
+  const deadline=new Promise<never>((_,reject)=>{rejectDeadline=reject;});
+  const cancel=()=>{rejectDeadline(new DOMException('Aborted','AbortError'));controller.abort();};
   if(signal?.aborted)cancel();else signal?.addEventListener('abort',cancel,{once:true});
-  const timer=setTimeout(()=>{timedOut=true;controller.abort();},all?120000:45000);
+  const timer=setTimeout(()=>{timedOut=true;rejectDeadline(new Error('Request deadline exceeded'));controller.abort();},all?120000:45000);
   try {
   const params=managementTableQuery(input,all);
   if(input.kind==='contracts'&&!all&&mode!=='page')params.set('scope_count','1');
   if(mode==='statistics')params.set('statistics_only','1');
   const reuse=input.kind==='contracts'&&!all?statistics:undefined;
   if(input.kind==='contracts'&&!all&&!reuse&&mode==='full')params.set('status_counts','1');
-  const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${params}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal});
-  const result=await response.json().catch(()=>null);
+  const {response,result}=await Promise.race([deadline,(async()=>{
+    const response=await fetch(`/api${READ_ENDPOINTS[input.kind]}?${params}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal});
+    const result=await response.json().catch(()=>null);
+    return {response,result};
+  })()]);
   if (!response.ok || result?.status!=='success') throw new Error(result?.message || 'Không tải được danh sách. Thử lại.');
   // Old deployments/test fixtures return the original array until their API is upgraded.
   if (Array.isArray(result.data)) return projectManagementTable(result.data.map((row: Record<string,unknown>)=>mapApiRow(input.kind,row)),input,all,Date.now(),ownershipStores);
