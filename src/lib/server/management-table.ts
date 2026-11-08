@@ -506,7 +506,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
         const ids=batch.map(row=>row.id);
         // A failed detail query must fail this read, not silently turn balances,
         // vehicle labels or rental dates into missing/incorrect information.
-        const details=await client.query(kind==='contracts'?overdueSql(contractVehicleDetailsSql(contractHydrateSql())):vehicleHydrateSql(),[ids]);
+        const details=await client.query(kind==='contracts'?contractVehicleDetailsSql(overdueSql(contractHydrateSql())):vehicleHydrateSql(),[ids]);
         const mapped=new Map(mapManagementRows(kind,details.rows).map(record=>[record.id,record]));
         batch=batch.map(row=>mapped.get(row.id)||row);
       }
@@ -536,7 +536,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     };
   }
   const fullSql=kind==='contracts' ? `${CONTRACT_LIST_SQL}${clause}` : CUSTOMER_PROFILE_SQL;
-  const result=await client.query(kind==='contracts' ? overdueSql(contractVehicleDetailsSql(fullSql)) : fullSql);
+  const result=await client.query(kind==='contracts' ? contractVehicleDetailsSql(overdueSql(fullSql)) : fullSql);
   const mapped=mapManagementRows(kind,result.rows);
   return projectManagementTable(monitoring?await legacyFees(mapped):mapped,input,all,now);
 }
