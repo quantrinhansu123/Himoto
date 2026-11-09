@@ -17,10 +17,15 @@ const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)
 const VIEW_TABS = [{ id: 'info', label: 'Chi tiết' }, { id: 'vouchers', label: 'Danh sách thu chi' }] as const;
 type ViewTab = (typeof VIEW_TABS)[number]['id'];
 
-function VoucherColumn({ title, kind, rows }: { title: string; kind: 'income' | 'expense'; rows: CashbookAccountVoucher[] }) {
+import { FilteredExcelButton } from './FilteredExcelButton';
+
+function VoucherColumn({ title, kind, rows, exportRows }: { title: string; kind: 'income' | 'expense'; rows: CashbookAccountVoucher[]; exportRows: () => Promise<CashbookAccountVoucher[]> }) {
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
   return <section className="mg-account-voucher-col" aria-label={title}>
     <h3>{title}<span className="mg-title-count">{rows.length}</span></h3>
+    <FilteredExcelButton disabled={false} filename={`himoto-phieu-${kind}`}
+      headers={['ID','Ngày','Giờ','Mã HĐ','Nội dung','Người thực hiện','Số tiền']}
+      getRows={async ()=>(await exportRows()).filter(r=>r.type===kind).map(r=>[r.id,r.date,r.time,r.contract_code,r.content,r.user_name,r.amount])}/>
     <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{rows.map(row => <MobileDetailsCard key={row.id} title={row.contract_code || row.content || `Phiếu #${row.id}`}
       summary={<><span>{money(row.amount)}</span><span>{row.date ? row.date.split('-').reverse().join('/') : '—'}</span></>}
       fields={[["ID", row.id], ["Ngày", row.date ? row.date.split('-').reverse().join('/') : '—'], ["Giờ", row.time || '—'], ["Hợp đồng", row.contract_code || '—'], ["Nội dung", row.content || '—'], ["Người thực hiện", row.user_name || '—'], ["Số tiền", money(row.amount)]]} />)}</ul>
@@ -52,6 +57,7 @@ function AccountVouchers({ account }: { account: CashbookAccount }) {
   }, [account, range, invalid, retry]);
   const income = useMemo(() => rows.filter(row => row.type === 'income'), [rows]);
   const expense = useMemo(() => rows.filter(row => row.type === 'expense'), [rows]);
+  const exportRows = () => loadCashbookAccountVouchers(account, range, undefined, true);
   return <div>
     <div className="mg-date-filters"><label htmlFor="account-from">Từ ngày <input id="account-from" type="date" value={range.from} aria-invalid={invalid} onChange={event => setRange(current => ({ ...current, from: event.target.value }))} /></label>
       <label htmlFor="account-to">Đến ngày <input id="account-to" type="date" value={range.to} aria-invalid={invalid} onChange={event => setRange(current => ({ ...current, to: event.target.value }))} /></label>
@@ -59,7 +65,7 @@ function AccountVouchers({ account }: { account: CashbookAccount }) {
       {invalid && <span className="mg-field-error" role="alert">Đến ngày phải bằng hoặc sau Từ ngày.</span>}</div>
     {loading ? <div className="mg-table-state" role="status"><LoaderCircle size={22} className="mg-spin" /><strong>Đang tải phiếu thu chi…</strong></div>
       : error ? <div className="mg-table-state mg-table-error" role="alert"><strong>{error}</strong><button type="button" className="mg-button" onClick={() => setRetry(value => value + 1)}>Thử lại</button></div>
-      : <div className="mg-account-voucher-grid"><VoucherColumn title="Thu" kind="income" rows={income} /><VoucherColumn title="Chi" kind="expense" rows={expense} /></div>}
+      : invalid ? null : <div className="mg-account-voucher-grid"><VoucherColumn title="Thu" kind="income" rows={income} exportRows={exportRows} /><VoucherColumn title="Chi" kind="expense" rows={expense} exportRows={exportRows} /></div>}
   </div>;
 }
 

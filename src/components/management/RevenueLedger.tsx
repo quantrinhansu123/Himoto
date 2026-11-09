@@ -234,7 +234,7 @@ export function RevenueLedger({ from, to, store, retry }: { from: string; to: st
           </h3>
           <p>Tách riêng phiếu thu và phiếu chi đã duyệt. Xuất Excel gồm 2 sheet Thu / Chi.</p>
         </div>
-        <button type="button" className="mg-button" disabled={!ready || !totalCount || exporting} onClick={() => void exportExcel()}>
+        <button type="button" className="mg-button mg-excel-export" disabled={!ready || !totalCount || exporting} onClick={() => void exportExcel()}>
           {exporting ? <LoaderCircle size={16} className="mg-spin" /> : <ArrowDownToLine size={16} />}
           {exporting ? 'Đang xuất…' : 'Xuất sổ Excel'}
         </button>

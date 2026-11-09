@@ -3,6 +3,7 @@ import { useEffect,useState } from 'react';
 import { formatMoney } from '@/lib/formatters';
 import { loadOwnedFleetReport,type FleetRevenueTotals,type FleetStoreRevenue,type OwnedFleetRevenueReport } from '@/lib/management/owned-fleet-revenue';
 import { rentalReportQuery,type RentalReportScope } from '@/lib/management/rental-reports';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { Dialog } from './Dialog';
 
 function useFleetReport(query:URLSearchParams,revision:number) {
@@ -41,9 +42,27 @@ function FleetVehicleDetails({row,scope,onClose}:{row:FleetStoreRevenue;scope:Re
   const state=useFleetReport(query,0),report=state.report?.view==='vehicles'?state.report:null;
   const ready=report&&!state.loading&&!state.error,unknown=Boolean(report?.total.unassigned_rentals);
   const pages=Math.max(1,Math.ceil((report?.total.vehicles||0)/size)),active=report?.page||page;
+  async function exportVehicles() {
+    const params = new URLSearchParams(query);
+    params.set('size','50');
+    const rows = new Map<number,(string | number)[]>();
+    let total = 0;
+    for (let index=1; index===1 || rows.size<total; index++) {
+      params.set('page',String(index));
+      const result = await loadOwnedFleetReport(params);
+      if (result.view!=='vehicles') throw new Error('Không tải được danh sách đội xe.');
+      if (index===1) total=result.total.vehicles;
+      if (result.page!==index || result.total.vehicles!==total || !result.rows.length ||
+          result.rows.some(vehicle=>rows.has(vehicle.id))) throw new Error('Danh sách đội xe đã thay đổi. Tải lại rồi xuất Excel.');
+      for (const v of result.rows) rows.set(v.id,[v.name,v.license,v.current_store_name,v.rentals,v.direct_revenue,v.loan_revenue,v.unassigned_revenue,v.revenue]);
+    }
+    return [...rows.values()];
+  }
   return <Dialog className="mg-dialog-fullscreen mg-owned-fleet-dialog" title={`Đội xe chủ quản · ${row.store_name}`} subtitle={`${scope.from} – ${scope.to} · Chỉ xem`} onClose={onClose}>
     <div className="mg-dialog-body"><ReportState {...state}/>{ready&&<>
       <FleetSummary total={report.total}/>
+      <FilteredExcelButton disabled={!report.total.vehicles} filename={`himoto-doi-xe-${row.store_id}`}
+        headers={['Tên xe','Biển số','Cơ sở đang quản lý','Lượt thuê','Trực tiếp cho khách thuê','Cho cơ sở khác mượn','Chưa xác định cơ sở lập HĐ','Tổng doanh thu']} getRows={exportVehicles}/>
       <p className="mg-rental-revenue-note">Đủ xe thuộc cơ sở này, kể cả xe chưa có doanh thu. Cơ sở đang giữ xe không làm đổi cơ sở chủ quản. Sắp xếp theo doanh thu giảm dần.</p>
       <div className="mg-mobile-records mg-report-mobile" role="region" aria-label="Thẻ đội xe chủ quản">{report.rows.map(vehicle=><article key={vehicle.id} className="mg-report-card"><strong>{vehicle.name} · {vehicle.license||'Chưa có biển số'}</strong><p>Đang quản lý: {vehicle.current_store_name} · {vehicle.rentals} lượt thuê</p><dl>
         <div><dt>Trực tiếp cho khách thuê</dt><dd>{formatMoney(vehicle.direct_revenue)}</dd></div>
@@ -72,6 +91,10 @@ export function OwnedFleetRevenuePanel({from,to,store,retry}:RentalReportScope&{
     <p className="mg-rental-revenue-note">Cùng cách tính Doanh thu từng xe: các lượt thuê bắt đầu trong kỳ, gồm phí thuê + gia hạn + điều chỉnh trả muộn / trả sớm; không gồm cọc và phí sửa chữa. Số xe là danh mục hiện tại. Doanh thu phân theo cơ sở lập hợp đồng tại thời điểm thuê, không theo nơi giữ xe hôm nay.</p>
     <ReportState {...state}/>{ready&&<>
       <FleetSummary total={report.total}/>
+      <FilteredExcelButton disabled={!report.rows.length} filename={`himoto-doanh-thu-doi-xe-${from}-${to}`}
+        headers={['Cơ sở chủ quản','Tổng xe','Tại cơ sở gốc','Ở cơ sở khác','Trực tiếp cho khách thuê','Cho cơ sở khác mượn','Chưa xác định cơ sở lập HĐ','Tổng doanh thu']}
+        getRows={()=>[...report.rows.map(r=>[r.store_name,r.vehicles,r.local_vehicles,r.away_vehicles,r.direct_revenue,r.loan_revenue,r.unassigned_revenue,r.revenue]),
+          ['Tổng',report.total.vehicles,report.total.local_vehicles,report.total.away_vehicles,report.total.direct_revenue,report.total.loan_revenue,report.total.unassigned_revenue,report.total.revenue]]}/>
       <div className="mg-mobile-records mg-report-mobile" role="region" aria-label="Thẻ doanh thu xe theo cơ sở">{report.rows.map(row=><article key={row.store_id} className="mg-report-card"><h3>{row.store_name}</h3><p>{row.vehicles} xe · {row.local_vehicles} tại cơ sở gốc · {row.away_vehicles} ở cơ sở khác</p><dl>
         <div><dt>Trực tiếp cho khách thuê</dt><dd>{formatMoney(row.direct_revenue)}</dd></div><div><dt>Cho cơ sở khác mượn</dt><dd>{formatMoney(row.loan_revenue)}</dd></div>{unknown&&<div><dt>Chưa xác định cơ sở lập HĐ</dt><dd>{formatMoney(row.unassigned_revenue)}</dd></div>}<div><dt>Tổng doanh thu đội xe</dt><dd>{formatMoney(row.revenue)}</dd></div>
       </dl><button type="button" className="mg-button" aria-label={`Xem đội xe ${row.store_name}`} onClick={()=>setSelected(row)}>Xem {row.vehicles} xe</button></article>)}</div>

@@ -9,7 +9,8 @@ import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
 import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource,contractVehicleLabelSource } from './contract-vehicle-reads';
-import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits';
+import { dailyPriceSql,depositLateral,depositReceiptSql,rentalPaidSql } from './contract-deposits';
+import type { ManagementRow } from '@/lib/management/types';
 import { CONTRACT_REVIEW_SQL,EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { draftVehicleRentalsLateralSql } from './draft-vehicle-rentals';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
@@ -24,6 +25,44 @@ import { legacyOwnershipFeeReader } from './legacy-ownership-overdue';
 import {contractWarehouseJoinSql,contractWarehouseStoreSql} from './contract-warehouses';
 import {usesScopedDatabase} from './access-context';
 
+
+async function withVatPayments(client: Pick<PoolClient, 'query'>, rows: ManagementRow[]): Promise<ManagementRow[]> {
+  if (!rows.length) return rows;
+  const result = await client.query(`SELECT o.id, receipts.*, renewals.vat_renewal_amount
+    FROM himoto.orders o
+    CROSS JOIN LATERAL (
+      SELECT string_agg(DISTINCT method, ', ' ORDER BY method) FILTER (WHERE rental) AS vat_rental_methods,
+        string_agg(DISTINCT method, ', ' ORDER BY method) FILTER (WHERE deposit) AS vat_deposit_methods,
+        COALESCE(sum(value) FILTER (WHERE bank_owner_type='company'),0) AS company_paid_amount
+      FROM (
+        SELECT t.value, t.bank_owner_type, ${depositReceiptSql()} AS deposit,
+          (t.name IN ('order:rental_fees','order:payment','order:renewal')
+            OR t.name LIKE 'order:rental_fees:%' OR t.name LIKE 'order:payment:%' OR t.name LIKE 'order:renewal:%') AS rental,
+          CASE WHEN t.bank_owner_type='company' THEN 'Chuyển khoản công ty'
+            WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản'
+            WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
+            ELSE 'Chưa xác định' END AS method
+        FROM himoto.transactions t
+        WHERE t.order_id=o.id AND t.status='approved' AND t.type IN ('in','addon')
+      ) payments
+    ) receipts
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(sum(d.total_renewal_amount),0) AS vat_renewal_amount
+      FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL
+    ) renewals
+    WHERE o.id=ANY($1::bigint[])`, [rows.map(row => row.id)]);
+  const payments = new Map(result.rows.map(row => [Number(row.id), row]));
+  return rows.map(row => {
+    const payment = payments.get(row.id);
+    return payment ? {
+      ...row,
+      vat_rental_methods: payment.vat_rental_methods ?? '',
+      vat_deposit_methods: payment.vat_deposit_methods ?? '',
+      vat_renewal_amount: Number(payment.vat_renewal_amount),
+      company_paid_amount: Number(payment.company_paid_amount),
+    } : row;
+  });
+}
 export class ManagementTableError extends Error {}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
   const integer=(key:string,fallback:number,max:number)=>{const value=params.get(key);if(value===null)return fallback;if(!/^[1-9]\d*$/.test(value)||!Number.isSafeInteger(Number(value))||Number(value)>max)throw new ManagementTableError('Phân trang không hợp lệ.');return Number(value);};
@@ -528,7 +567,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     const pages=Math.max(1,Math.ceil(total/input.size));
     const stats=kind==='contracts'&&params.get('status_counts')==='1'?await readStatistics():undefined;
     return {
-      rows,total,scopeCount:scopeCount??total,tabCount:stats?.tabCount??catalogue?.tabCount??total,page,pages,
+      rows:kind==='contracts'&&input.scope==='vat'?await withVatPayments(client,rows):rows,total,scopeCount:scopeCount??total,tabCount:stats?.tabCount??catalogue?.tabCount??total,page,pages,
       statusCounts:stats?.statusCounts??catalogue?.statusCounts??[],statuses:stats?.statuses??(catalogue?catalogue.statusCounts.map(([status])=>status):[...new Set(rows.map(row=>row.status))].sort()),dueCount:stats?.dueCount??0,
       summary:stats?.summary??(kind==='contracts'?{contractCount:total,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null),
       ...(stats?.overdueCounts?{overdueCounts:stats.overdueCounts}:{}),
@@ -539,5 +578,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const fullSql=kind==='contracts' ? `${CONTRACT_LIST_SQL}${clause}` : CUSTOMER_PROFILE_SQL;
   const result=await client.query(kind==='contracts' ? contractVehicleDetailsSql(overdueSql(fullSql)) : fullSql);
   const mapped=mapManagementRows(kind,result.rows);
-  return projectManagementTable(monitoring?await legacyFees(mapped):mapped,input,all,now);
+  const projected = projectManagementTable(monitoring?await legacyFees(mapped):mapped,input,all,now);
+  if (kind==='contracts' && input.scope==='vat') projected.rows = await withVatPayments(client, projected.rows);
+  return projected;
 }

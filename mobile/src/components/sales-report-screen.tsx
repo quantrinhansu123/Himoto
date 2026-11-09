@@ -10,10 +10,9 @@ import { Button, Card, InlineError, StateView } from "./ui";
 import { DateField } from "./date-field";
 import { ChoiceField, FormField } from "./form-fields";
 import { SalesReportView } from "./sales-report-view";
-import { useCsvExport } from "@/hooks/use-csv-export";
 const contractKinds: SalesReportKind[] = ["contracts", "by-staff", "by-store", "new-customers", "assigned"];
 export function SalesReportScreen() {
-  const { api, session } = useSession(), theme = useTheme(), scroll = useRef<ScrollViewInstance>(null), csv = useCsvExport();
+  const { api, session } = useSession(), theme = useTheme(), scroll = useRef<ScrollViewInstance>(null);
   const [today, setToday] = useState(() => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10));
   useFocusEffect(useCallback(() => { setToday(new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)); }, []));
   const [kind, setKind] = useState<SalesReportKind>("actual"), [from, setFrom] = useState(`${today.slice(0, 7)}-01`), [to, setTo] = useState(today), [store, setStore] = useState(session!.user.allStores ? "all" : String(session!.user.storeId || "all"));
@@ -63,9 +62,6 @@ export function SalesReportScreen() {
     {kind === "vehicles" && <Card style={{ gap: 14 }}><ChoiceField label="Sắp xếp doanh thu xe" value={sort} choices={[{ value: "revenue", label: "Doanh thu" }, { value: "rentals", label: "Lượt thuê" }, { value: "license", label: "Biển số" }]} onChange={setSort} /><ChoiceField label="Chiều sắp xếp xe" value={direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={setDirection} /></Card>}
     {(kind === "vehicles" || kind === "ledger") && <ChoiceField label="Số dòng báo cáo mỗi trang" value={size} choices={(kind === "ledger" ? [10, 20, 50, 100] : [10, 20, 50]).map(value => ({ value: String(value), label: String(value) }))} onChange={value => changePage(1, Number(value))} />}
     {options.isError && <InlineError message={options.error.message} />}
-    {!!csv.error && <InlineError message={csv.error} />}
-    {!!csv.message && <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, lineHeight: 23 }}>{csv.message}</Text>}
-    {report.data?.canExport && <Button secondary label={csv.stage === "fetching" ? "Đang lấy toàn bộ dữ liệu xuất" : csv.stage === "saving" ? "Đang lưu file báo cáo" : kind === "ledger" ? "Xuất Excel sổ thu / chi" : "Xuất CSV báo cáo"} loading={csv.busy} disabled={!valid || report.isFetching || report.isError || kind !== "ledger" && !report.data.sections.some(section => section.rows.length)} onPress={() => { const target = kind, snapshot = params; void csv.run(signal => api!.salesReportExport(target, snapshot, signal)); }} />}
     {!valid ? <StateView title="Kiểm tra ngày báo cáo" message="Chọn khoảng ngày hợp lệ, không sau hôm nay." /> : report.isPending ? <StateView title="Đang tính báo cáo" loading /> : report.isError ? <StateView title="Chưa tải được báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} /> : <SalesReportView key={`${kind}:${params}`} report={report.data} onPage={changePage} />}
     <Button secondary label="Tải lại báo cáo" loading={report.isFetching} onPress={() => { void report.refetch(); }} disabled={!valid} />
   </ScrollView>;

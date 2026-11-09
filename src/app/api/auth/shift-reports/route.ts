@@ -10,7 +10,8 @@ import { hasPermission } from '@/lib/management/permissions';
 export const runtime='nodejs';
 export const maxDuration=300;
 export const GET=withAccessRequest(async(request:NextRequest)=>{
-  try{return NextResponse.json({data:await listShiftReports(himotoPool,request.nextUrl.searchParams.get('store_id'),request.nextUrl.searchParams.get('date'))},{headers:{'Cache-Control':'no-store'}});}
+  const params=request.nextUrl.searchParams;
+  try{return NextResponse.json({data:await listShiftReports(himotoPool,params.get('store_id'),params.get('date'),undefined,params.get('all')==='1')},{headers:{'Cache-Control':'no-store'}});}
   catch(error){return error instanceof ShiftRequestError?NextResponse.json({message:error.message},{status:error.status}):failureResponse('Không tải được báo cáo cuối ca.',error);}
 });
 export const POST=withAccessRequest(async(request:NextRequest)=>{

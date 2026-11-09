@@ -1,6 +1,7 @@
 'use client';
 import { useCallback,useEffect,useState } from 'react';
 import Link from 'next/link';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 import { shiftApi } from '@/lib/management/shift-report-client';
@@ -33,6 +34,7 @@ export function DebtReportPanel(){
     await shiftApi('/api/auth/gps/debts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({store_id:Number(selectedStore),hash:data.hash})});notify('Đã đưa báo cáo vào hàng đợi Telegram của PGD.');setPreview(false);setVersion(v=>v+1);
   }catch(e){setError((e as Error).message);}finally{setSending(false);}}
   return <div className="mg-collection-panel"><div className="mg-heading-actions"><h2>Nợ chậm · {loading?'…':data?.rows.length??'—'} hợp đồng</h2><button type="button" className="mg-button" disabled={loading} onClick={refresh}>Làm mới báo cáo</button>{can('contracts.draft')&&<button type="button" className="mg-button" disabled={loading||!!error||!data||selectedStore==='all'||editingNotes.size>0} onClick={()=>setPreview(true)}>Xem trước & gửi Telegram PGD</button>}</div>
+    <FilteredExcelButton filename="himoto-no-cham" disabled={loading || Boolean(error) || !rows.length} headers={['Mã HĐ','Khách hàng','Điện thoại','Cơ sở','Xe','Hạn trả','Số ngày quá hạn','Nợ đến hạn','Phí trễ tạm tính','GPS','Liên hệ','Tình trạng khách','Xử lý','Ghi chú']} getRows={()=>rows.map(r=>[r.code,r.customer,r.phone,r.store_name,r.vehicle,formatDateTime(r.due_at),r.days,r.amount,r.late_fee,r.gps.map(s=>GPS_STATE_LABELS[s]||s).join(', '),CONTACT_STATUSES[r.followup.contact_status],r.followup.customer_condition||r.customer_status,HANDLING_STATUSES[r.followup.handling_status],r.followup.notes])}/>
     <p>Khoản nợ đến hạn tách khỏi phí quá hạn tạm tính. Chọn một PGD để gửi báo cáo ngày; ghi chú và tình trạng khách được giữ theo hợp đồng.</p>
     {!!data?.deliveries?.length&&<p role="status">Telegram báo cáo này: {data.deliveries.filter(d=>d.status==='sent').length}/{data.messages.length} tin đã gửi.{data.deliveries.some(d=>d.status==='unknown')?' Có tin chưa rõ kết quả; kiểm tra nhóm, không tự gửi lại.':data.deliveries.some(d=>['failed','awaiting_config'].includes(d.status))?' Có tin chưa gửi được; kiểm tra cấu hình nhóm rồi thử gửi lại.':data.deliveries.some(d=>['pending','sending'].includes(d.status))?' Đang chờ gửi; bấm Làm mới báo cáo để kiểm tra.':''}</p>}
     {editingNotes.size>0&&<p role="status">Lưu hoặc huỷ ghi chú đang nhập trước khi đổi bộ lọc hoặc xem báo cáo gửi.</p>}

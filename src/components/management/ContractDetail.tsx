@@ -65,6 +65,8 @@ function rentalDays(start: unknown, end: unknown) {
   return hours === 24 ? `${days + 1} ngày` : `${days} ngày${hours ? ` ${hours} giờ` : ''}`;
 }
 
+import { FilteredExcelButton } from './FilteredExcelButton';
+
 export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
 
 export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft,onEditIssued,onHandover, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void;onEditIssued?:()=>void;onHandover?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
@@ -183,6 +185,9 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
           {sourceVehicles.some(vehicle => vehicle.rent_at) && <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{sourceVehicles.map((vehicle, index) => <MobileDetailsCard key={index} title={text(vehicle.license || vehicle.name)}
             summary={<><span>{rentalDays(vehicle.rent_at, vehicle.completed_at || vehicle.return_at)}</span><span>{vehicle.completed_at ? 'Đã trả' : 'Đang thuê'}</span></>}
             fields={[["Thuê lúc", dateTime(String(vehicle.rent_at || ''))], ["Hẹn trả / Đã trả", dateTime(String(vehicle.completed_at || vehicle.return_at || ''))], ["Số ngày thuê", rentalDays(vehicle.rent_at, vehicle.completed_at || vehicle.return_at)]]} />)}</ul></div>}
+          {sourceVehicles.some(vehicle => vehicle.rent_at) && <FilteredExcelButton disabled={false} filename={`himoto-thoi-gian-thue-${row.id}`}
+            headers={['Xe','Thuê lúc','Hẹn trả / Đã trả','Số ngày thuê','Trạng thái']}
+            getRows={()=>sourceVehicles.map(v=>[text(v.license || v.name),dateTime(String(v.rent_at || '')),dateTime(String(v.completed_at || v.return_at || '')),rentalDays(v.rent_at,v.completed_at || v.return_at),v.completed_at?'Đã trả':'Đang thuê'])}/>}
           {sourceVehicles.some(vehicle => vehicle.rent_at) && <table className="mg-contract-days mg-desktop-records">
             <thead><tr><th>Xe</th><th>Thuê lúc</th><th>Hẹn trả / Đã trả</th><th>Số ngày thuê</th></tr></thead>
             <tbody>{sourceVehicles.map((vehicle, index) => {

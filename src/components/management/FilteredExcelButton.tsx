@@ -10,7 +10,7 @@ export function FilteredExcelButton({ disabled, headers, getRows, filename }: {
 }) {
   const [busy, setBusy] = useState(false);
   const { notify } = useManagement();
-  return <button type="button" className="mg-button" disabled={disabled || busy} onClick={async () => {
+  return <button type="button" className="mg-button mg-excel-export" disabled={disabled || busy} onClick={async () => {
     if (busy) return;
     setBusy(true);
     try { const rows = await getRows(); await downloadFilteredExcel(headers, rows, filename); notify(`Đã xuất ${rows.length} bản ghi theo bộ lọc.`); }

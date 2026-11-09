@@ -1,4 +1,3 @@
-import {FilteredListExport} from '@/components/filtered-list-export';
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FlatList, RefreshControl, ScrollView, Text, View } from "react-native";
@@ -94,7 +93,6 @@ export function DutyRosterScreen() {
         <DateField label="Ngày trong tuần cần xem" value={week} onChange={moveWeek} />
         <ChoiceField label="Cơ sở" value={store} choices={[...(session!.user.allStores ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} searchable />
         <ChoiceField label="Ngày trực" value={day} choices={[{ value: "all", label: `Cả tuần: ${week} → ${days[6]}` }, ...days.map(value => ({ value, label: value.split("-").reverse().join("/") }))]} onChange={setDay} />
-        <FilteredListExport kind="duties" filters={new URLSearchParams({week,day,...store==='all'?{}:{store_id:store}}).toString()} disabled={roster.isFetching||roster.isError||!visible.length}/>
         <Text style={{ color: theme.muted }}>{visible.length} ca trực trong phạm vi đang xem</Text>
         {writable && <Button label="Tạo ca trực" onPress={() => setEditor({ row: null })} />}
         {roster.isError && <><InlineError message={roster.error.message} /><Button secondary label="Tải lại lịch trực" onPress={() => { void roster.refetch(); }} /></>}

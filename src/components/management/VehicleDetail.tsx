@@ -26,6 +26,8 @@ const SECTIONS = [
   { id: 'history', label: 'Lịch sử' },
 ] as const;
 type VehicleSection = (typeof SECTIONS)[number]['id'];
+import { FilteredExcelButton } from './FilteredExcelButton';
+
 const ACTION_TONE: Record<VehicleEventAction, string> = { rent: 'blue', return: 'green', transfer: 'amber', repair: 'red', status: 'gray', swap: 'amber', note: 'gray', create: 'green', edit:'gray' };
 const RENTAL_STATUS_LABEL: Record<string, string> = { draft:'Bản nháp', renting:'Đang thuê', overdue:'Quá hạn', wait_payment:'Chờ thanh toán', pending:'Chờ xử lý', deposit_contract:'Hợp đồng cọc', bad_debt:'Nợ xấu' };
 
@@ -116,6 +118,9 @@ export function VehicleDetail({ row, config, canEdit, onEdit, onClose, onAction 
           <div className="mg-vehicle-history-actions">
             <select aria-label="Lọc hành động" value={action} onChange={event => setAction(event.target.value as VehicleEventAction | '')}>
               <option value="">Tất cả hành động</option>{VEHICLE_EVENT_ACTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+            <FilteredExcelButton disabled={loading || Boolean(error) || !shown.length} filename={`himoto-lich-su-xe-${row.id}`}
+              headers={['Hành động','Tên xe','Biển số','Vị trí','Cơ sở phụ trách','Cơ sở sử dụng xe','Nội dung thao tác','Ngày giờ','Người thao tác']}
+              getRows={()=>shown.map(e=>[e.label,e.vehicle_name,e.license,e.location,e.responsible_store,e.beneficiary_store,[(e.changes || []).map(c=>`${c.label}: ${dash(c.from)} → ${dash(c.to)}`).join('\n'),e.note].filter(Boolean).join('\n'),formatDateTime(e.at || ''),e.actor])}/>
             {source === 'api' && <button type="button" className="mg-button" disabled={loading} onClick={() => fetchHistory()}>{loading ? <LoaderCircle size={15} className="mg-spin" /> : <RotateCcw size={15} />}Làm mới</button>}
           </div></div>
         {source !== 'api' && <p className="mg-contract-history-state">Lịch sử chỉ có khi kết nối dữ liệu Supabase.</p>}

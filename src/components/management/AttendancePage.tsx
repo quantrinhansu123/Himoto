@@ -4,6 +4,7 @@ import { Camera, LogIn, LogOut, MapPin, RotateCcw } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 import { vietnamDate } from '@/lib/management/duty-roster';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { attendanceShift, shiftCreditLabel } from '@/lib/management/attendance-shifts';
 import { formatDateTime } from '@/lib/formatters';
 
@@ -34,6 +35,25 @@ export function AttendancePage() {
   const lateLabel = (value:number|null|undefined) => value==null?'Chưa có lịch ca':value>0?value+' phút':'Đúng giờ';
   const monthPreset = () => {setFrom(vietnamDate().slice(0,7)+'-01');setTo(vietnamDate());setPage(1);};
   const refresh = useCallback(()=>setRetry(value=>value+1),[]);
+  async function exportAttendance() {
+    const query = new URLSearchParams({from,to,store:selectedStore});
+    const rows: Attendance[] = [];
+    let total = 0;
+    for (let index=1; index===1 || rows.length<total; index++) {
+      query.set('page', String(index));
+      const result = await responseData<Report>(await fetch(`/api/auth/attendance?${query}`,{cache:'no-store'}));
+      if (index===1) total = result.total;
+      if (result.total!==total || result.page!==index || !result.rows.length) {
+        throw new Error('Danh sách chấm công đã thay đổi. Tải lại rồi xuất Excel.');
+      }
+      rows.push(...result.rows);
+    }
+    if (rows.length!==total || new Set(rows.map(row=>row.id)).size!==total) {
+      throw new Error('Chưa đọc đủ lịch sử chấm công. Tải lại rồi xuất Excel.');
+    }
+    return rows.map(row=>[row.id,row.staff_name,row.store_name,row.shift_name,formatDateTime(row.clock_in_at),
+      row.clock_out_at?formatDateTime(row.clock_out_at):null,row.late_minutes]);
+  }
   useEffect(()=>{
     const controller=new AbortController();setLoading(true);setError('');setData(null);
     const query = new URLSearchParams({from,to,store:selectedStore,page:String(page)});
@@ -41,7 +61,7 @@ export function AttendancePage() {
     return()=>controller.abort();
   },[from,to,selectedStore,page,retry]);
   return <section className="mg-page mg-attendance-page"><div className="mg-page-content">
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Chấm công</h1><p>Ghi nhận giờ vào, giờ ra cùng ảnh chụp và vị trí GPS.</p></div><button type="button" className="mg-button" disabled={loading} onClick={refresh}><RotateCcw size={16}/>Làm mới</button></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Chấm công</h1><p>Ghi nhận giờ vào, giờ ra cùng ảnh chụp và vị trí GPS.</p></div><div className="mg-heading-actions"><FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} filename={`himoto-cham-cong-${from}-${to}`} headers={['ID','Nhân viên','Cơ sở','Ca làm','Giờ vào','Giờ ra','Số phút đi muộn']} getRows={exportAttendance}/><button type="button" className="mg-button" disabled={loading} onClick={refresh}><RotateCcw size={16}/>Làm mới</button></div></div>
     <div className="mg-data-panel mg-attendance-dashboard">
       <div className="mg-attendance-clock-heading"><div><strong>{data?.staff?.name || 'Tài khoản chấm công'}</strong><p>{loading?'Đang kiểm tra ca…':data?.open?'Đang trong ca':data?.staff?'Chưa vào ca':error?'Không tải được trạng thái ca.':'Tài khoản chưa liên kết nhân viên đang hoạt động.'}</p></div><div className="mg-attendance-live-clock"><strong suppressHydrationWarning>{now?new Date(now).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour12:false}):'—'}</strong><small>{now?new Date(now).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Giờ Việt Nam'}</small></div></div>
       <div className="mg-attendance-shift-label">{data?.shift?data.shift.shift_name+' · '+timeOnly(data.shift.starts_at)+' – '+timeOnly(data.shift.ends_at):'Chưa có lịch trực phù hợp. Quản lý phân ca tại Lịch trực cơ sở.'}</div>

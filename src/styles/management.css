@@ -4790,3 +4790,4 @@
  .mg-attendance-history-times { display:flex; flex-wrap:wrap; gap:6px 14px; padding:7px 0; font-size:12px; }
  .mg-attendance-filters > span { grid-column:auto; justify-self:end; }
 }
+@media (max-width: 900px) { .mg-excel-export { display: none !important; } }

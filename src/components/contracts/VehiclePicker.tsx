@@ -7,7 +7,7 @@ import { isOwnershipStore } from '@/lib/management/contract-billing';
 import { formatDateTime } from '@/lib/formatters';
 import { normalize } from '@/lib/management/table-utils';
 import type { ManagementRow } from '@/lib/management/types';
-import { classifyReservationWindow, type OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
+import { classifyReservationWindow, isSoftVehicleHold, type OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 
 type Tone = 'ok' | 'warn' | 'danger';
 export interface VehicleAvailability { tone: Tone; label: string; detail: string; selectable: boolean }
@@ -43,7 +43,10 @@ export function vehicleAvailability(
 ): VehicleAvailability {
   if(!historical&&ownershipStoreIds&&(vehicle.status==='in_transit'||(!ownershipStoreIds.includes(String(vehicle.store_id))&&!isOwnershipStore(vehicle.store_name))))return {tone:'danger',label:'Chưa vào kho Thuê sở hữu',detail:'Chuyển xe sang kho Thuê sở hữu và xác nhận nhận xe trước khi chọn xe lập hợp đồng.',selectable:false};
   if(historical)return {tone:'warn',label:'Chỉ nhập lịch sử',detail:'Bổ sung lượt thuê đã trả xe; trạng thái kho hiện tại được giữ nguyên. Hệ thống kiểm tra trùng lịch khi lưu chính thức.',selectable:true};
-  const all = rentalsOf(vehicle);
+  const rentals = rentalsOf(vehicle);
+  const all = vehicle.status === 'ready'
+    ? rentals.filter(rental => rental.order_id === ownOrderId || isSoftVehicleHold(rental))
+    : rentals;
   const classified = classifyReservationWindow(all, proposedStart, proposedEnd, ownOrderId);
   if (classified.kind === 'hard') {
     const rental = classified.rental;

@@ -168,15 +168,6 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   if(stockError)throw new ContractFinalizeError(stockError,409);
   const branchStockError=rentalStockError(approvalRequired?'ownership':composer.rental_type,storeId,vehicles.rows,historical);
   if(branchStockError)throw new ContractFinalizeError(branchStockError,409);
-  const conflictLabel = (row: { license: string; code: string; store_name?: string | null; manager_name?: string | null; status?: string | null; rent_at?: Date | string | null; severity?: string | null }) => {
-    const store = String(row.store_name || '').trim();
-    const manager = String(row.manager_name || '').trim();
-    const pickup = row.rent_at ? String(row.rent_at).replace('T', ' ').slice(0, 16) : '';
-    if (row.severity === 'reservation_overlap') {
-      return `xe ${row.license} đã cọc giữ (HĐ ${row.code}${pickup ? `, nhận ${pickup}` : ''}${store ? ` tại ${store}` : ''}) — hẹn trả HĐ này chồng/vượt ngày nhận`;
-    }
-    return `xe ${row.license} đang thuộc hợp đồng ${row.code}${store ? ` tại ${store}` : ''}${manager ? ` (phụ trách: ${manager})` : ''}`;
-  };
   if(!historical)await releaseIdleRentedVehicles(client, vehicles.rows);
   const proposedStart = `${start}:00+07:00`, proposedEnd = `${end}:00+07:00`;
   if(historical){
@@ -190,27 +181,22 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
           AND COALESCE(d.completed_at,CASE WHEN o.order_status='completed' THEN COALESCE(d.return_at,o.return_at) END,'infinity'::timestamptz)>$3::timestamptz`,[vehicleIds,id,proposedStart,actualEnd]);
     if(overlaps.rowCount)throw new ContractFinalizeError('Khoảng thuê thực tế chồng với lịch sử thuê đã có của xe. Đối chiếu trước khi nhập bổ sung để tránh trùng hợp đồng.',409);
   }
-  const conflicts = historical?{rows:[]} : usesScopedDatabase()
-    ? await client.query('SELECT * FROM himoto.vehicle_window_conflicts($1::bigint[],$2,$3::timestamptz,$4::timestamptz)', [vehicleIds, id, proposedStart, proposedEnd])
-    : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code, s.store_name,
-        COALESCE(cu.name, mu.name, '') AS manager_name,
-        CASE WHEN o.order_status='renting' AND d.return_at<now() THEN 'overdue' ELSE o.order_status END AS status,
-        d.rent_at, d.return_at,
-        CASE WHEN o.order_status='deposit_contract' THEN 'reservation_overlap' ELSE 'hard' END AS severity
+  const notStored = historical?[]:vehicles.rows.filter(row => row.status!=='ready');
+  if (notStored.length) throw new ContractFinalizeError(`Xe ${notStored.map(row => row.license).join(', ')} phải ở trạng thái Lưu kho. Kiểm tra lại trạng thái kho trước khi phát hành hợp đồng mới.`, 409);
+  const soft = historical ? [] : (usesScopedDatabase()
+    ? await client.query("SELECT * FROM himoto.vehicle_window_conflicts($1::bigint[],$2,$3::timestamptz,$4::timestamptz) WHERE severity='reservation_overlap'", [vehicleIds, id, proposedStart, proposedEnd])
+    : await client.query(`SELECT v.license, COALESCE(NULLIF(o.contract_number,''), NULLIF(o.draft_reference,''), '#' || o.id::text) AS code, s.store_name, d.rent_at
       FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id JOIN himoto.vehicles v ON v.id=d.vehicle_id
       LEFT JOIN himoto.stores s ON s.id=o.store_id
-      LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
-      LEFT JOIN himoto.users mu ON mu.id=s.user_id
-      WHERE d.vehicle_id = ANY($1::bigint[]) AND d.order_id <> $2 AND d.deleted_at IS NULL AND d.completed_at IS NULL
+      WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND d.completed_at IS NULL
         AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-        AND (
-          o.order_status = ANY($3::text[])
-          OR (o.order_status='deposit_contract' AND d.rent_at IS NOT NULL AND $4::timestamptz > d.rent_at)
-        )
-      ORDER BY v.license`, [vehicleIds, id, ['renting','overdue','wait_payment','pending','bad_debt'], proposedEnd]);
-  const hard = conflicts.rows.filter(row => row.severity !== 'reservation_overlap');
-  const soft = conflicts.rows.filter(row => row.severity === 'reservation_overlap');
-  if (hard.length) throw new ContractFinalizeError(`Không thể lưu chính thức: ${hard.map(conflictLabel).join('; ')} chưa đóng. Hoàn tất hợp đồng cũ trước khi phát hành hợp đồng mới.`, 409);
+        AND o.order_status='deposit_contract' AND $3::timestamptz > d.rent_at
+      ORDER BY v.license`, [vehicleIds, id, proposedEnd])).rows;
+  const conflictLabel = (row: { license: string; code: string; store_name?: string | null; rent_at?: Date | string | null }) => {
+    const store = String(row.store_name || '').trim();
+    const pickup = row.rent_at ? String(row.rent_at).replace('T', ' ').slice(0, 16) : '';
+    return `xe ${row.license} đã cọc giữ (HĐ ${row.code}${pickup ? `, nhận ${pickup}` : ''}${store ? ` tại ${store}` : ''}) — hẹn trả HĐ này chồng/vượt ngày nhận`;
+  };
   if (soft.length && !('acknowledge_reservation_overlap' in input && input.acknowledge_reservation_overlap === true)) {
     throw new ContractFinalizeError(
       `Cảnh báo chồng lịch cọc giữ xe: ${soft.map(conflictLabel).join('; ')}. Tick xác nhận để vẫn phát hành, hoặc chỉnh hẹn trả trước ngày nhận của khách đã cọc.`,
@@ -218,8 +204,6 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
       'reservation_overlap',
     );
   }
-  const notStored = historical?[]:vehicles.rows.filter(row => row.status!=='ready');
-  if (notStored.length) throw new ContractFinalizeError(`Xe ${notStored.map(row => row.license).join(', ')} phải ở trạng thái Lưu kho. Đóng hợp đồng cũ và xác nhận nhận xe trước khi phát hành hợp đồng mới.`, 409);
   for (const line of lines) {
     const stock = vehicles.rows.find(vehicle=>String(vehicle.id)===String(line.id))!;
     // Today's physical location is not evidence of a historical handover branch.

@@ -7,7 +7,7 @@ import { readManagementTable, ManagementTableError } from './management-table';
 import { mobileTableParams } from './mobile-catalogue';
 import { readCollectionFollowups } from './collection-followups';
 import { MANAGEMENT_CONFIG } from '@/lib/management/config';
-import { compactContractConfig } from '@/lib/management/contract-monitoring-config';
+import { compactContractConfig, VAT_CONTRACT_COLUMNS } from '@/lib/management/contract-monitoring-config';
 import { buildManagementCsv,managementExportRows } from '@/lib/management/management-export';
 import {mobileFilteredWorkbook} from './mobile-filtered-workbook';
 import { hasPermission } from '@/lib/management/permissions';
@@ -31,7 +31,7 @@ function selection(user: SessionUser, value: string, raw: URLSearchParams) {
     const scope = query.get('scope'), monitoring = scope === 'ownership' || scope === 'overdue' || ['overdue', 'bad_debt'].includes(query.get('status') || '');
     const mode = scope === 'ownership' ? 'ownership' : monitoring ? 'monitoring' : scope === 'due' ? 'due' : 'rental';
     config = { ...config, columns: config.columns.map(c => c.key === 'rental_type' ? { ...c, key: 'contract_type_name', ...(scope === 'ownership' ? { hidden: false } : {}) } : c) };
-    if (scope === 'vat') config = { ...config, columns: [...config.columns, { key: 'company_paid_amount', label: 'Đã thu vào TK công ty', format: 'money', align: 'right' }] };
+    if (scope === 'vat') config = { ...config, columns: [...config.columns, ...VAT_CONTRACT_COLUMNS] };
     if (scope === 'due') config = { ...config, columns: [...config.columns, { key: 'billing_next_due_at', label: 'Ngày hẹn đóng tiền', format: 'date' }, { key: 'billing_due_amount', label: 'Tiền đến hạn còn thiếu', format: 'money', align: 'right' }] };
     if (scope === 'overdue') config = { ...config, columns: [config.columns[0], { key: 'overdue_minutes', label: 'Thời gian quá hạn', format: 'duration', align: 'right' }, { key: 'overdue_fee_estimate', label: 'Phí quá hạn (tạm tính)', format: 'money', align: 'right' }, { key: 'rental_debt_amount', label: 'Tiền thuê còn thiếu', format: 'money', align: 'right' }, ...config.columns.slice(1)] };
     config = compactContractConfig(config, mode);

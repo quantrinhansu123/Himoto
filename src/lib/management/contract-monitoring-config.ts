@@ -1,5 +1,12 @@
 import type { ManagementConfig,ManagementColumn } from './types';
 
+export const VAT_CONTRACT_COLUMNS: ManagementColumn[] = [
+  {key:'vat_rental_methods',label:'Hình thức thu tiền thuê',hidden:false,sortable:false},
+  {key:'vat_deposit_methods',label:'Hình thức thu tiền cọc',hidden:false,sortable:false},
+  {key:'vat_renewal_amount',label:'Tiền gia hạn',format:'money',align:'right',hidden:false,sortable:false},
+  {key:'company_paid_amount',label:'Đã thu vào TK công ty',format:'money',align:'right',hidden:false,sortable:false},
+];
+
 export function compactContractConfig(config:ManagementConfig, mode:'monitoring'|'ownership'|'rental'|'due'='monitoring'):ManagementConfig {
   const rentalDates:ManagementColumn[]=[{key:'rental_period',label:'Thời gian thuê',sortable:false}];
   const columns:ManagementColumn[]=[

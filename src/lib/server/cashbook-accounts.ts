@@ -60,7 +60,7 @@ export async function listAccountTransactions(kind: 'bank' | 'cash', id: number,
   const from = dateParam(params.get('from')), to = dateParam(params.get('to'));
   if ((params.get('from') && !from) || (params.get('to') && !to) || (from && to && from > to)) return json(400, 'Khoảng ngày không hợp lệ.');
   try {
-    const rows = await readDatabaseCashbookTransactions(himotoPool, kind, id, from, to);
+    const rows = await readDatabaseCashbookTransactions(himotoPool, kind, id, from, to, params.get('all') === '1');
     return NextResponse.json({ status: 'success', data: rows }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return failureResponse('Không tải được danh sách thu chi của tài khoản.', error); }
 }

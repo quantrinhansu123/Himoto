@@ -269,8 +269,6 @@ export function CatalogueScreen({
   }
   const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis } : {}) }).toString();
   if (!operationsCatalogue) {
-    actions.push({ label: "Tải Excel theo bộ lọc", disabled: !datesValid || query.isPending || query.isError,
-      onPress: () => router.push({ pathname: "/catalogue-export/[kind]", params: { kind, filters: exportFilters } }) });
     if (kind !== "contracts" && session?.user.permissions.includes("settings.write"))
       actions.push({ label: "Chọn nhiều hồ sơ để xóa", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
   }

@@ -130,7 +130,7 @@ async function main() {
       const before = JSON.stringify((await c.query('SELECT o.id,o.order_status,o.pid,o.contract_number,(SELECT count(*) FROM qa_fin_order_vehicle_details d WHERE d.order_id=o.id) AS lines FROM qa_fin_orders o ORDER BY o.id')).rows)
         + JSON.stringify((await c.query('SELECT count(*) FROM qa_fin_transactions')).rows) + JSON.stringify((await c.query('SELECT id,status FROM qa_fin_vehicles ORDER BY id')).rows);
       await assert.rejects(finalize(1), error => error.status === 409);
-      await assert.rejects(finalize(3), error => error.status === 409 && /QA-D/.test(error.message) && /QA-OPEN/.test(error.message));
+      await assert.rejects(finalize(3), error => error.status === 409 && /QA-D/.test(error.message));
       await assert.rejects(finalize(4), error => error.status === 409 && /QA-C/.test(error.message));
       await assert.rejects(finalize(6, { revision: '1', deposit: null }), error => error.status === 409);
       await assert.rejects(finalize(6, { deposit: null, rental: { method: 'company_transfer', account_id: 6 } }), error => error.status === 409);
@@ -139,7 +139,16 @@ async function main() {
       const after = JSON.stringify((await c.query('SELECT o.id,o.order_status,o.pid,o.contract_number,(SELECT count(*) FROM qa_fin_order_vehicle_details d WHERE d.order_id=o.id) AS lines FROM qa_fin_orders o ORDER BY o.id')).rows)
         + JSON.stringify((await c.query('SELECT count(*) FROM qa_fin_transactions')).rows) + JSON.stringify((await c.query('SELECT id,status FROM qa_fin_vehicles ORDER BY id')).rows);
       assert.equal(after, before);
-      checks.push('PostgreSQL TEMP: already-final contract, vehicle on another open contract, unavailable vehicle, stale revision, wrong-method or other-branch account and a deposit receipt with no deposit are rejected without any change');
+      checks.push('PostgreSQL TEMP: already-final contract, unavailable vehicle, stale revision, wrong-method or other-branch account and a deposit receipt with no deposit are rejected without any change');
+
+      await c.query('SAVEPOINT ready_with_open_contract');
+      await c.query("UPDATE qa_fin_vehicles SET status='ready' WHERE id=103");
+      const readyWithOpenContract = await finalize(3, { deposit: null, rental: null });
+      assert.equal(readyWithOpenContract.status, 'renting');
+      assert.equal((await c.query("SELECT order_status FROM qa_fin_orders WHERE contract_number='QA-OPEN'")).rows[0].order_status, 'renting');
+      await c.query('ROLLBACK TO SAVEPOINT ready_with_open_contract');
+      await c.query('RELEASE SAVEPOINT ready_with_open_contract');
+      checks.push('Ready stock can be issued on a new contract while an older contract remains open');
 
       await c.query("UPDATE qa_fin_vehicles SET status='ready' WHERE id=101");
       await c.query("UPDATE qa_fin_order_vehicle_details SET completed_at=now() WHERE order_id=1 AND vehicle_id=101");
