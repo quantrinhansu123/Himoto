@@ -344,7 +344,7 @@ async function run() {
       assert.equal(lastScope.operation, "fleet_read");
       assert.equal(lastScope.scope_all, false);
       await assert.rejects(
-        catalogue.readMobilePage(actor, "customers", new URLSearchParams()),
+        catalogue.readMobilePage({ ...actor, permissions: [] }, "contracts", new URLSearchParams()),
         (error) => error.status === 403,
       );
       await assert.rejects(

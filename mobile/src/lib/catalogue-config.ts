@@ -11,10 +11,10 @@ export const catalogueConfig: Record<
   }
 > = {
   vehicles: {
-    title: "Đội xe",
+    title: "Danh sách xe",
     noun: "xe",
     placeholder: "Tìm biển số, tên xe, nhãn hiệu",
-    quickStatuses: ["ready", "using", "in_transit"],
+    quickStatuses: ["", "ready", "using", "repairing", "in_transit", "bad_debt"],
     allStatuses: [
       "ready",
       "using",
@@ -27,10 +27,10 @@ export const catalogueConfig: Record<
     ],
   },
   contracts: {
-    title: "Hợp đồng",
+    title: "Danh sách hợp đồng",
     noun: "hợp đồng",
     placeholder: "Tìm mã hợp đồng, khách, biển số",
-    quickStatuses: ["renting", "overdue", "draft"],
+    quickStatuses: ["", "renting", "overdue", "draft"],
     allStatuses: [
       "renting",
       "overdue",
@@ -49,7 +49,7 @@ export const catalogueConfig: Record<
     title: "Khách hàng",
     noun: "khách hàng",
     placeholder: "Tìm tên hoặc số điện thoại",
-    quickStatuses: ["active", "warning", "blacklist"],
+    quickStatuses: ["", "active", "warning", "blacklist"],
     allStatuses: ["active", "warning", "blacklist", "draft"],
   },
 };

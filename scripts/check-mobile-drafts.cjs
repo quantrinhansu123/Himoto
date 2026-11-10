@@ -531,7 +531,7 @@ async function run() {
   await assert.rejects(
     () =>
       lookups.lookupMobileDraftCustomer(
-        { ...user, permissions: ["contracts.read", "contracts.draft"] },
+        { ...user, permissions: ["contracts.read"] },
         request({ query: "0900000000" }),
       ),
     (e) => e.status === 403,

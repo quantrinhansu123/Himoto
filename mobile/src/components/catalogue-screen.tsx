@@ -24,7 +24,6 @@ import {
 } from "lucide-react-native";
 import type { CatalogueKind, MobileRecord } from "@himoto/mobile-contract";
 import { CONTRACT_WORKSPACES, contractWorkspace, type MobileContractScope } from "../../../shared/mobile-contract-workspaces";
-import { ChoiceField } from "./form-fields";
 import { VehicleThumbnail } from './vehicle-thumbnail';
 import {
   Button,
@@ -105,6 +104,25 @@ const RecordCard = memo(function RecordCard({
               ? ` · ${record.license}`
               : ""}
           </Text>
+        )}
+        {kind === "vehicles" && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: -4 }}>
+            {!!record.brand && (
+              <Text style={{ color: theme.muted, fontSize: 13, fontWeight: "500" }}>
+                {record.brand}
+              </Text>
+            )}
+            {record.odometer !== null && (
+              <Text style={{ color: theme.text, fontSize: 13, fontWeight: "600" }}>
+                · {record.odometer.toLocaleString("vi-VN")} km
+              </Text>
+            )}
+            {!!record.color && (
+              <Text style={{ color: theme.muted, fontSize: 13 }}>
+                · {record.color}
+              </Text>
+            )}
+          </View>
         )}
         {kind === "customers" && !!(record.phone || record.contactDetail) && (
           <Text numberOfLines={2} style={{ color: theme.muted, fontSize: 15 }}>
@@ -236,6 +254,17 @@ export function CatalogueScreen({
       : stores.find((item) => String(item.id) === store)?.name ||
         "Cơ sở được phân công";
   const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source");
+  const statusCountsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const counts = query.data?.pages[0]?.statusCounts;
+    if (Array.isArray(counts)) {
+      for (const [st, cnt] of counts) {
+        map.set(st, cnt);
+      }
+    }
+    return map;
+  }, [query.data]);
+
   const quickStatuses = [
     ...new Set(["", ...settings.quickStatuses, ...(status ? [status] : [])]),
   ];
@@ -294,27 +323,29 @@ export function CatalogueScreen({
             </Text>
           </View>
         )}
-        {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && <Button label="Thêm xe" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />}
-        {kind === "contracts" && (
-          <View style={{ gap: 8 }}>
-            <ChoiceField label="Nhóm hợp đồng" value={scope} choices={CONTRACT_WORKSPACES.map(item => ({ value: item.key, label: item.title }))} onChange={value => { setScope(value as MobileContractScope); setStatus(""); }} />
-            {!!scope && <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 20 }}>{contractWorkspace(scope)!.description}</Text>}
+        {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
+          <Button label="+ Thêm xe mới" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />
+        )}
+        {kind === "customers" && session?.user.permissions.includes("customers.write") && (
+          <Button label="+ Thêm khách hàng" onPress={() => router.push("/customer/new")} />
+        )}
+        {kind === "contracts" && session?.user.permissions.includes("contracts.draft") && (
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Button
+                secondary
+                label="+ Nhận cọc giữ xe"
+                onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store, reservation: "1" } })}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button
+                label="+ Nhập hợp đồng"
+                onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store } })}
+              />
+            </View>
           </View>
         )}
-        {kind === "customers" &&
-          session?.user.permissions.includes("customers.write") && (
-            <Button
-              label="Thêm khách hàng"
-              onPress={() => router.push("/customer/new")}
-            />
-          )}
-        {kind === "contracts" &&
-          session?.user.permissions.includes("contracts.draft") && (
-            <Button
-              label="Thêm bản nháp"
-              onPress={() => router.push("/draft/new")}
-            />
-          )}
         {actions.length > 0 && <View style={{ gap: 8 }}>
           <Pressable
             accessibilityRole="button"
@@ -404,43 +435,84 @@ export function CatalogueScreen({
           </Pressable>
         </View>
         {!compact && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8 }}
-          >
-            {quickStatuses.map((value) => (
-              <Pressable
-                key={value}
-                accessibilityRole="button"
-                accessibilityState={{ selected: status === value }}
-                aria-selected={status === value}
-                onPress={() => setStatus(value)}
-                style={({ pressed }) => [
-                  styles.chip,
-                  {
-                    backgroundColor:
-                      status === value ? theme.primary : theme.surface,
-                    borderColor:
-                      status === value ? theme.primary : theme.controlBorder,
-                    opacity: pressed ? 0.75 : 1,
-                  },
-                ]}
-              >
-                <Text
-                  style={{
-                    color: status === value ? theme.primaryText : theme.muted,
-                    fontSize: 13,
-                    fontWeight: "600",
-                  }}
+          <View style={{ gap: 6 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {kind === "contracts" ? CONTRACT_WORKSPACES.map((item) => {
+                const isSelected = scope === item.key;
+                return (
+                  <Pressable
+                    key={item.key}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    aria-selected={isSelected}
+                    onPress={() => {
+                      setScope(item.key as MobileContractScope);
+                      setStatus("");
+                    }}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      {
+                        backgroundColor:
+                          isSelected ? theme.primary : theme.surface,
+                        borderColor:
+                          isSelected ? theme.primary : theme.controlBorder,
+                        opacity: pressed ? 0.75 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: isSelected ? theme.primaryText : theme.text,
+                        fontSize: 13,
+                        fontWeight: isSelected ? "700" : "500",
+                      }}
+                    >
+                      {item.title}
+                    </Text>
+                  </Pressable>
+                );
+              }) : quickStatuses.map((value) => (
+                <Pressable
+                  key={value || "all"}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: status === value }}
+                  aria-selected={status === value}
+                  onPress={() => setStatus(value)}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    {
+                      backgroundColor:
+                        status === value ? theme.primary : theme.surface,
+                      borderColor:
+                        status === value ? theme.primary : theme.controlBorder,
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
                 >
-                  {value
-                    ? contextualStatusLabel(kind, value) || statuses[value]
-                    : "Tất cả"}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+                  <Text
+                    style={{
+                      color: status === value ? theme.primaryText : theme.text,
+                      fontSize: 13,
+                      fontWeight: status === value ? "700" : "500",
+                    }}
+                  >
+                    {value
+                      ? `${contextualStatusLabel(kind, value) || statuses[value]}${statusCountsMap.has(value) ? ` (${statusCountsMap.get(value)})` : ""}`
+                      : `Tất cả${query.data?.pages[0]?.total !== undefined ? ` (${query.data.pages[0].total})` : ""}`}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {kind === "contracts" && !!scope && (
+              <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 18, paddingHorizontal: 2 }}>
+                {contractWorkspace(scope)!.description}
+              </Text>
+            )}
+          </View>
         )}
         <View style={styles.row}>
           <Text
