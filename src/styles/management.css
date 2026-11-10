@@ -4791,3 +4791,6 @@
  .mg-attendance-filters > span { grid-column:auto; justify-self:end; }
 }
 @media (max-width: 900px) { .mg-excel-export { display: none !important; } }
+
+.mg-attendance-location-fields { display:grid; gap:12px; }
+.mg-attendance-location-fields > .mg-attendance-locate { justify-content:center; width:100%; }
