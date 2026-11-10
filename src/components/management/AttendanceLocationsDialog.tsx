@@ -8,6 +8,10 @@ import { Dialog } from './Dialog';
 type StoreLocation = { id: string | number; store_name: string; latitude: number | null; longitude: number | null };
 const endpoint = '/api/auth/attendance/locations';
 
+function mapUrl(coordinates: string) {
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(coordinates);
+}
+
 export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boolean; onClose: () => void }) {
   const [stores, setStores] = useState<StoreLocation[] | null>(null);
   const [storeId, setStoreId] = useState('');
@@ -26,6 +30,8 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
     });
     return () => controller.abort();
   }, []);
+
+  const selectedStore = stores?.find(store => String(store.id) === storeId);
 
   function selectStore(id: string) {
     const row = stores?.find(store => String(store.id) === id);
@@ -53,7 +59,7 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
       },
       cause => {
         setError(cause.code === 1
-          ? 'Hãy cho phép trang này truy cập vị trí rồi thử lại.'
+          ? 'Hãy mở cài đặt trang web trong trình duyệt, cho phép truy cập Vị trí rồi thử lại.'
           : 'Chưa lấy được vị trí. Hãy bật dịch vụ định vị rồi thử lại.');
         setLocating(false);
       },
@@ -95,7 +101,12 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
         <button type="button" className="mg-button mg-attendance-locate" onClick={locate} disabled={saving || locating}>
           <MapPin size={16} aria-hidden="true" />{locating ? 'Đang lấy vị trí…' : 'Lấy vị trí hiện tại'}
         </button>
-        {currentLocation && <p role="status">Vị trí hiện tại: {currentLocation}</p>}
+        {currentLocation && <div>
+          <p role="status">Vị trí hiện tại: {currentLocation}</p>
+          <a className="mg-button" href={mapUrl(currentLocation)} target="_blank" rel="noopener noreferrer">Mở vị trí hiện tại trên bản đồ</a>
+        </div>}
+        {selectedStore && selectedStore.latitude !== null && selectedStore.longitude !== null &&
+          <a className="mg-button" href={mapUrl([selectedStore.latitude, selectedStore.longitude].join(","))} target="_blank" rel="noopener noreferrer">Mở vị trí cơ sở trên bản đồ</a>}
         {storeId && <>
           <label className="mg-field">Vĩ độ<input type="number" step="any" min="-90" max="90" required readOnly={!canEdit} disabled={saving || locating} value={latitude} onChange={event => { setLatitude(event.target.value); setSaved(false); }} /></label>
           <label className="mg-field">Kinh độ<input type="number" step="any" min="-180" max="180" required readOnly={!canEdit} disabled={saving || locating} value={longitude} onChange={event => { setLongitude(event.target.value); setSaved(false); }} /></label>
