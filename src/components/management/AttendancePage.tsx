@@ -83,30 +83,38 @@ export function AttendancePage() {
 }
 function ClockCapture({action,onClose,onSaved}:{action:'in'|'out';onClose:()=>void;onSaved:()=>void}) {
   const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),lock=useRef(false),requestId=useRef(crypto.randomUUID());
-  const [cameraReady,setCameraReady]=useState(false),[photo,setPhoto]=useState<Blob|null>(null),[preview,setPreview]=useState(''),[location,setLocation]=useState<Location|null>(null),[locating,setLocating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [cameraReady,setCameraReady]=useState(false),[photo,setPhoto]=useState<Blob|null>(null),[preview,setPreview]=useState(''),[locating,setLocating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   useEffect(()=>{let current=true;
     if(!navigator.mediaDevices?.getUserMedia){setError('Trình duyệt chưa hỗ trợ camera. Mở bằng HTTPS hoặc localhost và cho phép camera.');return;}
     void navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:960},height:{ideal:720}},audio:false}).then(value=>{if(!current){value.getTracks().forEach(track=>track.stop());return;}stream.current=value;if(video.current)video.current.srcObject=value;}).catch(()=>{if(current)setError('Không mở được camera. Hãy cấp quyền camera và mở lại chấm công.');});
     return()=>{current=false;stream.current?.getTracks().forEach(track=>track.stop());};
   },[]);
   useEffect(()=>{if(!photo){setPreview('');return;}const url=URL.createObjectURL(photo);setPreview(url);return()=>URL.revokeObjectURL(url);},[photo]);
-  function locate() {
-    if(!navigator.geolocation){setError('Trình duyệt không hỗ trợ vị trí GPS.');return;}
-    setLocating(true);setError('');
-    navigator.geolocation.getCurrentPosition(position=>{setLocation({latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy:position.coords.accuracy,timestamp:position.timestamp});setLocating(false);},()=>{setLocating(false);setError('Chưa lấy được GPS. Cho phép vị trí trên thiết bị rồi thử lại.');},{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+  async function locate(): Promise<Location> {
+    if (!navigator.geolocation) throw new Error('Trình duyệt không hỗ trợ vị trí GPS.');
+    setLocating(true);
+    try {
+      const { coords, timestamp } = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error('Chưa lấy được GPS. Cho phép vị trí trên thiết bị rồi xác nhận lại.')), {
+          enableHighAccuracy: true, maximumAge: 0, timeout: 20000,
+        });
+      });
+      return { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy, timestamp };
+    } finally {
+      setLocating(false);
+    }
   }
   function capture() {
     if(!video.current?.videoWidth)return;
     const canvas=document.createElement('canvas');canvas.width=video.current.videoWidth;canvas.height=video.current.videoHeight;
-    canvas.getContext('2d')?.drawImage(video.current,0,0);canvas.toBlob(blob=>{if(blob){setPhoto(blob);locate();}else setError('Không chụp được ảnh. Vui lòng thử lại.');},'image/jpeg',0.8);
+    canvas.getContext('2d')?.drawImage(video.current,0,0);canvas.toBlob(blob=>{if(blob){setPhoto(blob);}else setError('Không chụp được ảnh. Vui lòng thử lại.');},'image/jpeg',0.8);
   }
   async function save() {
-    if(lock.current||!photo||!location)return;
-    if(Date.now()-location.timestamp>5*60000){setError('Vị trí đã quá 5 phút. Lấy lại GPS trước khi xác nhận.');return;}
+    if(lock.current||!photo)return;
     lock.current=true;setBusy(true);setError('');
-    try {const form=new FormData();form.set('action',action);form.set('request_id',requestId.current);form.set('photo',photo,'cham-cong.jpg');form.set('location',JSON.stringify(location));await responseData(await fetch('/api/auth/attendance',{method:'POST',body:form}));onSaved();}
+    try {const location=await locate();const form=new FormData();form.set('action',action);form.set('request_id',requestId.current);form.set('photo',photo,'cham-cong.jpg');form.set('location',JSON.stringify(location));await responseData(await fetch('/api/auth/attendance',{method:'POST',body:form}));onSaved();}
     catch(cause){setError(cause instanceof Error?cause.message:'Chưa xác nhận được chấm công. Giữ màn hình này để thử lại cùng lần chấm.');}
     finally {lock.current=false;setBusy(false);}
   }
-  return <Dialog title={action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}><div className="mg-dialog-body mg-attendance-capture"><p>Chụp ảnh hiện tại và cho phép vị trí để xác nhận chấm công.</p><video ref={video} autoPlay playsInline muted onLoadedData={()=>setCameraReady(true)} aria-label="Camera chấm công"/><button type="button" className="mg-button" disabled={!cameraReady||busy||locating} onClick={capture}><Camera size={17}/>{photo?'Chụp lại':'Chụp ảnh'}</button>{preview&&<img src={preview} alt="Ảnh chấm công vừa chụp"/>}<button type="button" className="mg-button" disabled={busy||locating} onClick={locate}><MapPin size={17}/>{locating?'Đang lấy vị trí…':'Lấy lại GPS'}</button>{location&&<p role="status">Đã lấy vị trí · Sai số khoảng {Math.round(location.accuracy)} m.</p>}{error&&<p className="mg-field-error" role="alert">{error}</p>}</div><div className="mg-dialog-footer"><button className="mg-button" disabled={busy} onClick={onClose}>Đóng</button><button className="mg-button mg-button-primary" disabled={busy||locating||!photo||!location} onClick={()=>void save()}>{busy?'Đang lưu…':action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'}</button></div></Dialog>;
+  return <Dialog title={action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}><div className="mg-dialog-body mg-attendance-capture"><p>Chụp ảnh hiện tại và cho phép vị trí để xác nhận chấm công.</p><video ref={video} autoPlay playsInline muted onLoadedData={()=>setCameraReady(true)} aria-label="Camera chấm công"/><button type="button" className="mg-button" disabled={!cameraReady||busy||locating} onClick={capture}><Camera size={17}/>{photo?'Chụp lại':'Chụp ảnh'}</button>{preview&&<img src={preview} alt="Ảnh chấm công vừa chụp"/>}{error&&<p className="mg-field-error" role="alert">{error}</p>}</div><div className="mg-dialog-footer"><button className="mg-button" disabled={busy} onClick={onClose}>Đóng</button><button className="mg-button mg-button-primary" disabled={busy||!photo} onClick={()=>void save()}>{locating?'Đang lấy vị trí…':busy?'Đang lưu…':action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'}</button></div></Dialog>;
 }

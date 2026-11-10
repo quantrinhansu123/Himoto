@@ -109,7 +109,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     return () => document.removeEventListener('click', close);
   }, []);
 
-  const navContent = <>
+  const navContent = (mobile: boolean) => <>
     <Link href="/vehicles" className="mg-brand" aria-label="HIMOTO - Danh sách xe" onClick={() => setMobileOpen(false)}>
       {/* Existing brand asset, kept in its original proportions. */}
       <img src="/images/branding/logo-himoto-dark.svg" width="154" height="32" alt="HIMOTO" />
@@ -117,7 +117,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     </Link>
     <div className="mg-workspace"><span className="mg-workspace-symbol"><Building2 size={19} /></span><div><strong>HIMOTO Workspace</strong><small>Quản lý vận hành</small></div></div>
     <p className="mg-nav-caption">DANH MỤC QUẢN LÝ</p>
-    <nav aria-label="Điều hướng quản lý">{visibleNavigation.map(item => <Link key={item.href} href={item.href}
+    <nav aria-label="Điều hướng quản lý">{visibleNavigation.filter(item => mobile || item.kind !== 'attendance').map(item => <Link key={item.href} href={item.href}
       className={`mg-nav-link ${active.href === item.href ? 'is-active' : ''}`} aria-current={active.href === item.href ? 'page' : undefined}
       title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
       <item.icon size={19} strokeWidth={1.8} /><span>{item.label}</span>{active.href === item.href && <ChevronRight className="mg-nav-arrow" size={15} />}
@@ -128,9 +128,9 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     <GpsSyncPulse/>
     <TableScrollDock/>
     <a href="#management-main" className="mg-skip">Đến nội dung chính</a>
-    <aside className="mg-sidebar">{navContent}</aside>
+    <aside className="mg-sidebar">{navContent(false)}</aside>
     <dialog ref={mobileRef} className="mg-mobile-nav" aria-label="Menu điều hướng" onCancel={event => { event.preventDefault(); setMobileOpen(false); }}>
-      <button type="button" className="mg-icon-button mg-mobile-close" aria-label="Đóng menu" onClick={() => setMobileOpen(false)}><X size={20} /></button>{navContent}
+      <button type="button" className="mg-icon-button mg-mobile-close" aria-label="Đóng menu" onClick={() => setMobileOpen(false)}><X size={20} /></button>{navContent(true)}
     </dialog>
     <div className="mg-main">
       <header className="mg-topbar">
