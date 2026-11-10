@@ -4,6 +4,7 @@ import { Camera, LogIn, LogOut, MapPin, RotateCcw, Settings } from 'lucide-react
 import { AttendanceLocationsDialog } from './AttendanceLocationsDialog';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
+import { isAdminAccount } from '@/lib/management/permissions';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { FilteredExcelButton } from './FilteredExcelButton';
 import { attendanceShift, shiftCreditLabel } from '@/lib/management/attendance-shifts';
@@ -24,7 +25,7 @@ function Evidence({row,side}:{row:Attendance;side:'in'|'out'}) {
     <a href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`} target="_blank" rel="noopener noreferrer"><MapPin size={13}/>Vị trí</a><small>GPS ±{Math.round(location.accuracy)} m</small></div>;
 }
 export function AttendancePage() {
-  const {selectedStore,notify,can} = useManagement();
+  const {selectedStore,notify,accessUser} = useManagement();
   const [from,setFrom] = useState(()=>vietnamDate().slice(0,7)+'-01'),[to,setTo] = useState(vietnamDate),[page,setPage] = useState(1),[retry,setRetry] = useState(0);
   const [data,setData] = useState<Report|null>(null),[loading,setLoading] = useState(true),[error,setError] = useState('');
   const [action,setAction] = useState<'in'|'out'|null>(null);
@@ -63,8 +64,8 @@ export function AttendancePage() {
     return()=>controller.abort();
   },[from,to,selectedStore,page,retry]);
   return <section className="mg-page mg-attendance-page"><div className="mg-page-content">
-    {settingsOpen && <AttendanceLocationsDialog onClose={() => setSettingsOpen(false)} />}
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Chấm công</h1><p>Ghi nhận giờ vào, giờ ra cùng ảnh chụp và vị trí GPS.</p></div><div className="mg-heading-actions">{can('settings.write') && <button type="button" className="mg-button" onClick={() => setSettingsOpen(true)}><Settings size={16}/>Cài đặt</button>}<FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} filename={`himoto-cham-cong-${from}-${to}`} headers={['ID','Nhân viên','Cơ sở','Ca làm','Giờ vào','Giờ ra','Số phút đi muộn']} getRows={exportAttendance}/><button type="button" className="mg-button" disabled={loading} onClick={refresh}><RotateCcw size={16}/>Làm mới</button></div></div>
+    {settingsOpen && <AttendanceLocationsDialog canEdit={isAdminAccount(accessUser)} onClose={() => setSettingsOpen(false)} />}
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Chấm công</h1><p>Ghi nhận giờ vào, giờ ra cùng ảnh chụp và vị trí GPS.</p></div><div className="mg-heading-actions"><button type="button" className="mg-button" onClick={() => setSettingsOpen(true)}><Settings size={16}/>Cài đặt</button><FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} filename={`himoto-cham-cong-${from}-${to}`} headers={['ID','Nhân viên','Cơ sở','Ca làm','Giờ vào','Giờ ra','Số phút đi muộn']} getRows={exportAttendance}/><button type="button" className="mg-button" disabled={loading} onClick={refresh}><RotateCcw size={16}/>Làm mới</button></div></div>
     <div className="mg-data-panel mg-attendance-dashboard">
       <div className="mg-attendance-clock-heading"><div><strong>{data?.staff?.name || 'Tài khoản chấm công'}</strong><p>{loading?'Đang kiểm tra ca…':data?.open?'Đang trong ca':data?.staff?'Chưa vào ca':error?'Không tải được trạng thái ca.':'Tài khoản chưa liên kết nhân viên đang hoạt động.'}</p></div><div className="mg-attendance-live-clock"><strong suppressHydrationWarning>{now?new Date(now).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour12:false}):'—'}</strong><small>{now?new Date(now).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Giờ Việt Nam'}</small></div></div>
       <div className="mg-attendance-shift-label">{data?.shift?data.shift.shift_name+' · '+timeOnly(data.shift.starts_at)+' – '+timeOnly(data.shift.ends_at):'Chưa có lịch trực phù hợp. Quản lý phân ca tại Lịch trực cơ sở.'}</div>
