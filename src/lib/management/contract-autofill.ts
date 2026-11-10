@@ -129,9 +129,6 @@ export function createApiAutofillRepository(baseUrl = '/api'): ContractAutofillR
       const errors = assignment?.allow_incomplete ? validateDepositCustomer(customer,'api') : validateCustomer(customer, 'api');
       if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
       const phoneDigits = customer.phone.replace(/\D/g,'');
-      const existing = customer.id_card ? await this.lookupCustomer(customer.id_card) : null;
-      const matches = existing ? [existing] : !customer.id_card && phoneDigits ? await this.searchCustomers(phoneDigits) : [];
-      if (matches.length) throw new DuplicateCustomerError(matches);
       // The Supabase adapter stores branch and profile status on customer creation.
       let payload: unknown;
       try { payload = await request(READ_ENDPOINTS.customers, { method: 'POST', body: JSON.stringify({

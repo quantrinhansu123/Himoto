@@ -237,12 +237,16 @@ async function writeCustomer(request: NextRequest, id: number | null) {
   const client = await himotoPool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SET LOCAL statement_timeout = '10s'");
     const row = id === null ? await insertCustomer(client, data) : await updateCustomer(client, id, data);
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data: row }, { status: id === null ? 201 : 200 });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     if (error instanceof CustomerWriteError) return NextResponse.json({ status: 'error', message: error.message }, { status: error.status });
+    if (typeof error === 'object' && error !== null && 'code' in error && (error.code === '55P03' || error.code === '57014')) {
+      return NextResponse.json({ status: 'error', message: 'Cơ sở dữ liệu đang bận. Dữ liệu chưa được lưu, vui lòng thử lại.' }, { status: 503 });
+    }
     return failureResponse(id === null ? 'Không lưu được khách hàng.' : 'Không lưu được thay đổi khách hàng.', error);
   } finally { client.release(); }
 }
