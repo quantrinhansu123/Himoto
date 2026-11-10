@@ -8,7 +8,7 @@ import { Dialog } from './Dialog';
 type StoreLocation = { id: string | number; store_name: string; latitude: number | null; longitude: number | null };
 const endpoint = '/api/auth/attendance/locations';
 
-export function AttendanceLocationsDialog({ onClose }: { onClose: () => void }) {
+export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boolean; onClose: () => void }) {
   const [stores, setStores] = useState<StoreLocation[] | null>(null);
   const [storeId, setStoreId] = useState('');
   const [latitude, setLatitude] = useState('');
@@ -60,7 +60,7 @@ export function AttendanceLocationsDialog({ onClose }: { onClose: () => void }) 
   }
 
   async function save() {
-    if (saving || locating || !storeId || !latitude.trim() || !longitude.trim()) return;
+    if (!canEdit || saving || locating || !storeId || !latitude.trim() || !longitude.trim()) return;
     const coordinates = { latitude: Number(latitude), longitude: Number(longitude) };
     setSaving(true);
     setError('');
@@ -91,18 +91,18 @@ export function AttendanceLocationsDialog({ onClose }: { onClose: () => void }) 
           </select>
         </label>}
         {storeId && <>
-          <button type="button" className="mg-button mg-attendance-locate" onClick={locate} disabled={saving || locating}>
+          {canEdit && <button type="button" className="mg-button mg-attendance-locate" onClick={locate} disabled={saving || locating}>
             <MapPin size={16} aria-hidden="true" />{locating ? 'Đang lấy vị trí…' : 'Lấy vị trí hiện tại'}
-          </button>
-          <label className="mg-field">Vĩ độ<input type="number" step="any" min="-90" max="90" required disabled={saving || locating} value={latitude} onChange={event => { setLatitude(event.target.value); setSaved(false); }} /></label>
-          <label className="mg-field">Kinh độ<input type="number" step="any" min="-180" max="180" required disabled={saving || locating} value={longitude} onChange={event => { setLongitude(event.target.value); setSaved(false); }} /></label>
+          </button>}
+          <label className="mg-field">Vĩ độ<input type="number" step="any" min="-90" max="90" required readOnly={!canEdit} disabled={saving || locating} value={latitude} onChange={event => { setLatitude(event.target.value); setSaved(false); }} /></label>
+          <label className="mg-field">Kinh độ<input type="number" step="any" min="-180" max="180" required readOnly={!canEdit} disabled={saving || locating} value={longitude} onChange={event => { setLongitude(event.target.value); setSaved(false); }} /></label>
         </>}
         {error && <p role="alert" className="mg-field-error">{error}</p>}
         {saved && <p role="status">Đã lưu tọa độ chấm công.</p>}
       </div>
       <div className="mg-dialog-footer">
         <button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
-        <button type="submit" className="mg-button mg-button-primary" disabled={!storeId || saving || locating}>{saving ? 'Đang lưu…' : 'Lưu tọa độ'}</button>
+        {canEdit && <button type="submit" className="mg-button mg-button-primary" disabled={!storeId || saving || locating}>{saving ? 'Đang lưu…' : 'Lưu tọa độ'}</button>}
       </div>
     </form>
   </Dialog>;
