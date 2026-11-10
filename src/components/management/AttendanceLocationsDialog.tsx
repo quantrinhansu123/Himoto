@@ -8,7 +8,7 @@ import { Dialog } from './Dialog';
 type StoreLocation = { id: string | number; store_name: string; latitude: number | null; longitude: number | null };
 const endpoint = '/api/auth/attendance/locations';
 
-export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boolean; onClose: () => void }) {
+export function AttendanceLocationsDialog({ onClose }: { onClose: () => void }) {
   const [stores, setStores] = useState<StoreLocation[] | null>(null);
   const [storeId, setStoreId] = useState('');
   const [latitude, setLatitude] = useState('');
@@ -47,8 +47,8 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         setCurrentLocation([coords.latitude, coords.longitude].join(", "));
-        if (canEdit && storeId) setLatitude(String(coords.latitude));
-        if (canEdit && storeId) setLongitude(String(coords.longitude));
+        if (storeId) setLatitude(String(coords.latitude));
+        if (storeId) setLongitude(String(coords.longitude));
         setLocating(false);
       },
       cause => {
@@ -62,7 +62,7 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
   }
 
   async function save() {
-    if (!canEdit || saving || locating || !storeId || !latitude.trim() || !longitude.trim()) return;
+    if (saving || locating || !storeId || !latitude.trim() || !longitude.trim()) return;
     const coordinates = { latitude: Number(latitude), longitude: Number(longitude) };
     setSaving(true);
     setError('');
@@ -97,15 +97,15 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
         </button>
         {currentLocation && <p role="status">Vị trí hiện tại: {currentLocation}</p>}
         {storeId && <>
-          <label className="mg-field">Vĩ độ<input type="number" step="any" min="-90" max="90" required readOnly={!canEdit} disabled={saving || locating} value={latitude} onChange={event => { setLatitude(event.target.value); setSaved(false); }} /></label>
-          <label className="mg-field">Kinh độ<input type="number" step="any" min="-180" max="180" required readOnly={!canEdit} disabled={saving || locating} value={longitude} onChange={event => { setLongitude(event.target.value); setSaved(false); }} /></label>
+          <label className="mg-field">Vĩ độ<input type="number" step="any" min="-90" max="90" required disabled={saving || locating} value={latitude} onChange={event => { setLatitude(event.target.value); setSaved(false); }} /></label>
+          <label className="mg-field">Kinh độ<input type="number" step="any" min="-180" max="180" required disabled={saving || locating} value={longitude} onChange={event => { setLongitude(event.target.value); setSaved(false); }} /></label>
         </>}
         {error && <p role="alert" className="mg-field-error">{error}</p>}
         {saved && <p role="status">Đã lưu tọa độ chấm công.</p>}
       </div>
       <div className="mg-dialog-footer">
         <button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
-        {canEdit && <button type="submit" className="mg-button mg-button-primary" disabled={!storeId || saving || locating}>{saving ? 'Đang lưu…' : 'Lưu tọa độ'}</button>}
+        <button type="submit" className="mg-button mg-button-primary" disabled={!storeId || saving || locating}>{saving ? 'Đang lưu…' : 'Lưu tọa độ'}</button>
       </div>
     </form>
   </Dialog>;
