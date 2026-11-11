@@ -8,7 +8,7 @@ Giữ `CLOUDFLY_S3_*` phía server đang dùng cho video. `PHOTO_STORAGE_PROVIDE
 
 Thứ tự triển khai:
 
-1. Chạy từng câu trong `docs/sql/2026-11-11-contract-vehicle-read-indexes.sql` và `docs/sql/2026-11-11-contract-statistics-indexes.sql` ngoài transaction. Kiểm tra `indisvalid` của cả bảy index.
+1. Chạy từng câu trong `docs/sql/2026-11-11-contract-vehicle-read-indexes.sql`, `docs/sql/2026-11-11-contract-statistics-indexes.sql` và `docs/sql/2026-11-11-gps-latest-position-index.sql` ngoài transaction. Kiểm tra `indisvalid` của cả tám index. Chỉ mục GPS phải khớp `provider_recorded_at DESC NULLS LAST`, tránh đọc rồi sắp xếp lịch sử cho từng thiết bị trong mỗi lượt đồng bộ.
    Áp dụng `docs/sql/2026-11-11-access-order-store-inline.sql` trong transaction: hai helper invoker dùng SQL body được bind từ lúc định nghĩa; wrapper được phép inline. Helper ownership có quyền cao vẫn giữ `search_path` riêng. Giữ nguyên owner, ACL và kết quả phạm vi; đối chiếu trước/sau trước khi commit.
 2. `node scripts/migrate-cloudfly-media.cjs --schema` bổ sung cột/check lưu ảnh và bảng ánh xạ. Không đổi RLS hồ sơ hay dữ liệu nghiệp vụ.
 3. Chạy kiểm tra, build rồi deploy web/backend từ cùng commit.

@@ -2,7 +2,7 @@
 
 ## Kết luận
 
-Xác nhận hai vấn đề độc lập: truy vấn thông tin xe/thống kê và wrapper kiểm tra quyền gây tốn tài nguyên trong luồng nhân viên cơ sở; tài khoản Cloudinary vượt hạn mức Free. Sau khi người dùng yêu cầu triển khai, đã bổ sung index và schema kho ảnh trên production. Không thay đổi dòng nghiệp vụ hoặc phạm vi được phép xem.
+Xác nhận các nguồn gây tốn tài nguyên: truy vấn thông tin xe/thống kê, wrapper kiểm tra quyền và đồng bộ GPS đọc/sắp xếp lịch sử cho từng thiết bị. Tài khoản Cloudinary đồng thời vượt hạn mức Free. Sau khi người dùng yêu cầu triển khai, đã tối ưu truy vấn, bổ sung index và chuyển tệp tham chiếu sang CloudFly trên production. Không thay đổi dòng nghiệp vụ hoặc phạm vi được phép xem.
 
 Ảnh Infrastructure do người dùng cung cấp cho thấy compute Micro, CPU khoảng 93%, RAM khoảng 80%, Disk IO Balance 0%, trong khi dung lượng đĩa mới dùng 23%. Supabase giải thích hết Disk IO Budget sẽ làm instance bị giới hạn tốc độ: https://supabase.com/kb/troubleshooting/exhaust-disk-io. Đây là tài nguyên compute/I/O, không phải đầy đĩa hay bằng chứng project còn ở gói Free.
 
@@ -45,7 +45,7 @@ Hoàn tất sao chép lúc 22:37:46 giờ Việt Nam ngày 11/11/2026. Quét l�
 
 Mỗi bản sao chỉ được thêm ánh xạ sau PUT bất biến, HEAD và đọc lại toàn bộ đối chiếu byte/SHA-256. Không xóa nguồn, sửa dòng nghiệp vụ, revision hoặc payload/hash Telegram. Phạm vi chuyển là tệp Cloudinary được hồ sơ/ca làm/notification tham chiếu; ảnh inline PostgreSQL cũ giữ luồng đọc tương thích. Không coi đây là di chuyển các asset không còn tham chiếu trong tài khoản Cloudinary.
 
-Audit production sau chuyển xác nhận cả bảy index hợp lệ, bảng archive bật RLS và không cấp SELECT cho `himoto_scoped`, wrapper vẫn là invoker với dependency được bind. Cloudinary vẫn phục vụ nhánh chuyển mã video dự phòng khi trình duyệt không xử lý HEVC/MOV; chưa được xóa khóa/tài khoản Cloudinary.
+Audit production sau chuyển xác nhận các index hợp lệ, bảng archive bật RLS và không cấp SELECT cho `himoto_scoped`, wrapper vẫn là invoker với dependency được bind. Cloudinary vẫn phục vụ nhánh chuyển mã video dự phòng khi trình duyệt không xử lý HEVC/MOV; chưa được xóa khóa/tài khoản Cloudinary.
 
 ### Đối chiếu bản production mới
 
@@ -58,6 +58,24 @@ Vercel triển khai thành công `47fd763` (deployment `7713838069`, tạo lúc 
 | Form xe trả | 214 / 163 / 261 ms |
 
 Đây là các mẫu sau triển khai, không phải p95 hoặc kiểm thử tải. Không POST trả xe/thu chi hoặc gửi Telegram thật. Các mẫu production trước đó còn có thống kê 9–18 giây; kết quả bảng trên được lấy sau khi bản truy vấn tách lịch sử đã triển khai.
+
+### Nút thắt GPS phát hiện khi kiểm tra kéo dài
+
+Sau bảng mẫu nhanh trên, kiểm tra lại bản `e454079` vẫn gặp một lần tải danh sách **21.949 ms** (Server-Timing tầng bảng 21.036 ms), thống kê 4.246 ms, form trả xe 248 ms. Vì vậy không dùng chín mẫu nhanh để kết luận hệ thống đã ổn định.
+
+Snapshot đúng thời điểm có hai câu đồng bộ GPS đang chạy khoảng 13 giây, chờ đọc dữ liệu. `gps-sync.ts` tìm vị trí gần nhất theo `provider_recorded_at DESC NULLS LAST`. Index tăng dần cũ khi đọc ngược cho `DESC NULLS FIRST`, nên planner dùng bitmap heap scan rồi sort khoảng 5.577 dòng cho từng thiết bị. Bảng `gps_positions` có khoảng 2,03 triệu dòng theo ước lượng planner; lượt kiểm tra bao gồm 357 thiết bị Protrack.
+
+Đã tạo `idx_gps_positions_latest_cover` bằng `CREATE INDEX CONCURRENTLY`, khớp đúng thứ tự/null và INCLUDE hai cột cần đọc. Không đổi lịch đồng bộ, trạng thái GPS hoặc dữ liệu lịch sử. Index hợp lệ/ready, dung lượng 105.349.120 byte. `EXPLAIN (ANALYZE, BUFFERS)` sau bổ sung dùng `Limit → Index Only Scan`, không còn Sort; ba lần đọc toàn bộ 357 thiết bị mất **8,724 / 5,438 / 5,219 ms** ở server. Đây là truy vấn đọc vị trí mới nhất, không phải toàn bộ lượt gọi nhà cung cấp GPS. Planner cost giảm từ 1.990.363,91 xuống 407,63; cost không phải thời gian thực thi.
+
+Đo lại lúc 22:52–22:53 giờ Việt Nam bằng cùng phiên nhân viên cơ sở: sáu vòng, cách nhau 12 giây, tổng 18 GET đều HTTP 200. Thời gian đã gồm mạng:
+
+| API | Sáu mẫu sau index GPS (ms) |
+| --- | --- |
+| Danh sách 10/11.332 hợp đồng | 994 / 483 / 507 / 554 / 464 / 542 |
+| Thống kê cơ sở | 468 / 220 / 227 / 274 / 230 / 316 |
+| Form xe trả | 226 / 226 / 212 / 207 / 239 / 226 |
+
+Tám index production đều hợp lệ; audit archive vẫn đủ 20.625 tệp, không có metadata sai. Snapshot hoạt động sau index không thấy câu GPS kéo dài. Các mẫu trải qua nhiều chu kỳ đồng bộ nhưng chưa phải p95 hoặc kiểm thử tải giờ cao điểm; không suy ra đảm bảo tài nguyên Micro luôn đủ. Không tự nâng gói tính phí.
 
 ## Bằng chứng
 
@@ -82,7 +100,7 @@ Thời gian trên gồm nhiều câu SQL và thời gian truyền từ máy ki�
 - Bước lấy chi tiết danh sách còn materialize `vehicle_inventory()`, gồm tính xe đang bị giữ, trong khi phần hiển thị chỉ cần nhãn và vị trí xe. Gọi riêng inventory đo được 7.128 ms.
 - Snapshot hoạt động DB cho thấy chờ `DataFileRead`/`DataFilePrefetch`; không thấy truy vấn bị khóa tại thời điểm quan sát. Không suy rộng thành không có khóa ở thời điểm nhân viên gặp lỗi.
 - Thử SELECT lấy nhãn và vị trí xe, giới hạn vào đúng hai hợp đồng trước khi nối, giữ kiểm tra actor/phạm vi: 311 ms, trả 2 xe. Đây là truy vấn ứng viên chạy bằng owner với predicate quyền tương đương, chưa phải bản sửa ứng dụng đã triển khai hoặc kiểm thử phân quyền đầy đủ.
-- `returnRequest()` hiện dùng fetch không có deadline riêng. `contractTelegramRequest()` có abort sau 60 giây nhưng chưa race toàn bộ fetch và JSON với deadline như danh sách. Những điểm này có thể giữ giao diện ở trạng thái chờ khi transport không kết thúc; chưa có trace trình duyệt để khẳng định chính xác chuỗi chờ 15 phút trong ảnh.
+- Trước sửa, `returnRequest()` dùng fetch không có deadline riêng; `contractTelegramRequest()` có abort sau 60 giây nhưng chưa race toàn bộ fetch và JSON với deadline như danh sách. Những điểm này có thể giữ giao diện ở trạng thái chờ khi transport không kết thúc; chưa có trace trình duyệt để khẳng định chính xác chuỗi chờ 15 phút trong ảnh. Bản triển khai đã bổ sung deadline cho cả fetch và body như mô tả ở trên.
 
 ### Cloudinary
 
@@ -96,14 +114,13 @@ Admin API của đúng cloud cấu hình trong ứng dụng trả:
 
 Cloudinary mô tả quota là soft limit: vượt hạn mức không đồng nghĩa bị ngắt ngay; tài khoản có thể bị vô hiệu hóa sau các cảnh báo và khi đó upload/transformation/delivery có thể bị chặn. Nguồn: https://cloudinary.com/documentation/programmable_media_asset_usage_data và https://cloudinary.com/documentation/billing_and_plans.
 
-## Hướng xử lý
+## Theo dõi sau triển khai
 
-1. Giới hạn helper thông tin xe vào ID hợp đồng/xe thực sự cần đọc, giữ nguyên kiểm tra phạm vi; tránh gọi toàn bộ lịch sử và inventory đầy đủ trong chi tiết/phân trang.
-2. Kiểm tra lại admin, nhân viên cơ sở, hợp đồng khác cơ sở, xe đã chuyển kho, xe đã lưu trữ và toàn bộ loại hợp đồng; so sánh dữ liệu trước/sau.
-3. Bổ sung deadline cho toàn bộ request/đọc response. Với thao tác ghi, timeout phải hướng dẫn kiểm tra trạng thái trước khi gửi lại, không coi timeout là bằng chứng giao dịch chưa lưu.
-4. Xử lý hạn mức Cloudinary theo nhu cầu vận hành; kiểm tra cache, kích thước và số lần đọc ảnh/video để giảm băng thông. Không xóa hồ sơ hoặc chuyển kho ảnh để thử nghiệm trên production.
-5. Xác minh sau triển khai bằng quyền nhân viên và đo p50/p95 của API thực tế; không dùng kết quả đăng nhập/admin để thay cho các luồng này.
+1. Theo dõi p50/p95 API, CPU và I/O qua giờ cao điểm trước khi quyết định tăng compute. Không dùng kết quả đăng nhập/admin thay cho luồng nhân viên.
+2. Nếu helper thông tin xe vẫn chiếm thời gian khi dữ liệu tăng, có thể giới hạn vào ID hợp đồng/xe cần đọc. Đây là tối ưu tiếp theo chưa triển khai; cần kiểm tra đầy đủ xe khác cơ sở, chuyển kho và lưu trữ trước khi đổi helper.
+3. Với timeout thao tác ghi, kiểm tra trạng thái đã lưu trước khi gửi lại; không coi timeout là bằng chứng giao dịch chưa lưu.
+4. Theo dõi dung lượng/băng thông CloudFly và nhánh video chuyển mã dự phòng Cloudinary. Không xóa nguồn cũ hoặc khóa Cloudinary khi nhánh dự phòng vẫn cần.
 
 ## Phạm vi kiểm tra
 
-Giai đoạn điều tra chỉ GET/HEAD và truy vấn đọc dữ liệu nghiệp vụ. Sau khi được yêu cầu triển khai: thêm index/schema và ánh xạ bản sao lưu trữ, không trả xe, ghi thu chi, gửi Telegram, đổi gói tính phí hoặc thay function nghiệp vụ production. Script và kết quả chi tiết lưu ngoài Git tại `.backups/incident-20261111/`; báo cáo không chứa khóa truy cập, ảnh hay thông tin cá nhân của khách hàng.
+Giai đoạn điều tra chỉ GET/HEAD và truy vấn đọc dữ liệu nghiệp vụ. Sau khi được yêu cầu triển khai: sửa web/backend, thêm index/schema, tối ưu hai helper quyền với kết quả giữ nguyên và thêm ánh xạ bản sao lưu trữ. Không trả xe, ghi thu chi, gửi Telegram hoặc đổi gói tính phí. Script và kết quả chi tiết lưu ngoài Git tại `.backups/incident-20261111/`; báo cáo không chứa khóa truy cập, ảnh hay thông tin cá nhân của khách hàng.
