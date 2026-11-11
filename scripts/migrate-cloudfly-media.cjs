@@ -6,6 +6,7 @@ const {load,root}=require('./lib/load-typescript.cjs');
 const {ownerDatabase}=load(path.join(root,'lib/server/himoto-database'));
 const objects=load(path.join(root,'lib/server/object-media'));
 const {v2:cloudinary}=require('cloudinary');
+const transient=require('./lib/media-copy-retry.cjs');
 const flag=name=>process.argv.includes(name),option=(name,fallback)=>{const i=process.argv.indexOf(name);return i<0?fallback:Number(process.argv[i+1]);};
 const extension={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','video/mp4':'mp4'};
 const keyFor=photo=>createHash('sha256').update(JSON.stringify([photo.cloudinary_cloud_name,photo.cloudinary_public_id,String(photo.cloudinary_version),photo.mime_type])).digest('hex');
@@ -40,23 +41,27 @@ async function main(){
   const archived=exists.rows[0].present?(await ownerDatabase.query('SELECT source_cloud AS cloudinary_cloud_name,source_public_id AS cloudinary_public_id,source_version AS cloudinary_version,mime_type FROM himoto.management_media_archive WHERE verified_at IS NOT NULL')).rows:[];
   const done=new Set(archived.map(keyFor)),pending=entries.filter(p=>!done.has(keyFor(p)));
   console.log(JSON.stringify({referencedAssets:entries.length,verifiedAliases:entries.length-pending.length,pendingAssets:pending.length,mode:flag('--apply')?'copy':'inventory',sourceDeletes:0,businessRowsWritten:0}));
-  if(!flag('--apply'))return;
+  if(!flag('--apply')||!pending.length)return;
   if(!exists.rows[0].present)throw Error('APPLY_SCHEMA_FIRST');
-  const limit=option('--limit',pending.length),concurrency=option('--concurrency',3);
-  if(!Number.isSafeInteger(limit)||limit<1||!Number.isSafeInteger(concurrency)||concurrency<1||concurrency>32)throw Error('INVALID_BATCH_OPTIONS');
-  const queue=pending.slice(0,limit),started=Date.now();let next=0,copied=0,failed=0,bytes=0;
+  const limit=option('--limit',pending.length),concurrency=option('--concurrency',3),attempts=option('--attempts',3);
+  if(!Number.isSafeInteger(limit)||limit<1||!Number.isSafeInteger(concurrency)||concurrency<1||concurrency>32||!Number.isSafeInteger(attempts)||attempts<1||attempts>5)throw Error('INVALID_BATCH_OPTIONS');
+  const queue=pending.slice(0,limit),started=Date.now();let next=0,copied=0,failed=0,bytes=0,retries=0;
   const dir=path.join('.backups','cloudfly-media-migration');fs.mkdirSync(dir,{recursive:true});
   const failures=[];
-  const checkpoint=()=>{const summary={at:new Date().toISOString(),referencedAssets:entries.length,batch:queue.length,copied,failed,bytes,remaining:pending.length-copied,seconds:Math.round((Date.now()-started)/1000),businessRowsWritten:0,sourceDeletes:0};fs.writeFileSync(path.join(dir,'progress.json'),JSON.stringify(summary,null,2));console.log(JSON.stringify(summary));};
-  await Promise.all(Array.from({length:concurrency},async()=>{while(next<queue.length){const photo=queue[next++],hash=keyFor(photo);try{
+  const checkpoint=()=>{const summary={at:new Date().toISOString(),referencedAssets:entries.length,batch:queue.length,copied,failed,retries,bytes,remaining:pending.length-copied,seconds:Math.round((Date.now()-started)/1000),businessRowsWritten:0,sourceDeletes:0};fs.writeFileSync(path.join(dir,'progress.json'),JSON.stringify(summary,null,2));fs.writeFileSync(path.join(dir,'failures.json'),JSON.stringify(failures,null,2));console.log(JSON.stringify(summary));};
+  await Promise.all(Array.from({length:concurrency},async()=>{while(next<queue.length){const photo=queue[next++],hash=keyFor(photo);
+   for(let attempt=1;attempt<=attempts;attempt++){let stage='download';try{
     const data=await download(photo),sha256=createHash('sha256').update(data).digest('hex'),key=`himoto/legacy/cloudinary/${hash}.${extension[photo.mime_type]}`;
+    stage='store';
     const etag=await objects.putVerifiedObject(key,data,photo.mime_type,sha256),bucket=load(path.join(root,'lib/server/cloudfly-videos')).cloudflyVideoSettings().bucket;
+    stage='archive';
     const saved=await ownerDatabase.query(`INSERT INTO himoto.management_media_archive(source_cloud,source_public_id,source_version,mime_type,object_bucket,object_key,object_etag,storage_sha256,storage_bytes,verified_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()) ON CONFLICT(source_cloud,source_public_id,source_version,mime_type) DO UPDATE SET verified_at=EXCLUDED.verified_at
       WHERE management_media_archive.object_bucket=EXCLUDED.object_bucket AND management_media_archive.object_key=EXCLUDED.object_key AND management_media_archive.object_etag=EXCLUDED.object_etag AND management_media_archive.storage_sha256=EXCLUDED.storage_sha256 AND management_media_archive.storage_bytes=EXCLUDED.storage_bytes RETURNING storage_bytes`,
     [photo.cloudinary_cloud_name,photo.cloudinary_public_id,photo.cloudinary_version,photo.mime_type,bucket,key,etag,sha256,data.length]);
-    if(!saved.rowCount)throw Error('ARCHIVE_CONFLICT');copied++;bytes+=data.length;
-  }catch(e){failed++;failures.push({sourceFingerprint:hash,code:/^[A-Z0-9_]+$/.test(e.code||e.message||'')?(e.code||e.message):'COPY_FAILED'});}
+    if(!saved.rowCount)throw Error('ARCHIVE_CONFLICT');copied++;bytes+=data.length;break;
+   }catch(e){if(attempt<attempts&&transient(e)){retries++;await new Promise(resolve=>setTimeout(resolve,250*attempt*attempt));continue;}
+    const code=e.code||e.cause?.code||e.message;failed++;failures.push({sourceFingerprint:hash,stage,attempt,code:/^[A-Z0-9_]+$/.test(code||'')?code:'COPY_FAILED',name:/^[a-zA-Z0-9_]{1,80}$/.test(e.name||'')?e.name:'Error',status:e.$metadata?.httpStatusCode});break;}}
   if((copied+failed)%25===0)checkpoint();}}));
   checkpoint();fs.writeFileSync(path.join(dir,'failures.json'),JSON.stringify(failures,null,2));if(failed)process.exitCode=1;
 }

@@ -13,7 +13,7 @@ Thứ tự triển khai:
 2. `node scripts/migrate-cloudfly-media.cjs --schema` bổ sung cột/check lưu ảnh và bảng ánh xạ. Không đổi RLS hồ sơ hay dữ liệu nghiệp vụ.
 3. Chạy kiểm tra, build rồi deploy web/backend từ cùng commit.
 4. `node scripts/migrate-cloudfly-media.cjs` thống kê; `node scripts/migrate-cloudfly-media.cjs --apply --limit 25 --concurrency 2` kiểm tra đợt nhỏ.
-5. `node scripts/migrate-cloudfly-media.cjs --apply --concurrency 16` chuyển lịch sử. Có thể chạy lại: các bản sao đã có ánh xạ xác minh được bỏ qua. Chỉ chạy một tiến trình chuyển cùng lúc.
+5. `node scripts/migrate-cloudfly-media.cjs --apply --concurrency 16 --attempts 3` chuyển lịch sử. Chỉ tự retry lỗi mạng/HTTP tạm thời hoặc giao dịch DB bị gián đoạn; lỗi nội dung, xung đột hoặc nguồn bị từ chối giữ lại để kiểm tra. Checkpoint ghi cả số liệu và danh sách lỗi theo fingerprint/bước xử lý. Có thể chạy lại: các bản sao đã có ánh xạ xác minh được bỏ qua; hàng đợi rỗng kết thúc thành công. Chỉ chạy một tiến trình chuyển cùng lúc.
 6. Thống kê lại sau đợt chuyển để bắt các tham chiếu phát sinh đồng thời. Chỉ báo hoàn tất khi số còn lại và số lỗi đều bằng 0.
 
 ## Tính toàn vẹn
@@ -21,6 +21,7 @@ Thứ tự triển khai:
 - Ảnh mới được kiểm tra định dạng/kích thước, PUT điều kiện không ghi đè, xác minh HEAD và tải lại đối chiếu SHA-256 trước khi trả biên nhận.
 - Luồng mobile lưu object trước transaction; tham chiếu, hash, dung lượng và biên nhận được ghi nguyên tử dưới RLS. Lỗi giữa chừng giữ nguyên ảnh đã ghi nhận; retry dùng lại cùng mã, mất phản hồi COMMIT có thể tra cứu biên nhận.
 - Bản sao lịch sử dùng khóa theo nguồn/phiên bản. Chỉ thêm ánh xạ sau khi đối chiếu đủ byte/hash. Không cập nhật hồ sơ nguồn, revision, payload hoặc hash Telegram; không xóa bất kỳ nguồn nào.
+- Đợt chuyển lịch sử sao chép tham chiếu Cloudinary. Ảnh inline cũ trong PostgreSQL vẫn đọc qua API bằng luồng tương thích; không sửa dòng ảnh đó trong đợt chuyển này.
 - API ảnh và bộ gửi Telegram tra bảng ánh xạ trước khi dùng Cloudinary. Snapshot cũ vẫn giữ nguyên nguồn logic; việc di chuyển không tự mở lại quyền gửi trùng.
 - Các tab trình duyệt cũ vẫn có thể dùng chữ ký Cloudinary; server chuyển ảnh đó sang CloudFly trước khi gắn vào hồ sơ. Client mới tải ảnh trực tiếp qua API CloudFly của Himoto.
 - Web dùng ảnh xem trước cố định tối đa 384 px/96 KiB, lưu private trên CloudFly. Nút mở ảnh giữ nguyên tệp gốc. Ảnh ngoài màn hình dùng lazy loading. Không nhận kích thước tùy ý để tạo thêm vô hạn biến thể.

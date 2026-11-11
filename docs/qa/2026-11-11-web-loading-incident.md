@@ -34,10 +34,30 @@ Tất cả bốn index thông tin xe đã được xác nhận `indisvalid=true`
 - Ảnh mới lưu CloudFly; dữ liệu cũ được giải quyết bằng ánh xạ bất biến, không sửa revision/payload/hash Telegram. Công cụ đã chạy đợt thử 25/25 tệp, sau đó chuyển lịch sử với kiểm tra toàn bộ byte/SHA-256 và checkpoint.
 - Web dùng ảnh xem trước private cố định 384 px, lazy loading và đường mở ảnh gốc. Đã kiểm tra Chromium desktop và WebKit 390 px: lưu ảnh qua CloudFly không tự trả xe, Enter không tạo giao dịch, nút xác nhận tạo đúng một lần trả mô phỏng, 0 lỗi JavaScript và không tràn ngang.
 - Request trả xe/Telegram có deadline bao gồm cả đọc body; timeout thao tác ghi nói rõ cần kiểm tra trạng thái trước khi gửi lại. API trả xe đặt giới hạn câu SQL/khóa ngay từ đầu transaction.
-- Đã qua: TypeScript/lint web và mobile; production build; 46 suite release; bộ mobile; 124 nhóm SQL trong PGlite; test CloudFly upload/biên nhận/rollback/lost commit với RLS thật trong PGlite; kiểm tra schema lặp lại; PostgreSQL 17.11 cục bộ với 9 nhóm ghi cạnh tranh và 4 nhóm xóa ảnh cạnh tranh.
+- Đã qua: TypeScript/lint web và mobile; production build; 47 suite release; bộ mobile; 124 nhóm SQL trong PGlite; test CloudFly upload/biên nhận/rollback/lost commit với RLS thật trong PGlite; kiểm tra schema lặp lại; PostgreSQL 17.11 cục bộ với 9 nhóm ghi cạnh tranh và 4 nhóm xóa ảnh cạnh tranh.
 - Đã kiểm tra CloudFly thật bằng ảnh tổng hợp: upload, đọc lại đúng byte, URL có chữ ký và truy cập ẩn danh bị từ chối; tệp thử đã dọn. Không dùng giao dịch vận hành để thử nghiệm hoặc gửi Telegram thật.
 
-Xem cấu hình, lệnh chuyển và giới hạn video tại [cloudfly-media](../cloudfly-media.md). Kết quả triển khai và tổng số tệp cuối cùng được ghi sau khi đối chiếu production và hàng đợi chuyển hoàn tất.
+Xem cấu hình, lệnh chuyển và giới hạn video tại [cloudfly-media](../cloudfly-media.md).
+
+### Chuyển lịch sử đã hoàn tất
+
+Hoàn tất sao chép lúc 22:37:46 giờ Việt Nam ngày 11/11/2026. Quét lại tham chiếu và chạy lại công cụ ở chế độ apply xác nhận: **20.625 tham chiếu Cloudinary, 20.625 bản sao xác minh, 0 còn thiếu**. Công cụ kết thúc thành công khi hàng đợi rỗng. Tổng dung lượng bản sao **11.155.335.050 byte**; audit metadata không có bản ghi sai. Danh sách lỗi cuối cùng rỗng; các lỗi truyền trước đó đã xử lý hết. Đợt cuối 2.955 tệp có một lượt tự retry, không có lỗi còn lại.
+
+Mỗi bản sao chỉ được thêm ánh xạ sau PUT bất biến, HEAD và đọc lại toàn bộ đối chiếu byte/SHA-256. Không xóa nguồn, sửa dòng nghiệp vụ, revision hoặc payload/hash Telegram. Phạm vi chuyển là tệp Cloudinary được hồ sơ/ca làm/notification tham chiếu; ảnh inline PostgreSQL cũ giữ luồng đọc tương thích. Không coi đây là di chuyển các asset không còn tham chiếu trong tài khoản Cloudinary.
+
+Audit production sau chuyển xác nhận cả bảy index hợp lệ, bảng archive bật RLS và không cấp SELECT cho `himoto_scoped`, wrapper vẫn là invoker với dependency được bind. Cloudinary vẫn phục vụ nhánh chuyển mã video dự phòng khi trình duyệt không xử lý HEVC/MOV; chưa được xóa khóa/tài khoản Cloudinary.
+
+### Đối chiếu bản production mới
+
+Vercel triển khai thành công `47fd763` (deployment `7713838069`, tạo lúc 22:15:48 giờ Việt Nam). Kiểm tra ba GET cho mỗi API, bằng phiên nhân viên cơ sở, tất cả trả HTTP 200:
+
+| API | Thời gian gồm mạng |
+| --- | ---: |
+| Danh sách 10/11.332 hợp đồng | 748 / 230 / 213 ms |
+| Thống kê toàn cơ sở | 232 / 206 / 203 ms |
+| Form xe trả | 214 / 163 / 261 ms |
+
+Đây là các mẫu sau triển khai, không phải p95 hoặc kiểm thử tải. Không POST trả xe/thu chi hoặc gửi Telegram thật. Các mẫu production trước đó còn có thống kê 9–18 giây; kết quả bảng trên được lấy sau khi bản truy vấn tách lịch sử đã triển khai.
 
 ## Bằng chứng
 
