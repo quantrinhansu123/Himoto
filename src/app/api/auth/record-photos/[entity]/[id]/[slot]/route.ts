@@ -4,10 +4,11 @@ import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { RecordPhotoError, parsePhotoTarget, requirePhotoRecord,requireContractPhotoSlot, writeRecordPhoto, deleteRecordPhoto } from '@/lib/server/record-photos';
 import { MAX_PHOTO_BYTES } from '@/lib/management/record-photos';
-import { verifyPhotoReceipt, writeCloudinaryPhoto, readCloudinaryPhoto, cleanupConvertedVideo, type CloudPhotoReceipt } from '@/lib/server/cloudinary-photos';
+import { verifyPhotoReceipt, writeCloudinaryPhoto, readCloudinaryPhoto, cleanupConvertedVideo, prepareCloudPhoto, type CloudPhotoReceipt } from '@/lib/server/cloudinary-photos';
 import { objectVideoUrl } from '@/lib/server/cloudfly-videos';
 import { isBrowserVideoReceipt, verifyBrowserVideoReceipt, writeBrowserVideoPhoto } from '@/lib/server/browser-videos';
 import { failureResponse } from '@/lib/server/public-failure';
+import { objectMediaUrl, cloudflyPhotosEnabled, storeObjectPhoto, objectPhotoPreviewUrl, photoPreviewUrl, boundedObjectBytes, legacyMediaObject } from '@/lib/server/object-media';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -40,6 +41,7 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
     if (writing && !user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
     const direct = writing && !data && user && isBrowserVideoReceipt(receiptBody) ? verifyBrowserVideoReceipt(receiptBody, user.id) : undefined;
     const receipt: CloudPhotoReceipt | undefined = writing && !data && user && !direct ? verifyPhotoReceipt(receiptBody, user.id) : undefined;
+    const prepared = user&&cloudflyPhotosEnabled()?(data?await storeObjectPhoto(data,request.headers.get('content-type')||'',user.id):receipt&&receipt.resource_type!=='video'?await prepareCloudPhoto(receipt,user.id):undefined):undefined;
     client = await himotoPool.connect();
     await client.query('BEGIN');
     if(writing)await requireContractPhotoSlot(client,target.entity,target.id,raw.slot);
@@ -48,21 +50,31 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
       if (direct) {
         await writeBrowserVideoPhoto(client,target.entity,target.id,raw.slot,user.id,direct);
       }
-      else if (receipt) { await requirePhotoRecord(client, target.entity, target.id); await writeCloudinaryPhoto(client, target.entity, target.id, raw.slot, user.id, receipt); }
-      else await writeRecordPhoto(client, target.entity, target.id, raw.slot, request.headers.get('content-type') || '', data!, user.id);
+      else if (receipt) { await requirePhotoRecord(client, target.entity, target.id); await writeCloudinaryPhoto(client, target.entity, target.id, raw.slot, user.id, receipt, prepared); }
+      else await writeRecordPhoto(client, target.entity, target.id, raw.slot, request.headers.get('content-type') || '', data!, user.id, prepared);
       response = NextResponse.json({ status: 'success' });
     } else {
       await requirePhotoRecord(client, target.entity, target.id, false);
-      const result = await client.query('SELECT mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3', [target.entity, target.id, raw.slot]);
+      const result = await client.query('SELECT mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag,xmin::text AS revision FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3', [target.entity, target.id, raw.slot]);
       if (!result.rowCount) throw new RecordPhotoError('Chưa có ảnh.', 404);
       await client.query('COMMIT'); client.release(); client = undefined;
       const photo = result.rows[0];
-      if (photo.object_key) response = NextResponse.redirect(await objectVideoUrl(photo), 307);
+      if(request.nextUrl.searchParams.get('preview')==='1'&&photo.mime_type!=='video/mp4'&&cloudflyPhotosEnabled()){
+        const preview=photo.object_key?await objectPhotoPreviewUrl(photo,photo.mime_type):await photoPreviewUrl(photo.cloudinary_public_id
+          ?`cloudinary:${photo.cloudinary_cloud_name}:${photo.cloudinary_public_id}:${photo.cloudinary_version}`
+          :`record:${target.entity}:${target.id}:${raw.slot}:${photo.revision}`,async()=>photo.data!=null?Buffer.from(photo.data):boundedObjectBytes((await readCloudinaryPhoto(photo)).body!,2097152));
+        response=NextResponse.redirect(preview,307);
+      }
+      else if (photo.object_key) response = NextResponse.redirect(await (photo.mime_type==='video/mp4'?objectVideoUrl(photo):objectMediaUrl(photo,photo.mime_type)), 307);
       else if (photo.cloudinary_public_id) {
+        const archived=await legacyMediaObject(photo);
+        if(archived)response=NextResponse.redirect(await objectMediaUrl(archived,photo.mime_type),307);
+        else {
         const remote = await readCloudinaryPhoto(photo,request.headers.get('range'));
         const headers:Record<string,string>={'Content-Type':photo.mime_type,'X-Content-Type-Options':'nosniff','Content-Disposition':`inline; filename="${photo.mime_type==='video/mp4'?'video-hop-dong.mp4':'anh-ho-so.jpg'}"`};
         for(const key of ['Content-Length','Content-Range','Accept-Ranges']){const value=remote.headers.get(key);if(value)headers[key]=value;}
         response = new NextResponse(remote.body, {status:remote.status,headers});
+        }
       } else response = new NextResponse(new Uint8Array(photo.data), { headers: { 'Content-Type': photo.mime_type, 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline; filename="anh-ho-so"' } });
     }
     if (client) { await client.query('COMMIT'); client.release(); client = undefined; }

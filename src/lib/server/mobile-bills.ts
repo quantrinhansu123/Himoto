@@ -16,6 +16,7 @@ import { nextContractRenewalVersion } from "./contract-renewal-version";
 import { RecordPhotoError, validatePhotoBytes, writeRecordPhoto } from "./record-photos";
 import { idempotentMobileWrite, mobileRequestKey } from "./mobile-writes";
 import { readCloudinaryPhoto } from "./cloudinary-photos";
+import {cloudflyPhotosEnabled,storeObjectPhoto,readObjectMedia} from './object-media';
 import { renewalCollectionPeriod, RenewalCollectionPeriodError } from "./renewal-collection-period";
 
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -77,11 +78,11 @@ async function receipt(client: PoolClient, user: SessionUser, key: string, audie
     throw new MobileError("Kết quả lưu bill cần đối chiếu.",409,"INVALID_WRITE_RECEIPT");
   if (!(await client.query("SELECT id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL",[id])).rowCount)
     throw new MobileError("Hợp đồng đã ra ngoài phạm vi truy cập hiện tại.",403,"FORBIDDEN");
-  const photo = (await client.query(`SELECT xmin::text AS revision,data FROM himoto.management_record_photos
+  const photo = (await client.query(`SELECT xmin::text AS revision,data,storage_sha256 FROM himoto.management_record_photos
     WHERE entity_type='contracts' AND entity_id=$1 AND slot=$2`,[id,row.slot])).rows[0];
   const result = {id,revision:String(row.resource_revision),replayed:true,version:Number(row.renewal_version),slot:row.slot,
     sha256:String(row.sha256).trim(),photoRevision:String(row.photo_revision),bytes:Number(row.byte_count),
-    current:!!photo && String(photo.revision)===String(row.photo_revision) && photo.data!=null && digest(photo.data)===String(row.sha256).trim()};
+    current:!!photo && String(photo.revision)===String(row.photo_revision) && (photo.data!=null?digest(photo.data):photo.storage_sha256)===String(row.sha256).trim()};
   if (!isMobileBillReceipt(result)) throw new MobileError("Kết quả lưu bill cần đối chiếu.",409,"INVALID_WRITE_RECEIPT");
   return result;
 }
@@ -100,7 +101,7 @@ async function photoSnapshot(user: SessionUser, value: string, versionValue: str
   return transaction(user,false,async client=>{
     if(!(await client.query("SELECT id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL",[found.id])).rowCount)
       throw new MobileError("Không tìm thấy hợp đồng.",404,"NOT_FOUND");
-    const photo=(await client.query(`SELECT xmin::text AS revision,mime_type,updated_at,octet_length(data) AS byte_count${withData?",data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version":""}
+    const photo=(await client.query(`SELECT xmin::text AS revision,mime_type,updated_at,COALESCE(storage_bytes,octet_length(data)) AS byte_count${withData?",data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag":""}
       FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND slot=$2`,[found.id,found.slot])).rows[0];
     const info:MobileBillInfo={...found,photoRevision:photo?String(photo.revision):null,mimeType:photo?.mime_type??null,
       bytes:photo?.byte_count==null?null:Number(photo.byte_count),updatedAt:photo?new Date(photo.updated_at).toISOString():null};
@@ -119,10 +120,10 @@ export async function readMobileBillImage(user: SessionUser, value: string, vers
   if(!photo)throw new MobileError("Chưa có ảnh bill.",404,"NOT_FOUND");
   if(info.photoRevision!==revision)throw new MobileError("Ảnh bill đã thay đổi. Tải lại để xem đúng ảnh hiện tại.",409,"BILL_CONFLICT");
   if(photo.data!=null) return{data:new Uint8Array(photo.data),mimeType:info.mimeType!,revision};
-  if(!photo.cloudinary_public_id)throw new MobileError("Không đọc được ảnh bill. Kiểm tra hồ sơ trên web.",409,"BILL_REVIEW_REQUIRED");
+  if(!photo.cloudinary_public_id&&!photo.object_key)throw new MobileError("Không đọc được ảnh bill. Kiểm tra hồ sơ trên web.",409,"BILL_REVIEW_REQUIRED");
   // Proxy trusted storage bytes after releasing the DB transaction. The device
   // never sends its bearer token to a storage redirect or third-party host.
-  const remote=await readCloudinaryPhoto(photo),reader=remote.body?.getReader();
+  const remote=photo.object_key?await readObjectMedia(photo,info.mimeType!):await readCloudinaryPhoto(photo),reader=remote.body?.getReader();
   if(!remote.ok || !reader)throw new MobileError("Chưa tải được ảnh bill. Thử lại.",503,"SERVICE_UNAVAILABLE");
   const chunks:Uint8Array[]=[];let size=0;
   try{while(true){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.byteLength;
@@ -141,6 +142,7 @@ export async function uploadMobileRenewalBill(user: SessionUser, value: string, 
   const historical=request.headers.get("x-renewal-backfill"),backfill=historical==="1";
   if(historical!==null&&(!backfill||audience!=="renewal"))throw new MobileError("Chế độ bill lịch sử không hợp lệ.",400,"INVALID_BILL");
   const data=await readBytes(request),sha256=digest(data),slot=`renewal-${version}-document-1`;
+  const storedPhoto=cloudflyPhotosEnabled()?await storeObjectPhoto(data,'image/jpeg',user.id,key):undefined;
   return transaction(user,true,async client=>{
     const saved=await idempotentMobileWrite(client,user.id,key,`${operation(audience)}:${id}`,{id,version,revision,expected,sha256,bytes:data.length,...(backfill?{backfill:true}:{})},async()=>{
       const order=(await client.query("SELECT xmin::text AS revision,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",[id])).rows[0];
@@ -163,7 +165,7 @@ export async function uploadMobileRenewalBill(user: SessionUser, value: string, 
         WHERE entity_type='contracts' AND entity_id=$1 AND slot=$2 FOR UPDATE`,[id,slot])).rows[0];
       if((previous?.revision??"0")!==expected)
         throw new MobileError("Bill đã được người khác thay đổi. Đối chiếu ảnh hiện tại trước khi thay thế.",409,"BILL_CONFLICT");
-      await writeRecordPhoto(client,"contracts",id,slot,"image/jpeg",data,user.id);
+      await writeRecordPhoto(client,"contracts",id,slot,"image/jpeg",data,user.id,storedPhoto);
       const photo=(await client.query(`SELECT xmin::text AS revision FROM himoto.management_record_photos
         WHERE entity_type='contracts' AND entity_id=$1 AND slot=$2`,[id,slot])).rows[0];
       if(!validPaymentRevision(photo?.revision))throw new MobileError("Chưa xác nhận được bill đã lưu. Giữ mã để đối chiếu.",503,"INVALID_WRITE_RECEIPT");

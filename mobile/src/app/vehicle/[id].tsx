@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import {
   FlatList,
@@ -17,15 +17,10 @@ import {
   FilePenLine,
   Files,
   FileText,
-  History,
-  Info,
   RefreshCw,
-  RotateCcw,
   Truck,
 } from "lucide-react-native";
-import type { MobileRecord } from "@himoto/mobile-contract";
 import { VEHICLE_HISTORY_ACTIONS } from "../../../../shared/mobile-vehicles";
-import { recordPreviewKey } from "@/lib/record-preview";
 import { useSession } from "@/providers/session";
 import { Button, Card, InlineError, StateView, StatusBadge } from "@/components/ui";
 import { SectionTabs } from "@/components/section-tabs";
@@ -45,7 +40,6 @@ const TABS = [
 function VehicleProfile({ id }: { id: string }) {
   const { api, session } = useSession();
   const theme = useTheme();
-  const cache = useQueryClient();
   const [activeTab, setActiveTab] = useState<VehicleTab>("details");
 
   // History Tab states

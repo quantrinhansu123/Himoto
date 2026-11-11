@@ -1,3 +1,4 @@
+import { withRequestDeadline } from '@/lib/request-deadline';
 export interface ReturnableContractItem {
   item_id: number; order_id: number; contract_code: string; order_status: string; customer_name: string;
   customer_id_card: string; vehicle_id: number; vehicle_name: string; license: string; store_id: number;
@@ -17,11 +18,15 @@ export class ContractReturnRequestError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 async function returnRequest<T>(path: string, input?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { method: input ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store', signal,
+  return withRequestDeadline(async requestSignal => {
+  const response = await fetch(path, { method: input ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store', signal:requestSignal,
     headers: { Accept: 'application/json', ...(input ? { 'Content-Type': 'application/json' } : {}) }, ...(input ? { body: JSON.stringify(input) } : {}) });
   const result = await response.json().catch(() => null);
   if (!response.ok || result?.status !== 'success') throw new Error(result?.message || `Không thực hiện được thao tác trả xe (HTTP ${response.status}).`);
   return result.data as T;
+  }, input ? 90_000 : 45_000, input
+    ? 'Chưa nhận được kết quả trả xe. Tải lại trạng thái hợp đồng và kiểm tra khoản thu / hoàn trước khi xác nhận lại; yêu cầu có thể đã được lưu.'
+    : 'Tải thông tin trả xe quá lâu. Vui lòng thử lại.', signal);
 }
 export function searchReturnableItems(query: string, signal?: AbortSignal) {
   return returnRequest<ReturnableContractItem[]>(`/api/auth/returns?${new URLSearchParams({ query })}`, undefined, signal);

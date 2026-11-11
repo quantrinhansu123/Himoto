@@ -233,6 +233,14 @@ export function CatalogueScreen({
     ...new Map(query.data?.pages.flatMap(page => page.rows).map(row => [row.id, row])).values(),
   ], [query.data]);
   const renderRecord = useCallback(({ item }: { item: MobileRecord }) => <RecordCard record={item} kind={kind} scope={scope} />, [kind, scope]);
+  const statusCountsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const counts = query.data?.pages[0]?.statusCounts;
+    if (Array.isArray(counts)) {
+      for (const [st, cnt] of counts) map.set(st, cnt);
+    }
+    return map;
+  }, [query.data]);
   if (!allowed)
     return (
       <StateView
@@ -254,16 +262,6 @@ export function CatalogueScreen({
       : stores.find((item) => String(item.id) === store)?.name ||
         "Cơ sở được phân công";
   const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source");
-  const statusCountsMap = useMemo(() => {
-    const map = new Map<string, number>();
-    const counts = query.data?.pages[0]?.statusCounts;
-    if (Array.isArray(counts)) {
-      for (const [st, cnt] of counts) {
-        map.set(st, cnt);
-      }
-    }
-    return map;
-  }, [query.data]);
 
   const quickStatuses = [
     ...new Set(["", ...settings.quickStatuses, ...(status ? [status] : [])]),

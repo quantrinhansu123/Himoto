@@ -14,7 +14,7 @@ async function run(){
     INSERT INTO himoto.orders SELECT n,201,23,NULL FROM generate_series(101,106) n;
     CREATE TABLE himoto.customers(id bigint PRIMARY KEY,store_id bigint);INSERT INTO himoto.customers VALUES(201,23);
     CREATE TABLE himoto.management_record_photos(entity_type text,entity_id bigint,slot text,mime_type text,data bytea,updated_by bigint,updated_at timestamptz DEFAULT now(),
-      cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,PRIMARY KEY(entity_type,entity_id,slot));
+      cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,object_bucket text,object_key text,object_etag text,storage_sha256 text,storage_bytes bigint,PRIMARY KEY(entity_type,entity_id,slot));
     INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by) VALUES('customers',201,'id_front','image/jpeg',decode('ffd8ff01','hex'),7);
     CREATE FUNCTION himoto.access_store(id bigint) RETURNS boolean LANGUAGE sql STABLE AS $$SELECT current_setting('himoto.scope_all',true)='true' OR id=NULLIF(current_setting('himoto.store_id',true),'')::bigint$$;
     GRANT USAGE ON SCHEMA himoto TO himoto_scoped;GRANT SELECT,UPDATE ON himoto.orders TO himoto_scoped;GRANT SELECT ON himoto.customers TO himoto_scoped;

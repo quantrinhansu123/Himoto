@@ -90,11 +90,16 @@ export async function deleteRecordPhoto(client: Pick<PoolClient, 'query'>, entit
   const result = await client.query('DELETE FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3 RETURNING slot', [entity, id, slot]);
   if (!result.rowCount) throw new RecordPhotoError('Chưa có ảnh.', 404);
 }
-export async function writeRecordPhoto(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, slot: string, type: string, data: Buffer, actorId: number) {
+export async function writeRecordPhoto(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, slot: string, type: string, data: Buffer, actorId: number, prepared?: import('./object-media').StoredPhoto) {
   if(/-video-[1-3]$/.test(slot))throw new RecordPhotoError('Video cần tải qua Cloudinary.');
   validatePhotoBytes(type, data);
   await requirePhotoRecord(client, entity, id);
+  const objects = await import('./object-media');
+  if (objects.cloudflyPhotosEnabled()) {
+    await objects.saveObjectRecordPhoto(client,entity,id,slot,actorId,prepared || await objects.storeObjectPhoto(data,type,actorId));
+    return;
+  }
   await client.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by)
     VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(entity_type,entity_id,slot)
-    DO UPDATE SET mime_type=EXCLUDED.mime_type,data=EXCLUDED.data,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=NULL,cloudinary_cloud_name=NULL,cloudinary_version=NULL,object_bucket=NULL,object_key=NULL,object_etag=NULL`, [entity, id, slot, type, data, actorId]);
+    DO UPDATE SET mime_type=EXCLUDED.mime_type,data=EXCLUDED.data,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=NULL,cloudinary_cloud_name=NULL,cloudinary_version=NULL,object_bucket=NULL,object_key=NULL,object_etag=NULL,storage_sha256=NULL,storage_bytes=NULL`, [entity, id, slot, type, data, actorId]);
 }

@@ -162,7 +162,7 @@ export async function readMobilePage(
         `SELECT entity_id,xmin::text AS revision FROM himoto.management_record_photos
          WHERE entity_type='vehicles' AND entity_id=ANY($1::bigint[]) AND slot='vehicle-photo'
          AND mime_type IN ('image/jpeg','image/png','image/webp')
-         AND (data IS NOT NULL OR cloudinary_public_id IS NOT NULL AND cloudinary_cloud_name IS NOT NULL)
+         AND (data IS NOT NULL OR cloudinary_public_id IS NOT NULL AND cloudinary_cloud_name IS NOT NULL OR object_key IS NOT NULL AND object_bucket IS NOT NULL AND object_etag IS NOT NULL)
          AND (data IS NULL OR octet_length(data) BETWEEN 1 AND 2097152)`, [data.rows.map(row => row.id)],
       ) : { rows: [] };
       const thumbnailRevisions = new Map(thumbnails.rows.map(row => [Number(row.entity_id), String(row.revision)]));

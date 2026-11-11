@@ -14,14 +14,20 @@ export const maxDuration=300;
 async function GETHandler(request: NextRequest) {
   const denied = await protectDatabaseRequest(request);
   if (denied) return denied;
+  let client;
   try {
     const query = request.nextUrl.searchParams.get('query') || '';
     const rawOrderId = request.nextUrl.searchParams.get('order_id');
-    const data = rawOrderId ? await loadContractReturnableItems(himotoPool, Number(rawOrderId),request.nextUrl.searchParams.get('recovery')==='1') : await searchReturnableItems(himotoPool, query);
+    client=await himotoPool.connect();
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await client.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='3s'");
+    const data = rawOrderId ? await loadContractReturnableItems(client, Number(rawOrderId),request.nextUrl.searchParams.get('recovery')==='1') : await searchReturnableItems(client, query);
+    await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
+    if(client)await client.query('ROLLBACK').catch(()=>{});
     return failureResponse('Không tải được danh sách xe cần trả.', error);
-  }
+  } finally {client?.release();}
 }
 
 async function POSTHandler(request: NextRequest) {
@@ -36,6 +42,7 @@ async function POSTHandler(request: NextRequest) {
     const settlements=parseReturnSettlements(body?.settlements);
     client = await himotoPool.connect();
     await client.query('BEGIN');
+    await client.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='3s'");
     const results = await completeReturnBatch(client,user.id,inputs,settlements);
     const returned=(await client.query('SELECT id,order_id FROM himoto.order_vehicle_details WHERE id=ANY($1::bigint[])',[inputs.map(input=>input.item_id)])).rows;
     const byOrder=new Map<number,number[]>();for(const row of returned){const orderId=Number(row.order_id);byOrder.set(orderId,[...(byOrder.get(orderId)||[]),Number(row.id)]);}

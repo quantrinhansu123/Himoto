@@ -55,7 +55,7 @@ async function run(){
         CREATE TABLE himoto.order_vehicle_details(id bigint PRIMARY KEY,order_id bigint,vehicle_id bigint,deleted_at timestamptz);INSERT INTO himoto.order_vehicle_details VALUES(301,101,303,NULL);
         CREATE TABLE himoto.management_contract_vehicle_swaps(id bigint PRIMARY KEY,order_id bigint,from_vehicle_id bigint,to_vehicle_id bigint);
         CREATE TABLE himoto.management_record_photos(entity_type text,entity_id bigint,slot text,mime_type text,data bytea,updated_by bigint,updated_at timestamptz NOT NULL DEFAULT now(),
-          cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,object_bucket text,object_key text,object_etag text,PRIMARY KEY(entity_type,entity_id,slot));
+          cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,object_bucket text,object_key text,object_etag text,storage_sha256 text,storage_bytes bigint,PRIMARY KEY(entity_type,entity_id,slot));
         CREATE FUNCTION himoto.access_actor() RETURNS bigint LANGUAGE sql STABLE AS $$SELECT NULLIF(current_setting('himoto.actor_id',true),'')::bigint$$;
         CREATE FUNCTION himoto.access_store(id bigint) RETURNS boolean LANGUAGE sql STABLE AS $$SELECT current_setting('himoto.scope_all',true)='true' OR id=NULLIF(current_setting('himoto.store_id',true),'')::bigint$$;
         CREATE FUNCTION himoto.vehicle_inventory() RETURNS TABLE(id bigint,name text,license text,type text,status text,store_id bigint,store_name text) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,himoto AS $$SELECT v.id,v.name,v.license,v.type,v.status,v.store_id,s.store_name FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=v.store_id WHERE himoto.access_actor() IS NOT NULL$$;

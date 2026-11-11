@@ -219,11 +219,11 @@ export function mapMediaPhoto(target:MobileMediaIdentity,row:Record<string,unkno
   const video=kind==='video'&&mimeType==='video/mp4'&&/-video-[1-3]$/.test(text(row.slot));
   const blockedReason=video?(bytes!==null&&(bytes===0||bytes>45*1024*1024)?'Video vượt giới hạn xem hoặc không có dữ liệu.':row.has_data!==true&&row.has_cloud!==true&&row.has_object!==true?'Chưa đọc được nguồn video này.':null):kind!=='image'||/-video-[1-3]$/.test(text(row.slot))?'Định dạng chưa hỗ trợ xem trong ứng dụng.':
     bytes!==null&&(bytes===0||bytes>2*1024*1024)?'Ảnh vượt giới hạn xem hoặc không có dữ liệu.':
-    row.has_data!==true&&row.has_cloud!==true?'Chưa đọc được nguồn ảnh này.':null;
+    row.has_data!==true&&row.has_cloud!==true&&row.has_object!==true?'Chưa đọc được nguồn ảnh này.':null;
   return{slot:text(row.slot),label:mediaPhotoLabel(target,text(row.slot)),revision:String(row.revision),mimeType,bytes,
     updatedAt:row.updated_at instanceof Date?row.updated_at.toISOString():new Date(String(row.updated_at)).toISOString(),kind,readable:blockedReason===null,blockedReason};
 }
-const photoSql='SELECT slot,xmin::text AS revision,mime_type,updated_at,octet_length(data) AS byte_count,'+
+const photoSql='SELECT slot,xmin::text AS revision,mime_type,updated_at,COALESCE(storage_bytes,octet_length(data)) AS byte_count,'+
   '(data IS NOT NULL) AS has_data,(cloudinary_public_id IS NOT NULL AND cloudinary_cloud_name IS NOT NULL) AS has_cloud,(object_bucket IS NOT NULL AND object_key IS NOT NULL AND object_etag IS NOT NULL) AS has_object '+
   'FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2';
 export async function readMobileRecordMedia(user:SessionUser,raw:Params,request:NextRequest):Promise<MobileRecordMedia> {
@@ -267,7 +267,7 @@ export async function readMobileRecordMediaImage(user:SessionUser,raw:Params,slo
   const query=parseMobileMediaImage(raw,slot,request);requireMedia(user,query.target);
   const image=await withMobileMedia(user,query.target,async db=>{
     await readMediaTarget(db,query.target);await requireContractPhotoSlot(db,query.target.entity,query.target.id,slot);
-    const row=(await db.query(photoSql.replace('FROM himoto.management_record_photos',',data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version FROM himoto.management_record_photos')+
+    const row=(await db.query(photoSql.replace('FROM himoto.management_record_photos',',data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag FROM himoto.management_record_photos')+
       ' AND slot=$3',[query.target.entity,query.target.id,slot])).rows[0];
     if(!row)throw new MobileError('Chưa có ảnh trong ô này.',404,'NOT_FOUND');
     const photo=mapMediaPhoto(query.target,row);
@@ -281,7 +281,9 @@ export async function readMobileRecordMediaImage(user:SessionUser,raw:Params,slo
     // Import outside the read-only DB transaction; no storage URL/redirect is
     // returned to a device carrying its Himoto bearer token.
     const {readCloudinaryPhoto}=await import('./cloudinary-photos');
-    const remote=await readCloudinaryPhoto(image.row as {cloudinary_public_id:string;cloudinary_cloud_name:string;cloudinary_version:number;mime_type:string});
+    const remote=image.row.object_key
+      ?await (await import('./object-media')).readObjectMedia(image.row as import('./object-media').ObjectMediaRef,image.photo.mimeType)
+      :await readCloudinaryPhoto(image.row as {cloudinary_public_id:string;cloudinary_cloud_name:string;cloudinary_version:number;mime_type:string});
     const reader=remote.body?.getReader();
     if(!remote.ok||!reader)throw new MobileError('Chưa tải được ảnh. Thử lại.',503,'SERVICE_UNAVAILABLE');
     const chunks:Uint8Array[]=[];let length=0;

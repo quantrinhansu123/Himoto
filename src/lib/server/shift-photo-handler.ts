@@ -6,6 +6,7 @@ import { dataAccess } from '@/lib/server/access-context';
 import { hasPermission } from '@/lib/management/permissions';
 import { ShiftRequestError, shiftRequestId, shiftRequestHash, readShiftReceipt, writeShiftReceipt } from '@/lib/server/shift-report-requests';
 import { failureResponse } from '@/lib/server/public-failure';
+import {cloudflyPhotosEnabled,storeObjectPhoto,readObjectMedia} from './object-media';
 
 type Context = { params: Promise<{ id: string; slot: string }> };
 export async function handleShiftPhoto(request: NextRequest, context: Context) {
@@ -17,10 +18,11 @@ export async function handleShiftPhoto(request: NextRequest, context: Context) {
   try {
     if (request.method === 'GET') {
       // One MVCC read: no row locks or multi-query transaction for image views.
-      const photo = (await himotoPool.query(`SELECT p.mime_type,p.data FROM himoto.management_shift_photos p
+      const photo = (await himotoPool.query(`SELECT p.mime_type,p.data,p.object_bucket,p.object_key,p.object_etag FROM himoto.management_shift_photos p
         JOIN himoto.management_shift_reports r ON r.id=p.report_id AND r.store_id=p.store_id
         WHERE r.id=$1 AND p.slot=$2`, [id,slot])).rows[0];
       if (!photo) return NextResponse.json({ message: 'Chưa có ảnh.' }, { status: 404 });
+      if(photo.object_key){const remote=await readObjectMedia(photo,photo.mime_type);return new Response(remote.body,{headers:{'Content-Type':photo.mime_type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});}
       return new Response(new Uint8Array(photo.data), { headers: { 'Content-Type': photo.mime_type, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
     }
     let bytes: Buffer | undefined;
@@ -36,6 +38,7 @@ export async function handleShiftPhoto(request: NextRequest, context: Context) {
       while (true) { const part = await reader.read(); if (part.done) break; size += part.value.length; if (size > 2097152) { await reader.cancel(); throw new Error('Mỗi ảnh tối đa 2 MB.'); } parts.push(part.value); }
       bytes = Buffer.concat(parts); validatePhotoBytes(mime, bytes);
     }
+    const storedPhoto=bytes&&cloudflyPhotosEnabled()?await storeObjectPhoto(bytes,mime,user!.id,requestId||undefined):undefined;
     client = await himotoPool.connect(); await client.query('BEGIN');
     const hash = request.method === 'PUT' ? shiftRequestHash(JSON.stringify({ actor: user!.id, id, slot, revision, mime }), bytes!) : '';
     const receipt = await readShiftReceipt(client, requestId, user!.id, hash);
@@ -45,8 +48,8 @@ export async function handleShiftPhoto(request: NextRequest, context: Context) {
     if (report.status !== 'draft') { await client.query('ROLLBACK'); return NextResponse.json({ message: 'Báo cáo đã chốt, không thể thay ảnh.' }, { status: 409 }); }
     const updated = await client.query('UPDATE himoto.management_shift_reports SET revision=revision+1,updated_at=now() WHERE id=$1 AND revision=$2 RETURNING revision', [id,revision]);
     if (!updated.rowCount) { await client.query('ROLLBACK'); return NextResponse.json({ message: 'Báo cáo đã thay đổi. Mở lại trước khi thay ảnh.' }, { status: 409 }); }
-    await client.query(`INSERT INTO himoto.management_shift_photos(report_id,store_id,slot,mime_type,data) VALUES($1,$2,$3,$4,$5)
-      ON CONFLICT(report_id,slot) DO UPDATE SET mime_type=EXCLUDED.mime_type,data=EXCLUDED.data`, [id,report.store_id,slot,mime,bytes]);
+    await client.query(`INSERT INTO himoto.management_shift_photos(report_id,store_id,slot,mime_type,data,object_bucket,object_key,object_etag,storage_sha256,storage_bytes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT(report_id,slot) DO UPDATE SET mime_type=EXCLUDED.mime_type,data=EXCLUDED.data,object_bucket=EXCLUDED.object_bucket,object_key=EXCLUDED.object_key,object_etag=EXCLUDED.object_etag,storage_sha256=EXCLUDED.storage_sha256,storage_bytes=EXCLUDED.storage_bytes`, [id,report.store_id,slot,mime,storedPhoto?null:bytes,storedPhoto?.object_bucket??null,storedPhoto?.object_key??null,storedPhoto?.object_etag??null,storedPhoto?.storage_sha256??null,storedPhoto?.storage_bytes??null]);
     const saved = { revision: updated.rows[0].revision };
     await writeShiftReceipt(client, requestId, user!.id, Number(report.store_id), hash, saved);
     await client.query('COMMIT'); return NextResponse.json({ data: saved });

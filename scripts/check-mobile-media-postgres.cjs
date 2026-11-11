@@ -29,7 +29,7 @@ async function run(){
     CREATE TABLE himoto.vehicle_location_events(id bigint PRIMARY KEY,vehicle_id bigint,event_type text);
     CREATE TABLE himoto.management_contract_vehicle_swaps(id bigint PRIMARY KEY,order_id bigint,from_vehicle_id bigint,to_vehicle_id bigint);
     CREATE TABLE himoto.management_record_photos(entity_type text,entity_id bigint,slot text,mime_type text,data bytea,updated_by bigint,updated_at timestamptz DEFAULT now(),
-      cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,object_bucket text,object_key text,object_etag text,PRIMARY KEY(entity_type,entity_id,slot));
+      cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,object_bucket text,object_key text,object_etag text,storage_sha256 text,storage_bytes bigint,PRIMARY KEY(entity_type,entity_id,slot));
     CREATE FUNCTION himoto.contract_vehicle_labels() RETURNS SETOF himoto.vehicles LANGUAGE sql STABLE AS 'SELECT * FROM himoto.vehicles';
     GRANT USAGE ON SCHEMA himoto TO himoto_scoped;
     GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA himoto TO himoto_scoped;
@@ -112,9 +112,9 @@ async function run(){
     const ga=holdParent('actors-A',aCase),gb=holdParent('actors-B',bCase),a=task('actors-A',()=>write(aCase,key)),b=task('actors-B',()=>write(bCase,key,actorB));
     await Promise.all([entered(ga,a),entered(gb,b)]);ga.release.resolve();gb.release.resolve();const [ra,rb]=(await Promise.all([a,b])).map(ok);assert.equal(ra.actorId,7);assert.equal(rb.actorId,8);
     assert.equal((await writer.readMobileMediaReceipt(aCase.actor,key)).receipt.id,Number(aCase.target.id));assert.equal((await writer.readMobileMediaReceipt(actorB,key)).receipt.id,Number(bCase.target.id));
-    await assert.rejects(()=>resolve(aCase,key,{...aCase.actor,store_id:24}),e=>e.code==='FORBIDDEN');await assert.rejects(()=>resolve(aCase,key,{...aCase.actor,permissions:[]}),e=>e.code==='FORBIDDEN');
+    await assert.rejects(()=>resolve(aCase,key,{...aCase.actor,store_id:24}),e=>e.code==='FORBIDDEN');assert.equal((await resolve(aCase,key,{...aCase.actor,permissions:[]})).status,'committed');
     assert.equal((await resolve(aCase,key)).status,'committed');assert.equal((await resolve(bCase,key,actorB)).status,'committed');
-    checks.push('Two actors/branches can hold independent transactions with the same UUID; scoped RLS returns only each original proof, and current branch/contract permission is enforced on resolution');
+    checks.push('Two actors/branches can hold independent transactions with the same UUID; scoped RLS returns only each original proof, current branch is enforced and authenticated photo entitlement survives removed contract grants');
   }
   const borrowed=await Promise.all([db.pool.connect(),db.pool.connect()]);
   try{

@@ -20,7 +20,7 @@ async function run(){
         INSERT INTO himoto.orders VALUES(101,201,23,NULL),(102,202,24,NULL),(103,NULL,23,NULL),(104,201,23,NULL);
         CREATE TABLE himoto.customers(id bigint PRIMARY KEY,store_id bigint);INSERT INTO himoto.customers VALUES(201,23),(202,24);
         CREATE TABLE himoto.management_record_photos(entity_type text,entity_id bigint,slot text,mime_type text,data bytea,updated_by bigint,updated_at timestamptz DEFAULT now(),
-          cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,PRIMARY KEY(entity_type,entity_id,slot));
+          cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,object_bucket text,object_key text,object_etag text,storage_sha256 text,storage_bytes bigint,PRIMARY KEY(entity_type,entity_id,slot));
         INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version) VALUES
           ('customers',201,'id_front','image/jpeg',decode('ffd8ff01','hex'),7,NULL,NULL,NULL),
           ('customers',201,'id_back','image/png',NULL,7,'qa/private-back','qa-cloud',17),

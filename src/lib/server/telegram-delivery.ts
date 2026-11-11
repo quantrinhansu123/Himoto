@@ -1,5 +1,6 @@
 import 'server-only';
-import { cloudinaryPhotoUrl, readCloudinaryPhoto } from './cloudinary-photos';
+import { cloudinaryPhotoUrl, legacyMediaUrl, readCloudinaryPhoto } from './cloudinary-photos';
+import { objectMediaUrl, readObjectMedia, boundedObjectBytes, legacyMediaObject } from './object-media';
 import { objectVideoByteLength, objectVideoUrl, readObjectVideo } from './cloudfly-videos';
 import { MAX_VIDEO_BYTES } from '@/lib/management/record-photos';
 import type { Attachment } from './contract-notification-content';
@@ -69,7 +70,11 @@ async function videoByUrl(photo: Attachment): Promise<Media | null> {
       return { url: await objectVideoUrl({ object_bucket: photo.object_bucket, object_key: photo.object_key, object_etag: photo.object_etag }), type: 'video/mp4' };
     }
     if (photo.cloudinary_public_id && photo.cloudinary_cloud_name) {
-      const url = cloudinaryPhotoUrl({ cloudinary_public_id: photo.cloudinary_public_id, cloudinary_cloud_name: photo.cloudinary_cloud_name, mime_type: 'video/mp4' }, 600);
+      const source={cloudinary_public_id:photo.cloudinary_public_id,cloudinary_cloud_name:photo.cloudinary_cloud_name,cloudinary_version:Number(photo.cloudinary_version),mime_type:'video/mp4'};
+      const archived=await legacyMediaObject(source);
+      if(archived)return Number(archived.storage_bytes)>0&&Number(archived.storage_bytes)<=TELEGRAM_URL_VIDEO_BYTES
+        ?{url:await objectMediaUrl(archived,'video/mp4',600),type:'video/mp4'}:null;
+      const url = cloudinaryPhotoUrl(source,600);
       const head = await fetch(url, { method: 'HEAD', cache: 'no-store', redirect: 'follow', signal: AbortSignal.timeout(10_000) });
       const size = Number(head.headers.get('content-length'));
       if (!head.ok || !Number.isFinite(size) || size <= 0 || size > TELEGRAM_URL_VIDEO_BYTES) return null;
@@ -79,10 +84,12 @@ async function videoByUrl(photo: Attachment): Promise<Media | null> {
   return null;
 }
 async function loadMedia(photo: Attachment, upload: boolean): Promise<Media> {
+  if (!upload && photo.object_key && photo.mime_type !== 'video/mp4') return {
+    url:await objectMediaUrl({object_bucket:photo.object_bucket!,object_key:photo.object_key,object_etag:photo.object_etag!},photo.mime_type,600),type:photo.mime_type};
   // Authenticated Cloudinary photos (and videos ≤20 MB) go to Telegram as a signed URL so
   // Vercel does not download+reupload. Larger videos still upload as bytes (Telegram URL cap).
   if (!upload && photo.cloudinary_public_id && photo.cloudinary_cloud_name && photo.mime_type !== 'video/mp4') {
-    return { url: cloudinaryPhotoUrl({ cloudinary_public_id: photo.cloudinary_public_id, cloudinary_cloud_name: photo.cloudinary_cloud_name, mime_type: photo.mime_type }), type: photo.mime_type };
+    return { url: await legacyMediaUrl({ cloudinary_public_id: photo.cloudinary_public_id, cloudinary_cloud_name: photo.cloudinary_cloud_name, cloudinary_version:Number(photo.cloudinary_version), mime_type: photo.mime_type }), type: photo.mime_type };
   }
   if (!upload && photo.mime_type === 'video/mp4') {
     const remote = await videoByUrl(photo);
@@ -90,7 +97,8 @@ async function loadMedia(photo: Attachment, upload: boolean): Promise<Media> {
   }
   let data: Buffer;
   try { data = photo.object_key
-    ? await readObjectVideo({ object_bucket: photo.object_bucket!, object_key: photo.object_key, object_etag: photo.object_etag! })
+    ? photo.mime_type==='video/mp4'?await readObjectVideo({ object_bucket: photo.object_bucket!, object_key: photo.object_key, object_etag: photo.object_etag! })
+      :await boundedObjectBytes((await readObjectMedia({ object_bucket: photo.object_bucket!, object_key: photo.object_key, object_etag: photo.object_etag! },photo.mime_type)).body!,2*1024*1024)
     : photo.cloudinary_public_id
     ? Buffer.from(await (await readCloudinaryPhoto({ cloudinary_public_id: photo.cloudinary_public_id, cloudinary_cloud_name: photo.cloudinary_cloud_name!, cloudinary_version: Number(photo.cloudinary_version), mime_type: photo.mime_type })).arrayBuffer())
     : Buffer.from(photo.bytes || '', 'base64');

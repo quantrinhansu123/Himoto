@@ -3,7 +3,6 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
   Linking,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,8 +11,6 @@ import {
 } from "react-native";
 import {
   Building2,
-  Calendar,
-  CreditCard,
   FilePenLine,
   FileText,
   Mail,
@@ -21,7 +18,6 @@ import {
   MessageSquare,
   Phone,
   ShieldAlert,
-  User,
 } from "lucide-react-native";
 import type { CatalogueKind, MobileRecord } from "@himoto/mobile-contract";
 import {
@@ -32,7 +28,7 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import { useSession } from "@/providers/session";
-import { dateTime, money, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { contextualStatusLabel } from "@/lib/catalogue-config";
 import { recordPreviewKey } from "@/lib/record-preview";
 import { ContractDetailView } from "@/components/contract-detail-view";
