@@ -2,7 +2,7 @@
 
 ## Kết luận
 
-Xác nhận hai vấn đề độc lập: truy vấn thông tin xe quá rộng trong luồng nhân viên cơ sở và tài khoản Cloudinary vượt hạn mức Free. Sau khi người dùng yêu cầu triển khai, đã bổ sung bốn covering index và schema kho ảnh trên production. Không thay đổi dòng nghiệp vụ hoặc phạm vi RLS.
+Xác nhận hai vấn đề độc lập: truy vấn thông tin xe/thống kê và wrapper kiểm tra quyền gây tốn tài nguyên trong luồng nhân viên cơ sở; tài khoản Cloudinary vượt hạn mức Free. Sau khi người dùng yêu cầu triển khai, đã bổ sung index và schema kho ảnh trên production. Không thay đổi dòng nghiệp vụ hoặc phạm vi được phép xem.
 
 Ảnh Infrastructure do người dùng cung cấp cho thấy compute Micro, CPU khoảng 93%, RAM khoảng 80%, Disk IO Balance 0%, trong khi dung lượng đĩa mới dùng 23%. Supabase giải thích hết Disk IO Budget sẽ làm instance bị giới hạn tốc độ: https://supabase.com/kb/troubleshooting/exhaust-disk-io. Đây là tài nguyên compute/I/O, không phải đầy đĩa hay bằng chứng project còn ở gói Free.
 
@@ -18,7 +18,16 @@ Xác nhận hai vấn đề độc lập: truy vấn thông tin xe quá rộng t
 | Nội dung Telegram thứ nhất | timeout 13.194 ms | 1.025 ms |
 | Nội dung Telegram thứ hai | timeout 23.746 ms tổng nhiều câu SQL | 1.172 ms |
 
-Tất cả bốn index đã được xác nhận `indisvalid=true`. Chỉ mục giữ nguyên SQL nghiệp vụ và kiểm tra quyền; cung cấp đường đọc thông tin xe/inventory mà không phải đọc heap JSON của toàn bộ lịch sử. Các phép đo là tầng dữ liệu, không phải p95 trang web hay bảo đảm tài nguyên Micro sẽ luôn đủ tải.
+Tất cả bốn index thông tin xe đã được xác nhận `indisvalid=true`. Chỉ mục giữ nguyên SQL nghiệp vụ và kiểm tra quyền; cung cấp đường đọc thông tin xe/inventory mà không phải đọc heap JSON của toàn bộ lịch sử. Các phép đo là tầng dữ liệu, không phải p95 trang web hay bảo đảm tài nguyên Micro sẽ luôn đủ tải.
+
+### Tối ưu thống kê và wrapper quyền
+
+- Thống kê tách đếm lịch sử đóng khỏi tính ngày/tiền cọc/kế hoạch trả góp. Ba index mới hỗ trợ hai nhóm hợp đồng và danh sách khách blacklist; cả ba hợp lệ. 11.332 hợp đồng cơ sở chỉ cần hydrate 55 hợp đồng phức tạp. Kết quả JSON của chi tiết giữ nguyên cách biểu diễn ngày/tiền của bản cũ.
+- `access_order_store(numeric)` là invoker nhưng có `SET search_path`, khiến PostgreSQL không inline. Đo cùng 11.332 dòng: wrapper cũ 4.117 ms; cùng biểu thức đặt trực tiếp 75 ms. Điều kiện inline được PostgreSQL mô tả tại https://wiki.postgresql.org/wiki/Inlining_of_SQL_functions.
+- Hai helper invoker chuyển sang SQL-standard body, bind dependency trong `search_path` tin cậy lúc định nghĩa; wrapper bỏ SET cục bộ. Không thay policy hoặc ACL. Helper ownership SECURITY DEFINER giữ nguyên cấu hình và nội dung.
+- PostgreSQL QA qua 36 lượt so sánh truth table/visibility trước, sau và chạy lại migration; bao gồm phạm vi cơ sở, trụ sở cho ownership, thiếu actor, target NULL, từ chối ghi khác cơ sở và caller search_path chứa hàm giả.
+- Production áp dụng trong transaction sau khi đối chiếu 20 ngữ cảnh, 180 kết quả target và 120 lượt kiểm tra hồ sơ: toàn bộ giống trước; OID/owner/ACL/invoker giữ nguyên. Chỉ commit khi các so sánh qua.
+- Đo cùng snapshot cơ sở sau sửa helper: bản thống kê cũ 826 ms; bản tách lịch sử 231 ms, kết quả trả về bằng nhau hoàn toàn. Test PostgreSQL riêng qua 24 trường hợp đối chiếu toàn bộ tổng tiền, công nợ, blacklist và trạng thái, gồm kiểu tiền cũ, nháp, trả góp, ngày từ dòng xe và RLS.
 
 ## Bản sửa ứng dụng và kiểm tra
 
@@ -32,7 +41,7 @@ Xem cấu hình, lệnh chuyển và giới hạn video tại [cloudfly-media](.
 
 ## Bằng chứng
 
-- GitHub deployment Production báo `success` cho commit `142dfb4`, tạo lúc 15:41:59 giờ Việt Nam.
+- Bản trước điều tra: GitHub deployment Production báo `success` cho commit `142dfb4`, tạo lúc 15:41:59 giờ Việt Nam. Bản chuyển CloudFly `57f933b` đã triển khai thành công lúc 21:27:44, kiểm tra thật API provider/upload/private URL/ảnh cũ/preview/quyền cơ sở qua 11 mục. Không dùng các mẫu này làm p95.
 - GET trang đăng nhập: HTTP 200, 479 ms. GET phiên chưa đăng nhập: HTTP 401, 111 ms. Đây chỉ là hai mẫu, không phải đánh giá tải toàn hệ thống.
 - Đọc đúng hai hợp đồng được phản ánh bằng quyền nhân viên cơ sở Nguyễn Hoàng, dùng cùng phạm vi và vai trò `himoto_scoped` như ứng dụng. Mỗi phép đo trong transaction READ ONLY, đặt `statement_timeout=12s`, rồi rollback.
 

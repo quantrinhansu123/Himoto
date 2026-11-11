@@ -8,7 +8,8 @@ Giữ `CLOUDFLY_S3_*` phía server đang dùng cho video. `PHOTO_STORAGE_PROVIDE
 
 Thứ tự triển khai:
 
-1. Chạy từng câu trong `docs/sql/2026-11-11-contract-vehicle-read-indexes.sql` ngoài transaction. Kiểm tra `indisvalid` của cả bốn index.
+1. Chạy từng câu trong `docs/sql/2026-11-11-contract-vehicle-read-indexes.sql` và `docs/sql/2026-11-11-contract-statistics-indexes.sql` ngoài transaction. Kiểm tra `indisvalid` của cả bảy index.
+   Áp dụng `docs/sql/2026-11-11-access-order-store-inline.sql` trong transaction: hai helper invoker dùng SQL body được bind từ lúc định nghĩa; wrapper được phép inline. Helper ownership có quyền cao vẫn giữ `search_path` riêng. Giữ nguyên owner, ACL và kết quả phạm vi; đối chiếu trước/sau trước khi commit.
 2. `node scripts/migrate-cloudfly-media.cjs --schema` bổ sung cột/check lưu ảnh và bảng ánh xạ. Không đổi RLS hồ sơ hay dữ liệu nghiệp vụ.
 3. Chạy kiểm tra, build rồi deploy web/backend từ cùng commit.
 4. `node scripts/migrate-cloudfly-media.cjs` thống kê; `node scripts/migrate-cloudfly-media.cjs --apply --limit 25 --concurrency 2` kiểm tra đợt nhỏ.
@@ -33,13 +34,15 @@ npm.cmd run test:release
 node scripts/check-cloudfly-photo-schema.cjs .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
 node scripts/check-mobile-customer-documents.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite --cloudfly
 node scripts/check-mobile-finance-sql.cjs --pglite-path .backups/mobile-sql-qa/node_modules/@electric-sql/pglite
+node scripts/check-contract-statistics-postgres.cjs
+node scripts/check-access-order-store-postgres.cjs
 npm.cmd run build
 ```
 
-PGlite ở đường dẫn trên là runtime QA cục bộ, không thuộc production dependencies. Test dùng fixture; không gửi Telegram hoặc ghi giao dịch vận hành.
+PGlite ở đường dẫn trên là runtime QA cục bộ, không thuộc production dependencies. Test thống kê dùng PostgreSQL QA riêng tại loopback cổng 55439, kiểm tra đúng cluster và chặn mạng ngoài. Test dùng fixture; không gửi Telegram hoặc ghi giao dịch vận hành.
 
 ## Theo dõi và quay lại
 
 Tiến độ, lỗi theo fingerprint nguồn: `.backups/cloudfly-media-migration/`. Không đưa signed URL, key hoặc ảnh thật vào log/Git. Theo dõi dung lượng và băng thông CloudFly riêng; copy và xác minh cũng sử dụng băng thông. Giữ bucket/credential sau khi chuyển vì dữ liệu mới đã dùng chúng.
 
-Khi có lỗi release, quay về commit triển khai trước và giữ nguyên schema/index/nguồn Cloudinary. Không tự xóa ánh xạ hoặc bản sao. Đặt `PHOTO_STORAGE_PROVIDER=cloudinary` chỉ tác động ảnh ghi mới; các reader của bản mới vẫn phải giữ khả năng đọc object đã lưu. Không chạy lifecycle xóa chung `himoto/photos`, `himoto/videos`, `himoto/legacy` hoặc `himoto/previews` khi chưa đối chiếu tham chiếu và chính sách lưu trữ.
+Khi có lỗi release, chỉ quay về bản đã hỗ trợ đọc ảnh CloudFly (từ `57f933b`) hoặc sửa tiếp trên nền bản đó; giữ nguyên schema/index/nguồn Cloudinary. Bản trước khi có reader ảnh object không đọc đầy đủ ảnh mới đã lưu. Không tự xóa ánh xạ hoặc bản sao. Đặt `PHOTO_STORAGE_PROVIDER=cloudinary` chỉ tác động ảnh ghi mới; các reader vẫn phải giữ khả năng đọc object đã lưu. Không chạy lifecycle xóa chung `himoto/photos`, `himoto/videos`, `himoto/legacy` hoặc `himoto/previews` khi chưa đối chiếu tham chiếu và chính sách lưu trữ.

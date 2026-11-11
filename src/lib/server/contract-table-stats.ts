@@ -63,21 +63,33 @@ export function mapContractStatistics(raw:Record<string,unknown>):ManagementRow{
  * Unknown/legacy money formats keep the ordinary JS path, never become zero. */
 export async function fastContractStatistics(db:Pick<PoolClient,'query'>,input:ManagementTableInput,scope:string,now:number){
  if(!['','vat'].includes(input.scope)||input.query.search.trim()||input.query.startDate||input.query.endDate||input.query.overdueDays||input.query.overdueBucket||Object.values(input.query.filters).some(Boolean)||['overdue','bad_debt'].includes(input.query.status))return;
- const result=(await db.query(`WITH source AS MATERIALIZED (${contractStatisticsSql(scope,input.scope==='vat')}),
-   split AS MATERIALIZED (SELECT *,status IN('draft','renting','overdue','wait_payment','reserved','bad_debt') OR installment_plan IS NOT NULL
-     OR NOT(total_amount IS NULL OR total_amount='' OR total_amount ~ '^[0-9]{1,13}$') AS needs_detail FROM source),
-   closed AS MATERIALIZED (SELECT * FROM split WHERE NOT needs_detail),
+ const needsDetail=`(o.order_status IN('draft','renting','overdue','wait_payment','reserved','bad_debt')
+   OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL
+   OR NOT(o.total IS NULL OR o.total='' OR o.total ~ '^[0-9]{1,13}$'))`;
+ // Classify history before resolving dates, deposits and billing JSON. A closed
+ // rental contributes counts/money only; those joins used to run for every row.
+ // Both reads share the caller's repeatable-read transaction and ordinary RLS.
+ const result=(await db.query(`WITH closed AS MATERIALIZED (
+     SELECT o.customer_id,o.order_status AS status,o.total AS total_amount
+     FROM himoto.orders o
+     WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND NOT ${needsDetail}${scope}),
+   blacklisted AS MATERIALIZED (SELECT id FROM himoto.customers WHERE status=2),
    selected AS (SELECT * FROM closed WHERE $1::text='' OR status=$1)
-   SELECT COALESCE((SELECT jsonb_agg(to_jsonb(s)) FROM split s WHERE needs_detail),'[]'::jsonb) AS detailed,
+   SELECT COALESCE((SELECT jsonb_agg(o.id) FROM himoto.orders o
+     WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND ${needsDetail}${scope}),'[]'::jsonb) AS detailed_ids,
      (SELECT count(*)::int FROM closed) AS closed_total,(SELECT count(*)::int FROM selected) AS closed_selected,
      COALESCE((SELECT jsonb_agg(jsonb_build_array(status,n) ORDER BY status) FROM (SELECT status,count(*)::int AS n FROM closed GROUP BY status) c),'[]'::jsonb) AS closed_counts,
-     COALESCE((SELECT jsonb_agg(DISTINCT customer_id) FROM selected WHERE customer_status=2),'[]'::jsonb) AS blacklist,
+     COALESCE((SELECT jsonb_agg(DISTINCT customer_id) FROM selected WHERE customer_id IN (SELECT id FROM blacklisted)),'[]'::jsonb) AS blacklist,
      (SELECT count(*)::int FROM selected WHERE status NOT IN('draft','cancelled','bad_debt') AND (total_amount IS NULL OR total_amount='')) AS unknown_totals,
      (SELECT COALESCE(sum(NULLIF(total_amount,'')::numeric),0) FROM selected WHERE status NOT IN('draft','cancelled','bad_debt')) AS closed_amount`,[input.query.status])).rows[0];
- if(!result||!Array.isArray(result.detailed)||!Array.isArray(result.closed_counts)||!Array.isArray(result.blacklist))throw Error('Không đọc được thống kê hợp đồng.');
+ if(!result||!Array.isArray(result.detailed_ids)||!Array.isArray(result.closed_counts)||!Array.isArray(result.blacklist))throw Error('Không đọc được thống kê hợp đồng.');
  const amount=Number(result.closed_amount);
  if(!Number.isSafeInteger(amount))return; // Preserve the original addition semantics for unusually large totals.
- const detailed=result.detailed.map(mapContractStatistics).map((row:ManagementRow)=>withContractMonitoring(applyInstallmentBilling(row,now),now));
+ // Keep the original JSON representation (not pg's Date/numeric conversions)
+ // so signed dates and all detail fields remain byte-for-byte compatible.
+ const raw=result.detailed_ids.length?(await db.query(`SELECT to_jsonb(detail) AS record FROM (
+   ${contractStatisticsSql(scope,input.scope==='vat')} AND o.id=ANY($1::bigint[])) detail`,[result.detailed_ids])).rows.map(row=>row.record):[];
+ const detailed=raw.map(mapContractStatistics).map((row:ManagementRow)=>withContractMonitoring(applyInstallmentBilling(row,now),now));
  const stats=projectManagementTable(detailed,{...input,...(input.storeBasis==='warehouse'?{store:'all'}:{}),page:1,size:1},true,now);
  const counts=new Map(stats.statusCounts);
  for(const [status,count] of result.closed_counts as [string,number][])counts.set(status,(counts.get(status)||0)+count);
