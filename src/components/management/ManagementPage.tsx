@@ -263,6 +263,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   }, []);
 
   const allRows = paged ? table.data?.rows || EMPTY_ROWS : dataset?.[kind] || EMPTY_ROWS;
+  const viewingVehicle=kind==='vehicles'&&viewing?(allRows.find(item=>item.id===viewing.id)||viewing):null;
   const gpsAllowed=can('vehicles.read');
   const listGps=useSelectedVehicleGps(compactContracts&&gpsAllowed&&visibleKeys.includes('contract_gps_status')?allRows.flatMap(contractVehicleIds):[]);
   const rows:ManagementRow[] = useMemo(() => kind === 'vehicles' ? allRows.map(row => ({...row,overdue_days:vehicleOverdueDays(row,openedAt)})) : compactContracts?allRows.map(row=>({...row,contract_signed_at:row.signed_on||row.start_date,...contractGpsFields(row,listGps,gpsAllowed)})):allRows,[allRows,kind,openedAt,compactContracts,listGps,gpsAllowed]);
@@ -617,8 +618,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       }} /></ManagementDataBoundary>}
     {viewing && kind === 'customers' && <CustomerDetail row={viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }} />}
     {viewing && kind === 'stores' && <StoreDetail row={viewing} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }} />}
-    {viewing && kind === 'vehicles' && <VehicleDetail row={dataset?.vehicles.find(item=>item.id===viewing.id)||viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }}
-      onAction={mode => { setVehicleAction({ mode, vehicle: viewing }); setViewing(null); }} />}
+    {viewingVehicle && <VehicleDetail row={viewingVehicle} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewingVehicle); setViewing(null); setFormOpen(true); }}
+      onAction={mode => { setVehicleAction({ mode, vehicle: viewingVehicle }); setViewing(null); }} />}
     {vehicleAction && <VehicleActionDialog mode={vehicleAction.mode} vehicle={vehicleAction.vehicle} onClose={() => setVehicleAction(null)} />}
     {handoverId && <ContractHandoverDialog id={handoverId} onClose={()=>setHandoverId(null)} onDone={context=>{setHandoverId(null);invalidateData(['contracts','vehicles']);notify(`Đã giao xe đơn ${context.code}. Tiền thuê trả trước được giữ nguyên.`);if (canPayContracts && context.remaining !== null && context.remaining > 0) router.push(cashbookPaymentPath(context.id, 'debt'));else void ensureData(['contracts','vehicles'],true).catch(()=>{});}} />}
     {viewing && kind !== 'contracts' && kind !== 'customers' && kind !== 'stores' && kind !== 'vehicles' && <Dialog title={String(viewing.name)} subtitle={`${viewing.code} · ${config.title}`} onClose={() => setViewing(null)}>

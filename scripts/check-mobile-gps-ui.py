@@ -27,7 +27,7 @@ def run(base,output):
             if lost:status,data=503,{'code':'SERVICE_UNAVAILABLE','message':'QA mất phản hồi sau commit GPS.'}
             return route.fulfill(status=status,headers=headers,json=data)
         context.route('**/*',intercept)
-        page=context.new_page();page.on('pageerror',lambda error:errors.append(str(error)))
+        page=context.new_page();page.clock.install();page.on('pageerror',lambda error:errors.append(str(error)))
         button=lambda text:page.get_by_role('button',name=text,exact=True)
         field=lambda text:page.get_by_role('textbox',name=text,exact=True)
         def login(email):
@@ -70,10 +70,14 @@ def run(base,output):
             button('Thiết bị GPS').click();journal.control(lambda state:state.update(mode='read-error'));button('Tải lại GPS').click();expect(page.get_by_text('QA gián đoạn đọc GPS; giữ dữ liệu gần nhất.',exact=True)).to_be_visible();expect(button('Mở bản đồ GPS-QA-101').first).to_be_visible()
             journal.control(lambda state:state.update(mode='sync-error'));button('Đồng bộ ngay').click();expect(page.get_by_text('QA chưa đồng bộ được GPS. Giữ trạng thái gần nhất.',exact=True)).to_be_visible();expect(button('Mở bản đồ GPS-QA-101').first).to_be_visible()
             journal.control(lambda state:state.update(mode='none'));button('Tải lại GPS').click()
-            before=journal.state['reads'];page.wait_for_timeout(5500);assert journal.state['reads']>before
-            page.go_back();before=journal.state['reads'];page.wait_for_timeout(5500);assert journal.state['reads']==before
+            page.wait_for_timeout(300);before=journal.state['reads']
+            page.clock.fast_forward(5000);page.wait_for_timeout(200);assert journal.state['reads']==before
+            with page.expect_response(lambda response:'/api/mobile/v1/gps?' in response.url):
+                page.clock.fast_forward(60000)
+            assert journal.state['reads']>before
+            page.go_back();page.wait_for_timeout(300);before=journal.state['reads'];page.clock.fast_forward(60000);page.wait_for_timeout(200);assert journal.state['reads']==before
             page.get_by_role('tab',name='Tài khoản',exact=True).click();button('Đăng xuất').click();expect(button('Đăng nhập')).to_be_visible()
-            checks.append('History source/device filters, retained last good GPS on read/sync errors, five-second foreground polling and no reads after leaving screen')
+            checks.append('History filters and last good GPS survive errors; no five-second read occurs, foreground polling runs each minute and stops when leaving the screen')
             login('qa-admin');button('Ghép GPS GPSQA001').click();expect(page.get_by_text('Đang ghép: GPS-QA-101 · Cơ sở GPS QA A',exact=True)).to_be_visible()
             field('Tìm xe để ghép GPS').fill('GPS-QA-102');button('Tìm xe ghép GPS').click();button('Chọn ghép GPS-QA-102').click()
             expect(page.get_by_text('Sẽ ghép: GPS-QA-102 · Cơ sở GPS QA B',exact=True)).to_be_visible()

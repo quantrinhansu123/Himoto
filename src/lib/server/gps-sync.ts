@@ -1,7 +1,7 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { matchingGpsVehicles,type GpsObservation,type GpsProvider } from '@/lib/management/gps';
+import { GPS_POLL_INTERVAL_MS,matchingGpsVehicles,type GpsObservation,type GpsProvider } from '@/lib/management/gps';
 import { ownerDatabase } from './himoto-database';
 import { openIntegrationSecret,sealIntegrationSecret } from './integration-secrets';
 import { GpsProviderError,loginGps,readGpsDevices,shouldRefreshGpsSession,type GpsSession } from './gps-providers';
@@ -87,11 +87,13 @@ export async function persistGpsObservations(client:Database,provider:GpsProvide
   return {devices:rows.length,mapped:rows.filter(row=>row.vehicle_id!==null).length};
 }
 export async function claimGpsAccounts(database:Database,lease:string) {
+  // The database gate is shared by cron, web tabs, mobile and legacy clients.
+  // Keep the integration dispatcher fast for Telegram/push; only GPS is paced.
   return (await database.query(`UPDATE himoto.management_gps_accounts
     SET last_attempt_at=clock_timestamp(),sync_lease_token=$1,sync_lease_until=clock_timestamp()+interval '90 seconds'
-    WHERE enabled AND (last_attempt_at IS NULL OR last_attempt_at<clock_timestamp()-interval '4 seconds')
+    WHERE enabled AND (last_attempt_at IS NULL OR last_attempt_at<clock_timestamp()-($2::integer*interval '1 millisecond'))
       AND (sync_lease_until IS NULL OR sync_lease_until<clock_timestamp())
-      AND (next_attempt_at IS NULL OR next_attempt_at<=clock_timestamp()) RETURNING *`,[lease])).rows;
+      AND (next_attempt_at IS NULL OR next_attempt_at<=clock_timestamp()) RETURNING *`,[lease,GPS_POLL_INTERVAL_MS])).rows;
 }
 export async function finishGpsAccount(database:Database,id:string,lease:string,deviceCount:number,error:string|null=null) {
   return database.query(`UPDATE himoto.management_gps_accounts SET sync_lease_token=NULL,sync_lease_until=NULL,last_error=$3,
