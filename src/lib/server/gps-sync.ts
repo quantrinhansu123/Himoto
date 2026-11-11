@@ -5,6 +5,8 @@ import { GPS_POLL_INTERVAL_MS,matchingGpsVehicles,type GpsObservation,type GpsPr
 import { ownerDatabase } from './himoto-database';
 import { openIntegrationSecret,sealIntegrationSecret } from './integration-secrets';
 import { GpsProviderError,loginGps,readGpsDevices,shouldRefreshGpsSession,type GpsSession } from './gps-providers';
+import { runIntegrationJob } from './integration-jobs';
+import { gpsBudgetFetch } from './gps-budget-fetch';
 
 type Database=Pick<PoolClient,'query'>;
 export async function persistGpsObservations(client:Database,provider:GpsProvider,observations:GpsObservation[],accountId:string|null=null) {
@@ -89,11 +91,23 @@ export async function persistGpsObservations(client:Database,provider:GpsProvide
 export async function claimGpsAccounts(database:Database,lease:string) {
   // The database gate is shared by cron, web tabs, mobile and legacy clients.
   // Keep the integration dispatcher fast for Telegram/push; only GPS is paced.
-  return (await database.query(`UPDATE himoto.management_gps_accounts
-    SET last_attempt_at=clock_timestamp(),sync_lease_token=$1,sync_lease_until=clock_timestamp()+interval '90 seconds'
+  return (await database.query(`WITH due AS (
+    SELECT id FROM himoto.management_gps_accounts a
     WHERE enabled AND (last_attempt_at IS NULL OR last_attempt_at<clock_timestamp()-($2::integer*interval '1 millisecond'))
       AND (sync_lease_until IS NULL OR sync_lease_until<clock_timestamp())
-      AND (next_attempt_at IS NULL OR next_attempt_at<=clock_timestamp()) RETURNING *`,[lease,GPS_POLL_INTERVAL_MS])).rows;
+      AND (next_attempt_at IS NULL OR next_attempt_at<=clock_timestamp())
+      AND NOT EXISTS(SELECT 1 FROM himoto.management_gps_accounts active
+        WHERE active.provider=a.provider AND active.sync_lease_until>clock_timestamp())
+      AND a.id=(SELECT candidate.id FROM himoto.management_gps_accounts candidate
+        WHERE candidate.provider=a.provider AND candidate.enabled
+          AND (candidate.last_attempt_at IS NULL OR candidate.last_attempt_at<clock_timestamp()-($2::integer*interval '1 millisecond'))
+          AND (candidate.sync_lease_until IS NULL OR candidate.sync_lease_until<clock_timestamp())
+          AND (candidate.next_attempt_at IS NULL OR candidate.next_attempt_at<=clock_timestamp())
+        ORDER BY candidate.last_attempt_at NULLS FIRST,candidate.id LIMIT 1)
+    ORDER BY last_attempt_at NULLS FIRST,id FOR UPDATE SKIP LOCKED LIMIT 2
+  ) UPDATE himoto.management_gps_accounts
+    SET last_attempt_at=clock_timestamp(),sync_lease_token=$1,sync_lease_until=clock_timestamp()+interval '90 seconds'
+    WHERE id IN(SELECT id FROM due) RETURNING *`,[lease,GPS_POLL_INTERVAL_MS])).rows;
 }
 export async function finishGpsAccount(database:Database,id:string,lease:string,deviceCount:number,error:string|null=null) {
   return database.query(`UPDATE himoto.management_gps_accounts SET sync_lease_token=NULL,sync_lease_until=NULL,last_error=$3,
@@ -102,20 +116,25 @@ export async function finishGpsAccount(database:Database,id:string,lease:string,
       device_count=CASE WHEN $3::text IS NULL THEN $4 ELSE device_count END WHERE id=$1 AND sync_lease_token=$2`,[id,lease,error,deviceCount]);
 }
 export async function syncGpsAccounts() {
+  const worker=await runIntegrationJob('gps-live',120_000,runGpsAccounts);
+  return worker.busy?{attempted:0,succeeded:0,busy:true}:worker.result;
+}
+async function runGpsAccounts() {
   const lease=randomUUID(),accounts=await claimGpsAccounts(ownerDatabase,lease);
+  const send=gpsBudgetFetch(fetch,35_000,'LIVE_BUDGET');
   const results=await Promise.all(accounts.map(async account=>{
     try {
       let session:GpsSession|undefined=account.session_cipher&&new Date(account.session_expires_at).getTime()>Date.now()?openIntegrationSecret<GpsSession>(account.session_cipher):undefined;
       const credentials=openIntegrationSecret<{password:string}>(account.secret_cipher);
       const remember=()=>ownerDatabase.query("UPDATE himoto.management_gps_accounts SET session_cipher=$2,session_expires_at=now()+interval '60 minutes' WHERE id=$1 AND sync_lease_token=$3",[account.id,sealIntegrationSecret(session),lease]);
-      if(!session){session=await loginGps(account.provider,account.username,credentials.password);await remember();}
+      if(!session){session=await loginGps(account.provider,account.username,credentials.password,send);await remember();}
       let observations:GpsObservation[];
-      try {observations=await readGpsDevices(account.provider,session);}
+      try {observations=await readGpsDevices(account.provider,session,send);}
       catch(error){
         if(!shouldRefreshGpsSession(error))throw error;
-        session=await loginGps(account.provider,account.username,credentials.password);
+        session=await loginGps(account.provider,account.username,credentials.password,send);
         await remember();
-        observations=await readGpsDevices(account.provider,session);
+        observations=await readGpsDevices(account.provider,session,send);
       }
       const client=await ownerDatabase.connect();let summary;
       try {await client.query('BEGIN');await client.query("SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='20s'");
@@ -123,6 +142,8 @@ export async function syncGpsAccounts() {
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`gps-provider:${account.provider}`]);summary=await persistGpsObservations(client,account.provider,observations,account.id);await client.query('COMMIT');}
       catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
       await finishGpsAccount(ownerDatabase,account.id,lease,observations.length);
+      await ownerDatabase.query(`UPDATE himoto.management_gps_event_channels SET
+        history_next_request_at=GREATEST(history_next_request_at,clock_timestamp()+interval '15 seconds') WHERE account_id=$1`,[account.id]);
       return {id:account.id,ok:true,...summary};
     }catch(error){const code=error instanceof GpsProviderError?error.code:'SYNC_FAILED';await finishGpsAccount(ownerDatabase,account.id,lease,0,code);return {id:account.id,ok:false};}
   }));

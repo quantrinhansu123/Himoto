@@ -1,0 +1,41 @@
+const assert=require('node:assert/strict'),path=require('node:path');
+const open=require('./lib/peak-staging.cjs'),{load,root}=require('./lib/load-typescript.cjs');
+(async()=>{const qa=await open(process.argv[2]),c=await qa.pool.connect();let checks=0;
+ try{await c.query('BEGIN');
+  await c.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+    ALTER TABLE vault.secrets ADD COLUMN secret text;
+    CREATE OR REPLACE VIEW vault.decrypted_secrets AS SELECT id,secret AS decrypted_secret FROM vault.secrets;
+    CREATE TABLE net.qa_requests(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,url text,headers jsonb,body jsonb);
+    CREATE FUNCTION net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) RETURNS bigint LANGUAGE sql AS $$
+      INSERT INTO net.qa_requests(url,headers,body) VALUES(url,headers,body) RETURNING id $$;`);
+  const auth=load(path.join(root,'lib/server/integration-worker-auth')),secret=require('node:crypto').randomUUID(),token=auth.integrationWorkerToken();
+  await c.query('INSERT INTO vault.secrets VALUES($1,$2)',[secret,token]);
+  await c.query('INSERT INTO himoto.management_integration_schedule(singleton,enabled,secret_id) VALUES(true,true,$1)',[secret]);
+  const run=lane=>c.query('SELECT himoto.run_gps_schedule($1) AS id',[lane]).then(r=>r.rows[0].id);
+  assert.equal(await run('gps-live'),null);await c.query('UPDATE himoto.management_gps_job_schedule SET enabled=true');
+  await c.query("UPDATE himoto.management_gps_accounts SET last_attempt_at=clock_timestamp(),sync_lease_until=NULL,next_attempt_at=NULL");
+  assert.equal(await run('gps-live'),null);checks++;
+  await c.query("UPDATE himoto.management_gps_accounts SET last_attempt_at=clock_timestamp()-interval '61 seconds'");
+  const live=await run('gps-live');assert(live);assert.equal(await run('gps-live'),null);
+  const request=(await c.query('SELECT * FROM net.qa_requests WHERE id=$1',[live])).rows[0];
+  assert.equal(request.url,'https://himoto.vercel.app/api/cron/gps-live');assert(!JSON.stringify(request).includes(token));
+  assert(auth.validIntegrationWorker(request.headers.Authorization,Date.now(),'/api/cron/gps-live'));assert(!auth.validIntegrationWorker(request.headers.Authorization));checks++;
+  const notify=(await c.query('SELECT himoto.run_integration_schedule() AS id')).rows[0].id;assert(notify);
+  const history=await run('gps-history');assert(history);assert.equal(await run('gps-live'),null);checks++;
+  await c.query("INSERT INTO net._http_response(id,status_code,content) VALUES($1,503,'{}')",[live]);
+  assert.equal(await run('gps-live'),null);const gpsState=(await c.query("SELECT * FROM himoto.management_gps_job_schedule WHERE job='gps-live'")).rows[0];
+  assert.equal(gpsState.last_error_code,'HTTP_REJECTED');assert(gpsState.next_attempt_at);
+  await c.query("INSERT INTO net._http_response(id,status_code,content) VALUES($1,200,'{\"status\":\"success\"}')",[notify]);
+  await c.query("UPDATE himoto.management_integration_schedule SET last_dispatched_at=clock_timestamp()-interval '6 seconds'");
+  assert((await c.query('SELECT himoto.run_integration_schedule() AS id')).rows[0].id);checks++;
+  await c.query("INSERT INTO net._http_response(id,status_code,content) VALUES($1,401,'{}')",[history]);
+  assert.equal(await run('gps-history'),null);
+  assert.equal((await c.query("SELECT enabled FROM himoto.management_gps_job_schedule WHERE job='gps-history'")).rows[0].enabled,false);
+  assert.equal((await c.query('SELECT enabled FROM himoto.management_integration_schedule')).rows[0].enabled,true);checks++;
+  await c.query('SET LOCAL ROLE himoto_scoped');
+  for(const sql of ["SELECT * FROM himoto.management_gps_job_schedule","SELECT himoto.run_gps_schedule('gps-live')",'SELECT * FROM himoto.management_integration_workers']){
+    await c.query('SAVEPOINT deny');await assert.rejects(()=>c.query(sql),e=>e.code==='42501');await c.query('ROLLBACK TO SAVEPOINT deny');
+  }checks++;
+  console.log(JSON.stringify({passed:checks,checks:['Disabled/not-due GPS makes no HTTP request','One in-flight request and route-bound signed proof','Live, history and notification schedules dispatch independently','A failed live GPS request backs off without blocking notification dispatch','Authentication failure disables only the affected GPS lane','Worker state and dispatch functions are private'],realHttpRequests:0,productionWrites:0},null,2));
+ }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await qa.close();}
+})().catch(e=>{console.error(e);process.exitCode=1});

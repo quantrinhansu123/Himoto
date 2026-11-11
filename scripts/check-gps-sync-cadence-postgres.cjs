@@ -6,7 +6,7 @@ async function main(){
   const qa=await openQa(),checks=[];
   try{
     await qa.pool.query(`CREATE SCHEMA himoto;CREATE TABLE himoto.management_gps_accounts(
-      id uuid PRIMARY KEY,enabled boolean NOT NULL DEFAULT true,last_attempt_at timestamptz,
+      id uuid PRIMARY KEY,provider text NOT NULL DEFAULT 'protrack',enabled boolean NOT NULL DEFAULT true,last_attempt_at timestamptz,
       sync_lease_token uuid,sync_lease_until timestamptz,next_attempt_at timestamptz,
       last_error text,last_success_at timestamptz,device_count int DEFAULT 0)`);
     const {claimGpsAccounts,finishGpsAccount}=load(path.join(root,'lib/server/gps-sync'));
@@ -45,6 +45,13 @@ async function main(){
     const row=(await qa.pool.query('SELECT last_error,device_count,last_success_at IS NOT NULL AS success FROM himoto.management_gps_accounts')).rows[0];
     assert.deepEqual(row,{last_error:null,device_count:2,success:true});
     checks.push('Provider backoff and disabled accounts are respected; clearing backoff never bypasses the minute gate; a later success clears the error');
+    for(const provider of ['protrack','protrack','iopgps','iopgps'])await qa.pool.query('INSERT INTO himoto.management_gps_accounts(id,provider) VALUES($1,$2)',[randomUUID(),provider]);
+    const batch=await claimGpsAccounts(qa.pool,current);assert.equal(batch.length,2);assert.equal(new Set(batch.map(a=>a.provider)).size,2);
+    assert.equal((await claimGpsAccounts(qa.pool,other)).length,0);
+    for(const a of batch)await finishGpsAccount(qa.pool,a.id,current,1);
+    const nextBatch=await claimGpsAccounts(qa.pool,other);assert.equal(nextBatch.length,2);assert.equal(new Set(nextBatch.map(a=>a.provider)).size,2);
+    for(const a of nextBatch)await finishGpsAccount(qa.pool,a.id,other,1);
+    checks.push('Each batch admits at most two accounts and one per provider; later due accounts progress after the first batch without occupying connections on a provider lock');
     console.log(JSON.stringify({passed:checks.length,checks,realProviderRequests:0,operationalWrites:0},null,2));
   }finally{await qa.close();}
 }

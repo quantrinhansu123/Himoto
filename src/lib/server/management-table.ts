@@ -148,8 +148,9 @@ function likeNeedle(search:string) {
   return `%${search.trim().replace(/[%_\\]/g,'')}%`;
 }
 const foldedSql=(value:string)=>`lower(translate(regexp_replace(normalize(COALESCE(${value},''),NFD) COLLATE "C",'[\u0300-\u036f]','','g'),'đĐ','dD'))`;
-function contractSearchSql(search:string) {
+export function contractSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
+  if(usesScopedDatabase())return{sql:' AND o.id IN(SELECT matched.id FROM himoto.contract_search_order_ids($3) matched)',value:likeNeedle(search)};
   // Collect matching IDs before applying the contract scope;
   // each branch retains its ordinary RLS visibility and contains no user SQL.
   return {sql:` AND o.id IN (
@@ -546,7 +547,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
         const ids=batch.map(row=>row.id);
         // A failed detail query must fail this read, not silently turn balances,
         // vehicle labels or rental dates into missing/incorrect information.
-        const details=await client.query(kind==='contracts'?contractVehicleDetailsSql(overdueSql(contractHydrateSql())):vehicleHydrateSql(),[ids]);
+        const details=await client.query(kind==='contracts'?contractVehicleDetailsSql(overdueSql(contractHydrateSql()),'$1::bigint[]'):vehicleHydrateSql(),[ids]);
         const mapped=new Map(mapManagementRows(kind,details.rows).map(record=>[record.id,record]));
         batch=batch.map(row=>mapped.get(row.id)||row);
       }

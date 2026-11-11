@@ -7,14 +7,14 @@ export function integrationWorkerToken() {
   return createHmac('sha256',secret).update('himoto-integrations-worker-v1').digest('hex');
 }
 const proofPattern=/^Himoto-Scheduler (\d{10}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([a-f0-9]{64})$/;
-export function integrationSchedulerProof(time:string,nonce:string) {
-  return createHmac('sha256',integrationWorkerToken()).update(`himoto-scheduler-v1:POST:/api/cron/integrations:${time}:${nonce}`).digest('hex');
+export function integrationSchedulerProof(time:string,nonce:string,path='/api/cron/integrations') {
+  return createHmac('sha256',integrationWorkerToken()).update(`himoto-scheduler-v1:POST:${path}:${time}:${nonce}`).digest('hex');
 }
 export function integrationSchedulerNonce(header:string) {return header.match(proofPattern)?.[2]||null;}
-export function validIntegrationWorker(header:string|null,now=Date.now()) {
+export function validIntegrationWorker(header:string|null,now=Date.now(),path='/api/cron/integrations') {
   if(!header)return false;
   const proof=header.match(proofPattern);
-  if(proof){if(Math.abs(now-Number(proof[1])*1000)>60_000)return false;const actual=Buffer.from(proof[3]),expected=Buffer.from(integrationSchedulerProof(proof[1],proof[2]));return actual.length===expected.length&&timingSafeEqual(actual,expected);}
+  if(proof){if(Math.abs(now-Number(proof[1])*1000)>60_000)return false;const actual=Buffer.from(proof[3]),expected=Buffer.from(integrationSchedulerProof(proof[1],proof[2],path));return actual.length===expected.length&&timingSafeEqual(actual,expected);}
   if(!/^Bearer [a-f0-9]{64}$/.test(header))return false;
   const token=Buffer.from(header.slice(7)),expected=Buffer.from(integrationWorkerToken());
   return token.length===expected.length&&timingSafeEqual(token,expected);

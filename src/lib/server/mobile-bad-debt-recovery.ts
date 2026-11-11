@@ -63,7 +63,7 @@ async function readRecoveryOrder(db:Database,id:number) {
     badDebtAt:iso(badDebtCutoff(order.draft_payload)??null),ownership:requiresOwnershipApproval(order.rental_type),hasInstallmentPlan:!!order.draft_payload?.management_composer?.installment_plan};
 }
 const lineSql=()=> 'SELECT d.id,d.vehicle_id,d.xmin::text AS revision,d.rent_at,d.completed_at,v.name,v.license '+
-  'FROM himoto.order_vehicle_details d LEFT JOIN '+contractVehicleLabelSource()+' v ON v.id=d.vehicle_id '+
+  'FROM himoto.order_vehicle_details d LEFT JOIN '+contractVehicleLabelSource('ARRAY[$1::bigint]')+' v ON v.id=d.vehicle_id '+
   'WHERE d.order_id=$1 AND d.deleted_at IS NULL';
 function line(row:Record<string,unknown>,reason:string|null):MobileRecoveryItem {
   const blocked=reason??(row.completed_at!=null?'Xe đã được ghi nhận trả hoặc thu hồi.':null);

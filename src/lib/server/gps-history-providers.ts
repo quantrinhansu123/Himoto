@@ -22,7 +22,7 @@ function protrackUrl(session:GpsSession,device:HistoryDevice,start:number,end:nu
   return url;
 }
 export async function readGpsMotionHistory(provider:GpsProvider,session:GpsSession,device:HistoryDevice,start:number,end:number,send:typeof fetch=fetch):Promise<GpsHistoryPoint[]> {
-  if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>3_600_000)throw new GpsProviderError('HISTORY_WINDOW');
+  if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>86_400_000)throw new GpsProviderError('HISTORY_WINDOW');
   const points:GpsHistoryPoint[]=[];
   if(provider==='iopgps') {
     const url=new URL(`/rest/device/track/${encodeURIComponent(device.external_device_id)}/v3`,'https://iopgps.com');
@@ -54,7 +54,7 @@ export async function readGpsMotionHistory(provider:GpsProvider,session:GpsSessi
   throw new GpsProviderError('HISTORY_INCOMPLETE');
 }
 export async function readGpsAlarmHistory(provider:GpsProvider,session:GpsSession,device:HistoryDevice,start:number,end:number,send:typeof fetch=fetch):Promise<GpsProviderEvent[]> {
-  if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>3_600_000)throw new GpsProviderError('HISTORY_WINDOW');
+  if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>86_400_000)throw new GpsProviderError('HISTORY_WINDOW');
   if(provider==='protrack') {
     if(!device.provider_device_id||!/^\d{1,20}$/.test(device.provider_device_id))throw new GpsProviderError('HISTORY_DEVICE_ID_MISSING');
     const url=new URL('https://www.protrack365.com/StatService');

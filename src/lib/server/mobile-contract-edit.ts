@@ -68,7 +68,7 @@ export async function readMobileContractEdit(user: SessionUser, value: string): 
   return transaction(user, false, async client => {
     const current = await visible(client, id);
     if (current.order_status === 'draft') throw new MobileError('Hợp đồng đang là bản nháp. Mở màn soạn nháp để tiếp tục.', 409, 'DRAFT_CONFLICT');
-    const raw = (await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=$1`), [id])).rows[0];
+    const raw = (await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=$1`,'ARRAY[$1::bigint]'), [id])).rows[0];
     if (!raw) throw new MobileError('Không tìm thấy hợp đồng.', 404, 'NOT_FOUND');
     const row = mapApiRow('contracts', { ...raw, status: current.order_status });
     const document = createContractDraft({ stores: [], staff: [], customers: [], contracts: [], vehicles: [] }, 'all', row);

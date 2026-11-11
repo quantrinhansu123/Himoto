@@ -73,7 +73,7 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
 
 // Stock can be archived or moved after a legacy agreement was issued. The rental
 // line remains returnable; labels are limited to contracts in the caller's scope.
-const returnableSql = (includeBadDebt=false) => RETURNABLE_SQL.replace('JOIN himoto.vehicles v', `LEFT JOIN ${contractVehicleLabelSource()} v`)+(includeBadDebt?'':" AND o.order_status<>'bad_debt'");
+const returnableSql = (includeBadDebt=false,orderIdsSql?:string) => RETURNABLE_SQL.replace('JOIN himoto.vehicles v', `LEFT JOIN ${contractVehicleLabelSource(orderIdsSql)} v`)+(includeBadDebt?'':" AND o.order_status<>'bad_debt'");
 
 function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractItem[] {
   return rows.map(row => {
@@ -120,7 +120,7 @@ export async function searchReturnableItems(client: Database, query: string): Pr
 
 export async function loadContractReturnableItems(client: Database, orderId: number, includeBadDebt=false): Promise<ReturnableContractItem[]> {
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return [];
-  const result = await client.query(`${returnableSql(includeBadDebt)} AND o.id=$1 ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id`, [orderId]);
+  const result = await client.query(`${returnableSql(includeBadDebt,'ARRAY[$1::bigint]')} AND o.id=$1 ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id`, [orderId]);
   return mapReturnableRows(result.rows);
 }
 
@@ -128,7 +128,7 @@ export async function loadContractReturnableItems(client: Database, orderId: num
 export async function loadContractReturnablePage(client: Database, orderId: number, page: number) {
   if (!Number.isSafeInteger(orderId) || orderId <= 0 || !Number.isSafeInteger(page) || page < 1 || page > 100000)
     throw new ContractReturnError('Trang xe trả không hợp lệ.');
-  const source=`${returnableSql(true)} AND o.id=$1`;
+  const source=`${returnableSql(true,'ARRAY[$1::bigint]')} AND o.id=$1`;
   const counted=await client.query(`SELECT count(*)::int AS total FROM (${source}) returnable`,[orderId]);
   const total=Number(counted.rows[0]?.total),pages=Math.max(1,Math.ceil(total/25));
   if(!Number.isSafeInteger(total)||total<0||total>1000000)throw new ContractReturnError('Lịch sử xe cần đối chiếu trước khi trả.',409);
@@ -141,7 +141,7 @@ export async function loadContractReturnablePage(client: Database, orderId: numb
 export async function loadContractReturnableSelection(client:Database,orderId:number,ids:number[]) {
   if(!Number.isSafeInteger(orderId)||orderId<=0||!ids.length||ids.length>50||ids.some(id=>!Number.isSafeInteger(id)||id<=0)||new Set(ids).size!==ids.length)
     throw new ContractReturnError('Chọn từ 1 đến 50 dòng xe hợp lệ.');
-  const result=await client.query(`${returnableSql()} AND o.id=$1 AND d.id=ANY($2::bigint[]) ORDER BY d.id LIMIT 50`,[orderId,ids]);
+  const result=await client.query(`${returnableSql(false,'ARRAY[$1::bigint]')} AND o.id=$1 AND d.id=ANY($2::bigint[]) ORDER BY d.id LIMIT 50`,[orderId,ids]);
   return mapReturnableRows(result.rows);
 }
 

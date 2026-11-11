@@ -124,7 +124,7 @@ export async function readMobileDraft(
 ): Promise<MobileDraftProfile> {
   return withMobileDraft(user, "", async (client) => {
     const result = await client.query(
-      contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=$1`),
+      contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=$1`,'ARRAY[$1::bigint]'),
       [id],
     );
     const raw = result.rows[0];

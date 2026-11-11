@@ -402,6 +402,6 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
       created_at=CASE WHEN NULLIF($19,'') IS NULL THEN created_at ELSE ($19::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') END,
       updated_at=now() WHERE id=$20 AND order_status='draft'`, [...values, id]);
   }
-  const result = await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id = $1`), [savedId]);
+  const result = await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id = $1`,'ARRAY[$1::bigint]'), [savedId]);
   return result.rows[0];
 }

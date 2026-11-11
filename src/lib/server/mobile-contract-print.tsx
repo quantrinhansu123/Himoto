@@ -27,7 +27,7 @@ export async function readMobileContractPrint(user: SessionUser, value: string, 
     const client = await himotoPool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY'); await client.query("SET LOCAL statement_timeout='20s'");
-      const raw = (await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=$1`), [id])).rows[0];
+      const raw = (await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id=$1`,'ARRAY[$1::bigint]'), [id])).rows[0];
       if (!raw) throw new MobileError('Không tìm thấy hợp đồng trong phạm vi tài khoản.', 404, 'NOT_FOUND');
       const row = mapApiRow('contracts', raw);
       const history = await readContractHistory(client, id);

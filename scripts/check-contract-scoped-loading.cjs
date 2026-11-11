@@ -10,9 +10,13 @@ async function main(){
  dataAccess.run(scope,()=>{
   const query=contractVehicleDetailsSql(raw+' '+contractWarehouseJoinSql()+' LEFT JOIN himoto.contract_vehicle_labels() other ON other.id=o.id');
   assert.equal(query.split('himoto.contract_vehicle_labels()').length-1,1);
-  assert.equal(query.split('himoto.vehicle_inventory()').length-1,1);
+  assert.equal(query.split('himoto.contract_vehicle_locations()').length-1,1);
   assert(query.includes('AS MATERIALIZED'));
   assert(!query.includes('LEFT JOIN himoto.vehicles'));
+  const bounded=contractVehicleDetailsSql(raw+' '+contractWarehouseJoinSql(),'$1::bigint[]');
+  assert.equal(bounded.split('himoto.contract_vehicles_for_orders(').length-1,1);
+  assert(!bounded.includes('himoto.contract_vehicle_labels()'));assert(!bounded.includes('himoto.vehicle_inventory()'));
+  assert(bounded.includes('warehouse_id IS NOT NULL'));
   assert.equal(contractVehicleDetailsSql('SELECT 1'),'SELECT 1');
  });
  if(!process.argv.includes('--live-read'))return console.log('PASS: scoped label/warehouse helpers materialize once; owner reads stay unchanged');

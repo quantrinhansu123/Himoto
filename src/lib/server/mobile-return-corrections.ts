@@ -45,7 +45,7 @@ export async function readMobileReturnCorrectionOptions(user: SessionUser, value
     const order = await visible(client, id);
     const count = Number((await client.query('SELECT count(*) AS n FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL AND completed_at IS NOT NULL', [id])).rows[0].n);
     const pages = Math.max(1, Math.ceil(count / 25)), current = Math.min(Number(page), pages);
-    const rows = (await client.query(`SELECT d.id,d.vehicle_id,d.completed_at,v.name,v.license FROM himoto.order_vehicle_details d LEFT JOIN ${contractVehicleLabelSource()} v ON v.id=d.vehicle_id
+    const rows = (await client.query(`SELECT d.id,d.vehicle_id,d.completed_at,v.name,v.license FROM himoto.order_vehicle_details d LEFT JOIN ${contractVehicleLabelSource('ARRAY[$1::bigint]')} v ON v.id=d.vehicle_id
       WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NOT NULL ORDER BY d.completed_at DESC,d.id DESC LIMIT 25 OFFSET $2`, [id, (current - 1) * 25])).rows;
     const result = { id, code: String(order.code), page: current, pages, total: count, rows: rows.map(r => ({ itemId: Number(r.id), vehicleId: Number(r.vehicle_id), license: String(r.license || ''), name: String(r.name || ''), returnedAt: new Date(r.completed_at).toISOString() })) };
     if (!isMobileReturnCorrectionOptions(result)) throw new MobileError('Danh sách lượt trả cần đối chiếu.', 409, 'DATA_REVIEW_REQUIRED'); return result;

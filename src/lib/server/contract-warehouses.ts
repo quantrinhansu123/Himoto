@@ -4,7 +4,7 @@ import { usesScopedDatabase } from './access-context';
 // Inventory already exposes stock locations across branches. Contract/customer
 // reads retain their own RLS scope; this adds no contract or financial access.
 function warehouseSource(scoped:boolean) {
-  return scoped?'(SELECT id,store_id,store_name FROM himoto.vehicle_inventory())':`(SELECT stock.id,COALESCE(stock.current_store_id,stock.store_id) AS store_id,stores.store_name
+  return scoped?'himoto.contract_vehicle_locations()':`(SELECT stock.id,COALESCE(stock.current_store_id,stock.store_id) AS store_id,stores.store_name
     FROM himoto.vehicles stock LEFT JOIN himoto.stores stores ON stores.id=COALESCE(stock.current_store_id,stock.store_id))`;
 }
 export const CONTRACT_WAREHOUSE_JOIN_SQL=`LEFT JOIN ${warehouseSource(false)} warehouse ON warehouse.id=d.vehicle_id`;

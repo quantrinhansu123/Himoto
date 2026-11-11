@@ -36,7 +36,7 @@ async function order(db:Database,id:number,user:PermissionAccount&{id:number},lo
 export async function readRentalTerms(db:Database,id:number,user:PermissionAccount&{id:number}):Promise<RentalTermsState> {
   const o=await order(db,id,user);
   const items=(await db.query(`SELECT d.id,d.xmin::text AS revision,d.vehicle_id,v.license,d.rent_at,d.return_at,d.completed_at,${dailyPriceSql()} AS unit_price
-    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id LEFT JOIN ${contractVehicleLabelSource()} v ON v.id=d.vehicle_id
+    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id LEFT JOIN ${contractVehicleLabelSource('ARRAY[$1::bigint]')} v ON v.id=d.vehicle_id
     WHERE d.order_id=$1 AND d.deleted_at IS NULL ORDER BY d.id`,[id])).rows;
   const paid=(await db.query(`SELECT ${rentalPaidSql()} AS paid FROM himoto.orders o ${depositLateral()} WHERE o.id=$1`,[id])).rows[0]?.paid;
   return {revision:o.revision,code:o.contract_number||o.draft_reference||`#${id}`,total_amount:Number(o.total),paid_amount:paid==null?null:Number(paid),items:items.map(d=>({id:Number(d.id),revision:d.revision,vehicle_id:Number(d.vehicle_id),license:d.license||'',start_at:local(d.rent_at),end_at:local(d.return_at),unit_price:d.unit_price==null?null:Number(d.unit_price),completed_at:d.completed_at?new Date(d.completed_at).toISOString():null}))};

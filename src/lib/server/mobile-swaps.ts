@@ -66,7 +66,7 @@ function mapLine(row:Record<string,unknown>,order:Record<string,unknown>,reason:
     startsAt:iso(row.rent_at),returnAt:iso(row.return_at),completedAt:iso(row.completed_at),available:blockedReason===null,blockedReason};
 }
 const lineSql=()=>'SELECT d.id,d.vehicle_id,d.xmin::text AS revision,d.rent_at,d.return_at,d.completed_at,v.name,v.license '+
-  'FROM himoto.order_vehicle_details d LEFT JOIN '+contractVehicleLabelSource()+' v ON v.id=d.vehicle_id WHERE d.order_id=$1 AND d.deleted_at IS NULL';
+  'FROM himoto.order_vehicle_details d LEFT JOIN '+contractVehicleLabelSource('ARRAY[$1::bigint]')+' v ON v.id=d.vehicle_id WHERE d.order_id=$1 AND d.deleted_at IS NULL';
 export async function readSwapLine(db:Database,id:number,itemId:number) {
   const order=await readSwapOrder(db,id);
   if(order.reason)throw swapConflict(order.reason);
