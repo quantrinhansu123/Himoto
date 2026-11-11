@@ -36,8 +36,7 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
       if (controller.signal.aborted) return;
       setContext(data);
       if (initialMode === 'telegram') {
-        const latestReturn = [...data.history].reverse().find(entry => entry.action === 'return');
-        setTelegramRequestId(latestReturn?.request_id || '');
+        setTelegramRequestId(data.history.at(-1)?.request_id || 'rental');
       }
       setUnit(data.contract.price_unit === 'ngày' ? 'day' : 'month');
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được hợp đồng pin.'); })
@@ -74,7 +73,7 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
     try {
       const result = await batteryRequest<BatteryWorkflowContext>(`/api/auth/battery-contracts/${id}/actions`, 'POST', input);
       setContext({ ...result, accounts: context.accounts }); setMode('history');
-      if (mode === 'return') setTelegramRequestId(input.request_id);
+      setTelegramRequestId(input.request_id);
       requestId.current = crypto.randomUUID(); setNote('');
       notify(mode === 'return' ? `Đã nhận lại pin / sạc · ${code}. Kiểm tra và gửi Telegram.` : collecting ? `Đã lưu và ghi phiếu thu gia hạn · ${code}.` : `Đã gia hạn pin / sạc · ${code}${hasFee ? ' · còn công nợ gia hạn' : ''}.`);
       onSaved();
@@ -92,7 +91,7 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
         {mode === 'history' ? <>
           <dl className="mg-payment-totals"><div><dt>Tổng phí gia hạn mới</dt><dd>{formatMoney(context.renewal_amount)}</dd></div><div><dt>Đã thu gia hạn</dt><dd>{formatMoney(context.renewal_collected)}</dd></div><div><dt>Nợ gia hạn</dt><dd>{formatMoney(context.renewal_remaining)}</dd></div></dl>
           <p className="mg-composer-hint">Số liệu gia hạn tính từ các lượt mới; tiền và hồ sơ nhập từ app cũ giữ trong hợp đồng và Sổ quỹ.</p>
-          {initialMode === 'telegram' && !context.history.some(entry => entry.action === 'return') && <p role="status">Hợp đồng chưa có lịch sử xác nhận trả pin / sạc trên hệ thống mới để gửi Telegram.</p>}
+          {can('contracts.draft') && <button type="button" className="mg-button" onClick={() => setTelegramRequestId('rental')}>Gửi / xem Telegram thuê pin / sạc</button>}
           {!context.history.length && <p>Chưa có thao tác gia hạn hoặc trả pin / sạc mới.</p>}
           {[...context.history].reverse().map(entry => <article className="mg-battery-history-entry" key={entry.request_id}>
             <strong>{entry.action === 'renew' ? 'Gia hạn' : entry.action === 'return' ? 'Trả pin / sạc' : 'Thu nợ gia hạn'}</strong>
@@ -103,9 +102,9 @@ export function BatteryWorkflowDialog({ id, code, initialMode, onClose, onSaved 
             {entry.action === 'collect_renewal' && <p>Đã thu: {formatMoney(entry.collected || 0)}</p>}
             {entry.transaction_id && <p>Phiếu thu #{entry.transaction_id}{entry.receipt ? ` · ${BATTERY_COLLECTION_METHODS.find(m => m.value === entry.receipt?.method)?.label}` : ''}</p>}
             {entry.note && <p className="mg-battery-history-note">Ghi chú: {entry.note}</p>}
-            {entry.action === 'return' && can('contracts.return') && <button type="button" className="mg-button" onClick={() => setTelegramRequestId(entry.request_id)}>Gửi / xem Telegram</button>}
+            {can(entry.action === 'return' ? 'contracts.return' : 'contracts.renew') && <button type="button" className="mg-button" onClick={() => setTelegramRequestId(entry.request_id)}>Gửi / xem Telegram</button>}
           </article>)}
-          {telegramRequestId && can('contracts.return') && <BatteryTelegramPanel batteryId={id} requestId={telegramRequestId} />}
+          {telegramRequestId && <BatteryTelegramPanel key={telegramRequestId} batteryId={id} requestId={telegramRequestId} />}
         </> : <fieldset className="mg-payment-fields" disabled={saving || uncertain}>
           <legend>{title}</legend>
           {mode === 'renew' && <>

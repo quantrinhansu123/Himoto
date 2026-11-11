@@ -4,7 +4,7 @@ import { loadRentalRevenue, type RentalRevenueReport } from '@/lib/management/re
 import { loadEstimatedSales, type EstimatedSalesReport } from '@/lib/management/estimated-sales';
 import { formatMoney } from '@/lib/formatters';
 
-const labels = [['rental', 'Phí thuê đã thu'], ['renewal', 'Gia hạn đã thu'], ['early', 'Đã hoàn do trả sớm']] as const;
+const labels = [['rental', 'Phí thuê đã thu'], ['renewal', 'Gia hạn đã thu'], ['late', 'Phí quá hạn đã thu'], ['early', 'Đã hoàn do trả sớm']] as const;
 
 export function RentalRevenuePanel({
   from, to, store, retry,
@@ -83,7 +83,7 @@ export function RentalRevenuePanel({
           <div className="mg-rental-revenue-heading">
             <div>
               <h2>Doanh thu</h2>
-              <p>Thực thu trong kỳ của HĐ theo bộ lọc · Chưa trừ chi phí</p>
+              <p>Theo ngày thu/hoàn trong kỳ · Gồm cả HĐ bắt đầu trước kỳ</p>
             </div>
             <strong data-revenue-total>{ready ? formatMoney(report!.total.revenue) : '—'}</strong>
           </div>
@@ -97,11 +97,11 @@ export function RentalRevenuePanel({
           </dl>
           {loading ? <p className="mg-rental-revenue-note" role="status">Đang tải doanh thu…</p>
             : error ? <p className="mg-field-error" role="alert" style={{ margin: '0 16px 12px' }}>{error}</p>
-            : <p className="mg-rental-revenue-note">Doanh thu thuê xe = tiền thuê + gia hạn − tiền thuê đã hoàn. Gia hạn ghi nhận cho Công ty và cơ sở, không phân bổ cho nhân viên. VAT, sửa xe, trả muộn và phí khác thuộc Công ty, không cộng vào doanh số nhân viên hay cơ sở.</p>}
+            : <p className="mg-rental-revenue-note">Doanh thu thuê xe = tiền thuê + gia hạn + phí quá hạn − tiền thuê đã hoàn, theo ngày thu/hoàn thực tế. Gia hạn và phí quá hạn ghi nhận cho Công ty và cơ sở, không phân bổ vào doanh số nhân viên. Không gồm cọc, VAT, sửa xe và phí khác; chưa trừ chi phí.</p>}
         </article>
 
         <article className="mg-data-panel mg-revenue-card" aria-label="Phí khác của Công ty">
-          <div className="mg-rental-revenue-heading"><div><h2>Phí khác · Công ty</h2><p>VAT, sửa xe, trả muộn và các phí khác đã thu trong bộ lọc</p></div><strong>{ready ? formatMoney(report!.company_fees) : '—'}</strong></div>
+          <div className="mg-rental-revenue-heading"><div><h2>Phí khác · Công ty</h2><p>VAT, sửa xe và các phí khác đã thu trong bộ lọc</p></div><strong>{ready ? formatMoney(report!.company_fees) : '—'}</strong></div>
           <p className="mg-rental-revenue-note">Theo dõi riêng cho Công ty; không cộng vào doanh số thuê xe của nhân viên hoặc cơ sở.</p>
         </article>
 

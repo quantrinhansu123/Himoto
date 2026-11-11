@@ -95,10 +95,10 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
   return read(user, kind, async client => {
     const doc: MobileSalesReport = { kind, title: SALES_REPORTS.find(row => row.value === kind)!.label, notes: [], metrics: [], sections: [], canExport: false };
     if (kind === "actual") {
-      const received = await rentalRevenue(client, from, to, store, "contracts"), estimate = await estimatedSales(client, from, to, store);
+      const received = await rentalRevenue(client, from, to, store), estimate = await estimatedSales(client, from, to, store);
       const summary = await readSalesSummary(client, new URLSearchParams({ from, to, store: String(store || "all") }));
       checked(validRentalRevenue(received) && validEstimatedSales(estimate));
-      doc.notes = ["Chỉ hợp đồng bắt đầu thuê trong khoảng ngày và cơ sở đang chọn. Doanh số ước tính theo ngày·xe còn nằm trong kỳ.", "Doanh thu = thuê + gia hạn + trả muộn − hoàn trả sớm thực thu/hoàn trong kỳ. Không gồm cọc, phí sửa; chưa trừ chi phí.", "Công nợ gồm đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu; không gồm cọc. Nợ quá hạn hiển thị riêng với nợ xấu."];
+      doc.notes = ["Doanh số và công nợ theo hợp đồng bắt đầu thuê trong khoảng ngày và cơ sở đang chọn. Doanh thu theo ngày thu/hoàn thực tế, gồm cả hợp đồng bắt đầu trước kỳ.", "Doanh thu = thuê + gia hạn + trả muộn − hoàn trả sớm thực thu/hoàn trong kỳ. Không gồm cọc, phí sửa; chưa trừ chi phí.", "Công nợ gồm đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu; không gồm cọc. Nợ quá hạn hiển thị riêng với nợ xấu."];
       doc.metrics = [...metrics("Doanh số ước tính", estimate, [["sales", "Doanh số"], ["contracts", "Hợp đồng trong kỳ", "count"], ["active_contracts", "Đang thuê / chưa trả", "count"], ["finished_contracts", "Đã trả", "count"], ["vehicle_days", "Ngày·xe trong kỳ", "count"]]),
         ...metrics("Doanh thu thực thu", received.total, [["revenue", "Doanh thu"], ["rental", "Phí thuê đã thu"], ["renewal", "Gia hạn đã thu"], ["late", "Trả muộn đã thu"], ["early", "Đã hoàn do trả sớm"]]),
         ...metrics("Công nợ", summary.kpis, [["debt", "Tiền thuê còn thiếu"], ["debtContracts", "Hợp đồng còn thiếu tiền", "count"], ["overdueDebt", "Nợ quá hạn chưa thu đủ"], ["overdueContracts", "Hợp đồng quá hạn chưa thu đủ", "count"], ["badDebt", "Nợ xấu riêng"]])];

@@ -28,6 +28,7 @@ export interface NotificationPayload {
   refund_recipient?:{bank?:string;account?:string;name?:string};
   refund_pending?:{amount:number;bank?:string;account?:string;name?:string};
   battery_swap?:{percentage:number;fee:number;collected:number;license:string;vehicle_name:string};
+  battery_details?:{starts_at:string;ends_at:string|null;package_name:string;amount:number|null;collected:number;remaining:number|null;note:string};
   vehicle_swap?:{from_license:string;from_name:string;to_license:string;to_name:string};
   transfer?:{from:string;to:string;note:string;received:boolean;ownership?:boolean};
 }
@@ -87,7 +88,20 @@ function withTelegramFooter(body:string,actor:string,at:string,sentAt?:string|nu
   const rows=body.replace(/\n+$/,'').split('\n').filter(row=>!/^Nhân viên xuất tin Telegram:/.test(row)&&!/^Thời gian:/.test(row));
   return [...rows,sender,time].join('\n').slice(0,4000);
 }
-export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive'|'battery_return'|'battery_renewal',p:NotificationPayload,sentAt?:string|null) {
+export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive'|'battery_return'|'battery_renewal'|'battery_rental',p:NotificationPayload,sentAt?:string|null) {
+  if(kind==='battery_rental'||kind==='battery_renewal')return withTelegramFooter([
+    `${kind==='battery_rental'?'Khách thuê pin / sạc':'Khách gia hạn pin / sạc'}: ${p.customer}`,`Pin / sạc: ${p.vehicle_names||'—'}`,
+    `Mã HĐ: ${p.code}`,`Cơ sở: ${p.store}`,...(p.vehicles?[`Biển số: ${p.vehicles}`]:[]),
+    `Thời hạn: ${renewalClock(p.battery_details?.starts_at)} → ${renewalClock(p.battery_details?.ends_at)}`,
+    ...(p.battery_details?.package_name?[`Gói thuê: ${p.battery_details.package_name}`]:[]),
+    `${kind==='battery_rental'?'Giá thuê':'Phí gia hạn'}: ${money(p.battery_details?.amount)} đ`,
+    `Đã thu${kind==='battery_renewal'?' của kỳ gia hạn':''}: ${money(p.battery_details?.collected)} đ`,
+    ...(p.battery_details?.remaining!=null?[`Còn thiếu: ${money(p.battery_details.remaining)} đ`]:[]),
+    ...(kind==='battery_rental'?[`Cọc: ${money(p.deposit)} đ`]:[]),`Hình thức thanh toán: ${p.method||'Chưa ghi nhận thanh toán'}`,
+    ...amountLine(kind==='battery_rental'?'Đã thu tiền thuê theo hình thức':'Phiếu thu của giao dịch',kind==='battery_rental'?p.payment_amounts?.rental:p.payment_amounts?.renewal),
+    ...(kind==='battery_rental'?amountLine('Đã thu tiền cọc theo hình thức',p.payment_amounts?.deposit):[]),
+    ...(p.battery_details?.note?[`Ghi chú: ${p.battery_details.note}`]:[]),
+  ].join('\n'),p.actor,p.at,sentAt);
   if(kind==='battery_return')return withTelegramFooter([`Khách trả pin / sạc: ${p.customer}`,`Pin / sạc: ${p.vehicle_names||'—'}`,`Mã HĐ: ${p.code}`,`Cơ sở: ${p.store}`,
     `Nhận lại lúc: ${p.return_details?.returned_at?.[0]?telegramClock(p.return_details.returned_at[0]):telegramClock(p.at)}`,`Cọc: ${money(p.deposit)}`,
     ...(Number(p.total)>0?[`Nợ gia hạn còn: ${money(p.total)}`]:[]),...(p.return_details?.note?[`Ghi chú: ${p.return_details.note}`]:[])].join('\n'),p.actor,p.at,sentAt);

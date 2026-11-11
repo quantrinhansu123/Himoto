@@ -23,6 +23,7 @@ import { VietnamDateField } from '@/components/contracts/VietnamDateField';
 import { DateTime24Field } from '@/components/contracts/DateTime24Field';
 import { BatteryContractPrintDocument, BatteryPrintData } from './BatteryContractPrintDocument';
 import { BatteryWorkflowDialog, type BatteryWorkflowMode } from './BatteryWorkflowDialog';
+import { BatteryTelegramPanel } from './BatteryTelegramPanel';
 
 const vietnamNow = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16);
 const moment = (value: string) => value ? `${value.slice(11, 16)} ${value.slice(8, 10)}/${value.slice(5, 7)}/${value.slice(0, 4)}` : '—';
@@ -97,7 +98,7 @@ export function BatteryContractsPage() {
                 { key: 'print', label: 'Xem / In hợp đồng', icon: <Printer size={16} />, onSelect: () => setPrinting(row) },
                 ...(row.status === 'renting' && can('contracts.renew') ? [{ key: 'renew', label: 'Gia hạn pin / sạc', icon: <CalendarPlus size={16} />, onSelect: () => setWorkflow({ row, mode: 'renew' }) }] : []),
                 ...(row.status === 'renting' && can('contracts.return') ? [{ key: 'return', label: 'Trả pin / sạc', icon: <Undo2 size={16} />, onSelect: () => setWorkflow({ row, mode: 'return' }) }] : []),
-                ...(row.status === 'returned' && can('contracts.return') ? [{ key: 'telegram', label: 'Gửi Telegram trả pin / sạc', icon: <Send size={16} />, onSelect: () => setWorkflow({ row, mode: 'telegram' }) }] : []),
+                ...(row.status !== 'cancelled' && (can('contracts.draft') || can('contracts.renew') || can('contracts.return')) ? [{ key: 'telegram', label: 'Gửi / xem Telegram pin / sạc', icon: <Send size={16} />, onSelect: () => setWorkflow({ row, mode: 'telegram' }) }] : []),
                 { key: 'history', label: 'Lịch sử / Thu gia hạn', icon: <History size={16} />, onSelect: () => setWorkflow({ row, mode: 'history' }) },
                 ...(can('contracts.draft') ? [{ key: 'edit', label: 'Sửa hợp đồng', icon: <Pencil size={16} />, onSelect: () => setEditing(row) },
                   { key: 'delete', label: 'Xóa hợp đồng', danger: true, icon: <Trash2 size={16} />, onSelect: () => { setRemoving(row); setDeleteError(''); } }] : []),
@@ -176,6 +177,7 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
   const [lookupError, setLookupError] = useState('');
   const [saving, setSaving] = useState(false), [error, setError] = useState(''), [uncertain, setUncertain] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [created, setCreated] = useState<BatteryContract | null>(null);
   const busy = useRef(false), requestId = useRef(crypto.randomUUID()), skipLookup = useRef(Boolean(row || prefill?.customer_id || prefill?.customer_id_card || prefill?.customer_phone));
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm(current => ({ ...current, [key]: value }));
   const productKind = batteryProductKind(form.battery_name);
@@ -216,7 +218,8 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
     try {
       const saved = await batteryRequest<BatteryContract>(`/api/auth/battery-contracts${row ? `/${row.id}` : ''}`, row ? 'PATCH' : 'POST', input);
       if (!saved || !Number.isSafeInteger(saved.id) || typeof saved.revision !== 'string') throw new Error('Kết quả lưu chưa hợp lệ.');
-      onSaved(saved, print);
+      if (!row) { setCreated(saved); setPreview(print); }
+      else onSaved(saved, print);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Chưa xác nhận được hợp đồng thuê pin.');
       if (!(cause instanceof BatteryRequestError) || cause.status === 0 || cause.status >= 500 || cause.status === 409) setUncertain(true);
@@ -236,6 +239,13 @@ export function BatteryContractForm({ row, storeId, prefill, sourceLabel, onClos
       {type && <label>{purpose === 'paid' ? 'Tài khoản nhận tiền thuê' : 'Tài khoản nhận tiền cọc'}<select aria-label={purpose === 'paid' ? 'Tài khoản nhận tiền thuê' : 'Tài khoản nhận tiền cọc'} required={positive} disabled={accountsLoading} value={form[`${purpose}_account_id`] || ''} onChange={event => update(`${purpose}_account_id`, event.target.value ? Number(event.target.value) : null)}><option value="">Chọn tài khoản nhận</option>{available.map(account => <option key={account.key} value={account.id}>{account.label}</option>)}</select>{!accountsLoading && !available.length && <small className="mg-field-error">Không có tài khoản đang hoạt động phù hợp với cơ sở đã chọn.</small>}</label>}</>;
   };
   const dialogTitle = row ? `Sửa hợp đồng thuê pin ${row.code}` : sourceLabel ? `Thuê pin / sạc · ${sourceLabel}` : 'Tạo hợp đồng thuê pin';
+  if (created) return <>
+    <Dialog title={`Đã lưu hợp đồng · ${created.code}`} onClose={() => onSaved(created, false)}>
+      <div className="mg-dialog-body"><p role="status">Đã lưu hợp đồng và các khoản thu. Kiểm tra và gửi Telegram thuê pin / sạc.</p><BatteryTelegramPanel batteryId={created.id} requestId="rental" /></div>
+      <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={() => setPreview(true)}><Printer size={16} />Xem / In hợp đồng</button><button type="button" className="mg-button" onClick={() => onSaved(created, false)}>Đóng</button></div>
+    </Dialog>
+    {preview && <BatteryPrintPreview doc={created} onClose={() => setPreview(false)} />}
+  </>;
   return <>
     <Dialog title={dialogTitle} className="mg-battery-dialog" onClose={() => { if (!busy.current) onClose(); }}><form onSubmit={submit}><div className="mg-dialog-body">
       {(sourceLabel || row?.vehicle_contract_id) && <p className="mg-composer-hint">Liên kết hợp đồng xe {sourceLabel || row?.vehicle_contract_code || `#${row?.vehicle_contract_id}`}. Chọn Pin, Sạc hoặc Pin + Sạc, kiểm tra giá rồi lưu.</p>}
