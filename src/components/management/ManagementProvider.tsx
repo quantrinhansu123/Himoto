@@ -65,7 +65,7 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   const fleetPage=pathname==='/vehicles'||pathname.startsWith('/vehicles/transfers')||pathname==='/gps';
   const customerPage=pathname==='/customers';
   const directoryPage=fleetPage||customerPage;
-  const [branchStore, setBranchStore] = useState(user&&!user.scope_all&&user.store_id?String(user.store_id):'all');
+  const [branchStore, setBranchStore] = useState(user?.store_id?String(user.store_id):'all');
   const [fleetStore,setFleetStore]=useState('all');
   const [customerStore,setCustomerStore]=useState('all');
   const [fleetStores,setFleetStores]=useState<ManagementRow[]|null>(null);

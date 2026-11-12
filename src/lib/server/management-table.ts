@@ -126,11 +126,10 @@ export function contractStatusClause(status:string) {
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
   return ` AND o.order_status='${status}'`;
 }
-/** Recent created/started rentals plus every still-open contract so operations are never hidden. */
+/** Bound the default list to recent creation/start dates, including drafts. */
 export function contractRecentClause(days:number) {
   return ` AND (
-    o.order_status IN ('draft','renting','overdue','wait_payment','deposit_contract','pending','bad_debt')
-    OR o.created_at >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
+    o.created_at >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
     OR o.rent_at >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
   )`;
 }
@@ -470,7 +469,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const recentDays=input.recentDays&&!input.scope&&!input.query.search.trim()&&!input.query.startDate&&!input.query.endDate
     &&!input.query.filters.customer_id&&!input.query.filters.id ? input.recentDays : undefined;
   const storeSql=kind==='contracts'?(input.storeBasis==='warehouse'?contractWarehouseStoreSql(input.store):contractStoreSql(input.store)):'';
-  const listWindow=all&&recentDays?contractRecentClause(recentDays):'';
+  const listWindow=recentDays?contractRecentClause(recentDays):'';
   const clause=kind==='contracts'
     ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}${all?'':contractDateSql(input.query)}`
     : '';
@@ -481,7 +480,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     const readStatistics=async()=>{
       let stats;
       const search=contractSearchSql(input.query.search);
-      const statsClause=`${contractPageScopeClause(input.scope)}${storeSql}${contractFilterSql(input.query.filters)}`;
+      const statsClause=`${contractPageScopeClause(input.scope)}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}`;
       stats=await fastContractStatistics(client,input,statsClause,now);
       if(!stats){
       const base=`${contractStatisticsSql(statsClause,input.scope==='vat')}${search.sql.replaceAll('$3','$1')}`;
@@ -497,7 +496,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     let scopeCount:number|undefined;
     const separateScopeCount=Boolean(input.query.search.trim()||input.query.status||input.query.startDate||input.query.endDate||input.query.overdueDays||input.query.overdueBucket||Object.values(input.query.filters).some(Boolean)||input.scope==='due');
     if(kind==='contracts'&&params.get('scope_count')==='1'&&separateScopeCount){
-      const counted=await client.query(`SELECT count(*)::int AS scope_count FROM himoto.orders o WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${contractPageScopeClause(input.scope)}${storeSql}`);
+      const counted=await client.query(`SELECT count(*)::int AS scope_count FROM himoto.orders o WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${contractPageScopeClause(input.scope)}${listWindow}${storeSql}`);
       scopeCount=Number(counted.rows[0]?.scope_count);
       if(!Number.isSafeInteger(scopeCount)||scopeCount<0)throw new Error('Không đọc được tổng toàn bộ hợp đồng. Vui lòng thử lại.');
     }
