@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from "@tanstack/react-query";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { Linking, ScrollView, Text } from "react-native";
@@ -15,7 +16,7 @@ function StaffDetails({ row }: { row: MobileStaffProfile }) {
   const editable = session!.user.permissions.includes("hr.write"), locked = write.busy || write.checking || write.pending, phone = row.phone.replace(/[\s().-]/g, "");
   return <>
     <Stack.Screen options={{ title: row.name }} />
-    <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}>
+    <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}>
       <StaffProfileCard row={row} />
       {!!write.error && <InlineError message={write.error} />}
       {write.pending && <InlineError message="Nhân sự còn yêu cầu chưa rõ kết quả. Mở Tài khoản để đối chiếu trước khi sửa hoặc xóa." />}
@@ -28,7 +29,7 @@ function StaffDetails({ row }: { row: MobileStaffProfile }) {
         {row.status !== "leave" && <Button secondary label="Chuyển sang Đã nghỉ việc" disabled={locked} onPress={() => setConfirm("leave")} />}
         <Button secondary label="Xóa hồ sơ nhân sự" disabled={locked} onPress={() => setConfirm("delete")} />
       </>}
-    </ScrollView>
+    </ScrollView></SafeAreaView>
     {confirm && <ConfirmEdit title={confirm === "delete" ? "Xóa hồ sơ nhân sự?" : "Chuyển sang Đã nghỉ việc?"} message={`${row.code} · ${row.name}\n${confirm === "delete" ? "Xóa vĩnh viễn hồ sơ; không tự khóa hoặc xóa tài khoản đăng nhập. Nhân sự còn lịch trực hoặc dữ liệu liên quan sẽ bị chặn xóa. Đổi sang Đã nghỉ việc để khóa tài khoản và giữ lịch sử." : "Giữ hồ sơ nhân sự, khóa và ngừng tài khoản đăng nhập đã liên kết."}`} confirmLabel={confirm === "delete" ? "Xóa hồ sơ nhân sự" : "Xác nhận nghỉ việc"} busy={write.busy} onCancel={() => setConfirm(null)} onConfirm={() => { const removing = confirm === "delete"; setConfirm(null); void write.save(removing ? { revision: row.revision } : { name: row.name, phone: row.phone, email: row.email, position: row.position, store_id: row.storeId, status: "leave", revision: row.revision }, removing); }} />}
     {write.exit && <ConfirmEdit title="Rời hồ sơ nhân sự?" message="Yêu cầu đã gửi vẫn giữ mã trong Tài khoản để đối chiếu. Kiểm tra kết quả trước khi gửi yêu cầu mới." confirmLabel="Rời hồ sơ" busy={write.busy} onCancel={write.cancelExit} onConfirm={write.leave} />}
   </>;

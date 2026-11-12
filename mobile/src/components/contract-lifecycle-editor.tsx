@@ -27,7 +27,7 @@ const descriptions: Record<MobileLifecycleAction, string> = {
   resume: 'Tiếp tục chính hợp đồng này. Chọn đủ xe đang rảnh và đối chiếu lịch còn lại. Giữ nợ/cọc/lịch sử cũ; dời các kỳ chưa phát sinh theo thời gian bảo lưu.',
   complete_hold: 'Hoàn thành và dừng theo dõi khoản không thu hồi. Phần còn thiếu được ghi là tổn thất công nợ, không tạo phiếu thu/chi và không cộng vào doanh thu thực thu. Tiền đã thu/hoàn và cọc giữ theo lịch sử.',
 };
-export function ContractLifecycleEditor({ id }: { id: string }) {
+export function ContractLifecycleEditor({ id, initialAction }: { id: string; initialAction?: 'close_bad_debt' }) {
   const write = useContractLifecycleWrite(id), theme = useTheme(), { session } = useSession(), scroll = useRef<ScrollViewInstance>(null);
   const [dirty, setDirty] = useState(false), [exit, setExit] = useState<(() => void) | null>(null), [confirm, setConfirm] = useState<MobileLifecycleInput | null>(null), [reload, setReload] = useState(false), [formVersion, setFormVersion] = useState(0), [eventCount, setEventCount] = useState(50);
   const disablePrevention = usePreventRemove(write.busy || dirty && !write.proof, ({ repeat }) => setExit(() => repeat));
@@ -61,7 +61,7 @@ export function ContractLifecycleEditor({ id }: { id: string }) {
             {context.status === 'reserved' && <><Text style={text}>Bảo lưu: {dateTime(context.heldAt || '')} → {dateTime(context.holdUntil || '')}</Text><Text style={{ ...text, color: context.holdExpired ? theme.danger : theme.muted }}>{context.holdExpired ? 'Hết hạn bảo lưu. Chờ xác nhận tiếp tục thuê hoặc hoàn thành.' : 'Dừng phát sinh kỳ mới; nợ và cọc trước bảo lưu được giữ.'}</Text></>}
           </Card>
           {context.items.map(i => <Card key={i.id} style={{ gap: 8 }}><Text style={text}>{i.license || i.name} · lượt #{i.id}</Text><Text style={muted}>{i.reconciled ? 'Đã gỡ giữ xe; chưa có ngày thu hồi thực tế. Giữ kho và mốc cũ.' : i.completedAt ? `Đã trả / thu hồi: ${dateTime(i.completedAt)}` : `Chưa trả · hẹn trả ${dateTime(i.endsAt || '')}`}</Text></Card>)}
-          {!write.entry && context.actions.length > 0 && <LifecycleActionForm key={formVersion} id={id} context={context} disabled={disabled} onDirty={() => setDirty(true)} onReview={setConfirm} />}
+          {!write.entry && context.actions.length > 0 && <LifecycleActionForm key={formVersion} id={id} context={context} initialAction={initialAction} disabled={disabled} onDirty={() => setDirty(true)} onReview={setConfirm} />}
           {context.status === 'bad_debt' && !context.allReturned && session?.user.permissions.includes('contracts.return') && <Button secondary label="Thu hồi xe nợ xấu" disabled={write.busy} onPress={() => router.push({ pathname: '/recovery-editor/[id]', params: { id } })} />}
           {session?.user.permissions.some(p => p === 'finance.read' || p === 'finance.write') && <Button secondary label="Thu / chi và xử lý cọc" disabled={write.busy} onPress={() => router.push({ pathname: '/finance/[id]', params: { id } })} />}
           {!write.entry && <Button secondary label="Làm mới tình trạng hợp đồng" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />}
@@ -76,9 +76,9 @@ export function ContractLifecycleEditor({ id }: { id: string }) {
     {exit && <ConfirmEdit title={write.busy ? 'Đang ghi nhận tình trạng' : 'Rời màn tình trạng hợp đồng?'} message={write.busy ? 'Chờ máy chủ xác nhận trước khi rời.' : 'Nội dung chưa gửi sẽ mất. Mã đã gửi được giữ để đối chiếu trong Tài khoản.'} confirmLabel="Rời màn tình trạng" busy={write.busy} onCancel={() => setExit(null)} onConfirm={() => { if (!write.busy) exit(); }} />}
   </SafeAreaView>;
 }
-function LifecycleActionForm({ id, context, disabled, onDirty, onReview }: { id: string; context: MobileLifecycleContext; disabled: boolean; onDirty: () => void; onReview: (input: MobileLifecycleInput) => void }) {
+function LifecycleActionForm({ id, context, initialAction, disabled, onDirty, onReview }: { id: string; context: MobileLifecycleContext; initialAction?: 'close_bad_debt'; disabled: boolean; onDirty: () => void; onReview: (input: MobileLifecycleInput) => void }) {
   const { api, session } = useSession(), theme = useTheme();
-  const [action, setAction] = useState<MobileLifecycleAction | ''>(''), [at, setAt] = useState(now), [holdUntil, setHoldUntil] = useState(''), [resumeEnd, setResumeEnd] = useState(context.suggestedResumeEnd || ''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false), [vehicles, setVehicles] = useState<MobileDraftVehicle[]>([]), [picker, setPicker] = useState(false), [error, setError] = useState('');
+  const [action, setAction] = useState<MobileLifecycleAction | ''>(() => initialAction && context.actions.some(item => item.action === initialAction) ? initialAction : ''), [at, setAt] = useState(now), [holdUntil, setHoldUntil] = useState(''), [resumeEnd, setResumeEnd] = useState(context.suggestedResumeEnd || ''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false), [vehicles, setVehicles] = useState<MobileDraftVehicle[]>([]), [picker, setPicker] = useState(false), [error, setError] = useState('');
   const previewInput = useDebouncedValue(JSON.stringify({ at, ...(resumeEnd ? { resume_end: resumeEnd } : {}) }));
   const preview = useQuery({ queryKey: ['lifecycle-preview', api?.origin, session?.user.id, id, context.revision, previewInput], queryFn: ({ signal }) => api!.lifecyclePreview(id, JSON.parse(previewInput), signal), enabled: !!api && action === 'resume' && validDraftTime(at) && (!resumeEnd || validDraftTime(resumeEnd)), retry: false, staleTime: 0, gcTime: 0 });
   const inventory = useQuery({ queryKey: ['lifecycle-inventory', api?.origin, session?.user.id, id, context.revision], queryFn: ({ signal }) => api!.lifecycleInventory(id, 'page=1', signal), enabled: !!api && action === 'resume', retry: false, staleTime: 0, gcTime: 0 });

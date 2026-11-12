@@ -1,4 +1,5 @@
 import type { CatalogueKind } from "@himoto/mobile-contract";
+import { statuses } from './status-labels';
 
 export const catalogueConfig: Record<
   CatalogueKind,
@@ -99,5 +100,5 @@ export function contextualStatusLabel(
     if (status === "draft") return "Chưa hoàn tất";
     if (status === "blacklist") return "Nợ xấu / Cấm thuê";
   }
-  return undefined;
+  return statuses[status];
 }

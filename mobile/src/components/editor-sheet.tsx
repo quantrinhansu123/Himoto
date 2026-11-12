@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 import { useTheme } from "@/theme";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
@@ -24,6 +24,7 @@ export function EditorSheet({
     reduced = useReducedMotion();
   return (
     <Modal animationType={reduced ? "none" : "slide"} onRequestClose={onClose}>
+      <SafeAreaProvider>
       <SafeAreaView
         accessibilityViewIsModal
         style={{ flex: 1, backgroundColor: theme.surface }}
@@ -74,6 +75,7 @@ export function EditorSheet({
           {children}
         </KeyboardAvoidingView>
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -100,6 +102,7 @@ export function ConfirmEdit({
       animationType={reduced ? "none" : "fade"}
       onRequestClose={onCancel}
     >
+      <SafeAreaProvider>
       <SafeAreaView
         accessibilityViewIsModal
         style={{
@@ -141,6 +144,7 @@ export function ConfirmEdit({
           )}
         </ScrollView>
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }

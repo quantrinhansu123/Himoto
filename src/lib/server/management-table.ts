@@ -121,7 +121,7 @@ function overdueDetailsSql(sql:string) {
 export function contractStatusClause(status:string) {
   if(!status)return '';
   if(status==='renting')return ` AND o.order_status IN ('renting','overdue','bad_debt')`;
-  if(status==='overdue')return ` AND (o.order_status='overdue' OR o.order_status='renting' AND o.return_at < now()
+  if(status==='overdue')return ` AND (o.order_status IN ('overdue','bad_debt') OR o.order_status='renting' AND o.return_at < now()
     OR o.order_status IN ('renting','wait_payment') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL)`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
   return ` AND o.order_status='${status}'`;

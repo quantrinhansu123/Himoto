@@ -1,0 +1,17 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'vn.himoto.video'
+version = '1.0.0'
+
+android {
+  namespace 'vn.himoto.video'
+}
+
+dependencies {
+  // Keep this aligned with expo-video in Expo SDK 58.
+  implementation 'androidx.media3:media3-transformer:1.9.1'
+  implementation 'androidx.media3:media3-effect:1.9.1'
+}

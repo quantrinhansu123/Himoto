@@ -20,6 +20,7 @@ function selection(user: SessionUser, value: string, raw: URLSearchParams) {
   const kind = value;
   if (!hasPermission(user, kind === 'staff' ? 'hr.read' : kind === 'stores' ? 'contracts.read' : `${kind}.read`)) throw new MobileError('Không có quyền xuất danh mục này.', 403, 'FORBIDDEN');
   const params = new URLSearchParams(raw), position = params.get('position') || '', selected = params.get('columns');
+  if (params.has('statistics')) throw new MobileError('Bộ lọc xuất không hợp lệ.');
   if (params.has('columns') && (params.getAll('columns').length !== 1 || !selected || selected.length > 2000)) throw new MobileError('Chọn các cột xuất hợp lệ.');
   params.delete('columns');
   if (params.has('position') && (kind !== 'staff' || params.getAll('position').length !== 1 || position.length > 100)) throw new MobileError('Bộ lọc chức vụ chưa hợp lệ.');

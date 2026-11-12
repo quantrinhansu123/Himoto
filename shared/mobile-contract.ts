@@ -52,6 +52,8 @@ export interface MobileRecord {
 export interface MobilePage {
   rows: MobileRecord[];
   total: number;
+  /** Total after store/search/date/customer filters, before selecting a status. */
+  tabCount?: number;
   page: number;
   pages: number;
   statusCounts: [string, number][];

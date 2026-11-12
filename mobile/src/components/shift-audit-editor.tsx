@@ -1,3 +1,4 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect,useRef,useState } from "react";
 import { router,usePreventRemove } from "expo-router";
 import { uuid } from "expo";
@@ -21,7 +22,7 @@ export function ShiftAuditEditor({report,snapshot,onRefresh}:{report:ShiftReport
   async function save(){if(!api||!session||running.current||!confirm||readonly)return;running.current=true;setBusy(true);setError("");const status=confirm;setConfirm(null);
     try{const operation=`shift.audit:${report.id}`,scope={origin:api.origin,userId:session.user.id,storeId:session.user.allStores?null:session.user.storeId,allStores:session.user.allStores},intent=await pendingWrites.reserveExclusive(scope,operation,[operation,`shift.update:${report.id}`,`shift.media:${report.id}`],()=>uuid.v4().toLowerCase());if(!alive.current)return;setPending(true);if(!intent.created)throw Error("Còn thao tác báo cáo ca chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.");await api.saveShiftAudit(String(report.id),{input:parseAuditInput(input),status,revision:report.audit?.revision||0,report_revision:report.revision,fingerprint:snapshot.fingerprint},intent.key);if(!alive.current)return;setLeaving(true);prevent();router.replace({pathname:"/shift-result/[key]",params:{key:intent.key}});}catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}
   }
-  return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}}>
+  return <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}}>
     <Text accessibilityRole="header" style={{color:theme.text,fontSize:26,fontWeight:"800"}}>KTNB đối soát · {report.store_name}</Text><Text style={{color:theme.muted,lineHeight:24}}>{report.payload.date.split("-").reverse().join("/")} · Số PGD đã chốt được giữ nguyên. Nhập số sổ và số KTNB độc lập. Ô trống giữ trạng thái chưa có số liệu.</Text>
     {report.audit&&<Card style={{gap:10}}><Text style={{color:theme.text,fontWeight:"700"}}>{report.audit.status==="confirmed"?`Đã xác nhận · ${report.audit.result==="matched"?"Khớp":"Có chênh lệch"}`:"Nháp KTNB"}</Text><Text style={{color:theme.muted}}>Người đối soát: {report.audit.reviewer_name}</Text></Card>}
     <ShiftAuditExport key={`${report.id}:${report.audit?.revision||0}`} report={report} disabled={busy||pending}/>
@@ -35,5 +36,5 @@ export function ShiftAuditEditor({report,snapshot,onRefresh}:{report:ShiftReport
     {!!error&&<InlineError message={error} />}{pending&&!busy&&<Button label="Mở Tài khoản đối chiếu KTNB" onPress={()=>{setLeaving(true);prevent();router.push("/(tabs)/account");}} />}
     {confirm&&<ConfirmEdit title={confirm==="confirmed"?"Xác nhận đối soát KTNB?":"Lưu nháp KTNB?"} message="Số liệu PGD đã chốt giữ nguyên. Máy chủ kiểm lại phiên bản báo cáo, bản đối soát và dấu vân tay số liệu app trước khi ghi. Sau xác nhận, đối soát và minh chứng KTNB được khóa." confirmLabel={confirm==="confirmed"?"Xác nhận đối soát KTNB":"Xác nhận lưu nháp KTNB"} onCancel={()=>setConfirm(null)} onConfirm={()=>{void save();}} />}
     {exit&&<ConfirmEdit title="Rời biểu mẫu KTNB?" message="Giữ các mã chưa rõ kết quả trong Tài khoản; thay đổi biểu mẫu chưa lưu sẽ bị bỏ." confirmLabel="Rời đối soát KTNB" onCancel={()=>setExit(null)} onConfirm={()=>{const repeat=exit;setExit(null);setLeaving(true);prevent();repeat();}} />}
-  </ScrollView>;
+  </ScrollView></SafeAreaView>;
 }

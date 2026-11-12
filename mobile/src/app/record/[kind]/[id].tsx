@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Linking,
   RefreshControl,
@@ -128,7 +129,7 @@ export default function RecordDetail() {
   }
 
   return (
-    <ScrollView
+    <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><ScrollView
       contentContainerStyle={{
         padding: 20,
         gap: 16,
@@ -284,7 +285,7 @@ export default function RecordDetail() {
           }
         />
       </Card>
-    </ScrollView>
+    </ScrollView></SafeAreaView>
   );
 }
 

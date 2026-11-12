@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { usePathname, useRouter } from "expo-router";
+import { usePathname, useRouter, type Href } from "expo-router";
 import {
   AlarmClock,
   BatteryCharging,
@@ -41,7 +41,7 @@ import { Brand } from "./ui";
 interface DrawerItem {
   id: string;
   label: string;
-  route: string;
+  route: Href & string;
   icon: React.ComponentType<{ size: number; color: string }>;
   permission?: string | null;
   badge?: string;
@@ -68,7 +68,6 @@ export function ManagementDrawer({
   const drawerWidth = Math.min(width * 0.85, 340);
 
   const permissions = session?.user.permissions || [];
-  const isAdmin = session?.user.role === "admin" || session?.user.role === "super_admin";
 
   const currentStore = useMemo(() => {
     if (session?.user.allStores) return "Toàn bộ cơ sở";
@@ -85,7 +84,7 @@ export function ManagementDrawer({
         { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock, permission: null },
         { id: "shift-reports", label: "Báo cáo cuối ca", route: "/shift-reports", icon: ReceiptText, permission: null },
         { id: "operations", label: "Thao tác nhanh", route: "/(tabs)", icon: House, permission: null },
-        { id: "dashboard", label: "Dashboard", route: "/dashboard", icon: LayoutDashboard, permission: "contracts.read" },
+        { id: "dashboard", label: "Tổng quan giao dịch", route: "/dashboard", icon: LayoutDashboard, permission: "contracts.read" },
         { id: "staff-sales", label: "Báo cáo doanh thu", route: "/staff-sales", icon: ReceiptText, permission: "contracts.read" },
       ],
     },
@@ -115,9 +114,9 @@ export function ManagementDrawer({
     {
       title: "NHÂN SỰ & CƠ SỞ",
       items: [
-        { id: "staff", label: "Nhân sự", route: "/staff", icon: UsersRound, permission: "hr.read" },
+        { id: "staff", label: "Nhân sự", route: "/directory/staff", icon: UsersRound, permission: "hr.read" },
         { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays, permission: "hr.read" },
-        { id: "stores", label: "Cơ sở", route: "/stores", icon: Building2, permission: "settings.write" },
+        { id: "stores", label: "Cơ sở", route: "/directory/stores", icon: Building2, permission: "settings.write" },
       ],
     },
     {
@@ -135,14 +134,14 @@ export function ManagementDrawer({
     if (item.permission === null) return true;
     if (item.id === "accounts") return canManageAccounts(session?.user);
     if (!item.permission) return true;
-    return permissions.includes(item.permission) || isAdmin;
+    return permissions.includes(item.permission);
   };
 
-  const handleNavigate = (route: string) => {
+  const handleNavigate = (route: Href & string) => {
     onClose();
     // Small timeout ensures smooth drawer close before navigation
     setTimeout(() => {
-      router.push(route as any);
+      router.push(route);
     }, 120);
   };
 
@@ -256,13 +255,13 @@ export function ManagementDrawer({
                   <View style={styles.sectionItems}>
                     {visibleItems.map((item) => {
                       const Icon = item.icon;
-                      const isActive =
-                        pathname === item.route ||
-                        (item.route === "/(tabs)" && pathname === "/");
+                      const isActive = pathname === (item.route.replace(/\/\([^/]+\)/g, "") || "/");
 
                       return (
                         <Pressable
                           key={item.id}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isActive }}
                           onPress={() => handleNavigate(item.route)}
                           style={({ pressed }) => [
                             styles.navItem,

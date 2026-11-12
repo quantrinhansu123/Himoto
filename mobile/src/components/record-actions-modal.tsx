@@ -44,15 +44,13 @@ export function RecordActionsModal({
   onClose,
   kind,
   record,
-  isAdmin,
-  canSettle,
+  permissions,
 }: {
   visible: boolean;
   onClose: () => void;
   kind: CatalogueKind;
   record: MobileRecord | null;
-  isAdmin?: boolean;
-  canSettle?: boolean;
+  permissions: readonly string[];
 }) {
   const theme = useTheme();
 
@@ -67,6 +65,9 @@ export function RecordActionsModal({
 
   const id = String(record.id);
   const status = record.status || "";
+  const has = (permission: string) => permissions.includes(permission);
+  const canRead = has(`${kind}.read`);
+  if (!canRead) return null;
   const title =
     kind === "vehicles"
       ? record.license || record.code
@@ -96,7 +97,7 @@ export function RecordActionsModal({
     });
 
     // 2. Trả xe
-    if (["renting", "overdue", "wait_payment"].includes(status)) {
+    if (has("contracts.return") && ["renting", "overdue", "wait_payment"].includes(status)) {
       actions.push({
         id: "return",
         label: "Trả xe tại quầy",
@@ -112,7 +113,7 @@ export function RecordActionsModal({
     }
 
     // 3. Gia hạn
-    if (["renting", "overdue"].includes(status)) {
+    if (has("contracts.renew") && ["renting", "overdue"].includes(status)) {
       actions.push({
         id: "renew",
         label: "Gia hạn hợp đồng",
@@ -128,7 +129,7 @@ export function RecordActionsModal({
     }
 
     // 4. Đổi xe
-    if (["renting", "overdue", "wait_payment"].includes(status)) {
+    if (has("contracts.return") && ["renting", "overdue", "wait_payment"].includes(status)) {
       actions.push({
         id: "swap",
         label: "Đổi xe cho khách",
@@ -144,7 +145,7 @@ export function RecordActionsModal({
     }
 
     // 5. Thu tiền
-    if (!["draft", "cancelled"].includes(status)) {
+    if (has("finance.write") && !["draft", "cancelled"].includes(status)) {
       actions.push({
         id: "payment",
         label: "Thu tiền hợp đồng",
@@ -176,7 +177,7 @@ export function RecordActionsModal({
     }
 
     // 7. Gửi nhắc nợ
-    if (["overdue", "renting", "wait_payment"].includes(status)) {
+    if (record.reminderEligible && (has("contracts.draft") || has("finance.write"))) {
       actions.push({
         id: "reminder",
         label: "Gửi nhắc nợ qua Zalo",
@@ -195,8 +196,8 @@ export function RecordActionsModal({
     if (status !== "draft") {
       actions.push({
         id: "telegram",
-        label: "Gửi Telegram",
-        description: "Bắn tin hợp đồng vào nhóm",
+        label: "Telegram hợp đồng",
+        description: "Xem trạng thái gửi và thao tác theo quyền",
         icon: MessageCircle,
         color: "#0284C7",
         onPress: () =>
@@ -232,24 +233,24 @@ export function RecordActionsModal({
         }),
     });
 
-    // 11. Đóng hợp đồng nợ xấu (Admin / Quyền quyết toán)
-    if (status === "bad_debt" && (isAdmin || canSettle)) {
+    // Settlement is an individual server-projected grant, never implied by role.
+    if (status === "bad_debt" && has("contracts.settle")) {
       actions.push({
         id: "close_bad_debt",
         label: "Đóng hợp đồng nợ xấu",
-        description: "Giải phóng xe & kết thúc theo dõi",
+        description: "Rà soát đủ xe đã nhận; công nợ tiếp tục theo dõi",
         icon: ShieldCheck,
         color: "#16A34A",
         onPress: () =>
           router.push({
-            pathname: "/recovery-editor/[id]",
-            params: { id },
+            pathname: "/contract-lifecycle/[id]",
+            params: { id, action: "close_bad_debt" },
           }),
       });
     }
 
     // 12. Tiếp tục sửa bản nháp
-    if (status === "draft") {
+    if (has("contracts.draft") && status === "draft") {
       actions.push({
         id: "draft_edit",
         label: "Tiếp tục sửa bản nháp",
@@ -275,7 +276,7 @@ export function RecordActionsModal({
         }),
     });
 
-    actions.push({
+    if (has("vehicles.write")) actions.push({
       id: "status",
       label: "Đổi trạng thái xe",
       description: "Lưu kho, bảo dưỡng, sẵn sàng",
@@ -288,7 +289,7 @@ export function RecordActionsModal({
         }),
     });
 
-    actions.push({
+    if (has("vehicles.transfer")) actions.push({
       id: "transfer",
       label: "Điều chuyển cơ sở",
       description: "Chuyển xe sang cơ sở khác",
@@ -324,14 +325,14 @@ export function RecordActionsModal({
         }),
     });
 
-    actions.push({
+    if (has("contracts.read")) actions.push({
       id: "history",
       label: "Hợp đồng của khách",
       icon: Files,
       onPress: () =>
         router.push({
           pathname: "/(tabs)/contracts",
-          params: { search: record.name || "" },
+          params: { customer_id: id, customer_name: record.name || "", status: "all", store: "all" },
         }),
     });
   }
@@ -374,7 +375,7 @@ export function RecordActionsModal({
                 </Text>
               )}
             </View>
-            <Pressable onPress={onClose} hitSlop={8} style={styles.closeBtn}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Đóng menu thao tác" onPress={onClose} hitSlop={8} style={styles.closeBtn}>
               <X size={20} color={theme.muted} />
             </Pressable>
           </View>
@@ -389,6 +390,7 @@ export function RecordActionsModal({
               return (
                 <Pressable
                   key={action.id}
+                  accessibilityRole="button"
                   onPress={() => handleAction(action.onPress)}
                   style={({ pressed }) => [
                     styles.actionItem,

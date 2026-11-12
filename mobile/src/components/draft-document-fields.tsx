@@ -176,27 +176,11 @@ export function DraftPeople<T extends MobileContractFormInput>({
       title="Nhân sự và nguồn khách"
       initial={!!d.sales_staff_id || !!d.sales_staff_name || !!d.tls_staff_id}
     >
-      <ChoiceField
-        label="Người làm hợp đồng"
-        value={d.staff_id || "manual"}
-        disabled={disabled}
-        searchable
-        choices={choices("representative", d.staff_id, d.staff_name)}
-        onChange={(value) => {
-          const row = staff.find((item) => String(item.id) === value);
-          set({
-            staff_id: row ? value : "",
-            ...(row ? { staff_name: row.name } : {}),
-          });
-        }}
-      />
       <FormField
-        label="Tên người làm hợp đồng"
+        label="Người làm hợp đồng"
         value={d.staff_name}
-        editable={!disabled && !d.staff_id}
-        onChangeText={(value) => set({ staff_name: value })}
-        maxLength={191}
-        autoComplete="off"
+        editable={false}
+        hint="Hợp đồng mới lấy tên tài khoản đăng nhập. Hồ sơ đã lưu giữ nguyên người làm hợp đồng."
       />
       <ChoiceField
         label="NVKD ghi nhận doanh số"

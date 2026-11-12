@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { router } from "expo-router";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { router, Stack } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
@@ -204,6 +204,8 @@ export function CatalogueScreen({
   initialScope = "",
   initialStore,
   initialSearch="",
+  initialCustomerId,
+  customerName,
   operationsCatalogue=false,
 }: {
   kind: CatalogueKind;
@@ -211,6 +213,8 @@ export function CatalogueScreen({
   initialScope?: MobileContractScope;
   initialStore?: string;
   initialSearch?:string;
+  initialCustomerId?:string;
+  customerName?:string;
   operationsCatalogue?:boolean;
 }) {
   const theme = useTheme();
@@ -223,6 +227,7 @@ export function CatalogueScreen({
   const [search, setSearch] = useState(initialSearch);
   const [status, setStatus] = useState(initialStatus);
   const [scope, setScope] = useState(initialScope);
+  const [customerId, setCustomerId] = useState(initialCustomerId || "");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [storeBasis, setStoreBasis] = useState("source");
@@ -233,7 +238,7 @@ export function CatalogueScreen({
       : session?.user.storeId
       ? String(session.user.storeId)
       : "all";
-  const [store, setStore] = useState(initialStore || defaultStore);
+  const [store, setStore] = useState(kind === 'vehicles' || session?.user.allStores ? initialStore || defaultStore : defaultStore);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -248,9 +253,9 @@ export function CatalogueScreen({
   }, [input]);
   useEffect(() => {
     list.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [search, status, store, scope, from, to, storeBasis]);
+  }, [search, status, store, scope, from, to, storeBasis, customerId]);
   const query = useInfiniteQuery({
-    queryKey: ["catalogue", session?.user.id, session?.user.storeId, session?.user.allStores, kind, search, status, store, scope, from, to, storeBasis,operationsCatalogue],
+    queryKey: ["catalogue", session?.user.id, session?.user.storeId, session?.user.allStores, kind, search, status, store, scope, from, to, storeBasis,operationsCatalogue,customerId],
     initialPageParam: 1,
     queryFn: ({ pageParam, signal }) =>
       (operationsCatalogue?(_kind:CatalogueKind,query:string,signal:AbortSignal)=>api!.operationContracts(query,signal):api!.catalogue)(
@@ -261,7 +266,7 @@ export function CatalogueScreen({
           search,
           status,
           store,
-          ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis } : {}),
+          ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}),
         }).toString(),
         signal,
       ),
@@ -270,6 +275,13 @@ export function CatalogueScreen({
     enabled: !!api && !!allowed && datesValid,
     staleTime: 30_000,
     gcTime: 300_000,
+  });
+  // Counts are independent of the selected status and never block the first page.
+  const statistics = useQuery({
+    queryKey: ['catalogue', 'status-counts', 'contracts', session?.user.id, session?.user.storeId, session?.user.allStores, scope, search, store, from, to, storeBasis, customerId],
+    queryFn: ({ signal }) => api!.catalogue('contracts', new URLSearchParams({ statistics: '1', size: '1', scope, search, store, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) }).toString(), signal),
+    enabled: kind === 'contracts' && !operationsCatalogue && !!api && !!allowed && datesValid && query.isSuccess,
+    staleTime: 30_000, gcTime: 300_000, retry: false,
   });
   const records = useMemo(() => [
     ...new Map(query.data?.pages.flatMap(page => page.rows).map(row => [row.id, row])).values(),
@@ -284,12 +296,12 @@ export function CatalogueScreen({
   ), [kind, scope]);
   const statusCountsMap = useMemo(() => {
     const map = new Map<string, number>();
-    const counts = query.data?.pages[0]?.statusCounts;
+    const counts = kind === 'contracts' ? statistics.data?.statusCounts : query.data?.pages[0]?.statusCounts;
     if (Array.isArray(counts)) {
       for (const [st, cnt] of counts) map.set(st, cnt);
     }
     return map;
-  }, [query.data]);
+  }, [kind, statistics.data, query.data]);
   if (!allowed)
     return (
       <StateView
@@ -310,11 +322,11 @@ export function CatalogueScreen({
         : "Cơ sở được phân công"
       : stores.find((item) => String(item.id) === store)?.name ||
         "Cơ sở được phân công";
-  const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source");
+  const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source") + Number(!!customerId);
 
   const quickStatuses = [
     ...new Set(["", ...settings.quickStatuses, ...(status ? [status] : [])]),
-  ];
+  ].filter(value => !value || status === value || !(scope === 'overdue' && value === 'overdue' || scope === 'drafts' && value === 'draft'));
   function resetFilters() {
     setInput("");
     setSearch("");
@@ -323,6 +335,7 @@ export function CatalogueScreen({
     setFrom("");
     setTo("");
     setStoreBasis("source");
+    setCustomerId("");
   }
   function fetchMore() {
     if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError)
@@ -343,7 +356,7 @@ export function CatalogueScreen({
       { label: "Khớp cơ sở khách từ Excel", onPress: () => router.push("/customer-store-import") },
     );
   }
-  const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis } : {}) }).toString();
+  const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}) }).toString();
   if (!operationsCatalogue) {
     if (kind !== "contracts" && session?.user.permissions.includes("settings.write"))
       actions.push({ label: "Chọn nhiều hồ sơ để xóa", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
@@ -382,7 +395,9 @@ export function CatalogueScreen({
               {settings.title}
             </Text>
 
-            <Pressable
+            {kind === 'customers' ? <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ color: theme.muted, fontSize: 12, flexShrink: 1 }}>
+              {query.data ? `${query.data.pages[0].total.toLocaleString('vi-VN')} khách hàng` : 'Đang tải…'}
+            </Text> : <Pressable
               accessibilityRole="button"
               accessibilityLabel="Chọn cơ sở"
               onPress={() => setStoreModalOpen(true)}
@@ -400,11 +415,11 @@ export function CatalogueScreen({
                 {storeName}
               </Text>
               <ChevronDown size={13} color={theme.muted} />
-            </Pressable>
+            </Pressable>}
           </View>
         )}
 
-        {!compact && (
+        {!compact && kind !== 'customers' && (
           <View style={styles.row}>
             <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>
               {query.data
@@ -536,18 +551,20 @@ export function CatalogueScreen({
                 const isSelected = status === value;
                 const tabLabel = value
                   ? contextualStatusLabel(kind, value) || statuses[value] || value
-                  : "Tất cả";
+                  : kind === 'contracts' && scope ? contractWorkspace(scope)!.title : "Tất cả";
                 const count = (() => {
-                  if (!value) return query.data?.pages[0]?.total;
-                  if (statusCountsMap.size === 0) return undefined;
+                  if (!value) return kind === 'contracts' ? statistics.data?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined) : query.data?.pages[0]?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined);
+                  if (statusCountsMap.size === 0 && !(kind === 'contracts' ? statistics.data : query.data)) return undefined;
                   if (kind === "contracts" && value === "renting") {
                     const renting = statusCountsMap.get("renting") || 0;
                     const overdue = statusCountsMap.get("overdue") || 0;
                     const badDebt = statusCountsMap.get("bad_debt") || 0;
                     const sum = renting + overdue + badDebt;
-                    return sum > 0 ? sum : undefined;
+                    return sum;
                   }
-                  return statusCountsMap.get(value);
+                  if (kind === 'contracts' && value === 'overdue') return (statusCountsMap.get('overdue') || 0) + (statusCountsMap.get('bad_debt') || 0);
+                  if (kind === 'customers' && value === 'blacklist') return statusCountsMap.get('bad_debt') ?? statusCountsMap.get('blacklist') ?? 0;
+                  return statusCountsMap.get(value) ?? 0;
                 })();
 
                 return (
@@ -582,6 +599,9 @@ export function CatalogueScreen({
               })}
             </ScrollView>
 
+            {!!customerId && <Text style={{ color: theme.text, fontSize: 14 }}>Hợp đồng của khách: {customerName || `#${customerId}`}</Text>}
+            {kind === 'contracts' && !operationsCatalogue && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
+
             {/* Scope notification banner if filtered by specialized workspace */}
             {kind === "contracts" && !!scope && (
               <View
@@ -599,7 +619,9 @@ export function CatalogueScreen({
                   </Text>
                 </View>
                 <Pressable
-                  onPress={() => setScope("")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Xem tất cả hợp đồng"
+                  onPress={() => { setScope(""); setStatus(""); }}
                   style={[
                     styles.scopeClearChip,
                     { backgroundColor: theme.surface, borderColor: theme.border },
@@ -659,6 +681,7 @@ export function CatalogueScreen({
       edges={["top", "left", "right"]}
       style={{ flex: 1, backgroundColor: theme.background }}
     >
+      {kind === 'contracts' && !!initialScope && <Stack.Screen options={{ title: settings.title }} />}
       <FlatList
         ref={list}
         style={{ flex: 1 }}
@@ -680,6 +703,7 @@ export function CatalogueScreen({
             onRefresh={() => {
               void restore(true);
               void query.refetch();
+              if (kind === 'contracts' && !operationsCatalogue) void statistics.refetch();
               if(kind==='vehicles')void cache.invalidateQueries({queryKey:['record-media','vehicle-thumbnail']});
             }}
             tintColor={theme.primary}
@@ -801,14 +825,7 @@ export function CatalogueScreen({
         onClose={() => setActionRecord(null)}
         kind={kind}
         record={actionRecord}
-        isAdmin={
-          session?.user.role === "admin" || session?.user.role === "super_admin"
-        }
-        canSettle={
-          session?.user.permissions.includes("contracts.settle") ||
-          session?.user.role === "admin" ||
-          session?.user.role === "super_admin"
-        }
+        permissions={session?.user.permissions || []}
       />
 
       {/* Quick Store Picker Modal */}

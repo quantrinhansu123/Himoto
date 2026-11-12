@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from "@tanstack/react-query";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { Linking, ScrollView, Text } from "react-native";
@@ -16,7 +17,7 @@ function StoreDetails({ row }: { row: MobileStoreProfile }) {
   const editable = session!.user.permissions.includes("settings.write"), phone = row.phone.replace(/[\s().-]/g, "");
   return <>
     <Stack.Screen options={{ title: row.name }} />
-    <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}>
+    <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}>
       <StoreProfileCard row={row} />
       {!!write.error && <InlineError message={write.error} />}
       {write.pending && <InlineError message="Cơ sở còn yêu cầu chưa rõ kết quả. Mở Tài khoản để đối chiếu trước khi sửa hoặc xóa." />}
@@ -29,7 +30,7 @@ function StoreDetails({ row }: { row: MobileStoreProfile }) {
       {session!.user.permissions.includes("finance.read") && <Button secondary label="Sổ quỹ / Sổ két của cơ sở" onPress={() => router.push({ pathname: "/cashbook", params: { store: String(row.id) } })} />}
       {([{ kind: "staff", permission: "hr.read", label: "Nhân sự của cơ sở" }, { kind: "vehicles", permission: "vehicles.read", label: "Xe tại cơ sở" }, { kind: "customers", permission: "customers.read", label: "Khách hàng của cơ sở" }] as const).filter(link => session!.user.permissions.includes(link.permission)).map(link => <Button key={link.kind} secondary label={link.label} onPress={() => router.push({ pathname: "/store-records/[id]/[kind]", params: { id: String(row.id), kind: link.kind } })} />)}
       {editable && <Button secondary label="Xóa cơ sở" disabled={write.busy || write.checking || write.pending} onPress={() => setRemove(true)} />}
-    </ScrollView>
+    </ScrollView></SafeAreaView>
     {remove && <ConfirmEdit title="Xóa cơ sở?" message={`${row.code} · ${row.name}\nChỉ xóa được cơ sở không có dữ liệu liên quan, kể cả dữ liệu lưu trữ. Thao tác xóa không thể hoàn tác. Có thể chọn Tạm ngừng trong Chỉnh sửa cơ sở để giữ lịch sử.`} confirmLabel="Xóa cơ sở" busy={write.busy} onCancel={() => setRemove(false)} onConfirm={() => { setRemove(false); void write.save({ revision: row.revision }, true); }} />}
     {write.exit && <ConfirmEdit title="Rời hồ sơ cơ sở?" message="Yêu cầu đã gửi vẫn giữ mã trong Tài khoản để đối chiếu. Kiểm tra kết quả trước khi gửi yêu cầu mới." confirmLabel="Rời hồ sơ" busy={write.busy} onCancel={write.cancelExit} onConfirm={write.leave} />}
   </>;

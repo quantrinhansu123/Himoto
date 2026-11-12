@@ -21,7 +21,7 @@ $taskSigningManifest=Get-Content -LiteralPath (Join-Path $taskSigning 'manifest.
 $taskKey=Join-Path $taskSigning $taskSigningManifest.keystore
 if ((Get-FileHash -LiteralPath $taskKey -Algorithm SHA256).Hash.ToLowerInvariant() -ne $taskSigningManifest.keystoreSha256) { throw 'Signing keystore hash mismatch.' }
 $taskPassword=(New-Object Management.Automation.PSCredential('signing',(ConvertTo-SecureString ([IO.File]::ReadAllText((Join-Path $taskSigning 'password.dpapi')))))).GetNetworkCredential().Password
-$taskNames=@('HIMOTO_ANDROID_LOCAL_SIGNING','HIMOTO_ANDROID_KEYSTORE_PATH','HIMOTO_ANDROID_KEYSTORE_PASSWORD','HIMOTO_ANDROID_KEY_ALIAS','HIMOTO_ANDROID_KEY_PASSWORD','HIMOTO_ANDROID_GOOGLE_SERVICES_FILE','EXPO_PUBLIC_ENVIRONMENT')
+$taskNames=@('HIMOTO_ANDROID_LOCAL_SIGNING','HIMOTO_ANDROID_KEYSTORE_PATH','HIMOTO_ANDROID_KEYSTORE_PASSWORD','HIMOTO_ANDROID_KEY_ALIAS','HIMOTO_ANDROID_KEY_PASSWORD','HIMOTO_ANDROID_GOOGLE_SERVICES_FILE','EXPO_PUBLIC_ENVIRONMENT','NODE_OPTIONS')
 $taskPrevious=@{};foreach($taskName in $taskNames){$taskPrevious[$taskName]=[Environment]::GetEnvironmentVariable($taskName,'Process')}
 try {
     $env:HIMOTO_ANDROID_LOCAL_SIGNING='1'
@@ -38,6 +38,7 @@ try {
     $env:EXPO_PUBLIC_API_URL='https://himoto.vercel.app'
     $env:EXPO_PUBLIC_ENVIRONMENT='production'
     $env:CMAKE_BUILD_PARALLEL_LEVEL='1'
+    $env:NODE_OPTIONS='--max-old-space-size=4096'
     & node (Join-Path $PSScriptRoot 'mobile-release-provenance.cjs') --manifest (Join-Path $taskOutput 'source-manifest.json')
     if($LASTEXITCODE -ne 0){throw 'Release source snapshot failed.'}
     if($ResumePreparedBuild){

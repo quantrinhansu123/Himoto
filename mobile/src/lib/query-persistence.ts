@@ -27,6 +27,20 @@ export function refreshActiveLookups(client: QueryClient) {
     predicate: query => persistableLookup(query.queryKey),
   }, { cancelRefetch: false });
 }
+/** A tab tap refreshes its reads in the background, including fresh cache.
+ * Inactive destinations are marked stale and load on mount. Never touch writes. */
+export function refreshTabLookups(client: QueryClient, tab: string) {
+  const families: Record<string, readonly string[]> = {
+    index: ['overview', 'workspace', 'operations'],
+    vehicles: ['catalogue', 'workspace'], contracts: ['catalogue', 'workspace'],
+    customers: ['catalogue', 'workspace'], account: ['workspace'],
+  };
+  return client.invalidateQueries({ refetchType: 'active', predicate: query => {
+    const family = String(query.queryKey[0]);
+    if (!persistableLookup(query.queryKey) || !families[tab]?.includes(family)) return false;
+    return family !== 'catalogue' || query.queryKey.includes(tab);
+  } }, { cancelRefetch: false });
+}
 export function lookupSnapshot(key: QueryKey, data: unknown, updatedAt: number): LookupSnapshot | null {
   if (!persistableLookup(key) || data === undefined || !Number.isFinite(updatedAt) || updatedAt <= 0) return null;
   // A long scrolling session must not turn the next launch into a huge hydration.

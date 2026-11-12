@@ -21,14 +21,15 @@ export function RecordVideoEditor({id,kind,referenceId,slot}:{id:string;kind:str
 function VideoForm({target,slot}:{target:MobileMediaIdentity;slot:string}) {
   const {api,session}=useSession(),theme=useTheme();
   const [video,setVideo]=useState<RecordVideo|null>(null),[picking,setPicking]=useState(false),[ready,setReady]=useState(false),[duration,setDuration]=useState(0),[error,setError]=useState(''),[confirm,setConfirm]=useState(false),[resolving,setResolving]=useState(false),[epoch,setEpoch]=useState(0);
+  const [preparationProgress,setPreparationProgress]=useState<number|null>(null),[cancelling,setCancelling]=useState(false);
   const alive=useRef(true),local=useRef<RecordVideo|null>(null),picker=useRef<AbortController|null>(null),pickingLock=useRef(false);
   const write=useRecordVideoWrite(target.id,!!video||picking),locked=write.busy||!!write.key||!write.checked||picking;
   const info=useQuery({queryKey:['record-media','video',api?.origin,session?.user.id,session?.user.storeId,session?.user.allStores,target,slot],queryFn:({signal})=>api!.mediaSlotInfo(target,slot,signal),enabled:write.checked&&!write.key,staleTime:0,gcTime:0,retry:false,refetchOnReconnect:false,refetchOnWindowFocus:false});
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;picker.current?.abort();local.current?.dispose();};},[]);
   const onReady=useCallback((value:boolean,seconds:number)=>{setReady(value);setDuration(seconds);},[]);
   async function pick(camera:boolean){
-    if(locked||pickingLock.current)return;pickingLock.current=true;setPicking(true);setError('');const controller=new AbortController();picker.current=controller;
-    try{const chosen=await selectRecordVideo(camera,controller.signal);if(!chosen)return;if(!alive.current){chosen.dispose();return;}local.current?.dispose();local.current=chosen;setReady(false);setDuration(0);setVideo(chosen);}
+    if(locked||pickingLock.current)return;pickingLock.current=true;setPicking(true);setError('');setPreparationProgress(null);setCancelling(false);const controller=new AbortController();picker.current=controller;
+    try{const chosen=await selectRecordVideo(camera,controller.signal,MOBILE_CONTRACT_VIDEO_SECONDS,percent=>{if(alive.current)setPreparationProgress(percent);});if(!chosen)return;if(!alive.current){chosen.dispose();return;}local.current?.dispose();local.current=chosen;setReady(false);setDuration(0);setVideo(chosen);}
     catch(cause){if(alive.current)setError((cause as Error).message);}finally{pickingLock.current=false;if(alive.current)setPicking(false);}
   }
   const data=info.data,valid=ready&&Number.isFinite(duration)&&duration>0&&duration<=MOBILE_CONTRACT_VIDEO_SECONDS;
@@ -49,6 +50,8 @@ function VideoForm({target,slot}:{target:MobileMediaIdentity;slot:string}) {
           </Card>
           {data.photo&&<Button label="Xóa tệp khỏi hồ sơ" secondary disabled={locked||!!video||info.isFetching||info.isError} onPress={()=>router.push({pathname:'/media-delete/[entity]/[id]',params:{entity:'contracts',id:String(target.id),kind:target.kind,referenceId:String(target.referenceId),slot}})}/>}
           <Card style={{gap:14}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Video sẽ lưu</Text><Text style={text}>Tối đa 45 MB và 60 giây. Hỗ trợ MP4, MOV, M4V và WebM.</Text>
+            {picking&&<Text accessibilityLiveRegion="polite" style={text}>{cancelling?'Đang hủy chuẩn bị video…':preparationProgress===null?'Đang mở video…':`Đang chuẩn bị video · ${preparationProgress}%`}</Text>}
+            {picking&&Platform.OS==='android'&&<Button label="Hủy chuẩn bị video" secondary loading={cancelling} onPress={()=>{setCancelling(true);picker.current?.abort();}}/>}
             {video&&<><RecordVideoPlayer key={video.uri} source={{uri:video.uri,useCaching:false}} label="Video đang chọn" onReady={onReady}/><Text style={text}>{(video.size/1024/1024).toFixed(1)} MB · {duration>0?`${Math.ceil(duration)} giây`:'Đang đọc thời lượng'}</Text></>}
             {video&&ready&&!valid&&<InlineError message="Video hợp đồng cần có thời lượng từ trên 0 đến 60 giây. Chọn tệp khác."/>}
             <Button label="Chọn video" secondary loading={picking} disabled={locked} onPress={()=>void pick(false)}/><Button label="Quay video" secondary disabled={locked||Platform.OS==='web'} onPress={()=>void pick(true)}/>

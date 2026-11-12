@@ -12,7 +12,7 @@ import {
   type TextInputInstance,
   type TextInputProps,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Check, ChevronDown, X } from "lucide-react-native";
 import { useTheme } from "@/theme";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
@@ -167,6 +167,7 @@ export function ChoiceField({
           animationType={reducedMotion ? "none" : "fade"}
           onRequestClose={() => setOpen(false)}
         >
+          <SafeAreaProvider>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ flex: 1 }}
@@ -294,6 +295,7 @@ export function ChoiceField({
             </SafeAreaView>
           </View>
         </KeyboardAvoidingView>
+          </SafeAreaProvider>
       </Modal>
       )}
     </View>

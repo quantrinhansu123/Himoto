@@ -150,6 +150,7 @@ export function isPage(value: unknown): value is MobilePage {
     value.rows.length <= 50 &&
     value.rows.every(isRecord) &&
     integer(value.total) &&
+    (value.tabCount === undefined || integer(value.tabCount)) &&
     integer(value.page, 1) &&
     integer(value.pages, 1) &&
     Number(value.page) <= Number(value.pages) &&

@@ -324,7 +324,7 @@ export default function Overview() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Làm hợp đồng mới"
-                onPress={() => router.push("/draft/new")}
+                onPress={() => router.push({ pathname: "/draft/new", params: { store_id: session?.user.allStores ? selectedStore : String(session?.user.storeId || "") } })}
                 style={({ pressed }) => [
                   styles.gridItem,
                   {

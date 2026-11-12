@@ -1,3 +1,4 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect,useRef,useState } from "react";
 import { router,usePreventRemove } from "expo-router";
 import { uuid } from "expo";
@@ -33,7 +34,7 @@ export function ShiftEditor({record,options}:{record:ShiftReport|null;options:Mo
   }
   const n=(key:keyof ShiftInput,label:string)=><ShiftNumberField key={key} label={label} value={Number(input[key]??0)} disabled={busy||pending} onChange={value=>update(key,value as never)} />;
   const sectionFilled=filled[tab];
-  return <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}}>
+  return <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}}>
     <Text accessibilityRole="header" style={{color:theme.text,fontSize:26,fontWeight:"800"}}>{record?`Sửa báo cáo #${record.id}`:"Lập báo cáo cuối ca"}</Text>
     <ChoiceField label="Phần báo cáo ca" value={tab} choices={tabs} disabled={busy} onChange={setTab} />
     {tab==="information"&&<Card style={{gap:16}}><ChoiceField label="Cơ sở báo cáo ca" value={String(input.store_id||"")} disabled={busy||pending||!!record} searchable choices={options.stores.filter(s=>session!.user.allStores||s.id===session!.user.storeId).map(s=>({value:String(s.id),label:s.name}))} onChange={v=>update("store_id",Number(v))} /><DateField label="Ngày báo cáo ca" value={input.date} disabled={busy||pending||!!record} onChange={v=>update("date",v)} /><FormField label="Nhân sự trực ca" value={input.staff} onChangeText={v=>update("staff",v)} editable={!busy&&!pending} multiline maxLength={1000} /></Card>}
@@ -49,5 +50,5 @@ export function ShiftEditor({record,options}:{record:ShiftReport|null;options:Mo
     {pending&&!busy&&<Button secondary label="Mở Tài khoản để đối chiếu báo cáo ca" onPress={()=>{setLeaving(true);disablePrevention();router.push("/(tabs)/account");}} />}
     {confirm&&<ConfirmEdit title={confirm==="submitted"?"Chốt báo cáo cuối ca?":"Lưu nháp báo cáo ca?"} message={`${input.date} · ${options.stores.find(s=>s.id===input.store_id)?.name||""}\nNhân sự: ${input.staff}\nTổng tài sản xe: ${shiftVehicleTotal(input)??"Chưa đủ"}\nTiền mặt: ${money(input.cash)}\n${confirm==="submitted"?"Sau chốt, số kiểm kê và minh chứng PGD được giữ nguyên để KTNB đối soát.":"Lưu nháp để thêm minh chứng và tiếp tục kiểm kê."}`} confirmLabel={confirm==="submitted"?"Xác nhận chốt báo cáo ca":"Xác nhận lưu nháp báo cáo ca"} onCancel={()=>setConfirm(null)} onConfirm={()=>{void save();}} />}
     {exit&&<ConfirmEdit title={pending?"Giữ mã và rời báo cáo?":"Bỏ thay đổi chưa lưu?"} message={pending?"Mã yêu cầu vẫn được giữ trên thiết bị. Đối chiếu trong Tài khoản trước khi tạo lần lưu mới.":"Các thay đổi trên biểu mẫu chưa được lưu. Lưu nháp trước khi rời nếu cần giữ lại."} confirmLabel="Rời báo cáo ca" onCancel={()=>setExit(null)} onConfirm={()=>{const repeat=exit;setExit(null);setLeaving(true);disablePrevention();repeat();}} />}
-  </ScrollView></KeyboardAvoidingView>;
+  </ScrollView></KeyboardAvoidingView></SafeAreaView>;
 }
