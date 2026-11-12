@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ShieldCheck, CircleUserRound } from "lucide-react-native";
+import * as Updates from "expo-updates";
 import { Button, Card, InlineError } from "@/components/ui";
 import {DraftWorkList} from "@/components/draft-work-list";
 import { BiometricSettings } from '@/components/biometric-settings';
@@ -16,6 +17,32 @@ export default function Account() {
   const workspace = useWorkspace();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState("");
+
+  async function handleCheckUpdate() {
+    if (__DEV__) {
+      setUpdateMessage("Đang ở môi trường phát triển (DEV), không dùng OTA update.");
+      return;
+    }
+    setCheckingUpdate(true);
+    setUpdateMessage("");
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        setUpdateMessage("Đang tải bản cập nhật mới...");
+        await Updates.fetchUpdateAsync();
+        setUpdateMessage("Đã tải xong bản mới! Đang khởi động lại ứng dụng...");
+        await Updates.reloadAsync();
+      } else {
+        setUpdateMessage("Ứng dụng đang ở phiên bản mới nhất.");
+      }
+    } catch (cause) {
+      setUpdateMessage(`Chưa thể kiểm tra: ${(cause as Error).message}`);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
   async function signOut() {
     setBusy(true);
     setError("");
@@ -86,6 +113,24 @@ export default function Account() {
         <Button secondary label="Chấm công vào / ra ca" onPress={()=>router.push('/attendance')} />
         <Button secondary label="Hướng dẫn và hỏi đáp" onPress={()=>router.push('/guide')} />
         <Button secondary label="Dữ liệu offline và trạng thái đồng bộ" onPress={()=>router.navigate('/offline-sync')} />
+        <Button
+          secondary
+          label="Kiểm tra bản cập nhật mới"
+          loading={checkingUpdate}
+          onPress={handleCheckUpdate}
+        />
+        {!!updateMessage && (
+          <Text
+            style={{
+              color: theme.muted,
+              fontSize: 13,
+              textAlign: "center",
+              lineHeight: 18,
+            }}
+          >
+            {updateMessage}
+          </Text>
+        )}
         <BiometricSettings/>
         {api&&session&&<DraftWorkList key={`${api.origin}:${session.user.id}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(',')}`}/>}
         {api && session && <PendingWriteRecovery key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} />}

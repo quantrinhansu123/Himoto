@@ -15,6 +15,7 @@ import {
   BatteryCharging,
   Bike,
   CalendarPlus,
+  FileCheck,
   FilePenLine,
   FileSpreadsheet,
   FileText,
@@ -189,6 +190,18 @@ export function ContractDetailView({
                 </View>
               )}
             </View>
+
+            {isBadDebt && (
+              <View style={[styles.priorityBtnRow, { marginTop: 4 }]}>
+                <View style={{ flex: 1 }}>
+                  <Button
+                    label="Đóng hợp đồng nợ xấu"
+                    icon={<FileCheck size={16} color={theme.primaryText} />}
+                    onPress={() => router.push({ pathname: "/contract-lifecycle/[id]", params: { id } })}
+                  />
+                </View>
+              </View>
+            )}
           </Card>
         )}
 

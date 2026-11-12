@@ -61,7 +61,7 @@ try {
     if(-not $taskGradleText.Contains('// @generated begin himoto-release-signing') -or -not $taskGradleText.Contains('signingConfig signingConfigs.release')){throw 'Release signing plugin was not applied.'}
     Push-Location (Join-Path $taskMobile 'android')
     try {
-        $taskArguments=@(':app:assembleRelease','--no-daemon','--console=plain','--max-workers=1','-Dorg.gradle.parallel=false','-Dorg.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -XX:ActiveProcessorCount=2','-Pkotlin.compiler.execution.strategy=in-process','-Pandroid.cmakeVersion=3.31.6',('-PreactNativeArchitectures='+$Architectures))
+        $taskArguments=@(':app:assembleRelease','--no-daemon','--console=plain','--max-workers=1','-Dorg.gradle.parallel=false','-Dorg.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=1024m -XX:ActiveProcessorCount=2','-Pkotlin.compiler.execution.strategy=in-process','-Pandroid.cmakeVersion=3.31.6',('-PreactNativeArchitectures='+$Architectures))
         $ErrorActionPreference='Continue'
         & .\gradlew.bat @taskArguments *> (Join-Path $taskOutput 'gradle.log')
         $taskCode=$LASTEXITCODE;$ErrorActionPreference='Stop'

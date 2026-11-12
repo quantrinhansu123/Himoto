@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -16,14 +17,18 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
+  Check,
   ChevronRight,
   ChevronDown,
+  MapPin,
+  Menu,
+  MoreHorizontal,
   Search,
   SlidersHorizontal,
   X,
 } from "lucide-react-native";
 import type { CatalogueKind, MobileRecord } from "@himoto/mobile-contract";
-import { CONTRACT_WORKSPACES, contractWorkspace, type MobileContractScope } from "../../../shared/mobile-contract-workspaces";
+import { contractWorkspace, type MobileContractScope } from "../../../shared/mobile-contract-workspaces";
 import { VehicleThumbnail } from './vehicle-thumbnail';
 import {
   Button,
@@ -38,15 +43,19 @@ import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { dateTime, money, statuses, useTheme } from "@/theme";
 import { rememberRecordPreview } from '@/lib/record-preview';
+import { ManagementDrawer } from "@/components/management-drawer";
+import { RecordActionsModal } from "@/components/record-actions-modal";
 
 const RecordCard = memo(function RecordCard({
   record,
   kind,
   scope,
+  onOpenActions,
 }: {
   record: MobileRecord;
   kind: CatalogueKind;
   scope: MobileContractScope;
+  onOpenActions?: () => void;
 }) {
   const theme = useTheme();
   const cache = useQueryClient();
@@ -72,18 +81,17 @@ const RecordCard = memo(function RecordCard({
   };
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Xem ${kind === "vehicles" ? record.license || record.name : record.code}, ${record.name}`}
-      onPress={handlePress}
-      style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
-    >
-      <Card style={{ gap: 12, padding: 16 }}>
-        <View style={styles.row}>
-          {kind==='vehicles'&&<VehicleThumbnail id={record.id} revision={record.thumbnailRevision}/>}
+    <Card style={{ gap: 12, padding: 16 }}>
+      <View style={styles.row}>
+        {kind === 'vehicles' && <VehicleThumbnail id={record.id} revision={record.thumbnailRevision}/>}
+        <Pressable
+          style={{ flex: 1 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Xem ${kind === "vehicles" ? record.license || record.name : record.code}, ${record.name}`}
+          onPress={handlePress}
+        >
           <Text
             style={{
-              flex: 1,
               color: theme.text,
               fontSize: 18,
               fontWeight: "700",
@@ -95,8 +103,37 @@ const RecordCard = memo(function RecordCard({
                 ? record.name
                 : record.code}
           </Text>
-          <ChevronRight size={19} color={theme.muted} accessible={false} />
+        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          {!!onOpenActions && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Thao tác ${record.code || record.license || record.name}`}
+              onPress={onOpenActions}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.moreButton,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: pressed ? theme.background : theme.surface,
+                },
+              ]}
+            >
+              <MoreHorizontal size={18} color={theme.text} />
+            </Pressable>
+          )}
+          <Pressable onPress={handlePress} hitSlop={10}>
+            <ChevronRight size={19} color={theme.muted} accessible={false} />
+          </Pressable>
         </View>
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Chi tiết ${record.code || record.name}`}
+        onPress={handlePress}
+        style={({ pressed }) => ({ gap: 12, opacity: pressed ? 0.72 : 1 })}
+      >
         {kind !== "customers" && (
           <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 23 }}>
             {record.name || "Chưa có tên"}
@@ -157,8 +194,8 @@ const RecordCard = memo(function RecordCard({
             {scope === "vat" && <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>Đã thu vào TK công ty: {money(record.monitoring.companyPaidAmount)}</Text>}
           </View>
         )}
-      </Card>
-    </Pressable>
+      </Pressable>
+    </Card>
   );
 });
 export function CatalogueScreen({
@@ -197,6 +234,9 @@ export function CatalogueScreen({
   const [store, setStore] = useState(initialStore || defaultStore);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [storeModalOpen, setStoreModalOpen] = useState(false);
+  const [actionRecord, setActionRecord] = useState<MobileRecord | null>(null);
   const list = useRef<FlatList<MobileRecord>>(null);
   const settings = { ...catalogueConfig[kind], ...(kind === "contracts" && scope ? { title: contractWorkspace(scope)!.title } : {}) };
   const allowed = session?.user.permissions.includes(`${kind}.read`);
@@ -232,7 +272,14 @@ export function CatalogueScreen({
   const records = useMemo(() => [
     ...new Map(query.data?.pages.flatMap(page => page.rows).map(row => [row.id, row])).values(),
   ], [query.data]);
-  const renderRecord = useCallback(({ item }: { item: MobileRecord }) => <RecordCard record={item} kind={kind} scope={scope} />, [kind, scope]);
+  const renderRecord = useCallback(({ item }: { item: MobileRecord }) => (
+    <RecordCard
+      record={item}
+      kind={kind}
+      scope={scope}
+      onOpenActions={() => setActionRecord(item)}
+    />
+  ), [kind, scope]);
   const statusCountsMap = useMemo(() => {
     const map = new Map<string, number>();
     const counts = query.data?.pages[0]?.statusCounts;
@@ -303,18 +350,61 @@ export function CatalogueScreen({
       <View
         style={[
           styles.toolbar,
-          { paddingTop: compact ? 8 : 20, paddingBottom: compact ? 8 : 12 },
+          { paddingTop: compact ? 8 : 14, paddingBottom: compact ? 8 : 12 },
         ]}
       >
+        {/* Top Header with Hamburger Menu and Fast Store Selector */}
         {!compact && (
-          <View style={styles.row}>
+          <View style={styles.topHeader}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Mở danh mục quản lý"
+              onPress={() => setDrawerOpen(true)}
+              style={({ pressed }) => [
+                styles.menuButton,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                  opacity: pressed ? 0.65 : 1,
+                },
+              ]}
+            >
+              <Menu size={20} color={theme.text} accessible={false} />
+            </Pressable>
+
             <Text
               accessibilityRole="header"
-              style={[styles.title, { color: theme.text, flex: 1, flexShrink: 1 }]}
+              numberOfLines={1}
+              style={[styles.headerTitle, { color: theme.text }]}
             >
               {settings.title}
             </Text>
-            <Text style={{ color: theme.muted, fontSize: 13, maxWidth: 100, textAlign: "right" }}>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Chọn cơ sở"
+              onPress={() => setStoreModalOpen(true)}
+              style={({ pressed }) => [
+                styles.storePillHeader,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <MapPin size={13} color={theme.primary} />
+              <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: "600", maxWidth: 105 }}>
+                {storeName}
+              </Text>
+              <ChevronDown size={13} color={theme.muted} />
+            </Pressable>
+          </View>
+        )}
+
+        {!compact && (
+          <View style={styles.row}>
+            <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>
               {query.data
                 ? `${query.data.pages[0].total.toLocaleString("vi-VN")} ${settings.noun}`
                 : "Đang tải…"}
@@ -434,23 +524,37 @@ export function CatalogueScreen({
         </View>
         {!compact && (
           <View style={{ gap: 6 }}>
+            {/* 10 Standard Status Tabs matching Web contract-tabs.ts */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 8 }}
             >
-              {kind === "contracts" ? CONTRACT_WORKSPACES.map((item) => {
-                const isSelected = scope === item.key;
+              {quickStatuses.map((value) => {
+                const isSelected = status === value;
+                const tabLabel = value
+                  ? contextualStatusLabel(kind, value) || statuses[value] || value
+                  : "Tất cả";
+                const count = (() => {
+                  if (!value) return query.data?.pages[0]?.total;
+                  if (statusCountsMap.size === 0) return undefined;
+                  if (kind === "contracts" && value === "renting") {
+                    const renting = statusCountsMap.get("renting") || 0;
+                    const overdue = statusCountsMap.get("overdue") || 0;
+                    const badDebt = statusCountsMap.get("bad_debt") || 0;
+                    const sum = renting + overdue + badDebt;
+                    return sum > 0 ? sum : undefined;
+                  }
+                  return statusCountsMap.get(value);
+                })();
+
                 return (
                   <Pressable
-                    key={item.key}
+                    key={value || "all"}
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected }}
                     aria-selected={isSelected}
-                    onPress={() => {
-                      setScope(item.key as MobileContractScope);
-                      setStatus("");
-                    }}
+                    onPress={() => setStatus(value)}
                     style={({ pressed }) => [
                       styles.chip,
                       {
@@ -469,46 +573,42 @@ export function CatalogueScreen({
                         fontWeight: isSelected ? "700" : "500",
                       }}
                     >
-                      {item.title}
+                      {tabLabel}{count !== undefined ? ` (${count})` : ""}
                     </Text>
                   </Pressable>
                 );
-              }) : quickStatuses.map((value) => (
+              })}
+            </ScrollView>
+
+            {/* Scope notification banner if filtered by specialized workspace */}
+            {kind === "contracts" && !!scope && (
+              <View
+                style={[
+                  styles.scopeBanner,
+                  { backgroundColor: theme.tint, borderColor: theme.border },
+                ]}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
+                    Đang xem: {contractWorkspace(scope)!.title}
+                  </Text>
+                  <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
+                    {contractWorkspace(scope)!.description}
+                  </Text>
+                </View>
                 <Pressable
-                  key={value || "all"}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: status === value }}
-                  aria-selected={status === value}
-                  onPress={() => setStatus(value)}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    {
-                      backgroundColor:
-                        status === value ? theme.primary : theme.surface,
-                      borderColor:
-                        status === value ? theme.primary : theme.controlBorder,
-                      opacity: pressed ? 0.75 : 1,
-                    },
+                  onPress={() => setScope("")}
+                  style={[
+                    styles.scopeClearChip,
+                    { backgroundColor: theme.surface, borderColor: theme.border },
                   ]}
                 >
-                  <Text
-                    style={{
-                      color: status === value ? theme.primaryText : theme.text,
-                      fontSize: 13,
-                      fontWeight: status === value ? "700" : "500",
-                    }}
-                  >
-                    {value
-                      ? `${contextualStatusLabel(kind, value) || statuses[value]}${statusCountsMap.has(value) ? ` (${statusCountsMap.get(value)})` : ""}`
-                      : `Tất cả${query.data?.pages[0]?.total !== undefined ? ` (${query.data.pages[0].total})` : ""}`}
+                  <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
+                    Xem tất cả
                   </Text>
+                  <X size={13} color={theme.primary} />
                 </Pressable>
-              ))}
-            </ScrollView>
-            {kind === "contracts" && !!scope && (
-              <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 18, paddingHorizontal: 2 }}>
-                {contractWorkspace(scope)!.description}
-              </Text>
+              </View>
             )}
           </View>
         )}
@@ -685,6 +785,124 @@ export function CatalogueScreen({
           }}
         />
       )}
+
+      {/* Global Management Drawer */}
+      <ManagementDrawer
+        visible={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
+
+      {/* Fast Row Actions Modal */}
+      <RecordActionsModal
+        visible={!!actionRecord}
+        onClose={() => setActionRecord(null)}
+        kind={kind}
+        record={actionRecord}
+        isAdmin={
+          session?.user.role === "admin" || session?.user.role === "super_admin"
+        }
+      />
+
+      {/* Quick Store Picker Modal */}
+      <Modal
+        visible={storeModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStoreModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setStoreModalOpen(false)}
+        >
+          <View
+            style={[
+              styles.modalSheet,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <Text
+                style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}
+              >
+                Chọn cơ sở xem {settings.noun}
+              </Text>
+              <Pressable
+                onPress={() => setStoreModalOpen(false)}
+                hitSlop={8}
+              >
+                <X size={20} color={theme.muted} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 360 }}>
+              {(kind === "vehicles" || session?.user.allStores) && (
+                <Pressable
+                  onPress={() => {
+                    setStore("all");
+                    setStoreModalOpen(false);
+                  }}
+                  style={[
+                    styles.storeOption,
+                    {
+                      backgroundColor:
+                        store === "all" ? theme.tint : "transparent",
+                      borderBottomColor: theme.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: store === "all" ? theme.primary : theme.text,
+                      fontWeight: store === "all" ? "700" : "500",
+                      fontSize: 15,
+                    }}
+                  >
+                    Toàn bộ cơ sở
+                  </Text>
+                  {store === "all" && (
+                    <Check size={18} color={theme.primary} />
+                  )}
+                </Pressable>
+              )}
+
+              {stores.map((st) => {
+                const isSelected = store === String(st.id);
+                return (
+                  <Pressable
+                    key={st.id}
+                    onPress={() => {
+                      setStore(String(st.id));
+                      setStoreModalOpen(false);
+                    }}
+                    style={[
+                      styles.storeOption,
+                      {
+                        backgroundColor: isSelected
+                          ? theme.tint
+                          : "transparent",
+                        borderBottomColor: theme.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        flex: 1,
+                        color: isSelected ? theme.primary : theme.text,
+                        fontWeight: isSelected ? "700" : "500",
+                        fontSize: 15,
+                      }}
+                    >
+                      {st.name}
+                    </Text>
+                    {isSelected && <Check size={18} color={theme.primary} />}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -694,6 +912,62 @@ const styles = StyleSheet.create({
     maxWidth: 760,
     alignSelf: "center",
     gap: 10,
+  },
+  topHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingBottom: 2,
+  },
+  menuButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.4,
+    flex: 1,
+  },
+  storePillHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  moreButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scopeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 10,
+    marginTop: 2,
+  },
+  scopeClearChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   list: {
     paddingHorizontal: 20,
@@ -743,5 +1017,31 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 12,
     borderWidth: 1,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    padding: 20,
+    paddingBottom: 34,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  storeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderRadius: 8,
   },
 });

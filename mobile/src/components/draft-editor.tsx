@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Keyboard,
@@ -48,7 +48,7 @@ import {
 } from "@/lib/draft-form";
 import { Button, Card, InlineError, StateView, StatusBadge } from "./ui";
 import { ContractTypeManager } from "./contract-type-manager";
-import { ChoiceField, FormField } from "./form-fields";
+import { ChoiceField, FormField, KeyboardScrollContext } from "./form-fields";
 import { DateField } from "./date-field";
 import { RentalDateTime } from "./rental-date-time";
 import { ConfirmEdit } from "./editor-sheet";
@@ -180,17 +180,38 @@ function DraftForm({
   const { width, height } = useWindowDimensions();
   const compact = width > height && height < 500;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", () =>
-      setKeyboardVisible(true),
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        setKeyboardVisible(true);
+        setKeyboardHeight(e.endCoordinates?.height || 300);
+      },
     );
-    const hide = Keyboard.addListener("keyboardDidHide", () =>
-      setKeyboardVisible(false),
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => {
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+      },
     );
     return () => {
       show.remove();
       hide.remove();
     };
+  }, []);
+  const scrollInputIntoView = useCallback((target: any) => {
+    if (!target) return;
+    setTimeout(() => {
+      try {
+        (scroll.current as any)?.scrollResponderScrollNativeHandleToKeyboard?.(
+          target,
+          140,
+          true,
+        );
+      } catch {}
+    }, 80);
   }, []);
   const d = input.draft,
     inputRef=useRef(input);
@@ -351,8 +372,9 @@ function DraftForm({
       />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
+        <KeyboardScrollContext.Provider value={scrollInputIntoView}>
         {compact && keyboardVisible ? (
           <View
             style={{
@@ -485,8 +507,13 @@ function DraftForm({
             maxWidth: 760,
             width: "100%",
             alignSelf: "center",
-            paddingBottom: 28,
+            paddingBottom: keyboardVisible
+              ? keyboardHeight > 0
+                ? keyboardHeight + 80
+                : 320
+              : 36,
           }}
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
         >
           <View style={{ gap: 8 }}>
             <Text
@@ -967,6 +994,7 @@ function DraftForm({
             </View>
           </View>
         )}
+        </KeyboardScrollContext.Provider>
       </KeyboardAvoidingView>
       {customerCreate && (
         <CustomerCreateSheet

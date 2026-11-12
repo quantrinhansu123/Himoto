@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import {
   ActivityIndicator,
   Keyboard,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,16 +16,21 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   AlarmClock,
+  BatteryCharging,
   Bell,
-  CalendarDays,
   CalendarPlus,
   CarFront,
+  Check,
+  ChevronDown,
   ChevronRight,
   Clock3,
   FilePenLine,
   FilePlus2,
   Files,
+  History,
   MapPin,
+  Menu,
+  ReceiptText,
   RotateCcw,
   Search,
   UsersRound,
@@ -37,11 +43,12 @@ import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useTheme, roles } from "@/theme";
 import { WorkspaceLinks } from "@/components/workspace-links";
+import { ManagementDrawer } from "@/components/management-drawer";
 
 const modules = [
   {
     kind: "vehicles" as CatalogueKind,
-    title: "Đội xe",
+    title: "Danh sách xe",
     description: "Biển số, tình trạng và cơ sở",
     icon: CarFront,
     href: "/(tabs)/vehicles" as const,
@@ -67,14 +74,23 @@ export default function Overview() {
   const { session, api, restore } = useSession();
   const workspace = useWorkspace();
   const [plate, setPlate] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [storeModalOpen, setStoreModalOpen] = useState(false);
+
+  const initialStore = session?.user.allStores
+    ? "all"
+    : session?.user.storeId
+    ? String(session.user.storeId)
+    : "all";
+  const [selectedStore, setSelectedStore] = useState(initialStore);
 
   const available = modules.filter((item) =>
     session?.user.permissions.includes(`${item.kind}.read`),
   );
 
   const storeScope = (kind: CatalogueKind) => {
-    if (kind === "vehicles" || session?.user.allStores) return "all";
-    return session?.user.storeId ? String(session.user.storeId) : "all";
+    if (kind === "vehicles") return selectedStore;
+    return selectedStore;
   };
 
   const queries = useQueries({
@@ -82,8 +98,7 @@ export default function Overview() {
       queryKey: [
         "overview",
         session?.user.id,
-        session?.user.storeId,
-        session?.user.allStores,
+        selectedStore,
         item.kind,
       ],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
@@ -98,17 +113,13 @@ export default function Overview() {
     })),
   });
 
-  const operationsStore =
-    !session?.user.allStores && session?.user.storeId
-      ? String(session.user.storeId)
-      : "";
   const operationsParams = useMemo(() => {
     const params = new URLSearchParams();
-    if (operationsStore) {
-      params.set("store_id", operationsStore);
+    if (selectedStore && selectedStore !== "all") {
+      params.set("store_id", selectedStore);
     }
     return params;
-  }, [operationsStore]);
+  }, [selectedStore]);
 
   const operationsQuery = useQuery({
     queryKey: [
@@ -131,10 +142,13 @@ export default function Overview() {
     });
   };
 
-  const store = session?.user.allStores
-    ? "Toàn bộ cơ sở"
-    : workspace.data?.stores.find((item) => item.id === session?.user.storeId)
-        ?.name || "Cơ sở được phân công";
+  const currentStoreLabel = useMemo(() => {
+    if (selectedStore === "all") return "Toàn bộ cơ sở";
+    return (
+      workspace.data?.stores.find((item) => String(item.id) === selectedStore)
+        ?.name || "Cơ sở được phân công"
+    );
+  }, [selectedStore, workspace.data?.stores]);
 
   const handleQuickReturn = () => {
     const query = plate.trim();
@@ -142,11 +156,12 @@ export default function Overview() {
     Keyboard.dismiss();
     router.push({
       pathname: "/operation-contracts/[action]",
-      params: { action: "return", query, store: "all" },
+      params: { action: "return", query, store: selectedStore },
     });
   };
 
   const grants = session?.user.permissions || [];
+  const canSwitchStore = session?.user.allStores || (workspace.data?.stores && workspace.data.stores.length > 1);
 
   return (
     <SafeAreaView
@@ -168,33 +183,39 @@ export default function Overview() {
           />
         }
       >
-        {/* Top App Bar */}
-        <View style={styles.row}>
+        {/* Top App Bar with Hamburger Drawer Trigger */}
+        <View style={styles.topBar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Mở danh mục quản lý"
+            onPress={() => setDrawerOpen(true)}
+            style={({ pressed }) => [
+              styles.iconButton,
+              {
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                opacity: pressed ? 0.65 : 1,
+              },
+            ]}
+          >
+            <Menu size={22} color={theme.text} accessible={false} />
+          </Pressable>
+
           <Brand small />
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Text style={{ color: theme.muted, fontSize: 13, fontWeight: "500" }}>
-              {new Intl.DateTimeFormat("vi-VN", {
-                weekday: "short",
-                day: "2-digit",
-                month: "2-digit",
-                timeZone: "Asia/Ho_Chi_Minh",
-              }).format(new Date())}
-            </Text>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Mở thông báo công việc"
               onPress={() => router.push("/notifications")}
-              style={({ pressed }) => ({
-                width: 42,
-                height: 42,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: theme.border,
-                backgroundColor: theme.surface,
-                opacity: pressed ? 0.65 : 1,
-              })}
+              style={({ pressed }) => [
+                styles.iconButton,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                  opacity: pressed ? 0.65 : 1,
+                },
+              ]}
             >
               <Bell size={20} color={theme.text} accessible={false} />
             </Pressable>
@@ -202,42 +223,259 @@ export default function Overview() {
         </View>
 
         {/* User & Store Banner */}
-        <View style={{ gap: 4 }}>
-          <Text
-            accessibilityRole="header"
-            style={[styles.title, { color: theme.text }]}
-          >
-            Thao tác nhanh
-          </Text>
+        <View style={styles.headerBlock}>
+          <View style={{ gap: 2 }}>
+            <Text
+              accessibilityRole="header"
+              style={[styles.pageTitle, { color: theme.text }]}
+            >
+              Thao tác nhanh
+            </Text>
+            <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 18 }}>
+              Làm hợp đồng và xử lý xe tại quầy.
+            </Text>
+          </View>
+
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={{ color: theme.text, fontSize: 16, fontWeight: "700" }}>
+            <Text style={{ color: theme.text, fontSize: 15, fontWeight: "700" }}>
               {session?.user.name}
             </Text>
-            <Text style={{ color: theme.muted, fontSize: 14 }}>·</Text>
-            <Text style={{ color: theme.muted, fontSize: 14 }}>
+            <Text style={{ color: theme.muted, fontSize: 13 }}>·</Text>
+            <Text style={{ color: theme.muted, fontSize: 13 }}>
               {roles[session?.user.role || ""] || "Nhân viên"}
             </Text>
           </View>
         </View>
 
-        {/* Branch Pin Card */}
-        <View
-          style={[
-            styles.store,
-            { borderColor: theme.border, backgroundColor: theme.surface },
+        {/* Branch Pin & Quick Switcher Card */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Chọn cơ sở làm việc"
+          disabled={!canSwitchStore}
+          onPress={() => setStoreModalOpen(true)}
+          style={({ pressed }) => [
+            styles.storePill,
+            {
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              opacity: pressed && canSwitchStore ? 0.75 : 1,
+            },
           ]}
         >
-          <MapPin size={19} color={theme.primary} accessible={false} />
+          <MapPin size={18} color={theme.primary} accessible={false} />
+          <View style={{ flex: 1, gap: 1 }}>
+            <Text style={{ color: theme.muted, fontSize: 11, fontWeight: "600" }}>
+              CƠ SỞ VẬN HÀNH
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={{
+                color: theme.text,
+                fontWeight: "700",
+                fontSize: 14,
+              }}
+            >
+              {currentStoreLabel}
+            </Text>
+          </View>
+          {canSwitchStore && (
+            <ChevronDown size={18} color={theme.muted} accessible={false} />
+          )}
+        </Pressable>
+
+        {/* 6 Quick Action Cards chuẩn Web OperationsPage */}
+        <View style={{ gap: 12 }}>
           <Text
-            style={{
-              color: theme.text,
-              flex: 1,
-              fontWeight: "600",
-              fontSize: 15,
-            }}
+            accessibilityRole="header"
+            style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}
           >
-            {store}
+            Nghiệp vụ quầy
           </Text>
+          <View style={styles.grid}>
+            {/* 1. Thuê pin / sạc */}
+            {grants.includes("contracts.read") && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Hợp đồng thuê pin và sạc"
+                onPress={() => router.push("/battery-contracts")}
+                style={({ pressed }) => [
+                  styles.gridItem,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <View
+                  style={[styles.gridIcon, { backgroundColor: "#CCFBF1" }]}
+                >
+                  <BatteryCharging size={22} color="#0D9488" />
+                </View>
+                <Text style={[styles.gridTitle, { color: theme.text }]}>
+                  Thuê pin / sạc
+                </Text>
+                <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                  Quản lý hợp đồng pin & sạc
+                </Text>
+              </Pressable>
+            )}
+
+            {/* 2. Làm hợp đồng */}
+            {grants.includes("contracts.draft") && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Làm hợp đồng mới"
+                onPress={() => router.push("/draft/new")}
+                style={({ pressed }) => [
+                  styles.gridItem,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <View
+                  style={[styles.gridIcon, { backgroundColor: theme.tint }]}
+                >
+                  <FilePlus2 size={22} color={theme.primary} />
+                </View>
+                <Text style={[styles.gridTitle, { color: theme.text }]}>
+                  Làm hợp đồng
+                </Text>
+                <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                  Chọn khách, xe & ghi nhận tiền
+                </Text>
+              </Pressable>
+            )}
+
+            {/* 3. Trả xe */}
+            {grants.includes("contracts.return") && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Nhận trả xe"
+                onPress={() =>
+                  router.push({
+                    pathname: "/operation-contracts/[action]",
+                    params: { action: "return", store: selectedStore },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.gridItem,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <View
+                  style={[styles.gridIcon, { backgroundColor: "#EEF2FF" }]}
+                >
+                  <RotateCcw size={22} color="#4F46E5" />
+                </View>
+                <Text style={[styles.gridTitle, { color: theme.text }]}>
+                  Trả xe
+                </Text>
+                <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                  Tìm biển số hoặc HĐ nhận trả
+                </Text>
+              </Pressable>
+            )}
+
+            {/* 4. Gia hạn */}
+            {grants.includes("contracts.renew") && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Gia hạn hợp đồng"
+                onPress={() =>
+                  router.push({
+                    pathname: "/operation-contracts/[action]",
+                    params: { action: "renew", store: selectedStore },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.gridItem,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <View
+                  style={[styles.gridIcon, { backgroundColor: "#ECFDF5" }]}
+                >
+                  <CalendarPlus size={22} color="#059669" />
+                </View>
+                <Text style={[styles.gridTitle, { color: theme.text }]}>
+                  Gia hạn
+                </Text>
+                <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                  Cập nhật ngày hẹn trả xe
+                </Text>
+              </Pressable>
+            )}
+
+            {/* 5. Trạng thái kho xe */}
+            {grants.includes("vehicles.read") && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Trạng thái kho xe"
+                onPress={() => router.push("/(tabs)/vehicles")}
+                style={({ pressed }) => [
+                  styles.gridItem,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <View
+                  style={[styles.gridIcon, { backgroundColor: "#F0FDF4" }]}
+                >
+                  <CarFront size={22} color="#16A34A" />
+                </View>
+                <Text style={[styles.gridTitle, { color: theme.text }]}>
+                  Trạng thái kho xe
+                </Text>
+                <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                  Kiểm tra & đổi trạng thái xe
+                </Text>
+              </Pressable>
+            )}
+
+            {/* 6. Nhập bổ sung */}
+            {grants.includes("contracts.draft") && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Nhập bổ sung hợp đồng"
+                onPress={() => router.push("/backfill-contract")}
+                style={({ pressed }) => [
+                  styles.gridItem,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <View
+                  style={[styles.gridIcon, { backgroundColor: "#F5F3FF" }]}
+                >
+                  <History size={22} color="#7C3AED" />
+                </View>
+                <Text style={[styles.gridTitle, { color: theme.text }]}>
+                  Nhập bổ sung
+                </Text>
+                <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                  Bổ sung HĐ, gia hạn, thu chi
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </View>
 
         {/* Khung Nhận trả xe nhanh theo biển số / SĐT (Chuẩn Web) */}
@@ -247,10 +485,10 @@ export default function Overview() {
               <Text
                 style={{ color: theme.text, fontSize: 16, fontWeight: "700" }}
               >
-                Nhận trả xe nhanh
+                Nhận trả xe nhanh theo biển số / SĐT
               </Text>
               <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 18 }}>
-                Nhập biển số hoặc SĐT để mở hợp đồng đang thuê
+                Tìm hợp đồng đang thuê để trả xe ngay
               </Text>
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
@@ -293,175 +531,158 @@ export default function Overview() {
           </Card>
         )}
 
-        {/* Lưới các nghiệp vụ tại quầy chuẩn Web */}
+        {/* Khối Thống kê vận hành trực tiếp chuẩn Web OperationsPage */}
+        {grants.includes("contracts.read") && (
+          <View style={{ gap: 12 }}>
+            <Text
+              accessibilityRole="header"
+              style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}
+            >
+              Theo dõi vận hành
+            </Text>
+            <View style={{ gap: 8 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Xem hợp đồng đang thuê"
+                onPress={() =>
+                  router.push({
+                    pathname: "/operation-contracts/[action]",
+                    params: { action: "active", store: selectedStore },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.statCard,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    opacity: pressed ? 0.75 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.statNumber, { color: theme.primary }]}>
+                  {operationsQuery.data
+                    ? operationsQuery.data.active.toLocaleString("vi-VN")
+                    : "—"}
+                </Text>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.statLabel, { color: theme.text }]}>
+                    Hợp đồng đang thuê
+                  </Text>
+                  <Text style={{ color: theme.muted, fontSize: 13 }}>
+                    Đang lưu thông và cần theo dõi
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={theme.muted} />
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Xem hợp đồng quá hạn"
+                onPress={() =>
+                  router.push({
+                    pathname: "/operation-contracts/[action]",
+                    params: { action: "overdue", store: selectedStore },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.statCard,
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    opacity: pressed ? 0.75 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.statNumber, { color: theme.danger }]}>
+                  {operationsQuery.data
+                    ? operationsQuery.data.overdue.toLocaleString("vi-VN")
+                    : "—"}
+                </Text>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.statLabel, { color: theme.text }]}>
+                    Hợp đồng quá hạn
+                  </Text>
+                  <Text style={{ color: theme.muted, fontSize: 13 }}>
+                    Chưa trả xe hoặc trễ thanh toán
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={theme.muted} />
+              </Pressable>
+
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Tiếp tục hợp đồng nháp"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/contracts-workspace/[scope]",
+                      params: { scope: "drafts", store: selectedStore },
+                    })
+                  }
+                  style={({ pressed }) => [
+                    styles.miniCard,
+                    {
+                      borderColor: theme.border,
+                      backgroundColor: theme.surface,
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
+                >
+                  <FilePenLine size={18} color={theme.primary} />
+                  <Text
+                    style={{
+                      color: theme.text,
+                      fontSize: 14,
+                      fontWeight: "600",
+                    }}
+                  >
+                    Hợp đồng nháp
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Xem khoản đến hạn đóng tiền"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/contracts-workspace/[scope]",
+                      params: { scope: "due", store: selectedStore },
+                    })
+                  }
+                  style={({ pressed }) => [
+                    styles.miniCard,
+                    {
+                      borderColor: theme.border,
+                      backgroundColor: theme.surface,
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
+                >
+                  <Clock3 size={18} color="#D97706" />
+                  <Text
+                    style={{
+                      color: theme.text,
+                      fontSize: 14,
+                      fontWeight: "600",
+                    }}
+                  >
+                    Đến hạn đóng tiền
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Tiện ích ca trực (Chấm công, Báo cáo ca, Sổ quỹ, Định vị GPS) */}
         <View style={{ gap: 12 }}>
           <Text
             accessibilityRole="header"
-            style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}
+            style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}
           >
-            Nghiệp vụ quầy
+            Tiện ích ca trực
           </Text>
           <View style={styles.grid}>
-            {/* Lập hợp đồng mới */}
-            {grants.includes("contracts.draft") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Lập hợp đồng mới"
-                onPress={() => router.push("/draft/new")}
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: theme.tint }]}
-                >
-                  <FilePlus2 size={22} color={theme.primary} />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Lập hợp đồng
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Soạn hợp đồng cho thuê xe
-                </Text>
-              </Pressable>
-            )}
-
-            {/* Nhận cọc giữ xe */}
-            {grants.includes("contracts.draft") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Nhận cọc giữ xe"
-                onPress={() =>
-                  router.push({
-                    pathname: "/draft/new",
-                    params: { reservation: "1" },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#FEF3C7" }]}
-                >
-                  <CalendarPlus size={22} color="#D97706" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Nhận cọc giữ xe
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Đặt cọc giữ chỗ trước
-                </Text>
-              </Pressable>
-            )}
-
-            {/* Nhận trả xe */}
-            {grants.includes("contracts.return") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Nhận trả xe"
-                onPress={() =>
-                  router.push({
-                    pathname: "/operation-contracts/[action]",
-                    params: { action: "return", store: "all" },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#EEF2FF" }]}
-                >
-                  <RotateCcw size={22} color="#4F46E5" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Nhận trả xe
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Kiểm tra xe & kết thúc HĐ
-                </Text>
-              </Pressable>
-            )}
-
-            {/* Gia hạn hợp đồng */}
-            {grants.includes("contracts.renew") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Gia hạn hợp đồng"
-                onPress={() =>
-                  router.push({
-                    pathname: "/operation-contracts/[action]",
-                    params: { action: "renew", store: "all" },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#ECFDF5" }]}
-                >
-                  <CalendarDays size={22} color="#059669" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Gia hạn hợp đồng
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Tăng ngày hẹn trả xe
-                </Text>
-              </Pressable>
-            )}
-
-            {/* Trạng thái kho xe */}
-            {grants.includes("vehicles.read") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Trạng thái kho xe"
-                onPress={() => router.push("/(tabs)/vehicles")}
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#F0FDF4" }]}
-                >
-                  <CarFront size={22} color="#16A34A" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Trạng thái kho xe
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Lưu kho, sửa chữa, bàn giao
-                </Text>
-              </Pressable>
-            )}
-
             {/* Chấm công */}
             <Pressable
               accessibilityRole="button"
@@ -485,16 +706,43 @@ export default function Overview() {
                 Chấm công
               </Text>
               <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                Vào ca, ra ca, GPS & ảnh
+                Vào ca, ra ca & GPS
+              </Text>
+            </Pressable>
+
+            {/* Báo cáo cuối ca */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Báo cáo cuối ca"
+              onPress={() => router.push("/shift-reports")}
+              style={({ pressed }) => [
+                styles.gridItem,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                  opacity: pressed ? 0.72 : 1,
+                },
+              ]}
+            >
+              <View
+                style={[styles.gridIcon, { backgroundColor: "#EFF6FF" }]}
+              >
+                <ReceiptText size={22} color="#2563EB" />
+              </View>
+              <Text style={[styles.gridTitle, { color: theme.text }]}>
+                Báo cáo cuối ca
+              </Text>
+              <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                Bàn giao ca & nộp tiền
               </Text>
             </Pressable>
 
             {/* Sổ quỹ / Sổ két */}
-            {grants.includes("contracts.read") && (
+            {grants.includes("finance.read") && (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Sổ quỹ và sổ két"
-                onPress={() => router.push("/reports")}
+                onPress={() => router.push("/cashbook")}
                 style={({ pressed }) => [
                   styles.gridItem,
                   {
@@ -549,154 +797,11 @@ export default function Overview() {
           </View>
         </View>
 
-        {/* Khối Thống kê vận hành trực tiếp chuẩn Web */}
-        {grants.includes("contracts.read") && (
-          <View style={{ gap: 12 }}>
-            <Text
-              accessibilityRole="header"
-              style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}
-            >
-              Theo dõi vận hành
-            </Text>
-            <View style={{ gap: 8 }}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Xem hợp đồng đang thuê"
-                onPress={() =>
-                  router.push({
-                    pathname: "/operation-contracts/[action]",
-                    params: { action: "active", store: "all" },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.statCard,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.75 : 1,
-                  },
-                ]}
-              >
-                <Text style={[styles.statNumber, { color: theme.primary }]}>
-                  {operationsQuery.data
-                    ? operationsQuery.data.active.toLocaleString("vi-VN")
-                    : "—"}
-                </Text>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[styles.statLabel, { color: theme.text }]}>
-                    Hợp đồng đang thuê
-                  </Text>
-                  <Text style={{ color: theme.muted, fontSize: 13 }}>
-                    Đang lưu thông và cần theo dõi
-                  </Text>
-                </View>
-                <ChevronRight size={18} color={theme.muted} />
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Xem hợp đồng quá hạn"
-                onPress={() =>
-                  router.push({
-                    pathname: "/operation-contracts/[action]",
-                    params: { action: "overdue", store: "all" },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.statCard,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.75 : 1,
-                  },
-                ]}
-              >
-                <Text style={[styles.statNumber, { color: theme.danger }]}>
-                  {operationsQuery.data
-                    ? operationsQuery.data.overdue.toLocaleString("vi-VN")
-                    : "—"}
-                </Text>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[styles.statLabel, { color: theme.text }]}>
-                    Hợp đồng quá hạn
-                  </Text>
-                  <Text style={{ color: theme.muted, fontSize: 13 }}>
-                    Chưa trả xe hoặc trễ thanh toán
-                  </Text>
-                </View>
-                <ChevronRight size={18} color={theme.muted} />
-              </Pressable>
-
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Tiếp tục hợp đồng nháp"
-                  onPress={() =>
-                    router.push({
-                      pathname: "/contracts-workspace/[scope]",
-                      params: { scope: "drafts", store: "all" },
-                    })
-                  }
-                  style={({ pressed }) => [
-                    styles.miniCard,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor: theme.surface,
-                      opacity: pressed ? 0.75 : 1,
-                    },
-                  ]}
-                >
-                  <FilePenLine size={18} color={theme.primary} />
-                  <Text
-                    style={{
-                      color: theme.text,
-                      fontSize: 14,
-                      fontWeight: "600",
-                    }}
-                  >
-                    Hợp đồng nháp
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Xem khoản đến hạn đóng tiền"
-                  onPress={() =>
-                    router.push({
-                      pathname: "/contracts-workspace/[scope]",
-                      params: { scope: "due", store: "all" },
-                    })
-                  }
-                  style={({ pressed }) => [
-                    styles.miniCard,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor: theme.surface,
-                      opacity: pressed ? 0.75 : 1,
-                    },
-                  ]}
-                >
-                  <Clock3 size={18} color="#D97706" />
-                  <Text
-                    style={{
-                      color: theme.text,
-                      fontSize: 14,
-                      fontWeight: "600",
-                    }}
-                  >
-                    Đến hạn đóng tiền
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        )}
-
         {/* Khối Danh mục quản lý (Đội xe, Hợp đồng, Khách hàng) */}
         <View style={{ gap: 12 }}>
           <Text
             accessibilityRole="header"
-            style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}
+            style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}
           >
             Danh mục quản lý
           </Text>
@@ -795,6 +900,119 @@ export default function Overview() {
           Kéo xuống để cập nhật dữ liệu.
         </Text>
       </ScrollView>
+
+      {/* Global Management Drawer */}
+      <ManagementDrawer
+        visible={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
+
+      {/* Quick Store Picker Modal */}
+      <Modal
+        visible={storeModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStoreModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setStoreModalOpen(false)}
+        >
+          <View
+            style={[
+              styles.modalSheet,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <Text
+                style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}
+              >
+                Chọn cơ sở làm việc
+              </Text>
+              <Pressable
+                onPress={() => setStoreModalOpen(false)}
+                hitSlop={8}
+              >
+                <X size={20} color={theme.muted} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ maxHeight: 360 }}>
+              {session?.user.allStores && (
+                <Pressable
+                  onPress={() => {
+                    setSelectedStore("all");
+                    setStoreModalOpen(false);
+                  }}
+                  style={[
+                    styles.storeOption,
+                    {
+                      backgroundColor:
+                        selectedStore === "all"
+                          ? theme.tint
+                          : "transparent",
+                      borderBottomColor: theme.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      color:
+                        selectedStore === "all"
+                          ? theme.primary
+                          : theme.text,
+                      fontWeight:
+                        selectedStore === "all" ? "700" : "500",
+                      fontSize: 15,
+                    }}
+                  >
+                    Toàn bộ cơ sở
+                  </Text>
+                  {selectedStore === "all" && (
+                    <Check size={18} color={theme.primary} />
+                  )}
+                </Pressable>
+              )}
+
+              {workspace.data?.stores.map((st) => {
+                const isSelected = selectedStore === String(st.id);
+                return (
+                  <Pressable
+                    key={st.id}
+                    onPress={() => {
+                      setSelectedStore(String(st.id));
+                      setStoreModalOpen(false);
+                    }}
+                    style={[
+                      styles.storeOption,
+                      {
+                        backgroundColor: isSelected
+                          ? theme.tint
+                          : "transparent",
+                        borderBottomColor: theme.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        flex: 1,
+                        color: isSelected ? theme.primary : theme.text,
+                        fontWeight: isSelected ? "700" : "500",
+                        fontSize: 15,
+                      }}
+                    >
+                      {st.name}
+                    </Text>
+                    {isSelected && <Check size={18} color={theme.primary} />}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -802,30 +1020,48 @@ export default function Overview() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    gap: 18,
+    gap: 16,
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
+  },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  iconButton: {
+    width: 42,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  headerBlock: {
+    gap: 6,
+  },
+  pageTitle: {
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+  storePill: {
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
-  },
-  title: {
-    fontSize: 26,
-    lineHeight: 34,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-  store: {
-    borderWidth: 1,
-    padding: 12,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
   },
   icon: { padding: 10, borderRadius: 10 },
   searchBox: {
@@ -893,5 +1129,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     justifyContent: "center",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    padding: 20,
+    paddingBottom: 34,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  storeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderRadius: 8,
   },
 });

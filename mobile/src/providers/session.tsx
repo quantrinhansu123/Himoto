@@ -73,7 +73,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const origin = useMemo(() => {
     try {
       return {
-        value: apiOrigin(process.env.EXPO_PUBLIC_API_URL, __DEV__),
+        value: apiOrigin(process.env.EXPO_PUBLIC_API_URL || "https://himoto.vercel.app", __DEV__),
         error: "",
       };
     } catch (error) {

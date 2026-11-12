@@ -14,7 +14,17 @@ export const catalogueConfig: Record<
     title: "Danh sách xe",
     noun: "xe",
     placeholder: "Tìm biển số, tên xe, nhãn hiệu",
-    quickStatuses: ["", "ready", "using", "repairing", "in_transit", "bad_debt"],
+    quickStatuses: [
+      "",
+      "ready",
+      "using",
+      "repairing",
+      "in_transit",
+      "bad_debt",
+      "pending",
+      "sold",
+      "broken",
+    ],
     allStatuses: [
       "ready",
       "using",
@@ -30,7 +40,18 @@ export const catalogueConfig: Record<
     title: "Danh sách hợp đồng",
     noun: "hợp đồng",
     placeholder: "Tìm mã hợp đồng, khách, biển số",
-    quickStatuses: ["", "renting", "overdue", "draft"],
+    quickStatuses: [
+      "",
+      "renting",
+      "draft",
+      "overdue",
+      "bad_debt",
+      "reserved",
+      "wait_payment",
+      "deposit_contract",
+      "completed",
+      "cancelled",
+    ],
     allStatuses: [
       "renting",
       "overdue",
@@ -68,7 +89,14 @@ export function contextualStatusLabel(
   kind: CatalogueKind,
   status: string,
 ): string | undefined {
-  if (kind === "contracts" && status === "pending") return "Chờ giao xe";
-  if (kind === "customers" && status === "draft") return "Chưa hoàn tất";
+  if (kind === "contracts") {
+    if (status === "draft") return "Nháp";
+    if (status === "deposit_contract") return "Đặt cọc";
+    if (status === "pending") return "Chờ giao xe";
+  }
+  if (kind === "customers") {
+    if (status === "draft") return "Chưa hoàn tất";
+    if (status === "blacklist") return "Nợ xấu / Cấm thuê";
+  }
   return undefined;
 }

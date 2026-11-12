@@ -9,7 +9,7 @@ import type {
 } from "@himoto/mobile-contract";
 import { useTheme, money, dateTime } from "@/theme";
 import { draftWindowDifferences } from "@himoto/mobile-draft-validation";
-import { staffRoles } from '../../../shared/staff-positions';
+import { staffRoles, hasSalesCommissionRole } from '../../../shared/staff-positions';
 import { emptyDraftVehicle, type DraftErrors } from "@/lib/draft-form";
 import { Card, Button } from "./ui";
 import { FormField, ChoiceField } from "./form-fields";
@@ -125,11 +125,12 @@ export function DraftPeople<T extends MobileContractFormInput>({
 }) {
   const d = input.draft;
   const salesFollowsSource = useRef(!d.sales_staff_id && !d.sales_staff_name?.trim() && !d.tls_staff_id);
+  const [manualSales, setManualSales] = useState(Boolean(!d.sales_staff_id && d.sales_staff_name?.trim()));
   const commissionStaff = staff.filter(row => {
     if (/^tls$/i.test(row.name.trim())) return false;
     if (String(row.id) === d.sales_staff_id || String(row.id) === d.tls_staff_id) return true;
-    const roles=staffRoles(row.position);
-    return roles.includes('TPKD') || row.roles.includes('telesales') || row.roles.includes('sales') && (row.storeId === null || String(row.storeId) === d.store_id);
+    const roles = staffRoles(row.position);
+    return hasSalesCommissionRole(row.position) || roles.includes('TPKD') || roles.includes('TLS') || row.roles.includes('telesales') || row.roles.includes('sales');
   });
   const sourceStaff = staff.filter(row => !/^tls$/i.test(row.name.trim()) && (commissionStaff.includes(row) || String(row.storeId) === (d.vehicle_store_id ?? d.store_id) || String(row.storeId) === d.store_id));
   const set = (next: Partial<MobileContractDraft>) =>
@@ -150,7 +151,14 @@ export function DraftPeople<T extends MobileContractFormInput>({
     name: string | undefined,
     optional = false,
   ) {
-    const rows = (role==='sales'?commissionStaff:staff).filter((row) => row.roles.includes(role));
+    let rows: MobileDraftStaff[];
+    if (role === 'sales') {
+      const commissionSet = new Set(commissionStaff.map(s => s.id));
+      const remainingStaff = staff.filter(s => !commissionSet.has(s.id) && !/^tls$/i.test(s.name.trim()));
+      rows = [...commissionStaff, ...remainingStaff];
+    } else {
+      rows = staff.filter((row) => row.roles.includes(role));
+    }
     return [
       ...(optional ? [{ value: "", label: "Chưa ghi nhận" }] : []),
       { value: "manual", label: "Nhập tên" },
@@ -192,25 +200,27 @@ export function DraftPeople<T extends MobileContractFormInput>({
       />
       <ChoiceField
         label="NVKD ghi nhận doanh số"
-        value={d.sales_staff_id || (d.sales_staff_name ? "manual" : "")}
+        value={d.sales_staff_id || (manualSales || d.sales_staff_name ? "manual" : "")}
         disabled={disabled}
         searchable
         choices={choices("sales", d.sales_staff_id, d.sales_staff_name, true)}
         onChange={(value) => {
           const row = staff.find((item) => String(item.id) === value);
           salesFollowsSource.current = !value;
+          const isManual = value === "manual";
+          setManualSales(isManual);
           set({
             sales_staff_id: row ? value : "",
             tls_staff_id: '',
             sales_staff_name: row
               ? row.name
-              : value === ""
-                ? ""
-                : d.sales_staff_name || "",
+              : isManual
+                ? d.sales_staff_name || ""
+                : "",
           });
         }}
       />
-      {!d.sales_staff_id && (
+      {(manualSales || (!d.sales_staff_id && !!d.sales_staff_name?.trim())) && (
         <FormField
           label="Tên NVKD nhập tay"
           value={d.sales_staff_name || ""}

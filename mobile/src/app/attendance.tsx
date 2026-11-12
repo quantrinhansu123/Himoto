@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {FlatList,RefreshControl,ScrollView,Text,View} from 'react-native';
+import {FlatList,Linking,RefreshControl,ScrollView,Text,View} from 'react-native';
 import {useQuery} from '@tanstack/react-query';
 import {uuid} from 'expo';
 import {Image} from 'expo-image';
@@ -93,7 +93,7 @@ export default function Attendance() {
         {copy(row.store_name||'Chưa có cơ sở')}{copy(`Vào ca: ${dateTime(row.clock_in_at)}`)}{copy(row.clock_out_at?`Ra ca: ${dateTime(row.clock_out_at)}`:'Đang trong ca')}
         {row.shift_name&&copy('Ca '+row.shift_name)}{row.late_minutes!==null&&copy(row.late_minutes?`Đi muộn ${row.late_minutes} phút`:'Đúng giờ')}
         <Button secondary label={`${evidence===String(row.id)?'Ẩn':'Xem'} ảnh và GPS #${row.id}`} onPress={()=>setEvidence(current=>current===String(row.id)?null:String(row.id))}/>
-        {evidence===String(row.id)&&(['in','out'] as const).map(side=>{const loc=side==='in'?row.in_location:row.out_location;return loc?<View key={side} style={{gap:8}}><Text style={{color:theme.text,fontWeight:'700'}}>{side==='in'?'Vào ca':'Ra ca'}</Text><Image cachePolicy="none" source={api!.supportPhoto('attendance',String(row.id),side)} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh ${side==='in'?'vào':'ra'} ca #${row.id}`}/>{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}</View>:null;})}
+        {evidence===String(row.id)&&(['in','out'] as const).map(side=>{const loc=side==='in'?row.in_location:row.out_location;return loc?<View key={side} style={{gap:8}}><Text style={{color:theme.text,fontWeight:'700'}}>{side==='in'?'Vào ca':'Ra ca'}</Text><Image cachePolicy="none" source={api!.supportPhoto('attendance',String(row.id),side)} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh ${side==='in'?'vào':'ra'} ca #${row.id}`}/>{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}<Button secondary label="Mở vị trí trên Google Maps" onPress={()=>void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${loc.latitude},${loc.longitude}`)}`)} /></View>:null;})}
       </Card>}
       ListEmptyComponent={!query.isPending&&!query.isError?<Text style={{color:theme.muted,textAlign:'center',padding:20}}>Chưa có chấm công trong khoảng ngày đã chọn.</Text>:undefined}
       ListFooterComponent={query.data&&query.data.total>50?<View style={{gap:10}}>{copy(`Trang ${query.data.page} · ${query.data.total} lần chấm công`)}<Button secondary label="Trang chấm công trước" disabled={page<=1||query.isFetching} onPress={()=>setPage(value=>value-1)}/><Button secondary label="Trang chấm công sau" disabled={page*50>=query.data!.total||query.isFetching} onPress={()=>setPage(value=>value+1)}/></View>:undefined}/>
@@ -103,7 +103,13 @@ export default function Attendance() {
         {(pending?.photo||photo)&&<Image cachePolicy="none" source={{uri:(pending?.photo||photo)!.uri}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel="Ảnh chấm công vừa chụp"/>}
         <Button secondary label={photo?'Chụp lại ảnh hiện tại':'Chụp ảnh hiện tại'} disabled={busy||!!pending} onPress={()=>{void run(async()=>{const controller=new AbortController();camera.current=controller;const next=await captureAttendancePhoto(controller.signal);if(next){if(!alive.current){next.dispose();return;}photo?.dispose();setPhoto(next);}});}}/>
         <Button secondary label={location?'Lấy lại GPS':'Lấy vị trí GPS'} disabled={busy||!!pending} onPress={()=>{void run(async()=>{const next=await locateAttendance();if(alive.current)setLocation(next);});}}/>
-        {(pending?.location||location)&&copy(`Đã lấy GPS · sai số khoảng ${Math.round((pending?.location||location)!.accuracy)} m`)}
+        {(pending?.location||location)&&<View style={{gap:6}}>
+          {copy(`Đã lấy GPS · sai số khoảng ${Math.round((pending?.location||location)!.accuracy)} m`)}
+          <Button secondary label="Xem vị trí hiện tại trên Google Maps" onPress={()=>{
+            const coords=(pending?.location||location);
+            if(coords)void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${coords.latitude},${coords.longitude}`)}`);
+          }}/>
+        </View>}
         {!!error&&<InlineError message={error}/>}
         {pending&&copy('Ảnh và mã gốc được giữ trên máy. Thử lại sẽ đối chiếu kết quả trước khi gửi.')}
         <Button label={action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'} disabled={!pending&&(!photo||!location)} loading={busy} onPress={()=>{void run(save);}}/>

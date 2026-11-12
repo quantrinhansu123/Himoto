@@ -1,8 +1,10 @@
-import { useId, useState, type Ref } from "react";
+import { createContext, useContext, useId, useState, type Ref } from "react";
 import {
   FlatList,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   Text,
   TextInput,
@@ -15,11 +17,14 @@ import { Check, ChevronDown, X } from "lucide-react-native";
 import { useTheme } from "@/theme";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
+export const KeyboardScrollContext = createContext<((target: any) => void) | null>(null);
+
 export function FormField({
   label,
   error,
   hint,
   inputRef,
+  onFocus,
   ...props
 }: TextInputProps & {
   label: string;
@@ -29,6 +34,8 @@ export function FormField({
 }) {
   const theme = useTheme(),
     id = useId();
+  const scrollIntoView = useContext(KeyboardScrollContext);
+
   return (
     <View style={{ gap: 8 }}>
       <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>
@@ -41,6 +48,10 @@ export function FormField({
         aria-describedby={error || hint ? id : undefined}
         placeholderTextColor={theme.muted}
         autoCorrect={false}
+        onFocus={(e) => {
+          scrollIntoView?.(e.target);
+          onFocus?.(e);
+        }}
         style={[
           {
             color: theme.text,
@@ -152,16 +163,21 @@ export function ChoiceField({
       {open && (
         <Modal
           transparent
+          statusBarTranslucent
           animationType={reducedMotion ? "none" : "fade"}
           onRequestClose={() => setOpen(false)}
         >
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "flex-end",
-              backgroundColor: theme.scrim,
-            }}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
           >
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "flex-end",
+                backgroundColor: theme.scrim,
+              }}
+            >
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Đóng danh sách ${label.toLowerCase()}`}
@@ -220,6 +236,7 @@ export function ChoiceField({
                     label={`Tìm ${label.toLowerCase()}`}
                     value={search}
                     onChangeText={setSearch}
+                    autoCapitalize="none"
                   />
                 </View>
               )}
@@ -227,6 +244,7 @@ export function ChoiceField({
                 data={filtered}
                 keyExtractor={(item) => item.value}
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
                 contentContainerStyle={{ padding: 16, paddingTop: 0 }}
                 renderItem={({ item }) => (
                   <Pressable
@@ -275,7 +293,8 @@ export function ChoiceField({
               />
             </SafeAreaView>
           </View>
-        </Modal>
+        </KeyboardAvoidingView>
+      </Modal>
       )}
     </View>
   );

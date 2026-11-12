@@ -1,6 +1,6 @@
 import type { MobileDraftInventory, MobileStore, MobileWriteReceipt } from './mobile-contract';
 import { isMobileDraftInventory, validDraftTime } from './mobile-draft-validation';
-export const mobileLifecycleActions = ['mark_bad_debt', 'settle', 'hold', 'resume', 'update_hold', 'complete_hold'] as const;
+export const mobileLifecycleActions = ['mark_bad_debt', 'close_bad_debt', 'settle', 'hold', 'resume', 'update_hold', 'complete_hold'] as const;
 export type MobileLifecycleAction = typeof mobileLifecycleActions[number];
 export interface MobileLifecycleInput { action: MobileLifecycleAction; revision: string; at: string; note: string; confirmed: true; hold_until?: string; vehicle_ids?: number[]; resume_end?: string }
 export interface MobileLifecycleContext {
@@ -9,6 +9,7 @@ export interface MobileLifecycleContext {
   allReturned: boolean; returnedCount: number; totalAmount: number | null; rentalPaid: number | null; remaining: number | null; depositHeld: number; overpayment: number | null;
   settled: boolean; settlementNote: string; heldAt: string | null; holdUntil: string | null; holdExpired: boolean; resumeVehicleCount: number;
   completedFromHold: boolean; waivedAmount: number | null; suggestedResumeEnd: string | null;
+  badDebtClosedAt?: string | null;
   actions: { action: MobileLifecycleAction; label: string; enabled: boolean; reason: string }[];
   events: { action: string; label: string; at: string; recordedAt: string; actorId: number; actorName: string; note: string; from: string; to: string }[];
 }
@@ -27,6 +28,7 @@ export function isMobileLifecycleContext(v: unknown): v is MobileLifecycleContex
     ['ownership', 'overdue', 'allReturned', 'settled', 'holdExpired', 'completedFromHold'].every(k => typeof v[k] === 'boolean') &&
     ['totalAmount', 'rentalPaid', 'remaining', 'overpayment', 'waivedAmount'].every(k => amount(v[k])) && nonnegative(v.depositHeld) && nonnegative(v.returnedCount) && nonnegative(v.resumeVehicleCount) && text(v.settlementNote) &&
     ['heldAt', 'holdUntil', 'suggestedResumeEnd'].every(k => v[k] === null || validDraftTime(v[k])) &&
+    (v.badDebtClosedAt === undefined || v.badDebtClosedAt === null || stamp(v.badDebtClosedAt)) &&
     Array.isArray(v.items) && v.items.length <= 10000 && v.items.every(i => object(i) && id(i.id) && id(i.vehicleId) && text(i.name) && text(i.license) && typeof i.reconciled === 'boolean' && ['startsAt', 'endsAt', 'completedAt'].every(k => i[k] === null || stamp(i[k]))) &&
     Array.isArray(v.actions) && v.actions.every(a => object(a) && mobileLifecycleActions.includes(a.action as never) && text(a.label) && typeof a.enabled === 'boolean' && text(a.reason)) &&
     Array.isArray(v.events) && v.events.length <= 10000 && v.events.every(e => object(e) && ['action', 'label', 'actorName', 'note', 'from', 'to'].every(k => text(e[k])) && id(e.actorId) && stamp(e.at) && stamp(e.recordedAt));
