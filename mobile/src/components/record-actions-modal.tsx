@@ -45,12 +45,14 @@ export function RecordActionsModal({
   kind,
   record,
   isAdmin,
+  canSettle,
 }: {
   visible: boolean;
   onClose: () => void;
   kind: CatalogueKind;
   record: MobileRecord | null;
   isAdmin?: boolean;
+  canSettle?: boolean;
 }) {
   const theme = useTheme();
 
@@ -230,8 +232,8 @@ export function RecordActionsModal({
         }),
     });
 
-    // 11. Đóng hợp đồng nợ xấu (Admin)
-    if (status === "bad_debt" && isAdmin) {
+    // 11. Đóng hợp đồng nợ xấu (Admin / Quyền quyết toán)
+    if (status === "bad_debt" && (isAdmin || canSettle)) {
       actions.push({
         id: "close_bad_debt",
         label: "Đóng hợp đồng nợ xấu",

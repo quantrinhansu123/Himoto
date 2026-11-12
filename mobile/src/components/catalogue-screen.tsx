@@ -228,9 +228,11 @@ export function CatalogueScreen({
   const [storeBasis, setStoreBasis] = useState("source");
   const datesValid = !from || !to || from <= to;
   const defaultStore =
-    kind === "vehicles" || session?.user.allStores
+    kind === "vehicles"
       ? "all"
-      : String(session?.user.storeId || "all");
+      : session?.user.storeId
+      ? String(session.user.storeId)
+      : "all";
   const [store, setStore] = useState(initialStore || defaultStore);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -800,6 +802,11 @@ export function CatalogueScreen({
         record={actionRecord}
         isAdmin={
           session?.user.role === "admin" || session?.user.role === "super_admin"
+        }
+        canSettle={
+          session?.user.permissions.includes("contracts.settle") ||
+          session?.user.role === "admin" ||
+          session?.user.role === "super_admin"
         }
       />
 

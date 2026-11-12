@@ -79,10 +79,11 @@ export function initialCatalogueStatus(
   kind: CatalogueKind,
   value?: string | string[],
 ) {
-  return typeof value === "string" &&
-    catalogueConfig[kind].allStatuses.includes(value)
-    ? value
-    : "";
+  if (typeof value === "string") {
+    if (value === "all") return "";
+    if (catalogueConfig[kind].allStatuses.includes(value)) return value;
+  }
+  return kind === "contracts" ? "draft" : "";
 }
 
 export function contextualStatusLabel(

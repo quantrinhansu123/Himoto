@@ -77,9 +77,7 @@ export default function Overview() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [storeModalOpen, setStoreModalOpen] = useState(false);
 
-  const initialStore = session?.user.allStores
-    ? "all"
-    : session?.user.storeId
+  const initialStore = session?.user.storeId
     ? String(session.user.storeId)
     : "all";
   const [selectedStore, setSelectedStore] = useState(initialStore);
