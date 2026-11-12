@@ -21,6 +21,12 @@ async function main(){const saved=[session.userFromSession,session.readSessionUs
    checks.push('Hold, manually edited deadlines and explicit completion use the same operating permission and transactional API');
    user={...user,access_role:'accounting',permissions:['contracts.read','finance.write']};assert.equal((await request('POST',body('settle'))).status,200);assert.equal((await request('POST',body('hold'))).status,403);assert.equal((await request('POST',body('mark_bad_debt'))).status,403);
    checks.push('Accounting may confirm a reconciled settlement, while ownership/vehicle state changes still require operating permissions');
+   for(const role of ['branch_staff','branch_manager','ownership_staff','ownership_manager','accounting']){
+     user={...user,access_role:role,permissions:['contracts.read','contracts.return','finance.write','settings.write']};queries=[];
+     assert.equal((await request('POST',body('close_bad_debt'))).status,403);assert.equal(queries.length,0);
+   }
+   user={...user,access_role:'admin'};queries=[];assert.equal((await request('POST',body('close_bad_debt'))).status,200);assert(queries.includes('COMMIT'));
+   checks.push('Only an authenticated administrator may close bad debt; operating/finance/settings grants cannot delegate this privilege');
    user={...user,access_role:'branch_staff',permissions:['contracts.read','contracts.return']};
    for(const code of [400,404,409]){failure=code;queries=[];assert.equal((await request('POST',body('settle'))).status,code);assert(queries.includes('ROLLBACK'));assert(!queries.includes('COMMIT'));}failure=0;
    assert.equal((await request('POST',{action:'settle'})).status,400);assert.equal((await request('GET',undefined,'http://localhost','0')).status,400);

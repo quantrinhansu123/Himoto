@@ -21,6 +21,7 @@ import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management
 import { contractHandoverBlockReason, contractRenewBlockReason, contractReturnBlockReason, vehicleTransferBlockReason } from '@/lib/management/blocked-actions';
 import type { OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
+import { isAdminAccount } from '@/lib/management/permissions';
 import { canCancelVehicleTransfer } from '@/lib/management/vehicle-history';
 import { VehicleThumbnail } from './VehicleThumbnail';
 
@@ -29,6 +30,7 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
   if(config.kind==='vehicles'&&column.key==='beneficiary_store_name')return <span className="mg-cell-value" title={String(value||'')}>{value||(['using','rent'].includes(row.status)?'Chưa xác định':'—')}</span>;
   if(config.kind==='contracts'&&column.key==='collection_notes')return <ContractCollectionNote row={row}/>;
   if(config.kind==='contracts'&&column.key==='status'&&row.status==='reserved')return <ContractHoldStatus row={row} label={optionLabel(config,'status',row.status)}/>;
+  if(config.kind==='contracts'&&column.key==='status'&&row.status==='completed'&&row.bad_debt_closed_at)return <span className="mg-status mg-status-yellow"><span/>Đã đóng · {row.total_amount==null||row.paid_amount==null?'cần đối chiếu':Number(row.total_amount)>Number(row.paid_amount)?'còn công nợ':'nợ đã thu đủ'}</span>;
   if(column.key==='rental_period')return <ContractRentalPeriod row={row}/>;
   if(column.key==='monitoring_amount')return <ContractMonitoringAmount row={row}/>;
   if(column.key==='contract_gps_status')return <ContractGpsIndicator row={row}/>;
@@ -88,6 +90,7 @@ interface Props {
   onHandover?: (row: ManagementRow) => void;
   onReturn?: (row: ManagementRow) => void;
   onMarkBadDebt?: (row: ManagementRow) => void;
+  onCloseBadDebt?: (row: ManagementRow) => void;
   onRenew?: (row: ManagementRow) => void;
   onVehicleChange?: (row: ManagementRow) => void;
   onBatteryRent?: (row: ManagementRow) => void;
@@ -111,7 +114,7 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onRenew, onVehicleChange, onBatteryRent, onOwnershipTerms, onApproveContract, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onCloseBadDebt, onRenew, onVehicleChange, onBatteryRent, onOwnershipTerms, onApproveContract, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const {can,accessUser}=useManagement();
   const blockingError=rows.length?'':error;
   const selectable = Boolean(selectedIds && onSelectionChange);
@@ -164,6 +167,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : { key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
     }
     if(isActiveContract&&onMarkBadDebt&&can('contracts.return')&&(row.status==='overdue'||row.collection_overdue===1))actions.push({key:'mark-bad-debt',label:'Chuyển sang Nợ xấu',icon:<TriangleAlert size={16}/>,onSelect:()=>onMarkBadDebt(row)});
+    if(isContract&&row.status==='bad_debt'&&onCloseBadDebt&&isAdminAccount(accessUser))actions.push({key:'close-bad-debt',label:'Đóng hợp đồng nợ xấu',icon:<ShieldCheck size={16}/>,onSelect:()=>onCloseBadDebt(row)});
     if (isContract && onRenew) {
       const renewBlock = contractRenewBlockReason(String(row.status || ''), Boolean(row.billing_plan_json));
       actions.push(renewBlock
@@ -196,7 +200,8 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         icon: blacklistBusyId === row.id ? <LoaderCircle size={16} className="mg-spin" /> : blacklisted ? <ShieldCheck size={16} /> : <ShieldBan size={16} />, onSelect: () => onBlacklist(row) });
     }
     if (canDelete && onDelete && (!isContract || ['draft','completed','deposit_contract'].includes(row.status))) {
-      actions.push({ key: 'delete', label: isContract ? row.status === 'completed'?'Ẩn hợp đồng':row.status === 'deposit_contract' ? 'Xóa hợp đồng cọc' : 'Xóa hẳn bản nháp' : `Xóa ${config.singular}`, danger: true, icon: <Trash2 size={16} />, onSelect: () => onDelete(row) });
+      const debtBlocked=isContract&&Boolean(row.bad_debt_closed_at)&&(row.total_amount==null||row.paid_amount==null||Number(row.total_amount)!==Number(row.paid_amount)||Number(row.deposit_paid||0)>Number(row.deposit_refunded||0));
+      actions.push({ key: 'delete', label: isContract ? row.status === 'completed'?'Ẩn hợp đồng':row.status === 'deposit_contract' ? 'Xóa hợp đồng cọc' : 'Xóa hẳn bản nháp' : `Xóa ${config.singular}`, disabled:debtBlocked,title:debtBlocked?'Cần xử lý hết công nợ, cọc và tiền thu dư trước khi ẩn.':undefined, danger: true, icon: <Trash2 size={16} />, onSelect: () => onDelete(row) });
     }
     return actions;
   };

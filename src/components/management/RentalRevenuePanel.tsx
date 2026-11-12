@@ -119,7 +119,7 @@ export function RentalRevenuePanel({
           </dl>
           {debtLoading ? <p className="mg-rental-revenue-note" role="status">Đang tải công nợ…</p>
             : debtError ? <p className="mg-field-error" role="alert" style={{ margin: '0 16px 12px' }}>{debtError}</p>
-            : <p className="mg-rental-revenue-note">Gồm đơn đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu. Không gồm cọc.</p>}
+            : <p className="mg-rental-revenue-note">Gồm đơn đang thuê, quá hạn, chờ tất toán, bảo lưu, nợ xấu và HĐ nợ xấu đã đóng còn thiếu tiền. Không gồm cọc.</p>}
         </article>
 
         <article className="mg-data-panel mg-revenue-card is-overdue" aria-label="Nợ quá hạn">

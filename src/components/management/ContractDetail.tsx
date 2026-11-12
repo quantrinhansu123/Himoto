@@ -29,6 +29,8 @@ import { OwnershipTermsEditor,OwnershipTermsSummary } from './OwnershipTermsEdit
 import { requiresOwnershipApproval } from '@/lib/management/contract-approval';
 import { contractIssuedEditBlockReason } from '@/lib/management/contract-profile';
 import { BadDebtRecoveryDialog } from './BadDebtRecoveryDialog';
+import { ContractBadDebtCloseDialog } from './ContractBadDebtCloseDialog';
+import { isAdminAccount } from '@/lib/management/permissions';
 import { lifecycleDisplayStatus,loadContractLifecycle,type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 
 const SECTIONS = [
@@ -72,9 +74,10 @@ export type ContractVersionPrint = { end_date: string | null; total_amount: numb
 export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft,onEditIssued,onHandover, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void;onEditIssued?:()=>void;onHandover?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
   const { dataset, source, can, accessUser, invalidateData, notify } = useManagement();
   const [lifecycleOverride,setLifecycleOverride]=useState<Partial<ManagementRow>>({});
+  const [badDebtCloseOpen,setBadDebtCloseOpen]=useState(false);
   const [recoveryOpen,setRecoveryOpen]=useState(false),[lifecycleReload,setLifecycleReload]=useState(0);
   const applyLifecycle=useCallback((context:ContractLifecycleContext)=>{
-    setLifecycleOverride({status:lifecycleDisplayStatus(context),draft_revision:context.revision,billing_plan_json:context.plan?JSON.stringify(context.plan):'',end_date:context.end_at||undefined,total_amount:context.total_amount??undefined,paid_amount:context.paid_amount??undefined,hold_until:context.hold_until||'',held_at:context.held_at||'',completed_from_hold:context.completed_from_hold?1:0});
+    setLifecycleOverride({status:lifecycleDisplayStatus(context),draft_revision:context.revision,billing_plan_json:context.plan?JSON.stringify(context.plan):'',end_date:context.end_at||undefined,total_amount:context.total_amount??undefined,paid_amount:context.paid_amount??undefined,hold_until:context.hold_until||'',held_at:context.held_at||'',completed_from_hold:context.completed_from_hold?1:0,bad_debt_closed_at:context.bad_debt_closed_at||''});
   },[]);
   const originalRow=row;
   row={...originalRow,...lifecycleOverride};
@@ -317,11 +320,13 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         {can('contracts.return')&&onVehicleChange&&<button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>}
       </>}
       {row.status==='completed'&&can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}>Bổ sung ảnh trả xe</button>}
+      {row.status==='bad_debt'&&isAdminAccount(accessUser)&&<button type="button" className="mg-button mg-button-primary" onClick={()=>setBadDebtCloseOpen(true)}>Đóng hợp đồng nợ xấu</button>}
       {row.status==='bad_debt'&&can('contracts.return')&&<button type="button" className="mg-button" onClick={()=>setRecoveryOpen(true)}><RotateCcw size={15}/>Thu hồi xe nợ xấu</button>}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('lifecycle')}>Trạng thái &amp; xử lý</button>}
       {canRentBattery && <button type="button" className="mg-button" onClick={onBatteryRent}><BatteryCharging size={15} />Thuê pin / sạc</button>}
       {canPay && <button type="button" className="mg-button" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : depositHeld != null && depositHeld > 0 ? 'deposit_refund' : 'extra')}><Wallet size={15} />Điền sổ quỹ</button>}
       {onQr && row.status !== 'cancelled' && <button type="button" className="mg-button" onClick={onQr}><Wallet size={15} />Nhập phiếu chi</button>}
       <button type="button" className="mg-button mg-button-primary" onClick={onPrint}><Printer size={16} />In hợp đồng</button></div>
+    {badDebtCloseOpen&&<ContractBadDebtCloseDialog id={row.id} code={row.code} onClose={()=>setBadDebtCloseOpen(false)} onDone={context=>{applyLifecycle(context);setBadDebtCloseOpen(false);setLifecycleReload(value=>value+1);}}/>}
   </Dialog>;
 }

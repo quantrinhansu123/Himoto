@@ -5,14 +5,14 @@ import {projectManagementTable,type ManagementTableInput} from '@/lib/management
 import {applyInstallmentBilling} from '@/lib/management/contract-billing';
 import {withContractMonitoring} from '@/lib/management/contract-overdue';
 import {dateTimeInput} from '@/lib/management/contract-document';
-import {BAD_DEBT_CUTOFF_SQL} from './contract-bad-debt';
+import {BAD_DEBT_CLOSED_AT_SQL,BAD_DEBT_CUTOFF_SQL} from './contract-bad-debt';
 import {EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL} from './contract-classification';
 import {depositReceiptSql,rentalPaidSql} from './contract-deposits';
 
 /** Counts and balances need dates and numeric fields, not every vehicle,
  * customer document or form field from 26,000 historical contracts. */
 export function contractStatisticsSql(scopeClause:string,company:boolean){
- const needsPaid=`(o.order_status IN('renting','overdue','wait_payment','reserved','bad_debt') OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL)`;
+ const needsPaid=`(o.order_status IN('renting','overdue','wait_payment','reserved','bad_debt') OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL OR (${BAD_DEBT_CLOSED_AT_SQL}) IS NOT NULL)`;
  return `SELECT o.id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
    CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,dates.end_date)<now() THEN 'overdue' ELSE o.order_status END AS status,
    o.customer_id,c.status AS customer_status,o.store_id,s.kind AS store_kind,
@@ -26,7 +26,7 @@ export function contractStatisticsSql(scopeClause:string,company:boolean){
    CASE WHEN ${needsPaid} THEN ${rentalPaidSql()} ELSE NULL END AS paid_amount,
    o.draft_payload #> '{management_composer,installment_plan}' AS installment_plan,
    o.draft_payload #>> '{legacy_migration,sourceStoreId}' AS legacy_source_store_id,
-   ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
+   ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at, ${BAD_DEBT_CLOSED_AT_SQL} AS bad_debt_closed_at,
    ${company?'company.payment_count':'0::int'} AS company_payment_count
    FROM himoto.orders o LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id
    LEFT JOIN LATERAL (
@@ -54,7 +54,7 @@ export function mapContractStatistics(raw:Record<string,unknown>):ManagementRow{
    store_id:number(raw.store_id),store_kind:text(raw.store_kind),rental_type:type,contract_type_id:text(raw.contract_type_id)||type,
    ownership_term_months:type==='ownership'?'custom':'',start_date:dateTimeInput(raw.start_date)||text(raw.start_date),end_date:dateTimeInput(raw.end_date)||text(raw.end_date),
    signed_on:text(raw.signed_on),total_amount:number(raw.total_amount),paid_amount:number(raw.paid_amount),company_payment_count:number(raw.company_payment_count),
-   billing_plan_json:raw.installment_plan?JSON.stringify(raw.installment_plan):'',bad_debt_at:text(raw.bad_debt_at),legacy_source_store_id:text(raw.legacy_source_store_id),
+   billing_plan_json:raw.installment_plan?JSON.stringify(raw.installment_plan):'',bad_debt_at:text(raw.bad_debt_at),bad_debt_closed_at:text(raw.bad_debt_closed_at),legacy_source_store_id:text(raw.legacy_source_store_id),
    overdue_items_json:Array.isArray(raw.overdue_items)?JSON.stringify(raw.overdue_items):undefined};
 }
 
@@ -64,7 +64,7 @@ export function mapContractStatistics(raw:Record<string,unknown>):ManagementRow{
 export async function fastContractStatistics(db:Pick<PoolClient,'query'>,input:ManagementTableInput,scope:string,now:number){
  if(!['','vat'].includes(input.scope)||input.query.search.trim()||input.query.startDate||input.query.endDate||input.query.overdueDays||input.query.overdueBucket||Object.values(input.query.filters).some(Boolean)||['overdue','bad_debt'].includes(input.query.status))return;
  const needsDetail=`(o.order_status IN('draft','renting','overdue','wait_payment','reserved','bad_debt')
-   OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL
+   OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL OR (${BAD_DEBT_CLOSED_AT_SQL}) IS NOT NULL
    OR NOT(o.total IS NULL OR o.total='' OR o.total ~ '^[0-9]{1,13}$'))`;
  // Classify history before resolving dates, deposits and billing JSON. A closed
  // rental contributes counts/money only; those joins used to run for every row.

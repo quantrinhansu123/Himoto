@@ -7,7 +7,7 @@ export function badDebtCutoff(payload: unknown): string | undefined {
   if (typeof at==='string'&&Number.isFinite(Date.parse(at))) return at;
 }
 export function badDebtClock(status: string, cutoff: unknown, now: number): number | undefined {
-  if (status!=='bad_debt') return now;
+  if (status!=='bad_debt'&&!(status==='completed'&&cutoff)) return now;
   const at=typeof cutoff==='string'?Date.parse(cutoff):NaN;
   return Number.isFinite(at)?Math.min(at,now):undefined;
 }

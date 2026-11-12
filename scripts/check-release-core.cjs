@@ -1,6 +1,6 @@
 const path=require('node:path'),{spawnSync}=require('node:child_process');
 const cases=[
- 'object-media','request-deadlines','media-copy-retry','gps-budget-fetch','gps-history-provider-bounds',
+ 'object-media','request-deadlines','media-copy-retry','gps-budget-fetch','gps-history-provider-bounds','bad-debt-close',
  'management-login','account-management-api','account-password-api','global-vehicle-access',
  'contract-autofill','contract-billing','contract-summary','contract-receipt-summary','contract-finalize','contract-payments','renewal-payment-corrections',
  'contract-overdue','contract-dates','contract-warehouses','legacy-ownership-overdue','contract-branch-flows','contract-lifecycle-api','contract-edit-api','contract-followups-api','ownership-approval','ownership-stock','ownership-terms',

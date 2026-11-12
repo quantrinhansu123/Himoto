@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { hasPermission, type AccessPermission } from '@/lib/management/permissions';
+import { hasPermission, isAdminAccount, type AccessPermission } from '@/lib/management/permissions';
 import { dataAccess } from './access-context';
 import { SESSION_COOKIE, sameOrigin, userFromSession, readSessionUser } from './management-session';
 import { failureResponse } from './public-failure';
@@ -82,6 +82,7 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     if(request.method!=='GET'&&(request.nextUrl.pathname.endsWith('/actions')||/^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/lifecycle$/.test(request.nextUrl.pathname))) {
       try {operation=String((await request.clone().json()).action||'');}catch {return NextResponse.json({status:'error',message:'Thao tác không hợp lệ.'},{status:400});}
     }
+    if(operation==='close_bad_debt'&&!isAdminAccount(user))return NextResponse.json({status:'error',message:'Chỉ quản trị viên được đóng hợp đồng nợ xấu.'},{status:403});
     const vehiclePhoto=request.nextUrl.pathname.match(/\/record-photos\/vehicles\/([1-9]\d{0,14})(?:\/|$)/);
     const vehicleAction=request.nextUrl.pathname.match(/^\/api\/auth\/vehicles\/([1-9]\d{0,14})\/actions$/);
     const transfer_vehicle_id=vehiclePhoto?.[1]||(['transfer','receive','reject','cancel'].includes(operation)?vehicleAction?.[1]:'')||'';

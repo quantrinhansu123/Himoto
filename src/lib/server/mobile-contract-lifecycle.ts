@@ -13,7 +13,7 @@ import { MobileError } from './mobile-session';
 import { mobileContractId } from './mobile-contracts';
 import { mapDraftInventoryRow } from './mobile-draft-lookups';
 import { idempotentMobileWrite, mobileBody, mobileRequestKey } from './mobile-writes';
-import { isMobileLifecycleContext, isMobileLifecyclePreview, isMobileLifecycleResult, isMobileLifecycleInventory, type MobileLifecycleContext, type MobileLifecycleResult } from '../../../shared/mobile-contract-lifecycle';
+import { mobileLifecycleActions,isMobileLifecycleContext, isMobileLifecyclePreview, isMobileLifecycleResult, isMobileLifecycleInventory, type MobileLifecycleContext, type MobileLifecycleResult } from '../../../shared/mobile-contract-lifecycle';
 
 export function requireMobileLifecycle(user: SessionUser, action?: string) {
   if (!hasPermission(user, 'contracts.read') || action && !(hasPermission(user, 'contracts.return') || action === 'settle' && hasPermission(user, 'finance.write'))) throw new MobileError('Tài khoản không có quyền thao tác tình trạng hợp đồng.', 403, 'FORBIDDEN');
@@ -40,7 +40,7 @@ async function visible(client: PoolClient, id: number) {
 }
 function project(context: ContractLifecycleContext, user: SessionUser): MobileLifecycleContext {
   const actions: MobileLifecycleContext['actions'] = [];
-  const add = (action: ContractLifecycleAction, enabled = true, reason = '') => {
+  const add = (action: MobileLifecycleContext['actions'][number]['action'], enabled = true, reason = '') => {
     if (hasPermission(user, 'contracts.return') || action === 'settle' && hasPermission(user, 'finance.write')) actions.push({ action, label: lifecycleActionLabel[action], enabled, reason });
   };
   if (canMarkBadDebtContract(context)) add('mark_bad_debt');
@@ -109,7 +109,7 @@ async function result(client: PoolClient, user: SessionUser, key: string): Promi
 export async function readMobileLifecycleResult(user: SessionUser, key: string) { mobileRequestKey(key); return transaction(user, undefined, async client => ({ result: await result(client, user, key) })); }
 export async function writeMobileLifecycle(user: SessionUser, value: string, request: NextRequest): Promise<MobileLifecycleResult> {
   const id = mobileContractId(value), key = mobileRequestKey(request.headers.get('idempotency-key')), body = await mobileBody(request, 16384);
-  if ('request_id' in body || typeof body.action !== 'string' || !Object.hasOwn(lifecycleActionLabel, body.action)) throw new MobileError('Loại thao tác tình trạng hợp đồng chưa hợp lệ.');
+  if ('request_id' in body || typeof body.action !== 'string' || !mobileLifecycleActions.includes(body.action as typeof mobileLifecycleActions[number])) throw new MobileError('Loại thao tác tình trạng hợp đồng chưa hợp lệ.');
   return transaction(user, body.action, async client => {
     await visible(client, id); const input = parseContractLifecycle({ ...body, request_id: key });
     const receipt = await idempotentMobileWrite(client, user.id, key, `lifecycle.${input.action}:${id}`, { id, input }, async () => {

@@ -3,6 +3,8 @@ import type { PoolClient } from 'pg';
 import { installmentBalance,parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { badDebtClock,badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { depositLateral,rentalPaidSql } from './contract-deposits';
+import { dataAccess } from './access-context';
+import { isAdminAccount } from '@/lib/management/permissions';
 
 type Database=Pick<PoolClient,'query'>;
 export async function readContractResolution(db:Database,id:number){
@@ -31,10 +33,13 @@ export async function readContractResolution(db:Database,id:number){
 }
 /** Called inside the operation transaction; no receipt or balance is invented. */
 export async function closeResolvedBadDebt(db:Database,id:number,actorId:number){
+  const actor=dataAccess.getStore();
+  if(!isAdminAccount(actor)||actor?.id!==actorId)return false;
   const row=(await db.query('SELECT order_status,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id])).rows[0];
   if(row?.order_status!=='bad_debt'||!row.draft_payload?.management_composer?.lifecycle?.settlement)return false;
   const state=await readContractResolution(db,id);if(!state?.all_returned||!state.settled)return false;
   const payload=structuredClone(row.draft_payload),lifecycle=payload.management_composer.lifecycle,at=new Date().toISOString();
+  lifecycle.bad_debt_closure={at,recorded_at:at,actor_id:actorId,note:'Đã trả đủ xe và xác nhận tất toán.',total:state.total,paid:state.paid,remaining:state.remaining,deposit_held:state.deposit_held,overpayment:state.overpayment};
   lifecycle.events=[...(Array.isArray(lifecycle.events)?lifecycle.events:[]),{action:'closed',at,recorded_at:at,actor_id:actorId,actor_name:`#${actorId}`,note:'Đã trả/thu hồi tất cả xe và đối chiếu tất toán đủ tiền thuê, phí, cọc.',from:'bad_debt',to:'completed'}];
   await db.query("UPDATE himoto.orders SET order_status='completed',draft_payload=$2::json,updated_at=now() WHERE id=$1 AND order_status='bad_debt'",[id,JSON.stringify(payload)]);return true;
 }

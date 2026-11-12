@@ -51,7 +51,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   // SQL plans may return equal sort values in different orders; use IDs as a stable tie-breaker across pages.
   let rows = [...source].sort((a,b)=>a.id-b.id);
   if(input.kind==='contracts')rows=rows.map(row=>({...applyInstallmentBilling(row,now),contract_signed_at:row.signed_on||row.start_date}));
-  const monitoring=input.kind==='contracts'&&(input.scope==='ownership'||input.scope==='overdue'||input.query.status==='overdue'||input.query.status==='bad_debt'||Boolean(input.query.overdueBucket));
+  const monitoring=input.kind==='contracts'&&(input.scope==='ownership'||input.scope==='overdue'||input.scope==='collection'||input.query.status==='overdue'||input.query.status==='bad_debt'||Boolean(input.query.overdueBucket));
   if(monitoring)rows=rows.map(row=>withContractMonitoring(row,now));
   if (input.scope === 'backfill') rows=rows.filter(row=>!['draft','cancelled'].includes(row.status));
   if (input.scope === 'active') rows=rows.filter(row=>['renting','overdue','wait_payment'].includes(row.status));
@@ -62,6 +62,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if (input.scope === 'renewable') rows=rows.filter(row=>['renting','overdue'].includes(row.status)&&!row.billing_plan_json);
   if (input.scope === 'remindable') rows=rows.filter(isRemindableContract);
   if (input.scope === 'overdue') rows=rows.filter(row=>row.status==='overdue'||row.status==='bad_debt'||row.collection_overdue===1);
+  if (input.scope === 'collection') rows=rows.filter(row=>row.status==='overdue'||row.status==='bad_debt'||row.collection_overdue===1||row.status==='completed'&&row.bad_debt_closed_at&&(row.rental_debt_amount===undefined||Number(row.rental_debt_amount)>0));
   const warehouseScope=input.kind==='contracts'&&input.storeBasis==='warehouse';
   if(warehouseScope)rows=rows.filter(row=>contractMatchesWarehouse(row,input.store));
   const sourceStore=warehouseScope?'all':input.store;
