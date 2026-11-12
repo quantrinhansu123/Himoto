@@ -27,7 +27,7 @@ import { cashbookPaymentPath, type PaymentPurpose } from '@/lib/management/contr
 import { batteryPrefillFromVehicleContract } from '@/lib/management/battery-from-contract';
 import type { BatteryContract } from '@/lib/management/battery-contracts';
 import { staffPositionSuggestions } from '@/lib/management/staff-positions';
-import { canSendDebtReminder,isAdminAccount } from '@/lib/management/permissions';
+import { canSendDebtReminder,canSettleContract } from '@/lib/management/permissions';
 import { canFinalizeRentalContract } from '@/lib/management/contract-approval';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ResponsiveDataActions } from './ResponsiveDataActions';
@@ -516,7 +516,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onHandover={can('contracts.finalize') && kind === 'contracts' && source === 'api' ? row=>setHandoverId(row.id) : undefined}
           onReturn={can('contracts.return') && kind === 'contracts' && source === 'api' ? row => setReturnTarget({ orderId: row.id, code: row.code }) : undefined}
           onMarkBadDebt={can('contracts.return') && kind==='contracts' && source==='api' ? row=>setBadDebtTarget({id:row.id,code:row.code}) : undefined}
-          onCloseBadDebt={isAdminAccount(accessUser)?row=>setBadDebtCloseTarget(row):undefined}
+          onCloseBadDebt={canSettleContract(accessUser)?row=>setBadDebtCloseTarget(row):undefined}
           onRenew={can('contracts.renew') && kind === 'contracts' && source === 'api' ? row => setRenewTarget(row) : undefined}
           onVehicleChange={can('contracts.return') && kind === 'contracts' && source === 'api' ? row => setVehicleTarget({ orderId: row.id, code: row.code }) : undefined}
           onBatteryRent={can('contracts.draft') && kind === 'contracts' && source === 'api' ? row => setBatteryRentTarget(row) : undefined}

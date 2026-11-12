@@ -68,7 +68,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   const item = locked.rows[0];
   if (!item) throw new ContractRenewalError('Xe đã trả, đã xóa hoặc không thuộc hợp đồng này.', 404);
   if (item.draft_payload?.management_composer?.lifecycle?.hold_completion) throw new ContractRenewalError('Hợp đồng đã hoàn thành sau bảo lưu; không gia hạn hoặc phát sinh lại khoản phải thu.',409);
-  if (item.draft_payload?.management_composer?.lifecycle?.bad_debt_closure) throw new ContractRenewalError('Hợp đồng nợ xấu đã đóng; chỉ tiếp tục theo dõi và thu công nợ.',409);
+  if (item.draft_payload?.management_composer?.lifecycle?.bad_debt_closure||item.draft_payload?.management_composer?.lifecycle?.payment_closure) throw new ContractRenewalError('Hợp đồng nợ xấu đã đóng; chỉ tiếp tục theo dõi và thu công nợ.',409);
   if (item.draft_payload?.management_composer?.installment_plan) throw new ContractRenewalError('Thuê sở hữu đóng tiền theo lịch đã lập. Không cộng kỳ đóng tiền thành phí gia hạn.', 409);
   const historical=Boolean(item.completed_at&&input.occurred_at);
   if (!RENEWAL_STATUSES.includes(String(item.order_status))&&!(historical&&['completed','wait_payment','bad_debt'].includes(String(item.order_status)))) throw new ContractRenewalError('Chỉ gia hạn hợp đồng đang thuê hoặc nhập bổ sung đúng lịch sử của xe đã trả.', 409);

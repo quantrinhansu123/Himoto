@@ -1,7 +1,7 @@
 import 'server-only';
 import type { NextRequest } from 'next/server';
 import type { PoolClient } from 'pg';
-import { hasPermission, isAdminAccount } from '@/lib/management/permissions';
+import { hasPermission, canSettleContract } from '@/lib/management/permissions';
 import { canHoldContract, canMarkBadDebtContract, lifecycleActionLabel, localLifecycleTime, resumedHoldEnd, resumeInstallmentPlan, validLifecycleTime, type ContractLifecycleAction, type ContractLifecycleContext } from '@/lib/management/contract-lifecycle';
 import { addRentalMonths, installmentSchedule, parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { readContractLifecycle, applyContractLifecycle, parseContractLifecycle, ContractLifecycleError } from './contract-lifecycle';
@@ -16,8 +16,8 @@ import { idempotentMobileWrite, mobileBody, mobileRequestKey } from './mobile-wr
 import { mobileLifecycleActions,isMobileLifecycleContext, isMobileLifecyclePreview, isMobileLifecycleResult, isMobileLifecycleInventory, type MobileLifecycleContext, type MobileLifecycleResult } from '../../../shared/mobile-contract-lifecycle';
 
 export function requireMobileLifecycle(user: SessionUser, action?: string) {
-  if (!hasPermission(user, 'contracts.read') || action && !(hasPermission(user, 'contracts.return') || (action === 'settle' || action === 'close_bad_debt') && hasPermission(user, 'finance.write') || action === 'close_bad_debt' && isAdminAccount(user))) throw new MobileError('Tài khoản không có quyền thao tác tình trạng hợp đồng.', 403, 'FORBIDDEN');
-  if (action === 'close_bad_debt' && !isAdminAccount(user)) throw new MobileError('Chỉ quản trị viên được đóng hợp đồng nợ xấu.', 403, 'FORBIDDEN');
+  if (!hasPermission(user, 'contracts.read') || action && !(hasPermission(user, 'contracts.return') || (action === 'settle' || action === 'close_bad_debt') && hasPermission(user, 'finance.write') || action === 'close_bad_debt' && canSettleContract(user))) throw new MobileError('Tài khoản không có quyền thao tác tình trạng hợp đồng.', 403, 'FORBIDDEN');
+  if (action === 'close_bad_debt' && !canSettleContract(user)) throw new MobileError('Chỉ quản trị viên được đóng hợp đồng nợ xấu.', 403, 'FORBIDDEN');
 }
 async function transaction<T>(user: SessionUser, action: string | undefined, task: (client: PoolClient) => Promise<T>, operation = '') {
   requireMobileLifecycle(user, action);
@@ -46,7 +46,7 @@ function project(context: ContractLifecycleContext, user: SessionUser): MobileLi
   };
   if (canMarkBadDebtContract(context)) add('mark_bad_debt');
   if (context.status === 'bad_debt' && !context.settled) add('settle', context.can_settle, context.can_settle ? '' : context.settlement_note);
-  if (context.status === 'bad_debt' && isAdminAccount(user)) {
+  if (context.status === 'bad_debt' && canSettleContract(user)) {
     const eligible = context.all_returned && context.total_amount !== null && context.paid_amount !== null && context.remaining !== null;
     actions.push({
       action: 'close_bad_debt',

@@ -20,13 +20,21 @@ import { SavedRecordPhotos } from './RecordPhotoFields';
 import { contractEvidenceSlots } from '@/lib/management/contract-photos';
 import { validBackfillTime } from '@/lib/management/contract-backfill';
 import { addRentalDuration } from '@/lib/management/rental-time';
+import { canSettleContract } from '@/lib/management/permissions';
+import { ContractSettlementDialog } from './ContractSettlementDialog';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const defaultNote = (purpose: PaymentPurpose, code: string) => purpose==='deposit'?`Thu cọc hợp đồng_${code}`:purpose==='rental_refund'?`Hoàn tiền thuê trả sớm_${code}`:purpose === 'extra' ? `Thu thêm hợp đồng_${code}` : purpose === 'deposit_refund' ? `Trả cọc hợp đồng_${code}` : purpose === 'debt' ? contractTransferMemo(code) : `Gia hạn hợp đồng_${code}`;
 const vietnamText = (value: string) => formatDateTime(value);
 
 export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void }) {
-  const { acceptContractPayment, notify, selectStore } = useManagement();
+  const {accessUser}=useManagement();
+  const [other,setOther]=useState(false);
+  if(initialPurpose==='debt'&&!backfill&&canSettleContract(accessUser)&&!other)return <ContractSettlementDialog id={id} onClose={onClose} onSaved={onPaymentSaved} onOther={()=>setOther(true)}/>;
+  return <LegacyContractPaymentDialog id={id} initialPurpose={other?'extra':initialPurpose} backfill={backfill} onClose={onClose} onPaymentSaved={onPaymentSaved}/>;
+}
+function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void }) {
+  const { acceptContractPayment, notify, selectStore,accessUser } = useManagement();
   const router = useRouter();
   const [context, setContext] = useState<PaymentContext | null>(null);
   const approvedHistory = (context?.history || []).filter(receipt => receipt.status === 'approved');
@@ -88,7 +96,7 @@ export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fa
   const accounts = context ? paymentAccounts(context, method) : [];
   const effectiveAccount = accountId || (accounts.length === 1 ? paymentAccountKey(accounts[0]) : '');
   const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
-  const payable = Boolean(context && !context.completed_from_hold && PAYABLE_STATUSES.includes(context.status) && context.remaining !== null && context.remaining > 0);
+  const payable = Boolean(canSettleContract(accessUser)&&context && !context.completed_from_hold && PAYABLE_STATUSES.includes(context.status) && context.remaining !== null && context.remaining > 0);
   const renewable = Boolean(context && !context.billing && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
   const days = /^\d+$/.test(renewalDays) && Number(renewalDays) >= 1 && Number(renewalDays) <= 365 ? Number(renewalDays) : 0;
   const suggestedFor = (item: RenewalItem) => item.daily_price && days ? String(item.daily_price * days) : '';

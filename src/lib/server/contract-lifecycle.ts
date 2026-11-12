@@ -4,7 +4,7 @@ import type { PoolClient } from 'pg';
 import { installmentBalance,parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { canHoldContract,canMarkBadDebtContract,localLifecycleTime,resumeInstallmentPlan,resumedHoldEnd,validLifecycleTime,type ContractLifecycleContext,type ContractLifecycleInput,type LifecycleEvent } from '@/lib/management/contract-lifecycle';
 import { dataAccess,usesScopedDatabase } from './access-context';
-import { isAdminAccount } from '@/lib/management/permissions';
+import { canSettleContract } from '@/lib/management/permissions';
 import { badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
@@ -71,13 +71,13 @@ export async function readContractLifecycle(db:Database,id:number):Promise<Contr
     events:Array.isArray(lifecycle.events)?lifecycle.events:[],held_at:lifecycle.active_hold?.at||null,resume_vehicle_count:lifecycle.active_hold?.vehicle_ids?.length||0,plan,base_total:state.base,start_at:iso(order.rent_at)||items[0]?.rent_at||null,
     hold_until:lifecycle.active_hold?.until||null,hold_expired:order.order_status==='reserved'&&validLifecycleTime(lifecycle.active_hold?.until)&&Date.parse(stamp(lifecycle.active_hold.until))<=Date.now(),
     hold_can_resume:order.order_status==='reserved'&&Boolean(lifecycle.active_hold),hold_was_overdue:lifecycle.active_hold?.was_overdue===true,
-    completed_from_hold:Boolean(lifecycle.hold_completion),waived_amount:lifecycle.hold_completion?.waived_amount,bad_debt_closed_at:lifecycle.bad_debt_closure?.at,
+    completed_from_hold:Boolean(lifecycle.hold_completion),waived_amount:lifecycle.hold_completion?.waived_amount,bad_debt_closed_at:lifecycle.bad_debt_closure?.at||lifecycle.payment_closure?.at,
     end_at:plan?stamp(plan.end):iso(order.return_at)||items.filter(item=>(!item.completed_at||item.return_reconciled)&&item.return_at).map(item=>item.return_at!).sort().at(-1)||null};
 }
 export async function applyContractLifecycle(db:Database,id:number,actorId:number,raw:unknown){
   const input=parseContractLifecycle(raw);if(!Number.isSafeInteger(id)||id<=0)throw new ContractLifecycleError('Mã hợp đồng không hợp lệ.');
   const actorScope=dataAccess.getStore();
-  if(input.action==='close_bad_debt'&&(!isAdminAccount(actorScope)||actorScope?.id!==actorId))throw new ContractLifecycleError('Chỉ quản trị viên được đóng hợp đồng nợ xấu.',403);
+  if(input.action==='close_bad_debt'&&(!canSettleContract(actorScope)||actorScope?.id!==actorId))throw new ContractLifecycleError('Chỉ tài khoản được chỉ định và Quản lý Thuê sở hữu được đóng hợp đồng.',403);
   await db.query("SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='20s'");
   const order=(await db.query(orderSql+' FOR UPDATE OF o',[id])).rows[0];if(!order)throw new ContractLifecycleError('Không tìm thấy hợp đồng trong phạm vi tài khoản.',404);
   const payload=structuredClone(order.draft_payload||{}),composer=payload.management_composer||{},lifecycle=composer.lifecycle||{};

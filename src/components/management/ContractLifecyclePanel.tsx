@@ -11,7 +11,7 @@ import { formatDateTime,formatMoney } from '@/lib/formatters';
 import { MANAGEMENT_CONFIG,optionLabel } from '@/lib/management/config';
 import { addRentalMonths, installmentSchedule } from '@/lib/management/contract-billing';
 import { ContractBadDebtCloseDialog } from './ContractBadDebtCloseDialog';
-import { isAdminAccount } from '@/lib/management/permissions';
+import { canSettleContract } from '@/lib/management/permissions';
 import { ContractBadDebtDialog } from './ContractBadDebtDialog';
 import { useHoldExpired } from './ContractHoldStatus';
 
@@ -69,8 +69,8 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
       {hasReconciled&&<p role="status">Hồ sơ cũ có xe đã gỡ giữ khi đối chiếu kho, chưa xác định ngày thu hồi thực tế. Bảo lưu giữ nguyên mốc cũ và kho xe hiện tại; không thu hồi xe lần nữa hoặc tự điều chỉnh tiền thuê, tiền đã thu và cọc. Chọn Tiếp tục thuê để bàn giao xe khi khách quay lại.</p>}
       <div className="mg-heading-actions">
         {can('contracts.return')&&canMarkBadDebtContract(context)&&<button className="mg-button" onClick={()=>open('mark_bad_debt')}>Chuyển sang Nợ xấu</button>}
-        {can('contracts.return')&&context.status==='bad_debt'&&!context.all_returned&&<button className="mg-button" onClick={onRecover}>Thu hồi xe nợ xấu</button>}
-        {isAdminAccount(accessUser)&&context.status==='bad_debt'&&<button className="mg-button mg-button-primary" disabled={!context.all_returned} onClick={()=>open('close_bad_debt')}>Đóng hợp đồng nợ xấu</button>}
+        {can('contracts.return')&&(context.status==='bad_debt'||context.status==='completed'&&Boolean(context.bad_debt_closed_at))&&!context.all_returned&&<button className="mg-button" onClick={onRecover}>Thu hồi xe nợ xấu</button>}
+        {canSettleContract(accessUser)&&context.status==='bad_debt'&&<button className="mg-button mg-button-primary" onClick={()=>open('close_bad_debt')}>Đóng hợp đồng nợ xấu</button>}
         {(can('contracts.return')||can('finance.write'))&&context.status==='bad_debt'&&!context.settled&&<button className="mg-button" disabled={!context.can_settle} onClick={()=>open('settle')}>Xác nhận tất toán</button>}
         {onPayment&&['bad_debt','reserved'].includes(context.status)&&<button className="mg-button" onClick={()=>onPayment(Number(context.remaining)>0?'debt':context.deposit_held>0?'deposit_refund':'extra')}>Thanh toán / xử lý cọc</button>}
         {can('contracts.return')&&canHoldContract(context)&&<button className="mg-button" onClick={()=>open('hold')}>Bảo lưu hợp đồng</button>}
@@ -86,7 +86,7 @@ export function ContractLifecyclePanel({id,reloadKey,onChanged,onRecover,onPayme
     {action&&action!=='mark_bad_debt'&&action!=='close_bad_debt'&&context&&<Dialog title={lifecycleActionLabel[action]} onClose={()=>{if(!busy.current)setAction(null);}} dismissOnBackdrop={!saving}>
       <form onSubmit={event=>{event.preventDefault();void save();}}><div className="mg-dialog-body">
         <p>{context.code}</p>
-        {action==='settle'&&<p>Đối chiếu đủ tiền thuê, phí phát sinh và cọc. {context.all_returned&&isAdminAccount(accessUser)?'Đã trả đủ xe: quản trị viên xác nhận sẽ đóng hợp đồng.':'Hợp đồng vẫn Nợ xấu; chỉ quản trị viên được đóng sau khi đã trả đủ xe.'}</p>}
+        {action==='settle'&&<p>Đối chiếu đủ tiền thuê, phí phát sinh và cọc. {context.all_returned&&canSettleContract(accessUser)?'Đã trả đủ xe: quản trị viên xác nhận sẽ đóng hợp đồng.':'Hợp đồng vẫn Nợ xấu; chỉ quản trị viên được đóng sau khi đã trả đủ xe.'}</p>}
         {action==='hold'&&<p>{reconciledOnly?'Chuyển hồ sơ đã gỡ giữ xe sang Bảo lưu. Ngày bắt đầu bảo lưu không thay cho ngày thu hồi thực tế chưa xác định; giữ nguyên kho xe, các lượt thuê sau đó, tiền và lịch sử cũ.':'Chỉ xác nhận khi đã thực tế thu hồi các xe còn đang thuê. Xe được giải phóng để cho thuê lại; lịch đóng tiền dừng phát sinh kỳ mới, nợ và cọc cũ được giữ nguyên.'}</p>}
         {action==='update_hold'&&<p>Sửa ngày kết thúc bảo lưu. Hợp đồng tiếp tục giữ Bảo lưu và dừng phát sinh phí; ngày bắt đầu, khoản tiền cũ và lịch sử không thay đổi.</p>}
         {action==='complete_hold'&&<><p>Hoàn thành và dừng theo dõi công nợ hợp đồng này. Khoản đã phát sinh chưa thu được ghi là <strong>Tổn thất công nợ: {money(context.remaining)}</strong>. Không cộng vào doanh thu đã thu, không tạo phiếu thu/chi và không trừ thêm vào doanh thu thực thu.</p><p>Hủy các kỳ chưa phát sinh; không tính tiền trong thời gian bảo lưu. Tiền đã thu/hoàn và tiền cọc giữ đúng lịch sử.</p></>}

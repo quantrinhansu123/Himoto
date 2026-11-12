@@ -4,7 +4,7 @@ import { compare } from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { unstable_rethrow } from 'next/navigation';
 import { NextRequest, NextResponse } from 'next/server';
-import { ACCESS_PERMISSIONS, canRecordContractPayment, isAdminAccount } from '@/lib/management/permissions';
+import { ADMIN_PERMISSIONS, ACCESS_PERMISSIONS, canRecordContractPayment, canSettleContract, isAdminAccount } from '@/lib/management/permissions';
 import { himotoPool, ownerDatabase } from './himoto-database';
 import { dataAccess } from './access-context';
 import { logSessionUnavailable, retrySessionRead } from './session-read';
@@ -12,8 +12,8 @@ import { failureResponse } from './public-failure';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
-export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; scope_all?:boolean;password_version?:number };
-type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null; access_role?:string; permissions?:string[]; access_store_id?:string|number|null; scope_all?:boolean; access_enabled?:boolean;management_password_version?:number };
+export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; store_kind?:string|null; scope_all?:boolean;password_version?:number };
+type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null; access_role?:string; permissions?:string[]; access_store_id?:string|number|null; store_kind?:string|null; ownership_store_id?:string|number|null; scope_all?:boolean; access_enabled?:boolean;management_password_version?:number };
 type Database = Pick<typeof himotoPool, 'query'>;
 export { canRecordContractPayment, isAdminAccount };
 
@@ -52,18 +52,26 @@ export function verifySession(token: string | undefined, key = sessionKey(), now
 }
 
 function allowedAccount(account: Account) {
+  if(account.access_role==='ownership_manager'||account.access_role==='branch_manager'&&account.store_kind==='lease_to_own')return account.status==='active'&&account.access_enabled===true&&Number(account.ownership_store_id)>0;
   // Managed accounts require an enabled scope; preserve existing admin/accounting access.
   return account.status === 'active' && (account.access_role ? account.access_enabled===true && (account.scope_all===true || ['headquarters_sales','headquarters_debt'].includes(account.access_role) || Number(account.access_store_id)>0) : canRecordContractPayment(account));
 }
 function safeUser(account: Account): SessionUser {
   const admin=isAdminAccount(account);
+  const ownershipManager=account.access_role==='ownership_manager'||account.access_role==='branch_manager'&&account.store_kind==='lease_to_own';
+  const ownershipStore=Number(account.ownership_store_id??account.access_store_id);
   return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
-    access_role:account.access_role||(admin?'admin':'accounting'),permissions:admin?[...ACCESS_PERMISSIONS]:(account.permissions||['contracts.read','finance.read','finance.write']).filter(permission=>permission!=='accounts.manage'),
-    store_id:['headquarters_sales','headquarters_debt'].includes(account.access_role||'')||account.access_store_id==null?null:Number(account.access_store_id),scope_all:admin||(!account.access_role)||['headquarters_sales','headquarters_debt'].includes(account.access_role)||account.scope_all===true,
+    access_role:ownershipManager?'ownership_manager':account.access_role||(admin?'admin':'accounting'),
+    permissions:ownershipManager?[...ACCESS_PERMISSIONS]:admin?[...ADMIN_PERMISSIONS,...(canSettleContract(account)?['contracts.settle']:[])]:(account.permissions||['contracts.read','finance.read','finance.write']).filter(permission=>permission!=='accounts.manage'&&permission!=='contracts.settle'),
+    store_id:ownershipManager?ownershipStore:['headquarters_sales','headquarters_debt'].includes(account.access_role||'')||account.access_store_id==null?null:Number(account.access_store_id),
+    store_kind:ownershipManager?'lease_to_own':account.store_kind??null,
+    scope_all:ownershipManager?false:admin||(!account.access_role)||['headquarters_sales','headquarters_debt'].includes(account.access_role)||account.scope_all===true,
     ...(account.management_password_version?{password_version:Number(account.management_password_version)}:{}) };
 }
-const accountFields = 'u.id, u.name, u.email, u.status, u.role, u.role_id, u.management_password_version, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,a.enabled AS access_enabled';
-const accountJoin='LEFT JOIN himoto.roles r ON r.id=u.role_id LEFT JOIN himoto.management_account_access a ON a.user_id=u.id';
+const accountFields = `u.id, u.name, u.email, u.status, u.role, u.role_id, u.management_password_version, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,a.enabled AS access_enabled,s.kind AS store_kind,
+  CASE WHEN s.kind='lease_to_own' THEN s.id WHEN COALESCE(a.store_id,u.store_id) IS NULL THEN
+    (SELECT min(os.id) FROM himoto.stores os WHERE os.kind='lease_to_own' HAVING count(*)=1) END AS ownership_store_id`;
+const accountJoin='LEFT JOIN himoto.roles r ON r.id=u.role_id LEFT JOIN himoto.management_account_access a ON a.user_id=u.id LEFT JOIN himoto.stores s ON s.id=COALESCE(a.store_id,u.store_id)';
 export class LoginError extends Error {
   constructor(message: string, public status = 401) { super(message); }
 }

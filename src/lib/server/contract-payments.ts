@@ -1,4 +1,6 @@
 import 'server-only';
+import { canSettleContract } from '@/lib/management/permissions';
+import { dataAccess } from './access-context';
 import { renewalDurationUnits,renewalFeeWarning } from '@/lib/management/contract-renewals';
 import { badDebtClock,badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { extendContractVehicleLine } from './contract-renewal-line';
@@ -68,6 +70,8 @@ export async function readPaymentContext(client: Database, id: number, options?:
   const result = await client.query(`SELECT o.id, COALESCE(NULLIF(o.contract_number,''), o.draft_reference, '#' || o.id::text) AS code,
       CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,(SELECT max(d.return_at) FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL)) < now() THEN 'overdue' ELSE o.order_status END AS status,
       o.store_id, o.total, o.draft_payload, COALESCE(o.first_deposit_amount,0)+COALESCE(o.additional_deposit_amount,0) AS deposit_amount, ${rentalPaidSql()} AS rental_paid, dep.paid AS deposit_paid, dep.refunded AS deposit_refunded, o.xmin::text AS revision,
+      EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL)
+        AND NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND d.completed_at IS NULL) AS all_returned,
       COALESCE(o.return_at,(SELECT max(d.return_at) FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL)) AS end_date
     FROM himoto.orders o ${depositLateral()} WHERE o.id=$1 AND o.deleted_at IS NULL`, [id]);
   if (!result.rowCount) throw new ContractPaymentError('Không tìm thấy hợp đồng.', 404);
@@ -78,7 +82,10 @@ export async function readPaymentContext(client: Database, id: number, options?:
   const clock=badDebtClock(String(order.status),badDebtCutoff(order.draft_payload)||plan?.stopped_at&&`${plan.stopped_at}:00+07:00`,options?.asOf??Date.now());
   if(plan&&clock===undefined)throw new ContractPaymentError('Chưa có thời điểm chốt Nợ xấu; cần đối chiếu trước khi thanh toán.',409);
   const billing = plan && (['renting', 'overdue', 'wait_payment', 'bad_debt','reserved'].includes(String(order.status)) || order.status === 'completed' && plan.stopped_at) ? installmentBalance(plan, baseTotal, paid,clock) : undefined;
-  const total = billing ? billing.accrued_total : baseTotal;
+  const closure=order.status==='completed'?order.draft_payload?.management_composer?.lifecycle?.payment_closure:undefined;
+  const total = closure ? money(closure.total) : billing ? billing.accrued_total : baseTotal;
+  if(billing&&closure){billing.accrued_total=total;billing.remaining=total===null||paid===null?null:Math.max(total-paid,0);billing.due_amount=billing.remaining;billing.next_due_at=null;billing.overdue_at=null;}
+  const settlementTotal=money(plan&&!plan.stopped_at&&order.status!=='bad_debt'&&baseTotal!==null&&billing?baseTotal+billing.expected_total-plan.amount:total);
   const depositPaid = money(order.deposit_paid) ?? 0, depositRefunded = money(order.deposit_refunded) ?? 0;
   // Store banks/cash must match cơ sở nguồn; company banks are usable from every store (Cashbook may attach them to a display branch).
   const accounts = await client.query(`SELECT id, 'bank'::text AS kind, store_id, owner_type,bank_name,account_number,owner_name,
@@ -121,6 +128,7 @@ export async function readPaymentContext(client: Database, id: number, options?:
   return { id: Number(order.id), code: String(order.code), status: String(order.status), store_id: Number(order.store_id), revision: String(order.revision),
     hold_active:Boolean(order.draft_payload?.management_composer?.lifecycle?.active_hold),completed_from_hold:Boolean(order.draft_payload?.management_composer?.lifecycle?.hold_completion),
     total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0), ...(billing ? {billing, billing_base_total: baseTotal} : {}),
+    settlement_total:settlementTotal,settlement_remaining:settlementTotal===null||paid===null?null:Math.max(settlementTotal-paid,0),all_returned:order.all_returned===true,payment_closed_at:order.draft_payload?.management_composer?.lifecycle?.payment_closure?.at,
     deposit_paid: depositPaid, deposit_refunded: depositRefunded, deposit_held: Math.max(depositPaid - depositRefunded, 0),
     deposit_remaining:Math.max((money(order.deposit_amount)??0)-depositPaid,0),
     rental_refundable:rentalRefundable,
@@ -142,10 +150,12 @@ export async function readPaymentContext(client: Database, id: number, options?:
 }
 
 // Caller owns BEGIN/COMMIT. The receipt, income and paid total are atomic.
-export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput, options?: PaymentReadOptions, validation: {allowFutureTime?:boolean} = {}) {
+export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput, options?: PaymentReadOptions, validation: {allowFutureTime?:boolean;contractSettlement?:boolean} = {}) {
   input = parseContractPayment(input, validation);
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractPaymentError('Hợp đồng hoặc người thực hiện không hợp lệ.');
   const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', deposit=input.purpose==='deposit', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
+  const actor=dataAccess.getStore();
+  if(!renewal&&!extra&&!deposit&&!refund&&input.renewal_version===undefined&&actor&&(!canSettleContract(actor)||actor.id!==actorId))throw new ContractPaymentError('Chỉ tài khoản được chỉ định và Quản lý Thuê sở hữu được thanh toán công nợ hợp đồng.',403);
   const fingerprint = createHash('sha256').update(JSON.stringify({ id, actorId, amount: input.amount, method: input.method, account_id: input.account_id, paid_at: input.paid_at, note: input.note,
     ...(input.renewal_version !== undefined ? { renewal_version: input.renewal_version } : {}),
     ...(renewal ? { purpose: input.purpose, ...(input.items ? { items: input.items.map(item => [item.item_id, item.return_at, item.amount]) } : { item_id: input.item_id, return_at: input.return_at }) }
@@ -181,7 +191,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
     // (already-paid / overpaid contracts can still have remaining 0 after the fee is added to total).
     // Thu vượt / HĐ đã thu dư (pid >> total, còn thiếu = 0): vẫn cho ghi phiếu và đóng HĐ.
     // Nếu còn thiếu > 0 thì cộng phần dư vào total; nếu vẫn không đủ remaining (đã thu dư sẵn) thì bỏ qua chặn.
-    if (!renewal && !extra && input.renewal_version === undefined && amount > context.remaining) {
+    if (!renewal && !extra && input.renewal_version === undefined && amount > context.remaining && !validation.contractSettlement) {
       if (context.remaining > 0) {
         const excess = amount - context.remaining;
         if (!Number.isSafeInteger(excess) || context.total_amount + excess > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Số tiền thu vượt giới hạn lưu trữ của hợp đồng.', 409);

@@ -121,7 +121,7 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
         LEFT JOIN himoto.users cu ON cu.id=o.contract_responsible_user_id
         LEFT JOIN himoto.users mu ON mu.id=s.user_id
         WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-          AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`, [vehicleId]);
+          AND (o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') OR (o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NOT NULL)) LIMIT 1`, [vehicleId]);
     if (open.rowCount) {
       const store = String(open.rows[0].store_name || '').trim();
       const manager = String(open.rows[0].manager_name || '').trim();

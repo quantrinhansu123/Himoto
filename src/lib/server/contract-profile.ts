@@ -46,7 +46,7 @@ export async function updateContractProfile(client:Pick<PoolClient,'query'>,id:n
   if(row.rows[0].order_status === 'draft')throw new ContractProfileError('Lưu nháp để cập nhật hợp đồng này.',409);
   const code=contract_number??previous.contract_number;
   const nextStatus=status??previous.order_status;
-  if(nextStatus!==previous.order_status&&(previous.order_status==='bad_debt'||previous.draft_payload?.management_composer?.lifecycle?.bad_debt_closure))throw new ContractProfileError('Giữ trạng thái hồ sơ nợ xấu khi sửa thông tin. Chỉ quản trị viên được đóng qua thao tác Đóng hợp đồng nợ xấu sau khi trả đủ xe.',409);
+  if(nextStatus!==previous.order_status&&(previous.order_status==='bad_debt'||previous.draft_payload?.management_composer?.lifecycle?.bad_debt_closure||previous.draft_payload?.management_composer?.lifecycle?.payment_closure))throw new ContractProfileError('Giữ trạng thái hồ sơ nợ xấu khi sửa thông tin. Chỉ quản trị viên được đóng qua thao tác Đóng hợp đồng nợ xấu sau khi trả đủ xe.',409);
   if(!options.allowIncomplete && contract_number !== undefined && code!==previous.contract_number && !await contractNumberAvailable(client,code,id))throw new ContractProfileError('Số hợp đồng đã được sử dụng. Kiểm tra số HĐ giấy trước khi lưu.',409);
   if(!options.allowIncomplete && profile.staff_id && !(await client.query(usesScopedDatabase()?'SELECT id FROM himoto.staff_for_contract($1)':'SELECT id FROM himoto.staff_profiles WHERE id=$1 FOR SHARE',[profile.staff_id])).rowCount) {
     if (!profile.staff_name.trim()) throw new ContractProfileError('Chọn lại hoặc tự nhập tên người làm hợp đồng.',409);

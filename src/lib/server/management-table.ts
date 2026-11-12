@@ -6,7 +6,7 @@ import { mapApiRow } from '@/lib/management/repository';
 import { EMPTY_QUERY, filterRows,sortRows } from '@/lib/management/table-utils';
 import { projectManagementTable, type ManagementTableInput, type TableKind } from '@/lib/management/management-table';
 import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
-import { BAD_DEBT_CLOSED_AT_SQL,BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
+import { PAYMENT_CLOSURE_TOTAL_SQL,BAD_DEBT_CLOSED_AT_SQL,BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource,contractVehicleLabelSource } from './contract-vehicle-reads';
 import { dailyPriceSql,depositLateral,depositReceiptSql,rentalPaidSql } from './contract-deposits';
@@ -225,7 +225,7 @@ function contractHydrateSql() {
     o.created_at, o.updated_at, o.contract_signed_on::text AS signed_on,
     ${OWNERSHIP_HOLD_FIELDS_SQL},
     ${CONTRACT_REVIEW_SQL},
-    ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at, ${BAD_DEBT_CLOSED_AT_SQL} AS bad_debt_closed_at,
+    ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at, ${PAYMENT_CLOSURE_TOTAL_SQL} AS payment_closure_total,${BAD_DEBT_CLOSED_AT_SQL} AS bad_debt_closed_at,
     CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,ov.end_date) < now() THEN 'overdue' ELSE o.order_status END AS status,
     o.customer_id, c.status AS customer_status,
     ${CONTRACT_CUSTOMER_NAME_SQL} AS customer_name, ${CONTRACT_CUSTOMER_PHONE_SQL} AS customer_phone,

@@ -10,7 +10,7 @@ export function BadDebtRecoveryDialog({id,code,onClose,onRecovered}:{id:number;c
   const [rows,setRows]=useState<ReturnableContractItem[]>([]),[item,setItem]=useState(''),[date,setDate]=useState(''),[note,setNote]=useState('');
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(false),[confirmed,setConfirmed]=useState(false);
   const request=useRef(crypto.randomUUID()),lock=useRef(false);
-  useEffect(()=>{const controller=new AbortController();loadContractReturnableItems(id,controller.signal,true).then(result=>{if(!controller.signal.aborted){const active=result.filter(row=>row.order_status==='bad_debt'&&!row.completed_at);setRows(active);setItem(active[0]?String(active[0].item_id):'');}}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được xe.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[id]);
+  useEffect(()=>{const controller=new AbortController();loadContractReturnableItems(id,controller.signal,true).then(result=>{if(!controller.signal.aborted){const active=result.filter(row=>(row.order_status==='bad_debt'||row.order_status==='completed')&&!row.completed_at);setRows(active);setItem(active[0]?String(active[0].item_id):'');}}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được xe.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[id]);
   async function save(){
     const row=rows.find(row=>String(row.item_id)===item);if(lock.current||!row||!confirmed||!date)return;
     lock.current=true;setBusy(true);setError('');

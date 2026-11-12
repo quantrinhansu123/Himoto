@@ -21,7 +21,7 @@ import { vehicleHolderLabel, vehicleMissingOpenContract } from '@/lib/management
 import { contractHandoverBlockReason, contractRenewBlockReason, contractReturnBlockReason, vehicleTransferBlockReason } from '@/lib/management/blocked-actions';
 import type { OpenVehicleRental } from '@/lib/management/vehicle-reservation-window';
 import {ContractBranches,VehicleOwnerBranch} from './ContractBranches';
-import { isAdminAccount } from '@/lib/management/permissions';
+import { canSettleContract } from '@/lib/management/permissions';
 import { canCancelVehicleTransfer } from '@/lib/management/vehicle-history';
 import { VehicleThumbnail } from './VehicleThumbnail';
 
@@ -167,7 +167,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : { key: 'return', label: 'Trả xe', title: 'Ghi nhận trả xe trực tiếp trên hợp đồng này', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
     }
     if(isActiveContract&&onMarkBadDebt&&can('contracts.return')&&(row.status==='overdue'||row.collection_overdue===1))actions.push({key:'mark-bad-debt',label:'Chuyển sang Nợ xấu',icon:<TriangleAlert size={16}/>,onSelect:()=>onMarkBadDebt(row)});
-    if(isContract&&row.status==='bad_debt'&&onCloseBadDebt&&isAdminAccount(accessUser))actions.push({key:'close-bad-debt',label:'Đóng hợp đồng nợ xấu',icon:<ShieldCheck size={16}/>,onSelect:()=>onCloseBadDebt(row)});
+    if(isContract&&row.status==='bad_debt'&&onCloseBadDebt&&canSettleContract(accessUser))actions.push({key:'close-bad-debt',label:'Đóng hợp đồng nợ xấu',icon:<ShieldCheck size={16}/>,onSelect:()=>onCloseBadDebt(row)});
     if (isContract && onRenew) {
       const renewBlock = contractRenewBlockReason(String(row.status || ''), Boolean(row.billing_plan_json));
       actions.push(renewBlock

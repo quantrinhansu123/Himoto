@@ -117,6 +117,10 @@ export function installmentBalance(plan: InstallmentPlan, baseTotal: number | nu
     remaining_to_own: valid ? Math.max(expectedTotal - rentalPaid, 0) : null, ...(plan.stopped_at ? {stopped_at: plan.stopped_at} : {}) };
 }
 export function applyInstallmentBilling(row: ManagementRow, now = Date.now()): ManagementRow {
+  if(row.status==='completed'&&row.payment_closure_total!==undefined){
+    const total=Number(row.payment_closure_total),paid=row.paid_amount==null?null:Number(row.paid_amount);
+    return {...row,total_amount:Number.isSafeInteger(total)&&total>=0?total:undefined,billing_due_amount:paid===null?undefined:Math.max(total-paid,0),billing_next_due_at:'',billing_overdue_at:''};
+  }
   if (!row.billing_plan_json || !['renting', 'overdue', 'wait_payment', 'bad_debt', 'completed','reserved'].includes(row.status)) return row;
   let plan: InstallmentPlan | null = null;
   try { plan = parseInstallmentPlan(JSON.parse(String(row.billing_plan_json))); } catch { /* Invalid schedules never become zero debt. */ }

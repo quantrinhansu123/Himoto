@@ -41,7 +41,7 @@ async function releaseIdleRentedVehicles(client: Database, rows: { id: unknown; 
         WHERE v.id = ANY($1::bigint[]) AND v.status IN ('using','rent') AND NOT EXISTS (
           SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
           WHERE d.vehicle_id=v.id AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL
-            AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','pending','bad_debt'))
+            AND ${VEHICLE_ORDER_SQL} AND (o.order_status IN ('renting','overdue','wait_payment','pending','bad_debt') OR (o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NOT NULL)))
         RETURNING id`, [stale]);
   const ready = new Set(released.rows.map(row => Number(row.id)));
   for (const row of rows) if (ready.has(Number(row.id))) row.status = 'ready';
@@ -178,7 +178,7 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
         WHERE d.vehicle_id=ANY($1::bigint[]) AND d.order_id<>$2 AND d.deleted_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
           AND o.order_status IN('renting','overdue','wait_payment','pending','bad_debt','completed')
           AND COALESCE(d.rent_at,o.rent_at,'-infinity'::timestamptz)<$4::timestamptz
-          AND COALESCE(d.completed_at,CASE WHEN o.order_status='completed' THEN COALESCE(d.return_at,o.return_at) END,'infinity'::timestamptz)>$3::timestamptz`,[vehicleIds,id,proposedStart,actualEnd]);
+          AND COALESCE(d.completed_at,CASE WHEN o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NULL THEN COALESCE(d.return_at,o.return_at) END,'infinity'::timestamptz)>$3::timestamptz`,[vehicleIds,id,proposedStart,actualEnd]);
     if(overlaps.rowCount)throw new ContractFinalizeError('Khoảng thuê thực tế chồng với lịch sử thuê đã có của xe. Đối chiếu trước khi nhập bổ sung để tránh trùng hợp đồng.',409);
   }
   const notStored = historical?[]:vehicles.rows.filter(row => row.status!=='ready');

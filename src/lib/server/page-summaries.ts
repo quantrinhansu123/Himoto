@@ -5,7 +5,7 @@ import { summarizeBySalesStaff, summarizeByStore, summarizeSalesKpis } from '@/l
 import { depositLateral,rentalPaidSql } from './contract-deposits';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { rentalSalesValueSql } from './rental-sales-value';
-import { BAD_DEBT_CLOSED_AT_SQL,BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
+import { PAYMENT_CLOSURE_TOTAL_SQL,BAD_DEBT_CLOSED_AT_SQL,BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { applyInstallmentBilling } from '@/lib/management/contract-billing';
 
 export class PageSummaryError extends Error {}
@@ -37,7 +37,7 @@ export async function readSalesSummary(client:Pick<PoolClient,'query'>,params:UR
     CASE WHEN o.order_status='renting' AND o.ended_at<now() THEN 'overdue' ELSE o.order_status END AS status,
     o.started_at AS start_date,
     o.total AS total_amount,
-    ${BAD_DEBT_CLOSED_AT_SQL} AS bad_debt_closed_at,${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
+    ${PAYMENT_CLOSURE_TOTAL_SQL} AS payment_closure_total,${BAD_DEBT_CLOSED_AT_SQL} AS bad_debt_closed_at,${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
     CASE WHEN (${BAD_DEBT_CLOSED_AT_SQL}) IS NOT NULL THEN jsonb_build_object('management_composer',jsonb_build_object(
       'installment_plan',o.draft_payload #> '{management_composer,installment_plan}')) ELSE '{}'::jsonb END AS draft_payload,
     ${rentalSalesValueSql()} AS rental_sales_amount,
