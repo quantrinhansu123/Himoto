@@ -10,7 +10,17 @@ export async function selectRecordVideo(camera:boolean, signal:AbortSignal,maxDu
   if(![60,180].includes(maxDuration))throw Error('Giới hạn thời lượng chưa hợp lệ.');
   if(camera && !(await ImagePicker.requestCameraPermissionsAsync()).granted) throw Error('Chưa được cấp quyền camera. Chọn video đã có hoặc cấp quyền Camera trong Cài đặt.');
   if(signal.aborted)return null;
-  const options:ImagePicker.ImagePickerOptions={mediaTypes:['videos'],allowsEditing:false,allowsMultipleSelection:false,videoMaxDuration:maxDuration,base64:false,exif:false};
+  const options: ImagePicker.ImagePickerOptions = {
+    mediaTypes: ['videos'],
+    allowsEditing: false,
+    allowsMultipleSelection: false,
+    videoMaxDuration: maxDuration,
+    videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+    videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
+    quality: 0.8,
+    base64: false,
+    exif: false,
+  };
   const result=await(camera?ImagePicker.launchCameraAsync(options):ImagePicker.launchImageLibraryAsync(options));
   if(result.canceled||signal.aborted)return null;
   const asset=result.assets[0];

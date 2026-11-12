@@ -665,9 +665,10 @@ export function CatalogueScreen({
         data={records}
         keyExtractor={(record) => String(record.id)}
         renderItem={renderRecord}
-        initialNumToRender={6}
-        maxToRenderPerBatch={6}
-        windowSize={7}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         updateCellsBatchingPeriod={32}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"

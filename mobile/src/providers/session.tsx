@@ -54,8 +54,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
         defaultOptions: {
           queries: {
             networkMode: 'always',
-            staleTime: 30000,
-            gcTime: 300000,
+            staleTime: 60000,
+            gcTime: 600000,
             refetchOnWindowFocus: true,
             retry: (count, error) =>
               count < 1 &&

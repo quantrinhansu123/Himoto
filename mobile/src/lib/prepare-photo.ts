@@ -10,7 +10,7 @@ export type PreparedPhoto = {
   dispose: () => void;
 };
 const MAX_BYTES = 2 * 1024 * 1024;
-const MAX_EDGE = 2200;
+const MAX_EDGE = 1600;
 const cancelled = (signal?: AbortSignal) => {
   if (signal?.aborted) throw new Error("Đã hủy chuẩn bị ảnh.");
 };
@@ -35,7 +35,7 @@ export async function preparePhoto(source: string, signal?: AbortSignal): Promis
     cancelled(signal);
     if (![image.width, image.height].every(value => Number.isInteger(value) && value > 0 && value <= MAX_EDGE))
       throw new Error("Không chuẩn bị được kích thước ảnh an toàn. Chụp hoặc chọn ảnh khác.");
-    for (const compress of [0.85, 0.7, 0.55]) {
+    for (const compress of [0.78, 0.65, 0.52]) {
       cancelled(signal);
       const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress, base64: false });
       // Only the new output in Expo's cache belongs to this operation.
