@@ -99,7 +99,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const searchParams = useSearchParams();
   const searchFromUrl = kind === 'contracts' ? searchParams.get('search') || '' : '';
   const requestedStatus = kind === 'contracts' ? searchParams.get('status') || '' : '';
-  const statusFromUrl = MANAGEMENT_CONFIG.contracts.statuses.some(option=>option.value===requestedStatus)?requestedStatus:'';
+  const defaultContractStatus=kind==='contracts'&&!draftsOnly&&!vatOnly&&!overdueOnly&&!ownershipOnly&&!paymentDueOnly&&!searchFromUrl&&!searchParams.get('customer_id')&&!searchParams.get('contract_id')?'draft':'';
+  const statusFromUrl = requestedStatus==='all'?'':MANAGEMENT_CONFIG.contracts.statuses.some(option=>option.value===requestedStatus)?requestedStatus:defaultContractStatus;
   const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl,status:statusFromUrl,...(overdueOnly?{status:statusFromUrl||'overdue',overdueBucket:'traditional-overdue' as const}:{})}));
   const compactContracts=kind==='contracts';
   const collectionNotes=compactContracts&&!draftsOnly;
@@ -149,7 +150,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => isOwnershipCustomerSourceStore(store)).map(store => store.id)), [dataset?.stores]);
   const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
   const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
-  const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:30}:{})};
+  const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:3}:{})};
   const resourceRevision=resources[kind].revision;
   const tableRevision=useMemo(()=>({revision:resourceRevision}),[resourceRevision]);
   const contractsRevision=useMemo(()=>({revision:resources.contracts.revision}),[resources.contracts.revision]);
@@ -350,7 +351,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     setQuery(current => ({ ...current, ...next })); setPage(1);
     if(kind==='contracts'&&next.status!==undefined){
       const url=new URL(window.location.href);
-      if(next.status)url.searchParams.set('status',next.status);else url.searchParams.delete('status');
+      url.searchParams.set('status',next.status||'all');
       // Preserve the selected tab on refresh/back without requesting a new
       // server layout or remounting an in-progress contract form.
       window.history.replaceState(window.history.state,'',url.pathname+url.search);
@@ -387,7 +388,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   }
 
   const summaryPanel=kind==='contracts'?<OptionalTools collapsed={compactContracts} label="Thống kê & thông tin thêm"><ContractSummary values={paged?table.data?.summary:undefined} rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={loading} unavailable={Boolean(error) || !dataset}/>
-    {!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder"><p>Đang xem {table.data.recentDays} ngày gần đây và các hợp đồng đang mở.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
+    {!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder"><p>Đang xem {table.data.recentDays} ngày gần đây. Tìm kiếm để tra cứu hợp đồng cũ.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
     {!loading&&!error&&dueCount>0&&<div className="mg-billing-reminder"><p>{dueCount} hợp đồng đến hạn đóng tiền.</p><Link href="/contracts/due" className="mg-button">Xem khoản đến hạn</Link></div>}
   </OptionalTools>:null;
   return <ContractCollectionNotesProvider rows={allRows} enabled={collectionNotes&&visibleKeys.includes('collection_notes')}><section className={`mg-page mg-page-${kind}${vatOnly?' mg-page-contracts-vat':''}${compactContracts?' mg-compact-contracts':''}${monitoringContracts?' mg-monitoring-contracts':''}`} aria-label={config.title}>
