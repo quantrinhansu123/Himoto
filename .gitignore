@@ -22,3 +22,5 @@ __pycache__/
 *.pyc
 /videos/
 /docs/HANDOFF-*.md
+/release/
+*.apk
