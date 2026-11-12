@@ -50,6 +50,7 @@ async function main(){
     const evidence=fs.readFileSync('docs/sql/2026-10-18-gps-status-evidence.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(evidence);await c.query(evidence);
     let migration=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-contract-telegram.sql'),'utf8').replaceAll('himoto.',schema+'.').replaceAll(schema+'.access_store','himoto.access_store').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(migration);await c.query(migration);
     const controls=fs.readFileSync(path.resolve('docs/sql/2026-10-18-contract-telegram-controls.sql'),'utf8').replaceAll('himoto.',schema+'.').replaceAll(schema+'.access_store','himoto.access_store').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(controls);await c.query(controls);
+    const mediaCache=fs.readFileSync('docs/sql/2026-11-12-telegram-media-cache.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(mediaCache);await c.query(mediaCache);
     await c.query(`ALTER TABLE ${schema}.management_contract_notifications ADD COLUMN IF NOT EXISTS vehicle_event_id bigint REFERENCES ${schema}.vehicle_location_events(id)`);
     const batteryNotice=fs.readFileSync('docs/sql/2026-10-29-battery-contract-telegram.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(batteryNotice);
     const deliveryReview=fs.readFileSync(path.resolve('docs/sql/2026-10-18-telegram-delivery-review.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(deliveryReview);await c.query(deliveryReview);
@@ -73,6 +74,17 @@ async function main(){
     await c.query(`INSERT INTO ${schema}.vehicles(id,name,brand,type,year,store_id,current_store_id,license,color,status,odometer,created_by) VALUES(101,'Vehicle QA','Honda','xeso',2024,23,23,'29B1-123.45','Black','ready',0,143),(102,'Vehicle B QA','Honda','xeso',2024,31,31,'30B1-999.99','Black','ready',0,143)`);
     await c.query(`INSERT INTO ${schema}.orders(id,contract_number,customer_name,customer_phone,order_status,store_id,total,pid) VALUES(1,'HD-QA-1','Customer QA','0900000001','renting',23,'1000',0),(2,'HD-QA-2','Customer B QA','0900000002','renting',31,'1000',0)`);
     await c.query(`INSERT INTO ${schema}.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at) VALUES(1001,1,101,now(),now()+interval '1 day')`);
+    if(process.argv.includes('--vehicle-transfer-only')){
+      const token='123456789:qa-only-bot-token-123456789';
+      await c.query(`UPDATE ${schema}.management_telegram_settings SET bot_cipher=$1`,[crypto.sealIntegrationSecret({token})]);
+      await c.query(`INSERT INTO ${schema}.management_store_telegram(store_id,chat_id,enabled) VALUES(23,'-100000000001',true),(31,'-100000000002',true)`);
+      await c.query(`INSERT INTO ${schema}.stores(id,store_name,kind) VALUES(900001,'Ownership branch QA','lease_to_own')`);
+      await c.query(`INSERT INTO ${schema}.orders(id,contract_number,order_status,order_type,store_id) VALUES(900002,'QA-OWNERSHIP','renting','ownership',23)`);
+      await c.query(`INSERT INTO ${schema}.management_ownership_telegram(route,chat_id,thread_id,enabled) VALUES('ownership_new','-100000000101',17,true)`);
+      checks.push(...await require('./lib/check-vehicle-transfer-telegram.cjs')(db,c,schema,notices));
+      console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0,realTelegramRequests:0},null,2));
+      return;
+    }
     const observation=providers.normalizeProtrackDevice(raw,now);await persistGpsObservations(db,'protrack',[observation]);
     checks.push(await require('./lib/check-gps-long-stops.cjs')(db,c,schema,observation));
     let gps=(await c.query(`SELECT * FROM ${schema}.gps_devices`)).rows[0];assert.equal(Number(gps.vehicle_id),101);assert.equal(gps.management_status,'online');

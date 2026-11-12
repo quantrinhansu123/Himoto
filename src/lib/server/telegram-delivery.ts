@@ -29,6 +29,10 @@ export function canUploadRejectedTelegramMedia(error: unknown) {
   return error instanceof TelegramDeliveryError && error.definiteFailure && error.message === 'TELEGRAM_400'
     && /HTTP|URL|WEBPAGE|web page|remote file|wrong file|photo|image|media|content type/i.test(error.description || '');
 }
+export function canReplaceRejectedTelegramFile(error:unknown) {
+  return error instanceof TelegramDeliveryError&&error.definiteFailure&&error.message==='TELEGRAM_400'
+    &&/file[_ ](?:id|identifier|reference)|wrong.*file|FILE_REFERENCE/i.test(error.description||'');
+}
 export function requireTelegramTime(deadline: number, workMs: number) {
   if (Date.now() + workMs + CLEANUP_MS > deadline) throw new TelegramContinuation();
 }
@@ -39,7 +43,8 @@ function telegramCallTimeoutMs(method: string) {
   return TELEGRAM_MEDIA_TIMEOUT_MS;
 }
 /** A success includes valid message IDs and a fully consumed response body. Never retry an ambiguous POST. */
-export async function telegramCall(token: string, method: string, body: FormData | Record<string, unknown>, send: typeof fetch, expectedMessages = 1) {
+export interface TelegramMediaReceipt {file_id:string;kind:'photo'|'video'}
+export async function telegramCall(token: string, method: string, body: FormData | Record<string, unknown>, send: typeof fetch, expectedMessages = 1,acceptedMedia?:(TelegramMediaReceipt|null)[]) {
   const form = body instanceof FormData;
   try {
     const response = await send(`https://api.telegram.org/bot${token}/${method}`, {
@@ -53,6 +58,12 @@ export async function telegramCall(token: string, method: string, body: FormData
     if (!response.ok || result?.ok !== true) throw new TelegramDeliveryError('TELEGRAM_INVALID_RESPONSE');
     const messages = method === 'sendMediaGroup' ? result.result : [result.result];
     if (!Array.isArray(messages) || messages.length !== expectedMessages || messages.some(message => !Number.isSafeInteger(message?.message_id) || message.message_id <= 0)) throw new TelegramDeliveryError('TELEGRAM_INVALID_RESPONSE');
+    if(acceptedMedia)for(const message of messages){
+      const valid=(id:unknown):id is string=>typeof id==='string'&&id.length>0&&id.length<=4096;
+      const photo=Array.isArray(message.photo)?message.photo.filter((p:{file_id?:unknown})=>valid(p?.file_id))
+        .sort((a:{width?:number;height?:number},b:{width?:number;height?:number})=>Number(b.width||0)*Number(b.height||0)-Number(a.width||0)*Number(a.height||0))[0]:null;
+      acceptedMedia.push(valid(message.video?.file_id)?{kind:'video',file_id:message.video.file_id}:photo?{kind:'photo',file_id:photo.file_id}:null);
+    }
     return messages.map(message => Number(message.message_id)) as number[];
   } catch (error) {
     if (error instanceof TelegramDeliveryError) throw error;
@@ -60,7 +71,8 @@ export async function telegramCall(token: string, method: string, body: FormData
   }
 }
 
-export interface Media { data?: Buffer; url?: string; type: string }
+export interface TelegramAttachment extends Attachment {telegram_file_id?:string;telegram_cache_key?:string}
+export interface Media { data?: Buffer; url?: string; file_id?:string; cache_key?:string; type: string }
 const mediaBytes = (file: Media) => file.data?.length || 0;
 async function videoByUrl(photo: Attachment): Promise<Media | null> {
   try {
@@ -83,7 +95,8 @@ async function videoByUrl(photo: Attachment): Promise<Media | null> {
   } catch { return null; }
   return null;
 }
-async function loadMedia(photo: Attachment, upload: boolean): Promise<Media> {
+async function loadMedia(photo: TelegramAttachment, upload: boolean): Promise<Media> {
+  if(!upload&&photo.telegram_file_id)return {file_id:photo.telegram_file_id,type:photo.mime_type};
   if (!upload && photo.object_key && photo.mime_type !== 'video/mp4') return {
     url:await objectMediaUrl({object_bucket:photo.object_bucket!,object_key:photo.object_key,object_etag:photo.object_etag!},photo.mime_type,600),type:photo.mime_type};
   // Authenticated Cloudinary photos (and videos ≤20 MB) go to Telegram as a signed URL so
@@ -107,25 +120,25 @@ async function loadMedia(photo: Attachment, upload: boolean): Promise<Media> {
   return { data, type: photo.mime_type };
 }
 /** Preserve attachment order, cap uploaded photo albums by bytes/count and upload each video separately. */
-export async function* telegramMediaBatches(photos: Attachment[], offset: number, deadline: number, upload = false): AsyncGenerator<Media[]> {
+export async function* telegramMediaBatches(photos: TelegramAttachment[], offset: number, deadline: number, upload = false): AsyncGenerator<Media[]> {
   let batch: Media[] = [], bytes = 0;
   while (offset < photos.length) {
     const video = photos[offset].mime_type === 'video/mp4';
     if (video) {
       if (batch.length) { yield batch; batch = []; bytes = 0; }
       requireTelegramTime(deadline, TELEGRAM_MEDIA_TIMEOUT_MS + 5_000);
-      const media = await loadMedia(photos[offset], upload);
-      if (!media.url) requireTelegramTime(deadline, TELEGRAM_VIDEO_TIMEOUT_MS + 45_000);
+      const media = {...await loadMedia(photos[offset], upload),cache_key:photos[offset].telegram_cache_key};
+      if (!media.url&&!media.file_id) requireTelegramTime(deadline, TELEGRAM_VIDEO_TIMEOUT_MS + 45_000);
       else requireTelegramTime(deadline, TELEGRAM_VIDEO_TIMEOUT_MS + 5_000);
       yield [media];
       offset += 1;
       continue;
     }
     if (batch.length === 10) { yield batch; batch = []; bytes = 0; }
-    const chunk: Attachment[] = [];
+    const chunk: TelegramAttachment[] = [];
     for (let i = offset; i < photos.length && chunk.length < Math.min(3, 10 - batch.length) && photos[i].mime_type !== 'video/mp4'; i++) chunk.push(photos[i]);
     requireTelegramTime(deadline, TELEGRAM_MEDIA_TIMEOUT_MS + (!upload && chunk.some(photo => photo.cloudinary_public_id) ? 5_000 : 15_000));
-    for (const file of await Promise.all(chunk.map(photo => loadMedia(photo, upload)))) {
+    for (const file of await Promise.all(chunk.map(async photo => ({...await loadMedia(photo, upload),cache_key:photo.telegram_cache_key})))) {
       if (batch.length && bytes + mediaBytes(file) > TELEGRAM_ALBUM_BYTES) { yield batch; batch = []; bytes = 0; }
       batch.push(file); bytes += mediaBytes(file);
       if (batch.length === 10) { yield batch; batch = []; bytes = 0; }

@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { ownerDatabase } from './himoto-database';
 import { openIntegrationSecret } from './integration-secrets';
-import { telegramCall, telegramMediaBatches, canUploadRejectedTelegramMedia, requireTelegramTime, TelegramContinuation, TelegramDeliveryError, TELEGRAM_DISPATCH_BUDGET_MS, TELEGRAM_MEDIA_TIMEOUT_MS, TELEGRAM_TEXT_TIMEOUT_MS, TELEGRAM_VIDEO_TIMEOUT_MS, type Media } from './telegram-delivery';
+import { telegramCall, telegramMediaBatches, canUploadRejectedTelegramMedia, canReplaceRejectedTelegramFile, requireTelegramTime, TelegramContinuation, TelegramDeliveryError, TELEGRAM_DISPATCH_BUDGET_MS, TELEGRAM_MEDIA_TIMEOUT_MS, TELEGRAM_TEXT_TIMEOUT_MS, TELEGRAM_VIDEO_TIMEOUT_MS, type Media,type TelegramMediaReceipt } from './telegram-delivery';
+import { cachedTelegramMedia,rememberTelegramMedia,forgetTelegramMedia } from './telegram-media-cache';
 import { copyContractCustomerPhotos } from './contract-customer-photos';
 import { CONTRACT_TELEGRAM_ROUTE_SQL } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
@@ -78,15 +79,19 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
     const payload=row.payload as NotificationPayload,ids:number[]=Array.isArray(row.message_ids)?[...row.message_ids]:[];
     const target={chat_id:row.chat_id,...(row.thread_id?{message_thread_id:row.thread_id}:{})};
     let contacted=false,continued=false;
+    const deliveryStarted=Date.now(),botId=telegramBotIdentity(token);
+    let mediaRequests=0,reusedMedia=0;
     try {
       if(row.delivery_target?.bot_id&&row.delivery_target.bot_id!==telegramBotIdentity(token))throw new TelegramDeliveryError('BOT_CHANGED',true);
       if(!row.delivery_target)await database.query('UPDATE himoto.management_contract_notifications SET delivery_target=$2::jsonb WHERE id=$1 AND delivery_target IS NULL',
         [row.id,JSON.stringify({chat_id:row.chat_id,thread_id:row.thread_id||null,bot_id:telegramBotIdentity(token),started_at:new Date().toISOString()})]);
-      const photos=await hydrateNotificationPhotos(database,row.order_id==null?null:Number(row.order_id),payload.photos||[]);
+      const originalPhotos=await hydrateNotificationPhotos(database,row.order_id==null?null:Number(row.order_id),payload.photos||[]);
+      // Cache failures cannot prevent delivery of the original verified source.
+      const photos=await cachedTelegramMedia(database,botId,originalPhotos).catch(()=>{console.error('Telegram media cache read failed.');return originalPhotos;});
       if(row.error_code==='DELIVERY_IN_FLIGHT'||ids.some(id=>!Number.isSafeInteger(id)||id<=0)||ids.length>photos.length||ids.length&&row.error_code!=='DELIVERY_CONTINUE')throw new TelegramDeliveryError('SEND_UNCERTAIN');
       // The footer clock is when this message is delivered, not when the row was queued.
       const text=contractNotificationText(row.event_type,payload,new Date().toISOString());
-      const upload=Array.isArray(row.delivery_review)&&row.delivery_review.some((review: {outcome?:string}) => ['media_upload_fallback','resume_remaining'].includes(review.outcome||''));
+      const upload=Array.isArray(row.delivery_review)&&row.delivery_review.some((review: {outcome?:string}) => ['media_upload_fallback','media_file_fallback','resume_remaining'].includes(review.outcome||''));
       const sendBatch=async(batch:Media[])=>{
         const video=batch.length===1&&batch[0].type==='video/mp4';
         requireTelegramTime(deadline,video?TELEGRAM_VIDEO_TIMEOUT_MS:TELEGRAM_MEDIA_TIMEOUT_MS);
@@ -95,29 +100,36 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
         // Persist before the POST: a killed worker cannot turn an in-flight send into a replay.
         await database.query("UPDATE himoto.management_contract_notifications SET error_code='DELIVERY_IN_FLIGHT' WHERE id=$1",[row.id]);
         contacted=true;
+        const acceptedMedia:(TelegramMediaReceipt|null)[]=[];
+        mediaRequests++;
         if(batch.length===1){
-          if(batch[0].url)form.append(video?'video':'photo',batch[0].url);
+          if(batch[0].file_id||batch[0].url)form.append(video?'video':'photo',(batch[0].file_id||batch[0].url)!);
           else form.append(video?'video':'photo',new Blob([new Uint8Array(batch[0].data!)],{type:batch[0].type}),video?'video-hop-dong.mp4':'anh-hop-dong.jpg');
           if(video)form.append('supports_streaming','true');
-          ids.push(...await telegramCall(token,video?'sendVideo':'sendPhoto',form,send));
+          ids.push(...await telegramCall(token,video?'sendVideo':'sendPhoto',form,send,1,acceptedMedia));
         }
         else {
-          form.append('media',JSON.stringify(batch.map((file,i)=>({type:'photo',media:file.url||`attach://photo${i}`}))));
+          form.append('media',JSON.stringify(batch.map((file,i)=>({type:'photo',media:file.file_id||file.url||`attach://photo${i}`}))));
           batch.forEach((file,i)=>{if(file.data)form.append(`photo${i}`,new Blob([new Uint8Array(file.data)],{type:file.type}),`anh-${i+1}.jpg`);});
-          ids.push(...await telegramCall(token,'sendMediaGroup',form,send,batch.length));
+          ids.push(...await telegramCall(token,'sendMediaGroup',form,send,batch.length,acceptedMedia));
         }
         contacted=false;
         await database.query("UPDATE himoto.management_contract_notifications SET message_ids=$2,error_code='DELIVERY_CONTINUE' WHERE id=$1",[row.id,JSON.stringify(ids)]);
+        reusedMedia+=batch.filter(file=>file.file_id).length;
+        // Persist acknowledged IDs first. Cache bookkeeping never makes a successful POST replayable.
+        await rememberTelegramMedia(database,botId,batch,acceptedMedia).catch(()=>console.error('Telegram media cache write failed.'));
       };
       // Only acknowledged media is skipped when the worker resumes a deliberate continuation.
       for await(const batch of telegramMediaBatches(photos,ids.length,deadline,upload)) {
         try { await sendBatch(batch); }
         catch(error) {
-          if(!batch.some(file=>file.url)||!canUploadRejectedTelegramMedia(error))throw error;
+          const replaceFiles=batch.some(file=>file.file_id)&&canReplaceRejectedTelegramFile(error);
+          if(!replaceFiles&&(!batch.some(file=>file.url)||!canUploadRejectedTelegramMedia(error)))throw error;
           contacted=false; // Telegram explicitly rejected this batch; it has no message IDs.
+          if(replaceFiles)await forgetTelegramMedia(database,botId,batch).catch(()=>console.error('Telegram media cache eviction failed.'));
           const failure=error as TelegramDeliveryError;
           await database.query("UPDATE himoto.management_contract_notifications SET error_code='DELIVERY_CONTINUE',delivery_review=delivery_review||$2::jsonb WHERE id=$1",
-            [row.id,JSON.stringify([{outcome:'media_upload_fallback',at:new Date().toISOString(),error_code:failure.message,description:failure.description,method:failure.method,media_offset:ids.length,media_count:batch.length}])]);
+            [row.id,JSON.stringify([{outcome:replaceFiles?'media_file_fallback':'media_upload_fallback',at:new Date().toISOString(),error_code:failure.message,description:failure.description,method:failure.method,media_offset:ids.length,media_count:batch.length}])]);
           const remaining=photos.slice(ids.length,ids.length+batch.length);
           // Download the rejected batch, split uploads by bytes, checkpoint each accepted part.
           for await(const files of telegramMediaBatches(remaining,0,deadline,true))await sendBatch(files);
@@ -129,7 +141,9 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       contacted=true;
       ids.push(...await telegramCall(token,'sendMessage',{...target,text,link_preview_options:{is_disabled:true}},send));
       contacted=false;
-      await database.query("UPDATE himoto.management_contract_notifications SET status='sent',message_ids=$2,sent_at=now(),error_code=NULL WHERE id=$1",[row.id,JSON.stringify(ids)]);sent++;
+      const metrics={outcome:'delivery_metrics',at:new Date().toISOString(),media_count:photos.length,media_requests:mediaRequests,cached_media:reusedMedia,
+        queue_ms:Math.max(deliveryStarted-new Date(row.created_at).getTime(),0),delivery_ms:Date.now()-deliveryStarted};
+      await database.query("UPDATE himoto.management_contract_notifications SET status='sent',message_ids=$2,sent_at=now(),error_code=NULL,delivery_review=delivery_review||$3::jsonb WHERE id=$1",[row.id,JSON.stringify(ids),JSON.stringify([metrics])]);sent++;
     }catch(error){
       continued=error instanceof TelegramContinuation&&!contacted;
       const known=error instanceof TelegramDeliveryError&&error.definiteFailure;
