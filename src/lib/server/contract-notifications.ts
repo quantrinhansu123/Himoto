@@ -78,9 +78,9 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
     if(!row.chat_id){await database.query("UPDATE himoto.management_contract_notifications SET status='awaiting_config' WHERE id=$1",[row.id]);continue;}
     const payload=row.payload as NotificationPayload,ids:number[]=Array.isArray(row.message_ids)?[...row.message_ids]:[];
     const target={chat_id:row.chat_id,...(row.thread_id?{message_thread_id:row.thread_id}:{})};
-    let contacted=false,continued=false;
+    let contacted=false,continued=false,retrySeconds=0;
     const deliveryStarted=Date.now(),botId=telegramBotIdentity(token);
-    let mediaRequests=0,reusedMedia=0;
+    let mediaRequests=0,reusedMedia=0,sourceBytes=0,uploadedBytes=0;
     try {
       if(row.delivery_target?.bot_id&&row.delivery_target.bot_id!==telegramBotIdentity(token))throw new TelegramDeliveryError('BOT_CHANGED',true);
       if(!row.delivery_target)await database.query('UPDATE himoto.management_contract_notifications SET delivery_target=$2::jsonb WHERE id=$1 AND delivery_target IS NULL',
@@ -94,11 +94,13 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       const upload=Array.isArray(row.delivery_review)&&row.delivery_review.some((review: {outcome?:string}) => ['media_upload_fallback','media_file_fallback','resume_remaining'].includes(review.outcome||''));
       const sendBatch=async(batch:Media[])=>{
         const video=batch.length===1&&batch[0].type==='video/mp4';
+        const started=Date.now(),offset=ids.length,bytes=batch.reduce((sum,file)=>sum+(file.data?.length||0),0);
         requireTelegramTime(deadline,video?TELEGRAM_VIDEO_TIMEOUT_MS:TELEGRAM_MEDIA_TIMEOUT_MS);
         await database.query("UPDATE himoto.management_telegram_delivery_leases SET expires_at=clock_timestamp()+interval '3 minutes' WHERE lease_id=$1",[leaseId]);
         const form=new FormData();form.append('chat_id',row.chat_id);if(row.thread_id)form.append('message_thread_id',String(row.thread_id));
         // Persist before the POST: a killed worker cannot turn an in-flight send into a replay.
-        await database.query("UPDATE himoto.management_contract_notifications SET error_code='DELIVERY_IN_FLIGHT' WHERE id=$1",[row.id]);
+        await database.query("UPDATE himoto.management_contract_notifications SET error_code='DELIVERY_IN_FLIGHT',delivery_review=delivery_review||$2::jsonb WHERE id=$1",
+          [row.id,JSON.stringify([{outcome:'media_sending',at:new Date().toISOString(),media_offset:offset,media_count:batch.length,upload_bytes:bytes}])]);
         contacted=true;
         const acceptedMedia:(TelegramMediaReceipt|null)[]=[];
         mediaRequests++;
@@ -114,8 +116,12 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
           ids.push(...await telegramCall(token,'sendMediaGroup',form,send,batch.length,acceptedMedia));
         }
         contacted=false;
-        await database.query("UPDATE himoto.management_contract_notifications SET message_ids=$2,error_code='DELIVERY_CONTINUE' WHERE id=$1",[row.id,JSON.stringify(ids)]);
+        const preparedBytes=batch.reduce((sum,file)=>sum+(file.source_bytes||0),0);
+        await database.query("UPDATE himoto.management_contract_notifications SET message_ids=$2,error_code='DELIVERY_CONTINUE',delivery_review=delivery_review||$3::jsonb WHERE id=$1",
+          [row.id,JSON.stringify(ids),JSON.stringify([{outcome:'media_received',at:new Date().toISOString(),media_offset:offset,media_count:batch.length,
+            duration_ms:Date.now()-started,source_bytes:preparedBytes,upload_bytes:bytes,cached_media:batch.filter(file=>file.file_id).length}])]);
         reusedMedia+=batch.filter(file=>file.file_id).length;
+        sourceBytes+=preparedBytes;uploadedBytes+=bytes;
         // Persist acknowledged IDs first. Cache bookkeeping never makes a successful POST replayable.
         await rememberTelegramMedia(database,botId,batch,acceptedMedia).catch(()=>console.error('Telegram media cache write failed.'));
       };
@@ -137,24 +143,30 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
       }
       // One closing message follows every photo/video, never between albums.
       requireTelegramTime(deadline,TELEGRAM_TEXT_TIMEOUT_MS);
-      await database.query("UPDATE himoto.management_contract_notifications SET error_code='DELIVERY_IN_FLIGHT' WHERE id=$1",[row.id]);
+      await database.query("UPDATE himoto.management_contract_notifications SET error_code='DELIVERY_IN_FLIGHT',delivery_review=delivery_review||$2::jsonb WHERE id=$1",
+        [row.id,JSON.stringify([{outcome:'summary_sending',at:new Date().toISOString(),media_offset:ids.length}])]);
       contacted=true;
       ids.push(...await telegramCall(token,'sendMessage',{...target,text,link_preview_options:{is_disabled:true}},send));
       contacted=false;
       const metrics={outcome:'delivery_metrics',at:new Date().toISOString(),media_count:photos.length,media_requests:mediaRequests,cached_media:reusedMedia,
-        queue_ms:Math.max(deliveryStarted-new Date(row.created_at).getTime(),0),delivery_ms:Date.now()-deliveryStarted};
+        queue_ms:Math.max(deliveryStarted-new Date(row.created_at).getTime(),0),delivery_ms:Date.now()-deliveryStarted,source_bytes:sourceBytes,upload_bytes:uploadedBytes};
       await database.query("UPDATE himoto.management_contract_notifications SET status='sent',message_ids=$2,sent_at=now(),error_code=NULL,delivery_review=delivery_review||$3::jsonb WHERE id=$1",[row.id,JSON.stringify(ids),JSON.stringify([metrics])]);sent++;
     }catch(error){
-      continued=error instanceof TelegramContinuation&&!contacted;
       const known=error instanceof TelegramDeliveryError&&error.definiteFailure;
+      // A confirmed flood rejection sent nothing. Honour Telegram's retry_after
+      // through the existing topic lease; never replay a timed-out POST.
+      const rateRetries=Array.isArray(row.delivery_review)?row.delivery_review.filter((review:{outcome?:string;media_offset?:number})=>review.outcome==='delivery_retry_scheduled'&&review.media_offset===ids.length).length:0;
+      if(known&&error.message==='TELEGRAM_429'&&rateRetries<3){retrySeconds=error.retryAfterSeconds||30;contacted=false;}
+      continued=error instanceof TelegramContinuation&&!contacted||retrySeconds>0;
       const code=continued?'DELIVERY_CONTINUE':error instanceof TelegramDeliveryError?error.message:contacted?'SEND_UNCERTAIN':'MEDIA_FETCH_FAILED';
-      const review=continued?[]:[{outcome:'delivery_failed',at:new Date().toISOString(),error_code:code,
-        ...(error instanceof TelegramDeliveryError?{description:error.description,method:error.method}:{}),media_offset:Math.min(ids.length,payload.photos?.length||0)}];
+      const review=retrySeconds?[{outcome:'delivery_retry_scheduled',at:new Date().toISOString(),error_code:'TELEGRAM_429',retry_after:retrySeconds,
+        retry_at:new Date(Date.now()+retrySeconds*1000).toISOString(),media_offset:ids.length}]:continued?[]:[{outcome:'delivery_failed',at:new Date().toISOString(),error_code:code,
+        ...(error instanceof TelegramDeliveryError?{description:error.description,method:error.method,duration_ms:error.durationMs}:{}),media_offset:Math.min(ids.length,payload.photos?.length||0)}];
       await database.query('UPDATE himoto.management_contract_notifications SET status=$2,message_ids=$3,error_code=$4,delivery_review=delivery_review||$5::jsonb WHERE id=$1',
         [row.id,continued?'pending':known?'failed':code==='SEND_UNCERTAIN'||contacted||ids.length?'unknown':'failed',JSON.stringify(ids),code,JSON.stringify(review)]);
     }finally{
       // A checkpoint keeps the topic reserved, but lets the next worker resume immediately.
-      if(continued)await database.query('UPDATE himoto.management_telegram_delivery_leases SET expires_at=clock_timestamp() WHERE lease_id=$1',[leaseId]);
+      if(continued)await database.query("UPDATE himoto.management_telegram_delivery_leases SET expires_at=clock_timestamp()+($2::integer*interval '1 second') WHERE lease_id=$1",[leaseId,retrySeconds]);
       else await database.query('DELETE FROM himoto.management_telegram_delivery_leases WHERE lease_id=$1',[leaseId]);
     }
     if(continued)break;

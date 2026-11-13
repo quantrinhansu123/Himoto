@@ -6,6 +6,7 @@ import { contractTelegramRequest, NOTICE_STATUS_LABELS, type ContractTelegramSta
 import { ContractTelegramRetraction } from './ContractTelegramRetraction';
 import { ContractPhotoCard } from './ContractPhotoCard';
 import { RenewalPaymentEditor } from './RenewalPaymentEditor';
+import { ContractTelegramProgress } from './ContractTelegramProgress';
 
 export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyEventKey=false}:{id:number;eventKind?:string;eventKey?:string;returnItemIds?:number[];onlyEventKey?:boolean}) {
   const [data,setData]=useState<ContractTelegramState|null>(null),[selected,setSelected]=useState(''),[loading,setLoading]=useState(false),[actionBusy,setBusy]=useState(false),[photoBusy,setPhotoBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
@@ -22,7 +23,8 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
   useEffect(()=>{const controller=new AbortController();void refresh(controller.signal);return()=>controller.abort();},[refresh]);
   const events=data?.events.filter(e=>(!onlyEventKey||e.key===eventKey)&&(!returnItems||e.kind==='return'&&e.phases.some(phase=>returnItems.split(',').some(item=>phase===`return-${item}`))))||[];
   const event=events.find(e=>e.key===selected);
-  useEffect(()=>setConfirmedAbsent(false),[selected,event?.notice_id]);
+  useEffect(()=>setConfirmedAbsent(false),[selected,event?.notice_id,event?.status]);
+  const ambiguous=['TELEGRAM_TIMEOUT','TELEGRAM_NETWORK','TELEGRAM_INVALID_RESPONSE','SEND_UNCERTAIN'].includes(event?.delivery_error||'');
   const active=Boolean(event&&(event.status==='pending'||event.status==='sending'||event.deliveries?.some(delivery=>['pending','processing'].includes(delivery.retraction_state||''))));
   useEffect(()=>{
     if(!active||busy)return;
@@ -45,18 +47,6 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
       {event.kind==='renewal'&&<RenewalPaymentEditor orderId={id} eventKey={event.key} receiptIds={event.renewal_receipt_ids} disabled={actionBusy||photoBusy||loading} onBusyChange={setPaymentBusy} onSaved={()=>{void refresh();}}/>}
       {event.delivery_contract_code&&!event.text.split('\n').some(line=>line===`Hợp đồng: ${event.delivery_contract_code}`||line===`HĐ: ${event.delivery_contract_code}`)&&<p>Lần gửi trước dùng mã hợp đồng {event.delivery_contract_code}. Bản cập nhật bên trên dùng số hợp đồng hiện tại.</p>}
       <p role="status">{event.photo_count} ảnh · {event.video_count||0} video đã lưu · {event.can_resume?'Gửi chưa hoàn tất':event.status?NOTICE_STATUS_LABELS[event.status]:'Chưa gửi'}{event.sent_at?` · ${new Date(event.sent_at).toLocaleString('vi-VN')}`:''}</p>
-      {event.can_resume?<div className="mg-billing-reminder" role="alert">
-        <p>Telegram đã nhận {event.delivery_message_count}/{event.delivery_attachment_count} tệp. Còn {(event.delivery_attachment_count||0)-(event.delivery_message_count||0)} tệp và phần nội dung chưa gửi.</p>
-        <p>Gửi tiếp dùng đúng nội dung, tệp và nhóm của lần đã lưu; bỏ qua các tệp Telegram đã nhận.</p>
-        {event.delivery_error&&<p>Lỗi lần trước: {event.delivery_error}{event.delivery_error_description?` · ${event.delivery_error_description}`:''}.</p>}
-        {['TELEGRAM_TIMEOUT','TELEGRAM_NETWORK','TELEGRAM_INVALID_RESPONSE','SEND_UNCERTAIN'].includes(event.delivery_error||'')&&<p>Đối chiếu nhóm trước: nếu album vừa timeout đã có trong nhóm, có thể trùng một phần khi gửi tiếp.</p>}
-        <details><summary>Nội dung sẽ gửi tiếp</summary><pre className="mg-telegram-preview">{event.deliveries?.find(delivery=>delivery.id===event.notice_id)?.text}</pre></details>
-        <button type="button" className="mg-button mg-button-primary" disabled={busy||loading} onClick={async()=>{
-          setBusy(true);setError('');setMessage('');
-          try{const state=await contractTelegramRequest(id,{action:'resume',event_key:event.key,hash:event.hash,notice_id:event.notice_id,request_id:crypto.randomUUID()});setData(state);setMessage('Đã xếp gửi tiếp phần còn thiếu. Các tệp đã nhận được giữ nguyên.');}
-          catch(cause){setError(cause instanceof Error?cause.message:'Chưa gửi tiếp được.');}finally{setBusy(false);}
-        }}>{busy?<LoaderCircle size={16} className="mg-spin"/>:null}{(event.delivery_attachment_count||0)===(event.delivery_message_count||0)?'Gửi tiếp nội dung':'Gửi tiếp phần còn thiếu'}</button>
-      </div>:event.status==='unknown'?<div className="mg-billing-reminder" role="alert"><p>Lần gửi bị mất phản hồi{event.delivery_error?` (${event.delivery_error})`:''}. Kiểm tra nhóm bằng mã hợp đồng trước khi xử lý.</p>{event.can_retry_confirmed_absent?<><label className="mg-checkbox"><input type="checkbox" checked={confirmedAbsent} onChange={e=>setConfirmedAbsent(e.target.checked)}/>Đã kiểm tra nhóm, chưa có tin và ảnh của giao dịch này</label><button type="button" className="mg-button" disabled={!confirmedAbsent||busy||loading} onClick={async()=>{setBusy(true);setError('');try{const value=await contractTelegramRequest(id,{action:'retry_confirmed_absent',event_key:event.key,hash:event.hash,notice_id:event.notice_id,confirmed_absent:true,request_id:crypto.randomUUID()});setData(value);setConfirmedAbsent(false);setMessage('Đã ghi nhận đối chiếu và xếp gửi lại. Chờ Telegram xác nhận.');}catch(cause){setError(cause instanceof Error?cause.message:'Không gửi lại được.');}finally{setBusy(false);}}}>Gửi lại sau khi đối chiếu</button></>:<p>Đã có mã tin gửi một phần nhưng chưa đủ điều kiện gửi tiếp. Tải lại trang; nếu vẫn vậy, báo quản trị kèm mã hợp đồng.</p>}</div>:event.status==='failed'&&<div className="mg-billing-reminder" role="alert"><p>Gửi thất bại{event.delivery_error?` (${event.delivery_error})`:''}.{event.delivery_error_description?` ${event.delivery_error_description}`:''} Kiểm tra nguyên nhân rồi thử lại.</p></div>}
       {event.unchanged&&['sent','pending','sending'].includes(event.status||'')&&<p>{event.status==='sent'?'Telegram đã nhận đủ nội dung và tệp này. Nút gửi được khóa để tránh gửi trùng.':'Nội dung và tệp này đã vào hàng đợi. Chờ kết quả từ Telegram.'} Bổ sung ảnh trong Hồ sơ ảnh rồi làm mới nếu cần gửi bản cập nhật.</p>}
       {event.status==='retracted'&&<p role="status">Tin đã được thu hồi. Hồ sơ hợp đồng vẫn được giữ.{event.can_send?' Kiểm tra nội dung và ảnh, rồi chủ động bấm Gửi toàn bộ Telegram khi cần gửi bản đúng.':''}</p>}
       {event.status==='retracting'&&<p role="status">Đang thu hồi các tin đã chọn. Chờ kết quả trước khi gửi bản đúng.</p>}
@@ -68,11 +58,24 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
         catch(cause){setError(cause instanceof Error?cause.message:'Chưa yêu cầu thu hồi được.');}finally{setBusy(false);}
       }}/>}
       <div className="mg-transaction-photo-gallery" aria-label="Toàn bộ ảnh và video sẽ gửi">{event.attachments?.map(photo=><ContractPhotoCard key={photo.slot} id={id} slot={photo.slot} label={photo.label} mimeType={photo.mime_type} version={event.hash} disabled={busy||loading||Boolean(active)} onBusyChange={setPhotoBusy} onDeleted={async()=>{setData(null);setMessage('');await refresh();}}/>)}</div>
-      <button type="button" className="mg-button mg-button-primary" disabled={!event.can_send||busy||loading} onClick={async()=>{
+      <ContractTelegramProgress event={event}/>
+      {event.can_resume?<div className="mg-billing-reminder mg-telegram-recovery" role="alert">
+        <p>Telegram đã nhận {event.delivery_message_count}/{event.delivery_attachment_count} tệp. Còn {(event.delivery_attachment_count||0)-(event.delivery_message_count||0)} tệp và phần nội dung chưa gửi.</p>
+        <p>Gửi tiếp dùng đúng nội dung, tệp và nhóm của lần đã lưu; bỏ qua các tệp Telegram đã nhận.</p>
+        {ambiguous&&<><p>Đối chiếu nhóm trước: album mất phản hồi có thể đã xuất hiện trong nhóm.</p><label className="mg-checkbox"><input type="checkbox" checked={confirmedAbsent} onChange={e=>setConfirmedAbsent(e.target.checked)}/>Đã kiểm tra nhóm; phần chưa được xác nhận chưa có trong nhóm</label></>}
+        <details><summary>Nội dung sẽ gửi tiếp</summary><pre className="mg-telegram-preview">{event.deliveries?.find(delivery=>delivery.id===event.notice_id)?.text}</pre></details>
+        <button type="button" className="mg-button mg-button-primary" disabled={busy||loading||ambiguous&&!confirmedAbsent} onClick={async()=>{
+          setBusy(true);setError('');setMessage('');
+          try{const state=await contractTelegramRequest(id,{action:'resume',event_key:event.key,hash:event.hash,notice_id:event.notice_id,request_id:crypto.randomUUID()});setData(state);setMessage('Đã xếp gửi tiếp phần còn thiếu. Các tệp đã nhận được giữ nguyên.');}
+          catch(cause){setError(cause instanceof Error?cause.message:'Chưa gửi tiếp được.');}finally{setBusy(false);}
+        }}>{busy?<LoaderCircle size={16} className="mg-spin"/>:null}{(event.delivery_attachment_count||0)===(event.delivery_message_count||0)?'Gửi tiếp nội dung':'Gửi tiếp phần còn thiếu'}</button>
+      </div>:event.status==='unknown'?<div className="mg-billing-reminder mg-telegram-recovery" role="alert"><p>Lần gửi bị mất phản hồi. Kiểm tra nhóm bằng mã hợp đồng trước khi xử lý.</p>{event.can_retry_confirmed_absent?<><label className="mg-checkbox"><input type="checkbox" checked={confirmedAbsent} onChange={e=>setConfirmedAbsent(e.target.checked)}/>Đã kiểm tra nhóm, chưa có tin và ảnh của giao dịch này</label><button type="button" className="mg-button mg-button-primary" disabled={!confirmedAbsent||busy||loading} onClick={async()=>{setBusy(true);setError('');try{const value=await contractTelegramRequest(id,{action:'retry_confirmed_absent',event_key:event.key,hash:event.hash,notice_id:event.notice_id,confirmed_absent:true,request_id:crypto.randomUUID()});setData(value);setConfirmedAbsent(false);setMessage('Đã ghi nhận đối chiếu và xếp gửi lại. Chờ Telegram xác nhận.');}catch(cause){setError(cause instanceof Error?cause.message:'Không gửi lại được.');}finally{setBusy(false);}}}>Gửi lại sau khi đối chiếu</button></>:<p>Tài khoản chưa thể xử lý lượt gửi này. Báo quản trị kèm mã hợp đồng và đối chiếu nhóm trước khi gửi thêm.</p>}</div>:event.status==='failed'&&<div className="mg-billing-reminder mg-telegram-recovery" role="alert"><p>Gửi thất bại{event.delivery_error?` (${event.delivery_error})`:''}.{event.delivery_error_description?` ${event.delivery_error_description}`:''} Hồ sơ vẫn được giữ; kiểm tra nguyên nhân rồi thử lại.</p></div>}
+      {!event.can_resume&&event.status!=='unknown'&&<button type="button" className="mg-button mg-button-primary" disabled={!event.can_send||busy||loading} onClick={async()=>{
         setBusy(true);setError('');setMessage('');
         try{const state=await contractTelegramRequest(id,{action:'send',event_key:event.key,hash:event.hash,request_id:crypto.randomUUID()});setData(state);setMessage(state.events.find(item=>item.key===event.key)?.status==='retracting'?'Đang thu hồi tin cũ trong 24 giờ. Khi thu hồi xong, kiểm tra và bấm gửi bản mới.':'Đã xếp thông báo vào hàng đợi. Trạng thái bên trên cập nhật sau khi Telegram trả kết quả.');}
         catch(cause){setError(cause instanceof Error?cause.message:'Chưa gửi được Telegram.');}finally{setBusy(false);}
-      }}>{busy?<LoaderCircle size={16} className="mg-spin"/>:<Send size={16}/>} {busy?'Đang xử lý…':event.unchanged&&event.status==='sent'?'Đã gửi Telegram':event.status==='pending'||event.status==='sending'?'Đang gửi Telegram':event.can_resume?'Gửi chưa hoàn tất':event.status==='unknown'?'Cần đối chiếu Telegram':'Gửi toàn bộ Telegram'} · {event.photo_count} ảnh · {event.video_count||0} video</button>
+      }}>{busy||event.status==='pending'||event.status==='sending'?<LoaderCircle size={16} className="mg-spin"/>:<Send size={16}/>} {busy?'Đang xử lý…':event.unchanged&&event.status==='sent'?'Đã gửi Telegram':event.status==='pending'||event.status==='sending'?'Đang gửi Telegram':event.status==='failed'?'Gửi lại Telegram':'Gửi toàn bộ Telegram'} · {event.photo_count} ảnh · {event.video_count||0} video</button>}
+      <button type="button" className="mg-button" disabled={busy||loading} onClick={()=>void refresh()}>{loading?<LoaderCircle size={15} className="mg-spin"/>:null}Kiểm tra trạng thái Telegram</button>
     </div>}
     {message&&event?.status!=='sent'&&<p role="status">{message}</p>}{error&&<p className="mg-field-error" role="alert">{error}</p>}
   </section>;

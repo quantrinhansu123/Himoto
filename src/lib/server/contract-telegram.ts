@@ -106,6 +106,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const unresolved=related.find(n=>n.retraction?.state!=='done'&&(['unknown','sending','pending'].includes(n.status)||n.status==='failed'&&n.message_ids?.length||n.retraction));
     const latest=related.find(n=>n.retraction&&n.retraction.state!=='done')||unresolved||same||related[0];
     const failure=Array.isArray(latest?.delivery_review)?latest.delivery_review.findLast((review:{outcome?:string;error_code?:string})=>review.outcome==='delivery_failed'&&review.error_code===latest.error_code):undefined;
+    const progress=Array.isArray(latest?.delivery_review)?latest.delivery_review.at(-1):undefined;
     const matchingReceipts=event.kind==='renewal'?renewalReceipts.filter(row=>payload.renewal?.transaction_id!==undefined?Number(row.transaction_id)===payload.renewal.transaction_id:Number(row.renewal_payload.version)===Number(payload.renewal?.version)&&sameRenewalPeriod(row.renewal_payload,payload.renewal||{})):[];
     const cancelledReceipts=matchingReceipts.length>0&&matchingReceipts.every(row=>row.status==='cancelled');
     result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`+(event.kind==='renewal'&&payload.renewal?` · ${new Date(payload.renewal.before_return_at||payload.renewal.return_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} – ${new Date(payload.renewal.return_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · ${payload.renewal.amount.toLocaleString('vi-VN')} đ`:'')+(cancelledReceipts?' · Phiếu thu đã hủy':''),phases:event.phases,
@@ -115,6 +116,8 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
       attachments:payload.photos.map(photo=>({slot:photo.slot,mime_type:photo.mime_type,label:contractPhotoLabel(photo.slot)})),
       can_send:!['draft','cancelled'].includes(o.order_status)&&!cancelledReceipts&&canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
       delivery_contract_code:latest?.payload?.code,
+      delivery_started_at:latest?.delivery_target?.started_at||null,delivery_updated_at:progress?.at||latest?.delivery_target?.started_at||null,
+      delivery_retry_at:latest?.status==='pending'&&progress?.outcome==='delivery_retry_scheduled'?progress.retry_at:null,
       can_resume:!cancelledReceipts&&canSendContractEvent(user,event.kind)&&Boolean(latest&&canResumeNotice(latest)),
       delivery_attachment_count:latest?.payload?.photos?.length||0,
       delivery_error_description:telegramErrorDescription(failure?.description),

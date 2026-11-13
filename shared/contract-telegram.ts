@@ -12,6 +12,7 @@ export interface ContractTelegramEvent {
   notice_id?:string;delivery_error?:string|null;can_retry_confirmed_absent?:boolean;delivery_message_count?:number;
   can_resume?:boolean;delivery_attachment_count?:number;delivery_error_description?:string;
   delivery_contract_code?:string;
+  delivery_started_at?:string|null;delivery_updated_at?:string|null;delivery_retry_at?:string|null;
   destination_label?:string;
   renewal_receipt_ids?:number[];
   renewal_receipts_cancelled?:boolean;

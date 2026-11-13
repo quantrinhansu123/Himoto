@@ -1,2 +1,2 @@
 HIMOTO deployment check
-marker: renewal-photo-fix-eb286e0-20261021
+marker: telegram-photo-upload-v2-20261113

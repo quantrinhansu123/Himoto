@@ -99,8 +99,8 @@ module.exports=async function checkTransfers(db,c,schema,notices){
   const originalUrl=objects.objectMediaUrl,originalRead=objects.readObjectMedia;
   let sourceReads=0;
   const ref={object_bucket:'qa-private',object_key:'himoto/photos/143/00000000-0000-4000-8000-000000000009/v1.jpg',object_etag:'"qa-etag"'};
-  objects.objectMediaUrl=async supplied=>{assert.deepEqual(supplied,ref);sourceReads++;return 'https://qa.invalid/private-photo';};
-  objects.readObjectMedia=async supplied=>{assert.deepEqual(supplied,ref);return new Response(photo);};
+  objects.objectMediaUrl=async()=>{throw Error('Photos must not use private URLs');};
+  objects.readObjectMedia=async supplied=>{assert.deepEqual(supplied,ref);sourceReads++;return new Response(photo);};
   try{
     for(const event of [900009,900010]){
       await c.query(`INSERT INTO ${schema}.vehicle_location_events(id,vehicle_id,event_type,from_store_id,to_store_id,created_by,created_at,notes,audit_snapshot)
@@ -120,7 +120,7 @@ module.exports=async function checkTransfers(db,c,schema,notices){
       return Response.json({ok:true,result:{message_id:++messageId,photo:[{file_id:'cached-object-photo',width:1800,height:1800}]}});
     };
     assert.equal((await notices.dispatchContractNotifications(objectSend,2,db,undefined,[900009])).sent,2);
-    assert.deepEqual(objectCalls,['https://qa.invalid/private-photo','cached-object-photo']);assert.equal(sourceReads,1);
+    assert.equal(objectCalls.length,2);assert(Buffer.from(await objectCalls[0].arrayBuffer()).equals(photo));assert.equal(objectCalls[1],'cached-object-photo');assert.equal(sourceReads,1);
     const metrics=(await c.query(`SELECT delivery_review FROM ${schema}.management_contract_notifications WHERE vehicle_event_id=900009 ORDER BY event_key`)).rows
       .map(row=>row.delivery_review.find(review=>review.outcome==='delivery_metrics'));
     assert.deepEqual(metrics.map(metric=>metric.cached_media).sort(),[0,1]);

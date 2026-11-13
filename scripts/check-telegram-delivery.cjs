@@ -1,4 +1,4 @@
-const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs'),ts=require('typescript');
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs'),ts=require('typescript'),sharp=require('sharp');
 const {load,root}=require('./lib/load-typescript.cjs');
 const delivery=load(path.join(root,'lib/server/telegram-delivery'));
 const checks=[];
@@ -8,19 +8,22 @@ async function main(){
   const originalFetch=global.fetch;global.fetch=async()=>{throw Error('Real network disabled during QA');};
   try {
     const files=[...Array.from({length:7},(_,i)=>photo(i,400000)),photo(8,3428871,'video/mp4'),photo(9,3428871,'video/mp4')];
-    const split=await batches(files);assert.deepEqual(split.map(group=>group.length),[7,1,1]);
+    const split=await batches(files);assert.deepEqual(split.map(group=>group.length),[5,2,1,1]);
     assert(split.filter(group=>group[0].type==='video/mp4').every(group=>group.length===1));
-    const large=await batches(Array.from({length:7},(_,i)=>photo(i,1800000)));
-    assert.deepEqual(large.map(group=>group.length),[2,2,2,1]);
+    const pixels=Buffer.alloc(1400*1000*3);let seed=17;for(let i=0;i<pixels.length;i++){seed=(Math.imul(seed,1664525)+1013904223)|0;pixels[i]=seed>>>24;}
+    const jpeg=await sharp(pixels,{raw:{width:1400,height:1000,channels:3}}).jpeg({quality:94}).toBuffer();
+    const large=await batches(Array.from({length:7},(_,i)=>({...photo(i),bytes:jpeg.toString('base64')})));
+    assert.equal(large.flat().length,7);assert(large.length>1);
     assert(large.every(group=>group.reduce((sum,f)=>sum+f.data.length,0)<=delivery.TELEGRAM_ALBUM_BYTES));
     assert.deepEqual((await batches(Array.from({length:23},(_,i)=>photo(i)))).map(group=>group.length),[10,10,3]);
     await assert.rejects(batches([photo(1,2*1024*1024+1)]),/PHOTO_SIZE/);
     const oldEnv={...process.env};
     delete process.env.CLOUDINARY_URL;Object.assign(process.env,{CLOUDINARY_CLOUD_NAME:'qa-cloud',CLOUDINARY_API_KEY:'qa-key',CLOUDINARY_API_SECRET:'qa-media-test-secret'});
     try {
+      global.fetch=async()=>new Response(Buffer.from([255,216,255,1]));
       const remote=await batches(Array.from({length:10},(_,i)=>({slot:`rental-${i+1}`,mime_type:'image/jpeg',bytes:null,cloudinary_public_id:`himoto/management/1/${i}`,cloudinary_cloud_name:'qa-cloud',cloudinary_version:1})));
       assert.equal(remote.length,1);assert.equal(remote[0].length,10);
-      assert(remote[0].every(file=>file.url&&!file.data&&String(file.url).includes('qa-cloud')));
+      assert(remote[0].every(file=>file.data&&!file.url),'Uncached photos must not depend on Telegram fetching a private URL');
       const videoRef={slot:'rental-video-1',mime_type:'video/mp4',bytes:null,cloudinary_public_id:'himoto/management-video/1/qa',cloudinary_cloud_name:'qa-cloud',cloudinary_version:1};
       global.fetch=async(_url,options)=>{
         if(options?.method==='HEAD')return new Response(null,{status:200,headers:{'content-length':'1500000'}});
@@ -35,7 +38,7 @@ async function main(){
       const videoUpload=await batches([videoRef]);
       assert.equal(videoUpload.length,1);assert.equal(videoUpload[0][0].data?.length,2048);assert(!videoUpload[0][0].url);
     } finally { for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]; Object.assign(process.env,oldEnv); global.fetch=async()=>{throw Error('Real network disabled during QA');}; }
-    checks.push('The reported 7-photo/2-video payload splits into 7/1/1; photo albums obey byte/count caps; Cloudinary videos ≤20 MB use signed URLs');
+    checks.push('Photo albums obey byte/count caps, uncached photos upload directly and videos ≤20 MB retain their signed URL path');
     const originalTimeout=AbortSignal.timeout,timeouts=[];
     AbortSignal.timeout=ms=>{timeouts.push(ms);return new AbortController().signal;};
     try{

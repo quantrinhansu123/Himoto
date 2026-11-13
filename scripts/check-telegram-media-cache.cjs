@@ -14,8 +14,8 @@ const db={query:async(sql,args)=>{
 }};
 async function main(){
   let sourceReads=0,nextId=0;
-  const originals={url:objects.objectMediaUrl,videoUrl:videos.objectVideoUrl,videoSize:videos.objectVideoByteLength};
-  objects.objectMediaUrl=async()=>{sourceReads++;return 'https://qa.invalid/photo';};
+  const originals={read:objects.readObjectMedia,videoUrl:videos.objectVideoUrl,videoSize:videos.objectVideoByteLength};
+  objects.readObjectMedia=async()=>{sourceReads++;return new Response(Buffer.from([255,216,255,1]));};
   videos.objectVideoByteLength=async()=>{sourceReads++;return 1024;};
   videos.objectVideoUrl=async()=>{sourceReads++;return 'https://qa.invalid/video';};
   try{
@@ -30,6 +30,7 @@ async function main(){
     const batches=async prepared=>{const result=[];for await(const batch of media.telegramMediaBatches(prepared,0,Date.now()+240000))result.push(batch);return result;};
     const cold=await batches(await cache.cachedTelegramMedia(db,bot,photos));
     assert.equal(sourceReads,34);assert.deepEqual(cold.map(batch=>batch.length),[10,10,10,2,1]);
+    assert(cold.flat().filter(file=>file.type!=='video/mp4').every(file=>file.data&&!file.url));
     for(const batch of cold){
       const receipts=[];
       const send=async()=>Response.json({ok:true,result:batch.length===1
@@ -63,6 +64,6 @@ async function main(){
       'A confirmed stale file ID can fall back; timeout and unrelated API errors cannot trigger a replay',
       'Eviction affects only the rejected cached files of the selected bot'
     ],realTelegramRequests:0,externalMediaRequests:0},null,2));
-  }finally{objects.objectMediaUrl=originals.url;videos.objectVideoUrl=originals.videoUrl;videos.objectVideoByteLength=originals.videoSize;}
+  }finally{objects.readObjectMedia=originals.read;videos.objectVideoUrl=originals.videoUrl;videos.objectVideoByteLength=originals.videoSize;}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
