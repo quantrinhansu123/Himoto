@@ -289,7 +289,7 @@ export function ShiftReportsPage() {
         {renderPhotos(['door'])}</div>
         <div id="shift-panel-ownership" role="tabpanel" aria-labelledby="shift-tab-ownership" hidden={tab!=='ownership'} tabIndex={0}><h3>Báo cáo cuối ngày thuê sở hữu</h3>{input.ownership_report?<>{renderAutofill('ownership')}<OwnershipReportFields report={input.ownership_report} date={input.date} readonly={readonly} onChange={value=>update('ownership_report',value)}/></>:<p>Chọn mẫu Thuê sở hữu trong tab Thông tin để lập báo cáo theo mẫu và gửi Telegram khi chốt.</p>}</div>
       </fieldset>
-      {record?.status==='submitted'&&input.ownership_report&&<ShiftTelegramStatus id={record.id} canSend={writable}/>}
+      {record?.status==='submitted'&&<ShiftTelegramStatus id={record.id} canSend={writable}/>}
       {error && <p className="mg-field-error" role="alert">{error}</p>}
       {!readonly && <div className="shift-actions">{unconfirmed ? <button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(false)}><RefreshCw size={16}/>{busy ? 'Đang xác nhận…' : 'Thử lại thao tác lưu'}</button> : <><button type="submit" className="mg-button" disabled={busy}><Save size={16}/>{busy ? 'Đang lưu…' : 'Lưu nháp'}</button><button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(true)}><CheckCircle2 size={16}/>Chốt báo cáo</button></>}</div>}
     </form>}

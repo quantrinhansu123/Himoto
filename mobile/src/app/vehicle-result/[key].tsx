@@ -7,12 +7,15 @@ import { pendingWrites } from "@/lib/pending-writes";
 import { useTheme } from "@/theme";
 import { Button, Card, InlineError, StateView } from "@/components/ui";
 import { VehicleProfileCard } from "@/components/vehicle-profile-card";
+import {RecordPhotoBatch} from '@/components/record-photo-batch';
+import {bindStagedPhotos,completeStagedPhotos} from '@/lib/staged-photo-work';
 function VehicleResult({ requestKey }: { requestKey: string }) {
   const { api, session } = useSession(), theme = useTheme(), alive = useRef(true);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const[photosPending,setPhotosPending]=useState(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const allowed = /^[0-9a-f-]{36}$/.test(requestKey) && session!.user.permissions.includes("vehicles.read");
-  const query = useQuery({ queryKey: ["vehicle-result", session!.user.id, requestKey], queryFn: ({ signal }) => api!.vehicleResult(requestKey, signal), enabled: allowed });
+  const query = useQuery({ queryKey: ["vehicle-result", session!.user.id, requestKey], queryFn: async({ signal }) => {const result=await api!.vehicleResult(requestKey, signal);const photoBatchId=result.operation==='vehicle.create'?await bindStagedPhotos({origin:api!.origin,userId:session!.user.id,storeId:session!.user.allStores?null:session!.user.storeId,allStores:session!.user.allStores},result.receipt.id,requestKey):null;return{...result,photoBatchId};}, enabled: allowed });
   if (!allowed) return <StateView title="Không mở được xác nhận lưu xe" />;
   if (query.isPending) return <StateView title="Đang đối chiếu kết quả lưu xe" loading />;
   if (query.isError) return <StateView title="Chưa tải được xác nhận lưu xe" message={query.error.message} retry={() => { void query.refetch(); }} />;
@@ -25,6 +28,7 @@ function VehicleResult({ requestKey }: { requestKey: string }) {
       // Use the original create destination from the actor's exact ledger entry;
       // never complete a similarly named create in the current/different scope.
       const owner = await pendingWrites.entryScope(scope, result.operation, requestKey);
+      if(result.operation==='vehicle.create')await completeStagedPhotos(scope,result.receipt.id,requestKey);
       if (!alive.current) return;
       if (owner) await pendingWrites.complete(owner, result.operation, requestKey);
       if (alive.current) router.replace({ pathname: "/vehicle/[id]", params: { id: String(result.receipt.id) } });
@@ -39,8 +43,9 @@ function VehicleResult({ requestKey }: { requestKey: string }) {
       <Text style={{ color: theme.muted, lineHeight: 22 }}>Thông tin xe hiện tại{result.current.revision !== result.receipt.revision ? " đã thay đổi sau lần lưu này" : ""}.</Text>
     </Card>
     <VehicleProfileCard profile={result.current} />
+    {result.photoBatchId&&<RecordPhotoBatch target={{entity:'vehicles',id:result.receipt.id,kind:'vehicle',referenceId:result.receipt.id}} slot="registration-front" queueId={result.photoBatchId} showTelegram={false} onPendingChange={setPhotosPending}/>}
     {!!error && <InlineError message={error} />}
-    <Button label="Đã kiểm tra xác nhận lưu xe" loading={busy} onPress={() => { void acknowledge(); }} />
+    <Button label="Đã kiểm tra xác nhận lưu xe" disabled={!!result.photoBatchId&&photosPending} loading={busy} onPress={() => { void acknowledge(); }} />
   </ScrollView>;
 }
 export default function VehicleResultRoute() {

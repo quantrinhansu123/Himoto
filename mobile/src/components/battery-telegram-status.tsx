@@ -10,10 +10,12 @@ export function BatteryTelegramStatus({
   id,
   requestKey,
   title,
+  disabled=false,
 }: {
   id: string;
   requestKey: string;
   title?: string;
+  disabled?:boolean;
 }) {
   const { api, session } = useSession(),
     theme = useTheme(),
@@ -33,7 +35,7 @@ export function BatteryTelegramStatus({
     retry: false,
   });
   async function send() {
-    if (!api || busy) return;
+    if (!api || busy || disabled) return;
     setBusy(true);
     setConfirm(false);
     setError("");
@@ -74,10 +76,12 @@ export function BatteryTelegramStatus({
           <Text selectable style={{ color: theme.text, lineHeight: 24 }}>
             {query.data.text}
           </Text>
+          <Text style={{color:theme.muted}}>{query.data.photo_count??0} ảnh sẽ gửi. {disabled?'Lưu hết bộ ảnh đang chọn trước khi gửi.':''}</Text>
           {query.data.can_send && (
             <Button
               label={`Rà soát gửi Telegram ${actionLabel}`}
               loading={busy}
+              disabled={disabled}
               onPress={() => setConfirm(true)}
             />
           )}

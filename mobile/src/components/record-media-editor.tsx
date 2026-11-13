@@ -13,6 +13,7 @@ import {dateTime,useTheme} from '@/theme';
 import {Button,Card,InlineError,StateView} from './ui';
 import {ConfirmEdit,EditorSheet} from './editor-sheet';
 import {BillPhoto} from './bill-photo';
+import {RecordPhotoBatch} from './record-photo-batch';
 
 export function RecordMediaEditor({entity,id,kind,referenceId}:{entity:string;id:string;kind?:string;referenceId?:string}) {
   const {api,session}=useSession();
@@ -28,6 +29,7 @@ function MediaForm({entity,id,initial}:{entity:MobileMediaEntity;id:string;initi
   const [slot,setSlot]=useState<string|null>(null),[sheet,setSheet]=useState(false),[review,setReview]=useState<MobileMediaSlotInfo|null>(null),[confirm,setConfirm]=useState(false),[resolving,setResolving]=useState(false);
   const [photo,setPhoto]=useState<RecordMediaPhoto|null>(null),[picking,setPicking]=useState(false),[error,setError]=useState(''),[currentReady,setCurrentReady]=useState<string|null>(null),[selectedReady,setSelectedReady]=useState(false);
   const [imageEpoch,setImageEpoch]=useState(0),[discard,setDiscard]=useState<(()=>void)|null>(null);
+  const [batch,setBatch]=useState(false);
   const alive=useRef(true),pickerBusy=useRef(false),controller=useRef<AbortController|null>(null),local=useRef<RecordMediaPhoto|null>(null);
   const [previousGallery,setPreviousGallery]=useState<MobileRecordMedia|undefined>(undefined),[previousTargets,setPreviousTargets]=useState<MobileMediaTargets|undefined>(undefined);
   const write=useRecordMediaWrite(entity,id,!!photo||picking);
@@ -51,7 +53,7 @@ function MediaForm({entity,id,initial}:{entity:MobileMediaEntity;id:string;initi
   const locked=write.busy||picking||!write.checked||!!write.key;
   function choose(value:string){
     if(target?.entity==='contracts'&&/-video-[1-3]$/.test(value)){setSheet(false);router.push({pathname:'/record-video/[id]',params:{id,kind:target.kind,referenceId:String(target.referenceId),slot:value}});return;}
-    setSlot(value);setSheet(false);setReview(null);setCurrentReady(null);setError('');top();
+    setSlot(value);setBatch(true);setSheet(false);setReview(null);setCurrentReady(null);setError('');top();
   }
   function clearPhoto(){local.current?.dispose();local.current=null;setPhoto(null);setSelectedReady(false);}
   function changeSlot(){const change=()=>{clearPhoto();setSlot(null);setReview(null);setError('');top();};if(photo)setDiscard(()=>change);else change();}
@@ -134,6 +136,7 @@ function MediaForm({entity,id,initial}:{entity:MobileMediaEntity;id:string;initi
   if(!data)return frame(<>{messages}<Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'700'}}>Đọc ô ảnh đã chọn</Text>
     {info.isError&&<InlineError message={info.error.message}/>}<Button label="Tải lại ô ảnh" loading={info.isFetching} onPress={()=>{void info.refetch();}}/>
     <Button label="Chọn mục ảnh khác" secondary onPress={changeSlot}/></>);
+  if(batch&&canUpload)return frame(<><Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'800'}}>{data.target.label} · {data.label}</Text><RecordPhotoBatch key={JSON.stringify([target,slot])} target={target} slot={slot}/><Button secondary label="Xem hoặc xóa ảnh đã lưu tại mục này" onPress={()=>setBatch(false)}/><Button secondary label="Chọn mục ảnh khác" onPress={changeSlot}/></>);
   if(review)return frame(<>
     <Card style={{gap:14}}>
       <Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'800'}}>Rà soát ảnh trước khi lưu</Text>
@@ -160,7 +163,7 @@ function MediaForm({entity,id,initial}:{entity:MobileMediaEntity;id:string;initi
     {canUpload&&<Card style={{gap:14}}>
       <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Ảnh sẽ lưu</Text>
       {photo&&<><BillPhoto key={photo.uri} context="hồ sơ" source={{uri:photo.uri}} label="Ảnh hồ sơ đang chọn" onReady={setSelectedReady}/><Text style={{color:theme.muted,fontSize:15}}>{photo.width} × {photo.height} · {Math.ceil(photo.size/1024)} KB</Text></>}
-      <Button label="Chọn ảnh hồ sơ" secondary loading={picking} disabled={locked} onPress={()=>{void pick(false);}}/>
+      <Button label="Chọn nhiều ảnh hồ sơ" secondary loading={picking} disabled={locked} onPress={()=>setBatch(true)}/>
       <Button label="Chụp ảnh hồ sơ" secondary disabled={locked||Platform.OS==='web'} onPress={()=>{void pick(true);}}/>
       {!!error&&Platform.OS!=='web'&&<Button label="Mở cài đặt quyền camera" secondary disabled={locked} onPress={()=>{void Linking.openSettings().catch(()=>{if(alive.current)setError('Mở Cài đặt điện thoại để kiểm tra quyền Camera của Himoto.');});}}/>}
     </Card>}

@@ -44,7 +44,9 @@ async function main(){
     await query('UPDATE himoto.battery_contracts SET workflow_history=$1',[JSON.stringify(history)]);
     const migration=fs.readFileSync(path.resolve('docs/sql/2026-11-11-battery-rental-telegram.sql'),'utf8');
     await sql.exec(migration);await sql.exec(migration);
-    const rental=await api.readBatteryTelegram(db,1,'rental',actor);
+    await sql.exec(`CREATE TABLE himoto.management_battery_media(battery_contract_id bigint,event_key text,id uuid,mime_type text,data bytea,object_bucket text,object_key text,object_etag text,created_at timestamptz DEFAULT now());`);
+    for(let index=0;index<25;index++)await query("INSERT INTO himoto.management_battery_media(battery_contract_id,event_key,id,mime_type,data) VALUES(1,$1,$2,'image/jpeg',$3)",[returned,randomUUID(),Buffer.from([255,216,255])]);
+    const rental=await api.readBatteryTelegram(db,1,'rental',actor);assert.equal(rental.state.photo_count,0);
     assert.equal(rental.kind,'battery_rental');assert.equal(rental.payload.battery_details.collected,300);
     assert.match(rental.state.text,/Khách thuê pin \/ sạc: QA Customer/);assert.match(rental.state.text,/Pin \+ Sạc/);
     assert.match(rental.state.text,/01\/10\/2026 09:00 → 01\/11\/2026 09:00/);
@@ -61,6 +63,7 @@ async function main(){
     assert.match(noPayment.state.text,/Chưa ghi nhận thanh toán/);assert.deepEqual(noPayment.payload.payment_amounts.renewal,[]);
     checks.push('Renewal/late collection previews isolate the correct period and receipt, show real totals/debt, and unpaid periods cannot inherit initial or unrelated payments');
     const returnedState=await api.readBatteryTelegram(db,1,returned,actor);
+    assert.equal(returnedState.payload.photos.length,25);assert.equal(returnedState.state.photo_count,25);assert.equal((await api.readBatteryTelegram(db,1,collection,actor)).state.photo_count,0);
     assert.match(returnedState.state.text,/Khách trả pin \/ sạc/);assert.match(returnedState.state.text,/Nợ gia hạn còn: 450/);
     assert.equal(returnedState.key,`battery-return:1:${returned}`);
     for(const key of ['rental',renewal,collection,unpaid,returned]){
@@ -76,6 +79,13 @@ async function main(){
       LEFT JOIN himoto.orders o ON o.id=n.order_id LEFT JOIN himoto.stores s ON s.id=o.store_id`)).rows;
     assert(branchRoutes.every(row=>row.route==='store'));
     checks.push('Migration is repeatable; rental/renewal/collection/return enqueue once with stable return keys; ownership renewal and ordinary branch routes match the preview');
+    await query("UPDATE himoto.management_contract_notifications SET status='sent' WHERE event_key=$1",[returnedState.key]);
+    await query("INSERT INTO himoto.management_battery_media(battery_contract_id,event_key,id,mime_type,data) VALUES(1,$1,$2,'image/jpeg',$3)",[returned,randomUUID(),Buffer.from([255,216,255])]);
+    const extra=await api.readBatteryTelegram(db,1,returned,actor);assert.equal(extra.state.can_send,true);assert.equal(extra.payload.photos.length,1);assert(extra.key.startsWith(returnedState.key+':media:'));
+    await api.saveBatteryTelegram(db,1,returned,actor);await query("UPDATE himoto.management_contract_notifications SET status='failed' WHERE event_key=$1",[extra.key]);
+    await api.saveBatteryTelegram(db,1,returned,actor);assert.equal((await query('SELECT status FROM himoto.management_contract_notifications WHERE event_key=$1',[extra.key])).rows[0].status,'pending');
+    assert.equal((await query('SELECT jsonb_array_length(payload->\'photos\') AS n FROM himoto.management_contract_notifications WHERE event_key=$1',[extra.key])).rows[0].n,1);
+    checks.push('Return Telegram includes all 25 photos of that exact event; a later 26th photo queues only one supplement, and a failed supplement requeues its original delivery rather than reposting the old album');
     for(const [key,grant] of [['rental','contracts.draft'],[renewal,'contracts.renew'],[returned,'contracts.return']]){
       await assert.rejects(api.saveBatteryTelegram(db,1,key,{...actor,permissions:['contracts.read']}),e=>e.status===403);
       assert.equal((await api.readBatteryTelegram(db,1,key,{...actor,permissions:['contracts.read',grant]})).allowed,true);

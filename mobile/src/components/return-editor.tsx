@@ -2,6 +2,8 @@ import {useEffect,useRef,useState} from 'react';
 import {Keyboard,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,Text,View,type ScrollViewInstance} from 'react-native';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {RefundQrReader} from './refund-qr-reader';
+import {mergeMobileRefundRecipient} from '../../../shared/mobile-refund-qr';
 import type {MobileReturnPreview,MobileReturnPreviewInput} from '../../../shared/mobile-returns';
 import type {MobileReturnSettlementInput,MobileReturnSettlementPreview} from '../../../shared/mobile-return-settlement';
 import {useSession} from '@/providers/session';
@@ -36,6 +38,7 @@ function ReturnForm({id}:{id:string}) {
     queryFn:({signal})=>api!.returnPreparation(id,page,signal),enabled:!!api&&action.checked&&!action.key,placeholderData:keepPreviousData,
     staleTime:30_000,gcTime:300_000,refetchOnWindowFocus:false,refetchOnReconnect:false});
   const data=query.data,locked=previewing||action.busy||!action.checked||!!action.key;
+  const[qrPending,setQrPending]=useState<Record<string,boolean>>({});
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;abort.current?.abort();};},[]);
   const top=()=>{Keyboard.dismiss();scroll.current?.scrollTo({y:0,animated:!reducedMotion});};
   function clearReview(){setReview(null);setReviewInput(null);setError('');}
@@ -57,6 +60,7 @@ function ReturnForm({id}:{id:string}) {
   }
   async function calculateSettlement(acknowledged=false){
     if(!api||!data||!fees||!feeInput||locked||running.current)return;
+    if(Object.values(qrPending).some(Boolean)){setError('Còn ảnh QR chưa lưu. Lưu hoặc bỏ ảnh chưa gửi ở phần người nhận trước khi rà soát quyết toán.');top();return;}
     Keyboard.dismiss();setError('');
     try{
       const input=returnSettlementInput(data,fees,feeInput,receipts,rentalRefund,depositRefund,acknowledged);
@@ -78,6 +82,7 @@ function ReturnForm({id}:{id:string}) {
       <ChoiceField label={label+' · tài khoản'} value={value.account} disabled={locked} choices={(data?.accounts??[]).filter(row=>row.method===value.method).map(row=>({value:String(row.id),label:row.label}))} onChange={account=>change({account})}/>
       <RentalDateTime label={label.toLowerCase()} value={value.paidAt} disabled={locked} onChange={paidAt=>change({paidAt})}/>
       {refund&&value.method!=='cash'&&<>
+        {lines[0]&&<RefundQrReader id={id} itemId={lines[0].vehicle.id} value={value} onPendingChange={pending=>setQrPending(old=>old[label]===pending?old:{...old,[label]:pending})} onRead={(fields,before)=>{onChange(mergeMobileRefundRecipient(value,fields,before));clearReview();}}/>}
         <FormField label={label+' · ngân hàng người nhận (tùy chọn)'} value={value.bank} editable={!locked} onChangeText={bank=>change({bank})} maxLength={150}/>
         <FormField label={label+' · số tài khoản người nhận (tùy chọn)'} value={value.recipientAccount} editable={!locked} onChangeText={recipientAccount=>change({recipientAccount})} maxLength={150}/>
         <FormField label={label+' · tên người nhận (tùy chọn)'} value={value.recipientName} editable={!locked} onChangeText={recipientName=>change({recipientName})} maxLength={150}/>
@@ -94,7 +99,7 @@ function ReturnForm({id}:{id:string}) {
       confirmLabel="Rời bước trả xe" onCancel={action.dismissExit} onConfirm={action.leave}/>}
     {confirm&&review&&reviewInput&&<ConfirmEdit title="Ghi trả xe và quyết toán?"
       message={'Nhận '+review.fees.items.length+' xe · thực thu '+money(review.totals.income)+' · hoàn thuê '+money(review.totals.rentalRefund)+' · hoàn cọc '+money(review.totals.depositRefund)+'. Kiểm tra tiền thực tế trước khi xác nhận.'}
-      confirmLabel="Xác nhận trả xe và quyết toán" onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);void action.submit({...reviewInput,settlement_snapshot:review.snapshot});}}/>}
+      confirmLabel="Xác nhận trả xe và quyết toán" onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);if(Object.values(qrPending).some(Boolean)){setError('Còn ảnh QR chưa lưu. Lưu hoặc bỏ ảnh trước khi xác nhận.');return;}void action.submit({...reviewInput,settlement_snapshot:review.snapshot});}}/>}
   </>;
   if(!action.checked)return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
     <ScrollView contentContainerStyle={{padding:20}}><Card style={{gap:16}}>

@@ -106,6 +106,7 @@ function operationLabel(operation: string) {
     "battery.renew": "Gia hạn pin / sạc",
     "battery.collect_renewal": "Thu nợ gia hạn pin / sạc",
     "battery.return": "Trả pin / sạc",
+    "battery.media": "Lưu ảnh lượt pin / sạc",
     "shift.create": "Lập báo cáo ca",
     "shift.update": "Lưu hoặc chốt báo cáo ca",
     "shift.audit": "Đối soát KTNB",

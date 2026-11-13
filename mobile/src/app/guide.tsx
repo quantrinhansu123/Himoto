@@ -9,7 +9,7 @@ import {useDebouncedValue} from '@/hooks/use-debounced-value';
 import {Button,Card,InlineError,StateView} from '@/components/ui';
 import {ChoiceField,FormField} from '@/components/form-fields';
 import {EditorSheet,ConfirmEdit} from '@/components/editor-sheet';
-import {selectRecordMediaPhoto,type RecordMediaPhoto} from '@/lib/record-media-photo';
+import {selectRecordMediaPhotos,type RecordMediaPhoto} from '@/lib/record-media-photo';
 import {supportFormData} from '@/lib/support-form-data';
 import {GUIDE_WORKFLOWS} from '../../../shared/user-guide';
 import {FAQ_CATEGORIES,type GuideFaq} from '../../../shared/guide-faq';
@@ -22,7 +22,7 @@ function FaqEditor({row,name,onClose,onSaved}:{row:GuideFaq|null;name:string;onC
   const lock=useRef(false),request=useRef(uuid.v4().toLowerCase()),alive=useRef(true),current=useRef(photos);
   useEffect(()=>{current.current=photos;},[photos]);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;current.current.forEach(photo=>photo.dispose());};},[]);
-  async function pick(camera=false){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{const next=await selectRecordMediaPhoto(camera,new AbortController().signal);if(next){if(!alive.current){next.dispose();return;}setPhotos(items=>[...items,next]);}}catch(failure){setError((failure as Error).message);}finally{lock.current=false;if(alive.current)setBusy(false);}}
+  async function pick(camera=false){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await selectRecordMediaPhotos(camera,new AbortController().signal,next=>{if(!alive.current){next.dispose();return;}setPhotos(items=>[...items,next]);});}catch(failure){setError((failure as Error).message);}finally{lock.current=false;if(alive.current)setBusy(false);}}
   async function save(){
     if(lock.current)return;lock.current=true;setBusy(true);setError('');
     try {

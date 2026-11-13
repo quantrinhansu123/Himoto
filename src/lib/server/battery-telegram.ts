@@ -1,5 +1,5 @@
 import 'server-only';
-import { randomUUID } from 'node:crypto';
+import { createHash,randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { hasPermission, type PermissionAccount } from '@/lib/management/permissions';
 import type { BatteryTelegramState } from '@/lib/management/battery-telegram';
@@ -36,7 +36,10 @@ export async function readBatteryTelegram(db: Database, batteryId: number, reque
   const kind = requestId === 'rental' ? 'battery_rental' : entry?.action === 'return' ? 'battery_return' : 'battery_renewal';
   const grant = kind === 'battery_rental' ? 'contracts.draft' : kind === 'battery_return' ? 'contracts.return' : 'contracts.renew';
   const allowed = hasPermission(user, grant) && contract.status !== 'cancelled';
-  const key = kind === 'battery_rental' ? `battery-rental:${batteryId}` : `battery-${kind === 'battery_return' ? 'return' : 'renewal'}:${batteryId}:${requestId}`;
+  const root = kind === 'battery_rental' ? `battery-rental:${batteryId}` : `battery-${kind === 'battery_return' ? 'return' : 'renewal'}:${batteryId}:${requestId}`;
+  const photos=(await db.query(`SELECT 'battery-'||event_key||'-'||id::text AS slot,mime_type,encode(data,'base64') AS bytes,
+    NULL::text AS cloudinary_public_id,NULL::text AS cloudinary_cloud_name,NULL::integer AS cloudinary_version,object_bucket,object_key,object_etag
+    FROM himoto.management_battery_media WHERE battery_contract_id=$1 AND event_key=$2 ORDER BY created_at,id`,[batteryId,requestId])).rows;
   const store = (await db.query('SELECT id,store_name,kind FROM himoto.stores WHERE id=$1', [contract.store_id])).rows[0];
   const ownership = store?.kind === 'lease_to_own';
   const route = kind === 'battery_renewal' ? 'ownership_renewal' : 'ownership_new';
@@ -49,7 +52,7 @@ export async function readBatteryTelegram(db: Database, batteryId: number, reque
   const payload: NotificationPayload = {
     code: contract.code, customer: contract.customer_name || '—', phone: contract.customer_phone || '', store: contract.store_name || store?.store_name || '',
     actor, vehicles: contract.vehicle_license || '', vehicle_names: contract.battery_name || 'Pin / sạc', total: String(context.renewal_remaining || 0),
-    at: new Date(at).toISOString(), photos: [], deposit: contract.deposit_amount ?? null,
+    at: new Date(at).toISOString(), photos, deposit: contract.deposit_amount ?? null,
   };
   if (kind === 'battery_return') {
     payload.return_details = { note: entry!.note || '', returned_at: [time(entry!.returned_at || at)] };
@@ -80,18 +83,24 @@ export async function readBatteryTelegram(db: Database, batteryId: number, reque
     payload.payment_amounts = rental ? { rental: amounts, deposit: notificationPaymentAmounts(receipts.filter(row => row.name === 'battery:deposit')) } : { renewal: amounts };
   }
   const notices = (await db.query(
-    `SELECT status,message_ids FROM himoto.management_contract_notifications
+    `SELECT status,message_ids,payload,event_key FROM himoto.management_contract_notifications
      WHERE battery_contract_id=$1 AND (event_key=$2 OR root_event_key=$2) ORDER BY created_at,id`,
-    [batteryId, key],
+    [batteryId, root],
   )).rows;
   const aggregate = noticeStatus(notices);
+  const sentSlots=new Set<string>(notices.filter(n=>n.status==='sent').flatMap(n=>Array.isArray(n.payload?.photos)?n.payload.photos.map((p:{slot:string})=>p.slot):[]));
+  const added=photos.filter(p=>!sentSlots.has(p.slot)),supplement=notices.length>0&&notices.every(n=>n.status==='sent')&&added.length>0;
+  const retryable=notices.find(n=>['failed','awaiting_config'].includes(n.status));
+  const key=retryable?.event_key||(supplement?`${root}:media:${createHash('sha256').update(added.map(p=>p.slot).join('|')).digest('hex').slice(0,24)}`:root);
+  if(retryable&&Array.isArray(retryable.payload?.photos))payload.photos=retryable.payload.photos;
+  else if(supplement)payload.photos=added;
   const eligible = Number.isSafeInteger(Number(contract.store_id)) && Number(contract.store_id) > 0;
   const state: BatteryTelegramState = {
     eligible, battery_contract_id: batteryId, request_id: requestId.toLowerCase(), destination_label,
     text: contractNotificationText(kind, payload), status: aggregate.status, message_count: aggregate.message_count,
-    can_send: eligible && allowed && (aggregate.can_requeue || !notices.length),
+    can_send: eligible && allowed && (aggregate.can_requeue || !notices.length || supplement),photo_count:payload.photos.length,
   };
-  return { state, payload, store_id: Number(contract.store_id), allowed, ownership, kind, key };
+  return { state, payload, store_id: Number(contract.store_id), allowed, ownership, kind, key,root };
 }
 
 export async function saveBatteryTelegram(db: Database, batteryId: number, requestId: string, user: User) {
@@ -104,9 +113,9 @@ export async function saveBatteryTelegram(db: Database, batteryId: number, reque
     throw new BatteryTelegramError('Không gửi lại được lượt chưa rõ kết quả. Kiểm tra nhóm Telegram trước.', 409);
   }
   await db.query(`INSERT INTO himoto.management_contract_notifications(id,order_id,store_id,event_key,root_event_key,event_type,payload,delivery_mode,status,battery_contract_id)
-    VALUES ($1,NULL,$2,$3,$3,$6,$4,'manual','pending',$5)
+    VALUES ($1,NULL,$2,$3,$7,$6,$4,'manual','pending',$5)
     ON CONFLICT(event_key) DO UPDATE SET status='pending',error_code=NULL,store_id=EXCLUDED.store_id,payload=EXCLUDED.payload,battery_contract_id=EXCLUDED.battery_contract_id
       WHERE management_contract_notifications.status IN ('failed','awaiting_config')`,
-  [randomUUID(), read.store_id, read.key, JSON.stringify(read.payload), batteryId, read.kind]);
+  [randomUUID(), read.store_id, read.key, JSON.stringify(read.payload), batteryId, read.kind,read.root]);
   return (await readBatteryTelegram(db, batteryId, requestId, user)).state;
 }

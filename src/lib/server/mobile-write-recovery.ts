@@ -54,7 +54,7 @@ export async function resolveMobileWrite(
   if(operation.startsWith('account.password:')&&(!isAdminAccount(user)||![145,160].includes(user.id)))throw new MobileError('Tài khoản không có quyền đối chiếu xem mật khẩu.',403,'FORBIDDEN');
   if(operation.startsWith("ctype."))throw new MobileError("Đối chiếu loại hợp đồng qua màn hình danh mục.",400,"INVALID_OPERATION");
   const battery=family==='battery';
-  if(battery&&(!hasPermission(user,'contracts.read')||!hasPermission(user,/^battery[.](create|update:|delete:)/.test(operation)?'contracts.draft':operation.startsWith('battery.return:')?'contracts.return':'contracts.renew')))throw new MobileError('Không có quyền đối chiếu hợp đồng pin / sạc.',403,'FORBIDDEN');
+  if(battery&&(!hasPermission(user,'contracts.read')||(operation.startsWith('battery.media:')?!['contracts.draft','contracts.return','contracts.renew'].some(p=>hasPermission(user,p as 'contracts.draft'|'contracts.return'|'contracts.renew')):!hasPermission(user,/^battery[.](create|update:|delete:)/.test(operation)?'contracts.draft':operation.startsWith('battery.return:')?'contracts.return':'contracts.renew'))))throw new MobileError('Không có quyền đối chiếu hợp đồng pin / sạc.',403,'FORBIDDEN');
   const reminder=family==='reminder';
   const shift=family==='shift';
   if(shift&&(!hasPermission(user,'contracts.read')||!(operation.startsWith('shift.audit:')?hasPermission(user,'shift.review'):hasPermission(user,'contracts.draft')||hasPermission(user,'finance.write')||operation.startsWith('shift.media:')&&hasPermission(user,'shift.review'))))throw new MobileError('Không có quyền đối chiếu báo cáo ca.',403,'FORBIDDEN');

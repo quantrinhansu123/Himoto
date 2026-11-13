@@ -1,4 +1,5 @@
-import { NextRequest,NextResponse } from 'next/server';
+import {deliverReportTelegram} from '@/lib/server/report-telegram';
+import { after,NextRequest,NextResponse } from 'next/server';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { dataAccess } from '@/lib/server/access-context';
 import { himotoPool } from '@/lib/server/himoto-database';
@@ -7,6 +8,7 @@ import { readShiftAuditSnapshot,saveShiftAudit } from '@/lib/server/shift-audit-
 import { ShiftRequestError,shiftRequestId } from '@/lib/server/shift-report-requests';
 import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
+export const maxDuration=300;
 type Context={params:Promise<{id:string}>};
 export const GET=withAccessRequest(async(_request:NextRequest,context:Context)=>{
   const {id}=await context.params;
@@ -27,6 +29,6 @@ export const POST=withAccessRequest(async(request:NextRequest,context:Context)=>
     const raw=await request.json(),key=shiftRequestId(request.headers);if(!key)throw Error('Thiếu mã thao tác đối soát.');
     client=await himotoPool.connect();await client.query('BEGIN');
     const data=await saveShiftAudit(client,actor,id,raw,key);
-    await client.query('COMMIT');return NextResponse.json({data});
+    await client.query('COMMIT');if(raw.status==='confirmed')after(()=>deliverReportTelegram(`shift-audit:${id}`));return NextResponse.json({data});
   }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});return error instanceof ShiftRequestError?NextResponse.json({message:error.message},{status:error.status}):failureResponse('Không lưu được đối soát. Giữ form và thử lại.',error);}finally{client?.release();}
 });

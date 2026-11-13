@@ -1,6 +1,20 @@
 import * as ImagePicker from 'expo-image-picker';
 import type {RecordMediaPhoto} from './record-media-photo';
 export type {RecordMediaPhoto} from './record-media-photo';
+export async function selectRecordMediaPhotos(_camera:boolean,signal:AbortSignal,onPhoto:(photo:RecordMediaPhoto,index:number,total:number)=>Promise<void>|void):Promise<void> {
+  const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:false,allowsMultipleSelection:true,selectionLimit:100,base64:false});
+  if(result.canceled||signal.aborted)return;
+  const failures:string[]=[];
+  for(let index=0;index<result.assets.length;index++){
+    if(signal.aborted)return;
+    let photo:RecordMediaPhoto;
+    try{photo=await prepareRecordMediaAsset(result.assets[index],signal);}
+    catch(error){if(signal.aborted)return;failures.push(`Ảnh ${index+1}: ${(error as Error).message}`);continue;}
+    if(signal.aborted){photo.dispose();return;}
+    await onPhoto(photo,index,result.assets.length);
+  }
+  if(failures.length)throw Error(`Đã giữ các ảnh chuẩn bị thành công. ${failures.join('\n')}`);
+}
 export async function selectRecordMediaPhoto(_camera:boolean,signal:AbortSignal):Promise<RecordMediaPhoto|null> {
   const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsMultipleSelection:false,base64:false});
   if(result.canceled||signal.aborted)return null;

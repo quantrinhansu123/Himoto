@@ -5,6 +5,7 @@ export { AUDIT_FIELDS,emptyAuditInput,parseAuditInput,auditComparisons,validateA
 export { OWNERSHIP_REPORT_GROUPS,blankOwnershipReport,ownershipKeys,validateOwnershipSubmission,reconciliation } from "./ownership-report";
 export { SHIFT_AUTOFILL_SECTIONS } from "./shift-autofill";
 export type { ShiftReport,ShiftInput,ShiftSnapshot,AuditInput };
+export interface ShiftTelegramState {status:string;message_id:number|null;error_code:string|null;attachment_count?:number;media_count?:number}
 export type { ShiftAutofillResult,ShiftAutofillSection } from "./shift-autofill";
 export interface MobileShiftOptions { canWrite:boolean;canReview:boolean;stores:{id:number;name:string;kind:string}[] }
 export interface MobileShiftResult { key:string;operation:string;receipt:{id:number;revision:string};current:ShiftReport }

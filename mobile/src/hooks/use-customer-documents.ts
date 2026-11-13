@@ -3,7 +3,7 @@ import {uuid} from 'expo';
 import type {MobileCustomerInput} from '@himoto/mobile-contract';
 import {nextCustomerDocumentSlot,type CustomerOcrKind,type CustomerOcrFields} from '../../../shared/mobile-customer-ocr';
 import {useSession} from '@/providers/session';
-import {selectRecordMediaPhoto,type RecordMediaPhoto} from '@/lib/record-media-photo';
+import {selectRecordMediaPhotos,type RecordMediaPhoto} from '@/lib/record-media-photo';
 import {selectCustomerDocumentBatch} from '@/lib/customer-document-picker';
 import {customerDocumentBody} from '@/lib/customer-document-body';
 
@@ -52,8 +52,9 @@ export function useCustomerDocuments(getForm:()=>MobileCustomerInput,onOcr:(fiel
         added.push(append(photo,['id_front','id_back','driver_license'][Math.min(index,2)]));
       });
       else{
-        const photo=await selectRecordMediaPhoto(camera,controller.signal);
-        if(photo){if(!alive.current||token.current!==atToken){photo.dispose();return;}added.push(append(photo,base));}
+        await selectRecordMediaPhotos(camera,controller.signal,photo=>{
+          if(!alive.current||token.current!==atToken){photo.dispose();return;}added.push(append(photo,base));
+        });
       }
     }catch(failure){if(alive.current&&!controller.signal.aborted&&token.current===atToken)setError((failure as Error).message);}
     finally{busy.current=false;if(alive.current){setPicking(false);if(token.current===atToken&&added.length)void read(added,many);}}

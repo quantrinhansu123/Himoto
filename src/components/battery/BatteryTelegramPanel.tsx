@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NOTICE_STATUS_LABELS } from '@/lib/management/contract-telegram';
 import { batteryTelegramRequest, type BatteryTelegramState } from '@/lib/management/battery-telegram';
+import {BatteryPhotoFields} from './BatteryPhotoFields';
 
 export function BatteryTelegramPanel({ batteryId, requestId }: { batteryId: number; requestId: string }) {
   const [data, setData] = useState<BatteryTelegramState | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [photosPending,setPhotosPending]=useState(false);
   const sending = useRef(false);
   const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -29,6 +31,7 @@ export function BatteryTelegramPanel({ batteryId, requestId }: { batteryId: numb
     return () => { clearTimeout(timer); controller.abort(); };
   }, [data, refresh]);
   return <section className="mg-contract-telegram">
+    <BatteryPhotoFields id={batteryId} eventKey={requestId} onChanged={()=>{void refresh();}} onPendingChange={setPhotosPending}/>
     <p>Kiểm tra đúng giao dịch thuê, gia hạn hoặc trả pin / sạc và nơi nhận rồi bấm gửi Telegram. Có thể mở lại từ Lịch sử.</p>
     <button className="mg-button" type="button" disabled={busy} onClick={() => void refresh()}>Làm mới trạng thái</button>
     {error && <p role="alert" className="mg-field-error">{error}</p>}
@@ -37,13 +40,14 @@ export function BatteryTelegramPanel({ batteryId, requestId }: { batteryId: numb
       <pre className="mg-telegram-preview">{data.text}</pre>
       <p role="status">{data.status ? NOTICE_STATUS_LABELS[data.status] : 'Chưa gửi'}</p>
       {data.status === 'unknown' && <p role="alert">Chưa rõ Telegram đã nhận hay chưa. Kiểm tra nhóm trước khi xử lý; hệ thống không tự gửi lại.</p>}
-      <button type="button" className="mg-button mg-button-primary" disabled={busy || !data.can_send} onClick={async () => {
+      <p>{data.photo_count??0} ảnh sẽ gửi. {photosPending?'Lưu hết bộ ảnh đang chọn trước khi gửi.':''}</p>
+      <button type="button" className="mg-button mg-button-primary" disabled={busy || photosPending || !data.can_send} onClick={async () => {
         if (sending.current) return;
         sending.current = true; setBusy(true); setError('');
         try { setData(await batteryTelegramRequest(batteryId, requestId, true)); }
         catch (cause) { setError(cause instanceof Error ? cause.message : 'Không gửi được thông báo.'); }
         finally { sending.current = false; setBusy(false); }
-      }}>{busy ? 'Đang xử lý…' : data.status === 'sent' ? 'Đã gửi Telegram' : ['pending', 'sending'].includes(data.status || '') ? 'Đang gửi Telegram' : 'Gửi thông tin Telegram'}</button>
+      }}>{busy ? 'Đang xử lý…' : data.status === 'sent' && data.can_send ? 'Gửi ảnh bổ sung Telegram' : data.status === 'sent' ? 'Đã gửi Telegram' : ['pending', 'sending'].includes(data.status || '') ? 'Đang gửi Telegram' : 'Gửi toàn bộ ảnh và thông tin Telegram'}</button>
     </>}
   </section>;
 }

@@ -141,10 +141,11 @@ export async function uploadMobileRenewalBill(user: SessionUser, value: string, 
     throw new MobileError("Phiên bản hợp đồng hoặc bill chưa hợp lệ.",400,"INVALID_BILL");
   const historical=request.headers.get("x-renewal-backfill"),backfill=historical==="1";
   if(historical!==null&&(!backfill||audience!=="renewal"))throw new MobileError("Chế độ bill lịch sử không hợp lệ.",400,"INVALID_BILL");
-  const data=await readBytes(request),sha256=digest(data),slot=`renewal-${version}-document-1`;
+  const data=await readBytes(request),sha256=digest(data),primary=`renewal-${version}-document-1`,slot=request.headers.get('x-bill-slot')??primary;
+  if(!new RegExp(`^renewal-${version}-document-1(?:-extra-(?:[2-9]|[1-9][0-9]{1,14}))?$`).test(slot))throw new MobileError('Ảnh bill không thuộc kỳ đã chọn.',400,'INVALID_BILL');
   const storedPhoto=cloudflyPhotosEnabled()?await storeObjectPhoto(data,'image/jpeg',user.id,key):undefined;
   return transaction(user,true,async client=>{
-    const saved=await idempotentMobileWrite(client,user.id,key,`${operation(audience)}:${id}`,{id,version,revision,expected,sha256,bytes:data.length,...(backfill?{backfill:true}:{})},async()=>{
+    const saved=await idempotentMobileWrite(client,user.id,key,`${operation(audience)}:${id}`,{id,version,revision,expected,sha256,bytes:data.length,...(slot!==primary?{slot}:{}),...(backfill?{backfill:true}:{})},async()=>{
       const order=(await client.query("SELECT xmin::text AS revision,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",[id])).rows[0];
       if(!order)throw new MobileError("Không tìm thấy hợp đồng.",404,"NOT_FOUND");
       if(order.revision!==revision)throw new MobileError("Hợp đồng đã thay đổi. Đối chiếu và tải lại trước khi lưu bill.",409,"BILL_CONFLICT");

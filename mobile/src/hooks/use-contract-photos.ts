@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {uuid} from 'expo';
 import type {MobileDraftVehicle} from '@himoto/mobile-contract';
 import {useSession} from '@/providers/session';
-import {selectRecordMediaPhoto,type RecordMediaPhoto} from '@/lib/record-media-photo';
+import {selectRecordMediaPhotos,type RecordMediaPhoto} from '@/lib/record-media-photo';
 import {nextPhotoInGroup,photoBaseSlot} from '../../../shared/photo-slot-groups';
 import {nextSignedContractPhotoSlot} from '../../../shared/contract-photos';
 import type {DraftWorkController,WorkLocalPhoto} from '@/lib/draft-work-controller';
@@ -33,8 +33,8 @@ export function useContractPhotos({getVehicleIds,onVehicle,work=null,initialPhot
       if(base!=='scan_plate'&&base!==`plate-${vehicle.id}`)throw Error(`Ảnh có biển số ${license}, không khớp xe đang chọn. Kiểm tra lại ảnh.`);
       apply.current(vehicle,before,base==='scan_plate');
       if(base==='scan_plate'){
-        const next=current.current.filter(p=>photoBaseSlot(p.slot)!=='scan_plate');
-        for(const pending of current.current.filter(p=>photoBaseSlot(p.slot)==='scan_plate'))next.push({...pending,slot:nextPhotoInGroup(`plate-${vehicle.id}`,next.map(p=>p.slot))});
+        const next=current.current.filter(p=>p.id!==row.id);
+        next.push({...row,slot:nextPhotoInGroup(`plate-${vehicle.id}`,next.map(p=>p.slot))});
         if(work)for(const pending of next.filter(p=>current.current.some(old=>old.id===p.id&&old.slot!==p.slot)))await work.bindPhoto(pending.id,pending.slot);
         if(controller.signal.aborted||!alive.current||token.current!==atToken||at!==epoch.current)return;
         replace(next);
@@ -49,13 +49,18 @@ export function useContractPhotos({getVehicleIds,onVehicle,work=null,initialPhot
     try{
       await prepareTransition();
       if(controller.signal.aborted||!alive.current||at!==token.current)return;
-      const photo=await selectRecordMediaPhoto(camera,controller.signal);if(!photo)return;
-      if(!alive.current||at!==token.current){photo.dispose();return;}
-      const keys=current.current.map(p=>p.slot),slot=base==='rental-document-1'?nextSignedContractPhotoSlot(keys):nextPhotoInGroup(base,keys);let row:ContractPendingPhoto={id:uuid.v4().toLowerCase(),slot,photo};
-      replace([...current.current,row]);
-      await ensurePersistent();
-      if(!alive.current||at!==token.current)return;row=current.current.find(p=>p.id===row.id)??row;
-      if(base==='scan_plate'||base.startsWith('plate-'))void read(row);
+      const added:ContractPendingPhoto[]=[];
+      await selectRecordMediaPhotos(camera,controller.signal,async(photo,index,total)=>{
+        if(!alive.current||at!==token.current){photo.dispose();return;}
+        const keys=current.current.map(p=>p.slot),slot=base==='rental-document-1'?nextSignedContractPhotoSlot(keys):nextPhotoInGroup(base,keys);
+        const row:ContractPendingPhoto={id:uuid.v4().toLowerCase(),slot,photo};
+        replace([...current.current,row]);added.push(row);setNotice(`Đang giữ ảnh ${index+1}/${total} trên thiết bị…`);
+        await ensurePersistent();
+      });
+      if(!alive.current||at!==token.current)return;
+      setNotice(`Đã chọn ${added.length} ảnh. Có thể chọn thêm hoặc bỏ từng ảnh trước khi lưu.`);
+      if(base==='scan_plate')for(const row of added){if(!alive.current||at!==token.current)return;await read(current.current.find(p=>p.id===row.id)??row);}
+      else if(base.startsWith('plate-')&&added[0])void read(added[0]);
     }catch(cause){if(alive.current&&!controller.signal.aborted&&at===token.current)setError((cause as Error).message);}
     finally{busy.current=false;if(alive.current)setPicking(false);}
   }

@@ -28,13 +28,14 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
   const theme = useTheme(), insets = useSafeAreaInsets();
   const [initial] = useState(() => initialForm(profile, store, options)), [form, setForm] = useState(initial);
   const [errors, setErrors] = useState<Partial<Record<keyof Form, string>>>({}), [confirm, setConfirm] = useState(false);
+  const[photosBusy,setPhotosBusy]=useState(false);
   const scroll = useRef<ScrollViewInstance>(null), inputs = useRef<Partial<Record<keyof Form, TextInputInstance | null>>>({});
   const dirty = Object.keys(form).some(key => form[key as keyof Form] !== initial[key as keyof Form]);
   const write = useVehicleProfileWrite(profile ? String(profile.id) : null, dirty);
   const change = (key: keyof Form, value: string) => { setForm(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
   const stores = options.stores.map(row => ({ value: String(row.id), label: row.name }));
   if (profile && !stores.some(row => row.value === form.store_id)) stores.unshift({ value: form.store_id, label: profile.storeName || `Cơ sở #${form.store_id}` });
-  const locked = write.busy || write.pending || write.checking, statusLocked = locked || profile?.hasOpenContract || profile?.inTransit;
+  const locked = write.busy || write.pending || write.checking || photosBusy, statusLocked = locked || profile?.hasOpenContract || profile?.inTransit;
   function validate() {
     const next: typeof errors = {};
     for (const field of fields) if (field.required && !form[field.key].trim()) next[field.key] = `Nhập ${field.label.toLowerCase()}.`;
@@ -62,7 +63,7 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
       {write.pending && <InlineError message="Xe còn thao tác chưa rõ kết quả. Mở Tài khoản → Thao tác cần đối chiếu trước khi lưu tiếp." />}
       {!!write.error && <InlineError message={write.error} />}
       {(write.pending || write.error) && <Button secondary label="Mở Tài khoản để đối chiếu" onPress={() => router.push("/(tabs)/account")} />}
-      <VehicleRegistrationOcr values={{ license: form.license, chassis: form.chassis, engine: form.engine, color: form.color, year: form.year }} disabled={locked} onApply={values => { setForm(current => ({ ...current, ...values })); setErrors({}); }} />
+      <VehicleRegistrationOcr onBusyChange={setPhotosBusy} vehicleId={profile?.id} values={{ license: form.license, chassis: form.chassis, engine: form.engine, color: form.color, year: form.year }} disabled={write.busy||write.pending||write.checking} onApply={values => { setForm(current => ({ ...current, ...values })); setErrors({}); }} />
       <Card style={{ gap: 16 }}>
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>Thông tin xe</Text>
         {fields.map(field => <FormField key={field.key} label={field.label} value={form[field.key]} onChangeText={value => change(field.key, value)} editable={!locked} maxLength={field.max} keyboardType={field.numeric ? "number-pad" : "default"} autoCapitalize={field.key === "license" ? "characters" : "none"} error={errors[field.key]} inputRef={value => { inputs.current[field.key] = value; }} />)}

@@ -1,4 +1,5 @@
 import {isAttendanceSummary,isAttendanceReceipt,isAttendanceResolution,isMobileGuideFaq} from '../../../shared/mobile-support';
+import {isBatteryMedia,type BatteryMedia} from '../../../shared/battery-media';
 import {isMobileNotifications, isMobileNotificationList, isMobilePushStatus, isMobilePushTest, type MobileNotificationKind} from '../../../shared/mobile-notifications';
 import type { OfflineTransport } from './offline-transport';
 import {isMobileActivityPage} from '../../../shared/mobile-activity';
@@ -61,7 +62,7 @@ import { isMobileCsvExport, isMobileFileExport, type MobileCsvExport, type Mobil
 import type {MobileListExportKind} from '../../../shared/mobile-list-export';
 import { isSalesReportOptions, isMobileSalesReport, type SalesReportOptions, type MobileSalesReport, type SalesReportKind } from "../../../shared/mobile-reports";
 import { isMobileBatteryStaff,type MobileBatteryStaff,isBatteryOptions,isBatteryPage,isBatteryWorkflow,isBatteryResult,isBatteryTelegram,type MobileBatteryOptions,type MobileBatteryPage,type BatteryWorkflowContext,type MobileBatteryResult,type MobileBatteryInput,type MobileBatteryAction,type MobileBatteryPrefill,type MobileBatteryTelegram } from "../../../shared/mobile-battery";
-import { isShiftReport,isShiftOptions,isShiftResult,isShiftSnapshot,type ShiftReport,type MobileShiftOptions,type MobileShiftSave,type MobileAuditSave,type MobileShiftVideoReview,type ShiftSnapshot,type MobileShiftResult,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
+import { isShiftReport,isShiftOptions,isShiftResult,isShiftSnapshot,type ShiftTelegramState,type ShiftReport,type MobileShiftOptions,type MobileShiftSave,type MobileAuditSave,type MobileShiftVideoReview,type ShiftSnapshot,type MobileShiftResult,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
 import { isReminderHistory,isReminderOptions,isReminderContext,isReminderResult,isReminderStatus,type MobileReminderHistory,type MobileReminderOptions,type DebtReminderContext,type MobileReminderResult,type DebtReminderInput,type ReminderStatus } from "../../../shared/mobile-debt-reminders";
 import { isVoucherDeleteSelection, isVoucherDeletion, type VoucherDeleteSelection, type VoucherDeletion } from "../../../shared/mobile-cashbook-delete";
 import { isStaffProfile, isStaffOptions, isStaffWriteResult, isStaffResult, type MobileStaffProfile, type MobileStaffOptions, type MobileStaffInput, type MobileStaffWriteResult, type MobileStaffResult } from "../../../shared/mobile-staff";
@@ -268,6 +269,7 @@ export function createApi(
     guideFaq:(params:string,signal?:AbortSignal)=>request(`/guide-faq?${params}`,isMobileGuideFaq,{signal}),
     saveGuideFaq:(body:FormData)=>request<{success:true}>('/guide-faq',(v):v is {success:true}=>!!v&&typeof v==='object'&&'success'in v&&v.success===true,{method:'POST',body},60000),
     supportPhoto:(kind:'attendance'|'guide-faq',id:string,side?:'in'|'out')=>({uri:`${origin}/api/mobile/v1/${kind}?photo=${encodeURIComponent(id)}${side?'&side='+side:''}`,headers:authorization()}),
+    refundQr:(id:string,bytes:ArrayBuffer)=>request<{fields:Partial<Record<'recipient_bank'|'recipient_account'|'recipient_name',string>>;warnings:string[]}>(`/contracts/${id}/refund-qr`,(v):v is {fields:Partial<Record<'recipient_bank'|'recipient_account'|'recipient_name',string>>;warnings:string[]}=>!!v&&typeof v==='object'&&'fields'in v&&!!v.fields&&typeof v.fields==='object'&&Object.entries(v.fields).every(([key,value])=>['recipient_bank','recipient_account','recipient_name'].includes(key)&&typeof value==='string'&&value.length<=150)&&'warnings'in v&&Array.isArray(v.warnings)&&v.warnings.every(w=>typeof w==='string'),{method:'POST',headers:{'Content-Type':'image/jpeg'},body:bytes},60000),
     contractTelegram:(id:string,signal?:AbortSignal)=>request<ContractTelegramState>(`/contracts/${id}/telegram`,isMobileContractTelegram,{signal},60000),
     pendingTelegram:(params:string,signal?:AbortSignal)=>request<MobilePendingTelegram>(`/telegram/pending?${params}`,isMobilePendingTelegram,{signal}),
     saveContractTelegram:(id:string,input:MobileTelegramCommand,key:string)=>request<MobileTelegramResult>(`/contracts/${id}/telegram`,(v):v is MobileTelegramResult=>isMobileTelegramResult(v)&&v.key===key&&v.operation===`telegram.contract:${id}`&&v.action===input.action,{method:'POST',body:JSON.stringify(input),headers:{'Idempotency-Key':key}},90000),
@@ -293,6 +295,9 @@ export function createApi(
     reportOptions: (signal?: AbortSignal) => request<SalesReportOptions>("/reports/options", isSalesReportOptions, { signal }),
     batteryOptions:(signal?:AbortSignal)=>request<MobileBatteryOptions>("/battery-contracts/options",isBatteryOptions,{signal}),
     batteryStaff:(signal?:AbortSignal)=>request<MobileBatteryStaff>('/battery-contracts/staff',isMobileBatteryStaff,{signal}),
+    batteryMedia:(id:string,eventKey:string,signal?:AbortSignal)=>request<BatteryMedia>(`/battery-contracts/${id}/media/${eventKey}`,(v):v is BatteryMedia=>isBatteryMedia(v)&&String(v.id)===id&&v.eventKey===eventKey,{signal}),
+    saveBatteryMedia:(id:string,eventKey:string,fileId:string,bytes:ArrayBuffer,key:string)=>request<MobileWriteReceipt>(`/battery-contracts/${id}/media/${eventKey}/${fileId}`,(v):v is MobileWriteReceipt=>isWriteReceipt(v)&&String(v.id)===id,{method:'PUT',headers:{'Content-Type':'image/jpeg','Idempotency-Key':key},body:bytes}),
+    batteryMediaSource:(id:string,eventKey:string,fileId:string)=>({uri:`${origin}/api/mobile/v1/battery-contracts/${id}/media/${eventKey}/${fileId}`,headers:authorization()}),
     batteryTelegram:(id:string,key:string,signal?:AbortSignal)=>request<MobileBatteryTelegram>(`/battery-contracts/${encodeURIComponent(id)}/telegram?request_id=${encodeURIComponent(key)}`,(v):v is MobileBatteryTelegram=>isBatteryTelegram(v)&&String(v.battery_contract_id)===id&&v.request_id===key,{signal}),
     sendBatteryTelegram:(id:string,key:string)=>request<MobileBatteryTelegram>(`/battery-contracts/${encodeURIComponent(id)}/telegram`,(v):v is MobileBatteryTelegram=>isBatteryTelegram(v)&&String(v.battery_contract_id)===id&&v.request_id===key,{method:'POST',body:JSON.stringify({action:'send',request_id:key})}),
     batteries:(params:string,signal?:AbortSignal)=>request<MobileBatteryPage>(`/battery-contracts?${params}`,isBatteryPage,{signal}),
@@ -309,8 +314,8 @@ export function createApi(
     saveShift:(input:MobileShiftSave,key:string)=>request<MobileWriteReceipt>("/shift-reports",isWriteReceipt,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},90000),
     shiftResult:(key:string,signal?:AbortSignal)=>request<MobileShiftResult>(`/shift-reports/requests/${encodeURIComponent(key)}`,(v):v is MobileShiftResult=>isShiftResult(v)&&v.key===key,{signal}),
     shiftSnapshot:(id:string,signal?:AbortSignal)=>request<ShiftSnapshot>(`/shift-reports/${encodeURIComponent(id)}/audit`,isShiftSnapshot,{signal},65000),
-    shiftTelegram:(id:string,signal?:AbortSignal)=>request<{status:string;message_id:number|null;error_code:string|null}|null>(`/shift-reports/${encodeURIComponent(id)}/telegram`,(v):v is {status:string;message_id:number|null;error_code:string|null}|null=>v===null||!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string"&&"message_id" in v&&(v.message_id===null||Number.isSafeInteger(v.message_id))&&"error_code" in v&&(v.error_code===null||typeof v.error_code==="string"),{signal}),
-    retryShiftTelegram:(id:string)=>request<{status:string}>(`/shift-reports/${encodeURIComponent(id)}/telegram`,(v):v is {status:string}=>!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string",{method:"POST"}),
+    shiftTelegram:(id:string,signal?:AbortSignal,stage='pgd')=>request<ShiftTelegramState|null>(`/shift-reports/${encodeURIComponent(id)}/telegram${stage==='audit'?'?stage=audit':''}`,(v):v is ShiftTelegramState|null=>v===null||!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string"&&"message_id" in v&&(v.message_id===null||Number.isSafeInteger(v.message_id))&&"error_code" in v&&(v.error_code===null||typeof v.error_code==="string"),{signal}),
+    retryShiftTelegram:(id:string,stage='pgd')=>request<{status:string}>(`/shift-reports/${encodeURIComponent(id)}/telegram${stage==='audit'?'?stage=audit':''}`,(v):v is {status:string}=>!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string",{method:"POST"}),
     saveShiftAudit:(id:string,input:MobileAuditSave,key:string)=>request<MobileWriteReceipt>(`/shift-reports/${encodeURIComponent(id)}/audit`,isWriteReceipt,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},65000),
     shiftMediaSource:(id:number,file:string,legacy=false)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/${legacy?"photos":"media"}/${encodeURIComponent(file)}`,headers:authorization()}),
     shiftVideoSource:(id:number,file:string,revision:number)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/media/${encodeURIComponent(file)}?video=1&revision=${revision}`,headers:authorization(),useCaching:false}),
@@ -384,20 +389,20 @@ export function createApi(
     renewalBill: (id: string, version: number, signal?: AbortSignal) =>
       request<MobileBillInfo>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/bill`,
         (value): value is MobileBillInfo => isMobileBillInfo(value) && String(value.id)===id && value.version===version,{signal}),
-    uploadRenewalBill: (id: string, version: number, revision: string, expectedPhotoRevision: string | null, bytes: ArrayBuffer, key: string, backfill=false) =>
+    uploadRenewalBill: (id: string, version: number, revision: string, expectedPhotoRevision: string | null, bytes: ArrayBuffer, key: string, backfill=false,slot?:string) =>
       request<MobileBillReceipt>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/bill`,
-        (value): value is MobileBillReceipt => isMobileBillReceipt(value) && String(value.id)===id && value.version===version,
-        {method:"PUT",body:bytes,headers:{"Content-Type":"image/jpeg","Idempotency-Key":key,"X-Contract-Revision":revision,"X-Bill-Revision":expectedPhotoRevision??"0",...(backfill?{"X-Renewal-Backfill":"1"}:{})}}),
+        (value): value is MobileBillReceipt => isMobileBillReceipt(value) && String(value.id)===id && value.version===version && value.slot===(slot??`renewal-${version}-document-1`),
+        {method:"PUT",body:bytes,headers:{"Content-Type":"image/jpeg","Idempotency-Key":key,"X-Contract-Revision":revision,"X-Bill-Revision":expectedPhotoRevision??"0",...(slot?{'X-Bill-Slot':slot}:{}),...(backfill?{"X-Renewal-Backfill":"1"}:{})}}),
     billReceipt: (key: string) =>
       request<{receipt:MobileBillReceipt|null}>(`/bills/requests/${encodeURIComponent(key)}`,
         (value): value is {receipt:MobileBillReceipt|null} => !!value && typeof value==="object" && "receipt" in value && (value.receipt===null || isMobileBillReceipt(value.receipt))),
     collectionBill: (id: string, version: number, signal?: AbortSignal) =>
       request<MobileBillInfo>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/collection/bill`,
         (value): value is MobileBillInfo => isMobileBillInfo(value) && String(value.id) === id && value.version === version, { signal }),
-    uploadCollectionBill: (id: string, version: number, revision: string, expectedPhotoRevision: string | null, bytes: ArrayBuffer, key: string) =>
+    uploadCollectionBill: (id: string, version: number, revision: string, expectedPhotoRevision: string | null, bytes: ArrayBuffer, key: string,slot?:string) =>
       request<MobileBillReceipt>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/collection/bill`,
-        (value): value is MobileBillReceipt => isMobileBillReceipt(value) && String(value.id) === id && value.version === version,
-        { method: "PUT", body: bytes, headers: { "Content-Type": "image/jpeg", "Idempotency-Key": key, "X-Contract-Revision": revision, "X-Bill-Revision": expectedPhotoRevision ?? "0" } }),
+        (value): value is MobileBillReceipt => isMobileBillReceipt(value) && String(value.id) === id && value.version === version && value.slot===(slot??`renewal-${version}-document-1`),
+        { method: "PUT", body: bytes, headers: { "Content-Type": "image/jpeg", "Idempotency-Key": key, "X-Contract-Revision": revision, "X-Bill-Revision": expectedPhotoRevision ?? "0",...(slot?{'X-Bill-Slot':slot}:{}) } }),
     collectionBillReceipt: (key: string) =>
       request<{ receipt: MobileBillReceipt | null }>(`/renewal-collection-bills/requests/${encodeURIComponent(key)}`,
         (value): value is { receipt: MobileBillReceipt | null } => !!value && typeof value === "object" && "receipt" in value && (value.receipt === null || isMobileBillReceipt(value.receipt))),

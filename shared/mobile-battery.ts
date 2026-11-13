@@ -10,7 +10,7 @@ export function isMobileBatteryStaff(v:unknown):v is MobileBatteryStaff{return o
 export interface MobileBatteryPage { rows:BatteryContract[];scopeCount:number;total:number;page:number;pages:number;statusCounts:{status:string;count:number}[] }
 export interface MobileBatteryResult {key:string;operation:string;receipt:{id:number;revision:string};current:BatteryContract|null;deleted:boolean}
 export interface MobileBatteryPrefill { sourceId:number;sourceCode:string;values:BatteryContractPrefill }
-export interface MobileBatteryTelegram {eligible:boolean;battery_contract_id:number;request_id:string;destination_label:string;text:string;status:string|null;can_send:boolean;message_count:number}
+export interface MobileBatteryTelegram {photo_count?:number;eligible:boolean;battery_contract_id:number;request_id:string;destination_label:string;text:string;status:string|null;can_send:boolean;message_count:number}
 export function isBatteryTelegram(v:unknown):v is MobileBatteryTelegram{return object(v)&&typeof v.eligible==='boolean'&&id(v.battery_contract_id)&&typeof v.request_id==='string'&&typeof v.destination_label==='string'&&typeof v.text==='string'&&(v.status===null||typeof v.status==='string')&&typeof v.can_send==='boolean'&&Number.isSafeInteger(v.message_count);}
 export type MobileBatteryInput=BatteryContractFields&{revision?:string};
 type WithoutRequest<T>=T extends unknown?Omit<T,'request_id'>:never;

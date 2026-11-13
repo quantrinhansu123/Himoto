@@ -6,6 +6,7 @@ import type { MobileVehicleInput } from "../../../shared/mobile-vehicles";
 import { vehicleProfileOperations } from "../../../shared/mobile-vehicles";
 import { pendingWrites } from "@/lib/pending-writes";
 import { useSession } from "@/providers/session";
+import {guardStagedPhotos,linkStagedPhotos,bindStagedPhotos} from '@/lib/staged-photo-work';
 
 export function useVehicleProfileWrite(id: string | null, dirty: boolean) {
   const { api, session } = useSession(), cache = useQueryClient();
@@ -20,6 +21,7 @@ export function useVehicleProfileWrite(id: string | null, dirty: boolean) {
     if (!scope || running.current) return;
     setChecking(true);
     try {
+      if(id===null)await guardStagedPhotos(scope);
       const entries = await pendingWrites.list(scope, true), conflicts = id === null ? ["vehicle.create"] : vehicleProfileOperations(id);
       if (alive.current) setPending(entries.some(row => conflicts.includes(row.operation)));
     } catch (cause) { if (alive.current) { setPending(true); setError((cause as Error).message); } }
@@ -30,11 +32,14 @@ export function useVehicleProfileWrite(id: string | null, dirty: boolean) {
     if (!api || !scope || running.current || checking || pending) return;
     running.current = true; setBusy(true); setError("");
     try {
+      if(id===null)await guardStagedPhotos(scope);
       const reserved = await pendingWrites.reserveExclusive(scope, operation, id === null ? [operation] : vehicleProfileOperations(id), () => uuid.v4().toLowerCase());
       if (!alive.current) return;
       setPending(true);
       if (!reserved.created) throw Error("Xe còn yêu cầu chưa rõ kết quả. Vào Tài khoản để đối chiếu trước khi lưu tiếp.");
-      await api.saveVehicle(id, input, reserved.key);
+      if(id===null)await linkStagedPhotos(scope,reserved.key);
+      const receipt=await api.saveVehicle(id, input, reserved.key);
+      if(id===null)await bindStagedPhotos(scope,receipt.id,reserved.key);
       if (!alive.current) return;
       for (const queryKey of [["catalogue"], ["overview"], ["record"], ["vehicle-profile"], ["vehicle-history"], ["transfer-history"]]) void cache.invalidateQueries({ queryKey });
       disable(); router.replace({ pathname: "/vehicle-result/[key]", params: { key: reserved.key } });

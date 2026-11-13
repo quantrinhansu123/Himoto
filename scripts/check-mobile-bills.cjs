@@ -27,6 +27,16 @@ async function run(){
   assert.equal(sent.options.headers['Idempotency-Key'],key);assert.equal(sent.options.headers['X-Contract-Revision'],'100');assert.equal(sent.options.headers['X-Bill-Revision'],'0');
   assert.equal(sent.options.headers.Authorization,'Bearer hm1_'+'a'.repeat(43));assert.equal(sent.options.credentials,'omit');assert.equal(sent.options.redirect,'error');
   checks.push('Bill upload preserves binary JPEG/body, reviewed contract/photo revisions and the original UUID in an origin-bound bearer request without browser credentials or redirects');
+  for(const number of [2,10,25]){
+    const slot=`renewal-9-document-1-extra-${number}`;global.fetch=async(_url,options)=>{assert.equal(options.headers['X-Bill-Slot'],slot);return Response.json({...receipt,slot});};
+    assert.equal((await client.uploadRenewalBill('101',9,'100',null,bytes,key,false,slot)).slot,slot);
+    assert.equal((await client.uploadCollectionBill('101',9,'100',null,bytes,key,slot)).slot,slot);
+  }
+  global.fetch=async()=>Response.json({...receipt,slot:'renewal-9-document-1-extra-26'});
+  await assert.rejects(client.uploadRenewalBill('101',9,'100',null,bytes,key,false,'renewal-9-document-1-extra-25'),e=>e.code==='INVALID_RESPONSE');
+  assert(!isMobileBillReceipt({...receipt,slot:'renewal-9-document-1-extra-1'}));
+  await assert.rejects(()=>server.uploadMobileRenewalBill(user,'101','9',request({'X-Bill-Slot':'renewal-8-document-1-extra-2'})),e=>e.code==='INVALID_BILL');
+  checks.push('Rental and collection bill albums retain supplemental images 2/10/25 in the correct period, bind each receipt to its exact requested slot and reject cross-period or substituted image slots');
 
   for(const broken of [{...receipt,id:102},{...receipt,version:10},{...receipt,sha256:'bad'},{...receipt,bytes:2097153},{...receipt,photoRevision:'bad'},{...receipt,slot:'renewal-8-document-1'}]){
     assert.equal(isMobileBillReceipt(broken)&&broken.id===101&&broken.version===9,false);
