@@ -76,8 +76,10 @@ with sync_playwright() as pw:
     region.get_by_text('Bộ lọc nâng cao',exact=True).click();expect(region.get_by_role('combobox',name='Lọc trạng thái')).not_to_be_visible()
     checks.append('Eight core fields replace noisy columns; full filters and statistics remain collapsed and available, with first contracts visible without a long scroll')
     fresh('/contracts/overdue');region=page.get_by_role('region',name='Hợp đồng quá hạn',exact=True)
-    group=region.get_by_role('group',name='Nhóm quá hạn truyền thống')
-    for label,count in [('Quá hạn',3),('Trên 3 ngày',2),('Trên 10 ngày',1)]:
+    group=region.get_by_role('group',name='Nhóm hợp đồng quá hạn')
+    expect(group.get_by_role('button',name=re.compile('^Tất cả quá hạn'))).to_have_attribute('aria-pressed','true')
+    expect(visible_rows().filter(has_text='QA-001')).to_have_count(1)
+    for label,count in [('Quá hạn truyền thống',3),('Trên 3 ngày',2),('Trên 10 ngày',1)]:
         group.get_by_role('button',name=re.compile('^'+label)).click();expect(visible_rows()).to_have_count(count)
     bad_button=group.get_by_role('button',name=re.compile('^Nợ xấu'));expect(bad_button).to_contain_text('2')
     bad_button.click();expect(visible_rows()).to_have_count(2);expect(visible_rows().first).to_contain_text('Nợ xấu')

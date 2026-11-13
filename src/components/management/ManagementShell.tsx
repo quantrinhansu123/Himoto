@@ -42,7 +42,8 @@ const navigation = [
   { href: '/accounts', label: 'Tài khoản & Phân quyền', kind: 'accounts' as const, icon: UsersRound },
   { href: '/huong-dan', label: 'Hướng dẫn sử dụng', kind: 'help' as const, icon: BookOpen },
 ];
-const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
+// Store reads follow contract access; store mutations still require settings.write.
+const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();
@@ -53,7 +54,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const homeHref=visibleNavigation.find(item=>item.href==='/operations')?.href||visibleNavigation[0]?.href||'/login';
   const pageAllowed=navigationPermission(active.kind)===null||hasPermission(user,navigationPermission(active.kind)!);
   const writableCustomers = source === 'api' && active.kind === 'customers';
-  const writableStores = source === 'api' && active.kind === 'stores';
+  const writableStores = source === 'api' && active.kind === 'stores' && hasPermission(user,'settings.write');
   const writableDuties = source === 'api' && active.kind === 'duty-roster';
   const writableBattery = source === 'api' && active.kind === 'battery-contracts';
   const writableVehicles = source === 'api' && active.kind === 'vehicles';
@@ -78,7 +79,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     } catch (cause) { setSignOutError(cause instanceof Error ? cause.message : 'Không đăng xuất được.'); setSigningOut(false); }
   }
 
-  // A stale browser tab must return to login when the server rejects its session.
+  // Refresh changed grants and scope as well as rejecting expired sessions.
   useEffect(() => {
     if (!user) return;
     let running = false, lastCheck = 0;
@@ -88,12 +89,20 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
       running = true; lastCheck = Date.now();
       active = new AbortController();
       const timer = setTimeout(() => active?.abort(), 10_000);
-      try { if ((await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin', signal: active.signal })).status === 401) { router.replace('/login'); router.refresh(); } } catch { /* Keep the page during a temporary network outage. */ }
+      try {
+        const response=await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin', signal: active.signal });
+        if(response.status===401){router.replace('/login');router.refresh();}
+        else if(response.ok){
+          const body=await response.json();
+          if(Number(body?.user?.id)>0&&JSON.stringify(body.user)!==JSON.stringify(user))router.refresh();
+        }
+      } catch { /* Keep the page during a temporary network outage. */ }
       finally { clearTimeout(timer); running = false; }
     };
     window.addEventListener('focus', checkSession);
     document.addEventListener('visibilitychange', checkSession);
-    return () => { active?.abort(); window.removeEventListener('focus', checkSession); document.removeEventListener('visibilitychange', checkSession); };
+    const interval=window.setInterval(checkSession,60_000);
+    return () => { clearInterval(interval); active?.abort(); window.removeEventListener('focus', checkSession); document.removeEventListener('visibilitychange', checkSession); };
   }, [router, user]);
 
   useEffect(() => {
@@ -163,5 +172,5 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
 }
 
 export function ManagementShell({ children, user = null }: { children: ReactNode; user?: SessionUser | null }) {
-  return <ManagementProvider user={user} canPayContracts={canRecordContractPayment(user)}><ContractTypesProvider canManage={hasPermission(user,'settings.write')}><Shell user={user}>{children}</Shell></ContractTypesProvider></ManagementProvider>;
+  return <ManagementProvider key={JSON.stringify(user)} user={user} canPayContracts={canRecordContractPayment(user)}><ContractTypesProvider canManage={hasPermission(user,'settings.write')}><Shell user={user}>{children}</Shell></ContractTypesProvider></ManagementProvider>;
 }
