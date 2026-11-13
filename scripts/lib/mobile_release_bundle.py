@@ -1,5 +1,5 @@
 """Inspect the real APK bytes, without environment files or credentials."""
-import hashlib,zipfile
+import hashlib,re,zipfile
 from .mobile_dex import has_constructor
 def verify_bundle(apk,require_offline=False):
     with zipfile.ZipFile(apk) as archive:
@@ -12,7 +12,18 @@ def verify_bundle(apk,require_offline=False):
         native_features={name:marker in dex for name,marker in [('sqlite',b'expo/modules/sqlite/'),('biometric',b'expo/modules/localauthentication/'),('location',b'expo/modules/location/'),('backgroundTask',b'expo/modules/backgroundtask/')]}
         native_features['sqlCipher']=any(b'cipher_version' in archive.read(n) for n in names if n.startswith('lib/arm64-v8a/') and 'sqlite' in n.lower() and n.endswith('.so'))
         native_features['workDatabaseConstructor']=any(has_constructor(archive.read(n),'Landroidx/work/impl/WorkDatabase_Impl;') for n in classes)
-        native_features['himotoVideo']=any(has_constructor(archive.read(n),'Lvn/himoto/video/HimotoVideoModule;') for n in classes)
+        video_descriptor='Lvn/himoto/video/HimotoVideoModule;'
+        mapping=apk.parent/'r8-mapping.txt'
+        if mapping.is_file():
+            mapped=re.search(r'^vn\.himoto\.video\.HimotoVideoModule -> ([A-Za-z0-9_.$]+):$',mapping.read_text(encoding='utf-8'),re.M)
+            if mapped:video_descriptor='L'+mapped[1].replace('.','/')+';'
+        # R8 may rename a directly registered Expo module. Verify its actual
+        # defined constructor using this build's mapping, not a class-name string.
+        native_features['himotoVideo']=b'HimotoVideo' in dex and any(has_constructor(archive.read(n),video_descriptor) for n in classes)
+        native_features['transformerApiBoundary']=all(name in dex for name in (
+            b'androidx/media3/transformer/DefaultAssetLoaderFactory;',
+            b'androidx/media3/transformer/ExoPlayerAssetLoader$Factory;',
+            b'androidx/media3/transformer/TransformerInternal$SequenceAssetLoaderListener;'))
         if require_offline:assert all(native_features.values()),'Required final-release native modules absent: '+str(native_features)
         assert any(b'expo/modules/notifications/' in archive.read(n) for n in classes),'Native notifications module absent'
         resources=archive.read('resources.arsc')

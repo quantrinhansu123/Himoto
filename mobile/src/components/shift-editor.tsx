@@ -6,6 +6,7 @@ import { KeyboardAvoidingView,Platform,ScrollView,Text,View } from "react-native
 import { SHIFT_SUMMARY_FIELDS,emptyShiftSummary,parseShiftInput,shiftVehicleTotal,OWNERSHIP_REPORT_GROUPS,blankOwnershipReport,validateOwnershipSubmission,type ShiftInput,type ShiftReport,type MobileShiftOptions,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
 import { useSession } from "@/providers/session";
 import { pendingWrites } from "@/lib/pending-writes";
+import {requireShiftPhotosSaved} from '@/lib/shift-photo-work';
 import { useTheme,money } from "@/theme";
 import { ChoiceField,FormField } from "./form-fields";
 import { DateField } from "./date-field";
@@ -30,7 +31,7 @@ export function ShiftEditor({record,options}:{record:ShiftReport|null;options:Mo
   function review(status:"draft"|"submitted") {try{parseShiftInput(input);if(status==="submitted"){if(!input.electricity_off)throw Error("Xác nhận đã tắt thiết bị điện trước khi chốt.");if(input.ownership_report)validateOwnershipSubmission(input.ownership_report);}setError("");setConfirm(status);}catch(cause){setError((cause as Error).message);}}
   async function save() {
     if(!api||!session||running.current||!confirm)return;const status=confirm;running.current=true;setBusy(true);setConfirm(null);setError("");const scope={origin:api.origin,userId:session.user.id,storeId:session.user.allStores?null:session.user.storeId,allStores:session.user.allStores},operation=record?`shift.update:${record.id}`:"shift.create";
-    try{const intent=await pendingWrites.reserveExclusive(scope,operation,record?[operation,`shift.audit:${record.id}`,`shift.media:${record.id}`]:[operation],()=>uuid.v4().toLowerCase());if(!alive.current)return;setPending(true);if(!intent.created)throw Error("Còn thao tác báo cáo ca chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.");await api.saveShift({payload:parseShiftInput(input),status,...(record?{id:record.id,revision:record.revision}:{})},intent.key);if(!alive.current)return;setLeaving(true);disablePrevention();router.replace({pathname:"/shift-result/[key]",params:{key:intent.key}});}catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}
+    try{if(record&&status==='submitted')await requireShiftPhotosSaved(scope,record.id,'pgd');const intent=await pendingWrites.reserveExclusive(scope,operation,record?[operation,`shift.audit:${record.id}`,`shift.media:${record.id}`]:[operation],()=>uuid.v4().toLowerCase());if(!alive.current)return;setPending(true);if(!intent.created)throw Error("Còn thao tác báo cáo ca chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.");await api.saveShift({payload:parseShiftInput(input),status,...(record?{id:record.id,revision:record.revision}:{})},intent.key);if(!alive.current)return;setLeaving(true);disablePrevention();router.replace({pathname:"/shift-result/[key]",params:{key:intent.key}});}catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}
   }
   const n=(key:keyof ShiftInput,label:string)=><ShiftNumberField key={key} label={label} value={Number(input[key]??0)} disabled={busy||pending} onChange={value=>update(key,value as never)} />;
   const sectionFilled=filled[tab];

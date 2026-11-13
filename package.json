@@ -82,7 +82,8 @@
     "test:vehicles": "node scripts/check-vehicle-import.cjs",
     "test:vehicle-transfers": "node scripts/check-vehicle-transfers.cjs",
     "test:vehicle-transfer-history": "node scripts/check-vehicle-transfer-history.cjs",
-    "lint:management": "eslint \"src/components/management/**/*.{ts,tsx}\" \"src/components/contracts/**/*.{ts,tsx}\" \"src/lib/management/**/*.ts\" \"src/app/(management)/**/*.tsx\" src/fixtures/management-data.ts"
+    "lint:management": "eslint \"src/components/management/**/*.{ts,tsx}\" \"src/components/contracts/**/*.{ts,tsx}\" \"src/lib/management/**/*.ts\" \"src/app/(management)/**/*.tsx\" src/fixtures/management-data.ts",
+    "test:mobile:albums": "node scripts/check-mobile-photo-batches.cjs && node scripts/check-transfer-photo-album.cjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1155.0",

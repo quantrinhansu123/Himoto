@@ -15,12 +15,12 @@
 
 - Typecheck root/mobile và lint các file server/web, toàn bộ mobile: đạt.
 - `npm run test:mobile`: 39 bộ kiểm tra đạt.
-- `check-mobile-photo-batches.cjs`: 7 nhóm; album 25 ảnh, mất phản hồi, ghi tiến độ, đổi tài khoản, lỗi một nguồn, QR và cô lập bộ ảnh theo hồ sơ/lượt/cơ sở.
+- `check-mobile-photo-batches.cjs`: 8 nhóm; album 25 ảnh, mất phản hồi, ghi tiến độ, đổi tài khoản, lỗi một nguồn, QR và cô lập bộ ảnh theo hồ sơ/lượt/cơ sở. PGD/KTNB kiểm tra mọi mục minh chứng đang giữ trước khi chốt, gồm cả picker đã đóng; không để chốt rồi khóa mất phần ảnh chưa gửi.
 - `check-transfer-photo-album.cjs`: chuyển 25/25, nhận 25/25.
 - `check-mobile-bills.cjs`: 5 nhóm, gồm ảnh bổ sung 2/10/25 và kiểm tra đúng kỳ/ô ảnh.
 - PGlite: `check-mobile-battery.cjs` 7 nhóm; `check-battery-telegram-workflow.cjs` 6 nhóm; `check-mobile-shift-reports.cjs` 6 nhóm; `check-report-telegram-media.cjs` 3 nhóm.
 - `check-refund-qr.cjs` và `check-photo-ocr.cjs`: mỗi bộ 5 nhóm.
-- UI `check-mobile-photo-batches-ui.py`: picker nhiều ảnh, giữ 25 ảnh sau tải lại/đăng nhập lại, mất phản hồi sau commit ảnh thứ 10, 25 ảnh/26 lần gọi và không trùng UUID. Thực hiện hoàn toàn với API giả lập.
+- UI `check-mobile-photo-batches-ui.py`: 3 nhóm. Picker nhiều ảnh, giữ 25 ảnh sau tải lại/đăng nhập lại, mất phản hồi sau commit ảnh thứ 10, 25 ảnh/26 lần gọi và không trùng UUID; trả pin chọn 25 ảnh và chỉ mở nút Telegram sau khi lưu đủ bộ. Thực hiện hoàn toàn với API giả lập.
 
 Không gửi tin thử vào nhóm vận hành hoặc tạo giao dịch/ảnh giả trên hồ sơ khách thật để kiểm thử. Kiểm thử nhà cung cấp sử dụng transport giả lập; kết quả đó không phải bằng chứng gửi Telegram thật.
 
@@ -31,3 +31,14 @@ Migration `docs/sql/2026-11-13-battery-media-report-attachments.sql` chỉ thêm
 APK chuẩn bị: `vn.himoto.staff`, 1.0.11 / code 12, runtime 1.0.11, channel production. Phải cài APK mới để có native HimotoVideo; không đẩy toàn bộ mã này vào runtime 1.0.9. Bằng chứng deploy, APK, Samsung và OTA được ghi sau khi từng bước hoàn tất.
 
 Artifact kiểm chứng cục bộ: `.backups/mobile-media-full-20261113/`; bản build ký: `.backups/mobile-media-1.0.11-20261113-release/`.
+
+## Kiểm tra trên Samsung và lỗi native tìm thêm
+
+- Cài đè 1.0.11/code12 bằng khóa ký cũ, UID 10216 và phiên đăng nhập được giữ.
+- Picker Android chọn đủ 25 ảnh từ album QA riêng trong một lần; kho SQLCipher mở được, xem ảnh được. Force-stop rồi mở lại vẫn giữ đủ 25/25. Đã bỏ toàn bộ ảnh QA chưa gửi bằng giao diện, không tạo xe hoặc gắn ảnh giả vào hồ sơ vận hành.
+- Khi thử video tổng hợp 3 giây trên Samsung Android 9, bản thử đầu bị crash `NoClassDefFoundError: android.media.metrics.LogSessionId` trong Media3 Transformer sau R8. Đây là lỗi native thực tế, không được xem là nghiệm thu đạt. Bản đầu không được phát hành OTA hoặc đưa lên link APK bàn giao.
+- Sửa bằng consumer rules giới hạn ở ba lớp factory/listener Media3 qua ranh giới API31; thêm xử lý LinkageError để báo lỗi thay vì thoát app. Theo [issue Media3 #2535](https://github.com/androidx/media/issues/2535), R8 gộp lớp có thể làm tham chiếu LogSessionId bị resolve trên Android trước 12. Kết quả chạy lại video được ghi sau khi bản sửa qua thiết bị.
+- Bộ kiểm APK đọc mapping R8 của đúng build để kiểm tra constructor module đã đổi tên, đồng thời xác nhận ba lớp bảo vệ API vẫn còn trong DEX. Không chỉ tìm chuỗi tên module rồi kết luận hoạt động.
+- Bản sửa R8 trên Samsung xử lý lại đúng video tổng hợp 3 giây đã gây crash thành MP4 0,8 MB, phát được trong app. Không lưu hoặc gắn video QA vào hợp đồng thật. Các nút lưu/gửi album đặt trước danh sách ảnh để bộ nhiều ảnh không phải cuộn xuống cuối mới lưu được.
+
+Production commit `ee53664`: Vercel `dpl_5f1MovmzFUCwLzqkPHib1rsxVXrA`, trạng thái thành công. Smoke công khai 23 kiểm tra và 5 kiểm tra API mới/quyền đọc qua production đều đạt. Không tải ảnh thử lên hoặc tạo/gửi tin Telegram vận hành.

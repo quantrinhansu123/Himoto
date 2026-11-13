@@ -64,6 +64,18 @@ async function main(){const checks=[];
   }
   assert.equal(new Set(works).size,4);
   checks.push('Rental, renewal, renewal collection and battery return keep independent durable albums; old events, other actions, actors and branches cannot adopt their images');
+  const shiftModule={exports:{}},shiftSource=fs.readFileSync(path.join(root,'../mobile/src/lib/shift-photo-work.ts'),'utf8'),shiftRows=new Map();
+  new Function('require','module','exports',ts.transpileModule(shiftSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(name=>name==='./photo-batch-store'?{openPhotoBatchStore:async identity=>({list:async()=>shiftRows.get(identity)??[]})}:load(path.resolve(root,'../mobile/src/lib',name)),shiftModule,shiftModule.exports);
+  const shiftIdentity=(stage,category)=>JSON.stringify([scope,`shift:801:${stage}:${category}`]);
+  const categories=load(path.join(root,'../shared/mobile-shift-reports')).SHIFT_PHOTOS;
+  shiftRows.set(shiftIdentity('pgd',categories.at(-1)[0]),[{state:'queued'}]);
+  await assert.rejects(shiftModule.exports.requireShiftPhotosSaved(scope,801,'pgd'),/chưa lưu/);
+  await shiftModule.exports.requireShiftPhotosSaved(scope,801,'audit');
+  shiftRows.set(shiftIdentity('pgd',categories.at(-1)[0]),[{state:'saved'}]);
+  await shiftModule.exports.requireShiftPhotosSaved(scope,801,'pgd');
+  shiftRows.set(shiftIdentity('audit',categories[0][0]),[{state:'queued',attempt:{}}]);
+  await assert.rejects(shiftModule.exports.requireShiftPhotosSaved(scope,801,'audit'),/KTNB/);
+  checks.push('PGD submission and KTNB confirmation check every durable evidence category, even a closed picker; queued/uncertain images block finalization while acknowledged images and the other stage remain independent');
   console.log(JSON.stringify({passed:checks.length,checks,fixtureOnly:true,operationalWrites:0,providerCalls:0},null,2));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

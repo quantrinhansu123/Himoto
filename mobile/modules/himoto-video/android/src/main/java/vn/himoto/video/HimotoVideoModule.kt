@@ -148,6 +148,8 @@ class HimotoVideoModule : Module() {
             handler.postDelayed(this, 500)
           } catch (error: Exception) {
             fail(task, "VIDEO_PROGRESS_FAILED", "Chưa đọc được tiến trình xử lý video. Chọn lại video gốc.", error)
+          } catch (error: LinkageError) {
+            fail(task, "VIDEO_PLATFORM_UNAVAILABLE", "Thiết bị chưa xử lý được video này. Video gốc được giữ nguyên.", error)
           }
         }
       }
@@ -158,6 +160,9 @@ class HimotoVideoModule : Module() {
     } catch (error: Exception) {
       if (job != null) fail(job, "VIDEO_PREPARE_FAILED", error.message ?: "Chưa chuẩn bị được video.", error)
       else promise.reject("VIDEO_PREPARE_FAILED", "Chưa mở được video hoặc bộ nhớ tạm. Video gốc được giữ nguyên.", error)
+    } catch (error: LinkageError) {
+      if (job != null) fail(job, "VIDEO_PLATFORM_UNAVAILABLE", "Thiết bị chưa xử lý được video này. Video gốc được giữ nguyên.", error)
+      else promise.reject("VIDEO_PLATFORM_UNAVAILABLE", "Thiết bị chưa xử lý được video này. Video gốc được giữ nguyên.", error)
     }
   }
 

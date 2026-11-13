@@ -8,6 +8,9 @@ version = '1.0.0'
 
 android {
   namespace 'vn.himoto.video'
+  defaultConfig {
+    consumerProguardFiles 'consumer-rules.pro'
+  }
 }
 
 dependencies {
