@@ -150,12 +150,12 @@ export async function readPaymentContext(client: Database, id: number, options?:
 }
 
 // Caller owns BEGIN/COMMIT. The receipt, income and paid total are atomic.
-export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput, options?: PaymentReadOptions, validation: {allowFutureTime?:boolean;contractSettlement?:boolean} = {}) {
+export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput, options?: PaymentReadOptions, validation: {allowFutureTime?:boolean;contractSettlement?:boolean;vehicleReturn?:boolean} = {}) {
   input = parseContractPayment(input, validation);
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractPaymentError('Hợp đồng hoặc người thực hiện không hợp lệ.');
   const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', deposit=input.purpose==='deposit', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
   const actor=dataAccess.getStore();
-  if(!renewal&&!extra&&!deposit&&!refund&&input.renewal_version===undefined&&actor&&(!canSettleContract(actor)||actor.id!==actorId))throw new ContractPaymentError('Chỉ tài khoản được chỉ định và Quản lý Thuê sở hữu được thanh toán công nợ hợp đồng.',403);
+  if(!renewal&&!extra&&!deposit&&!refund&&input.renewal_version===undefined&&actor&&((!validation.vehicleReturn&&!canSettleContract(actor))||actor.id!==actorId))throw new ContractPaymentError('Chỉ tài khoản được chỉ định và Quản lý Thuê sở hữu được thanh toán công nợ hợp đồng.',403);
   const fingerprint = createHash('sha256').update(JSON.stringify({ id, actorId, amount: input.amount, method: input.method, account_id: input.account_id, paid_at: input.paid_at, note: input.note,
     ...(input.renewal_version !== undefined ? { renewal_version: input.renewal_version } : {}),
     ...(renewal ? { purpose: input.purpose, ...(input.items ? { items: input.items.map(item => [item.item_id, item.return_at, item.amount]) } : { item_id: input.item_id, return_at: input.return_at }) }
