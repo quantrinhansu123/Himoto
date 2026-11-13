@@ -24,6 +24,11 @@ key = 'return:901:1001'
 
 def event():
     case = state['case']
+    if case.startswith('preparation-'):
+        return dict(key=key, kind='rental', label='Thuê xe · Cần kiểm tra hồ sơ', phases=['rental'],
+                    text='', hash='0' * 64, photo_count=0, video_count=0, status='manual', sent_at=None,
+                    can_send=False, unchanged=False, can_resume=False, can_retry_confirmed_absent=False,
+                    preparation_error='Ngày thuê trong hồ sơ hợp đồng chưa hợp lệ.', attachments=[], deliveries=[])
     resume = case in ('legacy-400', 'partial-400', 'summary-only', 'api-error', 'timeout-partial')
     count = 17 if case == 'summary-only' else 0 if case in ('timeout-empty', 'long-gallery') else 10
     status = 'failed' if case in ('partial-400', 'summary-only', 'api-error') else 'unknown'
@@ -44,6 +49,17 @@ def event():
                     can_retract=False, blocked_reason='Lượt gửi chưa hoàn tất.', expires_at=None, retraction_state=None)])
 
 
+def events():
+    items = [event()]
+    if state['case'] == 'preparation-isolated':
+        sent = state.get('resumed', False)
+        items.append(dict(key='renewal:901:12', kind='renewal', label='Gia hạn v12 · 7–9/11', phases=['renewal-12'],
+                          text='Khách gia hạn: QA\nGia hạn: 07/11/2026 18:45 - 09/11/2026 18:45\nPhí gia hạn: 400.000 đ',
+                          hash='a' * 64, photo_count=0, video_count=0, status='sent' if sent else 'manual',
+                          sent_at=None, can_send=not sent, unchanged=sent, attachments=[], deliveries=[], renewal_receipt_ids=[]))
+    return items
+
+
 def mock(route):
     if mock_contract_type_read(route):
         return
@@ -53,6 +69,14 @@ def mock(route):
         if req.method == 'POST':
             body = req.post_data_json
             posts.append(copy.deepcopy(body))
+            if state['case'].startswith('preparation-'):
+                assert state['case'] == 'preparation-isolated'
+                assert body['action'] == 'send' and body['event_key'] == 'renewal:901:12', body
+                assert set(body) == {'action', 'event_key', 'hash', 'request_id'}
+                assert not state.get('resumed'), 'Duplicate send attempted'
+                state['resumed'] = True
+                route.fulfill(json=dict(status='success', data=dict(auto_enabled=False, next_renewal_version=13, events=events())))
+                return
             assert body['action'] == ('retry_confirmed_absent' if state['case'] in ('timeout-empty', 'long-gallery') else 'resume'), body
             assert body['notice_id'] == notice_id and body['event_key'] == key
             assert set(body) == {'action', 'event_key', 'hash', 'notice_id', 'request_id'} | ({'confirmed_absent'} if body['action'] == 'retry_confirmed_absent' else set())
@@ -63,7 +87,7 @@ def mock(route):
                 return
             assert not state.get('resumed'), 'Duplicate resume attempted'
             state['resumed'] = True
-        route.fulfill(json=dict(status='success', data=dict(auto_enabled=False, next_renewal_version=2, events=[event()])))
+        route.fulfill(json=dict(status='success', data=dict(auto_enabled=False, next_renewal_version=13, events=events())))
         return
     if path.startswith('/api/auth/record-photos/'):
         assert req.method == 'GET'
@@ -93,7 +117,7 @@ with sync_playwright() as pw:
         ctx.route('https://api.telegram.org/**', lambda route: (unexpected.append('REAL TELEGRAM'), route.abort()))
         page = ctx.new_page()
         page.on('pageerror', lambda error: errors.append(str(error)))
-        for case in ('legacy-400', 'partial-400', 'summary-only', 'timeout-partial', 'timeout-empty', 'long-gallery', 'readonly', 'api-error'):
+        for case in ('legacy-400', 'partial-400', 'summary-only', 'timeout-partial', 'timeout-empty', 'long-gallery', 'readonly', 'api-error', 'preparation-error', 'preparation-isolated'):
             state.clear()
             state['case'] = case
             before = len(posts)
@@ -104,6 +128,30 @@ with sync_playwright() as pw:
             dialog = page.get_by_role('dialog', name='Gửi Telegram · QA-RECOVERY', exact=True)
             expect(dialog).to_be_visible()
             expect(dialog.get_by_text('Lần gửi trước dùng mã hợp đồng', exact=False)).to_have_count(0)
+            if case.startswith('preparation-'):
+                expect(dialog.get_by_role('alert').filter(has_text='Chưa chuẩn bị được thông báo')).to_be_visible()
+                expect(dialog).to_contain_text('Ngày thuê trong hồ sơ hợp đồng chưa hợp lệ.')
+                expect(dialog.get_by_role('button', name=re.compile('^Gửi (toàn bộ|lại|tiếp)'))).to_have_count(0)
+                expect(dialog).not_to_contain_text('Tài khoản chưa có quyền gửi giao dịch này.')
+                dialog.get_by_role('button', name='Kiểm tra trạng thái Telegram', exact=True).click()
+                expect(dialog.get_by_role('alert').filter(has_text='Chưa chuẩn bị được thông báo')).to_be_visible()
+                expect(dialog.get_by_role('button', name='Kiểm tra trạng thái Telegram', exact=True)).to_be_enabled()
+                assert len(posts) == before
+                if case == 'preparation-isolated':
+                    dialog.get_by_label('Giao dịch cần gửi Telegram', exact=True).select_option('renewal:901:12')
+                    expect(dialog).to_contain_text('07/11/2026 18:45 - 09/11/2026 18:45')
+                    expect(dialog.get_by_role('alert').filter(has_text='Chưa chuẩn bị được thông báo')).to_have_count(0)
+                    send = dialog.get_by_role('button', name=re.compile('^Gửi toàn bộ Telegram'))
+                    expect(send).to_be_enabled()
+                    send.click()
+                    expect(dialog.get_by_role('button', name=re.compile('^Đã gửi Telegram'))).to_be_disabled()
+                    assert len(posts) == before + 1
+                assert not page.evaluate('document.documentElement.scrollWidth > innerWidth')
+                page.screenshot(path=str(out / f'{engine}-{case}.png'))
+                dialog.get_by_role('button', name='Đóng', exact=True).click()
+                checks.append(dict(browser=engine, case=case, passed=True))
+                print(json.dumps(checks[-1], ensure_ascii=False), flush=True)
+                continue
             can_resume = case in ('legacy-400', 'partial-400', 'summary-only', 'api-error', 'timeout-partial')
             resume = dialog.get_by_role('button', name='Gửi tiếp nội dung' if case == 'summary-only' else 'Gửi tiếp phần còn thiếu', exact=True)
             if can_resume:

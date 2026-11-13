@@ -8,13 +8,15 @@ const row=(id,name,value,method=cash,extra={})=>({id,name,value,method,payment_m
 const fixture={store_id:23,code:'QA-SPLIT',contract_number:'QA-SPLIT',order_status:'renting',customer:'Khách QA',phone:'',store:'CS QA',actor:'Nhân viên QA',contract_staff:'Nhân viên QA',ownership:false,total:'140000',total_rental_fees:140000,first_deposit_amount:500000,additional_deposit_amount:null,rent_at:'2026-10-28T00:00:00Z',return_at:'2026-10-29T00:00:00Z',vehicles:'QA-1',vehicle_names:'Xe QA',return_covers_order:false,
   draft_payload:{management_composer:{finalized:{contract_number:'QA-SPLIT',transaction_ids:[101,102,103,104]},return_settlements:[{item_ids:[1],refund_transaction_id:106,rental_refund_transaction_id:108,transaction_ids:[110,111]}],return_adjustments:[{item_id:1,actual_return_at:'2026-10-28T10:00:00Z',late_fee:7,repair_fee:13,fee:20}]}}};
 const transactions=[row(101,'order:rental_fees',10000),row(102,'order:rental_fees',130000,personal),row(103,'order:deposit',200000),row(104,'order:additional_deposit',300000,company),
-  row(105,'order:payment',1200000,personal,{renewal_payload:{version:2}}),row(106,'order:deposit_refund',40000,cash,{type:'out'}),row(107,'order:deposit_refund',60000,personal,{type:'out'}),
+  row(105,'order:payment',1200000,personal,{renewal_payload:{version:2,before_return_at:'2026-10-29T00:00:00Z',return_at:'2026-11-29T00:00:00Z'}}),row(106,'order:deposit_refund',40000,cash,{type:'out'}),row(107,'order:deposit_refund',60000,personal,{type:'out'}),
   row(108,'order:rental_refund',20000,company,{type:'out',order_item_id:1}),row(110,'order:return_late',7),row(111,'order:payment',13,company),row(112,'order:battery_swap',100000),
   row(113,'order:payment',99000000,company,{status:'pending',renewal_payload:{version:2}}),row(114,'order:payment',99000000,company,{status:'cancelled',renewal_payload:{version:2}}),
-  row(115,'order:payment',300000,company,{renewal_payload:{version:3}})];
+  row(115,'order:payment',300000,company,{renewal_payload:{version:3}}),
+  row(116,'order:payment',99000000,company,{renewal_payload:{version:2,before_return_at:'2026-10-28T00:00:00Z',return_at:'2026-11-28T00:00:00Z'}})];
 let notices=[],queryLog=[];
 function db(){return{query:async(sql,values)=>{
-  queryLog.push(sql);assert.match(sql,/^SELECT/,'Preview and duplicate-send checks must never write');
+  queryLog.push(sql);assert.match(sql,/^(?:SELECT|WITH)\b/,'Preview and duplicate-send checks must read');
+  assert.doesNotMatch(sql.replace(/\bFOR\s+UPDATE\b/gi,''),/\b(?:INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|CALL)\b/i,'Preview and duplicate-send checks must never write');
   if(sql.includes('FROM himoto.management_contract_battery_swaps'))return{rows:[{id:1,vehicle_id:1,transaction_id:112,battery_percent:10,fee:100000,license:'QA-1',vehicle_name:'Xe QA'}]};
   if(sql.includes('AS return_covers_order'))return{rows:[structuredClone(fixture)]};
   if(sql.startsWith('SELECT o.store_id,o.order_status'))return{rows:[structuredClone(fixture)]};

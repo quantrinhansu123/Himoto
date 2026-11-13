@@ -6,6 +6,10 @@ function clock(value?:string|null) {
 }
 
 export function ContractTelegramProgress({event}:{event:ContractTelegramEvent}) {
+  if(event.preparation_error)return <div className="mg-telegram-progress mg-telegram-progress-stopped" role="alert">
+    <strong>Chưa chuẩn bị được thông báo</strong><p>{event.preparation_error}</p>
+    <p>Kiểm tra hồ sơ, rồi bấm Kiểm tra trạng thái Telegram để tải lại. Các giao dịch hợp lệ khác vẫn có thể gửi.</p>
+  </div>;
   const total=event.delivery_attachment_count||event.photo_count+(event.video_count||0);
   const sent=event.status==='sent',stopped=event.status==='unknown'||event.status==='failed';
   const active=event.status==='pending'||event.status==='sending';

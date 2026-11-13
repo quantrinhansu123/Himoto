@@ -10,6 +10,7 @@ import { OWNERSHIP_ORDER_SQL,contractTelegramDestination } from './contract-tele
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { queueTelegramRetraction,retractionEligibility,retractionErrorText } from './telegram-retractions';
 import { telegramErrorDescription } from './telegram-delivery';
+import { requireTelegramTimestamp, telegramTimestamp, TelegramPreparationError } from './telegram-time';
 
 type Database=Pick<PoolClient,'query'>;
 interface Event {key:string;kind:ContractEventType;phases:string[];payload?:NotificationPayload;renewal?:RenewalNotice}
@@ -29,6 +30,11 @@ function canResumeNotice(notice:ResumableNotice) {
 }
 export class ContractTelegramError extends Error {constructor(message:string,public status=400){super(message);}}
 export { canSendContractEvent };
+const dateLabel=(value:string|null|undefined)=>value?new Date(requireTelegramTimestamp(value)).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Chưa đối chiếu';
+function historyText(notice:{event_type:ContractEventType;payload:NotificationPayload;sent_at?:unknown}) {
+  try{return contractNotificationText(notice.event_type,notice.payload,telegramTimestamp(notice.sent_at));}
+  catch(error){if(!(error instanceof TelegramPreparationError))throw error;return 'Nội dung lịch sử có ngày giờ hoặc số tiền cần kiểm tra. Các mã tin đã gửi vẫn được giữ nguyên.';}
+}
 export async function readContractTelegram(db:Database,id:number,actorId:number,user:PermissionAccount,eventKey?:string) {
   const o=(await db.query(`SELECT o.store_id,o.order_status,o.contract_number,o.draft_payload,s.store_name,${OWNERSHIP_ORDER_SQL} AS ownership
     FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`,[id])).rows[0];
@@ -75,8 +81,9 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
   for(const event of events) {
     if(!event.phases.length)event.phases=event.kind==='return'?event.key.split(':').at(-1)!.split('-').map(n=>`return-${n}`):[event.kind==='handover'?'handover':'rental'];
     if(eventKey&&event.key!==eventKey)continue;
-    const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal);void _store;
     const related=notices.filter(n=>(n.root_event_key||n.event_key)===event.key);
+    try {
+    const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal);void _store;
     const delivered=related.find(n=>n.status==='sent'&&n.retraction?.state!=='done');
     // Once a bad delivery is retracted, rebuild from the corrected contract. A later
     // successful resend becomes the baseline so it stays locked against duplication.
@@ -109,10 +116,11 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     const progress=Array.isArray(latest?.delivery_review)?latest.delivery_review.at(-1):undefined;
     const matchingReceipts=event.kind==='renewal'?renewalReceipts.filter(row=>payload.renewal?.transaction_id!==undefined?Number(row.transaction_id)===payload.renewal.transaction_id:Number(row.renewal_payload.version)===Number(payload.renewal?.version)&&sameRenewalPeriod(row.renewal_payload,payload.renewal||{})):[];
     const cancelledReceipts=matchingReceipts.length>0&&matchingReceipts.every(row=>row.status==='cancelled');
-    result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`+(event.kind==='renewal'&&payload.renewal?` · ${new Date(payload.renewal.before_return_at||payload.renewal.return_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} – ${new Date(payload.renewal.return_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · ${payload.renewal.amount.toLocaleString('vi-VN')} đ`:'')+(cancelledReceipts?' · Phiếu thu đã hủy':''),phases:event.phases,
+    const text=contractNotificationText(event.kind,payload,telegramTimestamp(latest?.sent_at));
+    result.events.push({key:event.key,kind:event.kind,label:CONTRACT_EVENT_LABELS[event.kind]+(payload.renewal?.version?` v${payload.renewal.version}`:'')+` · ${payload.renewal?.license||payload.vehicles||payload.code}`+(event.kind==='renewal'&&payload.renewal?` · ${dateLabel(payload.renewal.before_return_at||payload.renewal.return_at)} – ${dateLabel(payload.renewal.return_at)} · ${payload.renewal.amount.toLocaleString('vi-VN')} đ`:'')+(cancelledReceipts?' · Phiếu thu đã hủy':''),phases:event.phases,
       destination_label:contractTelegramDestination(event.kind,o.ownership===true,o.store_name),
       ...(event.kind==='renewal'?{renewal_receipt_ids:matchingReceipts.map(row=>Number(row.transaction_id)),renewal_receipts_cancelled:cancelledReceipts}:{}),
-      text:contractNotificationText(event.kind,payload,latest?.sent_at?new Date(latest.sent_at).toISOString():undefined),hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.retraction?.state==='done'?'retracted':latest?.retraction?.state==='failed'?'retraction_failed':latest?.retraction?'retracting':latest?.status||null,sent_at:latest?.sent_at?new Date(latest.sent_at).toISOString():null,
+      text,hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.retraction?.state==='done'?'retracted':latest?.retraction?.state==='failed'?'retraction_failed':latest?.retraction?'retracting':latest?.status||null,sent_at:telegramTimestamp(latest?.sent_at),
       attachments:payload.photos.map(photo=>({slot:photo.slot,mime_type:photo.mime_type,label:contractPhotoLabel(photo.slot)})),
       can_send:!['draft','cancelled'].includes(o.order_status)&&!cancelledReceipts&&canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
       delivery_contract_code:latest?.payload?.code,
@@ -121,10 +129,23 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
       can_resume:!cancelledReceipts&&canSendContractEvent(user,event.kind)&&Boolean(latest&&canResumeNotice(latest)),
       delivery_attachment_count:latest?.payload?.photos?.length||0,
       delivery_error_description:telegramErrorDescription(failure?.description),
-      deliveries:related.filter(n=>n.message_ids?.length).map(n=>({id:n.id,sent_at:n.sent_at?new Date(n.sent_at).toISOString():null,message_count:n.message_ids.length,text:contractNotificationText(n.event_type,n.payload,n.sent_at?new Date(n.sent_at).toISOString():null),
+      deliveries:related.filter(n=>n.message_ids?.length).map(n=>({id:n.id,sent_at:telegramTimestamp(n.sent_at),message_count:n.message_ids.length,text:historyText(n),
         ...retractionEligibility(n,user),retraction_state:n.retraction?.state||null,retraction_reason:n.retraction?.reason,retracted_at:n.retraction?.state==='done'?n.retraction.finished_at:undefined,
         ...(n.retraction?.state==='failed'?{blocked_reason:retractionErrorText(n.retraction.error)}:{})})),
       can_retry_confirmed_absent:!cancelledReceipts&&canSendContractEvent(user,event.kind)&&latest?.status==='unknown'&&!latest?.message_ids?.length});
+    } catch(error) {
+      if(!(error instanceof TelegramPreparationError))throw error;
+      payloads.delete(event.key);
+      const latest=related[0];
+      result.events.push({key:event.key,kind:event.kind,label:`${CONTRACT_EVENT_LABELS[event.kind]}${event.renewal?.version?` v${event.renewal.version}`:''} · ${o.contract_number||`#${id}`} · Cần kiểm tra hồ sơ`,
+        phases:event.phases,text:'',hash:'0'.repeat(64),photo_count:0,video_count:0,status:latest?.status||null,sent_at:telegramTimestamp(latest?.sent_at),
+        can_send:false,unchanged:false,can_resume:false,can_retry_confirmed_absent:false,preparation_error:error.message,
+        notice_id:latest?.id,delivery_message_count:latest?.message_ids?.length||0,delivery_attachment_count:latest?.payload?.photos?.length||0,
+        destination_label:contractTelegramDestination(event.kind,o.ownership===true,o.store_name),attachments:[],
+        deliveries:related.filter(n=>n.message_ids?.length).map(n=>({id:n.id,sent_at:telegramTimestamp(n.sent_at),message_count:n.message_ids.length,text:historyText(n),
+          ...retractionEligibility(n,user),retraction_state:n.retraction?.state||null,retraction_reason:n.retraction?.reason,
+          retracted_at:n.retraction?.state==='done'?n.retraction.finished_at:undefined}))});
+    }
   }
   result.events.sort((a,b)=>Number(Boolean(payloads.get(b.key)?.contract_edit))-Number(Boolean(payloads.get(a.key)?.contract_edit)));
   return {state:result,payloads,store_id:Number(o.store_id)};
@@ -157,6 +178,7 @@ export async function saveContractTelegram(db:Database,id:number,actorId:number,
   const event=read.state.events.find(e=>e.key===body.event_key);
   if(!event)throw new ContractTelegramError('Không tìm thấy giao dịch đã hoàn tất.',404);
   if(!canSendContractEvent(user,event.kind))throw new ContractTelegramError('Tài khoản chưa được phép gửi giao dịch này.',403);
+  if(event.preparation_error)throw new ContractTelegramError(event.preparation_error,409);
   if(event.renewal_receipts_cancelled)throw new ContractTelegramError('Phiếu thu của kỳ này đã hủy. Chọn kỳ gia hạn có phiếu thu đang có hiệu lực.',409);
   if(event.hash!==body.hash)throw new ContractTelegramError('Nội dung hoặc ảnh đã thay đổi. Bấm Làm mới để kiểm tra trước khi gửi.',409);
   if(resume){

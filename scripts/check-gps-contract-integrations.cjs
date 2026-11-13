@@ -126,6 +126,8 @@ async function main(){
     const token='123456789:qa-only-bot-token-123456789';await c.query(`UPDATE ${schema}.management_telegram_settings SET bot_cipher=$1`,[crypto.sealIntegrationSecret({token})]);await c.query(`INSERT INTO ${schema}.management_store_telegram(store_id,chat_id,enabled) VALUES(23,'-100000000001',true),(31,'-100000000002',true)`);
     if(process.argv.includes('--vehicle-swap-only')) {
       checks.push(...await require('./lib/check-vehicle-swap-telegram.cjs')(db,c,schema,notices));
+    } else if(process.argv.includes('--telegram-preparation-only')) {
+      checks.push(...await require('./lib/check-telegram-preparation.cjs')(db,c,schema,notices));
     } else if(process.argv.includes('--telegram-media-first-only')) {
       checks.push(...await require('./lib/check-telegram-media-first.cjs')(db,c,schema,notices));
     } else if(process.argv.includes('--telegram-recovery-only')) {

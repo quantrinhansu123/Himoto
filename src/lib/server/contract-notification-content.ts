@@ -7,6 +7,7 @@ import { contractVehicleLabelSource,contractVehicleReadSource } from './contract
 import { OWNERSHIP_ORDER_SQL } from './contract-telegram-routing';
 import { depositLateral,rentalPaidSql } from './contract-deposits';
 import { pendingReturnRefund } from '@/lib/management/return-refunds';
+import { requireTelegramTimestamp, telegramTimestamp, TelegramPreparationError } from './telegram-time';
 
 export interface Attachment {slot:string;mime_type:string;bytes:string|null;cloudinary_public_id:string|null;cloudinary_cloud_name:string|null;cloudinary_version:number|null;object_bucket?:string|null;object_key?:string|null;object_etag?:string|null}
 export interface RenewalNotice {version?:number;item_id?:number;created_at?:string;amount:number;before_return_at:string|null;return_at:string;license:string;vehicle_name:string;transaction_id?:number;outside_amount?:number;outside_name?:string;items?:RenewalNotice[]}
@@ -34,8 +35,8 @@ export interface NotificationPayload {
 }
 type Database=Pick<PoolClient,'query'>;
 const money=(value:unknown)=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'Chưa đối chiếu':Number(value).toLocaleString('vi-VN');
-const day=(value:string|null)=>value?new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
-const renewalClock=(value:string|null|undefined)=>value?`${day(value)} ${new Date(value).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}`:'Chưa đối chiếu';
+const day=(value:string|null)=>value?new Date(requireTelegramTimestamp(value)).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'}):'Chưa đối chiếu';
+const renewalClock=(value:string|null|undefined)=>value?`${day(value)} ${new Date(requireTelegramTimestamp(value)).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}`:'Chưa đối chiếu';
 /** Rental coverage and receipt creation are separate clocks, including late collections. */
 /** Telegram gia hạn: từ hẹn trả cũ → hẹn trả mới (khớp cách cộng ngày trên form gia hạn). */
 export function renewalPeriodStart(item:Pick<RenewalNotice,'created_at'|'before_return_at'>&{occurred_at?:string}) {
@@ -47,31 +48,33 @@ export function sameRenewalPeriod(a:Partial<RenewalNotice>,b:Partial<RenewalNoti
   let bounds=0;
   for(const key of ['before_return_at','return_at'] as const){
     const x=a[key],y=b[key];
-    if(x&&!Number.isFinite(Date.parse(x))||y&&!Number.isFinite(Date.parse(y)))return false;
-    if(x&&y){if(Date.parse(x)!==Date.parse(y))return false;bounds++;}
+    const from=telegramTimestamp(x),to=telegramTimestamp(y);
+    if(x&&!from||y&&!to)return false;
+    if(x&&y){if(from!==to)return false;bounds++;}
   }
   // An edit can retain created_at while changing coverage. Creation time alone
   // must never attach an older receipt to a different period or an empty payload.
-  if(a.created_at&&b.created_at)return bounds>0&&Number.isFinite(Date.parse(a.created_at))&&Date.parse(a.created_at)===Date.parse(b.created_at);
+  if(a.created_at&&b.created_at)return bounds>0&&telegramTimestamp(a.created_at)!==null&&telegramTimestamp(a.created_at)===telegramTimestamp(b.created_at);
   return bounds===2;
 }
 export function renewalDurationText(item:RenewalNotice) {
-  const minutes=Math.ceil((Date.parse(item.return_at)-Date.parse(renewalPeriodStart(item)||''))/60_000);
+  const start=renewalPeriodStart(item);
+  const minutes=start&&item.return_at?Math.ceil((Date.parse(requireTelegramTimestamp(item.return_at))-Date.parse(requireTelegramTimestamp(start)))/60_000):NaN;
   if(!Number.isFinite(minutes)||minutes<=0)return '';
   return [Math.floor(minutes/1440)?`${Math.floor(minutes/1440)} ngày`:'',Math.floor(minutes%1440/60)?`${Math.floor(minutes%1440/60)} giờ`:'',minutes%60?`${minutes%60} phút`:''].filter(Boolean).join(' ');
 }
-const telegramClock=(at:string)=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
+const telegramClock=(at:string)=>new Date(requireTelegramTimestamp(at)).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
 /** Sum verified receipts, never infer a split from a draft label or contract
  * total. Historical mixed vouchers keep their explicitly unknown split. */
 export function notificationPaymentAmounts(rows:{method:string;value:unknown;payment_method?:unknown}[]):PaymentAmount[] {
   const totals=new Map<string,number>();
   for(const row of rows){
     const amount=row.value==null||String(row.value).trim()===''?NaN:Number(row.value);
-    if(!Number.isSafeInteger(amount)||amount<0)throw Error('Số tiền phiếu không hợp lệ để tách hình thức thanh toán.');
+    if(!Number.isSafeInteger(amount)||amount<0)throw new TelegramPreparationError('Số tiền phiếu không hợp lệ để tách hình thức thanh toán.');
     if(!amount)continue;
     const method=Number(row.payment_method)===3?'Tiền mặt + CK (chưa tách số tiền)':row.method||'Chưa xác định';
     const total=(totals.get(method)||0)+amount;
-    if(!Number.isSafeInteger(total))throw Error('Tổng tiền theo hình thức thanh toán vượt giới hạn.');
+    if(!Number.isSafeInteger(total))throw new TelegramPreparationError('Tổng tiền theo hình thức thanh toán vượt giới hạn.');
     totals.set(method,total);
   }
   const priority=['Tiền mặt','CK TK cá nhân','CK TK công ty'];
@@ -89,6 +92,8 @@ function withTelegramFooter(body:string,actor:string,at:string,sentAt?:string|nu
   return [...rows,sender,time].join('\n').slice(0,4000);
 }
 export function contractNotificationText(kind:ContractEventType|'vehicle_transfer'|'vehicle_receive'|'battery_return'|'battery_renewal'|'battery_rental',p:NotificationPayload,sentAt?:string|null) {
+  if(!p||typeof p.code!=='string'||!Array.isArray(p.photos)||p.renewal?.items&&!Array.isArray(p.renewal.items))throw new TelegramPreparationError('Hồ sơ thông báo chưa hợp lệ. Kiểm tra giao dịch trước khi gửi Telegram.');
+  if(p.renewal&&(!Number.isSafeInteger(p.renewal.amount)||p.renewal.amount<0||p.renewal.items?.some(item=>!item||!Number.isSafeInteger(item.amount)||item.amount<0)))throw new TelegramPreparationError('Số tiền kỳ gia hạn chưa hợp lệ. Kiểm tra phiếu thu trước khi gửi Telegram.');
   if(kind==='battery_rental'||kind==='battery_renewal')return withTelegramFooter([
     `${kind==='battery_rental'?'Khách thuê pin / sạc':'Khách gia hạn pin / sạc'}: ${p.customer}`,`Pin / sạc: ${p.vehicle_names||'—'}`,
     `Mã HĐ: ${p.code}`,`Cơ sở: ${p.store}`,...(p.vehicles?[`Biển số: ${p.vehicles}`]:[]),
@@ -147,7 +152,7 @@ export function contractNotificationText(kind:ContractEventType|'vehicle_transfe
     :[...amountLine(kind==='reservation'?'Đã thu cọc giữ xe':'Đã thu tiền thuê / phí',amounts?.rental),...amountLine('Đã thu tiền cọc',amounts?.deposit)];
   lines.push(...paymentLines);
   if(p.contract_edit)lines.unshift(`SỬA LẠI HỢP ĐỒNG: ${p.contract_edit.previous_code}${p.contract_edit.previous_code!==p.contract_edit.code?` → ${p.contract_edit.code}`:''}`,`Bản sửa lưu lúc: ${telegramClock(p.contract_edit.at)}`);
-  if(kind==='return')return withTelegramFooter([...lines,...(p.return_details?[`Giờ trả: ${p.return_details.returned_at.map(at=>new Date(at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})).join(' · ')}`,
+  if(kind==='return')return withTelegramFooter([...lines,...(p.return_details?[`Giờ trả: ${p.return_details.returned_at.map(at=>telegramClock(at)).join(' · ')}`,
     ...(p.refund_recipient&&[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].some(Boolean)?[`Nhận hoàn cọc: ${[p.refund_recipient.bank,p.refund_recipient.account,p.refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
     ...(p.return_details.rental_refund_recipient?[`Nhận hoàn tiền thuê: ${[p.return_details.rental_refund_recipient.bank,p.return_details.rental_refund_recipient.account,p.return_details.rental_refund_recipient.name].filter(Boolean).join(' · ')}`]:[]),
     ...(p.return_details.note?[`Ghi chú: ${p.return_details.note}`]:[])]:[]),`HĐ: ${p.code}`].join('\n'),p.actor,p.at,sentAt);
@@ -249,7 +254,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     if(!changed)throw Error('Không tìm thấy lượt đổi xe của hợp đồng.');
     // actor = tài khoản đang gửi Telegram (JOIN users $2); người đổi xe vẫn hiện qua Người thực hiện nếu khác.
     return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor||changed.actor||'',
-      vehicles:changed.to_license||'',vehicle_names:changed.to_name||'',total:o.total,at:new Date(changed.created_at).toISOString(),
+      vehicles:changed.to_license||'',vehicle_names:changed.to_name||'',total:o.total,at:requireTelegramTimestamp(changed.created_at,'Thời gian đổi xe'),
       photos:await notificationPhotos(db,orderId,phases),vehicle_swap:{from_license:changed.from_license||'',from_name:changed.from_name||'',to_license:changed.to_license||'',to_name:changed.to_name||''}};
   }
   const tx=(await db.query(`SELECT t.id,t.name,t.type,t.value,t.created_at,t.order_item_id,t.payment_method,r.renewal_payload,
@@ -261,7 +266,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const draft=o.draft_payload?.management_composer?.draft;
   const composer=o.draft_payload?.management_composer;
   const edits=[...(Array.isArray(composer?.contract_edits)?composer.contract_edits:[]),...(Array.isArray(composer?.full_contract_edits)?composer.full_contract_edits:[]),...(Array.isArray(composer?.rental_terms_history)?composer.rental_terms_history:[])];
-  const lastEdit=edits.filter(edit=>Number.isFinite(Date.parse(edit.at))).sort((a,b)=>Date.parse(b.at)-Date.parse(a.at))[0];
+  const lastEdit=edits.filter(edit=>telegramTimestamp(edit.at)).sort((a,b)=>Date.parse(telegramTimestamp(b.at)!)-Date.parse(telegramTimestamp(a.at)!))[0];
   const previousCode=[...(Array.isArray(composer?.contract_edits)?composer.contract_edits:[])].reverse().find(edit=>edit.before?.contract_number)?.before.contract_number||o.code;
   const renewalNote=kind==='renewal'&&o.ownership===true&&renewal
     ? String((renewal as RenewalNotice & {note?:string}).note ||
@@ -286,7 +291,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     renewal.transaction_id!==undefined?Number(t.id)===Number(renewal.transaction_id)
       :renewal.version!==undefined?Number(t.renewal_payload?.version)===Number(renewal.version)&&sameRenewalPeriod(t.renewal_payload||{},renewal)
         :t.renewal_payload&&t.renewal_payload.version===undefined&&
-          new Date(t.renewal_payload.return_at).getTime()===new Date(renewal.return_at).getTime()&&t.renewal_payload.license===renewal.license)):[];
+          telegramTimestamp(t.renewal_payload.return_at)!==null&&telegramTimestamp(t.renewal_payload.return_at)===telegramTimestamp(renewal.return_at)&&t.renewal_payload.license===renewal.license)):[];
   // Rental/handover: cọc + thuê. Reservation (cọc giữ xe) records advance as order:rental_fees, not order:deposit.
   const selected=kind==='battery_swap'?tx.filter(t=>Number(t.id)===Number(swap?.transaction_id)):kind==='return'?[...eventRefunds,...eventRentalRefunds]:kind==='renewal'?renewalTx
     :kind==='reservation'?rental:[...depositTx,...rental];
@@ -304,8 +309,12 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const fee=o.total_rental_fees==null?null:Number(o.total_rental_fees);
   const deposit=o.first_deposit_amount==null&&o.additional_deposit_amount==null?null:Number(o.first_deposit_amount||0)+Number(o.additional_deposit_amount||0);
   const rentalFee=fee??(o.total==null?null:Number(o.total));
-  const start=draft?.start_date?`${draft.start_date}:00+07:00`:o.rent_at;
-  const end=draft?.end_date?`${draft.end_date}:00+07:00`:o.return_at;
+  const start=telegramTimestamp(draft?.start_date||o.rent_at);
+  const end=telegramTimestamp(draft?.end_date||o.return_at);
+  if(['rental','reservation','handover'].includes(kind)) {
+    if(draft?.start_date&&!start)requireTelegramTimestamp(draft.start_date,'Ngày thuê trong hồ sơ hợp đồng');
+    if(draft?.end_date&&!end)requireTelegramTimestamp(draft.end_date,'Ngày trả trong hồ sơ hợp đồng');
+  }
   const duration=start&&end?Math.ceil((new Date(end).getTime()-new Date(start).getTime())/86400000):NaN;
   const effectiveDeposit=kind==='return'?depositTx.reduce((sum,t)=>sum+Number(t.value),0):deposit;
   const heldDeposit=Math.max(Number(effectiveDeposit||0)-refunds.reduce((sum,t)=>sum+Number(t.value),0),0);
@@ -322,7 +331,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
     payment_amounts:paymentAmounts,
     ...(['rental','reservation','handover'].includes(kind)&&lastEdit?{contract_edit:{at:String(lastEdit.at),previous_code:String(previousCode),code:String(o.code)}}:{}),
-    ...(!['return','renewal','battery_swap'].includes(kind)&&composer?.rental_terms_history?.length?{rental_correction:{request_id:composer.rental_terms_history.at(-1).request_id,start_at:new Date(start).toISOString(),end_at:new Date(end).toISOString()}}:{}),
+    ...(!['return','renewal','battery_swap'].includes(kind)&&composer?.rental_terms_history?.length?{rental_correction:{request_id:composer.rental_terms_history.at(-1).request_id,start_at:requireTelegramTimestamp(start,'Ngày thuê trong hồ sơ hợp đồng'),end_at:requireTelegramTimestamp(end,'Ngày trả trong hồ sơ hợp đồng')}}:{}),
     ...(renewalNote?{ownership_renewal_note:renewalNote}:{}),
     ...(corrected?{return_details:{note:String(settlement?.note||''),returned_at:[...new Set<string>(adjustments.map((a:{actual_return_at:string})=>a.actual_return_at))].sort(),...(eventRentalRefunds.length&&settlement?.rental_refund_recipient?.account?{rental_refund_recipient:settlement.rental_refund_recipient}:{})}}:{}),
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,

@@ -9,6 +9,7 @@ export const NOTICE_STATUS_LABELS:Record<string,string> = {manual:'Chờ bấm g
 export interface ContractTelegramEvent {
   key:string;kind:ContractEventType;label:string;phases:string[];text:string;hash:string;photo_count:number;video_count?:number;
   status:string|null;sent_at:string|null;can_send:boolean;unchanged:boolean;
+  preparation_error?:string;
   notice_id?:string;delivery_error?:string|null;can_retry_confirmed_absent?:boolean;delivery_message_count?:number;
   can_resume?:boolean;delivery_attachment_count?:number;delivery_error_description?:string;
   delivery_contract_code?:string;

@@ -1,2 +1,2 @@
 HIMOTO deployment check
-marker: telegram-photo-upload-v2-20261113
+marker: telegram-renewal-time-v3-20261113

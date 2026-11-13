@@ -9,6 +9,7 @@ import { copyContractCustomerPhotos } from './contract-customer-photos';
 import { CONTRACT_TELEGRAM_ROUTE_SQL } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { dispatchTelegramRetractions,telegramBotIdentity } from './telegram-retractions';
+import { TelegramPreparationError } from './telegram-time';
 
 import type { ContractEventType } from '@/lib/management/contract-telegram';
 import { contractNotificationText, hydrateNotificationPhotos, notificationHash, notificationPayload, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
@@ -152,16 +153,16 @@ export async function dispatchContractNotifications(send:typeof fetch=fetch,limi
         queue_ms:Math.max(deliveryStarted-new Date(row.created_at).getTime(),0),delivery_ms:Date.now()-deliveryStarted,source_bytes:sourceBytes,upload_bytes:uploadedBytes};
       await database.query("UPDATE himoto.management_contract_notifications SET status='sent',message_ids=$2,sent_at=now(),error_code=NULL,delivery_review=delivery_review||$3::jsonb WHERE id=$1",[row.id,JSON.stringify(ids),JSON.stringify([metrics])]);sent++;
     }catch(error){
-      const known=error instanceof TelegramDeliveryError&&error.definiteFailure;
+      const known=error instanceof TelegramDeliveryError&&error.definiteFailure||error instanceof TelegramPreparationError;
       // A confirmed flood rejection sent nothing. Honour Telegram's retry_after
       // through the existing topic lease; never replay a timed-out POST.
       const rateRetries=Array.isArray(row.delivery_review)?row.delivery_review.filter((review:{outcome?:string;media_offset?:number})=>review.outcome==='delivery_retry_scheduled'&&review.media_offset===ids.length).length:0;
-      if(known&&error.message==='TELEGRAM_429'&&rateRetries<3){retrySeconds=error.retryAfterSeconds||30;contacted=false;}
+      if(error instanceof TelegramDeliveryError&&error.definiteFailure&&error.message==='TELEGRAM_429'&&rateRetries<3){retrySeconds=error.retryAfterSeconds||30;contacted=false;}
       continued=error instanceof TelegramContinuation&&!contacted||retrySeconds>0;
-      const code=continued?'DELIVERY_CONTINUE':error instanceof TelegramDeliveryError?error.message:contacted?'SEND_UNCERTAIN':'MEDIA_FETCH_FAILED';
+      const code=continued?'DELIVERY_CONTINUE':error instanceof TelegramPreparationError?error.code:error instanceof TelegramDeliveryError?error.message:contacted?'SEND_UNCERTAIN':'MEDIA_FETCH_FAILED';
       const review=retrySeconds?[{outcome:'delivery_retry_scheduled',at:new Date().toISOString(),error_code:'TELEGRAM_429',retry_after:retrySeconds,
         retry_at:new Date(Date.now()+retrySeconds*1000).toISOString(),media_offset:ids.length}]:continued?[]:[{outcome:'delivery_failed',at:new Date().toISOString(),error_code:code,
-        ...(error instanceof TelegramDeliveryError?{description:error.description,method:error.method,duration_ms:error.durationMs}:{}),media_offset:Math.min(ids.length,payload.photos?.length||0)}];
+        ...(error instanceof TelegramDeliveryError?{description:error.description,method:error.method,duration_ms:error.durationMs}:error instanceof TelegramPreparationError?{description:error.message}:{}),media_offset:Math.min(ids.length,payload.photos?.length||0)}];
       await database.query('UPDATE himoto.management_contract_notifications SET status=$2,message_ids=$3,error_code=$4,delivery_review=delivery_review||$5::jsonb WHERE id=$1',
         [row.id,continued?'pending':known?'failed':code==='SEND_UNCERTAIN'||contacted||ids.length?'unknown':'failed',JSON.stringify(ids),code,JSON.stringify(review)]);
     }finally{

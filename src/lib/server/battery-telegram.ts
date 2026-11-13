@@ -6,6 +6,7 @@ import type { BatteryTelegramState } from '@/lib/management/battery-telegram';
 import { contractNotificationText, notificationPaymentAmounts, type NotificationPayload } from './contract-notification-content';
 import { OWNERSHIP_TELEGRAM_DESTINATIONS } from '@/lib/management/telegram-destinations';
 import { readBatteryWorkflow } from './battery-workflow';
+import { requireTelegramTimestamp } from './telegram-time';
 
 type Database = Pick<PoolClient, 'query'>;
 type User = PermissionAccount & { store_id?: number | null; scope_all?: boolean; name?: string };
@@ -52,7 +53,7 @@ export async function readBatteryTelegram(db: Database, batteryId: number, reque
   const payload: NotificationPayload = {
     code: contract.code, customer: contract.customer_name || '—', phone: contract.customer_phone || '', store: contract.store_name || store?.store_name || '',
     actor, vehicles: contract.vehicle_license || '', vehicle_names: contract.battery_name || 'Pin / sạc', total: String(context.renewal_remaining || 0),
-    at: new Date(at).toISOString(), photos, deposit: contract.deposit_amount ?? null,
+    at: requireTelegramTimestamp(at), photos, deposit: contract.deposit_amount ?? null,
   };
   if (kind === 'battery_return') {
     payload.return_details = { note: entry!.note || '', returned_at: [time(entry!.returned_at || at)] };
