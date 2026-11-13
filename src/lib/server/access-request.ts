@@ -100,7 +100,11 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     const receiptCorrection=request.method==='PATCH'&&/^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/receipt-corrections$/.test(request.nextUrl.pathname)&&hasPermission(user,'contracts.read')&&hasPermission(user,'finance.write');
     if(!branchOptions&&!composerStaff&&!lifecycleSettlement&&!renewalPaymentCorrection&&!receiptCorrection&&permission&&!hasPermission(user,permission))return NextResponse.json({status:'error',message:'Tài khoản không có quyền thực hiện thao tác này.'},{status:403});
     try {
-      return await dataAccess.run({...user,store_id:user.store_id??null,scope_all:user.scope_all===true,operation,transfer_vehicle_id},()=>handler(request,context));
+      // HR permissions govern access to the duty roster. Within that endpoint
+      // only, allow assigned HR users to work across branches instead of
+      // silently filtering stores and staff to their account's home branch.
+      const dutyRoster=request.nextUrl.pathname.startsWith('/api/auth/duty-roster');
+      return await dataAccess.run({...user,store_id:dutyRoster?null:user.store_id??null,scope_all:dutyRoster||user.scope_all===true,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>handler(request,context));
     } catch (error) {
       return failureResponse('Không thực hiện được thao tác.', error);
     }
