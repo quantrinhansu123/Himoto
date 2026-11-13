@@ -1,5 +1,6 @@
 import 'server-only';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
+import { ownerDatabase } from './himoto-database';
 import type { PoolClient } from 'pg';
 import { VEHICLE_STATUSES, VEHICLE_TYPES } from '@/lib/management/config';
 import { vehicleRevision, writeVehicleAudit } from './vehicle-audit';
@@ -50,7 +51,11 @@ async function checkVehicle(client: Client, values: VehicleValues, id: number | 
     if (open.rowCount && values.status !== (currentStatus === 'rent' ? 'using' : currentStatus)) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng để đổi trạng thái.');
     if (open.rowCount && String(values.store_id) !== String(currentStoreId)) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở, không được đổi cơ sở quản lý xe.');
   }
-  const store = await client.query('SELECT 1 FROM himoto.stores WHERE id=$1 FOR SHARE', [values.store_id]);
+  // Store visibility is narrower than vehicle visibility for some roles (for
+  // example, staff allowed to manage shared or headquarters fleet). Check that
+  // the referenced store exists globally; vehicle row access and the RLS
+  // update policy still enforce whether this actor may edit/move this vehicle.
+  const store = await ownerDatabase.query('SELECT 1 FROM himoto.stores WHERE id=$1', [values.store_id]);
   if (!store.rowCount) throw new VehicleSaveError('Cơ sở đã chọn không còn tồn tại.');
   const duplicate = await client.query('SELECT id FROM himoto.vehicles WHERE upper(btrim(license))=$1 AND ($2::bigint IS NULL OR id<>$2) LIMIT 1', [values.license, id]);
   if (duplicate.rowCount) throw new VehicleSaveError(`Biển số ${values.license} đã có trong danh sách xe.`, 409);
