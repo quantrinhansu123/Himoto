@@ -103,7 +103,7 @@ function contractPageScopeClause(scope:string):string {
 function contractPageStatusClause(status:string) {
   if(!status)return '';
   if(status==='renting')return ` AND o.order_status IN ('renting','overdue','bad_debt')`;
-  if(status==='overdue')return ` AND o.order_status IN ('overdue','renting','wait_payment')`;
+  if(status==='overdue')return ` AND (o.order_status IN ('overdue','bad_debt') OR o.order_status IN ('renting','wait_payment'))`;
   if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
   return ` AND o.order_status='${status}'`;
 }
@@ -117,19 +117,15 @@ function overdueDetailsSql(sql:string) {
     WHERE d.order_id=listing.id AND d.deleted_at IS NULL AND d.completed_at IS NULL) AS overdue_items
     FROM (${sql}) listing`;
 }
-/** Push status tabs into SQL so Đang thuê does not index every open/historical row first. */
+/** Page and export share candidates; hydrated dates/balances decide overdue membership. */
 export function contractStatusClause(status:string) {
-  if(!status)return '';
-  if(status==='renting')return ` AND o.order_status IN ('renting','overdue','bad_debt')`;
-  if(status==='overdue')return ` AND (o.order_status IN ('overdue','bad_debt') OR o.order_status='renting' AND o.return_at < now()
-    OR o.order_status IN ('renting','wait_payment') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL)`;
-  if(!/^[a-z][a-z0-9_]{0,63}$/.test(status))throw new ManagementTableError('Bộ lọc không hợp lệ.');
-  return ` AND o.order_status='${status}'`;
+  return contractPageStatusClause(status);
 }
-/** Bound the default list to recent creation/start dates, including drafts. */
+/** Retain every open contract; only closed history is bounded by recent dates. */
 export function contractRecentClause(days:number) {
   return ` AND (
-    o.created_at >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
+    o.order_status IN ('draft','renting','overdue','bad_debt','wait_payment','reserved','deposit_contract','pending','cancel_pending_settlement')
+    OR o.created_at >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
     OR o.rent_at >= (timezone('Asia/Ho_Chi_Minh', now()) - interval '${days} days')
   )`;
 }
@@ -474,28 +470,30 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     ? `${all?contractScopeClause(input.scope):contractPageScopeClause(input.scope)}${statusClause}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}${all?'':contractDateSql(input.query)}`
     : '';
   const now=Date.now();
+  const derivedScope=kind==='contracts'&&['overdue','collection','due'].includes(input.scope);
   const legacyFees=legacyOwnershipFeeReader(client);
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   if(!all){
-    const readStatistics=async()=>{
+    const readStatistics=async(scopeOnly=false)=>{
+      const statisticsInput=scopeOnly?{...input,query:EMPTY_QUERY}:input;
       let stats;
-      const search=contractSearchSql(input.query.search);
-      const statsClause=`${contractPageScopeClause(input.scope)}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}`;
-      stats=await fastContractStatistics(client,input,statsClause,now);
+      const search=contractSearchSql(statisticsInput.query.search);
+      const statsClause=`${contractPageScopeClause(input.scope)}${listWindow}${storeSql}${contractFilterSql(statisticsInput.query.filters)}`;
+      stats=await fastContractStatistics(client,statisticsInput,statsClause,now);
       if(!stats){
       const base=`${contractStatisticsSql(statsClause,input.scope==='vat')}${search.sql.replaceAll('$3','$1')}`;
       const result=await client.query(monitoring||input.query.overdueDays?overdueDetailsSql(base):base,search.value?[search.value]:[]);
-      const index=(await legacyFees(result.rows.map(mapContractStatistics))).map(row=>['renting','overdue','wait_payment','bad_debt'].includes(row.status)||row.billing_plan_json||input.query.overdueDays?withContractMonitoring(applyInstallmentBilling(row,now),now):row);
+      const index=(await legacyFees(result.rows.map(mapContractStatistics))).map(row=>['renting','overdue','wait_payment','bad_debt'].includes(row.status)||row.billing_plan_json||statisticsInput.query.overdueDays?withContractMonitoring(applyInstallmentBilling(row,now),now):row);
       // Search is already bound/applied in SQL, including customer and plate
       // matches. Those labels need not travel back for a second search.
-      stats=projectManagementTable(index,{...input,...(input.storeBasis==='warehouse'?{store:'all'}:{}),query:{...input.query,search:''},page:1,size:1},true,now);
+      stats=projectManagementTable(index,{...statisticsInput,...(input.storeBasis==='warehouse'?{store:'all'}:{}),query:{...statisticsInput.query,search:''},page:1,size:1},true,now);
       }
       return stats!;
     };
     // Count the permitted list without hydrating other tabs or applying search.
     let scopeCount:number|undefined;
     const separateScopeCount=Boolean(input.query.search.trim()||input.query.status||input.query.startDate||input.query.endDate||input.query.overdueDays||input.query.overdueBucket||Object.values(input.query.filters).some(Boolean)||input.scope==='due');
-    if(kind==='contracts'&&params.get('scope_count')==='1'&&separateScopeCount){
+    if(kind==='contracts'&&!derivedScope&&params.get('scope_count')==='1'&&separateScopeCount){
       const counted=await client.query(`SELECT count(*)::int AS scope_count FROM himoto.orders o WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${contractPageScopeClause(input.scope)}${listWindow}${storeSql}`);
       scopeCount=Number(counted.rows[0]?.scope_count);
       if(!Number.isSafeInteger(scopeCount)||scopeCount<0)throw new Error('Không đọc được tổng toàn bộ hợp đồng. Vui lòng thử lại.');
@@ -503,6 +501,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     // Statistics never hydrate a page or send historical rows to the browser.
     if(kind==='contracts'&&params.get('statistics_only')==='1'){
       const stats=await readStatistics();
+      if(derivedScope)scopeCount=(input.query.search.trim()||Object.values(input.query.filters).some(Boolean)?await readStatistics(true):stats).scopeCount;
       return {...stats,rows:[],scopeCount:scopeCount??stats.scopeCount,page:1,pages:Math.max(1,Math.ceil(stats.total/input.size)),statisticsPending:false};
     }
     // Installment overdue state and age groups depend on the hydrated balance.
@@ -568,6 +567,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     const rows=filterBeforePaging?sortRows(matches,input.sort,input.direction).slice(pageOffset,pageOffset+input.size):matches;
     const pages=Math.max(1,Math.ceil(total/input.size));
     const stats=kind==='contracts'&&params.get('status_counts')==='1'?await readStatistics():undefined;
+    if(derivedScope&&params.get('scope_count')==='1')scopeCount=(input.query.search.trim()||Object.values(input.query.filters).some(Boolean)?await readStatistics(true):stats??await readStatistics()).scopeCount;
     return {
       rows:kind==='contracts'&&input.scope==='vat'?await withVatPayments(client,rows):rows,total,scopeCount:scopeCount??total,tabCount:stats?.tabCount??catalogue?.tabCount??total,page,pages,
       statusCounts:stats?.statusCounts??catalogue?.statusCounts??[],statuses:stats?.statuses??(catalogue?catalogue.statusCounts.map(([status])=>status):[...new Set(rows.map(row=>row.status))].sort()),dueCount:stats?.dueCount??0,

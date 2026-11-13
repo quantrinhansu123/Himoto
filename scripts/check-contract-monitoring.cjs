@@ -64,7 +64,7 @@ async function main(){
   checks.push('Unpaid installments drive ownership overdue age and amount even with a future vehicle return; paying due installments removes overdue without consuming the deposit');
   for(const bucket of OVERDUE_BUCKETS){const query=managementTableQuery({...input,query:{...EMPTY_QUERY,overdueBucket:bucket.key}});assert.equal(parseManagementTable('contracts',query).query.overdueBucket,bucket.key);}
   assert.throws(()=>parseManagementTable('contracts',new URLSearchParams('overdue_bucket=bad')));
-  assert.match(contractStatusClause('overdue'),/installment_plan/);
+  assert.match(contractStatusClause('overdue'),/bad_debt/);
   const oldNow=Date.now;Date.now=()=>now;
   try{
     const raw={...planned,draft_payload:{management_composer:{installment_plan:plan}},vehicles:[],overdue_items:[]};let calls=0;

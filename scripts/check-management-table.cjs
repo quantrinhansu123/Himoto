@@ -115,9 +115,9 @@ async function main(){
   assert.match(sqlCommands[1],/AS approval_at/);assert.match(sqlCommands[2],/AS approval_at/);
   assert.equal(paged.rows[0].approval_at,'2026-11-03T10:14:48.521Z');assert.equal(paged.rows[1].approval_at,'');
   assert.match(sqlCommands[0],/interval '30 days'/);
-  assert.doesNotMatch(server.contractRecentClause(3),/order_status IN/);
+  assert.match(server.contractRecentClause(3),/order_status IN.*bad_debt/);
   assert.match(server.contractRecentClause(3),/interval '3 days'/);
-  checks.push('Recent page selection applies the date window before paging');
+  checks.push('Recent page selection retains open contracts and bounds closed history before paging');
   checks.push('Page hydrate returns the saved composer draft and revision so a reopened draft is not reconstructed empty');
   let called=false;await assert.rejects(()=>server.readManagementTable({query(){called=true;}},'contracts',new URLSearchParams('size=999')),server.ManagementTableError);assert.equal(called,false);
   assert.equal(mapApiRow('contracts',{id:1,rent_at:new Date('2026-10-10T09:00:00Z')}).start_date,'2026-10-10T16:00');

@@ -1,4 +1,4 @@
-const assert=require('node:assert/strict'),path=require('node:path');
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
 const {load,root}=require('./lib/load-typescript.cjs');
 const {readManagementTable}=load(path.join(root,'lib/server/management-table'));
@@ -7,12 +7,14 @@ async function main(){
   const c=await ownerDatabase.connect(),checks=[];
   try{
     await c.query('BEGIN');await c.query("SET LOCAL statement_timeout='20s'");
-    const tables=['orders','order_vehicle_details','vehicles','stores','staff_profiles','transactions','customers'];
+    const tables=['orders','order_vehicle_details','vehicles','stores','staff_profiles','transactions','customers','pricing','users'];
     for(const table of tables)await c.query(`CREATE TEMP TABLE qa_tab_${table} ON COMMIT DROP AS SELECT * FROM himoto.${table} WHERE false`);
     await c.query('CREATE TEMP VIEW qa_tab_staff_account_attribution AS SELECT id,user_id,full_name,store_id FROM qa_tab_staff_profiles');
+    const ownershipFunction=fs.readFileSync(path.join(__dirname,'../docs/sql/2026-11-01-ownership-hq-customer-source.sql'),'utf8').match(/CREATE OR REPLACE FUNCTION himoto[.]is_ownership_customer_source_store[\s\S]*?\$\$;/)[0];
+    await c.query(ownershipFunction.replaceAll('himoto.','pg_temp.qa_tab_').replaceAll("'himoto'","'pg_temp'"));
     const db={async query(sql,args){
-      for(const table of ['staff_account_attribution',...tables])sql=sql.replaceAll('himoto.'+table,'pg_temp.qa_tab_'+table);
-      assert(!sql.includes('himoto.'),'Every business read must use isolated fixtures');
+      for(const table of ['is_ownership_customer_source_store','staff_account_attribution',...tables])sql=sql.replaceAll('himoto.'+table,'pg_temp.qa_tab_'+table);
+      assert(!sql.includes('himoto.'),'Every business read must use isolated fixtures: '+[...new Set(sql.match(/himoto[.]\w+/g)||[])].join(', '));
       return c.query(sql,args);
     }};
     await c.query("INSERT INTO qa_tab_stores(id,store_name,kind) VALUES(1,'QA branch','traditional'),(2,'QA foreign','traditional'),(3,'QA ownership','lease_to_own')");
@@ -46,6 +48,38 @@ async function main(){
     const owner=await read({store:'3',scope:'ownership',status:'overdue',overdue_bucket:'ownership-6-15'});
     assert.equal(owner.tabCount,1);assert.equal(owner.overdueCounts['ownership-6-15'],1);
     checks.push('Plate searches, empty results, store changes and ownership age groups preserve accurate counts without reading business rows');
+    for(const scope of ['', 'overdue'])for(const status of ['', 'renting', 'overdue', 'bad_debt', 'draft']){
+      const params={scope,status,size:'2'};
+      const page=await read({...params,status_counts:'0',scope_count:'0'});
+      const stats=await read({...params,statistics_only:'1'});
+      const exported=await read({...params,all:'1'});
+      assert.equal(page.total,stats.total,`${scope}/${status}: page and statistics agree`);
+      assert.equal(exported.total,stats.total,`${scope}/${status}: export and statistics agree`);
+      assert.equal(exported.rows.length,stats.total);
+      if(status==='overdue'){
+        assert.equal(page.total,4);assert(exported.rows.some(row=>String(row.id)==='4'),'Bad debt belongs to overdue');
+        assert(exported.rows.some(row=>String(row.id)==='9'),'Legacy per-vehicle return date belongs to overdue');
+      }
+      if(scope==='overdue')assert.equal(stats.scopeCount,4,'Heading counts hydrated overdue membership, not open candidates');
+    }
+    const global=await read({store:'all',scope:'overdue',status:'overdue'});
+    assert.equal(global.total,6);assert.equal(global.scopeCount,6);
+    const scopedSearch=await read({store:'all',scope:'overdue',search:'QA-9',statistics_only:'1'});
+    assert.equal(scopedSearch.total,1);assert.equal(scopedSearch.scopeCount,6);
+    const scopedFilter=await read({store:'all',scope:'overdue',filter_store_id:'1',statistics_only:'1'});
+    assert.equal(scopedFilter.total,4);assert.equal(scopedFilter.scopeCount,6);
+    checks.push('Separate page/statistics requests and Excel exports agree across all tabs, including bad debt and legacy deadlines; overdue headings count the real scope');
+    await c.query("UPDATE qa_tab_orders SET created_at=now()-interval '60 days'");
+    const recent=await read({recent:'3',size:'50'});
+    assert.equal(recent.total,6);assert(!recent.rows.some(row=>String(row.id)==='6'),'Old closed history is bounded');
+    assert(recent.rows.some(row=>String(row.id)==='4'),'Old bad debt stays visible');
+    assert(recent.rows.some(row=>String(row.id)==='5'),'Old draft stays visible');
+    const recentOverdue=await read({recent:'3',status:'overdue',statistics_only:'1'});
+    assert.equal(recentOverdue.total,4);
+    await c.query("UPDATE qa_tab_orders SET created_at=now() WHERE id=6");
+    assert.equal((await read({recent:'3'})).total,7,'Recent closed history stays visible');
+    assert.equal((await read({})).total,7,'Full history retains closed contracts');
+    checks.push('Default recent window retains every old open contract, hides old closed history, and includes recently created closed history');
   }finally{await c.query('ROLLBACK');c.release();await globalThis.himotoPool?.end();}
   console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0},null,2));
 }
