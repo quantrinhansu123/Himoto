@@ -148,7 +148,7 @@ async function main(){
       }
       const stats=await load(path.join(root,'lib/server/page-summaries')).readOperationsSummary(c);
       assert.equal(stats.stores.reduce((sum,row)=>sum+row.active,0),old.filter(row=>['renting','overdue','wait_payment'].includes(row.status)).length);
-      assert.equal(stats.stores.reduce((sum,row)=>sum+row.overdue,0),old.filter(row=>row.status==='overdue').length);
+      assert.equal(stats.stores.reduce((sum,row)=>sum+row.overdue,0),shared.projectManagementTable(old,{...base,scope:'overdue'},true).total);
       const sales=load(path.join(root,'lib/management/source-sales')),staff=(await c.query('SELECT id,full_name AS name FROM himoto.staff_profiles')).rows;
       for(const [from,to,store]of [['2026-10-01','2026-10-16','all'],['2025-01-01','2026-10-16','31']]){
         const expected={sources:sales.summarizeBySalesStaff(old,from,to,store,staff),stores:sales.summarizeByStore(old,from,to,store),kpis:sales.summarizeSalesKpis(old,from,to,store)};
