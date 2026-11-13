@@ -84,7 +84,7 @@ export async function settleReturnedItems(db:Database,actor:number,settlement:Re
       const label={late_fee:'Thu phí quá hạn',repair_fee:'Thu phí sửa chữa',rental_debt:'Thu công nợ thuê xe'}[receipt.kind];
       const {kind,...payment}=receipt;
       // Thu vượt / HĐ đã thu dư: recordContractPayment cho ghi nhận và đóng, không chặn tại đây.
-      const paid=await recordContractPayment(db,settlement.order_id,actor,{...payment,revision:context.revision,note:`${label}_${context.code}`});
+      const paid=await recordContractPayment(db,settlement.order_id,actor,{...payment,revision:context.revision,note:`${label}_${context.code}`},undefined,{returnSettlement:true});
       context=paid.context;transactionIds.push(paid.transaction_id);
       await db.query('UPDATE himoto.transactions SET name=$2 WHERE id=$1',[paid.transaction_id,kind==='late_fee'?'order:return_late':kind==='repair_fee'?'order:return_repair':'order:payment']);
     }
