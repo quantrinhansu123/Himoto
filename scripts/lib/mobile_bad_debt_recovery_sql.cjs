@@ -78,10 +78,14 @@ module.exports=async function recoverySql({pg,load,root,user,checks,failReceipt,
   const closing=await fixture({billing:true,frozen:false,settled:true,paid:2000000}),closedBefore=await balance(closing),closedMoney=await money(closing.id);
   assert.equal(closedMoney.ledger.length,1);assert.equal(closedMoney.payments.length,1);
   await recover(await input(closing,late));
+  assert.equal((await pg.query('SELECT order_status FROM himoto.orders WHERE id=$1',[closing.id])).rows[0].order_status,'bad_debt','Physical-recovery permission alone cannot settle debt');
+  const settlementActor={...user,access_role:'ownership_manager',store_kind:'lease_to_own'};
+  const resolution=load(path.join(root,'lib/server/contract-resolution'));
+  assert.equal(await transaction(settlementActor,db=>resolution.closeResolvedBadDebt(db,closing.id,settlementActor.id)),true);
   assert.equal((await pg.query('SELECT order_status FROM himoto.orders WHERE id=$1',[closing.id])).rows[0].order_status,'completed');
   assert.deepEqual(await balance(closing),closedBefore);assert.deepEqual(await money(closing.id),closedMoney);
   assert.equal((await payload(closing)).installment_plan.stopped_at,cutoff);
-  checks.push('Final physical recovery can close an already-settled debt without recreating future installments after status becomes completed');
+  checks.push('Physical recovery alone cannot settle debt; the verified ownership manager closes an already-settled debt without recreating future installments after status becomes completed');
 
   const missing=await fixture({billing:true,frozen:false,known:false}),missingBefore=await payload(missing);
   const missingInput=await input(missing);
@@ -175,6 +179,8 @@ module.exports=async function recoverySql({pg,load,root,user,checks,failReceipt,
   await previewParity({paid:100000,deposit:100000});
   await previewParity({billing:true},early);await previewParity({billing:true},late);
   await previewParity({billing:true,frozen:false,settled:true,paid:2000000});
+  const closePreview=await previewParity({billing:true,frozen:false,settled:true,paid:2000000},late,settlementActor);
+  assert.equal(closePreview.view.after.status,'completed');
   await previewParity({billing:true,lines:2});
   const ownershipReview=await previewParity({billing:true,store:31,legacy:true},early,lease);
   assert(ownershipReview.view.ownership);assert.equal(ownershipReview.view.item.license,'QA-RECOVERY-'+ownershipReview.f.vehicles[0]);
@@ -240,10 +246,15 @@ module.exports=async function recoverySql({pg,load,root,user,checks,failReceipt,
   const owned=await fixture({billing:true,store:31,legacy:true}),ownedMoney=await money(owned.id),ownedBody=await recordInput(owned,early,lease);
   const ownedProof=await record(owned,ownedBody,randomUUID(),lease);assert(ownedProof.current&&ownedProof.review.ownership);assert.deepEqual(await money(owned.id),ownedMoney);
   const closingMobile=await fixture({billing:true,frozen:false,settled:true,paid:2000000}),closingInput=await recordInput(closingMobile);
-  assert.equal((await record(closingMobile,closingInput,randomUUID())).review.after.status,'completed');
+  assert.equal((await record(closingMobile,closingInput,randomUUID())).review.after.status,'bad_debt');
+  const permittedClosing=await fixture({billing:true,frozen:false,settled:true,paid:2000000}),permittedInput=await recordInput(permittedClosing,late,settlementActor);
+  const beforePermissionChange=await databaseStamp();
+  await assert.rejects(()=>record(permittedClosing,permittedInput,randomUUID(),user),error=>error.code==='RECOVERY_REVIEW_REQUIRED');
+  assert.deepEqual(await databaseStamp(),beforePermissionChange,'Losing settlement authority invalidates the old closing review without writes');
+  assert.equal((await record(permittedClosing,permittedInput,randomUUID(),settlementActor)).review.after.status,'completed');
   const taken=await fixture(),hiddenHire=await fixture({store:24});await pg.query('UPDATE himoto.order_vehicle_details SET vehicle_id=$1 WHERE id=$2',[taken.vehicles[0],hiddenHire.ids[0]]);
   await record(taken,await recordInput(taken),randomUUID());assert.equal((await pg.query('SELECT status FROM himoto.vehicles WHERE id=$1',[taken.vehicles[0]])).rows[0].status,'bad_debt');
-  checks.push('Mobile writer handles HQ/legacy-29, backdated frozen debt, already-settled completion and hidden foreign occupancy through the shared domain without changing location or old finances');
+  checks.push('Mobile writer handles HQ/legacy-29, backdated frozen debt, privileged settled completion and hidden foreign occupancy; ordinary return staff recover the vehicle while retaining bad debt, with no location or financial changes');
 
   await pg.query('UPDATE himoto.transactions SET value=value+1 WHERE order_id=$1',[firstFixture.id]);
   let corrected=(await writer.readMobileRecoveryReceipt(user,key)).receipt;assert(!corrected.moneyCurrent&&corrected.itemCurrent&&corrected.historyCurrent&&corrected.contractCurrent);

@@ -1,5 +1,7 @@
 import 'server-only';
 import {createHash} from 'node:crypto';
+import {canSettleContract} from '@/lib/management/permissions';
+import {dataAccess} from './access-context';
 import type {PoolClient} from 'pg';
 import type {NextRequest} from 'next/server';
 import type {SessionUser} from './management-session';
@@ -96,12 +98,14 @@ export async function readRecoveryPreview(db:Database,id:number,input:MobileReco
   if(!item.available||item.revision!==input.item_revision)throw recoveryConflict('Dòng xe đã thay đổi hoặc đã thu hồi. Tải lại để kiểm tra.');
   const recoveredAt=iso(input.recovered_at+':00+07:00')!;
   if(item.startsAt&&Date.parse(recoveredAt)<Date.parse(item.startsAt))throw recoveryConflict('Ngày thu hồi không được trước ngày bắt đầu thuê.');
-  const after:MobileRecoveryPreview['after']={...ctx.amounts,remainingItems:ctx.remaining-1,status:ctx.remaining===1&&ctx.resolution.settled?'completed':'bad_debt'};
+  // The shared physical writer closes debt only for a verified settlement actor.
+  const settled=ctx.resolution.settled&&canSettleContract(dataAccess.getStore());
+  const after:MobileRecoveryPreview['after']={...ctx.amounts,remainingItems:ctx.remaining-1,status:ctx.remaining===1&&settled?'completed':'bad_debt'};
   const ledger=(await db.query("SELECT md5(COALESCE(string_agg(id::text||':'||xmin::text,',' ORDER BY id),'')) AS stamp FROM himoto.transactions WHERE order_id=$1",[id])).rows[0].stamp;
   const snapshot=createHash('sha256').update(JSON.stringify({id,input,payload:ctx.order.draft_payload,item,ledger,before:ctx.amounts,after})).digest('hex');
   const result:MobileRecoveryPreview={id,code:text(ctx.order.code),storeId:Number(ctx.order.store_id),revision:ctx.order.revision,status:'bad_debt',
     ownership:ctx.ownership,hasInstallmentPlan:ctx.hasInstallmentPlan,item,recoveredAt,note:input.note,badDebtAt:ctx.badDebtAt,billingStoppedAt:ctx.stopped,
-    before:ctx.amounts,after,settled:ctx.resolution.settled,snapshot,observedAt:new Date().toISOString()};
+    before:ctx.amounts,after,settled,snapshot,observedAt:new Date().toISOString()};
   if(!isMobileRecoveryPreview(result))throw recoveryConflict('Kết quả rà soát thu hồi cần đối chiếu.');return result;
 }
 export async function readMobileRecoveryPreview(user:SessionUser,value:string,request:NextRequest) {

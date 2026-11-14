@@ -36,7 +36,7 @@ async function run() {
   const bills = load(path.join(root, 'lib/server/mobile-bills'));
   const renewalWrite = load(path.join(root, 'lib/server/mobile-renewal-write'));
   const linkedWrite = load(path.join(root, 'lib/server/mobile-renewal-collection-write'));
-  const user = { id: 7, role: 'staff', access_role: 'accounting', store_id: 23, scope_all: false, permissions: ['contracts.read', 'finance.write'] };
+  const user = { id: 7, role: 'staff', access_role: 'ownership_manager', store_kind: 'lease_to_own', store_id: 23, scope_all: false, permissions: ['contracts.read', 'finance.write'] };
   const req = (body, key) => new NextRequest('https://fixture.invalid/api/mobile/v1/contracts/101/payments', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body),
   });
@@ -69,6 +69,12 @@ async function run() {
         data bytea,updated_by bigint,updated_at timestamptz DEFAULT now(),cloudinary_public_id text,cloudinary_cloud_name text,
         cloudinary_version bigint,object_bucket text,object_key text,object_etag text,storage_sha256 text,storage_bytes bigint,PRIMARY KEY(entity_type,entity_id,slot));
       CREATE FUNCTION himoto.contract_vehicle_labels() RETURNS SETOF himoto.vehicles LANGUAGE sql STABLE AS 'SELECT * FROM himoto.vehicles';
+      CREATE FUNCTION himoto.contract_vehicles_for_orders(order_ids bigint[])
+      RETURNS TABLE(id bigint,name text,license text,brand text,type text,year integer,color text,store_id bigint,warehouse_id bigint,warehouse_store_id bigint,warehouse_store_name text)
+      LANGUAGE sql STABLE AS $$ SELECT v.id,v.name,v.license,to_jsonb(v)->>'brand',to_jsonb(v)->>'type',(to_jsonb(v)->>'year')::integer,
+        to_jsonb(v)->>'color',(to_jsonb(v)->>'store_id')::bigint,v.id,COALESCE((to_jsonb(v)->>'current_store_id')::bigint,(to_jsonb(v)->>'store_id')::bigint),NULL::text
+        FROM himoto.vehicles v WHERE v.id IN(SELECT d.vehicle_id FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+          WHERE o.id=ANY(order_ids) AND o.deleted_at IS NULL AND d.deleted_at IS NULL) $$;
       CREATE FUNCTION himoto.vehicle_inventory() RETURNS SETOF himoto.vehicles LANGUAGE sql STABLE AS 'SELECT * FROM himoto.vehicles';
       CREATE FUNCTION himoto.extend_contract_vehicle_line(line_id bigint,contract_id bigint,revision text,ends_at timestamptz,fee bigint) RETURNS void LANGUAGE plpgsql AS $$
         BEGIN UPDATE himoto.order_vehicle_details d SET return_at=ends_at,total_renewal_amount=COALESCE(total_renewal_amount,0)+fee
@@ -176,6 +182,7 @@ async function run() {
       return { revision:c.revision,expected_total:c.totalAmount,expected_remaining:c.rentalRemaining,purpose,amount:String(amount),
         method:'cash',account_id:1,paid_at:paidAt,note:'Khoản SQL QA',...patch };
     };
+    await rejected(async()=>api.recordMobilePayment({...user,access_role:'accounting'},'101',req(await input('debt',1000,{acknowledge_overpayment:true}),randomUUID())),'INVALID_PAYMENT');
     for (const [purpose, amount, patch] of [['debt',1000,{acknowledge_overpayment:true}],['deposit',10000,{}],['extra',2000,{}],['deposit_refund',5000,{method:'transfer'}],['rental_refund',10000,{}]]) {
       const key = randomUUID(), body = await input(purpose, amount, patch), before = await count();
       const saved = await api.recordMobilePayment(user,'101',req(body,key));
@@ -270,7 +277,7 @@ async function run() {
     assert.equal(refreshedPreparation.nextVersion,13); assert.equal(refreshedPreparation.evidence.present,false);
     checks.push('Actual renewal-preparation SQL chooses a fresh version from saved notification/receipt references, reads active vehicle prices and accepts bill evidence only for that version, even when xmin is unchanged');
 
-    await assert.rejects(()=>prepare(user),error=>error.status===403);
+    await assert.rejects(()=>prepare({...user,access_role:'accounting'}),error=>error.status===403);
     await assert.rejects(()=>prepare({...renewalUser,store_id:24}),error=>error.status===404);
     assert.equal((await prepare({...renewalUser,store_id:24,scope_all:true})).id,101);
     const ownershipPreparation=await renewal.readMobileRenewalPreparation(renewalUser,'104',new NextRequest('https://fixture.invalid/api/mobile/v1/contracts/104/renewals'));
@@ -571,7 +578,7 @@ async function run() {
     checks.push('Later bill replacement and cashbook cancellation are reported independently while retaining the immutable original amount/version/transaction; replay never overwrites a correction and scoped clients cannot update acknowledgements');
     // The return preparation reuses the web return projection and financial
     // domain, but never records a vehicle return or settlement.
-    await pg.exec(`ALTER TABLE himoto.orders ADD COLUMN customer_id bigint,ADD COLUMN customer_name text,ADD COLUMN customer_idnumber text,ADD COLUMN customer_phone text;
+    await pg.exec(`ALTER TABLE himoto.orders ADD COLUMN order_type text,ADD COLUMN customer_id bigint,ADD COLUMN customer_name text,ADD COLUMN customer_idnumber text,ADD COLUMN customer_phone text;
       CREATE TABLE himoto.customers(id bigint PRIMARY KEY,name text,id_card text,phone text);
       CREATE TABLE himoto.stores(id bigint PRIMARY KEY,store_name text);
       INSERT INTO himoto.stores VALUES(23,'Cơ sở SQL QA'),(24,'Cơ sở khác SQL QA');
@@ -592,7 +599,7 @@ async function run() {
     assert(!JSON.stringify(returnFirst).includes('PRIVATE-ID-MUST-NOT-PROJECT'));
     checks.push('Return preparation executes the shared scoped projection in PostgreSQL, paginates 25 active lines ahead of returned history, retains method-qualified accounts and omits customer ID/raw composer data');
     await rejected(()=>prepareReturn('109',1,{...returnUser,store_id:24}),'NOT_FOUND');
-    await rejected(()=>prepareReturn('109',1,user),'FORBIDDEN');
+    await rejected(()=>prepareReturn('109',1,{...user,access_role:'accounting'}),'FORBIDDEN');
     await assert.rejects(()=>prepareReturn('109',3),error=>error.status===400);
     assert.equal(await count(),beforeReturnReads);assert.deepEqual((await pg.query('SELECT total,draft_payload FROM himoto.orders WHERE id=109')).rows[0],returnOrderBefore);
     checks.push('Return preparation requires contracts.return rather than finance.write, observes current branch RLS, rejects removed pages and leaves money/order/period data untouched');
