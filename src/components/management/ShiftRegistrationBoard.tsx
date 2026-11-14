@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, RotateCcw } from 'lucide-react';
 import { dutyRequest, vietnamDate } from '@/lib/management/duty-roster';
-import { registrationDates, registrationMonthRange, REGISTRATION_SHIFTS, registrationCredit, type RegisteredStaff, type RegistrationRange, type ShiftRegistration } from '@/lib/management/shift-registration';
+import { registrationDates, registrationMonthRange, registrationExcel, REGISTRATION_SHIFTS, registrationCredit, type RegisteredStaff, type RegistrationRange, type ShiftRegistration } from '@/lib/management/shift-registration';
 import { shiftCreditLabel } from '@/lib/management/attendance-shifts';
 import { FilteredExcelButton } from './FilteredExcelButton';
 import { useManagement } from './ManagementProvider';
@@ -74,6 +74,7 @@ export function ShiftRegistrationBoard() {
     return [...result.values()];
   }, [people]);
   const total = (person: RegisteredStaff) => dates.reduce((sum, date) => sum + registrationCredit(cells.get(keyOf(person.id, date))?.shift_code), 0);
+  const excel=data?registrationExcel(data,store,search):{headers:[],rows:[]};
   const unavailable = loading || Boolean(error) || !data;
   const writable = can('hr.write');
   async function register(person: RegisteredStaff, date: string, code: string) {
@@ -94,7 +95,7 @@ export function ShiftRegistrationBoard() {
   }
   return <section className="mg-page mg-shift-registration-page" aria-label="Đăng ký ca làm việc"><div className="mg-page-content">
     <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ NHÂN SỰ</div><h1>Đăng ký ca</h1><p>Bảng ca làm theo tháng, nhóm nhân viên theo cơ sở. Dùng chung dữ liệu nhân viên đăng ký trong tuần.</p></div><div className="mg-heading-actions">
-      <FilteredExcelButton filename={`himoto-dang-ky-ca-${range.from}-${range.to}`} disabled={unavailable || !people.length || Boolean(pending)} headers={['Địa điểm làm việc', 'Họ và tên', 'Chức vụ', ...dates.map(date => date.split('-').reverse().join('/')), 'Tổng công đăng ký']} getRows={() => people.map(person => [person.store_name, person.name, person.position, ...dates.map(date => cells.get(keyOf(person.id, date))?.shift_code || ''), total(person)])} />
+      <FilteredExcelButton filename={`himoto-dang-ky-ca-${range.from}-${range.to}`} disabled={unavailable || !people.length || Boolean(pending)} headers={excel.headers} getRows={()=>excel.rows} />
       <button type="button" className="mg-button" disabled={loading || Boolean(pending)} onClick={refresh}><RotateCcw size={16} />Làm mới</button>
     </div></div>
     <div className={styles.toolbar}>

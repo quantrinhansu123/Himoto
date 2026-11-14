@@ -26,7 +26,7 @@ class Fixture:
     def respond(self, method, raw, body=None):
         url = urlparse(raw)
         path = url.path.removeprefix('/api/mobile/v1')
-        params = {k: values[0] for k, values in parse_qs(url.query).items()}
+        params = {k: values[0] for k, values in parse_qs(url.query, keep_blank_values=True).items()}
         self.requests.append(dict(method=method, path=path, params=params))
         if path == '/session':
             return 201 if method == 'POST' else 200, dict(user=self.user, expiresAt=self.expiry, **({'token': 'hm1_' + 'a' * 43} if method == 'POST' else {}))
@@ -78,8 +78,15 @@ class Fixture:
             return 200, data
         if path == '/duty-roster/registrations':
             data = deepcopy(self.workflow['month'])
+            if 'from' in params:
+                data.pop('month', None); data.update(dict(from_=params['from'], to=params['to'])); data['from'] = data.pop('from_')
+                data['registrations'] = [row for row in data['registrations'] if params['from'] <= row['work_date'] <= params['to']]
+                return 200, data
             data['month'] = params.get('month', data['month'])
             return 200, data
+        if path == '/list-exports/shift-registrations':
+            assert method == 'GET' and all(key in params for key in ['from','to','store','search'])
+            return 200, self.workflow['shiftFile']
         if path.startswith('/directory/'):
             return 200, dict(rows=[], total=0, page=1, pages=1)
         raise AssertionError(f'Unexpected fixture API: {method} {path}')
@@ -179,6 +186,14 @@ def run(build, workflow, catalogue, output):
                     navigate('/shift-registrations')
                     expect(page.get_by_text('QA ca trực', exact=True)).to_be_visible()
                     expect(button('Ngày đăng ký')).to_be_visible()
+                    page.get_by_label('Từ ngày', exact=True).fill('2026-11-13')
+                    page.get_by_label('Đến ngày', exact=True).fill('2026-11-16')
+                    button('Áp dụng bộ lọc').click()
+                    expect(page.get_by_label('Từ ngày', exact=True)).to_have_value('2026-11-13')
+                    with page.expect_download(): button('Tải Excel theo bộ lọc').click()
+                    registration_export=next(r for r in reversed(fixture.requests) if r['path']=='/list-exports/shift-registrations')
+                    assert registration_export['params']['from']=='2026-11-13' and registration_export['params']['to']=='2026-11-16'
+                    page.screenshot(path=str(output / f'registration-range-{width}.png'), full_page=True)
                     navigate('/self-shift-registration')
                     expected_day = next(date for date in fixture.respond('GET', '/api/mobile/v1/attendance/shift-registration?week=' + (datetime.fromisoformat(w['self']['week']) + timedelta(days=7)).date().isoformat())[1]['dates'] if date >= w['self']['today'])
                     date_label = datetime.fromisoformat(expected_day).strftime('%d/%m/%Y')
