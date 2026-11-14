@@ -1,8 +1,8 @@
-export const MOBILE_BULK_KINDS=['staff','stores','customers','vehicles'] as const;
+export const MOBILE_BULK_KINDS=['staff','stores','customers','vehicles','contracts'] as const;
 export type MobileBulkKind=typeof MOBILE_BULK_KINDS[number];
-export const MOBILE_BULK_LABELS:Record<MobileBulkKind,string>={staff:'nhân sự',stores:'cơ sở',customers:'khách hàng',vehicles:'xe'};
+export const MOBILE_BULK_LABELS:Record<MobileBulkKind,string>={staff:'nhân sự',stores:'cơ sở',customers:'khách hàng',vehicles:'xe',contracts:'hợp đồng'};
 export const bulkDeleteOperation=(kind:MobileBulkKind)=>`bulk.${kind}.delete`;
-export const isBulkDeleteOperation=(v:unknown):v is string=>typeof v==='string'&&/^bulk\.(staff|stores|customers|vehicles)\.delete$/.test(v);
+export const isBulkDeleteOperation=(v:unknown):v is string=>typeof v==='string'&&/^bulk\.(staff|stores|customers|vehicles|contracts)\.delete$/.test(v);
 export const isMobileBulkKind=(v:unknown):v is MobileBulkKind=>typeof v==='string'&&MOBILE_BULK_KINDS.some(k=>k===v);
 export interface MobileBulkReview {kind:MobileBulkKind;review:string;rows:{id:number;code:string;name:string;status:string;storeName:string}[]}
 export interface MobileBulkDeletion {key:string;kind:MobileBulkKind;operation:string;deletedCount:number;receiptVersion:1;replayed:boolean}

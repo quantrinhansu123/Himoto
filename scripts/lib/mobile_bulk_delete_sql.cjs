@@ -15,7 +15,16 @@ module.exports=async function({pg,load,root,user,admin,setFailReceipt}){
     ALTER TABLE himoto.customers ENABLE ROW LEVEL SECURITY;CREATE POLICY scoped_customers ON himoto.customers TO himoto_scoped USING(himoto.access_store(store_id));
     ALTER TABLE himoto.vehicles ENABLE ROW LEVEL SECURITY;CREATE POLICY scoped_vehicles ON himoto.vehicles TO himoto_scoped USING(himoto.access_store(store_id));
     GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA himoto TO himoto_scoped;`);
+  await pg.exec('ALTER TABLE himoto.orders ADD COLUMN IF NOT EXISTS contract_number text,ADD COLUMN IF NOT EXISTS draft_reference text,ADD COLUMN IF NOT EXISTS deleted_at timestamptz');
   const users=JSON.stringify((await pg.query('SELECT * FROM himoto.users ORDER BY id')).rows),business=JSON.stringify((await pg.query(`SELECT (SELECT jsonb_agg(o ORDER BY id)FROM himoto.orders o)AS orders,(SELECT jsonb_agg(t ORDER BY id)FROM himoto.transactions t)AS transactions`)).rows);
+  const contractActor={...globalActor,role:'admin',access_role:'admin',permissions:[...globalActor.permissions,'contracts.delete']};
+  const contract=(await pg.query("SELECT id FROM himoto.orders WHERE store_id=23 AND order_status='renting' ORDER BY id LIMIT 1")).rows[0];
+  assert(contract,'The isolated portfolio must contain a renting contract');
+  const contractPlan=await review('contracts',[Number(contract.id)],contractActor);assert(dto.isMobileBulkReview(contractPlan));assert.equal(contractPlan.rows[0].status,'renting');
+  await assert.rejects(()=>review('contracts',[Number(contract.id)],actor),e=>e.status===403);
+  const blockedContractKey=randomUUID();await assert.rejects(()=>remove(contractPlan,blockedContractKey,contractActor),e=>e.status===409);
+  assert.equal((await pg.query('SELECT count(*)::int n FROM himoto.management_mobile_requests WHERE request_id=$1',[blockedContractKey])).rows[0].n,0);
+  checks.push('Contract batch review uses canonical web identity/status and the contracts.delete grant; the actual shared writer rejects a renting contract, rolling back the entire batch and receipt');
   const stale=await review('staff',[102,101]);assert(dto.isMobileBulkReview(stale));assert.deepEqual(stale.rows.map(r=>r.id),[101,102]);
   await pg.exec("UPDATE himoto.staff_profiles SET full_name='QA Đã sửa' WHERE id=101");await assert.rejects(()=>remove(stale),e=>e.status===409);
   await assert.rejects(()=>review('staff',[101,103]),e=>e.status===409);

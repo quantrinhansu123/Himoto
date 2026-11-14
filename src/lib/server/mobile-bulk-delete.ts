@@ -15,11 +15,15 @@ import type {MobileWriteResolution} from '../../../shared/mobile-write-recovery'
 function kind(raw:string){if(!isMobileBulkKind(raw))throw new MobileError('Danh mục không hỗ trợ xóa hàng loạt.',404,'NOT_FOUND');return raw;}
 function allowed(user:SessionUser,target:MobileBulkKind){const permission=requestPermission(`/api/auth/bulk-delete/${target}`,'DELETE');if(!permission||!hasPermission(user,permission))throw new MobileError('Không có quyền xóa danh sách này.',403,'FORBIDDEN');}
 function selectedIds(target:MobileBulkKind,body:unknown){try{return parseBulkDelete(target,body).ids.sort((a,b)=>a-b);}catch(error){if(error instanceof BulkDeleteError)throw new MobileError(error.message,error.status);throw error;}}
-const tables:Record<MobileBulkKind,string>={staff:'staff_profiles',stores:'stores',customers:'customers',vehicles:'vehicles'};
-const names:Record<MobileBulkKind,string>={staff:'full_name',stores:'store_name',customers:'name',vehicles:'name'};
+const tables:Record<MobileBulkKind,string>={staff:'staff_profiles',stores:'stores',customers:'customers',vehicles:'vehicles',contracts:'orders'};
+const names:Record<MobileBulkKind,string>={staff:'full_name',stores:'store_name',customers:'name',vehicles:'name',contracts:'contract_number'};
 async function transaction<T>(user:SessionUser,read:boolean,task:(db:PoolClient)=>Promise<T>){return withMobileData(user,'',async()=>{const db=await himotoPool.connect();try{await db.query(read?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN');await db.query("SET LOCAL statement_timeout='30s'");await db.query("SET LOCAL lock_timeout='5s'");const result=await task(db);await db.query('COMMIT');return result;}catch(error){await db.query('ROLLBACK').catch(()=>{});if(error instanceof BulkDeleteError)throw new MobileError(error.message,error.status,error.status===409?'CONFLICT':'INVALID_REQUEST');throw error;}finally{db.release();}});}
 async function selection(db:PoolClient,user:SessionUser,target:MobileBulkKind,ids:number[],lock=false):Promise<MobileBulkReview>{
-  const rows=(await db.query(`SELECT p.id,p.xmin::text AS revision,p.${names[target]} AS name,p.status,${target==='staff'?'p.staff_code':target==='vehicles'?'p.license':'p.id::text'} AS code,
+  const rows=(await db.query(target==='contracts'?`SELECT p.id,p.xmin::text AS revision,COALESCE(c.name,'') AS name,p.order_status AS status,
+    COALESCE(NULLIF(p.contract_number,''),NULLIF(p.draft_reference,''),'#'||p.id::text) AS code,
+    (SELECT s.store_name FROM himoto.stores s WHERE s.id=p.store_id) AS store_name
+    FROM himoto.orders p LEFT JOIN himoto.customers c ON c.id=p.customer_id
+    WHERE p.id=ANY($1::bigint[]) AND p.deleted_at IS NULL ORDER BY p.id${lock?' FOR UPDATE OF p':''}`:`SELECT p.id,p.xmin::text AS revision,p.${names[target]} AS name,p.status,${target==='staff'?'p.staff_code':target==='vehicles'?'p.license':'p.id::text'} AS code,
     ${target==='stores'?'p.store_name':'(SELECT s.store_name FROM himoto.stores s WHERE s.id=p.store_id)'} AS store_name
     FROM himoto.${tables[target]} p WHERE p.id=ANY($1::bigint[]) ORDER BY p.id${lock?' FOR UPDATE OF p':''}`,[ids])).rows;
   if(rows.length!==ids.length)throw new MobileError('Có hồ sơ đã xóa hoặc ngoài phạm vi hiện tại. Tải lại danh sách.',409,'CONFLICT');

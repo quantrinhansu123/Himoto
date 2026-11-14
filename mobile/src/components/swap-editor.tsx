@@ -1,5 +1,6 @@
+import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,KeyboardAvoidingView,Platform,Pressable,ScrollView,Text,type ScrollViewInstance} from 'react-native';
+import {Keyboard,Pressable,Text,type ScrollViewInstance} from 'react-native';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileSwapInput,MobileSwapLine,MobileSwapPreparation,MobileSwapPreview,MobileSwapVehicle} from '../../../shared/mobile-swaps';
@@ -68,11 +69,11 @@ function SwapForm({id}:{id:string}) {
       confirmLabel="Xác nhận đổi xe trong hợp đồng" onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);void action.submit(input);}}/>}
   </>;
   const frame=(children:React.ReactNode)=><SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
+
+      <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
         {children}
-      </ScrollView>
-    </KeyboardAvoidingView>{overlays}
+      </KeyboardFormScrollView>
+    {overlays}
   </SafeAreaView>;
   if(action.key)return frame(<Card style={{gap:16}}>
     <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Đổi xe đang chờ đối chiếu</Text>

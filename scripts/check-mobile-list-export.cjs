@@ -12,7 +12,7 @@ async function run(){
  const admin={id:7,name:'QA Admin',role:'admin',role_slug:'quan-tri-vien',access_role:'admin',store_id:null,scope_all:true,permissions:[...actors.ACCESS_PERMISSIONS]};
  const branch={id:8,name:'QA Branch',role:'staff',access_role:'custom',store_id:23,scope_all:false,permissions:['contracts.read','hr.read','vehicles.read']};
  let expected=admin,duplicate=false;
- function scoped(kind){const scope=dataAccess.getStore();assert.equal(scope.id,expected.id);assert.equal(scope.store_id,expected.store_id);assert.equal(scope.scope_all,expected.scope_all);assert.equal(scope.operation,['transfers','gps'].includes(kind)?'fleet_read':'');calls.push(kind);}
+ function scoped(kind){const scope=dataAccess.getStore();assert.equal(scope.id,expected.id);assert.equal(scope.store_id,kind==='duties'?null:expected.store_id);assert.equal(scope.scope_all,kind==='duties'?true:expected.scope_all);assert.equal(scope.operation,['transfers','gps'].includes(kind)?'fleet_read':kind==='duties'?'duty_roster':'');calls.push(kind);}
  const count=53,now=new Date().toISOString(),many=make=>Array.from({length:count},(_,i)=>make(i+1));
  const transferRows=many(id=>({id,vehicle_id:id,vehicle_name:'QA xe',license:'000123',from_store_id:23,to_store_id:24,from_store:'QA A',to_store:'QA B',action:'receive',label:'Nhận xe',at:now,actor:'QA',note:'=SUM(1,2)',changes:[]}));
  const transfers=load(path.join(root,'lib/server/vehicle-transfer-history'));

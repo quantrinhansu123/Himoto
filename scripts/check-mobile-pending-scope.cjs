@@ -38,6 +38,13 @@ async function run() {
   await store.reserve(globalScope, "payment.record:101", () => keys[1]);
   assert.deepEqual(JSON.parse(values.get(INDEX)), [keys[0]]);
   checks.push("Scope recovery is restricted to the same origin/actor/resource and reserve cannot invent another UUID for that pending intent");
+  for(const operation of ['payment.record:101','contract.edit:101','renewal.record:101','return.record:101','media.contract:101']){
+    values.clear();store=createStore();await store.reserve(scope,operation,()=>keys[0]);
+    assert.deepEqual(await store.reserveExclusive(scope,'bulk.contracts.delete',['bulk.contracts.delete'],()=>keys[1]),{operation,key:keys[0],created:false});
+    values.clear();store=createStore();await store.reserve(scope,'bulk.contracts.delete',()=>keys[0]);
+    assert.deepEqual(await store.reserveExclusive(scope,operation,[operation],()=>keys[1]),{operation:'bulk.contracts.delete',key:keys[0],created:false});
+  }
+  checks.push('Contract batch deletion and pending contract/payment/renewal/return/media intents block one another across a process restart instead of losing the original write key');
 
   values.clear(); store = createStore();
   await store.reserve(scope, "draft.create", () => keys[0]);

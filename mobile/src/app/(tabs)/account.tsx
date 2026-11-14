@@ -4,6 +4,7 @@ import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ShieldCheck, CircleUserRound } from "lucide-react-native";
 import * as Updates from "expo-updates";
+import Constants from 'expo-constants';
 import { Button, Card, InlineError } from "@/components/ui";
 import {DraftWorkList} from "@/components/draft-work-list";
 import { BiometricSettings } from '@/components/biometric-settings';
@@ -19,15 +20,17 @@ export default function Account() {
   const [error, setError] = useState("");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateMessage, setUpdateMessage] = useState("");
+  const updateState = Updates.useUpdates();
 
   async function handleCheckUpdate() {
-    if (__DEV__) {
-      setUpdateMessage("Đang ở môi trường phát triển (DEV), không dùng OTA update.");
+    if (__DEV__ || !Updates.isEnabled) {
+      setUpdateMessage("Bản thử nghiệm không nhận cập nhật tự động. Dùng bản Himoto đã cài chính thức.");
       return;
     }
     setCheckingUpdate(true);
     setUpdateMessage("");
     try {
+      if (updateState.isUpdatePending) { await Updates.reloadAsync(); return; }
       const update = await Updates.checkForUpdateAsync();
       if (update.isAvailable) {
         setUpdateMessage("Đang tải bản cập nhật mới...");
@@ -35,7 +38,7 @@ export default function Account() {
         setUpdateMessage("Đã tải xong bản mới! Đang khởi động lại ứng dụng...");
         await Updates.reloadAsync();
       } else {
-        setUpdateMessage("Ứng dụng đang ở phiên bản mới nhất.");
+        setUpdateMessage("Đã kiểm tra: chưa có bản cập nhật mới cho phiên bản ứng dụng đang cài.");
       }
     } catch (cause) {
       setUpdateMessage(`Chưa thể kiểm tra: ${(cause as Error).message}`);
@@ -78,6 +81,7 @@ export default function Account() {
         >
           Tài khoản
         </Text>
+        <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 20 }}>Himoto {Constants.expoConfig?.version || Updates.runtimeVersion || ''}{Updates.createdAt ? ` · Cập nhật ${dateTime(Updates.createdAt.toISOString())}` : ''}</Text>
         <Card style={{ gap: 12 }}>
           <CircleUserRound size={44} color={theme.primary} accessible={false} />
           <Text style={{ color: theme.text, fontSize: 24, fontWeight: "700" }}>

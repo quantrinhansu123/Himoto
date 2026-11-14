@@ -8,6 +8,9 @@ import {readMobileGpsExportRows} from './mobile-gps';
 import {readMobileBatteryExportRows} from './mobile-battery';
 import {readMobileAccountExportRows} from './mobile-managed-accounts';
 import {readMobileShifts} from './mobile-shift-reports';
+import {matchesShiftReportProgress} from '../../../shared/shift-report-workflow';
+import {ATTENDANCE_SHIFTS} from '../../../shared/attendance-shifts';
+import {hasPermission} from '@/lib/management/permissions';
 import {readMobileDuties} from './mobile-duty-roster';
 import {readMobileReminderExportRows} from './mobile-debt-reminders';
 import {isMobileListExportKind} from '../../../shared/mobile-list-export';
@@ -23,6 +26,11 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
   if(!isMobileListExportKind(kind))throw new MobileError('Danh sách xuất không tồn tại.',404,'NOT_FOUND');
   if(request.headers.has('idempotency-key'))throw new MobileError('Xuất danh sách không dùng mã ghi.');
   const params=new URLSearchParams(request.nextUrl.searchParams);
+  if(kind==='work-shifts'){
+    if(!hasPermission(user,'contracts.read')&&!hasPermission(user,'hr.read'))throw new MobileError('Không có quyền xem ca làm việc.',403,'FORBIDDEN');
+    if(params.size)throw new MobileError('Danh mục ca làm việc không nhận bộ lọc.');
+    return mobileFilteredWorkbook('himoto-ca-lam-viec',['Mã ca','Tên ca','Giờ vào','Giờ ra','Số công'],ATTENDANCE_SHIFTS.map(s=>[s.code,s.name,s.start,s.end,s.credit]));
+  }
   if(kind==='transfers')return mobileFilteredWorkbook('himoto-lich-su-luan-chuyen',TRANSFER_EXPORT_HEADERS,transferExportRows(await readMobileTransferExportRows(user,params)));
   if(kind==='gps'){
     const rows=await readMobileGpsExportRows(user,request),states=new Map(rows.map(row=>[row.id,row.displayState]));
@@ -33,8 +41,9 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
   if(kind==='shifts'){
     const status=localFilter(params,'status','all');
     if(!['all','draft','submitted','pending','confirmed','explained'].includes(status))throw new MobileError('Trạng thái báo cáo ca không hợp lệ.');
+    params.set('all','1');
     const {rows}=await readMobileShifts(user,params);
-    const visible=rows.filter(row=>status==='all'||status==='draft'&&row.status==='draft'||status==='submitted'&&row.status==='submitted'||status==='pending'&&row.status==='submitted'&&row.audit?.status!=='confirmed'||status==='confirmed'&&row.audit?.status==='confirmed'||status==='explained'&&row.audit?.result==='explained');
+    const visible=rows.filter(row=>status==='submitted'?row.status==='submitted':matchesShiftReportProgress(row,status));
     return mobileFilteredWorkbook('himoto-bao-cao-cuoi-ca',SHIFT_EXPORT_HEADERS,shiftExportRows(visible));
   }
   if(kind==='duties'){

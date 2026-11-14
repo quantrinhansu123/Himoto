@@ -1,5 +1,6 @@
+import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
+import { AccessibilityInfo, Keyboard, Text, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, Stack, usePreventRemove } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -36,8 +37,8 @@ export function ContractLifecycleEditor({ id, initialAction }: { id: string; ini
   const text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title: 'Tình trạng xe / nợ / bảo lưu' }} />
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 18, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 36 }}>
+
+      <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 18, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 36 }}>
         <Text accessibilityRole="header" style={{ ...text, fontSize: 24, lineHeight: 32, fontWeight: '800' }}>Tình trạng hợp đồng</Text>
         {!!(write.error || write.query.error) && <InlineError message={write.error || write.query.error?.message || 'Chưa tải được tình trạng.'} />}
         {!!write.notice && <Text accessibilityLiveRegion="polite" style={text}>{write.notice}</Text>}
@@ -69,8 +70,8 @@ export function ContractLifecycleEditor({ id, initialAction }: { id: string; ini
           {context.events.length ? context.events.slice(-eventCount).reverse().map((e, i) => <Card key={`${e.recordedAt}:${i}`} style={{ gap: 8 }}><Text style={text}>{e.label} · {e.actorName || `#${e.actorId}`}</Text><Text style={muted}>Thực tế: {dateTime(e.at)} · Ghi nhận: {dateTime(e.recordedAt)}</Text><Text style={muted}>{contextualStatusLabel('contracts', e.from) || e.from} → {contextualStatusLabel('contracts', e.to) || e.to}</Text>{!!e.note && <Text style={text}>{e.note}</Text>}</Card>) : <Text style={muted}>Chưa có thao tác trạng thái mới.</Text>}
           {context.events.length > eventCount && <Button secondary label={`Xem thêm lịch sử (${Math.min(eventCount, context.events.length)}/${context.events.length})`} onPress={() => setEventCount(v => v + 50)} />}
         </>}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardFormScrollView>
+
     {confirm && <ConfirmEdit title={context?.actions.find(a => a.action === confirm.action)?.label || 'Xác nhận tình trạng hợp đồng'} message={`${context?.code || `Hợp đồng #${id}`}\nNgày thực tế: ${dateTime(confirm.at)}\n${confirm.hold_until ? `Bảo lưu đến: ${dateTime(confirm.hold_until)}\n` : ''}${confirm.resume_end ? `Hạn trả mới: ${dateTime(confirm.resume_end)}\n` : ''}\n${descriptions[confirm.action]}${confirm.action === 'complete_hold' ? `\nTổn thất công nợ đang đối chiếu: ${money(context?.remaining ?? null)}` : ''}${confirm.action === 'close_bad_debt' ? `\nCông nợ tiếp tục theo dõi: ${money(context?.remaining ?? null)}` : ''}\n\n${confirm.note}`} confirmLabel={confirm.action === 'close_bad_debt' ? 'Đóng hợp đồng, giữ công nợ' : 'Xác nhận tình trạng hợp đồng'} busy={write.busy} onCancel={() => setConfirm(null)} onConfirm={() => { const input = confirm; setConfirm(null); void write.save(input); }} />}
     {reload && <ConfirmEdit title="Tải lại tình trạng mới nhất?" message="Nội dung chưa gửi sẽ thay bằng tình trạng xe, tiền và lịch mới nhất." confirmLabel="Tải lại tình trạng" onCancel={() => setReload(false)} onConfirm={() => { setReload(false); void write.query.refetch().then(result => { if (result.data?.context) { setDirty(false); setFormVersion(v => v + 1); } }); }} />}
     {exit && <ConfirmEdit title={write.busy ? 'Đang ghi nhận tình trạng' : 'Rời màn tình trạng hợp đồng?'} message={write.busy ? 'Chờ máy chủ xác nhận trước khi rời.' : 'Nội dung chưa gửi sẽ mất. Mã đã gửi được giữ để đối chiếu trong Tài khoản.'} confirmLabel="Rời màn tình trạng" busy={write.busy} onCancel={() => setExit(null)} onConfirm={() => { if (!write.busy) exit(); }} />}

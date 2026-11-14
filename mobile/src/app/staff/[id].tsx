@@ -9,6 +9,7 @@ import { useStaffWrite } from "@/hooks/use-staff-write";
 import { useTheme } from "@/theme";
 import { Button, InlineError, StateView } from "@/components/ui";
 import { StaffProfileCard } from "@/components/staff-profile-card";
+import { StaffLinkedAccounts } from '@/components/staff-linked-accounts';
 import { ConfirmEdit } from "@/components/editor-sheet";
 function StaffDetails({ row }: { row: MobileStaffProfile }) {
   const { session } = useSession(), theme = useTheme(), write = useStaffWrite(String(row.id), false);
@@ -18,6 +19,7 @@ function StaffDetails({ row }: { row: MobileStaffProfile }) {
     <Stack.Screen options={{ title: row.name }} />
     <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}>
       <StaffProfileCard row={row} />
+      <StaffLinkedAccounts id={row.id} />
       {!!write.error && <InlineError message={write.error} />}
       {write.pending && <InlineError message="Nhân sự còn yêu cầu chưa rõ kết quả. Mở Tài khoản để đối chiếu trước khi sửa hoặc xóa." />}
       {(write.pending || write.error) && <Button secondary label="Mở Tài khoản để đối chiếu" onPress={() => router.push("/(tabs)/account")} />}

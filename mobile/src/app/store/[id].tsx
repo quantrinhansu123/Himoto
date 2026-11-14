@@ -9,6 +9,7 @@ import { useStoreWrite } from "@/hooks/use-store-write";
 import { useTheme } from "@/theme";
 import { Button, InlineError, StateView } from "@/components/ui";
 import { StoreProfileCard } from "@/components/store-profile-card";
+import { WorkShiftCatalogue } from '@/components/work-shift-catalogue';
 import { ConfirmEdit } from "@/components/editor-sheet";
 
 function StoreDetails({ row }: { row: MobileStoreProfile }) {
@@ -19,6 +20,7 @@ function StoreDetails({ row }: { row: MobileStoreProfile }) {
     <Stack.Screen options={{ title: row.name }} />
     <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}>
       <StoreProfileCard row={row} />
+      <WorkShiftCatalogue store={String(row.id)} />
       {!!write.error && <InlineError message={write.error} />}
       {write.pending && <InlineError message="Cơ sở còn yêu cầu chưa rõ kết quả. Mở Tài khoản để đối chiếu trước khi sửa hoặc xóa." />}
       {(write.pending || write.error) && <Button secondary label="Mở Tài khoản để đối chiếu" onPress={() => router.push("/(tabs)/account")} />}

@@ -1,5 +1,6 @@
+import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,KeyboardAvoidingView,Platform,ScrollView,Text,type ScrollViewInstance} from 'react-native';
+import {Keyboard,Text,type ScrollViewInstance} from 'react-native';
 import {useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileVehicleStatusInput,MobileVehicleStatusPreparation,MobileVehicleStatusReview} from '../../../shared/mobile-vehicle-status';
@@ -44,8 +45,8 @@ function StatusForm({id}:{id:string}) {
   }
   const vehicle=data?.vehicle??query.data?.vehicle;
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
+
+      <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
         <Card style={{gap:10}}>
           <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Đổi trạng thái xe</Text>
           <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{vehicle?.license||vehicle?.name||`Xe #${id}`}</Text>
@@ -93,8 +94,8 @@ function StatusForm({id}:{id:string}) {
           <Button label="Rà soát đổi trạng thái" loading={previewing} disabled={locked} onPress={()=>{void preview();}}/>
           <Button label="Tải lại để nhập lại" secondary disabled={locked} onPress={()=>setReload(true)}/>
         </>}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardFormScrollView>
+
     {confirm&&review&&<ConfirmEdit title={review.effect==='draft'?'Tạo hợp đồng nháp từ kho?':'Ghi nhận xe Lưu kho?'} message={`${review.vehicle.license||review.vehicle.name} · ${review.store.name}. ${review.effect==='draft'?'Tạo nháp, xe vẫn Lưu kho; không thu tiền.':'Ghi trạng thái Lưu kho và lịch sử thao tác.'}`}
       confirmLabel={review.effect==='draft'?'Xác nhận tạo nháp':'Xác nhận Lưu kho'} onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);void write.submit({...review.input,review_snapshot:review.snapshot});}}/>}
     {reload&&<ConfirmEdit title="Tải lại xe và nhập lại?" message="Nội dung đang nhập sẽ được bỏ. Lấy thông tin xe mới nhất trước khi tiếp tục." confirmLabel="Tải lại và nhập lại" onCancel={()=>setReload(false)} onConfirm={()=>{setReload(false);setData(null);setReview(null);setName('');setPhone('');setCard('');setNote('');setError('');top();void query.refetch();}}/>}

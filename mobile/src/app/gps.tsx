@@ -1,3 +1,4 @@
+import {FilteredListExport} from '@/components/filtered-list-export';
 import {useState,useRef,useEffect,useCallback} from 'react';
 import {AppState,FlatList,Pressable,ScrollView,Text,View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -57,6 +58,7 @@ export default function GpsScreen() {
       ListHeaderComponent={<View style={{gap:14,paddingBottom:4}}>
         <Text accessibilityRole="header" style={{...titleStyle,fontSize:25}}>Định vị GPS</Text>
         <View style={{flexDirection:'row',gap:10,flexWrap:'wrap'}}><Button label="Tải lại GPS" secondary loading={query.isFetching&&!data} onPress={()=>void query.refetch({cancelRefetch:false})}/><Button label={syncing?'Đang đồng bộ…':'Đồng bộ ngay'} loading={syncing} onPress={()=>void sync()}/></View>
+<FilteredListExport kind="gps" filters={new URLSearchParams({...filters,page:String(filters.page)}).toString()} disabled={query.isFetching||query.isError||!data?.total||search!==filters.search}/>
         {!!(error||query.error)&&<InlineError message={error||query.error?.message||'Chưa tải được GPS.'}/>}
         {!!data&&<Text style={muted}>Lần tải thành công: {date(data.observedAt)}{query.error?' · Đang giữ dữ liệu gần nhất':''}</Text>}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8,paddingVertical:4}}>

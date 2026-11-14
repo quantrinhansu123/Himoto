@@ -15,10 +15,14 @@ import { csvCell } from "@/lib/management/table-utils";
 import { buildRevenueLedgerWorkbook } from "@/lib/management/revenue-ledger-workbook";
 import { validRevenueLedger } from "@/lib/management/revenue-ledger";
 import { validRentalReport, type VehicleRevenueRow } from "@/lib/management/rental-reports";
+import { mobileFilteredWorkbook } from './mobile-filtered-workbook';
 
 export async function exportMobileSalesReport(user: SessionUser, rawKind: string, raw: URLSearchParams): Promise<MobileFileExport> {
   if (!isSalesReportKind(rawKind)) throw new MobileError("Báo cáo không tồn tại.", 404);
-  const kind = rawKind, query = reportQuery(kind, raw), from = query.get("from")!, to = query.get("to")!, store = query.has("store_id") ? Number(query.get("store_id")) : undefined;
+  const params=new URLSearchParams(raw),format=params.get('format')||'csv';
+  if(params.getAll('format').length>1||!['csv','xlsx'].includes(format))throw new MobileError('Định dạng xuất chưa hợp lệ.');
+  params.delete('format');
+  const kind = rawKind, query = reportQuery(kind, params), from = query.get("from")!, to = query.get("to")!, store = query.has("store_id") ? Number(query.get("store_id")) : undefined;
   if (["actual", "fleet", "contracts"].includes(kind) || query.has("vehicle_id") || kind === "overview" && query.has("detail")) throw new MobileError("Mục báo cáo này không có chức năng xuất file.");
   if (kind === "ledger") {
     const { income, expense } = await withMobileReportData(user, kind, async client => {
@@ -60,5 +64,6 @@ export async function exportMobileSalesReport(user: SessionUser, rawKind: string
     } else throw new MobileError("Mục báo cáo này không hỗ trợ xuất CSV.");
     return { lines, count, name };
   });
+  if(format==='xlsx')return mobileFilteredWorkbook(`himoto-${output.name}-${from}-${to}`,output.lines[0].map(String),output.lines.slice(1));
   return { filename: `himoto-${output.name}-${from}-${to}.csv`, mimeType: "text/csv", content: "\uFEFF" + output.lines.map(row => row.map(value => csvCell(String(value))).join(",")).join("\r\n"), rowCount: output.count };
 }

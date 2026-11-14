@@ -382,6 +382,7 @@ jobs:
       - run: npm run test:release
       - run: npm run test:login
       - run: npm run test:mobile
+      - run: npm run test:mobile:parity
       - run: npm run test:mobile:offline
       - run: python3 scripts/check-mobile-native-diagnostics.py
       - run: python3 scripts/check-mobile-native-keyboard.py

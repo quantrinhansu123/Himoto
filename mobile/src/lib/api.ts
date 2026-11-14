@@ -63,6 +63,9 @@ import type {MobileListExportKind} from '../../../shared/mobile-list-export';
 import { isSalesReportOptions, isMobileSalesReport, type SalesReportOptions, type MobileSalesReport, type SalesReportKind } from "../../../shared/mobile-reports";
 import { isMobileBatteryStaff,type MobileBatteryStaff,isBatteryOptions,isBatteryPage,isBatteryWorkflow,isBatteryResult,isBatteryTelegram,type MobileBatteryOptions,type MobileBatteryPage,type BatteryWorkflowContext,type MobileBatteryResult,type MobileBatteryInput,type MobileBatteryAction,type MobileBatteryPrefill,type MobileBatteryTelegram } from "../../../shared/mobile-battery";
 import { isShiftReport,isShiftOptions,isShiftResult,isShiftSnapshot,type ShiftTelegramState,type ShiftReport,type MobileShiftOptions,type MobileShiftSave,type MobileAuditSave,type MobileShiftVideoReview,type ShiftSnapshot,type MobileShiftResult,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
+import { isRegistrationMonth, isSelfRegistrationWeek, isShiftRegistration, type RegistrationMonth, type SelfRegistrationWeek, type ShiftRegistration, type RegistrationInput, type SelfRegistrationInput } from '../../../shared/mobile-shift-registration';
+import { isMobileStaffAccounts, type MobileStaffAccount } from '../../../shared/mobile-staff-accounts';
+import { isMobileAttendanceLocations, type MobileAttendanceLocation } from '../../../shared/mobile-attendance-locations';
 import { isReminderHistory,isReminderOptions,isReminderContext,isReminderResult,isReminderStatus,type MobileReminderHistory,type MobileReminderOptions,type DebtReminderContext,type MobileReminderResult,type DebtReminderInput,type ReminderStatus } from "../../../shared/mobile-debt-reminders";
 import { isVoucherDeleteSelection, isVoucherDeletion, type VoucherDeleteSelection, type VoucherDeletion } from "../../../shared/mobile-cashbook-delete";
 import { isStaffProfile, isStaffOptions, isStaffWriteResult, isStaffResult, type MobileStaffProfile, type MobileStaffOptions, type MobileStaffInput, type MobileStaffWriteResult, type MobileStaffResult } from "../../../shared/mobile-staff";
@@ -307,6 +310,13 @@ export function createApi(
     batteryAction:(id:string,input:MobileBatteryAction,key:string)=>request<MobileWriteReceipt>(`/battery-contracts/${encodeURIComponent(id)}/actions`,(v):v is MobileWriteReceipt=>isWriteReceipt(v)&&String(v.id)===id,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}}),
     deleteBattery:(id:string,revision:string,key:string)=>request<MobileWriteReceipt>(`/battery-contracts/${encodeURIComponent(id)}`,(v):v is MobileWriteReceipt=>isWriteReceipt(v)&&String(v.id)===id,{method:"DELETE",body:JSON.stringify({revision}),headers:{"Idempotency-Key":key}}),
     batteryResult:(key:string,signal?:AbortSignal)=>request<MobileBatteryResult>(`/battery-contracts/requests/${encodeURIComponent(key)}`,(v):v is MobileBatteryResult=>isBatteryResult(v)&&v.key===key,{signal}),
+    registrationMonth:(month:string,signal?:AbortSignal)=>request<RegistrationMonth>(`/duty-roster/registrations?${new URLSearchParams({month})}`,isRegistrationMonth,{signal}),
+    attendanceLocations:(signal?:AbortSignal)=>request<MobileAttendanceLocation[]>('/attendance/locations',isMobileAttendanceLocations,{signal}),
+    saveAttendanceLocation:(input:{storeId:string;latitude:number;longitude:number})=>request<{success:true}>('/attendance/locations',(v):v is {success:true}=>!!v&&typeof v==='object'&&'success'in v&&v.success===true,{method:'PUT',body:JSON.stringify(input)}),
+    saveRegistration:(input:RegistrationInput)=>request<ShiftRegistration>('/duty-roster/registrations',isShiftRegistration,{method:'PUT',body:JSON.stringify(input)}),
+    selfRegistration:(week:string,signal?:AbortSignal)=>request<SelfRegistrationWeek>(`/attendance/shift-registration?${new URLSearchParams({week})}`,isSelfRegistrationWeek,{signal}),
+    saveSelfRegistration:(input:SelfRegistrationInput)=>request<SelfRegistrationWeek>('/attendance/shift-registration',isSelfRegistrationWeek,{method:'PUT',body:JSON.stringify(input)}),
+    staffAccounts:(id:string,signal?:AbortSignal)=>request<MobileStaffAccount[]>(`/staff/${id}/accounts`,isMobileStaffAccounts,{signal}),
     shiftOptions:(signal?:AbortSignal)=>request<MobileShiftOptions>("/shift-reports/options",isShiftOptions,{signal}),
     shifts:(params:string,signal?:AbortSignal)=>request<{rows:ShiftReport[]}>(`/shift-reports?${params}`,(v):v is {rows:ShiftReport[]}=>!!v&&typeof v==="object"&&"rows" in v&&Array.isArray(v.rows)&&v.rows.every(isShiftReport),{signal}),
     shift:(id:string,signal?:AbortSignal)=>request<ShiftReport>(`/shift-reports/${encodeURIComponent(id)}`,(v):v is ShiftReport=>isShiftReport(v)&&String(v.id)===id,{signal}),
@@ -342,7 +352,7 @@ export function createApi(
         return request<MobileSalesReport>(`/reports/${kind}?${legacy}`, validate, { signal }, 70000);
       }
     },
-    salesReportExport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileFileExport>(`/reports/${kind}/export?${params}`, isMobileFileExport, { signal, headers: { Accept: `${WORKBOOK_MIME}, application/json` } }, 90000),
+    salesReportExport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileFileExport>(`/reports/${kind}/export?${params}&format=xlsx`, isMobileFileExport, { signal, headers: { Accept: `${WORKBOOK_MIME}, application/json` } }, 90000),
     cashbookExport: (params: string, signal?: AbortSignal) => request<MobileCsvExport>(`/cashbook/export?${params}`, isMobileCsvExport, { signal }, 70000),
     cashbookExcel: (params:string,signal?:AbortSignal)=>request<MobileFileExport>(`/cashbook/export?${params}&format=xlsx`,isMobileFileExport,{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000),
     cashbookDeleteSelection: (params: string, signal?: AbortSignal) => request<VoucherDeleteSelection>(`/cashbook/vouchers/selection?${params}`, isVoucherDeleteSelection, { signal }, 70000),
@@ -358,7 +368,7 @@ export function createApi(
     staffOptions: (signal?: AbortSignal) => request<MobileStaffOptions>("/staff/options", isStaffOptions, { signal }),
     staffOrganization:(filters:string,signal?:AbortSignal)=>request<MobileStaffOrganization>(`/staff/organization?${filters}`,isMobileStaffOrganization,{signal}),
     dashboard:(filters:string,signal?:AbortSignal)=>{const params=new URLSearchParams(filters);return request<DashboardSummary>(`/dashboard?${filters}`,(v):v is DashboardSummary=>isMobileDashboard(v)&&v.from===params.get('from')&&v.to===params.get('to'),{signal},70000);},
-    dashboardExport:(filters:string,signal?:AbortSignal)=>request<MobileCsvExport>(`/dashboard/export?${filters}`,isMobileCsvExport,{signal},70000),
+    dashboardExport:(filters:string,signal?:AbortSignal)=>request<MobileFileExport>(`/dashboard/export?${filters}&format=xlsx`,isMobileFileExport,{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000),
     bulkDeleteReview:(kind:MobileBulkKind,ids:number[],signal?:AbortSignal)=>request<MobileBulkReview>(`/bulk-delete/${kind}/review`,(v):v is MobileBulkReview=>isMobileBulkReview(v)&&v.kind===kind,{method:'POST',body:JSON.stringify({ids}),signal}),
     bulkDelete:(review:MobileBulkReview,key:string)=>request<MobileBulkDeletion>(`/bulk-delete/${review.kind}`,(v):v is MobileBulkDeletion=>isMobileBulkDeletion(v)&&v.key===key&&v.kind===review.kind&&v.deletedCount===review.rows.length,{method:'DELETE',body:JSON.stringify({ids:review.rows.map(r=>r.id),review:review.review}),headers:{'Idempotency-Key':key}}),
     bulkDeletion:(key:string,signal?:AbortSignal)=>request<MobileBulkDeletion>(`/bulk-delete/requests/${encodeURIComponent(key)}`,(v):v is MobileBulkDeletion=>isMobileBulkDeletion(v)&&v.key===key,{signal}),

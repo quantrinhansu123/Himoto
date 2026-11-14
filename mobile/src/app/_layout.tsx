@@ -10,6 +10,7 @@ import { EnvironmentBanner } from "@/components/environment-banner";
 import { NotificationBridge } from "@/components/notification-bridge";
 import { OfflineBanner } from '@/components/offline-banner';
 import { BiometricGate } from '@/components/biometric-gate';
+import { AppUpdateBridge } from '@/components/app-update-bridge';
 
 export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
   return (
@@ -48,6 +49,7 @@ function Navigator() {
       <StatusBar style="auto" />
       <EnvironmentBanner />
       <OfflineBanner />
+      <AppUpdateBridge />
       <NotificationBridge />
       <SafeAreaProvider style={{ flex: 1 }}>
       <Stack
@@ -63,6 +65,9 @@ function Navigator() {
         </Stack.Protected>
         <Stack.Protected guard={!!session}>
           <Stack.Screen name="attendance" options={{title:'Chấm công'}}/>
+          <Stack.Screen name="attendance-locations" options={{title:'Cài đặt GPS chấm công'}}/>
+          <Stack.Screen name="self-shift-registration" options={{title:'Đăng ký ca làm việc'}}/>
+          <Stack.Screen name="shift-registrations" options={{title:'Đăng ký ca làm việc'}}/>
           <Stack.Screen name="guide" options={{title:'Hướng dẫn và hỏi đáp'}}/>
           <Stack.Screen name="offline-sync" options={{ title: 'Dữ liệu và đồng bộ' }}/>
           <Stack.Screen name="notifications" options={{title:'Thông báo công việc'}}/>
@@ -97,7 +102,7 @@ function Navigator() {
           <Stack.Screen name="transfer-telegram/[id]/[eventId]" options={{title:'Telegram điều chuyển'}} />
           <Stack.Screen name="telegram-result/[key]" options={{title:'Xác nhận yêu cầu Telegram'}} />
           <Stack.Screen name="telegram-pending" options={{title:'Giao dịch chưa gửi Telegram'}} />
-          <Stack.Screen name="shift-editor/[id]" options={{ title: "Kiểm kê cuối ca" }} />
+          <Stack.Screen name="shift-editor/[id]" options={{ title: "Báo cáo cuối ca" }} />
           <Stack.Screen name="shift-audit/[id]" options={{ title: "Đối soát KTNB" }} />
           <Stack.Screen name="shift-result/[key]" options={{ title: "Xác nhận báo cáo ca" }} />
           <Stack.Screen name="debt-reminders" options={{ title: "Gửi nhắc nợ" }} />

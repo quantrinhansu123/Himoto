@@ -1,5 +1,6 @@
+import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,Text,View,type ScrollViewInstance} from 'react-native';
+import {Keyboard,Pressable,RefreshControl,Text,View,type ScrollViewInstance} from 'react-native';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {RefundQrReader} from './refund-qr-reader';
@@ -102,26 +103,26 @@ function ReturnForm({id}:{id:string}) {
       confirmLabel="Xác nhận trả xe và quyết toán" onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);if(Object.values(qrPending).some(Boolean)){setError('Còn ảnh QR chưa lưu. Lưu hoặc bỏ ảnh trước khi xác nhận.');return;}void action.submit({...reviewInput,settlement_snapshot:review.snapshot});}}/>}
   </>;
   if(!action.checked)return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <ScrollView contentContainerStyle={{padding:20}}><Card style={{gap:16}}>
+    <KeyboardFormScrollView contentContainerStyle={{padding:20}}><Card style={{gap:16}}>
       <Text accessibilityRole="header" style={{color:theme.text,fontSize:23,fontWeight:'700'}}>Kiểm tra thao tác trên thiết bị</Text>
       {!!action.error&&<InlineError message={action.error}/>}
       <Button label="Đọc lại thao tác trả xe" loading={action.checking} onPress={()=>{void action.checkPending();}}/>
       <Button label="Mở Tài khoản để đối chiếu" secondary disabled={action.checking} onPress={action.openAccount}/>
-    </Card></ScrollView>{overlays}
+    </Card></KeyboardFormScrollView>{overlays}
   </SafeAreaView>;
   if(action.key)return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <ScrollView contentContainerStyle={{padding:20}}><Card style={{gap:16}}>
+    <KeyboardFormScrollView contentContainerStyle={{padding:20}}><Card style={{gap:16}}>
       <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Trả xe đang chờ đối chiếu</Text>
       <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Kiểm tra phiếu gốc trước khi trả hoặc ghi tiền thêm. Nội dung đang nhập được giữ trong màn hình này.</Text>
       {!!action.error&&<InlineError message={action.error}/>}
       <Button label="Đối chiếu trả xe với máy chủ" loading={action.busy} onPress={()=>setResolving(true)}/>
       <Button label="Mở phiếu trả xe" secondary disabled={action.busy} onPress={action.openReceipt}/>
-    </Card></ScrollView>{overlays}
+    </Card></KeyboardFormScrollView>{overlays}
   </SafeAreaView>;
   if(!data)return <><StateView title="Chuẩn bị trả xe" loading={query.isPending} message={query.isError?(query.error as Error).message:undefined} retry={query.isError?()=>{void query.refetch();}:undefined}/>{overlays}</>;
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
-      <ScrollView
+
+      <KeyboardFormScrollView
         ref={scroll}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -233,7 +234,7 @@ function ReturnForm({id}:{id:string}) {
         </>}
         <Button label="Tải lại dữ liệu trả xe" secondary loading={query.isFetching} disabled={locked} onPress={()=>{void query.refetch();}}/>
         <Button label="Ẩn bàn phím" secondary disabled={action.busy} onPress={()=>Keyboard.dismiss()}/>
-      </ScrollView>
-    </KeyboardAvoidingView>{overlays}
+      </KeyboardFormScrollView>
+    {overlays}
   </SafeAreaView>;
 }
