@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { load } = require('./check-contract-payments.cjs');
+
+const page = fs.readFileSync(path.resolve('src/app/(management)/shift-registration/page.tsx'), 'utf8');
+const shell = fs.readFileSync(path.resolve('src/components/management/ManagementShell.tsx'), 'utf8');
+const board = fs.readFileSync(path.resolve('src/components/management/ShiftRegistrationBoard.tsx'), 'utf8');
+const loader = load(path.resolve('src/lib/management/data-loader'));
+assert.match(page, /return <ShiftRegistrationBoard\s*\/>/);
+assert.match(page, /Đăng ký ca — HIMOTO/);
+assert.match(shell, /href:\s*'\/shift-registration',\s*label:\s*'Đăng ký ca',\s*kind:\s*'shift-registration'/);
+assert.match(shell, /kind==='shift-registration'\?'hr\.read'/);
+assert.match(shell, /active\.kind === 'shift-registration' && hasPermission\(user, 'hr\.write'\)/);
+assert.deepEqual(loader.managementKindsForPath('/shift-registration'), ['stores']);
+assert.match(board, /<h1>Đăng ký ca<\/h1>/);
+assert.match(board, /\/api\/auth\/duty-roster\/registrations\?\$\{new URLSearchParams\(range\)\}/);
+assert.match(board, /Từ ngày/);assert.match(board, /Đến ngày/);assert.match(board, /Thêm ngày theo bộ lọc/);
+assert.match(board, /full-time/);assert.match(board, /part-time/);assert.match(board, /7h30/);
+assert.match(board, /rowSpan=\{group\.length\}/);
+assert.match(board, /registrationCredit\(cells\.get/);
+console.log('PASS: dedicated monthly shift-registration route/menu, HR read/write guards, shared registration DB API, grouped staff grid and credits; no redundant full staff/dataset load');

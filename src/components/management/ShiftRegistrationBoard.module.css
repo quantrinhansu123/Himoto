@@ -2,6 +2,7 @@
 .toolbar label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; }
 .toolbar input,.toolbar select { min-height:38px; border:1px solid #cbd5e1; border-radius:6px; padding:6px 10px; background:#fff; color:#172b45; }
 .month { display:flex; align-items:end; gap:8px; flex-wrap:wrap; }
+.range { display:flex; align-items:end; gap:12px; flex-wrap:wrap; width:100%; padding-top:12px; border-top:1px solid #e2e8f0; }.range > span { font-size:12px; color:#64748b; padding-bottom:10px; }
 .summary { display:flex; flex-wrap:wrap; gap:20px; padding:16px 0 0; font-size:13px; color:#475569; }
 .status { min-height:20px; font-size:13px; color:#475569; margin:12px 0; }
 .scroll { max-width:100%; max-height:65vh; overflow:auto; border:1px solid #b9c6d5; border-radius:8px; background:#fff; isolation:isolate; }
@@ -15,6 +16,7 @@
 .table thead .store,.table thead .name,.table thead .position { background:#08cdd3; color:#093846; font-weight:750; z-index:4; }
 .table .total { position:sticky; right:0; min-width:78px; z-index:2; background:#f1f5f9; }
 .table thead .total { z-index:4; }
+.fit .table { width:100%; min-width:100%; }.fit .table th,.fit .table td { padding:3px 1px; }.fit .table thead th { min-width:0; font-size:10px; }.fit .table .store { width:100px; min-width:100px; max-width:100px; }.fit .table .name { left:100px; width:150px; min-width:150px; max-width:150px; padding-left:7px; }.fit .table .position { width:70px; min-width:70px; font-size:10px; }.fit .table .total { width:54px; min-width:54px; font-size:10px; }.fit .shift { width:100%; min-width:0; padding:0; font-size:10px; text-align:center; appearance:none; -webkit-appearance:none; background-image:none; border-radius:8px; }.fit .table small { font-size:9px; }
 .table thead .sunday { background:#fff2cb; }
 .table .today { box-shadow:inset 2px 0 #309aab,inset -2px 0 #309aab; }
 .group0 { --group:#dcefd5; }.group1 { --group:#f9dddd; }.group2 { --group:#ffedb5; }.group3 { --group:#dce9fc; }.group4 { --group:#eae2f8; }
@@ -26,5 +28,7 @@
 .caption { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 .notes { display:grid; grid-template-columns:minmax(300px,440px) 1fr; gap:30px; margin-top:24px; padding:20px; border:1px solid #dce3eb; border-radius:10px; background:#fff; }
 .notes h2 { font-size:15px; margin:0 0 12px; }.notes ul { margin:0; padding-left:20px; font-size:13px; line-height:1.9; color:#475569; }
+.notes p { font-size:13px; line-height:1.75; margin:0 0 8px; color:#334155; }.notes .disclaimer { margin-top:12px; padding:10px; border-radius:6px; background:#f8fafc; font-size:12px; color:#64748b; }
 .legend { width:100%; border-collapse:collapse; font-size:12px; }.legend th,.legend td { border:1px solid #c5cdd6; padding:6px; text-align:left; }.legend b { display:inline-block; min-width:42px; padding:3px 6px; text-align:center; border-radius:10px; }
 @media(max-width:760px) { .notes { grid-template-columns:1fr; padding:12px; gap:20px; }.table .store { width:100px; min-width:100px; max-width:100px; }.table .name { left:100px; width:150px; min-width:150px; max-width:150px; }.toolbar { padding:12px; }.table .total { position:static; } }
+@media(max-width:1000px) { .fit .table { width:max-content; min-width:1300px; }.fit .table thead th { min-width:32px; } }
