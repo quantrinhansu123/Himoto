@@ -18,6 +18,7 @@ export type VehicleActionInput = (
   | { action: 'receive'; transfer_event_id: number; note: string }
   | { action: 'reject'; transfer_event_id: number; note: string }
   | { action: 'cancel'; transfer_event_id: number; note: string }
+  | { action: 'inventory_status'; status: string; note: string; revision: string }
   | { action: 'status'; status: 'ready' | 'using'; beneficiary_store_id: number; customer_name: string; customer_phone: string; customer_id_card: string; note: string }) & { revision?: string };
 
 const text = (value: unknown, label: string, max: number) => {
@@ -38,6 +39,10 @@ export function parseVehicleAction(body: unknown): VehicleActionInput {
   let revision: string | undefined;
   try { revision = vehicleRevision(raw.revision); } catch { throw new VehicleActionError('Phiên bản thông tin xe không hợp lệ.'); }
   const note = text(raw.note, 'Ghi chú', 500);
+  if (raw.action === 'inventory_status') {
+    if (Object.keys(raw).some(key => !['action','status','note','revision'].includes(key)) || !revision || !VEHICLE_STATUSES.some(option => option.value === raw.status && option.value !== 'in_transit')) throw new VehicleActionError('Chọn trạng thái xe hợp lệ và tải lại phiên bản xe trước khi lưu.');
+    return { action: 'inventory_status', status: String(raw.status), note, revision };
+  }
   if (raw.action === 'receive') return {action:'receive',transfer_event_id:storeId(raw.transfer_event_id,'lần chuyển xe cần nhận'),note,...(revision?{revision}:{})};
   if (raw.action === 'reject') return {action:'reject',transfer_event_id:storeId(raw.transfer_event_id,'lần chuyển xe cần từ chối'),note,...(revision?{revision}:{})};
   if (raw.action === 'cancel') return {action:'cancel',transfer_event_id:storeId(raw.transfer_event_id,'lần chuyển xe cần huỷ'),note,...(revision?{revision}:{})};
@@ -104,12 +109,23 @@ export async function applyVehicleAction(client: PoolClient, vehicleId: number, 
   const vehicle = found.rows[0];
   if (!vehicle) throw new VehicleActionError('Không tìm thấy xe. Nhấn Làm mới để kiểm tra.', 404);
   const scope=dataAccess.getStore();
-  if(input.action==='status'&&scope&&!scope.scope_all&&Number(vehicle.store_id)!==scope.store_id){
+  if((input.action==='status'||input.action==='inventory_status')&&scope&&!scope.scope_all&&Number(vehicle.store_id)!==scope.store_id){
     const hq=(await client.query('SELECT himoto.ownership_may_use_headquarters_vehicle($1) AS ok',[vehicle.store_id])).rows[0];
     if(!hq?.ok)throw new VehicleActionError('Chỉ được thao tác xe tại cơ sở được phân quyền hoặc kho trụ sở chính.',403);
   }
   if (input.revision && input.revision !== vehicle.revision) throw new VehicleActionError('Thông tin xe đã thay đổi. Nhấn Làm mới rồi thao tác lại.', 409);
-  if(vehicle.status==='in_transit'&&input.action==='status')throw new VehicleActionError('Xe đang Chờ luân chuyển. Cơ sở đích cần dùng Xác nhận nhận xe trước khi đổi trạng thái.',409);
+  if(vehicle.status==='in_transit'&&(input.action==='status'||input.action==='inventory_status'))throw new VehicleActionError('Xe đang Chờ luân chuyển. Cơ sở đích cần dùng Xác nhận nhận xe trước khi đổi trạng thái.',409);
+  if (input.action === 'inventory_status') {
+    // Inventory reconciliation is independent of contract/debt settlement. Never
+    // create a draft, return a rental line or alter payments from this action.
+    if (!VEHICLE_STATUSES.some(option => option.value === input.status && option.value !== 'in_transit')) throw new VehicleActionError('Trạng thái xe không hợp lệ.');
+    const current = ({ rent: 'using', maintenance: 'repairing', holding: 'pending' } as Record<string, string>)[String(vehicle.status)] || String(vehicle.status);
+    if (current === input.status) throw new VehicleActionError(`Xe đang ở trạng thái ${statusLabel(current)}.`);
+    await client.query('UPDATE himoto.vehicles SET status=$2,updated_at=now() WHERE id=$1', [vehicleId, input.status]);
+    const eventId = await writeVehicleAudit(client, { vehicleId, before: vehicle, after: { ...vehicle, status: input.status }, actorId,
+      type: 'status_change', refType: input.status, note: input.note });
+    return { id: vehicleId, event_id: eventId };
+  }
   // HĐ mở chỉ chặn đổi trạng thái; điều chuyển / nhận / từ chối / huỷ vẫn làm được (thuê chéo cơ sở).
   if (input.action === 'status') {
     const open = scope

@@ -174,6 +174,35 @@ async function main(){
     assert.throws(()=>parseVehicleAction({action:'transfer',to_store_id:32,revision:123}),VehicleActionError);
     assert.throws(()=>parseVehicleAction({action:'receive',transfer_event_id:0}),VehicleActionError);
     assert.throws(()=>parseVehicleValues({...edit,revision:'invalid'}),VehicleSaveError);
+    await c.query("INSERT INTO qa_transfer_vehicles(id,name,brand,type,year,store_id,current_store_id,license,status,created_by) VALUES(108,'Xe nợ xấu QA','Honda','xeso',2024,31,31,'QA-108','bad_debt',143)");
+    await c.query("INSERT INTO qa_transfer_orders(id,store_id,order_status,order_mode,pid) VALUES(202,31,'bad_debt','standard',0)");
+    await c.query('INSERT INTO qa_transfer_order_vehicle_details(id,order_id,vehicle_id) VALUES(302,202,108)');
+    const unchangedOrders=(await c.query('SELECT * FROM qa_transfer_orders ORDER BY id')).rows;
+    const unchangedLines=(await c.query('SELECT * FROM qa_transfer_order_vehicle_details ORDER BY id')).rows;
+    const unchangedCustomers=(await c.query('SELECT * FROM qa_transfer_customers ORDER BY id')).rows;
+    const independent=async(id,status)=>attempt(async()=>applyVehicleAction(proxy,id,parseVehicleAction({action:'inventory_status',status,note:'Đối chiếu kho độc lập QA',revision:(await vehicle(id)).revision}),143));
+    const restored=await independent(108,'ready');
+    assert.equal((await vehicle(108)).status,'ready');assert(!restored.draft&&!restored.customer);
+    const restoredEvent=(await c.query('SELECT * FROM qa_transfer_vehicle_location_events WHERE id=$1',[restored.event_id])).rows[0];
+    assert.equal(restoredEvent.event_type,'status_change');assert.equal(Number(restoredEvent.created_by),143);
+    assert.deepEqual(restoredEvent.audit_snapshot.changes.map(change=>change.field),['status']);
+    assert.equal(restoredEvent.audit_snapshot.changes[0].from_value,'bad_debt');assert.equal(restoredEvent.audit_snapshot.changes[0].to_value,'ready');
+    for(const status of ['using','repairing','pending','sold','broken','bad_debt','ready'])await independent(108,status);
+    await c.query("UPDATE qa_transfer_orders SET order_status='renting' WHERE id=202");
+    await independent(108,'using');await independent(108,'ready');
+    const inventoryEdit=parseVehicleValues({...edit,license:'QA-108',store_id:31,status:'repairing',revision:(await vehicle(108)).revision});
+    await attempt(()=>updateDatabaseVehicle(proxy,108,inventoryEdit,143));assert.equal((await vehicle(108)).status,'repairing');
+    await assert.rejects(()=>attempt(()=>applyVehicleAction(proxy,108,parseVehicleAction({action:'inventory_status',status:'ready',revision:'0'}),143)),e=>e.status===409);
+    await assert.rejects(()=>independent(103,'ready'),e=>e.status===409); // Pending transfer cannot be bypassed.
+    const beforeFailure=await vehicle(108),countBeforeFailure=await count();failAudit=true;
+    await assert.rejects(()=>independent(108,'ready'),/Simulated audit/);failAudit=false;
+    assert.equal((await vehicle(108)).status,beforeFailure.status);assert.equal(await count(),countBeforeFailure);
+    await c.query("UPDATE qa_transfer_orders SET order_status='bad_debt' WHERE id=202");
+    assert.deepEqual((await c.query('SELECT * FROM qa_transfer_orders ORDER BY id')).rows,unchangedOrders);
+    assert.deepEqual((await c.query('SELECT * FROM qa_transfer_order_vehicle_details ORDER BY id')).rows,unchangedLines);
+    assert.deepEqual((await c.query('SELECT * FROM qa_transfer_customers ORDER BY id')).rows,unchangedCustomers);
+    assert.equal(Number((await vehicle(108)).store_id),31);assert.equal(Number((await vehicle(108)).current_store_id),31);
+    checks.push('Independent inventory states: bad debt returns to stock; all manual states work with open contracts; no draft/customer/contract/rental-line/store mutation; full edit works, stale versions and pending transfers stay blocked; audit failure rolls back');
     await c.query('ROLLBACK');
   }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
   console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0},null,2));
