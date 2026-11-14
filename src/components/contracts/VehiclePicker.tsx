@@ -82,10 +82,10 @@ export function vehicleAvailability(
     selectable: true };
 }
 
-export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, ownOrderId, takenIds, disabled, invalid, proposedStart, proposedEnd, onChange, directory, historical=false,ownershipStoreIds }: {
+export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, ownOrderId, takenIds, disabled, invalid, proposedStart, proposedEnd, onChange, directory, historical=false,ownershipStoreIds,placeholder }: {
   id: string; index: number; vehicles: ManagementRow[]; value: string; storeName: string; monthly: boolean; ownOrderId?: number;
   takenIds: string[]; disabled: boolean; invalid: boolean; proposedStart?: string; proposedEnd?: string; onChange: (id: string) => void;
-  directory?: ManagementRow[];historical?:boolean;ownershipStoreIds?:string[];
+  directory?: ManagementRow[];historical?:boolean;ownershipStoreIds?:string[];placeholder?:string;
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -140,7 +140,7 @@ export function VehiclePicker({ id, index, vehicles, value, storeName, monthly, 
     <div className="mg-vehicle-picker-input">
       <input id={id} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" autoComplete="off" disabled={disabled}
         aria-invalid={invalid} aria-activedescendant={open && shown[active] ? `${listId}-${shown[active].item.id}` : undefined}
-        placeholder={disabled ? 'Chọn cửa hàng xe trước' : ownershipStoreIds?'Gõ tên xe hoặc biển số trong kho Thuê sở hữu':`Gõ tên xe hoặc biển số tại ${storeName}. Gõ biển số để tìm cả cửa hàng khác`}
+        placeholder={placeholder || (disabled ? 'Chọn cửa hàng xe trước' : ownershipStoreIds?'Gõ tên xe hoặc biển số trong kho Thuê sở hữu':`Gõ tên xe hoặc biển số tại ${storeName}. Gõ biển số để tìm cả cửa hàng khác`)}
         value={open ? query : selected ? `${selected.name} · ${selected.license}` : ''}
         onFocus={() => { setOpen(true); setQuery(''); setActive(0); }}
         onBlur={() => { setOpen(false); setQuery(''); }}

@@ -6,6 +6,7 @@ export interface ReturnableContractItem {
   total_amount: number | null; paid_amount: number | null; overdue: boolean; daily_price: number | null;
   deposit_paid: number; deposit_held: number;
   return_reconciled?: boolean;
+  rental_type?: string;
 }
 export interface ReturnInput { item_id: number; item_revision: string; returned_at: string; hourly_rate: string; fee_override?: string; early_discount?: string;repair_fee?:string;repair_note?:string }
 export interface ReturnResult { item_id: number; contract_code: string; returned_at: string; scheduled_return_at: string; late_minutes: number; chargeable_hours: number; hourly_rate: number; fee: number;late_fee?:number;repair_fee?:number; total_amount: number | null; status: string }

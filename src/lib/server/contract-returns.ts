@@ -57,7 +57,7 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
   COALESCE(NULLIF(o.contract_number,''),NULLIF(o.draft_reference,''),'#'||o.id::text) AS contract_code,
   CASE WHEN o.order_status='renting' AND d.return_at < now() THEN 'overdue' ELSE o.order_status END AS order_status,
   COALESCE(c.name,o.customer_name,'') AS customer_name,COALESCE(c.id_card::text,o.customer_idnumber::text,'') AS customer_id_card,
-  d.vehicle_id AS vehicle_id,v.name AS vehicle_name,v.license, o.store_id,s.store_name,
+  d.vehicle_id AS vehicle_id,v.name AS vehicle_name,v.license, o.store_id,s.store_name,${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
   d.rent_at AS scheduled_start_at,d.return_at AS scheduled_return_at,d.completed_at,d.xmin::text AS item_revision,o.xmin::text AS order_revision,
   NULLIF(o.total::text,'')::numeric AS total_amount,o.draft_payload,${rentalPaidSql()} AS paid_amount,dep.paid AS deposit_paid,dep.paid-dep.refunded AS deposit_held,
   (d.completed_at IS NULL AND d.return_at < now()) AS overdue,
@@ -85,7 +85,7 @@ function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractI
     const returnReconciled=Array.isArray(reconciliations)&&reconciliations.some(item=>Number(item.item_id)===Number(row.item_id)&&item.actual_recovery_at===null);
     const total = plan && (row.order_status !== 'completed' || plan.stopped_at) ? installmentBalance(plan, baseTotal, paid).accrued_total : baseTotal;
     return { item_id: Number(row.item_id), order_id: Number(row.order_id), contract_code: String(row.contract_code),
-    order_status: String(row.order_status), customer_name: String(row.customer_name), customer_id_card: String(row.customer_id_card),
+    order_status: String(row.order_status), rental_type: String(row.rental_type || ''), customer_name: String(row.customer_name), customer_id_card: String(row.customer_id_card),
     vehicle_id: Number(row.vehicle_id), vehicle_name: String(row.vehicle_name || ''), license: String(row.license || ''),
     store_id: Number(row.store_id), store_name: String(row.store_name || ''), scheduled_start_at: toIso(row.scheduled_start_at), scheduled_return_at: toIso(row.scheduled_return_at), completed_at: toIso(row.completed_at),
     item_revision: String(row.item_revision), order_revision: String(row.order_revision),
