@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { addDays, dutyRequest, DutyRequestError, vietnamDate, weekStart } from '@/lib/management/duty-roster';
-import { REGISTRATION_SHIFTS, registrationCredit } from '@/lib/management/shift-registration';
+import { registrationCredit } from '@/lib/management/shift-registration';
 import type { SelfRegistrationWeek } from '@/lib/management/self-shift-registration';
 import { shiftCreditLabel } from '@/lib/management/attendance-shifts';
 import { Dialog } from './Dialog';
+import { ShiftSearchPicker } from './ShiftSearchPicker';
 import styles from './WeeklyShiftRegistrationDialog.module.css';
 
 const dateLabel = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('vi-VN', { timeZone: 'UTC', day: '2-digit', month: '2-digit' });
@@ -19,6 +20,7 @@ export function WeeklyShiftRegistrationDialog({ onClose, onSaved }: { onClose: (
   const [error, setError] = useState('');
   const [uncertain, setUncertain] = useState(false);
   const [reload, setReload] = useState(0);
+  const [activeDate, setActiveDate] = useState<string | null>(null);
   const lock = useRef(false);
   const apply = (result: SelfRegistrationWeek) => {
     setData(result);
@@ -26,7 +28,7 @@ export function WeeklyShiftRegistrationDialog({ onClose, onSaved }: { onClose: (
   };
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true); setError(''); setUncertain(false); setData(null); setDraft({});
+    setLoading(true); setError(''); setUncertain(false); setData(null); setDraft({}); setActiveDate(null);
     dutyRequest<SelfRegistrationWeek>(`/api/auth/attendance/shift-registration?week=${week}`, 'GET', undefined, controller.signal).then(result => {
       if (result.week !== week || !Array.isArray(result.dates) || result.dates.length !== 7 || !Array.isArray(result.registrations) || !result.staff?.id) throw new Error('Thông tin tuần đăng ký chưa hợp lệ.');
       if (!controller.signal.aborted) apply(result);
@@ -59,12 +61,10 @@ export function WeeklyShiftRegistrationDialog({ onClose, onSaved }: { onClose: (
       {error && <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" disabled={saving} onClick={() => setReload(value => value + 1)}>Tải lại để kiểm tra</button></p>}
       {data && <><div className={styles.days}>{data.dates.map(date => {
         const past = date < data.today;
-        return <label key={date} className={`${styles.day} ${past ? styles.past : ''} ${date === data.today ? styles.today : ''}`}>
+        return <div key={date} className={`${styles.day} ${past ? styles.past : ''} ${date === data.today ? styles.today : ''}`}>
           <span><strong>{new Date(`${date}T00:00:00Z`).toLocaleDateString('vi-VN', { timeZone: 'UTC', weekday: 'long' })}</strong><small>{dateLabel(date)}{date === data.today ? ' · Hôm nay' : past ? ' · Đã qua' : ''}</small></span>
-          <select aria-label={`Ca làm ngày ${dateLabel(date)}`} disabled={unavailable || past} value={draft[date] || ''} className={draft[date] === 'O' ? styles.off : draft[date] === 'F' ? styles.full : ''} onChange={event => setDraft(current => ({ ...current, [date]: event.target.value }))}>
-            <option value="">Chưa đăng ký</option>{REGISTRATION_SHIFTS.map(shift => <option key={shift.code} value={shift.code}>{shift.code} · {shift.name}{shift.start ? ` (${shift.start}–${shift.end}${shift.code === 'G1+G3' ? ', nghỉ 12:00–17:00' : ''})` : ''} · {shiftCreditLabel(shift.credit)} công</option>)}
-          </select>
-        </label>;
+          <ShiftSearchPicker label={`Ca làm ngày ${dateLabel(date)}`} disabled={unavailable || past} value={draft[date] || ''} open={activeDate === date} onOpenChange={open => setActiveDate(open ? date : null)} onChange={code => setDraft(current => ({ ...current, [date]: code }))} />
+        </div>;
       })}</div>
       <div className={styles.summary}><span>Tổng công đăng ký dự kiến</span><strong>{shiftCreditLabel(data.dates.reduce((sum, date) => sum + registrationCredit(draft[date]), 0))} công</strong></div>
       <p className="mg-reminder-help">Chỉ đăng ký ca của chính bạn tại cơ sở trong hồ sơ. Ngày đã qua không thể sửa. Ca đăng ký được hiển thị trên bảng tháng của quản lý, chưa thay thế lịch trực và công chấm thực tế.</p>
