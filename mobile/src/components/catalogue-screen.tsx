@@ -277,7 +277,6 @@ export function CatalogueScreen({
           )}
         {kind === "customers" && session?.user.permissions.includes('settings.write') && <Button secondary label="Nhập khách hàng từ Excel" onPress={() => router.push('/import-customers')} />}
         {kind === "customers" && session?.user.permissions.includes('settings.write') && <Button secondary label="Khớp cơ sở khách từ Excel" onPress={() => router.push('/customer-store-import')} />}
-        {!operationsCatalogue && <Button secondary label="Tải Excel theo bộ lọc" disabled={!datesValid || query.isPending || query.isError} onPress={() => router.push({ pathname: '/catalogue-export/[kind]', params: { kind, filters: new URLSearchParams({ search, status, store, ...(kind === 'contracts' ? { scope, from, to, store_basis: storeBasis } : {}) }).toString() } })} />}
         {!operationsCatalogue&&kind!=='contracts'&&session!.user.permissions.includes('settings.write')&&<Button secondary label="Chọn nhiều hồ sơ để xóa" onPress={()=>router.push({pathname:'/bulk-delete/[kind]',params:{kind,filters:new URLSearchParams({search,status,store}).toString()}})}/>}
         {kind === "contracts" &&
           session?.user.permissions.includes("contracts.draft") && (

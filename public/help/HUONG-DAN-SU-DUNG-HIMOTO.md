@@ -178,6 +178,23 @@ Bản nháp chưa phải hợp đồng đã phát hành và không tự giữ xe
 
 Tiền giữ xe được trừ vào tiền thuê. Không nhầm khoản trả trước này với tiền cọc bảo đảm trong hợp đồng thuê thông thường.
 
+### Tiền giữ xe: ghi số tiền thực tế đã nhận
+
+![Nhập tiền giữ xe, hình thức, tài khoản và thời điểm nhận — dữ liệu minh họa](images/08-tien-giu-xe.png)
+
+Ảnh minh họa khoản giữ xe 100.000 đồng bằng tiền mặt. Chọn đúng tài khoản/két và thời điểm nhận, lưu bill trước khi xác nhận. Khoản này được trừ vào tiền thuê, không phải cọc bảo đảm.
+
+### Khách đến: tiếp tục giao xe
+
+1. Mở tab Đặt cọc, chọn đúng hợp đồng rồi bấm Giao xe.
+2. Bổ sung đủ hồ sơ, ảnh xe và hợp đồng ký.
+3. Đối chiếu tiền thuê, khoản đã trả trước và tiền thuê còn lại; khoản trả trước không thu lại lần nữa.
+4. Xác nhận giao xe, chờ thành công và kiểm tra trạng thái Đang thuê.
+
+![Màn hình giao xe đã đặt cọc — dữ liệu minh họa](images/07-giao-xe-da-dat-coc.png)
+
+Ảnh minh họa: tiền thuê 300.000 đồng, đã trả trước 100.000 đồng, còn lại 200.000 đồng. Kiểm tra số tiền thực tế của hợp đồng trước khi xác nhận.
+
 ## 7. Gia hạn và thu tiền
 
 ### Gia hạn thuê thông thường
@@ -207,6 +224,10 @@ Nếu mất mạng hoặc chưa có kết quả rõ ràng, tải lại trạng t
 2. Kiểm tra lịch đóng tiền theo kỳ.
 3. Dùng mục **Đến hạn đóng tiền** để theo dõi các khoản đến hẹn.
 4. Thu khoản đến hạn theo công nợ/lịch đã lưu; không dùng gia hạn thuê thường để tự cộng thêm kỳ thuê sở hữu.
+
+![Màn hình thu tiền gia hạn — dữ liệu minh họa](images/09-gia-han-thanh-toan.png)
+
+Ảnh minh họa màn hình thanh toán hợp đồng với nghiệp vụ Thu tiền gia hạn; số liệu và tài khoản chỉ là dữ liệu kiểm thử.
 
 ### Sửa kỳ gia hạn đã lưu
 
@@ -390,7 +411,23 @@ Chọn mã ca, nhân viên và cơ sở để đối chiếu chấm công.
 
 Chụp ảnh, lấy GPS và ghi nhận giờ vào/ra theo giờ Việt Nam.
 
+### Cài đặt tọa độ chấm công cho cơ sở
+
+![Cài đặt tọa độ chấm công cho cơ sở](images/11-cham-cong-cai-dat-gps.jpg)
+
+**Mở tại:** Chấm công → Cài đặt
+
+1. Người được cấp quyền chỉnh sửa chọn đúng cơ sở.
+2. Đứng tại cơ sở rồi bấm Lấy vị trí hiện tại và cho phép truy cập vị trí; hoặc nhập Vĩ độ, Kinh độ đã kiểm tra.
+3. Bấm Lưu tọa độ và chờ thông báo Đã lưu tọa độ chấm công.
+
+**Kết quả cần thấy:** Mở lại cơ sở và kiểm tra tọa độ đã lưu.
+
+**Lưu ý:** Nếu chỉ có quyền xem, liên hệ người quản lý được cấp quyền để cập nhật. Không lấy vị trí hiện tại khi đang ở nơi khác.
+
 ### Kiểm tra tài khoản và lịch làm việc
+
+![Kiểm tra tài khoản và lịch làm việc](images/10-cham-cong-tong-quan.jpg)
 
 **Mở tại:** Chấm công
 
@@ -407,26 +444,30 @@ Chụp ảnh, lấy GPS và ghi nhận giờ vào/ra theo giờ Việt Nam.
 **Mở tại:** Chấm công → Vào ca
 
 1. Cho phép camera và vị trí trên thiết bị.
-2. Chụp ảnh hiện tại, kiểm tra ảnh xem trước và vị trí GPS.
-3. Bấm Xác nhận vào ca, chờ lưu thành công rồi kiểm tra Giờ vào.
+2. Bấm Chụp ảnh, kiểm tra ảnh xem trước; dùng Chụp lại nếu ảnh chưa rõ.
+3. Bấm Xác nhận vào ca; hệ thống lấy GPS mới rồi lưu. Chờ thành công và kiểm tra Giờ vào.
 
 **Kết quả cần thấy:** Hiển thị Đang trong ca và có giờ vào.
 
-**Lưu ý:** Nếu GPS quá hạn, bấm Lấy lại GPS. Chưa rõ kết quả lưu thì làm mới để kiểm tra; không bấm gửi liên tục.
+**Lưu ý:** Mở bằng HTTPS hoặc localhost và bật quyền camera, vị trí. Khi lỗi GPS, kiểm tra quyền và bật định vị rồi xác nhận lại. Chưa rõ kết quả lưu thì làm mới để kiểm tra; không bấm gửi liên tục.
 
 ### Xác nhận ra ca bằng ảnh và GPS mới
 
+![Xác nhận ra ca bằng ảnh và GPS mới](images/12-cham-cong-ra-ca.jpg)
+
 **Mở tại:** Chấm công → Ra ca
 
-1. Chụp ảnh hiện tại và lấy lại GPS.
-2. Bấm Xác nhận ra ca, chờ thông báo lưu.
+1. Bấm Ra ca, chụp ảnh hiện tại và kiểm tra ảnh xem trước.
+2. Bấm Xác nhận ra ca; hệ thống tự lấy GPS mới. Chờ thông báo lưu thành công.
 3. Kiểm tra Giờ ra và dòng lịch sử của ca vừa kết thúc.
 
 **Kết quả cần thấy:** Có đủ giờ vào và giờ ra; ca đã kết thúc.
 
-**Lưu ý:** Phải ra ca trước khi bắt đầu ca mới. Giờ ghi nhận theo máy chủ, giờ Việt Nam.
+**Lưu ý:** Phải ra ca trước khi bắt đầu ca mới. Giờ ghi nhận theo máy chủ, giờ Việt Nam. Ảnh minh họa hộp thoại khi camera chưa sẵn sàng; cần mở được camera và chụp ảnh để bật nút xác nhận.
 
 ### Đối chiếu lịch sử chấm công
+
+![Đối chiếu lịch sử chấm công](images/10-cham-cong-tong-quan.jpg)
 
 **Mở tại:** Chấm công → bộ lọc ngày
 
@@ -494,4 +535,4 @@ Phân biệt ảnh đã lưu, đang gửi, gửi thiếu và mất phản hồi.
 
 ---
 
-**Ghi chú biên tập:** tài liệu hiện có 6 ảnh thực tế cho quy trình nhập hợp đồng và quét QR. Các nghiệp vụ sau phát hành có hướng dẫn bằng chữ; có thể bổ sung ảnh từ dữ liệu minh họa được duyệt khi đào tạo. Ảnh đang liên kết từ thư mục `images` lưu cùng tài liệu; xem `QUAN-LY-ANH.md` để chuyển sang Cloudinary.
+**Ghi chú biên tập:** tài liệu hiện có 8 ảnh giao diện cho quy trình nhập hợp đồng, quét QR, tiền giữ xe và giao xe đã đặt cọc. Các nghiệp vụ sau phát hành có hướng dẫn bằng chữ; có thể bổ sung ảnh từ dữ liệu minh họa được duyệt khi đào tạo. Ảnh đang liên kết từ thư mục `images` lưu cùng tài liệu; xem `QUAN-LY-ANH.md` để chuyển sang Cloudinary.

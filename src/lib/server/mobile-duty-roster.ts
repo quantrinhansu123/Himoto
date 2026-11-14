@@ -21,7 +21,9 @@ export async function readMobileDuties(user: SessionUser, params: URLSearchParam
   return transaction(user, true, client => listDuties(client, params.get("week") || dutyToday(), store === null ? undefined : Number(store)));
 }
 async function transaction<T>(user: SessionUser, read: boolean, run: (client: import("pg").PoolClient) => Promise<T>) {
-  return withMobileData(user, "", async () => {
+  // A user with HR access manages schedules for every branch; keep this wider
+  // store scope confined to the duty-roster transaction.
+  return withMobileData({ ...user, store_id: null, scope_all: true }, "duty_roster", async () => {
     const client = await himotoPool.connect();
     try {
       await client.query(read ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");

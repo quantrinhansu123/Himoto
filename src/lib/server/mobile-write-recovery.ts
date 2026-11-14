@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 import type { SessionUser } from "./management-session";
 import type { MobileWriteResolution } from "../../../shared/mobile-write-recovery";
 import { isMobileWriteOperation } from "../../../shared/mobile-write-recovery";
-import { hasPermission,isAdminAccount,canSendDebtReminder } from "@/lib/management/permissions";
+import { hasPermission,isAdminAccount,canSendDebtReminder,canRecoverAccountPasswords } from "@/lib/management/permissions";
 import { himotoPool,ownerDatabase } from "./himoto-database";
 import { withMobileData } from "./mobile-context";
 import { MobileError } from "./mobile-session";
@@ -51,7 +51,7 @@ export async function resolveMobileWrite(
   if(family==='integration')throw new MobileError('Đối chiếu cấu hình qua màn hình tích hợp.',400,'INVALID_OPERATION');
   const managedAccount=family==='account',ownPassword=operation==='account.change-password';
   if(managedAccount&&!ownPassword&&!isAdminAccount(user))throw new MobileError('Chỉ quản trị viên được đối chiếu quản lý tài khoản.',403,'FORBIDDEN');
-  if(operation.startsWith('account.password:')&&(!isAdminAccount(user)||![145,160].includes(user.id)))throw new MobileError('Tài khoản không có quyền đối chiếu xem mật khẩu.',403,'FORBIDDEN');
+  if(operation.startsWith('account.password:')&&!canRecoverAccountPasswords(user))throw new MobileError('Tài khoản không có quyền đối chiếu xem mật khẩu.',403,'FORBIDDEN');
   if(operation.startsWith("ctype."))throw new MobileError("Đối chiếu loại hợp đồng qua màn hình danh mục.",400,"INVALID_OPERATION");
   const battery=family==='battery';
   if(battery&&(!hasPermission(user,'contracts.read')||!hasPermission(user,/^battery[.](create|update:|delete:)/.test(operation)?'contracts.draft':operation.startsWith('battery.return:')?'contracts.return':'contracts.renew')))throw new MobileError('Không có quyền đối chiếu hợp đồng pin / sạc.',403,'FORBIDDEN');

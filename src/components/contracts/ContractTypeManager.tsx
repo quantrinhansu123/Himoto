@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { Dialog } from '@/components/management/Dialog';
+import { FilteredExcelButton } from '@/components/management/FilteredExcelButton';
 import { CONTRACT_TYPE_BILLING, type ContractType, type ContractTypeInput } from '@/lib/management/contract-types';
 import { useContractTypes } from './ContractTypesProvider';
 
@@ -48,5 +49,10 @@ export function ContractTypeManager({ onClose, onCreated }: { onClose?: () => vo
     <ul className="mg-contract-type-list">{catalog.types.map(type => <li key={type.id}><div><strong>{type.label}</strong><small>{type.active ? 'Đang dùng' : 'Đã ẩn'}{type.term_months ? ` · ${type.term_months} tháng` : ''}</small></div><div className="mg-contract-type-actions"><button type="button" className="mg-button" disabled={!catalog.canManage || busy || catalog.loading} onClick={() => { setEditing(type); setLabel(type.label); setMonths(type.term_months ? String(type.term_months) : ''); setError(''); }}>Đổi tên {type.label}</button><button type="button" className="mg-button" disabled={!catalog.canManage || busy || catalog.loading} onClick={() => void toggle(type)}>{type.active ? 'Ẩn' : 'Hiện'} {type.label}</button></div></li>)}</ul>
   </div>;
   return onClose ? <Dialog title="Loại hợp đồng" onClose={() => { if (!busy) onClose(); }}>{content}<div className="mg-dialog-footer"><button className="mg-button" type="button" disabled={busy} onClick={onClose}>Đóng</button></div></Dialog>
-    : <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><h1>Loại hợp đồng</h1></div><div className="mg-data-panel">{content}</div></div></section>;
+    : <section className="mg-page"><div className="mg-page-content"><div className="mg-page-heading"><h1>Loại hợp đồng</h1><FilteredExcelButton
+      disabled={catalog.loading || !catalog.types.length} filename="himoto-loai-hop-dong"
+      headers={['Loại hợp đồng','Cách tính tiền','Kỳ hạn (tháng)','Trạng thái']}
+      getRows={() => catalog.types.map(type => [type.label,
+        CONTRACT_TYPE_BILLING.find(option => option.value === type.rental_type)?.label ?? type.rental_type,
+        type.term_months,type.active ? 'Đang dùng' : 'Đã ẩn'])}/></div><div className="mg-data-panel">{content}</div></div></section>;
 }

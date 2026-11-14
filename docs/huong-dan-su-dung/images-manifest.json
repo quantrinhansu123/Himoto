@@ -38,6 +38,51 @@
       "local_path": "images/06-ky-ket-va-luu.jpg",
       "sha256": "fb8ea98d7eb037e5ff2f0b978610f3f06caa2167e260966249fb0703e913e7b7",
       "secure_url": null
+    },
+    {
+      "filename": "07-giao-xe-da-dat-coc.png",
+      "local_path": "images/07-giao-xe-da-dat-coc.png",
+      "sha256": "1000d2ae5fe8a127f42a07351a4e1cc62b86f5ff20b40afa1aba955f70975a58",
+      "secure_url": null,
+      "source": "Reservation handover UI QA screenshot, synthetic data"
+    },
+    {
+      "filename": "08-tien-giu-xe.png",
+      "local_path": "images/08-tien-giu-xe.png",
+      "sha256": "a2a04c05aa59d64c1491f9a57ed14c4696ebd7d485c5554397c57b74e319725d",
+      "secure_url": null,
+      "source": "Reservation payment UI QA screenshot, synthetic data"
+    },
+    {
+      "filename": "09-gia-han-thanh-toan.png",
+      "local_path": "images/09-gia-han-thanh-toan.png",
+      "sha256": "a4b2024ece678981ca3a6d041244ddd5cfe63bf71e45e462662b6ce200a0a0a7",
+      "secure_url": null,
+      "source": "Contract renewal payment UI QA screenshot, synthetic data"
+    },
+    {
+      "filename": "10-cham-cong-tong-quan.jpg",
+      "local_path": "images/10-cham-cong-tong-quan.jpg",
+      "sha256": "fa4e7b41868b3431706cc45487955f87f7d248bafa740c8414fa477419a1fb19",
+      "secure_url": null,
+      "captured_on": "2026-11-13",
+      "source": "Local attendance UI"
+    },
+    {
+      "filename": "11-cham-cong-cai-dat-gps.jpg",
+      "local_path": "images/11-cham-cong-cai-dat-gps.jpg",
+      "sha256": "5753e73766814ec4e020c6afd1de517a60c1161a7d4310e0369468254d4974e1",
+      "secure_url": null,
+      "captured_on": "2026-11-13",
+      "source": "Local attendance UI"
+    },
+    {
+      "filename": "12-cham-cong-ra-ca.jpg",
+      "local_path": "images/12-cham-cong-ra-ca.jpg",
+      "sha256": "378a24451dcf74c4edd3c6381b07f9a0e2f089d6c41c497e119d5872930f4a3b",
+      "secure_url": null,
+      "captured_on": "2026-11-13",
+      "source": "Local attendance UI"
     }
   ]
 }

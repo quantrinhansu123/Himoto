@@ -21,3 +21,8 @@ next-env.d.ts
 __pycache__/
 *.pyc
 /docs/HANDOFF-*.md
+
+# Local recovery data and separately cloned tooling must not be published.
+/local-backups/
+/.dsh-acl-recovery/
+/ui-ux-pro-max-skill/

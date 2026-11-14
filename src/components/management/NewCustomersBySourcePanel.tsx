@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownToLine, Search, UsersRound } from 'lucide-react';
+import { Search, UsersRound } from 'lucide-react';
 import { formatDate } from '@/lib/formatters';
 import { CONTRACT_STATUSES } from '@/lib/management/config';
 import {
@@ -10,7 +10,7 @@ import {
   type NewCustomerBySourceReport,
   type NewCustomerBySourceRow,
 } from '@/lib/management/new-customers-by-source';
-import { csvCell } from '@/lib/management/table-utils';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { Dialog } from './Dialog';
 
 const EMPTY_FILTERS: NewCustomerBySourceFilters = { search: '', source: '', sourcePresence: '' };
@@ -23,15 +23,11 @@ type DetailScope =
   | { kind: 'without'; title: string }
   | { kind: 'source'; source: string; title: string };
 
-function downloadCsv(rows: (string | number)[][], filename: string) {
-  const data = rows.map(row => row.map(value => csvCell(String(value))).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['\uFEFF', data], { type: 'text/csv;charset=utf-8;' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
+const CUSTOMER_HEADERS = ['Khách hàng','Điện thoại','CCCD','Nguồn khách','Cơ sở nguồn / doanh thu','Ngày thuê lần đầu','Mã HĐ đầu','Trạng thái HĐ'];
+const customerExportRows = (rows: NewCustomerBySourceRow[]) => rows.map(row=>[
+  row.customer_name,row.phone,row.id_card,row.customer_source || 'Chưa ghi nguồn',
+  row.store_name || 'Chưa có cơ sở',row.started_on,row.contract_code,statusLabel(row.contract_status),
+]);
 
 function CustomerDetailTable({ rows }: { rows: NewCustomerBySourceRow[] }) {
   if (!rows.length) return <p className="mg-table-state">Không có khách hàng trong nhóm này.</p>;
@@ -130,16 +126,6 @@ export function NewCustomersBySourcePanel({
     return rows;
   }, [filtered]);
 
-  function exportCsv(rows: NewCustomerBySourceRow[], filename: string) {
-    if (!rows.length) return;
-    downloadCsv([
-      ['Khách hàng', 'Điện thoại', 'CCCD', 'Nguồn khách', 'Cơ sở nguồn / doanh thu', 'Ngày thuê lần đầu', 'Mã HĐ đầu', 'Trạng thái HĐ'],
-      ...rows.map(row => [
-        row.customer_name, row.phone, row.id_card, row.customer_source || 'Chưa ghi nguồn',
-        row.store_name || 'Chưa có cơ sở', row.started_on, row.contract_code, statusLabel(row.contract_status),
-      ]),
-    ], filename);
-  }
 
   return (
     <div className="mg-source-sales mg-new-customers-source" aria-label="Danh sách khách hàng mới từ các nguồn khách" aria-busy={loading}>
@@ -148,14 +134,8 @@ export function NewCustomersBySourcePanel({
           <h2>Danh sách Khách hàng mới từ các nguồn khách</h2>
           <p>Khách có hợp đồng thuê lần đầu bắt đầu trong kỳ đang chọn. Bấm một dòng nguồn khách để xem danh sách chi tiết.</p>
         </div>
-        <button
-          className="mg-button"
-          type="button"
-          disabled={!ready || !filtered.rows.length}
-          onClick={() => exportCsv(filtered!.rows, `khach-moi-nguon-${from}-${to}.csv`)}
-        >
-          <ArrowDownToLine size={16} />Xuất CSV
-        </button>
+        <FilteredExcelButton disabled={!ready || !filtered.rows.length} filename={`khach-moi-nguon-${from}-${to}`}
+          headers={CUSTOMER_HEADERS} getRows={()=>customerExportRows(filtered?.rows || [])}/>
       </div>
 
       <div className="mg-revenue-ledger-filters" role="search" aria-label="Bộ lọc khách hàng mới">
@@ -259,7 +239,9 @@ export function NewCustomersBySourcePanel({
 
           {!sourceRows.length
             ? <p className="mg-table-state">{isFiltered ? 'Không có khách hàng mới khớp bộ lọc.' : 'Không có khách hàng mới trong kỳ.'}</p>
-            : <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Tổng hợp khách mới theo nguồn">
+            : <><FilteredExcelButton disabled={!ready} filename={`tong-hop-khach-moi-${from}-${to}`}
+              headers={['Nguồn khách','Số khách mới']} getRows={()=>sourceRows.map(r=>[r.name,r.customers])}/>
+            <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Tổng hợp khách mới theo nguồn">
               <table className="mg-table mg-source-sales-table mg-new-customers-source-table">
                 <thead>
                   <tr>
@@ -316,7 +298,7 @@ export function NewCustomersBySourcePanel({
                   </tr>
                 </tfoot>
               </table>
-            </div>}
+            </div></>}
         </> : null}
 
       {detail && ready && (
@@ -331,14 +313,8 @@ export function NewCustomersBySourcePanel({
             <CustomerDetailTable rows={detailRows} />
           </div>
           <div className="mg-dialog-footer">
-            <button
-              type="button"
-              className="mg-button"
-              disabled={!detailRows.length}
-              onClick={() => exportCsv(detailRows, `khach-moi-${detail.kind}-${from}-${to}.csv`)}
-            >
-              <ArrowDownToLine size={16} />Xuất CSV nhóm này
-            </button>
+            <FilteredExcelButton disabled={!detailRows.length} filename={`khach-moi-${detail.kind}-${from}-${to}`}
+              headers={CUSTOMER_HEADERS} getRows={()=>customerExportRows(detailRows)}/>
             <button type="button" className="mg-button" onClick={() => setDetail(null)}>Đóng</button>
           </div>
         </Dialog>

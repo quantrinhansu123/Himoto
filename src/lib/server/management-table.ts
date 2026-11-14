@@ -9,7 +9,8 @@ import { CONTRACT_LIST_SQL, contractListScopeClause } from './contract-drafts';
 import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { CUSTOMER_PROFILE_SQL } from './customer-search';
 import { contractVehicleDetailsSql,contractVehicleReadSource,contractVehicleLabelSource } from './contract-vehicle-reads';
-import { dailyPriceSql,depositLateral,rentalPaidSql } from './contract-deposits';
+import { dailyPriceSql,depositLateral,depositReceiptSql,rentalPaidSql } from './contract-deposits';
+import type { ManagementRow } from '@/lib/management/types';
 import { CONTRACT_REVIEW_SQL,EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { draftVehicleRentalsLateralSql } from './draft-vehicle-rentals';
 import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
@@ -24,6 +25,44 @@ import { legacyOwnershipFeeReader } from './legacy-ownership-overdue';
 import {contractWarehouseJoinSql,contractWarehouseStoreSql} from './contract-warehouses';
 
 export class ManagementTableError extends Error {}
+
+async function withVatPayments(client: Pick<PoolClient, 'query'>, rows: ManagementRow[]): Promise<ManagementRow[]> {
+  if (!rows.length) return rows;
+  const result = await client.query(`SELECT o.id, receipts.*, renewals.vat_renewal_amount
+    FROM himoto.orders o
+    CROSS JOIN LATERAL (
+      SELECT string_agg(DISTINCT method, ', ' ORDER BY method) FILTER (WHERE rental) AS vat_rental_methods,
+        string_agg(DISTINCT method, ', ' ORDER BY method) FILTER (WHERE deposit) AS vat_deposit_methods,
+        COALESCE(sum(value) FILTER (WHERE bank_owner_type='company'),0) AS company_paid_amount
+      FROM (
+        SELECT t.value, t.bank_owner_type, ${depositReceiptSql()} AS deposit,
+          (t.name IN ('order:rental_fees','order:payment','order:renewal')
+            OR t.name LIKE 'order:rental_fees:%' OR t.name LIKE 'order:payment:%' OR t.name LIKE 'order:renewal:%') AS rental,
+          CASE WHEN t.bank_owner_type='company' THEN 'Chuyển khoản công ty'
+            WHEN t.bank_id IS NOT NULL OR t.payment_method=2 THEN 'Chuyển khoản'
+            WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
+            ELSE 'Chưa xác định' END AS method
+        FROM himoto.transactions t
+        WHERE t.order_id=o.id AND t.status='approved' AND t.type IN ('in','addon')
+      ) payments
+    ) receipts
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(sum(d.total_renewal_amount),0) AS vat_renewal_amount
+      FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL
+    ) renewals
+    WHERE o.id=ANY($1::bigint[])`, [rows.map(row => row.id)]);
+  const payments = new Map(result.rows.map(row => [Number(row.id), row]));
+  return rows.map(row => {
+    const payment = payments.get(row.id);
+    return payment ? {
+      ...row,
+      vat_rental_methods: payment.vat_rental_methods ?? '',
+      vat_deposit_methods: payment.vat_deposit_methods ?? '',
+      vat_renewal_amount: Number(payment.vat_renewal_amount),
+      company_paid_amount: Number(payment.company_paid_amount),
+    } : row;
+  });
+}
 export function parseManagementTable(kind:TableKind,params:URLSearchParams):ManagementTableInput {
   const integer=(key:string,fallback:number,max:number)=>{const value=params.get(key);if(value===null)return fallback;if(!/^[1-9]\d*$/.test(value)||!Number.isSafeInteger(Number(value))||Number(value)>max)throw new ManagementTableError('Phân trang không hợp lệ.');return Number(value);};
   const page=integer('page',1,1000000),size=integer('size',10,50),direction=params.get('direction')||'asc',scope=params.get('scope')||'';
@@ -109,13 +148,17 @@ function likeNeedle(search:string) {
 const foldedSql=(value:string)=>`lower(translate(regexp_replace(normalize(COALESCE(${value},''),NFD) COLLATE "C",'[\u0300-\u036f]','','g'),'đĐ','dD'))`;
 function contractSearchSql(search:string) {
   if(!search.trim())return {sql:'',value:undefined as string|undefined};
-  return {sql:` AND (o.contract_number ILIKE $3 OR o.draft_reference ILIKE $3 OR ${foldedSql('o.customer_name')} LIKE ${foldedSql('$3')} OR COALESCE(o.customer_phone,'') ILIKE $3
-    OR COALESCE(o.customer_idnumber,'') ILIKE $3
-    OR EXISTS (SELECT 1 FROM himoto.customers linked_customer WHERE linked_customer.id=o.customer_id
-      AND (${foldedSql('linked_customer.name')} LIKE ${foldedSql('$3')} OR COALESCE(linked_customer.phone,'') ILIKE $3 OR COALESCE(linked_customer.id_card,'') ILIKE $3))
-    OR EXISTS (SELECT 1 FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
-      WHERE d.order_id=o.id AND d.deleted_at IS NULL AND (v.license ILIKE $3
-        OR regexp_replace(upper(COALESCE(v.license,'')),'[^A-Z0-9]','','g') LIKE '%'||regexp_replace(upper($3),'[^A-Z0-9]','','g')||'%')))`,
+  // Collect matching IDs before applying the contract scope;
+  // each branch retains its ordinary RLS visibility and contains no user SQL.
+  return {sql:` AND o.id IN (
+    SELECT matched.id FROM himoto.orders matched WHERE matched.contract_number ILIKE $3 OR matched.draft_reference ILIKE $3
+      OR ${foldedSql('matched.customer_name')} LIKE ${foldedSql('$3')} OR COALESCE(matched.customer_phone,'') ILIKE $3
+      OR COALESCE(matched.customer_idnumber,'') ILIKE $3
+    UNION SELECT linked_order.id FROM himoto.orders linked_order JOIN himoto.customers linked_customer ON linked_customer.id=linked_order.customer_id
+      WHERE ${foldedSql('linked_customer.name')} LIKE ${foldedSql('$3')} OR COALESCE(linked_customer.phone,'') ILIKE $3 OR COALESCE(linked_customer.id_card,'') ILIKE $3
+    UNION SELECT d.order_id FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
+      WHERE d.deleted_at IS NULL AND (v.license ILIKE $3
+        OR regexp_replace(upper(COALESCE(v.license,'')),'[^A-Z0-9]','','g') LIKE '%'||regexp_replace(upper($3),'[^A-Z0-9]','','g')||'%'))`,
     value:likeNeedle(search)};
 }
 function contractFilterSql(filters:Record<string,string>) {
@@ -431,6 +474,21 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
   const legacyFees=legacyOwnershipFeeReader(client);
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   if(!all){
+    const readStatistics=async()=>{
+      let stats;
+      const search=contractSearchSql(input.query.search);
+      const statsClause=`${contractPageScopeClause(input.scope)}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}`;
+      stats=await fastContractStatistics(client,input,statsClause,now);
+      if(!stats){
+      const base=`${contractStatisticsSql(statsClause,input.scope==='vat')}${search.sql.replaceAll('$3','$1')}`;
+      const result=await client.query(monitoring||input.query.overdueDays?overdueDetailsSql(base):base,search.value?[search.value]:[]);
+      const index=(await legacyFees(result.rows.map(mapContractStatistics))).map(row=>['renting','overdue','wait_payment','bad_debt'].includes(row.status)||row.billing_plan_json||input.query.overdueDays?withContractMonitoring(applyInstallmentBilling(row,now),now):row);
+      // Search is already bound/applied in SQL, including customer and plate
+      // matches. Those labels need not travel back for a second search.
+      stats=projectManagementTable(index,{...input,...(input.storeBasis==='warehouse'?{store:'all'}:{}),query:{...input.query,search:''},page:1,size:1},true,now);
+      }
+      return stats!;
+    };
     // Count the permitted list without hydrating other tabs or applying search.
     let scopeCount:number|undefined;
     const separateScopeCount=Boolean(input.query.search.trim()||input.query.status||input.query.startDate||input.query.endDate||input.query.overdueDays||input.query.overdueBucket||Object.values(input.query.filters).some(Boolean)||input.scope==='due');
@@ -438,6 +496,11 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       const counted=await client.query(`SELECT count(*)::int AS scope_count FROM himoto.orders o WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${contractPageScopeClause(input.scope)}${listWindow}${storeSql}`);
       scopeCount=Number(counted.rows[0]?.scope_count);
       if(!Number.isSafeInteger(scopeCount)||scopeCount<0)throw new Error('Không đọc được tổng toàn bộ hợp đồng. Vui lòng thử lại.');
+    }
+    // Statistics never hydrate a page or send historical rows to the browser.
+    if(kind==='contracts'&&params.get('statistics_only')==='1'){
+      const stats=await readStatistics();
+      return {...stats,rows:[],scopeCount:scopeCount??stats.scopeCount,page:1,pages:Math.max(1,Math.ceil(stats.total/input.size)),statisticsPending:false,recentDays:recentDays??null};
     }
     // Installment overdue state and age groups depend on the hydrated balance.
     // Read candidates for this tab in bounded batches and filter BEFORE paging;
@@ -451,11 +514,20 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
       :storeSearchSql(input.query.search);
     const catalogue=kind==='contracts'?null:await readCatalogueCounts(client,input,search);
     if(catalogue)scopeCount=catalogue.scopeCount;
-    let total=catalogue?.total??0,page=catalogue?Math.min(input.page,Math.max(1,Math.ceil(total/input.size))):input.page;
+    let total=catalogue?.total??0;
+    const separateTotal=kind==='contracts'&&!filterBeforePaging;
+    if(separateTotal){
+      // Count narrow index entries; a window count carries every historical
+      // row (including toasted JSON) through the page's projection and sort.
+      const counted=await client.query(`SELECT count(*)::int AS total FROM (${contractPageSql(clause)}${search.sql.replaceAll('$3','$1')}) counted`,search.value?[search.value]:[]);
+      total=Number(counted.rows[0]?.total);
+      if(!Number.isSafeInteger(total)||total<0)throw new Error('Không đọc được tổng số hợp đồng. Vui lòng thử lại.');
+    }
+    let page=catalogue||separateTotal?Math.min(input.page,Math.max(1,Math.ceil(total/input.size))):input.page;
     const offset=(page-1)*input.size;
     // Count only this tab's matching orders, before LIMIT. Do not hydrate history
     // or query the other tabs merely to obtain a real page count.
-    const pageSql=kind==='contracts'?`${contractPageSql(clause,!filterBeforePaging)}${search.sql} ORDER BY o.id DESC LIMIT $1 OFFSET $2`
+    const pageSql=kind==='contracts'?`SELECT indexed.id FROM (${contractPageSql(clause)}${search.sql}) indexed ORDER BY indexed.id DESC LIMIT $1 OFFSET $2`
       :kind==='customers'?`${customerPageSql(customerPageClause(input.store,input.query.status))}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
       :kind==='vehicles'?`${vehiclePageSql(vehiclePageClause(input.store,input.query.status,input.query.filters))}${vehicleDerivedClause(input.query)}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
       :kind==='staff'?`${staffPageSql(staffPageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
@@ -464,20 +536,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     let candidateOffset=filterBeforePaging?0:offset,moreCandidates=false;
     const readPage=(limit:number,start:number)=>client.query(pageSql,search.value?[limit,start,search.value]:[limit,start]);
     do {
-      let indexed=await readPage(take,candidateOffset);
-      if(kind==='contracts'&&!filterBeforePaging){
-        // A deletion or changed filter can leave a requested page out of range.
-        // Read one index row to recover the total, then return the actual last page.
-        if(!indexed.rows.length&&candidateOffset>0){
-          const first=await readPage(1,0);
-          total=first.rows.length?Number(first.rows[0].__total_count):0;
-          if(!Number.isSafeInteger(total)||total<0)throw new Error('Không đọc được tổng số hợp đồng. Vui lòng thử lại.');
-          page=Math.max(1,Math.ceil(total/input.size));
-          candidateOffset=(page-1)*input.size;
-          indexed=total?await readPage(take,candidateOffset):first;
-        }else total=indexed.rows.length?Number(indexed.rows[0].__total_count):0;
-        if(!Number.isSafeInteger(total)||total<0)throw new Error('Không đọc được tổng số hợp đồng. Vui lòng thử lại.');
-      }
+      const indexed=await readPage(take,candidateOffset);
       moreCandidates=indexed.rows.length===take;
       candidateOffset+=indexed.rows.length;
       let batch=mapManagementRows(kind,indexed.rows.slice(0,filterBeforePaging?take:input.size));
@@ -485,7 +544,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
         const ids=batch.map(row=>row.id);
         // A failed detail query must fail this read, not silently turn balances,
         // vehicle labels or rental dates into missing/incorrect information.
-        const details=await client.query(kind==='contracts'?overdueSql(contractVehicleDetailsSql(contractHydrateSql())):vehicleHydrateSql(),[ids]);
+        const details=await client.query(kind==='contracts'?contractVehicleDetailsSql(overdueSql(contractHydrateSql())):vehicleHydrateSql(),[ids]);
         const mapped=new Map(mapManagementRows(kind,details.rows).map(record=>[record.id,record]));
         batch=batch.map(row=>mapped.get(row.id)||row);
       }
@@ -504,21 +563,9 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     const pageOffset=(page-1)*input.size;
     const rows=filterBeforePaging?sortRows(matches,input.sort,input.direction).slice(pageOffset,pageOffset+input.size):matches;
     const pages=Math.max(1,Math.ceil(total/input.size));
-    let stats;
-    if(kind==='contracts'&&params.get('status_counts')==='1'){
-      const statsClause=`${contractPageScopeClause(input.scope)}${listWindow}${storeSql}${contractFilterSql(input.query.filters)}`;
-      stats=await fastContractStatistics(client,input,statsClause,now);
-      if(!stats){
-      const base=`${contractStatisticsSql(statsClause,input.scope==='vat')}${search.sql.replaceAll('$3','$1')}`;
-      const result=await client.query(monitoring||input.query.overdueDays?overdueDetailsSql(base):base,search.value?[search.value]:[]);
-      const index=(await legacyFees(result.rows.map(mapContractStatistics))).map(row=>['renting','overdue','wait_payment','bad_debt'].includes(row.status)||row.billing_plan_json||input.query.overdueDays?withContractMonitoring(applyInstallmentBilling(row,now),now):row);
-      // Search is already bound/applied in SQL, including customer and plate
-      // EXISTS checks. Those labels need not travel back for a second search.
-      stats=projectManagementTable(index,{...input,...(input.storeBasis==='warehouse'?{store:'all'}:{}),query:{...input.query,search:''},page:1,size:1},true,now);
-      }
-    }
+    const stats=kind==='contracts'&&params.get('status_counts')==='1'?await readStatistics():undefined;
     return {
-      rows,total,scopeCount:scopeCount??total,tabCount:stats?.tabCount??catalogue?.tabCount??total,page,pages,
+      rows:kind==='contracts'&&input.scope==='vat'?await withVatPayments(client,rows):rows,total,scopeCount:scopeCount??total,tabCount:stats?.tabCount??catalogue?.tabCount??total,page,pages,
       statusCounts:stats?.statusCounts??catalogue?.statusCounts??[],statuses:stats?.statuses??(catalogue?catalogue.statusCounts.map(([status])=>status):[...new Set(rows.map(row=>row.status))].sort()),dueCount:stats?.dueCount??0,
       summary:stats?.summary??(kind==='contracts'?{contractCount:total,blacklistCount:0,totalAmount:null,receivableAmount:null,badDebtAmount:null}:null),
       ...(stats?.overdueCounts?{overdueCounts:stats.overdueCounts}:{}),
@@ -527,7 +574,9 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     };
   }
   const fullSql=kind==='contracts' ? `${CONTRACT_LIST_SQL}${clause}` : CUSTOMER_PROFILE_SQL;
-  const result=await client.query(kind==='contracts' ? overdueSql(contractVehicleDetailsSql(fullSql)) : fullSql);
+  const result=await client.query(kind==='contracts' ? contractVehicleDetailsSql(overdueSql(fullSql)) : fullSql);
   const mapped=mapManagementRows(kind,result.rows);
-  return projectManagementTable(monitoring?await legacyFees(mapped):mapped,input,all,now);
+  const projected = projectManagementTable(monitoring?await legacyFees(mapped):mapped,input,all,now);
+  if (kind==='contracts' && input.scope==='vat') projected.rows = await withVatPayments(client, projected.rows);
+  return projected;
 }

@@ -1,25 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowDownToLine, CalendarRange, FilterX, LayoutDashboard, RotateCcw } from 'lucide-react';
+import { CalendarRange, FilterX, LayoutDashboard, RotateCcw } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { loadDashboardSummary, type DashboardSummary } from '@/lib/management/dashboard';
 import { vietnamDate } from '@/lib/management/duty-roster';
-import {DASHBOARD_PRESETS as PRESETS,dashboardPeriod as presetRange,dashboardCsv,DASHBOARD_METRICS} from '../../../shared/mobile-dashboard';
+import {DASHBOARD_PRESETS as PRESETS,dashboardPeriod as presetRange,DASHBOARD_METRICS} from '../../../shared/mobile-dashboard';
+import { FilteredExcelButton } from './FilteredExcelButton';
 
 const money = (value: number) => `${value.toLocaleString('vi-VN')} đ`;
 const number = (value: number) => value.toLocaleString('vi-VN');
 const viDate = (value: string) => value.split('-').reverse().join('/');
-
-function downloadCsv(content:string, filename: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8;' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
 
 const HEADERS = DASHBOARD_METRICS.map(metric=>metric.label);
 
@@ -81,10 +73,6 @@ export function DashboardPage() {
     if (!value) return;
     setTo(value);
     if (value < from) setFrom(value);
-  }
-  function exportCsv() {
-    if (!report) return;
-    downloadCsv(dashboardCsv(report), `dashboard-giao-dich-${from}-${to}.csv`);
   }
 
   return (
@@ -163,9 +151,9 @@ export function DashboardPage() {
                 <h2>Bảng tổng hợp theo cơ sở</h2>
                 <p>Mỗi dòng là một cơ sở trong kỳ đã chọn. Dòng Tổng khớp các thẻ phía trên.</p>
               </div>
-              <button className="mg-button" type="button" disabled={loading || !rows.length} title={!rows.length ? 'Không có dữ liệu để xuất CSV.' : undefined} onClick={exportCsv}>
-                <ArrowDownToLine size={16} />Xuất CSV
-              </button>
+              <FilteredExcelButton disabled={loading || Boolean(error) || !rows.length} filename={`dashboard-giao-dich-${from}-${to}`}
+                headers={['Cơ sở', ...HEADERS]}
+                getRows={() => report ? [...rows.map(row=>[row.name,...DASHBOARD_METRICS.map(metric=>row[metric.key])]),['Tổng',...DASHBOARD_METRICS.map(metric=>report.total[metric.key])]] : []}/>
             </div>
 
             {loading ? <p role="status" className="mg-table-state">Đang tải bảng tổng hợp giao dịch…</p>

@@ -4,17 +4,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowDownToLine, Search } from 'lucide-react';
 import { formatDateTime, formatMoney } from '@/lib/formatters';
-import { csvCell } from '@/lib/management/table-utils';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { VEHICLE_TYPES } from '@/lib/management/config';
 import { loadRentalReport, rentalReportQuery, type RentalReportScope, type RentalOverviewReport, type RentalOverviewRow, type VehicleRevenueReport, type VehicleRevenueRow, type VehicleRevenueDetail } from '@/lib/management/rental-reports';
 import { Dialog } from './Dialog';
 
-function download(rows: (string | number)[][], filename: string) {
-  const data = rows.map(row => row.map(value => csvCell(String(value))).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['\uFEFF', data], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 function useReport<T>(path: string, query: URLSearchParams, revision: number) {
   const key = query.toString();
   const [loaded, setLoaded] = useState<{ key: string; value: T } | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [retry, setRetry] = useState(0);
@@ -57,7 +51,9 @@ function StoreOverview({ scope, row, onClose }: { scope: RentalReportScope; row:
   const query = rentalReportQuery({ ...scope, store: row.key }); query.set('view', 'days');
   const state = useReport<RentalOverviewReport>('rental-overview', query, 0);
   return <Dialog className="mg-dialog-fullscreen" title={`Thuê xe · ${row.name}`} subtitle={`${scope.from} – ${scope.to} · Theo ngày thực thu / chi`} onClose={onClose}>
-    <div className="mg-dialog-body"><ReportState {...state}/>{state.report && !state.loading && !state.error && <OverviewTable report={state.report} days/>}</div>
+    <div className="mg-dialog-body"><ReportState {...state}/>{state.report && !state.loading && !state.error && <><FilteredExcelButton disabled={!state.report.rows.length} filename={`bao-cao-theo-ngay-${row.key}-${scope.from}-${scope.to}`}
+      headers={['Ngày',...OVERVIEW_COLUMNS.map(([,title])=>title)]}
+      getRows={()=>state.report ? [...state.report.rows,state.report.total].map(r=>[r.name,...OVERVIEW_COLUMNS.map(([key])=>overviewValue(r,key))]) : []}/><OverviewTable report={state.report} days/></>}</div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button></div>
   </Dialog>;
 }
@@ -70,7 +66,9 @@ export function RentalOverviewPanel({ from, to, store, retry }: RentalReportScop
   return <section className="mg-rental-revenue mg-data-panel is-compact-report" aria-label="Báo cáo theo cơ sở" aria-busy={loading}>
     <div className="mg-rental-revenue-heading"><div><h2>Báo cáo theo cơ sở</h2><p>Thu / chi theo ngày thực tế · Bấm cơ sở để xem từng ngày</p></div>
       <div className="mg-rental-revenue-toolbar is-inline"><div role="group" aria-label="Xem tổng quan theo">{(['stores', 'days'] as const).map(key => <button key={key} type="button" className={`mg-button${view === key ? ' is-active' : ''}`} aria-pressed={view === key} onClick={() => setView(key)}>{key === 'stores' ? 'Theo cơ sở' : 'Theo ngày'}</button>)}</div>
-        <button type="button" className="mg-button" disabled={!ready || !report.rows.length} onClick={() => { if (report) download([[view === 'stores' ? 'Cơ sở' : 'Ngày', ...OVERVIEW_COLUMNS.map(([, title]) => title)], ...[...report.rows, report.total].map(row => [row.name, ...OVERVIEW_COLUMNS.map(([key]) => overviewValue(row, key))])], `bao-cao-theo-co-so-${view}-${from}-${to}.csv`); }}><ArrowDownToLine size={15}/>Xuất CSV</button>
+        <FilteredExcelButton disabled={!ready || !report.rows.length} filename={`bao-cao-theo-co-so-${view}-${from}-${to}`}
+          headers={[view === 'stores' ? 'Cơ sở' : 'Ngày', ...OVERVIEW_COLUMNS.map(([, title]) => title)]}
+          getRows={() => report ? [...report.rows, report.total].map(row => [row.name, ...OVERVIEW_COLUMNS.map(([key]) => overviewValue(row, key))]) : []}/>
       </div>
     </div>
     <div className="mg-report-totals">{OVERVIEW_COLUMNS.slice(0, 3).map(([key, title]) => <div key={key}><span>{title}</span><strong data-overview={key}>{ready ? formatMoney(overviewValue(report.total, key)) : '—'}</strong></div>)}</div>
@@ -86,6 +84,9 @@ function VehicleRevenueDetails({ row, scope, onClose }: { row: VehicleRevenueRow
   const state = useReport<VehicleRevenueDetail[]>('vehicle-revenue', query, 0);
   return <Dialog className="mg-dialog-fullscreen" title={`Doanh thu xe · ${row.license || row.name}`} subtitle={`${row.name} · Lượt thuê bắt đầu ${scope.from} – ${scope.to}`} onClose={onClose}>
     <div className="mg-dialog-body"><ReportState {...state}/>{state.report && !state.loading && !state.error && <>
+      <FilteredExcelButton disabled={!state.report.length} filename={`himoto-luot-thue-xe-${row.id}`}
+        headers={['Mã HĐ','Ngày bắt đầu thuê','Dự kiến trả','Phí thuê','Gia hạn','Giảm tiền thuê','Doanh thu']}
+        getRows={()=>state.report?.map(r=>[r.code,formatDateTime(r.rent_at || ''),formatDateTime(r.return_at || ''),r.rental,r.renewal,r.adjustment,r.revenue]) || []}/>
       <p>Tổng {state.report.length} lượt thuê · <strong>{formatMoney(state.report.reduce((total, line) => total + line.revenue, 0))}</strong></p>
       <div className="mg-table-scroll" role="region" aria-label="Các lượt thuê của xe" tabIndex={0}><table className="mg-table"><thead><tr><th scope="col">Hợp đồng</th><th scope="col">Ngày bắt đầu thuê</th><th scope="col">Dự kiến trả</th><th scope="col">Phí thuê</th><th scope="col">Gia hạn</th><th scope="col">Giảm tiền thuê</th><th scope="col">Doanh thu</th></tr></thead><tbody>
         {state.report.map(line => <tr key={line.id}><th scope="row"><Link href={`/contracts?contract_id=${line.order_id}`}>{line.code}</Link></th><td>{formatDateTime(line.rent_at || '')}</td><td>{formatDateTime(line.return_at || '')}</td><td>{formatMoney(line.rental)}</td><td>{formatMoney(line.renewal)}</td><td>{formatMoney(line.adjustment)}</td><td>{formatMoney(line.revenue)}</td></tr>)}
@@ -103,12 +104,13 @@ export function VehicleRevenuePanel({ from, to, store, retry }: RentalReportScop
   const state = useReport<VehicleRevenueReport>('vehicle-revenue', query, retry), { report, loading, error } = state;
   const busy = loading || search !== debounced, ready = report && !busy && !error;
   const pages = Math.max(1, Math.ceil((report?.total || 0) / (report?.size || 10))), activePage = report?.page || page;
-  async function exportCsv() {
+  async function exportExcel() {
     setExporting(true); setExportError('');
     try {
       const params = new URLSearchParams(query); params.set('mode', 'all');
       const all = await loadRentalReport<VehicleRevenueReport>('vehicle-revenue', params);
-      download([['Tên xe', 'Biển số', 'Cơ sở hiện tại', 'Lượt thuê', 'Phí thuê', 'Gia hạn', 'Giảm tiền thuê', 'Doanh thu'], ...all.rows.map(row => [row.name, row.license, row.store_name, row.rentals, row.rental, row.renewal, row.adjustment, row.revenue]), ['Tổng', '', '', all.rentals, all.rental, all.renewal, all.adjustment, all.revenue]], `doanh-thu-tung-xe-${from}-${to}.csv`);
+      const { downloadFilteredExcel } = await import('@/lib/management/excel-export');
+      await downloadFilteredExcel(['Tên xe', 'Biển số', 'Cơ sở hiện tại', 'Lượt thuê', 'Phí thuê', 'Gia hạn', 'Giảm tiền thuê', 'Doanh thu'], [...all.rows.map(row => [row.name, row.license, row.store_name, row.rentals, row.rental, row.renewal, row.adjustment, row.revenue]), ['Tổng', '', '', all.rentals, all.rental, all.renewal, all.adjustment, all.revenue]], `doanh-thu-tung-xe-${from}-${to}`);
     } catch (cause) { setExportError(cause instanceof Error ? cause.message : 'Không xuất được báo cáo.'); }
     finally { setExporting(false); }
   }
@@ -118,7 +120,7 @@ export function VehicleRevenuePanel({ from, to, store, retry }: RentalReportScop
     <div className="mg-rental-revenue-toolbar"><label className="mg-report-search"><Search size={16} aria-hidden="true"/><input aria-label="Tìm xe trong báo cáo" type="search" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} placeholder="Biển số, tên xe hoặc ID"/></label>
       <label>Sắp xếp <select aria-label="Sắp xếp báo cáo xe" value={sort} onChange={event => { setSort(event.target.value); setPage(1); }}><option value="revenue">Doanh thu</option><option value="rentals">Lượt thuê</option><option value="license">Biển số</option></select></label>
       <button type="button" className="mg-button" aria-label={direction === 'desc' ? 'Đang giảm dần, đổi sang tăng dần' : 'Đang tăng dần, đổi sang giảm dần'} onClick={() => { setDirection(value => value === 'desc' ? 'asc' : 'desc'); setPage(1); }}>{direction === 'desc' ? 'Giảm dần' : 'Tăng dần'}</button>
-      <button type="button" className="mg-button" disabled={!ready || !report.total || exporting} onClick={() => void exportCsv()}><ArrowDownToLine size={15}/>{exporting ? 'Đang xuất…' : 'Xuất Excel (CSV)'}</button>
+      <button type="button" className="mg-button mg-excel-export" disabled={!ready || !report.total || exporting} onClick={() => void exportExcel()}><ArrowDownToLine size={15}/>{exporting ? 'Đang xuất…' : 'Xuất Excel'}</button>
     </div>
     {exportError && <p role="alert" className="mg-field-error">{exportError}</p>}
     <ReportState loading={busy} error={error} reload={state.reload}/>{ready && <>

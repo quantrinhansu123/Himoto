@@ -133,8 +133,9 @@ async function writeCashbookAccount(path: string, method: 'POST' | 'PATCH' | 'DE
   if (!response.ok || envelope.status !== 'success') throw new Error(optionalText(envelope.message) || `Không thực hiện được thao tác (HTTP ${response.status}).`);
 }
 export interface CashbookAccountVoucher { id: string; date?: string; time?: string; type: 'income' | 'expense'; amount: number; user_name?: string; contract_code?: string; content?: string }
-export async function loadCashbookAccountVouchers(account: CashbookAccount, range: { from: string; to: string }, signal?: AbortSignal): Promise<CashbookAccountVoucher[]> {
+export async function loadCashbookAccountVouchers(account: CashbookAccount, range: { from: string; to: string }, signal?: AbortSignal, all = false): Promise<CashbookAccountVoucher[]> {
   const query = new URLSearchParams(); if (range.from) query.set('from', range.from); if (range.to) query.set('to', range.to);
+  if (all) query.set('all', '1');
   const response = await fetch(`/api/auth/cashbook/accounts/${account.kind}/${encodeURIComponent(account.id)}/transactions?${query}`, { cache: 'no-store', signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
   const envelope = object(await response.json().catch(() => ({})));
   if (!response.ok || envelope.status !== 'success' || !Array.isArray(envelope.data)) throw new Error(optionalText(envelope.message) || `Không tải được danh sách thu chi (HTTP ${response.status}).`);

@@ -94,6 +94,7 @@ async function main(){
   const sqlCommands=[];
   const paged=await server.readManagementTable({async query(sql,params){
     sqlCommands.push(sql);
+    if(sql.startsWith('SELECT count(*)::int AS total FROM'))return {rows:[{total:31}]};
     if(/\bLIMIT \$1\b/.test(sql)){
       assert.equal(params[0],10);
       return {rows:Array.from({length:10},(_,i)=>({id:i+1,status:'renting',contract_number:`HD-${i+1}`,vehicles:[],__total_count:31}))};
@@ -103,19 +104,25 @@ async function main(){
   }},'contracts',shared.managementTableQuery({...base,recentDays:30}));
   assert.equal(paged.rows.length,10);assert.equal(paged.rows[0].id,1);assert.equal(paged.total,31);assert.equal(paged.pages,4);
   assert.equal(paged.rows[0].license,'29A-123');assert.equal(paged.rows[0].total_amount,1500000);
-  assert(sqlCommands[0]&&/\bLIMIT \$1\b/.test(sqlCommands[0])&&sqlCommands[0].includes('OFFSET'));
-  assert(!sqlCommands[0].includes('GROUP BY')&&!sqlCommands[0].includes('himoto.transactions'));
-  assert(sqlCommands[1]&&sqlCommands[1].includes('ANY($1'));
-  assert.match(sqlCommands[1],/order_status='draft'/);
-  assert.match(sqlCommands[1],/draft_payload::jsonb->'management_composer'/);
-  assert.match(sqlCommands[1],/draft_payload::jsonb->'order_items'/);
-  assert.match(sqlCommands[1],/xmin::text AS draft_revision/);
-  assert.match(sqlCommands[0],/AS approval_at/);assert.match(sqlCommands[1],/AS approval_at/);
+  assert(sqlCommands[0].startsWith('SELECT count(*)::int AS total FROM'));
+  assert(sqlCommands[1]&&/\bLIMIT \$1\b/.test(sqlCommands[1])&&sqlCommands[1].includes('OFFSET'));
+  assert(!sqlCommands[1].includes('GROUP BY')&&!sqlCommands[1].includes('himoto.transactions'));
+  assert(sqlCommands[2]&&sqlCommands[2].includes('ANY($1'));
+  assert.match(sqlCommands[2],/order_status='draft'/);
+  assert.match(sqlCommands[2],/draft_payload::jsonb->'management_composer'/);
+  assert.match(sqlCommands[2],/draft_payload::jsonb->'order_items'/);
+  assert.match(sqlCommands[2],/xmin::text AS draft_revision/);
+  assert.match(sqlCommands[1],/AS approval_at/);assert.match(sqlCommands[2],/AS approval_at/);
   assert.equal(paged.rows[0].approval_at,'2026-11-03T10:14:48.521Z');assert.equal(paged.rows[1].approval_at,'');
-  assert.match(sqlCommands[0],/interval '30 days'/);
-  assert.doesNotMatch(server.contractRecentClause(3),/order_status IN/);
-  assert.match(server.contractRecentClause(3),/interval '3 days'/);
-  checks.push('Recent page selection applies the date window before paging');
+    assert.match(sqlCommands[0],/interval '30 days'/);
+    assert.match(sqlCommands[1],/interval '30 days'/);
+    assert.doesNotMatch(server.contractRecentClause(3),/order_status IN/);
+    assert.match(server.contractRecentClause(3),/interval '3 days'/);
+    const recentStatsSql=[];
+    await server.readManagementTable({async query(sql){recentStatsSql.push(sql);return {rows:[{detailed:[],closed_counts:[],blacklist:[],closed_amount:0,closed_total:0,closed_selected:0,unknown_totals:0}]};}},'contracts',new URLSearchParams('recent=3&status=draft&statistics_only=1&store=2&search='));
+    assert(recentStatsSql.length>0);
+    assert(recentStatsSql.every(sql=>sql.includes("interval '3 days'")&&sql.includes('o.store_id=2')));
+    checks.push('Recent page counts, page selection and statistics apply the same date window and assigned store');
   checks.push('Page hydrate returns the saved composer draft and revision so a reopened draft is not reconstructed empty');
   let called=false;await assert.rejects(()=>server.readManagementTable({query(){called=true;}},'contracts',new URLSearchParams('size=999')),server.ManagementTableError);assert.equal(called,false);
   assert.equal(mapApiRow('contracts',{id:1,rent_at:new Date('2026-10-10T09:00:00Z')}).start_date,'2026-10-10T16:00');

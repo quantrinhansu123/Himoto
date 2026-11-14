@@ -1,12 +1,13 @@
 'use client';
 
 import { useId, useMemo, useState } from 'react';
-import { Building2, Eye, Network, Pencil, Phone, RotateCcw, Search, Trash2, Users, X } from 'lucide-react';
+import { Building2, Eye, KeyRound, Network, Pencil, Phone, RotateCcw, Search, Trash2, Users, X } from 'lucide-react';
 import { ManagementRow } from '@/lib/management/types';
 import { useManagement } from './ManagementProvider';
 import { StaffDialog, StaffDialogMode } from './StaffDialogs';
 import { branchStaffPosition, normalizeStaffPosition, staffRoles } from '@/lib/management/staff-positions';
 import {buildStaffOrganization,matchesOrganizationStaff as matchesStaff,scopeOrganizationStaff} from '../../../shared/staff-organization';
+import { canManageAccounts } from '@/lib/management/permissions';
 
 function staffGroups(staff: ManagementRow[], branch = false) {
   const groups = new Map<string, ManagementRow[]>();
@@ -21,6 +22,7 @@ const INACTIVE_LABEL: Record<string, string> = { inactive: 'Tạm nghỉ', leave
 
 interface PersonProps { person: ManagementRow; position?: string; onAction: (person: ManagementRow, mode: StaffDialogMode) => void }
 function PersonCard({ person, position = normalizeStaffPosition(person.position), onAction }: PersonProps) {
+  const { accessUser } = useManagement();
   const name = person.name || '—', inactive = INACTIVE_LABEL[person.status];
   return <div className={`mg-org-person${inactive ? ' is-inactive' : ''}`}>
     <span className="mg-org-avatar" aria-hidden="true">{initials(name)}</span>
@@ -29,6 +31,7 @@ function PersonCard({ person, position = normalizeStaffPosition(person.position)
       <span className="mg-org-phone">{person.phone ? <a href={`tel:${person.phone}`}><Phone size={11} />{person.phone}</a> : '—'}</span>
       {inactive && <em className="mg-org-badge">{inactive}</em>}</div>
     <div className="mg-org-actions" role="group" aria-label={`Thao tác với ${name}`}>
+      {canManageAccounts(accessUser) && <button type="button" className="mg-icon-button" title="Xem nick và mật khẩu" aria-label={`Xem tài khoản đăng nhập của ${name}`} onClick={() => onAction(person, 'view')}><KeyRound size={15} /></button>}
       <button type="button" className="mg-icon-button" title="Xem" aria-label={`Xem ${name}`} onClick={() => onAction(person, 'view')}><Eye size={15} /></button>
       <button type="button" className="mg-icon-button" title="Sửa" aria-label={`Sửa ${name}`} onClick={() => onAction(person, 'edit')}><Pencil size={15} /></button>
       <button type="button" className="mg-icon-button is-danger" title="Xóa" aria-label={`Xóa ${name}`} onClick={() => onAction(person, 'delete')}><Trash2 size={15} /></button>

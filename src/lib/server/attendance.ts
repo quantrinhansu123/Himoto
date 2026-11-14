@@ -26,7 +26,7 @@ export function attendancePhotoMime(bytes: Buffer) {
   throw new AttendanceError('Chọn ảnh JPEG, PNG hoặc WebP.');
 }
 export async function attendanceStaff(db: Database, user: SessionUser) {
-  const result = await db.query("SELECT id,full_name,store_id FROM himoto.staff_profiles WHERE user_id=$1 AND status='active'", [user.id]);
+  const result = await db.query("SELECT p.id,p.full_name,p.store_id,s.store_name FROM himoto.staff_profiles p LEFT JOIN himoto.stores s ON s.id=p.store_id WHERE p.user_id=$1 AND p.status='active'", [user.id]);
   if (result.rows.length !== 1) return null;
   return result.rows[0];
 }
@@ -35,6 +35,7 @@ export async function recordAttendance(db: Database, user: SessionUser, action: 
   const mime = attendancePhotoMime(photo);
   const staff = await attendanceStaff(db,user);
   if (!staff) throw new AttendanceError('Tài khoản chưa liên kết với một nhân viên đang hoạt động. Liên hệ quản lý nhân sự.',409);
+  if (!staff.store_id) throw new AttendanceError('Nhân viên chưa được gắn cơ sở. Liên hệ quản lý nhân sự trước khi chấm công.',409);
   await db.query('SELECT pg_advisory_xact_lock(73412,hashtext($1))',[String(staff.id)]);
   const previous = await db.query('SELECT id,staff_id,actor_id,in_request,out_request FROM himoto.management_staff_attendance WHERE in_request=$1 OR out_request=$1',[requestId]);
   if (previous.rows.length) {

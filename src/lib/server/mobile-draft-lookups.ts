@@ -252,7 +252,8 @@ export async function readMobileDraftAvailability(
       endsAt: end,
       vehicles: stock.rows.map((row) => {
         const blockers = conflicts.rows.filter(
-          (c) => Number(c.vehicle_id) === Number(row.id),
+          (c) => Number(c.vehicle_id) === Number(row.id) &&
+            (row.status !== "ready" || c.severity === "reservation_overlap"),
         );
         const holds = drafts.filter(
           (d) =>

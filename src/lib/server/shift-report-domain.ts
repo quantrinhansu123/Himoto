@@ -9,7 +9,7 @@ import { readOwnershipReport } from './ownership-report';
 import { ownershipReportText,validateOwnershipSubmission } from '@/lib/management/ownership-report';
 import { queueReportTelegram } from './report-telegram';
 type Database=Pick<PoolClient,'query'>;
-export async function listShiftReports(client:Database,store:string|null,date:string|null,id?:number):Promise<ShiftReport[]> {
+export async function listShiftReports(client:Database,store:string|null,date:string|null,id?:number,all=false):Promise<ShiftReport[]> {
   if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date))throw new ShiftRequestError('Ngày báo cáo không hợp lệ.');
   if(store&&!/^[1-9]\d*$/.test(store))throw new ShiftRequestError('PGD không hợp lệ.');
     const result = await client.query(`SELECT r.id,r.payload,r.status,r.revision,r.updated_at,r.app_snapshot,s.store_name,COALESCE(u.name,'Nhân sự') AS created_by_name,
@@ -21,7 +21,7 @@ export async function listShiftReports(client:Database,store:string|null,date:st
       CASE WHEN a.report_id IS NOT NULL THEN jsonb_build_object('input',a.input,'snapshot',a.app_snapshot,'status',a.status,'result',a.result,'revision',a.revision,'reviewer_name',COALESCE(a.reviewer_name,reviewer.name,'KTNB'),'updated_at',a.updated_at,'confirmed_at',a.confirmed_at) END AS audit
       FROM himoto.management_shift_reports r JOIN himoto.stores s ON s.id=r.store_id LEFT JOIN himoto.users u ON u.id=r.created_by
       LEFT JOIN himoto.management_shift_audits a ON a.report_id=r.id LEFT JOIN himoto.users reviewer ON reviewer.id=a.reviewer_id
-      WHERE ($1::bigint IS NULL OR r.store_id=$1) AND ($2::date IS NULL OR r.report_date=$2) AND ($3::bigint IS NULL OR r.id=$3) ORDER BY r.report_date DESC,r.id DESC LIMIT 100`, [store || null,date||null,id??null]);
+      WHERE ($1::bigint IS NULL OR r.store_id=$1) AND ($2::date IS NULL OR r.report_date=$2) AND ($3::bigint IS NULL OR r.id=$3) ORDER BY r.report_date DESC,r.id DESC${all?'':' LIMIT 100'}`, [store || null,date||null,id??null]);
   return result.rows.map(r=>({...r,id:Number(r.id)}));
 }
 

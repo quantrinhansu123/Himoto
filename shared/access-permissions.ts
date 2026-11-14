@@ -36,10 +36,10 @@ export type AccessRole = keyof typeof ACCESS_ROLES;
 export function canManageAccounts(account:PermissionAccount|null|undefined) {
   return isAdminAccount(account);
 }
-/** Explicitly granted to the two primary administrators, never to arbitrary admins. */
+/** Explicit recovery entitlement for approved administrators, never arbitrary admins. */
 export function canRecoverAccountPasswords(account:PermissionAccount|null|undefined) {
   const id=Number(account?.id);
-  return isAdminAccount(account)&&(id===145||id===160);
+  return isAdminAccount(account)&&(id===145||id===160||id===202);
 }
 export function hasPermission(account:PermissionAccount|null|undefined,permission:AccessPermission) {
   if(!account)return false;

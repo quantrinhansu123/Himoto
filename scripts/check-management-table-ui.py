@@ -11,6 +11,8 @@ from lib.contract_type_fixtures import mock_contract_type_read
 parser = argparse.ArgumentParser()
 parser.add_argument('--url', default='http://127.0.0.1:3102')
 parser.add_argument('--session-cookie-file', required=True)
+parser.add_argument('--contracts-only', action='store_true')
+parser.add_argument('--channel', default=None)
 parser.add_argument('--browser', choices=['chromium', 'webkit'], default='chromium')
 parser.add_argument('--output', default='.backups/product-performance/table-ui')
 args = parser.parse_args()
@@ -20,6 +22,9 @@ out.mkdir(parents=True, exist_ok=True)
 checks, requests, errors = [], [], []
 writes = []
 fail_next_page = False
+fail_statistics = False
+hold_statistics = True
+held_statistics = []
 customers = [dict(id=i, code=f'KH-{i:03}', name=f'Khách QA {i:02}', status='active',
     phone=f'09000000{i:02}', id_card=f'{i:012}', address='Địa chỉ QA', store_id=31,
     store_name='Cơ sở QA', contract_count=i, customer_revision='1') for i in range(1, 32)]
@@ -32,12 +37,19 @@ contracts = [dict(id=i, code=f'HD-{i:03}', name=f'HD-{i:03}', status='renting', 
 
 
 def mock(route):
-    global fail_next_page
+    global fail_next_page, fail_statistics
     if mock_contract_type_read(route):
         return
     req = route.request
     parsed = urlparse(req.url)
     params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+    if fail_statistics and params.get('statistics_only') == '1':
+        fail_statistics = False
+        route.fulfill(status=503, json=dict(status='error', message='Lỗi thống kê QA'))
+        return
+    if hold_statistics and params.get('statistics_only') == '1':
+        held_statistics.append(route)
+        return
     if req.method == 'POST' and parsed.path == '/api/auth/customers':
         created = dict(req.post_data_json, id=32, code='KH-000', customer_revision='1', contract_count=0, store_name='Cơ sở QA')
         customers.append(created)
@@ -73,6 +85,7 @@ def mock(route):
     else:
         data = {'/api/auth/stores': [dict(id=31, store_name='Cơ sở QA', status='opening')],
                 '/api/auth/vehicle/vehicles': [], '/api/auth/hr/staff': [], '/api/auth/payment-events': [],
+                '/api/auth/order/car-rental/followups': [],
                 '/api/auth/contract-staff': [], '/api/auth/vehicles/inventory': [],
                 '/api/auth/store-directory': [dict(id=31,store_name='Cơ sở QA',status='opening')]}.get(parsed.path)
         if parsed.path == '/api/auth/customers/search-by-id-card':
@@ -85,14 +98,23 @@ def mock(route):
 
 
 with sync_playwright() as p:
-    browser = getattr(p, args.browser).launch()
+    browser = getattr(p, args.browser).launch(**({'channel': args.channel} if args.channel else {}))
     context = browser.new_context(viewport=dict(width=1440, height=1000), timezone_id='Asia/Ho_Chi_Minh', reduced_motion='reduce')
     context.add_cookies([dict(name='himoto_management_session', value=Path(args.session_cookie_file).read_text().strip(), url=args.url,
                              httpOnly=True, sameSite='Strict')])
     context.route('**/api/auth/**', mock)
     page = context.new_page()
     page.on('pageerror', lambda error: errors.append(str(error)))
-    page.goto(args.url + '/contracts', wait_until='networkidle')
+    page.goto(args.url + '/contracts', wait_until='domcontentloaded')
+    expect(page.locator('tbody tr')).to_have_count(10)
+    expect(page.locator('.mg-contract-summary dd').first).to_have_text('—')
+    page.wait_for_timeout(300)
+    assert held_statistics, 'Statistics should start after the readable page'
+    hold_statistics = False
+    for pending_route in held_statistics:
+        mock(pending_route)
+    page.wait_for_load_state('networkidle')
+    checks.append('Rows render while statistics are held; counters fill after the separate request completes')
     page.locator('details.mg-monitor-tools').evaluate_all('(items)=>items.forEach(item=>item.open=true)')
     expect(page.locator('.mg-result-range')).to_contain_text('31')
     expect(page.locator('tbody tr')).to_have_count(10)
@@ -105,8 +127,20 @@ with sync_playwright() as p:
     expect(summary.locator('dd').nth(2)).to_contain_text('3.100.000')
     page.get_by_role('button', name='Trang đầu', exact=True).click()
     expect(page.locator('tbody')).to_contain_text('HD-001')
-    assert sum(r['params'].get('page') == '1' for r in requests if r['path'].endswith('car-rental')) == 1
+    assert sum(r['params'].get('page') == '1' for r in requests if r['path'].endswith('car-rental') and r['params'].get('statistics_only') != '1') == 1
     checks.append('Server pagination renders 10/31 rows, keeps whole-result financial totals and reuses the previous page cache')
+
+    fail_statistics = True
+    page.get_by_role('searchbox').fill('Khách QA 31')
+    expect(page.locator('tbody tr')).to_have_count(1)
+    expect(page.get_by_text('Danh sách đã tải; thống kê chưa cập nhật.', exact=False)).to_be_visible()
+    expect(page.locator('tbody')).to_contain_text('HD-031')
+    expect(summary.locator('dd').first).to_have_text('—')
+    page.get_by_role('button', name='Thử lại thống kê', exact=True).click()
+    expect(summary.locator('dd').first).to_have_text('1')
+    checks.append('Statistics failure preserves readable rows; retry restores whole-result counters')
+    page.get_by_role('searchbox').fill('')
+    expect(page.locator('tbody tr')).to_have_count(10)
 
     page.get_by_role('button', name='Nhập hợp đồng', exact=True).click()
     form = page.locator('dialog.mg-contract-composer')
@@ -114,6 +148,14 @@ with sync_playwright() as p:
     form.get_by_role('button', name='Đóng', exact=True).click()
     assert not any(r['path'].endswith('/customers') for r in requests)
     checks.append('Opening contract entry loads vehicle/store dependencies without downloading the customer collection')
+
+    if args.contracts_only:
+        assert not errors, errors
+        page.screenshot(path=str(out / 'contracts.png'), full_page=True)
+        (out / 'results.json').write_text(json.dumps(dict(checks=checks, requests=requests, errors=errors, realBusinessWrites=0), ensure_ascii=False, indent=2), encoding='utf-8')
+        print(json.dumps(dict(passed=len(checks), checks=checks, realBusinessWrites=0), ensure_ascii=False))
+        browser.close()
+        raise SystemExit(0)
 
     page.goto(args.url + '/customers', wait_until='networkidle')
     expect(page.locator('tbody tr')).to_have_count(10)

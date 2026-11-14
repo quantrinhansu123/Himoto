@@ -11,6 +11,7 @@ import { SuggestionInput } from './SuggestionInput';
 import { useManagement } from './ManagementProvider';
 import type { IssuedAccountCredentials } from '@/lib/management/accounts';
 import { AccountCredentialsDialog } from './AccountCredentialsDialog';
+import { StaffAccountDetails } from './StaffAccountDetails';
 
 export type StaffDialogMode = 'view' | 'edit' | 'delete' | 'create';
 const statusLabel = (value: string) => STAFF_STATUSES.find(option => option.value === value)?.label || value || '—';
@@ -34,6 +35,7 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
     status: creating ? 'active' : String(row?.status || 'active'), joined_at: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
   const [error, setError] = useState('');
   const [issued,setIssued]=useState<IssuedAccountCredentials|null>(null);
   const busy = useRef(false);
@@ -47,6 +49,7 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
   }
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (accountBusy) return;
     const next: Record<string, string> = {};
     if (!draft.name.trim()) next.name = 'Nhập họ và tên.';
     if (!/^\+?\d{9,13}$/.test(draft.phone.replace(/[\s.()-]/g, ''))) next.phone = 'Số điện thoại cần 9–13 chữ số.';
@@ -61,7 +64,7 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
     });
   }
   if(issued)return <AccountCredentialsDialog value={issued} onClose={onClose}/>;
-  const close = () => { if (!busy.current) onClose(); };
+   const close = () => { if (!busy.current && !accountBusy) onClose(); };
   const title = creating ? 'Thêm nhân sự' : mode === 'view' ? 'Hồ sơ nhân sự' : mode === 'edit' ? 'Sửa nhân sự' : 'Xóa nhân sự';
   const positions = staffPositionSuggestions((dataset?.staff || []).map(person => person.position));
   const field = (key: 'name' | 'phone' | 'email', label: string, type = 'text', required = false) => <div className="mg-field"><label htmlFor={`staff-${key}`}>{label}{required && <span aria-hidden="true"> *</span>}</label>
@@ -69,7 +72,7 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
   return <Dialog title={title} subtitle={creating ? 'Mã nhân sự được hệ thống tự cấp sau khi lưu' : `${row.code} · ${row.name}`} onClose={close}>
     {!creating && mode === 'view' && <><div className="mg-dialog-body"><dl className="mg-detail-grid">
       {([['Mã nhân sự', row.code], ['Họ và tên', row.name], ['Số điện thoại', row.phone], ['Email', row.email], ['Chức vụ', row.position], ['Cơ sở', row.store_name || 'Trụ sở công ty / Chưa phân bổ'], ['Trạng thái', statusLabel(row.status)], ['Ngày vào làm', dateLabel(row.hire_date)], ['Ghi chú', row.notes]] as [string, unknown][])
-        .map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{String(value || '—')}</dd></div>)}</dl></div>
+        .map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{String(value || '—')}</dd></div>)}</dl><StaffAccountDetails key={row.id} staffId={row.id} /></div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button><button type="button" className="mg-button mg-button-primary" onClick={() => onSwitch?.('edit')}><Pencil size={16} />Chỉnh sửa</button></div></>}
     {(creating || mode === 'edit') && <form noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
       {field('name', 'Họ và tên', 'text', true)}{field('phone', 'Số điện thoại', 'tel', true)}{field('email', 'Email', 'email')}
@@ -77,8 +80,8 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
       <div className="mg-field"><label htmlFor="staff-store">Cơ sở</label><select id="staff-store" value={draft.store_id} disabled={saving} aria-describedby={!creating?'staff-store-hint':undefined} onChange={event => change('store_id', event.target.value)}><option value="">Chưa phân bổ</option>{stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select>{!creating&&<small id="staff-store-hint">Tài khoản theo một cơ sở sẽ tự chuyển quyền truy cập sang cơ sở mới khi lưu. Tài khoản toàn cơ sở giữ nguyên phạm vi.</small>}</div>
       <div className="mg-field"><label htmlFor="staff-status">Trạng thái</label><select id="staff-status" value={draft.status || 'active'} disabled={saving} onChange={event => change('status', event.target.value)} aria-describedby={creating ? 'staff-status-hint' : undefined}>{STAFF_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{creating && <small id="staff-status-hint">Mặc định: Bình thường.</small>}</div>
       {creating && <div className="mg-field"><label htmlFor="staff-joined-at">Ngày vào làm</label><input id="staff-joined-at" type="date" value={draft.joined_at} disabled={saving} onChange={event => change('joined_at', event.target.value)} /></div>}
-    </div>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
-      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button><button type="submit" className="mg-button mg-button-primary" disabled={saving}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : creating ? 'Thêm nhân sự' : 'Lưu nhân sự'}</button></div></form>}
+    </div>{!creating && <StaffAccountDetails key={row.id} staffId={row.id} editable disabled={saving || accountBusy} onBusyChange={setAccountBusy} />}{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
+      <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving || accountBusy} onClick={close}>Hủy</button><button type="submit" className="mg-button mg-button-primary" disabled={saving || accountBusy}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Check size={16} />}{saving ? 'Đang lưu…' : creating ? 'Thêm nhân sự' : 'Lưu nhân sự'}</button></div></form>}
     {!creating && mode === 'delete' && <><div className="mg-dialog-body"><p>Xóa vĩnh viễn hồ sơ <strong>{row.name}</strong>? Nhân sự còn lịch trực hoặc dữ liệu liên quan sẽ không xóa được; khi đó hãy đổi trạng thái sang “Đã nghỉ việc”.</p>{error && <p className="mg-error-message" role="alert">{error}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Hủy</button>{error && <button type="button" className="mg-button" disabled={saving} onClick={() => void run(async () => { await saveStaff(row.id, { name: row.name, phone: row.phone, email: row.email || '', position: normalizeStaffPosition(row.position), store_id: row.store_id ?? null, status: 'leave' }); })}>Chuyển sang đã nghỉ việc</button>}<button type="button" className="mg-button mg-button-danger" disabled={saving} onClick={() => void run(async () => { await bulkDelete('staff', [row.id]); })}>{saving ? <LoaderCircle size={16} className="mg-spin" /> : <Trash2 size={16} />}{saving ? 'Đang xóa…' : 'Xóa nhân sự'}</button></div></>}
   </Dialog>;

@@ -1,6 +1,6 @@
 'use client';
 import { useCallback,useEffect,useState } from 'react';
-import { ArrowDownToLine,CalendarRange,FilterX,Receipt,RotateCcw,TrendingUp,TriangleAlert,Wallet } from 'lucide-react';
+import { CalendarRange,FilterX,Receipt,RotateCcw,TrendingUp,TriangleAlert,Wallet } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { SalesCharts } from './SalesCharts';
@@ -13,7 +13,7 @@ import { canViewOwnedFleetRevenue } from '@/lib/management/permissions';
 import { loadSalesSummary,loadStaffSales,type StaffSalesReport,type SalesSummaryReport } from '@/lib/management/staff-sales';
 import { summarizeBySalesStaff,summarizeByStore,summarizeSalesKpis,type SalesKpis,type SourceSalesSummary } from '@/lib/management/source-sales';
 import { vietnamDate } from '@/lib/management/duty-roster';
-import { csvCell } from '@/lib/management/table-utils';
+import { FilteredExcelButton } from './FilteredExcelButton';
 
 type ReportView = 'actual' | 'ledger' | 'overview' | 'owned-fleet' | 'contracts';
 const REPORT_TABS: { key: ReportView; label: string }[] = [
@@ -31,7 +31,6 @@ const CONTRACTS_SUB_TABS: { key: ContractsSubView; label: string }[] = [
   { key: 'assigned', label: 'NVKD / TLS phân công' },
 ];
 const money=(value:number)=>`${value.toLocaleString('vi-VN')} đ`;
-function downloadCsv(rows:(string|number)[][],filename:string){const data=rows.map(row=>row.map(value=>csvCell(String(value))).join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF',data],{type:'text/csv;charset=utf-8;'}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),0);}
 const isoDate=(year:number,month:number,day:number)=>new Date(Date.UTC(year,month,day)).toISOString().slice(0,10);
 const viDate=(value:string)=>value.split('-').reverse().join('/');
 const PRESETS=[{id:'today',label:'Hôm nay'},{id:'yesterday',label:'Hôm qua'},{id:'7d',label:'7 ngày qua'},{id:'month',label:'Tháng này'},{id:'last-month',label:'Tháng trước'},{id:'quarter',label:'Quý này'},{id:'year',label:'Năm nay'}] as const;
@@ -67,7 +66,7 @@ function SalesKpiCards({kpis,loading,error}:{kpis:SalesKpis;loading:boolean;erro
 const SUMMARY_HEADERS=['Hợp đồng','Khách','Tiền thuê','Đã thu tiền thuê','Tiền cọc'];
 function SummaryTable({title,description,column,unit,summary,filename,loading,error}:{title:string;description:string;column:string;unit:string;summary:SourceSalesSummary;filename:string;loading:boolean;error:string}) {
   const {rows,total}=summary;
-  return <div className="mg-source-sales"><div className="mg-source-sales-heading"><div><h2>{title}</h2><p>{description}</p></div><button className="mg-button" type="button" disabled={loading || !rows.length} onClick={()=>downloadCsv([[column,...SUMMARY_HEADERS],...rows.map(row=>[row.name,row.contracts,row.customers,row.rent,row.paid,row.deposit]),['Tổng',total.contracts,total.customers,total.rent,total.paid,total.deposit]],filename)}><ArrowDownToLine size={16}/>Xuất CSV</button></div>
+  return <div className="mg-source-sales"><div className="mg-source-sales-heading"><div><h2>{title}</h2><p>{description}</p></div><FilteredExcelButton disabled={loading || !rows.length} filename={filename} headers={[column,...SUMMARY_HEADERS]} getRows={()=>[...rows.map(row=>[row.name,row.contracts,row.customers,row.rent,row.paid,row.deposit]),['Tổng',total.contracts,total.customers,total.rent,total.paid,total.deposit]]}/></div>
     {loading ? <p role="status" className="mg-table-state">Đang tải danh sách hợp đồng…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : !rows.length ? <p className="mg-table-state">Không có hợp đồng trong kỳ.</p> :
     <><SalesCharts summary={summary} unit={unit}/><div className="mg-table-scroll" tabIndex={0} role="region" aria-label={title}><table className="mg-table mg-source-sales-table"><thead><tr><th scope="col">{column}</th>{SUMMARY_HEADERS.map(label=><th scope="col" key={label} className="mg-align-right">{label}</th>)}</tr></thead>
       <tbody>{rows.map(row=><tr key={row.key || 'none'} className={row.key ? undefined : 'is-muted'}><td>{row.name}</td><td className="mg-align-right">{row.contracts}</td><td className="mg-align-right">{row.customers}</td><td className="mg-align-right">{money(row.rent)}</td><td className="mg-align-right">{money(row.paid)}</td><td className="mg-align-right">{money(row.deposit)}</td></tr>)}</tbody>
@@ -100,7 +99,6 @@ export function StaffSalesPage() {
   function changeFrom(value:string){if(!value)return;setFrom(value);if(value>to)setTo(value);}
   function changeTo(value:string){if(!value)return;setTo(value);if(value<from)setFrom(value);}
   const scope='Hợp đồng có ngày bắt đầu thuê trong kỳ; gồm nháp đã điền số tiền; không tính giữ xe / chờ nhận xe và đã hủy.';
-  function exportCsv(){downloadCsv([['Nhân viên','Bộ phận','Cách tính','Hợp đồng','Khách','Khách mới','Doanh số'],...rows.map(row=>[row.name,row.department,row.department === 'NVKD' ? 'Tiền thuê kỳ đầu của HĐ đầu tiên' : 'Tiền thuê HĐ mở mới đầu tiên',row.contracts,row.customers,row.new_customers,row.revenue])],`doanh-so-${from}-${to}.csv`);}
   return <section className="mg-page mg-sales-page"><div className="mg-page-content"><div className="mg-page-heading"><div><h1>Báo cáo doanh thu thuê xe</h1></div><div className="mg-heading-actions"><button className="mg-button" type="button" onClick={()=>{setRetry(v=>v+1);void reload();}}><RotateCcw size={16}/>Tải lại</button></div></div>
     <div className="mg-data-panel"><div className="mg-sales-filter is-compact" role="search" aria-label="Bộ lọc doanh số">
       <div className="mg-sales-filter-row">
@@ -133,12 +131,12 @@ export function StaffSalesPage() {
       <SalesKpiCards kpis={kpis} loading={summaryLoading} error={contractsError}/>
       <p className="mg-sales-kpi-note">Tính trên hợp đồng bắt đầu thuê trong kỳ, không gồm cọc. Công nợ = tiền còn thiếu của đơn đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu. Nợ xấu quá hạn = nợ quá hạn (HĐ Quá hạn chưa thu đủ) cộng nợ xấu.</p>
     </>}
-    {contractsSubView==='by-staff'&&<SummaryTable title="Theo NVKD ghi nhận doanh số" description={`Tổng hợp từ Danh sách hợp đồng theo cột NVKD ghi nhận doanh số. ${scope}`} column="NVKD ghi nhận doanh số" unit="nhân viên" summary={sources} filename={`doanh-so-nvkd-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>}
-    {contractsSubView==='by-store'&&<SummaryTable title="Doanh thu theo cơ sở" description={`Tổng hợp từ Danh sách hợp đồng theo cột Nguồn / doanh thu. ${scope}`} column="Cơ sở (Nguồn / doanh thu)" unit="cơ sở" summary={stores} filename={`doanh-thu-co-so-${from}-${to}.csv`} loading={summaryLoading} error={contractsError}/>}
+    {contractsSubView==='by-staff'&&<SummaryTable title="Theo NVKD ghi nhận doanh số" description={`Tổng hợp từ Danh sách hợp đồng theo cột NVKD ghi nhận doanh số. ${scope}`} column="NVKD ghi nhận doanh số" unit="nhân viên" summary={sources} filename={`doanh-so-nvkd-${from}-${to}`} loading={summaryLoading} error={contractsError}/>}
+    {contractsSubView==='by-store'&&<SummaryTable title="Doanh thu theo cơ sở" description={`Tổng hợp từ Danh sách hợp đồng theo cột Nguồn / doanh thu. ${scope}`} column="Cơ sở (Nguồn / doanh thu)" unit="cơ sở" summary={stores} filename={`doanh-thu-co-so-${from}-${to}`} loading={summaryLoading} error={contractsError}/>}
     {contractsSubView==='new-customers'&&<NewCustomersBySourcePanel from={from} to={to} store={selectedStore} retry={retry}/>}
     {contractsSubView==='assigned'&&<>
       <div className="mg-source-sales-heading mg-source-sales-heading-sub"><div><h2>Theo NVKD / TLS được phân công</h2></div></div>
-      <div className="mg-sales-filter-row"><div className="mg-sales-segmented" role="group" aria-label="Bộ phận báo cáo bổ sung">{DEPARTMENTS.map(item=><button key={item.value||'all'} type="button" className={department===item.value?'is-active':''} aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div><button className="mg-button" type="button" disabled={loading||!rows.length} title={loading?'Đang tải doanh số…':!rows.length?'Chưa có doanh số được gắn nhân viên trong kỳ.':'Xuất CSV báo cáo bổ sung.'} onClick={exportCsv}><ArrowDownToLine size={16}/>Xuất báo cáo bổ sung</button></div>
+      <div className="mg-sales-filter-row"><div className="mg-sales-segmented" role="group" aria-label="Bộ phận báo cáo bổ sung">{DEPARTMENTS.map(item=><button key={item.value||'all'} type="button" className={department===item.value?'is-active':''} aria-pressed={department===item.value} onClick={()=>setDepartment(item.value)}>{item.label}</button>)}</div><FilteredExcelButton disabled={loading||!rows.length} filename={`doanh-so-${from}-${to}`} headers={['Nhân viên','Bộ phận','Cách tính','Hợp đồng','Khách','Khách mới','Doanh số']} getRows={()=>rows.map(row=>[row.name,row.department,row.department === 'NVKD' ? 'Tiền thuê kỳ đầu của HĐ đầu tiên' : 'Tiền thuê HĐ mở mới đầu tiên',row.contracts,row.customers,row.new_customers,row.revenue])}/></div>
       {loading ? <p role="status" className="mg-table-state">Đang tải doanh số…</p> : error ? <p role="alert" className="mg-field-error">{error}</p> : !rows.length ? <p className="mg-table-state">Chưa có doanh số được gắn nhân viên trong kỳ.</p> :
       <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Theo NVKD / TLS được phân công"><table className="mg-table mg-source-sales-table"><thead><tr><th scope="col">Nhân viên</th><th scope="col">Bộ phận</th><th scope="col">Cách tính</th><th scope="col" className="mg-align-right">Hợp đồng</th><th scope="col" className="mg-align-right">Khách</th><th scope="col" className="mg-align-right">Khách mới</th><th scope="col" className="mg-align-right">Doanh số</th></tr></thead>
         <tbody>{rows.map(row=><tr key={`${row.department}-${row.staff_id}-${row.name}`}><td>{row.name}</td><td>{row.department}</td><td>{row.department === 'NVKD' ? 'Tiền thuê kỳ đầu của HĐ đầu tiên' : 'Tiền thuê HĐ mở mới đầu tiên'}</td><td className="mg-align-right">{row.contracts}</td><td className="mg-align-right">{row.customers}</td><td className="mg-align-right">{row.new_customers}</td><td className="mg-align-right">{money(row.revenue)}</td></tr>)}</tbody>

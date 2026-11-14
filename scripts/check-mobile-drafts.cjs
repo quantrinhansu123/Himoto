@@ -470,9 +470,9 @@ async function run() {
   );
   assert(wire.isMobileVehicleAvailability(availability));
   const available = availability.vehicles[0];
-  assert.equal(available.hasHardBlocker, true);
+  assert.equal(available.hasHardBlocker, false);
   assert.equal(available.reservationOverlap, true);
-  assert.equal(available.blockersTotal, 25);
+  assert.equal(available.blockersTotal, 24);
   assert.equal(available.blockers.length, 20);
   assert.equal(available.draftsTotal, 26);
   assert.equal(available.drafts.length, 20);

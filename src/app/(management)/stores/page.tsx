@@ -1,2 +1,2 @@
-import { ManagementPage } from '@/components/management/ManagementPage';
-export default function StoresPage() { return <ManagementPage kind="stores" />; }
+import { StoresPage } from '@/components/management/StoresPage';
+export default function Page() { return <StoresPage />; }

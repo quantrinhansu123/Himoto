@@ -11,7 +11,6 @@ import { money, useTheme } from "@/theme";
 import { Button, Card, InlineError, StateView } from "./ui";
 import { ChoiceField, FormField } from "./form-fields";
 import { DateField } from "./date-field";
-import { useCsvExport } from "@/hooks/use-csv-export";
 import { CashbookDeleteActions } from "./cashbook-delete-actions";
 const details: [keyof CashbookBreakdown, string][] = [["rental_income", "Phí thuê"], ["renewal_income", "Tiền gia hạn"], ["late_fee_income", "Tiền trả muộn"], ["deposit_income", "Tổng thu cọc"], ["deposit_refund_expense", "Tiền cọc trả khách"], ["rental_refund_expense", "Tiền hoàn do trả sớm"], ["repair_income", "Phí sửa chữa"], ["extra_income", "Thu thêm hợp đồng"], ["other_income", "Thu khác / chưa phân loại"], ["other_expense", "Chi khác"]];
 export function CashbookVoucherCard({ row }: { row: MobileCashbookVoucher }) {
@@ -28,7 +27,6 @@ export function CashbookVoucherCard({ row }: { row: MobileCashbookVoucher }) {
 }
 export function CashbookScreen({ initialStore }: { initialStore?: string }) {
   const { api, session } = useSession(), workspace = useWorkspace(), theme = useTheme();
-  const csv = useCsvExport();
   const [selected, setSelected] = useState<Map<string, MobileCashbookVoucher>>(new Map());
   const [store, setStore] = useState(initialStore || (session!.user.allStores ? "all" : String(session!.user.storeId || "all")));
   const [input, setInput] = useState(""), search = useDebouncedValue(input), [actor, setActor] = useState(""), [from, setFrom] = useState(""), [to, setTo] = useState("");
@@ -52,9 +50,6 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
     ListHeaderComponent={<View style={{ gap: 16 }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 27, fontWeight: "800" }}>Sổ quỹ / Sổ két</Text>
       <Button secondary label="Tài khoản ngân hàng và két" onPress={() => router.push({ pathname: "/cashbook-accounts", params: { store } })} />
-      <Button secondary label={csv.stage === "fetching" ? "Đang lấy toàn bộ phiếu để xuất" : csv.stage === "saving" ? "Đang lưu file Excel" : "Tải Excel theo bộ lọc sổ quỹ"} loading={csv.busy} disabled={!valid || query.isPending || query.isError || !data || data.income.total + data.expense.total === 0} onPress={() => { const filters = new URLSearchParams({ store_id: store, search, actor, from, to }).toString(); void csv.run(signal => api!.cashbookExcel(filters, signal)); }} />
-      {!!csv.message && <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, lineHeight: 22 }}>{csv.message}</Text>}
-      {!!csv.error && <InlineError message={csv.error} />}
       <Button secondary label={open ? "Ẩn bộ lọc sổ quỹ" : "Bộ lọc sổ quỹ"} onPress={() => setOpen(value => !value)} />
       {open && <Card style={{ gap: 16 }}>
         <FormField label="Tìm phiếu thu chi" value={input} onChangeText={setInput} maxLength={300} />

@@ -18,6 +18,7 @@ import { ReturnedVehicleStatus } from './ReturnedVehicleStatus';
 import { ReturnedContractEditor } from './ReturnedContractEditor';
 
 const localMillis = (value: string) => new Date(`${value}:00+07:00`).getTime();
+const futureReturnError = 'Thời gian trả xe không được nằm trong tương lai.';
 const digits = (value: string) => value.replace(/\D/g, '').slice(0, 13);
 
 interface Estimate { late: boolean; early: boolean; minutes: number; hours: number; unusedDays: number; suggested: number;lateDays?:number;missingDayPrice?:boolean }
@@ -133,6 +134,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
   }
 
   function changeReturnedAt(value:string){
+    if (error === futureReturnError) setError('');
     if(Number.isFinite(localMillis(value))){
       const previous=lastValidReturnedAt.current;
       setOverrides(current=>Object.fromEntries(Object.entries(current).map(([id,amount])=>{
@@ -196,7 +198,14 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
         closes: summary?.closes ?? false,
       });
       else onClose();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không ghi nhận được trả xe.'); }
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Không ghi nhận được trả xe.';
+      if (message === futureReturnError) {
+        showProblem(message, '#contract-returned-at');
+      } else {
+        setError(message);
+      }
+    }
     finally { savingRef.current=false;setSaving(false); }
   }
 
@@ -253,7 +262,11 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
           {openRows.length>1&&<p className="mg-composer-hint">Chỉ tích xe khách thực tế trả. Xe chưa chọn tiếp tục thuê; trả từng xe không tự giảm doanh số tổng của hợp đồng.</p>}
           <div className="mg-form-grid mg-contract-grid-two">
             <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ khách trả thực tế (24h)<span aria-hidden="true"> *</span></label>
-              <DateTime24Controls id="contract-returned-at" label="Ngày giờ khách trả thực tế" value={returnedAt} onChange={changeReturnedAt} />
+              <DateTime24Controls id="contract-returned-at" label="Ngày giờ khách trả thực tế" value={returnedAt} onChange={changeReturnedAt}
+                error={error === futureReturnError} describedBy={error === futureReturnError ? 'contract-returned-at-error' : undefined} />
+              {error === futureReturnError && <p id="contract-returned-at-error" className="mg-field-error" role="alert">
+                {futureReturnError} Kiểm tra lại ngày, giờ và phút theo giờ Việt Nam (24h).
+              </p>}
               <small>Nhập đúng giờ khách trả xe. Không lấy giờ hiện tại nếu khách đã trả trước mà giờ mới ghi nhận.</small>
               {!returnedAt&&<p className="mg-field-error" role="status">Chưa nhập ngày giờ khách trả.</p>}
             </div>
@@ -293,7 +306,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
           <p className="mg-composer-hint">Chỉ ghi phiếu cho khoản đã chọn thu / hoàn. Còn nợ: giữ hợp đồng Chờ tất toán.</p>
         </>}
         {doneRows.length>0&&<section className="mg-return-completed-actions" aria-label="Sửa và gửi hồ sơ xe đã trả"><h3>Hồ sơ xe đã trả</h3>{doneRows.map(row=><div className="mg-return-completed-card" key={row.item_id}><div><strong>{row.license}</strong><span>{row.contract_code} · {formatDateTime(row.completed_at)}</span></div><div className="mg-heading-actions"><button type="button" className="mg-button" disabled={photosPending} onClick={()=>openEditor(row.item_id,'edit')}><Pencil size={16}/>Sửa hồ sơ trả xe</button><button type="button" className="mg-button mg-button-primary" disabled={photosPending} onClick={()=>openEditor(row.item_id,'telegram')}><MessageCircle size={16}/>Gửi Telegram</button></div></div>)}</section>}
-        {error && <p className="mg-error-message" role="alert">{error}</p>}
+        {error && error !== futureReturnError && <p className="mg-error-message" role="alert">{error}</p>}
         </>}
       </div>
       <div className="mg-dialog-footer">{photosPending&&<span role="status">Có ảnh/video mới chưa lưu.</span>}{!returnedAt&&lines.length>0&&!photosPending&&<span role="status">Chưa nhập ngày giờ khách trả thực tế.</span>}{settlementBlocked&&!photosPending&&returnedAt&&<span role="status">{settlementBlockReason}</span>}<button type="button" className="mg-button" disabled={saving} onClick={close}>{done || !openRows.length ? 'Đóng' : 'Hủy'}</button>{!done && openRows.length > 0 && (()=>{

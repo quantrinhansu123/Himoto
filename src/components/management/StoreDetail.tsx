@@ -6,19 +6,23 @@ import { useRouter } from 'next/navigation';
 import { ChevronRight, FileSearch, LoaderCircle, RotateCcw, Search, X } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { Cell } from './DataTable';
+import { FilteredExcelButton } from './FilteredExcelButton';
+import { managementExportRows } from '@/lib/management/management-export';
 import { useManagement } from './ManagementProvider';
 import { CashbookAccounts } from './CashbookAccounts';
 import { CashbookTable } from './CashbookTable';
 import { ContractSectionTabs } from '@/components/contracts/ContractSectionTabs';
 import { MANAGEMENT_CONFIG, optionLabel, statusTone } from '@/lib/management/config';
 import { EMPTY_QUERY, filterRows, formatValue } from '@/lib/management/table-utils';
-import { CashbookFilters, CashbookRow, EMPTY_CASHBOOK_FILTERS, filterCashbookRows } from '@/lib/management/cashbook';
-import { CashbookAccount, createApiCashbookRepository, loadCashbookAccounts } from '@/lib/management/cashbook-repository';
+import { CASHBOOK_COLUMNS, cashbookCell, CashbookFilters, CashbookRow, EMPTY_CASHBOOK_FILTERS, filterCashbookRows } from '@/lib/management/cashbook';
+import { CashbookAccount, createApiCashbookRepository, loadCashbookAccounts, loadCashbookExport } from '@/lib/management/cashbook-repository';
 import { ManagementRow } from '@/lib/management/types';
 import { formatMoney } from '@/lib/formatters';
 import { MobileDetailsCard } from './MobileDetailsCard';
+import { StoreWorkShifts } from './StoreWorkShifts';
 
 const SECTIONS = [
+  { id: 'shifts', label: 'Ca làm việc' },
   { id: 'details', label: 'Chi tiết' },
   { id: 'staff', label: 'Nhân sự' },
   { id: 'vehicles', label: 'Xe' },
@@ -58,7 +62,7 @@ function StoreRelatedList({ kind, storeId, onOpenList, onClose }: { kind: ListSe
   return <>
     <div className="mg-contract-history-toolbar">
       <p>{loading || resource.error ? `${config.title} của cơ sở đang xem.` : <><strong>{rows.length}</strong> {config.singular}{statusCounts.length > 0 && ' · '}{statusCounts.map(([status, count]) => `${optionLabel(config, 'status', status)} ${count}`).join(' · ')}</>}</p>
-      <div><button type="button" className="mg-button" disabled={resource.loading} onClick={() => void ensureData([kind], true).catch(() => {})}>
+      <div><FilteredExcelButton filename={`himoto-${kind}-co-so-${storeId}`} disabled={loading || Boolean(resource.error) || !visible.length} headers={columns.map(column=>column.label)} getRows={()=>managementExportRows(config,columns,visible)}/><button type="button" className="mg-button" disabled={resource.loading} onClick={() => void ensureData([kind], true).catch(() => {})}>
         {resource.loading ? <LoaderCircle size={15} className="mg-spin" /> : <RotateCcw size={15} />}Làm mới</button></div>
     </div>
     {kind === 'contracts' && !loading && !resource.error && <dl className="mg-payment-totals"><div><dt>Số hợp đồng</dt><dd>{rows.length}</dd></div><div><dt>Tổng tiền hợp đồng / Đã thu</dt><dd>{formatMoney(contractTotal)} / {formatMoney(contractPaid)}</dd></div><div><dt>Còn nợ</dt><dd>{formatMoney(contractDebt)}</dd></div></dl>}
@@ -137,7 +141,12 @@ function StoreCashbook({ storeId, onOpenCashbook }: { storeId: number; onOpenCas
       <div className="mg-contract-history-toolbar"><label className="mg-search mg-store-detail-search"><Search size={17} /><span className="mg-sr-only">Tìm phiếu thu chi của cơ sở</span>
         <input type="search" placeholder="Tìm ID, người thực hiện, lý do, nội dung…" value={query.search} onChange={event => update({ search: event.target.value })} />
         {query.search && <button type="button" aria-label="Xóa từ khóa" onClick={() => update({ search: '' })}><X size={15} /></button>}</label>
-        <div><button type="button" className="mg-button" disabled={recordsLoading} onClick={() => setRecordsRetry(value => value + 1)}>{recordsLoading ? <LoaderCircle size={15} className="mg-spin" /> : <RotateCcw size={15} />}Tải lại</button></div></div>
+        <div><FilteredExcelButton disabled={recordsLoading || Boolean(recordsError) || invalidDate} filename={`himoto-so-ket-co-so-${storeId}`}
+          headers={['Loại phiếu',...CASHBOOK_COLUMNS.map(c=>c.label)]}
+          getRows={async ()=>(await loadCashbookExport(query,String(storeId))).map(row=>[
+            row.type==='income'?'Thu':'Chi',...CASHBOOK_COLUMNS.map(c=>c.key==='amount'?row.amount:cashbookCell(row,c.key)),
+          ])}/>
+          <button type="button" className="mg-button" disabled={recordsLoading} onClick={() => setRecordsRetry(value => value + 1)}>{recordsLoading ? <LoaderCircle size={15} className="mg-spin" /> : <RotateCcw size={15} />}Tải lại</button></div></div>
       <div className="mg-date-filters"><span>Ngày phát sinh</span><label htmlFor="store-cashbook-start">Từ ngày <input id="store-cashbook-start" type="date" value={query.startDate} aria-invalid={invalidDate} onChange={event => update({ startDate: event.target.value })} /></label>
         <label htmlFor="store-cashbook-end">Đến ngày <input id="store-cashbook-end" type="date" value={query.endDate} aria-invalid={invalidDate} onChange={event => update({ endDate: event.target.value })} /></label>
         {invalidDate && <span className="mg-field-error" role="alert">Đến ngày phải bằng hoặc sau Từ ngày.</span>}{isFiltered && <button type="button" className="mg-button" onClick={() => setQuery(EMPTY_CASHBOOK_FILTERS)}><RotateCcw size={14} />Xóa bộ lọc</button>}</div>
@@ -171,6 +180,7 @@ export function StoreDetail({ row, canEdit, onEdit, onClose }: { row: Management
         <dl className="mg-detail-grid">{config.columns.filter(column => column.key !== 'name' && column.key !== 'status').map(column => <div key={column.key} data-detail-field={column.key}><dt>{column.label}</dt><dd>{optionLabel(config, column.key, formatValue(row[column.key], column.format))}</dd></div>)}
           {config.fields.filter(field => !config.columns.some(column => column.key === field.key)).map(field => <div key={field.key} data-detail-field={field.key}><dt>{field.label}</dt><dd>{row[field.key] || '—'}</dd></div>)}</dl>
       </>)}
+      {panel('shifts', section === 'shifts' && <StoreWorkShifts storeId={row.id} onClose={onClose} />)}
       {LIST_SECTIONS.map(kind => panel(kind, section === kind && <StoreRelatedList kind={kind} storeId={row.id} onOpenList={() => openList(kind)} onClose={onClose} />))}
       {panel('cashbook', section === 'cashbook' && <StoreCashbook storeId={row.id} onOpenCashbook={() => openList('cashbook')} />)}
     </div>

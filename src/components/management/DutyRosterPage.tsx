@@ -11,11 +11,20 @@ import { FilteredExcelButton } from './FilteredExcelButton';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { Dialog } from './Dialog';
+import { ShiftRegistrationBoard } from './ShiftRegistrationBoard';
 
 const dateLabel=(date:string)=>new Date(`${date}T00:00:00+07:00`).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',weekday:'long',day:'2-digit',month:'2-digit'});
 const timeLabel=(date:string)=>formatTime24(date);
 
 export function DutyRosterPage() {
+  const [view, setView] = useState<'month' | 'week'>('month');
+  return <><div className="mg-heading-actions" style={{ padding: '16px 24px 0' }} role="group" aria-label="Chế độ lịch làm việc">
+    <button type="button" className={`mg-button ${view === 'month' ? 'mg-button-primary' : ''}`} aria-pressed={view === 'month'} onClick={() => setView('month')}>Bảng đăng ký ca tháng</button>
+    <button type="button" className={`mg-button ${view === 'week' ? 'mg-button-primary' : ''}`} aria-pressed={view === 'week'} onClick={() => setView('week')}>Lịch trực theo tuần</button>
+  </div>{view === 'month' ? <ShiftRegistrationBoard /> : <WeeklyDutyRosterPage />}</>;
+}
+
+function WeeklyDutyRosterPage() {
   const {dataset,selectedStore,selectStore,loading:datasetLoading,error:datasetError,notify}=useManagement();
   const [week,setWeek]=useState(()=>weekStart(vietnamDate()));
   const [staffFilter,setStaffFilter]=useState('');

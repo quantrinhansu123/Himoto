@@ -55,8 +55,8 @@ export async function setDatabaseCashbookAccountStatus(client: Database, kind: C
   if (status !== "active" && status !== "inactive") throw new CashbookAccountError("Trạng thái tài khoản không hợp lệ.");
   if (!(await client.query(`UPDATE himoto.${kind === "cash" ? "cash" : "banks"} SET status=$2,updated_at=now() WHERE id=$1 RETURNING id`, [id, status === "active" ? "Active" : "Inactive"])).rowCount) throw new CashbookAccountError("Không tìm thấy tài khoản.", 404);
 }
-export async function readDatabaseCashbookTransactions(client: Database, kind: CashbookAccountKind, id: number, from: string | null, to: string | null) {
+export async function readDatabaseCashbookTransactions(client: Database, kind: CashbookAccountKind, id: number, from: string | null, to: string | null, all = false) {
   return (await client.query(`${CASHBOOK_ACCOUNT_TRANSACTIONS_SQL} WHERE t.${kind === "cash" ? "cash_id" : "bank_id"}=$1 AND t.status='approved'
     AND ($2::date IS NULL OR (t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= $2::date)
-    AND ($3::date IS NULL OR (t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= $3::date) ORDER BY t.created_at DESC,t.id DESC LIMIT 2000`, [id, from, to])).rows;
+    AND ($3::date IS NULL OR (t.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= $3::date) ORDER BY t.created_at DESC,t.id DESC${all ? '' : ' LIMIT 2000'}`, [id, from, to])).rows;
 }
