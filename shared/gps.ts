@@ -16,6 +16,7 @@ export interface GpsVehicle {
   license:string|null;store_id:number|null;store_name:string|null;management_status:GpsState|'unavailable'|'none'|null;
   sync_received_at:string|null;heartbeat_at:string|null;last_latitude:number|null;last_longitude:number|null;last_speed:number|null;
   mapping_status:string;
+  vehicle_status?:string|null;
   position_recorded_at?:string|null;provider_reported_at?:string|null;last_ignition?:boolean|null;
   stopped_since?:string|null;
   provider_stopped_since?:string|null;

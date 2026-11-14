@@ -43,6 +43,14 @@ async function main(){
   queries.length=0;const exported=await readManagementTable(client,'contracts',managementTableQuery(input,true));
   assert.equal(exported.rows[0].overdue_fee_estimate,40000);
   checks.push('Paged hydration and all-row exports preserve per-line estimates; SQL reads the same legacy/current day prices as returns and excludes recovered vehicles');
+  const missingRate={...raw,rental_type:'ownership',store_kind:'lease_to_own',overdue_items:[{return_at:new Date(Date.now()-1439*60000).toISOString(),daily_price:null,vehicle_type:'xeso',price_type:'week'}]};
+  for(const all of [false,true]){
+    const db={query:async sql=>({rows:sql.startsWith('SELECT id,type,price_type,price FROM himoto.pricing')?[{id:1,type:'xeso',price_type:'day',price:140000}]:[sql.includes('AS overdue_items')?missingRate:{...missingRate,__total_count:1,overdue_items:undefined}]})};
+    const result=await readManagementTable(db,'contracts',new URLSearchParams({status:'overdue',store:'all',...(all?{all:'1'}:{})}));
+    assert.equal(result.rows[0].monitoring_amount,140000);assert.equal(result.rows[0].overdue_fee_estimate,140000);
+    assert.equal(result.rows[0].overdue_reference_price,1);assert.equal(result.rows[0].rental_debt_amount,800000);
+  }
+  checks.push('The exact contracts?status=overdue filter and all-row export show weekly ownership late fees, explicitly marked day-reference estimates, separately from existing rental debt');
   if(process.argv.includes('--live-read')){
     require('@next/env').loadEnvConfig(path.resolve(__dirname,'..'),false,{info(){},error(){}});
     const pool=load(path.join(root,'lib/server/himoto-database')).himotoPool,client=await pool.connect();

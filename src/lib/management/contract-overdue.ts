@@ -71,7 +71,7 @@ export function withContractMonitoring(row:ManagementRow,now=Date.now()):Managem
   if(row.status==='completed'&&row.bad_debt_closed_at)return {...base,contract_signed_at:row.signed_on||row.start_date,collection_overdue:0,overdue_fee_estimate:undefined,monitoring_amount:base.rental_debt_amount};
   if(row.status==='bad_debt')return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:0,monitoring_amount:base.rental_debt_amount};
   const owner=isOwnershipContract(row);
-  if(!owner||!row.billing_plan_json)return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:row.status==='overdue'?1:0,monitoring_amount:owner&&!usesLegacyOwnershipFees(row)?base.rental_debt_amount:base.overdue_fee_estimate};
+  if(!owner||!row.billing_plan_json)return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:row.status==='overdue'?1:0,monitoring_amount:base.overdue_fee_estimate};
   if(row.billing_error||row.billing_due_amount===undefined||row.billing_due_amount==='')return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'payment',overdue_minutes:undefined,overdue_days:0,overdue_fee_estimate:undefined,collection_overdue:row.status==='overdue'?1:0,monitoring_amount:undefined};
   const due=String(row.billing_overdue_at||'');
   const dueAt=Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(due)?`${due}:00+07:00`:due);

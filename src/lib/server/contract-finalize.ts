@@ -230,7 +230,9 @@ export async function finalizeContractDraft(client: Database, id: number, actorI
   ];
   const depositCollected = receipts.filter(row=>row.purpose==='deposit').reduce((sum,row)=>sum+Number(row.amount),0);
   const rentalCollected = receipts.filter(row=>row.purpose==='rental').reduce((sum,row)=>sum+Number(row.amount),0);
-  if (!Number.isSafeInteger(depositCollected+rentalCollected) || depositCollected>depositDue || rentalCollected>rentalDue) throw new ContractFinalizeError('Tổng các khoản thu vượt số tiền cọc hoặc tiền thuê/phí còn phải thu.',409);
+  // Record actual receipts even above the quoted deposit/rent. Overpayment is
+  // not a new charge: keep the contract price unchanged and retain safe limits.
+  if (!Number.isSafeInteger(depositCollected+rentalCollected) || depositCollected+rentalCollected>MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Tổng các khoản thu không hợp lệ hoặc vượt giới hạn lưu trữ.',409);
   const previousPaid = amountOf(order.pid);
   if (previousPaid === null || previousPaid+depositCollected+rentalCollected>MAX_PAYMENT_AMOUNT) throw new ContractFinalizeError('Tổng đã thu không hợp lệ hoặc vượt giới hạn.',409);
   async function account(receipt: FinalizeReceipt | null, label: string) {

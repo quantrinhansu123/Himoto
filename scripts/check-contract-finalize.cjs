@@ -28,6 +28,10 @@ async function main() {
   const pickerSource = fs.readFileSync(path.join(root, 'components/contracts/VehiclePicker.tsx'), 'utf8');
   const composerSource = fs.readFileSync(path.join(root, 'components/contracts/ContractComposer.tsx'), 'utf8');
   assert.ok(finalizeSource.includes('releaseIdleRentedVehicles'));
+  const finalizeDialog=fs.readFileSync(path.join(root,'components/contracts/ContractFinalizeDialog.tsx'),'utf8');
+  assert.doesNotMatch(finalizeDialog,/collected\(state\)>due\) throw/);
+  assert.doesNotMatch(finalizeDialog,/!state\.collect \|\| !due/);
+  assert.match(finalizeDialog,/Thu dư:/);
   assert.ok(pickerSource.includes('Sẵn sàng phát hành'));
   assert.ok(pickerSource.includes('matchesVehicleSearch'));
   assert.ok(pickerSource.includes('extraMatches'));
@@ -111,6 +115,42 @@ async function main() {
       assert.equal(Number((await c.query("SELECT value FROM qa_fin_transactions WHERE order_id=1 AND name='order:rental_fees'")).rows[0].value),1050000);
       await c.query('ROLLBACK TO SAVEPOINT multi_fee_total');
       checks.push('PostgreSQL TEMP: two vehicle rents plus one shipping fee produce the correct receipt; the contract deposit is collected once');
+      const collect=async(receipts,reservation=false)=>savepoint(async()=>server.finalizeContractDraft(proxy,1,143,{revision:await revision(1),receipts,...(reservation?{reservation:true}:{})}));
+      const collection=(purpose,amount)=>({purpose,amount,method:'cash',account_id:5,paid_at:paidAt});
+      await c.query('SAVEPOINT overcollection');
+      const overpaid=await collect([collection('deposit','1500000'),collection('rental','1250000')]);
+      assert.equal(overpaid.total_amount,1000000);assert.equal(overpaid.deposit_amount,1000000);assert.equal(overpaid.paid_amount,2750000);
+      assert.deepEqual((await c.query("SELECT name,value::text AS amount FROM qa_fin_transactions WHERE order_id=1 ORDER BY id")).rows.map(r=>[r.name,r.amount]),[['order:deposit','1500000'],['order:rental_fees','1250000']]);
+      const issuedRevision=await revision(1);
+      await assert.rejects(server.finalizeContractDraft(proxy,1,143,{revision:issuedRevision,receipts:[collection('rental','1250000')]}),e=>e.status===409);
+      assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_fin_transactions WHERE order_id=1')).rows[0].n,2);
+      await c.query('ROLLBACK TO SAVEPOINT overcollection');
+      await c.query("INSERT INTO qa_fin_transactions(order_id,name,type,status,value,user_id,store_id,cash_id,payment_method,note) VALUES(1,'order:rental_fees','in','approved',1200000,143,23,5,1,'Existing payment QA')");
+      await c.query('UPDATE qa_fin_orders SET pid=1200000 WHERE id=1');
+      const alreadyPaid=await collect([collection('rental','300000')]);
+      assert.equal(alreadyPaid.total_amount,1000000);assert.equal(alreadyPaid.paid_amount,1500000);
+      await c.query('ROLLBACK TO SAVEPOINT overcollection');
+      const tomorrow=new Date(Date.now()+86400000+7*3600000).toISOString().slice(0,16),nextDay=new Date(Date.now()+2*86400000+7*3600000).toISOString().slice(0,16);
+      for(const total of ['250000','0']){
+        await c.query('UPDATE qa_fin_orders SET draft_payload=$1 WHERE id=1',[draft([100],{start_date:tomorrow,end_date:nextDay,package_name:'Tùy chọn',unit_price:'0',total_amount:total,deposit_amount:'0'})]);
+        const reservation=await collect([collection('rental','500000')],true);
+        assert.equal(reservation.status,'deposit_contract');assert.equal(reservation.total_amount,Number(total));assert.equal(reservation.paid_amount,500000);
+        assert.equal((await c.query('SELECT status FROM qa_fin_vehicles WHERE id=100')).rows[0].status,'ready');
+        await c.query('ROLLBACK TO SAVEPOINT overcollection');
+      }
+      await assert.rejects(collect([collection('rental','6000000000000'),collection('rental','6000000000000')]),e=>e.status===409&&/giới hạn/.test(e.message));
+      await assert.rejects(collect([{...collection('rental','1250000'),account_id:15}]),e=>e.status===409);
+      await assert.rejects(collect([{...collection('rental','1250000'),method:'company_transfer',account_id:6}]),e=>e.status===409);
+      const failing={query(sql,args){if(sql.startsWith('UPDATE himoto.orders SET order_status=$12'))throw Error('Injected after overcollection receipt');return proxy.query(sql,args);}};
+      await assert.rejects(savepoint(async()=>server.finalizeContractDraft(failing,1,143,{revision:await revision(1),receipts:[collection('rental','1250000')]})),/Injected after overcollection/);
+      assert.equal((await c.query('SELECT count(*)::int AS n FROM qa_fin_transactions WHERE order_id=1')).rows[0].n,0);
+      assert.equal((await c.query('SELECT order_status FROM qa_fin_orders WHERE id=1')).rows[0].order_status,'draft');
+      await c.query('RELEASE SAVEPOINT overcollection');
+      checks.push('TEMP: deposit/rent overcollections and reservation advances above 250k or a zero quote save exact receipts without increasing the contract price; existing paid money is retained, duplicate issue and storage overflow stay blocked');
+      if(process.argv.includes('--overcollection-only')){
+        console.log(JSON.stringify({passed:checks.length,checks,scope:'Finalize overcollection regression only; unrelated bulk-delete tests excluded',realBusinessWrites:0},null,2));
+        return;
+      }
       const result = await finalize(1, { rental: { method: 'transfer', account_id: 6 } });
       assert.equal(result.code, `${day}-0008`); assert.equal(result.paid_amount, 2000000); assert.equal(result.transaction_ids.length, 2);
       const order = (await c.query('SELECT * FROM qa_fin_orders WHERE id=1')).rows[0];

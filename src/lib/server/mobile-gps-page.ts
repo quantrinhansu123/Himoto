@@ -10,7 +10,7 @@ export async function readMobileGpsPage(db: Pick<PoolClient, 'query'>, query: Mo
       CASE WHEN d.provider_status='not_visible_in_account' THEN 'unavailable' ELSE d.management_status END AS management_status,
       CASE WHEN d.provider_status='not_visible_in_account' THEN d.sync_received_at ELSE COALESCE(a.last_success_at,d.sync_received_at) END AS sync_received_at,
       d.heartbeat_at,d.last_latitude,d.last_longitude,d.last_speed,d.provider_reported_at,d.position_recorded_at,d.last_ignition,
-      d.stopped_since,d.provider_stopped_since,v.license,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name
+      d.stopped_since,d.provider_stopped_since,v.license,COALESCE(v.current_store_id,v.store_id) AS store_id,s.store_name,v.status AS vehicle_status
     FROM himoto.gps_devices d LEFT JOIN himoto.management_gps_accounts a ON a.id=d.source_account_id
     LEFT JOIN himoto.vehicles v ON v.id=d.vehicle_id LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
     WHERE (d.vehicle_id IS NULL OR v.id IS NOT NULL AND v.deleted_at IS NULL)
@@ -19,7 +19,7 @@ export async function readMobileGpsPage(db: Pick<PoolClient, 'query'>, query: Mo
     SELECT -v.id,v.id,NULL::text,''::text,''::text,'unmapped'::text,'none'::text,
       NULL::timestamptz,NULL::timestamptz,NULL::numeric,NULL::numeric,NULL::numeric,
       NULL::timestamptz,NULL::timestamptz,NULL::boolean,NULL::timestamptz,NULL::timestamptz,
-      v.license,COALESCE(v.current_store_id,v.store_id),s.store_name
+      v.license,COALESCE(v.current_store_id,v.store_id),s.store_name,v.status
     FROM himoto.vehicles v LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
     WHERE v.deleted_at IS NULL AND ($1::bigint IS NULL OR COALESCE(v.current_store_id,v.store_id)=$1)
       AND NOT EXISTS(SELECT 1 FROM himoto.gps_devices d WHERE d.vehicle_id=v.id)

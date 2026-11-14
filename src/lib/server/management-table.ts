@@ -472,7 +472,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     : '';
   const now=Date.now();
   const derivedScope=kind==='contracts'&&['overdue','collection','due'].includes(input.scope);
-  const legacyFees=legacyOwnershipFeeReader(client);
+  const legacyFees=legacyOwnershipFeeReader(client,true);
   const overdueSql=(sql:string)=>monitoring?overdueDetailsSql(sql):sql;
   if(!all){
     const readStatistics=async(scopeOnly=false)=>{

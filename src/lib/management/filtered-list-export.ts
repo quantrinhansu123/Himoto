@@ -6,12 +6,13 @@ import { localDutyTime, type DutySchedule } from './duty-roster';
 import type { TransferHistoryRow } from './vehicle-transfer-history';
 import { SHIFT_SUMMARY_FIELDS, type ShiftReport } from './shift-reports';
 import { REMINDER_STATUS_LABELS, type DebtReminderRow } from './debt-reminders';
+import { VEHICLE_STATUSES } from './config';
 
 // The web and mobile exports use these same columns and cell values.
 export const TRANSFER_EXPORT_HEADERS = ['Ngày giờ','Thao tác','Biển số','Tên xe','Cơ sở chuyển đi','Cơ sở nhận','Người thao tác','Ghi chú'];
 export const transferExportRows = (rows: TransferHistoryRow[]) => rows.map(row => [formatDateTime(row.at),row.label,row.license,row.vehicle_name,row.from_store,row.to_store,row.actor,row.note]);
-export const GPS_EXPORT_HEADERS = ['Biển số','Tên GPS','Nền tảng','IMEI','Cơ sở','Trạng thái','Đồng bộ gần nhất','Vĩ độ','Kinh độ'];
-export const gpsExportRows = (rows: GpsVehicle[], state: (row: GpsVehicle) => string) => rows.map(row => [row.license,row.provider_device_name,row.provider,row.external_device_id,row.store_name,GPS_STATE_LABELS[state(row)]||state(row),row.sync_received_at,row.last_latitude,row.last_longitude]);
+export const GPS_EXPORT_HEADERS = ['Biển số','Tên GPS','Nền tảng','IMEI','Cơ sở','Trạng thái xe','Trạng thái GPS','Đồng bộ gần nhất','Vĩ độ','Kinh độ'];
+export const gpsExportRows = (rows: GpsVehicle[], state: (row: GpsVehicle) => string) => rows.map(row => [row.license,row.provider_device_name,row.provider,row.external_device_id,row.store_name,VEHICLE_STATUSES.find(option=>option.value===row.vehicle_status)?.label||row.vehicle_status||'Chưa xác định',GPS_STATE_LABELS[state(row)]||state(row),row.sync_received_at,row.last_latitude,row.last_longitude]);
 export const BATTERY_EXPORT_HEADERS = ['Mã HĐ','Khách hàng','SĐT','Biển số','Pin','Bắt đầu','Kết thúc','Giá thuê','Cơ sở','Trạng thái'];
 const batteryMoment = (value: string) => value ? `${value.slice(11,16)} ${value.slice(8,10)}/${value.slice(5,7)}/${value.slice(0,4)}` : '—';
 export const batteryExportRows = (rows: BatteryContract[]) => rows.map(row => [row.code,row.customer_name,row.customer_phone,row.vehicle_license,row.battery_name,batteryMoment(row.starts_at),batteryMoment(row.ends_at),row.rent_price,row.store_name,batteryStatusLabel(row.status)]);

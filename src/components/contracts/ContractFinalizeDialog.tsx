@@ -51,21 +51,21 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       const row = (method: PaymentMethod, amount: string, label?: string): CollectionRow => ({key:nextKey.current++,method,amount,account:'',paid_at:paidDefault,label});
       const seed = (due: number, methods: PaymentMethod[], label?: string) => {
         const usableMethods = withAccounts(methods);
-        return due>0 ? usableMethods.map((method,index)=>({...row(method,usableMethods.length===1 ? String(due) : '',label),automatic:!reservation && usableMethods.length>1 && index===usableMethods.length-1})) : [];
+        return usableMethods.map((method,index)=>({...row(method,usableMethods.length===1 && due>0 ? String(due) : '',label),automatic:!reservation && usableMethods.length>1 && index===usableMethods.length-1}));
       };
       const depositDue = Math.max(deposit-value.deposit_paid,0), rentalDue = Math.max(total-(value.paid_amount || 0),0);
       const fees = initialMethods.current.charges.filter(item=>item.name.trim() && Number(item.amount)>0);
       const feeTotal = fees.reduce((sum,item)=>sum+Number(item.amount),0);
       const rentalMethods = withAccounts(initialMethods.current.rental);
       const rentalRows = feeTotal && feeTotal<=rentalDue
-        ? [...seed(rentalDue-feeTotal,rentalMethods,'Tiền thuê xe'),...fees.map(item=>{
+        ? [...(rentalDue>feeTotal?seed(rentalDue-feeTotal,rentalMethods,'Tiền thuê xe'):[]),...fees.map(item=>{
             const method = item.method || rentalMethods[0];
             return row(method,item.amount,item.name.trim());
           })]
         : seed(rentalDue,rentalMethods);
       setDepositState(reservation ? {collect:false,rows:[]} : {collect:depositDue>0,rows:seed(depositDue,initialMethods.current.deposit)});
       const advanceRows=reservation?seed(rentalDue,initialMethods.current.deposit):[];
-      setRentalState({collect:rentalDue>0,rows:reservation ? advanceRows.map(item=>({...item,amount:advanceRows.length===1&&reservationAdvance>0 ? String(Math.max(reservationAdvance-(value.paid_amount||0),0)) : ''})) : rentalRows});
+      setRentalState({collect:reservation||rentalDue>0,rows:reservation ? advanceRows.map(item=>({...item,amount:advanceRows.length===1&&reservationAdvance>0 ? String(Math.max(reservationAdvance-(value.paid_amount||0),0)) : ''})) : rentalRows});
     }).catch(cause=>{if(!controller.signal.aborted)setLoadError(cause instanceof Error ? cause.message : 'Không tải được tài khoản nhận tiền.');});
     return ()=>controller.abort();
   },[orderId,deposit,total,reservation,reservationAdvance,paidDefault]);
@@ -76,10 +76,9 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   const accountGap = (state: CollectionState) => state.collect && state.rows.some(row => !(row.automatic && row.amount === '0') && !accountsFor(row).length);
   const missingAccounts = Boolean(context) && ((depositState.collect && accountGap(depositState)) || (rentalState.collect && accountGap(rentalState)));
   const noAccountMessage = 'Chưa có tài khoản đang hoạt động cho hình thức này tại cơ sở hợp đồng. Nhờ quản trị kiểm tra tài khoản trong Sổ quỹ, rồi mở lại bước thanh toán. Chọn đúng hình thức thực tế đã nhận tiền.';
-  function collections(state: CollectionState, purpose: FinalizeCollection['purpose'], due: number): FinalizeCollection[] {
-    if (!state.collect || !due) return [];
+  function collections(state: CollectionState, purpose: FinalizeCollection['purpose']): FinalizeCollection[] {
+    if (!state.collect) return [];
     if (!state.rows.length) throw new Error('Thêm khoản tiền đã nhận, hoặc bỏ chọn thu tiền để ghi nhận chưa thu.');
-    if (collected(state)>due) throw new Error(`Khoản ${purpose==='deposit' ? 'cọc' : 'thuê/phí'} vượt số còn phải thu ${money(due)}.`);
     return state.rows.filter(row=>!(row.automatic && row.amount==='0')).map(row=>{
       if (!/^[1-9]\d{0,12}$/.test(row.amount) || !Number.isSafeInteger(Number(row.amount))) throw new Error('Nhập số tiền lớn hơn 0 cho từng khoản thu.');
       const account = chosenAccount(row);
@@ -92,7 +91,7 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
   async function submit(event: FormEvent) {
     event.preventDefault(); if(busy.current || completed || !context||photosPending)return; setError('');
     let receipts: FinalizeCollection[];
-    try {receipts=[...collections(depositState,'deposit',depositDue),...collections(rentalState,'rental',rentalDue)]; if (reservation && !receipts.length) throw new Error('Nhập khoản tiền giữ xe đã nhận.');}
+    try {receipts=[...collections(depositState,'deposit'),...collections(rentalState,'rental')]; if (reservation && !receipts.length) throw new Error('Nhập khoản tiền giữ xe đã nhận.');}
     catch(cause){setError(cause instanceof Error ? cause.message : 'Kiểm tra các khoản đã nhận.');return;}
     if (overlapWarning && !acknowledgeOverlap) {
       setError('Tick xác nhận chồng lịch cọc giữ xe để tiếp tục, hoặc chỉnh lại ngày thuê/hẹn trả.');
@@ -126,8 +125,8 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
       setState({...state,rows:balanceCollectionAmounts([...state.rows,added],due)});
     };
     return <fieldset className="mg-finalize-receipt" data-purpose={purpose}><legend>{label}: {money(amount)}</legend>
-      <p className="mg-composer-hint">Đã ghi nhận trước: {money(amount-due)} · Còn phải thu: {money(due)}</p>
-      {due>0 && <><label className="mg-checkbox"><input type="checkbox" checked={state.collect} onChange={event=>setState({...state,collect:event.target.checked})} />{purpose === 'deposit' ? 'Đã nhận tiền cọc' : 'Khách đã thanh toán tiền thuê / phí'}</label>
+      <p className="mg-composer-hint">Đã ghi nhận trước: {money((purpose==='deposit'?context?.deposit_paid:context?.paid_amount)||0)} · Còn phải thu: {money(due)}</p>
+      <><label className="mg-checkbox"><input type="checkbox" checked={state.collect} onChange={event=>setState({...state,collect:event.target.checked})} />{purpose === 'deposit' ? 'Đã nhận tiền cọc' : 'Khách đã thanh toán tiền thuê / phí'}</label>
         {state.collect && <>
           {state.rows.map((row,index)=><div className="mg-collection-row" key={row.key}>
             <div className="mg-collection-row-heading"><strong>Khoản {index+1}{row.label ? ` · ${row.label}` : ''}</strong><button type="button" className="mg-icon-button" aria-label={`Bỏ khoản ${label.toLowerCase()} ${index+1}`} onClick={()=>setState({...state,rows:balanceCollectionAmounts(state.rows.filter(item=>item.key!==row.key),due)})}><Trash2 size={15}/></button></div>
@@ -141,11 +140,11 @@ export function ContractFinalizeDialog({ orderId, revision, code, total, deposit
             </div>
           </div>)}
           <button type="button" className="mg-button" disabled={state.rows.length>=20} onClick={add}><Plus size={15}/>Thêm khoản thu {purpose==='deposit' ? 'cọc' : 'thuê/phí'}</button>
-          <p className={collected(state)>due ? 'mg-field-error' : 'mg-composer-hint'}>Sẽ ghi nhận: {money(collected(state))} · Còn chưa thu: {money(Math.max(due-collected(state),0))}</p>
+          <p className="mg-composer-hint">Sẽ ghi nhận: {money(collected(state))} · Còn chưa thu: {money(Math.max(due-collected(state),0))}{collected(state)>due&&<> · Thu dư: {money(collected(state)-due)}. Vẫn lưu đúng số thực nhận, không tăng giá hợp đồng.</>}</p>
         </>}
         {!state.collect && <small>Chưa nhận tiền: giữ nguyên số còn phải thu, không ghi nhận vào tài khoản.</small>}
-      </>}
-      {due > 0 && <p className="mg-payment-state" role="status">{collected(state) === due ? 'Đã thanh toán đủ' : collected(state) > 0 ? 'Thanh toán một phần' : 'Chưa thanh toán'}</p>}
+      </>
+      <p className="mg-payment-state" role="status">{collected(state)>due?'Thu dư so với số còn phải thu':collected(state) === due ? 'Đã thanh toán đủ' : collected(state) > 0 ? 'Thanh toán một phần' : 'Chưa thanh toán'}</p>
     </fieldset>;
   }
   if(completed)return <Dialog title={`Kiểm tra & gửi Telegram · ${completed.code}`} onClose={()=>onDone(completed)}>

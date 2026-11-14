@@ -37,7 +37,21 @@ async function main(){
  await noRead([native,planned]);assert.equal(unexpected,0);
  assert.equal(withContractMonitoring(native,now).monitoring_amount,140000);
  const before=withContractMonitoring(applyInstallmentBilling(planned,now),now),after=withContractMonitoring(applyInstallmentBilling((await hydrate([planned]))[0],now),now);assert.deepEqual(after,before);
- checks.push('Native rental fees and scheduled ownership installments retain their existing policies and do not read legacy pricing.');
+  checks.push('Native rental fees and scheduled ownership installments retain their existing policies and do not read legacy pricing.');
+  const referenceReader=legacyOwnershipFeeReader({query:async()=>({rows:prices})},true);
+  const references=await referenceReader([
+    row(11,[item(1440,'xeso',{price_type:'week'})],{legacy_source_store_id:''}),
+    row(12,[item(1440,'xega',{price_type:'total'})],{legacy_source_store_id:'',rental_type:'rental',store_kind:'physical'}),
+    row(13,[item(1440,'xeso',{daily_price:123000})],{legacy_source_store_id:'',rental_type:'rental',store_kind:'physical'}),
+    row(14,[item(1440,'unknown')],{legacy_source_store_id:'',rental_type:'rental',store_kind:'physical'}),
+    row(15,[item(1440,'xeso',{price_type:'month'})]),
+    planned,
+  ]);
+  assert.deepEqual(references.slice(0,5).map(r=>withContractMonitoring(r,now).monitoring_amount),[140000,160000,123000,undefined,140000]);
+  assert.deepEqual(references.map(r=>r.overdue_reference_price),[1,1,undefined,undefined,1,undefined]);
+  assert.deepEqual(references[5],planned);
+  for(const r of references.slice(0,5)){assert.equal(r.total_amount,1000000);assert.equal(r.paid_amount,1000000);assert.equal(r.deposit_amount,3000000);}
+  checks.push('Opt-in list estimates cover week/package/missing legacy prices using day reference rates, preserve known rates and installment schedules, label reference prices and never invent unknown vehicle prices or alter balances.');
  const raw={id:1,contract_number:'QA-1',status:'overdue',store_id:35,store_kind:'lease_to_own',rental_type:'ownership',legacy_source_store_id:'29',total_amount:1000000,paid_amount:1000000,deposit_amount:3000000,vehicles:[],overdue_items:[item(8980)]};
  for(const all of [false,true]){
   const sql=[];const db={query:async text=>{sql.push(text);if(text.startsWith('SELECT id,type,price_type,price FROM himoto.pricing'))return {rows:prices};return {rows:[text.includes('AS overdue_items')?raw:{...raw,overdue_items:undefined,__total_count:1}]};}};
