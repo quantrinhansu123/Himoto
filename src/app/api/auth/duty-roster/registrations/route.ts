@@ -3,7 +3,7 @@ import { withAccessRequest } from '@/lib/server/access-request';
 import { himotoPool } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { DutyError } from '@/lib/server/duty-roster';
-import { readRegistrationMonth, saveRegistration } from '@/lib/server/shift-registration';
+import { readRegistrationMonth, readRegistrationRange, saveRegistration } from '@/lib/server/shift-registration';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { failureResponse } from '@/lib/server/public-failure';
 
@@ -18,7 +18,10 @@ async function handle(request: NextRequest) {
     const raw = writing ? await request.json() : null;
     client = await himotoPool.connect();
     await client.query(writing ? 'BEGIN' : 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    const data = writing ? await saveRegistration(client, user!.id, raw) : await readRegistrationMonth(client, request.nextUrl.searchParams.get('month') || vietnamDate().slice(0, 7));
+    const params = request.nextUrl.searchParams;
+    const data = writing ? await saveRegistration(client, user!.id, raw)
+      : params.has('from') || params.has('to') ? await readRegistrationRange(client, params.get('from') || '', params.get('to') || '')
+      : await readRegistrationMonth(client, params.get('month') || vietnamDate().slice(0, 7));
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

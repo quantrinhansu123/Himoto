@@ -9,6 +9,11 @@ async function main() {
   assert.equal(shared.monthDates('2026-02').length, 28);
   assert.equal(shared.monthDates('2026-11').length, 30);
   assert.equal(shared.monthDates('2026-12').length, 31);
+  assert.deepEqual(shared.registrationMonthRange('2026-11'),{from:'2026-11-01',to:'2026-11-30'});
+  assert.equal(shared.registrationDates('2026-11-01','2026-11-30').length,30);
+  assert.deepEqual(shared.registrationDates('2026-12-31','2027-01-02'),['2026-12-31','2027-01-01','2027-01-02']);
+  assert.equal(shared.registrationDates('2028-02-28','2028-03-01').length,3);
+  for(const range of [['2026-02-30','2026-03-01'],['2026-11-30','2026-11-01'],['2026-01-01','2026-12-31'],['','2026-11-30']])assert.throws(()=>shared.registrationDates(...range));
   for (const month of ['2026-13', '2026-00', '1999-12', '2101-01', '2026-2', '']) assert.throws(() => shared.monthDates(month));
   for (const [code, credit] of [['S',1],['G1',0.5],['G2',0.5],['G3',0.5],['C',1],['F',1.5],['O',0],['G1+G3',1],[null,0]]) assert.equal(shared.registrationCredit(code),credit);
   const base = { staff_id: 1, store_id: 23, work_date: '2026-11-01', shift_code: 'S', revision: null };
@@ -69,6 +74,9 @@ async function main() {
     let result = await server.readRegistrationMonth(db,'2026-11');
     assert.equal(result.registrations.length,1); assert.equal(result.staff.length,2); assert.equal(result.stores.length,2);
     assert.equal((await server.readRegistrationMonth(db,'2026-12')).registrations.length,0);
+    const filteredRange=await server.readRegistrationRange(db,'2026-10-31','2026-11-02');
+    assert.equal(filteredRange.from,'2026-10-31');assert.equal(filteredRange.to,'2026-11-02');assert.equal(filteredRange.registrations.length,1);
+    assert.equal((await server.readRegistrationRange(db,'2026-11-02','2026-11-30')).registrations.length,0);
     assert.equal((await c.query('SELECT count(*)::int n FROM qa_registration_staff_shift_registration_history')).rows[0].n,4);
     failHistory = true;
     await assert.rejects(save({revision:cleared.revision,shift_code:'F'}), /simulated audit failure/);

@@ -1,0 +1,4 @@
+.dialog .locate { min-height:48px; touch-action:manipulation; font-size:15px; gap:8px; }
+.status { padding:12px; border:1px solid #bfdbfe; border-radius:8px; background:#eff6ff; color:#1e40af; font-size:13px; line-height:1.65; }
+.status p { margin:0 0 10px; }.success { padding:12px; border-radius:8px; background:#f0fdf4; color:#166534; font-size:13px; line-height:1.65; margin:0; }
+.help { padding:12px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; line-height:1.7; color:#475569; }.help summary { cursor:pointer; font-weight:600; color:#172b45; }.help ol { padding-left:20px; margin:10px 0 0; }.help li+li { margin-top:8px; }

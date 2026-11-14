@@ -1,6 +1,6 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
-import { monthDates, REGISTRATION_SHIFTS, type RegistrationMonth, type ShiftRegistration } from '@/lib/management/shift-registration';
+import { monthDates, registrationDates, REGISTRATION_SHIFTS, type RegistrationMonth, type RegistrationRange, type ShiftRegistration } from '@/lib/management/shift-registration';
 import { DutyError, validDutyDate } from './duty-roster';
 
 type Database = Pick<PoolClient, 'query'>;
@@ -22,14 +22,20 @@ function map(row: Record<string, unknown>): ShiftRegistration {
 export async function readRegistrationMonth(db: Database, month: string): Promise<RegistrationMonth> {
   let dates: string[];
   try { dates = monthDates(month); } catch { throw new DutyError('Tháng không hợp lệ (2000–2100).'); }
-  const args = [dates[0], dates[dates.length - 1]];
+  const { from: _from, to: _to, ...data } = await readRegistrationRange(db, dates[0], dates[dates.length - 1]);
+  void _from; void _to;
+  return { month, ...data };
+}
+export async function readRegistrationRange(db: Database, from: string, to: string): Promise<RegistrationRange> {
+  try { registrationDates(from, to); } catch (cause) { throw new DutyError(cause instanceof Error ? cause.message : 'Khoảng ngày không hợp lệ.'); }
+  const args = [from, to];
   const staff = await db.query(`SELECT p.id,p.full_name,p.position,p.store_id,s.store_name,p.status
     FROM himoto.staff_profiles p LEFT JOIN himoto.stores s ON s.id=p.store_id
     WHERE p.status='active' OR EXISTS (SELECT 1 FROM himoto.staff_shift_registrations r WHERE r.staff_id=p.id AND r.work_date BETWEEN $1::date AND $2::date)
     ORDER BY s.store_name NULLS LAST,p.full_name,p.id`, args);
   const registrations = await db.query(`SELECT ${columns} FROM himoto.staff_shift_registrations WHERE work_date BETWEEN $1::date AND $2::date`, args);
   const stores = await db.query('SELECT id,store_name FROM himoto.stores ORDER BY store_name,id');
-  return { month, staff: staff.rows.map(p => ({ id: Number(p.id), name: String(p.full_name), position: String(p.position || ''), store_id: p.store_id == null ? null : Number(p.store_id), store_name: String(p.store_name || 'Chưa có cơ sở'), status: String(p.status) })), registrations: registrations.rows.map(map), stores: stores.rows.map(s => ({ id: Number(s.id), name: String(s.store_name) })) };
+  return { from, to, staff: staff.rows.map(p => ({ id: Number(p.id), name: String(p.full_name), position: String(p.position || ''), store_id: p.store_id == null ? null : Number(p.store_id), store_name: String(p.store_name || 'Chưa có cơ sở'), status: String(p.status) })), registrations: registrations.rows.map(map), stores: stores.rows.map(s => ({ id: Number(s.id), name: String(s.store_name) })) };
 }
 export async function saveRegistration(db: Database, actorId: number, raw: unknown) {
   const input = parseRegistration(raw);
