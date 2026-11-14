@@ -10,7 +10,7 @@ import { extendContractVehicleLine } from './contract-renewal-line';
 
 type Database = Pick<PoolClient, 'query'>;
 export class ContractRenewalError extends Error { constructor(message: string, public status = 400) { super(message); } }
-const RENEWAL_STATUSES = ['renting', 'overdue', 'wait_payment'];
+const RENEWAL_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt'];
 const LOCAL_MINUTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 const iso = (value: unknown) => value instanceof Date ? value.toISOString() : value == null ? null : String(value);
 

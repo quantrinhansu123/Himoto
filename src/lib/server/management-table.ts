@@ -92,7 +92,7 @@ function contractScopeClause(scope:string):string {
   // applies the actual overdue test; filtering by the header first loses them.
   if(scope==='overdue'||scope==='collection')return contractPageScopeClause(scope);
   return scope==='due' ? ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL`
-    : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
+    : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
 }
 function contractPageScopeClause(scope:string):string {
   if(scope==='active'||scope==='backfill')return contractScopeClause(scope);

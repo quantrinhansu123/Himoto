@@ -24,7 +24,7 @@ export function mobileRenewalBlockedReason(context: PaymentContext, hasInstallme
   return hasInstallments ? "Thuê sở hữu đóng tiền theo lịch đã lập; không cộng kỳ đóng tiền thành phí gia hạn."
     : context.completed_from_hold ? "Hợp đồng đã hoàn thành sau bảo lưu."
     : !backfill && context.hold_active ? "Hợp đồng đang bảo lưu; cần xử lý bảo lưu trước khi gia hạn."
-    : !(backfill ? ["renting","overdue","wait_payment","completed","bad_debt"] : ["renting", "overdue", "wait_payment"]).includes(context.status) ? "Chỉ gia hạn hợp đồng đang thuê, quá hạn hoặc chờ thanh toán còn xe chưa trả."
+    : !(backfill ? ["renting","overdue","wait_payment","completed","bad_debt"] : ["renting", "overdue", "wait_payment", "bad_debt"]).includes(context.status) ? "Chỉ gia hạn hợp đồng đang thuê, quá hạn, nợ xấu hoặc chờ thanh toán còn xe chưa trả."
     : itemCount === 0 ? "Hợp đồng không còn xe đang thuê."
     : !backfill && (context.total_amount === null || context.paid_amount === null) ? "Số liệu hợp đồng cần đối chiếu trước khi gia hạn."
     : null;

@@ -75,7 +75,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadContractReturnableItems(orderId, controller.signal,backfill).then(result => {
+    void loadContractReturnableItems(orderId, controller.signal,true).then(result => {
       const open = result.filter(row => backfill||!row.completed_at);
       setRows(open);
       if (open.length === 1) { setItemId(String(open[0].item_id)); setRateInput(defaultRate(open[0], 'day', unitPrice)); }

@@ -11,8 +11,10 @@ const scope = { id: 151, access_role: 'branch_staff', store_id: 23, scope_all: f
 const tables = ['orders','order_vehicle_details','vehicles','banks','cash','transactions','management_contract_payments','stores','users','management_record_photos','customers','staff_profiles','staff_account_attribution','management_contract_notifications'];
 const table = name => `pg_temp.qa_xrenew_${name}`;
 const rewrite = sql => tables.reduce((value, name) => value.replaceAll(`himoto.${name}`, table(name)), sql)
+  .replaceAll('himoto.management_mobile_renewals', 'pg_temp.qa_xrenew_optional_mobile_ledger')
   .replaceAll('himoto.vehicle_inventory()', 'pg_temp.qa_xrenew_inventory()')
   .replaceAll('himoto.contract_vehicle_labels()', 'pg_temp.qa_xrenew_inventory()')
+  .replace(/himoto\.contract_vehicles_for_orders\([^)]*\)/g,'pg_temp.qa_xrenew_inventory()')
   .replaceAll('himoto.extend_contract_vehicle_line', 'pg_temp.qa_xrenew_extend');
 const local = value => new Date(value + 7 * 3600000).toISOString().slice(0, 16);
 
@@ -63,7 +65,7 @@ async function main() {
       CREATE FUNCTION pg_temp.qa_xrenew_inventory() RETURNS SETOF ${table('vehicles')} LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog AS 'SELECT * FROM ${table('vehicles')}';
       REVOKE ALL ON FUNCTION pg_temp.qa_xrenew_inventory() FROM PUBLIC;
       GRANT EXECUTE ON FUNCTION pg_temp.qa_xrenew_inventory() TO himoto_scoped;`);
-    const migration = fs.readFileSync(path.resolve('docs/sql/2026-10-21-cross-branch-renewals.sql'), 'utf8').replace(/^BEGIN;\s*/, '').replace(/COMMIT;\s*$/, '');
+    const migration = fs.readFileSync(path.resolve('docs/sql/2026-11-14-bad-debt-renewals.sql'), 'utf8').replace(/^BEGIN;\s*/, '').replace(/COMMIT;\s*$/, '');
     await c.query(rewrite(migration));
     await c.query("SELECT set_config('himoto.actor_id','151',true),set_config('himoto.store_id','23',true),set_config('himoto.scope_all','false',true)");
     await c.query('SET LOCAL ROLE himoto_scoped');
@@ -90,7 +92,7 @@ async function main() {
       await assert.rejects(() => atomic(() => db.query('SELECT himoto.extend_contract_vehicle_line($1,$2,$3,now()+interval \'3 days\',1000)', args)), error => error.code === '42501');
     }
     for (const fee of [-1,10000000000000]) await assert.rejects(() => atomic(() => db.query('SELECT himoto.extend_contract_vehicle_line(101,1,$1,now()+interval \'3 days\',$2)', [rev, fee])), error => error.code === '42501');
-    for (const patch of ["order_status='cancelled'", "draft_payload='{\"management_composer\":{\"installment_plan\":{}}}'::json"]) {
+    for (const patch of ["order_status='cancelled'", "draft_payload='{\"management_composer\":{\"installment_plan\":{}}}'::json", "draft_payload='{\"management_composer\":{\"lifecycle\":{\"bad_debt_closure\":{}}}}'::json", "draft_payload='{\"management_composer\":{\"lifecycle\":{\"payment_closure\":{}}}}'::json"]) {
       await assert.rejects(() => atomic(async () => {
         await db.query(`UPDATE himoto.orders SET ${patch} WHERE id=1`);
         await db.query('SELECT himoto.extend_contract_vehicle_line(101,1,$1,now()+interval \'3 days\',0)', [rev]);
@@ -115,6 +117,14 @@ async function main() {
     assert.equal((await atomic(() => renew(unpaid))).payment, undefined);
     assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.transactions')).rows[0].n, 2);
     checks.push('Unpaid cross-branch renewal saves debt without fabricating a receipt');
+    await c.query('ROLLBACK TO SAVEPOINT baseline');
+    await db.query("UPDATE himoto.orders SET order_status='bad_debt' WHERE id=1");
+    const badDebtInput={...unpaid,...await revisions(),request_id:randomUUID()};
+    const badDebtRenewal=await atomic(()=>renew(badDebtInput));
+    assert.equal(badDebtRenewal.payment,undefined);
+    const badDebtOrder=(await db.query('SELECT order_status,total FROM himoto.orders WHERE id=1')).rows[0];
+    assert.equal(badDebtOrder.order_status,'bad_debt');assert.equal(badDebtOrder.total,'540000');
+    checks.push('Scoped bad-debt renewal succeeds for foreign stock without clearing bad-debt status or creating receipts');
     await c.query('ROLLBACK TO SAVEPOINT baseline');
     const r = await revisions();
     const legacy = await atomic(() => dataAccess.run(scope, () => recordContractPayment(db,1,151,{request_id:randomUUID(),revision:r.order_revision,amount:'140000',method:'cash',account_id:5,paid_at:input.receipt.paid_at,note:'QA',purpose:'renewal',item_id:101,item_revision:r.item_revision,return_at:input.return_at})));

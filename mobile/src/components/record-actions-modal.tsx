@@ -113,7 +113,7 @@ export function RecordActionsModal({
     }
 
     // 3. Gia hạn
-    if (has("contracts.renew") && ["renting", "overdue"].includes(status)) {
+    if (has("contracts.renew") && ["renting", "overdue", "bad_debt"].includes(status)) {
       actions.push({
         id: "renew",
         label: "Gia hạn hợp đồng",

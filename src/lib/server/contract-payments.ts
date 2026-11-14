@@ -173,6 +173,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
   if (!locked.rowCount) throw new ContractPaymentError('Không tìm thấy hợp đồng.', 404);
   if (locked.rows[0].revision !== input.revision) throw new ContractPaymentError('Hợp đồng hoặc tổng đã thu đã thay đổi. Tải lại thông tin trước khi thanh toán.', 409);
   if(locked.rows[0].draft_payload?.management_composer?.lifecycle?.hold_completion&&!refund)throw new ContractPaymentError('Hợp đồng đã hoàn thành sau bảo lưu; không thu thêm nợ hoặc kỳ thuê đã miễn.',409);
+  if(renewal&&(locked.rows[0].draft_payload?.management_composer?.lifecycle?.bad_debt_closure||locked.rows[0].draft_payload?.management_composer?.lifecycle?.payment_closure))throw new ContractPaymentError('Hợp đồng đã đóng; không gia hạn.',409);
   if(locked.rows[0].draft_payload?.management_composer?.lifecycle?.active_hold&&extra)throw new ContractPaymentError('Hợp đồng đang bảo lưu; không cộng phí mới. Chỉ ghi nhận thanh toán khoản đã phát sinh trước bảo lưu.',409);
   let context = await readPaymentContext(client, id, options);
   const amount = Number(input.amount);

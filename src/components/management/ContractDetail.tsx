@@ -316,9 +316,9 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
       {onReminder&&isRemindableContract(row)&&<button type="button" className="mg-button" onClick={onReminder}><MessageCircle size={15}/>Nhắc nợ</button>}
       {canOperateRental && <>
         {can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}><RotateCcw size={15} />Trả xe</button>}
-        {can('contracts.renew')&&onRenew&&!row.billing_plan_json && <button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15} />Gia hạn</button>}
         {can('contracts.return')&&onVehicleChange&&<button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>}
       </>}
+      {(canOperateRental||row.status==='bad_debt')&&can('contracts.renew')&&onRenew&&!row.billing_plan_json&&<button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15}/>Gia hạn</button>}
       {row.status==='completed'&&can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}>Bổ sung ảnh trả xe</button>}
       {row.status==='bad_debt'&&canSettleContract(accessUser)&&<button type="button" className="mg-button mg-button-primary" onClick={()=>setBadDebtCloseOpen(true)}>Đóng hợp đồng nợ xấu</button>}
       {(row.status==='bad_debt'||row.status==='completed'&&Boolean(row.bad_debt_closed_at))&&can('contracts.return')&&<button type="button" className="mg-button" onClick={()=>setRecoveryOpen(true)}><RotateCcw size={15}/>Thu hồi xe nợ xấu</button>}

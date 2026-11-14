@@ -6,6 +6,11 @@ const root = path.resolve(__dirname, '../src');
 async function main() {
   const server = load(path.join(root, 'lib/server/contract-renewals'));
   const shared = load(path.join(root, 'lib/management/contract-renewals'));
+  const {contractRenewBlockReason}=load(path.join(root,'lib/management/blocked-actions'));
+  assert.equal(contractRenewBlockReason('bad_debt',false),null);
+  assert(contractRenewBlockReason('bad_debt',true));
+  assert(contractRenewBlockReason('completed',false));
+  assert(load(path.join(root,'lib/management/contract-payments')).RENEWABLE_STATUSES.includes('bad_debt'));
   const {addRentalDuration}=load(path.join(root,'lib/management/rental-time'));
   assert.equal(addRentalDuration('2026-10-15T09:30:00Z',7,'day'),'2026-10-22T16:30');
   assert.equal(addRentalDuration('2026-10-23T08:04:00Z',4,'day'),'2026-10-27T15:04');
@@ -69,6 +74,7 @@ async function main() {
     const tables = ['order_vehicle_details', 'orders', 'vehicles','transactions'];
     const proxy = { query: async (sql, params) => {
       let rewritten = sql;
+      rewritten = rewritten.replaceAll('himoto.management_mobile_renewals','pg_temp.qa_renewal_optional_mobile_ledger');
       for (const table of [...tables,'management_contract_notifications','management_contract_payments']) rewritten = rewritten.replaceAll(`himoto.${table}`, `pg_temp.qa_renewal_${table}`);
       assert(!rewritten.includes('himoto.'), 'All business SQL must use TEMP');
       return c.query(rewritten, params);
@@ -140,9 +146,29 @@ async function main() {
       assert.equal(historicalOrder.order_status,'wait_payment');assert.equal(historicalOrder.draft_payload.management_composer.versions.at(-1).occurred_at,'2026-01-21T09:00:00+07:00');
       assert.deepEqual((await c.query('SELECT completed_at FROM qa_renewal_order_vehicle_details WHERE id=101')).rows[0].completed_at,actual);
       assert.equal((await c.query('SELECT status FROM qa_renewal_vehicles WHERE id=100')).rows[0].status,'using');
-      await assert.rejects(renew({occurred_at:'2026-02-11T09:00',return_at:'2026-02-12T10:00',note:'Occurred after vehicle return'}),e=>e.status===400);
-      checks.push('TEMP historical renewal retains actual return/current stock, records actual occurrence separately from entry, opens only unpaid debt and rejects occurrence after return');
+      const shifted=await renew({occurred_at:'2026-02-11T09:00',return_at:'2026-02-12T10:00',note:'Recorded after vehicle return'});
+      assert.equal(shifted.amount,300);
+      assert.deepEqual((await c.query('SELECT completed_at FROM qa_renewal_order_vehicle_details WHERE id=101')).rows[0].completed_at,actual);
+      checks.push('TEMP historical renewal retains actual return/current stock, records actual occurrence separately from entry and opens only unpaid debt');
       await c.query('ROLLBACK TO SAVEPOINT historical_renewal');await c.query('RELEASE SAVEPOINT historical_renewal');
+      await c.query('SAVEPOINT bad_debt_renewal');
+      const badDebt={at:'2026-01-15T10:00:00+07:00',note:'Existing bad debt'};
+      await c.query(`UPDATE qa_renewal_orders SET order_status='bad_debt',draft_payload=jsonb_set(draft_payload::jsonb,'{management_composer,lifecycle}',$1::jsonb)::json WHERE id=1`,[JSON.stringify({bad_debt:badDebt})]);
+      const extended=await renew({return_at:'2026-02-01T10:00',amount:'300'});
+      assert.equal(extended.total_amount,1600);
+      const debtOrder=(await c.query('SELECT order_status,total,pid,draft_payload FROM qa_renewal_orders WHERE id=1')).rows[0];
+      assert.equal(debtOrder.order_status,'bad_debt');assert.equal(Number(debtOrder.pid),400);
+      assert.deepEqual(debtOrder.draft_payload.management_composer.lifecycle.bad_debt,badDebt);
+      assert.equal(debtOrder.draft_payload.management_composer.versions.at(-1).amount,300);
+      assert.equal((await c.query('SELECT status FROM qa_renewal_vehicles WHERE id=100')).rows[0].status,'using');
+      await assert.rejects(renew({item_id:102,return_at:'2026-02-05T10:00'}),e=>e.status===404);
+      for(const closure of ['bad_debt_closure','payment_closure']) {
+        await c.query(`UPDATE qa_renewal_orders SET draft_payload=jsonb_set(draft_payload::jsonb,$1::text[],'{"at":"2026-02-01"}'::jsonb)::json WHERE id=1`,[['management_composer','lifecycle',closure]]);
+        await assert.rejects(renew({return_at:'2026-02-05T10:00'}),e=>e.status===409&&/đã đóng/.test(e.message));
+        await c.query(`UPDATE qa_renewal_orders SET draft_payload=(draft_payload::jsonb #- $1::text[])::json WHERE id=1`,[['management_composer','lifecycle',closure]]);
+      }
+      await c.query('ROLLBACK TO SAVEPOINT bad_debt_renewal');await c.query('RELEASE SAVEPOINT bad_debt_renewal');
+      checks.push('TEMP bad-debt renewal adds fees without clearing existing debt, paid amount, bad-debt status/history or stock status; returned vehicles and closed contracts remain blocked');
     } finally { await c.query('ROLLBACK'); c.release(); }
   }
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));

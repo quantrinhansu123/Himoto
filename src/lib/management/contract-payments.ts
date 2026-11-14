@@ -6,7 +6,7 @@ export const PAYMENT_METHODS = [
 export type PaymentMethod = typeof PAYMENT_METHODS[number]['value'];
 export const paymentMethodLabel = (method: PaymentMethod) => method === 'transfer' ? 'CK tài khoản cá nhân' : PAYMENT_METHODS.find(item => item.value === method)?.label || method;
 export const PAYABLE_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt', 'deposit_contract','completed','reserved'];
-export const RENEWABLE_STATUSES = ['renting', 'overdue'];
+export const RENEWABLE_STATUSES = ['renting', 'overdue', 'bad_debt'];
 export const MAX_PAYMENT_AMOUNT = 9_999_999_999_999;
 export const canAddExtraReceipt = (status: string) => !['draft', 'cancelled'].includes(status);
 export type PaymentPurpose = 'debt' | 'renewal' | 'extra' | 'deposit' | 'deposit_refund' | 'rental_refund';export const PAYMENT_PURPOSES: PaymentPurpose[] = ['debt', 'renewal', 'extra','deposit', 'deposit_refund', 'rental_refund'];

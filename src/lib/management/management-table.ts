@@ -59,7 +59,7 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   if (input.scope === 'vat') rows=rows.filter(row=>Number(row.company_payment_count)>0);
   if (input.scope === 'ownership') rows=rows.filter(row=>row.store_kind==='lease_to_own' || ownershipStores.includes(Number(row.store_id)) || OWNERSHIP_CONTRACT_TYPES.has(String(row.rental_type)) || isOwnershipCustomerSourceStore({ kind: row.store_kind, name: row.store_name }));
   if (input.scope === 'due') rows=rows.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0);
-  if (input.scope === 'renewable') rows=rows.filter(row=>['renting','overdue'].includes(row.status)&&!row.billing_plan_json);
+  if (input.scope === 'renewable') rows=rows.filter(row=>['renting','overdue','bad_debt'].includes(row.status)&&!row.billing_plan_json);
   if (input.scope === 'remindable') rows=rows.filter(isRemindableContract);
   if (input.scope === 'overdue') rows=rows.filter(row=>row.status==='overdue'||row.status==='bad_debt'||row.collection_overdue===1);
   if (input.scope === 'collection') rows=rows.filter(row=>row.status==='overdue'||row.status==='bad_debt'||row.collection_overdue===1||row.status==='completed'&&row.bad_debt_closed_at&&(row.rental_debt_amount===undefined||Number(row.rental_debt_amount)>0));

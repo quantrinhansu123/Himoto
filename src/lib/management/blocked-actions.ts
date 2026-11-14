@@ -53,12 +53,11 @@ export function contractReturnBlockReason(status: string): string | null {
 
 export function contractRenewBlockReason(status: string, hasBillingPlan: boolean): string | null {
   if (hasBillingPlan) return 'Hợp đồng thuê sở hữu có lịch đóng tiền; không gia hạn theo lượt ngày/tháng thường.';
-  if (['renting', 'overdue', 'wait_payment'].includes(status)) return null;
+  if (['renting', 'overdue', 'wait_payment', 'bad_debt'].includes(status)) return null;
   if (status === 'completed') return 'Hợp đồng đã hoàn thành; không gia hạn.';
   if (status === 'cancelled') return 'Hợp đồng đã hủy; không gia hạn.';
   if (status === 'draft') return 'Bản nháp chưa phát hành; không gia hạn.';
   if (status === 'deposit_contract') return 'Đang giữ cọc, chưa giao xe; không gia hạn.';
-  if (status === 'bad_debt') return 'Hợp đồng đang nợ xấu; không gia hạn cho đến khi xử lý công nợ.';
   if (status === 'reserved') return 'Hợp đồng đang bảo lưu; không gia hạn trong thời gian bảo lưu.';
   return `Trạng thái “${statusLabel(status)}” không cho gia hạn.`;
 }
