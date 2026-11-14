@@ -40,16 +40,18 @@ export function parseVehicleValues(body: unknown): VehicleValues {
     type, year, store_id: storeId, status, color: text(raw.color, 'Màu sắc', 255), chassis: text(raw.chassis, 'Số khung', 255), engine: text(raw.engine, 'Số máy', 255), odometer, note: text(raw.note, 'Ghi chú', 500), ...(revision?{revision}:{}) };
 }
 
-// Inventory may record a checkout before the source branch enters the contract.
-// An actual open contract still owns vehicle status and prevents branch changes.
+// Inventory status is independent of contract settlement. Branch changes still
+// follow the existing rental/transfer rules; pending transfers cannot be bypassed.
 async function checkVehicle(client: Client, values: VehicleValues, id: number | null, currentStoreId?: unknown, currentStatus?: string) {
   if (id !== null) {
     if(currentStatus==='in_transit'&&(values.status!=='in_transit'||String(values.store_id)!==String(currentStoreId)))throw new VehicleSaveError('Xe đang Chờ luân chuyển. Dùng Xác nhận nhận xe tại cơ sở đích trước khi đổi trạng thái hoặc cơ sở.',409);
-    const open = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
-      WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-        AND (o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') OR (o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NOT NULL)) LIMIT 1`, [id]);
-    if (open.rowCount && values.status !== (currentStatus === 'rent' ? 'using' : currentStatus)) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở. Trả xe trên hợp đồng để đổi trạng thái.');
-    if (open.rowCount && String(values.store_id) !== String(currentStoreId)) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở, không được đổi cơ sở quản lý xe.');
+    if(values.status==='in_transit'&&currentStatus!=='in_transit')throw new VehicleSaveError('Dùng Chuyển xe để tạo lượt luân chuyển, không đổi thủ công sang Chờ luân chuyển.',409);
+    if (String(values.store_id) !== String(currentStoreId)) {
+      const open = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+        WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+          AND (o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract') OR (o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NOT NULL)) LIMIT 1`, [id]);
+      if (open.rowCount) throw new VehicleSaveError('Xe đang thuộc hợp đồng mở, không được đổi cơ sở quản lý xe.');
+    }
   }
   // Store visibility is narrower than vehicle visibility for some roles (for
   // example, staff allowed to manage shared or headquarters fleet). Check that

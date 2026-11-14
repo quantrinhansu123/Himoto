@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, FileText, LoaderCircle, RotateCcw, TriangleAlert } from 'lucide-react';
 import { ManagementRow } from '@/lib/management/types';
-import { optionLabel, MANAGEMENT_CONFIG } from '@/lib/management/config';
+import { optionLabel, MANAGEMENT_CONFIG, VEHICLE_STATUSES } from '@/lib/management/config';
 import { applyVehicleAction, loadSessionUserName, VehicleActionResult } from '@/lib/management/vehicle-repository';
 import { vehicleTransferPhotoSlots } from '@/lib/management/record-photos';
 import { formatDateTime } from '@/lib/formatters';
@@ -19,7 +19,7 @@ import { VehicleTransferTelegramPanel } from './VehicleTransferTelegramPanel';
 import { SavedRecordPhotos } from './RecordPhotoFields';
 
 export type VehicleActionMode = 'transfer' | 'status' | 'receive' | 'reject' | 'cancel';
-const STATUS_CHOICES = [{ value: 'using', label: 'Lập hợp đồng nháp' }, { value: 'ready', label: 'Lưu kho' }] as const;
+const STATUS_CHOICES = VEHICLE_STATUSES.filter(option => option.value !== 'in_transit');
 const vehicleOption = (row: ManagementRow) => `${row.license || row.code} — ${row.name}`;
 const plateKey=(value:string)=>value.toUpperCase().replace(/[^A-Z0-9]/g,'');
 function resolveVehicle(rows:ManagementRow[],value:string){
@@ -57,12 +57,11 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
   const statusOf = (row: ManagementRow | null) => row ? (String(row.status) === 'rent' ? 'using' : String(row.status)) : '';
   const currentStatus = statusOf(selected);
   const defaults = (row: ManagementRow | null) => ({
-    status: mode === 'status' && (statusOf(row) === 'using' || statusOf(row) === 'ready') ? statusOf(row) : '',
+    status: mode === 'status' && STATUS_CHOICES.some(option => option.value === statusOf(row)) ? statusOf(row) : '',
     storeId: mode === 'status' && row ? String(row.store_id || '') : '',
   });
   const [status, setStatus] = useState(() => defaults(vehicle).status);
   const [storeId, setStoreId] = useState(() => defaults(vehicle).storeId);
-  const [customer, setCustomer] = useState({ name: '', phone: '', idCard: '' });
   const [note, setNote] = useState('');
   const [actor, setActor] = useState('');
   const [openedAt] = useState(() => new Date().toISOString());
@@ -97,10 +96,10 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
     : null;
   const receiveBlock = (mode === 'receive' || mode === 'reject' || mode === 'cancel') ? vehicleReceiveBlockReason(mode, receiveBlocked) : null;
   const cancelBlock = mode==='cancel'&&selected&&!canCancelVehicleTransfer(selected,accessUser?.id)?'Chỉ người đã tạo lượt điều chuyển còn chờ xử lý được tự huỷ. Nhấn Làm mới để kiểm tra.':null;
-  const statusOpenBlock = mode === 'status' && rented
-    ? `Xe đang thuộc ${openRentals[0]?.code ? `HĐ ${openRentals[0].code}${openRentals[0].customer ? ` · ${openRentals[0].customer}` : ''}` : 'hợp đồng mở'}. Trả xe trên hợp đồng trước khi đổi trạng thái.`
+  const statusBlock = mode === 'status' && currentStatus === 'in_transit'
+    ? 'Xe đang Chờ luân chuyển. Xử lý lượt chuyển trước khi đổi trạng thái.'
     : null;
-  const submitBlockReason = transferBlock || receiveBlock || cancelBlock || statusOpenBlock;
+  const submitBlockReason = transferBlock || receiveBlock || cancelBlock || statusBlock;
   const title = mode === 'transfer' ? 'Chuyển xe' : mode === 'receive' ? 'Nhận xe' : mode === 'reject' ? 'Từ chối điều chuyển' : mode === 'cancel' ? 'Huỷ điều chuyển' : 'Đổi trạng thái';
 
   async function submit(event: FormEvent) {
@@ -108,10 +107,9 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
     if (!selected) return setError('Chọn xe cần thao tác.');
     if (submitBlockReason) return setError(submitBlockReason);
     if (mode === 'transfer' && !storeId) return setError('Chọn cơ sở chuyển đến.');
-    if (mode === 'status' && status !== 'ready' && status !== 'using') return setError('Chọn trạng thái Đang thuê hoặc Lưu kho.');
+    if (mode === 'status' && !STATUS_CHOICES.some(option => option.value === status)) return setError('Chọn trạng thái xe hợp lệ.');
     if (mode === 'status' && status === currentStatus) return setError(`Xe đang ở trạng thái ${optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)}.`);
-    if (mode === 'status' && !storeId) return setError('Chọn cơ sở sử dụng xe.');
-    if (mode === 'status' && status === 'using' && (!customer.name.trim() || !customer.phone.trim() || !customer.idCard.trim())) return setError('Nhập tên, số điện thoại và CCCD của khách thuê.');
+    if (mode === 'status' && !selected.vehicle_revision) return setError('Chưa có phiên bản xe. Nhấn Làm mới rồi mở lại thao tác.');
     busy.current = true; setSaving(true); setError('');
     try {
       const revision=selected.vehicle_revision ? String(selected.vehicle_revision) : undefined;
@@ -119,7 +117,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         : mode==='receive'?{action:'receive',transfer_event_id:String(selected.transfer_event_id),note,revision}
         : mode==='reject'?{action:'reject',transfer_event_id:String(selected.transfer_event_id),note,revision}
         : mode==='cancel'?{action:'cancel',transfer_event_id:String(selected.transfer_event_id),note,revision}
-        : { action: 'status', status: status as 'ready' | 'using', beneficiary_store_id: storeId, customer_name: customer.name, customer_phone: customer.phone, customer_id_card: customer.idCard, note, revision });
+        : { action: 'inventory_status', status, note, revision: String(selected.vehicle_revision) });
       await ensureData(saved.customer ? ['vehicles', 'customers', 'contracts'] : mode==='transfer'||mode==='receive'||mode==='reject'||mode==='cancel'?['vehicles','stores']:['vehicles'], true).catch(() => {});
       const destName = stores.find(store => String(store.id) === storeId)?.name || 'cơ sở đích';
       notify(mode === 'transfer'
@@ -165,7 +163,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
         {mode==='transfer'&&<small>Có thể chọn xe ở mọi cơ sở để điều chuyển.</small>}
         {submitBlockReason && <p className="mg-field-error" role="alert">{submitBlockReason}</p>}
         {selected && !rented && ['using','rent'].includes(currentStatus) && <small>Không còn hợp đồng mở. Chọn Lưu kho nếu cần phát hành hợp đồng mới.</small>}
-        {selected&&rented&&<Link className="mg-button" href={`/contracts?action=return&query=${encodeURIComponent(String(selected.license||''))}`} onClick={onClose}>Tìm hợp đồng đang thuê · Trả xe & hoàn cọc</Link>}
+         {selected&&rented&&<><small>Xe còn hợp đồng liên quan. Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ.</small><Link className="mg-button" href={`/contracts?search=${encodeURIComponent(String(selected.license||''))}`} onClick={onClose}>Xem hợp đồng liên quan</Link></>}
         </div>
       {mode==='receive'||mode==='reject'||mode==='cancel'?<>
         <p className="mg-transfer-direction mg-field-wide">{selected?vehicleTransferRoute(selected):''}</p>
@@ -185,15 +183,7 @@ export function VehicleActionDialog({ mode, vehicle, onClose }: { mode: VehicleA
           <select id="vehicle-action-status" value={status} disabled={saving || !selected} onChange={event => setStatus(event.target.value)}>
             {status === '' && <option value="">{selected ? `${optionLabel(MANAGEMENT_CONFIG.vehicles, 'status', currentStatus)} (hiện tại)` : 'Chọn trạng thái'}</option>}
             {STATUS_CHOICES.map(option => <option key={option.value} value={option.value}>{option.label}{option.value === currentStatus ? ' (hiện tại)' : ''}</option>)}</select></div>
-        <div className="mg-field"><label htmlFor="vehicle-action-store">Cơ sở sử dụng xe<span aria-hidden="true"> *</span></label>
-          <select id="vehicle-action-store" value={storeId} disabled={saving || !selected} onChange={event => setStoreId(event.target.value)}>
-            <option value="">Chọn cơ sở</option>{stores.map(store => <option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></div>
-        <div className="mg-field"><label htmlFor="vehicle-action-customer">Tên khách{status === 'using' && <span aria-hidden="true"> *</span>}</label>
-          <input id="vehicle-action-customer" value={customer.name} maxLength={191} disabled={saving} onChange={event => setCustomer(current => ({ ...current, name: event.target.value }))} /></div>
-        <div className="mg-field"><label htmlFor="vehicle-action-phone">SĐT{status === 'using' && <span aria-hidden="true"> *</span>}</label>
-          <input id="vehicle-action-phone" type="tel" inputMode="tel" value={customer.phone} maxLength={20} disabled={saving} onChange={event => setCustomer(current => ({ ...current, phone: event.target.value }))} /></div>
-        <div className="mg-field"><label htmlFor="vehicle-action-idcard">CCCD{status === 'using' && <span aria-hidden="true"> *</span>}</label>
-          <input id="vehicle-action-idcard" inputMode="numeric" value={customer.idCard} maxLength={12} disabled={saving} onChange={event => setCustomer(current => ({ ...current, idCard: event.target.value }))} /></div>
+        <p className="mg-composer-hint mg-field-wide">Đổi trạng thái độc lập trong Danh sách xe, kể cả Nợ xấu → Lưu kho. Không cần nhập khách hàng, không tạo hợp đồng nháp, không trả xe hoặc xóa công nợ. Cơ sở và hợp đồng hiện có được giữ nguyên.</p>
       </>}
       <div className="mg-field"><label htmlFor="vehicle-action-at">Ngày giờ</label><input id="vehicle-action-at" value={formatDateTime(openedAt)} readOnly disabled /></div>
       <div className="mg-field"><label htmlFor="vehicle-action-actor">Người nhập</label><input id="vehicle-action-actor" value={actor || 'Đang tải…'} readOnly disabled /></div>

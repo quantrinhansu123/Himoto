@@ -3,6 +3,13 @@ const {load,root}=require('./lib/load-typescript.cjs');
 const {VEHICLE_STATUS_SQL}=load(path.join(root,'lib/server/vehicle-status'));
 const {mapApiRow}=load(path.join(root,'lib/management/repository'));
 async function main(){
+ const actions=load(path.join(root,'lib/server/vehicle-actions'));
+ const base={action:'inventory_status',status:'ready',note:'Reconcile QA',revision:'123'};
+ assert.deepEqual(actions.parseVehicleAction(base),base);
+ for(const patch of [{status:'in_transit'},{status:'invalid'},{revision:undefined},{revision:123},{store_id:31},{customer_name:'Forged'},{action:'unknown'}])assert.throws(()=>actions.parseVehicleAction({...base,...patch}));
+ for(const status of ['ready','using','repairing','pending','sold','bad_debt','broken'])assert.equal(actions.parseVehicleAction({...base,status}).status,status);
+ const access=load(path.join(root,'lib/server/access-request'));
+ assert.equal(access.requestPermission('/api/auth/vehicles/101/actions','POST','inventory_status'),'vehicles.write');
  const cases=[['ready','ready'],['using','using'],['rent','using'],['maintenance','repairing'],['holding','pending'],['bad_debt','bad_debt'],['sold','sold']];
  for(const [status,expected]of cases){const row=mapApiRow('vehicles',{id:1,status,rentals:[{order_id:11,customer:'Khách QA',status:'renting'}]});assert.equal(row.status,expected);assert.equal(row.holder_name,'Khách QA');}
  if(process.argv.includes('--live-read')){
