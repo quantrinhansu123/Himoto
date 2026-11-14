@@ -63,7 +63,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
       o.total,o.pid,o.order_status,o.draft_payload,o.xmin::text AS order_revision,
       COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,v.name AS vehicle_name,v.license
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id LEFT JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id
-    WHERE d.id=$1 AND d.order_id=$2 AND d.deleted_at IS NULL AND (d.completed_at IS NULL OR $3::boolean) AND o.deleted_at IS NULL
+    WHERE d.id=$1 AND d.order_id=$2 AND d.deleted_at IS NULL AND (d.completed_at IS NULL OR $3::boolean OR o.order_status='bad_debt') AND o.deleted_at IS NULL
     FOR UPDATE OF d,o`, [input.item_id, orderId,Boolean(input.occurred_at)]);
   const item = locked.rows[0];
   if (!item) throw new ContractRenewalError('Xe đã trả, đã xóa hoặc không thuộc hợp đồng này.', 404);
@@ -71,6 +71,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
   if (item.draft_payload?.management_composer?.lifecycle?.bad_debt_closure||item.draft_payload?.management_composer?.lifecycle?.payment_closure) throw new ContractRenewalError('Hợp đồng nợ xấu đã đóng; chỉ tiếp tục theo dõi và thu công nợ.',409);
   if (item.draft_payload?.management_composer?.installment_plan) throw new ContractRenewalError('Thuê sở hữu đóng tiền theo lịch đã lập. Không cộng kỳ đóng tiền thành phí gia hạn.', 409);
   const historical=Boolean(item.completed_at&&input.occurred_at);
+  const returnedBadDebt=Boolean(item.completed_at&&item.order_status==='bad_debt');
   if (!RENEWAL_STATUSES.includes(String(item.order_status))&&!(historical&&['completed','wait_payment','bad_debt'].includes(String(item.order_status)))) throw new ContractRenewalError('Chỉ gia hạn hợp đồng đang thuê hoặc nhập bổ sung đúng lịch sử của xe đã trả.', 409);
   // Recording a late renewal can happen after its new scheduled return date.
   // Renewal dates can differ from the rental bounds and current time.
@@ -110,7 +111,7 @@ export async function recordContractRenewal(client: Database, orderId: number, a
     ...(expected === null ? {} : { expected_amount: expected, amount_mismatch: mismatch, ...(warning ? { warning } : {}) }) };
   payload.management_composer = { ...composer, versions: [...versions, version] };
 
-  await extendContractVehicleLine(client, orderId, input.item_id, input.item_revision, newReturn, amount,historical?occurred:undefined);
+  await extendContractVehicleLine(client, orderId, input.item_id, input.item_revision, newReturn, amount,historical&&!returnedBadDebt?occurred:undefined);
   await client.query(`UPDATE himoto.orders SET
       total=CASE WHEN $2::bigint=0 THEN total ELSE (total::numeric+$2)::text END,
       return_at=CASE WHEN return_at IS NULL THEN NULL ELSE GREATEST(return_at,

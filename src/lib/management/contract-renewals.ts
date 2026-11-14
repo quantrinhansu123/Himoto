@@ -6,6 +6,11 @@ export function validRenewalTime(value:string) {
   return validBackfillTime(value,Number.POSITIVE_INFINITY);
 }
 
+/** Bad-debt extensions retain the real return/recovery; they never re-rent stock. */
+export function renewalItemVisible(item:{completed_at:string|null;order_status:string},backfill=false) {
+  return backfill||!item.completed_at||item.order_status==='bad_debt';
+}
+
 export interface RenewalInput {
   occurred_at?:string;
   item_id: number; item_revision: string; order_revision: string;

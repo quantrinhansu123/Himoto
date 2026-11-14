@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarPlus, LoaderCircle, Wallet } from 'lucide-react';
 import { loadContractReturnableItems, ReturnableContractItem } from '@/lib/management/contract-returns';
-import { overdueParts, saveContractRenewal, renewalDurationUnits, validRenewalTime, renewalFeeWarning, loadRenewalPhotoVersion } from '@/lib/management/contract-renewals';
+import { overdueParts, saveContractRenewal, renewalDurationUnits, renewalItemVisible, validRenewalTime, renewalFeeWarning, loadRenewalPhotoVersion } from '@/lib/management/contract-renewals';
 import {
   cashbookPaymentPath, loadPaymentContext, PAYMENT_METHODS, paymentAccountKey, paymentAccounts,
   paymentMethodLabel, PaymentContext, PaymentMethod,
@@ -76,7 +76,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   useEffect(() => {
     const controller = new AbortController();
     void loadContractReturnableItems(orderId, controller.signal,true).then(result => {
-      const open = result.filter(row => backfill||!row.completed_at);
+      const open = result.filter(row => renewalItemVisible(row,backfill));
       setRows(open);
       if (open.length === 1) { setItemId(String(open[0].item_id)); setRateInput(defaultRate(open[0], 'day', unitPrice)); }
     }).catch(cause => {
@@ -247,6 +247,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
         </div> : <>
         {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && !rows.length && !error && <p>Hợp đồng này không còn xe đang thuê để gia hạn.</p>}
+        {selected?.order_status==='bad_debt'&&selected.completed_at&&<p className="mg-composer-hint">Xe đã được ghi nhận trả/thu hồi. Gia hạn hợp đồng nợ xấu không xoá ngày trả/thu hồi, không chuyển xe sang Đang thuê và không thay đổi kho hiện tại.</p>}
         {rows.length > 1 && <div className="mg-field"><label htmlFor="renewal-item">Xe cần gia hạn</label><select id="renewal-item" value={itemId} onChange={event => { setItemId(event.target.value); setDurationSource('count'); setAmountTouched(false); setAmount(''); setRateInput(defaultRate(rows.find(row => String(row.item_id) === event.target.value) || null, unit, unitPrice)); }}><option value="">Chọn xe</option>{rows.map(row => <option key={row.item_id} value={row.item_id}>{row.vehicle_name} · {row.license}</option>)}</select></div>}
         {selected && <>
           <dl className="mg-renewal-facts">
