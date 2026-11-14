@@ -67,7 +67,7 @@ function Navigator() {
           <Stack.Screen name="attendance" options={{title:'Chấm công'}}/>
           <Stack.Screen name="attendance-locations" options={{title:'Cài đặt GPS chấm công'}}/>
           <Stack.Screen name="self-shift-registration" options={{title:'Đăng ký ca làm việc'}}/>
-          <Stack.Screen name="shift-registrations" options={{title:'Đăng ký ca làm việc'}}/>
+          <Stack.Screen name="shift-registrations" options={{title:'Đăng ký ca'}}/>
           <Stack.Screen name="guide" options={{title:'Hướng dẫn và hỏi đáp'}}/>
           <Stack.Screen name="offline-sync" options={{ title: 'Dữ liệu và đồng bộ' }}/>
           <Stack.Screen name="notifications" options={{title:'Thông báo công việc'}}/>

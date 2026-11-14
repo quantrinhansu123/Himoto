@@ -10,6 +10,8 @@ import {readMobileAccountExportRows} from './mobile-managed-accounts';
 import {readMobileShifts} from './mobile-shift-reports';
 import {matchesShiftReportProgress} from '../../../shared/shift-report-workflow';
 import {ATTENDANCE_SHIFTS} from '../../../shared/attendance-shifts';
+import {registrationDates,registrationExcel} from '../../../shared/mobile-shift-registration';
+import {readMobileRegistrationRange} from './mobile-shift-registration';
 import {hasPermission} from '@/lib/management/permissions';
 import {readMobileDuties} from './mobile-duty-roster';
 import {readMobileReminderExportRows} from './mobile-debt-reminders';
@@ -26,6 +28,14 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
   if(!isMobileListExportKind(kind))throw new MobileError('Danh sách xuất không tồn tại.',404,'NOT_FOUND');
   if(request.headers.has('idempotency-key'))throw new MobileError('Xuất danh sách không dùng mã ghi.');
   const params=new URLSearchParams(request.nextUrl.searchParams);
+  if(kind==='shift-registrations'){
+    if([...params.keys()].some(k=>!['from','to','store','search'].includes(k)||params.getAll(k).length!==1))throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
+    const from=params.get('from')||'',to=params.get('to')||'',store=params.get('store')||'all',search=params.get('search')||'';
+    try{registrationDates(from,to);}catch(error){throw new MobileError((error as Error).message);}
+    if(!/^(all|none|[1-9]\d{0,14})$/.test(store)||search.length>120)throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
+    const data=await readMobileRegistrationRange(user,from,to),table=registrationExcel(data,store,search);
+    return mobileFilteredWorkbook(`himoto-dang-ky-ca-${from}-${to}`,table.headers,table.rows);
+  }
   if(kind==='work-shifts'){
     if(!hasPermission(user,'contracts.read')&&!hasPermission(user,'hr.read'))throw new MobileError('Không có quyền xem ca làm việc.',403,'FORBIDDEN');
     if(params.size)throw new MobileError('Danh mục ca làm việc không nhận bộ lọc.');

@@ -8,10 +8,10 @@ import { himotoPool, ownerDatabase } from './himoto-database';
 import { MobileError } from './mobile-session';
 import { mobileBody } from './mobile-writes';
 import { DutyError } from './duty-roster';
-import { readRegistrationMonth, saveRegistration } from './shift-registration';
+import { readRegistrationMonth, readRegistrationRange, saveRegistration } from './shift-registration';
 import { readSelfRegistrationWeek, saveSelfRegistrationWeek } from './self-shift-registration';
 import { dutyToday, dutyWeekStart } from '../../../shared/mobile-duty-roster';
-import type { SelfRegistrationWeek, RegistrationMonth, ShiftRegistration } from '../../../shared/mobile-shift-registration';
+import type { SelfRegistrationWeek, RegistrationMonth, RegistrationRange, ShiftRegistration } from '../../../shared/mobile-shift-registration';
 
 async function transaction<T>(user: SessionUser, self: boolean, write: boolean, run: (db: PoolClient) => Promise<T>) {
   if (!self && (!hasPermission(user, 'hr.read') || write && !hasPermission(user, 'hr.write'))) throw new MobileError('Không có quyền đăng ký ca làm việc.', 403, 'FORBIDDEN');
@@ -31,10 +31,11 @@ async function transaction<T>(user: SessionUser, self: boolean, write: boolean, 
 }
 export async function mobileShiftRegistration(user: SessionUser, request: NextRequest, self: boolean) {
   const write = request.method === 'PUT', params = request.nextUrl.searchParams;
-  const key = self ? 'week' : 'month';
-  if ([...params.keys()].some(k => write || k !== key || params.getAll(k).length !== 1)) throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
+  const allowed = self ? ['week'] : ['month','from','to'];
+  if ([...params.keys()].some(k => write || !allowed.includes(k) || params.getAll(k).length !== 1)||!self&&(params.has('month')&&(params.has('from')||params.has('to'))||params.has('from')!==params.has('to'))) throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
   const body = write ? await mobileBody(request, 8192) : null;
-  return transaction<SelfRegistrationWeek | RegistrationMonth | ShiftRegistration>(user, self, write, db => self
+  return transaction<SelfRegistrationWeek | RegistrationMonth | RegistrationRange | ShiftRegistration>(user, self, write, db => self
     ? write ? saveSelfRegistrationWeek(db, user, body) : readSelfRegistrationWeek(db, user, params.get('week') || dutyWeekStart(dutyToday()))
-    : write ? saveRegistration(db, user.id, body) : readRegistrationMonth(db, params.get('month') || dutyToday().slice(0, 7)));
+    : write ? saveRegistration(db, user.id, body) : params.has('from')?readRegistrationRange(db,params.get('from')!,params.get('to')!):readRegistrationMonth(db, params.get('month') || dutyToday().slice(0, 7)));
 }
+export function readMobileRegistrationRange(user:SessionUser,from:string,to:string){return transaction(user,false,false,db=>readRegistrationRange(db,from,to));}
