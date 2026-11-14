@@ -57,49 +57,52 @@ module.exports=async function checkRecovery(db,c,schema,notices){
   let reads=0;
   try{
     const remote=photos.map((p,i)=>({...p,bytes:null,cloudinary_public_id:`qa/recovery/${i+1}`,cloudinary_cloud_name:'qa-cloud',cloudinary_version:1}));
-    global.fetch=async url=>{const u=new URL(url);assert.equal(u.hostname,'api.cloudinary.com');const index=Number(u.searchParams.get('public_id').split('/').at(-1));assert(index>=11&&index<=17);reads++;return new Response(Buffer.alloc(1800000,index),{headers:{'Content-Type':'image/jpeg'}});};
+    global.fetch=async url=>{const u=new URL(url);assert.equal(u.hostname,'api.cloudinary.com');const index=Number(u.searchParams.get('public_id').split('/').at(-1));assert(index>=1&&index<=17);reads++;return new Response(Buffer.from([255,216,255,index]),{headers:{'Content-Type':'image/jpeg'}});};
     const automatic=await queue({...payload,photos:remote}),methods=[],uploaded=[];let seq=400;
     await notices.dispatchContractNotifications(async(url,options)=>{
       const method=new URL(url).pathname.split('/').at(-1);methods.push(method);
       if(method==='sendMessage')return Response.json({ok:true,result:{message_id:seq++}});
       const media=method==='sendPhoto'?null:JSON.parse(options.body.get('media'));
-      const urls=media?.some(item=>item.media.startsWith('https://'));
-      if(urls&&media.length===7)return rejected('Bad Request: failed to get HTTP URL content https://private.invalid/photo?signature=secret 123456789:qa-only-bot-token-123456789');
-      if(!urls){const files=media?media.map((_,i)=>options.body.get(`photo${i}`)):[options.body.get('photo')];uploaded.push(files.length);assert(files.reduce((n,f)=>n+f.size,0)<=4*1024*1024);}
+      assert(!media?.some(item=>item.media.startsWith('https://')));
+      const files=media?media.map((_,i)=>options.body.get(`photo${i}`)):[options.body.get('photo')];uploaded.push(files.length);assert(files.reduce((n,f)=>n+f.size,0)<=2*1024*1024);
       const ids=Array.from({length:media?.length||1},()=>({message_id:seq++}));return Response.json({ok:true,result:media?ids:ids[0]});
     },1,db,[3]);
-    const complete=await row(automatic);assert.equal(complete.status,'sent');assert.equal(complete.message_ids.length,18);assert.deepEqual(uploaded,[2,2,2,1]);assert.equal(reads,7);assert.equal(methods.at(-1),'sendMessage');
-    const audit=complete.delivery_review.find(r=>r.outcome==='media_upload_fallback');assert.equal(audit.media_offset,10);assert.equal(audit.media_count,7);assert(audit.description.includes('[URL]'));assert(audit.description.includes('[TOKEN]'));assert(!audit.description.includes('signature=secret'));assert(!JSON.stringify(audit).includes('qa-only-bot'));
+    const complete=await row(automatic);assert.equal(complete.status,'sent');assert.equal(complete.message_ids.length,18);assert.deepEqual(uploaded,[10,7]);assert.equal(reads,17);assert.equal(methods.at(-1),'sendMessage');
+    assert(complete.delivery_review.some(r=>r.outcome==='media_received'&&r.media_offset===10&&r.media_count===7));
     const interrupted=await queue({...payload,photos:remote});let uploadCalls=0;
     await notices.dispatchContractNotifications(async(url,options)=>{
       const media=JSON.parse(options.body.get('media'));
-      if(media.some(item=>item.media.startsWith('https://'))){
-        if(media.length===7)return rejected('Bad Request: failed to get HTTP URL content');
-        return Response.json({ok:true,result:media.map(()=>({message_id:seq++}))});
-      }
-      if(++uploadCalls===2)return rejected('Bad Request: invalid photo');
+      assert(media.every(item=>item.media.startsWith('attach://')));
+      if(++uploadCalls===2)return rejected('Bad Request: invalid photo https://private.invalid/photo?signature=secret 123456789:qa-only-bot-token-123456789');
       return Response.json({ok:true,result:media.map(()=>({message_id:seq++}))});
     },1,db,[3]);
-    const checkpoint=await row(interrupted);assert.equal(checkpoint.status,'failed');assert.equal(checkpoint.message_ids.length,12);
+    const checkpoint=await row(interrupted);assert.equal(checkpoint.status,'failed');assert.equal(checkpoint.message_ids.length,10);
+    const audit=checkpoint.delivery_review.find(r=>r.outcome==='delivery_failed');assert(audit.description.includes('[URL]'));assert(audit.description.includes('[TOKEN]'));assert(!audit.description.includes('signature=secret'));assert(!JSON.stringify(audit).includes('qa-only-bot'));
     event=await read();assert(event.can_resume);assert.equal(event.notice_id,interrupted);
     await service.saveContractTelegram(db,3,143,admin,{...command,notice_id:interrupted,hash:event.hash,request_id:randomUUID()});
-    let nextPhoto=13;
+    let nextPhoto=11;
     await notices.dispatchContractNotifications(async(url,options)=>{
       const method=new URL(url).pathname.split('/').at(-1);
       if(method==='sendMessage')return Response.json({ok:true,result:{message_id:seq++}});
       const media=method==='sendPhoto'?null:JSON.parse(options.body.get('media'));
       const files=media?media.map((_,i)=>options.body.get(`photo${i}`)):[options.body.get('photo')];
-      for(const file of files)assert.equal(Buffer.from(await file.arrayBuffer())[0],nextPhoto++);
+      for(const file of files)assert.equal(Buffer.from(await file.arrayBuffer()).at(-1),nextPhoto++);
       const messages=files.map(()=>({message_id:seq++}));return Response.json({ok:true,result:media?messages:messages[0]});
     },1,db,[3]);
-    assert.equal(nextPhoto,18);const recovered=await row(interrupted);assert.equal(recovered.status,'sent');assert.equal(recovered.message_ids.length,18);assert.deepEqual(recovered.message_ids.slice(0,12),checkpoint.message_ids);
+    assert.equal(nextPhoto,18);const recovered=await row(interrupted);assert.equal(recovered.status,'sent');assert.equal(recovered.message_ids.length,18);assert.deepEqual(recovered.message_ids.slice(0,10),checkpoint.message_ids);
     const timeout=await queue({...payload,photos:remote});let attempts=0;const readsBefore=reads;
     await notices.dispatchContractNotifications(async()=>{attempts++;const e=Error('QA timeout');e.name='TimeoutError';throw e;},1,db,[3]);
-    assert.equal(attempts,1);assert.equal(reads,readsBefore);assert.equal((await row(timeout)).status,'unknown');
+    assert.equal(attempts,1);assert(reads>readsBefore);assert.equal((await row(timeout)).status,'unknown');
     await c.query(`UPDATE ${schema}.management_contract_notifications SET status='sent' WHERE id=$1`,[timeout]);
     const routing=await queue({...payload,photos:remote});attempts=0;
     await notices.dispatchContractNotifications(async()=>{attempts++;return rejected('Bad Request: message thread not found');},1,db,[3]);
-    assert.equal(attempts,1);assert.equal(reads,readsBefore);assert.equal((await row(routing)).status,'failed');
+    assert.equal(attempts,1);assert.equal((await row(routing)).status,'failed');
+    const flood=await queue({...payload,photos:[photos[0]]});let floodCalls=0;
+    await notices.dispatchContractNotifications(async()=>{floodCalls++;return Response.json({ok:false,error_code:429,description:'Fixture flood control',parameters:{retry_after:37}});},1,db,[3]);
+    const deferred=await row(flood);assert.equal(deferred.status,'pending');assert.equal(deferred.error_code,'DELIVERY_CONTINUE');assert.equal(deferred.delivery_review.at(-1).retry_after,37);assert.deepEqual(deferred.message_ids,[]);
+    await notices.dispatchContractNotifications(async()=>{floodCalls++;throw Error('A live flood-control lease must not send early');},1,db,[3]);assert.equal(floodCalls,1);
+    await c.query(`UPDATE ${schema}.management_telegram_delivery_leases SET expires_at=clock_timestamp()-interval '1 second' WHERE notice_id=$1`,[flood]);
+    await notices.dispatchContractNotifications(async()=>Response.json({ok:true,result:{message_id:seq++}}),1,db,[3]);assert.equal((await row(flood)).status,'sent');
     for(const priorIds of [[],sent.message_ids.slice(0,10)]){
       const killed=await queue();
       await c.query(`UPDATE ${schema}.management_contract_notifications SET status='sending',error_code='DELIVERY_IN_FLIGHT',message_ids=$2,delivery_target=$3 WHERE id=$1`,[killed,JSON.stringify(priorIds),JSON.stringify(failed.delivery_target)]);
@@ -120,9 +123,10 @@ module.exports=async function checkRecovery(db,c,schema,notices){
     '17-photo partial rejection keeps 10 acknowledged IDs, exposes exact progress, blocks full resend and resumes only 7 missing photos plus the original summary',
     'Resume preserves the original payload/target, is idempotent, enforces permission/stale-preview/notice checks and works with existing branch-scoped UPDATE grants',
     'A rejected final summary resumes text alone; legacy TELEGRAM_400 partial sends recover; timeouts/network/invalid responses never qualify for automatic recovery',
-    'Confirmed Cloudinary URL rejection falls back to byte-capped direct uploads; a subsequent upload rejection resumes after 12/17 accepted photos, preserves their IDs and sends the summary last',
+    'Cloudinary photos upload directly without private URLs; an upload rejection resumes after 10/17 accepted photos, preserves their IDs and sends the summary last',
     'Persisted rejection diagnostics include method, offset and sanitized description without signed URLs or bot tokens',
     'A worker killed during its first or later Telegram POST remains uncertain and never automatically replays an in-flight request',
-    'Network timeouts and unrelated routing errors never trigger upload fallback or an automatic replay'
+    'Network timeouts and unrelated routing errors never trigger upload fallback or an automatic replay',
+    'A confirmed Telegram 429 reserves the topic for retry_after, cannot send early and automatically continues once the lease expires'
   ];
 };

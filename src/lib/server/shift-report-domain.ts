@@ -7,7 +7,7 @@ import { ShiftRequestError,shiftRequestHash,readShiftReceipt,writeShiftReceipt }
 import { readShiftSnapshot } from './shift-audits';
 import { readOwnershipReport } from './ownership-report';
 import { ownershipReportText,validateOwnershipSubmission } from '@/lib/management/ownership-report';
-import { queueReportTelegram } from './report-telegram';
+import { queueReportTelegram,shiftTelegramAttachments } from './report-telegram';
 type Database=Pick<PoolClient,'query'>;
 export async function listShiftReports(client:Database,store:string|null,date:string|null,id?:number,all=false):Promise<ShiftReport[]> {
   if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date))throw new ShiftRequestError('Ngày báo cáo không hợp lệ.');
@@ -63,7 +63,8 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
         await client.query('UPDATE himoto.management_shift_reports SET submitted_at=now() WHERE id=$1',[saved.id]);
       }
       await client.query('RELEASE SAVEPOINT shift_snapshot');
-      if(input.ownership_report)await queueReportTelegram(client,`shift:${saved.id}`,input.store_id,ownershipReportText(input.date,input.ownership_report),'ownership_new');
+      const text=input.ownership_report?ownershipReportText(input.date,input.ownership_report):`BÁO CÁO CUỐI CA · PGD #${input.store_id}\nNgày: ${input.date}\nNhân sự: ${input.staff}\nXe tại cơ sở: ${input.vehicles}\nPin: ${input.batteries}\nTiền mặt: ${input.cash.toLocaleString('vi-VN')} đ\nTK cá nhân: ${input.personal.toLocaleString('vi-VN')} đ\nTK công ty: ${input.company.toLocaleString('vi-VN')} đ\n${input.notes}`.slice(0,3900);
+      await queueReportTelegram(client,`shift:${saved.id}`,input.store_id,text,input.ownership_report?'ownership_new':'store',await shiftTelegramAttachments(client,saved.id,'pgd'));
     }
     await writeShiftReceipt(client, requestId, actor.id, input.store_id, hash, saved);
 

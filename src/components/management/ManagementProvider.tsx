@@ -63,25 +63,29 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   const resourceError = requiredKinds.map(kind => resources[kind].error).filter(Boolean).join(' ');
   const contractAutofill = useMemo(() => createApiAutofillRepository('/api'), []);
   const fleetPage=pathname==='/vehicles'||pathname.startsWith('/vehicles/transfers')||pathname==='/gps';
+  const customerPage=pathname==='/customers';
+  const directoryPage=fleetPage||customerPage;
   const [branchStore, setBranchStore] = useState(user?.store_id?String(user.store_id):'all');
   const [fleetStore,setFleetStore]=useState('all');
+  const [customerStore,setCustomerStore]=useState('all');
   const [fleetStores,setFleetStores]=useState<ManagementRow[]|null>(null);
   const [fleetStoresError,setFleetStoresError]=useState('');
   const [fleetStoresVersion,setFleetStoresVersion]=useState(0);
-  const error=[resourceError,fleetPage?fleetStoresError:''].filter(Boolean).join(' ');
-  const selectedStore=fleetPage?fleetStore:branchStore;
+  const error=[resourceError,directoryPage?fleetStoresError:''].filter(Boolean).join(' ');
+  const selectedStore=customerPage?customerStore:fleetPage?fleetStore:branchStore;
   const selectStore=useCallback((id:string)=>{
-    if(fleetPage)setFleetStore(id);
+    if(customerPage)setCustomerStore(id);
+    else if(fleetPage)setFleetStore(id);
     else setBranchStore(user&&!user.scope_all&&user.store_id?String(user.store_id):id);
-  },[fleetPage,user]);
+  },[customerPage,fleetPage,user]);
   useEffect(()=>{
-    if(!fleetPage)return;const controller=new AbortController();setFleetStoresError('');
+    if(!directoryPage)return;const controller=new AbortController();setFleetStoresError('');
     void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{
       const body=await response.json();if(!response.ok||body.status!=='success'||!Array.isArray(body.data))throw Error('Không tải được danh sách cơ sở.');
       if(!controller.signal.aborted)setFleetStores(body.data.map((row:Record<string,unknown>)=>mapApiRow('stores',row)));
     }).catch(()=>{if(!controller.signal.aborted)setFleetStoresError('Không tải được danh sách cơ sở. Nhấn Làm mới để thử lại.');});return()=>controller.abort();
-  },[fleetPage,fleetStoresVersion]);
-  const visibleDataset=useMemo(()=>dataset&&fleetPage&&fleetStores?{...dataset,stores:fleetStores}:dataset,[dataset,fleetPage,fleetStores]);
+  },[directoryPage,fleetStoresVersion]);
+  const visibleDataset=useMemo(()=>dataset&&directoryPage&&fleetStores?{...dataset,stores:fleetStores}:dataset,[dataset,directoryPage,fleetStores]);
   const [notification, notify] = useState('');
 
   const ensureData = useCallback((kinds: readonly ManagementKind[], force = false) => {
@@ -90,11 +94,11 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   }, [loader,pagedKind]);
   const invalidateData = useCallback((kinds: readonly ManagementKind[]) => loader.invalidate(kinds), [loader]);
   const reload = useCallback(async (kinds?: readonly ManagementKind[]) => {
-    if(fleetPage)setFleetStoresVersion(value=>value+1);
+    if(directoryPage)setFleetStoresVersion(value=>value+1);
     if(pagedKind&&(!kinds||kinds.includes(pagedKind)))loader.invalidate([pagedKind]);
     const targets = (kinds || requiredKinds.filter(kind => kind !== 'stores' || requiredKinds.length === 1 || !loader.getSnapshot().resources.stores.loaded || loader.getSnapshot().resources.stores.error)).filter(kind=>kind!==pagedKind);
     try { await loader.ensure(targets, true); } catch { /* Each failed resource exposes its own error and retry. */ }
-  }, [loader, requiredKinds,pagedKind,fleetPage]);
+  }, [loader, requiredKinds,pagedKind,directoryPage]);
   useEffect(() => {
     loader.setContractsQuery('');
   }, [loader, pathname]);

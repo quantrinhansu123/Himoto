@@ -14,6 +14,7 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [saving, setSaving] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -45,13 +46,14 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        setLatitude(String(coords.latitude));
-        setLongitude(String(coords.longitude));
+        setCurrentLocation([coords.latitude, coords.longitude].join(", "));
+        if (storeId) setLatitude(String(coords.latitude));
+        if (storeId) setLongitude(String(coords.longitude));
         setLocating(false);
       },
       cause => {
         setError(cause.code === 1
-          ? 'Hãy cho phép trang này truy cập vị trí rồi thử lại.'
+          ? 'Trình duyệt đang chặn GPS. Trên iPhone, mở menu cạnh thanh địa chỉ Safari → Cài đặt trang web → Vị trí → Cho phép, rồi bấm Lấy vị trí hiện tại.'
           : 'Chưa lấy được vị trí. Hãy bật dịch vụ định vị rồi thử lại.');
         setLocating(false);
       },
@@ -90,10 +92,11 @@ export function AttendanceLocationsDialog({ canEdit, onClose }: { canEdit: boole
             {stores.map(store => <option key={store.id} value={store.id}>{store.store_name}{store.latitude === null ? ' · Chưa có tọa độ' : ` · ${store.latitude}, ${store.longitude}`}</option>)}
           </select>
         </label>}
+        {canEdit && <button type="button" className="mg-button mg-attendance-locate" onClick={locate} disabled={saving || locating}>
+          <MapPin size={16} aria-hidden="true" />{locating ? 'Đang lấy vị trí…' : 'Lấy vị trí hiện tại'}
+        </button>}
+        {currentLocation && <p role="status">Vị trí hiện tại: {currentLocation}</p>}
         {storeId && <>
-          {canEdit && <button type="button" className="mg-button mg-attendance-locate" onClick={locate} disabled={saving || locating}>
-            <MapPin size={16} aria-hidden="true" />{locating ? 'Đang lấy vị trí…' : 'Lấy vị trí hiện tại'}
-          </button>}
           <label className="mg-field">Vĩ độ<input type="number" step="any" min="-90" max="90" required readOnly={!canEdit} disabled={saving || locating} value={latitude} onChange={event => { setLatitude(event.target.value); setSaved(false); }} /></label>
           <label className="mg-field">Kinh độ<input type="number" step="any" min="-180" max="180" required readOnly={!canEdit} disabled={saving || locating} value={longitude} onChange={event => { setLongitude(event.target.value); setSaved(false); }} /></label>
         </>}

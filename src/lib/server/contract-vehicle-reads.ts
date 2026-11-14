@@ -9,13 +9,14 @@ export function contractVehicleReadSource() {
 }
 
 /** Labels for vehicles on in-scope contracts, including stock that already returned to another branch. */
-export function contractVehicleLabelSource() {
-  return usesScopedDatabase() ? 'himoto.contract_vehicle_labels()' : 'himoto.vehicles';
+export function contractVehicleLabelSource(orderIdsSql?:string) {
+  if(!usesScopedDatabase())return 'himoto.vehicles';
+  return orderIdsSql?`(SELECT id,name,license,brand,type,year,color,store_id FROM himoto.contract_vehicles_for_orders(${orderIdsSql}))`:'himoto.contract_vehicle_labels()';
 }
 
 // List/search/detail reads need the same labels even when physical stock is foreign.
 // The helper is restricted to vehicles attached to contracts in the caller's scope.
-export function contractVehicleDetailsSql(sql: string) {
+export function contractVehicleDetailsSql(sql: string,orderIdsSql?:string) {
   if(!usesScopedDatabase())return sql;
   // A correlated vehicle aggregate runs once per order. Calling the scoped
   // label helper inside it used to scan every permitted vehicle twice per row.
@@ -26,8 +27,12 @@ export function contractVehicleDetailsSql(sql: string) {
     .replaceAll(CONTRACT_WAREHOUSE_JOIN_SQL,`LEFT JOIN ${warehouses} warehouse ON warehouse.id=d.vehicle_id`)
     .replaceAll(contractWarehouseJoinSql(),`LEFT JOIN ${warehouses} warehouse ON warehouse.id=d.vehicle_id`);
   const sources=[];
-  if(rewritten.includes(labels))sources.push(`${labels} AS MATERIALIZED (SELECT * FROM himoto.contract_vehicle_labels())`);
-  if(rewritten.includes(warehouses))sources.push(`${warehouses} AS MATERIALIZED (SELECT id,store_id,store_name FROM himoto.vehicle_inventory())`);
+  // orderIdsSql is a trusted SQL parameter expression supplied by the caller,
+  // after search/filter/pagination. Never interpolate raw request values here.
+  const bounded='contract_read_requested_vehicles';
+  if(orderIdsSql&&(rewritten.includes(labels)||rewritten.includes(warehouses)))sources.push(`${bounded} AS MATERIALIZED (SELECT * FROM himoto.contract_vehicles_for_orders(${orderIdsSql}))`);
+  if(rewritten.includes(labels))sources.push(`${labels} AS MATERIALIZED (SELECT ${orderIdsSql?'id,name,license,brand,type,year,color,store_id FROM '+bounded:'* FROM himoto.contract_vehicle_labels()'})`);
+  if(rewritten.includes(warehouses))sources.push(`${warehouses} AS MATERIALIZED (SELECT ${orderIdsSql?'warehouse_id AS id,warehouse_store_id AS store_id,warehouse_store_name AS store_name FROM '+bounded+' WHERE warehouse_id IS NOT NULL':'id,store_id,store_name FROM himoto.contract_vehicle_locations()'})`);
   if(!sources.length)return sql;
   rewritten=`WITH ${sources.join(', ')} ${rewritten}`;
   return rewritten;

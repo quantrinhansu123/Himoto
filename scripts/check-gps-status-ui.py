@@ -25,10 +25,12 @@ def mock(route):
         # A provider failure must still refresh the list and show a stale marker.
         route.fulfill(status=503,json=dict(status='error',message='QA provider unavailable'));return
     if req.method!='GET':unexpected.append(req.method+' '+path);route.abort();return
+    if path.startswith('/api/auth/record-photos/vehicles/') and path.rsplit('/',1)[-1].isdigit():
+        route.fulfill(json=dict(status='success',data=[]));return
     if path=='/api/auth/vehicle/vehicles':reads.append(time.monotonic());data=vehicles
     elif path=='/api/auth/gps':
         data=dict(devices=[dict(id=230,vehicle_id=35,provider='protrack',external_device_id='qa-device',provider_device_name='90B3-092.33',license='90B3-092.33',store_id=1,store_name='Cơ sở QA',management_status='stopped',mapping_status='auto',sync_received_at=stamp(0),heartbeat_at=stamp(7*60),position_recorded_at=stamp(7*86400),last_speed=12,last_latitude=None,last_longitude=None)],events=[])
-    else:data={'/api/auth/stores':stores,'/api/auth/customers':[],'/api/auth/order/car-rental':[],'/api/auth/hr/staff':[],'/api/auth/payment-events':[]}.get(path)
+    else:data={'/api/auth/stores':stores,'/api/auth/store-directory':stores,'/api/auth/customers':[],'/api/auth/order/car-rental':[],'/api/auth/hr/staff':[],'/api/auth/payment-events':[]}.get(path)
     if data is None:unexpected.append(req.method+' '+path);route.abort()
     else:route.fulfill(json=dict(status='success',data=data))
 with sync_playwright() as p:
@@ -37,22 +39,31 @@ with sync_playwright() as p:
     context.route('**/api/**',mock)
     for domain in ['**protrack365.com/**','**gpscenter.xyz/**','**iopgps.com/**','**api.telegram.org/**']:
         context.route(domain,lambda route:(_ for _ in ()).throw(AssertionError('Real provider request blocked')))
-    page=context.new_page();page.on('pageerror',lambda error:errors.append(str(error)))
+    page=context.new_page();page.clock.install();page.on('pageerror',lambda error:errors.append(str(error)))
     page.goto(args.url+'/vehicles',wait_until='networkidle')
     target=page.locator('.mg-mobile-record-card').filter(has=page.get_by_text('90B3-092.33',exact=False))
     expect(target).to_contain_text('ON · Đang dừng');expect(target).to_contain_text('HIMOTO đọc:');expect(target).to_contain_text('Vị trí GPS cũ:')
     for text in ['OFF · Mất kết nối','Chưa cập nhật','Cảnh báo','Không còn trong tài khoản GPS','Chưa gắn GPS']:
         expect(page.locator('.mg-mobile-card-list')).to_contain_text(text)
-    initial=len(reads);page.wait_for_timeout(10800)
-    assert len(refreshes)>=3 and len(reads)>=initial+2,(refreshes,reads)
-    assert all(b-a>=3.8 for a,b in zip(refreshes,refreshes[1:])),refreshes
-    checks.append('Vehicle cards show connected/stopped separately from OFF/stale/unavailable/unmapped; a failed refresh still reads status on the five-second cycle')
+    page.clock.run_for(2000);page.wait_for_timeout(200)
+    initial_reads,initial_refreshes=len(reads),len(refreshes)
+    page.clock.fast_forward(5000);page.wait_for_timeout(200)
+    assert len(refreshes)==initial_refreshes,(refreshes,reads)
+    for _ in range(2):
+        with page.expect_response(lambda response:'/api/auth/vehicle/vehicles' in response.url):
+            page.clock.fast_forward(60000)
+    assert len(refreshes)==initial_refreshes+2 and len(reads)>=initial_reads+2,(refreshes,reads)
+    checks.append('Vehicle cards retain independent GPS states; no five-second sync occurs and a failed provider refresh still reloads the paged list each minute')
     target.locator('.mg-mobile-card-main').click();dialog=page.locator('dialog.mg-vehicle-detail')
     expect(dialog).to_contain_text('ON · Đang dừng');expect(dialog).to_contain_text('Khóa điện: Tắt')
     vehicles[0]['gps_normalized_status']='offline'
+    with page.expect_response(lambda response:'/api/auth/vehicle/vehicles' in response.url):
+        page.clock.fast_forward(60000)
     expect(dialog.get_by_text('OFF · Mất kết nối',exact=True)).to_be_visible(timeout=12000)
     dialog.screenshot(path=str(out/'open-vehicle-updated-offline-390.png'))
     vehicles[0]['gps_normalized_status']='stopped'
+    with page.expect_response(lambda response:'/api/auth/vehicle/vehicles' in response.url):
+        page.clock.fast_forward(60000)
     expect(dialog.get_by_text('ON · Đang dừng',exact=True)).to_be_visible(timeout=12000)
     dialog.locator('.mg-dialog-footer').get_by_role('button',name='Đóng',exact=True).click()
     checks.append('An open vehicle detail follows new GPS reads from ON to OFF and back without reopening; ignition remains independent')

@@ -7,6 +7,7 @@ export interface BatteryTelegramState {
   status: string | null;
   can_send: boolean;
   message_count: number;
+  photo_count?:number;
 }
 
 export async function batteryTelegramRequest(batteryId: number, requestId: string, send = false, signal?: AbortSignal): Promise<BatteryTelegramState> {

@@ -1,6 +1,6 @@
 import { createInstallmentPlan, installmentSchedule, parseInstallmentPlan, type InstallmentPlan } from './contract-billing';
 
-export type ContractLifecycleAction='mark_bad_debt'|'settle'|'hold'|'resume'|'update_hold'|'complete_hold';
+export type ContractLifecycleAction='mark_bad_debt'|'close_bad_debt'|'settle'|'hold'|'resume'|'update_hold'|'complete_hold';
 export interface LifecycleItem {id:number;vehicle_id:number;name:string;license:string;rent_at:string|null;return_at:string|null;completed_at:string|null;return_reconciled?:boolean}
 export interface LifecycleEvent {action:string;at:string;recorded_at:string;actor_id:number;actor_name:string;note:string;from:string;to:string;request_id:string;request_hash:string;[key:string]:unknown}
 export interface ContractLifecycleContext {
@@ -10,7 +10,7 @@ export interface ContractLifecycleContext {
   settled:boolean;can_settle:boolean;settlement_note:string;events:LifecycleEvent[];
   held_at:string|null;resume_vehicle_count:number;plan:InstallmentPlan|null;base_total:number|null;start_at:string|null;end_at:string|null;
   hold_until?:string|null;hold_expired?:boolean;hold_can_resume?:boolean;hold_was_overdue?:boolean;
-  completed_from_hold?:boolean;waived_amount?:number;
+  completed_from_hold?:boolean;waived_amount?:number;bad_debt_closed_at?:string;
 }
 export interface ContractLifecycleInput {
   action:ContractLifecycleAction;revision:string;request_id:string;note:string;at:string;confirmed:boolean;
@@ -33,7 +33,7 @@ export function canHoldContract(context:Pick<ContractLifecycleContext,'ownership
 export function canMarkBadDebtContract(context:Pick<ContractLifecycleContext,'overdue'|'all_returned'|'remaining'>) {
   return context.overdue&&(!context.all_returned||Number(context.remaining)>0);
 }
-export const lifecycleActionLabel:Record<ContractLifecycleAction,string>={mark_bad_debt:'Chuyển sang Nợ xấu',settle:'Xác nhận tất toán',hold:'Bảo lưu hợp đồng',resume:'Tiếp tục thuê',update_hold:'Sửa thời hạn bảo lưu',complete_hold:'Hoàn thành hợp đồng'};
+export const lifecycleActionLabel:Record<ContractLifecycleAction,string>={mark_bad_debt:'Chuyển sang Nợ xấu',close_bad_debt:'Đóng hợp đồng nợ xấu',settle:'Xác nhận tất toán',hold:'Bảo lưu hợp đồng',resume:'Tiếp tục thuê',update_hold:'Sửa thời hạn bảo lưu',complete_hold:'Hoàn thành hợp đồng'};
 export const localLifecycleTime=(value=new Date())=>new Date(value.getTime()+7*3600000).toISOString().slice(0,16);
 export function validLifecycleTime(value:unknown):value is string {
   if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value))return false;

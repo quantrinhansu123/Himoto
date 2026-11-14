@@ -1,5 +1,6 @@
 import type { BrowserVideoReceipt, VideoProgressCallback } from './video-media';
 import { abortTimeout } from '@/lib/abort-signal';
+import { withRequestDeadline } from '@/lib/request-deadline';
 import { isSupplementalPhotoSlot,photoBaseSlot } from './photo-slot-groups';
 export { MAX_VIDEO_BYTES } from './video-media';
 export type MediaUploadReceipt = CloudUploadReceipt | BrowserVideoReceipt;
@@ -33,10 +34,21 @@ export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploa
   const id = retry ? crypto.randomUUID() : previous?.id || crypto.randomUUID();
   const promise = (async () => {
     const video=file.type.startsWith('video/');
-    const signed = await fetch('/api/auth/photo-uploads/sign', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ upload_id: id, ...(video?{resource_type:'video'}:{}) }) });
-    const envelope = await signed.json().catch(() => null);
+    const {signed,envelope}=await withRequestDeadline(async signal=>{
+      const signed = await fetch('/api/auth/photo-uploads/sign', { method: 'POST', credentials: 'same-origin',signal, headers: { 'Content-Type': 'application/json',...(!video?{'x-photo-storage':'cloudfly'}:{}) }, body: JSON.stringify({ upload_id: id, ...(video?{resource_type:'video'}:{}) }) });
+      return {signed,envelope:await signed.json().catch(() => null)};
+    },45000,'Khởi tạo tải ảnh quá lâu. Ảnh vẫn được giữ trong form.');
     if (!signed.ok || envelope?.status !== 'success') throw new Error(envelope?.message || 'Không khởi tạo được tải ảnh.');
     const settings = envelope.data;
+    if (!video && settings?.provider === 'cloudfly') {
+      return withRequestDeadline(async signal=>{
+        const response=await fetch('/api/auth/photo-uploads/image',{method:'POST',credentials:'same-origin',signal,
+          headers:{'Content-Type':file.type,'x-upload-id':id},body:file});
+        const result=await response.json().catch(()=>null);
+        if(!response.ok||result?.status!=='success'||result.data?.public_id?.split('/').at(-1)!==id||result.data?.version!==1||!/^[a-f0-9]{64}$/.test(result.data?.signature||''))throw new Error(result?.message||'Chưa tải được ảnh lên CloudFly. Ảnh vẫn được giữ trong form.');
+        return result.data as CloudUploadReceipt;
+      },60000,'Tải ảnh quá lâu. Giữ form và thử tải lại.');
+    }
     if (!/^[a-z0-9_-]+$/i.test(settings?.cloud_name || '') || !settings.api_key || !settings.signature || !settings.params) throw new Error('Cấu hình tải ảnh chưa hợp lệ.');
     const body = new FormData(); body.append('file', file);
     for (const [key, value] of Object.entries(settings.params)) body.append(key, String(value));

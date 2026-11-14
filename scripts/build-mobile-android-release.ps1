@@ -21,7 +21,7 @@ $taskSigningManifest=Get-Content -LiteralPath (Join-Path $taskSigning 'manifest.
 $taskKey=Join-Path $taskSigning $taskSigningManifest.keystore
 if ((Get-FileHash -LiteralPath $taskKey -Algorithm SHA256).Hash.ToLowerInvariant() -ne $taskSigningManifest.keystoreSha256) { throw 'Signing keystore hash mismatch.' }
 $taskPassword=(New-Object Management.Automation.PSCredential('signing',(ConvertTo-SecureString ([IO.File]::ReadAllText((Join-Path $taskSigning 'password.dpapi')))))).GetNetworkCredential().Password
-$taskNames=@('HIMOTO_ANDROID_LOCAL_SIGNING','HIMOTO_ANDROID_KEYSTORE_PATH','HIMOTO_ANDROID_KEYSTORE_PASSWORD','HIMOTO_ANDROID_KEY_ALIAS','HIMOTO_ANDROID_KEY_PASSWORD','HIMOTO_ANDROID_GOOGLE_SERVICES_FILE','EXPO_PUBLIC_ENVIRONMENT')
+$taskNames=@('HIMOTO_ANDROID_LOCAL_SIGNING','HIMOTO_ANDROID_KEYSTORE_PATH','HIMOTO_ANDROID_KEYSTORE_PASSWORD','HIMOTO_ANDROID_KEY_ALIAS','HIMOTO_ANDROID_KEY_PASSWORD','HIMOTO_ANDROID_GOOGLE_SERVICES_FILE','EXPO_PUBLIC_ENVIRONMENT','NODE_OPTIONS')
 $taskPrevious=@{};foreach($taskName in $taskNames){$taskPrevious[$taskName]=[Environment]::GetEnvironmentVariable($taskName,'Process')}
 try {
     $env:HIMOTO_ANDROID_LOCAL_SIGNING='1'
@@ -38,6 +38,7 @@ try {
     $env:EXPO_PUBLIC_API_URL='https://himoto.vercel.app'
     $env:EXPO_PUBLIC_ENVIRONMENT='production'
     $env:CMAKE_BUILD_PARALLEL_LEVEL='1'
+    $env:NODE_OPTIONS='--max-old-space-size=4096'
     & node (Join-Path $PSScriptRoot 'mobile-release-provenance.cjs') --manifest (Join-Path $taskOutput 'source-manifest.json')
     if($LASTEXITCODE -ne 0){throw 'Release source snapshot failed.'}
     if($ResumePreparedBuild){
@@ -61,7 +62,7 @@ try {
     if(-not $taskGradleText.Contains('// @generated begin himoto-release-signing') -or -not $taskGradleText.Contains('signingConfig signingConfigs.release')){throw 'Release signing plugin was not applied.'}
     Push-Location (Join-Path $taskMobile 'android')
     try {
-        $taskArguments=@(':app:assembleRelease','--no-daemon','--console=plain','--max-workers=1','-Dorg.gradle.parallel=false','-Dorg.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -XX:ActiveProcessorCount=2','-Pkotlin.compiler.execution.strategy=in-process','-Pandroid.cmakeVersion=3.31.6',('-PreactNativeArchitectures='+$Architectures))
+        $taskArguments=@(':app:assembleRelease','--no-daemon','--console=plain','--max-workers=1','-Dorg.gradle.parallel=false','-Dorg.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=1024m -XX:ActiveProcessorCount=2','-Pkotlin.compiler.execution.strategy=in-process','-Pandroid.cmakeVersion=3.31.6',('-PreactNativeArchitectures='+$Architectures))
         $ErrorActionPreference='Continue'
         & .\gradlew.bat @taskArguments *> (Join-Path $taskOutput 'gradle.log')
         $taskCode=$LASTEXITCODE;$ErrorActionPreference='Stop'
@@ -82,7 +83,8 @@ try {
     $taskBadging | Set-Content -LiteralPath (Join-Path $taskOutput 'apk-badging.txt')
     if(@($taskBadging | Where-Object {$_ -match '^application-debuggable'}).Count -gt 0){throw 'Release APK is debuggable.'}
     if(-not ($taskBadging | Select-String -SimpleMatch "package: name='vn.himoto.staff' versionCode='$taskVersionCode' versionName='$taskVersion'")){throw 'APK identity/version mismatch.'}
-    & python (Join-Path $PSScriptRoot 'verify-mobile-release-bundle.py') --apk $taskApk
+    Copy-Item -LiteralPath (Join-Path $taskMobile 'android/app/build/outputs/mapping/release/mapping.txt') -Destination (Join-Path $taskOutput 'r8-mapping.txt')
+    & python (Join-Path $PSScriptRoot 'verify-mobile-release-bundle.py') --apk $taskApk --require-offline
     if($LASTEXITCODE -ne 0){throw 'Compiled bundle/Firebase/native module verification failed.'}
     & node (Join-Path $PSScriptRoot 'mobile-release-provenance.cjs') --manifest (Join-Path $taskOutput 'source-manifest.json') --verify
     if($LASTEXITCODE -ne 0){throw 'Release source changed during build.'}

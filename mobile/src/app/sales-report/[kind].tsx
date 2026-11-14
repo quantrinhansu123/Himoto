@@ -9,14 +9,19 @@ import { SalesReportView } from "@/components/sales-report-view";
 import { useTheme } from "@/theme";
 function ReportDetail({ kind, filters }: { kind: SalesReportKind; filters: string }) {
   const { api, session } = useSession(), theme = useTheme(), [paging, setPaging] = useState<{ page: number; size: number } | null>(null), query = new URLSearchParams(filters);
+  const [sectionPages, setSectionPages] = useState<Record<string, number>>({});
   if (paging) { query.set("page", String(paging.page)); query.set("size", String(paging.size)); }
+  query.set('section_pages', JSON.stringify(sectionPages));
   const params = query.toString(), allowed = session!.user.permissions.includes("contracts.read");
   const report = useQuery({ queryKey: ["sales-report", session!.user.id, kind, params], queryFn: ({ signal }) => api!.salesReport(kind, params, signal), enabled: allowed, retry: false });
   if (!allowed) return <StateView title="Không có quyền xem báo cáo" />;
   if (report.isPending) return <StateView title="Đang mở chi tiết báo cáo" loading />;
   if (report.isError) return <StateView title="Chưa mở được chi tiết báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} />;
   return <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }} refreshControl={<RefreshControl refreshing={report.isRefetching} tintColor={theme.primary} onRefresh={() => { void report.refetch(); }} />}>
-    <SalesReportView key={params} report={report.data} onPage={(page, size) => setPaging({ page, size })} />
+    <SalesReportView key={params} report={report.data} onPage={(page, size, section) => {
+      if (section && kind !== 'ledger' && kind !== 'vehicles' && kind !== 'fleet') setSectionPages(previous => ({ ...previous, [section]: page }));
+      else setPaging({ page, size });
+    }} />
   </ScrollView>;
 }
 export default function ReportDetailRoute() {

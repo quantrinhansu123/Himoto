@@ -25,7 +25,7 @@ async function handle(request: NextRequest, { params }: Params, writing: boolean
       }
       requestId = body.request_id;
     }
-    if (!requestId) throw new BatteryTelegramError('Thiếu mã lượt trả pin / sạc.');
+    if (!requestId) throw new BatteryTelegramError('Thiếu mã giao dịch pin / sạc.');
     client = await ownerDatabase.connect();
     await client.query(writing ? 'BEGIN' : 'BEGIN READ ONLY');
     await client.query("SET LOCAL statement_timeout='15s'");

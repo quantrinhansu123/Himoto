@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{createHash}=require('node:crypto');
 const root=path.resolve(__dirname,'..');
 const mobileFiles=[
- '2026-11-03-mobile-session-transition.sql','2026-10-31-mobile-sessions.sql','2026-10-31-mobile-writes.sql',
+ '2026-11-03-mobile-session-transition.sql','2026-10-31-mobile-sessions.sql','2026-11-06-mobile-refresh-tokens.sql','2026-10-31-mobile-writes.sql',
  '2026-11-01-mobile-bills.sql','2026-11-01-mobile-renewals.sql','2026-11-01-mobile-renewal-collections.sql',
  '2026-11-02-mobile-returns.sql','2026-11-02-mobile-swaps.sql','2026-11-02-mobile-recoveries.sql',
  '2026-11-02-mobile-vehicle-transfers.sql','2026-11-02-mobile-record-media.sql','2026-11-03-mobile-customer-documents.sql',

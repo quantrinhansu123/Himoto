@@ -1,4 +1,7 @@
+import {isAttendanceSummary,isAttendanceReceipt,isAttendanceResolution,isMobileGuideFaq} from '../../../shared/mobile-support';
+import {isBatteryMedia,type BatteryMedia} from '../../../shared/battery-media';
 import {isMobileNotifications, isMobileNotificationList, isMobilePushStatus, isMobilePushTest, type MobileNotificationKind} from '../../../shared/mobile-notifications';
+import type { OfflineTransport } from './offline-transport';
 import {isMobileActivityPage} from '../../../shared/mobile-activity';
 import {isFleetInventory,type MobileFleetInventory} from '../../../shared/mobile-fleet-inventory';
 import { isMobileVideoReceipt, isMobileVideoSignature, type MobileVideoReceipt, type MobileVideoUploadSignature, type MobileVideoCloudReceipt } from '../../../shared/mobile-video';
@@ -11,6 +14,7 @@ import {isMobileStoreContracts,type MobileStoreContracts} from '../../../shared/
 import {isMobileBulkReview,isMobileBulkDeletion,type MobileBulkKind,type MobileBulkReview,type MobileBulkDeletion} from '../../../shared/mobile-bulk-delete';
 import { isMobileStoreMatchResult, type CustomerStoreInput, type CustomerStoreResult, type MobileStoreMatchInput, type MobileStoreMatchFilePage } from '../../../shared/mobile-customer-store-import';
 import { readStoreMatchStream } from './read-workbook-stream';
+import { readWorkbookDownload, WORKBOOK_MIME } from './read-workbook-download';
 import { isMobileVehicleWorkbook, isMobileVehicleImportPreview, isMobileVehicleResetPreview, isMobileVehicleImportReceipt, isMobileVehicleImportResolution, isMobileVehicleImportOptions, type MobileVehicleWorkbook, type VehicleImportResult, type VehicleResetPreview, type MobileVehicleImportInput, type MobileVehicleImportReceipt, type MobileVehicleImportResolution, type MobileVehicleImportOptions } from '../../../shared/mobile-vehicle-import';
 import { isMobileContractQr, type MobileContractQr } from '../../../shared/mobile-contract-qr';
 import { isMobilePrintDocument, type MobilePrintDocument, type MobilePrintKind } from '../../../shared/mobile-print';
@@ -58,7 +62,7 @@ import { isMobileCsvExport, isMobileFileExport, type MobileCsvExport, type Mobil
 import type {MobileListExportKind} from '../../../shared/mobile-list-export';
 import { isSalesReportOptions, isMobileSalesReport, type SalesReportOptions, type MobileSalesReport, type SalesReportKind } from "../../../shared/mobile-reports";
 import { isMobileBatteryStaff,type MobileBatteryStaff,isBatteryOptions,isBatteryPage,isBatteryWorkflow,isBatteryResult,isBatteryTelegram,type MobileBatteryOptions,type MobileBatteryPage,type BatteryWorkflowContext,type MobileBatteryResult,type MobileBatteryInput,type MobileBatteryAction,type MobileBatteryPrefill,type MobileBatteryTelegram } from "../../../shared/mobile-battery";
-import { isShiftReport,isShiftOptions,isShiftResult,isShiftSnapshot,type ShiftReport,type MobileShiftOptions,type MobileShiftSave,type MobileAuditSave,type MobileShiftVideoReview,type ShiftSnapshot,type MobileShiftResult,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
+import { isShiftReport,isShiftOptions,isShiftResult,isShiftSnapshot,type ShiftTelegramState,type ShiftReport,type MobileShiftOptions,type MobileShiftSave,type MobileAuditSave,type MobileShiftVideoReview,type ShiftSnapshot,type MobileShiftResult,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
 import { isReminderHistory,isReminderOptions,isReminderContext,isReminderResult,isReminderStatus,type MobileReminderHistory,type MobileReminderOptions,type DebtReminderContext,type MobileReminderResult,type DebtReminderInput,type ReminderStatus } from "../../../shared/mobile-debt-reminders";
 import { isVoucherDeleteSelection, isVoucherDeletion, type VoucherDeleteSelection, type VoucherDeletion } from "../../../shared/mobile-cashbook-delete";
 import { isStaffProfile, isStaffOptions, isStaffWriteResult, isStaffResult, type MobileStaffProfile, type MobileStaffOptions, type MobileStaffInput, type MobileStaffWriteResult, type MobileStaffResult } from "../../../shared/mobile-staff";
@@ -100,6 +104,7 @@ import {
 } from "@himoto/mobile-draft-validation";
 import {
   isLogin,
+  isRefreshSession,
   isLogout,
   isPage,
   isRecord,
@@ -159,13 +164,26 @@ export function createApi(
   origin: string,
   token?: string,
   expired?: () => void,
+  offline?: OfflineTransport,
+  access?: { token: (force?: boolean) => Promise<string>; current: () => string },
 ) {
   let onExpired = expired;
-  async function request<T>(
+  let expiryNotified = false;
+  const authorization = () => {
+    const current = access?.current() || token;
+    return current ? { Authorization: `Bearer ${current}` } : undefined;
+  };
+  function request<T>(path: string, validate: (value: unknown) => value is T, options: RequestInit = {}, timeoutMs = 25000): Promise<T> {
+    const timeout = timeoutMs;
+    const send = () => networkRequest(path, validate, options, timeout);
+    return offline ? offline.execute(path, validate, options, send, timeout) : send();
+  }
+  async function networkRequest<T>(
     path: string,
     validate: (value: unknown) => value is T,
     options: RequestInit = {},
     timeoutMs = 25000,
+    refreshed = false,
   ): Promise<T> {
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -177,6 +195,8 @@ export function createApi(
       controller.abort();
     }, timeoutMs);
     try {
+      if (access) token = await access.token();
+      if (controller.signal.aborted) throw new DOMException('Aborted','AbortError');
       const response = await fetch(`${origin}/api/mobile/v1${path}`, {
         ...options,
         signal: controller.signal,
@@ -187,12 +207,16 @@ export function createApi(
           Accept: "application/json",
           ...(options.body && !(typeof FormData !== 'undefined' && options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
           ...options.headers,
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...authorization(),
         },
       });
-      const data = await response.json().catch(() => null);
+      const binary = response.ok && response.headers?.get('Content-Type')?.split(';')[0] === WORKBOOK_MIME;
+      const data = binary ? await readWorkbookDownload(response, controller.signal) : await response.json().catch(() => null);
       if (!response.ok) {
-        if (response.status === 401 && token) onExpired?.();
+        if (response.status === 401 && access && !refreshed) {
+          token = await access.token(true);
+          return await networkRequest(path, validate, options, timeoutMs, true);
+        }
         throw new ApiError(
           typeof data?.message === "string"
             ? data.message
@@ -224,6 +248,7 @@ export function createApi(
         );
       return data;
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401 && token && !expiryNotified) { expiryNotified = true; onExpired?.(); }
       if (error instanceof ApiError || options.signal?.aborted) throw error;
       throw new ApiError(
         timeout
@@ -238,6 +263,13 @@ export function createApi(
     }
   }
   return {
+    attendance:(params:string,signal?:AbortSignal)=>request(`/attendance?${params}`,isAttendanceSummary,{signal}),
+    clockAttendance:(body:FormData)=>request('/attendance',isAttendanceReceipt,{method:'POST',body},45000),
+    resolveAttendance:(key:string)=>request(`/attendance?request_id=${encodeURIComponent(key)}`,isAttendanceResolution),
+    guideFaq:(params:string,signal?:AbortSignal)=>request(`/guide-faq?${params}`,isMobileGuideFaq,{signal}),
+    saveGuideFaq:(body:FormData)=>request<{success:true}>('/guide-faq',(v):v is {success:true}=>!!v&&typeof v==='object'&&'success'in v&&v.success===true,{method:'POST',body},60000),
+    supportPhoto:(kind:'attendance'|'guide-faq',id:string,side?:'in'|'out')=>({uri:`${origin}/api/mobile/v1/${kind}?photo=${encodeURIComponent(id)}${side?'&side='+side:''}`,headers:authorization()}),
+    refundQr:(id:string,bytes:ArrayBuffer)=>request<{fields:Partial<Record<'recipient_bank'|'recipient_account'|'recipient_name',string>>;warnings:string[]}>(`/contracts/${id}/refund-qr`,(v):v is {fields:Partial<Record<'recipient_bank'|'recipient_account'|'recipient_name',string>>;warnings:string[]}=>!!v&&typeof v==='object'&&'fields'in v&&!!v.fields&&typeof v.fields==='object'&&Object.entries(v.fields).every(([key,value])=>['recipient_bank','recipient_account','recipient_name'].includes(key)&&typeof value==='string'&&value.length<=150)&&'warnings'in v&&Array.isArray(v.warnings)&&v.warnings.every(w=>typeof w==='string'),{method:'POST',headers:{'Content-Type':'image/jpeg'},body:bytes},60000),
     contractTelegram:(id:string,signal?:AbortSignal)=>request<ContractTelegramState>(`/contracts/${id}/telegram`,isMobileContractTelegram,{signal},60000),
     pendingTelegram:(params:string,signal?:AbortSignal)=>request<MobilePendingTelegram>(`/telegram/pending?${params}`,isMobilePendingTelegram,{signal}),
     saveContractTelegram:(id:string,input:MobileTelegramCommand,key:string)=>request<MobileTelegramResult>(`/contracts/${id}/telegram`,(v):v is MobileTelegramResult=>isMobileTelegramResult(v)&&v.key===key&&v.operation===`telegram.contract:${id}`&&v.action===input.action,{method:'POST',body:JSON.stringify(input),headers:{'Idempotency-Key':key}},90000),
@@ -263,6 +295,9 @@ export function createApi(
     reportOptions: (signal?: AbortSignal) => request<SalesReportOptions>("/reports/options", isSalesReportOptions, { signal }),
     batteryOptions:(signal?:AbortSignal)=>request<MobileBatteryOptions>("/battery-contracts/options",isBatteryOptions,{signal}),
     batteryStaff:(signal?:AbortSignal)=>request<MobileBatteryStaff>('/battery-contracts/staff',isMobileBatteryStaff,{signal}),
+    batteryMedia:(id:string,eventKey:string,signal?:AbortSignal)=>request<BatteryMedia>(`/battery-contracts/${id}/media/${eventKey}`,(v):v is BatteryMedia=>isBatteryMedia(v)&&String(v.id)===id&&v.eventKey===eventKey,{signal}),
+    saveBatteryMedia:(id:string,eventKey:string,fileId:string,bytes:ArrayBuffer,key:string)=>request<MobileWriteReceipt>(`/battery-contracts/${id}/media/${eventKey}/${fileId}`,(v):v is MobileWriteReceipt=>isWriteReceipt(v)&&String(v.id)===id,{method:'PUT',headers:{'Content-Type':'image/jpeg','Idempotency-Key':key},body:bytes}),
+    batteryMediaSource:(id:string,eventKey:string,fileId:string)=>({uri:`${origin}/api/mobile/v1/battery-contracts/${id}/media/${eventKey}/${fileId}`,headers:authorization()}),
     batteryTelegram:(id:string,key:string,signal?:AbortSignal)=>request<MobileBatteryTelegram>(`/battery-contracts/${encodeURIComponent(id)}/telegram?request_id=${encodeURIComponent(key)}`,(v):v is MobileBatteryTelegram=>isBatteryTelegram(v)&&String(v.battery_contract_id)===id&&v.request_id===key,{signal}),
     sendBatteryTelegram:(id:string,key:string)=>request<MobileBatteryTelegram>(`/battery-contracts/${encodeURIComponent(id)}/telegram`,(v):v is MobileBatteryTelegram=>isBatteryTelegram(v)&&String(v.battery_contract_id)===id&&v.request_id===key,{method:'POST',body:JSON.stringify({action:'send',request_id:key})}),
     batteries:(params:string,signal?:AbortSignal)=>request<MobileBatteryPage>(`/battery-contracts?${params}`,isBatteryPage,{signal}),
@@ -279,11 +314,11 @@ export function createApi(
     saveShift:(input:MobileShiftSave,key:string)=>request<MobileWriteReceipt>("/shift-reports",isWriteReceipt,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},90000),
     shiftResult:(key:string,signal?:AbortSignal)=>request<MobileShiftResult>(`/shift-reports/requests/${encodeURIComponent(key)}`,(v):v is MobileShiftResult=>isShiftResult(v)&&v.key===key,{signal}),
     shiftSnapshot:(id:string,signal?:AbortSignal)=>request<ShiftSnapshot>(`/shift-reports/${encodeURIComponent(id)}/audit`,isShiftSnapshot,{signal},65000),
-    shiftTelegram:(id:string,signal?:AbortSignal)=>request<{status:string;message_id:number|null;error_code:string|null}|null>(`/shift-reports/${encodeURIComponent(id)}/telegram`,(v):v is {status:string;message_id:number|null;error_code:string|null}|null=>v===null||!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string"&&"message_id" in v&&(v.message_id===null||Number.isSafeInteger(v.message_id))&&"error_code" in v&&(v.error_code===null||typeof v.error_code==="string"),{signal}),
-    retryShiftTelegram:(id:string)=>request<{status:string}>(`/shift-reports/${encodeURIComponent(id)}/telegram`,(v):v is {status:string}=>!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string",{method:"POST"}),
+    shiftTelegram:(id:string,signal?:AbortSignal,stage='pgd')=>request<ShiftTelegramState|null>(`/shift-reports/${encodeURIComponent(id)}/telegram${stage==='audit'?'?stage=audit':''}`,(v):v is ShiftTelegramState|null=>v===null||!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string"&&"message_id" in v&&(v.message_id===null||Number.isSafeInteger(v.message_id))&&"error_code" in v&&(v.error_code===null||typeof v.error_code==="string"),{signal}),
+    retryShiftTelegram:(id:string,stage='pgd')=>request<{status:string}>(`/shift-reports/${encodeURIComponent(id)}/telegram${stage==='audit'?'?stage=audit':''}`,(v):v is {status:string}=>!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string",{method:"POST"}),
     saveShiftAudit:(id:string,input:MobileAuditSave,key:string)=>request<MobileWriteReceipt>(`/shift-reports/${encodeURIComponent(id)}/audit`,isWriteReceipt,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},65000),
-    shiftMediaSource:(id:number,file:string,legacy=false)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/${legacy?"photos":"media"}/${encodeURIComponent(file)}`,headers:token?{Authorization:`Bearer ${token}`}:undefined}),
-    shiftVideoSource:(id:number,file:string,revision:number)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/media/${encodeURIComponent(file)}?video=1&revision=${revision}`,headers:token?{Authorization:`Bearer ${token}`}:undefined,useCaching:false}),
+    shiftMediaSource:(id:number,file:string,legacy=false)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/${legacy?"photos":"media"}/${encodeURIComponent(file)}`,headers:authorization()}),
+    shiftVideoSource:(id:number,file:string,revision:number)=>({uri:`${origin}/api/mobile/v1/shift-reports/${id}/media/${encodeURIComponent(file)}?video=1&revision=${revision}`,headers:authorization(),useCaching:false}),
     shiftVideoConfig:(id:string,review:MobileShiftVideoReview,key:string,signal?:AbortSignal)=>request<{direct:boolean}>(`/shift-reports/${id}/video-upload`,isMobileVideoUploadConfig,{method:'POST',body:JSON.stringify({...review,action:'config',uploadId:key}),headers:{'Idempotency-Key':key},signal}),
     signShiftDirectVideo:(id:string,review:MobileShiftVideoReview,key:string,actor:number,bytes:number,sha256:string,signal?:AbortSignal)=>request<MobileVideoDirectResult>(`/shift-reports/${id}/video-upload`,(v):v is MobileVideoDirectResult=>isMobileVideoDirectResult(v,actor,key,sha256),{method:'POST',body:JSON.stringify({...review,action:'sign',uploadId:key,bytes,sha256}),headers:{'Idempotency-Key':key},signal}),
     verifyShiftDirectVideo:(id:string,review:MobileShiftVideoReview,key:string,ticket:string,signal?:AbortSignal)=>request<{receipt:MobileVideoBrowserReceipt}>(`/shift-reports/${id}/video-upload`,(v):v is {receipt:MobileVideoBrowserReceipt}=>!!v&&typeof v==='object'&&'receipt'in v&&isMobileVideoBrowserReceipt(v.receipt)&&v.receipt.upload_id===key,{method:'POST',body:JSON.stringify({...review,action:'verify',uploadId:key,ticket}),headers:{'Idempotency-Key':key},signal},150000),
@@ -297,10 +332,19 @@ export function createApi(
     reminderContext: (id:string,signal?:AbortSignal)=>request<DebtReminderContext>(`/debt-reminders/context/${encodeURIComponent(id)}`,(v):v is DebtReminderContext=>isReminderContext(v)&&String(v.id)===id,{signal}),
     sendReminder: (input:Omit<DebtReminderInput,"request_id">,key:string)=>request<{request_id:string;status:ReminderStatus;replayed:boolean}>("/debt-reminders",(v):v is {request_id:string;status:ReminderStatus;replayed:boolean}=>!!v&&typeof v==="object"&&"request_id" in v&&v.request_id===key&&"status" in v&&isReminderStatus(v.status)&&"replayed" in v&&typeof v.replayed==="boolean",{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},35000),
     reminderResult: (key:string,signal?:AbortSignal)=>request<MobileReminderResult>(`/debt-reminders/requests/${encodeURIComponent(key)}`,(v):v is MobileReminderResult=>isReminderResult(v)&&v.key===key,{signal}),
-    salesReport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileSalesReport>(`/reports/${kind}?${params}`, (value): value is MobileSalesReport => isMobileSalesReport(value) && value.kind === kind, { signal }, 70000),
-    salesReportExport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileFileExport>(`/reports/${kind}/export?${params}`, isMobileFileExport, { signal }, 90000),
+    salesReport: async (kind: SalesReportKind, params: string, signal?: AbortSignal) => {
+      const validate = (value: unknown): value is MobileSalesReport => isMobileSalesReport(value) && value.kind === kind;
+      try { return await request<MobileSalesReport>(`/reports/${kind}?${params}`, validate, { signal }, 70000); }
+      catch (error) {
+        const legacy = new URLSearchParams(params);
+        if (!(error instanceof ApiError) || error.status !== 400 || !legacy.has('section_pages')) throw error;
+        legacy.delete('section_pages');
+        return request<MobileSalesReport>(`/reports/${kind}?${legacy}`, validate, { signal }, 70000);
+      }
+    },
+    salesReportExport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileFileExport>(`/reports/${kind}/export?${params}`, isMobileFileExport, { signal, headers: { Accept: `${WORKBOOK_MIME}, application/json` } }, 90000),
     cashbookExport: (params: string, signal?: AbortSignal) => request<MobileCsvExport>(`/cashbook/export?${params}`, isMobileCsvExport, { signal }, 70000),
-    cashbookExcel: (params:string,signal?:AbortSignal)=>request<MobileFileExport>(`/cashbook/export?${params}&format=xlsx`,isMobileFileExport,{signal},70000),
+    cashbookExcel: (params:string,signal?:AbortSignal)=>request<MobileFileExport>(`/cashbook/export?${params}&format=xlsx`,isMobileFileExport,{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000),
     cashbookDeleteSelection: (params: string, signal?: AbortSignal) => request<VoucherDeleteSelection>(`/cashbook/vouchers/selection?${params}`, isVoucherDeleteSelection, { signal }, 70000),
     deleteCashbookVouchers: (ids: number[], key: string) => request<VoucherDeletion>("/cashbook/vouchers", (value): value is VoucherDeletion => isVoucherDeletion(value) && value.key === key && value.deletedCount === ids.length, { method: "DELETE", body: JSON.stringify({ ids }), headers: { "Idempotency-Key": key } }),
     cashbookDeletion: (key: string, signal?: AbortSignal) => request<VoucherDeletion>(`/cashbook/deletions/requests/${encodeURIComponent(key)}`, (value): value is VoucherDeletion => isVoucherDeletion(value) && value.key === key, { signal }),
@@ -345,20 +389,20 @@ export function createApi(
     renewalBill: (id: string, version: number, signal?: AbortSignal) =>
       request<MobileBillInfo>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/bill`,
         (value): value is MobileBillInfo => isMobileBillInfo(value) && String(value.id)===id && value.version===version,{signal}),
-    uploadRenewalBill: (id: string, version: number, revision: string, expectedPhotoRevision: string | null, bytes: ArrayBuffer, key: string, backfill=false) =>
+    uploadRenewalBill: (id: string, version: number, revision: string, expectedPhotoRevision: string | null, bytes: ArrayBuffer, key: string, backfill=false,slot?:string) =>
       request<MobileBillReceipt>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/bill`,
-        (value): value is MobileBillReceipt => isMobileBillReceipt(value) && String(value.id)===id && value.version===version,
-        {method:"PUT",body:bytes,headers:{"Content-Type":"image/jpeg","Idempotency-Key":key,"X-Contract-Revision":revision,"X-Bill-Revision":expectedPhotoRevision??"0",...(backfill?{"X-Renewal-Backfill":"1"}:{})}}),
+        (value): value is MobileBillReceipt => isMobileBillReceipt(value) && String(value.id)===id && value.version===version && value.slot===(slot??`renewal-${version}-document-1`),
+        {method:"PUT",body:bytes,headers:{"Content-Type":"image/jpeg","Idempotency-Key":key,"X-Contract-Revision":revision,"X-Bill-Revision":expectedPhotoRevision??"0",...(slot?{'X-Bill-Slot':slot}:{}),...(backfill?{"X-Renewal-Backfill":"1"}:{})}}),
     billReceipt: (key: string) =>
       request<{receipt:MobileBillReceipt|null}>(`/bills/requests/${encodeURIComponent(key)}`,
         (value): value is {receipt:MobileBillReceipt|null} => !!value && typeof value==="object" && "receipt" in value && (value.receipt===null || isMobileBillReceipt(value.receipt))),
     collectionBill: (id: string, version: number, signal?: AbortSignal) =>
       request<MobileBillInfo>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/collection/bill`,
         (value): value is MobileBillInfo => isMobileBillInfo(value) && String(value.id) === id && value.version === version, { signal }),
-    uploadCollectionBill: (id: string, version: number, revision: string, expectedPhotoRevision: string | null, bytes: ArrayBuffer, key: string) =>
+    uploadCollectionBill: (id: string, version: number, revision: string, expectedPhotoRevision: string | null, bytes: ArrayBuffer, key: string,slot?:string) =>
       request<MobileBillReceipt>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/collection/bill`,
-        (value): value is MobileBillReceipt => isMobileBillReceipt(value) && String(value.id) === id && value.version === version,
-        { method: "PUT", body: bytes, headers: { "Content-Type": "image/jpeg", "Idempotency-Key": key, "X-Contract-Revision": revision, "X-Bill-Revision": expectedPhotoRevision ?? "0" } }),
+        (value): value is MobileBillReceipt => isMobileBillReceipt(value) && String(value.id) === id && value.version === version && value.slot===(slot??`renewal-${version}-document-1`),
+        { method: "PUT", body: bytes, headers: { "Content-Type": "image/jpeg", "Idempotency-Key": key, "X-Contract-Revision": revision, "X-Bill-Revision": expectedPhotoRevision ?? "0",...(slot?{'X-Bill-Slot':slot}:{}) } }),
     collectionBillReceipt: (key: string) =>
       request<{ receipt: MobileBillReceipt | null }>(`/renewal-collection-bills/requests/${encodeURIComponent(key)}`,
         (value): value is { receipt: MobileBillReceipt | null } => !!value && typeof value === "object" && "receipt" in value && (value.receipt === null || isMobileBillReceipt(value.receipt))),
@@ -437,8 +481,9 @@ export function createApi(
     ) =>
       request<MobileSession>("/session", isLogin, {
         method: "POST",
-        body: JSON.stringify({ email, password, platform, deviceName }),
+        body: JSON.stringify({ email, password, platform, deviceName, sessionVersion: 2 }),
       }),
+    refreshSession: (refreshToken: string, rotationId: string) => request<MobileSession>('/session/refresh', isRefreshSession, { method: 'POST', body: JSON.stringify({ refreshToken, rotationId }) }),
     session: () =>
       request<{ user: MobileUser; expiresAt: string }>("/session", isSession),
     logout: () =>
@@ -525,12 +570,12 @@ export function createApi(
     vehicleImportResult: (key: string, signal?: AbortSignal) => request<{ receipt: MobileVehicleImportReceipt | null }>(`/imports/vehicles/requests/${key}`, (v): v is { receipt: MobileVehicleImportReceipt | null } => !!v && typeof v === 'object' && 'receipt' in v && (v.receipt === null || isMobileVehicleImportReceipt(v.receipt) && v.receipt.key === key), { signal }),
     resolveVehicleImport: (key: string, operation: string) => request<MobileVehicleImportResolution>(`/imports/vehicles/requests/${key}/resolve`, (v): v is MobileVehicleImportResolution => isMobileVehicleImportResolution(v) && v.key === key && v.operation === operation, { method: 'POST', body: JSON.stringify({ operation }) }),
     vehicleImportBackup: (id: string, signal?: AbortSignal) => request<MobileFileExport>(`/imports/vehicles/backups/${id}`, isMobileFileExport, { signal }, 70000),
-    storeMatchFile: (name: string, bytes: ArrayBuffer, onPart: (part: MobileStoreMatchFilePage) => void, signal: AbortSignal) => readStoreMatchStream(origin, token, name, bytes, onPart, signal, onExpired),
+    storeMatchFile: async (name: string, bytes: ArrayBuffer, onPart: (part: MobileStoreMatchFilePage) => void, signal: AbortSignal) => readStoreMatchStream(origin, access ? await access.token() : token, name, bytes, onPart, signal, onExpired),
     previewStoreMatch: (rows: CustomerStoreInput[], signal?: AbortSignal) => request<CustomerStoreResult>('/imports/customer-stores/preview', isMobileStoreMatchResult, { method: 'POST', body: JSON.stringify({ rows }), signal }, 45000),
     saveStoreMatch: (batch: string, input: MobileStoreMatchInput, key: string) => request<MobileImportReceipt>(`/imports/customer-stores/${batch}`, (v): v is MobileImportReceipt => isMobileImportReceipt(v) && v.kind === 'customer_stores' && v.batchId === batch && v.key === key, { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': key } }, 45000),
-    catalogueExport: (kind: MobileCatalogueExportKind, filters: string, columns: string[], signal?: AbortSignal) => { const query = new URLSearchParams(filters); query.set('columns', columns.join(',')); return request<MobileFileExport>(`/exports/${kind}?${query}`, isMobileFileExport, { signal }, 70000); },
-    catalogueExcel: (kind:MobileCatalogueExportKind,filters:string,columns:string[],signal?:AbortSignal)=>{const query=new URLSearchParams(filters);query.set('columns',columns.join(','));query.set('format','xlsx');return request<MobileFileExport>(`/exports/${kind}?${query}`,isMobileFileExport,{signal},70000);},
-    listExcel:(kind:MobileListExportKind,filters:string,signal?:AbortSignal)=>request<MobileWorkbookExport>(`/list-exports/${kind}?${filters}`,(v):v is MobileWorkbookExport=>isMobileFileExport(v)&&v.mimeType==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',{signal},70000),
+    catalogueExport: (kind: MobileCatalogueExportKind, filters: string, columns: string[], signal?: AbortSignal) => { const query = new URLSearchParams(filters); query.set('columns', columns.join(',')); return request<MobileFileExport>(`/exports/${kind}?${query}`, isMobileFileExport, { signal, headers: { Accept: `${WORKBOOK_MIME}, application/json` } }, 70000); },
+    catalogueExcel: (kind:MobileCatalogueExportKind,filters:string,columns:string[],signal?:AbortSignal)=>{const query=new URLSearchParams(filters);query.set('columns',columns.join(','));query.set('format','xlsx');return request<MobileFileExport>(`/exports/${kind}?${query}`,isMobileFileExport,{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000);},
+    listExcel:(kind:MobileListExportKind,filters:string,signal?:AbortSignal)=>request<MobileWorkbookExport>(`/list-exports/${kind}?${filters}`,(v):v is MobileWorkbookExport=>isMobileFileExport(v)&&v.mimeType==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000),
     customerImportTemplate: (signal?: AbortSignal) => request<MobileFileExport>('/imports/customers/template', isMobileFileExport, { signal }, 60000),
     previewCustomerFile: (name: string, bytes: ArrayBuffer, allowIncomplete: boolean, signal?: AbortSignal) => request<MobileCustomerImportPreview>('/imports/customers/preview', isMobileCustomerImportPreview, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(name), 'X-Allow-Incomplete': allowIncomplete ? '1' : '0' }, body: bytes, signal }, 90000),
     previewCustomerImport: (preview: MobileCustomerImportPreview, allowIncomplete: boolean, signal?: AbortSignal) => request<MobileCustomerImportPreview>('/imports/customers/preview', (v): v is MobileCustomerImportPreview => isMobileCustomerImportPreview(v) && v.batchId === preview.batchId, { method: 'POST', body: JSON.stringify({ batchId: preview.batchId, filename: preview.filename, sha256: preview.sha256, rows: preview.sourceRows, allowIncomplete }), signal }, 60000),
@@ -593,7 +638,11 @@ export function createApi(
     recordMediaImageSource:(target:MobileMediaIdentity,photo:MobileMediaPhoto)=>{
       if(!isMobileMediaIdentity(target)||!isMobileMediaPhoto(photo,target)||!photo.readable||photo.kind!=='image')throw new ApiError('Ảnh không thuộc hồ sơ hoặc chưa hỗ trợ xem.',400,'INVALID_MEDIA_TARGET');
       return{uri:`${origin}/api/mobile/v1/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}/${encodeURIComponent(photo.slot)}?revision=${encodeURIComponent(photo.revision)}`,
-        headers:token?{Authorization:`Bearer ${token}`}:undefined};
+        headers:authorization()};
+    },
+    vehicleThumbnailSource: (id: number, revision: string) => {
+      if (!Number.isSafeInteger(id) || id < 1 || !/^[1-9]\d{0,19}$/.test(revision)) throw new ApiError('Ảnh xe không hợp lệ.',400,'INVALID_MEDIA_TARGET');
+      return { uri: `${origin}/api/mobile/v1/vehicles/${id}/thumbnail?revision=${encodeURIComponent(revision)}`, headers: authorization() };
     },
     deleteRecordMedia:(info:MobileMediaSlotInfo,key:string)=>request<MobileMediaDeleteReceipt>(`/record-media/${info.target.entity}/${info.target.id}/${info.target.kind}/${info.target.referenceId}/${encodeURIComponent(info.slot)}`,
       (value):value is MobileMediaDeleteReceipt=>isMediaDeleteReceipt(value)&&value.requestId===key&&matchesMobileMediaTarget(value.target,info.target)&&value.target.revision===info.target.revision&&
@@ -619,7 +668,7 @@ export function createApi(
         {method:'PUT',body:bytes,headers:{'Content-Type':'image/jpeg','Idempotency-Key':key,'X-Record-Revision':target.revision,'X-Reference-Revision':target.referenceRevision,'X-Photo-Revision':expectedPhotoRevision??'0','X-Media-Snapshot':target.snapshot??''}}),
     recordVideoSource:(target:MobileMediaIdentity,photo:MobileMediaPhoto)=>{
       if(!isMobileMediaIdentity(target)||!isMobileMediaPhoto(photo,target)||!photo.readable||photo.kind!=='video')throw new ApiError('Video không thuộc hồ sơ hoặc chưa hỗ trợ xem.',400,'INVALID_MEDIA_TARGET');
-      return{uri:`${origin}/api/mobile/v1/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}/${encodeURIComponent(photo.slot)}/video?revision=${encodeURIComponent(photo.revision)}`,headers:token?{Authorization:`Bearer ${token}`}:undefined,useCaching:false};
+      return{uri:`${origin}/api/mobile/v1/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}/${encodeURIComponent(photo.slot)}/video?revision=${encodeURIComponent(photo.revision)}`,headers:authorization(),useCaching:false};
     },
     signRecordVideo:(info:MobileMediaSlotInfo,key:string)=>request<MobileVideoUploadSignature>(`/record-media/${info.target.entity}/${info.target.id}/${info.target.kind}/${info.target.referenceId}/${encodeURIComponent(info.slot)}/video/sign`,
       (v):v is MobileVideoUploadSignature=>isMobileVideoSignature(v)&&String(v.params.public_id).endsWith('/'+key),

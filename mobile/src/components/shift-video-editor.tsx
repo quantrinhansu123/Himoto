@@ -25,6 +25,7 @@ function VideoForm({ id, initialStage, initialCategory }: { id: string; initialS
   const { api, session } = useSession(), theme = useTheme();
   const [stage, setStage] = useState(initialStage), [category, setCategory] = useState(initialCategory);
   const [video, setVideo] = useState<RecordVideo | null>(null), [picking, setPicking] = useState(false), [ready, setReady] = useState(false), [duration, setDuration] = useState(0), [error, setError] = useState('');
+  const [preparationProgress, setPreparationProgress] = useState<number | null>(null), [cancelling, setCancelling] = useState(false);
   const [review, setReview] = useState<MobileShiftVideoReview | null>(null), [resolving, setResolving] = useState(false);
   const alive = useRef(true), local = useRef<RecordVideo | null>(null), picker = useRef<AbortController | null>(null), pickingLock = useRef(false);
   const write = useShiftVideoWrite(id, !!video || picking), locked = write.busy || !!write.key || !write.checked || picking;
@@ -33,9 +34,9 @@ function VideoForm({ id, initialStage, initialCategory }: { id: string; initialS
   const onReady = useCallback((value: boolean, seconds: number) => { setReady(value); setDuration(seconds); }, []);
   async function pick(camera: boolean) {
     if (locked || pickingLock.current) return;
-    pickingLock.current = true; setPicking(true); setError(''); const controller = new AbortController(); picker.current = controller;
+    pickingLock.current = true; setPicking(true); setError(''); setPreparationProgress(null); setCancelling(false); const controller = new AbortController(); picker.current = controller;
     try {
-      const chosen = await selectRecordVideo(camera, controller.signal, MOBILE_SHIFT_VIDEO_SECONDS);
+      const chosen = await selectRecordVideo(camera, controller.signal, MOBILE_SHIFT_VIDEO_SECONDS, percent => { if (alive.current) setPreparationProgress(percent); });
       if (!chosen) return;
       if (!alive.current) { chosen.dispose(); return; }
       local.current?.dispose(); local.current = chosen; setReady(false); setDuration(0); setVideo(chosen);
@@ -75,6 +76,8 @@ function VideoForm({ id, initialStage, initialCategory }: { id: string; initialS
           <Card style={{ gap: 14 }}>
             <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '700' }}>Video chờ lưu</Text>
             <Text style={text}>Tối đa 3 phút và 45 MB mỗi video. Mỗi phần PGD / KTNB được lưu tối đa 3 video, tính chung tất cả mục.</Text>
+            {picking && <Text accessibilityLiveRegion="polite" style={text}>{cancelling ? 'Đang hủy chuẩn bị video…' : preparationProgress === null ? 'Đang mở video…' : `Đang chuẩn bị video · ${preparationProgress}%`}</Text>}
+            {picking && Platform.OS === 'android' && <Button label="Hủy chuẩn bị video ca" secondary loading={cancelling} onPress={() => { setCancelling(true); picker.current?.abort(); }} />}
             {video && <><RecordVideoPlayer key={video.uri} source={{ uri: video.uri, useCaching: false }} label="Video ca đang chọn" onReady={onReady} /><Text style={text}>{(video.size / 1024 / 1024).toFixed(1)} MB · {duration > 0 ? `${Math.ceil(duration)} giây` : 'Đang đọc thời lượng'}</Text></>}
             {video && ready && !valid && <InlineError message="Video ca cần có thời lượng trên 0 đến 180 giây. Chọn tệp khác." />}
             <Button label="Chọn video ca" secondary loading={picking} disabled={locked || !writable || count >= 3} onPress={() => void pick(false)} />

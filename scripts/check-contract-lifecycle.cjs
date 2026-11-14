@@ -46,6 +46,8 @@ async function main(){
  const rev=async id=>(await db.query('SELECT xmin::text AS revision FROM himoto.orders WHERE id=$1',[id])).rows[0].revision;
  const input=async(id,action,extra={})=>({action,revision:await rev(id),request_id:randomUUID(),note:'',at:'2026-10-24T10:00',confirmed:true,...(action==='hold'?{hold_until:domain.localLifecycleTime(new Date(Date.parse((extra.at||'2026-10-24T10:00')+':00+07:00')+86400000))}:{}),...extra});
  const apply=async(id,action,extra={})=>staff(async()=>life.applyContractLifecycle(db,id,70001,await input(id,action,extra)));
+ const adminScope={...scope,access_role:'admin',scope_all:true};
+ const adminApply=async(id,action,extra={})=>dataAccess.run(adminScope,async()=>life.applyContractLifecycle(db,id,70001,await input(id,action,extra)));
  const recover=async item=>staff(async()=>returns.recordBadDebtRecovery(db,70001,{item_id:item,item_revision:(await db.query('SELECT xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=$1',[item])).rows[0].revision,request_id:randomUUID(),recovered_at:'2026-10-24T11:00',note:''}));
  const receiveOwnershipStock=async ids=>{await db.query("UPDATE himoto.stores SET kind='lease_to_own' WHERE id=80001");await db.query('UPDATE himoto.vehicles SET current_store_id=80001 WHERE id=ANY($1::bigint[])',[ids]);};
  await isolated(async()=>{
@@ -163,21 +165,22 @@ async function main(){
  await isolated(async()=>{
    const settled=await apply(102,'settle');assert(settled.settled&&!settled.all_returned);assert.equal(settled.status,'bad_debt');
    const body=await staff(async()=>({item_id:1020,item_revision:(await db.query('SELECT xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=1020')).rows[0].revision,request_id:randomUUID(),recovered_at:'2026-10-24T11:00',note:'Last returned vehicle QA'}));
-   await staff(()=>returns.recordBadDebtRecovery(db,70001,body));const result=await staff(()=>life.readContractLifecycle(db,102));assert.equal(result.status,'completed');assert(result.settled&&result.all_returned);
+   await staff(()=>returns.recordBadDebtRecovery(db,70001,body));let result=await staff(()=>life.readContractLifecycle(db,102));assert.equal(result.status,'bad_debt');assert(result.settled&&result.all_returned);
+   result=await adminApply(102,'close_bad_debt',{at:'2026-10-24T11:00'});assert.equal(result.status,'completed');
    assert((await staff(()=>returns.recordBadDebtRecovery(db,70001,body))).replayed);
- });checks.push('Settled-but-unreturned remains bad debt; the last actual recovery closes it, and recovery replay after closure creates no second event');
+ });checks.push('Settled-but-unreturned remains bad debt; staff recovery waits for admin closure, and recovery replay after closure creates no second event');
  await isolated(async()=>{
    await db.query('UPDATE himoto.orders SET pid=0 WHERE id=102');await recover(1020);
    const pay=amount=>staff(async()=>payments.recordContractPayment(db,102,70001,payments.parseContractPayment({request_id:randomUUID(),revision:await rev(102),amount:String(amount),method:'cash',account_id:93001,paid_at:'2026-10-24T10:00',note:'Approved real receipt fixture QA'})));
    await pay(500000);await assert.rejects(()=>apply(102,'settle'),e=>e.status===409);await pay(500000);
-   const result=await apply(102,'settle');assert.equal(result.status,'completed');assert.equal(result.remaining,0);assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.transactions WHERE order_id=102')).rows[0].n,2);
- });checks.push('After return, partial actual receipts keep bad debt; full receipts plus explicit ledger review close without fabricating additional transactions');
+   const result=await apply(102,'settle');assert.equal(result.status,'bad_debt');assert.equal(result.remaining,0);assert.equal((await adminApply(102,'settle')).status,'completed');assert.equal((await db.query('SELECT count(*)::int AS n FROM himoto.transactions WHERE order_id=102')).rows[0].n,2);
+ });checks.push('After return, partial actual receipts keep bad debt; full receipts plus admin ledger review close without fabricating additional transactions');
  await isolated(async()=>{
    await db.query('UPDATE himoto.orders SET pid=1200000 WHERE id=102');
    await db.query("INSERT INTO himoto.transactions(order_id,name,type,status,value,store_id,user_id,cash_id,note,created_at) VALUES(102,'order:deposit','in','approved',200000,80001,70001,93001,'Deposit fixture QA',now())");
    await recover(1020);await assert.rejects(()=>apply(102,'settle'),e=>e.status===409&&/cọc/.test(e.message));
    await staff(async()=>payments.recordContractPayment(db,102,70001,payments.parseContractPayment({request_id:randomUUID(),revision:await rev(102),amount:'200000',method:'cash',account_id:93001,paid_at:'2026-10-24T11:00',purpose:'deposit_refund',note:'Deposit refund fixture QA'})));
-   assert.equal((await apply(102,'settle')).status,'completed');
+   assert.equal((await apply(102,'settle')).status,'bad_debt');assert.equal((await adminApply(102,'settle')).status,'completed');
  });checks.push('Unresolved deposit blocks settlement; an actual approved deposit refund clears it without reducing the rental paid total');
  await isolated(async()=>{
    await apply(102,'settle');await db.query("UPDATE himoto.orders SET total='1100000' WHERE id=102");await recover(1020);const result=await staff(()=>life.readContractLifecycle(db,102));assert.equal(result.status,'bad_debt');assert(!result.settled);assert.equal(result.remaining,100000);

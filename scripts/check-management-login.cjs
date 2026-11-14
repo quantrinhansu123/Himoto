@@ -25,7 +25,7 @@ async function run() {
   let row = account;
   const queries = [];
   const database = { query: async (sql, values) => { queries.push({ sql, values }); return { rows: row ? [row] : [] }; } };
-  const expectedUser={id:7,name:account.name,email:account.email,role:'admin',role_slug:'quan-tri-vien',access_role:'admin',permissions:[...load(path.join(root,'lib/management/permissions')).ACCESS_PERMISSIONS],store_id:null,scope_all:true};
+  const expectedUser={id:7,name:account.name,email:account.email,role:'admin',role_slug:'quan-tri-vien',access_role:'admin',permissions:[...load(path.join(root,'lib/management/permissions')).ADMIN_PERMISSIONS],store_id:null,store_kind:null,scope_all:true};
   assert.deepEqual(await session.authenticateAccount(account.email, password, database), expectedUser);
   assert.deepEqual(queries[0].values, [account.email]);
   assert(queries.every(query => query.sql.startsWith('SELECT')));

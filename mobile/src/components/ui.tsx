@@ -28,15 +28,35 @@ export function Button({
   onPress,
   loading = false,
   secondary = false,
+  danger = false,
   disabled = false,
+  icon,
 }: {
   label: string;
   onPress: () => void;
   loading?: boolean;
   secondary?: boolean;
+  danger?: boolean;
   disabled?: boolean;
+  icon?: React.ReactNode;
 }) {
   const theme = useTheme();
+  const bg = danger
+    ? theme.dangerBackground
+    : secondary
+      ? theme.surface
+      : theme.primary;
+  const border = danger
+    ? theme.danger
+    : secondary
+      ? theme.controlBorder
+      : theme.primary;
+  const textColor = danger
+    ? theme.danger
+    : secondary
+      ? theme.text
+      : theme.primaryText;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -49,19 +69,21 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: secondary ? theme.surface : theme.primary,
-          borderColor: secondary ? theme.controlBorder : theme.primary,
+          backgroundColor: bg,
+          borderColor: border,
           opacity: disabled ? 0.55 : pressed ? 0.75 : 1,
         },
       ]}
     >
-      {loading && (
-        <ActivityIndicator color={secondary ? theme.text : theme.primaryText} />
+      {loading ? (
+        <ActivityIndicator color={textColor} />
+      ) : (
+        icon
       )}
       <Text
         style={[
           styles.buttonText,
-          { color: secondary ? theme.text : theme.primaryText },
+          { color: textColor },
         ]}
       >
         {label}

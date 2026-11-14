@@ -85,6 +85,7 @@ async function run(){
     await assert.rejects(()=>api.customerOcr('customer_documents',form,requestId),e=>e.code==='INVALID_RESPONSE');
     checks.push('OCR client sends bearer multipart without JSON headers/cookies/redirects and rejects a result from another request');
     if(pg)await sqlChecks(pg,user,image,checks,()=>{loseCommit=true;},()=>{failReceipt=true;});
+    if(pg&&process.argv.includes('--cloudfly'))await require('./lib/check-cloudfly-mobile-photos.cjs')({pg,user,load,root,checks,loseResponse:()=>{loseCommit=true;},failReceipt:()=>{failReceipt=true;}});
     console.log(JSON.stringify({passed:checks.length,checks,fixtureOnly:true,operationalWrites:0,transport:pg?'PGlite in-memory PostgreSQL, real scopedConnect/RLS':'synthetic guarded OCR/client'},null,2));
   }finally{delete global.himotoPool;if(pg)await pg.close();}
 }
@@ -97,7 +98,7 @@ async function sqlChecks(pg,user,image,checks,loseResponse,failReceipt){
     CREATE TABLE himoto.vehicles(id bigint PRIMARY KEY,store_id bigint,deleted_at timestamptz);
     CREATE TABLE himoto.management_record_photos(entity_type text,entity_id bigint,slot text,mime_type text,data bytea,
       updated_by bigint,updated_at timestamptz DEFAULT now(),cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,
-      object_bucket text,object_key text,object_etag text,PRIMARY KEY(entity_type,entity_id,slot));
+      object_bucket text,object_key text,object_etag text,storage_sha256 text,storage_bytes bigint,PRIMARY KEY(entity_type,entity_id,slot));
     INSERT INTO himoto.users VALUES(7),(8);
     INSERT INTO himoto.customers VALUES(501,'Local QA',23),(502,'Linked other QA',24);
     GRANT USAGE ON SCHEMA himoto TO himoto_scoped;

@@ -67,7 +67,7 @@ async function run() {
       CREATE TABLE himoto.management_contract_notifications(id bigint PRIMARY KEY,order_id bigint,event_key text,root_event_key text,payload jsonb);
       CREATE TABLE himoto.management_record_photos(entity_type text,entity_id bigint,slot text,mime_type text DEFAULT 'image/jpeg',
         data bytea,updated_by bigint,updated_at timestamptz DEFAULT now(),cloudinary_public_id text,cloudinary_cloud_name text,
-        cloudinary_version bigint,object_bucket text,object_key text,object_etag text,PRIMARY KEY(entity_type,entity_id,slot));
+        cloudinary_version bigint,object_bucket text,object_key text,object_etag text,storage_sha256 text,storage_bytes bigint,PRIMARY KEY(entity_type,entity_id,slot));
       CREATE FUNCTION himoto.contract_vehicle_labels() RETURNS SETOF himoto.vehicles LANGUAGE sql STABLE AS 'SELECT * FROM himoto.vehicles';
       CREATE FUNCTION himoto.vehicle_inventory() RETURNS SETOF himoto.vehicles LANGUAGE sql STABLE AS 'SELECT * FROM himoto.vehicles';
       CREATE FUNCTION himoto.extend_contract_vehicle_line(line_id bigint,contract_id bigint,revision text,ends_at timestamptz,fee bigint) RETURNS void LANGUAGE plpgsql AS $$

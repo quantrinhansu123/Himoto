@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { installmentBalance,parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { canHoldContract,canMarkBadDebtContract,localLifecycleTime,resumeInstallmentPlan,resumedHoldEnd,validLifecycleTime,type ContractLifecycleContext,type ContractLifecycleInput,type LifecycleEvent } from '@/lib/management/contract-lifecycle';
-import { usesScopedDatabase } from './access-context';
+import { dataAccess,usesScopedDatabase } from './access-context';
+import { canSettleContract } from '@/lib/management/permissions';
+import { badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { contractVehicleReadSource } from './contract-vehicle-reads';
 import { EFFECTIVE_RENTAL_TYPE_SQL,VEHICLE_ORDER_SQL } from './contract-classification';
 import { closeResolvedBadDebt,readContractResolution } from './contract-resolution';
@@ -37,7 +39,7 @@ const orderSql=`SELECT o.id,o.order_status,o.draft_payload,o.total,o.rent_at,o.r
 export function parseContractLifecycle(raw:unknown):ContractLifecycleInput {
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new ContractLifecycleError('Thông tin thao tác không hợp lệ.');
   const body=raw as Record<string,unknown>;
-  if(Object.keys(body).some(key=>!['action','revision','request_id','note','at','confirmed','vehicle_ids','resume_end','resume_package','resume_amount','hold_until'].includes(key))||!['mark_bad_debt','settle','hold','resume','update_hold','complete_hold'].includes(String(body.action))||typeof body.revision!=='string'||!/^\d{1,20}$/.test(body.revision)||typeof body.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id)||typeof body.note!=='string'||body.note.trim().length>1000||!validLifecycleTime(body.at)||body.confirmed!==true)throw new ContractLifecycleError('Nhập ngày giờ hợp lệ, ghi chú tối đa 1.000 ký tự và xác nhận đã đối chiếu.');
+  if(Object.keys(body).some(key=>!['action','revision','request_id','note','at','confirmed','vehicle_ids','resume_end','resume_package','resume_amount','hold_until'].includes(key))||!['mark_bad_debt','close_bad_debt','settle','hold','resume','update_hold','complete_hold'].includes(String(body.action))||typeof body.revision!=='string'||!/^\d{1,20}$/.test(body.revision)||typeof body.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id)||typeof body.note!=='string'||body.note.trim().length>1000||!validLifecycleTime(body.at)||body.confirmed!==true)throw new ContractLifecycleError('Nhập ngày giờ hợp lệ, ghi chú tối đa 1.000 ký tự và xác nhận đã đối chiếu.');
   if(new Date(stamp(body.at)).getTime()>Date.now()+5*60000)throw new ContractLifecycleError('Ngày giờ thao tác không được nằm trong tương lai.');
   if(body.action!=='resume'&&['vehicle_ids','resume_end','resume_package','resume_amount'].some(key=>key in body))throw new ContractLifecycleError('Chỉ chọn xe và lịch mới khi thuê lại từ bảo lưu.');
   if(['hold','update_hold'].includes(String(body.action))){if(!validLifecycleTime(body.hold_until)||body.action==='hold'&&body.hold_until<=body.at)throw new ContractLifecycleError('Nhập hạn kết thúc bảo lưu sau ngày bắt đầu bảo lưu.');}
@@ -69,11 +71,13 @@ export async function readContractLifecycle(db:Database,id:number):Promise<Contr
     events:Array.isArray(lifecycle.events)?lifecycle.events:[],held_at:lifecycle.active_hold?.at||null,resume_vehicle_count:lifecycle.active_hold?.vehicle_ids?.length||0,plan,base_total:state.base,start_at:iso(order.rent_at)||items[0]?.rent_at||null,
     hold_until:lifecycle.active_hold?.until||null,hold_expired:order.order_status==='reserved'&&validLifecycleTime(lifecycle.active_hold?.until)&&Date.parse(stamp(lifecycle.active_hold.until))<=Date.now(),
     hold_can_resume:order.order_status==='reserved'&&Boolean(lifecycle.active_hold),hold_was_overdue:lifecycle.active_hold?.was_overdue===true,
-    completed_from_hold:Boolean(lifecycle.hold_completion),waived_amount:lifecycle.hold_completion?.waived_amount,
+    completed_from_hold:Boolean(lifecycle.hold_completion),waived_amount:lifecycle.hold_completion?.waived_amount,bad_debt_closed_at:lifecycle.bad_debt_closure?.at||lifecycle.payment_closure?.at,
     end_at:plan?stamp(plan.end):iso(order.return_at)||items.filter(item=>(!item.completed_at||item.return_reconciled)&&item.return_at).map(item=>item.return_at!).sort().at(-1)||null};
 }
 export async function applyContractLifecycle(db:Database,id:number,actorId:number,raw:unknown){
   const input=parseContractLifecycle(raw);if(!Number.isSafeInteger(id)||id<=0)throw new ContractLifecycleError('Mã hợp đồng không hợp lệ.');
+  const actorScope=dataAccess.getStore();
+  if(input.action==='close_bad_debt'&&(!canSettleContract(actorScope)||actorScope?.id!==actorId))throw new ContractLifecycleError('Chỉ tài khoản được chỉ định và Quản lý Thuê sở hữu được đóng hợp đồng.',403);
   await db.query("SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='20s'");
   const order=(await db.query(orderSql+' FOR UPDATE OF o',[id])).rows[0];if(!order)throw new ContractLifecycleError('Không tìm thấy hợp đồng trong phạm vi tài khoản.',404);
   const payload=structuredClone(order.draft_payload||{}),composer=payload.management_composer||{},lifecycle=composer.lifecycle||{};
@@ -92,6 +96,20 @@ export async function applyContractLifecycle(db:Database,id:number,actorId:numbe
     next='bad_debt';delete lifecycle.settlement;
     lifecycle.bad_debt={at:stamp(input.at),recorded_at:new Date().toISOString(),actor_id:actorId};
     if(context.plan)composer.installment_plan={...context.plan,stopped_at:input.at<context.plan.end?input.at:context.plan.end};
+  }else if(input.action==='close_bad_debt'){
+    if(order.order_status!=='bad_debt')throw new ContractLifecycleError('Chỉ đóng hợp đồng đang Nợ xấu.',409);
+    if(!context.all_returned)throw new ContractLifecycleError('Phải ghi nhận trả hoặc thu hồi tất cả xe trước khi đóng hợp đồng nợ xấu.',409);
+    if(context.total_amount===null||context.paid_amount===null||context.remaining===null)throw new ContractLifecycleError('Chưa đối chiếu được công nợ; cần kiểm tra số tiền trước khi đóng.',409);
+    const cutoff=badDebtCutoff(payload);
+    const latest=[cutoff,...context.items.map(item=>item.completed_at)].filter((value):value is string=>Boolean(value));
+    if(latest.some(value=>input.at<localLifecycleTime(new Date(value))))throw new ContractLifecycleError('Ngày đóng không được trước ngày chuyển nợ xấu hoặc ngày trả/thu hồi xe.',409);
+    if(context.plan&&!context.plan.stopped_at){
+      if(!cutoff)throw new ContractLifecycleError('Chưa có thời điểm chốt Nợ xấu; cần đối chiếu trước khi đóng.',409);
+      const stop=localLifecycleTime(new Date(cutoff));
+      composer.installment_plan={...context.plan,stopped_at:stop<context.plan.start?context.plan.start:stop>context.plan.end?context.plan.end:stop};
+    }
+    lifecycle.bad_debt_closure={at:stamp(input.at),recorded_at:new Date().toISOString(),actor_id:actorId,note:input.note,total:context.total_amount,paid:context.paid_amount,remaining:context.remaining,deposit_held:context.deposit_held,overpayment:context.overpayment};
+    extra={remaining:context.remaining,deposit_held:context.deposit_held};next='completed';
   }else if(input.action==='settle'){
     if(order.order_status!=='bad_debt')throw new ContractLifecycleError('Chỉ xác nhận tất toán ở luồng Nợ xấu.',409);
     if(!context.can_settle)throw new ContractLifecycleError(context.settlement_note,409);

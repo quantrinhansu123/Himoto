@@ -3,14 +3,27 @@ import { File, Paths } from 'expo-file-system';
 import { uuid } from 'expo';
 import { fetch } from 'expo/fetch';
 import { Platform } from 'react-native';
+import { prepareAndroidVideo } from './prepare-android-video';
 import { MOBILE_MAX_VIDEO_BYTES, MOBILE_CONTRACT_VIDEO_SECONDS, isMobileVideoSignature, isMobileVideoCloudReceipt, type MobileVideoUploadSignature, type MobileVideoCloudReceipt } from '../../../shared/mobile-video';
 
 export interface RecordVideo { uri:string; name:string; mimeType?:string; size:number; duration:number|null; blob:Blob; sha256:()=>Promise<string>; dispose:()=>void }
-export async function selectRecordVideo(camera:boolean, signal:AbortSignal,maxDuration:number=MOBILE_CONTRACT_VIDEO_SECONDS):Promise<RecordVideo|null> {
+export async function selectRecordVideo(camera:boolean, signal:AbortSignal,maxDuration:number=MOBILE_CONTRACT_VIDEO_SECONDS,onProgress?:(percent:number)=>void):Promise<RecordVideo|null> {
   if(![60,180].includes(maxDuration))throw Error('Giới hạn thời lượng chưa hợp lệ.');
+  if(signal.aborted)return null;
   if(camera && !(await ImagePicker.requestCameraPermissionsAsync()).granted) throw Error('Chưa được cấp quyền camera. Chọn video đã có hoặc cấp quyền Camera trong Cài đặt.');
   if(signal.aborted)return null;
-  const options:ImagePicker.ImagePickerOptions={mediaTypes:['videos'],allowsEditing:false,allowsMultipleSelection:false,videoMaxDuration:maxDuration,base64:false,exif:false};
+  const options: ImagePicker.ImagePickerOptions = {
+    mediaTypes: ['videos'],
+    allowsEditing: false,
+    allowsMultipleSelection: false,
+    videoMaxDuration: maxDuration,
+    ...(Platform.OS === 'ios' ? {
+      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+      videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
+    } : {}),
+    base64: false,
+    exif: false,
+  };
   const result=await(camera?ImagePicker.launchCameraAsync(options):ImagePicker.launchImageLibraryAsync(options));
   if(result.canceled||signal.aborted)return null;
   const asset=result.assets[0];
@@ -19,6 +32,7 @@ export async function selectRecordVideo(camera:boolean, signal:AbortSignal,maxDu
   if(duration!==null&&duration>maxDuration)throw Error(maxDuration===60?'Video hợp đồng tối đa 60 giây. Chọn video ngắn hơn.':'Video ca tối đa 3 phút. Chọn video ngắn hơn.');
   const ext=(asset.fileName||asset.uri).split('.').pop()?.toLowerCase().split('?')[0];
   if(ext&&!['mp4','mov','m4v','webm'].includes(ext)&&!asset.mimeType?.startsWith('video/'))throw Error('Chọn video MP4, MOV, M4V hoặc WebM.');
+  if(Platform.OS==='android')return prepareAndroidVideo(asset.uri,signal,maxDuration,onProgress);
   if(Platform.OS==='web') {
     if(!asset.file||asset.file.size<=0||asset.file.size>MOBILE_MAX_VIDEO_BYTES)throw Error('Video cần có dung lượng từ 1 byte đến 45 MB.');
     const file=asset.file,uri=URL.createObjectURL(file);return{uri,name:file.name||'himoto-video.mp4',mimeType:asset.mimeType||file.type,size:file.size,duration,blob:file,sha256:async()=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer())),b=>b.toString(16).padStart(2,'0')).join(''),dispose:()=>URL.revokeObjectURL(uri)};
@@ -27,7 +41,7 @@ export async function selectRecordVideo(camera:boolean, signal:AbortSignal,maxDu
   if(!source.exists||source.size<=0||source.size>MOBILE_MAX_VIDEO_BYTES)throw Error('Video cần có dung lượng từ 1 byte đến 45 MB.');
   const owned=new File(Paths.cache,`himoto-video-${uuid.v4()}.${['mp4','mov','m4v','webm'].includes(ext||'')?ext:'mp4'}`);
   try {
-    source.copy(owned);
+    await source.copy(owned);
     if(signal.aborted||!owned.exists||owned.size!==source.size)throw Error('Chưa chuẩn bị được video đầy đủ. Chọn lại tệp.');
     return{uri:owned.uri,name:owned.name,mimeType:asset.mimeType,size:owned.size,duration,blob:owned,sha256:()=>owned.digest('SHA-256'),dispose:()=>{try{if(owned.exists)owned.delete();}catch{}}};
   } catch(error) { try{if(owned.exists)owned.delete();}catch{} throw error; }

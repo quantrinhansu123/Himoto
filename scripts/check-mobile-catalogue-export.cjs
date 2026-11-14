@@ -42,8 +42,15 @@ async function run() {
     const p = api.mobileCatalogueExportColumns(user, 'staff', new URLSearchParams('position=QA'));
     assert(p.columns.length); await api.exportMobileCatalogue(user, 'staff', req('position=QA&columns=name')); assert.equal(queries.at(-1).query.get('filter_position'), 'QA');
     checks.push('Contract workspace columns follow compact web presets including ownership/due/VAT/overdue and followup notes; staff role filter survives export');
+    const exact = await api.exportMobileCatalogue(user, 'contracts', req('customer_id=101&columns=code'));
+    assert(fileShape.isMobileFileExport(exact));
+    assert.equal(queries.at(-1).query.get('filter_customer_id'), '101');
+    for (const bad of ['statistics=1','customer_id=01','customer_id=101&customer_id=102'])
+      assert.throws(() => api.mobileCatalogueExportColumns(user, 'contracts', new URLSearchParams(bad)));
+    checks.push('Exact customer history keeps its ID predicate during export; statistics-only requests cannot become exports');
     for (const bad of ['columns=private_secret', 'columns=name,name', 'columns=', 'all=1', 'filter_id=1', 'search=a&search=b', 'scope=unknown', 'from=2026-02-30', 'position=x']) assert.throws(() => api.mobileCatalogueExportColumns(user, 'customers', new URLSearchParams(bad)));
-    for (const kind of ['customers', 'staff', 'stores', 'contracts']) await assert.rejects(() => api.exportMobileCatalogue({ ...user, permissions: [] }, kind, req('')), e => e.status === 403);
+    for (const kind of ['staff', 'stores', 'contracts']) await assert.rejects(() => api.exportMobileCatalogue({ ...user, permissions: [] }, kind, req('')), e => e.status === 403);
+    assert(shape.isMobileExportColumns(api.mobileCatalogueExportColumns({ ...user, permissions: [] }, 'customers', new URLSearchParams())), 'Customer reading follows the shared authenticated-workspace policy');
     assert(shape.isMobileExportColumns(api.mobileCatalogueExportColumns({ ...user, permissions: [] }, 'vehicles', new URLSearchParams())), 'Authenticated fleet reading is universally granted by actual web policy');
     failCount = true; await assert.rejects(() => api.exportMobileCatalogue(user, 'customers', req('')), e => e.code === 'EXPORT_INCOMPLETE'); failCount = false;
     duplicate = true; await assert.rejects(() => api.exportMobileCatalogue(user, 'vehicles', req('')), e => e.code === 'EXPORT_INCOMPLETE');

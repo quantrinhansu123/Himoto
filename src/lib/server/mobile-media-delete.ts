@@ -40,7 +40,7 @@ export async function deleteMobileRecordMedia(user:SessionUser,raw:Params,slot:s
     const saved=await idempotentMobileWrite(db,user.id,key,mediaDeleteOperation(target.entity,target.id),{target,slot,revision,referenceRevision,snapshot,photoRevision},async()=>{
       const prepared=await readMediaTarget(db,target,true);if(prepared.revision!==revision||prepared.referenceRevision!==referenceRevision||prepared.snapshot!==snapshot)throw conflict();
       await requireContractPhotoSlot(db,target.entity,target.id,slot);
-      const previous=(await db.query('SELECT slot,xmin::text AS revision,mime_type,updated_at,octet_length(data) AS byte_count,(data IS NOT NULL) AS has_data,(cloudinary_public_id IS NOT NULL AND cloudinary_cloud_name IS NOT NULL) AS has_cloud,(object_bucket IS NOT NULL AND object_key IS NOT NULL AND object_etag IS NOT NULL) AS has_object FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3 FOR UPDATE',[target.entity,target.id,slot])).rows[0];
+      const previous=(await db.query('SELECT slot,xmin::text AS revision,mime_type,updated_at,COALESCE(storage_bytes,octet_length(data)) AS byte_count,(data IS NOT NULL) AS has_data,(cloudinary_public_id IS NOT NULL AND cloudinary_cloud_name IS NOT NULL) AS has_cloud,(object_bucket IS NOT NULL AND object_key IS NOT NULL AND object_etag IS NOT NULL) AS has_object FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3 FOR UPDATE',[target.entity,target.id,slot])).rows[0];
       if(!previous||previous.revision!==photoRevision)throw conflict();
       const photo=mapMediaPhoto(target,previous);
       await deleteRecordPhoto(db,target.entity,target.id,slot);

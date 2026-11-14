@@ -16,7 +16,7 @@ async function main(){
  for(const before_return_at of ['2026-02-30T10:00:00Z','2026-10-23T08:00','',null])assert.throws(()=>parse({...base,before_return_at}));
  assert.throws(()=>parse({...base,before_return_at:renewal.return_at,return_at:renewal.before_return_at}));
  assert.equal(renewalPeriodStart(renewal),renewal.before_return_at);
- const text=contractNotificationText('renewal',{renewal,photos:[],at:renewal.created_at});
+ const text=contractNotificationText('renewal',{code:'QA-RENEWAL',customer:'Fixture',phone:'',store:'Fixture',actor:'Fixture',vehicles:renewal.license,total:'900000',renewal,photos:[],at:renewal.created_at});
  assert(text.includes('20/10/2026 15:04 - 27/10/2026 15:04 (7 ngày)'));
  checks.push('Strict fee/routing/date inputs; Telegram gia hạn spans prior due → new return');
  if(process.argv.includes('--live-temp')){

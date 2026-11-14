@@ -14,6 +14,7 @@ import { DateField } from "./date-field";
 import { TimeField } from "./time-field";
 import { ConfirmEdit, EditorSheet } from "./editor-sheet";
 import { DutyScheduleCard } from "./duty-schedule-card";
+import {ATTENDANCE_SHIFTS,attendanceShift,shiftCreditLabel} from '../../../shared/attendance-shifts';
 
 // Adapted selectively from the colleague's duty-roster screen (c08bfb9):
 // weekly navigation and 08:00–17:00 defaults; current DTO/auth/domain are used.
@@ -21,7 +22,7 @@ function dutyForm(row: MobileDutySchedule | null, date: string, store: string): 
   const start = row ? localDutyTime(row.starts_at) : "", end = row ? localDutyTime(row.ends_at) : "";
   return { store_id: row?.store_id || (store === "all" ? 0 : Number(store)), staff_id: row?.staff_id || 0,
     starts_at: start || `${row?.duty_date || date}T08:00`, ends_at: end || `${row?.duty_date || date}T17:00`,
-    shift_name: row?.shift_name || "Ca trực", role_in_shift: row?.role_in_shift || "Nhân viên trực", notes: row?.notes || "", ...(row ? { revision: row.revision } : {}) };
+    shift_name: row?.shift_name || "S", role_in_shift: row?.role_in_shift || "Nhân viên trực", notes: row?.notes || "", ...(row ? { revision: row.revision } : {}) };
 }
 
 function DutyEditor({ row, date, store, onClose }: { row: MobileDutySchedule | null; date: string; store: string; onClose: () => void }) {
@@ -47,6 +48,7 @@ function DutyEditor({ row, date, store, onClose }: { row: MobileDutySchedule | n
       {people.data && people.data.total > people.data.rows.length && <Text style={{ color: theme.muted }}>Hiển thị 50 kết quả đầu. Nhập tên hoặc mã để tìm đúng nhân sự.</Text>}
       {people.isError && <><InlineError message={people.error.message} /><Button secondary label="Tải lại nhân sự" onPress={() => { void people.refetch(); }} /></>}
       <FormField label="Tên ca" value={form.shift_name} onChangeText={value => change("shift_name", value)} maxLength={80} editable={!writer.busy} />
+      <ChoiceField label="Ca chấm công" value={attendanceShift(form.shift_name)?.code||''} choices={[{value:'',label:'Ca tùy chỉnh'},...ATTENDANCE_SHIFTS.filter(item=>item.start).map(item=>({value:item.code,label:`${item.code} · ${item.name} · ${item.start}–${item.end} · ${shiftCreditLabel(item.credit)} công`}))]} disabled={writer.busy} onChange={value=>{const shift=attendanceShift(value);if(shift?.start&&shift.end)setForm(current=>({...current,shift_name:shift.code,starts_at:current.starts_at.slice(0,10)+'T'+shift.start,ends_at:current.starts_at.slice(0,10)+'T'+shift.end}));}}/>
       <FormField label="Vai trò trong ca" value={form.role_in_shift} onChangeText={value => change("role_in_shift", value)} maxLength={100} editable={!writer.busy} />
       <DateField label="Ngày bắt đầu" value={form.starts_at.slice(0, 10)} onChange={value => change("starts_at", value + form.starts_at.slice(10))} disabled={writer.busy} />
       <TimeField label="Giờ bắt đầu" value={form.starts_at.slice(11, 16)} onChange={value => change("starts_at", form.starts_at.slice(0, 11) + value)} disabled={writer.busy} />
@@ -66,6 +68,7 @@ function DutyEditor({ row, date, store, onClose }: { row: MobileDutySchedule | n
 export function DutyRosterScreen() {
   const { api, session } = useSession(), theme = useTheme(), workspace = useWorkspace(), writer = useDutyWrite();
   const [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
+  const [showShifts,setShowShifts]=useState(false);
   const [store, setStore] = useState(session!.user.allStores ? "all" : String(session!.user.storeId || "all"));
   const [day, setDay] = useState("all"), [editor, setEditor] = useState<{ row: MobileDutySchedule | null } | null>(null), [deleting, setDeleting] = useState<MobileDutySchedule | null>(null);
   const readable = session!.user.permissions.includes("hr.read"), writable = session!.user.permissions.includes("hr.write");
@@ -83,12 +86,13 @@ export function DutyRosterScreen() {
     <FlatList data={visible} keyExtractor={row => String(row.id)} contentContainerStyle={{ padding: 20, gap: 14, maxWidth: 760, width: "100%", alignSelf: "center" }}
       refreshControl={<RefreshControl refreshing={roster.isRefetching} onRefresh={() => { void roster.refetch(); }} tintColor={theme.primary} />}
       ListHeaderComponent={<View style={{ gap: 14 }}>
+        <Button secondary label={showShifts?'Ẩn danh mục 7 mã ca':'Xem danh mục 7 mã ca'} onPress={()=>setShowShifts(value=>!value)}/>
+        {showShifts&&<View style={{gap:10}}>{ATTENDANCE_SHIFTS.map(shift=><Text key={shift.code} style={{color:theme.text,lineHeight:23}}>{shift.code} · {shift.name}{shift.start?` · ${shift.start}–${shift.end}`:''} · {shiftCreditLabel(shift.credit)} công</Text>)}<Text style={{color:theme.muted,lineHeight:22}}>O: nghỉ, không tạo ca làm việc. Công quy định dùng để đối chiếu, chưa phải công đã duyệt.</Text></View>}
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>Lịch trực cơ sở</Text>
         <View style={{ flexDirection: "row", gap: 10 }}><View style={{ flex: 1 }}><Button secondary label="Tuần trước" onPress={() => moveWeek(dutyAddDays(week, -7))} /></View><View style={{ flex: 1 }}><Button secondary label="Tuần này" onPress={() => moveWeek(dutyToday())} /></View><View style={{ flex: 1 }}><Button secondary label="Tuần sau" onPress={() => moveWeek(dutyAddDays(week, 7))} /></View></View>
         <DateField label="Ngày trong tuần cần xem" value={week} onChange={moveWeek} />
         <ChoiceField label="Cơ sở" value={store} choices={[...(session!.user.allStores ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} searchable />
         <ChoiceField label="Ngày trực" value={day} choices={[{ value: "all", label: `Cả tuần: ${week} → ${days[6]}` }, ...days.map(value => ({ value, label: value.split("-").reverse().join("/") }))]} onChange={setDay} />
-
         <Text style={{ color: theme.muted }}>{visible.length} ca trực trong phạm vi đang xem</Text>
         {writable && <Button label="Tạo ca trực" onPress={() => setEditor({ row: null })} />}
         {roster.isError && <><InlineError message={roster.error.message} /><Button secondary label="Tải lại lịch trực" onPress={() => { void roster.refetch(); }} /></>}

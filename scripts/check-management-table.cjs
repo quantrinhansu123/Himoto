@@ -115,14 +115,14 @@ async function main(){
   assert.match(sqlCommands[1],/AS approval_at/);assert.match(sqlCommands[2],/AS approval_at/);
   assert.equal(paged.rows[0].approval_at,'2026-11-03T10:14:48.521Z');assert.equal(paged.rows[1].approval_at,'');
     assert.match(sqlCommands[0],/interval '30 days'/);
-    assert.match(sqlCommands[1],/interval '30 days'/);
-    assert.doesNotMatch(server.contractRecentClause(3),/order_status IN/);
+    assert.match(server.contractRecentClause(3),/order_status IN.*bad_debt/);
     assert.match(server.contractRecentClause(3),/interval '3 days'/);
     const recentStatsSql=[];
-    await server.readManagementTable({async query(sql){recentStatsSql.push(sql);return {rows:[{detailed:[],closed_counts:[],blacklist:[],closed_amount:0,closed_total:0,closed_selected:0,unknown_totals:0}]};}},'contracts',new URLSearchParams('recent=3&status=draft&statistics_only=1&store=2&search='));
+    await server.readManagementTable({async query(sql){recentStatsSql.push(sql);return {rows:[{detailed_ids:[],closed_counts:[],blacklist:[],closed_amount:0,closed_total:0,closed_selected:0,unknown_totals:0}]};}},'contracts',new URLSearchParams('recent=3&status=draft&statistics_only=1&store=2&search='));
     assert(recentStatsSql.length>0);
     assert(recentStatsSql.every(sql=>sql.includes("interval '3 days'")&&sql.includes('o.store_id=2')));
     checks.push('Recent page counts, page selection and statistics apply the same date window and assigned store');
+  checks.push('Recent page selection retains open contracts and bounds closed history before paging');
   checks.push('Page hydrate returns the saved composer draft and revision so a reopened draft is not reconstructed empty');
   let called=false;await assert.rejects(()=>server.readManagementTable({query(){called=true;}},'contracts',new URLSearchParams('size=999')),server.ManagementTableError);assert.equal(called,false);
   assert.equal(mapApiRow('contracts',{id:1,rent_at:new Date('2026-10-10T09:00:00Z')}).start_date,'2026-10-10T16:00');
@@ -153,7 +153,7 @@ async function main(){
       }
       const stats=await load(path.join(root,'lib/server/page-summaries')).readOperationsSummary(c);
       assert.equal(stats.stores.reduce((sum,row)=>sum+row.active,0),old.filter(row=>['renting','overdue','wait_payment'].includes(row.status)).length);
-      assert.equal(stats.stores.reduce((sum,row)=>sum+row.overdue,0),old.filter(row=>row.status==='overdue').length);
+      assert.equal(stats.stores.reduce((sum,row)=>sum+row.overdue,0),shared.projectManagementTable(old,{...base,scope:'overdue'},true).total);
       const sales=load(path.join(root,'lib/management/source-sales')),staff=(await c.query('SELECT id,full_name AS name FROM himoto.staff_profiles')).rows;
       for(const [from,to,store]of [['2026-10-01','2026-10-16','all'],['2025-01-01','2026-10-16','31']]){
         const expected={sources:sales.summarizeBySalesStaff(old,from,to,store,staff),stores:sales.summarizeByStore(old,from,to,store),kpis:sales.summarizeSalesKpis(old,from,to,store)};

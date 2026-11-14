@@ -7,6 +7,7 @@ import type { PhotoEntity } from '@/lib/management/record-photos';
 import { MAX_VIDEO_BYTES } from '@/lib/management/video-media';
 import { cloudflyVideosEnabled, storeConvertedVideo, hasConvertedVideo, objectVideoDetails } from './cloudfly-videos';
 import { ownerDatabase } from './himoto-database';
+import { legacyMediaObject, objectMediaUrl, readObjectMedia, readyObjectPhoto, saveObjectRecordPhoto, verifyObjectPhotoReceipt, cloudflyPhotosEnabled, boundedObjectBytes, storeObjectPhoto, type LegacyMediaRef, type StoredPhoto } from './object-media';
 
 export interface CloudPhotoReceipt { public_id: string; version: number; signature: string; resource_type?: 'video' }
 function config() {
@@ -28,13 +29,33 @@ export function signPhotoUpload(actorId: number, uploadId: unknown, now = Date.n
 export function verifyPhotoReceipt(value: unknown, actorId: number): CloudPhotoReceipt {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new RecordPhotoError('Thông tin ảnh Cloudinary không hợp lệ.');
   const input = value as Record<string, unknown>;
+  if (typeof input.signature === 'string' && /^[a-f0-9]{64}$/.test(input.signature)) {
+    if (Object.keys(input).some(key => !['public_id','version','signature'].includes(key)) || typeof input.public_id !== 'string') throw new RecordPhotoError('Biên nhận kho ảnh không hợp lệ.');
+    verifyObjectPhotoReceipt(input as unknown as CloudPhotoReceipt, actorId);
+    return input as unknown as CloudPhotoReceipt;
+  }
   const video=input.resource_type==='video';
   if (Object.keys(input).some(key => !['public_id', 'version', 'signature', 'resource_type'].includes(key)) || input.resource_type!==undefined&&!video || typeof input.public_id !== 'string' || !new RegExp(`^himoto/${video?'management-video':'management'}/${actorId}/[0-9a-f-]{36}$`, 'i').test(input.public_id) || !Number.isSafeInteger(input.version) || Number(input.version) <= 0 || typeof input.signature !== 'string' || !/^[a-f0-9]{40}$/i.test(input.signature)) throw new RecordPhotoError('Thông tin ảnh Cloudinary không hợp lệ.');
   const expected = cloudinary.utils.api_sign_request({ public_id: input.public_id, version: input.version }, config().api_secret);
   if (!timingSafeEqual(Buffer.from(expected), Buffer.from(input.signature.toLowerCase()))) throw new RecordPhotoError('Chữ ký ảnh Cloudinary không hợp lệ.');
   return { public_id: input.public_id, version: Number(input.version), signature: input.signature, ...(video?{resource_type:'video' as const}:{}) };
 }
-export async function writeCloudinaryPhoto(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, slot: string, actor: number, receipt: CloudPhotoReceipt) {
+export async function prepareCloudPhoto(receipt:CloudPhotoReceipt,actor:number):Promise<StoredPhoto> {
+  if(receipt.signature.length===64)return readyObjectPhoto(receipt,actor);
+  if(receipt.resource_type==='video')throw new RecordPhotoError('Cần chọn ảnh cho ô này.');
+  // Older open browser tabs can still upload via their Cloudinary signature;
+  // attach a verified durable CloudFly copy instead of breaking those clients.
+  const remote=await readCloudinaryPhoto({cloudinary_public_id:receipt.public_id,cloudinary_cloud_name:config().cloud_name,cloudinary_version:receipt.version,mime_type:'image/jpeg'});
+  if(!remote.body)throw new RecordPhotoError('Chưa đọc được ảnh vừa tải. Giữ form để thử lại.',502);
+  const bytes=await boundedObjectBytes(remote.body,2097152),id=receipt.public_id.split('/').at(-1)!;
+  return storeObjectPhoto(bytes,'image/jpeg',actor,id);
+}
+export async function writeCloudinaryPhoto(client: Pick<PoolClient, 'query'>, entity: PhotoEntity, id: number, slot: string, actor: number, receipt: CloudPhotoReceipt, prepared?:StoredPhoto) {
+  if (receipt.signature.length === 64 || receipt.resource_type!=='video'&&cloudflyPhotosEnabled()) {
+    if (/-video-[1-3]$/.test(slot)) throw new RecordPhotoError('Không lưu ảnh vào ô video.');
+    await saveObjectRecordPhoto(client, entity, id, slot, actor, prepared||await prepareCloudPhoto(receipt,actor));
+    return;
+  }
   const video=receipt.resource_type==='video';
   let videoDetails: { bytes: number; duration: number } | undefined;
   if(video) {
@@ -56,7 +77,7 @@ export async function writeCloudinaryPhoto(client: Pick<PoolClient, 'query'>, en
   } else if(/-video-[1-3]$/.test(slot))throw new RecordPhotoError('Chọn video cho ô này.');
   await client.query(`INSERT INTO himoto.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version)
     VALUES($1,$2,$3,$8,NULL,$4,$5,$6,$7) ON CONFLICT(entity_type,entity_id,slot)
-    DO UPDATE SET mime_type=EXCLUDED.mime_type,data=NULL,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=EXCLUDED.cloudinary_public_id,cloudinary_cloud_name=EXCLUDED.cloudinary_cloud_name,cloudinary_version=EXCLUDED.cloudinary_version,object_bucket=NULL,object_key=NULL,object_etag=NULL`,
+    DO UPDATE SET mime_type=EXCLUDED.mime_type,data=NULL,updated_by=EXCLUDED.updated_by,updated_at=now(),cloudinary_public_id=EXCLUDED.cloudinary_public_id,cloudinary_cloud_name=EXCLUDED.cloudinary_cloud_name,cloudinary_version=EXCLUDED.cloudinary_version,object_bucket=NULL,object_key=NULL,object_etag=NULL,storage_sha256=NULL,storage_bytes=NULL`,
   [entity, id, slot, actor, receipt.public_id, config().cloud_name, receipt.version,video?'video/mp4':'image/jpeg']);
   return videoDetails;
 }
@@ -106,7 +127,13 @@ export function cloudinaryPhotoUrl(photo: { cloudinary_public_id: string; cloudi
     expires_at: Math.floor(Date.now() / 1000) + expiresIn,
   });
 }
-export async function readCloudinaryPhoto(photo: { cloudinary_public_id: string; cloudinary_cloud_name: string; cloudinary_version: number; mime_type?: string }, range?:string|null) {
+export async function legacyMediaUrl(photo: LegacyMediaRef, expires = 600) {
+  const archived = await legacyMediaObject(photo);
+  return archived ? objectMediaUrl(archived, photo.mime_type || 'image/jpeg', expires) : cloudinaryPhotoUrl(photo, expires);
+}
+export async function readCloudinaryPhoto(photo: LegacyMediaRef, range?:string|null) {
+  const archived = await legacyMediaObject(photo);
+  if (archived) return readObjectMedia(archived, photo.mime_type || 'image/jpeg', range);
   const video=photo.mime_type==='video/mp4';
   const response = await fetch(cloudinaryPhotoUrl(photo, 300), { cache: 'no-store', signal: AbortSignal.timeout(video?45_000:15_000), ...(range?{headers:{Range:range}}:{}) });
   if (!response.ok) throw new RecordPhotoError('Không tải được ảnh Cloudinary. Thử lại sau.', 502);

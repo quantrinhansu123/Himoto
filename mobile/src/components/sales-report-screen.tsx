@@ -19,6 +19,7 @@ export function SalesReportScreen() {
   const [preset, setPreset] = useState("month"), [input, setInput] = useState(""), search = useDebouncedValue(input);
   const [category, setCategory] = useState(""), [method, setMethod] = useState(""), [side, setSide] = useState("in"), [view, setView] = useState("stores"), [department, setDepartment] = useState(""), [source, setSource] = useState(""), [presence, setPresence] = useState("");
   const [sort, setSort] = useState("revenue"), [direction, setDirection] = useState("desc"), [paging, setPaging] = useState<Record<string, { filter: string; page: number; size: string }>>({});
+  const [sectionPaging, setSectionPaging] = useState<Record<string, { filter: string; pages: Record<string, number> }>>({});
   const allowed = session!.user.permissions.includes("contracts.read"), options = useQuery({ queryKey: ["report-options", session!.user.id], queryFn: ({ signal }) => api!.reportOptions(signal), enabled: allowed });
   const query = new URLSearchParams({ from, to, store_id: store });
   if (["ledger", "vehicles", "new-customers"].includes(kind)) query.set("search", search);
@@ -29,12 +30,18 @@ export function SalesReportScreen() {
   if (kind === "vehicles") { query.set("sort", sort); query.set("direction", direction); }
   const filter = query.toString(), slot = kind === "ledger" ? `ledger:${side}` : kind;
   const config = paging[slot], size = config?.size || (kind === "ledger" ? "20" : "10"), page = config?.filter === filter ? config.page : 1;
-  if (kind === "ledger" || kind === "vehicles") { query.set("page", String(page)); query.set("size", size); }
+  if (kind === "ledger" || kind === "vehicles" || kind === 'fleet') { query.set("page", String(page)); query.set("size", size); }
+  query.set('section_pages', JSON.stringify(sectionPaging[slot]?.filter === filter ? sectionPaging[slot].pages : {}));
   const valid = !!from && !!to && from <= to && from <= today && to <= today, params = query.toString();
   const report = useQuery({ queryKey: ["sales-report", session!.user.id, kind, params], queryFn: ({ signal }) => api!.salesReport(kind, params, signal), enabled: allowed && valid, retry: false });
   if (!allowed) return <StateView title="Không có quyền xem báo cáo thuê xe" />;
   function chooseKind(value: SalesReportKind) { setKind(value); setInput(""); setCategory(""); setMethod(""); setSide("in"); setView("stores"); setDepartment(""); setSource(""); setPresence(""); setSort("revenue"); setDirection("desc"); setPaging({}); }
-  function changePage(next: number, nextSize: number) { setPaging(previous => ({ ...previous, [slot]: { filter, page: next, size: String(nextSize) } })); scroll.current?.scrollTo({ y: 0, animated: false }); }
+  function changePage(next: number, nextSize: number, section?: string) {
+    if (section && kind !== 'ledger' && kind !== 'vehicles' && kind !== 'fleet') setSectionPaging(previous => ({ ...previous,
+      [slot]: { filter, pages: { ...(previous[slot]?.filter === filter ? previous[slot].pages : {}), [section]: next } } }));
+    else setPaging(previous => ({ ...previous, [slot]: { filter, page: next, size: String(nextSize) } }));
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }
   const mainChoices = SALES_REPORTS.filter(row => !["by-staff", "by-store", "new-customers", "assigned"].includes(row.value) && (row.value !== "fleet" || options.data?.canViewFleet));
   return <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 18, width: "100%", maxWidth: 760, alignSelf: "center" }} refreshControl={<RefreshControl refreshing={report.isRefetching || options.isRefetching} tintColor={theme.primary} onRefresh={() => { void report.refetch(); void options.refetch(); }} />}>
     <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 27, fontWeight: "800" }}>Báo cáo doanh thu thuê xe</Text>

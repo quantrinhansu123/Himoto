@@ -11,7 +11,7 @@ export function GpsSyncPulse() {
     const sync=async()=>{if(running||document.visibilityState!=='visible')return;running=true;
       try{await fetch('/api/auth/gps/refresh',{method:'POST',credentials:'same-origin',signal:controller.signal});}catch{/* A provider outage must still refresh the database's stale indicator. */}
       // Refresh the visible paged list, never download all stock just to refresh
-      // GPS. Keep the existing 30-second vehicle-table refresh cadence.
+      // GPS. Avoid repeated table refreshes when the tab regains visibility.
       finally{if(!controller.signal.aborted&&current.current.pathname==='/vehicles'&&Date.now()-lastVehicleRead>=30000){lastVehicleRead=Date.now();current.current.invalidateData(['vehicles']);}running=false;}};
     const first=setTimeout(()=>void sync(),1500);const timer=setInterval(()=>void sync(),GPS_POLL_INTERVAL_MS);document.addEventListener('visibilitychange',sync);
     return()=>{controller.abort();clearTimeout(first);clearInterval(timer);document.removeEventListener('visibilitychange',sync);};

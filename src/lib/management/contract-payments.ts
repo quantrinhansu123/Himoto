@@ -56,6 +56,25 @@ export interface PaymentContext {
   history_page?: number; history_pages?: number; history_total?: number;
   billing?: import('./contract-billing').InstallmentBalance;
   billing_base_total?: number | null;
+  settlement_total?: number | null;
+  settlement_remaining?: number | null;
+  all_returned?: boolean;
+  payment_closed_at?: string;
+}
+export type ContractSettlementMode = 'partial' | 'full' | 'close_unpaid';
+export interface ContractSettlementInput {
+  request_id:string; revision:string; mode:ContractSettlementMode; amount:string;
+  paid_at:string; note:string; confirmed:true; method?:PaymentMethod; account_id?:number;
+  vehicles_confirmed?:true;
+  vehicles?:{item_id:number;revision:string;status:'with_customer'|'returned';returned_at?:string}[];
+}
+export interface ContractSettlementResult {context:PaymentContext;transaction_id:number|null;replayed:boolean}
+export async function saveContractSettlement(id:number,input:ContractSettlementInput):Promise<ContractSettlementResult> {
+  const response=await fetch(`/api/auth/order/car-rental/${id}/payments/settlement`,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
+  const result=await response.json().catch(()=>null),data=result?.data;
+  if(!response.ok||result?.status!=='success')throw new PaymentRequestError(result?.message||'Chưa xác nhận được thanh toán/đóng hợp đồng. Giữ mã thao tác để thử lại.',response.status);
+  if(data?.context?.id!==id||typeof data.context.revision!=='string'||typeof data.replayed!=='boolean'||!(data.transaction_id===null||Number.isSafeInteger(data.transaction_id)&&data.transaction_id>0))throw new PaymentRequestError('Kết quả thanh toán/đóng hợp đồng cần đối chiếu.');
+  return data;
 }
 export interface PaymentInput {
   request_id: string; revision: string; amount: string; method: PaymentMethod; account_id: number; paid_at: string; note: string;

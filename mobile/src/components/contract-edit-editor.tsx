@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, usePreventRemove } from 'expo-router';
@@ -12,7 +12,7 @@ import { useContractEditWrite } from '@/hooks/use-contract-edit-write';
 import { addDraftVehicle, changeDraftTime, chooseDraftCustomer, chooseDraftType, draftSteps } from '@/lib/draft-form';
 import { contextualStatusLabel } from '@/lib/catalogue-config';
 import { Button, Card, InlineError, StateView } from './ui';
-import { ChoiceField, FormField } from './form-fields';
+import { ChoiceField, FormField, KeyboardScrollContext } from './form-fields';
 import { DateField } from './date-field';
 import { RentalDateTime } from './rental-date-time';
 import { ConfirmEdit } from './editor-sheet';
@@ -28,6 +28,18 @@ export function ContractEditEditor({ id }: { id: string }) {
   const [pendingCustomer, setPendingCustomer] = useState<MobileDraftCustomer | null>(null), [localError, setLocalError] = useState('');
   const [exit, setExit] = useState<(() => void) | null>(null);
   const { api, session } = useSession(), scroll = useRef<ScrollViewInstance>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', e => setKeyboardHeight(e.endCoordinates?.height || 300));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  const scrollInputIntoView = useCallback((target: any) => {
+    if (!target) return;
+    setTimeout(() => {
+      try { (scroll.current as any)?.scrollResponderScrollNativeHandleToKeyboard?.(target, 140, true); } catch {}
+    }, 80);
+  }, []);
   useEffect(() => { if (write.key || write.error) { scroll.current?.scrollTo({ y: 0, animated: false }); AccessibilityInfo.announceForAccessibility(write.error || 'Kiểm tra kết quả lần sửa hợp đồng.'); } }, [write.key, write.error]);
   const profile = write.query.data?.profile, options = write.query.data?.options;
   // Retain in-memory edits across a cancelled request resolution and refetch.
@@ -48,8 +60,9 @@ export function ContractEditEditor({ id }: { id: string }) {
   const props = value ? { input: value, change, disabled, errors: {} } : null;
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title: profile ? `Sửa ${profile.code}` : 'Sửa hợp đồng đã phát hành' }} />
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 18, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 36 }}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardScrollContext.Provider value={scrollInputIntoView}>
+      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 18, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: keyboardHeight > 0 ? keyboardHeight + 80 : 280 }} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
         <Text accessibilityRole="header" style={{ ...text, fontSize: 24, lineHeight: 32, fontWeight: '800' }}>Sửa đầy đủ hợp đồng</Text>
         {!!(write.error || write.query.error || localError) && <InlineError message={localError || write.error || write.query.error?.message || 'Chưa tải được hợp đồng.'} />}
         {!!write.notice && <Text accessibilityLiveRegion="polite" style={text}>{write.notice}</Text>}
@@ -121,6 +134,7 @@ export function ContractEditEditor({ id }: { id: string }) {
         <View style={{ flexDirection: 'row', gap: 10 }}>{step > 0 && <View style={{ flex: 1 }}><Button secondary label="Bước trước" disabled={write.busy} onPress={() => jump(step - 1)} /></View>}{step < 4 && <View style={{ flex: 1 }}><Button secondary label="Tiếp theo" disabled={write.busy} onPress={() => jump(step + 1)} /></View>}</View>
         <Button label="Kiểm tra và lưu hợp đồng" loading={write.busy} disabled={disabled || write.query.isError || write.query.isFetching} onPress={() => { Keyboard.dismiss(); setConfirm(true); }} />
       </View>}
+      </KeyboardScrollContext.Provider>
     </KeyboardAvoidingView>
     {confirm && value && <ConfirmEdit title="Ghi đè hợp đồng đã phát hành?" message={`${value.draft.contract_number || `Hợp đồng #${id}`}\n${value.draft.customer.name || 'Chưa nhập tên khách'}\n${value.draft.vehicles.filter(v => v.id).map(v => `#${v.id} ${v.license}`).join('\n') || 'Không giữ xe nào'}\nTổng: ${money(Number(value.draft.total_amount || 0))}\nCọc: ${money(Number(value.draft.deposit_amount || 0))}\n\nNội dung cả 5 phần sẽ ghi đè bản mới nhất, có thể gồm thay đổi người khác vừa lưu. Tiền thực nhận theo phiếu được giữ; xe/kho và lịch sử cập nhật theo quy trình web. Duyệt thuê sở hữu sẽ bị xóa.`} confirmLabel="Xác nhận lưu đè hợp đồng" busy={write.busy} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); void write.save(value); }} />}
     {pendingCustomer && value && <ConfirmEdit title="Dùng hồ sơ khách đã chọn?" message={`Thay thông tin khách và người thân bằng hồ sơ ${pendingCustomer.details.name}. Giấy tờ khách không tự sao chép khi sửa hợp đồng.`} confirmLabel="Dùng hồ sơ khách" onCancel={() => setPendingCustomer(null)} onConfirm={() => { setInput(chooseDraftCustomer(value, pendingCustomer)); setPendingCustomer(null); }} />}

@@ -27,7 +27,7 @@ import { cashbookPaymentPath, type PaymentPurpose } from '@/lib/management/contr
 import { batteryPrefillFromVehicleContract } from '@/lib/management/battery-from-contract';
 import type { BatteryContract } from '@/lib/management/battery-contracts';
 import { staffPositionSuggestions } from '@/lib/management/staff-positions';
-import { canSendDebtReminder } from '@/lib/management/permissions';
+import { canSendDebtReminder,canSettleContract } from '@/lib/management/permissions';
 import { canFinalizeRentalContract } from '@/lib/management/contract-approval';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ResponsiveDataActions } from './ResponsiveDataActions';
@@ -39,7 +39,7 @@ import { OVERDUE_BUCKETS } from '@/lib/management/contract-overdue';
 import { isOwnershipCustomerSourceStore } from '@/lib/management/contract-billing';
 import { useSelectedVehicleGps } from './SelectedVehicleGps';
 import { contractVehicleIds,contractGpsFields } from './ContractMonitoringCells';
-import { CONTRACT_STATUS_TABS, contractActiveRentalCount } from '@/lib/management/contract-tabs';
+import { CONTRACT_STATUS_TABS, contractActiveRentalCount, contractOverdueCount } from '@/lib/management/contract-tabs';
 import { ContractStatusTotals } from './ContractStatusTotals';
 import { RecordTotal } from './RecordTotal';
 import { FilterCombobox, type FilterOption } from './FilterCombobox';
@@ -48,6 +48,7 @@ function FeatureLoading() { return <div className="mg-toast" role="status">Đang
 const EntityForm = dynamic(() => import('./EntityForm').then(module => module.EntityForm), { ssr: false, loading: FeatureLoading });
 const ContractDetail = dynamic(() => import('./ContractDetail').then(module => module.ContractDetail), { ssr: false, loading: FeatureLoading });
 const ContractBadDebtDialog = dynamic(() => import('./ContractBadDebtDialog').then(module=>module.ContractBadDebtDialog), {ssr:false,loading:FeatureLoading});
+const ContractBadDebtCloseDialog = dynamic(() => import('./ContractBadDebtCloseDialog').then(module=>module.ContractBadDebtCloseDialog), {ssr:false,loading:FeatureLoading});
 const loadComposer = () => import('@/components/contracts/ContractComposer');
 const ContractComposer = dynamic(() => loadComposer().then(module => module.ContractComposer), { ssr: false, loading: FeatureLoading });
 const ContractHandoverDialog = dynamic(() => import('@/components/contracts/ContractHandoverDialog').then(module=>module.ContractHandoverDialog), {ssr:false,loading:FeatureLoading});
@@ -101,7 +102,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const requestedStatus = kind === 'contracts' ? searchParams.get('status') || '' : '';
   const defaultContractStatus=kind==='contracts'&&!draftsOnly&&!vatOnly&&!overdueOnly&&!ownershipOnly&&!paymentDueOnly&&!searchFromUrl&&!searchParams.get('customer_id')&&!searchParams.get('contract_id')?'draft':'';
   const statusFromUrl = requestedStatus==='all'?'':MANAGEMENT_CONFIG.contracts.statuses.some(option=>option.value===requestedStatus)?requestedStatus:defaultContractStatus;
-  const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl,status:statusFromUrl,...(overdueOnly?{status:statusFromUrl||'overdue',overdueBucket:'traditional-overdue' as const}:{})}));
+  const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl,status:statusFromUrl,...(overdueOnly?{status:statusFromUrl||'overdue'}:{})}));
   const compactContracts=kind==='contracts';
   const collectionNotes=compactContracts&&!draftsOnly;
   const [debtReportOpen,setDebtReportOpen]=useState(false);
@@ -131,6 +132,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [vehicleTarget, setVehicleTarget] = useState<{ orderId: number; code: string } | null>(null);
   const [inventoryOpen,setInventoryOpen]=useState(false);
   const [recoveryTarget,setRecoveryTarget]=useState<{id:number;code:string}|null>(null);
+  const [badDebtCloseTarget,setBadDebtCloseTarget]=useState<ManagementRow|null>(null);
   const [badDebtTarget,setBadDebtTarget]=useState<{id:number;code:string}|null>(null);
   const [backfillOpen,setBackfillOpen]=useState(false),[backfillComposer,setBackfillComposer]=useState(false),[backfillRenewal,setBackfillRenewal]=useState(false);
   const [returnTarget, setReturnTarget] = useState<{ orderId: number | null; code: string;query?:string } | null>(null);
@@ -264,6 +266,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   }, []);
 
   const allRows = paged ? table.data?.rows || EMPTY_ROWS : dataset?.[kind] || EMPTY_ROWS;
+  const viewingVehicle=kind==='vehicles'&&viewing?(allRows.find(item=>item.id===viewing.id)||viewing):null;
   const gpsAllowed=can('vehicles.read');
   const listGps=useSelectedVehicleGps(compactContracts&&gpsAllowed&&visibleKeys.includes('contract_gps_status')?allRows.flatMap(contractVehicleIds):[]);
   const rows:ManagementRow[] = useMemo(() => kind === 'vehicles' ? allRows.map(row => ({...row,overdue_days:vehicleOverdueDays(row,openedAt)})) : compactContracts?allRows.map(row=>({...row,contract_signed_at:row.signed_on||row.start_date,...contractGpsFields(row,listGps,gpsAllowed)})):allRows,[allRows,kind,openedAt,compactContracts,listGps,gpsAllowed]);
@@ -309,7 +312,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : kind === 'staff' ? canManageStaff : false;
   const canDelete = source === 'api' && (
     (kind === 'staff' && canManageStaff)
-    || (kind === 'contracts' && can('contracts.delete'))
+    || (kind === 'contracts' && canSaveContractDrafts)
     || (can('settings.write') && (kind === 'customers' || kind === 'stores' || kind === 'vehicles'))
   );
   const invalidDate = Boolean(query.startDate && query.endDate && query.startDate > query.endDate);
@@ -317,7 +320,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     (kind === 'staff' && canManageStaff)
     || (can('settings.write') && kind !== 'contracts' && kind !== 'staff')
   );
-  const canBulkRemind = kind === 'contracts' && !draftsOnly && source === 'api' && canSendDebtReminder(accessUser);
+  const canBulkRemind = paymentDueOnly && source === 'api' && canSendDebtReminder(accessUser);
   const canSelectRows = canBulkDelete || canBulkRemind;
   useEffect(() => {
     if(paged)return;
@@ -327,7 +330,6 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       return next.size === current.size ? current : next;
     });
   }, [rows,paged]);
-  useEffect(() => { setSelectedIds(new Set()); }, [kind, query, draftsOnly, vatOnly, overdueOnly, ownershipOnly, paymentDueOnly]);
   function changeSelection(ids: number[], selected: boolean) {
     setSelectedIds(current => { const next = new Set(current); for (const id of ids) if (selected) next.add(id); else next.delete(id); return next; });
   }
@@ -361,7 +363,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   };
 
   function clearFilters() {
-    updateQuery({...EMPTY_QUERY,...(overdueOnly?{status:'overdue',overdueBucket:'traditional-overdue' as const}:{})}); selectStore('all');
+    updateQuery({...EMPTY_QUERY,...(overdueOnly?{status:'overdue'}:{})}); selectStore('all');
     if (customerId || contractId || searchFromUrl) router.replace(contractPath);
   }
   const [exporting, setExporting] = useState(false);
@@ -390,13 +392,13 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   }
 
   const summaryPanel=kind==='contracts'?<OptionalTools collapsed={compactContracts} label="Thống kê & thông tin thêm"><ContractSummary values={paged?table.data?.summary:undefined} rows={filteredRows} customers={dataset?.customers || EMPTY_ROWS} loading={statisticsLoading} unavailable={Boolean(error) || Boolean(table.statisticsError) || !dataset}/>
-    {!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder"><p>Đang xem {table.data.recentDays} ngày gần đây. Tìm kiếm để tra cứu hợp đồng cũ.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
+    {!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder"><p>Đang xem hợp đồng đang mở và lịch sử {table.data.recentDays} ngày gần đây. Tìm kiếm để tra cứu hợp đồng cũ.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
     {!loading&&!error&&dueCount>0&&<div className="mg-billing-reminder"><p>{dueCount} hợp đồng đến hạn đóng tiền.</p><Link href="/contracts/due" className="mg-button">Xem khoản đến hạn</Link></div>}
   </OptionalTools>:null;
   return <ContractCollectionNotesProvider rows={allRows} enabled={collectionNotes&&visibleKeys.includes('collection_notes')}><section className={`mg-page mg-page-${kind}${vatOnly?' mg-page-contracts-vat':''}${compactContracts?' mg-compact-contracts':''}${monitoringContracts?' mg-monitoring-contracts':''}`} aria-label={config.title}>
     {inventoryOpen&&<SharedVehicleInventory onClose={()=>setInventoryOpen(false)}/>}
     <div className="mg-page-content">
-      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label="Toàn bộ hợp đồng" count={table.data&&!statisticsUnavailable ? scopeCount : null} loading={statisticsLoading} className="mg-contract-total"/>{!draftsOnly&&<p>Cơ sở đang xem lọc theo nguồn khách (cơ sở tạo hợp đồng). Dưới biển số ghi cơ sở sở hữu xe.</p>}{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Toàn bộ xe',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{kind==='vehicles'?'Cơ sở đang xem lọc theo cơ sở sở hữu xe. Dưới tên khách ghi nguồn khách; kho quản lý vẫn hiện riêng.':config.description}</p></div>}
+      <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label={overdueOnly?'Tổng hợp đồng quá hạn':paymentDueOnly?'Tổng hợp đồng đến hạn':recentWindow?'Hợp đồng đang mở và gần đây':'Toàn bộ hợp đồng'} count={table.data&&!statisticsUnavailable ? scopeCount : null} loading={statisticsLoading} className="mg-contract-total"/>{!draftsOnly&&<p>Cơ sở đang xem lọc theo nguồn khách (cơ sở tạo hợp đồng). Dưới biển số ghi cơ sở sở hữu xe.</p>}{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Toàn bộ xe',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{kind==='vehicles'?'Cơ sở đang xem lọc theo cơ sở sở hữu xe. Dưới tên khách ghi nguồn khách; kho quản lý vẫn hiện riêng.':config.description}</p></div>}
         {kind==='contracts'&&<div className="mg-heading-actions mg-contract-flow">
           {(canSaveContractDrafts||can('contracts.renew')||canPayContracts)&&<button type="button" className="mg-button" onClick={()=>setBackfillOpen(true)}><Plus size={17}/>Nhập bổ sung giao dịch</button>}
           {canSaveContractDrafts&&<><button type="button" className="mg-button" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}}><Plus size={17}/>Nhập hợp đồng</button></>}
@@ -419,28 +421,25 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
             else { setEditing(null); setFormOpen(true); }
           }}><Plus size={18} />{config.addLabel}</button>}
           {kind !== 'staff' && <button type="button" className="mg-button" disabled={loading || refreshing || blacklistBusyId !== null} onClick={() => { setBlacklistError(''); void reload(); }}><RotateCcw size={17} className={refreshing ? 'mg-spin' : undefined} />{refreshing ? 'Đang tải…' : 'Làm mới'}</button>}
-
+          {canBulkRemind && <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}
           {kind==='contracts'&&source==='api'&&<button type="button" className="mg-button" onClick={()=>setTelegramTarget('pending')}><MessageCircle size={17}/>Chưa gửi Telegram</button>}
           </div></OptionalTools>
       </div>
 
-      {canBulkRemind && selectedIds.size > 0 && <div className="mg-contract-selection-bar" role="region" aria-label="Thao tác với hợp đồng đã chọn">
-        <strong role="status">Đã chọn {selectedIds.size} hợp đồng</strong>
-        <button type="button" className="mg-button mg-button-primary" disabled={loading || Boolean(error)} onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16}/>Gửi nhắc nợ ({selectedIds.size})</button>
-        <button type="button" className="mg-button" onClick={() => setSelectedIds(new Set())}><X size={15}/>Bỏ chọn</button>
-      </div>}
       {kind === 'staff' && <StaffOrganizationChart />}
+
+      {kind==='contracts'&&!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder" role="status" aria-label="Phạm vi thời gian hợp đồng"><p>Đang xem đầy đủ hợp đồng đang mở và lịch sử {table.data.recentDays} ngày gần đây.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
 
       <div className="mg-data-panel">
         {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&!overdueOnly&&<ContractStatusTotals counts={statusCounts} loading={statisticsLoading}/>}
         <div className="mg-status-tabs" aria-label="Lọc theo trạng thái" aria-busy={statisticsLoading}>{contractTabs ? <>
-          {CONTRACT_STATUS_TABS.map(tab => <button type="button" key={tab.value} className={query.status === tab.value ? 'is-active' : ''} aria-pressed={query.status === tab.value} onClick={() => updateQuery({ status: tab.value,overdueBucket:undefined,overdueDays:'' })}>{tab.label}<span>{statisticsLoading?'—':tab.value==='renting'?contractActiveRentalCount(statusCounts):tab.value?statusCounts.get(tab.value)||0:tabCount}</span></button>)}
+          {CONTRACT_STATUS_TABS.map(tab => <button type="button" key={tab.value} className={query.status === tab.value ? 'is-active' : ''} aria-pressed={query.status === tab.value} onClick={() => updateQuery({ status: tab.value,overdueBucket:undefined,overdueDays:'' })}>{tab.label}<span>{statisticsLoading?'—':tab.value==='renting'?contractActiveRentalCount(statusCounts):tab.value==='overdue'?contractOverdueCount(statusCounts):tab.value?statusCounts.get(tab.value)||0:tabCount}</span></button>)}
           {query.status && !CONTRACT_STATUS_TABS.some(tab => tab.value === query.status) && <button type="button" className="is-active" aria-pressed="true">{optionLabel(config,'status',query.status)}<span>{statisticsLoading?'—':statusCounts.get(query.status)||0}</span></button>}
         </> : <><button type="button" className={!query.status ? 'is-active' : ''} aria-pressed={!query.status} onClick={() => updateQuery({ status: '',overdueBucket:undefined })}>{draftsOnly?'Tất cả bản nháp':'Tất cả'}<span>{statisticsLoading?'—':tabCount}</span></button>
           {statusOptions.filter(option => (kind === 'contracts' && !overdueOnly && option.value === 'draft') || statusCounts.has(option.value) || query.status === option.value).map(option => <button type="button" key={option.value} className={query.status === option.value ? 'is-active' : ''} aria-pressed={query.status === option.value} onClick={() => updateQuery({ status: option.value,overdueBucket:undefined })}>{option.label}<span>{statisticsLoading?'—':statusCounts.get(option.value) || 0}</span></button>)}</>}</div>
-        {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&(overdueOnly||query.status==='overdue'||query.status==='bad_debt')&&<div className="mg-overdue-buckets" role="group" aria-label={ownershipOnly?'Nhóm quá hạn thuê sở hữu':'Nhóm quá hạn truyền thống'}>
-          {ownershipOnly&&<button type="button" aria-pressed={!query.overdueBucket} className={!query.overdueBucket?'is-active':''} onClick={()=>updateQuery({status:'overdue',overdueBucket:undefined,overdueDays:''})}>Tất cả quá hạn<span>{statisticsLoading?'—':statusCounts.get('overdue')||0}</span></button>}
-          {OVERDUE_BUCKETS.filter(bucket=>ownershipOnly?bucket.key.startsWith('ownership-')&&bucket.key!=='ownership-overdue':bucket.key.startsWith('traditional-')).map(bucket=><button key={bucket.key} type="button" aria-pressed={query.overdueBucket===bucket.key} className={`${query.overdueBucket===bucket.key?'is-active ':''}${bucket.key.endsWith('-bad-debt')?'is-bad-debt':''}`} onClick={()=>{updateQuery({status:bucket.key.endsWith('-bad-debt')?'bad_debt':'overdue',overdueBucket:bucket.key,overdueDays:''});setSort({key:'overdue_minutes',direction:'desc'});}}>{bucket.label}<span>{statisticsLoading?'—':table.data?.overdueCounts?.[bucket.key]||0}</span></button>)}
+        {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&(overdueOnly||query.status==='overdue'||query.status==='bad_debt')&&<div className="mg-overdue-buckets" role="group" aria-label={ownershipOnly?'Nhóm quá hạn thuê sở hữu':overdueOnly?'Nhóm hợp đồng quá hạn':'Nhóm quá hạn truyền thống'}>
+          {(ownershipOnly||overdueOnly)&&<button type="button" aria-pressed={!query.overdueBucket&&query.status==='overdue'} className={!query.overdueBucket&&query.status==='overdue'?'is-active':''} onClick={()=>updateQuery({status:'overdue',overdueBucket:undefined,overdueDays:''})}>Tất cả quá hạn<span>{statisticsLoading?'—':contractOverdueCount(statusCounts)}</span></button>}
+          {OVERDUE_BUCKETS.filter(bucket=>ownershipOnly?bucket.key.startsWith('ownership-')&&bucket.key!=='ownership-overdue':bucket.key.startsWith('traditional-')).map(bucket=><button key={bucket.key} type="button" aria-pressed={query.overdueBucket===bucket.key} className={`${query.overdueBucket===bucket.key?'is-active ':''}${bucket.key.endsWith('-bad-debt')?'is-bad-debt':''}`} onClick={()=>{updateQuery({status:bucket.key.endsWith('-bad-debt')?'bad_debt':'overdue',overdueBucket:bucket.key,overdueDays:''});setSort({key:'overdue_minutes',direction:'desc'});}}>{overdueOnly&&bucket.key==='traditional-overdue'?'Quá hạn truyền thống':bucket.label}<span>{statisticsLoading?'—':table.data?.overdueCounts?.[bucket.key]||0}</span></button>)}
         </div>}
         <div className="mg-toolbar"><label className="mg-search"><Search size={17} /><span className="mg-sr-only">Tìm kiếm {config.title.toLowerCase()}</span><input type="search" placeholder={config.searchPlaceholder} value={query.search} onChange={event => updateQuery({ search: event.target.value })} />{query.search && <button type="button" aria-label="Xóa từ khóa" onClick={() => updateQuery({ search: '' })}><X size={15} /></button>}</label>
           <OptionalTools collapsed={compactContracts && !ownershipOnly} label="Bộ lọc nâng cao"><div className="mg-filter-controls mg-list-filters"><span className="mg-filter-icon"><ListFilter size={16} /></span>{compactContracts&&<><FilterCombobox id="contract-sort-key" label="Sắp xếp hợp đồng" value={sort.key} emptyLabel="Sắp xếp theo cột" options={config.columns.filter(column=>column.sortable!==false).map(column=>({value:column.key,label:column.label}))} onChange={value=>{if(value){setSort(current=>({...current,key:value}));setPage(1);}}}/><button type="button" className="mg-button" onClick={()=>{setSort(current=>({...current,direction:current.direction==='asc'?'desc':'asc'}));setPage(1);}}>{sort.direction==='asc'?'Tăng dần':'Giảm dần'}</button></>}{config.filters.map(filter => {
@@ -456,7 +455,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
                         : (store.name || `Cơ sở #${store.id}`),
                   }))
                   : (filter.options || []);
-              return <FilterCombobox key={filter.key} id={`filter-${kind}-${filter.key}`} label={filter.label} value={query.filters[filter.key] || ''} emptyLabel={filter.label} options={options} onChange={value => updateQuery({ filters: { ...query.filters, [filter.key]: value } })} />;
+              const sourceStore=kind==='contracts'&&filter.key==='store_id';
+              return <FilterCombobox key={filter.key} id={`filter-${kind}-${filter.key}`} label={filter.label} value={sourceStore?(selectedStore==='all'?'':selectedStore):query.filters[filter.key]||''} emptyLabel={filter.label} options={options} onChange={value=>{if(sourceStore)selectStore(value||'all');else updateQuery({filters:{...query.filters,[filter.key]:value}});}} />;
             })}
             <FilterCombobox id={`filter-${kind}-status`} label="Lọc trạng thái" value={query.status} emptyLabel="Tất cả trạng thái" options={statusOptions.map(option => ({ value: option.value, label: option.label }))} onChange={value => updateQuery({ status: value, overdueBucket: undefined })} />
             <details className="mg-column-menu" ref={columnsRef}><summary className="mg-button" aria-label="Ẩn hiện cột"><Columns3 size={16} /><span>Cột</span></summary><div className="mg-popover"><strong>Hiển thị cột</strong>{config.columns.map(column => <label key={column.key}><input type="checkbox" checked={visibleKeys.includes(column.key)} disabled={visibleKeys.length === 1 && visibleKeys.includes(column.key)} onChange={event => setVisibleKeys(current => event.target.checked ? [...current, column.key] : current.filter(key => key !== column.key))} />{column.label}</label>)}</div></details>
@@ -480,7 +480,6 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
         {kind === 'vehicles' && Boolean(query.filters.beneficiary_store_id) && <p className="mg-composer-hint" style={{margin:'2px 0 8px'}}>Đang lọc theo nguồn khách của hợp đồng đang thuê. Xe lưu kho không thuộc nguồn khách nào.</p>}
         {kind==='vehicles'&&!loading&&!error&&missingOpenContractCount>0&&<div className="mg-billing-reminder" role="status"><p><TriangleAlert size={16} aria-hidden="true"/> <strong>{missingOpenContractCount} xe</strong> đang ở trạng thái Đang thuê nhưng không có hợp đồng mở. Kiểm tra và chuyển Lưu kho hoặc lập hợp đồng.</p>{query.filters.missing_contract!=='1'&&<button type="button" className="mg-button" onClick={()=>updateQuery({status:'using',filters:{...query.filters,missing_contract:'1'}})}>Lọc xe thiếu HĐ</button>}{query.filters.missing_contract==='1'&&<button type="button" className="mg-button" onClick={()=>{const next={...query.filters};delete next.missing_contract;updateQuery({filters:next});}}>Bỏ lọc thiếu HĐ</button>}{can('vehicles.write')&&missingContractVehicles[0]&&<button type="button" className="mg-button" onClick={()=>setVehicleAction({mode:'status',vehicle:missingContractVehicles[0]})}><RefreshCw size={16}/>Đổi trạng thái xe</button>}</div>}
         {kind==='contracts'&&!compactContracts&&query.search.trim()&&(draftsOnly?<div className="mg-billing-reminder"><p>Chỉ tìm trong hợp đồng nháp.</p><Link className="mg-button" href={`/contracts?search=${encodeURIComponent(query.search.trim())}`}>Tìm trong tất cả hợp đồng</Link></div>:!tableInput.scope&&<p className="mg-reminder-help">Kết quả ưu tiên hợp đồng đang thuê / quá hạn gần nhất để mở trả xe; các bản nháp và lịch sử vẫn ở bên dưới.</p>)}
-        {kind==='contracts'&&!compactContracts&&!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder" role="status"><p>Đang tải nhanh hợp đồng khoảng <strong>{table.data.recentDays} ngày</strong> gần đây và các hợp đồng đang mở. Phân trang trong tập này trước.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
         {kind === 'contracts' && !compactContracts && !loading && !error && dueCount > 0 && <div className="mg-billing-reminder" role="status"><p><strong>{dueCount} hợp đồng thuê sở hữu đến hạn đóng tiền.</strong> {paymentDueOnly && canBulkRemind ? 'Chọn nhiều hợp đồng rồi bấm Gửi nhắc nợ để gửi tin Zalo tới từng số khách.' : 'Khoản chưa đóng đủ tiếp tục hiện để kế toán giục nợ.'}</p>{!paymentDueOnly && <button className="mg-button" type="button" onClick={() => router.push('/contracts/due')}>Xem khoản đến hạn</button>}{paymentDueOnly && canBulkRemind && selectedIds.size > 0 && <button className="mg-button mg-button-primary" type="button" onClick={() => setBulkReminderIds([...selectedIds])}><MessageCircle size={16} />Gửi nhắc nợ ({selectedIds.size})</button>}</div>}
         {kind==='contracts'&&table.statisticsError&&<p role="status">Danh sách đã tải; thống kê chưa cập nhật. <button type="button" className="mg-button" onClick={table.refresh}>Thử lại thống kê</button></p>}
         {!compactContracts&&summaryPanel}
@@ -520,6 +519,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onHandover={can('contracts.finalize') && kind === 'contracts' && source === 'api' ? row=>setHandoverId(row.id) : undefined}
           onReturn={can('contracts.return') && kind === 'contracts' && source === 'api' ? row => setReturnTarget({ orderId: row.id, code: row.code }) : undefined}
           onMarkBadDebt={can('contracts.return') && kind==='contracts' && source==='api' ? row=>setBadDebtTarget({id:row.id,code:row.code}) : undefined}
+          onCloseBadDebt={canSettleContract(accessUser)?row=>setBadDebtCloseTarget(row):undefined}
           onRenew={can('contracts.renew') && kind === 'contracts' && source === 'api' ? row => setRenewTarget(row) : undefined}
           onVehicleChange={can('contracts.return') && kind === 'contracts' && source === 'api' ? row => setVehicleTarget({ orderId: row.id, code: row.code }) : undefined}
           onBatteryRent={can('contracts.draft') && kind === 'contracts' && source === 'api' ? row => setBatteryRentTarget(row) : undefined}
@@ -571,12 +571,13 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       <div className="mg-dialog-body"><p>{bulkDeleteNote[kind]}</p>{bulkDeleteError && <p className="mg-error-message" role="alert">{bulkDeleteError}</p>}</div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={bulkDeleteBusy} onClick={() => setBulkDeleteOpen(false)}>Hủy</button><button type="button" className="mg-button mg-button-danger" disabled={bulkDeleteBusy} onClick={() => void deleteSelected()}>{bulkDeleteBusy ? 'Đang xóa…' : <><Trash2 size={16} />Xóa {selectedIds.size} {config.singular}</>}</button></div>
     </Dialog>}
-    {draftDeleteTarget&&<ContractDraftDeleteDialog row={draftDeleteTarget} onClose={()=>setDraftDeleteTarget(null)} onDeleted={()=>{setDraftDeleteTarget(null);invalidateData(['contracts']);void reload(['contracts']);notify(draftDeleteTarget.status==='completed'?'Đã ẩn hợp đồng; dữ liệu và nhật ký vẫn được giữ.':'Đã xóa hẳn bản nháp và lưu nhật ký.');}}/>}
+    {draftDeleteTarget&&<ContractDraftDeleteDialog row={draftDeleteTarget} onClose={()=>setDraftDeleteTarget(null)} onDeleted={()=>{setDraftDeleteTarget(null);invalidateData(['contracts']);void reload(['contracts']);notify('Đã xóa bản nháp khỏi danh sách.');}}/>}
     {depositDeleteTarget&&<ContractDepositDeleteDialog row={depositDeleteTarget} onClose={()=>setDepositDeleteTarget(null)} onDeleted={()=>{setDepositDeleteTarget(null);invalidateData(['contracts','vehicles']);void reload(['contracts']);notify('Đã xóa hợp đồng cọc khỏi danh sách.');}}/>}
     {telegramTarget&&<ContractTelegramDialog order={telegramTarget==='pending'?undefined:telegramTarget} store={selectedStore} onClose={()=>setTelegramTarget(null)}/>}
     {returnTarget !== null && kind === 'contracts' && <ContractRowReturnDialog contractId={returnTarget.orderId ?? undefined} contractCode={returnTarget.code} initialQuery={returnTarget.query} onClose={() => setReturnTarget(null)} />}
     {recoveryTarget&&<BadDebtRecoveryDialog id={recoveryTarget.id} code={recoveryTarget.code} onClose={()=>setRecoveryTarget(null)} onRecovered={()=>{table.refresh();invalidateData(['contracts','vehicles']);}}/>}
     {badDebtTarget&&<ContractBadDebtDialog id={badDebtTarget.id} code={badDebtTarget.code} onClose={()=>setBadDebtTarget(null)} onDone={()=>{setBadDebtTarget(null);table.refresh();}}/>}
+    {badDebtCloseTarget&&<ContractBadDebtCloseDialog id={badDebtCloseTarget.id} code={badDebtCloseTarget.code} onClose={()=>setBadDebtCloseTarget(null)} onDone={()=>{setBadDebtCloseTarget(null);table.refresh();}}/>}
     {renewTarget && kind === 'contracts' && <ContractRenewalDialog orderId={renewTarget.id} contractCode={renewTarget.code} unitPrice={typeof renewTarget.unit_price === 'number' && renewTarget.unit_price > 0 ? renewTarget.unit_price : undefined} backfill={backfillRenewal} onClose={() => {setRenewTarget(null);setBackfillRenewal(false);}} />}
     {backfillOpen&&<ContractBackfillDialog onClose={()=>setBackfillOpen(false)} onCreate={()=>{setBackfillOpen(false);setBackfillComposer(true);setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}} onSelect={(action,row)=>{setBackfillOpen(false);if(action==='renewal'){setBackfillRenewal(true);setRenewTarget(row);}else router.push(`${cashbookPaymentPath(row.id)}&backfill=1`);}}/>}
     {renewPicker && <Dialog title="Chọn hợp đồng gia hạn" onClose={()=>setRenewPicker(false)}><div className="mg-dialog-body"><label className="mg-field">Tìm hợp đồng cần gia hạn<input type="search" autoFocus value={renewSearch} placeholder="Mã hợp đồng, khách, SĐT hoặc biển số" onChange={event=>setRenewSearch(event.target.value)}/></label><ul className="mg-operation-picks">{(renewable.data?.rows || []).map(row=><li key={row.id}><button type="button" onClick={()=>{setRenewPicker(false);setRenewTarget(row);}}><strong>{row.code} · {row.customer_name}</strong><span>{row.license} · {row.customer_phone}</span></button></li>)}</ul></div><div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={()=>setRenewPicker(false)}>Đóng</button></div></Dialog>}
@@ -606,14 +607,13 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
     {qrTarget!==null&&<ContractQrDialog id={qrTarget} onClose={()=>setQrTarget(null)}/>}
     {reminderTarget!==null&&<DebtReminderDialog orderId={reminderTarget} onClose={()=>setReminderTarget(null)}/>}
-    {bulkReminderIds&&canBulkRemind&&<BulkDebtReminderDialog orderIds={bulkReminderIds} onClose={()=>setBulkReminderIds(null)} onSent={()=>{setSelectedIds(new Set());notify('Đã xử lý các lượt nhắc nợ. Xem kết quả chi tiết trong danh sách gửi.');}}/>}
+    {bulkReminderIds&&canBulkRemind&&<BulkDebtReminderDialog orderIds={bulkReminderIds} onClose={()=>setBulkReminderIds(null)} onSent={()=>{setSelectedIds(new Set());notify('Đã gửi nhắc nợ cho các hợp đồng đã chọn.');}}/>}
     {composerOpen && dataset && <ManagementDataBoundary kinds={CONTRACT_DATA_KINDS} title="Mở hợp đồng" onClose={() => {setComposerOpen(false);setBackfillComposer(false);}}><ContractComposer key={`${composerMode}-${printRow?.id || 'new'}`} row={printRow} mode={composerMode} backfill={backfillComposer} onClose={() => {setComposerOpen(false);setBackfillComposer(false);}} onDraftSaved={() => { setBackfillComposer(false);setQuery(EMPTY_QUERY); setPage(1); selectStore('all'); if(draftsOnly&&!searchParams.toString())table.refresh();else router.push('/contracts/drafts'); }}
       onSaved={code => {
         setComposerOpen(false);setBackfillComposer(false);
         invalidateData(['contracts']);
         if(paged)table.refresh();else void ensureData(['contracts'], true).catch(() => {});
         notify(`Đã lưu hợp đồng ${code}.`);
-        if(composerMode==='edit'&&printRow)setTelegramTarget({id:printRow.id,code});
       }}
       onHandover={printRow?.status==='deposit_contract'&&canFinalizeRentalContract(accessUser,printRow.rental_type)?()=>{setComposerOpen(false);setHandoverId(printRow.id);}:undefined}
       onFinalized={result => {
@@ -625,8 +625,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       }} /></ManagementDataBoundary>}
     {viewing && kind === 'customers' && <CustomerDetail row={viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }} />}
     {viewing && kind === 'stores' && <StoreDetail row={viewing} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }} />}
-    {viewing && kind === 'vehicles' && <VehicleDetail row={dataset?.vehicles.find(item=>item.id===viewing.id)||viewing} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null); setFormOpen(true); }}
-      onAction={mode => { setVehicleAction({ mode, vehicle: viewing }); setViewing(null); }} />}
+    {viewingVehicle && <VehicleDetail row={viewingVehicle} config={config} canEdit={canEdit} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewingVehicle); setViewing(null); setFormOpen(true); }}
+      onAction={mode => { setVehicleAction({ mode, vehicle: viewingVehicle }); setViewing(null); }} />}
     {vehicleAction && <VehicleActionDialog mode={vehicleAction.mode} vehicle={vehicleAction.vehicle} onClose={() => setVehicleAction(null)} />}
     {handoverId && <ContractHandoverDialog id={handoverId} onClose={()=>setHandoverId(null)} onDone={context=>{setHandoverId(null);invalidateData(['contracts','vehicles']);notify(`Đã giao xe đơn ${context.code}. Tiền thuê trả trước được giữ nguyên.`);if (canPayContracts && context.remaining !== null && context.remaining > 0) router.push(cashbookPaymentPath(context.id, 'debt'));else void ensureData(['contracts','vehicles'],true).catch(()=>{});}} />}
     {viewing && kind !== 'contracts' && kind !== 'customers' && kind !== 'stores' && kind !== 'vehicles' && <Dialog title={String(viewing.name)} subtitle={`${viewing.code} · ${config.title}`} onClose={() => setViewing(null)}>

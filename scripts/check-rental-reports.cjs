@@ -71,16 +71,16 @@ async function main(){
         (9103,7001,'order:rental_fees','in',99999,'approved',7,1,'2026-10-24T00:00:00+07:00'),
         (9104,8003,'order:rental_fees','in',99999,'approved',7,1,'2026-10-23T10:00:00+07:00');`);
       const stores=await rentalOverview(db,params()),days=await rentalOverview(db,params('view=days'));
-      assert.equal(stores.rows.length,1);assert.equal(stores.total.revenue,120);assert.equal(stores.total.income,1190);assert.equal(stores.total.expense,320);
+      assert.equal(stores.rows.length,1);assert.equal(stores.total.revenue,170);assert.equal(stores.total.income,1190);assert.equal(stores.total.expense,320);
       const {readDashboardSummary}=load(path.join(root,'lib/server/dashboard'));
       const dashboard=await readDashboardSummary(db,new URLSearchParams({from:'2026-10-23',to:'2026-10-23',store_id:'1'}));
-      assert.equal(dashboard.total.revenue,120);assert.equal(dashboard.total.repair,7);
+      assert.equal(dashboard.total.revenue,170);assert.equal(dashboard.total.repair,7);
       assert.deepEqual(stores.total,days.total);assert.equal(days.rows[0].key,'2026-10-23');assert.equal(stores.total.breakdown.other_income,5);
       assert(validRentalReport('rental-overview',stores,params()));assert(validRentalReport('rental-overview',days,params('view=days')));
       assert(!validRentalReport('rental-overview',{...stores,rows:[]},params()));
       assert(!validRentalReport('rental-overview',{...stores,total:{...stores.total,income:0}},params()));
       assert(!validRentalReport('rental-overview',{...stores,rows:[null]},params()));
-      const actual=await rentalRevenue(db,'2026-10-23','2026-10-23',1);assert.deepEqual(actual.total,{rental:100,renewal:40,late:50,early:20,revenue:120});assert.equal(actual.unclassified_amount,5);
+      const actual=await rentalRevenue(db,'2026-10-23','2026-10-23',1);assert.deepEqual(actual.total,{rental:100,renewal:40,late:50,early:20,revenue:170});assert.equal(actual.unclassified_amount,5);
       checks.push('TEMP: store/day overview obeys all three requested formulas, legacy addon renewal counts once, unknown addons remain separate, approved receipts and Vietnam dates drive actual money');
       checks.push('Client validation rejects missing page records, malformed rows and non-reconciling money before rendering or exporting financial reports');
     }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}

@@ -1,7 +1,7 @@
 import 'server-only';
 import { randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { ACCESS_ROLES,hasPermission,isAdminAccount,type AccessRole,type PermissionAccount } from '@/lib/management/permissions';
+import { ACCESS_ROLES,hasPermission,isAdminAccount,canManageAccounts,isOwnershipManager,type AccessRole,type PermissionAccount } from '@/lib/management/permissions';
 import type { IssuedAccountCredentials } from '@/lib/management/accounts';
 import { AccountAccessError,saveManagedAccount } from './account-management';
 type Database=Pick<PoolClient,'query'>;
@@ -12,7 +12,7 @@ export function requireStaffAccountScope(user:PermissionAccount,store:unknown) {
 }
 /** An employee change and its login change are committed together. No password enters the audit. */
 export async function syncStaffAccount(db:Database,actorId:number,staffId:number,user:PermissionAccount,initialRole?:AccessRole,rehire=false):Promise<IssuedAccountCredentials|null> {
-  if(initialRole&&!isAdminAccount(user))throw new AccountAccessError('Chỉ quản trị được đặt vai trò khi cấp tài khoản.',403);
+  if(initialRole&&!canManageAccounts(user))throw new AccountAccessError('Chỉ quản trị được đặt vai trò khi cấp tài khoản.',403);
   await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['management-accounts']);
   const staff=(await db.query('SELECT id,full_name,store_id,status,user_id FROM himoto.staff_profiles WHERE id=$1 FOR UPDATE',[staffId])).rows[0];
   if(!staff)throw new AccountAccessError('Không tìm thấy nhân sự.',404);
@@ -20,7 +20,7 @@ export async function syncStaffAccount(db:Database,actorId:number,staffId:number
   const before=staff.user_id?(await db.query(`SELECT u.id,u.name,u.role,u.role_id,u.deleted_at,u.xmin::text AS revision,a.login_name,a.access_role,a.store_id,a.scope_all,a.permissions,a.enabled FROM himoto.users u LEFT JOIN himoto.management_account_access a ON a.user_id=u.id WHERE u.id=$1 FOR UPDATE OF u`,[staff.user_id])).rows[0]:null;
   if(before&&!isAdminAccount(user)){
     if(isAdminAccount(before)||before.login_name==='system.sepay')throw new AccountAccessError('Chỉ quản trị viên được cập nhật nhân sự gắn tài khoản quản trị hoặc tích hợp.',403);
-    if(!user.scope_all&&(before.scope_all||Number(before.store_id)!==Number(user.store_id)||!['branch_staff','ownership_staff'].includes(before.access_role)))throw new AccountAccessError('Chỉ được cập nhật tài khoản nhân viên trong cơ sở của mình.',403);
+    if(!user.scope_all&&(before.scope_all||Number(before.store_id)!==Number(user.store_id)||!isOwnershipManager(user)&&!['branch_staff','ownership_staff'].includes(before.access_role)))throw new AccountAccessError('Chỉ được cập nhật tài khoản nhân viên trong cơ sở của mình.',403);
   }
   if(staff.status==='leave'){
     if(before){

@@ -6,6 +6,7 @@ import { signPhotoUpload } from '@/lib/server/cloudinary-photos';
 import { hasPermission } from '@/lib/management/permissions';
 import { cloudflyVideosEnabled, probeCloudflyVideoStorage } from '@/lib/server/cloudfly-videos';
 import { failureResponse } from '@/lib/server/public-failure';
+import { cloudflyPhotosEnabled } from '@/lib/server/object-media';
 
 export const runtime = 'nodejs';
 export const maxDuration = 90;
@@ -15,12 +16,14 @@ async function POSTHandler(request: NextRequest) {
     if (Number(request.headers.get('content-length')) > 1024) throw new RecordPhotoError('Yêu cầu tải ảnh không hợp lệ.');
     const body = await request.text(); if (body.length > 1024) throw new RecordPhotoError('Yêu cầu tải ảnh không hợp lệ.');
     const input = JSON.parse(body);
+    if(!input||typeof input!=='object'||Array.isArray(input)||typeof input.upload_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.upload_id))throw new RecordPhotoError('Mã tải ảnh không hợp lệ.');
     const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
     if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
     // Mọi tài khoản đã đăng nhập đều được tải ảnh lên web.
     if(input.resource_type!==undefined&&input.resource_type!=='video')throw new RecordPhotoError('Loại tệp không hợp lệ.');
     if(input.verify_storage!==undefined&&typeof input.verify_storage!=='boolean')throw new RecordPhotoError('Yêu cầu kiểm tra kho không hợp lệ.');
     if(input.verify_storage===true&&(!hasPermission(user,'settings.write')||input.resource_type!=='video'))throw new RecordPhotoError('Chỉ quản trị viên được kiểm tra kho video.',403);
+    if(input.resource_type===undefined&&request.headers.get('x-photo-storage')==='cloudfly'&&cloudflyPhotosEnabled())return NextResponse.json({status:'success',data:{provider:'cloudfly'}},{headers:{'Cache-Control':'private, no-store'}});
     const provider=input.resource_type==='video'?(cloudflyVideosEnabled()?'cloudfly':'cloudinary'):undefined;
     const signed = signPhotoUpload(user.id, input?.upload_id, Date.now(), input.resource_type==='video');
     let storageCheck;

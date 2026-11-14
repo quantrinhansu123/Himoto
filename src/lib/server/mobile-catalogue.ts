@@ -116,12 +116,23 @@ export function mobileRecord(
   };
 }
 export function mobileTableParams(params: URLSearchParams, kind: CatalogueKind = "contracts") {
-  const allowed = new Set(["page", "size", "search", "status", "store", ...(kind === "contracts" ? ["scope", "from", "to", "store_basis"] : [])]);
+  const allowed = new Set(["page", "size", "search", "status", "store", ...(kind === "contracts" ? ["scope", "from", "to", "store_basis", "customer_id", "statistics"] : [])]);
   for (const [key] of params)
     if (!allowed.has(key) || params.getAll(key).length !== 1) {
       throw new MobileError("Bộ lọc không hợp lệ.");
     }
   const result = new URLSearchParams(params);
+  if (result.has("customer_id")) {
+    const id = result.get("customer_id")!;
+    if (!/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new MobileError("Khách hàng cần lọc chưa hợp lệ.");
+    result.delete("customer_id");
+    result.set("filter_customer_id", id);
+  }
+  if (result.has("statistics")) {
+    if (result.get("statistics") !== "1") throw new MobileError("Yêu cầu số lượng chưa hợp lệ.");
+    result.delete("statistics");
+    result.set("statistics_only", "1");
+  }
   if (kind === "contracts" && !contractWorkspace(result.get("scope") || ""))
     throw new MobileError("Nhóm hợp đồng không hợp lệ.");
   for (const key of ["from", "to"]) {
@@ -149,16 +160,28 @@ export async function readMobilePage(
 ): Promise<MobilePage> {
   assertPermission(user, kind);
   const query = mobileTableParams(params, kind);
+  if (!user.scope_all && user.store_id && !query.has('store') && kind !== 'vehicles') {
+    query.set('store', String(user.store_id));
+  }
   return scope(user, kind, async () => {
     const client = await himotoPool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await client.query("SET LOCAL statement_timeout='20s'");
       const data = await readManagementTable(client, kind, query);
+      const thumbnails = kind === 'vehicles' && data.rows.length ? await client.query(
+        `SELECT entity_id,xmin::text AS revision FROM himoto.management_record_photos
+         WHERE entity_type='vehicles' AND entity_id=ANY($1::bigint[]) AND slot='vehicle-photo'
+         AND mime_type IN ('image/jpeg','image/png','image/webp')
+         AND (data IS NOT NULL OR cloudinary_public_id IS NOT NULL AND cloudinary_cloud_name IS NOT NULL OR object_key IS NOT NULL AND object_bucket IS NOT NULL AND object_etag IS NOT NULL)
+         AND (data IS NULL OR octet_length(data) BETWEEN 1 AND 2097152)`, [data.rows.map(row => row.id)],
+      ) : { rows: [] };
+      const thumbnailRevisions = new Map(thumbnails.rows.map(row => [Number(row.entity_id), String(row.revision)]));
       await client.query("COMMIT");
       return {
-        rows: data.rows.map((row) => mobileRecord(kind, row)),
+        rows: data.rows.map((row) => ({ ...mobileRecord(kind, row), ...(kind === 'vehicles' ? { thumbnailRevision: thumbnailRevisions.get(row.id) ?? null } : {}) })),
         total: data.total,
+        ...(query.get("statistics_only") === "1" || kind !== "contracts" ? { tabCount: data.tabCount } : {}),
         page: data.page,
         pages: data.pages,
         statusCounts: data.statusCounts,

@@ -8,6 +8,7 @@ let scheme = 'light';
 const themeModule = { exports: {} };
 const source = ts.transpileModule(fs.readFileSync(path.join(mobileRoot, 'theme.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 new Function('require', 'module', 'exports', source)(name => {
+  if (name === './lib/status-labels') return load(path.join(mobileRoot, 'lib/status-labels'));
   assert.equal(name, 'react-native'); return { useColorScheme: () => scheme };
 }, themeModule, themeModule.exports);
 function luminance(hex) {
@@ -33,9 +34,13 @@ for (scheme of ['light', 'dark']) {
 const catalogue = load(path.join(mobileRoot, 'lib/catalogue-config'));
 assert.equal(catalogue.initialCatalogueStatus('vehicles', 'ready'), 'ready');
 assert.equal(catalogue.initialCatalogueStatus('contracts', 'overdue'), 'overdue');
-for (const value of ['unknown', 'ready&store=999', ['ready'], undefined]) assert.equal(catalogue.initialCatalogueStatus('contracts', value), '');
+for (const value of ['unknown', 'ready&store=999', ['ready'], undefined]) {
+  assert.equal(catalogue.initialCatalogueStatus('contracts', value), 'draft');
+  assert.equal(catalogue.initialCatalogueStatus('vehicles', value), '');
+}
+assert.equal(catalogue.initialCatalogueStatus('contracts', 'all'), '');
 assert.equal(catalogue.contextualStatusLabel('contracts', 'pending'), 'Chờ giao xe');
 assert.equal(catalogue.contextualStatusLabel('customers', 'draft'), 'Chưa hoàn tất');
 assert(catalogue.catalogueConfig.contracts.allStatuses.includes('cancel_pending_settlement'));
-checks.push('Shortcut presets reject malformed/unknown values and context-specific statuses retain their business meaning');
+checks.push('Malformed/unknown shortcuts use safe per-catalogue defaults; contracts open drafts, explicit all stays unfiltered and contextual statuses retain their business meaning');
 console.log(JSON.stringify({ passed: checks.length, checks, nativeScreenReaderCertified: false }, null, 2));

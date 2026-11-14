@@ -1,4 +1,5 @@
 import type { CatalogueKind } from "@himoto/mobile-contract";
+import { statuses } from './status-labels';
 
 export const catalogueConfig: Record<
   CatalogueKind,
@@ -11,10 +12,20 @@ export const catalogueConfig: Record<
   }
 > = {
   vehicles: {
-    title: "Đội xe",
+    title: "Danh sách xe",
     noun: "xe",
     placeholder: "Tìm biển số, tên xe, nhãn hiệu",
-    quickStatuses: ["ready", "using", "in_transit"],
+    quickStatuses: [
+      "",
+      "ready",
+      "using",
+      "repairing",
+      "in_transit",
+      "bad_debt",
+      "pending",
+      "sold",
+      "broken",
+    ],
     allStatuses: [
       "ready",
       "using",
@@ -27,10 +38,21 @@ export const catalogueConfig: Record<
     ],
   },
   contracts: {
-    title: "Hợp đồng",
+    title: "Danh sách hợp đồng",
     noun: "hợp đồng",
     placeholder: "Tìm mã hợp đồng, khách, biển số",
-    quickStatuses: ["renting", "overdue", "draft"],
+    quickStatuses: [
+      "",
+      "renting",
+      "draft",
+      "overdue",
+      "bad_debt",
+      "reserved",
+      "wait_payment",
+      "deposit_contract",
+      "completed",
+      "cancelled",
+    ],
     allStatuses: [
       "renting",
       "overdue",
@@ -49,7 +71,7 @@ export const catalogueConfig: Record<
     title: "Khách hàng",
     noun: "khách hàng",
     placeholder: "Tìm tên hoặc số điện thoại",
-    quickStatuses: ["active", "warning", "blacklist"],
+    quickStatuses: ["", "active", "warning", "blacklist"],
     allStatuses: ["active", "warning", "blacklist", "draft"],
   },
 };
@@ -58,17 +80,25 @@ export function initialCatalogueStatus(
   kind: CatalogueKind,
   value?: string | string[],
 ) {
-  return typeof value === "string" &&
-    catalogueConfig[kind].allStatuses.includes(value)
-    ? value
-    : "";
+  if (typeof value === "string") {
+    if (value === "all") return "";
+    if (catalogueConfig[kind].allStatuses.includes(value)) return value;
+  }
+  return kind === "contracts" ? "draft" : "";
 }
 
 export function contextualStatusLabel(
   kind: CatalogueKind,
   status: string,
 ): string | undefined {
-  if (kind === "contracts" && status === "pending") return "Chờ giao xe";
-  if (kind === "customers" && status === "draft") return "Chưa hoàn tất";
-  return undefined;
+  if (kind === "contracts") {
+    if (status === "draft") return "Nháp";
+    if (status === "deposit_contract") return "Đặt cọc";
+    if (status === "pending") return "Chờ giao xe";
+  }
+  if (kind === "customers") {
+    if (status === "draft") return "Chưa hoàn tất";
+    if (status === "blacklist") return "Nợ xấu / Cấm thuê";
+  }
+  return statuses[status];
 }

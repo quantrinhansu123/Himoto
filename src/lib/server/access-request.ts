@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { hasPermission, type AccessPermission } from '@/lib/management/permissions';
+import { hasPermission, canSettleContract, type AccessPermission } from '@/lib/management/permissions';
 import { dataAccess } from './access-context';
 import { SESSION_COOKIE, sameOrigin, userFromSession, readSessionUser } from './management-session';
 import { failureResponse } from './public-failure';
@@ -48,6 +48,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/returns'))return read?'contracts.read':'contracts.return';
   if(path.includes('/staff-sales')||path==='/api/auth/dashboard'||path.startsWith('/api/auth/rental-revenue'))return 'contracts.read';
   if(path.includes('/order/car-rental/')) {
+    if(path.endsWith('/payments/settlement'))return 'contracts.settle';
     if(path.endsWith('/approval'))return read?'contracts.read':'contracts.finalize';
     if(path.endsWith('/receipt-corrections'))return read?'contracts.read':'contracts.draft';
     if(path.endsWith('/rental-terms'))return read?'contracts.read':'contracts.draft';
@@ -82,6 +83,7 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
     if(request.method!=='GET'&&(request.nextUrl.pathname.endsWith('/actions')||/^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/lifecycle$/.test(request.nextUrl.pathname))) {
       try {operation=String((await request.clone().json()).action||'');}catch {return NextResponse.json({status:'error',message:'Thao tác không hợp lệ.'},{status:400});}
     }
+    if(operation==='close_bad_debt'&&!canSettleContract(user))return NextResponse.json({status:'error',message:'Tài khoản chưa có quyền đóng hợp đồng.'},{status:403});
     const vehiclePhoto=request.nextUrl.pathname.match(/\/record-photos\/vehicles\/([1-9]\d{0,14})(?:\/|$)/);
     const vehicleAction=request.nextUrl.pathname.match(/^\/api\/auth\/vehicles\/([1-9]\d{0,14})\/actions$/);
     const transfer_vehicle_id=vehiclePhoto?.[1]||(['transfer','receive','reject','cancel'].includes(operation)?vehicleAction?.[1]:'')||'';

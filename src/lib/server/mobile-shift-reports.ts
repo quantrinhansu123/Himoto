@@ -35,11 +35,11 @@ export async function saveMobileShift(user:SessionUser,request:NextRequest){
   let input;try{input=parseShiftInput(body.payload);}catch(error){throw new MobileError((error as Error).message);}
   const raw={...body,payload:input} as unknown as MobileShiftSave;const operation=raw.id==null?"shift.create":`shift.update:${mobileShiftId(String(raw.id))}`;
   const receipt=await transaction(user,false,client=>idempotentMobileWrite(client,user.id,key,operation,raw,async()=>{const saved=await saveShiftReport(client,{...user,store_id:user.store_id??null,scope_all:user.scope_all===true},raw,key);return{id:Number(saved.id),revision:String(saved.revision)};}));
-  return {key,operation,receipt,deliveryKey:raw.status==="submitted"&&raw.payload.ownership_report?`shift:${receipt.id}`:null};
+  return {key,operation,receipt,deliveryKey:raw.status==="submitted"?`shift:${receipt.id}`:null};
 }
 export function readMobileShiftSnapshot(user:SessionUser,id:string){mobileShiftId(id);return transaction(user,true,client=>readShiftAuditSnapshot(client,id));}
-export function readMobileShiftTelegram(user:SessionUser,id:string){mobileShiftId(id);return transaction(user,true,client=>readShiftTelegram(client,id));}
-export function retryMobileShiftTelegram(user:SessionUser,id:string){permission(user,"write");mobileShiftId(id);return transaction(user,true,client=>retryShiftTelegram(client,id));}
+export function readMobileShiftTelegram(user:SessionUser,id:string,stage='pgd'){mobileShiftId(id);return transaction(user,true,client=>readShiftTelegram(client,id,stage));}
+export function retryMobileShiftTelegram(user:SessionUser,id:string,stage='pgd'){permission(user,stage==='audit'?'audit':'write');mobileShiftId(id);return transaction(user,true,client=>retryShiftTelegram(client,id,stage));}
 export async function saveMobileShiftAudit(user:SessionUser,id:string,request:NextRequest){
   permission(user,"audit");mobileShiftId(id);const key=mobileRequestKey(request.headers.get("Idempotency-Key")),raw=await mobileBody(request,131072);
   if(Object.keys(raw).some(k=>!["input","revision","report_revision","status","fingerprint"].includes(k)))throw new MobileError("Thông tin đối soát không hợp lệ.");

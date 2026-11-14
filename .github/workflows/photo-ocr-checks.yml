@@ -1,0 +1,37 @@
+name: Photo OCR checks
+on:
+  pull_request:
+    paths:
+      - 'package*.json'
+      - 'src/lib/management/photo-ocr.ts'
+      - 'src/lib/server/photo-ocr.ts'
+      - 'src/lib/server/customer-document-ocr.ts'
+      - 'src/app/api/auth/photo-ocr/**'
+      - 'src/components/management/usePhotoOcr.ts'
+      - 'src/components/management/CustomerDocumentBatch.tsx'
+      - 'src/components/contracts/CustomerCreateDialog.tsx'
+      - 'src/components/contracts/ContractComposer.tsx'
+      - 'scripts/check-photo-ocr*'
+      - '.github/workflows/photo-ocr-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:photo-ocr
+      - run: npm run test:vehicle-registration-ocr
+      - run: node scripts/check-mobile-customer-documents.cjs
+      - run: npm run build

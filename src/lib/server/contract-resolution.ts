@@ -3,6 +3,8 @@ import type { PoolClient } from 'pg';
 import { installmentBalance,parseInstallmentPlan } from '@/lib/management/contract-billing';
 import { badDebtClock,badDebtCutoff } from '@/lib/management/contract-bad-debt';
 import { depositLateral,rentalPaidSql } from './contract-deposits';
+import { dataAccess } from './access-context';
+import { canSettleContract } from '@/lib/management/permissions';
 
 type Database=Pick<PoolClient,'query'>;
 export async function readContractResolution(db:Database,id:number){
@@ -17,9 +19,10 @@ export async function readContractResolution(db:Database,id:number){
   const plan=rawPlan?parseInstallmentPlan(rawPlan):null;
   const clock=badDebtClock(row.order_status,badDebtCutoff(row.draft_payload)||plan?.stopped_at&&`${plan.stopped_at}:00+07:00`,Date.now());
   const balance=plan&&clock!==undefined?installmentBalance(plan,base,paid,clock):null;
-  const total=rawPlan&&(!plan||clock===undefined)?null:balance?balance.accrued_total:base;
+  const closure=row.order_status==='completed'?row.draft_payload?.management_composer?.lifecycle?.payment_closure:undefined;
+  const total=closure?money(closure.total):rawPlan&&(!plan||clock===undefined)?null:balance?balance.accrued_total:base;
   // Before return, settlement also covers future contractual installments.
-  const target=balance&&plan&&!plan.stopped_at&&row.order_status!=='bad_debt'&&base!==null?base+balance.expected_total-plan.amount:total;
+  const target=!closure&&balance&&plan&&!plan.stopped_at&&row.order_status!=='bad_debt'&&base!==null?base+balance.expected_total-plan.amount:total;
   const remaining=target===null||paid===null?null:Math.max(target-paid,0);
   const overpayment=target===null||paid===null?null:Math.max(paid-target,0);
   const depositHeld=Math.max(Number(row.deposit_paid)-Number(row.deposit_refunded),0);
@@ -31,10 +34,13 @@ export async function readContractResolution(db:Database,id:number){
 }
 /** Called inside the operation transaction; no receipt or balance is invented. */
 export async function closeResolvedBadDebt(db:Database,id:number,actorId:number){
+  const actor=dataAccess.getStore();
+  if(!canSettleContract(actor)||actor?.id!==actorId)return false;
   const row=(await db.query('SELECT order_status,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id])).rows[0];
   if(row?.order_status!=='bad_debt'||!row.draft_payload?.management_composer?.lifecycle?.settlement)return false;
   const state=await readContractResolution(db,id);if(!state?.all_returned||!state.settled)return false;
   const payload=structuredClone(row.draft_payload),lifecycle=payload.management_composer.lifecycle,at=new Date().toISOString();
+  lifecycle.bad_debt_closure={at,recorded_at:at,actor_id:actorId,note:'Đã trả đủ xe và xác nhận tất toán.',total:state.total,paid:state.paid,remaining:state.remaining,deposit_held:state.deposit_held,overpayment:state.overpayment};
   lifecycle.events=[...(Array.isArray(lifecycle.events)?lifecycle.events:[]),{action:'closed',at,recorded_at:at,actor_id:actorId,actor_name:`#${actorId}`,note:'Đã trả/thu hồi tất cả xe và đối chiếu tất toán đủ tiền thuê, phí, cọc.',from:'bad_debt',to:'completed'}];
   await db.query("UPDATE himoto.orders SET order_status='completed',draft_payload=$2::json,updated_at=now() WHERE id=$1 AND order_status='bad_debt'",[id,JSON.stringify(payload)]);return true;
 }

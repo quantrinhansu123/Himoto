@@ -1,4 +1,5 @@
 import 'server-only';
+import { requireTelegramTimestamp } from './telegram-time';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { hasPermission,type PermissionAccount } from '@/lib/management/permissions';
@@ -44,11 +45,12 @@ export async function readVehicleTransferTelegram(db:Database,vehicleId:number,e
   const received=e.event_type==='manual_transfer_receive',storeId=Number(received?e.to_store_id:e.from_store_id);
   const allowed=hasPermission(user,received?'vehicles.receive':'vehicles.transfer')&&(all||storeId===Number(user.store_id)||Number(e.created_by)===Number(user.id));
   const photoPrefix=`${received?'receive':'transfer'}-${e.id}-`;
-  const photos=(await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version
-    FROM himoto.management_record_photos WHERE entity_type='vehicles' AND entity_id=$1 AND slot ~ $2 ORDER BY length(slot),slot`,[vehicleId,`^${photoPrefix}[1-9][0-9]{0,14}(-extra-[2-9][0-9]{0,14})?$`])).rows;
+  const photos=(await db.query(`SELECT slot,mime_type,encode(data,'base64') AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,
+    object_bucket,object_key,object_etag
+    FROM himoto.management_record_photos WHERE entity_type='vehicles' AND entity_id=$1 AND slot ~ $2 ORDER BY length(slot),slot`,[vehicleId,`^${photoPrefix}[1-9][0-9]{0,14}(-extra-([2-9]|[1-9][0-9]{1,14}))?$`])).rows;
   // actor = tài khoản đang đăng nhập (xuất tin Telegram); fallback người tạo lượt chuyển.
   const senderName=String((user as {name?:string}).name||'').trim()||e.actor||'Chưa ghi nhận';
-  const payload:NotificationPayload={code:`DC-${e.id}`,customer:'',phone:'',store:e.from_name,actor:senderName,vehicles:e.license||'',vehicle_names:e.vehicle_name||'',total:'0',at:new Date(e.at).toISOString(),photos,transfer:{from:e.from_name||'',to:e.to_name||'',note:e.notes||'',received,ownership:e.ownership===true}};
+  const payload:NotificationPayload={code:`DC-${e.id}`,customer:'',phone:'',store:e.from_name,actor:senderName,vehicles:e.license||'',vehicle_names:e.vehicle_name||'',total:'0',at:requireTelegramTimestamp(e.at),photos,transfer:{from:e.from_name||'',to:e.to_name||'',note:e.notes||'',received,ownership:e.ownership===true}};
   const destinations=vehicleTransferTelegramDestinations(e.from_kind,e.to_kind,Number(e.from_store_id),Number(e.to_store_id),String(e.from_name||''),String(e.to_name||''),storeId,e.ownership===true);
   const notices=(await db.query('SELECT status,message_ids,event_key FROM himoto.management_contract_notifications WHERE vehicle_event_id=$1 ORDER BY event_key',[eventId])).rows;
   const aggregate=noticeStatus(notices);

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
-import type { MobileSalesReport, ReportAction, ReportFormat, ReportRow, ReportSection, ReportValue } from "../../../shared/mobile-reports";
+import type { MobileSalesReport, ReportAction, ReportFormat, ReportRow, ReportSection, ReportValue, ReportPageChange } from "../../../shared/mobile-reports";
 import { useSession } from "@/providers/session";
 import { money, useTheme } from "@/theme";
 import { Button, Card } from "./ui";
@@ -49,11 +49,11 @@ function RowCard({ row, section }: { row: ReportRow; section: ReportSection }) {
     {row.action && actionAllowed && <Button secondary label={`${row.action.label} · ${title}`} onPress={() => openReportAction(row.action!)} />}
   </Card>;
 }
-function Section({ section, onPage }: { section: ReportSection; onPage: (page: number, size: number) => void }) {
+function Section({ section, onPage }: { section: ReportSection; onPage: ReportPageChange }) {
   const theme = useTheme(), [localPage, setLocalPage] = useState(1), size = section.paging?.size || 20, total = section.paging?.total ?? section.rows.length;
   const pages = Math.max(1, Math.ceil(total / size)), page = section.paging?.page || Math.min(localPage, pages);
   const rows = section.paging ? section.rows : section.rows.slice((page - 1) * size, page * size);
-  const choose = (value: number) => { if (section.paging) onPage(value, size); else setLocalPage(value); };
+  const choose = (value: number) => { if (section.paging) onPage(value, size, section.key); else setLocalPage(value); };
   return <View style={{ gap: 14 }}>
     <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 21, fontWeight: "800" }}>{section.title}</Text>
     {rows.map(row => <RowCard key={row.key} row={row} section={section} />)}
@@ -65,7 +65,7 @@ function Section({ section, onPage }: { section: ReportSection; onPage: (page: n
     </View></View>}
   </View>;
 }
-export function SalesReportView({ report, onPage }: { report: MobileSalesReport; onPage: (page: number, size: number) => void }) {
+export function SalesReportView({ report, onPage }: { report: MobileSalesReport; onPage: ReportPageChange }) {
   const theme = useTheme(), groups = new Map<string, typeof report.metrics>();
   for (const metric of report.metrics) groups.set(metric.group, [...groups.get(metric.group) || [], metric]);
   return <View style={{ gap: 20 }}>

@@ -43,7 +43,7 @@ export function filterRows(rows: ManagementRow[], query: TableQuery, storeId: st
     if (storeId && storeId !== 'all' && String(row.store_id ?? row.id) !== storeId) return false;
     if (query.status && row.status !== query.status
       && !(query.status==='renting'&&isContractActiveRentalStatus(row.status))
-      && !(query.status==='overdue'&&row.collection_overdue===1)) return false;
+      && !(query.status==='overdue'&&(row.status==='bad_debt'||row.collection_overdue===1))) return false;
     if (query.filters.missing_contract === '1' && !vehicleMissingOpenContract(row)) return false;
     if (Object.entries(query.filters).some(([key, value]) => {
       if (key === 'missing_contract' || !value) return false;

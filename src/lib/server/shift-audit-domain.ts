@@ -5,6 +5,7 @@ import { hasPermission } from '@/lib/management/permissions';
 import { parseAuditInput,validateAuditConfirmation } from '@/lib/management/shift-audits';
 import { readShiftSnapshot } from './shift-audits';
 import { ShiftRequestError,shiftRequestHash,readShiftReceipt,writeShiftReceipt } from './shift-report-requests';
+import {queueReportTelegram,shiftTelegramAttachments} from './report-telegram';
 type Database=Pick<PoolClient,'query'>;
 export async function readShiftAuditSnapshot(client:Database,id:string) {
   const report=(await client.query('SELECT payload,status,app_snapshot FROM himoto.management_shift_reports WHERE id=$1',[id])).rows[0];
@@ -33,6 +34,7 @@ export async function saveShiftAudit(client:Database,actor:Omit<DataAccess,'oper
       [id,report.store_id,input,snapshot,raw.status,result,actor.id,reviewerName])).rows[0];
     const data={id:Number(id),revision:saved.revision,audit:{input,snapshot,status:raw.status,result,revision:saved.revision,
       reviewer_name:reviewerName,updated_at:saved.updated_at,confirmed_at:saved.confirmed_at}};
+    if(raw.status==='confirmed')await queueReportTelegram(client,`shift-audit:${id}`,Number(report.store_id),`KTNB ĐỐI SOÁT CA · PGD #${report.store_id}\nNgày: ${report.payload.date}\nNgười xác nhận: ${reviewerName}\nKết quả: ${result}`,report.payload.ownership_report?'ownership_new':'store',await shiftTelegramAttachments(client,Number(id),'audit'));
     await writeShiftReceipt(client,key,actor.id,Number(report.store_id),hash,data);
 
     return data;

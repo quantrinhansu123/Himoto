@@ -24,7 +24,8 @@ const ExistingCustomerDetail = dynamic(() => import('@/components/management/Cus
 
 export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowIncomplete = false, startDraft = false, onCreated, onClose }: { idCard: string; storeId?: string; foreign?:boolean; allowIncomplete?: boolean; startDraft?: boolean; onCreated: (row: ManagementRow) => void; onClose: () => void }) {
   const { source, dataset, selectedStore, createCustomer, can, accessUser } = useManagement();
-  const [branch, setBranch] = useState(storeId || (selectedStore !== 'all' ? selectedStore : String(dataset?.stores[0]?.id || '')));
+  const writableStores=dataset?.stores.filter(store=>!accessUser||accessUser.access_role==='admin'||accessUser.scope_all||Number(accessUser.store_id)===store.id)||[];
+  const [branch, setBranch] = useState(storeId || (selectedStore !== 'all'&&writableStores.some(store=>String(store.id)===selectedStore) ? selectedStore : String(writableStores[0]?.id || '')));
   const [status, setStatus] = useState(startDraft ? 'draft' : 'active');
   const incomplete = allowIncomplete && status === 'draft';
   const [customer, setCustomer] = useState<CustomerDetails>(() => ({ ...customerDetails(), customer_type:foreign?'foreign':'vietnam', id_card: idCard }));
@@ -83,7 +84,7 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
       return;
     }
     const next = incomplete ? validateDepositCustomer(customer,source) : validateCustomer(customer, source);
-    if (!dataset?.stores.some(store => String(store.id) === branch)) next.store_id = 'Chọn cơ sở cho khách hàng.';
+    if (!writableStores.some(store => String(store.id) === branch)) next.store_id = 'Chọn cơ sở cho khách hàng.';
     setErrors(next); setError(''); setDuplicates([]);
     if (Object.keys(next).length) { requestAnimationFrame(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return; }
     try { parseCustomerRelatives(relatives); }
@@ -121,10 +122,10 @@ export function CustomerCreateDialog({ idCard, storeId, foreign=false, allowInco
               onChange={event => setValue(event.target.value)} />}
         {field.hint && <small>{field.hint}</small>}
         {errors[field.key] && <p className="mg-field-error" id={`${fieldId}-error`}>{errors[field.key]}</p>}
-      </div>{field.key === 'id_card' && <div className="mg-field-wide"><CustomerDocumentBatch ocr={customerOcr} value={photos} onChange={setPhotos} onBusyChange={busy=>photoBusy('batch',busy)} disabled={fieldsDisabled} qrEnabled={!foreign}/><RecordPhotoFields entity="customers" slots={foreign?[{key:'id_front',label:'Trang hộ chiếu / giấy tờ'},{key:'id_back',label:'Trang bổ sung (nếu có)'}]:CUSTOMER_PHOTO_SLOTS} title={foreign?'Chụp hộ chiếu · Tự điền bằng AI':'Quét QR căn cước · Tự điền'} value={photos} onChange={setPhotos} disabled={saving} onBusyChange={busy=>photoBusy('identity',busy)} ocr={fieldsDisabled ? undefined : customerOcr} /></div>}{field.key==='driver_license_number'&&<div className="mg-field-wide"><RecordPhotoFields entity="customers" slots={[{key:'driver_license',label:'Giấy phép lái xe'}]} title="Chụp GPLX · Tự điền bằng AI" value={photos} onChange={setPhotos} disabled={saving} onBusyChange={busy=>photoBusy('license',busy)} ocr={fieldsDisabled?undefined:customerOcr}/></div>}</Fragment>;
+      </div>{field.key === 'id_card' && <div className="mg-field-wide"><CustomerDocumentBatch ocr={customerOcr} value={photos} onChange={setPhotos} onBusyChange={busy=>photoBusy('batch',busy)} disabled={fieldsDisabled}/><RecordPhotoFields entity="customers" slots={foreign?[{key:'id_front',label:'Trang hộ chiếu / giấy tờ'},{key:'id_back',label:'Trang bổ sung (nếu có)'}]:CUSTOMER_PHOTO_SLOTS} title={foreign?'Chụp hộ chiếu · Tự điền bằng AI':'Chụp CCCD · Tự điền bằng AI'} value={photos} onChange={setPhotos} disabled={saving} onBusyChange={busy=>photoBusy('identity',busy)} ocr={fieldsDisabled ? undefined : customerOcr} /></div>}{field.key==='driver_license_number'&&<div className="mg-field-wide"><RecordPhotoFields entity="customers" slots={[{key:'driver_license',label:'Giấy phép lái xe'}]} title="Chụp GPLX · Tự điền bằng AI" value={photos} onChange={setPhotos} disabled={saving} onBusyChange={busy=>photoBusy('license',busy)} ocr={fieldsDisabled?undefined:customerOcr}/></div>}</Fragment>;
       })}{<>
         <div className="mg-field"><label htmlFor="new-customer-store">Cơ sở nguồn khách *</label><select id="new-customer-store" value={branch} disabled={fieldsDisabled} aria-invalid={Boolean(errors.store_id)} aria-describedby={errors.store_id ? 'new-customer-store-error' : undefined} onChange={event => { setBranch(event.target.value); setErrors(current => ({ ...current, store_id: '' })); }}>
-          <option value="">Chọn cơ sở</option>{dataset?.stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select>{errors.store_id && <p id="new-customer-store-error" className="mg-field-error">{errors.store_id}</p>}</div>
+          <option value="">Chọn cơ sở</option>{writableStores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select>{errors.store_id && <p id="new-customer-store-error" className="mg-field-error">{errors.store_id}</p>}</div>
         <div className="mg-field"><label htmlFor="new-customer-status">Trạng thái hồ sơ *</label><select id="new-customer-status" value={status} disabled={fieldsDisabled} onChange={event => setStatus(event.target.value)}>{CUSTOMER_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
       </>}<CustomerRelativesFields prefix="new-customer" relatives={relatives} disabled={fieldsDisabled} onChange={setRelatives} /></div>
         {savedCustomer && <p role="status">Đã lưu thông tin khách hàng. Bấm lưu lại để hoàn tất tải ảnh; không tạo thêm hồ sơ.</p>}

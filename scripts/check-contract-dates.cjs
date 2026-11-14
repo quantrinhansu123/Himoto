@@ -11,7 +11,9 @@ async function main(){
  const raw={id:901,contract_number:'QA-DATES',status:'overdue',created_at:new Date('2026-10-18T10:28:22.074Z'),signed_on:'2026-10-18',start_date:new Date('2026-10-18T10:19:00Z'),end_date:new Date('2026-10-19T10:19:00Z'),vehicles:[]};
  const queries=[];
  const list=await readManagementTable({async query(sql){
-  queries.push(sql);if(queries.length===1)return{rows:[{...raw,__total_count:1}]};
+  queries.push(sql);
+  if(sql.startsWith('SELECT count(*)::int AS total FROM'))return{rows:[{total:1}]};
+  if(sql.startsWith('SELECT indexed.id'))return{rows:[{id:raw.id}]};
   assert.match(sql,/o\.created_at/);assert.match(sql,/o\.contract_signed_on::text AS signed_on/);return{rows:[raw]};
  }},'contracts',new URLSearchParams({search:'QA-DATES',size:'10'}));
  const draft=createContractDraft(empty,'all',list.rows[0]);

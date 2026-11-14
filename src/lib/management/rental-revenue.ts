@@ -16,12 +16,11 @@ export function summarizeRentalRevenue(receipts:RevenueReceipt[]):RentalRevenueR
     const kind=receipt.category as typeof RENTAL_REVENUE_KEYS[number];
     if(!value)continue;
     const company=kind==='renewal'||kind==='late';
-    if(kind==='late')company_fees+=value;
     const name=company?'Công ty':String(receipt.staff_name||'').normalize('NFC').trim().replace(/\s+/g,' ');
     const linked=!company&&receipt.staff_id&&/^[1-9]\d*$/.test(receipt.staff_id),assigned=Boolean(company||linked||name),key=company?'company':linked?String(receipt.staff_id):name?`name:${name.toLocaleLowerCase('vi')}`:'unassigned';
     const person=staff.get(key)||{...emptyRentalRevenue(),key,name:assigned?name||`Nhân viên #${key}`:'Chưa phân công NVKD',events:0};
     const daily=days.get(receipt.day)||{...emptyRentalRevenue(),key:receipt.day,name:receipt.day,events:0};
-    for(const target of [total,daily,person,...(assigned?[]:[unassigned])]){target[kind]+=value;target.revenue+=kind==='early'?-value:kind==='late'?0:value;}
+    for(const target of [total,daily,person,...(assigned?[]:[unassigned])]){target[kind]+=value;target.revenue+=kind==='early'?-value:value;}
     daily.events++;person.events++;days.set(receipt.day,daily);staff.set(key,person);
   }
   for(const group of [total,unassigned,...days.values(),...staff.values()])if(!RENTAL_REVENUE_KEYS.every(key=>Number.isSafeInteger(group[key]))||!Number.isSafeInteger(group.revenue))throw Error('Doanh thu vượt giới hạn tính toán. Cần đối chiếu.');
@@ -30,7 +29,7 @@ export function summarizeRentalRevenue(receipts:RevenueReceipt[]):RentalRevenueR
 }
 export function validRentalRevenue(value:unknown):value is RentalRevenueReport {
   const report=value as RentalRevenueReport;
-  const valid=(row:RentalRevenueAmounts)=>row&&RENTAL_REVENUE_KEYS.every(key=>Number.isSafeInteger(row[key])&&row[key]>=0)&&Number.isSafeInteger(row.revenue)&&row.revenue===row.rental+row.renewal-row.early;
+  const valid=(row:RentalRevenueAmounts)=>row&&RENTAL_REVENUE_KEYS.every(key=>Number.isSafeInteger(row[key])&&row[key]>=0)&&Number.isSafeInteger(row.revenue)&&row.revenue===row.rental+row.renewal+row.late-row.early;
   if(!Number.isSafeInteger(report?.company_fees)||report.company_fees<0)return false;
   if(!report||!valid(report.total)||!valid(report.unassigned)||!Array.isArray(report.days)||!Array.isArray(report.staff)||!Number.isSafeInteger(report.unclassified_count)||report.unclassified_count<0||!Number.isSafeInteger(report.unclassified_amount)||report.unclassified_amount<0)return false;
   for(const rows of [report.days,report.staff]){

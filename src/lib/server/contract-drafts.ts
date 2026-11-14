@@ -8,7 +8,7 @@ import { CUSTOMER_FIELDS, createContractDraft, dateTimeInput, emptyVehicle } fro
 import { saveDraftRecord } from '@/lib/management/contract-drafts';
 import { ContractEdits, ManagementDataset, ManagementRow } from '@/lib/management/types';
 import { depositLateral, rentalPaidSql } from './contract-deposits';
-import { BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
+import { PAYMENT_CLOSURE_TOTAL_SQL,BAD_DEBT_CLOSED_AT_SQL,BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
 import { chargeTotal } from '@/lib/management/contract-charges';
 import { validOwnershipTerm } from '@/lib/management/contract-billing';
 import { CONTRACT_TYPES } from '@/lib/management/config';
@@ -31,7 +31,7 @@ const CONTRACT_RETURN_ADJUSTMENT_SQL = `COALESCE((SELECT SUM(
 function contractListSql(compact = false) { return `SELECT o.id, o.contract_number, o.draft_reference,
   ${OWNERSHIP_HOLD_FIELDS_SQL},
   ${CONTRACT_REVIEW_SQL},
-  ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
+  ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at, ${PAYMENT_CLOSURE_TOTAL_SQL} AS payment_closure_total,${BAD_DEBT_CLOSED_AT_SQL} AS bad_debt_closed_at,
   ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
   o.draft_payload #>> '{management_composer,approval,at}' AS approval_at,
   o.draft_payload #>> '{management_composer,draft,contract_type_id}' AS contract_type_id,
@@ -129,7 +129,7 @@ function contractListSql(compact = false) { return `SELECT o.id, o.contract_numb
 export const CONTRACT_LIST_SQL = contractListSql();
 /** Filtering/summary fields only. Full document/customer/vehicle details are hydrated for the selected page. */
 export function contractTableSql(scopeClause: string) {
-  return `SELECT id,contract_number,draft_reference,rental_type,approval_at,contract_type_id,contract_type_name,contract_type_months,sales_staff_id,sales_staff_name,hold_until,held_at,completed_from_hold,
+  return `SELECT id,contract_number,draft_reference,rental_type,approval_at,contract_type_id,contract_type_name,contract_type_months,sales_staff_id,sales_staff_name,hold_until,held_at,completed_from_hold,bad_debt_at,payment_closure_total,bad_debt_closed_at,
     status,customer_id,customer_status,customer_name,customer_phone,store_id,store_name,store_kind,start_date,end_date,legacy_source_store_id,legacy_inferred_ownership,
     total_amount,paid_amount,deposit_amount,return_adjustment_amount,company_paid_amount,company_payment_count,representative_name,draft_payload,vehicles
     FROM (${contractListSql(true)}${scopeClause}) listing`;
@@ -146,7 +146,7 @@ export function contractIndexSql(scopeClause: string, options: { includeVehicleL
   return `SELECT o.id, o.contract_number, o.draft_reference,
     ${OWNERSHIP_HOLD_FIELDS_SQL},
     ${CONTRACT_REVIEW_SQL},
-    ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
+    ${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at, ${PAYMENT_CLOSURE_TOTAL_SQL} AS payment_closure_total,${BAD_DEBT_CLOSED_AT_SQL} AS bad_debt_closed_at,
     o.contract_signed_on AS signed_on,
     ${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type,
   o.draft_payload #>> '{management_composer,approval,at}' AS approval_at,
@@ -402,6 +402,6 @@ export async function saveDatabaseDraft(client: PoolClient, id: number | null, i
       created_at=CASE WHEN NULLIF($19,'') IS NULL THEN created_at ELSE ($19::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') END,
       updated_at=now() WHERE id=$20 AND order_status='draft'`, [...values, id]);
   }
-  const result = await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id = $1`), [savedId]);
+  const result = await client.query(contractVehicleDetailsSql(`${CONTRACT_LIST_SQL} AND o.id = $1`,'ARRAY[$1::bigint]'), [savedId]);
   return result.rows[0];
 }

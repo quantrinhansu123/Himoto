@@ -38,7 +38,7 @@ async function main(){await clientChecks();
   const c=await ownerDatabase.connect();try{
    await c.query('BEGIN');const fixed=Number((await c.query('SELECT extract(epoch FROM now())*1000 AS at')).rows[0].at);
    for(const table of ['orders','transactions','customers','stores','vehicles','order_vehicle_details','staff_profiles','staff_account_attribution'])await c.query(`CREATE TEMP TABLE qa_speed_${table} ON COMMIT DROP AS SELECT * FROM himoto.${table} WHERE false`);
-   const statements=[],db={async query(sql,args){assert(/^\s*(SELECT|WITH)\b/.test(sql));const r=await c.query(sql.replaceAll('himoto.','pg_temp.qa_speed_'),args);statements.push({sql,args,detailed:r.rows[0]?.detailed?.length});return r;}};
+   const statements=[],db={async query(sql,args){assert(/^\s*(SELECT|WITH)\b/.test(sql));const r=await c.query(sql.replaceAll('himoto.','pg_temp.qa_speed_'),args);statements.push({sql,args,detailed:r.rows[0]?.detailed_ids?.length});return r;}};
    await c.query(`INSERT INTO qa_speed_stores(id,store_name,kind) VALUES(1,'QA','physical');INSERT INTO qa_speed_customers(id,name,status) VALUES(1,'QA blacklist',2),(2,'QA customer',1);
      INSERT INTO qa_speed_orders(id,contract_number,customer_id,store_id,order_status,order_type,total,pid,rent_at,return_at,draft_payload)
        SELECT i,'QA-'||i,1+i%2,1,'completed','daily','1000',1000,'2026-09-01T00:00:00+07:00','2026-09-02T00:00:00+07:00','{}' FROM generate_series(1,1000)i;

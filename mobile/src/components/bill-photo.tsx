@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Image, type ImageSource } from "expo-image";
 import { X } from "lucide-react-native";
 import { useTheme } from "@/theme";
@@ -21,7 +21,7 @@ export function BillPhoto({source,label,onReady,context='bill'}:{source:ImageSou
       <Text style={{color:theme.primary,textAlign:"center",padding:16,fontSize:16,fontWeight:"700"}}>Xem ảnh lớn</Text>
     </Pressable>
     <Modal visible={expanded} animationType="none" onRequestClose={()=>setExpanded(false)} accessibilityViewIsModal>
-      <SafeAreaView style={{flex:1,backgroundColor:theme.background}}>
+      <SafeAreaProvider><SafeAreaView style={{flex:1,backgroundColor:theme.background}}>
         <View style={{padding:12,gap:8,flexShrink:0,zIndex:1,backgroundColor:theme.background}}>
           <View style={{flexDirection:"row",alignItems:"center",gap:12}}>
             <Text accessibilityRole="header" style={{flex:1,color:theme.text,fontSize:20,fontWeight:"800"}}>{label}</Text>
@@ -42,7 +42,7 @@ export function BillPhoto({source,label,onReady,context='bill'}:{source:ImageSou
               style={{width:imageWidth,height:imageHeight}}/>
           </ScrollView>
         </ScrollView></View>
-      </SafeAreaView>
+      </SafeAreaView></SafeAreaProvider>
     </Modal>
   </View>;
 }

@@ -37,7 +37,7 @@ export function summarizeSalesKpis(contracts: readonly ManagementRow[], from: st
     if (!startedInPeriod(contract, from, to, store)) continue;
     const total = Number(contract.total_amount) || 0, paid = Number(contract.paid_amount) || 0;
     kpis.contracts += 1; kpis.revenue += Number(contract.rental_sales_amount ?? total) || 0; kpis.paid += paid;
-    const debt = RECEIVABLE_STATUSES.has(contract.status) ? Math.max(total - paid, 0) : 0;
+    const debt = RECEIVABLE_STATUSES.has(contract.status)||contract.status==='completed'&&contract.bad_debt_closed_at ? Math.max(total - paid, 0) : 0;
     if (!debt) continue;
     kpis.debt += debt; kpis.debtContracts += 1;
     // Nợ quá hạn: chỉ HĐ đang Quá hạn còn thiếu tiền (chưa ghi nhận thu đủ).

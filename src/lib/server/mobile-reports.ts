@@ -21,9 +21,19 @@ import type { VehicleRevenueRow } from "@/lib/management/rental-reports";
 import { CONTRACT_STATUSES } from "@/lib/management/config";
 import { validOwnedFleetReport } from "@/lib/management/owned-fleet-revenue";
 import { validRevenueLedger, REVENUE_LEDGER_CATEGORIES, REVENUE_LEDGER_METHODS } from "@/lib/management/revenue-ledger";
-import { isSalesReportKind, isMobileSalesReport, SALES_REPORTS, type SalesReportKind, type MobileSalesReport, type ReportSection, type ReportColumn, type ReportMetric, type ReportRow, type ReportValue, type ReportAction } from "../../../shared/mobile-reports";
+import { isSalesReportKind, isMobileSalesReport, paginateReportSections, SALES_REPORTS, type SalesReportKind, type MobileSalesReport, type ReportSection, type ReportColumn, type ReportMetric, type ReportRow, type ReportValue, type ReportAction } from "../../../shared/mobile-reports";
 
-const baseKeys = ["from", "to", "store_id"];
+const baseKeys = ["from", "to", "store_id", "section_pages"];
+export function reportSectionPages(value: string | null): Record<string, number> | null {
+  if (value === null) return null;
+  try {
+    if (value.length > 2048) throw Error();
+    const pages: unknown = JSON.parse(value);
+    if (!pages || typeof pages !== 'object' || Array.isArray(pages) || Object.keys(pages).length > 20 ||
+      !Object.entries(pages).every(([key, page]) => /^[a-zA-Z0-9_-]{1,64}$/.test(key) && Number.isSafeInteger(page) && page >= 1 && page <= 100000)) throw Error();
+    return pages as Record<string, number>;
+  } catch { throw new MobileError('Trang chi tiết báo cáo không hợp lệ.'); }
+}
 const keys: Record<SalesReportKind, string[]> = {
   actual: [], ledger: ["search", "category", "method", "side", "page", "size"], vehicles: ["search", "sort", "direction", "page", "size", "vehicle_id"],
   overview: ["view", "detail"], fleet: ["view", "page", "size"], contracts: [], "by-staff": [], "by-store": [],
@@ -36,6 +46,8 @@ function permission(user: SessionUser, kind?: SalesReportKind) {
 export function reportQuery(kind: SalesReportKind, raw: URLSearchParams) {
   const query = new URLSearchParams(raw);
   for (const [key] of query) if (![...baseKeys, ...keys[kind]].includes(key) || query.getAll(key).length !== 1) throw new MobileError("Bộ lọc báo cáo không hợp lệ.");
+  reportSectionPages(query.get('section_pages'));
+  query.delete('section_pages');
   if (query.get("store_id") === "all") query.delete("store_id");
   if (kind === "ledger" && !query.get("side")) query.set("side", "in");
   if (query.has("detail") && query.get("detail") !== "1") throw new MobileError("Mục chi tiết báo cáo không hợp lệ.");
@@ -83,10 +95,10 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
   return read(user, kind, async client => {
     const doc: MobileSalesReport = { kind, title: SALES_REPORTS.find(row => row.value === kind)!.label, notes: [], metrics: [], sections: [], canExport: false };
     if (kind === "actual") {
-      const received = await rentalRevenue(client, from, to, store, "contracts"), estimate = await estimatedSales(client, from, to, store);
+      const received = await rentalRevenue(client, from, to, store), estimate = await estimatedSales(client, from, to, store);
       const summary = await readSalesSummary(client, new URLSearchParams({ from, to, store: String(store || "all") }));
       checked(validRentalRevenue(received) && validEstimatedSales(estimate));
-      doc.notes = ["Chỉ hợp đồng bắt đầu thuê trong khoảng ngày và cơ sở đang chọn. Doanh số ước tính theo ngày·xe còn nằm trong kỳ.", "Doanh thu = thuê + gia hạn + trả muộn − hoàn trả sớm thực thu/hoàn trong kỳ. Không gồm cọc, phí sửa; chưa trừ chi phí.", "Công nợ gồm đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu; không gồm cọc. Nợ quá hạn hiển thị riêng với nợ xấu."];
+      doc.notes = ["Doanh số và công nợ theo hợp đồng bắt đầu thuê trong khoảng ngày và cơ sở đang chọn. Doanh thu theo ngày thu/hoàn thực tế, gồm cả hợp đồng bắt đầu trước kỳ.", "Doanh thu = thuê + gia hạn + trả muộn − hoàn trả sớm thực thu/hoàn trong kỳ. Không gồm cọc, phí sửa; chưa trừ chi phí.", "Công nợ gồm đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu; không gồm cọc. Nợ quá hạn hiển thị riêng với nợ xấu."];
       doc.metrics = [...metrics("Doanh số ước tính", estimate, [["sales", "Doanh số"], ["contracts", "Hợp đồng trong kỳ", "count"], ["active_contracts", "Đang thuê / chưa trả", "count"], ["finished_contracts", "Đã trả", "count"], ["vehicle_days", "Ngày·xe trong kỳ", "count"]]),
         ...metrics("Doanh thu thực thu", received.total, [["revenue", "Doanh thu"], ["rental", "Phí thuê đã thu"], ["renewal", "Gia hạn đã thu"], ["late", "Trả muộn đã thu"], ["early", "Đã hoàn do trả sớm"]]),
         ...metrics("Công nợ", summary.kpis, [["debt", "Tiền thuê còn thiếu"], ["debtContracts", "Hợp đồng còn thiếu tiền", "count"], ["overdueDebt", "Nợ quá hạn chưa thu đủ"], ["overdueContracts", "Hợp đồng quá hạn chưa thu đủ", "count"], ["badDebt", "Nợ xấu riêng"]])];
@@ -164,6 +176,8 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
       }
       doc.sections.push(section("customers", "Khách hàng mới", fields, filtered.rows.map(row => ({ key: String(row.customer_id), values: values({ ...row, customer_source: row.customer_source || "Chưa ghi nguồn", store_name: row.store_name || "Chưa có cơ sở", contract_status: CONTRACT_STATUSES.find(option => option.value === row.contract_status)?.label || row.contract_status || "—" }, fields), action: action("Mở hợp đồng đầu tiên", "contract", new URLSearchParams({ id: String(row.order_id) })) })))); doc.canExport = true;
     }
-    checked(isMobileSalesReport(doc)); return doc;
+    const sectionPages = reportSectionPages(raw.get('section_pages'));
+    const response = sectionPages ? paginateReportSections(doc, sectionPages) : doc;
+    checked(isMobileSalesReport(response)); return response;
   });
 }

@@ -13,7 +13,7 @@ const pool=load(path.join(root,'lib/server/himoto-database')).ownerDatabase;
 const checks=[];
 async function main(){
   const now=Date.now(),raw={imei:'QA-GPS-1',devicename:'29B1-123.45',carnumber:'',hearttime:now,gpstime:now,lat:21,lng:105,speed:30,accstatus:1};
-  assert.equal(shared.GPS_POLL_INTERVAL_MS,5000);
+  assert.equal(shared.GPS_POLL_INTERVAL_MS,60000);
   assert(providers.shouldRefreshGpsSession(new providers.GpsProviderError('HTTP_401')));assert(providers.shouldRefreshGpsSession(new providers.GpsProviderError('INVALID_RESPONSE')));assert(!providers.shouldRefreshGpsSession(new providers.GpsProviderError('HTTP_429')));assert(!providers.shouldRefreshGpsSession(new providers.GpsProviderError('PROTRACK_READ_10009')));
   assert.equal(providers.normalizeProtrackDevice(raw,now).state,'online');assert.equal(providers.normalizeProtrackDevice({...raw,speed:0},now).state,'stopped');assert.equal(providers.normalizeProtrackDevice({...raw,hearttime:now-1500001},now).state,'offline');assert.equal(providers.normalizeProtrackDevice({...raw,block:true},now).state,'warning');
   assert.equal(providers.normalizeIopDevice({imei:'QA',deviceStatusBean:{status:1,speed:0}}).state,'online');assert.equal(providers.normalizeIopDevice({imei:'QA',deviceStatusBean:{status:0,speed:30}}).state,'stopped');assert.equal(providers.normalizeIopDevice({imei:'QA',deviceStatusBean:{status:10,speed:30}}).state,'offline');assert.equal(providers.normalizeIopDevice({imei:'QA'}).state,'warning');
@@ -50,6 +50,7 @@ async function main(){
     const evidence=fs.readFileSync('docs/sql/2026-10-18-gps-status-evidence.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(evidence);await c.query(evidence);
     let migration=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-contract-telegram.sql'),'utf8').replaceAll('himoto.',schema+'.').replaceAll(schema+'.access_store','himoto.access_store').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(migration);await c.query(migration);
     const controls=fs.readFileSync(path.resolve('docs/sql/2026-10-18-contract-telegram-controls.sql'),'utf8').replaceAll('himoto.',schema+'.').replaceAll(schema+'.access_store','himoto.access_store').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(controls);await c.query(controls);
+    const mediaCache=fs.readFileSync('docs/sql/2026-11-12-telegram-media-cache.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(mediaCache);await c.query(mediaCache);
     await c.query(`ALTER TABLE ${schema}.management_contract_notifications ADD COLUMN IF NOT EXISTS vehicle_event_id bigint REFERENCES ${schema}.vehicle_location_events(id)`);
     const batteryNotice=fs.readFileSync('docs/sql/2026-10-29-battery-contract-telegram.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(batteryNotice);
     const deliveryReview=fs.readFileSync(path.resolve('docs/sql/2026-10-18-telegram-delivery-review.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(deliveryReview);await c.query(deliveryReview);
@@ -68,11 +69,23 @@ async function main(){
     const history=fs.readFileSync(path.resolve('docs/sql/2026-10-17-gps-history-webhooks.sql'),'utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;\s*$/m,'').replace(/^COMMIT;\s*$/m,'');await c.query(history);await c.query(history);
     const longStops=fs.readFileSync('docs/sql/2026-10-24-gps-long-stops.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(longStops);await c.query(longStops);
     const providerStops=fs.readFileSync('docs/sql/2026-10-25-gps-provider-stop.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(providerStops);await c.query(providerStops);
+    const workerMigration=fs.readFileSync('docs/sql/2026-11-12-independent-integration-workers.sql','utf8').replaceAll('himoto.',schema+'.').replace(/^BEGIN;|^COMMIT;/gm,'');await c.query(workerMigration);await c.query(workerMigration);
     await c.query(`INSERT INTO ${schema}.stores(id,store_name) VALUES(23,'Branch A QA'),(31,'Branch B QA')`);
     await c.query(`INSERT INTO ${schema}.users(id,name,email,password,role_id,status) VALUES(143,'Actor QA','qa-gps@example.invalid','unused',1,'active')`);
     await c.query(`INSERT INTO ${schema}.vehicles(id,name,brand,type,year,store_id,current_store_id,license,color,status,odometer,created_by) VALUES(101,'Vehicle QA','Honda','xeso',2024,23,23,'29B1-123.45','Black','ready',0,143),(102,'Vehicle B QA','Honda','xeso',2024,31,31,'30B1-999.99','Black','ready',0,143)`);
     await c.query(`INSERT INTO ${schema}.orders(id,contract_number,customer_name,customer_phone,order_status,store_id,total,pid) VALUES(1,'HD-QA-1','Customer QA','0900000001','renting',23,'1000',0),(2,'HD-QA-2','Customer B QA','0900000002','renting',31,'1000',0)`);
     await c.query(`INSERT INTO ${schema}.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at) VALUES(1001,1,101,now(),now()+interval '1 day')`);
+    if(process.argv.includes('--vehicle-transfer-only')){
+      const token='123456789:qa-only-bot-token-123456789';
+      await c.query(`UPDATE ${schema}.management_telegram_settings SET bot_cipher=$1`,[crypto.sealIntegrationSecret({token})]);
+      await c.query(`INSERT INTO ${schema}.management_store_telegram(store_id,chat_id,enabled) VALUES(23,'-100000000001',true),(31,'-100000000002',true)`);
+      await c.query(`INSERT INTO ${schema}.stores(id,store_name,kind) VALUES(900001,'Ownership branch QA','lease_to_own')`);
+      await c.query(`INSERT INTO ${schema}.orders(id,contract_number,order_status,order_type,store_id) VALUES(900002,'QA-OWNERSHIP','renting','ownership',23)`);
+      await c.query(`INSERT INTO ${schema}.management_ownership_telegram(route,chat_id,thread_id,enabled) VALUES('ownership_new','-100000000101',17,true)`);
+      checks.push(...await require('./lib/check-vehicle-transfer-telegram.cjs')(db,c,schema,notices));
+      console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0,realTelegramRequests:0},null,2));
+      return;
+    }
     const observation=providers.normalizeProtrackDevice(raw,now);await persistGpsObservations(db,'protrack',[observation]);
     checks.push(await require('./lib/check-gps-long-stops.cjs')(db,c,schema,observation));
     let gps=(await c.query(`SELECT * FROM ${schema}.gps_devices`)).rows[0];assert.equal(Number(gps.vehicle_id),101);assert.equal(gps.management_status,'online');
@@ -91,11 +104,14 @@ async function main(){
     assert.equal((await claimGpsAccounts(db,leaseA)).length,1);assert.equal((await claimGpsAccounts(db,leaseB)).length,0);
     await c.query(`UPDATE ${schema}.management_gps_accounts SET last_attempt_at=clock_timestamp()-interval '10 seconds'`);assert.equal((await claimGpsAccounts(db,leaseB)).length,0);
     assert.equal((await finishGpsAccount(db,accountId,leaseB,1)).rowCount,0);assert.equal((await finishGpsAccount(db,accountId,leaseA,1)).rowCount,1);
-    assert.equal((await claimGpsAccounts(db,leaseB)).length,1);await finishGpsAccount(db,accountId,leaseB,0,'HTTP_429');
-    await c.query(`UPDATE ${schema}.management_gps_accounts SET last_attempt_at=clock_timestamp()-interval '10 seconds'`);assert.equal((await claimGpsAccounts(db,leaseA)).length,0);
+    assert.equal((await claimGpsAccounts(db,leaseB)).length,0);
+    await c.query(`UPDATE ${schema}.management_gps_accounts SET last_attempt_at=clock_timestamp()-interval '59 seconds'`);assert.equal((await claimGpsAccounts(db,leaseB)).length,0);
+    await c.query(`UPDATE ${schema}.management_gps_accounts SET last_attempt_at=clock_timestamp()-interval '61 seconds'`);assert.equal((await claimGpsAccounts(db,leaseB)).length,1);await finishGpsAccount(db,accountId,leaseB,0,'HTTP_429');
+    await c.query(`UPDATE ${schema}.management_gps_accounts SET last_attempt_at=clock_timestamp()-interval '61 seconds'`);assert.equal((await claimGpsAccounts(db,leaseA)).length,0);
     await c.query(`UPDATE ${schema}.management_gps_accounts SET next_attempt_at=clock_timestamp()-interval '1 second'`);assert.equal((await claimGpsAccounts(db,leaseA)).length,1);await finishGpsAccount(db,accountId,leaseA,1);
-    checks.push('Five-second pacing prevents overlapping account reads, rejects stale lease completions, backs off provider failures and avoids rewriting unchanged GPS rows');
-    checks.push(await require('./lib/check-gps-device-visibility.cjs')(db,c,schema,accountId,observation));
+    checks.push('Minute pacing across callers prevents early/overlapping account reads, rejects stale lease completions, backs off provider failures and avoids rewriting unchanged GPS rows');
+    // Focused Telegram runs do not exercise provider history pacing.
+    if(!process.argv.some(flag=>/^--(?:telegram|vehicle|ownership|retractions).*only$/.test(flag)))checks.push(await require('./lib/check-gps-device-visibility.cjs')(db,c,schema,accountId,observation));
     if(process.argv.includes('--gps-only')){
       checks.push(...await require('./lib/check-gps-status-parity.cjs')(db,c,schema));
       console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realSequenceChanges:0,realTelegramRequests:0},null,2));
@@ -110,6 +126,8 @@ async function main(){
     const token='123456789:qa-only-bot-token-123456789';await c.query(`UPDATE ${schema}.management_telegram_settings SET bot_cipher=$1`,[crypto.sealIntegrationSecret({token})]);await c.query(`INSERT INTO ${schema}.management_store_telegram(store_id,chat_id,enabled) VALUES(23,'-100000000001',true),(31,'-100000000002',true)`);
     if(process.argv.includes('--vehicle-swap-only')) {
       checks.push(...await require('./lib/check-vehicle-swap-telegram.cjs')(db,c,schema,notices));
+    } else if(process.argv.includes('--telegram-preparation-only')) {
+      checks.push(...await require('./lib/check-telegram-preparation.cjs')(db,c,schema,notices));
     } else if(process.argv.includes('--telegram-media-first-only')) {
       checks.push(...await require('./lib/check-telegram-media-first.cjs')(db,c,schema,notices));
     } else if(process.argv.includes('--telegram-recovery-only')) {

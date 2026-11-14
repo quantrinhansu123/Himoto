@@ -53,17 +53,17 @@ async function main(){
     const before=await snapshot();
     if(process.argv.includes('--dashboard-only'))return await require('./lib/mobile_dashboard_sql.cjs')({sql,query,load,root,actor,params,snapshot,before,setExpected:user=>{expectedActor=user;},connections:()=>({ownerConnections,ordinaryConnections})});
     expectedActor=actor;const options=await reports.readMobileReportOptions(actor);assert(dto.isSalesReportOptions(options));assert.equal(options.canViewFleet,false);assert.equal(ownerConnections,0);
-    const actual=await get('actual');assert(dto.isMobileSalesReport(actual));assert.equal(actual.metrics.find(row=>row.label==='Doanh thu').value,1300);
+    const actual=await get('actual');assert(dto.isMobileSalesReport(actual));assert.equal(actual.metrics.find(row=>row.label==='Doanh thu').value,1400);
     const webRental=load(path.join(root,'lib/server/rental-revenue')),webEstimate=load(path.join(root,'lib/server/estimated-sales'));
-    const direct=await withMobileData(actor,'',()=>webRental.rentalRevenue({query},base.from,base.to,23,'contracts'));
-    assert.equal(direct.total.late,100);assert.equal(direct.company_fees,520);
+    const direct=await withMobileData(actor,'',()=>webRental.rentalRevenue({query},base.from,base.to,23));
+    assert.equal(direct.total.late,100);assert.equal(direct.company_fees,420);
     const estimate=await withMobileData(actor,'',()=>webEstimate.estimatedSales({query},base.from,base.to,23));
     assert.equal(actual.metrics.find(row=>row.label==='Doanh thu').value,direct.total.revenue);assert.equal(actual.metrics.find(row=>row.label==='Doanh số').value,estimate.sales);
     const summary=await get('contracts');assert.equal(summary.metrics.find(row=>row.label==='Hợp đồng').value,2);
-    checks.push('Actual rental receipts, estimated day-vehicle sales and contract debt/KPIs use the exact web readers in one unchanged scoped read-only context; rental revenue is1300, late fees are accounted to company fees, and contracts include both in-period customers');
+    checks.push('Actual receipts use the shared web reader: revenue 1400 includes late fees once, other company fees remain 420, and contract sales/KPIs retain their separate start-date scope');
     const ledger=await get('ledger',{side:'in',size:'1'}),expense=await get('ledger',{side:'out',size:'1'});assert(dto.isMobileSalesReport(ledger)&&dto.isMobileSalesReport(expense));
-    assert.equal(ledger.metrics.find(row=>row.label==='Tổng thu').value,3020);assert.equal(ledger.metrics.find(row=>row.label==='Tổng chi').value,500);assert.equal(ledger.metrics.find(row=>row.label==='Tính doanh thu').value,1300);
-    assert.equal(expense.metrics.find(row=>row.label==='Tính doanh thu').value,1300);assert.equal(ledger.sections[0].rows.length,1);
+    assert.equal(ledger.metrics.find(row=>row.label==='Tổng thu').value,3020);assert.equal(ledger.metrics.find(row=>row.label==='Tổng chi').value,500);assert.equal(ledger.metrics.find(row=>row.label==='Tính doanh thu').value,1400);
+    assert.equal(expense.metrics.find(row=>row.label==='Tính doanh thu').value,1400);assert.equal(ledger.sections[0].rows.length,1);
     const first=await get('vehicles',{size:'1'}),second=await get('vehicles',{size:'1',page:'2'});assert(first.sections[0].paging.total===11);assert.notEqual(first.sections[0].rows[0].key,second.sections[0].rows[0].key);
     const vehicleDetail=await get('vehicles',{vehicle_id:'301'});assert.equal(vehicleDetail.sections[0].rows[0].action.query,'id=101');assert.equal(vehicleDetail.sections[0].rows[0].values.at(-1),3300);
     const stores=await get('overview',{view:'stores'}),days=await get('overview',{view:'days'});assert.deepEqual(stores.metrics,days.metrics);assert(stores.sections[0].rows[0].action.query.includes('view=days'));
@@ -83,9 +83,25 @@ async function main(){
     const exported={};for(const kind of ['vehicles','overview','by-staff','by-store','assigned','new-customers','ledger']){expectedActor=actor;const file=await exportsApi.exportMobileSalesReport(actor,kind,params({}));assert(fileDto.isMobileFileExport(file));exported[kind]=file;}
     assert.equal(exported.vehicles.rowCount,11);assert(exported.vehicles.content.includes("'\u003dQA Formula"));assert(exported['new-customers'].content.includes('Khách hàng","Điện thoại","CCCD"'));
     const ExcelJS=require('exceljs'),book=new ExcelJS.Workbook();await book.xlsx.load(Buffer.from(exported.ledger.contentBase64,'base64'));assert.deepEqual(book.worksheets.map(sheet=>sheet.name),['Phiếu thu','Phiếu chi']);
-    assert.equal(book.worksheets[0].getRow(4).getCell(16).value,'Ghi chú');assert.equal(book.worksheets[0].lastRow.getCell(9).value,2350);assert.equal(book.worksheets[1].lastRow.getCell(9).value,-200);assert.equal(book.worksheets[0].lastRow.getCell(13).value+book.worksheets[1].lastRow.getCell(13).value,1300);
+    assert.equal(book.worksheets[0].getRow(4).getCell(16).value,'Ghi chú');assert.equal(book.worksheets[0].lastRow.getCell(9).value,2350);assert.equal(book.worksheets[1].lastRow.getCell(9).value,-200);assert.equal(book.worksheets[0].lastRow.getCell(13).value+book.worksheets[1].lastRow.getCell(13).value,1400);
     assert(book.worksheets[0].getRows(5,6).some(row=>row.getCell(16).value==='=SUM(1,2)'));assert.equal(exported.ledger.rowCount,8);
     assert.equal(await snapshot(),before);checks.push('CSV exports the complete filtered rows with escaped formulas; shared web/mobile Excel builder produces both16-column sheets, signed payment amounts, totals and text-only note cells; all business tables remain unchanged');
+    try {
+      await query("UPDATE himoto.orders SET rent_at='2026-10-01T02:00:00Z' WHERE id=101");
+      await query("INSERT INTO himoto.transactions(id,order_id,created_at,type,status,value,name,store_id) VALUES (2001,102,'2026-11-03T16:59:59Z','in','approved',250,'order:renewal',24),(2002,102,'2026-11-03T16:59:59Z','in','approved',30,'order:return_late',24),(2003,102,'2026-11-03T17:00:00Z','in','approved',999,'order:renewal',24),(2004,102,'2026-11-03T04:00:00Z','in','pending',999,'order:return_late',24)");
+      assert.equal((await get('actual')).metrics.find(row=>row.label==='Doanh thu').value,1400,'Old contracts retain this-period rental, renewal, late and refund receipts');
+      assert.equal((await get('actual',{store_id:'24'})).metrics.find(row=>row.label==='Doanh thu').value,280);
+      const all=await webRental.rentalRevenue({query},base.from,base.to);
+      assert.deepEqual(all.total,{rental:1000,renewal:750,late:130,early:200,revenue:1680});
+      assert.equal(all.company_fees,420);
+      assert.equal(all.staff.find(row=>row.key==='company').revenue,880,'Renewal and late fees stay with company, not employee KPI');
+      assert.equal((await get('ledger',{side:'in',store_id:'24'})).metrics.find(row=>row.label==='Tính doanh thu').value,280);
+    } finally {
+      await query("UPDATE himoto.orders SET rent_at='2026-11-01T02:00:00Z' WHERE id=101");
+      await query('DELETE FROM himoto.transactions WHERE id BETWEEN 2001 AND 2004');
+    }
+    assert.equal(await snapshot(),before);
+    checks.push('Regression: prior-month contracts contribute current receipts; two branches reconcile to the all-store total; renewals/late fees count once, pending and next Vietnam midnight receipts stay excluded, employee attribution is unchanged');
     const outAt=process.argv.indexOf('--fixture-output');if(outAt>=0){
       const destination=path.resolve(process.argv[outAt+1]);assert(destination.startsWith(path.resolve('.backups')+path.sep));assert(!fs.existsSync(destination));
       const catalogue={fixtureOnly:true,options,entries:{},exports:{},source:'Actual web domain + mobile report projection on isolated PGlite; synthetic portfolio only'};

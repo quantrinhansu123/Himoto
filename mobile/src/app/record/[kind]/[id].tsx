@@ -1,8 +1,26 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { Linking, RefreshControl, ScrollView, Text, View } from "react-native";
-import type { CatalogueKind } from "@himoto/mobile-contract";
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Linking,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import {
+  Building2,
+  FilePenLine,
+  FileText,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Phone,
+  ShieldAlert,
+} from "lucide-react-native";
+import type { CatalogueKind, MobileRecord } from "@himoto/mobile-contract";
 import {
   Button,
   Card,
@@ -11,34 +29,56 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import { useSession } from "@/providers/session";
-import { dateTime, money, useTheme } from "@/theme";
+import { useTheme } from "@/theme";
 import { contextualStatusLabel } from "@/lib/catalogue-config";
-import { ContractApprovalSummary } from '@/components/contract-approval-summary';
+import { recordPreviewKey } from "@/lib/record-preview";
+import { ContractDetailView } from "@/components/contract-detail-view";
+
 export default function RecordDetail() {
   const params = useLocalSearchParams<{ kind: string; id: string }>();
   const { api, session } = useSession();
+  const cache = useQueryClient();
   const theme = useTheme();
   const [actionError, setActionError] = useState("");
+
   const valid =
     ["vehicles", "contracts", "customers"].includes(params.kind) &&
     /^[1-9]\d{0,14}$/.test(params.id);
   const allowed =
     valid && session?.user.permissions.includes(`${params.kind}.read`);
-  const query = useQuery({
+
+  const query = useQuery<MobileRecord>({
     queryKey: ["record", session?.user.id, params.kind, params.id],
     queryFn: ({ signal }) =>
       api!.record(params.kind as CatalogueKind, params.id, signal),
+    placeholderData: () =>
+      api && session
+        ? cache.getQueryData<MobileRecord>(
+            recordPreviewKey(
+              api.origin,
+              session.user,
+              params.kind as CatalogueKind,
+              params.id,
+            ),
+          )
+        : undefined,
+    staleTime: 30_000,
+    refetchOnMount: "always",
+    gcTime: 300_000,
     enabled: !!api && !!allowed,
   });
-  if (!allowed)
+
+  if (!allowed) {
     return (
       <StateView
         title="Không mở được hồ sơ"
         message="Kiểm tra liên kết và quyền truy cập của tài khoản."
       />
     );
-  if (query.isPending) return <StateView title="Đang tải hồ sơ" loading />;
-  if (query.isError && !query.data)
+  }
+
+  if (query.isPending && !query.data) return <StateView title="Đang tải hồ sơ" loading />;
+  if (query.isError && !query.data) {
     return (
       <StateView
         title="Chưa tải được hồ sơ"
@@ -48,65 +88,51 @@ export default function RecordDetail() {
         }}
       />
     );
+  }
+
   const row = query.data!;
-  const phone = row.phone.replace(/[\s().-]/g, "");
+
+  // If this is a contract, render the dedicated Web-mirroring ContractDetailView
+  if (params.kind === "contracts") {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
+        <Stack.Screen options={{ title: `HĐ ${row.code}` }} />
+        <ContractDetailView
+          record={row}
+          isRefetching={query.isRefetching}
+          onRefresh={() => {
+            void query.refetch();
+          }}
+        />
+      </View>
+    );
+  }
+
+  // If this is a vehicle opened via generic record link, redirect or render full vehicle view
+  if (params.kind === "vehicles") {
+    router.replace({ pathname: "/vehicle/[id]", params: { id: params.id } });
+    return <StateView title="Đang chuyển sang hồ sơ xe..." loading />;
+  }
+
+  // Customer Profile View (Chuẩn Web)
+  const phone = (row.phone || "").replace(/[\s().-]/g, "");
   const canCall = /^\+?[0-9]{8,15}$/.test(phone);
+
   async function callCustomer() {
     if (!canCall) return;
     setActionError("");
     try {
       await Linking.openURL(`tel:${phone}`);
     } catch {
-      setActionError(
-        "Thiết bị chưa mở được cuộc gọi. Anh/chị có thể chọn và sao chép số điện thoại bên dưới.",
-      );
+      setActionError("Thiết bị chưa mở được cuộc gọi.");
     }
   }
-  const fields: [string, string][] = [
-    ["Cơ sở", row.storeName || "Chưa xác định"],
-  ];
-  if (params.kind === "vehicles")
-    fields.push(
-      ["Tên xe", row.name],
-      ["Biển số", row.license],
-      ["Nhãn hiệu", row.brand],
-      ["Màu xe", row.color],
-      [
-        "Số km",
-        row.odometer === null ? "" : row.odometer.toLocaleString("vi-VN"),
-      ],
-    );
-  if (params.kind === "contracts")
-    fields.push(
-      ["Khách hàng", row.name],
-      ["Điện thoại", row.phone],
-      ["Xe", row.vehicleName],
-      ["Biển số", row.license],
-      ["Bắt đầu thuê", dateTime(row.startsAt)],
-      ["Kết thúc thuê", dateTime(row.endsAt)],
-      ["Giá trị hợp đồng", money(row.totalAmount)],
-      ["Tiền thuê đã ghi nhận", money(row.paidAmount)],
-    );
-  if (params.kind === "contracts" && row.monitoring) fields.push(
-    ["Loại hợp đồng", row.monitoring.contractTypeName],
-    ["Kỳ thanh toán tiếp theo", row.monitoring.nextDueAt ? dateTime(row.monitoring.nextDueAt) : ""],
-    ["Khoản phải đóng theo kỳ", money(row.monitoring.dueAmount)],
-    ["Đã thu vào TK công ty", money(row.monitoring.companyPaidAmount)],
-  );
-  if (params.kind === "customers") {
-    fields.push(["Điện thoại", row.phone]);
-    if (row.email) fields.push(["Email", row.email]);
-    if (row.address) fields.push(["Địa chỉ", row.address]);
-    if (row.contactChannel) fields.push(["Kênh liên hệ", row.contactChannel]);
-    if (row.contactDetail)
-      fields.push(["Thông tin liên hệ", row.contactDetail]);
-    if (row.customerNote) fields.push(["Lưu ý hồ sơ", row.customerNote]);
-  }
+
   return (
-    <ScrollView
+    <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><ScrollView
       contentContainerStyle={{
-        padding: 24,
-        gap: 20,
+        padding: 20,
+        gap: 16,
         width: "100%",
         maxWidth: 760,
         alignSelf: "center",
@@ -121,119 +147,123 @@ export default function RecordDetail() {
         />
       }
     >
-      <Stack.Screen
-        options={{
-          title:
-            params.kind === "vehicles"
-              ? "Chi tiết xe"
-              : params.kind === "contracts"
-                ? "Chi tiết hợp đồng"
-                : "Hồ sơ khách hàng",
-        }}
-      />
-      <View style={{ gap: 12 }}>
-        <Text
-          style={{
-            color: theme.primary,
-            fontSize: 12,
-            fontWeight: "700",
-            letterSpacing: 1,
-          }}
-        >
-          {row.code}
-        </Text>
-        <Text
-          accessibilityRole="header"
-          style={{
-            color: theme.text,
-            fontSize: 30,
-            fontWeight: "800",
-            lineHeight: 38,
-          }}
-        >
-          {params.kind === "vehicles"
-            ? row.license || row.name
-            : row.name || row.code}
-        </Text>
-        <StatusBadge
-          status={row.status}
-          label={contextualStatusLabel(
-            params.kind as CatalogueKind,
-            row.status,
-          )}
-        />
-      </View>
+      <Stack.Screen options={{ title: row.name || "Khách hàng" }} />
+
+      {/* Header Profile Card */}
+      <Card style={{ gap: 12, padding: 18 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={{ color: theme.primary, fontSize: 13, fontWeight: "700" }}>
+              {row.code || `KH #${row.id}`}
+            </Text>
+            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>
+              {row.name}
+            </Text>
+          </View>
+          <StatusBadge
+            status={row.status}
+            label={contextualStatusLabel("customers", row.status)}
+          />
+        </View>
+
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Building2 size={16} color={theme.muted} />
+          <Text style={{ color: theme.muted, fontSize: 13 }}>
+            Cơ sở tiếp nhận: <Text style={{ color: theme.text, fontWeight: "600" }}>{row.storeName || "Toàn hệ thống"}</Text>
+          </Text>
+        </View>
+      </Card>
+
       {query.isError && (
-        <InlineError message="Chưa cập nhật được hồ sơ. Thông tin bên dưới là lần tải gần nhất; kéo xuống để thử lại." />
+        <InlineError message="Chưa cập nhật được hồ sơ. Kéo xuống để thử lại." />
       )}
       {!!actionError && <InlineError message={actionError} />}
-      {params.kind === 'contracts' && <Button secondary label="Xem giấy / in hợp đồng" onPress={() => router.push({ pathname: '/print/[kind]/[id]', params: { kind: 'contracts', id: params.id } })} />}
-      {params.kind === 'contracts' && row.status !== 'cancelled' && <Button secondary label="QR chuyển khoản theo hợp đồng" onPress={() => router.push({ pathname: '/contract-qr/[id]', params: { id: params.id } })} />}
-      {params.kind === 'contracts' && <Button secondary label="Lịch sử / phiếu thu chi hợp đồng" onPress={() => router.push({ pathname: '/contract-history/[id]', params: { id: params.id } })} />}
-      {params.kind === 'contracts' && <ContractApprovalSummary id={params.id} />}
-      {params.kind==='contracts'&&<Button secondary label="Telegram hợp đồng" onPress={()=>router.push({pathname:'/contract-telegram/[id]',params:{id:params.id}})}/>}
-      {params.kind === "contracts" && <Button secondary label="Pin / sạc của hợp đồng xe" onPress={() => router.push({ pathname: "/battery-contracts", params: { source: params.id } })} />}
-      {params.kind === "contracts" && row.reminderEligible && session?.user.permissions.some(p => p === "contracts.draft" || p === "finance.write") && <Button secondary label="Soạn nhắc nợ Zalo" onPress={() => router.push({ pathname: "/reminder-editor/[id]", params: { id: params.id } })} />}
-      {params.kind === "vehicles" && <Button secondary label="Hồ sơ xe đầy đủ" onPress={() => router.push({ pathname: "/vehicle/[id]", params: { id: params.id } })} />}
-      {(params.kind==='contracts'||params.kind==='vehicles'||params.kind==='customers')&&<Button secondary label={params.kind==='customers'?'Giấy tờ và ảnh khách hàng':'Ảnh và hồ sơ nghiệp vụ'} onPress={()=>router.push({pathname:'/record-media/[entity]/[id]',params:{entity:params.kind,id:params.id}})}/>}
-      {params.kind === "vehicles" && session?.user.permissions.includes("vehicles.read") && (
-        <Button secondary label="Điều chuyển và nhận xe" onPress={() => router.push({ pathname: "/vehicle-transfer-editor/[id]", params: { id: params.id } })} />
-      )}
-      {params.kind === 'vehicles' && session?.user.permissions.includes('vehicles.write') && <Button secondary label="Đổi trạng thái / tạo nháp từ kho" onPress={()=>router.push({pathname:'/vehicle-status-editor/[id]',params:{id:params.id}})}/>}
-      {params.kind === "contracts" && ["renting","overdue","wait_payment"].includes(row.status) && session?.user.permissions.includes("contracts.return") && (
-        <Button secondary label="Trả xe và quyết toán" onPress={() => router.push({ pathname: "/return-editor/[id]", params: { id: params.id } })} />
-      )}
-      {params.kind === "contracts" && ["renting","overdue","wait_payment"].includes(row.status) && session?.user.permissions.includes("contracts.return") && (
-        <Button secondary label="Đổi xe trong hợp đồng" onPress={() => router.push({ pathname: "/swap-editor/[id]", params: { id: params.id } })} />
-      )}
-      {params.kind === "contracts" && row.status === "bad_debt" && session?.user.permissions.includes("contracts.return") && (
-        <Button secondary label="Thu hồi xe nợ xấu" onPress={() => router.push({ pathname: "/recovery-editor/[id]", params: { id: params.id } })} />
-      )}
-      {params.kind === "contracts" && session?.user.permissions.some((p) => p === "finance.read" || p === "finance.write") && (
-        <Button secondary label="Thu/chi hợp đồng" onPress={() => router.push({ pathname: "/finance/[id]", params: { id: params.id } })} />
-      )}
-      {params.kind === "contracts" && session?.user.permissions.includes("contracts.renew") && (
-        <View style={{ gap: 14 }}>
-          <Button secondary label="Bill gia hạn" onPress={() => router.push({ pathname: "/renewal-bill/[id]", params: { id: params.id } })} />
-          <Button secondary label="Gia hạn hợp đồng" onPress={() => router.push({ pathname: "/renewal/[id]", params: { id: params.id } })} />
+
+      {/* Contact & Personal Information */}
+      <Card style={{ gap: 14, padding: 16 }}>
+        <Text style={{ color: theme.text, fontSize: 16, fontWeight: "700" }}>
+          Thông tin liên hệ & Căn cước
+        </Text>
+
+        <View style={styles.infoRow}>
+          <View style={styles.infoIconLabel}>
+            <Phone size={15} color={theme.muted} />
+            <Text style={{ color: theme.muted, fontSize: 13 }}>Số điện thoại</Text>
+          </View>
+          <Text selectable style={{ color: theme.primary, fontSize: 16, fontWeight: "700" }}>
+            {row.phone || "—"}
+          </Text>
         </View>
-      )}
-      {params.kind === "contracts" &&
-        ["draft", "deposit_contract"].includes(row.status) &&
-        session?.user.permissions.includes("contracts.finalize") && (
+
+        {canCall && (
           <Button
-            label={
-              row.status === "draft"
-                ? "Rà soát và phát hành"
-                : "Xác nhận giao xe giữ chỗ"
-            }
-            onPress={() =>
-              router.push({
-                pathname: "/contract/[id]",
-                params: { id: params.id },
-              })
-            }
+            label={`Gọi điện thoại (${phone})`}
+            icon={<Phone size={16} color={theme.primaryText} />}
+            onPress={() => {
+              void callCustomer();
+            }}
           />
         )}
-      {params.kind === "contracts" &&
-        row.status === "draft" &&
-        session?.user.permissions.includes("contracts.draft") && (
-          <Button
-            secondary
-            label="Tiếp tục soạn hợp đồng"
-            onPress={() =>
-              router.push({
-                pathname: "/draft/[id]",
-                params: { id: params.id },
-              })
-            }
-          />
+
+        {!!row.email && (
+          <View style={styles.infoRow}>
+            <View style={styles.infoIconLabel}>
+              <Mail size={15} color={theme.muted} />
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Email</Text>
+            </View>
+            <Text selectable style={{ color: theme.text, fontSize: 14 }}>
+              {row.email}
+            </Text>
+          </View>
         )}
-      {params.kind === "customers" &&
-        session?.user.permissions.includes("customers.write") && (
+
+        {!!row.address && (
+          <View style={styles.infoRow}>
+            <View style={styles.infoIconLabel}>
+              <MapPin size={15} color={theme.muted} />
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Địa chỉ thường trú</Text>
+            </View>
+            <Text selectable style={{ color: theme.text, fontSize: 14, flex: 1, textAlign: "right" }}>
+              {row.address}
+            </Text>
+          </View>
+        )}
+
+        {!!row.contactChannel && (
+          <View style={styles.infoRow}>
+            <View style={styles.infoIconLabel}>
+              <MessageSquare size={15} color={theme.muted} />
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Kênh liên hệ</Text>
+            </View>
+            <Text selectable style={{ color: theme.text, fontSize: 14 }}>
+              {row.contactChannel}
+            </Text>
+          </View>
+        )}
+
+        {!!row.customerNote && (
+          <View style={[styles.noteBox, { backgroundColor: theme.background, borderColor: theme.border }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <ShieldAlert size={15} color={theme.warning} />
+              <Text style={{ color: theme.warning, fontSize: 13, fontWeight: "700" }}>Lưu ý hồ sơ rủi ro:</Text>
+            </View>
+            <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
+              {row.customerNote}
+            </Text>
+          </View>
+        )}
+      </Card>
+
+      {/* Customer Quick Actions */}
+      <Card style={{ gap: 12, padding: 16 }}>
+        <Text style={{ color: theme.text, fontSize: 16, fontWeight: "700" }}>
+          Tác vụ khách hàng
+        </Text>
+
+        {session?.user.permissions.includes("customers.write") && (
           <Button
-            secondary
             label="Sửa hồ sơ khách hàng"
+            icon={<FilePenLine size={16} color={theme.primaryText} />}
             onPress={() =>
               router.push({
                 pathname: "/customer/[id]",
@@ -242,42 +272,40 @@ export default function RecordDetail() {
             }
           />
         )}
-      {canCall && (
+
         <Button
-          secondary={
-            params.kind === "contracts" &&
-            ["draft", "deposit_contract"].includes(row.status) &&
-            session?.user.permissions.includes("contracts.finalize")
+          secondary
+          label="Giấy tờ, CCCD & Ảnh khách hàng"
+          icon={<FileText size={16} color={theme.text} />}
+          onPress={() =>
+            router.push({
+              pathname: "/record-media/[entity]/[id]",
+              params: { entity: "customers", id: params.id },
+            })
           }
-          label="Gọi khách hàng"
-          onPress={() => {
-            void callCustomer();
-          }}
         />
-      )}
-      {params.kind === 'contracts' && <Card style={{ gap: 14 }}>
-        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '700' }}>Hồ sơ và điều chỉnh</Text>
-      {params.kind === 'contracts' && row.status === 'draft' && session?.user.permissions.includes('contracts.draft') && <Button secondary label="Xóa nháp trên máy chủ" onPress={() => router.push({ pathname: '/draft-delete/[id]', params: { id: params.id } })} />}
-      {params.kind === 'contracts' && row.status !== 'draft' && (session?.user.role === 'admin' || session?.user.permissions.includes('contracts.draft')) && <><Button secondary label="Sửa đầy đủ hợp đồng" onPress={() => router.push({ pathname: '/contract-edit/[id]', params: { id: params.id } })} />{row.status !== "cancelled" && !["ownership","ownership_cd"].includes(row.monitoring?.rentalType || "") && <Button secondary label="Sửa tiền / ngày thuê" onPress={() => router.push({ pathname: '/rental-terms/[id]', params: { id: params.id } })} />}</>}
-      {params.kind === 'contracts' && !['draft','cancelled'].includes(row.status) && session?.user.permissions.some(p => p === 'contracts.draft' || p === 'finance.write') && <Button secondary label="Sửa cọc / khoản đã thu" onPress={() => router.push({ pathname: '/contract-correction/[kind]/[id]', params: { kind: 'receipts', id: params.id } })} />}
-      {params.kind === 'contracts' && !['draft','cancelled'].includes(row.status) && session?.user.permissions.some(p => p === 'contracts.renew' || p === 'finance.write') && <Button secondary label="Sửa ngày / tiền thực thu gia hạn" onPress={() => router.push({ pathname: '/contract-correction/[kind]/[id]', params: { kind: 'renewal', id: params.id } })} />}
-      {params.kind === 'contracts' && ['ownership','ownership_cd'].includes(row.monitoring?.rentalType || '') && <Button secondary label="Thời hạn / mức đóng thuê sở hữu" onPress={() => router.push({ pathname: '/ownership-terms/[id]', params: { id: params.id } })} />}
-      {params.kind === 'contracts' && row.status !== 'draft' && <Button secondary label="Tình trạng xe / nợ / bảo lưu" onPress={() => router.push({ pathname: '/contract-lifecycle/[id]', params: { id: params.id } })} />}
-      {params.kind === 'contracts' && row.status !== 'draft' && session?.user.permissions.includes('contracts.return') && <Button secondary label="Sửa hồ sơ / quyết toán xe đã trả" onPress={() => router.push({ pathname: '/return-correction/[id]', params: { id: params.id } })} />}
-      </Card>}
-      <Card style={{ gap: 20 }}>
-        {fields.map(([label, value]) => (
-          <View key={label} style={{ gap: 6 }}>
-            <Text style={{ color: theme.muted, fontSize: 13 }}>{label}</Text>
-            <Text
-              selectable
-              style={{ color: theme.text, fontSize: 17, lineHeight: 25 }}
-            >
-              {value || "Chưa có dữ liệu"}
-            </Text>
-          </View>
-        ))}
       </Card>
-    </ScrollView>
+    </ScrollView></SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+  },
+  infoIconLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  noteBox: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 4,
+    marginTop: 4,
+  },
+});

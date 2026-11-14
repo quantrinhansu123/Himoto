@@ -35,6 +35,47 @@ async function main() {
     assert.equal(shared.cleanOcrFields({name:'Tên người ký cấp thẻ',id_card:'001234567890'},'cccd_back').name,undefined);
     checks.push('Only four identity fields; fresh photos replace pre-entered CCCD/name without matching checks; current address/phone stay manual, in-flight edits survive and issue dates normalize');
 
+    const identityPhoto = new File([jpeg], 'synthetic-identity.jpg', { type: 'image/jpeg' });
+    for (const [kind, input, expectedIdentity] of [
+      ['cccd_front', identityPhoto, ''],
+      ['cccd_back', identityPhoto, '001234567890'],
+      ['customer_documents', identityPhoto, ''],
+      ['customer_documents', [identityPhoto, identityPhoto], ''],
+    ]) {
+      const signal = new AbortController().signal;
+      let calls = 0;
+      global.fetch = async (url, init) => {
+        calls++;
+        assert.equal(url, '/api/auth/photo-ocr'); assert.equal(init.method, 'POST');
+        assert.equal(init.credentials, 'same-origin'); assert.equal(init.signal, signal);
+        assert.equal(init.headers['X-Photo-Kind'], kind);
+        assert.equal(init.headers['X-Expected-Identity'] || '', expectedIdentity);
+        if (Array.isArray(input)) {
+          assert(init.body instanceof FormData); assert(!('Content-Type' in init.headers));
+          const images = init.body.getAll('photos'); assert.equal(images.length, input.length);
+          for (const image of images) assert.deepEqual(Buffer.from(await image.arrayBuffer()), jpeg);
+        } else {
+          assert.equal(init.body, identityPhoto); assert.equal(init.headers['Content-Type'], 'image/jpeg');
+        }
+        return Response.json({ status: 'success', data: { fields: {
+          id_card: '001234567890', name: 'Chủ căn cước QA', id_card_issued_on: '12/10/2024',
+          id_card_issued_by: 'Cơ quan QA', address: 'Must not fill current address', phone: '0900000000',
+        }, warnings: ['Kiểm tra trước khi lưu.'] } });
+      };
+      const result = await shared.readPhotoWithAi(kind, input, signal, expectedIdentity);
+      assert.equal(calls, 1); assert.equal(result.fields.id_card, '001234567890');
+      assert.equal(result.fields.id_card_issued_on, '2024-10-12');
+      assert.equal(result.fields.id_card_issued_by, 'Cơ quan QA');
+      assert.equal(result.fields.name, kind === 'cccd_back' ? undefined : 'Chủ căn cước QA');
+      assert.equal(result.fields.address, undefined); assert.equal(result.fields.phone, undefined);
+      assert.deepEqual(result.warnings, ['Kiểm tra trước khi lưu.']);
+    }
+    global.fetch = async () => Response.json({ status: 'error', message: 'Gemini đang giới hạn lượt đọc QA' }, { status: 503 });
+    await assert.rejects(shared.readPhotoWithAi('cccd_front', identityPhoto, new AbortController().signal), /Gemini đang giới hạn/);
+    assert.deepEqual(Buffer.from(await identityPhoto.arrayBuffer()), jpeg);
+    global.fetch = originalFetch;
+    checks.push('Identity fronts, backs and mixed document batches call the authenticated Gemini endpoint with original bytes; cleaned fields, warnings, cancellation signal and provider failures survive transport without QR decoding');
+
     process.env.GEMINI_API_KEY = 'unit-test-gemini-key'; delete process.env.GOOGLE_API_KEY; delete process.env.GEMINI_OCR_MODEL;
     const response = fields => Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(fields) }] } }] });
     const extracted = await server.extractPhoto('cccd_back', 'image/jpeg', jpeg, undefined, async (url, init) => {

@@ -2,6 +2,7 @@
 import { useEffect,useRef,useState } from 'react';
 import { useManagement } from './ManagementProvider';
 import { ShiftEvidence } from './ShiftEvidence';
+import {ShiftTelegramStatus} from './ShiftTelegramStatus';
 import { SHIFT_PHOTOS,type ShiftReport } from '@/lib/management/shift-reports';
 import { emptyAuditInput,parseAuditInput,auditComparisons,validateAuditConfirmation,auditReportText,type AuditInput,type AuditKey,type ShiftAudit,type ShiftSnapshot } from '@/lib/management/shift-audits';
 import { shiftApi,UnconfirmedSaveError,uploadShiftEvidence,type PendingShiftFile,type ShiftUpload } from '@/lib/management/shift-report-client';
@@ -83,6 +84,7 @@ export function ShiftAuditPanel({report,onDirty,onBusy,onSaved}:{report:ShiftRep
     <div className="mg-field"><label htmlFor="audit-notes">Kết luận / ghi chú KTNB</label><textarea id="audit-notes" value={input.notes} onChange={e=>change({...input,notes:e.target.value})} maxLength={5000}/></div>
     <details><summary>Minh chứng KTNB · {media.filter(m=>m.stage==='audit').length} tệp đã lưu · {Object.keys(pending).length} tệp chưa lưu</summary><ShiftEvidence slots={SHIFT_PHOTOS.map(([key])=>key)} media={media.filter(m=>m.stage==='audit')} pending={pending} readonly={locked} disabled={busy||uncertain} onFiles={value=>{setPending(value);onDirty(true);}} onDelete={file=>void remove(file)}/></details>
     </fieldset>
+    {audit?.status==='confirmed'&&<ShiftTelegramStatus id={report.id} stage="audit" canSend={can('shift.review')}/>}
     {error&&<p role="alert" className="mg-field-error">{error}</p>}
     {!locked&&<div className="shift-actions">{uncertain?<button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={()=>void save(false)}>Thử lại đối soát</button>:<><button type="button" className="mg-button" disabled={busy||loading||!snapshot} onClick={()=>void save(false)}>{busy?'Đang lưu…':'Lưu nháp KTNB'}</button><button type="button" className="mg-button mg-button-primary" disabled={busy||loading||!snapshot} onClick={()=>void save(true)}>Xác nhận đối soát</button></>}</div>}
   </section>;

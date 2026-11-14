@@ -1,6 +1,7 @@
 export type GpsProvider='protrack'|'iopgps';
 export type GpsState='online'|'stopped'|'offline'|'warning';
-export const GPS_POLL_INTERVAL_MS=5000;
+/** Foreground reads and the shared server account claim use the same minute cadence. */
+export const GPS_POLL_INTERVAL_MS=60_000;
 export const GPS_LONG_STOP_MS=3*24*60*60_000;
 export const GPS_SYNC_STALE_MS=10*60_000;
 export const GPS_STATE_LABELS:Record<GpsState|string,string>={online:'ON · Đang di chuyển',stopped:'ON · Đang dừng',long_stopped:'Xe dừng trên 3 ngày',offline:'OFF · Mất kết nối',warning:'Cần kiểm tra',stale:'Chưa cập nhật',none:'Chưa gắn GPS',unavailable:'Không còn trong tài khoản GPS'};

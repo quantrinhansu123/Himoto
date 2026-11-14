@@ -49,10 +49,11 @@ export function ContractPhotoSave({contractId,revision,copyAfter,documents,vehic
         if(found.receipt){if(found.receipt.id!==contractId||found.receipt.actorId!==scope.userId)throw Error('Phiếu ảnh không khớp hồ sơ hoặc người lưu. Giữ mã để đối chiếu.');setReceipt(found.receipt);}
       }else{
         const next:Record<string,MobileMediaSlotInfo>={};
+        const errors:string[]=[];
         for(const row of orderContractPhotoUploads(docs.current.photos,contractId,vehicles.map(v=>v.id))){
-          next[row.id]=await api.mediaSlotInfo(target(row.slot),row.slot);if(!current(at))return;
+          try{next[row.id]=await api.mediaSlotInfo(target(row.slot),row.slot);}catch(cause){errors.push(`${pendingContractPhotoLabel(row.slot,vehicles)}: ${(cause as Error).message}`);}if(!current(at))return;
         }
-        setReady({});setReviewVersion(v=>v+1);setInfos(next);setLoaded(true);
+        setReady({});setReviewVersion(v=>v+1);setInfos(next);setLoaded(true);if(errors.length)setError(errors.join('\n'));
       }
     }catch(cause){if(current(at))fail(cause);}
     finally{running.current=false;if(alive.current)setBusy(false);}
@@ -96,8 +97,9 @@ export function ContractPhotoSave({contractId,revision,copyAfter,documents,vehic
     if(!api||!scope||!loaded||key||running.current)return;
     const at=token.current;running.current=true;setBusy(true);setError('');setConfirm(null);
     try{
+      let skipped=0;
       for(const row of orderContractPhotoUploads(docs.current.photos,contractId,vehicles.map(v=>v.id))){
-        const info=infos[row.id];if(!info||info.target.canWrite===false||!ready[row.id]||info.photo&&(!info.photo.readable||!ready['old:'+row.id]))throw Error('Tải lại và xem đầy đủ ảnh trước khi lưu.');
+        const info=infos[row.id];if(!info||info.target.canWrite===false||!ready[row.id]||info.photo&&(!info.photo.readable||!ready['old:'+row.id])){skipped++;continue;}
         const reserved=docs.current.work?await docs.current.work.reservePhoto(row.id,info):await pendingWrites.reserveExclusive(scope,operation,mediaMutationOperations('contracts',contractId),()=>uuid.v4().toLowerCase());if(!current(at))return;
         if(reserved.operation!==operation)throw Error('Còn thao tác ảnh trên hợp đồng này. Vào Tài khoản để đối chiếu trước khi lưu ảnh.');
         setKey(reserved.key);
@@ -108,13 +110,13 @@ export function ContractPhotoSave({contractId,revision,copyAfter,documents,vehic
         const proof=await api.uploadRecordMedia(info.target,info.slot,info.photo?.revision??null,bytes,reserved.key);if(!current(at))return;
         await acknowledge(proof,reserved.key);if(!current(at))return;
       }
-      await finishPhotos();
+      if(skipped){setLoaded(false);setNotice(`Đã lưu các ảnh sẵn sàng. Còn ${skipped} ảnh cần tải lại hoặc kiểm tra; thông tin hợp đồng đã được giữ.`);}else await finishPhotos();
     }catch(cause){if(current(at))fail(cause);}
     finally{running.current=false;if(alive.current)setBusy(false);}
   }
   async function finishPhotos(){if(copyAfter)setCopying(true);else await onComplete();}
   function close(){if(copying){if(copyCanClose.current)onClose();return;}if(busy||key||running.current){setNotice('Đối chiếu yêu cầu ảnh đang gửi trước khi quay lại. Ảnh và thông tin đang nhập được giữ.');scroll.current?.scrollTo({y:0,animated:!reduced});}else onClose();}
-  const canSave=loaded&&!photoPlan.error&&remaining.every(row=>infos[row.id]&&infos[row.id].target.canWrite!==false&&ready[row.id]&&(!infos[row.id].photo||infos[row.id].photo!.readable&&ready['old:'+row.id]));
+  const canSave=loaded&&!photoPlan.error&&(!remaining.length||remaining.some(row=>infos[row.id]&&infos[row.id].target.canWrite!==false&&ready[row.id]&&(!infos[row.id].photo||infos[row.id].photo!.readable&&ready['old:'+row.id])));
   return <Modal animationType={reduced?'none':'slide'} onRequestClose={close} accessibilityViewIsModal>
     {copying?<CustomerPhotoCopy id={contractId} work={documents.work} expectedRevision={revision} autoStart onComplete={onComplete} onClose={onClose} onCloseAvailabilityChange={allowed=>{copyCanClose.current=allowed;}}/>:<SafeAreaView style={{flex:1,backgroundColor:theme.background}}>
       <ScrollView ref={scroll} contentContainerStyle={{padding:18,gap:16,maxWidth:760,width:'100%',alignSelf:'center'}}>

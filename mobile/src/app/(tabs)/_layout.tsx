@@ -1,16 +1,19 @@
 import { Tabs } from "expo-router";
+import { useQueryClient } from '@tanstack/react-query';
+import { refreshTabLookups } from '@/lib/query-persistence';
 import {
   CarFront,
-  LayoutDashboard,
   Files,
+  House,
   UsersRound,
   CircleUserRound,
 } from "lucide-react-native";
 import { useSession } from "@/providers/session";
 import { useTheme } from "@/theme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useWindowDimensions } from "react-native";
+import { Text, useWindowDimensions } from "react-native";
 export default function TabLayout() {
+  const cache = useQueryClient();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
@@ -18,6 +21,7 @@ export default function TabLayout() {
   const permissions = session?.user.permissions || [];
   return (
     <Tabs
+      screenListeners={({ route }) => ({ tabPress: () => { void refreshTabLookups(cache, route.name); } })}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: theme.primary,
@@ -25,11 +29,12 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: theme.surface,
           borderTopColor: theme.border,
-          height: 68 + Math.max(0, fontScale - 1) * 32 + insets.bottom,
+          height: 84 + Math.max(0, fontScale - 1) * 32 + insets.bottom,
           paddingTop: 8,
           paddingBottom: Math.max(insets.bottom, 8),
         },
-        tabBarLabelStyle: { fontSize: 12, lineHeight: 16, fontWeight: "600" },
+        tabBarLabelStyle: { fontSize: 11.5, lineHeight: 15, fontWeight: "600" },
+        tabBarLabel: ({ color, children }) => <Text numberOfLines={2} style={{ color, fontSize: 11.5, lineHeight: 15, fontWeight: '600', textAlign: 'center', maxWidth: '100%' }}>{children}</Text>,
         tabBarHideOnKeyboard: true,
         sceneStyle: { backgroundColor: theme.background },
       }}
@@ -37,16 +42,16 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Tổng quan",
+          title: "Thao tác",
           tabBarIcon: ({ color, size }) => (
-            <LayoutDashboard color={color} size={size} />
+            <House color={color} size={size} />
           ),
         }}
       />
       <Tabs.Screen
         name="vehicles"
         options={{
-          title: "Đội xe",
+          title: "Danh sách xe",
           href: permissions.includes("vehicles.read") ? undefined : null,
           tabBarIcon: ({ color, size }) => (
             <CarFront color={color} size={size} />

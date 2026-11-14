@@ -73,7 +73,7 @@ const RETURNABLE_SQL = `SELECT d.id AS item_id,o.id AS order_id,
 
 // Stock can be archived or moved after a legacy agreement was issued. The rental
 // line remains returnable; labels are limited to contracts in the caller's scope.
-const returnableSql = (includeBadDebt=false) => RETURNABLE_SQL.replace('JOIN himoto.vehicles v', `LEFT JOIN ${contractVehicleLabelSource()} v`)+(includeBadDebt?'':" AND o.order_status<>'bad_debt'");
+const returnableSql = (includeBadDebt=false,orderIdsSql?:string) => RETURNABLE_SQL.replace('JOIN himoto.vehicles v', `LEFT JOIN ${contractVehicleLabelSource(orderIdsSql)} v`)+(includeBadDebt?'':" AND o.order_status<>'bad_debt'");
 
 function mapReturnableRows(rows: Record<string, unknown>[]): ReturnableContractItem[] {
   return rows.map(row => {
@@ -120,7 +120,7 @@ export async function searchReturnableItems(client: Database, query: string): Pr
 
 export async function loadContractReturnableItems(client: Database, orderId: number, includeBadDebt=false): Promise<ReturnableContractItem[]> {
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return [];
-  const result = await client.query(`${returnableSql(includeBadDebt)} AND o.id=$1 ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id`, [orderId]);
+  const result = await client.query(`${returnableSql(includeBadDebt,'ARRAY[$1::bigint]')} AND o.id=$1 ORDER BY (d.completed_at IS NULL) DESC,d.return_at ASC NULLS LAST,d.id`, [orderId]);
   return mapReturnableRows(result.rows);
 }
 
@@ -128,7 +128,7 @@ export async function loadContractReturnableItems(client: Database, orderId: num
 export async function loadContractReturnablePage(client: Database, orderId: number, page: number) {
   if (!Number.isSafeInteger(orderId) || orderId <= 0 || !Number.isSafeInteger(page) || page < 1 || page > 100000)
     throw new ContractReturnError('Trang xe trả không hợp lệ.');
-  const source=`${returnableSql(true)} AND o.id=$1`;
+  const source=`${returnableSql(true,'ARRAY[$1::bigint]')} AND o.id=$1`;
   const counted=await client.query(`SELECT count(*)::int AS total FROM (${source}) returnable`,[orderId]);
   const total=Number(counted.rows[0]?.total),pages=Math.max(1,Math.ceil(total/25));
   if(!Number.isSafeInteger(total)||total<0||total>1000000)throw new ContractReturnError('Lịch sử xe cần đối chiếu trước khi trả.',409);
@@ -141,7 +141,7 @@ export async function loadContractReturnablePage(client: Database, orderId: numb
 export async function loadContractReturnableSelection(client:Database,orderId:number,ids:number[]) {
   if(!Number.isSafeInteger(orderId)||orderId<=0||!ids.length||ids.length>50||ids.some(id=>!Number.isSafeInteger(id)||id<=0)||new Set(ids).size!==ids.length)
     throw new ContractReturnError('Chọn từ 1 đến 50 dòng xe hợp lệ.');
-  const result=await client.query(`${returnableSql()} AND o.id=$1 AND d.id=ANY($2::bigint[]) ORDER BY d.id LIMIT 50`,[orderId,ids]);
+  const result=await client.query(`${returnableSql(false,'ARRAY[$1::bigint]')} AND o.id=$1 AND d.id=ANY($2::bigint[]) ORDER BY d.id LIMIT 50`,[orderId,ids]);
   return mapReturnableRows(result.rows);
 }
 
@@ -191,7 +191,7 @@ export async function recordBadDebtRecovery(client:Database,actorId:number,raw:B
   const previous=events.find((event:{request_id?:string})=>event.request_id===input.request_id);
   const result={item_id:input.item_id,order_id:Number(row.order_id),vehicle_id:Number(row.vehicle_id),recovered_at:localTimestamp(input.recovered_at)};
   if(previous){if(previous.request_hash!==hash)throw new ContractReturnError('Mã lần thu hồi đã dùng cho thông tin khác.',409);return {...result,replayed:true};}
-  if(row.order_status!=='bad_debt')throw new ContractReturnError('Hợp đồng đã đóng; không ghi thêm lượt thu hồi.',409);
+  if(row.order_status!=='bad_debt'&&!(row.order_status==='completed'&&composer.lifecycle?.payment_closure))throw new ContractReturnError('Hợp đồng đã đóng; không ghi thêm lượt thu hồi.',409);
   if(row.completed_at)throw new ContractReturnError('Xe đã được ghi nhận trả/thu hồi. Tải lại để kiểm tra kho.',409);
   if(String(row.item_revision)!==input.item_revision)throw new ContractReturnError('Dòng xe đã thay đổi. Mở lại hợp đồng trước khi xác nhận.',409);
   if(row.rent_at&&new Date(result.recovered_at).getTime()<new Date(row.rent_at).getTime())throw new ContractReturnError('Ngày thu hồi không được trước ngày bắt đầu thuê.');
@@ -211,7 +211,7 @@ export async function recordBadDebtRecovery(client:Database,actorId:number,raw:B
   else {
     const open=await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
       WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-        AND o.order_status IN('renting','overdue','wait_payment','pending','bad_debt') LIMIT 1`,[row.vehicle_id]);
+        AND (o.order_status IN('renting','overdue','wait_payment','pending','bad_debt') OR (o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NOT NULL)) LIMIT 1`,[row.vehicle_id]);
     if(!open.rowCount)await client.query("UPDATE himoto.vehicles SET status='ready',updated_at=now() WHERE id=$1 AND status IN('using','rent','bad_debt')",[row.vehicle_id]);
   }
   if(composer.lifecycle?.settlement)await closeResolvedBadDebt(client,Number(row.order_id),actorId);
@@ -288,7 +288,7 @@ export async function recordVehicleReturn(client: Database, actorId: number, inp
   else {
     const vehicleOpen=await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
       WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-      AND o.order_status IN('renting','overdue','wait_payment','pending','bad_debt') LIMIT 1`,[item.vehicle_id]);
+      AND (o.order_status IN('renting','overdue','wait_payment','pending','bad_debt') OR (o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NOT NULL)) LIMIT 1`,[item.vehicle_id]);
     if(!vehicleOpen.rowCount)await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`,[item.vehicle_id]);
   }
   return { item_id: input.item_id, contract_code: String(item.contract_code), returned_at: actual, scheduled_return_at: toIso(item.return_at)!,
@@ -316,7 +316,7 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   if(branchStockError)throw new ContractReturnError(branchStockError,409);
   const openRental = await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`, [input.vehicle_id]);
+      AND (o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') OR (o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NOT NULL)) LIMIT 1`, [input.vehicle_id]);
   const scopedBlocked=usesScopedDatabase()&&!(await client.query('SELECT available FROM himoto.vehicle_inventory() WHERE id=$1',[input.vehicle_id])).rows[0]?.available;
   if (openRental.rowCount || scopedBlocked) throw new ContractReturnError('Xe mới đang thuộc hợp đồng mở, không thể dùng để thay xe.', 409);
   const duplicate = await client.query(`SELECT 1 FROM himoto.order_vehicle_details
@@ -332,7 +332,7 @@ export async function replaceContractVehicle(client: Database, actorId: number, 
   else {
     const oldOpen=await client.query(`SELECT 1 FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
       WHERE d.vehicle_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-        AND o.order_status IN('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') LIMIT 1`,[item.vehicle_id]);
+        AND (o.order_status IN('renting','overdue','wait_payment','pending','deposit_contract','bad_debt') OR (o.order_status='completed' AND o.draft_payload #> '{management_composer,lifecycle,payment_closure}' IS NOT NULL)) LIMIT 1`,[item.vehicle_id]);
     if(!oldOpen.rowCount)await client.query(`UPDATE himoto.vehicles SET status=CASE WHEN status IN ('using','rent') THEN 'ready' ELSE status END,updated_at=now() WHERE id=$1`,[item.vehicle_id]);
   }
   await client.query(`UPDATE himoto.vehicles SET status='using',updated_at=now() WHERE id=$1`, [input.vehicle_id]);

@@ -13,3 +13,4 @@ export async function ownershipApprovalRequest(id:number,revision?:string,signal
   if(!response.ok||result?.status!=='success')throw new Error(result?.message||'Chưa tải được thông tin duyệt hợp đồng.');
   return result.data;
 }
+

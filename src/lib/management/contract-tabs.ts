@@ -20,3 +20,7 @@ export function contractActiveRentalCount(counts:Map<string,number>|Iterable<[st
   const map=counts instanceof Map?counts:new Map(counts);
   return CONTRACT_ACTIVE_RENTAL_STATUSES.reduce((sum,status)=>sum+(map.get(status)||0),0);
 }
+/** Overdue navigation includes bad debt; the dedicated bad-debt tab remains available. */
+export function contractOverdueCount(counts:Map<string,number>) {
+  return (counts.get('overdue') || 0) + (counts.get('bad_debt') || 0);
+}

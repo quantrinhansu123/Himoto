@@ -10,7 +10,7 @@ import { vietnamDate } from '@/lib/management/duty-roster';
 
 type Database=Pick<PoolClient,'query'>;
 export async function readCollectionReport(db:Database,store:string) {
-  const result=await readManagementTable(db,'contracts',new URLSearchParams({scope:'overdue',all:'1',store}));
+  const result=await readManagementTable(db,'contracts',new URLSearchParams({scope:'collection',all:'1',store}));
   const rows=result.rows;
   const meta=rows.length?(await db.query(`SELECT o.id,c.status AS customer_status,c.warning,f.*,
     (SELECT array_agg(DISTINCT COALESCE(gps.normalized_status,'none')) FROM himoto.order_vehicle_details d
@@ -22,7 +22,7 @@ export async function readCollectionReport(db:Database,store:string) {
   const data:CollectionRow[]=rows.map(row=>{
     const m=byId.get(row.id)||{},number=(value:unknown)=>value===undefined||value===null||value===''||!Number.isFinite(Number(value))?null:Number(value);
     return {id:row.id,code:row.code,customer:String(row.customer_name||''),phone:String(row.customer_phone||''),store_id:Number(row.store_id),store_name:String(row.store_name||''),vehicle:String(row.license||''),started_at:String(row.start_date||''),due_at:String(row.billing_plan_json?row.billing_overdue_at||row.billing_next_due_at||'':row.end_date||''),days:Number(row.overdue_days||0),amount:number(row.billing_plan_json?row.billing_due_amount:row.rental_debt_amount),late_fee:number(row.overdue_fee_estimate),
-      gps:m.gps_states||[],customer_status:Number(m.customer_status)===2?'Nợ xấu':m.warning?'Cảnh báo':row.status==='bad_debt'?'Nợ xấu':'Bình thường',
+      gps:m.gps_states||[],customer_status:row.status==='completed'&&row.bad_debt_closed_at?'Đã đóng · còn công nợ':Number(m.customer_status)===2?'Nợ xấu':m.warning?'Cảnh báo':row.status==='bad_debt'?'Nợ xấu':'Bình thường',
       followup:{contact_status:m.contact_status||'uncontacted',handling_status:m.handling_status||'branch',customer_condition:m.customer_condition||'',notes:m.notes||'',revision:Number(m.revision||0),updated_at:m.updated_at}};
   }).sort((a,b)=>b.days-a.days||a.id-b.id);
   return {rows:data,read_at:new Date().toISOString()};

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Himoto",
     "slug": "himoto-staff",
-    "version": "1.0.1",
+    "version": "1.0.11",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "himoto",
@@ -20,7 +20,19 @@
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "package": "vn.himoto.staff",
-      "versionCode": 2
+      "versionCode": 12,
+      "allowBackup": false
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f928280d-4ea8-4574-b64e-51dd44b94d68",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     },
     "web": {
       "output": "single",
@@ -29,9 +41,43 @@
     "plugins": [
       "./plugins/with-literal-account-input.cjs",
       "./plugins/with-android-release-signing.cjs",
+      "expo-updates",
       "expo-router",
       "expo-secure-store",
-      ["expo-notifications", {"defaultChannel": "himoto-work", "color": "#E60019"}],
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-background-task",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "# WorkManager/Room instantiate this constructor through reflection.\n-keep class androidx.work.impl.WorkDatabase_Impl { public <init>(); }"
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Himoto dùng vị trí hiện tại để xác nhận chấm công khi bạn vào hoặc ra ca."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Himoto dùng Face ID để mở khóa phiên làm việc của bạn."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "himoto-work",
+          "color": "#E60019"
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -54,6 +100,18 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "androidPushConfigured": false,
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "f928280d-4ea8-4574-b64e-51dd44b94d68"
+      }
+    },
+    "owner": "huybitvvt"
   }
 }

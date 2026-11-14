@@ -5,14 +5,25 @@ import { summarizeBySalesStaff, summarizeByStore, summarizeSalesKpis } from '@/l
 import { depositLateral,rentalPaidSql } from './contract-deposits';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { rentalSalesValueSql } from './rental-sales-value';
+import { PAYMENT_CLOSURE_TOTAL_SQL,BAD_DEBT_CLOSED_AT_SQL,BAD_DEBT_CUTOFF_SQL } from './contract-bad-debt';
+import { applyInstallmentBilling } from '@/lib/management/contract-billing';
+import { withContractMonitoring } from '@/lib/management/contract-overdue';
+import { contractStatisticsSql, mapContractStatistics } from './contract-table-stats';
 
 export class PageSummaryError extends Error {}
 export async function readOperationsSummary(client:Pick<PoolClient,'query'>) {
-  const result=await client.query(`SELECT o.store_id,count(*)::int AS active,
-    count(*) FILTER (WHERE o.order_status='overdue' OR o.order_status='renting' AND COALESCE(o.return_at,ov.end_date)<now())::int AS overdue
-    FROM himoto.orders o LEFT JOIN LATERAL (SELECT max(d.return_at) AS end_date FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL) ov ON o.return_at IS NULL
-    WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment') GROUP BY o.store_id`);
-  return {stores:result.rows};
+  // Use the list's numeric projection and installment rules. Header deadlines
+  // alone omit bad debt and miscount paid or not-yet-due ownership schedules.
+  const now=Date.now(),result=await client.query(contractStatisticsSql(" AND o.order_status IN ('renting','overdue','wait_payment','bad_debt')",false));
+  const stores=new Map<number|null,{store_id:number|null;active:number;overdue:number}>();
+  for(const raw of result.rows){
+    const row=withContractMonitoring(applyInstallmentBilling(mapContractStatistics(raw),now),now),id=row.store_id==null?null:Number(row.store_id);
+    const entry=stores.get(id)??{store_id:id,active:0,overdue:0};
+    if(['renting','overdue','wait_payment'].includes(row.status))entry.active++;
+    if(row.status==='overdue'||row.status==='bad_debt'||row.collection_overdue===1)entry.overdue++;
+    stores.set(id,entry);
+  }
+  return {stores:[...stores.values()]};
 }
 export async function readSalesSummary(client:Pick<PoolClient,'query'>,params:URLSearchParams) {
   const from=params.get('from')||'',to=params.get('to')||'',store=params.get('store')||'all';
@@ -35,6 +46,9 @@ export async function readSalesSummary(client:Pick<PoolClient,'query'>,params:UR
     CASE WHEN o.order_status='renting' AND o.ended_at<now() THEN 'overdue' ELSE o.order_status END AS status,
     o.started_at AS start_date,
     o.total AS total_amount,
+    ${PAYMENT_CLOSURE_TOTAL_SQL} AS payment_closure_total,${BAD_DEBT_CLOSED_AT_SQL} AS bad_debt_closed_at,${BAD_DEBT_CUTOFF_SQL} AS bad_debt_at,
+    CASE WHEN (${BAD_DEBT_CLOSED_AT_SQL}) IS NOT NULL THEN jsonb_build_object('management_composer',jsonb_build_object(
+      'installment_plan',o.draft_payload #> '{management_composer,installment_plan}')) ELSE '{}'::jsonb END AS draft_payload,
     ${rentalSalesValueSql()} AS rental_sales_amount,
     ${rentalPaidSql()} AS paid_amount,
     CASE WHEN o.first_deposit_amount IS NULL AND o.additional_deposit_amount IS NULL THEN NULL
@@ -44,6 +58,6 @@ export async function readSalesSummary(client:Pick<PoolClient,'query'>,params:UR
     FROM scoped o LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id
     ${depositLateral()}`,[from,to,store==='all'?null:Number(store)]);
   const staff=await client.query('SELECT id,full_name AS name FROM himoto.staff_profiles');
-  const rows=result.rows.map(row=>mapApiRow('contracts',row));
+  const rows=result.rows.map(row=>mapApiRow('contracts',row)).map(row=>row.bad_debt_closed_at?applyInstallmentBilling(row):row);
   return {sources:summarizeBySalesStaff(rows,from,to,store,staff.rows),stores:summarizeByStore(rows,from,to,store),kpis:summarizeSalesKpis(rows,from,to,store)};
 }

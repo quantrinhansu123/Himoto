@@ -56,6 +56,7 @@ export async function updateIssuedContract(db:Database,id:number,actor:number,bo
   await updateContractProfile(db,id,actor,{revision:input.revision,profile:contractProfile(draft),contract_number:draft.contract_number,notes:input.notes,status:input.status},{allowIncomplete:true,overwrite:true});
   const o = (await db.query('SELECT *,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id])).rows[0];
   const payload = structuredClone(o.draft_payload||{}), composer = payload.management_composer||{}, previous = composer.draft||{};
+  if(composer.lifecycle?.payment_closure)throw new ContractProfileError('Hợp đồng đã đóng qua Thanh toán. Sửa hồ sơ riêng hoặc ghi nhận thu hồi xe; không sửa lại toàn bộ xe và khoản tiền đã chốt.',409);
   const lines = (await db.query('SELECT * FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL ORDER BY id FOR UPDATE',[id])).rows;
   const datesChanged = dateTimeInput(o.rent_at)!==draft.start_date || dateTimeInput(o.return_at)!==draft.end_date;
   const returnChanged = draft.backfill!==undefined && draft.backfill.returned_at!==previous.backfill?.returned_at;

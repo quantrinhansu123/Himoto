@@ -60,40 +60,20 @@ SELECT to_char(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD'),'company
   LEAST(regular_total,initial_fees)-LEAST(regular_total-value,initial_fees)
 FROM allocated WHERE category='rental' AND created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
   AND ($3::bigint IS NULL OR store_id=$3)`;
-/** `receipts`: mọi phiếu thu/chi trong kỳ (ca sổ / audit). `contracts`: chỉ HĐ bắt đầu thuê trong bộ lọc. */
+/** Revenue follows approved receipts, including contracts that started before the report period. */
 export async function rentalRevenue(
   db:Pick<PoolClient,'query'>,
   from:string,
   to:string,
   store?:number,
-  scope:'receipts'|'contracts'='receipts',
 ){
   if(!validDate(from)||!validDate(to)||from>to||store!==undefined&&(!Number.isSafeInteger(store)||store<=0))throw new RentalRevenueError('Kiểm tra khoảng ngày và cơ sở của báo cáo.');
-  const relevant=scope==='contracts'
-    ? await db.query(`SELECT DISTINCT o.id AS order_id
-        FROM himoto.orders o
-        LEFT JOIN LATERAL (
-          SELECT min(d.rent_at) AS start_date
-          FROM himoto.order_vehicle_details d
-          WHERE d.order_id=o.id AND d.deleted_at IS NULL
-        ) dates ON true
-        WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-          AND o.order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
-          AND (COALESCE(o.rent_at,dates.start_date) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date
-          AND ($3::bigint IS NULL OR o.store_id=$3)
-          AND EXISTS (
-            SELECT 1 FROM himoto.transactions t
-            WHERE t.order_id=o.id AND t.status='approved' AND t.type IN ('in','addon','out')
-              AND t.created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-              AND t.created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-          )`,[from,to,store??null])
-    : await db.query(`SELECT DISTINCT order_id FROM himoto.transactions
+  const relevant=await db.query(`SELECT DISTINCT order_id FROM himoto.transactions
         WHERE status='approved' AND type IN('in','addon','out') AND order_id IS NOT NULL
           AND created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
           AND ($3::bigint IS NULL OR store_id=$3)`,[from,to,store??null]);
   if(!relevant.rows.length)return summarizeRentalRevenue([]);
-  // Với scope contracts đã lọc theo cơ sở HĐ; không lọc lại theo store phiếu để tránh sót thực thu.
-  const result=await db.query(RENTAL_REVENUE_SQL,[from,to,scope==='contracts'?null:store??null,relevant.rows.map(row=>String(row.order_id))]);
+  const result=await db.query(RENTAL_REVENUE_SQL,[from,to,store??null,relevant.rows.map(row=>String(row.order_id))]);
   return summarizeRentalRevenue(result.rows as RevenueReceipt[]);
 }

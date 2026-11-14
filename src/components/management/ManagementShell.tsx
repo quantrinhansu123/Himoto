@@ -42,7 +42,8 @@ const navigation = [
   { href: '/accounts', label: 'Tài khoản & Phân quyền', kind: 'accounts' as const, icon: UsersRound },
   { href: '/huong-dan', label: 'Hướng dẫn sử dụng', kind: 'help' as const, icon: BookOpen },
 ];
-const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='stores'||kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
+// Store reads follow contract access; store mutations still require settings.write.
+const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();
@@ -53,7 +54,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const homeHref=visibleNavigation.find(item=>item.href==='/operations')?.href||visibleNavigation[0]?.href||'/login';
   const pageAllowed=navigationPermission(active.kind)===null||hasPermission(user,navigationPermission(active.kind)!);
   const writableCustomers = source === 'api' && active.kind === 'customers';
-  const writableStores = source === 'api' && active.kind === 'stores';
+  const writableStores = source === 'api' && active.kind === 'stores' && hasPermission(user,'settings.write');
   const writableDuties = source === 'api' && active.kind === 'duty-roster';
   const writableBattery = source === 'api' && active.kind === 'battery-contracts';
   const writableVehicles = source === 'api' && active.kind === 'vehicles';
@@ -78,7 +79,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     } catch (cause) { setSignOutError(cause instanceof Error ? cause.message : 'Không đăng xuất được.'); setSigningOut(false); }
   }
 
-  // A stale browser tab must return to login when the server rejects its session.
+  // Refresh changed grants and scope as well as rejecting expired sessions.
   useEffect(() => {
     if (!user) return;
     let running = false, lastCheck = 0;
@@ -88,12 +89,20 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
       running = true; lastCheck = Date.now();
       active = new AbortController();
       const timer = setTimeout(() => active?.abort(), 10_000);
-      try { if ((await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin', signal: active.signal })).status === 401) { router.replace('/login'); router.refresh(); } } catch { /* Keep the page during a temporary network outage. */ }
+      try {
+        const response=await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin', signal: active.signal });
+        if(response.status===401){router.replace('/login');router.refresh();}
+        else if(response.ok){
+          const body=await response.json();
+          if(Number(body?.user?.id)>0&&JSON.stringify(body.user)!==JSON.stringify(user))router.refresh();
+        }
+      } catch { /* Keep the page during a temporary network outage. */ }
       finally { clearTimeout(timer); running = false; }
     };
     window.addEventListener('focus', checkSession);
     document.addEventListener('visibilitychange', checkSession);
-    return () => { active?.abort(); window.removeEventListener('focus', checkSession); document.removeEventListener('visibilitychange', checkSession); };
+    const interval=window.setInterval(checkSession,60_000);
+    return () => { clearInterval(interval); active?.abort(); window.removeEventListener('focus', checkSession); document.removeEventListener('visibilitychange', checkSession); };
   }, [router, user]);
 
   useEffect(() => {
@@ -109,7 +118,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     return () => document.removeEventListener('click', close);
   }, []);
 
-  const navContent = (mobile: boolean) => <>
+  const navContent = () => <>
     <Link href="/vehicles" className="mg-brand" aria-label="HIMOTO - Danh sách xe" onClick={() => setMobileOpen(false)}>
       {/* Existing brand asset, kept in its original proportions. */}
       <img src="/images/branding/logo-himoto-dark.svg" width="154" height="32" alt="HIMOTO" />
@@ -117,7 +126,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     </Link>
     <div className="mg-workspace"><span className="mg-workspace-symbol"><Building2 size={19} /></span><div><strong>HIMOTO Workspace</strong><small>Quản lý vận hành</small></div></div>
     <p className="mg-nav-caption">DANH MỤC QUẢN LÝ</p>
-    <nav aria-label="Điều hướng quản lý">{visibleNavigation.filter(item => mobile || item.kind !== 'attendance').map(item => <Link key={item.href} href={item.href}
+    <nav aria-label="Điều hướng quản lý">{visibleNavigation.map(item => <Link key={item.href} href={item.href}
       className={`mg-nav-link ${active.href === item.href ? 'is-active' : ''}`} aria-current={active.href === item.href ? 'page' : undefined}
       title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
       <item.icon size={19} strokeWidth={1.8} /><span>{item.label}</span>{active.href === item.href && <ChevronRight className="mg-nav-arrow" size={15} />}
@@ -128,9 +137,9 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     <GpsSyncPulse/>
     <TableScrollDock/>
     <a href="#management-main" className="mg-skip">Đến nội dung chính</a>
-    <aside className="mg-sidebar">{navContent(false)}</aside>
+    <aside className="mg-sidebar">{navContent()}</aside>
     <dialog ref={mobileRef} className="mg-mobile-nav" aria-label="Menu điều hướng" onCancel={event => { event.preventDefault(); setMobileOpen(false); }}>
-      <button type="button" className="mg-icon-button mg-mobile-close" aria-label="Đóng menu" onClick={() => setMobileOpen(false)}><X size={20} /></button>{navContent(true)}
+      <button type="button" className="mg-icon-button mg-mobile-close" aria-label="Đóng menu" onClick={() => setMobileOpen(false)}><X size={20} /></button>{navContent()}
     </dialog>
     <div className="mg-main">
       <header className="mg-topbar">
@@ -139,7 +148,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
           <span>Quản lý</span><ChevronRight size={14} /><strong>{active.label}</strong></div>
         <div className="mg-topbar-right"><ReloadButton name="Làm mới dữ liệu" busy={refreshing} onClick={() => { requestReload(); void reload(); router.refresh(); }} />
           <label className="mg-branch-select"><Building2 size={16} /><span className="mg-sr-only">Cơ sở đang xem</span><select aria-label="Cơ sở đang xem" value={selectedStore} onChange={event => selectStore(event.target.value)}>
-          {(user?.scope_all||active.kind==='vehicles'||active.kind==='vehicle-transfers'||active.kind==='gps')&&<option value="all">Tất cả cơ sở</option>}{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+          {(user?.scope_all||active.kind==='customers'||active.kind==='vehicles'||active.kind==='vehicle-transfers'||active.kind==='gps')&&<option value="all">Tất cả cơ sở</option>}{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
           <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{gpsPage?'Tự đồng bộ':integrationPage?'Cấu hình tích hợp':writableDrafts ? 'Lưu nháp' : writableVehicles ? 'Đồng bộ xe' : writableCustomers || writableStores || writableDuties || writableBattery ? 'Có thể sửa' : 'Chỉ đọc'}</span>
           <details className="mg-user-menu" ref={menuRef}><summary aria-label="Menu người dùng"><span className="mg-user-avatar">QT</span><div><strong>{user?.name || 'Quản trị viên'}</strong><small>{user ? 'Đã đăng nhập' : writableCustomers ? 'Supabase' : 'Phiên tra cứu'}</small></div><ChevronDown size={14} /></summary>
             <div className="mg-popover"><strong>{gpsPage?'Định vị GPS tự động':integrationPage?'Quản lý tích hợp':writableBattery ? 'Hợp đồng thuê pin kết nối Supabase' : writableDuties ? 'Quản lý lịch trực' : writableCustomers ? 'Khách hàng kết nối Supabase' : writableStores ? 'Cơ sở kết nối Supabase' : writableVehicles ? 'Xe kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{gpsPage?'Trạng thái xe được cập nhật từ Protrack và IOPGPS; có lưu lịch sử thay đổi.':integrationPage?'Quản trị cập nhật tài khoản GPS và nhóm Telegram của từng cơ sở tại đây.':writableBattery ? 'Tạo, sửa, xóa và in hợp đồng thuê pin; dữ liệu lưu trực tiếp vào Supabase.' : writableDuties ? 'Thêm, sửa hoặc xóa ca; hệ thống kiểm tra trùng giờ của cùng nhân viên.' : writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : writableStores ? 'Thêm và sửa cơ sở; xóa cơ sở có dữ liệu liên quan sẽ bị chặn để giữ lịch sử.' : writableVehicles ? 'Đồng bộ Excel có sao lưu. Xóa hết bị chặn khi xe có dữ liệu liên quan.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>
@@ -151,7 +160,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
         </div>
       </header>
       <main id="management-main" className="mg-content" tabIndex={-1}>{pageAllowed?children:<section className="mg-page"><h1>Không có quyền truy cập</h1><p>Tài khoản chưa được phân quyền cho chức năng này.</p><Link className="mg-button" href={visibleNavigation[0]?.href||'/login'}>Mở chức năng được phân quyền</Link></section>}</main>
-      <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{gpsPage?'GPS · Tự đồng bộ mỗi 5 giây':integrationPage?'GPS & Telegram · Cấu hình theo cơ sở':writableBattery ? 'Hợp đồng thuê pin · Ghi trực tiếp vào Supabase' : writableDuties ? 'Lịch trực theo tuần' : writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : writableStores ? 'Cơ sở · Ghi trực tiếp vào Supabase' : writableVehicles ? 'Xe · Đồng bộ có sao lưu' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
+      <footer className="mg-app-footer"><span>HIMOTO <span className="mg-footer-dot">·</span> Quản lý vận hành</span><span>{gpsPage?'GPS · Tự đồng bộ mỗi phút':integrationPage?'GPS & Telegram · Cấu hình theo cơ sở':writableBattery ? 'Hợp đồng thuê pin · Ghi trực tiếp vào Supabase' : writableDuties ? 'Lịch trực theo tuần' : writableDrafts ? 'Lưu nháp · Lưu trên hệ thống' : writableCustomers ? 'Khách hàng · Ghi trực tiếp vào Supabase' : writableStores ? 'Cơ sở · Ghi trực tiếp vào Supabase' : writableVehicles ? 'Xe · Đồng bộ có sao lưu' : 'Chế độ tra cứu · Không ghi dữ liệu'}</span></footer>
       <nav className="mg-mobile-bottom-nav" aria-label="Thao tác chính trên điện thoại">
         <button type="button" aria-label="Back — Quay lại" onClick={()=>{if(window.history.length>1)router.back();else router.push(homeHref);}}><ArrowLeft size={20}/><span>Back</span></button>
         <Link href={homeHref} aria-label="Home — Trang chủ" aria-current={pathname===homeHref?'page':undefined}><House size={20}/><span>Home</span></Link>
@@ -163,5 +172,5 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
 }
 
 export function ManagementShell({ children, user = null }: { children: ReactNode; user?: SessionUser | null }) {
-  return <ManagementProvider user={user} canPayContracts={canRecordContractPayment(user)}><ContractTypesProvider canManage={hasPermission(user,'settings.write')}><Shell user={user}>{children}</Shell></ContractTypesProvider></ManagementProvider>;
+  return <ManagementProvider key={JSON.stringify(user)} user={user} canPayContracts={canRecordContractPayment(user)}><ContractTypesProvider canManage={hasPermission(user,'settings.write')}><Shell user={user}>{children}</Shell></ContractTypesProvider></ManagementProvider>;
 }

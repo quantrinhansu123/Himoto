@@ -72,19 +72,19 @@ async function main(){
     await c.query(`INSERT INTO pg_temp.transactions(id,order_id,name,type,value,created_at,status,store_id,user_id,cash_id,bank_id,bank_owner_type,payment_method,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,7,$9,$10,$11,$12,'QA note')`,[id,order,name,type,value,at,status,store,method==='cash'?1:null,bank?1:null,['personal','company'].includes(method)?method:null,payment]);
    }
    await c.query(`INSERT INTO pg_temp.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload) VALUES($1,43,3,7,$2,'{"version":2,"amount":300}')`,[randomUUID(),'a'.repeat(64)]);
-   const all=await ledger.revenueLedger(db,params({all:'1'}));assert(validRevenueLedger(all));assert.equal(all.total,13);assert.equal(all.totals.revenue,1100);assert.equal(all.totals.contracts,4);
-   assert.deepEqual((await rentalRevenue(db,base.from,base.to,23)).total,{rental:180,renewal:1120,late:60,early:200,revenue:1100});
+   const all=await ledger.revenueLedger(db,params({all:'1'}));assert(validRevenueLedger(all));assert.equal(all.total,13);assert.equal(all.totals.revenue,1160);assert.equal(all.totals.contracts,4);
+   assert.deepEqual((await rentalRevenue(db,base.from,base.to,23)).total,{rental:180,renewal:1120,late:60,early:200,revenue:1160});
    assert.equal(all.rows.find(r=>r.id==='10').revenue,80);assert.equal(all.rows.find(r=>r.id==='16').revenue,100);assert.equal(all.rows.find(r=>r.id==='17').revenue,-200);assert.equal(all.rows.find(r=>r.id==='16').day,base.from);
    assert.equal(all.rows.filter(r=>r.category==='renewal').length,4);assert.equal(all.rows.find(r=>r.id==='3').vehicles,'QA-OTHER, QA-PLATE');
    assert(all.rows.filter(r=>r.category==='renewal').every(r=>r.staff_name==='Công ty'));
    checks.push('TEMP: every approved voucher appears once across multiple vehicles; equal-value renewals remain separate; Vietnam midnight, foreign branch, pending and battery receipts are filtered; ledger reconciles rental/renewal/late/refund totals');
    assert.equal(all.totals.deposit,500);assert.equal(all.totals.deposit_refund,500);
    for(const row of all.rows.filter(r=>['deposit','deposit_refund','repair','extra','unclassified'].includes(r.category)))assert.equal(row.revenue,0);
-   assert.equal(all.totals.methods.mixed.revenue,0);assert.equal(all.totals.methods.personal.revenue,100);assert.equal(all.totals.methods.company.revenue,100);
+   assert.equal(all.totals.methods.mixed.revenue,60);assert.equal(all.totals.methods.personal.revenue,100);assert.equal(all.totals.methods.company.revenue,100);
    checks.push('TEMP: cọc/refund/repair/extra stay separate from revenue, real early refund is negative, initial fees allocate using full history before branch/date filtering, ambiguous mixed/bank methods are not guessed');
    const page1=await ledger.revenueLedger(db,params({size:'5'})),page2=await ledger.revenueLedger(db,params({size:'5',page:'2'})),last=await ledger.revenueLedger(db,params({size:'5',page:'999'}));
    assert(validRevenueLedger(page1)&&validRevenueLedger(page2)&&validRevenueLedger(last));assert.equal(last.page,3);assert.equal(last.rows.length,3);assert.deepEqual(page1.totals,page2.totals);assert(!page1.rows.some(r=>page2.rows.some(s=>s.id===r.id)));
-   assert.equal((await ledger.revenueLedger(db,params({category:'revenue',all:'1'}))).total,7);
+   assert.equal((await ledger.revenueLedger(db,params({category:'revenue',all:'1'}))).total,8);
    assert.equal((await ledger.revenueLedger(db,params({method:'personal',all:'1'}))).total,3);
    assert.equal((await ledger.revenueLedger(db,params({search:'QA-PLATE',all:'1'}))).total,8);
    assert.equal((await ledger.revenueLedger(db,params({search:'000044',all:'1'}))).total,2);

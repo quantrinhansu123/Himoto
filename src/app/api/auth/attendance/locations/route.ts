@@ -10,13 +10,13 @@ const error = (message: string, status: number) => NextResponse.json({ status: '
 async function handle(request: NextRequest) {
   const user = await userFromSession(request.cookies.get(SESSION_COOKIE)?.value);
   if (!user) return error('Phiên đăng nhập đã hết hạn.', 401);
-  const canManageAllStores = isAdminAccount(user) || user.scope_all === true;
+  const scope = [isAdminAccount(user) || user.scope_all === true, user.store_id ?? null];
   try {
     if (request.method === 'GET') {
       const { rows } = await ownerDatabase.query(
         `SELECT s.id, s.store_name, l.latitude, l.longitude
          FROM himoto.stores s LEFT JOIN himoto.management_attendance_locations l ON l.store_id=s.id
-         WHERE $1::boolean OR s.id=$2 ORDER BY s.store_name, s.id`, [canManageAllStores, user.store_id ?? null]);
+         WHERE $1::boolean OR s.id=$2 ORDER BY s.store_name, s.id`, scope);
       return NextResponse.json({ status: 'success', data: rows }, { headers: { 'Cache-Control': 'no-store' } });
     }
     const body = await request.json().catch(() => null);
@@ -26,14 +26,11 @@ async function handle(request: NextRequest) {
       || !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
       return error('Chọn cơ sở và nhập tọa độ hợp lệ.', 400);
     }
-    if (!canManageAllStores && Number(storeId) !== Number(user.store_id)) {
-      return error('Bạn chỉ được cài đặt GPS cho cơ sở của mình.', 403);
-    }
     const { rowCount } = await ownerDatabase.query(
       `INSERT INTO himoto.management_attendance_locations(store_id, latitude, longitude)
-       SELECT id, $2, $3 FROM himoto.stores WHERE id=$1
+       SELECT id, $4, $5 FROM himoto.stores WHERE id=$3 AND ($1::boolean OR id=$2)
        ON CONFLICT (store_id) DO UPDATE SET latitude=EXCLUDED.latitude, longitude=EXCLUDED.longitude`,
-      [storeId, latitude, longitude]);
+      [...scope, storeId, latitude, longitude]);
     if (!rowCount) return error('Không tìm thấy cơ sở trong phạm vi quản lý.', 404);
     return NextResponse.json({ status: 'success', data: null });
   } catch (cause) {

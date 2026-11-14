@@ -1,3 +1,4 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect,useRef,useState } from "react";
 import { router,usePreventRemove } from "expo-router";
 import { uuid } from "expo";
@@ -5,6 +6,7 @@ import { KeyboardAvoidingView,Platform,ScrollView,Text,View } from "react-native
 import { SHIFT_SUMMARY_FIELDS,emptyShiftSummary,parseShiftInput,shiftVehicleTotal,OWNERSHIP_REPORT_GROUPS,blankOwnershipReport,validateOwnershipSubmission,type ShiftInput,type ShiftReport,type MobileShiftOptions,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
 import { useSession } from "@/providers/session";
 import { pendingWrites } from "@/lib/pending-writes";
+import {requireShiftPhotosSaved} from '@/lib/shift-photo-work';
 import { useTheme,money } from "@/theme";
 import { ChoiceField,FormField } from "./form-fields";
 import { DateField } from "./date-field";
@@ -29,11 +31,11 @@ export function ShiftEditor({record,options}:{record:ShiftReport|null;options:Mo
   function review(status:"draft"|"submitted") {try{parseShiftInput(input);if(status==="submitted"){if(!input.electricity_off)throw Error("Xác nhận đã tắt thiết bị điện trước khi chốt.");if(input.ownership_report)validateOwnershipSubmission(input.ownership_report);}setError("");setConfirm(status);}catch(cause){setError((cause as Error).message);}}
   async function save() {
     if(!api||!session||running.current||!confirm)return;const status=confirm;running.current=true;setBusy(true);setConfirm(null);setError("");const scope={origin:api.origin,userId:session.user.id,storeId:session.user.allStores?null:session.user.storeId,allStores:session.user.allStores},operation=record?`shift.update:${record.id}`:"shift.create";
-    try{const intent=await pendingWrites.reserveExclusive(scope,operation,record?[operation,`shift.audit:${record.id}`,`shift.media:${record.id}`]:[operation],()=>uuid.v4().toLowerCase());if(!alive.current)return;setPending(true);if(!intent.created)throw Error("Còn thao tác báo cáo ca chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.");await api.saveShift({payload:parseShiftInput(input),status,...(record?{id:record.id,revision:record.revision}:{})},intent.key);if(!alive.current)return;setLeaving(true);disablePrevention();router.replace({pathname:"/shift-result/[key]",params:{key:intent.key}});}catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}
+    try{if(record&&status==='submitted')await requireShiftPhotosSaved(scope,record.id,'pgd');const intent=await pendingWrites.reserveExclusive(scope,operation,record?[operation,`shift.audit:${record.id}`,`shift.media:${record.id}`]:[operation],()=>uuid.v4().toLowerCase());if(!alive.current)return;setPending(true);if(!intent.created)throw Error("Còn thao tác báo cáo ca chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.");await api.saveShift({payload:parseShiftInput(input),status,...(record?{id:record.id,revision:record.revision}:{})},intent.key);if(!alive.current)return;setLeaving(true);disablePrevention();router.replace({pathname:"/shift-result/[key]",params:{key:intent.key}});}catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}
   }
   const n=(key:keyof ShiftInput,label:string)=><ShiftNumberField key={key} label={label} value={Number(input[key]??0)} disabled={busy||pending} onChange={value=>update(key,value as never)} />;
   const sectionFilled=filled[tab];
-  return <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}}>
+  return <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}}>
     <Text accessibilityRole="header" style={{color:theme.text,fontSize:26,fontWeight:"800"}}>{record?`Sửa báo cáo #${record.id}`:"Lập báo cáo cuối ca"}</Text>
     <ChoiceField label="Phần báo cáo ca" value={tab} choices={tabs} disabled={busy} onChange={setTab} />
     {tab==="information"&&<Card style={{gap:16}}><ChoiceField label="Cơ sở báo cáo ca" value={String(input.store_id||"")} disabled={busy||pending||!!record} searchable choices={options.stores.filter(s=>session!.user.allStores||s.id===session!.user.storeId).map(s=>({value:String(s.id),label:s.name}))} onChange={v=>update("store_id",Number(v))} /><DateField label="Ngày báo cáo ca" value={input.date} disabled={busy||pending||!!record} onChange={v=>update("date",v)} /><FormField label="Nhân sự trực ca" value={input.staff} onChangeText={v=>update("staff",v)} editable={!busy&&!pending} multiline maxLength={1000} /></Card>}
@@ -49,5 +51,5 @@ export function ShiftEditor({record,options}:{record:ShiftReport|null;options:Mo
     {pending&&!busy&&<Button secondary label="Mở Tài khoản để đối chiếu báo cáo ca" onPress={()=>{setLeaving(true);disablePrevention();router.push("/(tabs)/account");}} />}
     {confirm&&<ConfirmEdit title={confirm==="submitted"?"Chốt báo cáo cuối ca?":"Lưu nháp báo cáo ca?"} message={`${input.date} · ${options.stores.find(s=>s.id===input.store_id)?.name||""}\nNhân sự: ${input.staff}\nTổng tài sản xe: ${shiftVehicleTotal(input)??"Chưa đủ"}\nTiền mặt: ${money(input.cash)}\n${confirm==="submitted"?"Sau chốt, số kiểm kê và minh chứng PGD được giữ nguyên để KTNB đối soát.":"Lưu nháp để thêm minh chứng và tiếp tục kiểm kê."}`} confirmLabel={confirm==="submitted"?"Xác nhận chốt báo cáo ca":"Xác nhận lưu nháp báo cáo ca"} onCancel={()=>setConfirm(null)} onConfirm={()=>{void save();}} />}
     {exit&&<ConfirmEdit title={pending?"Giữ mã và rời báo cáo?":"Bỏ thay đổi chưa lưu?"} message={pending?"Mã yêu cầu vẫn được giữ trên thiết bị. Đối chiếu trong Tài khoản trước khi tạo lần lưu mới.":"Các thay đổi trên biểu mẫu chưa được lưu. Lưu nháp trước khi rời nếu cần giữ lại."} confirmLabel="Rời báo cáo ca" onCancel={()=>setExit(null)} onConfirm={()=>{const repeat=exit;setExit(null);setLeaving(true);disablePrevention();repeat();}} />}
-  </ScrollView></KeyboardAvoidingView>;
+  </ScrollView></KeyboardAvoidingView></SafeAreaView>;
 }

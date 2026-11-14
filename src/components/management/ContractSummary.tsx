@@ -14,7 +14,7 @@ export function ContractSummary({ rows, customers, loading, unavailable, values 
     { label: 'Số hợp đồng', value: summary.contractCount, hint: 'Toàn bộ kết quả lọc, gồm nháp', money: false },
     { label: 'Số Blacklist', value: summary.blacklistCount, hint: 'Số khách duy nhất trong kết quả lọc', money: false },
     { label: 'Tổng tiền', value: summary.totalAmount, hint: 'Gồm nháp đã điền số tiền; không gồm đã hủy và Nợ xấu', money: true },
-    { label: 'Công nợ', value: summary.receivableAmount, hint: 'Tạm tính, không gồm Nợ xấu', money: true },
+    { label: 'Công nợ', value: summary.receivableAmount, hint: 'Gồm nợ còn lại của HĐ nợ xấu đã đóng', money: true },
     { label: 'Nợ xấu', value: summary.badDebtAmount, hint: 'Tiền còn thiếu của hợp đồng Nợ xấu', money: true },
   ];
   const formatted = metrics.map(metric => ready && metric.value !== null
@@ -26,7 +26,7 @@ export function ContractSummary({ rows, customers, loading, unavailable, values 
         <dt>{metric.label}</dt><dd>{formatted[index]}</dd><span>{metric.hint}</span>
       </div>)}
     </dl>
-    <p className="mg-contract-summary-note">Công nợ tạm tính = phần tiền hợp đồng còn thiếu sau khi trừ tổng đã thu, áp dụng cho đơn đang thuê, quá hạn, chờ tất toán và nợ xấu.</p>
+    <p className="mg-contract-summary-note">Công nợ tạm tính = phần tiền hợp đồng còn thiếu sau khi trừ tổng đã thu, gồm đơn đang thuê, quá hạn, chờ tất toán, bảo lưu và HĐ nợ xấu đã đóng. HĐ đang Nợ xấu được tính riêng ở ô Nợ xấu.</p>
     {ready && metrics.some(metric => metric.value === null) && <p className="mg-contract-summary-note is-incomplete">Chưa đủ số liệu tiền hợp đồng hoặc tổng đã thu để tính các ô hiển thị “—”.</p>}
     <span className="mg-sr-only" role="status" aria-atomic="true">{loading ? 'Đang tải thống kê hợp đồng.' : unavailable ? 'Không tải được thống kê hợp đồng.' : `Kết quả theo bộ lọc: ${metrics.map((metric, index) => `${metric.label}: ${formatted[index]}`).join('; ')}.`}</span>
   </section>;

@@ -95,10 +95,58 @@ module.exports=async function checkTransfers(db,c,schema,notices){
   await assert.rejects(()=>service.saveVehicleTransferTelegram(db,102,900008,source),e=>e.status===403);
   assert.equal((await notices.dispatchContractNotifications(branchSend,2,db,undefined,[900008])).sent,1,'Only the untouched second group may send');
   assert.equal((await notices.dispatchContractNotifications(branchSend,2,db,undefined,[900008])).sent,0);
+  const objects=load(path.join(root,'lib/server/object-media'));
+  const originalUrl=objects.objectMediaUrl,originalRead=objects.readObjectMedia;
+  let sourceReads=0;
+  const ref={object_bucket:'qa-private',object_key:'himoto/photos/143/00000000-0000-4000-8000-000000000009/v1.jpg',object_etag:'"qa-etag"'};
+  objects.objectMediaUrl=async()=>{throw Error('Photos must not use private URLs');};
+  objects.readObjectMedia=async supplied=>{assert.deepEqual(supplied,ref);sourceReads++;return new Response(photo);};
+  try{
+    for(const event of [900009,900010]){
+      await c.query(`INSERT INTO ${schema}.vehicle_location_events(id,vehicle_id,event_type,from_store_id,to_store_id,created_by,created_at,notes,audit_snapshot)
+        VALUES($1,102,'manual_transfer',23,31,143,now() AT TIME ZONE 'Asia/Ho_Chi_Minh','QA object photo','{}')`,[event]);
+      await c.query(`INSERT INTO ${schema}.management_record_photos(entity_type,entity_id,slot,mime_type,data,updated_by,object_bucket,object_key,object_etag,storage_sha256,storage_bytes)
+        VALUES('vehicles',102,$1,'image/jpeg',NULL,143,$2,$3,$4,$5,$6)`,[`transfer-${event}-1`,ref.object_bucket,ref.object_key,ref.object_etag,require('node:crypto').createHash('sha256').update(photo).digest('hex'),photo.length]);
+    }
+    const preview=await service.readVehicleTransferTelegram(db,102,900009,source);
+    assert.equal(preview.payload.photos.length,1);assert.equal(preview.payload.photos[0].bytes,null);
+    for(const key of Object.keys(ref))assert.equal(preview.payload.photos[0][key],ref[key]);
+    await service.saveVehicleTransferTelegram(db,102,900009,source);
+    const objectCalls=[];
+    const objectSend=async(url,options)=>{
+      const method=new URL(url).pathname.split('/').at(-1);
+      if(method==='sendMessage')return Response.json({ok:true,result:{message_id:++messageId}});
+      assert.equal(method,'sendPhoto');const value=options.body.get('photo');objectCalls.push(value);
+      return Response.json({ok:true,result:{message_id:++messageId,photo:[{file_id:'cached-object-photo',width:1800,height:1800}]}});
+    };
+    assert.equal((await notices.dispatchContractNotifications(objectSend,2,db,undefined,[900009])).sent,2);
+    assert.equal(objectCalls.length,2);assert(Buffer.from(await objectCalls[0].arrayBuffer()).equals(photo));assert.equal(objectCalls[1],'cached-object-photo');assert.equal(sourceReads,1);
+    const metrics=(await c.query(`SELECT delivery_review FROM ${schema}.management_contract_notifications WHERE vehicle_event_id=900009 ORDER BY event_key`)).rows
+      .map(row=>row.delivery_review.find(review=>review.outcome==='delivery_metrics'));
+    assert.deepEqual(metrics.map(metric=>metric.cached_media).sort(),[0,1]);
+    assert(metrics.every(metric=>metric.media_count===1&&metric.media_requests===1&&metric.delivery_ms>=0));
+    assert.equal((await c.query(`SELECT has_table_privilege('himoto_scoped','${schema}.management_telegram_media_cache','SELECT') AS allowed`)).rows[0].allowed,false);
+    await service.saveVehicleTransferTelegram(db,102,900010,source);
+    const fallbackCalls=[];
+    const fallbackSend=async(url,options)=>{
+      const method=new URL(url).pathname.split('/').at(-1);
+      if(method==='sendMessage'){fallbackCalls.push('summary');return Response.json({ok:true,result:{message_id:++messageId}});}
+      const value=options.body.get('photo');
+      if(value==='cached-object-photo'){fallbackCalls.push('rejected');return Response.json({ok:false,error_code:400,description:'wrong file identifier/HTTP URL specified'},{status:400});}
+      if(typeof value==='string'){assert.equal(value,'refreshed-object-photo');fallbackCalls.push('cached');}
+      else{assert(Buffer.from(await value.arrayBuffer()).equals(photo));fallbackCalls.push('uploaded');}
+      return Response.json({ok:true,result:{message_id:++messageId,photo:[{file_id:'refreshed-object-photo',width:1800,height:1800}]}});
+    };
+    assert.equal((await notices.dispatchContractNotifications(fallbackSend,2,db,undefined,[900010])).sent,2);
+    assert.deepEqual(fallbackCalls,['rejected','uploaded','summary','cached','summary']);
+    assert.equal((await service.readVehicleTransferTelegram(db,102,900010,source)).state.status,'sent');
+  }finally{objects.objectMediaUrl=originalUrl;objects.readObjectMedia=originalRead;}
   return [
     'Ownership transfer/receipt routing and legacy message titles remain intact; duplicates and uncertain retries stay blocked',
     'Regular transfers reopen after inventory moves, preview both branch groups without queueing, and enforce origin/receiver permissions',
     'Regular transfer and receipt each deliver their event photo before the summary to both branch groups, never ownership; repeat submits send nothing',
     'A missing branch configuration waits for explicit retry of only that branch; uncertain delivery cannot be requeued',
+    'CloudFly-only transfer photos retain their bucket/key/ETag; both groups receive the photo, with the second group reusing the acknowledged Telegram file ID',
+    'A definitely rejected cached file falls back once to verified bytes and refreshes the cache; delivery metrics persist and scoped accounts cannot read cache contents',
   ];
 };

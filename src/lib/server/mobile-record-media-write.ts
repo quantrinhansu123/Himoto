@@ -10,6 +10,7 @@ import {mobileRequestKey,idempotentMobileWrite} from './mobile-writes';
 import {parseMobileMediaTarget,requireMobileMediaWrite,readMediaTarget,readMediaReference,withMobileMedia,mediaPhotoLabel} from './mobile-record-media';
 import {parsePhotoTarget,requireContractPhotoSlot,validatePhotoBytes,writeRecordPhoto,RecordPhotoError} from './record-photos';
 import {isMediaRevision,isMobileMediaSlot,isMobileMediaReceipt,mediaOperation,type MobileMediaReceipt} from '../../../shared/mobile-record-media';
+import {cloudflyPhotosEnabled,storeObjectPhoto} from './object-media';
 
 const digest=(v:Uint8Array)=>createHash('sha256').update(v).digest('hex');
 const invalid=()=>new MobileError('Chưa xác nhận được phiếu lưu ảnh. Giữ mã để đối chiếu.',503,'INVALID_WRITE_RECEIPT');
@@ -42,8 +43,8 @@ async function original(db:PoolClient,user:SessionUser,key:string):Promise<Mobil
   const ref=await readMediaReference(db,target,parent);
   result.referenceCurrent=!!ref&&ref.deleted_at==null&&ref.revision===target.referenceRevision;
   if(result.parentCurrent&&result.referenceCurrent&&target.snapshot)result.referenceCurrent=(await readMediaTarget(db,target)).snapshot===target.snapshot;
-  const photo=(await db.query('SELECT xmin::text AS revision,mime_type,data FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3',[target.entity,target.id,result.slot])).rows[0];
-  result.photoCurrent=!!photo&&photo.revision===result.photoRevision&&photo.mime_type==='image/jpeg'&&photo.data!=null&&digest(photo.data)===result.sha256;
+  const photo=(await db.query('SELECT xmin::text AS revision,mime_type,data,storage_sha256 FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3',[target.entity,target.id,result.slot])).rows[0];
+  result.photoCurrent=!!photo&&photo.revision===result.photoRevision&&photo.mime_type==='image/jpeg'&&(photo.data!=null?digest(photo.data):photo.storage_sha256)===result.sha256;
   result.current=result.parentCurrent&&result.referenceCurrent&&result.photoCurrent;return result;
 }
 export async function readMobileMediaReceipt(user:SessionUser,key:string) {
@@ -67,6 +68,7 @@ export async function uploadMobileRecordMedia(user:SessionUser,raw:Params,slot:s
   if(request.nextUrl.search||!isMediaRevision(revision)||!isMediaRevision(referenceRevision)||!(expected==='0'||isMediaRevision(expected))||!snapshot||!/^[a-f0-9]{64}$/.test(snapshot))
     throw new MobileError('Cần phiên bản hồ sơ, lượt ghi nhận và ảnh đã rà soát.',400,'INVALID_MEDIA');
   const data=await imageBytes(request),sha256=digest(data);
+  const storedPhoto=cloudflyPhotosEnabled()?await storeObjectPhoto(data,'image/jpeg',user.id,key):undefined;
   return withMobileMedia(user,target,async db=>{
     const saved=await idempotentMobileWrite(db,user.id,key,mediaOperation(target.entity,target.id),{target,slot,revision,referenceRevision,expected,snapshot,sha256,bytes:data.length},async()=>{
       const prepared=await readMediaTarget(db,target,true);
@@ -74,9 +76,9 @@ export async function uploadMobileRecordMedia(user:SessionUser,raw:Params,slot:s
       await requireContractPhotoSlot(db,target.entity,target.id,slot);
       const previous=(await db.query('SELECT xmin::text AS revision FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3 FOR UPDATE',[target.entity,target.id,slot])).rows[0];
       if((previous?.revision??'0')!==expected)throw conflict();
-      await writeRecordPhoto(db,target.entity,target.id,slot,'image/jpeg',data,user.id);
-      const stored=(await db.query('SELECT xmin::text AS revision,updated_at,data FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3',[target.entity,target.id,slot])).rows[0];
-      if(!stored||digest(stored.data)!==sha256)throw invalid();
+      await writeRecordPhoto(db,target.entity,target.id,slot,'image/jpeg',data,user.id,storedPhoto);
+      const stored=(await db.query('SELECT xmin::text AS revision,updated_at,data,storage_sha256 FROM himoto.management_record_photos WHERE entity_type=$1 AND entity_id=$2 AND slot=$3',[target.entity,target.id,slot])).rows[0];
+      if(!stored||(stored.data!=null?digest(stored.data):stored.storage_sha256)!==sha256)throw invalid();
       const proof:MobileMediaReceipt={id:target.id,revision,requestId:key,replayed:false,target:prepared,slot,label:mediaPhotoLabel(target,slot),photoRevision:stored.revision,sha256,bytes:data.length,
         actorId:user.id,actorName:String(user.name??'').slice(0,4000),recordedAt:new Date(stored.updated_at).toISOString(),parentCurrent:true,referenceCurrent:true,photoCurrent:true,current:true};
       if(!isMobileMediaReceipt(proof))throw invalid();

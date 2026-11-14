@@ -32,7 +32,7 @@ export function isMobileBillReceipt(value: unknown): value is MobileBillReceipt 
   return typeof row.id === "number" && Number.isSafeInteger(row.id) && row.id > 0 &&
     typeof row.revision === "string" && /^[1-9]\d{0,19}$/.test(row.revision) && typeof row.replayed === "boolean" &&
     typeof row.version === "number" && Number.isSafeInteger(row.version) && row.version >= 2 &&
-    row.slot === `renewal-${row.version}-document-1` && typeof row.sha256 === "string" && /^[a-f0-9]{64}$/.test(row.sha256) &&
+    typeof row.slot==='string' && new RegExp(`^renewal-${row.version}-document-1(?:-extra-(?:[2-9]|[1-9][0-9]{1,14}))?$`).test(row.slot) && typeof row.sha256 === "string" && /^[a-f0-9]{64}$/.test(row.sha256) &&
     typeof row.photoRevision === "string" && /^[1-9]\d{0,19}$/.test(row.photoRevision) &&
     typeof row.bytes === "number" && Number.isSafeInteger(row.bytes) && row.bytes > 0 && row.bytes <= 2 * 1024 * 1024 && typeof row.current === "boolean";
 }

@@ -1,12 +1,13 @@
 const path=require('node:path'),{spawnSync}=require('node:child_process');
 const cases=[
+ 'object-media','request-deadlines','media-copy-retry','gps-budget-fetch','gps-history-provider-bounds','contract-settlement','bad-debt-close',
  'management-login','account-management-api','account-password-api','global-vehicle-access',
  'contract-autofill','contract-billing','contract-summary','contract-receipt-summary','contract-finalize','contract-payments','renewal-payment-corrections',
  'contract-overdue','contract-dates','contract-warehouses','legacy-ownership-overdue','contract-branch-flows','contract-lifecycle-api','contract-edit-api','contract-followups-api','ownership-approval','ownership-stock','ownership-terms',
  'contract-clone','contract-documents','contract-feedback','contract-photo-delete','draft-optional-sales',
  'customer-order-excel','management-data','management-loading','management-table-timeouts','contract-tabs',
  'shift-audits','vehicle-import','vehicle-documents','vehicle-registration-ocr','vehicle-rental-sources','public-failure',
- 'load-performance','refund-qr','telegram-delivery','telegram-retraction-api','vehicle-transfer-telegram-api','legacy-rental-integrity',
+ 'load-performance','refund-qr','telegram-delivery','telegram-time','telegram-payment-amounts','telegram-photo-preparation','telegram-media-cache','telegram-retraction-api','vehicle-transfer-telegram-api','legacy-rental-integrity',
 ];
 for(const name of cases){
  const result=spawnSync(process.execPath,['--require',path.join(__dirname,'lib/offline-tests.cjs'),path.join(__dirname,'check-'+name+'.cjs')],{encoding:'utf8',timeout:60000,windowsHide:true});

@@ -13,6 +13,7 @@ import { failureResponse } from '@/lib/server/public-failure';
 import { reserveShiftMobileReceipt,finishShiftMobileReceipt } from './shift-mobile-receipt';
 import {streamMobileVideo} from './mobile-video-read';
 import {MobileError} from './mobile-session';
+import {cloudflyPhotosEnabled,storeObjectPhoto,objectMediaUrl,readObjectMedia} from './object-media';
 type Context={params:Promise<{id:string;mediaId:string}>};
 export async function handleShiftMedia(request:NextRequest,context:Context,mobile=false){
   const {id,mediaId}=await context.params,actor=dataAccess.getStore()!;let client;
@@ -34,6 +35,7 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
       else validatePhotoBytes(mime,bytes);
     }
     const hash=shiftRequestHash(JSON.stringify({kind:'shift-media',method:request.method,actor:actor.id,id,mediaId,stage,category,revision,filename,mime,cloud}),bytes||'');
+    const storedPhoto=bytes&&cloudflyPhotosEnabled()?await storeObjectPhoto(bytes,mime,actor.id,mediaId):undefined;
     client=await himotoPool.connect();await client.query('BEGIN');
     if(mobile&&writing)await reserveShiftMobileReceipt(client,actor.id,key!,`shift.media:${id}`,hash);
     const receipt=await readShiftReceipt(client,key,actor.id,hash);if(receipt){await client.query('COMMIT');client.release();client=undefined;if(cloud&&!isBrowserVideoReceipt(cloud))await cleanupConvertedVideo(cloud);return NextResponse.json({data:receipt});}
@@ -48,7 +50,10 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
       }
       await client.query('COMMIT');client.release();client=undefined;
       if(mobile&&existing.mime_type==='video/mp4')return streamMobileVideo(existing,request.headers.get('range'),String(report.revision));
-      if(existing.object_key)return NextResponse.redirect(await objectVideoUrl(existing),{status:307,headers:{'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
+      if(existing.object_key){
+        if(mobile&&existing.mime_type!=='video/mp4'){const remote=await readObjectMedia(existing,existing.mime_type);return new Response(remote.body,{headers:{'Content-Type':existing.mime_type,'Cache-Control':'private, no-store'}});}
+        return NextResponse.redirect(await(existing.mime_type==='video/mp4'?objectVideoUrl(existing):objectMediaUrl(existing,existing.mime_type)),{status:307,headers:{'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
+      }
       let body:BodyInit,status=200;const headers:Record<string,string>={'Content-Type':existing.mime_type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'};
       if(existing.cloudinary_public_id){const remote=await readCloudinaryPhoto(existing,request.headers.get('range'));body=remote.body!;status=remote.status;for(const name of ['Content-Length','Content-Range','Accept-Ranges']){const value=remote.headers.get(name);if(value)headers[name]=value;}}
       else body=new Uint8Array(existing.data);
@@ -68,9 +73,9 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
       if(cloud){asset=isBrowserVideoReceipt(cloud)?{cloud_name:'',mime_type:'video/mp4',...await readyBrowserVideo(cloud,actor.id,180)}:await shiftCloudAsset(cloud);mime=asset.mime_type;}
       const count=(await client.query(`SELECT (count(*) FILTER(WHERE mime_type LIKE 'image/%')+CASE WHEN $2='pgd' THEN (SELECT count(*) FROM himoto.management_shift_photos WHERE report_id=$1) ELSE 0 END)::int AS images,count(*) FILTER(WHERE mime_type LIKE 'video/%')::int AS videos FROM himoto.management_shift_media WHERE report_id=$1 AND stage=$2`,[id,stage])).rows[0];
       if(mime.startsWith('video/')?count.videos>=3:count.images>=60)throw new RecordPhotoError('Mỗi phần PGD / KTNB tối đa 60 ảnh và 3 video.');
-      const object=asset&&'object_key' in asset?asset:null;
-      await client.query(`INSERT INTO himoto.management_shift_media(id,report_id,store_id,category,stage,filename,mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,created_by,object_bucket,object_key,object_etag)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,[mediaId,id,report.store_id,category,stage,filename,mime,bytes??null,object?null:cloud&&!isBrowserVideoReceipt(cloud)?cloud.public_id:null,object?null:asset?.cloud_name??null,object?null:cloud&&!isBrowserVideoReceipt(cloud)?cloud.version:null,actor.id,object?.object_bucket??null,object?.object_key??null,object?.object_etag??null]);
+      const object=storedPhoto||(asset&&'object_key' in asset?asset:null);
+      await client.query(`INSERT INTO himoto.management_shift_media(id,report_id,store_id,category,stage,filename,mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,created_by,object_bucket,object_key,object_etag,storage_sha256,storage_bytes)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,[mediaId,id,report.store_id,category,stage,filename,mime,storedPhoto?null:bytes??null,object?null:cloud&&!isBrowserVideoReceipt(cloud)?cloud.public_id:null,object?null:asset?.cloud_name??null,object?null:cloud&&!isBrowserVideoReceipt(cloud)?cloud.version:null,actor.id,object?.object_bucket??null,object?.object_key??null,object?.object_etag??null,storedPhoto?.storage_sha256??null,storedPhoto?.storage_bytes??null]);
     }
     const updated=(await client.query('UPDATE himoto.management_shift_reports SET revision=revision+1,updated_at=now() WHERE id=$1 RETURNING revision',[id])).rows[0];
     if(mobile)await finishShiftMobileReceipt(client,actor.id,key!,Number(id),updated.revision);

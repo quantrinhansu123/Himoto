@@ -1,0 +1,17 @@
+{
+  "title": "Tìm và lọc xe",
+  "version": "1.0.6",
+  "scenes": [
+    {"id": "00-intro", "title": "Tìm và lọc xe", "action": "still", "text": "Video này hướng dẫn cách tìm và lọc xe trong ứng dụng Hi mô tô. Chúng ta sẽ tìm theo biển số, lọc trạng thái và kiểm tra phạm vi cơ sở."},
+    {"id": "01-vehicles", "title": "Mở danh sách xe", "action": "vehicles", "cue": "Đội xe", "text": "Từ thanh điều hướng bên dưới, chọn Đội xe. Danh sách sẽ hiển thị các xe trong phạm vi tài khoản được phép xem."},
+    {"id": "02-search", "title": "Chạm ô tìm kiếm", "action": "focus", "cue": "ô tìm kiếm", "text": "Để tra cứu một xe cụ thể, chạm vào ô tìm kiếm ở phía trên danh sách."},
+    {"id": "03-type", "title": "Nhập biển số", "action": "type", "cue": "biển số", "text": "Nhập biển số xe cần tìm. Từ khóa phải khớp với thông tin xe đang lưu trong hệ thống."},
+    {"id": "04-keyboard", "title": "Xem kết quả tra cứu", "action": "keyboard", "cue": "ẩn bàn phím", "text": "Sau khi nhập, ẩn bàn phím để xem kết quả. Đối chiếu biển số, tên xe, trạng thái và cơ sở trên thẻ xe."},
+    {"id": "05-clear", "title": "Xóa từ khóa tìm kiếm", "action": "clear", "cue": "Xóa tìm kiếm", "text": "Để chuyển sang lọc theo trạng thái, chọn nút Xóa tìm kiếm ở cuối ô nhập."},
+    {"id": "06-ready", "title": "Lọc xe lưu kho", "action": "ready", "cue": "Lưu kho", "text": "Chọn Lưu kho để xem nhóm xe đang ở trạng thái này. Kiểm tra thêm cơ sở đang hiển thị bên dưới hàng bộ lọc."},
+    {"id": "07-filters", "title": "Mở bộ lọc chi tiết", "action": "filters", "cue": "Bộ lọc", "text": "Muốn kiểm tra các lựa chọn trạng thái và cơ sở, mở Bộ lọc ở bên phải ô tìm kiếm."},
+    {"id": "08-apply", "title": "Áp dụng bộ lọc", "action": "apply", "cue": "Áp dụng", "text": "Kiểm tra trạng thái và cơ sở đang được chọn. Sau đó, chọn Áp dụng để cập nhật danh sách."},
+    {"id": "09-reset", "title": "Đặt lại bộ lọc", "action": "reset", "cue": "Đặt lại", "text": "Nếu chưa thấy xe cần tìm, chọn Đặt lại để xóa bộ lọc và từ khóa. Danh sách sẽ trở về phạm vi truy cập ban đầu."},
+    {"id": "10-outro", "title": "Kiểm tra trước khi thao tác", "action": "still", "text": "Anh chị đã biết cách tìm và lọc xe. Trước khi xử lý nghiệp vụ, hãy kiểm tra đúng biển số, trạng thái và cơ sở của xe."}
+  ]
+}

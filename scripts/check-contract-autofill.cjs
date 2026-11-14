@@ -103,7 +103,9 @@ async function run() {
   global.fetch = async (url, options) => {
     requests.push({ url, method: options.method, body: options.body });
     if (url.includes('/hr/staff')) return { ok: true, json: async () => ({ status: 'success', data: [{ id: 2, full_name: 'Nhân sự cơ sở 2', store_id: 2, status: 1 }, { id: 1, full_name: 'Sai cơ sở', store_id: 1, status: 1 }] }) };
-    if (options.method === 'POST') return { ok: true, json: async () => ({ status: 'success', data: { id: 99, ...JSON.parse(options.body) } }) };
+    if (options.method === 'POST') return missing
+      ? { ok: true, json: async () => ({ status: 'success', data: { id: 99, ...JSON.parse(options.body) } }) }
+      : { ok: false, status:409, json:async()=>({status:'error',message:'Hồ sơ khách đã tồn tại.'}) };
     return { ok: true, json: async () => ({ status: 'success', data: missing ? null : { id: 10, name: 'Khách', id_card: '001234567890' } }) };
   };
   try {
@@ -111,7 +113,8 @@ async function run() {
     assert.equal((await api.loadStaff('2'))[0].id, 2); assert.equal((await api.loadStaff('2')).length, 1);
     assert.equal((await api.lookupCustomer('001234567890')).id, 10);
     await assert.rejects(api.createCustomer(details), error => error instanceof DuplicateCustomerError && error.customers[0].id === 10);
-    assert.equal(requests.filter(request => request.method === 'POST').length, 0);
+    assert.equal(requests.filter(request => request.method === 'POST').length, 1);
+    requests.length=0;
     missing = true;
     const saved = await api.createCustomer(details); assert.equal(saved.id, 99);
     const writes = requests.filter(request => request.method === 'POST');
@@ -136,7 +139,7 @@ async function run() {
     assert.deepEqual(relativesFromRow(updated)[0], family[0]);
     assert.equal(JSON.parse(requests.filter(request => request.method === 'POST').at(-1).body).warning_note, 'Cần đối chiếu hồ sơ');
     assert(!requests.some(request => request.url.includes('/order/')));
-    checks.push('existing API routes enforce exact identity, branch staff scope, duplicate preflight and customer-only writes');
+    checks.push('existing API routes enforce exact identity, branch staff scope, server duplicate conflicts and customer-only writes');
     global.fetch = async (url, options) => {
       requests.push({ url, method: options.method });
       return { ok: true, json: async () => ({ status: 'success', data: [

@@ -344,7 +344,7 @@ async function run() {
       assert.equal(lastScope.operation, "fleet_read");
       assert.equal(lastScope.scope_all, false);
       await assert.rejects(
-        catalogue.readMobilePage(actor, "customers", new URLSearchParams()),
+        catalogue.readMobilePage({ ...actor, permissions: [] }, "contracts", new URLSearchParams()),
         (error) => error.status === 403,
       );
       await assert.rejects(
@@ -508,6 +508,7 @@ async function run() {
     const order = [];
     const secureStore = {
       WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device-only",
+      AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "device-only",
       getItemAsync: async () => nativeValue,
       setItemAsync: async (_key, value, options) => {
         assert.equal(options.keychainAccessible, "device-only");

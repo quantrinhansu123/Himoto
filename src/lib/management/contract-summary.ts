@@ -31,7 +31,7 @@ export function summarizeContracts(rows: ManagementRow[], customers: ManagementR
       const total = amount(row.total_amount);
       totalAmount = totalAmount === null || total === null ? null : totalAmount + total;
     }
-    if (!RECEIVABLE_STATUSES.has(row.status)&&row.status!=='bad_debt') continue;
+    if (!RECEIVABLE_STATUSES.has(row.status)&&row.status!=='bad_debt'&&!(row.status==='completed'&&row.bad_debt_closed_at)) continue;
     const total = amount(row.total_amount), paid = amount(row.paid_amount);
     const debt = total === null || paid === null ? null : Math.max(total - paid, 0);
     if (row.status === 'bad_debt') badDebtAmount = badDebtAmount === null || debt === null ? null : badDebtAmount + debt;

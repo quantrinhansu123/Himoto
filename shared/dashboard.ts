@@ -44,3 +44,4 @@ export function validDashboardSummary(value: unknown): value is DashboardSummary
   return (['contracts', 'rental_contracts', 'ownership_contracts', 'overdue_contracts', 'sales', 'revenue', 'repair'] as const)
     .every(key => list.reduce((sum: number, raw: unknown) => sum + Number(record(raw)[key]), 0) === Number(total[key]));
 }
+

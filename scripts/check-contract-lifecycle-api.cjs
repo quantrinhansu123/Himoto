@@ -6,7 +6,7 @@ async function main(){const saved=[session.userFromSession,session.readSessionUs
  const context={id:100,code:'QA',status:'bad_debt',revision:'1',items:[],events:[],all_returned:false,can_settle:false};
  const dependencies={'next/server':{NextRequest,NextResponse},'@/lib/server/access-request':access,'@/lib/server/access-context':{dataAccess},'@/lib/server/public-failure':load(path.join(root,'lib/server/public-failure')),
    '@/lib/server/himoto-database':{himotoPool:{connect:async()=>({query:async sql=>{queries.push(sql);return {rows:[]};},release(){}})}},
-   '@/lib/server/contract-lifecycle':{ContractLifecycleError:service.ContractLifecycleError,readContractLifecycle:async()=>context,applyContractLifecycle:async(_db,id,actor,body)=>{assert.equal(id,100);assert.equal(actor,70001);service.parseContractLifecycle(body);applied++;if(failure)throw new service.ContractLifecycleError('QA changed',failure);return context;}}};
+   '@/lib/server/contract-lifecycle':{ContractLifecycleError:service.ContractLifecycleError,readContractLifecycle:async()=>context,applyContractLifecycle:async(_db,id,actor,body)=>{assert.equal(id,100);assert.equal(actor,user.id);service.parseContractLifecycle(body);applied++;if(failure)throw new service.ContractLifecycleError('QA changed',failure);return context;}}};
  const route={exports:{}};new Function('require','module','exports',ts.transpileModule(fs.readFileSync(path.join(root,'app/api/auth/order/car-rental/[id]/lifecycle/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(name=>{assert(name in dependencies,name);return dependencies[name];},route,route.exports);
  const body=action=>({action,revision:'1',request_id:randomUUID(),note:'QA reviewed state',at:'2026-10-24T10:00',confirmed:true,...(['hold','update_hold'].includes(action)?{hold_until:'2026-10-26T10:00'}:{})});
  const request=(method='GET',input,origin='http://localhost',id='100')=>route.exports[method](new NextRequest('http://localhost/api/auth/order/car-rental/'+id+'/lifecycle',{method,headers:{origin,'content-type':'application/json'},...(input!==undefined?{body:JSON.stringify(input)}:{})}),{params:Promise.resolve({id})});
@@ -21,6 +21,12 @@ async function main(){const saved=[session.userFromSession,session.readSessionUs
    checks.push('Hold, manually edited deadlines and explicit completion use the same operating permission and transactional API');
    user={...user,access_role:'accounting',permissions:['contracts.read','finance.write']};assert.equal((await request('POST',body('settle'))).status,200);assert.equal((await request('POST',body('hold'))).status,403);assert.equal((await request('POST',body('mark_bad_debt'))).status,403);
    checks.push('Accounting may confirm a reconciled settlement, while ownership/vehicle state changes still require operating permissions');
+   for(const role of ['branch_staff','branch_manager','ownership_staff','ownership_manager','accounting']){
+     user={...user,access_role:role,permissions:['contracts.read','contracts.return','finance.write','settings.write']};queries=[];
+     assert.equal((await request('POST',body('close_bad_debt'))).status,403);assert.equal(queries.length,0);
+   }
+   user={...user,id:202,access_role:'admin'};queries=[];assert.equal((await request('POST',body('close_bad_debt'))).status,200);assert(queries.includes('COMMIT'));
+   checks.push('Only an authenticated administrator may close bad debt; operating/finance/settings grants cannot delegate this privilege');
    user={...user,access_role:'branch_staff',permissions:['contracts.read','contracts.return']};
    for(const code of [400,404,409]){failure=code;queries=[];assert.equal((await request('POST',body('settle'))).status,code);assert(queries.includes('ROLLBACK'));assert(!queries.includes('COMMIT'));}failure=0;
    assert.equal((await request('POST',{action:'settle'})).status,400);assert.equal((await request('GET',undefined,'http://localhost','0')).status,400);

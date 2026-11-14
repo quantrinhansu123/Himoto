@@ -14,18 +14,19 @@ async function main() {
   for(const status of ['', 'renting','draft','completed']) {
     const commands=[];
     const row={id:9,contract_number:'QA-9',status:status||'renting',vehicles:[],__total_count:1};
-    const result=await readManagementTable({query:async(sql,args)=>{commands.push({sql,args});return {rows:[row]};}},'contracts',managementTableQuery({...input,query:{...EMPTY_QUERY,status}}));
+    const result=await readManagementTable({query:async(sql,args)=>{commands.push({sql,args});return {rows:sql.startsWith('SELECT count(*)::int AS total FROM')?[{total:1}]:[row]};}},'contracts',managementTableQuery({...input,query:{...EMPTY_QUERY,status}}));
     assert.equal(result.rows.length,1);
-    assert.equal(commands.length,2);
-    assert.match(commands[0].sql,/LIMIT \$1 OFFSET \$2/);
-    assert.equal(commands[0].args[0],1);
-    assert.match(commands[0].sql,/count\(\*\) OVER\(\)::int AS __total_count/);
+    assert.equal(commands.length,3);
+    assert.match(commands[0].sql,/SELECT count\(\*\)::int AS total/);
+    assert.match(commands[1].sql,/LIMIT \$1 OFFSET \$2/);
+    assert.equal(commands[1].args[0],1);
+    assert.doesNotMatch(commands[1].sql,/count\(\*\) OVER/);
     assert.doesNotMatch(commands[0].sql,/GROUP BY/i);
     if(status==='renting')assert.match(commands[0].sql,/order_status IN \('renting','overdue','bad_debt'\)/);
     if(status==='draft'||status==='completed')assert(commands[0].sql.includes(`o.order_status='${status}'`));
-    assert.deepEqual(commands[1].args,[[9]]);
-    assert.match(commands[1].sql,/COALESCE\(o\.rent_at,ov\.start_date\) AS start_date/);
-    assert.match(commands[1].sql,/COALESCE\(o\.return_at,ov\.end_date\) AS end_date/);
+    assert.deepEqual(commands[2].args,[[9]]);
+    assert.match(commands[2].sql,/COALESCE\(o\.rent_at,ov\.start_date\) AS start_date/);
+    assert.match(commands[2].sql,/COALESCE\(o\.return_at,ov\.end_date\) AS end_date/);
   }
   checks.push('Ten permanent status tabs preserve all lifecycle states; each simple tab reads only its own current page and hydrates only that page');
   const future=new Date(Date.now()+86400000).toISOString(),past=new Date(Date.now()-86400000).toISOString();
@@ -47,7 +48,7 @@ async function main() {
   assert.equal(bucket.rows.length,0);
   checks.push('Overdue filters run before pagination across bounded candidate batches; future rentals never fill overdue slots and age buckets are respected');
   let reads=0;
-  await assert.rejects(readManagementTable({query:async()=>{if(++reads===1)return {rows:[{...candidates[0],__total_count:52}]};throw Error('QA detail unavailable');}},'contracts',managementTableQuery(input)),/QA detail unavailable/);
+  await assert.rejects(readManagementTable({query:async()=>{if(++reads===1)return {rows:[{total:52}]};if(reads===2)return {rows:[{id:candidates[0].id}]};throw Error('QA detail unavailable');}},'contracts',managementTableQuery(input)),/QA detail unavailable/);
   checks.push('A failed hydration is retryable and cannot report partially loaded dates/balances as a successful page');
   const user={id:7,name:'QA',email:'qa@example.invalid',role:'admin',role_slug:'quan-tri-vien'};
   let attempts=0;

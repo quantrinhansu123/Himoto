@@ -6,6 +6,7 @@ const {load,root}=require('./lib/load-typescript.cjs');
 async function run(){
   const checks=[],dto=load(path.resolve(root,'../shared/mobile-gps')),domain=load(path.join(root,'lib/management/gps'));
   const now=Date.parse('2026-11-03T00:00:00Z'),iso=ms=>new Date(ms).toISOString();
+  assert.equal(dto.GPS_POLL_INTERVAL_MS,60000);assert.equal(dto.GPS_POLL_INTERVAL_MS,domain.GPS_POLL_INTERVAL_MS);
   const {gpsStopDurationLabel}=load(path.resolve(root,'../mobile/src/lib/gps-stop-duration'));
   for(const [milliseconds,label] of [[0,'Dưới 1 phút'],[59000,'Dưới 1 phút'],[60000,'1 phút'],[59*60000,'59 phút'],[3600000,'1 giờ 0 phút'],[24*3600000,'1 ngày 0 giờ'],[30*3600000,'1 ngày 6 giờ'],[-1,''],[NaN,''],[Infinity,'']])assert.equal(gpsStopDurationLabel(milliseconds),label);
   const row={id:1,vehicle_id:101,provider:'protrack',external_device_id:'QA001',provider_device_name:'QA GPS',license:'QA-101',store_id:23,store_name:'QA A',
@@ -101,6 +102,22 @@ async function run(){
       const branch=await read({...query,store:'24',event_source:'poll'});assert(branch.rows.every(r=>r.store_id===24));assert.deepEqual(branch.events.map(e=>e.id),[2]);assert.equal(staff.scope_all,false);
       assert.equal((await read({...query,search:'QA00'})).total,6);assert.equal((await read({...query,state:'long_stopped'})).total,2);
       assert(!JSON.stringify(first).includes('secret_cipher'));
+      const workspace=load(path.join(root,'lib/server/gps-workspace'));
+      // Compare every filter against the existing shared JS rules and the exact
+      // web snapshot, including multi-device agreement and literal search text.
+      for(const store of ['all','23','24'])for(const state of dto.GPS_FILTER_STATES)for(const provider of ['all','protrack','iopgps']){
+        const q={...query,store,state,provider,page:99999};
+        const snapshot=await workspace.readGpsWorkspace(raw,store,'all','');
+        const expected=dto.projectGpsRows(snapshot.devices,q,now),actual=await read(q);
+        assert.equal(actual.total,expected.total);assert.equal(actual.page,expected.page);
+        assert.deepEqual(actual.summary,expected.summary);assert.deepEqual(actual.rows.map(r=>[r.id,r.displayState]),expected.rows.map(r=>[r.id,r.displayState]));
+      }
+      for(const search of ['qa00','%','_','QA A','QA-227','no match']){
+        const q={...query,search};const snapshot=await workspace.readGpsWorkspace(raw,'all','all','');
+        const expected=dto.projectGpsRows(snapshot.devices,q,now),actual=await read(q);
+        assert.equal(actual.total,expected.total);assert.deepEqual(actual.rows.map(r=>r.id),expected.rows.map(r=>r.id));
+      }
+      checks.push('SQL GPS pagination matches shared web projection across all stores/states/providers, page clamping and literal percent/underscore search');
       const context=load(path.join(root,'lib/server/mobile-context'));
       const ordinary=await context.withMobileData(staff,'',()=>load(path.join(root,'lib/server/himoto-database')).himotoPool.query('SELECT id FROM himoto.vehicles ORDER BY id'));
       assert(ordinary.rows.every(v=>Number(v.id)%2===1));

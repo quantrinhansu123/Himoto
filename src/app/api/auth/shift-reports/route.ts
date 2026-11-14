@@ -22,7 +22,7 @@ export const POST=withAccessRequest(async(request:NextRequest)=>{
     const raw=await request.json(),actor=dataAccess.getStore()!,requestId=shiftRequestId(request.headers);
     client=await himotoPool.connect();await client.query('BEGIN');
     const saved=await saveShiftReport(client,actor,raw,requestId);await client.query('COMMIT');
-    if(raw.status==='submitted'&&raw.payload?.ownership_report)after(()=>deliverReportTelegram(`shift:${saved.id}`));
+    if(raw.status==='submitted')after(()=>deliverReportTelegram(`shift:${saved.id}`));
     return NextResponse.json({data:saved});
   }catch(error){
     if(client)await client.query('ROLLBACK').catch(()=>{});

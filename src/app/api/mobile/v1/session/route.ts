@@ -10,6 +10,7 @@ import {
   revokeMobileSession,
 } from "@/lib/server/mobile-session";
 import { mobileJson, mobileFailure } from "@/lib/server/mobile-response";
+import { createRotatingMobileSession } from '@/lib/server/mobile-refresh';
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
     await consumeMobileLoginAttempt(body.email.trim());
     const user = await authenticateAccount(body.email.trim(), body.password);
     return mobileJson(
-      await createMobileSession(user, body.deviceName.trim(), body.platform),
+      await (body.sessionVersion === 2 ? createRotatingMobileSession : createMobileSession)(user, body.deviceName.trim(), body.platform),
       201,
     );
   } catch (error) {

@@ -4246,6 +4246,15 @@
 .mg-contract-telegram { min-width: 0; display: grid; gap: 8px; padding-top: 12px; margin-top: 10px; border-top: 1px solid var(--mg-line); }
 .mg-contract-telegram > p { margin: 0; font-size: 13px; line-height: 1.5; }
 .mg-contract-telegram > .mg-button { justify-self: start; }
+.mg-telegram-progress { display: grid; gap: 8px; min-width: 0; margin: 16px 0 12px; padding: 14px; border: 1px solid var(--mg-line); border-radius: 9px; background: var(--mg-bg); font-size: 14px; line-height: 1.5; }
+.mg-telegram-progress p { margin: 0; }
+.mg-telegram-progress progress { width: 100%; height: 10px; accent-color: var(--mg-red, #c62828); }
+.mg-telegram-progress-stopped { background: #fffbeb; border-color: #fcd34d; color: #78350f; }
+.mg-telegram-recovery { display: grid; align-items: start; }
+.mg-telegram-recovery p { min-width: 0; }
+.mg-telegram-recovery .mg-checkbox { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; line-height: 1.5; }
+.mg-telegram-recovery .mg-checkbox input { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 2px; }
+.mg-telegram-recovery .mg-button { justify-self: start; min-height: 44px; white-space: normal; text-align: left; }
 .mg-contract-detail > .mg-dialog-footer { flex-wrap: wrap; }
 .mg-gps-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .mg-gps-summary strong { font-variant-numeric: tabular-nums; }
@@ -4793,3 +4802,6 @@
  .mg-attendance-filters > span { grid-column:auto; justify-self:end; }
 }
 @media (max-width: 900px) { .mg-excel-export { display: none !important; } }
+
+.mg-attendance-location-fields { display:grid; gap:12px; }
+.mg-attendance-location-fields > .mg-attendance-locate { justify-content:center; width:100%; }

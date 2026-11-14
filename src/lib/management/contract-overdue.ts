@@ -68,6 +68,7 @@ export function withContractOverdue(row:ManagementRow,now=Date.now()):Management
 /** Ownership collections follow unpaid installments; older contracts retain the vehicle deadline. */
 export function withContractMonitoring(row:ManagementRow,now=Date.now()):ManagementRow {
   const base=withContractOverdue(row,now);
+  if(row.status==='completed'&&row.bad_debt_closed_at)return {...base,contract_signed_at:row.signed_on||row.start_date,collection_overdue:0,overdue_fee_estimate:undefined,monitoring_amount:base.rental_debt_amount};
   if(row.status==='bad_debt')return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:0,monitoring_amount:base.rental_debt_amount};
   const owner=isOwnershipContract(row);
   if(!owner||!row.billing_plan_json)return {...base,contract_signed_at:row.signed_on||row.start_date,overdue_basis:'return',collection_overdue:row.status==='overdue'?1:0,monitoring_amount:owner&&!usesLegacyOwnershipFees(row)?base.rental_debt_amount:base.overdue_fee_estimate};

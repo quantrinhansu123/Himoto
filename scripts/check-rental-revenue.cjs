@@ -7,7 +7,7 @@ const {bulkDelete}=load(path.join(root,'lib/server/bulk-delete'));
 async function main(){
   const checks=[];
   const summary=summarizeRentalRevenue(['rental','renewal','late','early'].map((category,i)=>({day:'2026-10-21',category,amount:[1000,500,60,200][i],staff_id:i===3?null:'7',staff_name:i===3?null:'QA'})));
-  assert.equal(summary.total.revenue,1300);assert.equal(summary.unassigned.revenue,-200);assert.equal(summary.staff.reduce((n,r)=>n+r.revenue,0),summary.total.revenue);
+  assert.equal(summary.total.revenue,1360);assert.equal(summary.company_fees,0);assert.equal(summary.unassigned.revenue,-200);assert.equal(summary.staff.reduce((n,r)=>n+r.revenue,0),summary.total.revenue);
   assert(validRentalRevenue(summary));assert(!validRentalRevenue({...summary,total:{...summary.total,revenue:0}}));assert(!validRentalRevenue({...summary,staff:[]}));
   assert.throws(()=>summarizeRentalRevenue([{day:'2026-10-21',category:'rental',amount:null}]));
   checks.push('Formula reconciles across days and assigned/unassigned staff, supports negative refund-only days, and rejects unknown amounts');
@@ -67,8 +67,8 @@ async function main(){
       const fresh=await payments.readPaymentContext(db,42);assert.equal(fresh.rental_refundable,200);assert.equal(fresh.deposit_held,500);
       await c.query("INSERT INTO pg_temp.staff_profiles(id,full_name,position) VALUES(7,'PKD QA','NVKD'); UPDATE pg_temp.orders SET customer_id=600,rent_at='2026-10-20T09:00:00+07:00' WHERE id=42; UPDATE pg_temp.orders SET customer_id=600,rent_at='2026-10-21T09:00:00+07:00' WHERE id=43");
       const report=await rentalRevenue(db,'2026-10-21','2026-10-21',23);
-      assert.deepEqual(report.total,{rental:80,renewal:400,late:60,early:0,revenue:480});assert.equal(report.unclassified_amount,70);
-      assert.equal(report.company_fees,280,'Company gets the remaining initial fees 20 + repairs 90 + extras 110 + late fees 60');
+      assert.deepEqual(report.total,{rental:80,renewal:400,late:60,early:0,revenue:540});assert.equal(report.unclassified_amount,70);
+      assert.equal(report.company_fees,220,'Other company fees contain initial fees 20 + repairs 90 + extras 110; late fees count in revenue once');
       assert(!report.staff.some(row=>row.key==='7'),'PKD never gets renewals or repeat-contract revenue; branch totals retain them');
       assert.equal(report.staff.find(row=>row.key==='company').renewal,400);
       await c.query("UPDATE pg_temp.staff_profiles SET position='Quản lý cơ sở' WHERE id=7");
@@ -84,7 +84,7 @@ async function main(){
       const replay=await save(firstInput);assert.equal(replay.replayed,true);assert.equal(replay.transaction_id,first.transaction_id);
       await assert.rejects(save(input(first.context.revision,121)),e=>e.status===409);
       const second=await save(input(first.context.revision,120));assert.equal(second.context.rental_refundable,0);assert.equal(second.context.paid_amount,800);
-      const after=await rentalRevenue(db,'2026-10-21','2026-10-21',23);assert.equal(after.total.early,200);assert.equal(after.total.revenue,280);
+      const after=await rentalRevenue(db,'2026-10-21','2026-10-21',23);assert.equal(after.total.early,200);assert.equal(after.total.revenue,340);
       checks.push('TEMP: actual early refund reduces paid, cash and same-day KPI once; total and deposit unchanged, partial refund caps and idempotent retry prevent excess/double refund');
       await bulkDelete(db,'transactions',[first.transaction_id,second.transaction_id]);
       const restored=await payments.readPaymentContext(db,42);assert.equal(restored.paid_amount,1000);assert.equal(restored.rental_refundable,200);assert.equal(restored.deposit_held,500);
@@ -97,7 +97,7 @@ async function main(){
         INSERT INTO pg_temp.transactions(id,order_id,name,type,value,created_at,status,store_id,user_id,cash_id,note) VALUES
         (15,45,'order:rental_fees','in',50,'2026-10-20T10:00:00+07:00','approved',31,7,1,'QA'),
         (16,45,'order:payment','in',100,'2026-10-21T10:00:00+07:00','approved',23,7,1,'QA');`);
-      assert.equal((await rentalRevenue(db,'2026-10-21','2026-10-21',23)).total.revenue,580);
+      assert.equal((await rentalRevenue(db,'2026-10-21','2026-10-21',23)).total.revenue,640);
       checks.push('TEMP: selecting only orders with receipts in the requested period retains their complete cross-branch history, so prior fees are not deducted again');
       const {estimatedSales}=load(path.join(root,'lib/server/estimated-sales'));
       await c.query(`INSERT INTO pg_temp.orders(id,contract_number,customer_id,rent_at,order_status,store_id,total,pid,total_rental_fees,draft_payload)
