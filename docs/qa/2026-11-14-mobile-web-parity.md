@@ -2,7 +2,7 @@
 
 ## Phạm vi và nguyên nhân
 
-Đối chiếu source web mới nhất sau `235babd`, cùng ảnh người dùng gửi. Commit `4c4e8e5` đã gỡ các lối xuất file khỏi 14 tệp mobile và thay màn chọn cột bằng thông báo dùng máy tính, trong khi API và bộ dựng Excel vẫn còn. Nhập bổ sung giao dịch đã có nghiệp vụ nhưng thiếu lối vào tại danh sách hợp đồng. Báo cáo ca giữ một bộ nhãn/trạng thái khác web; form Android chưa tự cuộn ô đang nhập khi bàn phím mở.
+Đối chiếu source web, tích hợp tới `262c43d`, cùng ảnh người dùng gửi. Commit `4c4e8e5` đã gỡ các lối xuất file khỏi 14 tệp mobile và thay màn chọn cột bằng thông báo dùng máy tính, trong khi API và bộ dựng Excel vẫn còn. Nhập bổ sung giao dịch đã có nghiệp vụ nhưng thiếu lối vào tại danh sách hợp đồng. Báo cáo ca giữ một bộ nhãn/trạng thái khác web; form Android chưa tự cuộn ô đang nhập khi bàn phím mở.
 
 Đợt này giữ runtime Android `1.0.11`, version code `12`, project `f928280d-4ea8-4574-b64e-51dd44b94d68`, channel `production`. Không thêm dependency, module native hoặc migration. Hai bảng đăng ký ca đã tồn tại khi kiểm tra chỉ đọc trước triển khai.
 
@@ -15,6 +15,7 @@
 - Web, app và export dùng chung `shared/shift-report-workflow.ts`: tên sáu phần báo cáo và năm tiến độ, gồm “Đã xác nhận có giải trình”. Mẫu báo cáo nằm ở Thông tin như web; đồng bộ nhãn kiểm kê, đơn vị, nút lưu/chốt và cơ sở đang chọn. Xuất báo cáo ca đọc toàn bộ kết quả; danh sách trên màn hình vẫn là 100 báo cáo gần nhất như web.
 - Thành phần nhập liệu dùng đo vị trí ô đang focus, kích thước vùng cuộn và bàn phím; xử lý cả layout resize của Android cũ khi IME không phát sự kiện. Áp dụng PGD/KTNB, pin, nhân sự, cơ sở, xe, sổ quỹ và các form giao/trả/đổi xe. Hộp chọn giới hạn chiều cao và cuộn được khi xoay ngang; không cuộn form nền khi đang tìm trong modal.
 - Bổ sung đăng ký ca của chính nhân viên theo tuần, bảng đăng ký tháng cho HR, ca làm việc và Excel tại cơ sở, lối vào tài khoản đã liên kết ở hồ sơ nhân sự, cài đặt GPS chấm công. Gọi lại domain/handler web, giữ quyền và scope tương ứng. Lịch trực HR được chọn cơ sở/nhân sự toàn hệ thống như web mới.
+- Tích hợp thay đổi web vừa phát hành: tìm ca trong hộp chọn, bảy trạng thái xe độc lập không tạo nháp/sửa công nợ, giữ khóa kho khi còn hợp đồng hoặc chờ điều chuyển. Dùng lại writer web, rà soát phiên bản và receipt có chữ ký; vẫn đọc/đối chiếu được yêu cầu tạo nháp từ client cũ. Kho đổi xe dùng dữ liệu mới và hiện cảnh báo giữ xe trong nháp; nháp không chặn xe Lưu kho.
 - Theo dõi cập nhật khi đưa app ra trước; tải nền và áp dụng ở lần mở lại. Hiển thị phiên bản/thời điểm cập nhật ở Tài khoản. Không tự reload khi nhân viên đang nhập nghiệp vụ. Khi kiểm tra thủ công, ưu tiên bản đã tải sẵn và không báo “mới nhất” khi cập nhật bị tắt.
 
 ## Ma trận đối chiếu source

@@ -13,6 +13,7 @@ import {withMobileData} from './mobile-context';
 import {MobileError} from './mobile-session';
 import {isMobileSwapCandidates,isMobileSwapPreparation,isMobileSwapPreview,type MobileSwapCandidates,type MobileSwapPreparation,type MobileSwapVehicle,type MobileSwapInput,type MobileSwapPreview} from '../../../shared/mobile-swaps';
 import {mobileBody} from './mobile-writes';
+import {readDraftVehicleRentals} from './draft-vehicle-rentals';
 
 type Database=Pick<PoolClient,'query'>;
 export const swapConflict=(message:string)=>new MobileError(message,409,'SWAP_REVIEW_REQUIRED');
@@ -101,10 +102,14 @@ export function mapSwapVehicle(row:Record<string,unknown>):MobileSwapVehicle {
   return{id:Number(row.id),revision:String(row.revision),name:text(row.name),license:text(row.license),brand:text(row.brand),type:text(row.type),
     color:text(row.color),year:text(row.year),storeId:Number(row.store_id),storeName:text(row.store_name)};
 }
+async function withDraftHolds(db:Database,vehicles:MobileSwapVehicle[]) {
+  const holds=await readDraftVehicleRentals(db,vehicles.map(row=>row.id));
+  return vehicles.map(row=>({...row,draftHolds:holds.filter(hold=>hold.vehicle_id===row.id).map(hold=>({id:hold.order_id,code:hold.code,customer:hold.customer,storeName:hold.store_name}))}));
+}
 export async function readSwapCandidate(db:Database,context:Awaited<ReturnType<typeof readSwapLine>>,vehicleId:number) {
   const row=(await db.query(candidateSql+' AND v.id=$4 LIMIT 1',[context.item.vehicleId,context.ownership,context.row.store_id,vehicleId])).rows[0];
   if(!row)throw swapConflict('Xe mới không còn Lưu kho phù hợp với cơ sở/loại hợp đồng hoặc đang thuộc hợp đồng khác.');
-  return mapSwapVehicle(row);
+  return (await withDraftHolds(db,[mapSwapVehicle(row)]))[0];
 }
 export async function readMobileSwapPreview(user:SessionUser,value:string,request:NextRequest):Promise<MobileSwapPreview> {
   requireMobileSwap(user);
@@ -133,7 +138,7 @@ export async function readMobileSwapCandidates(user:SessionUser,value:string,req
     const rows=(await db.query(candidateSql+" AND ($4='' OR v.license ILIKE $5 ESCAPE '\\' OR v.name ILIKE $5 ESCAPE '\\') ORDER BY stock.store_name,v.license,v.id LIMIT 26 OFFSET $6",
       [context.item.vehicleId,context.ownership,context.row.store_id,search,needle,(Number(page)-1)*25])).rows;
     const result:MobileSwapCandidates={id,revision,itemId,itemRevision,ownership:context.ownership,page:Number(page),search,hasMore:rows.length>25,
-      rows:rows.slice(0,25).map(mapSwapVehicle),observedAt:new Date().toISOString()};
+      rows:await withDraftHolds(db,rows.slice(0,25).map(mapSwapVehicle)),observedAt:new Date().toISOString()};
     if(!isMobileSwapCandidates(result))throw swapConflict('Danh sách xe thay thế cần đối chiếu.');return result;
   });
 }

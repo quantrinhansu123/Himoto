@@ -4,6 +4,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
 const {NextRequest}=require('next/server'),{load,root}=require('./lib/load-typescript.cjs');
 async function main(){
  const checks=[],workflow=load(path.resolve('shared/shift-report-workflow'));
+ assert.deepEqual(load(path.resolve('shared/mobile-vehicle-status')).VEHICLE_INVENTORY_STATUSES,load(path.join(root,'lib/management/config')).VEHICLE_STATUSES.filter(row=>row.value!=='in_transit'));
  const shiftDto=load(path.resolve('shared/mobile-shift-reports')),registrationDto=load(path.resolve('shared/mobile-shift-registration'));
  const now=new Date().toISOString(),today=new Date(Date.now()+7*3600000).toISOString().slice(0,10);
  const payload={store_id:23,date:today,staff:'QA ca trực',vehicles:5,batteries:2,charged:1,rented_batteries:1,transfers:0,cash:123456,personal:0,company:500000,electricity_off:true,notes:'=SUM(1,2)',summary:shiftDto.emptyShiftSummary(),daily_vehicles:4,monthly_vehicles:3,other_vehicles:0};

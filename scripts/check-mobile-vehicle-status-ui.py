@@ -14,7 +14,7 @@ from playwright.sync_api import expect, sync_playwright
 
 def run(build, fixture, output):
     assert (build / 'index.html').is_file() and (build / 'metadata.json').is_file() and not output.exists()
-    data = json.loads(fixture.read_text(encoding='utf-8'))
+    data = json.loads(fixture.read_text(encoding='utf-8'))['inventory']
     assert data['fixtureOnly']
     output.mkdir(parents=True)
     class Handler(SimpleHTTPRequestHandler):
@@ -96,46 +96,43 @@ def run(build, fixture, output):
                     field('Tài khoản').fill('qa')
                     page.get_by_label('Mật khẩu', exact=True).fill('fixture-password')
                     button('Đăng nhập').click()
-                    page.get_by_role('tab', name='Đội xe').click()
+                    page.get_by_role('tab', name='Danh sách xe').click()
                     button(f"Xem {vehicle['license']}, {vehicle['name']}").click()
-                    button('Đổi trạng thái / tạo nháp từ kho').click()
+                    button('Đổi trạng thái xe').click()
                     button('Nhập thông tin đổi trạng thái').click()
-                    expect(button('Trạng thái')).to_contain_text('Lưu kho')
-                    expect(field('Tên khách')).to_have_value('')
+                    expect(button('Trạng thái')).to_contain_text('Đang thuê')
+                    expect(field('Tên khách')).to_have_count(0)
                     button('Rà soát đổi trạng thái').click()
                     expect(page.get_by_text('Xe đang ở trạng thái đã chọn. Chọn thao tác khác.', exact=True)).to_be_visible()
                     assert state['previews'] == 0 and not state['writes']
                     button('Trạng thái').click()
-                    button('Lập hợp đồng nháp').click()
-                    field('Tên khách *').fill(data['input']['customer_name'])
-                    field('SĐT khách *').fill(data['input']['customer_phone'])
-                    field('CCCD khách *').fill(data['input']['customer_id_card'])
+                    button('Nợ xấu').click()
                     field('Ghi chú').fill(data['input']['note'])
                     button('Rà soát đổi trạng thái').click()
                     expect(page.get_by_text('Rà soát trước khi ghi', exact=True)).to_be_visible()
                     page.screenshot(path=str(output / f'review-{width}.png'), full_page=True)
-                    button('Lưu và tạo hợp đồng nháp').click()
+                    button('Lưu đổi trạng thái').click()
                     button('Tiếp tục chỉnh sửa').click()
                     assert not state['writes']
                     button('Sửa thông tin').click()
-                    expect(field('Tên khách *')).to_have_value(data['input']['customer_name'])
+                    expect(field('Ghi chú')).to_have_value(data['input']['note'])
                     button('Rà soát đổi trạng thái').click()
-                    button('Lưu và tạo hợp đồng nháp').click()
-                    button('Xác nhận tạo nháp').click()
+                    button('Lưu đổi trạng thái').click()
+                    button('Lưu đổi trạng thái').click()
                     expect(page.get_by_text('Thao tác xe đang chờ đối chiếu', exact=True)).to_be_visible()
                     button('Vào Tài khoản để đối chiếu').click()
                     label = f"đổi trạng thái / tạo nháp từ kho #{vehicle['id']}"
                     button('Đối chiếu ' + label).click()
                     button('Đối chiếu với máy chủ').click()
                     button('Mở kết quả ' + label).click()
-                    expect(page.get_by_text('Đã tạo hợp đồng nháp', exact=True)).to_be_visible()
-                    expect(page.get_by_text(f"Hợp đồng {data['receipt']['draft']['code']} · #{data['receipt']['draft']['id']}", exact=True)).to_be_visible()
+                    expect(page.get_by_text('Đã đổi trạng thái: Nợ xấu', exact=True)).to_be_visible()
+                    assert data['receipt']['draft'] is None and data['receipt']['customer'] is None
                     assert len(state['writes']) == 1 and state['resolves'] == 1
                     page.screenshot(path=str(output / f'recovered-{width}.png'), full_page=True)
                     button('Đã kiểm tra · mở hồ sơ xe').click()
                     expect(page).to_have_url(re.compile(f"/record/vehicles/{vehicle['id']}$"))
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
-                    flows.append({'width': width, 'scheme': scheme, 'defaults': True, 'noImplicitStatusChange': True, 'reviewCancel': True, 'formPreserved': True, 'lostCommitAccountRecovery': True, 'originalDraftCode': data['receipt']['draft']['code'], 'writes': len(state['writes']), 'acknowledged': True})
+                    flows.append({'width': width, 'scheme': scheme, 'defaults': True, 'noImplicitStatusChange': True, 'reviewCancel': True, 'formPreserved': True, 'lostCommitAccountRecovery': True, 'independentStatus': True, 'noDraft': True, 'writes': len(state['writes']), 'acknowledged': True})
                 except Exception:
                     page.screenshot(path=str(output / f'failure-{width}.png'), full_page=True)
                     (output / 'failure-observed.json').write_text(json.dumps({'errors': errors, 'unexpected': unexpected, 'state': state}, ensure_ascii=False, indent=2), encoding='utf-8')

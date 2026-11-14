@@ -113,6 +113,20 @@ async function run() {
     await pg.exec(fs.readFileSync(path.resolve(root, '../docs/sql/2026-11-01-mobile-bills.sql'), 'utf8'));
     await pg.exec(fs.readFileSync(path.resolve(root, '../docs/sql/2026-11-01-mobile-renewals.sql'), 'utf8'));
     await pg.exec(fs.readFileSync(path.resolve(root, '../docs/sql/2026-11-01-mobile-renewal-collections.sql'), 'utf8'));
+    if(process.argv.includes('--swaps-only')){
+      await pg.exec(`ALTER TABLE himoto.orders ADD COLUMN customer_id bigint,ADD COLUMN customer_name text,ADD COLUMN customer_idnumber text,ADD COLUMN customer_phone text;
+        CREATE TABLE himoto.customers(id bigint PRIMARY KEY,name text,id_card text,phone text);
+        CREATE TABLE himoto.stores(id bigint PRIMARY KEY,store_name text);
+        INSERT INTO himoto.stores VALUES(23,'Cơ sở SQL QA'),(24,'Cơ sở khác SQL QA');
+        GRANT SELECT ON himoto.customers,himoto.stores TO himoto_scoped;`);
+      await pg.exec('ALTER TABLE himoto.order_vehicle_details ADD COLUMN updated_at timestamptz;ALTER TABLE himoto.vehicles ADD COLUMN status text DEFAULT \'using\',ADD COLUMN updated_at timestamptz;');
+      const access=fs.readFileSync(path.resolve(root,'../docs/sql/2026-10-17-account-access.sql'),'utf8').match(/CREATE OR REPLACE FUNCTION himoto\.access_(?:actor|store)\([\s\S]*?\$\$;/g);
+      assert.equal(access.length,2);await pg.exec(access.join('\n'));
+      await pg.exec(fs.readFileSync(path.resolve(root,'../docs/sql/2026-10-24-bad-debt-recovery.sql'),'utf8'));
+      await pg.exec(fs.readFileSync(path.resolve(root,'../docs/sql/2026-11-02-mobile-returns.sql'),'utf8'));
+      await require('./lib/mobile_swap_sql.cjs')({pg,raw,load,root,user,checks,failReceipt:()=>{failBeforeReceipt=true;},loseResponse:()=>{loseCommitResponse=true;}});
+      console.log(JSON.stringify({ok:true,checks,productionWrites:0,externalNetworkAllowed:false},null,2));return;
+    }
     if(process.argv.includes('--activity-triggers')){
       await pg.exec(`ALTER TABLE himoto.vehicles ADD COLUMN deleted_at timestamptz;
         CREATE TABLE himoto.vehicle_location_events(id bigserial PRIMARY KEY,vehicle_id bigint,from_store_id bigint,to_store_id bigint,event_type text);

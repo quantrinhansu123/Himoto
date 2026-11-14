@@ -36,7 +36,7 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
   const change = (key: keyof Form, value: string) => { setForm(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
   const stores = options.stores.map(row => ({ value: String(row.id), label: row.name }));
   if (profile && !stores.some(row => row.value === form.store_id)) stores.unshift({ value: form.store_id, label: profile.storeName || `Cơ sở #${form.store_id}` });
-  const locked = write.busy || write.pending || write.checking || photosBusy, statusLocked = locked || profile?.hasOpenContract || profile?.inTransit;
+  const locked = write.busy || write.pending || write.checking || photosBusy, storeLocked = locked || profile?.hasOpenContract || profile?.inTransit;
   function validate() {
     const next: typeof errors = {};
     for (const field of fields) if (field.required && !form[field.key].trim()) next[field.key] = `Nhập ${field.label.toLowerCase()}.`;
@@ -71,10 +71,10 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
       </Card>
       <Card style={{ gap: 16 }}>
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>Kho và trạng thái</Text>
-        <ChoiceField label="Cơ sở hiện tại" value={form.store_id} choices={stores} onChange={value => change("store_id", value)} disabled={!!statusLocked} searchable error={errors.store_id} />
+        <ChoiceField label="Cơ sở hiện tại" value={form.store_id} choices={stores} onChange={value => change("store_id", value)} disabled={!!storeLocked} searchable error={errors.store_id} />
         {!!profile?.ownerStoreName && <Text style={{ color: theme.muted }}>Cơ sở sở hữu: {profile.ownerStoreName}</Text>}
-        <ChoiceField label="Trạng thái xe" value={form.status} choices={options.statuses} onChange={value => change("status", value)} disabled={!!statusLocked} error={errors.status} />
-        <Text style={{ color: theme.muted, lineHeight: 23 }}>{profile?.inTransit ? "Xe đang chờ luân chuyển. Dùng xác nhận nhận xe ở cơ sở đích để cập nhật kho và trạng thái." : profile?.hasOpenContract ? "Xe thuộc hợp đồng mở. Thực hiện trả xe trên hợp đồng trước khi đổi trạng thái hoặc cơ sở." : "Đã giao xe nhưng chưa nhập hợp đồng: chọn Đang thuê để khớp kho, sau đó nhập hợp đồng và giữ cơ sở xe."}</Text>
+        <ChoiceField label="Trạng thái xe" value={form.status} choices={options.statuses.filter(row=>row.value!=='in_transit'||profile?.inTransit)} onChange={value => change("status", value)} disabled={locked||profile?.inTransit} error={errors.status} />
+        <Text style={{ color: theme.muted, lineHeight: 23 }}>{profile?.inTransit ? "Xe đang chờ luân chuyển. Dùng xác nhận nhận xe ở cơ sở đích để cập nhật kho và trạng thái." : "Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ. Xe còn hợp đồng mở giữ nguyên cơ sở hiện tại."}</Text>
       </Card>
       <Card style={{gap:16}}>
         <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Giá trị và giá thuê</Text>

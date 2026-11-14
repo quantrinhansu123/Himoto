@@ -6,7 +6,7 @@ module.exports=async function swapSql({pg,load,root,user,checks,failReceipt,lose
   await pg.exec("SET max_stack_depth='100kB';");
   const sql=name=>fs.readFileSync(path.resolve(root,'../docs/sql/'+name),'utf8');
   const functions=name=>sql(name).match(/CREATE OR REPLACE FUNCTION[\s\S]*?AS (\$\w*\$)[\s\S]*?\1\s*;/gi)||[];
-  await pg.exec("ALTER TABLE himoto.orders ADD COLUMN order_type text;"+
+  await pg.exec("ALTER TABLE himoto.orders ADD COLUMN IF NOT EXISTS order_type text;"+
     "ALTER TABLE himoto.stores ADD COLUMN kind text;"+
     "ALTER TABLE himoto.vehicles ADD COLUMN brand text,ADD COLUMN type text,ADD COLUMN color text,ADD COLUMN year text,"+
     "ADD COLUMN store_id bigint,ADD COLUMN current_store_id bigint,ADD COLUMN IF NOT EXISTS deleted_at timestamptz;"+
@@ -38,6 +38,7 @@ module.exports=async function swapSql({pg,load,root,user,checks,failReceipt,lose
   const policies=(name,tables)=>(sql(name).match(/CREATE POLICY[\s\S]*?;/g)||[]).filter(p=>tables.some(t=>p.includes('ON himoto.'+t+' '))).join('\n');
   await pg.exec(policies('2026-10-24-global-vehicle-transfers.sql',['vehicles']));
   await pg.exec(policies('2026-11-01-ownership-hq-customer-source.sql',['orders','stores']));
+  await pg.exec(sql('2026-11-12-bounded-contract-vehicles.sql').split('-- List filters need')[0]+'COMMIT;');
   const api=load(path.join(root,'lib/server/mobile-swaps'));
   const who={...user,permissions:['contracts.read','contracts.return','vehicles.read']};
   const prep=(id,page=1,actor=who)=>api.readMobileSwapPreparation(actor,String(id),new NextRequest('https://fixture.invalid/swaps?page='+page));
@@ -65,6 +66,8 @@ module.exports=async function swapSql({pg,load,root,user,checks,failReceipt,lose
   assert.equal(p.items.rows.length,25);assert.equal(p2.items.rows.length,1);assert(p.available);
   const c=await candidates(p,p.items.rows[0]);
   assert(c.rows.some(v=>v.id===a));assert(!c.rows.some(v=>[b,deleted,...f.vehicles].includes(v.id)));
+  const soft=await fixture({status:'draft',payload:{management_composer:{draft:{vehicles:[{id:String(a)}]}}}});
+  const held=(await candidates(p,p.items.rows[0])).rows.find(row=>row.id===a);assert(held);assert(held.draftHolds.some(hold=>hold.id===soft.id));
   await assert.rejects(()=>prep(f.id,1,{...who,store_id:24}),e=>e.status===404);
   checks.push('Swap preparation and stock candidates execute scoped PostgreSQL with bounded 25-row pages; foreign, deleted and already-used stock are excluded');
   const hidden=await fixture({store:24,status:'bad_debt'});
@@ -85,7 +88,7 @@ module.exports=async function swapSql({pg,load,root,user,checks,failReceipt,lose
   checks.push('Cross-branch bad-debt occupancy blocks replacement even when hidden by order RLS; completed hire releases it; wildcard searches are literal and legacy-29/HQ ownership uses only received lease stock');
   await pg.exec('DROP FUNCTION himoto.contract_vehicle_labels();');
   await pg.exec(sql('2026-10-21-contract-vehicle-labels.sql'));
-  assert.equal((await prep(ownership.id,1,lease)).items.rows[0].license,'');
+  assert.equal((await prep(ownership.id,1,lease)).items.rows[0].license,'QA-'+ownership.vehicles[0]);
   await assert.rejects(()=>api.withMobileSwap(lease,true,db=>db.query('SELECT himoto.complete_contract_vehicle_return($1,now())',[ownership.ids[0]])),e=>e.code==='42501');
   await pg.exec(sql('2026-11-02-contract-vehicle-scope.sql'));
   assert.equal((await prep(ownership.id,1,lease)).items.rows[0].license,'QA-'+ownership.vehicles[0]);

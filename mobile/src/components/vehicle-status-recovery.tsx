@@ -6,7 +6,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileVehicleStatusReceipt} from '../../../shared/mobile-vehicle-status';
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
-import {dateTime,useTheme} from '@/theme';
+import {dateTime,statuses,useTheme} from '@/theme';
 import {Button,Card,InlineError,StateView} from './ui';
 import {ConfirmEdit} from './editor-sheet';
 
@@ -64,12 +64,12 @@ function Recovery({requestKey}:{requestKey:string}) {
       {!!error&&<InlineError message={error}/>}{!!notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{notice}</Text>}
       {receipt?<>
         <Card style={{gap:14}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{receipt.draft?'Đã tạo hợp đồng nháp':'Đã ghi nhận Lưu kho'}</Text>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{receipt.review.effect==='inventory'?`Đã đổi trạng thái: ${statuses[receipt.review.input.status]||receipt.review.input.status}`:receipt.draft?'Đã tạo hợp đồng nháp':'Đã ghi nhận Lưu kho'}</Text>
           <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{receipt.review.vehicle.license||receipt.review.vehicle.name}</Text>
           {receipt.draft&&<Text selectable style={{color:theme.text,fontSize:19,fontWeight:'700'}}>Hợp đồng {receipt.draft.code} · #{receipt.draft.id}</Text>}
           {receipt.customer&&<Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Khách: {receipt.customer.name} · #{receipt.customer.id} · {receipt.customer.created?'hồ sơ mới':`khớp ${receipt.customer.matched_by}`}</Text>}
           <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Cơ sở sử dụng: {receipt.review.store.name}</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Sau ghi: xe Lưu kho tại {receipt.review.vehicle.storeName}. Không phát sinh thu tiền hoặc phiếu thu/hoàn.</Text>
+          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Sau ghi: xe {receipt.review.effect==='inventory'?(statuses[receipt.review.input.status]||receipt.review.input.status):'Lưu kho'} tại {receipt.review.vehicle.storeName}. Không phát sinh thu tiền hoặc phiếu thu/hoàn.</Text>
           <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{receipt.actorName} · {dateTime(receipt.recordedAt)} · Lịch sử #{receipt.eventId}</Text>
           <Text selectable style={{color:theme.muted,fontSize:14,lineHeight:23}}>Mã đối chiếu: {receipt.requestId}</Text>
           {!receipt.current&&<InlineError message="Xe, hợp đồng hoặc lịch sử đã được xử lý tiếp. Đây là kết quả gốc của mã này; kiểm tra hồ sơ hiện tại trước thao tác mới."/>}

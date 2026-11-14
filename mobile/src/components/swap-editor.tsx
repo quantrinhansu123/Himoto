@@ -135,6 +135,7 @@ function SwapForm({id}:{id:string}) {
           <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{row.license||('Xe #'+row.id)}</Text>
           <Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>{[row.name,row.color,row.year].filter(Boolean).join(' · ')}</Text>
           <Text style={{color:theme.text,fontSize:15,lineHeight:23}}>Kho: {row.storeName||('#'+row.storeId)}</Text>
+          {!!row.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:15,lineHeight:23}}>Đang được giữ trong hợp đồng nháp: {row.draftHolds.map(hold=>[hold.code,hold.customer,hold.storeName].filter(Boolean).join(' · ')).join('; ')}. Kiểm tra trước khi chọn xe.</Text>}
         </Pressable>)}
         <Text style={{color:theme.muted,fontSize:15}}>Trang kho {candidatePage}</Text>
         <Button label="Trang kho trước" secondary disabled={locked||candidates.isFetching||candidatePage===1} onPress={()=>{setCandidatePage(p=>p-1);top();}}/>
@@ -160,6 +161,7 @@ function SwapForm({id}:{id:string}) {
         <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{review.vehicle.license||review.vehicle.name}</Text>
         <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>{[review.vehicle.name,review.vehicle.brand,review.vehicle.color,review.vehicle.year].filter(Boolean).join(' · ')}</Text>
         <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Kho: {review.vehicle.storeName||('#'+review.vehicle.storeId)}</Text>
+        {!!review.vehicle.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Xe đang được giữ trong hợp đồng nháp: {review.vehicle.draftHolds.map(hold=>hold.code).join(', ')}. Kiểm tra trước khi xác nhận đổi xe.</Text>}
         <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Giữ nguyên kỳ thuê, giá, tiền cọc và các khoản đã thu/hoàn. Lượt đổi này không ghi thêm khoản tiền.</Text>
       </Card>
       <Button label="Ghi đổi xe trong hợp đồng" loading={action.busy} disabled={locked||!input} onPress={()=>setConfirm(true)}/>
