@@ -45,6 +45,8 @@ import { dateTime, money, statuses, useTheme } from "@/theme";
 import { rememberRecordPreview } from '@/lib/record-preview';
 import { ManagementDrawer } from "@/components/management-drawer";
 import { RecordActionsModal } from "@/components/record-actions-modal";
+import { backfillActions } from '../../../shared/mobile-backfill';
+import { canManageAccounts } from '../../../shared/mobile-managed-accounts';
 
 const RecordCard = memo(function RecordCard({
   record,
@@ -171,7 +173,7 @@ const RecordCard = memo(function RecordCard({
         >
           <StatusBadge
             status={record.status}
-            label={contextualStatusLabel(kind, record.status)}
+            label={kind === 'contracts' && scope === 'drafts' && record.status === 'draft' ? 'Lưu nháp' : contextualStatusLabel(kind, record.status)}
           />
           <Text
             style={{
@@ -207,6 +209,7 @@ export function CatalogueScreen({
   initialCustomerId,
   customerName,
   operationsCatalogue=false,
+  showManagementMenu=true,
 }: {
   kind: CatalogueKind;
   initialStatus?: string;
@@ -216,6 +219,7 @@ export function CatalogueScreen({
   initialCustomerId?:string;
   customerName?:string;
   operationsCatalogue?:boolean;
+  showManagementMenu?:boolean;
 }) {
   const theme = useTheme();
   const { session, api, restore } = useSession();
@@ -325,8 +329,8 @@ export function CatalogueScreen({
   const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source") + Number(!!customerId);
 
   const quickStatuses = [
-    ...new Set(["", ...settings.quickStatuses, ...(status ? [status] : [])]),
-  ].filter(value => !value || status === value || !(scope === 'overdue' && value === 'overdue' || scope === 'drafts' && value === 'draft'));
+    ...new Set(["", ...(kind === 'contracts' && scope === 'drafts' ? ['draft'] : settings.quickStatuses), ...(status ? [status] : [])]),
+  ].filter(value => !value || status === value || !(scope === 'overdue' && value === 'overdue'));
   function resetFilters() {
     setInput("");
     setSearch("");
@@ -357,8 +361,9 @@ export function CatalogueScreen({
     );
   }
   const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}) }).toString();
+  if (kind === 'contracts' && !operationsCatalogue && canManageAccounts(session?.user)) actions.push({ label: 'Nhập nháp hợp đồng từ Excel', onPress: () => router.push('/import-contracts') });
   if (!operationsCatalogue) {
-    if (kind !== "contracts" && session?.user.permissions.includes("settings.write"))
+    if (session?.user.permissions.includes(kind === 'contracts' ? 'contracts.delete' : 'settings.write'))
       actions.push({ label: "Chọn nhiều hồ sơ để xóa", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
   }
   const toolbar = (
@@ -371,7 +376,7 @@ export function CatalogueScreen({
         {/* Top Header with Hamburger Menu and Fast Store Selector */}
         {!compact && (
           <View style={styles.topHeader}>
-            <Pressable
+            {showManagementMenu && <Pressable
               accessibilityRole="button"
               accessibilityLabel="Mở danh mục quản lý"
               onPress={() => setDrawerOpen(true)}
@@ -385,7 +390,7 @@ export function CatalogueScreen({
               ]}
             >
               <Menu size={20} color={theme.text} accessible={false} />
-            </Pressable>
+            </Pressable>}
 
             <Text
               accessibilityRole="header"
@@ -451,6 +456,8 @@ export function CatalogueScreen({
             </View>
           </View>
         )}
+        {kind === 'contracts' && !operationsCatalogue && !!backfillActions(session!.user.permissions).length && <Button secondary label="+ Nhập bổ sung giao dịch" onPress={() => router.push({ pathname: '/backfill', params: { store_id: store } })} />}
+        {!operationsCatalogue && <Button secondary label="Tải Excel theo bộ lọc" disabled={!datesValid || query.isPending || query.isError || input.trim() !== search} onPress={() => router.push({ pathname: '/catalogue-export/[kind]', params: { kind, filters: exportFilters } })} />}
         {actions.length > 0 && <View style={{ gap: 8 }}>
           <Pressable
             accessibilityRole="button"
@@ -549,7 +556,7 @@ export function CatalogueScreen({
             >
               {quickStatuses.map((value) => {
                 const isSelected = status === value;
-                const tabLabel = value
+                const tabLabel = kind === 'contracts' && scope === 'drafts' && (!value || value === 'draft') ? value ? 'Lưu nháp' : 'Tất cả bản nháp' : value
                   ? contextualStatusLabel(kind, value) || statuses[value] || value
                   : kind === 'contracts' && scope ? contractWorkspace(scope)!.title : "Tất cả";
                 const count = (() => {
@@ -678,7 +685,7 @@ export function CatalogueScreen({
   );
   return (
     <SafeAreaView
-      edges={["top", "left", "right"]}
+      edges={showManagementMenu ? ["top", "left", "right"] : ["bottom", "left", "right"]}
       style={{ flex: 1, backgroundColor: theme.background }}
     >
       {kind === 'contracts' && !!initialScope && <Stack.Screen options={{ title: settings.title }} />}

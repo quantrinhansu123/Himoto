@@ -82,6 +82,14 @@ async function main(){
     checks.push('Only explicit entitled admin145 may use the separate read-only owner fleet query; another admin99 is denied before connecting, normal reports do not widen actor/store/operation, and injected/duplicate/date/permission inputs reject');
     const exported={};for(const kind of ['vehicles','overview','by-staff','by-store','assigned','new-customers','ledger']){expectedActor=actor;const file=await exportsApi.exportMobileSalesReport(actor,kind,params({}));assert(fileDto.isMobileFileExport(file));exported[kind]=file;}
     assert.equal(exported.vehicles.rowCount,11);assert(exported.vehicles.content.includes("'\u003dQA Formula"));assert(exported['new-customers'].content.includes('Khách hàng","Điện thoại","CCCD"'));
+    for(const kind of ['vehicles','overview','by-staff','by-store','assigned','new-customers']){
+      expectedActor=actor;const file=await exportsApi.exportMobileSalesReport(actor,kind,params({format:'xlsx'}));
+      assert(fileDto.isMobileFileExport(file));assert(file.filename.endsWith('.xlsx'));
+      const workbook=new (require('exceljs').Workbook)();await workbook.xlsx.load(Buffer.from(file.contentBase64,'base64'));
+      assert.equal(workbook.worksheets[0].rowCount,file.rowCount+1);
+      if(kind==='vehicles'){assert.equal(file.rowCount,12);assert(workbook.worksheets[0].getColumn(1).values.includes('=QA Formula'));assert.equal(workbook.worksheets[0].getColumn(8).values.at(-1),Number(exported.vehicles.content.trim().split('\r\n').at(-1).split(',').at(-1).replaceAll('"','')));}
+    }
+    for(const format of ['pdf','xlsx&format=csv'])await assert.rejects(()=>exportsApi.exportMobileSalesReport(actor,'vehicles',new URLSearchParams('from=2026-11-01&to=2026-11-03&format='+format)),e=>e.status===400);
     const ExcelJS=require('exceljs'),book=new ExcelJS.Workbook();await book.xlsx.load(Buffer.from(exported.ledger.contentBase64,'base64'));assert.deepEqual(book.worksheets.map(sheet=>sheet.name),['Phiếu thu','Phiếu chi']);
     assert.equal(book.worksheets[0].getRow(4).getCell(16).value,'Ghi chú');assert.equal(book.worksheets[0].lastRow.getCell(9).value,2350);assert.equal(book.worksheets[1].lastRow.getCell(9).value,-200);assert.equal(book.worksheets[0].lastRow.getCell(13).value+book.worksheets[1].lastRow.getCell(13).value,1400);
     assert(book.worksheets[0].getRows(5,6).some(row=>row.getCell(16).value==='=SUM(1,2)'));assert.equal(exported.ledger.rowCount,8);

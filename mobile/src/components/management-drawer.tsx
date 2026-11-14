@@ -116,7 +116,7 @@ export function ManagementDrawer({
       items: [
         { id: "staff", label: "Nhân sự", route: "/directory/staff", icon: UsersRound, permission: "hr.read" },
         { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays, permission: "hr.read" },
-        { id: "stores", label: "Cơ sở", route: "/directory/stores", icon: Building2, permission: "settings.write" },
+        { id: "stores", label: "Cơ sở", route: "/directory/stores", icon: Building2, permission: "contracts.read" },
       ],
     },
     {

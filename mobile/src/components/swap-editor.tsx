@@ -1,5 +1,6 @@
+import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,KeyboardAvoidingView,Platform,Pressable,ScrollView,Text,type ScrollViewInstance} from 'react-native';
+import {Keyboard,Pressable,Text,type ScrollViewInstance} from 'react-native';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileSwapInput,MobileSwapLine,MobileSwapPreparation,MobileSwapPreview,MobileSwapVehicle} from '../../../shared/mobile-swaps';
@@ -68,11 +69,11 @@ function SwapForm({id}:{id:string}) {
       confirmLabel="Xác nhận đổi xe trong hợp đồng" onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);void action.submit(input);}}/>}
   </>;
   const frame=(children:React.ReactNode)=><SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
+
+      <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
         {children}
-      </ScrollView>
-    </KeyboardAvoidingView>{overlays}
+      </KeyboardFormScrollView>
+    {overlays}
   </SafeAreaView>;
   if(action.key)return frame(<Card style={{gap:16}}>
     <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Đổi xe đang chờ đối chiếu</Text>
@@ -134,6 +135,7 @@ function SwapForm({id}:{id:string}) {
           <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{row.license||('Xe #'+row.id)}</Text>
           <Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>{[row.name,row.color,row.year].filter(Boolean).join(' · ')}</Text>
           <Text style={{color:theme.text,fontSize:15,lineHeight:23}}>Kho: {row.storeName||('#'+row.storeId)}</Text>
+          {!!row.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:15,lineHeight:23}}>Đang được giữ trong hợp đồng nháp: {row.draftHolds.map(hold=>[hold.code,hold.customer,hold.storeName].filter(Boolean).join(' · ')).join('; ')}. Kiểm tra trước khi chọn xe.</Text>}
         </Pressable>)}
         <Text style={{color:theme.muted,fontSize:15}}>Trang kho {candidatePage}</Text>
         <Button label="Trang kho trước" secondary disabled={locked||candidates.isFetching||candidatePage===1} onPress={()=>{setCandidatePage(p=>p-1);top();}}/>
@@ -159,6 +161,7 @@ function SwapForm({id}:{id:string}) {
         <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{review.vehicle.license||review.vehicle.name}</Text>
         <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>{[review.vehicle.name,review.vehicle.brand,review.vehicle.color,review.vehicle.year].filter(Boolean).join(' · ')}</Text>
         <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Kho: {review.vehicle.storeName||('#'+review.vehicle.storeId)}</Text>
+        {!!review.vehicle.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Xe đang được giữ trong hợp đồng nháp: {review.vehicle.draftHolds.map(hold=>hold.code).join(', ')}. Kiểm tra trước khi xác nhận đổi xe.</Text>}
         <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Giữ nguyên kỳ thuê, giá, tiền cọc và các khoản đã thu/hoàn. Lượt đổi này không ghi thêm khoản tiền.</Text>
       </Card>
       <Button label="Ghi đổi xe trong hợp đồng" loading={action.busy} disabled={locked||!input} onPress={()=>setConfirm(true)}/>

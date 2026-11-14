@@ -1,3 +1,4 @@
+import {FilteredListExport} from '@/components/filtered-list-export';
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -42,6 +43,7 @@ function TransferHistory() {
       {workspace.isError && <><InlineError message="Chưa tải được danh sách cơ sở." /><Button secondary label="Tải lại cơ sở" onPress={() => { void workspace.refetch(); }} /></>}
       {query.data && <Text style={{ color: theme.muted }}>{query.data.total} sự kiện · {query.data.from.split("-").reverse().join("/")} → {query.data.to.split("-").reverse().join("/")}</Text>}
 
+<FilteredListExport kind="transfers" filters={new URLSearchParams({from,to,store,from_store:fromStore,to_store:toStore,action,search}).toString()} disabled={!validDates||query.isFetching||query.isError||!query.data?.total||input!==search}/>
       {query.isError && <InlineError message={query.error.message} />}
     </View>}
     renderItem={({ item }) => <Card style={{ gap: 12 }}>

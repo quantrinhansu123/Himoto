@@ -34,6 +34,7 @@ module.exports=async function({pg,raw,load,root,user,admin,setFailReceipt}){
   await pg.exec(sql('2026-11-01-ownership-hq-customer-source.sql'));
   await pg.exec(sql('2026-11-02-ownership-scope-helpers.sql'));
   await pg.exec(sql('2026-10-21-returned-vehicle-conflicts.sql'));
+  await pg.exec(sql('2026-11-12-bounded-contract-vehicles.sql').split('-- List filters need')[0]+'COMMIT;');
   await pg.exec(`ALTER TABLE himoto.customers ENABLE ROW LEVEL SECURITY;
     CREATE POLICY management_scoped_gate ON himoto.customers TO himoto_scoped USING(true) WITH CHECK(true);
     CREATE POLICY management_scoped_insert ON himoto.customers AS RESTRICTIVE FOR INSERT TO himoto_scoped WITH CHECK(himoto.access_store(store_id));
@@ -83,12 +84,28 @@ module.exports=async function({pg,raw,load,root,user,admin,setFailReceipt}){
   assert.equal((await pg.query('SELECT status FROM himoto.vehicles WHERE id=19302')).rows[0].status,'ready');
   await pg.query("UPDATE himoto.orders SET order_status='renting' WHERE id=$1",[proof.draft.id]);const stale=(await api.readMobileVehicleStatusReceipt(actor,key)).receipt;assert(!stale.current&&!stale.draftCurrent);assert.deepEqual(stale.draft,proof.draft);
   checks.push('Matched customer retains actual profile name; changed customer invalidates review; blacklist/split identity reject; ready branch uses actual status writer without a draft; later issuance keeps original proof and marks it stale');
+  const opened=await prep(19301);assert(opened.inventory.available&&opened.inventory.hasOpenContract);assert(!opened.available);
+  const oldBusiness={};for(const table of ['orders','customers','order_vehicle_details','transactions'])oldBusiness[table]=(await pg.query(`SELECT row_to_json(t) AS row,xmin::text AS revision FROM himoto.${table} t ORDER BY row_to_json(t)::text`)).rows;
+  let inventoryFixture;
+  for(const status of ['bad_debt','ready','repairing','using','sold','broken','pending']){
+    const preparation=await prep(19301),body={action:'inventory_status',revision:preparation.vehicle.revision,status,note:'Kiểm kê độc lập QA'};
+    const previewed=await preview(19301,body);assert.equal(previewed.effect,'inventory');assert(dto.isMobileVehicleStatusReview(previewed));assert(dto.matchesVehicleStatusReview(previewed,body));
+    const key=randomUUID(),receipt=await write(19301,body,previewed,key);assert(receipt.current);assert.equal(receipt.draft,null);assert.equal(receipt.customer,null);assert.equal(receipt.review.input.status,status);
+    inventoryFixture??={fixtureOnly:true,preparation,input:body,review:previewed,receipt};
+    assert((await write(19301,body,previewed,key)).replayed);
+    assert.equal((await pg.query('SELECT status FROM himoto.vehicles WHERE id=19301')).rows[0].status,status);
+    await assert.rejects(()=>write(19301,body,previewed),error=>error.status===409);
+  }
+  for(const table of Object.keys(oldBusiness))assert.deepEqual((await pg.query(`SELECT row_to_json(t) AS row,xmin::text AS revision FROM himoto.${table} t ORDER BY row_to_json(t)::text`)).rows,oldBusiness[table]);
+  const revision=(await prep(19301)).vehicle.revision;
+  for(const extra of [{status:'in_transit'},{beneficiary_store_id:23},{customer_name:'forged'},{revision:'01'}])await assert.rejects(()=>preview(19301,{action:'inventory_status',revision,status:'ready',note:'',...extra}),error=>error.status===400);
+  checks.push('Independent inventory status reuses web writer for all seven states with an open contract, preserves every contract/customer/line/money row, rejects injected customer/store/transit and stale versions, and replays the original signed receipt exactly once; legacy draft flow remains valid');
   await pg.exec("INSERT INTO himoto.stores(id,store_name,kind,status,user_id)VALUES(31,'Trụ sở chính QA','rental','opening',145);UPDATE himoto.stores SET kind='lease_to_own' WHERE id=23;INSERT INTO himoto.vehicles(id,name,license,type,store_id,current_store_id,status)VALUES(19310,'Xe HQ QA','HQ19310','electric',31,31,'ready'),(19311,'Xe ngoài QA','OUT19311','electric',24,24,'ready');");
   const hqBody=await input(19310);assert.equal((await prep(19310)).defaults.storeId,31);const hp=await preview(19310,hqBody);assert(hp);
   const hq=await write(19310,hqBody,hp);assert(hq.current);assert.equal(hq.review.vehicle.storeId,31);assert.equal((await pg.query('SELECT store_id,current_store_id FROM himoto.vehicles WHERE id=19310')).rows[0].store_id,31);
   await assert.rejects(()=>prep(19311),e=>e.status===404);await assert.rejects(()=>resolve(key,19303,{...actor,permissions:['vehicles.read','vehicles.receive']}),e=>e.status===403);
   const output=process.argv.indexOf('--status-fixture-output');
-  if(output>=0){const folder=path.resolve(process.argv[output+1]);assert(folder.startsWith(path.resolve('.backups')+path.sep)&&!fs.existsSync(folder));fs.mkdirSync(folder,{recursive:true});fs.writeFileSync(path.join(folder,'catalogue.json'),JSON.stringify({fixtureOnly:true,preparation:p0,input:body,review:p,receipt:proof,readyPreparation:await prep(19302),readyReceipt:r},null,2));}
+  if(output>=0){const folder=path.resolve(process.argv[output+1]);assert(folder.startsWith(path.resolve('.backups')+path.sep)&&!fs.existsSync(folder));fs.mkdirSync(folder,{recursive:true});fs.writeFileSync(path.join(folder,'catalogue.json'),JSON.stringify({fixtureOnly:true,preparation:p0,input:body,review:p,receipt:proof,readyPreparation:await prep(19302),readyReceipt:r,inventory:inventoryFixture},null,2));}
   checks.push('Latest real RLS permits HQ draft/audit proof inside the same transaction for ownership branch while foreign ordinary stock and receive-only reconciliation remain denied');
   console.log(JSON.stringify({passed:checks.length,checks,operationalWrites:0,externalNetworkAllowed:false,database:'disposable PGlite actual web writer + scoped role/RLS; not staging/native acceptance'},null,2));
 };

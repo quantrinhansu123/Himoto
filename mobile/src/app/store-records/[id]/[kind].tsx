@@ -11,7 +11,7 @@ function StoreRecords({ id, kind }: { id: string; kind: keyof typeof labels }) {
   const query = useQuery({ queryKey: ["store-profile", session!.user.id, id], queryFn: ({ signal }) => api!.storeProfile(id, signal) });
   if (query.isPending) return <StateView title="Đang mở dữ liệu cơ sở" loading />;
   if (query.isError) return <StateView title="Chưa mở được cơ sở" message={query.error.message} retry={() => { void query.refetch(); }} />;
-  return <><Stack.Screen options={{ title: `${labels[kind]} · ${query.data.name}` }} />{kind==='contracts'?<StoreContracts id={id}/>:kind === "staff" ? <DirectoryScreen kind="staff" initialStore={id} /> : <CatalogueScreen kind={kind} initialStore={id} />}</>;
+  return <><Stack.Screen options={{ title: `${labels[kind]} · ${query.data.name}` }} />{kind==='contracts'?<StoreContracts id={id}/>:kind === "staff" ? <DirectoryScreen kind="staff" initialStore={id} /> : <CatalogueScreen kind={kind} initialStore={id} showManagementMenu={false} />}</>;
 }
 export default function StoreRecordsRoute() {
   const { id, kind } = useLocalSearchParams<{ id: string; kind: string }>(), { api, session } = useSession();

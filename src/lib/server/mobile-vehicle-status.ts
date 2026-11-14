@@ -13,6 +13,7 @@ import {readTransferVehicle} from './mobile-vehicle-transfers';
 import {applyVehicleAction,parseVehicleAction,findVehicleActionCustomer,VehicleActionError} from './vehicle-actions';
 import {DraftSaveError} from './contract-drafts';
 import {isMobileVehicleStatusPreparation,isMobileVehicleStatusReview,isMobileVehicleStatusReceipt,
+  isMobileVehicleStatusInput,
   type MobileVehicleStatusInput,type MobileVehicleStatusPreparation,type MobileVehicleStatusReview,type MobileVehicleStatusReceipt} from '../../../shared/mobile-vehicle-status';
 
 type Database=Pick<PoolClient,'query'>;
@@ -48,6 +49,10 @@ async function transaction<T>(user:SessionUser,write:boolean,task:(db:PoolClient
   });
 }
 export function parseMobileVehicleStatus(body:Record<string,unknown>):MobileVehicleStatusInput {
+  if(body.action==='inventory_status'){
+    if(!isMobileVehicleStatusInput(body))throw new MobileError('Chọn trạng thái xe hợp lệ và tải lại phiên bản xe trước khi lưu.');
+    return body;
+  }
   const names=['action','revision','status','beneficiary_store_id','customer_name','customer_phone','customer_id_card','note'];
   if(Object.keys(body).length!==names.length||Object.keys(body).some(k=>!names.includes(k))||body.action!=='status'||
     typeof body.revision!=='string'||!/^[1-9]\d{0,19}$/.test(body.revision)||typeof body.beneficiary_store_id!=='number'||
@@ -65,7 +70,7 @@ export function parseMobileVehicleStatus(body:Record<string,unknown>):MobileVehi
 function noQuery(request:NextRequest) {
   if(request.nextUrl.searchParams.size)throw new MobileError('Thao tác trạng thái xe không nhận bộ lọc.');
 }
-async function context(db:Database,user:SessionUser,id:number,lock=false) {
+async function context(db:Database,user:SessionUser,id:number,lock=false,inventory=false) {
   const vehicle=await readTransferVehicle(db,id,lock);
   const stores=(await db.query('SELECT id,store_name,xmin::text AS revision FROM himoto.stores ORDER BY store_name,id')).rows.map(r=>({id:Number(r.id),name:String(r.store_name),revision:String(r.revision)}));
   const actorRow=(await db.query('SELECT name FROM himoto.users WHERE id=$1',[user.id])).rows[0];
@@ -77,26 +82,36 @@ async function context(db:Database,user:SessionUser,id:number,lock=false) {
     if(!hq?.ok)blockedReason='Chỉ được thao tác xe tại cơ sở được phân quyền hoặc kho trụ sở chính.';
   }
   if(vehicle.status==='in_transit')blockedReason='Xe đang Chờ luân chuyển. Xử lý lượt chuyển trước khi đổi trạng thái.';
+  const inventoryBlockedReason=blockedReason;
   const open=(await db.query('SELECT license,code,store_name,manager_name FROM himoto.vehicle_other_rental_conflicts(ARRAY[$1::bigint],NULL) LIMIT 1',[id])).rows[0];
-  if(open)blockedReason=`Xe đang thuộc hợp đồng ${open.code}${open.store_name?` tại ${open.store_name}`:''}${open.manager_name?` (phụ trách: ${open.manager_name})`:''}. Trả xe trên hợp đồng trước khi đổi trạng thái.`;
-  return{vehicle,stores,actor,blockedReason};
+  if(open&&!inventory)blockedReason=`Xe đang thuộc hợp đồng ${open.code}${open.store_name?` tại ${open.store_name}`:''}${open.manager_name?` (phụ trách: ${open.manager_name})`:''}. Trả xe trên hợp đồng trước khi đổi trạng thái.`;
+  return{vehicle,stores,actor,blockedReason,inventoryBlockedReason,hasOpenContract:!!open};
 }
 export async function readMobileVehicleStatusPreparation(user:SessionUser,value:string,request:NextRequest):Promise<MobileVehicleStatusPreparation> {
   requireStatus(user);noQuery(request);const id=mobileVehicleId(value);
   return transaction(user,false,async db=>{
-    const {vehicle,stores,actor,blockedReason}=await context(db,user,id);
+    const {vehicle,stores,actor,blockedReason,inventoryBlockedReason,hasOpenContract}=await context(db,user,id);
     const status=vehicle.status==='rent'?'using':vehicle.status;
     const result:MobileVehicleStatusPreparation={id,vehicle,stores,actor,available:blockedReason===null,blockedReason,
-      defaults:{status:status==='ready'||status==='using'?status:'',storeId:vehicle.storeId},observedAt:new Date().toISOString()};
+      defaults:{status:status==='ready'||status==='using'?status:'',storeId:vehicle.storeId},observedAt:new Date().toISOString(),
+      inventory:{available:inventoryBlockedReason===null,blockedReason:inventoryBlockedReason,status:({rent:'using',maintenance:'repairing',holding:'pending'} as Record<string,string>)[vehicle.status]||vehicle.status,hasOpenContract}};
     if(!isMobileVehicleStatusPreparation(result))throw conflict('Thông tin xe cần đối chiếu trên web.');return result;
   });
 }
 async function review(db:Database,user:SessionUser,id:number,input:MobileVehicleStatusInput,lock=false):Promise<MobileVehicleStatusReview> {
-  const {vehicle,stores,actor,blockedReason}=await context(db,user,id,lock);
+  const {vehicle,stores,actor,blockedReason}=await context(db,user,id,lock,input.action==='inventory_status');
   if(blockedReason)throw conflict(blockedReason);
   if(vehicle.revision!==input.revision)throw conflict('Thông tin xe đã thay đổi. Tải lại và rà soát trước khi ghi.');
-  const status=vehicle.status==='rent'?'using':vehicle.status;
+  const status=({rent:'using',maintenance:'repairing',holding:'pending'} as Record<string,string>)[vehicle.status]||vehicle.status;
   if(status===input.status)throw conflict('Xe đang ở trạng thái đã chọn. Chọn thao tác khác.');
+  if(input.action==='inventory_status'){
+    const store=stores.find(row=>row.id===vehicle.storeId);
+    if(!store)throw conflict('Không đọc được cơ sở hiện tại của xe. Tải lại để đối chiếu.');
+    const fields={id,vehicle,input,store,actor,customer:null,effect:'inventory' as const};
+    const result={...fields,snapshot:hash({fields}),observedAt:new Date().toISOString()};
+    if(!isMobileVehicleStatusReview(result))throw conflict('Thông tin rà soát trạng thái xe chưa hợp lệ.');
+    return result;
+  }
   if(input.status==='using'&&status!=='ready')throw conflict('Xe phải đang Lưu kho trước khi lập hợp đồng mới.');
   const store=stores.find(s=>s.id===input.beneficiary_store_id);
   if(!store)throw conflict('Cơ sở đã chọn không còn tồn tại hoặc ngoài phạm vi.');
@@ -133,7 +148,7 @@ async function readReceipt(db:Database,user:SessionUser,key:string):Promise<Mobi
     request.operation!==`vehicle.status:${proof.id}`||proof.actorId!==user.id||proof.eventId!==Number(row.id)||row.event_type!=='status_change')throw invalid();
   const vehicle=(await db.query('SELECT xmin::text AS revision,deleted_at,status,store_id,COALESCE(current_store_id,store_id) AS current_store FROM himoto.vehicles WHERE id=$1',[proof.id])).rows[0];
   if(!vehicle)throw new MobileError('Xe đã ra ngoài phạm vi hiện tại. Giữ mã để đối chiếu.',403,'FORBIDDEN');
-  const vehicleCurrent=vehicle.deleted_at==null&&vehicle.revision===proof.revision&&vehicle.status==='ready'&&Number(vehicle.current_store)===proof.review.vehicle.storeId&&
+  const vehicleCurrent=vehicle.deleted_at==null&&vehicle.revision===proof.revision&&vehicle.status===(proof.review.effect==='inventory'?proof.review.input.status:'ready')&&Number(vehicle.current_store)===proof.review.vehicle.storeId&&
     (proof.review.vehicle.ownerStoreId==null||Number(vehicle.store_id)===proof.review.vehicle.ownerStoreId);
   let draftCurrent=true;
   if(proof.draft){
@@ -156,7 +171,7 @@ export async function recordMobileVehicleStatus(user:SessionUser,value:string,re
       const checked=await review(db,user,id,input,true);
       if(checked.snapshot!==review_snapshot)throw conflict('Xe, cơ sở hoặc hồ sơ khách đã thay đổi. Rà soát lại trước khi ghi.');
       const result=await applyVehicleAction(db,id,input,user.id),vehicle=await readTransferVehicle(db,id);
-      if(vehicle.status!=='ready'||vehicle.storeId!==checked.vehicle.storeId||vehicle.ownerStoreId!==checked.vehicle.ownerStoreId)throw invalid();
+      if(vehicle.status!==(input.action==='inventory_status'?input.status:'ready')||vehicle.storeId!==checked.vehicle.storeId||vehicle.ownerStoreId!==checked.vehicle.ownerStoreId)throw invalid();
       const event=(await db.query(eventSql+' WHERE id=$1 AND vehicle_id=$2 AND created_by=$3',[result.event_id,id,user.id])).rows[0];
       if(!event)throw invalid();
       const proof:MobileVehicleStatusReceipt={id,revision:vehicle.revision,requestId:key,replayed:false,review:checked,eventId:result.event_id,

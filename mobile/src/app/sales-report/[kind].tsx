@@ -5,6 +5,7 @@ import { ScrollView, RefreshControl } from "react-native";
 import { isSalesReportKind, type SalesReportKind } from "../../../../shared/mobile-reports";
 import { useSession } from "@/providers/session";
 import { StateView } from "@/components/ui";
+import { FileExportButton } from "@/components/file-export-button";
 import { SalesReportView } from "@/components/sales-report-view";
 import { useTheme } from "@/theme";
 function ReportDetail({ kind, filters }: { kind: SalesReportKind; filters: string }) {
@@ -18,6 +19,7 @@ function ReportDetail({ kind, filters }: { kind: SalesReportKind; filters: strin
   if (report.isPending) return <StateView title="Đang mở chi tiết báo cáo" loading />;
   if (report.isError) return <StateView title="Chưa mở được chi tiết báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} />;
   return <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }} refreshControl={<RefreshControl refreshing={report.isRefetching} tintColor={theme.primary} onRefresh={() => { void report.refetch(); }} />}>
+    {report.data.canExport && <FileExportButton key={params} disabled={report.isFetching||report.isError} load={signal => api!.salesReportExport(kind, params, signal)} />}
     <SalesReportView key={params} report={report.data} onPage={(page, size, section) => {
       if (section && kind !== 'ledger' && kind !== 'vehicles' && kind !== 'fleet') setSectionPages(previous => ({ ...previous, [section]: page }));
       else setPaging({ page, size });

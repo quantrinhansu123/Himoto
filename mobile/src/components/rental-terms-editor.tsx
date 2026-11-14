@@ -1,5 +1,6 @@
+import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import { useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, type ScrollViewInstance } from 'react-native';
+import { Keyboard, Text, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, usePreventRemove } from 'expo-router';
 import type { MobileRentalTerms, MobileRentalTermsInput } from '../../../shared/mobile-rental-terms';
@@ -19,8 +20,8 @@ export function RentalTermsEditor({ id }: { id: string }) {
   const profile = write.query.data?.profile, text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
   return <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title: 'Sửa tiền / ngày thuê' }} />
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 16 }}>
+
+      <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 16 }}>
         {!!write.error && <InlineError message={write.error} />}{!!write.notice && <Text accessibilityLiveRegion="polite" style={muted}>{write.notice}</Text>}
         {write.query.isPending && <StateView title="Đang tải tiền / ngày thuê" loading />}
         {write.query.isError && <StateView title="Chưa tải được tiền / ngày thuê" message={(write.query.error as Error).message} retry={() => void write.query.refetch()} />}
@@ -31,8 +32,8 @@ export function RentalTermsEditor({ id }: { id: string }) {
           <RentalTermsForm key={`${profile.revision}:${formEpoch}`} initial={profile} disabled={write.busy} onDirty={setDirty} onReview={input => { setReview(input); Keyboard.dismiss(); }} />
           <Button secondary label="Tải lại tiền / ngày thuê mới nhất" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />
         </>}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardFormScrollView>
+
     {review && profile && <ConfirmEdit title="Lưu tiền / ngày thuê đã sửa?" message={`${profile.code} · ${profile.items.find(i => i.id === review.item_id)?.license || `Dòng xe #${review.item_id}`}\n${dateTime(review.start_at)} → ${dateTime(review.end_at)}\nĐơn giá: ${review.unit_price === '' ? 'Giữ đơn giá cũ' : money(Number(review.unit_price))}\nTổng hợp đồng: ${money(profile.total_amount)} → ${money(Number(review.total_amount))}\nĐã thu: ${money(profile.paid_amount)} (giữ theo phiếu)\nLý do: ${review.reason}\n\nChỉ sửa dòng xe đang chọn và tổng hợp đồng. Phiếu/tiền thực nhận, thời điểm trả thực tế và kho giữ theo hồ sơ. Mốc gia hạn liên quan sẽ cập nhật theo lịch mới.`} confirmLabel="Xác nhận sửa tiền / ngày thuê" busy={write.busy} onCancel={() => setReview(null)} onConfirm={() => { const input = review; setReview(null); scroll.current?.scrollTo({ y: 0, animated: false }); void write.save(input); }} />}
     {reload && <ConfirmEdit title="Tải lại tiền / ngày thuê?" message="Nội dung chưa gửi sẽ thay bằng hồ sơ mới nhất." confirmLabel="Tải lại bản mới nhất" onCancel={() => setReload(false)} onConfirm={() => { setReload(false); void write.query.refetch().then(r => { if (r.data?.profile) { setDirty(false); setFormEpoch(v => v + 1); } }); }} />}
     {exit && <ConfirmEdit title="Rời màn sửa tiền / ngày thuê?" message="Nội dung chưa gửi sẽ mất khi rời màn. Mã yêu cầu đã gửi được giữ để đối chiếu trong Tài khoản." confirmLabel="Rời màn sửa tiền / ngày thuê" busy={write.busy} onCancel={() => setExit(null)} onConfirm={() => { if (!write.busy) exit(); }} />}

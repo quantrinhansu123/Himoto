@@ -10,6 +10,7 @@ export interface MobileSwapPreparation {
 }
 export interface MobileSwapVehicle {
   id:number;revision:string;name:string;license:string;brand:string;type:string;color:string;year:string;storeId:number;storeName:string;
+  draftHolds?:{id:number;code:string;customer:string;storeName:string}[];
 }
 export interface MobileSwapCandidates {
   id:number;revision:string;itemId:number;itemRevision:string;ownership:boolean;page:number;search:string;hasMore:boolean;
@@ -46,7 +47,8 @@ export function isMobileSwapPreparation(v:unknown):v is MobileSwapPreparation {
 }
 export function isMobileSwapVehicle(v:unknown):v is MobileSwapVehicle {
   return object(v)&&positive(v.id)&&revision(v.revision)&&positive(v.storeId)&&
-    [v.name,v.license,v.brand,v.type,v.color,v.year,v.storeName].every(text);
+    [v.name,v.license,v.brand,v.type,v.color,v.year,v.storeName].every(text)&&
+    (v.draftHolds===undefined||Array.isArray(v.draftHolds)&&v.draftHolds.every(row=>object(row)&&positive(row.id)&&[row.code,row.customer,row.storeName].every(text)));
 }
 export function isMobileSwapCandidates(v:unknown):v is MobileSwapCandidates {
   return object(v)&&positive(v.id)&&revision(v.revision)&&positive(v.itemId)&&revision(v.itemRevision)&&typeof v.ownership==='boolean'&&

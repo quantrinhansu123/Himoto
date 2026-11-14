@@ -1,7 +1,8 @@
+import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, type ScrollViewInstance, type TextInputInstance } from "react-native";
+import { Text, type ScrollViewInstance, type TextInputInstance } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MobileVehicleInput, MobileVehicleOptions, MobileVehicleProfile } from "../../../shared/mobile-vehicles";
 import { useSession } from "@/providers/session";
@@ -35,7 +36,7 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
   const change = (key: keyof Form, value: string) => { setForm(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
   const stores = options.stores.map(row => ({ value: String(row.id), label: row.name }));
   if (profile && !stores.some(row => row.value === form.store_id)) stores.unshift({ value: form.store_id, label: profile.storeName || `Cơ sở #${form.store_id}` });
-  const locked = write.busy || write.pending || write.checking || photosBusy, statusLocked = locked || profile?.hasOpenContract || profile?.inTransit;
+  const locked = write.busy || write.pending || write.checking || photosBusy, storeLocked = locked || profile?.hasOpenContract || profile?.inTransit;
   function validate() {
     const next: typeof errors = {};
     for (const field of fields) if (field.required && !form[field.key].trim()) next[field.key] = `Nhập ${field.label.toLowerCase()}.`;
@@ -56,8 +57,7 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
       ...(!profile || profile.values.cost_price !== undefined || cost_price !== initial.cost_price ? {cost_price:cost_price === '' ? null : Number(cost_price)} : {}),
       ...(profile ? { revision: profile.revision } : {}) };
   }
-  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-    <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom, gap: 18, width: "100%", maxWidth: 760, alignSelf: "center" }}>
+  return <><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom, gap: 18, width: "100%", maxWidth: 760, alignSelf: "center" }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{profile ? `Sửa xe ${profile.values.license}` : "Thêm xe"}</Text>
       {Object.keys(errors).length > 0 && <InlineError message="Kiểm tra các trường được đánh dấu trước khi lưu xe." />}
       {write.pending && <InlineError message="Xe còn thao tác chưa rõ kết quả. Mở Tài khoản → Thao tác cần đối chiếu trước khi lưu tiếp." />}
@@ -71,10 +71,10 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
       </Card>
       <Card style={{ gap: 16 }}>
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>Kho và trạng thái</Text>
-        <ChoiceField label="Cơ sở hiện tại" value={form.store_id} choices={stores} onChange={value => change("store_id", value)} disabled={!!statusLocked} searchable error={errors.store_id} />
+        <ChoiceField label="Cơ sở hiện tại" value={form.store_id} choices={stores} onChange={value => change("store_id", value)} disabled={!!storeLocked} searchable error={errors.store_id} />
         {!!profile?.ownerStoreName && <Text style={{ color: theme.muted }}>Cơ sở sở hữu: {profile.ownerStoreName}</Text>}
-        <ChoiceField label="Trạng thái xe" value={form.status} choices={options.statuses} onChange={value => change("status", value)} disabled={!!statusLocked} error={errors.status} />
-        <Text style={{ color: theme.muted, lineHeight: 23 }}>{profile?.inTransit ? "Xe đang chờ luân chuyển. Dùng xác nhận nhận xe ở cơ sở đích để cập nhật kho và trạng thái." : profile?.hasOpenContract ? "Xe thuộc hợp đồng mở. Thực hiện trả xe trên hợp đồng trước khi đổi trạng thái hoặc cơ sở." : "Đã giao xe nhưng chưa nhập hợp đồng: chọn Đang thuê để khớp kho, sau đó nhập hợp đồng và giữ cơ sở xe."}</Text>
+        <ChoiceField label="Trạng thái xe" value={form.status} choices={options.statuses.filter(row=>row.value!=='in_transit'||profile?.inTransit)} onChange={value => change("status", value)} disabled={locked||profile?.inTransit} error={errors.status} />
+        <Text style={{ color: theme.muted, lineHeight: 23 }}>{profile?.inTransit ? "Xe đang chờ luân chuyển. Dùng xác nhận nhận xe ở cơ sở đích để cập nhật kho và trạng thái." : "Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ. Xe còn hợp đồng mở giữ nguyên cơ sở hiện tại."}</Text>
       </Card>
       <Card style={{gap:16}}>
         <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Giá trị và giá thuê</Text>
@@ -82,10 +82,10 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
       </Card>
       <FormField label="Ghi chú thay đổi xe" value={form.note} onChangeText={value => change("note", value)} multiline maxLength={500} editable={!locked} hint="Thay đổi và ghi chú được lưu vào lịch sử cùng người thực hiện." />
       <Button label={profile ? "Rà soát và lưu xe" : "Rà soát và thêm xe"} loading={write.busy || write.checking} disabled={write.pending} onPress={validate} />
-    </ScrollView>
+    </KeyboardFormScrollView>
     {confirm && <ConfirmEdit title={profile ? "Lưu thay đổi xe?" : "Thêm xe vào kho?"} message={`${form.name}\n${form.license.trim().toUpperCase()} · ${form.year}\n${stores.find(row => row.value === form.store_id)?.label}\n${options.statuses.find(row => row.value === form.status)?.label}\nLưu hồ sơ xe và ghi nhận thay đổi vào lịch sử.`} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); void write.save(input()); }} />}
     {write.exit && <ConfirmEdit title="Rời biểu mẫu xe?" message="Thông tin chưa gửi trong biểu mẫu sẽ mất. Yêu cầu đã gửi vẫn giữ mã để đối chiếu trong Tài khoản." confirmLabel="Rời biểu mẫu" busy={write.busy} onCancel={write.cancelExit} onConfirm={write.leave} />}
-  </KeyboardAvoidingView>;
+  </>;
 }
 export function VehicleEditor({ id, store = "all" }: { id: string | null; store?: string }) {
   const { api, session } = useSession(), allowed = !!api && session?.user.permissions.includes("vehicles.write");

@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {router} from 'expo-router';
 import {FlatList,Linking,RefreshControl,ScrollView,Text,View} from 'react-native';
 import {useQuery} from '@tanstack/react-query';
 import {uuid} from 'expo';
@@ -66,6 +67,8 @@ export default function Attendance() {
   return <>
     <FlatList data={query.data?.rows||[]} keyExtractor={row=>String(row.id)} contentContainerStyle={{padding:20,gap:16,maxWidth:800,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={()=>{void query.refetch();}} tintColor={theme.primary}/>}
       ListHeaderComponent={<View style={{gap:18}}>
+        <Button secondary label="Đăng ký ca làm việc tuần tới" disabled={busy} onPress={()=>router.push("/self-shift-registration")}/>
+        <Button secondary label="Cài đặt GPS chấm công" disabled={busy} onPress={()=>router.push('/attendance-locations')}/>
         <Text accessibilityRole="header" style={{color:theme.text,fontSize:28,fontWeight:'800'}}>Chấm công</Text>
         <Card style={{gap:14}}>
           <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{query.data?.staff?.name||session!.user.name}</Text>

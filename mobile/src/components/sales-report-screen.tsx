@@ -9,6 +9,7 @@ import { useTheme } from "@/theme";
 import { Button, Card, InlineError, StateView } from "./ui";
 import { DateField } from "./date-field";
 import { ChoiceField, FormField } from "./form-fields";
+import { FileExportButton } from "./file-export-button";
 import { SalesReportView } from "./sales-report-view";
 const contractKinds: SalesReportKind[] = ["contracts", "by-staff", "by-store", "new-customers", "assigned"];
 export function SalesReportScreen() {
@@ -62,6 +63,7 @@ export function SalesReportScreen() {
     {kind === "vehicles" && <Card style={{ gap: 14 }}><ChoiceField label="Sắp xếp doanh thu xe" value={sort} choices={[{ value: "revenue", label: "Doanh thu" }, { value: "rentals", label: "Lượt thuê" }, { value: "license", label: "Biển số" }]} onChange={setSort} /><ChoiceField label="Chiều sắp xếp xe" value={direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={setDirection} /></Card>}
     {(kind === "vehicles" || kind === "ledger") && <ChoiceField label="Số dòng báo cáo mỗi trang" value={size} choices={(kind === "ledger" ? [10, 20, 50, 100] : [10, 20, 50]).map(value => ({ value: String(value), label: String(value) }))} onChange={value => changePage(1, Number(value))} />}
     {options.isError && <InlineError message={options.error.message} />}
+    {report.data?.canExport && <FileExportButton key={`${kind}:${params}`} disabled={!valid || report.isFetching || report.isError} load={signal => api!.salesReportExport(kind, params, signal)} />}
     {!valid ? <StateView title="Kiểm tra ngày báo cáo" message="Chọn khoảng ngày hợp lệ, không sau hôm nay." /> : report.isPending ? <StateView title="Đang tính báo cáo" loading /> : report.isError ? <StateView title="Chưa tải được báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} /> : <SalesReportView key={`${kind}:${params}`} report={report.data} onPage={changePage} />}
     <Button secondary label="Tải lại báo cáo" loading={report.isFetching} onPress={() => { void report.refetch(); }} disabled={!valid} />
   </ScrollView>;

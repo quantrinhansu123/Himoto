@@ -22,6 +22,8 @@ const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, '
   '@/theme': { useTheme: () => theme, statuses: { renting: 'Đang thuê', draft: 'Nháp' }, roles: {}, money: String, dateTime: String },
   '@/components/ui': components, './ui': components,
   '@/lib/catalogue-config': config, '../../../shared/mobile-contract-workspaces': workspaces,
+  '../../../shared/mobile-backfill': loadDomain(path.join(root, 'shared/mobile-backfill')),
+  '../../../shared/mobile-managed-accounts': loadDomain(path.join(root, 'shared/mobile-managed-accounts')),
   '../../../../shared/mobile-contract-workspaces': workspaces,
   '@/providers/session': { useSession: () => ({ session: { user }, api, logout: async () => {}, restore: async () => {} }) },
   '@/hooks/use-workspace': { useWorkspace: () => ({ data: { stores: [{ id: 23, name: 'Branch A' }, { id: 24, name: 'Branch B' }] } }) },
@@ -96,7 +98,8 @@ async function main() {
   function exists(route) { const clean = typeof route === 'string' ? route : route.pathname; return routes.some(pattern => new RegExp('^/' + pattern.replace(/\[[^\]]+\]/g,'[^/]+') + '/?$').test(clean.replace(/\/\([^/]+\)/g,'') || '/')); }
   for (const item of drawer.filter(n => n.type === 'Pressable' && n.key)) { item.props.onPress(); assert(exists(pushed.pop()), 'Missing route for ' + item.key); }
   user.permissions = ['contracts.read']; const limitedDrawer = nodes(ManagementDrawer({ visible: true, onClose() {} }));
-  assert(!limitedDrawer.some(n => n.key === 'staff' || n.key === 'stores'));
+  assert(!limitedDrawer.some(n => n.key === 'staff'));
+  assert(limitedDrawer.some(n => n.key === 'stores'));
   checks.push('Every drawer destination exists, staff/stores open directories, grouped tab paths highlight correctly and denied sections remain hidden');
 
   reset(); const { default: Overview } = load('mobile/src/app/(tabs)/index.tsx', { '@/components/workspace-links': { WorkspaceLinks: 'WorkspaceLinks' }, '@/components/management-drawer': { ManagementDrawer: 'Drawer' } });
@@ -132,7 +135,7 @@ async function main() {
   assert(text(tree).includes('Quá hạn (3)'));
   for (const scope of ['overdue','drafts','vat','due','ownership']) {
     reset(); tree = CatalogueScreen({ kind: 'contracts', initialScope: scope });
-    const label = workspaces.contractWorkspace(scope).title;
+    const label = scope === 'drafts' ? 'Tất cả bản nháp' : workspaces.contractWorkspace(scope).title;
     assert(text(tree).includes(label + ' (10)'), scope);
     assert(!text(tree).includes('Tất cả (10)'), scope);
     await infiniteOptions.queryFn({ pageParam: 1, signal: new AbortController().signal });

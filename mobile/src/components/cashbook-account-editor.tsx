@@ -1,7 +1,8 @@
+import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, type ScrollViewInstance, type TextInputInstance } from "react-native";
+import { Platform, Text, type ScrollViewInstance, type TextInputInstance } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cashbookAccountValues, validateCashbookAccount, type CashbookAccountKind, type CashbookAccountInput, type MobileCashbookAccount } from "../../../shared/mobile-cashbook";
 import { useSession } from "@/providers/session";
@@ -33,8 +34,7 @@ function AccountForm({ profile, kind: initialKind, stores: storeRows, store }: {
     if (Object.keys(next).length) { scroll.current?.scrollTo({ y: 0 }); requestAnimationFrame(() => inputs.current[Object.keys(next)[0]]?.focus()); return; }
     setConfirm(true);
   }
-  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-    <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
+  return <><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{profile ? "Sửa tài khoản sổ quỹ" : "Thêm tài khoản sổ quỹ"}</Text>
       {write.pending && <InlineError message="Tài khoản còn yêu cầu chưa rõ kết quả. Mở Tài khoản → Thao tác cần đối chiếu trước khi lưu tiếp." />}
       {!!write.error && <InlineError message={write.error} />}
@@ -49,10 +49,10 @@ function AccountForm({ profile, kind: initialKind, stores: storeRows, store }: {
         <ChoiceField label="Trạng thái sử dụng tài khoản" value={form.status} choices={[{ value: "active", label: "Đang sử dụng" }, { value: "inactive", label: "Ngừng sử dụng" }]} onChange={value => change("status", value)} disabled={locked} error={errors.status} />
       </Card>
       <Button label={profile ? "Rà soát và lưu tài khoản" : "Rà soát và thêm tài khoản"} onPress={review} loading={write.busy || write.checking} disabled={write.pending} />
-    </ScrollView>
+    </KeyboardFormScrollView>
     {confirm && <ConfirmEdit title={profile ? "Lưu thay đổi tài khoản?" : "Thêm tài khoản sổ quỹ?"} message={`${types.find(row => row.value === form.type)?.label}\n${kind === "cash" ? form.name || "Két tiền mặt (tên tự động)" : [form.bank_name, form.owner_name, form.account_number].join(" · ")}\n${stores.find(row => row.value === form.store_id)?.label}\nSố dư đầu kỳ: ${money(Number(form.opening_balance))}\n${form.status === "active" ? "Đang sử dụng" : "Ngừng sử dụng"}`} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); void write.save(input(), profile ? "update" : "create"); }} />}
     {write.exit && <ConfirmEdit title="Rời biểu mẫu tài khoản?" message="Thông tin chưa gửi sẽ mất. Yêu cầu đã gửi vẫn giữ mã trong Tài khoản để đối chiếu." confirmLabel="Rời biểu mẫu" onCancel={write.cancelExit} onConfirm={write.leave} busy={write.busy} />}
-  </KeyboardAvoidingView>;
+  </>;
 }
 export function CashbookAccountEditor({ kind, id, store }: { kind: CashbookAccountKind; id: string | null; store?: string }) {
   const { api, session } = useSession(), allowed = !!api && session!.user.permissions.includes("finance.write");

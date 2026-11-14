@@ -92,6 +92,7 @@ export function ChoiceField({
   disabled,
   error,
   searchable = false,
+  placeholder = 'Chọn một mục',
 }: {
   label: string;
   value: string;
@@ -100,13 +101,14 @@ export function ChoiceField({
   disabled?: boolean;
   error?: string;
   searchable?: boolean;
+  placeholder?: string;
 }) {
   const theme = useTheme(),
     reducedMotion = useReducedMotion();
   const [open, setOpen] = useState(false),
     [search, setSearch] = useState("");
   const selected =
-    choices.find((item) => item.value === value)?.label || "Chọn một mục";
+    choices.find((item) => item.value === value)?.label || placeholder;
   const normalize = (text: string) =>
     text
       .normalize("NFD")
@@ -168,6 +170,7 @@ export function ChoiceField({
           onRequestClose={() => setOpen(false)}
         >
           <SafeAreaProvider>
+          <KeyboardScrollContext.Provider value={null}>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ flex: 1 }}
@@ -190,6 +193,8 @@ export function ChoiceField({
               accessibilityViewIsModal
               style={{
                 maxHeight: "85%",
+                flexShrink: 1,
+                overflow: 'hidden',
                 backgroundColor: theme.surface,
                 borderTopLeftRadius: 24,
                 borderTopRightRadius: 24,
@@ -242,6 +247,7 @@ export function ChoiceField({
                 </View>
               )}
               <FlatList
+                style={{ flexShrink: 1, minHeight: 0 }}
                 data={filtered}
                 keyExtractor={(item) => item.value}
                 keyboardShouldPersistTaps="handled"
@@ -295,6 +301,7 @@ export function ChoiceField({
             </SafeAreaView>
           </View>
         </KeyboardAvoidingView>
+          </KeyboardScrollContext.Provider>
           </SafeAreaProvider>
       </Modal>
       )}
