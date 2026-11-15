@@ -39,6 +39,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
   const [rateInput, setRateInput] = useState('');
   const [returnAt, setReturnAt] = useState('');
   const [amount, setAmount] = useState('');
+  const [paidAt, setPaidAt] = useState(() => vietnamRentalTime(new Date()));
   const [amountTouched, setAmountTouched] = useState(false);
   const [extraName, setExtraName] = useState('Phí VAT');
   const [extraAmount, setExtraAmount] = useState('');
@@ -174,7 +175,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     if (collecting) {
       if (!paymentContext) { setError(paymentLoadError || 'Đang tải tài khoản nhận tiền.'); return; }
       if (!accounts.some(account => account.id === effectiveAccountId)) { setError('Chọn tài khoản nhận tiền gia hạn.'); return; }
-      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(occurredAt)) { setError('Ngày giờ thu tiền gia hạn không hợp lệ.'); return; }
+      if (!validRenewalTime(paidAt)) { setError('Ngày giờ thu tiền gia hạn không hợp lệ.'); return; }
       if (!hasPaymentEvidence) { setError('Lưu ảnh bill chuyển khoản hoặc tiền mặt trước khi hoàn thành gia hạn đã thu tiền.'); return; }
     }
     setSaving(true); setError('');
@@ -187,7 +188,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
         ...(outsideFee > 0 ? { outside_amount: String(outsideFee), outside_name: outsideName.trim() } : {}),
         occurred_at:occurredAt,
         ...(expectedFee !== null ? { expected_amount: String(expectedFee + otherFee) } : {}),
-        ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:occurredAt}} : {}),
+        ...(collecting ? {receipt:{method,account_id:effectiveAccountId,paid_at:paidAt}} : {}),
       });
       let remaining = result.total_amount !== null && paid !== null ? Math.max(result.total_amount - paid, 0) : null;
       let collected = false;
@@ -290,6 +291,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
               <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='received'} onChange={()=>setCollectionChoice('received')} />Đã thực nhận tiền gia hạn — ghi phiếu thu cùng lúc lưu</label>
               <label className="mg-field-wide mg-checkbox"><input type="radio" name="renewal-collection" required checked={collectionChoice==='unpaid'} onChange={()=>setCollectionChoice('unpaid')} />Chưa nhận tiền — ghi công nợ gia hạn</label>
               {collect && <>
+                <label className="mg-field-wide">Ngày giờ thực thu<input type="datetime-local" required value={paidAt} onChange={event => setPaidAt(event.target.value)} /></label>
                 {paymentLoadError && !paymentContext && <p className="mg-field-wide mg-field-error">{paymentLoadError}</p>}
                 {!paymentContext && !paymentLoadError && <p className="mg-field-wide" role="status"><LoaderCircle size={15} className="mg-spin" /> Đang tải tài khoản nhận tiền…</p>}
                 {paymentContext && <>

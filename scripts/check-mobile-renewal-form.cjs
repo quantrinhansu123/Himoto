@@ -2,6 +2,7 @@ require('./lib/offline-tests.cjs');
 const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {load,root}=require('./lib/load-typescript.cjs');
 const {reviewRenewal,renewalSuggestion}=load(path.resolve(root,'../mobile/src/lib/renewal-form'));
+const {parseRenewalInput}=load(path.join(root,'lib/server/contract-renewals'));
 const item={id:301,vehicleId:3,name:'Xe QA',license:'QA-003',revision:'11',returnAt:'2026-11-02T08:00:00+07:00',dailyPrice:100000,renewalAmount:0};
 const data={id:101,code:'HD-QA',status:'renting',storeId:23,revision:'100',available:true,blockedReason:null,nextVersion:9,totalAmount:500000,rentalPaid:100000,rentalRemaining:400000,
   items:{page:1,pages:1,total:1,rows:[item]},accounts:[{id:1,method:'cash',label:'Két QA'},{id:1,method:'transfer',label:'Cá nhân QA'},{id:2,method:'company_transfer',label:'Công ty QA'}],
@@ -31,6 +32,12 @@ assert.throws(()=>reviewRenewal(data,null,form,now));assert.throws(()=>reviewRen
 checks.push('Invalid/non-extending dates, malformed/overflowing money, missing vehicles, blocked contracts and oversized/missing text fail before reserving a write key');
 const historical={...data,backfill:true},lateItem={...item,startedAt:'2026-10-01T08:00:00+07:00',completedAt:'2026-11-04T08:00:00+07:00'};
 const late={...form,collected:false,occurredAt:'2026-11-04T07:00'};
+const collectedLate=reviewRenewal(historical,lateItem,{...late,collected:true,paidAt:'2026-11-05T08:00'},Date.parse('2026-11-05T08:00+07:00'));
+const {expected_version,bill_revision,...renewal}=collectedLate;
+const parsed=parseRenewalInput({...renewal,request_id:'00000000-0000-4000-8000-000000000001'});
+assert.equal(parsed.occurred_at,late.occurredAt);
+assert.equal(parsed.receipt.paid_at,'2026-11-05T08:00');
+checks.push('A renewal collected later preserves the period start and posts on the actual collection date');
 assert.equal(reviewRenewal(historical,lateItem,late,Date.parse('2026-11-05T08:00+07:00')).occurred_at,late.occurredAt);
 for(const occurredAt of ['2026-09-30T08:00','2026-11-04T09:00','2026-11-06T08:00'])assert.throws(()=>reviewRenewal(historical,lateItem,{...late,occurredAt},Date.parse('2026-11-05T08:00+07:00')));
 checks.push('Pulled late-renewal rule allows recording after scheduled new return but still enforces actual rental start, completion and server-time bounds');

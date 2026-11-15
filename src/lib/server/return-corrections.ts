@@ -65,10 +65,12 @@ async function readState(db:Database,itemId:number,lock=false) {
   if(lock)await db.query('SELECT id FROM himoto.order_vehicle_details WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE',[itemIds]);
   const relevant=notices.filter(n=>{const references=noticeItems(n);return !references.length||references.some(id=>itemIds.includes(id));});
   const blocked=relevant.some(n=>n.retraction?.state!=='done'&&(n.retraction||['pending','sending','unknown'].includes(n.status)||n.status==='failed'&&n.message_ids?.length));
-  const linked=settlement?idsOf([...(settlement.transaction_ids||[]),settlement.refund_transaction_id,settlement.rental_refund_transaction_id]):[];
-  const transactions=linked.length?(await db.query(`SELECT id,name,type,value,cash_id,bank_id,bank_owner_type,created_at,status,xmin::text AS revision
+  const linked=settlement?[...new Set(idsOf([...(settlement.transaction_ids||[]),settlement.refund_transaction_id,settlement.rental_refund_transaction_id]))]:[];
+  const linkedTransactions=linked.length?(await db.query(`SELECT id,name,type,value,cash_id,bank_id,bank_owner_type,created_at,status,xmin::text AS revision
     FROM himoto.transactions WHERE order_id=$1 AND id=ANY($2::bigint[]) ORDER BY id ${lock?'FOR UPDATE':''}`,[order.id,linked])).rows:[];
-  if(transactions.length!==linked.length||transactions.some(t=>t.status!=='approved'||!['order:return_late','order:return_repair','order:payment','order:deposit_refund','order:rental_refund'].includes(t.name)))throw new ContractReturnError('Phiếu thu/hoàn của lượt trả đã thay đổi. Cần đối chiếu lịch sử trước khi sửa.',409);
+  if(linkedTransactions.some(t=>!['approved','cancelled'].includes(t.status)||!['order:return_late','order:return_repair','order:payment','order:deposit_refund','order:rental_refund'].includes(t.name)))throw new ContractReturnError('Phiếu thu/hoàn của lượt trả đã thay đổi. Cần đối chiếu lịch sử trước khi sửa.',409);
+  // Deleted or cancelled vouchers no longer contribute to the settlement balance.
+  const transactions=linkedTransactions.filter(t=>t.status==='approved');
   const payment=await readPaymentContext(db,Number(order.id));
   const existing=Array.isArray(composer.return_adjustments)?composer.return_adjustments.filter((a:{item_id:number})=>itemIds.includes(Number(a.item_id))):[];
   if(new Set(existing.map((a:{item_id:number})=>Number(a.item_id))).size!==existing.length)throw new ContractReturnError('Hồ sơ có nhiều điều chỉnh trùng xe. Cần đối chiếu trước khi sửa.',409);
@@ -82,7 +84,7 @@ async function readState(db:Database,itemId:number,lock=false) {
     ...(refund?{refund:{...receipt(refund),recipient_bank:recipient.bank||'',recipient_account:recipient.account||'',recipient_name:recipient.name||''}}:{}),
     ...(rentalRefund?{rental_refund:{...receipt(rentalRefund),recipient_bank:settlement?.rental_refund_recipient?.bank||'',recipient_account:settlement?.rental_refund_recipient?.account||'',recipient_name:settlement?.rental_refund_recipient?.name||''}}:{}),
     ...(!refund&&settlement?.refund_deferred?{refund_deferred:true as const,refund_recipient:recipient}:{})};
-  const revision=hash({order:order.revision,lines:lines.map(l=>[l.item_id,l.item_revision]),transactions:transactions.map(t=>[t.id,t.revision]),itemIds});
+  const revision=hash({order:order.revision,lines:lines.map(l=>[l.item_id,l.item_revision]),transactions:linkedTransactions.map(t=>[t.id,t.revision]),itemIds});
   const context:ReturnCorrectionContext={order_id:Number(order.id),code:payment.code,customer:lines[0].customer_name,revision,event_key:notice?.root_event_key||notice?.event_key||`return:${order.id}:${itemIds.join(',')}`,
     lines:lines.map(line=>{const a=existing.find((a:{item_id:number})=>Number(a.item_id)===line.item_id);return {...line,late_fee:Number(a?.late_fee??Math.max(Number(a?.fee||0)+Number(a?.early_discount||0)-Number(a?.repair_fee||0),0)),repair_fee:Number(a?.repair_fee||0),repair_note:String(a?.repair_note||''),early_discount:Number(a?.early_discount||0),hourly_rate:Number(a?.hourly_rate??20000)};}),
     payment:{...payment,paid_amount:payment.paid_amount===null?null:payment.paid_amount-signed,deposit_held:payment.deposit_held+refunded,deposit_refunded:payment.deposit_refunded-refunded},

@@ -33,6 +33,8 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
   const [outsideAmount, setOutsideAmount] = useState(""), [outsideName, setOutsideName] = useState("Phí thu thêm"), [note, setNote] = useState("");
   const [collected, setCollected] = useState(false),[collectionChosen,setCollectionChosen]=useState(false), [customMethod, setMethod] = useState<MobileCollectionMethod|null>(null), [account, setAccount] = useState("");
   const [initialOccurredAt] = useState("");
+  const [initialPaidAt] = useState(() => renewalLocalTime(Date.now()));
+  const [paidAt, setPaidAt] = useState(initialPaidAt);
   const [unit,setUnit]=useState<"day"|"hour">("day"),[count,setCount]=useState("1"),[customRate,setRate]=useState<string|null>(null);
   const [readyBill, setReadyBill] = useState(""), [reviewedBill, setReviewedBill] = useState(""), [localError, setLocalError] = useState("");
   const [occurredAt,setOccurredAt]=useState(initialOccurredAt);
@@ -70,7 +72,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
     if (!data || locked || query.isFetching || query.isError || (collected && (bill.isFetching || bill.isError))) return;
     try {
       if(Number(amount||0)+Number(extraAmount||0)+Number(outsideAmount||0)>0&&!collectionChosen)throw Error("Chọn đã nhận tiền hoặc chưa nhận tiền gia hạn.");
-      setConfirm(reviewRenewal(data, item ?? null, { returnAt, amount, outsideAmount, outsideName, note, collected, method, account:effectiveAccount, paidAt:occurredAt,occurredAt,extraAmount,extraName,unit,rate,
+      setConfirm(reviewRenewal(data, item ?? null, { returnAt, amount, outsideAmount, outsideName, note, collected, method, account:effectiveAccount, paidAt,occurredAt,extraAmount,extraName,unit,rate,
         reviewedBill: billKey && readyBill === billKey && reviewedBill === billKey ? { version: bill.data!.version, revision: bill.data!.photoRevision! } : null }, Date.now()));
     } catch (cause) { setLocalError((cause as Error).message); }
   }
@@ -166,7 +168,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
             <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Chỉ xác nhận khoản đã thực nhận. Thu một phần sau gia hạn được thực hiện bằng phiếu liên kết phiên bản.</Text>
             <ChoiceField label="Hình thức thu gia hạn" value={method} choices={methods} disabled={locked} onChange={value => { setMethod(value as MobileCollectionMethod); setAccount(""); }} />
             <ChoiceField label="Tài khoản nhận gia hạn" value={effectiveAccount} disabled={locked} searchable choices={data.accounts.filter(row => row.method === method).map(row => ({ value: `${row.method}:${row.id}`, label: row.label }))} onChange={setAccount} />
-            <Text style={{color:theme.muted,lineHeight:24}}>Ngày giờ thực thu: {occurredAt.replace("T"," ")||"Chọn ngày bắt đầu gia hạn ở trên."}</Text>
+            <RentalDateTime label="thực thu gia hạn" value={paidAt} onChange={setPaidAt} disabled={locked} />
             <Text style={{ color: theme.text, fontSize: 16, fontWeight: "700" }}>Bill cho phiên bản #{data.nextVersion}</Text>
             {bill.isError && <InlineError message={bill.error.message} />}
             {source ? <BillPhoto key={billKey} source={source} label="Bill gia hạn đã lưu" onReady={ready => setReadyBill(ready ? billKey : "")} /> : <Text style={{ color: theme.muted, fontSize: 15 }}>{bill.isPending ? "Đang kiểm tra bill…" : "Chưa có bill chính cho phiên bản này."}</Text>}

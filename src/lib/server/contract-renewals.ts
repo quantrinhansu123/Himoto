@@ -48,7 +48,7 @@ export function parseRenewalInput(body: unknown): RenewalInput {
     try {
       // A zero contract fee still needs a valid receipt when only the outside fee is collected.
       const parsed = parseContractPayment({...receipt,request_id:result.request_id,revision:result.order_revision,amount:Number(result.amount) > 0 ? result.amount : '1',note:result.note || 'Gia hạn'},{allowFutureTime:true});
-      result.receipt = {method:parsed.method,account_id:parsed.account_id,paid_at:result.occurred_at || parsed.paid_at};
+      result.receipt = {method:parsed.method,account_id:parsed.account_id,paid_at:parsed.paid_at};
     } catch (error) { if (error instanceof ContractPaymentError) throw new ContractRenewalError(error.message,error.status); throw error; }
   }
   return result;

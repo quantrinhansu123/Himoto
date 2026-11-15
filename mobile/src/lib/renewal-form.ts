@@ -52,7 +52,7 @@ export function reviewRenewal(data: MobileRenewalPreparation, item: RenewalVehic
     if (outside > 0 && form.method === "company_transfer") throw Error("Phí thu ngoài chỉ nhận bằng tiền mặt hoặc tài khoản cá nhân.");
     const destination = data.accounts.find(row => `${row.method}:${row.id}` === form.account && row.method === form.method);
     if (!destination) throw Error("Chọn tài khoản đã thực nhận tiền.");
-    const paidTime=form.occurredAt||form.paidAt;
+    const paidTime = form.paidAt;
     if (!validDraftTime(paidTime) || Date.parse(`${paidTime}:00+07:00`) > now + 5 * 60000) throw Error("Chọn đúng thời điểm thực thu, không chọn ngày giờ tương lai.");
     if (!form.reviewedBill || form.reviewedBill.version !== data.nextVersion || !/^[1-9]\d{0,19}$/.test(form.reviewedBill.revision)) throw Error("Lưu và rà soát bill đúng phiên bản trước khi xác nhận đã thu.");
     input.receipt = { method: form.method, account_id: destination.id, paid_at: paidTime };
