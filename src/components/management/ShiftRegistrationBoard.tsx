@@ -17,16 +17,17 @@ function adjacentMonth(month: string, offset: number) {
   return date.toISOString().slice(0, 7);
 }
 
-export function ShiftRegistrationBoard() {
+export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: string; focusStaff?: string }) {
   const { can, notify } = useManagement();
-  const [month, setMonth] = useState(() => vietnamDate().slice(0, 7));
-  const [range, setRange] = useState(() => registrationMonthRange(month));
+  const [month, setMonth] = useState(() => (focusDate ?? vietnamDate()).slice(0, 7));
+  const [range, setRange] = useState(() => focusDate ? { from: focusDate, to: focusDate } : registrationMonthRange(month));
   const [from, setFrom] = useState(range.from);
   const [to, setTo] = useState(range.to);
   const [filterError, setFilterError] = useState('');
-  const [fitMonth, setFitMonth] = useState(true);
+  const [fitMonth, setFitMonth] = useState(!focusDate);
   const [store, setStore] = useState('all');
   const [search, setSearch] = useState('');
+  const [staffFilter, setStaffFilter] = useState(focusStaff);
   const [data, setData] = useState<RegistrationRange | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -67,14 +68,18 @@ export function ShiftRegistrationBoard() {
     } catch (cause) { setFilterError(cause instanceof Error ? cause.message : 'Khoảng ngày không hợp lệ.'); }
   }
   const cells = useMemo(() => new Map(data?.registrations.map(row => [keyOf(row.staff_id, row.work_date), row])), [data]);
-  const people = useMemo(() => (data?.staff || []).filter(person => (store === 'all' || (store === 'none' ? person.store_id === null : String(person.store_id) === store)) && `${person.name} ${person.position}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))), [data, store, search]);
+  const people = useMemo(() => (data?.staff || []).filter(person =>
+    (!staffFilter || String(person.id) === staffFilter) &&
+    (store === 'all' || (store === 'none' ? person.store_id === null : String(person.store_id) === store)) &&
+    `${person.name} ${person.position}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi')),
+  ), [data, staffFilter, store, search]);
   const groups = useMemo(() => {
     const result = new Map<string, RegisteredStaff[]>();
     for (const person of people) { const key = String(person.store_id ?? 'none'); result.set(key, [...(result.get(key) || []), person]); }
     return [...result.values()];
   }, [people]);
   const total = (person: RegisteredStaff) => dates.reduce((sum, date) => sum + registrationCredit(cells.get(keyOf(person.id, date))?.shift_code), 0);
-  const excel=data?registrationExcel(data,store,search):{headers:[],rows:[]};
+  const excel=data?registrationExcel({...data,staff:people}):{headers:[],rows:[]};
   const unavailable = loading || Boolean(error) || !data;
   const writable = can('hr.write');
   async function register(person: RegisteredStaff, date: string, code: string) {
@@ -106,6 +111,7 @@ export function ShiftRegistrationBoard() {
         <button type="button" className="mg-button" disabled={Boolean(pending)} onClick={() => chooseMonth(vietnamDate().slice(0, 7))}>Tháng này</button></div>
       <label>Cơ sở<select value={store} onChange={event => setStore(event.target.value)}><option value="all">Tất cả cơ sở</option>{data?.stores.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="none">Chưa có cơ sở</option></select></label>
       <label>Tìm nhân viên<input type="search" placeholder="Họ tên, chức vụ…" value={search} onChange={event => setSearch(event.target.value)} /></label>
+      {staffFilter && <button type="button" className="mg-button" onClick={() => setStaffFilter(undefined)}>Bỏ lọc nhân viên chấm công</button>}
       <div className={styles.range} role="group" aria-label="Bộ lọc ngày đăng ký ca">
         <label>Từ ngày<input type="date" min="2000-01-01" max="2100-12-31" value={from} disabled={Boolean(pending)} onChange={event => setFrom(event.target.value)} /></label>
         <label>Đến ngày<input type="date" min="2000-01-01" max="2100-12-31" value={to} disabled={Boolean(pending)} onChange={event => setTo(event.target.value)} /></label>

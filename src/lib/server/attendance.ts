@@ -2,6 +2,8 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import type { SessionUser } from './management-session';
 import { hasPermission, isAdminAccount } from '@/lib/management/permissions';
+import { attendanceShift } from '@/lib/management/attendance-shifts';
+import { REGISTRATION_SHIFTS } from '@/lib/management/shift-registration';
 
 type Database = Pick<PoolClient, 'query'>;
 export class AttendanceError extends Error { constructor(message: string, public status = 400) { super(message); } }
@@ -9,6 +11,40 @@ export const canReviewAttendance = (user: SessionUser) => hasPermission(user, 'h
 export function attendanceScope(user: SessionUser) {
   // These queries use the owner connection, so every read includes this explicit scope.
   return { reviewer: canReviewAttendance(user), all: isAdminAccount(user) || user.scope_all === true, store: user.store_id ?? null };
+}
+function attendanceEditTime(value: unknown) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+    throw new AttendanceError('Giờ chấm công không hợp lệ.');
+  }
+  const time = new Date(value);
+  if (!Number.isFinite(time.getTime()) || time.toISOString() !== value) throw new AttendanceError('Giờ chấm công không hợp lệ.');
+  return time;
+}
+
+export async function manageAttendance(db: Database, user: SessionUser, method: 'PATCH' | 'DELETE', input: unknown) {
+  if (!isAdminAccount(user)) throw new AttendanceError('Chỉ quản trị viên được sửa hoặc xóa chấm công.',403);
+  if (!input || typeof input !== 'object' || !('id' in input) || !/^[1-9]\d{0,14}$/.test(String(input.id))) {
+    throw new AttendanceError('Lượt chấm công không hợp lệ.');
+  }
+  const body = input as Record<string, unknown>;
+  const current = (await db.query(`SELECT clock_in_at,clock_out_at
+    FROM himoto.management_staff_attendance WHERE id=$1 FOR UPDATE`,[body.id])).rows[0];
+  if (!current) throw new AttendanceError('Không tìm thấy lượt chấm công.',404);
+  if (current.clock_in_at.toISOString() !== body.original_in || (current.clock_out_at?.toISOString() ?? null) !== body.original_out) {
+    throw new AttendanceError('Lượt chấm công đã thay đổi. Đóng cửa sổ và tải lại trước khi thử lại.',409);
+  }
+  if (method === 'DELETE') {
+    await db.query('DELETE FROM himoto.management_staff_attendance WHERE id=$1',[body.id]);
+    return;
+  }
+  const clockIn = attendanceEditTime(body.clock_in_at);
+  const clockOut = body.clock_out_at === null && current.clock_out_at === null ? null : attendanceEditTime(body.clock_out_at);
+  if (clockOut && clockOut < clockIn) throw new AttendanceError('Giờ ra phải từ giờ vào trở đi.');
+  if ((clockOut ?? clockIn).getTime() > Date.now()) throw new AttendanceError('Giờ chấm công không được ở tương lai.');
+  await db.query(`UPDATE himoto.management_staff_attendance
+    SET clock_in_at=CASE WHEN $2::boolean THEN clock_in_at ELSE $3 END,
+        clock_out_at=CASE WHEN $4::boolean THEN clock_out_at ELSE $5 END
+    WHERE id=$1`,[body.id,body.clock_in_at === body.original_in,clockIn,body.clock_out_at === body.original_out,clockOut]);
 }
 export function parseAttendanceLocation(value: string) {
   let raw;
@@ -18,6 +54,23 @@ export function parseAttendanceLocation(value: string) {
     || typeof raw.timestamp !== 'number' || !Number.isFinite(raw.timestamp) || Math.abs(Date.now() - raw.timestamp) > 5 * 60000) throw new AttendanceError('GPS không hợp lệ hoặc đã quá 5 phút. Vui lòng lấy lại vị trí.');
   return { latitude: raw.latitude, longitude: raw.longitude, accuracy: raw.accuracy, timestamp: raw.timestamp };
 }
+
+type Coordinates = { latitude: number; longitude: number };
+
+export function attendanceDistanceMeters(punch: Coordinates | null, store: Coordinates | null) {
+  if (!punch || !store) return null;
+  const valid = ({latitude,longitude}: Coordinates) =>
+    Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
+    Number.isFinite(longitude) && Math.abs(longitude) <= 180;
+  if (!valid(punch) || !valid(store)) return null;
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const latitudeDelta = radians(punch.latitude - store.latitude);
+  const longitudeDelta = radians(punch.longitude - store.longitude);
+  const haversine = Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(radians(punch.latitude)) * Math.cos(radians(store.latitude)) * Math.sin(longitudeDelta / 2) ** 2;
+  return Math.round(2 * 6371000 * Math.asin(Math.sqrt(Math.min(1,haversine))));
+}
+
 export function attendancePhotoMime(bytes: Buffer) {
   if (!bytes.length || bytes.length > 2 * 1024 * 1024) throw new AttendanceError('Ảnh chấm công tối đa 2 MB.');
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';
@@ -55,17 +108,51 @@ export async function recordAttendance(db: Database, user: SessionUser, action: 
   return { id: Number(opened.rows[0].id) };
 }
 
-export function attendanceLateMinutes(clockIn: string | Date, shiftStart: string | Date | null) {
-  if (!shiftStart) return null;
-  const difference = new Date(clockIn).getTime() - new Date(shiftStart).getTime();
+type AttendanceTime = string | Date | null | undefined;
+const morningShift = attendanceShift('G1')!;
+const eveningShift = attendanceShift('G3')!;
+export const SPLIT_SHIFT_MORNING_END = morningShift.end;
+
+function minutesAfter(later: AttendanceTime, earlier: AttendanceTime) {
+  if (!later || !earlier) return null;
+  const difference = new Date(later).getTime() - new Date(earlier).getTime();
   return Number.isFinite(difference) ? Math.max(0, Math.ceil(difference / 60000)) : null;
 }
-// Match the same staff and branch, including shifts crossing midnight.
-export const ATTENDANCE_SHIFT_JOIN = `LEFT JOIN LATERAL (
-  SELECT d.id,d.shift_name,d.starts_at,d.ends_at FROM himoto.store_duty_schedules d
-  WHERE d.staff_id=a.staff_id AND d.store_id=a.store_id AND d.deleted_at IS NULL AND d.starts_at IS NOT NULL AND d.ends_at IS NOT NULL
-    AND ((d.starts_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date=(a.clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
-      OR d.starts_at<=a.clock_in_at AND d.ends_at>a.clock_in_at)
-  ORDER BY CASE WHEN d.starts_at<=a.clock_in_at AND d.ends_at>a.clock_in_at THEN 0 ELSE 1 END,
-    abs(extract(epoch FROM d.starts_at-a.clock_in_at)),d.id LIMIT 1
-) duty ON true`;
+export function compareRegisteredAttendance(
+  registration: { work_date: string | null; shift_code: string | null } | undefined,
+  clockIn: AttendanceTime,
+  clockOut: AttendanceTime,
+) {
+  const shift = REGISTRATION_SHIFTS.find(option => option.code === registration?.shift_code);
+  const workDate = registration?.work_date;
+  const atWorkTime = (time: string | null | undefined) =>
+    workDate && time ? new Date(`${workDate}T${time}:00+07:00`).toISOString() : null;
+  let segment = shift;
+  const morningEnd = atWorkTime(SPLIT_SHIFT_MORNING_END);
+  if (shift?.code === 'G1+G3' && clockIn && morningEnd) {
+    segment = new Date(clockIn) < new Date(morningEnd) ? morningShift : eveningShift;
+  }
+  const scheduled_in = atWorkTime(segment?.start);
+  const scheduled_out = atWorkTime(segment?.end);
+  const lateMinutes = minutesAfter(clockIn, scheduled_in);
+  const earlyMinutes = minutesAfter(scheduled_out, clockOut);
+  const standardCredit = segment?.credit ?? null;
+  // A full unit represents 480 paid minutes, including for shifts with an unpaid break.
+  const earnedCredit = standardCredit === 0 ? 0
+    : standardCredit === null || lateMinutes === null || earlyMinutes === null ? null
+    : Math.max(0, standardCredit - (lateMinutes + earlyMinutes) / 480);
+  return {
+    shift_name: shift?.code ?? null,
+    scheduled_in,
+    scheduled_out,
+    late_minutes: lateMinutes,
+    early_leave_minutes: earlyMinutes,
+    standard_credit: standardCredit,
+    earned_credit: earnedCredit,
+  };
+}
+
+// Weekly registration has one entry per employee and work date.
+export const ATTENDANCE_SHIFT_JOIN = `LEFT JOIN himoto.staff_shift_registrations registration
+  ON registration.staff_id=a.staff_id
+  AND registration.work_date=(a.clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`;

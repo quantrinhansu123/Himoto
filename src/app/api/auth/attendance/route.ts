@@ -10,3 +10,5 @@ async function handle(request: NextRequest) {
 }
 export const GET = withAccessRequest(handle);
 export const POST = withAccessRequest(handle);
+export const PATCH = withAccessRequest(handle);
+export const DELETE = withAccessRequest(handle);

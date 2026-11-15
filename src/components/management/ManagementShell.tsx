@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { AlarmClock, ArrowLeft, BookOpen, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LayoutDashboard, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText, RotateCcw,Settings, UsersRound, Wallet, X } from 'lucide-react';
+import { AlarmClock, ArrowLeft, BookOpen, BatteryCharging, Bike, Building2, CalendarDays, ChevronDown, ChevronRight, ContactRound, FilePenLine, Files, History, House, KeyRound, LayoutDashboard, LogOut, MapPin,Menu, MessageCircle, PanelLeftClose, ReceiptText, RotateCcw,Settings, UsersRound, Wallet, X, type LucideIcon } from 'lucide-react';
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { ReloadButton, requestReload } from './ReloadButton';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
@@ -15,34 +15,48 @@ import { GpsSyncPulse } from './GpsSyncPulse';
 import { TableScrollDock } from './TableScrollDock';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 
-const navigation = [
-  {href:'/attendance',label:'Chấm công',kind:'attendance' as const,icon:AlarmClock},
-  {href:'/shift-reports',label:'Báo cáo cuối ca',kind:'shift-reports' as const,icon:ReceiptText},
-  {href:'/operations',label:'Thao tác nhanh',kind:'operations' as const,icon:House},
-  {href:'/dashboard',label:'Dashboard',kind:'dashboard' as const,icon:LayoutDashboard},
-  {href:'/staff-sales',label:'Báo cáo doanh thu',kind:'staff-sales' as const,icon:ReceiptText},
-  { href: '/staff', label: 'Nhân sự', kind: 'staff' as const, icon: UsersRound },
-  { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration' as const, icon: CalendarDays },
-  { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster' as const, icon: CalendarDays },
-  { href: '/customers', label: 'Khách hàng', kind: 'customers' as const, icon: ContactRound },
-  { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts' as const, icon: Files },
-  { href: '/contracts/drafts', label: 'Hợp đồng nháp', kind: 'contracts' as const, icon: FilePenLine },
-  { href: '/contracts/vat', label: 'Hợp đồng VAT', kind: 'contracts' as const, icon: ReceiptText },
-  { href: '/contracts/overdue', label: 'Hợp đồng quá hạn', kind: 'contracts' as const, icon: AlarmClock },
-  { href: '/contracts/due', label: 'Đến hạn đóng tiền', kind: 'contracts' as const, icon: CalendarDays },
-  { href: '/debt-reminders', label: 'Gửi nhắc nợ', kind: 'debt-reminders' as const, icon: MessageCircle },
-  { href: '/contracts/ownership', label: 'Hợp đồng thuê sở hữu', kind: 'contracts' as const, icon: KeyRound },
-  { href: '/contracts/battery', label: 'Hợp đồng thuê pin / sạc', kind: 'battery-contracts' as const, icon: BatteryCharging },
-  { href: '/contracts/types', label: 'Loại hợp đồng', kind: 'contract-types' as const, icon: Files },
-  { href: '/stores', label: 'Cơ sở', kind: 'stores' as const, icon: Building2 },
-  { href: '/vehicles', label: 'Danh sách xe', kind: 'vehicles' as const, icon: Bike },
-  { href: '/vehicles/transfers', label: 'Lịch sử luân chuyển', kind: 'vehicle-transfers' as const, icon: History },
-  { href: '/gps', label: 'Định vị GPS', kind: 'gps' as const, icon: MapPin },
-  { href: '/integrations', label: 'Tích hợp GPS & Telegram', kind: 'integrations' as const, icon: Settings },
-  { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook' as const, icon: Wallet },
-  { href: '/accounts', label: 'Tài khoản & Phân quyền', kind: 'accounts' as const, icon: UsersRound },
-  { href: '/huong-dan', label: 'Hướng dẫn sử dụng', kind: 'help' as const, icon: BookOpen },
+type NavLink = { href: string; label: string; kind: string; icon: LucideIcon };
+type NavGroup = { id: string; label: string; icon: LucideIcon; links: NavLink[] };
+const navigation: (NavLink | NavGroup)[] = [
+  { href: '/operations', label: 'Thao tác nhanh', kind: 'operations', icon: House },
+  { href: '/dashboard', label: 'Dashboard', kind: 'dashboard', icon: LayoutDashboard },
+  { id: 'contracts', label: 'Hợp đồng', icon: Files, links: [
+    { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts', icon: Files },
+    { href: '/contracts/drafts', label: 'Hợp đồng nháp', kind: 'contracts', icon: FilePenLine },
+    { href: '/contracts/vat', label: 'Hợp đồng VAT', kind: 'contracts', icon: ReceiptText },
+    { href: '/contracts/overdue', label: 'Hợp đồng quá hạn', kind: 'contracts', icon: AlarmClock },
+    { href: '/contracts/due', label: 'Đến hạn đóng tiền', kind: 'contracts', icon: CalendarDays },
+    { href: '/contracts/ownership', label: 'Hợp đồng thuê sở hữu', kind: 'contracts', icon: KeyRound },
+    { href: '/contracts/battery', label: 'Hợp đồng thuê pin / sạc', kind: 'battery-contracts', icon: BatteryCharging },
+    { href: '/contracts/types', label: 'Loại hợp đồng', kind: 'contract-types', icon: Files },
+  ] },
+  { id: 'hr', label: 'HCNS', icon: UsersRound, links: [
+    { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock },
+    { href: '/attendance/history', label: 'Lịch sử chấm công', kind: 'attendance', icon: History },
+    { href: '/staff', label: 'Nhân sự', kind: 'staff', icon: UsersRound },
+    { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
+    { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster', icon: CalendarDays },
+  ] },
+  { id: 'finance', label: 'Kế toán', icon: Wallet, links: [
+    { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook', icon: Wallet },
+    { href: '/staff-sales', label: 'Báo cáo doanh thu', kind: 'staff-sales', icon: ReceiptText },
+    { href: '/shift-reports', label: 'Báo cáo cuối ca', kind: 'shift-reports', icon: ReceiptText },
+    { href: '/debt-reminders', label: 'Gửi nhắc nợ', kind: 'debt-reminders', icon: MessageCircle },
+  ] },
+  { id: 'operations', label: 'Vận hành', icon: Building2, links: [
+    { href: '/customers', label: 'Khách hàng', kind: 'customers', icon: ContactRound },
+    { href: '/stores', label: 'Cơ sở', kind: 'stores', icon: Building2 },
+    { href: '/vehicles', label: 'Danh sách xe', kind: 'vehicles', icon: Bike },
+    { href: '/vehicles/transfers', label: 'Lịch sử luân chuyển', kind: 'vehicle-transfers', icon: History },
+    { href: '/gps', label: 'Định vị GPS', kind: 'gps', icon: MapPin },
+  ] },
+  { id: 'system', label: 'Hệ thống', icon: Settings, links: [
+    { href: '/integrations', label: 'Tích hợp GPS & Telegram', kind: 'integrations', icon: Settings },
+    { href: '/accounts', label: 'Tài khoản & Phân quyền', kind: 'accounts', icon: UsersRound },
+    { href: '/huong-dan', label: 'Hướng dẫn sử dụng', kind: 'help', icon: BookOpen },
+  ] },
 ];
+const navLinks = navigation.flatMap(item => 'links' in item ? item.links : [item]);
 // Store reads follow contract access; store mutations still require settings.write.
 const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'||kind==='shift-registration'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
@@ -50,8 +64,14 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();
   const pathname = usePathname();
   const router = useRouter();
-  const active = navigation.find(n => pathname === n.href) || navigation.find(n => n.kind === 'vehicles')!;
-  const visibleNavigation=navigation.filter(item=>(navigationPermission(item.kind)===null||hasPermission(user,navigationPermission(item.kind)!)));
+  const currentLink = navLinks.find(item => pathname === item.href);
+  const active = currentLink ?? navLinks.find(item => item.kind === 'vehicles')!;
+  const activeGroup = navigation.find((item): item is NavGroup =>
+    'links' in item && item.links.includes(active));
+  const visibleNavigation = navLinks.filter(item => {
+    const permission = navigationPermission(item.kind);
+    return permission === null || hasPermission(user, permission);
+  });
   const homeHref=visibleNavigation.find(item=>item.href==='/operations')?.href||visibleNavigation[0]?.href||'/login';
   const pageAllowed=navigationPermission(active.kind)===null||hasPermission(user,navigationPermission(active.kind)!);
   const writableCustomers = source === 'api' && active.kind === 'customers';
@@ -65,6 +85,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const integrationPage = active.kind === 'integrations';
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [groupExpansion, setGroupExpansion] = useState<{ pathname: string; groups: Record<string, boolean> }>();
   const mobileRef = useRef<HTMLDialogElement>(null);
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -120,7 +141,19 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     return () => document.removeEventListener('click', close);
   }, []);
 
-  const navContent = () => <>
+  const renderNavLink = (item: NavLink, iconsOnly: boolean) => (
+    <Link key={item.href} href={item.href}
+      className={`mg-nav-link ${active.href === item.href ? 'is-active' : ''}`}
+      aria-current={active.href === item.href ? 'page' : undefined}
+      aria-label={iconsOnly ? item.label : undefined} title={iconsOnly ? item.label : undefined}
+      onClick={() => setMobileOpen(false)}>
+      <item.icon size={19} strokeWidth={1.8} /><span>{item.label}</span>
+      {active.href === item.href && <ChevronRight className="mg-nav-arrow" size={15} />}
+    </Link>
+  );
+  const navContent = (surface: 'desktop' | 'mobile') => {
+    const iconsOnly = surface === 'desktop' && collapsed;
+    return <>
     <Link href="/vehicles" className="mg-brand" aria-label="HIMOTO - Danh sách xe" onClick={() => setMobileOpen(false)}>
       {/* Existing brand asset, kept in its original proportions. */}
       <img src="/images/branding/logo-himoto-dark.svg" width="154" height="32" alt="HIMOTO" />
@@ -128,26 +161,46 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     </Link>
     <div className="mg-workspace"><span className="mg-workspace-symbol"><Building2 size={19} /></span><div><strong>HIMOTO Workspace</strong><small>Quản lý vận hành</small></div></div>
     <p className="mg-nav-caption">DANH MỤC QUẢN LÝ</p>
-    <nav aria-label="Điều hướng quản lý">{visibleNavigation.map(item => <Link key={item.href} href={item.href}
-      className={`mg-nav-link ${active.href === item.href ? 'is-active' : ''}`} aria-current={active.href === item.href ? 'page' : undefined}
-      title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>
-      <item.icon size={19} strokeWidth={1.8} /><span>{item.label}</span>{active.href === item.href && <ChevronRight className="mg-nav-arrow" size={15} />}
-    </Link>)}</nav>
+    <nav aria-label="Điều hướng quản lý">{navigation.map(item => {
+      if (!('links' in item)) return visibleNavigation.includes(item) ? renderNavLink(item, iconsOnly) : null;
+      const links = item.links.filter(link => visibleNavigation.includes(link));
+      if (!links.length) return null;
+      const containsActive = links.includes(active);
+      const groups = groupExpansion?.pathname === pathname ? groupExpansion.groups : {};
+      const expanded = !iconsOnly && (groups[item.id] ?? containsActive);
+      const listId = `management-nav-${surface}-${item.id}`;
+      return <div key={item.id} className="mg-nav-section">
+        <button type="button" className={`mg-nav-link mg-nav-section-toggle ${containsActive ? 'has-active-link' : ''}`}
+          aria-expanded={expanded} aria-controls={listId}
+          aria-label={iconsOnly ? item.label : undefined} title={iconsOnly ? item.label : undefined}
+          onClick={() => {
+            if (iconsOnly) setCollapsed(false);
+            setGroupExpansion({ pathname, groups: { ...groups, [item.id]: !expanded } });
+          }}>
+          <item.icon size={19} strokeWidth={1.8} /><span>{item.label}</span>
+          <ChevronDown className="mg-nav-arrow" size={15} />
+        </button>
+        <div id={listId} className="mg-nav-section-links" hidden={!expanded}>
+          {links.map(link => renderNavLink(link, false))}
+        </div>
+      </div>;
+    })}</nav>
   </>;
+  };
 
   return <div className={`mg-app ${collapsed ? 'mg-is-collapsed' : ''}`}>
     <GpsSyncPulse/>
     <TableScrollDock/>
     <a href="#management-main" className="mg-skip">Đến nội dung chính</a>
-    <aside className="mg-sidebar">{navContent()}</aside>
+    <aside className="mg-sidebar">{navContent('desktop')}</aside>
     <dialog ref={mobileRef} className="mg-mobile-nav" aria-label="Menu điều hướng" onCancel={event => { event.preventDefault(); setMobileOpen(false); }}>
-      <button type="button" className="mg-icon-button mg-mobile-close" aria-label="Đóng menu" onClick={() => setMobileOpen(false)}><X size={20} /></button>{navContent()}
+      <button type="button" className="mg-icon-button mg-mobile-close" aria-label="Đóng menu" onClick={() => setMobileOpen(false)}><X size={20} /></button>{navContent('mobile')}
     </dialog>
     <div className="mg-main">
       <header className="mg-topbar">
         <div className="mg-breadcrumb"><button type="button" className="mg-icon-button mg-desktop-toggle" aria-label={collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'} onClick={() => setCollapsed(!collapsed)}><PanelLeftClose size={19} /></button>
           <button type="button" className="mg-icon-button mg-mobile-toggle" aria-label="Mở menu" onClick={() => setMobileOpen(true)}><Menu size={21} /></button>
-          <span>Quản lý</span><ChevronRight size={14} /><strong>{active.label}</strong></div>
+          <span>Quản lý</span><ChevronRight size={14} />{activeGroup && <><span>{activeGroup.label}</span><ChevronRight size={14} /></>}<strong>{active.label}</strong></div>
         <div className="mg-topbar-right"><ReloadButton name="Làm mới dữ liệu" busy={refreshing} onClick={() => { requestReload(); void reload(); router.refresh(); }} />
           <label className="mg-branch-select"><Building2 size={16} /><span className="mg-sr-only">Cơ sở đang xem</span><select aria-label="Cơ sở đang xem" value={selectedStore} onChange={event => selectStore(event.target.value)}>
           {(user?.scope_all||active.kind==='customers'||active.kind==='vehicles'||active.kind==='vehicle-transfers'||active.kind==='gps')&&<option value="all">Tất cả cơ sở</option>}{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>

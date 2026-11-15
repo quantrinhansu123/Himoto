@@ -2,19 +2,46 @@ const assert = require('node:assert/strict'), path = require('node:path');
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
 const {load,root} = require('./lib/load-typescript.cjs');
 const {ownerDatabase} = load(path.join(root,'lib/server/himoto-database'));
-const {ATTENDANCE_SHIFT_JOIN,attendanceLateMinutes,recordAttendance,parseAttendanceLocation,attendancePhotoMime,attendanceScope} = load(path.join(root,'lib/server/attendance'));
+const {ATTENDANCE_SHIFT_JOIN,compareRegisteredAttendance,recordAttendance,manageAttendance,parseAttendanceLocation,attendanceDistanceMeters,attendancePhotoMime,attendanceScope} = load(path.join(root,'lib/server/attendance'));
 const {requestPermission} = load(path.join(root,'lib/server/access-request'));
 async function main() {
   const location = parseAttendanceLocation(JSON.stringify({latitude:21.03,longitude:105.85,accuracy:15,timestamp:Date.now()}));
+  assert.equal(attendanceDistanceMeters(location,location),0);
+  assert.equal(attendanceDistanceMeters({latitude:0,longitude:0.01},{latitude:0,longitude:0}),1112);
+  assert.equal(attendanceDistanceMeters(location,null),null);
   assert.throws(()=>parseAttendanceLocation(JSON.stringify({...location,latitude:91})));
   assert.throws(()=>parseAttendanceLocation(JSON.stringify({...location,timestamp:Date.now()-600000})));
   assert.throws(()=>attendancePhotoMime(Buffer.from('not an image')));
   assert.equal(requestPermission('/api/auth/attendance','POST'),null);
   assert.equal(attendanceScope({id:1,access_role:'branch_staff',store_id:2}).reviewer,false);
   assert.deepEqual(attendanceScope({id:1,access_role:'branch_manager',permissions:['hr.read'],store_id:2}),{reviewer:true,all:false,store:2});
-  assert.equal(attendanceLateMinutes('2026-11-05T08:07:01+07:00','2026-11-05T08:00:00+07:00'),8);
-  assert.equal(attendanceLateMinutes('2026-11-05T07:55:00+07:00','2026-11-05T08:00:00+07:00'),0);
-  assert.equal(attendanceLateMinutes('2026-11-05T08:00:00+07:00',null),null);
+  const compare = (code, clockIn, clockOut) => compareRegisteredAttendance(
+    {work_date:'2026-11-05',shift_code:code}, clockIn, clockOut,
+  );
+  const lateAndEarly = compare('S','2026-11-05T08:07:01+07:00','2026-11-05T16:45+07:00');
+  assert.equal(lateAndEarly.late_minutes,8);
+  assert.equal(lateAndEarly.early_leave_minutes,15);
+  assert.equal(lateAndEarly.earned_credit,1-23/480);
+  const fullShift = compare('S','2026-11-05T07:55+07:00','2026-11-05T17:00+07:00');
+  assert.equal(fullShift.late_minutes,0);
+  assert.equal(fullShift.early_leave_minutes,0);
+  assert.equal(fullShift.earned_credit,1);
+  assert.equal(compare('S','2026-11-05T08:00+07:00',null).early_leave_minutes,null);
+  assert.equal(compare('S','2026-11-05T08:00+07:00',null).earned_credit,null);
+  assert.equal(compare('S','2026-11-05T16:00+07:00','2026-11-05T16:00+07:00').earned_credit,0);
+  assert.equal(compare('G1','2026-11-05T08:30+07:00','2026-11-05T11:30+07:00').earned_credit,0.375);
+  assert.equal(compare('F','2026-11-05T08:00+07:00','2026-11-05T21:00+07:00').earned_credit,1.5);
+  for (const code of [null,'O']) {
+    const ungraded = compare(code,'2026-11-05T08:07+07:00','2026-11-05T16:45+07:00');
+    assert.equal(ungraded.late_minutes,null);
+    assert.equal(ungraded.early_leave_minutes,null);
+    assert.equal(ungraded.earned_credit,code==='O'?0:null);
+  }
+  assert.equal(compare('G1+G3','2026-11-05T08:00+07:00','2026-11-05T11:55+07:00').early_leave_minutes,5);
+  const evening = compare('G1+G3','2026-11-05T17:03+07:00','2026-11-05T21:00+07:00');
+  assert.equal(evening.late_minutes,3);
+  assert.equal(evening.early_leave_minutes,0);
+  assert.equal(evening.earned_credit,0.5-3/480);
   const client=await ownerDatabase.connect();
   try {
     await client.query('BEGIN');
@@ -38,15 +65,33 @@ async function main() {
     await assert.rejects(recordAttendance(db,user,'out','44444444-4444-4444-8444-444444444444',photo,location),e=>e.status===409);
     const row=(await client.query('SELECT * FROM qa_attendance')).rows[0];
     assert(row.clock_out_at>=row.clock_in_at);assert.equal(row.staff_name,staff.full_name);assert(row.in_photo.equals(photo));assert(row.out_photo.equals(photo));
-    await client.query(`CREATE TEMP TABLE qa_attendance_duties(id bigint,staff_id bigint,store_id bigint,shift_name text,starts_at timestamptz,ends_at timestamptz,deleted_at timestamptz) ON COMMIT DROP;
-      INSERT INTO qa_attendance_duties VALUES(1,900001,2,'Ca đêm','2026-11-04T22:00+07','2026-11-05T06:00+07',NULL),(2,900001,2,'Ca ngày','2026-11-05T08:00+07','2026-11-05T17:00+07',NULL),(3,900001,99,'Khác cơ sở','2026-11-05T00:00+07','2026-11-05T23:00+07',NULL);`);
-    const shiftJoin=ATTENDANCE_SHIFT_JOIN.replaceAll('himoto.store_duty_schedules','pg_temp.qa_attendance_duties');
-    const match=async time=>(await client.query(`SELECT duty.* FROM (SELECT 900001::bigint AS staff_id,2::bigint AS store_id,$1::timestamptz AS clock_in_at) a ${shiftJoin}`,[time])).rows[0];
-    assert.equal((await match('2026-11-05T01:00+07')).shift_name,'Ca đêm');
-    assert.equal((await match('2026-11-05T08:07+07')).shift_name,'Ca ngày');
+    await client.query(`CREATE TEMP TABLE qa_attendance_registrations (LIKE himoto.staff_shift_registrations INCLUDING ALL) ON COMMIT DROP;
+      INSERT INTO qa_attendance_registrations(staff_id,store_id,work_date,shift_code,created_by,updated_by)
+      VALUES (900001,2,'2026-11-04','G3',900001,900001),(900001,2,'2026-11-05','S',900001,900001),(900002,2,'2026-11-06','G2',900001,900001);`);
+    const shiftJoin=ATTENDANCE_SHIFT_JOIN.replace('himoto.staff_shift_registrations','pg_temp.qa_attendance_registrations');
+    const match=async time=>(await client.query(`SELECT registration.shift_code FROM (SELECT 900001::bigint AS staff_id,$1::timestamptz AS clock_in_at) a ${shiftJoin}`,[time])).rows[0].shift_code;
+    assert.equal(await match('2026-11-04T16:59Z'),'G3');
+    assert.equal(await match('2026-11-04T17:00Z'),'S');
+    assert.equal(await match('2026-11-06T08:00+07'),null);
+    const manager = {...user,access_role:'branch_manager',permissions:['hr.read','hr.write']};
+    const hr = {...manager,access_role:'hr',scope_all:true};
+    const admin = {...user,access_role:'admin'};
+    const original = {id:first.id,original_in:row.clock_in_at.toISOString(),original_out:row.clock_out_at.toISOString()};
+    const correction = {...original,clock_in_at:new Date(row.clock_in_at.getTime()-60000).toISOString(),clock_out_at:original.original_out};
+    for (const nonAdmin of [user,manager,hr]) {
+      await assert.rejects(manageAttendance(db,nonAdmin,'DELETE',original),e=>e.status===403);
+      await assert.rejects(manageAttendance(db,nonAdmin,'PATCH',correction),e=>e.status===403);
+    }
+    await manageAttendance(db,admin,'PATCH',correction);
+    const revised = (await client.query('SELECT * FROM qa_attendance WHERE id=$1',[first.id])).rows[0];
+    assert.equal(revised.clock_in_at.toISOString(),correction.clock_in_at);
+    assert(revised.in_photo.equals(photo));
+    await assert.rejects(manageAttendance(db,admin,'DELETE',original),e=>e.status===409);
+    await manageAttendance(db,admin,'DELETE',{...original,original_in:correction.clock_in_at});
+    assert.equal((await client.query('SELECT id FROM qa_attendance WHERE id=$1',[first.id])).rowCount,0);
     linked=false;
     await assert.rejects(recordAttendance(db,user,'in','55555555-5555-4555-8555-555555555555',photo,location),e=>e.status===409);
-    console.log('PASS: linked identity, in/out pairing, repeat-request safety, double in/out rejection, server timestamps, photos/GPS validation and HR scope. Real attendance writes: 0 (TEMP only).');
+    console.log('PASS: in/out pairing, request safety, shift matching, scoped reads and admin-only edits/deletes. Real attendance writes: 0 (TEMP only).');
   } finally {await client.query('ROLLBACK');client.release();await globalThis.himotoPool?.end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

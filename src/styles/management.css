@@ -254,6 +254,28 @@
 }
 .mg-nav-link.is-active > svg { color: var(--mg-brand-700); }
 .mg-nav-arrow { margin-left: auto; color: var(--mg-brand-700); }
+.mg-nav-section-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.mg-nav-section-toggle.has-active-link { color: var(--mg-brand-800) !important; }
+.mg-nav-section-toggle.has-active-link > svg { color: var(--mg-brand-700); }
+.mg-nav-section-toggle[aria-expanded="true"] .mg-nav-arrow { transform: rotate(180deg); }
+.mg-nav-section-links:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 20px;
+  padding-left: 7px;
+  border-left: 1px solid var(--mg-line);
+}
+.mg-nav-section-links .mg-nav-link { min-height: 35px; padding: 6px 8px; gap: 7px; }
+.mg-nav-section-links .mg-nav-link > span { white-space: normal; }
+.mg-nav-section-links .mg-nav-link > svg { width: 16px; height: 16px; }
 
 .mg-sidebar-bottom {
   margin-top: auto;
@@ -4756,8 +4778,17 @@
 .mg-attendance-filters input { min-height:40px; min-width:0; border:1px solid #dce5ef; border-radius:7px; padding:6px 10px; font:inherit; }
 .mg-attendance-filters > span { margin-left:auto; color:#64748b; font-size:12px; padding-bottom:10px; }
 .mg-attendance-store,.mg-attendance-evidence small { display:block; color:#64748b; font-size:11px; margin-top:4px; }
-.mg-attendance-evidence { display:grid; gap:4px; font-size:12px; }
-.mg-attendance-evidence a { display:flex; align-items:center; gap:4px; color:#285f97; min-height:30px; }
+.mg-attendance-page a.mg-attendance-registration-link { color:#285f97; text-decoration:underline; text-underline-offset:2px; }
+.mg-attendance-evidence { display:grid; align-content:start; gap:8px; min-width:0; padding:12px; border:1px solid #e2e8f0; border-radius:10px; font-size:13px; }
+.mg-attendance-evidence h3 { margin:0; font-size:15px; }
+.mg-attendance-evidence time,.mg-attendance-evidence-empty { color:#64748b; }
+.mg-attendance-evidence a { display:inline-flex; align-items:center; gap:4px; color:#285f97; }
+.mg-attendance-evidence-photo { width:100%; overflow:hidden; border-radius:8px; background:#f1f5f9; }
+.mg-attendance-evidence-photo img { display:block; width:100%; height:auto; aspect-ratio:4/3; object-fit:contain; }
+.mg-attendance-evidence dl { display:grid; gap:4px; margin:0; }
+.mg-attendance-evidence dt { font-weight:600; margin-top:6px; }
+.mg-attendance-evidence dd { margin:0; overflow-wrap:anywhere; }
+.mg-attendance-evidence .mg-attendance-evidence-empty { margin:4px 0; }
 .mg-attendance-pagination { display:flex; justify-content:flex-end; align-items:center; gap:12px; padding:12px; font-size:12px; }
 .mg-attendance-capture video,.mg-attendance-capture img { display:block; width:100%; max-height:260px; object-fit:contain; border-radius:10px; background:#f1f5f9; margin:10px 0; }
 .mg-attendance-capture img { max-height:160px; }
@@ -4778,21 +4809,46 @@
 .mg-attendance-live-clock strong { font-size:28px; font-variant-numeric:tabular-nums; letter-spacing:1px; color:#285f97; }
 .mg-attendance-live-clock small,.mg-attendance-shift-label { color:#64748b; font-size:12px; }
 .mg-attendance-shift-label { margin:12px 0; padding:8px 10px; background:#f1f5f9; border-radius:7px; }
-.mg-attendance-time-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.mg-attendance-time-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:12px 0; }
 .mg-attendance-time-metrics div { padding:10px; border:1px solid #e6ecf3; border-radius:8px; }
 .mg-attendance-time-metrics dt { font-size:11px; color:#64748b; }
 .mg-attendance-time-metrics dd { margin:5px 0 0; font-size:16px; font-weight:600; }
+.mg-attendance-punch-actions {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  max-width:560px;
+  margin:16px auto 0;
+}
+.mg-attendance-punch-actions .mg-button {
+  min-width:0;
+  min-height:60px;
+  justify-content:center;
+  gap:9px;
+  border-radius:10px;
+  font-size:16px;
+  font-weight:700;
+}
+.mg-attendance-punch-actions .mg-button:enabled { background:#285f97; border-color:#285f97; color:#fff; }
+.mg-attendance-punch-actions .mg-button:enabled:hover { background:#1f4d7b; border-color:#1f4d7b; }
+.mg-attendance-punch-actions .mg-button:disabled { background:#f1f5f9; border-color:#dce5ef; color:#64748b; opacity:1; }
 .mg-attendance-page .is-late { color:#b45309; }
-.mg-attendance-evidence-pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:8px 0; }
+.mg-attendance-row-actions { display:flex; gap:4px; }
+.mg-attendance-row-actions .mg-button { min-height:30px; padding:4px 8px; white-space:nowrap; }
+.mg-attendance-edit-times { display:grid; gap:12px; }
+.mg-attendance-edit-times label { display:grid; gap:5px; }
+.mg-attendance-evidence-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:8px 0; }
+@media(max-width:560px) { .mg-attendance-evidence-pair { grid-template-columns:1fr; } }
 .mg-attendance-mobile-list { display:none; }
 .mg-attendance-page details summary { cursor:pointer; color:#526379; font-size:12px; padding:8px 0; }
 @media(max-width:767px) {
+ .mg-attendance-header-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; gap:8px; }
+ .mg-attendance-header-actions .mg-button { width:100%; min-width:0; min-height:44px; justify-content:center; text-align:center; }
+ .mg-attendance-register-action { grid-column:1/-1; }
  .mg-attendance-dashboard { padding:12px; }
  .mg-attendance-live-clock strong { font-size:24px; }
  .mg-attendance-time-metrics div { padding:8px; }
  .mg-attendance-time-metrics dd { font-size:14px; }
- .mg-attendance-dashboard > .mg-heading-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
- .mg-attendance-dashboard > .mg-heading-actions .mg-button { justify-content:center; }
  .mg-attendance-mobile-list { display:grid; gap:8px; padding:0 12px 12px; }
  .mg-attendance-desktop-table { display:none; }
  .mg-attendance-history-card { padding:10px 12px; border:1px solid #e2e8f0; border-radius:10px; }
