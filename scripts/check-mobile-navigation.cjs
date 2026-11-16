@@ -162,7 +162,9 @@ async function main() {
     list.props[callback](far); assert.equal(nextCalls, 0);
   }
   for (const callback of ['onScrollEndDrag', 'onMomentumScrollEnd']) list.props[callback](end);
-  assert.equal(nextCalls, 2);
+  assert.equal(nextCalls, 1);
+  list.props.onEndReached(); list.props.onScroll(end); assert.equal(nextCalls, 1, 'Native layout/edge events must not drain later pages without a new gesture');
+  list.props.onScrollBeginDrag(); list.props.onMomentumScrollEnd(end); assert.equal(nextCalls, 2);
   const loadMore = nodes(list.props.ListFooterComponent).find(n => n.props?.label === 'Tải thêm kết quả');
   assert(loadMore && !loadMore.props.disabled); loadMore.props.onPress(); assert.equal(nextCalls, 3);
   for (const blocked of [{ isFetching: true }, { isFetchNextPageError: true }, { hasNextPage: false }]) {
@@ -171,7 +173,7 @@ async function main() {
     list = nodes(tree).find(n => n.type === 'FlatList'); list.props.onMomentumScrollEnd(end);
     assert.equal(nextCalls, 3);
   }
-  checks.push('Native terminal scroll events retry end detection; an explicit load-more button recovers missed edge events, with fetching/error/end guards');
+  checks.push('Native terminal events load once per drag and cannot drain later pages after window trimming; explicit load-more recovers missed edges, with fetching/error/end guards');
   console.log(JSON.stringify({ passed: checks.length, checks, operationalWrites: 0, nativeScreenReaderCertified: false }, null, 2));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

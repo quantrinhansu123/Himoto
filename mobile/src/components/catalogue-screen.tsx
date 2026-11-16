@@ -253,6 +253,7 @@ export function CatalogueScreen({
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [actionRecord, setActionRecord] = useState<MobileRecord | null>(null);
   const list = useRef<FlatList<MobileRecord>>(null);
+  const nextPageGesture = useRef(true);
   const settings = { ...catalogueConfig[kind], ...(kind === "contracts" && scope ? { title: contractWorkspace(scope)!.title } : {}) };
   const allowed = session?.user.permissions.includes(`${kind}.read`);
   useEffect(() => {
@@ -260,6 +261,7 @@ export function CatalogueScreen({
     return () => clearTimeout(timer);
   }, [input]);
   useEffect(() => {
+    nextPageGesture.current = true;
     list.current?.scrollToOffset({ offset: 0, animated: false });
   }, [search, status, store, scope, from, to, storeBasis, customerId]);
   const query = useInfiniteQuery({
@@ -344,9 +346,14 @@ export function CatalogueScreen({
     setStoreBasis("source");
     setCustomerId("");
   }
-  function fetchMore() {
-    if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError)
+  function fetchMore(automatic = true) {
+    if (automatic && !nextPageGesture.current) return;
+    if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError) {
+      // Trimming a full page window can emit another native edge event without
+      // user movement. Consume one gesture so it cannot drain every later page.
+      nextPageGesture.current = false;
       void query.fetchNextPage({ cancelRefetch: false });
+    }
   }
   function checkListEnd({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }: NativeSyntheticEvent<NativeScrollEvent>) {
     if (contentSize.height > 0 && contentSize.height - contentOffset.y - layoutMeasurement.height <= layoutMeasurement.height * 0.4)
@@ -725,8 +732,9 @@ export function CatalogueScreen({
           />
         }
         onEndReachedThreshold={0.4}
-        onEndReached={fetchMore}
+        onEndReached={() => fetchMore()}
         scrollEventThrottle={100}
+        onScrollBeginDrag={() => { nextPageGesture.current = true; }}
         onScroll={checkListEnd}
         onScrollEndDrag={checkListEnd}
         onMomentumScrollEnd={checkListEnd}
@@ -790,7 +798,7 @@ export function CatalogueScreen({
             </View>
           ) : records.length > 0 && query.hasNextPage ? (
             <View style={{ paddingVertical: 16 }}>
-              <Button label="Tải thêm kết quả" secondary disabled={query.isFetching} onPress={fetchMore} />
+              <Button label="Tải thêm kết quả" secondary disabled={query.isFetching} onPress={() => fetchMore(false)} />
             </View>
           ) : records.length > 0 ? (
             <Text
