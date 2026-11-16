@@ -85,6 +85,7 @@ async function run(){
         CREATE POLICY management_scoped_gate ON himoto.gps_devices FOR SELECT TO himoto_scoped USING(true);
         ALTER TABLE himoto.management_gps_status_events ENABLE ROW LEVEL SECURITY;
       `);
+      await pg.exec("ALTER TABLE himoto.vehicles ADD COLUMN status text DEFAULT 'available'");
       await pg.exec('ALTER DEFAULT PRIVILEGES IN SCHEMA himoto GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO anon,authenticated');
       for(const sql of ['2026-10-28-fleet-gps-read.sql','2026-10-31-mobile-writes.sql','2026-11-03-mobile-gps-mappings.sql'])await pg.exec(fs.readFileSync(path.resolve(root,'../docs/sql',sql),'utf8'));
       for(const [id,vehicleId,state,availability] of [[1,101,'stopped',null],[2,101,'stopped',null],[3,102,'online',null],[4,104,'online','not_visible_in_account'],[5,105,'online',null],[6,106,'warning',null],[7,null,'stopped',null]]){

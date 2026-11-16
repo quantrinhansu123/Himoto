@@ -22,6 +22,7 @@ const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, '
   '@/theme': { useTheme: () => theme, statuses: { renting: 'Đang thuê', draft: 'Nháp' }, roles: {}, money: String, dateTime: String },
   '@/components/ui': components, './ui': components,
   '@/lib/catalogue-config': config, '../../../shared/mobile-contract-workspaces': workspaces,
+  '@/lib/catalogue-pages': loadDomain(path.join(root,'mobile/src/lib/catalogue-pages')),
   '../../../shared/mobile-backfill': loadDomain(path.join(root, 'shared/mobile-backfill')),
   '../../../shared/mobile-managed-accounts': loadDomain(path.join(root, 'shared/mobile-managed-accounts')),
   '../../../../shared/mobile-contract-workspaces': workspaces,

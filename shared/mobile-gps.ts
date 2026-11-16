@@ -7,6 +7,14 @@ export interface MobileGpsQuery {store:string;provider:'all'|'protrack'|'iopgps'
 export const defaultGpsQuery:MobileGpsQuery={store:'all',provider:'all',state:'all',search:'',page:1,event_source:'all',event_device:''};
 export interface MobileGpsRow extends GpsVehicle {displayState:MobileGpsState}
 export interface MobileGpsEvent {id:number;vehicleId:number|null;fromStatus:string|null;toStatus:string;kind:string;source:'poll'|'history'|'webhook';eventAt:string;observedAt:string;label:string}
+export type MobileGpsHistoryQuery=Pick<MobileGpsQuery,'store'|'event_source'|'event_device'>;
+export interface MobileGpsHistory {query:MobileGpsHistoryQuery;events:MobileGpsEvent[];observedAt:string}
+export interface MobileGpsEventOptions {store:string;devices:{id:number;label:string}[]}
+export interface MobileGpsSyncState {
+  inProgress:boolean;enabledAccounts:number;failedAccounts:number;
+  lastFinishedAt:string|null;latestSuccessAt:string|null;oldestSuccessAt:string|null;nextAttemptAt:string|null;
+}
+export interface MobileGpsSyncRequest {status:'queued'|'running'|'not_due'|'unconfigured';requestedAt:string;state:MobileGpsSyncState}
 export interface MobileGpsWorkspace {
   query:MobileGpsQuery;page:number;pageSize:25;total:number;hasMore:boolean;rows:MobileGpsRow[];
   summary:{fleet:number;unmapped:number;devices:number;states:Record<MobileGpsState,number>};
@@ -20,6 +28,30 @@ const text=(v:unknown):v is string=>typeof v==='string'&&v.length<=4000;
 const date=(v:unknown):v is string=>typeof v==='string'&&Number.isFinite(Date.parse(v));
 const nullableDate=(v:unknown)=>v===null||v===undefined||date(v);
 const nonnegative=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
+export function parseGpsHistoryQuery(params:URLSearchParams):MobileGpsHistoryQuery {
+  for(const [key]of params)if(!['store','event_source','event_device'].includes(key))throw Error('INVALID_GPS_QUERY');
+  const query=parseGpsQuery(params);
+  return {store:query.store,event_source:query.event_source,event_device:query.event_device};
+}
+export function isMobileGpsEvent(v:unknown):v is MobileGpsEvent {
+  return object(v)&&gpsId(v.id)&&(v.vehicleId===null||gpsId(v.vehicleId))&&(v.fromStatus===null||text(v.fromStatus))&&
+    text(v.toStatus)&&text(v.kind)&&['poll','history','webhook'].includes(String(v.source))&&date(v.eventAt)&&date(v.observedAt)&&text(v.label);
+}
+export function isMobileGpsHistory(v:unknown,expected:MobileGpsHistoryQuery):v is MobileGpsHistory {
+  return object(v)&&object(v.query)&&Object.keys(v.query).length===3&&
+    ['store','event_source','event_device'].every(k=>v.query&&object(v.query)&&v.query[k]===expected[k as keyof MobileGpsHistoryQuery])&&
+    date(v.observedAt)&&Array.isArray(v.events)&&v.events.length<=100&&v.events.every(isMobileGpsEvent)&&new Set(v.events.map(e=>e.id)).size===v.events.length;
+}
+export function isMobileGpsEventOptions(v:unknown,store:string):v is MobileGpsEventOptions {
+  return object(v)&&v.store===store&&Array.isArray(v.devices)&&v.devices.every(d=>object(d)&&gpsId(d.id)&&text(d.label))&&new Set(v.devices.map(d=>d.id)).size===v.devices.length;
+}
+export function isMobileGpsSyncState(v:unknown):v is MobileGpsSyncState {
+  return object(v)&&typeof v.inProgress==='boolean'&&nonnegative(v.enabledAccounts)&&nonnegative(v.failedAccounts)&&v.failedAccounts<=v.enabledAccounts&&
+    ['lastFinishedAt','latestSuccessAt','oldestSuccessAt','nextAttemptAt'].every(k=>v[k]===null||date(v[k]));
+}
+export function isMobileGpsSyncRequest(v:unknown):v is MobileGpsSyncRequest {
+  return object(v)&&['queued','running','not_due','unconfigured'].includes(String(v.status))&&date(v.requestedAt)&&isMobileGpsSyncState(v.state);
+}
 export function parseGpsQuery(params:URLSearchParams):MobileGpsQuery {
   const allowed=Object.keys(defaultGpsQuery);
   for(const [key] of params)if(!allowed.includes(key)||params.getAll(key).length!==1)throw Error('INVALID_GPS_QUERY');
@@ -63,8 +95,7 @@ export function isMobileGpsWorkspace(v:unknown,expected?:MobileGpsQuery):v is Mo
     !GPS_FILTER_STATES.filter(s=>s!=='all').every(s=>nonnegative((v.summary as {states:Record<string,unknown>}).states[s]))||
     !Array.isArray(v.stores)||!v.stores.every(s=>object(s)&&gpsId(s.id)&&text(s.name))||new Set(v.stores.map(s=>s.id)).size!==v.stores.length||
     !Array.isArray(v.eventDevices)||!v.eventDevices.every(s=>object(s)&&gpsId(s.id)&&text(s.label))||new Set(v.eventDevices.map(s=>s.id)).size!==v.eventDevices.length||
-    !Array.isArray(v.events)||v.events.length>100||!v.events.every(e=>object(e)&&gpsId(e.id)&&(e.vehicleId===null||gpsId(e.vehicleId))&&
-      (e.fromStatus===null||text(e.fromStatus))&&text(e.toStatus)&&text(e.kind)&&['poll','history','webhook'].includes(String(e.source))&&date(e.eventAt)&&date(e.observedAt)&&text(e.label))||
+    !Array.isArray(v.events)||v.events.length>100||!v.events.every(isMobileGpsEvent)||
     new Set(v.events.map(e=>e.id)).size!==v.events.length||typeof v.canMap!=='boolean'||!date(v.observedAt))return false;
   const observed=Date.parse(v.observedAt),search=query.search.toLowerCase();
   return v.rows.every(r=>{

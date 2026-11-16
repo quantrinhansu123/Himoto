@@ -72,7 +72,7 @@ import { isStaffProfile, isStaffOptions, isStaffWriteResult, isStaffResult, type
 import { isCashbookPage, isCashbookAccount, isCashbookAccounts, isCashbookTransactions, isCashbookAccountResult, type MobileCashbookPage, type MobileCashbookAccount, type MobileCashbookAccounts, type MobileCashbookTransactions, type MobileCashbookAccountResult, type CashbookAccountKind, type CashbookAccountInput } from "../../../shared/mobile-cashbook";
 import { isStoreProfile, isStoreResult, isStoreManagers, type MobileStoreProfile, type MobileStoreResult, type MobileStoreManagers, type StoreCreation, type StoreEdits } from "../../../shared/mobile-stores";
 import { isDutyRoster, isDutyResult, type MobileDutyInput, type MobileDutyRoster, type MobileDutyResult } from "../../../shared/mobile-duty-roster";
-import {isMobileGpsWorkspace,gpsQueryString,type MobileGpsQuery,type MobileGpsWorkspace} from '../../../shared/mobile-gps';
+import {isMobileGpsWorkspace,gpsQueryString,isMobileGpsHistory,isMobileGpsEventOptions,isMobileGpsSyncState,isMobileGpsSyncRequest,type MobileGpsQuery,type MobileGpsWorkspace,type MobileGpsHistoryQuery,type MobileGpsHistory,type MobileGpsEventOptions,type MobileGpsSyncState,type MobileGpsSyncRequest} from '../../../shared/mobile-gps';
 import {isMobilePlateOcr,isMobilePlateMatch,type MobilePlateOcr,type MobilePlateMatch} from '../../../shared/mobile-plate-ocr';
 import {isMediaDeleteReceipt,type MobileMediaDeleteReceipt} from '../../../shared/mobile-media-delete';
 import {isCustomerPhotoCopyReview,isCustomerPhotoCopyReceipt,type MobileCustomerPhotoCopyReview,type MobileCustomerPhotoCopyReceipt} from '../../../shared/mobile-customer-photo-copy';
@@ -390,6 +390,11 @@ export function createApi(
       {method:'POST',body:bytes,headers:{'Content-Type':'image/jpeg','X-Photo-Kind':'plate','X-Ocr-Request':key},signal},45000),
     plateLookup:(license:string,signal?:AbortSignal)=>request<MobilePlateMatch>(`/drafts/plate-lookup?${new URLSearchParams({license})}`,(v):v is MobilePlateMatch=>isMobilePlateMatch(v,license),{signal}),
     gps:(query:MobileGpsQuery,signal?:AbortSignal)=>request<MobileGpsWorkspace>(`/gps?${gpsQueryString(query)}`,(v):v is MobileGpsWorkspace=>isMobileGpsWorkspace(v,query),{signal}),
+    gpsDevices:(query:MobileGpsQuery,signal?:AbortSignal)=>request<MobileGpsWorkspace>(`/gps/devices?${gpsQueryString(query)}`,(v):v is MobileGpsWorkspace=>isMobileGpsWorkspace(v,query)&&v.events.length===0&&v.eventDevices.length===0,{signal}),
+    gpsHistory:(query:MobileGpsHistoryQuery,signal?:AbortSignal)=>request<MobileGpsHistory>(`/gps/history?${new URLSearchParams(query)}`,(v):v is MobileGpsHistory=>isMobileGpsHistory(v,query),{signal}),
+    gpsEventOptions:(store:string,signal?:AbortSignal)=>request<MobileGpsEventOptions>(`/gps/event-options?${new URLSearchParams({store})}`,(v):v is MobileGpsEventOptions=>isMobileGpsEventOptions(v,store),{signal}),
+    gpsSyncState:(signal?:AbortSignal)=>request<MobileGpsSyncState>('/gps/sync-state',isMobileGpsSyncState,{signal},10000),
+    requestGpsRefresh:()=>request<MobileGpsSyncRequest>('/gps/refresh',isMobileGpsSyncRequest,{method:'POST',headers:{Prefer:'respond-async'}},10000),
     refreshGps:()=>request<{synced:true;observedAt:string}>('/gps/refresh',(v):v is {synced:true;observedAt:string}=>!!v&&typeof v==='object'&&'synced' in v&&v.synced===true&&'observedAt' in v&&typeof v.observedAt==='string'&&Number.isFinite(Date.parse(v.observedAt)),{method:'POST'},65000),
     gpsMapping:(id:string,signal?:AbortSignal)=>request<MobileGpsMappingPreparation>(`/gps/devices/${encodeURIComponent(id)}/mapping`,(v):v is MobileGpsMappingPreparation=>isGpsMappingPreparation(v)&&String(v.device.id)===id,{signal}),
     gpsMappingCandidates:(id:string,search:string,page:number,signal?:AbortSignal)=>request<MobileGpsMappingCandidates>(`/gps/devices/${encodeURIComponent(id)}/candidates?${new URLSearchParams({search,page:String(page)})}`,

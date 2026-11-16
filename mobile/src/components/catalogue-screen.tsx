@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { cataloguePageWindow, CATALOGUE_MAX_PAGES } from '@/lib/catalogue-pages';
 import { router, Stack } from "expo-router";
 import {
   ActivityIndicator,
@@ -275,8 +276,7 @@ export function CatalogueScreen({
         }).toString(),
         signal,
       ),
-    getNextPageParam: (last) =>
-      last.page < last.pages ? last.page + 1 : undefined,
+    ...cataloguePageWindow,
     enabled: !!api && !!allowed && datesValid,
     staleTime: 30_000,
     gcTime: 300_000,
@@ -701,6 +701,7 @@ export function CatalogueScreen({
         windowSize={5}
         removeClippedSubviews={Platform.OS === 'android'}
         updateCellsBatchingPeriod={32}
+        maintainVisibleContentPosition={Platform.OS!=='web'&&(query.data?.pages.length||0)>=CATALOGUE_MAX_PAGES?{minIndexForVisible:1}:undefined}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'}
@@ -738,7 +739,10 @@ export function CatalogueScreen({
                 }}
               />
             </View>
-          ) : null}</>
+          ) : null}{query.hasPreviousPage&&<View style={{gap:10,paddingVertical:12}}>
+            <Button label="Xem kết quả trước" secondary loading={query.isFetchingPreviousPage} disabled={query.isFetching&&!query.isFetchingPreviousPage} onPress={()=>{void query.fetchPreviousPage({cancelRefetch:false});}}/>
+            {query.isFetchPreviousPageError&&<InlineError message="Chưa tải được kết quả trước. Các hồ sơ đang xem vẫn được giữ."/>}
+          </View>}</>
         }
         ListEmptyComponent={
           !datesValid ? <StateView title="Kiểm tra khoảng ngày" message="Chọn ngày kết thúc từ ngày bắt đầu trở đi." /> : query.isPending ? (
@@ -792,7 +796,7 @@ export function CatalogueScreen({
             >
               {query.hasNextPage
                 ? "Cuộn để xem thêm"
-                : "Đã hiển thị hết kết quả"}
+                : "Đã đến cuối kết quả"}
             </Text>
           ) : undefined
         }

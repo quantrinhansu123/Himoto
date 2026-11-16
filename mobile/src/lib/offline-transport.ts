@@ -8,10 +8,6 @@ export interface OfflineTransport {
 }
 export function createOfflineTransport(store: OfflineStore, scope: string, active: () => boolean | Promise<boolean>): OfflineTransport {
   let lastFailedAt = 0;
-  offlineStatus.subscribe(() => {
-    if (!offlineStatus.get().connected && lastFailedAt === 0) lastFailedAt = Date.now();
-    else if (offlineStatus.get().connected) lastFailedAt = 0;
-  });
   return {
     async execute<T>(path: string, validate: (value: unknown) => value is T, options: RequestInit, send: () => Promise<T>, timeout: number) {
       const method = options.method || 'GET', readable = cacheableRead(path, method);
@@ -20,6 +16,10 @@ export function createOfflineTransport(store: OfflineStore, scope: string, activ
       const resolveKey = /^\/write-requests\/([0-9a-f-]+)\/resolve$/.exec(path)?.[1];
       if (!await active()) throw new ApiError('Phiên làm việc đã thay đổi.', 401, 'SESSION_CHANGED');
       if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      // Read connectivity when executing. A transport can be replaced during
+      // session restoration; retaining a global listener would leak every copy.
+      if (offlineStatus.get().connected) lastFailedAt = 0;
+      else if (lastFailedAt === 0) lastFailedAt = Date.now();
       if (resolveKey) await store.pause(scope, resolveKey);
       const queued = operation && key && typeof options.body === 'string'
         ? await store.enqueue(scope, key, path, method, options.body, timeout + 30000) : null;
@@ -41,6 +41,7 @@ export function createOfflineTransport(store: OfflineStore, scope: string, activ
         if (key && !resolveKey) await store.clearCache(scope).catch(() => {});
         return data;
       } catch (error) {
+        if(readable&&error instanceof ApiError&&[401,403,404].includes(error.status))await store.invalidateRead(scope,path).catch(()=>{});
         const network = error instanceof ApiError && !['INVALID_RESPONSE', 'CONFIGURATION', 'SESSION_CHANGED'].includes(error.code) && (error.status === 0 || error.status >= 500 || error.status === 429);
         if (queued) await store.failed(scope, queued.key, (error as Error).message, network, queued.attempts);
         if (!await active() || options.signal?.aborted) throw error;

@@ -15,6 +15,7 @@ import {gpsMappingOperation,type MobileGpsMappingVehicle,type MobileGpsMappingRe
 export default function GpsMappingScreen() {
   const {id:raw}=useLocalSearchParams<{id:string}>(),id=typeof raw==='string'?raw:'',{api,session}=useSession(),theme=useTheme(),cache=useQueryClient();
   const operation=gpsMappingOperation(Number(id));
+  const invalidateGps=()=>cache.invalidateQueries({predicate:q=>['gps','gps-devices','gps-history','gps-event-options'].includes(String(q.queryKey[0]))});
   const scroll=useRef<ScrollViewInstance>(null),reducedMotion=useReducedMotion();
   const scope=useMemo(()=>api&&session?{origin:api.origin,userId:session.user.id,storeId:session.user.allStores?null:session.user.storeId,allStores:session.user.allStores}:null,[api,session]);
   const epoch=useRef({generation:0}),running=useRef(false);
@@ -40,7 +41,7 @@ export default function GpsMappingScreen() {
       if(!active(version))return;setPending(reserved.key);
       if(!reserved.created){const result=await api.gpsMappingReceipt(reserved.key);if(active(version)){setReceipt(result.receipt);setNotice('Có mã ghép GPS cần đối chiếu trước khi tiếp tục.');}return;}
       const result=await api.saveGpsMapping(id,{snapshot:preparation.snapshot,vehicleId:selected?.id??null,vehicleRevision:selected?.revision??null},reserved.key);
-      if(active(version)){setReceipt(result);void cache.invalidateQueries({queryKey:['gps']});}
+      if(active(version)){setReceipt(result);void invalidateGps();}
     }catch(cause){if(active(version))setError((cause as Error).message);}
     finally{running.current=false;if(active(version))setBusy(false);}
   }
@@ -51,7 +52,7 @@ export default function GpsMappingScreen() {
       if(result.status==='committed'){
         const found=await api.gpsMappingReceipt(key);if(!active(version))return;
         if(!found.receipt||String(found.receipt.id)!==id)throw Error('Chưa tải được kết quả gốc. Giữ mã để đối chiếu.');
-        setReceipt(found.receipt);void cache.invalidateQueries({queryKey:['gps']});
+        setReceipt(found.receipt);void invalidateGps();
       }else{
         await pendingWrites.complete(scope,operation,key);if(!active(version))return;
         setPending(null);setSelection(undefined);setNotice('Đã xác nhận chưa ghép và khóa mã cũ. Tải lại thiết bị trước khi tiếp tục.');await context.refetch();
@@ -61,7 +62,7 @@ export default function GpsMappingScreen() {
   }
   async function acknowledge() {
     if(!scope||!key||!proof||running.current)return;const version=epoch.current.generation;running.current=true;setBusy(true);setError('');
-    try{await pendingWrites.complete(scope,operation,key);if(active(version)){void cache.invalidateQueries({queryKey:['gps']});router.dismissTo('/gps');}}
+    try{await pendingWrites.complete(scope,operation,key);if(active(version)){void invalidateGps();router.dismissTo('/gps');}}
     catch(cause){if(active(version))setError((cause as Error).message);}
     finally{running.current=false;if(active(version))setBusy(false);}
   }
