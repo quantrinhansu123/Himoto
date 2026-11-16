@@ -52,6 +52,7 @@
     "test:login": "node scripts/check-management-login.cjs",
     "test:account-scope": "node scripts/check-account-scope.cjs",
     "test:scoped-pool": "node scripts/check-scoped-pool.cjs",
+    "test:scoped-performance": "node scripts/check-scoped-read-performance-postgres.cjs && node scripts/check-customer-pagination-postgres.cjs",
     "test:sepay": "node scripts/check-sepay.cjs",
     "test:debt-reminders": "node scripts/check-debt-reminders.cjs",
     "test:gps-contract-integrations": "node scripts/check-gps-contract-integrations.cjs",
