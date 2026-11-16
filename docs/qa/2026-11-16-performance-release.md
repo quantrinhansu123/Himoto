@@ -1,5 +1,7 @@
 # Hoàn thiện hiệu năng và thông báo — 16/11/2026
 
+**Cập nhật sau phát hành:** [rà soát sâu thêm nhóm quyền và bộ lọc](2026-11-16-performance-final-audit.md) phát hiện báo cáo dưới quyền thuê sở hữu và danh sách Khách hàng khi chọn tất cả còn chậm. Các số liệu admin trong biên bản này không phải kết luận đã tối ưu xong mọi role/bộ lọc.
+
 ## Bản bàn giao
 
 Đã triển khai các hạng mục được duyệt sau [đợt rà soát toàn hệ thống](2026-11-16-performance-audit.md). Source tối ưu web/mobile là `04bc642cdb9971a7aae6b1b8c15b3139fb284081`; backend cuối là `9ea7c93e4f3e6413a32d178d7836f7dc6f996a2f`. Cả hai đã push `main`. Vercel backend cuối Ready: `dpl_7XZPonS2MjBpVvsYiDiLKQs2hfoE`.
