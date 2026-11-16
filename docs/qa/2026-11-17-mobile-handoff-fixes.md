@@ -6,6 +6,7 @@
 - **In:** gửi HTML của mẫu web trực tiếp cho hộp thoại in native theo khổ A4. Tách tạo PDF để chia sẻ; lỗi native được chuyển thành hướng dẫn tiếng Việt có đường khôi phục. Đóng/hủy hộp thoại không hiện lỗi kỹ thuật.
 - **Nhóm hợp đồng:** nhóm quá hạn chỉ có tổng quá hạn và lọc nợ xấu; nhóm đang xử lý, nháp và đến hạn không còn các tab trùng nghĩa hoặc trạng thái không thuộc nhóm. Bộ lọc chi tiết dùng cùng tập trạng thái. Luồng từ Thao tác tải và làm mới số đếm độc lập như danh sách chính. Bộ đếm Đang thuê không cộng trùng khoản đến hạn của hợp đồng thuê sở hữu.
 - **Xe:** danh sách mặc định, phân trang, tổng, Excel và kho xe trên web/app loại xe đã bán khỏi xe đang quản lý. Giữ tab Đã bán để tra cứu lịch sử; không xóa xe, đổi trạng thái xe hoặc sửa quyền/RLS.
+- **Thông báo cập nhật:** thêm safe area cho banner tải/cài OTA để nội dung không chạm thanh trạng thái Samsung.
 
 Không có migration DB, thay native dependency, Firebase hoặc runtime. Giữ Android native/runtime `1.0.11`, versionCode `12`, channel `production`; không gửi bundle mới sang runtime `1.0.9`.
 
@@ -23,15 +24,22 @@ Không có migration DB, thay native dependency, Firebase hoặc runtime. Giữ 
 
 ## Phát hành và máy thật
 
-- Source sản phẩm **`f046bd5037a1b667242d5b720defd4ef5cf934f7`**, đã push `main`.
-- Vercel **Ready**, deployment `dpl_6iWrSfkNAe9LTkiqDJtiKZyfCKoC`. API production đã xác nhận Danh sách xe và Kho xe đều 411 xe đang quản lý; 7 xe đã bán vẫn truy cập riêng.
-- OTA Android production phát hành **00:54 ngày 17/11/2026** (giờ Việt Nam).
-- Update group `1740303c-b11d-4371-b905-7c8affa7a4a8`; update ID `01a1e57e-d804-7391-b575-f625838d3e6b`.
-- Bundle EAS đã xuất để phát hành: **7.123.048 byte**, SHA-256 **`d7e9500e0745d1d9aeed2024859b03d0b0cbf1f9569c1145e6e99a96ffc25efb`**. Đã tải từ CDN và đối chiếu khớp với chính bundle dùng để phát hành.
+- Source sản phẩm **`5a7c4bad8eb2c3df68aef5f101398346dd0837cc`**, đã push `main`. Bản này bổ sung safe area cho banner cập nhật trên nền bản sửa nghiệp vụ `f046bd5037a1b667242d5b720defd4ef5cf934f7`; lint/typecheck mobile đã chạy lại và đạt.
+- Vercel **Ready**, deployment `dpl_scLYR4pj8qU7XvJHH6VbTT7d7nJx`. API production đã xác nhận Danh sách xe và Kho xe đều 411 xe đang quản lý; 7 xe đã bán vẫn truy cập riêng.
+- OTA Android production chốt phát hành **01:17 ngày 17/11/2026** (giờ Việt Nam), thay bản 00:54 cùng ngày.
+- Update group `0f0a7de8-4c65-413e-a406-16322ae21ae9`; update ID `01a1e594-3aff-7891-9a5c-15b457f1c49d`.
+- Bundle EAS đã xuất để phát hành: **7.130.412 byte**, SHA-256 **`cb08b624f5ca6288e566f9eb5ac04dd5c2ce0faba2209243a1daf1e4f3db70e1`**. Đã tải từ CDN và đối chiếu khớp với chính bundle dùng để phát hành.
 - Manifest đúng runtime `1.0.11`, `androidPushConfigured=true`. Runtime `1.0.9` vẫn group `71e7a3fd-35c9-45f9-9e2f-f8db5772614f`.
 - 23 kiểm tra public/gate production đạt; không đăng nhập bằng mật khẩu thật.
 - **1.137 kiểm tra API sau phát hành trên 35 tài khoản đang hoạt động** (32 nghiệp vụ + 3 admin): trạng thái/response khớp quyền hiện hữu. Bao gồm cả danh sách xe, Đã bán, Kho xe và số đếm hợp đồng/quá hạn. Không đổi vai trò, cơ sở, quyền hoặc trạng thái tài khoản; đã xóa toàn bộ phiên QA tạm.
 
-Samsung thật đã được ADB nhận nhưng đang khóa PIN. Đã yêu cầu chủ máy mở khóa; **chưa xác nhận bản OTA mới đã áp dụng, ảnh hoặc hộp thoại in trên Samsung**. Không kết luận máy thật từ browser/fixture. Có thể lấy bản mới tại **Tài khoản → Kiểm tra bản cập nhật mới** sau khi mở khóa; vẫn cần nghiệm thu native để chốt bàn giao.
+Chủ máy đã mở khóa Samsung **SM-N960N**. Đã áp dụng OTA chốt trên máy đang cắm USB, xác nhận trong Tài khoản hiển thị **01:17, 17/11/2026**, runtime `1.0.11`, versionCode `12`.
 
-Artifact/log/ảnh và ngữ cảnh xác thực tạm chỉ lưu trong `.backups/handoff-fixes-20261117/` (ignored). Không commit `.env`, token, ảnh giấy tờ hoặc dữ liệu cá nhân. Không ghi nghiệp vụ production, gửi Telegram hay gửi push thử.
+- Mở từ chi tiết hợp đồng → Khách hàng → Giấy tờ và CCCD: đúng album, ảnh trước/sau hiển thị, xem toàn màn hình và phóng to được.
+- Nút mở hộp thoại in vào đúng **Android Print Spooler**, mẫu hợp đồng render A4 ngang. Hủy trở về app bình thường. Đã tạo PDF và mở được bộ chọn chia sẻ Android; hủy bình thường. **Không in giấy hoặc gửi PDF cho người nhận** trong lượt kiểm tra.
+- Thao tác → nhóm đang thuê **250** và nhóm quá hạn **102**: số đếm khớp trang mở ra; không còn tab Đang thuê trùng nhau. Nhóm quá hạn có Tất cả quá hạn (102), Nợ xấu (15); chọn Nợ xấu thu hẹp về 15. Các số là snapshot dữ liệu thực, có thể thay đổi theo nghiệp vụ.
+- Danh sách xe **411**, tab Đã bán **7**; Kho xe **411/411**. Xe đã bán không nằm trong tổng đang quản lý.
+- **45 màn/biểu mẫu native** được mở trên Samsung sau OTA chốt: hợp đồng/các nhóm, xe/kho/điều chuyển, khách, tài chính, nhân sự/cơ sở, chấm công/lịch sử/ca/lịch trực, báo cáo, GPS/tích hợp, tài khoản, thông báo, hướng dẫn, nhập file; chi tiết hợp đồng và biểu mẫu sửa/gia hạn/trả/đổi/thu tiền, chi tiết khách/xe/lịch sử xe. Không có lỗi đọc dữ liệu hoặc màn còn kẹt tải trong lượt kiểm tra; không submit nghiệp vụ.
+- Chẩn đoán trong cửa sổ kiểm tra: **0 app crash, 0 app ANR, 0 SystemUI ANR**, không lỗi thu thập. Đã đối chiếu lại 35 tài khoản: hồ sơ/quyền/cơ sở không đổi, không còn phiên QA tạm. Máy được trả về màn **Thao tác**.
+
+Artifact/log/ảnh và ngữ cảnh xác thực tạm chỉ lưu trong `.backups/handoff-fixes-20261117/` (ignored); kết quả máy thật và bản phát hành chốt nằm ở thư mục con `samsung-final/`. Kết quả `release-verification.json` ở thư mục gốc ghi nhận thời điểm trước khi mở khóa; bản trong `samsung-final/` là kết luận cuối cùng. Không commit `.env`, token, ảnh giấy tờ hoặc dữ liệu cá nhân. Không ghi nghiệp vụ production, gửi Telegram hay gửi push thử.
