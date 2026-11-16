@@ -1,9 +1,22 @@
-import { ACCESS_PERMISSIONS,ACCESS_ROLES,type AccessRole } from './access-permissions';
+import { ACCESS_PERMISSIONS,ACCESS_ROLES,canManageAccounts as coreCanManageAccounts,isOwnershipManager as coreIsOwnershipManager,canSettleContract as coreCanSettleContract,canRecoverAccountPasswords as coreCanRecoverAccountPasswords,type PermissionAccount,type AccessRole } from './access-permissions';
 import type { AccountValues } from './account-management';
-import type { MobileWriteReceipt } from './mobile-contract';
+import type { MobileUser,MobileWriteReceipt } from './mobile-contract';
 import { isStaffCredentials,type MobileStaffCredentials } from './mobile-staff';
 export type { MobileStaffCredentials } from './mobile-staff';
 export * from './access-permissions';
+// SessionUser is snake_case; the validated mobile projection is camelCase and
+// already canonicalizes lease-store managers to role=ownership_manager. Keep
+// both representations equivalent without trusting a projected grant alone.
+type Account=PermissionAccount|MobileUser|null|undefined;
+function permissionAccount(account:Account):PermissionAccount|null|undefined {
+  if(!account||!('allStores' in account))return account;
+  return {...account,access_role:account.role,store_id:account.storeId,scope_all:account.allStores,
+    store_kind:account.role==='ownership_manager'?'lease_to_own':null};
+}
+export const canManageAccounts=(account:Account)=>coreCanManageAccounts(permissionAccount(account));
+export const isOwnershipManager=(account:Account)=>coreIsOwnershipManager(permissionAccount(account));
+export const canSettleContract=(account:Account)=>coreCanSettleContract(permissionAccount(account));
+export const canRecoverAccountPasswords=(account:Account)=>coreCanRecoverAccountPasswords(permissionAccount(account));
 export { parseAccountValues,AccountAccessError,type AccountValues } from './account-management';
 export { validateNewPassword } from './account-password-validation';
 export interface ManagedAccount {id:number;name:string;email:string;login_name:string|null;status:string;access_role:AccessRole|null;store_id:number|null;store_name:string|null;scope_all:boolean;permissions:string[]|null;enabled:boolean|null;revision:string;staff_id?:number;staff_code?:string;staff_status?:string;password_available:boolean;password_changed_at:string|null;can_edit:boolean;can_delete:boolean}

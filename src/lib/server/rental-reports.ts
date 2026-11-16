@@ -57,7 +57,9 @@ export const VEHICLE_REVENUE_LINES_CTE = `WITH period_lines AS MATERIALIZED (
     AND d.rent_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
     AND d.rent_at < (($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
 )`;
-export const VEHICLE_REVENUE_CTE = `${VEHICLE_REVENUE_LINES_CTE}, totals AS (
+// A scoped nested-loop plan can otherwise recompute the complete aggregate for
+// every visible vehicle. Its result is shared by the page and summary.
+export const VEHICLE_REVENUE_CTE = `${VEHICLE_REVENUE_LINES_CTE}, totals AS MATERIALIZED (
   SELECT vehicle_id,count(*)::int AS rentals,sum(rental) AS rental,sum(renewal) AS renewal,sum(adjustment) AS adjustment,sum(rental+renewal+adjustment) AS revenue
   FROM lines GROUP BY vehicle_id
 ), matched AS (
