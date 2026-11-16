@@ -13,7 +13,6 @@ const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFini
 export const RENTAL_REVENUE_CTE=`WITH ranked_orders AS MATERIALIZED (
   SELECT id,row_number() OVER(PARTITION BY customer_id ORDER BY COALESCE(rent_at,created_at),id) AS rental_number
   FROM himoto.orders WHERE customer_id IS NOT NULL
-    AND customer_id IN(SELECT related.customer_id FROM himoto.orders related WHERE related.id=ANY($4::bigint[]))
     AND order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
 ), scoped_orders AS MATERIALIZED (
   SELECT o.id,
