@@ -1,3 +1,4 @@
+import {useScreenActive} from '@/hooks/use-screen-active';
 import { useState } from 'react';
 import { ScrollView, Text, View, Pressable, RefreshControl, Linking } from 'react-native';
 import { router } from 'expo-router';
@@ -11,10 +12,11 @@ import { enableNativePush, nativePushConfigured, notificationsModule } from '@/l
 
 export default function Notifications() {
   const {api, session} = useSession(), theme = useTheme();
+  const active=useScreenActive();
   const [busy,setBusy] = useState(false), [error,setError] = useState('');
   const [notice,setNotice]=useState('');
-  const query = useQuery({queryKey:['notifications',session?.user.id], queryFn:({signal})=>api!.notifications(signal), enabled:!!api, refetchInterval:60000});
-  const push = useQuery({queryKey:['push-status',session?.user.id],queryFn:()=>api!.pushStatus(),enabled:!!api});
+  const query = useQuery({queryKey:['notifications',session?.user.id], queryFn:({signal})=>api!.notifications(signal), enabled:!!api&&active, refetchInterval:active?60000:false,refetchIntervalInBackground:false});
+  const push = useQuery({queryKey:['push-status',session?.user.id],queryFn:()=>api!.pushStatus(),enabled:!!api&&active});
   async function toggle() {
     if (!api || busy) return;
     setBusy(true); setError('');
@@ -32,7 +34,7 @@ export default function Notifications() {
   }
   return <ScrollView contentContainerStyle={{padding:20,gap:20}} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={()=>{void query.refetch();void push.refetch();}} tintColor={theme.primary}/> }>
     <Card style={{gap:14}}><View style={{flexDirection:'row',gap:12,alignItems:'center'}}><Bell size={24} color={theme.primary}/><Text style={{color:theme.text,fontSize:20,fontWeight:'700',flex:1}}>Công việc cần xử lý</Text></View>
-      <Text style={{color:theme.muted,lineHeight:22}}>Cập nhật theo quyền và cơ sở của tài khoản. Mở hồ sơ để kiểm tra trước khi thao tác.</Text>
+      <Text style={{color:theme.muted,lineHeight:22}}>Ưu tiên hợp đồng quá hạn, sắp đến hạn trong 24 giờ và việc cần nhận hoặc duyệt. Giao dịch thường chỉ lưu trong Sự kiện gần đây, không đẩy thông báo.</Text>
       {query.data && <Text style={{color:theme.muted,fontSize:12}}>Cập nhật {new Date(query.data.observedAt).toLocaleTimeString('vi-VN')}</Text>}
     </Card>
     {query.isPending ? <StateView title="Đang tải công việc" loading/> : query.error ? <InlineError message={query.error.message}/> : query.data?.groups.length ? query.data.groups.map(group=><Pressable key={group.kind} accessibilityRole="button" accessibilityLabel={`${NOTIFICATION_LABELS[group.kind]}: ${group.count}`} onPress={()=>router.push({pathname:'/notification-list/[kind]',params:{kind:group.kind}})}><Card style={{flexDirection:'row',alignItems:'center',gap:12}}><View style={{flex:1,gap:6}}><Text style={{color:theme.text,fontSize:17,fontWeight:'600'}}>{NOTIFICATION_LABELS[group.kind]}</Text><Text style={{color:theme.muted,lineHeight:22}}>{group.count ? `${group.count} công việc` : 'Không có công việc cần xử lý'}</Text></View><ChevronRight size={20} color={theme.muted}/></Card></Pressable>) : <StateView title="Chưa có nhóm công việc" message="Tài khoản hiện không có quyền nhận các nhóm thông báo này."/>}

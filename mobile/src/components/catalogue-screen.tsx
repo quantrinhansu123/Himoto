@@ -60,7 +60,7 @@ const RecordCard = memo(function RecordCard({
   record: MobileRecord;
   kind: CatalogueKind;
   scope: MobileContractScope;
-  onOpenActions?: () => void;
+  onOpenActions?: (record:MobileRecord) => void;
 }) {
   const theme = useTheme();
   const cache = useQueryClient();
@@ -114,7 +114,7 @@ const RecordCard = memo(function RecordCard({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Thao tác ${record.code || record.license || record.name}`}
-              onPress={onOpenActions}
+              onPress={() => onOpenActions(record)}
               hitSlop={10}
               style={({ pressed }) => [
                 styles.moreButton,
@@ -300,7 +300,7 @@ export function CatalogueScreen({
       record={item}
       kind={kind}
       scope={scope}
-      onOpenActions={() => setActionRecord(item)}
+      onOpenActions={setActionRecord}
     />
   ), [kind, scope]);
   const statusCountsMap = useMemo(() => {

@@ -5,9 +5,9 @@ import { isAdminAccount } from '@/lib/management/permissions';
 import { readIntegrationSettings,saveIntegrationSettings,IntegrationSettingsError } from '@/lib/server/integration-settings';
 import { failureResponse } from '@/lib/server/public-failure';
 export const runtime='nodejs';
-export const GET=withAccessRequest(async()=>{
+export const GET=withAccessRequest(async(request:NextRequest)=>{
   if(!isAdminAccount(dataAccess.getStore()))return NextResponse.json({status:'error',message:'Chỉ quản trị được cấu hình tích hợp.'},{status:403});
-  try{return NextResponse.json({status:'success',data:await readIntegrationSettings()},{headers:{'Cache-Control':'no-store'}});}
+  try{return NextResponse.json({status:'success',data:await readIntegrationSettings(undefined,request.nextUrl.searchParams.get('view')!=='config')},{headers:{'Cache-Control':'no-store'}});}
   catch(error){return failureResponse('Không tải được cấu hình tích hợp.',error);}
 });
 export const POST=withAccessRequest(async(request:NextRequest)=>{

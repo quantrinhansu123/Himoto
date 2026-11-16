@@ -28,7 +28,7 @@ import { isMobileReceiptCorrections, isMobileRenewalCorrections, isMobileContrac
 import { isMobileContractEditProfile, isMobileContractEditResult, type MobileContractEditInput, type MobileContractEditProfile, type MobileContractEditResult } from "../../../shared/mobile-contract-edit";
 import { isMobileContractApprovalContext, isMobileContractApprovalResult, type MobileContractApprovalContext, type MobileContractApprovalResult } from '../../../shared/mobile-contract-approval';
 import { isMobileOperations,type MobileOperations } from '../../../shared/mobile-operations';
-import { isIntegrationSettings,isIntegrationReceipt,isIntegrationResult,isIntegrationResolution,type IntegrationSettings,type IntegrationInput,type IntegrationReceipt,type IntegrationResult,type IntegrationResolution,type IntegrationOperation } from '../../../shared/mobile-integrations';
+import { isIntegrationHealth,type IntegrationHealth,isIntegrationSettings,isIntegrationReceipt,isIntegrationResult,isIntegrationResolution,type IntegrationSettings,type IntegrationInput,type IntegrationReceipt,type IntegrationResult,type IntegrationResolution,type IntegrationOperation } from '../../../shared/mobile-integrations';
 import { isManagedAccountsPage,isManagedAccount,isManagedAccountOptions,isManagedAccountWriteResult,isManagedAccountResult,isManagedPasswordResult,type ManagedAccountsPage,type ManagedAccount,type ManagedAccountOptions,type ManagedAccountWriteResult,type ManagedAccountResult,type ManagedPasswordResult,type ManagedAccountInput } from '../../../shared/mobile-managed-accounts';
 import { isContractTypes,isContractTypeReceipt,isContractTypeResult,isContractTypeResolution,type ContractType,type ContractTypeInput,type MobileContractTypeReceipt,type MobileContractTypeResult,type MobileContractTypeResolution,type ContractTypeOperation } from '../../../shared/mobile-contract-types';
 import type {
@@ -455,7 +455,8 @@ export function createApi(
       request<{ receipt: MobilePaymentReceipt | null }>(`/payments/requests/${encodeURIComponent(key)}`,
         (value): value is { receipt: MobilePaymentReceipt | null } => !!value && typeof value === "object" && "receipt" in value && (value.receipt === null || isMobilePaymentReceipt(value.receipt))),
     operations: (params:URLSearchParams,signal?:AbortSignal)=>request<MobileOperations>(`/operations?${params}`,isMobileOperations,{signal}),
-    integrations: (signal?:AbortSignal)=>request<IntegrationSettings>('/integrations',isIntegrationSettings,{signal}),
+    integrations: (signal?:AbortSignal)=>request<IntegrationSettings>('/integrations?view=config',isIntegrationSettings,{signal}),
+    integrationHealth: (signal?:AbortSignal)=>request<IntegrationHealth>('/integrations/health',isIntegrationHealth,{signal},60000),
     saveIntegration: (input:IntegrationInput,key:string)=>request<IntegrationReceipt>('/integrations',isIntegrationReceipt,{method:'POST',body:JSON.stringify(input),headers:{'Idempotency-Key':key}}),
     integrationResult: (key:string,signal?:AbortSignal)=>request<IntegrationResult>(`/integrations/requests/${encodeURIComponent(key)}`,(v):v is IntegrationResult=>isIntegrationResult(v)&&v.key===key,{signal}),
     resolveIntegration: (key:string,operation:IntegrationOperation)=>request<IntegrationResolution>(`/integrations/requests/${encodeURIComponent(key)}/resolve`,(v):v is IntegrationResolution=>isIntegrationResolution(v)&&v.key===key&&v.operation===operation,{method:'POST',body:JSON.stringify({operation})}),

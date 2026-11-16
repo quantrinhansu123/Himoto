@@ -6,7 +6,7 @@ import { hasPermission } from '@/lib/management/permissions';
 import { canApproveOwnershipContract, isOwnershipApprovalContract } from '@/lib/management/contract-approval';
 import { withMobileData } from './mobile-context';
 import { himotoPool } from './himoto-database';
-import { readManagementTable } from './management-table';
+import { readContractAttentionRows } from './management-table';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
 import { EFFECTIVE_RENTAL_TYPE_SQL, VEHICLE_ORDER_SQL } from './contract-classification';
 import { isMobileNotifications, isMobileNotificationList, NOTIFICATION_KINDS, type MobileNotifications, type MobileNotificationList, type MobileNotificationKind } from '../../../shared/mobile-notifications';
@@ -18,10 +18,21 @@ function state(kind: MobileNotificationKind, rows: {id: number; label: string; m
   return {kind, count: rows.length, rows: rows.map(({id,label}) => ({id,label})),
     fingerprint: createHash('sha256').update(JSON.stringify(rows.map(r => r.member).sort())).digest('hex')};
 }
+export function contractAttentionGroups(rows:Awaited<ReturnType<typeof readContractAttentionRows>>,now=Date.now()){
+  const overdue=rows.filter(r=>r.status==='overdue'||r.status==='bad_debt'||r.collection_overdue===1);
+  const overdueIds=new Set(overdue.map(r=>r.id));
+  const due=rows.filter(r=>{
+    if(overdueIds.has(r.id)||r.billing_error||!['renting','wait_payment'].includes(r.status))return false;
+    const value=String(r.billing_next_due_at||r.end_date||'');
+    const at=Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)?`${value}:00+07:00`:value);
+    return Number.isFinite(at)&&at>now&&at<=now+24*60*60*1000;
+  });
+  return {due,overdue};
+}
 /** Same web billing projection and scoped role, in one read-only snapshot. */
-export async function readNotificationState(db: Database, user: SessionUser): Promise<NotificationState[]> {
+export async function readNotificationState(db: Database, user: SessionUser,kinds:readonly MobileNotificationKind[]=NOTIFICATION_KINDS): Promise<NotificationState[]> {
   const result: NotificationState[] = [];
-  if (hasPermission(user, 'vehicles.read') && hasPermission(user, 'vehicles.receive')) {
+  if (kinds.includes('transfer')&&hasPermission(user, 'vehicles.read') && hasPermission(user, 'vehicles.receive')) {
     const rows = (await db.query(`SELECT v.id,v.license,v.name,pending_transfer.id AS event_id FROM himoto.vehicles v
       ${VEHICLE_TRANSFER_JOIN_SQL} WHERE v.deleted_at IS NULL AND v.status='in_transit'
       AND pending_transfer.receivable=1 AND ($1::boolean OR pending_transfer.to_store_id=$2::bigint) ORDER BY pending_transfer.id DESC`,
@@ -29,18 +40,18 @@ export async function readNotificationState(db: Database, user: SessionUser): Pr
     result.push(state('transfer', rows.map(r => ({id: Number(r.id), label: String(r.license || r.name || `Xe #${r.id}`), member: `${r.id}:${r.event_id}`}))));
   }
   if (hasPermission(user, 'contracts.read')) {
-    for (const kind of ['due', 'overdue'] as const) {
-      // all=1 uses the actual web's installment balances, reconciled returns,
-      // grace periods and legacy fee calculations before filtering the scope.
-      const data = await readManagementTable(db, 'contracts', new URLSearchParams({all: '1', scope: kind}));
-      if (data.total !== data.rows.length) throw new Error('Notification scope is incomplete');
-      result.push(state(kind, data.rows.map(r => ({id: Number(r.id), label: String(r.code || `Hợp đồng #${r.id}`),
-        member: `${r.id}:${kind === 'due' ? r.billing_next_due_at || '' : r.billing_overdue_at || ''}`}))));
+    if(kinds.includes('due')||kinds.includes('overdue')){
+      const now=Date.now(),rows=await readContractAttentionRows(db,now);
+      const {due,overdue}=contractAttentionGroups(rows,now);
+      for(const kind of ['due','overdue'] as const)if(kinds.includes(kind))result.push(state(kind,(kind==='due'?due:overdue).map(r=>({id:r.id,label:r.code||`Hợp đồng #${r.id}`,member:`${r.id}:${kind==='due'?r.billing_next_due_at||r.end_date:r.billing_overdue_at||r.end_date}`}))));
     }
-    if (canApproveOwnershipContract(user)) {
+    if (kinds.includes('approval')&&canApproveOwnershipContract(user)) {
       const rows = (await db.query(`SELECT o.id,o.contract_number,o.draft_reference,s.kind AS store_kind,s.store_name,${EFFECTIVE_RENTAL_TYPE_SQL} AS rental_type
         FROM himoto.orders o LEFT JOIN himoto.stores s ON s.id=o.store_id
-        WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status NOT IN ('draft','cancelled')
+        WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND o.order_status IN ('renting','overdue','wait_payment','reserved','pending','deposit_contract')
+        AND (s.kind='lease_to_own' OR ${EFFECTIVE_RENTAL_TYPE_SQL} IN('ownership','ownership_cd')
+          OR lower(translate(regexp_replace(normalize(COALESCE(s.store_name,''),NFD) COLLATE "C",'[̀-ͯ]','','g'),'đĐ','dD')) LIKE '%thue so huu%'
+          OR lower(translate(regexp_replace(normalize(COALESCE(s.store_name,''),NFD) COLLATE "C",'[̀-ͯ]','','g'),'đĐ','dD')) LIKE '%tru so chinh%')
         AND NULLIF(o.draft_payload #>> '{management_composer,approval,at}','') IS NULL ORDER BY o.id DESC`)).rows;
       result.push(state('approval', rows.filter(isOwnershipApprovalContract).map(r => ({id: Number(r.id),
         label: String(r.contract_number || r.draft_reference || `Hợp đồng #${r.id}`), member: String(r.id)}))));
@@ -70,7 +81,7 @@ export async function readMobileNotificationList(user: SessionUser, kind: string
   if (!NOTIFICATION_KINDS.includes(kind as MobileNotificationKind)) throw new MobileError('Không tìm thấy nhóm thông báo.',404,'NOT_FOUND');
   if ([...params.keys()].some(k => k !== 'page' || params.getAll(k).length !== 1) || !/^[1-9]\d{0,5}$/.test(params.get('page') || '1'))
     throw new MobileError('Trang thông báo không hợp lệ.');
-  const states = await withNotificationSnapshot(user, db => readNotificationState(db, user));
+  const states = await withNotificationSnapshot(user, db => readNotificationState(db, user,[kind as MobileNotificationKind]));
   const group = states.find(g => g.kind === kind);
   if (!group) throw new MobileError('Không có quyền xem nhóm công việc này.',403,'FORBIDDEN');
   const pages = Math.max(1, Math.ceil(group.count / 20)), page = Math.min(Number(params.get('page') || '1'), pages);

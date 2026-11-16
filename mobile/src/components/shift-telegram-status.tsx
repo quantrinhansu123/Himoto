@@ -1,3 +1,4 @@
+import {useScreenActive} from '@/hooks/use-screen-active';
 import {useState} from 'react';
 import {Text} from 'react-native';
 import {useQuery} from '@tanstack/react-query';
@@ -8,7 +9,8 @@ import {ConfirmEdit} from './editor-sheet';
 const labels:Record<string,string>={pending:'Chờ gửi',sending:'Đang gửi',sent:'Đã gửi',failed:'Gửi thất bại',unknown:'Chưa rõ kết quả gửi',awaiting_config:'Chưa cấu hình nhóm / bot'};
 export function ShiftTelegramStatus({id,stage='pgd'}:{id:string;stage?:'pgd'|'audit'}){
   const{api,session}=useSession(),theme=useTheme(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[confirm,setConfirm]=useState(false);
-  const query=useQuery({queryKey:['shift-telegram',session!.user.id,id,stage],queryFn:({signal})=>api!.shiftTelegram(id,signal,stage),refetchInterval:q=>q.state.data&&['pending','sending'].includes(q.state.data.status)?4000:false});
+  const active=useScreenActive();
+  const query=useQuery({queryKey:['shift-telegram',session!.user.id,id,stage],queryFn:({signal})=>api!.shiftTelegram(id,signal,stage),enabled:active,refetchIntervalInBackground:false,refetchInterval:q=>active&&q.state.data&&['pending','sending'].includes(q.state.data.status)?4000:false});
   const canSend=stage==='audit'?session!.user.permissions.includes('shift.review'):session!.user.permissions.some(p=>p==='contracts.draft'||p==='finance.write');
   async function retry(){if(busy||!api)return;setBusy(true);setError('');setConfirm(false);try{await api.retryShiftTelegram(id,stage);void query.refetch();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   return <Card style={{gap:12}}><Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Telegram {stage==='audit'?'KTNB':'PGD'}: {query.isPending?'Đang kiểm tra':query.data?labels[query.data.status]||query.data.status:'Chốt báo cáo để gửi minh chứng'}</Text>

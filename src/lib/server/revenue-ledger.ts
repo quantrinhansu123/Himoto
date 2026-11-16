@@ -21,7 +21,7 @@ const categorySql=`CASE WHEN category='company_fee' THEN CASE WHEN name='order:r
 const methodSql=`CASE WHEN payment_method=3 THEN 'mixed' WHEN bank_owner_type='company' AND (bank_id IS NOT NULL OR payment_method=2) THEN 'company' WHEN bank_id IS NOT NULL OR payment_method=2 THEN CASE WHEN bank_owner_type='personal' THEN 'personal' ELSE 'unknown' END WHEN cash_id IS NOT NULL OR payment_method=1 THEN 'cash' ELSE 'unknown' END`;
 const number=(value:unknown)=>{const n=Number(value);if(value==null||!Number.isSafeInteger(n))throw new RevenueLedgerError('Số tiền trong phiếu chưa hợp lệ; cần đối chiếu.',409);return n;};
 
-export async function revenueLedger(db:Database,params:URLSearchParams):Promise<RevenueLedgerReport>{
+export async function revenueLedger(db:Database,params:URLSearchParams,includeOpposite=false):Promise<RevenueLedgerReport&{oppositeTotals?:RevenueLedgerTotals}>{
  const input=parseRevenueLedger(params);
  const relevant=(await db.query(`SELECT DISTINCT t.order_id FROM himoto.transactions t JOIN himoto.orders o ON o.id=t.order_id
    WHERE t.status='approved' AND t.type IN('in','addon','out') AND ${VEHICLE_ORDER_SQL}
@@ -29,12 +29,12 @@ export async function revenueLedger(db:Database,params:URLSearchParams):Promise<
      AND ($3::bigint IS NULL OR t.store_id=$3)`,[input.from,input.to,input.store])).rows.map(r=>String(r.order_id));
  const methods=Object.fromEntries(Object.keys(REVENUE_LEDGER_METHODS).map(key=>[key,{income:0,expense:0,revenue:0,count:0}])) as RevenueLedgerTotals['methods'];
  const empty:RevenueLedgerTotals={count:0,contracts:0,income_count:0,expense_count:0,revenue_count:0,income:0,expense:0,net:0,revenue:0,deposit:0,deposit_refund:0,methods};
- if(!relevant.length)return {rows:[],total:0,page:1,pages:1,page_size:input.size,totals:empty,export_all:input.all};
+ if(!relevant.length)return {...(includeOpposite?{oppositeTotals:empty}:{}),rows:[],total:0,page:1,pages:1,page_size:input.size,totals:empty,export_all:input.all};
  const values:unknown[]=[input.from,input.to,input.store,relevant];
  const bind=(value:unknown)=>{values.push(value);return `$${values.length}`;};
  const where=[`l.created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')`,`($3::bigint IS NULL OR l.store_id=$3)`];
- if(input.side==='in')where.push(`l.type<>'out'`);
- if(input.side==='out')where.push(`l.type='out'`);
+ const sideWhere=input.side==='in'?`type<>'out'`:input.side==='out'?`type='out'`:'true';
+ const oppositeWhere=input.side==='in'?`type='out'`:input.side==='out'?`type<>'out'`:'true';
  if(input.category)where.push(input.category==='revenue'?`l.revenue_amount<>0`:`l.ledger_category=${bind(input.category)}`);
  if(input.method)where.push(`l.ledger_method=${bind(input.method)}`);
  const searchParameter=input.search?bind('%'+input.search.replace(/[\\%_]/g,'\\$&')+'%'):null;
@@ -43,19 +43,20 @@ export async function revenueLedger(db:Database,params:URLSearchParams):Promise<
  const searchJoins=input.search?`LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.staff_profiles st ON st.id::text=l.staff_id LEFT JOIN himoto.users u ON u.id=l.user_id`:'';
  const limit=bind(input.all?10000:input.size),requestedPage=input.all?'1':bind(input.page);
  const aggregateMethods=Object.keys(REVENUE_LEDGER_METHODS).map(key=>`'${key}',jsonb_build_object('income',COALESCE(sum(value) FILTER(WHERE ledger_method='${key}' AND type<>'out'),0),'expense',COALESCE(sum(value) FILTER(WHERE ledger_method='${key}' AND type='out'),0),'revenue',COALESCE(sum(revenue_amount) FILTER(WHERE ledger_method='${key}'),0),'count',count(*) FILTER(WHERE ledger_method='${key}')::int)`).join(',');
- const result=(await db.query(`${RENTAL_REVENUE_CTE}, ledger AS (
-   SELECT a.*,${REVENUE_AMOUNT} AS revenue_amount,${categorySql} AS ledger_category,${methodSql} AS ledger_method FROM allocated a
- ), matched AS MATERIALIZED (
-   SELECT l.* FROM ledger l JOIN himoto.orders o ON o.id=l.order_id ${searchJoins} WHERE ${where.map(w=>'('+w+')').join(' AND ')}${searchSql}
- ), totals AS (
-   SELECT count(*)::int AS count,count(DISTINCT order_id)::int AS contracts,count(*) FILTER(WHERE type<>'out')::int AS income_count,count(*) FILTER(WHERE type='out')::int AS expense_count,
+ const aggregate=`SELECT count(*)::int AS count,count(DISTINCT order_id)::int AS contracts,count(*) FILTER(WHERE type<>'out')::int AS income_count,count(*) FILTER(WHERE type='out')::int AS expense_count,
      count(*) FILTER(WHERE revenue_amount<>0)::int AS revenue_count,COALESCE(sum(value) FILTER(WHERE type<>'out'),0) AS income,COALESCE(sum(value) FILTER(WHERE type='out'),0) AS expense,
      COALESCE(sum(revenue_amount),0) AS revenue,COALESCE(sum(value) FILTER(WHERE ledger_category='deposit'),0) AS deposit,COALESCE(sum(value) FILTER(WHERE ledger_category='deposit_refund'),0) AS deposit_refund,
-     jsonb_build_object(${aggregateMethods}) AS methods FROM matched
+     jsonb_build_object(${aggregateMethods}) AS methods`;
+ const result=(await db.query(`${RENTAL_REVENUE_CTE}, ledger AS (
+   SELECT a.*,${REVENUE_AMOUNT} AS revenue_amount,${categorySql} AS ledger_category,${methodSql} AS ledger_method FROM allocated a
+ ), matched_all AS MATERIALIZED (
+   SELECT l.* FROM ledger l JOIN himoto.orders o ON o.id=l.order_id ${searchJoins} WHERE ${where.map(w=>'('+w+')').join(' AND ')}${searchSql}
+ ), matched AS (SELECT * FROM matched_all WHERE ${sideWhere}), totals AS (
+${aggregate} FROM matched
  ), page_rows AS (
    SELECT * FROM matched ORDER BY created_at DESC,id DESC LIMIT ${limit}
      OFFSET (SELECT ${input.all?'0':`(LEAST(${requestedPage},GREATEST(1,ceil(count::numeric/${limit})))::int-1)*${limit}`} FROM totals)
- ) SELECT (SELECT to_jsonb(totals) FROM totals) AS totals,COALESCE((SELECT jsonb_agg(to_jsonb(p)||jsonb_build_object(
+ ) SELECT ${includeOpposite?`(SELECT to_jsonb(other_totals) FROM (${aggregate} FROM matched_all WHERE ${oppositeWhere}) other_totals) AS opposite_totals,`:''}(SELECT to_jsonb(totals) FROM totals) AS totals,COALESCE((SELECT jsonb_agg(to_jsonb(p)||jsonb_build_object(
      'code',COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text),'customer',COALESCE(NULLIF(o.customer_name,''),c.name,''),
      'store_name',COALESCE(s.store_name,''),'person',CASE WHEN p.category IN ('renewal','late','company_fee') THEN 'Công ty' ELSE COALESCE(NULLIF(p.staff_name,''),st.full_name,'') END,'actor',COALESCE(u.name,''),
      'vehicles',COALESCE((SELECT string_agg(DISTINCT v.license,', ' ORDER BY v.license) FROM himoto.order_vehicle_details d JOIN ${contractVehicleReadSource()} v ON v.id=d.vehicle_id WHERE d.order_id=o.id AND d.deleted_at IS NULL),''),
@@ -70,5 +71,8 @@ export async function revenueLedger(db:Database,params:URLSearchParams):Promise<
  const totals:RevenueLedgerTotals={count,contracts:number(t.contracts),income_count:number(t.income_count),expense_count:number(t.expense_count),revenue_count:number(t.revenue_count),income,expense,net:income-expense,revenue:number(t.revenue),deposit:number(t.deposit),deposit_refund:number(t.deposit_refund),methods};
  const rows:RevenueLedgerRow[]=result.rows.map((r:Record<string,unknown>)=>({id:String(r.id),order_id:number(r.order_id),code:String(r.code),customer:String(r.customer),store_id:r.store_id==null?null:number(r.store_id),store_name:String(r.store_name),
    at:new Date(String(r.created_at)).toISOString(),day:new Date(new Date(String(r.created_at)).getTime()+7*3600000).toISOString().slice(0,10),category:r.ledger_category as RevenueLedgerRow['category'],method:r.ledger_method as RevenueLedgerRow['method'],type:r.type as RevenueLedgerRow['type'],amount:number(r.value),revenue:number(r.revenue_amount),staff_name:String(r.person),actor_name:String(r.actor),note:String(r.note||''),vehicles:String(r.vehicles),start_at:r.start_at==null?null:new Date(String(r.start_at)).toISOString(),end_at:r.end_at==null?null:new Date(String(r.end_at)).toISOString()}));
- return {rows,total:count,page:input.all?1:Math.min(input.page,pages),pages:input.all?1:pages,page_size:input.all?Math.max(1,count):input.size,totals,export_all:input.all};
+ const oppositeTotals:RevenueLedgerTotals|undefined=includeOpposite&&result.opposite_totals?{...result.opposite_totals,net:number(result.opposite_totals.income)-number(result.opposite_totals.expense)}:undefined;
+ if(oppositeTotals){for(const[k,v]of Object.entries(oppositeTotals)){if(k==='methods'){for(const method of Object.values(v))for(const amount of Object.values(method as Record<string,unknown>))number(amount);}else number(v);}}
+ if(includeOpposite&&!oppositeTotals)throw new RevenueLedgerError('Không đọc được tổng sổ đối ứng.',409);
+ return {...(oppositeTotals?{oppositeTotals}:{}),rows,total:count,page:input.all?1:Math.min(input.page,pages),pages:input.all?1:pages,page_size:input.all?Math.max(1,count):input.size,totals,export_all:input.all};
 }

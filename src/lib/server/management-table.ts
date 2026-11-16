@@ -458,6 +458,13 @@ function mapManagementRows(kind:TableKind,rows:unknown[]) {
   }
   return mapped;
 }
+/** Notification membership needs billing/dates, never documents or every vehicle label. */
+export async function readContractAttentionRows(client:Pick<PoolClient,'query'>,now=Date.now()){
+  const sql=contractStatisticsSql(` AND o.order_status IN('renting','overdue','wait_payment','bad_debt')`,false,true);
+  const result=await client.query(`SELECT listing.*,(SELECT COALESCE(json_agg(json_build_object('return_at',d.return_at) ORDER BY d.id),'[]'::json)
+    FROM himoto.order_vehicle_details d WHERE d.order_id=listing.id AND d.deleted_at IS NULL AND d.completed_at IS NULL) AS overdue_items FROM (${sql}) listing`);
+  return result.rows.map(mapContractStatistics).map(row=>withContractMonitoring(applyInstallmentBilling(row,now),now));
+}
 export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:TableKind,params:URLSearchParams) {
   const input=parseManagementTable(kind,params);
   const all=params.get('all')==='1';

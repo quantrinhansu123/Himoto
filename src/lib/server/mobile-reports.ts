@@ -20,7 +20,7 @@ import { validRentalReport } from "@/lib/management/rental-reports";
 import type { VehicleRevenueRow } from "@/lib/management/rental-reports";
 import { CONTRACT_STATUSES } from "@/lib/management/config";
 import { validOwnedFleetReport } from "@/lib/management/owned-fleet-revenue";
-import { validRevenueLedger, REVENUE_LEDGER_CATEGORIES, REVENUE_LEDGER_METHODS } from "@/lib/management/revenue-ledger";
+import { validRevenueLedgerTotals,validRevenueLedger, REVENUE_LEDGER_CATEGORIES, REVENUE_LEDGER_METHODS } from "@/lib/management/revenue-ledger";
 import { isSalesReportKind, isMobileSalesReport, paginateReportSections, SALES_REPORTS, type SalesReportKind, type MobileSalesReport, type ReportSection, type ReportColumn, type ReportMetric, type ReportRow, type ReportValue, type ReportAction } from "../../../shared/mobile-reports";
 
 const baseKeys = ["from", "to", "store_id", "section_pages"];
@@ -104,9 +104,8 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
         ...metrics("Công nợ", summary.kpis, [["debt", "Tiền thuê còn thiếu"], ["debtContracts", "Hợp đồng còn thiếu tiền", "count"], ["overdueDebt", "Nợ quá hạn chưa thu đủ"], ["overdueContracts", "Hợp đồng quá hạn chưa thu đủ", "count"], ["badDebt", "Nợ xấu riêng"]])];
       if (received.unclassified_count) doc.notes.push(`Có ${received.unclassified_count} phiếu chưa phân loại (${received.unclassified_amount} đồng), chưa cộng doanh thu; cần đối chiếu Sổ quỹ trước chốt KPI.`);
     } else if (kind === "ledger") {
-      const report = await revenueLedger(client, query); checked(validRevenueLedger(report));
-      const opposite = new URLSearchParams(query); opposite.set("side", query.get("side") === "out" ? "in" : "out"); opposite.set("page", "1"); opposite.set("size", "1");
-      const other = await revenueLedger(client, opposite); checked(validRevenueLedger(other));
+      const report = await revenueLedger(client, query,true); checked(validRevenueLedger(report));
+      const other = {...report,rows:[],total:report.oppositeTotals!.count,page:1,pages:Math.max(1,Math.ceil(report.oppositeTotals!.count/report.page_size)),totals:report.oppositeTotals!}; checked(validRevenueLedgerTotals(other));
       const income = query.get("side") === "out" ? other : report, expense = query.get("side") === "out" ? report : other;
       const fields: Fields = [["code", "Hợp đồng", "text"], ["id", "Mã phiếu", "text"], ["at", "Thời điểm", "datetime"], ["customer", "Khách", "text"], ["vehicles", "Biển số", "text"], ["store_name", "Cơ sở", "text"], ["categoryLabel", "Nghiệp vụ", "text"], ["methodLabel", "Hình thức", "text"], ["signedAmount", "Số thu (+) / chi (−)"], ["revenue", "Tính doanh thu"], ["staff_name", "NVKD", "text"], ["actor_name", "Người ghi nhận", "text"], ["start_at", "Bắt đầu thuê", "datetime"], ["end_at", "Kết thúc thuê", "datetime"], ["note", "Ghi chú", "text"]];
       doc.notes = ["Phiếu đã duyệt theo ngày thực thu/chi trong kỳ. Cọc không tính doanh thu; hoàn tiền thuê làm giảm doanh thu.", "Số tiền chưa tách tiền mặt / chuyển khoản được giữ riêng để đối chiếu, không tự phân bổ."];

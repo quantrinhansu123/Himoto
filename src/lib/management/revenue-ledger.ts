@@ -14,7 +14,7 @@ export interface RevenueLedgerTotals {
 }
 export interface RevenueLedgerReport {rows:RevenueLedgerRow[];total:number;page:number;pages:number;page_size:number;totals:RevenueLedgerTotals;export_all:boolean}
 export interface RevenueLedgerQuery {from:string;to:string;store:string;search:string;category:string;method:string;page:number;size:number;side?:''|'in'|'out'}
-export function validRevenueLedger(value:unknown):value is RevenueLedgerReport {
+export function validRevenueLedgerTotals(value:unknown):value is RevenueLedgerReport {
  const report=value as RevenueLedgerReport,t=report?.totals;
  const integer=(n:unknown)=>Number.isSafeInteger(n);
  if(!report||!Array.isArray(report.rows)||!t||typeof report.export_all!=='boolean'||!integer(report.total)||report.total<0||!integer(report.page)||report.page<1||!integer(report.pages)||report.pages<1||!integer(report.page_size)||report.page_size<1||report.page>report.pages||report.total!==t.count)return false;
@@ -22,6 +22,13 @@ export function validRevenueLedger(value:unknown):value is RevenueLedgerReport {
  const methods=Object.keys(REVENUE_LEDGER_METHODS) as RevenueLedgerMethod[];
  if(!t.methods||methods.some(key=>!t.methods[key]||!integer(t.methods[key].income)||t.methods[key].income<0||!integer(t.methods[key].expense)||t.methods[key].expense<0||!integer(t.methods[key].revenue)||!integer(t.methods[key].count)||t.methods[key].count<0))return false;
  if(methods.reduce((n,k)=>n+t.methods[k].income,0)!==t.income||methods.reduce((n,k)=>n+t.methods[k].expense,0)!==t.expense||methods.reduce((n,k)=>n+t.methods[k].revenue,0)!==t.revenue||methods.reduce((n,k)=>n+t.methods[k].count,0)!==t.count)return false;
+ return t.contracts<=t.count&&t.deposit<=t.income&&t.deposit_refund<=t.expense;
+}
+
+export function validRevenueLedger(value:unknown):value is RevenueLedgerReport {
+ if(!validRevenueLedgerTotals(value))return false;
+ const integer=(n:unknown)=>Number.isSafeInteger(n);
+ const report=value,t=report.totals,methods=Object.keys(REVENUE_LEDGER_METHODS) as RevenueLedgerMethod[];
  if(new Set(report.rows.map(r=>r.id)).size!==report.rows.length||report.rows.some(r=>!/^[1-9]\d*$/.test(r.id)||!integer(r.order_id)||r.order_id<1||!['in','addon','out'].includes(r.type)||!Object.hasOwn(REVENUE_LEDGER_CATEGORIES,r.category)||!Object.hasOwn(REVENUE_LEDGER_METHODS,r.method)||!integer(r.amount)||r.amount<0||!integer(r.revenue)||!/^\d{4}-\d{2}-\d{2}$/.test(r.day)||!Number.isFinite(Date.parse(r.at))||[r.code,r.customer,r.store_name,r.staff_name,r.actor_name,r.note,r.vehicles].some(v=>typeof v!=='string')))return false;
  if(report.rows.length>report.total||report.export_all&&report.rows.length!==report.total||!report.export_all&&report.rows.length>report.page_size)return false;
  if(t.contracts>t.count||t.deposit>t.income||t.deposit_refund>t.expense||report.pages!==Math.max(1,Math.ceil(report.total/report.page_size))||report.rows.length!==Math.min(report.page_size,Math.max(0,report.total-(report.page-1)*report.page_size)))return false;
