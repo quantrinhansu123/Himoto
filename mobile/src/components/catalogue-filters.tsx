@@ -16,7 +16,8 @@ import { Check, Search, X } from "lucide-react-native";
 import type { CatalogueKind, MobileStore } from "@himoto/mobile-contract";
 import { Button, InlineError } from "@/components/ui";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
-import { catalogueConfig, contextualStatusLabel } from "@/lib/catalogue-config";
+import { catalogueStatuses, catalogueAllLabel, contextualStatusLabel } from "@/lib/catalogue-config";
+import type { MobileContractScope } from '../../../shared/mobile-contract-workspaces';
 import { statuses, useTheme } from "@/theme";
 import { DateField } from "./date-field";
 import { ChoiceField } from "./form-fields";
@@ -30,6 +31,7 @@ export interface CatalogueSelection {
 }
 export function CatalogueFilters({
   kind,
+  scope = '',
   selected,
   defaultStore,
   stores,
@@ -41,6 +43,7 @@ export function CatalogueFilters({
   onClose,
 }: {
   kind: CatalogueKind;
+  scope?: MobileContractScope;
   selected: CatalogueSelection;
   defaultStore: string;
   stores: MobileStore[];
@@ -125,7 +128,7 @@ export function CatalogueFilters({
                   Trạng thái
                 </Text>
                 <View style={styles.chips}>
-                  {["", ...catalogueConfig[kind].allStatuses].map((status) => (
+                  {[...new Set([...catalogueStatuses(kind, scope, true), ...(selection.status ? [selection.status] : [])])].map((status) => (
                     <Pressable
                       key={status}
                       accessibilityRole="button"
@@ -164,7 +167,7 @@ export function CatalogueFilters({
                         {status
                           ? contextualStatusLabel(kind, status) ||
                             statuses[status]
-                          : "Tất cả trạng thái"}
+                          : catalogueAllLabel(kind, scope)}
                       </Text>
                     </Pressable>
                   ))}

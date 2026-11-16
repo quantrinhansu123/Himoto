@@ -9,7 +9,7 @@ export default function Contracts() {
     search !== undefined && (typeof search !== 'string' || search.length > 120) ||
     store !== undefined && (typeof store !== 'string' || store !== 'all' && !/^[1-9]\d{0,14}$/.test(store)))
     return <StateView title="Bộ lọc hợp đồng chưa hợp lệ" message="Mở lại danh sách từ hồ sơ khách hàng hoặc menu hợp đồng." />;
-  const preset = initialCatalogueStatus("contracts", status ?? (customer_id || search ? 'all' : undefined));
+  const preset = initialCatalogueStatus("contracts", status ?? (scope || customer_id || search ? 'all' : undefined));
   const group = contractWorkspace(scope)?.key || "";
   return (
     <CatalogueScreen key={`${preset}:${group}:${customer_id || ''}:${search || ''}:${store || ''}`} kind="contracts" initialStatus={preset} initialScope={group} initialSearch={search} initialCustomerId={customer_id} customerName={typeof customer_name === 'string' ? customer_name.slice(0, 200) : undefined} initialStore={store} />

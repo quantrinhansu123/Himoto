@@ -305,11 +305,11 @@ function vehicleDerivedClause(query:ManagementTableInput['query']) {
   const missing=query.filters.missing_contract==='1'?` AND ${vehicleMissingOpenContractSql()}`:'';
   return `${days}${missing}`;
 }
-export function vehiclePageClause(store:string,status:string,filters:Record<string,string>) {
+export function vehiclePageClause(store:string,status:string,filters:Record<string,string>,includeSold=false) {
   // Branch picker on /vehicles scopes by current physical warehouse (COALESCE(v.current_store_id, v.store_id)).
   const storeSql=store==='all'?'':` AND (COALESCE(v.current_store_id,v.store_id)=${Number(store)} OR himoto.ownership_may_use_headquarters_vehicle(v.store_id))`;
   const mapped:Record<string,string>={using:"'using','rent'",repairing:"'repairing','maintenance'",pending:"'pending','holding'"};
-  const statusSql=!status?'':mapped[status]?` AND v.status IN (${mapped[status]})`
+  const statusSql=!status?(includeSold?'':" AND v.status IS DISTINCT FROM 'sold'"):mapped[status]?` AND v.status IN (${mapped[status]})`
     :/^[a-z][a-z0-9_]{0,63}$/.test(status)?` AND v.status='${status}'`:'';
   const type=filters.type||'';
   const typeSql=!type?'':type==='xe_dien'?` AND v.type IN ('xe_dien','electric')`
@@ -431,12 +431,12 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
   const {kind,store,query}=input;
   const source=kind==='customers'?'himoto.customers c':kind==='vehicles'?'himoto.vehicles v':kind==='staff'?'himoto.staff_profiles p':'himoto.stores s';
   const scope=kind==='customers'?customerPageClause(store,'')
-    :kind==='vehicles'?` AND v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{})}`
+    :kind==='vehicles'?` AND v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{},true)}`
     :kind==='staff'?staffPageClause(store,'',{}):'';
   // missing_contract narrows the page total only; tab/status badges and the banner count stay on the broader catalogue.
   const vehicleFilters=kind==='vehicles'?Object.fromEntries(Object.entries(query.filters).filter(([key])=>key!=='missing_contract')):query.filters;
   const missingOnly=kind==='vehicles'&&query.filters.missing_contract==='1';
-  const filters=kind==='vehicles'?`${vehiclePageClause('all','',vehicleFilters)}${vehicleDerivedClause({...query,filters:vehicleFilters})}`:kind==='staff'?staffPageClause('all','',query.filters):'';
+  const filters=kind==='vehicles'?`${vehiclePageClause('all','',vehicleFilters,true)}${vehicleDerivedClause({...query,filters:vehicleFilters})}`:kind==='staff'?staffPageClause('all','',query.filters):'';
   const selected=kind==='customers'?customerPageClause('all',query.status)
     :kind==='vehicles'?vehiclePageClause('all',query.status,{})
     :kind==='staff'?staffPageClause('all',query.status,{}):storePageClause(query.status);
@@ -450,7 +450,7 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
   const result=await client.query(`WITH counted AS MATERIALIZED (
     SELECT ${status} AS status,(true${filters}${search.sql.replaceAll('$3','$1')}) AS matches,(true${selected}) AS selected${missingFlag}
     FROM ${source} ${kind==='vehicles'&&query.filters.beneficiary_store_id?VEHICLE_RENTAL_SOURCE_JOIN_SQL:''} WHERE true${scope}
-  ) SELECT count(*)::int AS scope_count,count(*) FILTER (WHERE matches)::int AS tab_count,
+  ) SELECT count(*) FILTER (WHERE ${kind==='vehicles'?"status IS DISTINCT FROM 'sold'":'true'})::int AS scope_count,count(*) FILTER (WHERE matches${kind==='vehicles'?" AND status IS DISTINCT FROM 'sold'":''})::int AS tab_count,
     count(*) FILTER (WHERE ${totalFilter})::int AS total${missingSelect},
     COALESCE((SELECT jsonb_agg(jsonb_build_array(status,n) ORDER BY status) FROM (
       SELECT status,count(*)::int AS n FROM counted WHERE matches GROUP BY status

@@ -1,5 +1,6 @@
 import type { CatalogueKind } from "@himoto/mobile-contract";
 import { statuses } from './status-labels';
+import type { MobileContractScope } from '../../../shared/mobile-contract-workspaces';
 
 export const catalogueConfig: Record<
   CatalogueKind,
@@ -101,4 +102,35 @@ export function contextualStatusLabel(
     if (status === "blacklist") return "Nợ xấu / Cấm thuê";
   }
   return statuses[status];
+}
+
+/** A workspace is already a filter. Avoid a second identical rental filter,
+ * or lifecycle states that cannot occur in that workspace. */
+export function catalogueStatuses(kind: CatalogueKind, scope: MobileContractScope = '', all = false): string[] {
+  if (kind === 'contracts') {
+    if (scope === 'overdue') return ['', 'bad_debt'];
+    if (scope === 'drafts' || scope === 'due') return [''];
+    if (scope === 'active') return ['', 'overdue', 'wait_payment'];
+    if (scope === 'renewable') return ['', 'overdue', 'bad_debt'];
+  }
+  return all ? ['', ...catalogueConfig[kind].allStatuses] : catalogueConfig[kind].quickStatuses;
+}
+
+export function catalogueAllLabel(kind: CatalogueKind, scope: MobileContractScope = '') {
+  if (kind === 'vehicles') return 'Đang quản lý';
+  if (kind !== 'contracts' || !scope) return 'Tất cả';
+  if (scope === 'overdue') return 'Tất cả quá hạn';
+  if (scope === 'active') return 'Tất cả đang xử lý';
+  if (scope === 'drafts') return 'Tất cả bản nháp';
+  return 'Tất cả trong nhóm';
+}
+
+/** Monitoring can add overdue rentals to the overdue badge while retaining
+ * their original status. Subtract the other lifecycle states to count each
+ * active rental once. */
+export function activeRentalCount(counts: Map<string, number>, total: number) {
+  let count = total;
+  for (const [status, value] of counts)
+    if (!['renting', 'overdue', 'bad_debt'].includes(status)) count -= value;
+  return Math.max(0, count);
 }

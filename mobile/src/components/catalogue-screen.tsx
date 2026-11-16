@@ -41,7 +41,7 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import { CatalogueFilters } from "@/components/catalogue-filters";
-import { catalogueConfig, contextualStatusLabel } from "@/lib/catalogue-config";
+import { catalogueConfig, catalogueStatuses, catalogueAllLabel, activeRentalCount, contextualStatusLabel } from "@/lib/catalogue-config";
 import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { dateTime, money, statuses, useTheme } from "@/theme";
@@ -289,7 +289,7 @@ export function CatalogueScreen({
   const statistics = useQuery({
     queryKey: ['catalogue', 'status-counts', 'contracts', session?.user.id, session?.user.storeId, session?.user.allStores, scope, search, store, from, to, storeBasis, customerId],
     queryFn: ({ signal }) => api!.catalogue('contracts', new URLSearchParams({ statistics: '1', size: '1', scope, search, store, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) }).toString(), signal),
-    enabled: kind === 'contracts' && !operationsCatalogue && !!api && !!allowed && datesValid && query.isSuccess,
+    enabled: kind === 'contracts' && !!api && !!allowed && datesValid && query.isSuccess,
     staleTime: 30_000, gcTime: 300_000, retry: false,
   });
   const records = useMemo(() => [
@@ -333,9 +333,7 @@ export function CatalogueScreen({
         "Cơ sở được phân công";
   const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source") + Number(!!customerId);
 
-  const quickStatuses = [
-    ...new Set(["", ...(kind === 'contracts' && scope === 'drafts' ? ['draft'] : settings.quickStatuses), ...(status ? [status] : [])]),
-  ].filter(value => !value || status === value || !(scope === 'overdue' && value === 'overdue'));
+  const quickStatuses = [...new Set([...catalogueStatuses(kind, scope), ...(status ? [status] : [])])];
   function resetFilters() {
     setInput("");
     setSearch("");
@@ -447,6 +445,7 @@ export function CatalogueScreen({
             </Text>
           </View>
         )}
+        {kind === 'vehicles' && <Text style={{ color: theme.muted, fontSize: 13 }}>Xe đang quản lý không gồm xe đã bán. Chọn “Đã bán” để tra cứu lịch sử.</Text>}
         {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
           <Button label="+ Thêm xe mới" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />
         )}
@@ -570,18 +569,14 @@ export function CatalogueScreen({
             >
               {quickStatuses.map((value) => {
                 const isSelected = status === value;
-                const tabLabel = kind === 'contracts' && scope === 'drafts' && (!value || value === 'draft') ? value ? 'Lưu nháp' : 'Tất cả bản nháp' : value
+                const tabLabel = value
                   ? contextualStatusLabel(kind, value) || statuses[value] || value
-                  : kind === 'contracts' && scope ? contractWorkspace(scope)!.title : "Tất cả";
+                  : catalogueAllLabel(kind, scope);
                 const count = (() => {
                   if (!value) return kind === 'contracts' ? statistics.data?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined) : query.data?.pages[0]?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined);
                   if (statusCountsMap.size === 0 && !(kind === 'contracts' ? statistics.data : query.data)) return undefined;
                   if (kind === "contracts" && value === "renting") {
-                    const renting = statusCountsMap.get("renting") || 0;
-                    const overdue = statusCountsMap.get("overdue") || 0;
-                    const badDebt = statusCountsMap.get("bad_debt") || 0;
-                    const sum = renting + overdue + badDebt;
-                    return sum;
+                    return statistics.data?.tabCount === undefined ? undefined : activeRentalCount(statusCountsMap, statistics.data.tabCount);
                   }
                   if (kind === 'contracts' && value === 'overdue') return (statusCountsMap.get('overdue') || 0) + (statusCountsMap.get('bad_debt') || 0);
                   if (kind === 'customers' && value === 'blacklist') return statusCountsMap.get('bad_debt') ?? statusCountsMap.get('blacklist') ?? 0;
@@ -621,7 +616,7 @@ export function CatalogueScreen({
             </ScrollView>
 
             {!!customerId && <Text style={{ color: theme.text, fontSize: 14 }}>Hợp đồng của khách: {customerName || `#${customerId}`}</Text>}
-            {kind === 'contracts' && !operationsCatalogue && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
+            {kind === 'contracts' && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
 
             {/* Scope notification banner if filtered by specialized workspace */}
             {kind === "contracts" && !!scope && (
@@ -725,7 +720,7 @@ export function CatalogueScreen({
             onRefresh={() => {
               void restore(true);
               void query.refetch();
-              if (kind === 'contracts' && !operationsCatalogue) void statistics.refetch();
+              if (kind === 'contracts') void statistics.refetch();
               if(kind==='vehicles')void cache.invalidateQueries({queryKey:['record-media','vehicle-thumbnail']});
             }}
             tintColor={theme.primary}
@@ -817,6 +812,7 @@ export function CatalogueScreen({
       {filtersOpen && (
         <CatalogueFilters
           kind={kind}
+          scope={scope}
           selected={{ status, store, from, to, storeBasis }}
           defaultStore={defaultStore}
           stores={stores}

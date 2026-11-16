@@ -88,6 +88,7 @@ async function main() {
   params = history.params; const screen = Contracts(); assert.equal(screen.props.initialCustomerId, '101'); assert.equal(screen.props.initialStatus, '');
   params = { search: 'Same Name' }; assert.equal(Contracts().props.initialSearch, 'Same Name'); assert.equal(Contracts().props.initialStatus, '');
   params = {}; assert.equal(Contracts().props.initialStatus, 'draft');
+  params = { scope: 'overdue' }; assert.equal(Contracts().props.initialStatus, '');
   for (const customer_id of ['0','01','101 OR 1=1','', ['101']]) { params = { customer_id }; assert.equal(Contracts().type, 'StateView'); }
   checks.push('Customer history binds an exact ID and all statuses; general search is consumed, normal opening still defaults to drafts and malformed IDs fail closed');
 
@@ -162,20 +163,26 @@ async function main() {
   assert.deepEqual(statisticsOptions.queryKey, countKey); assert(text(tree).includes('Tất cả (10)'));
   statisticsPage = undefined; hookIndex = 0; hookValues = {}; tree = CatalogueScreen({ kind: 'contracts', initialStatus: 'draft' });
   assert(!text(tree).includes('Tất cả (0)'), 'Unavailable statistics must not be replaced with a filtered zero');
-  hookIndex = 0; hookValues = {}; CatalogueScreen({ kind: 'contracts', operationsCatalogue: true }); assert(!statisticsOptions.enabled);
+  hookIndex = 0; hookValues = {}; CatalogueScreen({ kind: 'contracts', operationsCatalogue: true }); assert(statisticsOptions.enabled);
   checks.push('Independent counters keep All=10 and active=7 even on an empty draft tab; customer/store filters bind both reads, status switches reuse counts and unavailable counts never show a false zero');
   reset(); hookIndex = 0;
   tree = CatalogueScreen({ kind: 'contracts', initialStatus: '' });
   assert(text(tree).includes('Quá hạn (3)'));
   for (const scope of ['overdue','drafts','vat','due','ownership']) {
     reset(); tree = CatalogueScreen({ kind: 'contracts', initialScope: scope });
-    const label = scope === 'drafts' ? 'Tất cả bản nháp' : workspaces.contractWorkspace(scope).title;
+    const label = config.catalogueAllLabel('contracts', scope);
     assert(text(tree).includes(label + ' (10)'), scope);
     assert(!text(tree).includes('Tất cả (10)'), scope);
     await infiniteOptions.queryFn({ pageParam: 1, signal: new AbortController().signal });
     assert.equal(requests[0].query.get('scope'), scope);
     assert.equal(requests[0].query.get('status'), '');
+    if (scope === 'overdue') assert(!text(tree).includes('Đang thuê'), 'Overdue workspace must not advertise a second active-rental scope');
+    if (scope === 'drafts' || scope === 'due') assert.deepEqual(config.catalogueStatuses('contracts',scope), ['']);
   }
+  reset(); statisticsPage = { ...statisticsPage, tabCount: 8, statusCounts: [['renting',4],['overdue',3],['bad_debt',1],['completed',2]] };
+  tree = CatalogueScreen({ kind: 'contracts', initialScope: 'ownership' });
+  assert(text(tree).includes('Đang thuê (6)'), 'Installment overdue badges must not count the same rental twice');
+  checks.push('Scoped lists avoid duplicate rental tabs, operation links load independent counters, and installment overdue badges cannot inflate active-rental totals');
   checks.push('Overdue tab counts bad debt; five drawer workspaces select their own group with an unfiltered status instead of misleading All');
   reset(); statisticsPage = { ...statisticsPage, tabCount: 0, statusCounts: [] };
   tree = CatalogueScreen({ kind: 'contracts', initialStatus: '' });

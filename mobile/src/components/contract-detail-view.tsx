@@ -352,12 +352,12 @@ export function ContractDetailView({
 
               <Button
                 secondary
-                label="Giấy tờ và CCCD của khách"
+                label="Giấy tờ và CCCD trong hợp đồng"
                 icon={<FileText size={16} color={theme.text} />}
                 onPress={() =>
                   router.push({
                     pathname: "/record-media/[entity]/[id]",
-                    params: { entity: "customers", id },
+                    params: { entity: "contracts", id, kind: "rental", referenceId: id },
                   })
                 }
               />

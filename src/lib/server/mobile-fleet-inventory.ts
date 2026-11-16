@@ -20,7 +20,7 @@ export async function readMobileFleetInventory(user:SessionUser,query:URLSearchP
     // One statement keeps rows/counts/store choices on the same DB snapshot.
     const folded=`lower(translate(regexp_replace(normalize(concat_ws(' ',license,name,store_name,from_store_name,to_store_name),NFD) COLLATE "C",'[\u0300-\u036f]','','g'),'đĐ','dD'))`;
     const data=await himotoPool.query(`WITH inventory AS MATERIALIZED (
-      SELECT * FROM himoto.vehicle_inventory() WHERE store_id>0
+      SELECT * FROM himoto.vehicle_inventory() WHERE store_id>0 AND status IS DISTINCT FROM 'sold'
     ), filtered AS MATERIALIZED (
       SELECT * FROM inventory WHERE ($1::bigint IS NULL OR store_id=$1)
       AND ($2::text='' OR available=($2='ready'))

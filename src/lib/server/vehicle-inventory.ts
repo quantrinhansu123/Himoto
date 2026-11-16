@@ -3,7 +3,7 @@ import type {PoolClient} from 'pg';
 import {readDraftVehicleRentals} from './draft-vehicle-rentals';
 
 export async function readVehicleInventory(db:Pick<PoolClient,'query'>) {
-  const inventory=await db.query('SELECT * FROM himoto.vehicle_inventory() WHERE store_id>0');
+  const inventory=await db.query("SELECT * FROM himoto.vehicle_inventory() WHERE store_id>0 AND status IS DISTINCT FROM 'sold'");
   const ids=inventory.rows.map(row=>Number(row.id)).filter(id=>Number.isSafeInteger(id)&&id>0);
   const blockers=ids.length?await db.query('SELECT * FROM himoto.vehicle_rental_blockers($1::bigint[])',[ids]):{rows:[]};
   const drafts=ids.length?await readDraftVehicleRentals(db,ids):[];
