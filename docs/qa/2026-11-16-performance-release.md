@@ -1,5 +1,7 @@
 # Hoàn thiện hiệu năng và thông báo — 16/11/2026
 
+**Bản phát hành tiếp theo:** [chốt theo 35 tài khoản hoạt động](2026-11-16-daily-account-release.md), OTA Samsung 19:18. Biên bản này mô tả bản 17:46 trước đó.
+
 **Cập nhật sau phát hành:** [rà soát sâu thêm nhóm quyền và bộ lọc](2026-11-16-performance-final-audit.md) phát hiện báo cáo dưới quyền thuê sở hữu và danh sách Khách hàng khi chọn tất cả còn chậm. Các số liệu admin trong biên bản này không phải kết luận đã tối ưu xong mọi role/bộ lọc.
 
 ## Bản bàn giao

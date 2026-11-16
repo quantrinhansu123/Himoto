@@ -1,5 +1,7 @@
 # Rà soát bổ sung trước bàn giao — 16/11/2026
 
+**Đã triển khai sau khi duyệt:** xem [bản chốt theo tài khoản nghiệp vụ](2026-11-16-daily-account-release.md). Các điểm nghẽn và prototype bên dưới là kết quả trước bản sửa, không phải trạng thái phát hành cuối.
+
 ## Kết luận
 
 Đợt tối ưu trước đã phát hành, nhưng **còn điểm nghẽn cần xử lý trước khi chốt hoàn thiện hiệu năng**: truy vấn tổng hợp dưới quyền quản lý thuê sở hữu và danh sách Khách hàng khi chọn tất cả cơ sở. Không kết luận hết lag từ kết quả của admin hoặc chỉ từ việc mở đủ các màn.
