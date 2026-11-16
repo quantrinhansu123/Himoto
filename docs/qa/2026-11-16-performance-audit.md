@@ -1,5 +1,7 @@
 # Rà soát hiệu năng web và mobile — 16/11/2026
 
+Các hạng mục được duyệt sau đợt audit này đã triển khai. Xem [biên bản bản phát hành và kết quả đo lại](2026-11-16-performance-release.md); các số liệu dưới đây là baseline trước triển khai.
+
 ## Kết luận và trạng thái
 
 Còn các điểm cần tối ưu ngoài GPS. Ưu tiên màn Tích hợp, thông báo, request ảnh xe web và truy vấn báo cáo. Samsung có khung hình trễ khi cuộn danh sách; cần profile riêng trước khi thay cấu hình render. Chưa có cơ sở tuyên bố toàn app luôn 60fps hoặc mọi màn đều mở tức thì.
