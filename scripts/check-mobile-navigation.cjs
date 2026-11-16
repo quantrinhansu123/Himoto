@@ -7,7 +7,7 @@ const React = require('../mobile/node_modules/react'), jsx = require('../mobile/
 const config = loadDomain(path.join(root, 'mobile/src/lib/catalogue-config'));
 const workspaces = loadDomain(path.join(root, 'shared/mobile-contract-workspaces'));
 const checks = [], pushed = [], requests = [];
-let user, pathname, params, hookIndex, hookValues, infiniteOptions, statisticsOptions, listPage, statisticsPage;
+let user, pathname, params, hookIndex, hookValues, infiniteOptions, statisticsOptions, listPage, statisticsPage, infiniteState, nextCalls;
 const theme = new Proxy({}, { get: (_o, key) => key });
 const components = Object.fromEntries(['Button','Card','InlineError','StateView','StatusBadge','Brand'].map(name => [name, name]));
 const native = Object.fromEntries(['Modal','Pressable','ScrollView','Text','View','FlatList','ActivityIndicator','RefreshControl','TextInput'].map(name => [name, name]));
@@ -29,7 +29,7 @@ const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, '
   '@/providers/session': { useSession: () => ({ session: { user }, api, logout: async () => {}, restore: async () => {} }) },
   '@/hooks/use-workspace': { useWorkspace: () => ({ data: { stores: [{ id: 23, name: 'Branch A' }, { id: 24, name: 'Branch B' }] } }) },
   '@tanstack/react-query': { useQueryClient: () => queryClient,
-    useInfiniteQuery: options => { infiniteOptions = options; return { data: { pages: [listPage] }, isSuccess: true }; },
+    useInfiniteQuery: options => { infiniteOptions = options; return { data: { pages: [listPage] }, isSuccess: true, fetchNextPage: async () => { nextCalls++; }, ...infiniteState }; },
     useQuery: options => { statisticsOptions = options; return { data: statisticsPage, isSuccess: !!statisticsPage }; },
     useQueries: options => options.queries.map(() => ({ data: listPage, isPending: false })), },
 };
@@ -47,6 +47,7 @@ function reset() {
   user = { id: 7, role: 'staff', storeId: 23, allStores: false, permissions: ['contracts.read','customers.read','vehicles.read'] };
   pathname = '/contracts'; params = {}; hookIndex = 0; hookValues = {}; pushed.length = requests.length = 0;
   listPage = { rows: [], total: 0, page: 1, pages: 1, statusCounts: [] };
+  infiniteState = {}; nextCalls = 0;
   statisticsPage = { ...listPage, active: 0, overdue: 0, tabCount: 10, statusCounts: [['renting', 4], ['overdue', 2], ['bad_debt', 1], ['completed', 3]] };
 }
 const { RecordActionsModal } = load('mobile/src/components/record-actions-modal.tsx');
@@ -151,6 +152,26 @@ async function main() {
   tree = CatalogueScreen({ kind: 'customers' });
   assert(text(tree).includes('Nợ xấu / Cấm thuê (2)'));
   checks.push('Customer blacklist tab counts the web bad_debt status instead of showing a false zero for its filter alias');
+  reset(); listPage = { ...listPage, rows: [record], total: 418, pages: 21 };
+  infiniteState = { hasNextPage: true, isFetching: false, isFetchNextPageError: false };
+  tree = CatalogueScreen({ kind: 'vehicles' });
+  let list = nodes(tree).find(n => n.type === 'FlatList');
+  const far = { nativeEvent: { contentOffset: { y: 0 }, contentSize: { height: 2000 }, layoutMeasurement: { height: 600 } } };
+  const end = { nativeEvent: { contentOffset: { y: 1350 }, contentSize: { height: 2000 }, layoutMeasurement: { height: 600 } } };
+  for (const callback of ['onScroll', 'onScrollEndDrag', 'onMomentumScrollEnd']) {
+    list.props[callback](far); assert.equal(nextCalls, 0);
+  }
+  for (const callback of ['onScrollEndDrag', 'onMomentumScrollEnd']) list.props[callback](end);
+  assert.equal(nextCalls, 2);
+  const loadMore = nodes(list.props.ListFooterComponent).find(n => n.props?.label === 'Tải thêm kết quả');
+  assert(loadMore && !loadMore.props.disabled); loadMore.props.onPress(); assert.equal(nextCalls, 3);
+  for (const blocked of [{ isFetching: true }, { isFetchNextPageError: true }, { hasNextPage: false }]) {
+    infiniteState = { hasNextPage: true, isFetching: false, isFetchNextPageError: false, ...blocked };
+    hookIndex = 0; hookValues = {}; tree = CatalogueScreen({ kind: 'vehicles' });
+    list = nodes(tree).find(n => n.type === 'FlatList'); list.props.onMomentumScrollEnd(end);
+    assert.equal(nextCalls, 3);
+  }
+  checks.push('Native terminal scroll events retry end detection; an explicit load-more button recovers missed edge events, with fetching/error/end guards');
   console.log(JSON.stringify({ passed: checks.length, checks, operationalWrites: 0, nativeScreenReaderCertified: false }, null, 2));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

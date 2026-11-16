@@ -54,7 +54,8 @@ export function createOfflineTransport(store: OfflineStore, scope: string, activ
           if (cached && validate(cached.data)) {
             offlineStatus.servedCache(cached.savedAt); return cached.data;
           }
-          throw new ApiError('Chưa có dữ liệu này được lưu trên máy hoặc dữ liệu đã quá 24 giờ. Kết nối mạng để tải lần đầu; bản đang soạn vẫn được giữ.', 0, 'OFFLINE_CACHE_MISS');
+          const maxAge = path.split('?')[0] === '/gps/devices' ? '5 phút' : '24 giờ';
+          throw new ApiError(`Chưa có dữ liệu này được lưu trên máy hoặc dữ liệu đã quá ${maxAge}. Kết nối mạng để tải lần đầu; bản đang soạn vẫn được giữ.`, 0, 'OFFLINE_CACHE_MISS');
         }
         if (queued && network) throw new ApiError('Đã lưu thao tác trên máy, chờ đồng bộ. Máy chủ chưa xác nhận; xem trạng thái trong Tài khoản.', 0, 'OFFLINE_QUEUED');
         throw error;

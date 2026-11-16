@@ -13,6 +13,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -345,6 +347,10 @@ export function CatalogueScreen({
   function fetchMore() {
     if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError)
       void query.fetchNextPage({ cancelRefetch: false });
+  }
+  function checkListEnd({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (contentSize.height > 0 && contentSize.height - contentOffset.y - layoutMeasurement.height <= layoutMeasurement.height * 0.4)
+      fetchMore();
   }
   const actions: { label: string; onPress: () => void; disabled?: boolean }[] = [];
   if (kind === "vehicles") {
@@ -721,12 +727,9 @@ export function CatalogueScreen({
         onEndReachedThreshold={0.4}
         onEndReached={fetchMore}
         scrollEventThrottle={100}
-        onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-          // Cached filter results can reuse a content length already reported by
-          // onEndReached. Check the actual scroll distance as well in that case.
-          if (contentSize.height > 0 && contentSize.height - contentOffset.y - layoutMeasurement.height <= layoutMeasurement.height * 0.4)
-            fetchMore();
-        }}
+        onScroll={checkListEnd}
+        onScrollEndDrag={checkListEnd}
+        onMomentumScrollEnd={checkListEnd}
         ListHeaderComponent={
           <>{toolbar}{query.isError && !!records.length ? (
             <View style={{ gap: 12, marginBottom: 12 }}>
@@ -785,6 +788,10 @@ export function CatalogueScreen({
                 }}
               />
             </View>
+          ) : records.length > 0 && query.hasNextPage ? (
+            <View style={{ paddingVertical: 16 }}>
+              <Button label="Tải thêm kết quả" secondary disabled={query.isFetching} onPress={fetchMore} />
+            </View>
           ) : records.length > 0 ? (
             <Text
               style={{
@@ -794,9 +801,7 @@ export function CatalogueScreen({
                 paddingVertical: 24,
               }}
             >
-              {query.hasNextPage
-                ? "Cuộn để xem thêm"
-                : "Đã đến cuối kết quả"}
+              Đã đến cuối kết quả
             </Text>
           ) : undefined
         }
