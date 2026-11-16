@@ -8,7 +8,7 @@ import {Button,Card,InlineError,StateView} from '@/components/ui';
 import {FormField,ChoiceField} from '@/components/form-fields';
 import {useGps} from '@/hooks/use-gps';
 import {useSession} from '@/providers/session';
-import {useTheme} from '@/theme';
+import {useTheme,statuses} from '@/theme';
 import {gpsStopDurationLabel} from '@/lib/gps-stop-duration';
 import {defaultGpsQuery,GPS_FILTER_STATES,GPS_STATE_LABELS,GPS_SYNC_STALE_MS,displayedGpsState,gpsMapLink,gpsStopEvidence,gpsStoppedDurationMs,type MobileGpsQuery,type MobileGpsRow,type MobileGpsEvent} from '../../../shared/mobile-gps';
 
@@ -40,6 +40,7 @@ export default function GpsScreen() {
     const duration=gpsStoppedDurationMs(row,now),evidence=gpsStopEvidence(row,now),positionOld=!!row.position_recorded_at&&now-Date.parse(row.position_recorded_at)>GPS_SYNC_STALE_MS;
     return <Card style={{gap:10}}>
       <Text style={titleStyle}>{row.license||row.provider_device_name||row.external_device_id||'Xe chưa gắn GPS'}</Text>
+      <Text style={muted}>Trạng thái xe: {row.vehicle_status?statuses[row.vehicle_status]||row.vehicle_status:'Chưa ghép xe'}</Text>
       <Text style={{color:state==='online'||state==='stopped'?theme.success:theme.warning,fontSize:15,fontWeight:'700'}}>{GPS_STATE_LABELS[state]||state}</Text>
       {duration!==null&&evidence?<View style={{gap:3}}><Text accessibilityLabel={`Thời gian dừng: ${gpsStopDurationLabel(duration)}`} style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{gpsStopDurationLabel(duration)}</Text><Text style={muted}>Từ {date(evidence.since)} · {evidence.source==='protrack'?'Theo Protrack':'Himoto ghi nhận'}</Text></View>:current==='stopped'?<Text style={muted}>Chưa đủ dữ liệu thời gian dừng</Text>:null}
       <Text style={muted}>{row.store_name||'Chưa có cơ sở'} · {row.provider||'Chưa ghép thiết bị'}</Text>

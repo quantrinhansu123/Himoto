@@ -12,6 +12,10 @@ import {matchesShiftReportProgress} from '../../../shared/shift-report-workflow'
 import {ATTENDANCE_SHIFTS} from '../../../shared/attendance-shifts';
 import {registrationDates,registrationExcel} from '../../../shared/mobile-shift-registration';
 import {readMobileRegistrationRange} from './mobile-shift-registration';
+import {handleAttendance} from './attendance-handler';
+import {NextRequest as AttendanceRequest} from 'next/server';
+import {formatDateTime} from '@/lib/formatters';
+import type {AttendanceEntry} from '../../../shared/mobile-support';
 import {hasPermission} from '@/lib/management/permissions';
 import {readMobileDuties} from './mobile-duty-roster';
 import {readMobileReminderExportRows} from './mobile-debt-reminders';
@@ -28,6 +32,15 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
   if(!isMobileListExportKind(kind))throw new MobileError('Danh sách xuất không tồn tại.',404,'NOT_FOUND');
   if(request.headers.has('idempotency-key'))throw new MobileError('Xuất danh sách không dùng mã ghi.');
   const params=new URLSearchParams(request.nextUrl.searchParams);
+  if(kind==='attendance'){
+    if([...params.keys()].some(k=>!['from','to','store'].includes(k)||params.getAll(k).length!==1))throw new MobileError('Bộ lọc chấm công không hợp lệ.');
+    params.set('export','1');
+    const response=await handleAttendance(new AttendanceRequest(request.nextUrl.origin+'/api/mobile/v1/attendance?'+params),user),body=await response.json();
+    if(!response.ok)throw new MobileError(body.message||'Chưa xuất được chấm công.',response.status);
+    const rows:AttendanceEntry[]=body.data.rows;
+    if(rows.length!==body.data.total||new Set(rows.map(row=>String(row.id))).size!==rows.length)throw new MobileError('Chưa đọc đủ lịch sử chấm công. Tải lại rồi xuất Excel.');
+    return mobileFilteredWorkbook(`himoto-cham-cong-${params.get('from')}-${params.get('to')}`,['ID','Nhân viên','Cơ sở','Ca làm','Giờ vào','Giờ ra','Số phút đi muộn','Số phút về sớm','Công thực tế'],rows.map(row=>[row.id,row.staff_name,row.store_name,row.shift_name,formatDateTime(row.clock_in_at),row.clock_out_at?formatDateTime(row.clock_out_at):null,row.late_minutes,row.early_leave_minutes??null,row.earned_credit??null]));
+  }
   if(kind==='shift-registrations'){
     if([...params.keys()].some(k=>!['from','to','store','search'].includes(k)||params.getAll(k).length!==1))throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
     const from=params.get('from')||'',to=params.get('to')||'',store=params.get('store')||'all',search=params.get('search')||'';

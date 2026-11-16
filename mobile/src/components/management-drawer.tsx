@@ -114,6 +114,7 @@ export function ManagementDrawer({
     {
       title: "NHÂN SỰ & CƠ SỞ",
       items: [
+        { id: "attendance-history", label: "Lịch sử chấm công", route: "/attendance-history", icon: History },
         { id: "staff", label: "Nhân sự", route: "/directory/staff", icon: UsersRound, permission: "hr.read" },
         { id: "shift-registrations", label: "Đăng ký ca", route: "/shift-registrations", icon: CalendarDays, permission: "hr.read" },
         { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays, permission: "hr.read" },

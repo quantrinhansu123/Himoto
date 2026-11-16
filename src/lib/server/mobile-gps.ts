@@ -26,7 +26,7 @@ async function readGpsSnapshot(user:SessionUser,request:NextRequest) {
       const raw=await readGpsWorkspace(db,query.store,query.event_source,query.event_device);
       const rows=raw.devices.map(row=>({
         id:row.id,vehicle_id:row.vehicle_id,provider:row.provider,external_device_id:label(row.external_device_id),provider_device_name:label(row.provider_device_name),
-        license:row.license==null?null:label(row.license),store_id:row.store_id,store_name:row.store_name==null?null:label(row.store_name),
+        license:row.license==null?null:label(row.license),store_id:row.store_id,store_name:row.store_name==null?null:label(row.store_name),vehicle_status:row.vehicle_status??null,
         mapping_status:label(row.mapping_status),management_status:row.management_status,sync_received_at:iso(row.sync_received_at),heartbeat_at:iso(row.heartbeat_at),
         position_recorded_at:iso(row.position_recorded_at),provider_reported_at:iso(row.provider_reported_at),stopped_since:iso(row.stopped_since),
         provider_stopped_since:iso(row.provider_stopped_since),last_latitude:row.last_latitude,last_longitude:row.last_longitude,last_speed:row.last_speed,last_ignition:row.last_ignition??null,

@@ -5,3 +5,5 @@ export const runtime='nodejs';
 export const maxDuration=30;
 export const GET=(request:NextRequest)=>mobileSupport(request,handleAttendance);
 export const POST=GET;
+export const PATCH=GET;
+export const DELETE=GET;

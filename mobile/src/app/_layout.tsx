@@ -65,6 +65,7 @@ function Navigator() {
         </Stack.Protected>
         <Stack.Protected guard={!!session}>
           <Stack.Screen name="attendance" options={{title:'Chấm công'}}/>
+          <Stack.Screen name="attendance-history" options={{title:'Lịch sử chấm công'}}/>
           <Stack.Screen name="attendance-locations" options={{title:'Cài đặt GPS chấm công'}}/>
           <Stack.Screen name="self-shift-registration" options={{title:'Đăng ký ca làm việc'}}/>
           <Stack.Screen name="shift-registrations" options={{title:'Đăng ký ca'}}/>

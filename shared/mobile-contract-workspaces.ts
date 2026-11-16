@@ -26,6 +26,7 @@ export interface MobileContractMonitoring {
   companyPaidAmount: number | null;
   collectionOverdue: boolean;
   basis: "payment" | "return";
+  referencePrice?:boolean;
 }
 export function isContractMonitoring(value: unknown): value is MobileContractMonitoring {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;

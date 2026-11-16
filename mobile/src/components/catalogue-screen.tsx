@@ -192,7 +192,8 @@ const RecordCard = memo(function RecordCard({
             {!!record.monitoring.nextDueAt && <Text style={{ color: theme.text, fontSize: 13 }}>Kỳ tiếp theo: {dateTime(record.monitoring.nextDueAt)}</Text>}
             {record.monitoring.dueAmount !== null && <Text style={{ color: record.monitoring.collectionOverdue ? theme.danger : theme.text, fontSize: 14, fontWeight: "600" }}>Còn phải đóng theo kỳ: {money(record.monitoring.dueAmount)}</Text>}
             {(scope === "overdue" || scope === "ownership") && record.monitoring.rentalDebt !== null && <Text style={{ color: theme.text, fontSize: 13 }}>Tiền thuê còn thiếu: {money(record.monitoring.rentalDebt)}</Text>}
-            {scope === "overdue" && record.monitoring.lateFeeEstimate !== null && <Text style={{ color: theme.warning, fontSize: 13 }}>Phí trả trễ tạm tính: {money(record.monitoring.lateFeeEstimate)}</Text>}
+            {scope === "overdue" && record.monitoring.lateFeeEstimate !== null && <Text style={{ color: theme.warning, fontSize: 13 }}>{record.monitoring.basis==='payment'?'Tiền đến hạn':'Phí trễ tạm tính'}: {money(record.monitoring.lateFeeEstimate)}</Text>}
+            {scope==='overdue'&&record.monitoring.referencePrice&&<Text style={{color:theme.muted,fontSize:13}}>Theo bảng giá ngày tham chiếu</Text>}
             {scope === "vat" && <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>Đã thu vào TK công ty: {money(record.monitoring.companyPaidAmount)}</Text>}
           </View>
         )}

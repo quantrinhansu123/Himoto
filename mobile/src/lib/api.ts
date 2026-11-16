@@ -1,4 +1,4 @@
-import {isAttendanceSummary,isAttendanceReceipt,isAttendanceResolution,isMobileGuideFaq} from '../../../shared/mobile-support';
+import {isAttendanceOverview,isAttendanceSummary,isAttendanceReceipt,isAttendanceResolution,isMobileGuideFaq} from '../../../shared/mobile-support';
 import {isBatteryMedia,type BatteryMedia} from '../../../shared/battery-media';
 import {isMobileNotifications, isMobileNotificationList, isMobilePushStatus, isMobilePushTest, type MobileNotificationKind} from '../../../shared/mobile-notifications';
 import type { OfflineTransport } from './offline-transport';
@@ -267,6 +267,8 @@ export function createApi(
   }
   return {
     attendance:(params:string,signal?:AbortSignal)=>request(`/attendance?${params}`,isAttendanceSummary,{signal}),
+    attendanceOverview:(signal?:AbortSignal)=>request('/attendance?view=summary',isAttendanceOverview,{signal}),
+    manageAttendance:(method:'PATCH'|'DELETE',body:import('../../../shared/mobile-support').AttendanceEdit)=>request('/attendance',(v):v is {success:true}=>!!v&&typeof v==='object'&&'success'in v&&v.success===true,{method,body:JSON.stringify(body)}),
     clockAttendance:(body:FormData)=>request('/attendance',isAttendanceReceipt,{method:'POST',body},45000),
     resolveAttendance:(key:string)=>request(`/attendance?request_id=${encodeURIComponent(key)}`,isAttendanceResolution),
     guideFaq:(params:string,signal?:AbortSignal)=>request(`/guide-faq?${params}`,isMobileGuideFaq,{signal}),

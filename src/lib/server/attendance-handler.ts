@@ -32,6 +32,8 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       const from = params.get('from') || vietnamDate().slice(0,7)+'-01', to = params.get('to') || from;
       const valid = (value:string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
       const store = params.get('store') || 'all', page = Number(params.get('page') || 1);
+      const exporting=params.get('export')==='1';
+      if(exporting&&!isAdminAccount(user))throw new AttendanceError('Chỉ quản trị viên được xuất lịch sử chấm công.',403);
       if (!valid(from)||!valid(to)||from>to||Date.parse(to)-Date.parse(from)>93*86400000||store!=='all'&&!/^[1-9]\d{0,14}$/.test(store)||!Number.isSafeInteger(page)||page<1||page>100000) throw new AttendanceError('Chọn khoảng ngày tối đa 93 ngày và cơ sở hợp lệ.');
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const staff = await attendanceStaff(client,user);
@@ -60,7 +62,8 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       const args = [...values,from,to,store==='all'?null:store];
       const total = Number((await client.query(`SELECT count(*) AS total ${attendanceSource}
         WHERE ${rangeScope} AND ($7::bigint IS NULL OR ${displayStore}=$7)`,args)).rows[0].total);
-      const currentPage = Math.min(page,Math.max(1,Math.ceil(total/50)));
+      if(exporting&&total>50000)throw new AttendanceError('Khoảng ngày có quá nhiều chấm công. Chọn khoảng ngắn hơn để xuất đầy đủ.');
+      const currentPage = exporting?1:Math.min(page,Math.max(1,Math.ceil(total/50)));
       const rows = (await client.query(`WITH punches AS (
         SELECT a.id,a.staff_id,a.staff_name,${displayStore} AS display_store_id,s.store_name,a.clock_in_at,a.clock_out_at,
         a.in_location,a.out_location,a.out_photo IS NOT NULL AS has_out_photo,
@@ -81,7 +84,7 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
             THEN (a.clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::time < $9::time END)
       )
       SELECT * FROM punches WHERE ($7::bigint IS NULL OR display_store_id=$7)
-      ORDER BY clock_in_at DESC,id DESC LIMIT 50 OFFSET $8`,[...args,(currentPage-1)*50,SPLIT_SHIFT_MORNING_END])).rows;
+      ORDER BY clock_in_at DESC,id DESC LIMIT $10 OFFSET $8`,[...args,(currentPage-1)*50,SPLIT_SHIFT_MORNING_END,exporting?50000:50])).rows;
       await client.query('COMMIT');
       const canManage = isAdminAccount(user);
       return NextResponse.json({status:'success',data:{
@@ -89,7 +92,7 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
         rows:rows.map(({work_date,shift_code,store_latitude,store_longitude,display_store_id:_displayStoreId,
           first_in,last_out,shift_open,punch_count,credit_rank,...row})=>{
           const storeLocation = store_latitude != null && store_longitude != null
-            ? {latitude:store_latitude,longitude:store_longitude}
+            ? {latitude:Number(store_latitude),longitude:Number(store_longitude)}
             : null;
           const registration = {work_date,shift_code};
           const comparison = compareRegisteredAttendance(registration,row.clock_in_at,row.clock_out_at);
