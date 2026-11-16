@@ -13,7 +13,7 @@ const components = Object.fromEntries(['Button','Card','InlineError','StateView'
 const native = Object.fromEntries(['Modal','Pressable','ScrollView','Text','View','FlatList','ActivityIndicator','RefreshControl','TextInput'].map(name => [name, name]));
 Object.assign(native, { StyleSheet: { create: value => value }, Platform: { OS: 'android' }, Keyboard: { dismiss() {} }, useWindowDimensions: () => ({ width: 375, height: 812 }) });
 const hooks = { ...React, useMemo: fn => fn(), useCallback: fn => fn, useEffect() {}, useRef: value => ({ current: value }),
-  useState(value) { const position = hookIndex++; return [Object.hasOwn(hookValues, position) ? hookValues[position] : typeof value === 'function' ? value() : value, next => { hookValues[position] = next; }]; } };
+  useState(value) { const position = hookIndex++, current = Object.hasOwn(hookValues, position) ? hookValues[position] : typeof value === 'function' ? value() : value; return [current, next => { hookValues[position] = typeof next === 'function' ? next(Object.hasOwn(hookValues, position) ? hookValues[position] : current) : next; }]; } };
 const queryClient = { invalidateQueries: async () => {}, prefetchQuery: async () => {} };
 const api = { origin: 'https://fixture.invalid', catalogue: async (kind, query) => { requests.push({ kind, query: new URLSearchParams(query) }); return listPage; } };
 const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, 'lucide-react-native': new Proxy({}, { get: () => () => null }),
@@ -92,17 +92,40 @@ async function main() {
 
   const { ManagementDrawer } = load('mobile/src/components/management-drawer.tsx', { '../../../shared/mobile-managed-accounts': { canManageAccounts: () => false } });
   user.permissions.push('hr.read','settings.write');
-  const drawer = nodes(ManagementDrawer({ visible: true, onClose() {} }));
-  for (const [key, route] of [['staff','/directory/staff'],['stores','/directory/stores']]) { drawer.find(n => n.key === key).props.onPress(); assert.equal(pushed.pop(), route); }
+  hookValues = {};
+  const renderDrawer = () => { hookIndex = 0; return nodes(ManagementDrawer({ visible: true, onClose() {} })); };
+  const sectionButtons = tree => tree.filter(n => n.type === 'Pressable' && typeof n.props.accessibilityState?.expanded === 'boolean');
+  const openSection = title => {
+    let tree = renderDrawer(); const button = sectionButtons(tree).find(n => n.props.accessibilityLabel === title); assert(button, title);
+    if (!button.props.accessibilityState.expanded) { button.props.onPress(); tree = renderDrawer(); }
+    return tree;
+  };
+  let drawer = renderDrawer();
+  assert.equal(sectionButtons(drawer).length, 5);
+  assert.equal(sectionButtons(drawer).filter(n => n.props.accessibilityState.expanded).length, 1);
   assert.equal(drawer.find(n => n.key === 'contracts').props.accessibilityState.selected, true);
+  assert(!drawer.some(n => n.key === 'staff'));
+  drawer = openSection('VẬN HÀNH & QUẦY');
+  assert(drawer.some(n => n.key === 'attendance')); assert(!drawer.some(n => n.key === 'contracts'));
+  sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.onPress(); drawer = renderDrawer();
+  assert.equal(sectionButtons(drawer).filter(n => n.props.accessibilityState.expanded).length, 0);
+  assert(!drawer.some(n => n.key === 'attendance'));
+  pathname = '/gps'; drawer = renderDrawer();
+  assert.equal(drawer.find(n => n.key === 'gps').props.accessibilityState.selected, true);
+  assert.equal(sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.accessibilityLabel, 'ĐỘI XE & ĐỊNH VỊ');
+  pathname = '/contracts'; drawer = openSection('NHÂN SỰ & CƠ SỞ');
+  for (const [key, route] of [['staff','/directory/staff'],['stores','/directory/stores']]) { drawer.find(n => n.key === key).props.onPress(); assert.equal(pushed.pop(), route); }
   const files = fs.readdirSync(path.join(root,'mobile/src/app'), { recursive: true }).filter(file => /\.tsx$/.test(file));
   const routes = files.map(file => file.replaceAll('\\','/').replace(/\.tsx$/,'').replace(/(^|\/)index$/,'').replace(/(^|\/)\([^/]+\)(?=\/|$)/g,'').replace(/^\//,''));
   function exists(route) { const clean = typeof route === 'string' ? route : route.pathname; return routes.some(pattern => new RegExp('^/' + pattern.replace(/\[[^\]]+\]/g,'[^/]+') + '/?$').test(clean.replace(/\/\([^/]+\)/g,'') || '/')); }
-  for (const item of drawer.filter(n => n.type === 'Pressable' && n.key)) { item.props.onPress(); assert(exists(pushed.pop()), 'Missing route for ' + item.key); }
-  user.permissions = ['contracts.read']; const limitedDrawer = nodes(ManagementDrawer({ visible: true, onClose() {} }));
+  for (const title of sectionButtons(drawer).map(n => n.props.accessibilityLabel)) {
+    for (const item of openSection(title).filter(n => n.type === 'Pressable' && n.key)) { item.props.onPress(); assert(exists(pushed.pop()), 'Missing route for ' + item.key); }
+  }
+  user.permissions = ['contracts.read']; const limitedDrawer = openSection('NHÂN SỰ & CƠ SỞ');
   assert(!limitedDrawer.some(n => n.key === 'staff'));
   assert(limitedDrawer.some(n => n.key === 'stores'));
-  checks.push('Every drawer destination exists, staff/stores open directories, grouped tab paths highlight correctly and denied sections remain hidden');
+  assert(!sectionButtons(limitedDrawer).some(n => n.props.accessibilityLabel === 'ĐỘI XE & ĐỊNH VỊ'));
+  checks.push('Drawer groups expand one at a time, toggle closed and open the active route by default; every permitted destination exists and denied sections remain hidden');
 
   reset(); const { default: Overview } = load('mobile/src/app/(tabs)/index.tsx', { '@/components/workspace-links': { WorkspaceLinks: 'WorkspaceLinks' }, '@/components/management-drawer': { ManagementDrawer: 'Drawer' } });
   for (const allStores of [true, false]) {
