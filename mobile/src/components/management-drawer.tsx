@@ -37,6 +37,7 @@ import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { roles, useTheme } from "@/theme";
 import { canManageAccounts } from "../../../shared/mobile-managed-accounts";
+import { isAdminAccount } from "../../../shared/access-permissions";
 import { Brand } from "./ui";
 
 interface DrawerItem {
@@ -83,7 +84,7 @@ export function ManagementDrawer({
       title: "VẬN HÀNH & QUẦY",
       items: [
         { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock, permission: null },
-        { id: "shift-reports", label: "Báo cáo cuối ca", route: "/shift-reports", icon: ReceiptText, permission: null },
+        { id: "shift-reports", label: "Báo cáo cuối ca", route: "/shift-reports", icon: ReceiptText, permission: "contracts.read" },
         { id: "operations", label: "Thao tác nhanh", route: "/(tabs)", icon: House, permission: null },
         { id: "dashboard", label: "Tổng quan giao dịch", route: "/dashboard", icon: LayoutDashboard, permission: "contracts.read" },
         { id: "staff-sales", label: "Báo cáo doanh thu", route: "/staff-sales", icon: ReceiptText, permission: "contracts.read" },
@@ -134,6 +135,7 @@ export function ManagementDrawer({
   ], []);
 
   const hasAccess = (item: DrawerItem) => {
+    if (item.id === "integrations") return isAdminAccount(session?.user);
     if (item.permission === null) return true;
     if (item.id === "accounts") return canManageAccounts(session?.user);
     if (!item.permission) return true;

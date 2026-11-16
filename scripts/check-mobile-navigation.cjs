@@ -25,6 +25,7 @@ const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, '
   '@/lib/catalogue-pages': loadDomain(path.join(root,'mobile/src/lib/catalogue-pages')),
   '../../../shared/mobile-backfill': loadDomain(path.join(root, 'shared/mobile-backfill')),
   '../../../shared/mobile-managed-accounts': loadDomain(path.join(root, 'shared/mobile-managed-accounts')),
+  '../../../shared/access-permissions': loadDomain(path.join(root, 'shared/access-permissions')),
   '../../../../shared/mobile-contract-workspaces': workspaces,
   '@/providers/session': { useSession: () => ({ session: { user }, api, logout: async () => {}, restore: async () => {} }) },
   '@/hooks/use-workspace': { useWorkspace: () => ({ data: { stores: [{ id: 23, name: 'Branch A' }, { id: 24, name: 'Branch B' }] } }) },
@@ -121,6 +122,14 @@ async function main() {
   for (const title of sectionButtons(drawer).map(n => n.props.accessibilityLabel)) {
     for (const item of openSection(title).filter(n => n.type === 'Pressable' && n.key)) { item.props.onPress(); assert(exists(pushed.pop()), 'Missing route for ' + item.key); }
   }
+  user.role='ownership_manager';
+  assert(!openSection('TÀI CHÍNH & HỆ THỐNG').some(n=>n.key==='integrations'));
+  user.role='admin';
+  assert(openSection('TÀI CHÍNH & HỆ THỐNG').some(n=>n.key==='integrations'));
+  user.role='staff';user.permissions=user.permissions.filter(p=>p!=='contracts.read');
+  assert(!openSection('VẬN HÀNH & QUẦY').some(n=>n.key==='shift-reports'));
+  assert(openSection('VẬN HÀNH & QUẦY').some(n=>n.key==='attendance'));
+  checks.push('Integration menu follows the admin-only API even with settings.write; end-of-shift reporting requires contracts.read while personal attendance remains available');
   user.permissions = ['contracts.read']; const limitedDrawer = openSection('NHÂN SỰ & CƠ SỞ');
   assert(!limitedDrawer.some(n => n.key === 'staff'));
   assert(limitedDrawer.some(n => n.key === 'stores'));

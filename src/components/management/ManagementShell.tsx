@@ -7,7 +7,7 @@ import { AlarmClock, ArrowLeft, BookOpen, BatteryCharging, Bike, Building2, Cale
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { ReloadButton, requestReload } from './ReloadButton';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
-import { canRecordContractPayment,hasPermission,type AccessPermission } from '@/lib/management/permissions';
+import { canRecordContractPayment,hasPermission,isAdminAccount,type AccessPermission } from '@/lib/management/permissions';
 import { ContractTypesProvider } from '@/components/contracts/ContractTypesProvider';
 import type { SessionUser } from '@/lib/server/management-session';
 import { SePayNotifications } from './SePayNotifications';
@@ -68,12 +68,10 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const active = currentLink ?? navLinks.find(item => item.kind === 'vehicles')!;
   const activeGroup = navigation.find((item): item is NavGroup =>
     'links' in item && item.links.includes(active));
-  const visibleNavigation = navLinks.filter(item => {
-    const permission = navigationPermission(item.kind);
-    return permission === null || hasPermission(user, permission);
-  });
+  const canNavigate=(kind:string)=>kind==='integrations'?isAdminAccount(user):navigationPermission(kind)===null||hasPermission(user,navigationPermission(kind)!);
+  const visibleNavigation = navLinks.filter(item => canNavigate(item.kind));
   const homeHref=visibleNavigation.find(item=>item.href==='/operations')?.href||visibleNavigation[0]?.href||'/login';
-  const pageAllowed=navigationPermission(active.kind)===null||hasPermission(user,navigationPermission(active.kind)!);
+  const pageAllowed=canNavigate(active.kind);
   const writableCustomers = source === 'api' && active.kind === 'customers';
   const writableStores = source === 'api' && active.kind === 'stores' && hasPermission(user,'settings.write');
   const writableDuties = source === 'api' && active.kind === 'duty-roster';
