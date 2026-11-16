@@ -49,7 +49,7 @@ import { rememberRecordPreview } from '@/lib/record-preview';
 import { ManagementDrawer } from "@/components/management-drawer";
 import { RecordActionsModal } from "@/components/record-actions-modal";
 import { backfillActions } from '../../../shared/mobile-backfill';
-import { canManageAccounts } from '../../../shared/mobile-managed-accounts';
+import { isAdminAccount } from '../../../shared/mobile-managed-accounts';
 
 const RecordCard = memo(function RecordCard({
   record,
@@ -375,7 +375,7 @@ export function CatalogueScreen({
     );
   }
   const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}) }).toString();
-  if (kind === 'contracts' && !operationsCatalogue && canManageAccounts(session?.user)) actions.push({ label: 'Nhập nháp hợp đồng từ Excel', onPress: () => router.push('/import-contracts') });
+  if (kind === 'contracts' && !operationsCatalogue && isAdminAccount(session?.user)) actions.push({ label: 'Nhập nháp hợp đồng từ Excel', onPress: () => router.push('/import-contracts') });
   if (!operationsCatalogue) {
     if (session?.user.permissions.includes(kind === 'contracts' ? 'contracts.delete' : 'settings.write'))
       actions.push({ label: "Chọn nhiều hồ sơ để xóa", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
