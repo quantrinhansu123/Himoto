@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { cataloguePageWindow, CATALOGUE_MAX_PAGES } from '@/lib/catalogue-pages';
 import { router, Stack } from "expo-router";
 import {
   ActivityIndicator,
@@ -12,6 +13,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -38,7 +41,7 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import { CatalogueFilters } from "@/components/catalogue-filters";
-import { catalogueConfig, contextualStatusLabel } from "@/lib/catalogue-config";
+import { catalogueConfig, catalogueStatuses, catalogueAllLabel, activeRentalCount, contextualStatusLabel } from "@/lib/catalogue-config";
 import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { dateTime, money, statuses, useTheme } from "@/theme";
@@ -46,7 +49,7 @@ import { rememberRecordPreview } from '@/lib/record-preview';
 import { ManagementDrawer } from "@/components/management-drawer";
 import { RecordActionsModal } from "@/components/record-actions-modal";
 import { backfillActions } from '../../../shared/mobile-backfill';
-import { canManageAccounts } from '../../../shared/mobile-managed-accounts';
+import { isAdminAccount } from '../../../shared/mobile-managed-accounts';
 
 const RecordCard = memo(function RecordCard({
   record,
@@ -57,7 +60,7 @@ const RecordCard = memo(function RecordCard({
   record: MobileRecord;
   kind: CatalogueKind;
   scope: MobileContractScope;
-  onOpenActions?: () => void;
+  onOpenActions?: (record:MobileRecord) => void;
 }) {
   const theme = useTheme();
   const cache = useQueryClient();
@@ -111,7 +114,7 @@ const RecordCard = memo(function RecordCard({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Thao tác ${record.code || record.license || record.name}`}
-              onPress={onOpenActions}
+              onPress={() => onOpenActions(record)}
               hitSlop={10}
               style={({ pressed }) => [
                 styles.moreButton,
@@ -190,9 +193,10 @@ const RecordCard = memo(function RecordCard({
           <View style={{ gap: 5 }}>
             {!!record.monitoring.contractTypeName && <Text style={{ color: theme.muted, fontSize: 13 }}>{record.monitoring.contractTypeName}</Text>}
             {!!record.monitoring.nextDueAt && <Text style={{ color: theme.text, fontSize: 13 }}>Kỳ tiếp theo: {dateTime(record.monitoring.nextDueAt)}</Text>}
-            {record.monitoring.dueAmount !== null && <Text style={{ color: record.monitoring.collectionOverdue ? theme.danger : theme.text, fontSize: 14, fontWeight: "600" }}>Còn phải đóng theo kỳ: {money(record.monitoring.dueAmount)}</Text>}
+            {scope!=='overdue'&&record.monitoring.dueAmount !== null && <Text style={{ color: record.monitoring.collectionOverdue ? theme.danger : theme.text, fontSize: 14, fontWeight: "600" }}>Còn phải đóng theo kỳ: {money(record.monitoring.dueAmount)}</Text>}
             {(scope === "overdue" || scope === "ownership") && record.monitoring.rentalDebt !== null && <Text style={{ color: theme.text, fontSize: 13 }}>Tiền thuê còn thiếu: {money(record.monitoring.rentalDebt)}</Text>}
-            {scope === "overdue" && record.monitoring.lateFeeEstimate !== null && <Text style={{ color: theme.warning, fontSize: 13 }}>Phí trả trễ tạm tính: {money(record.monitoring.lateFeeEstimate)}</Text>}
+            {scope === "overdue"&&record.status!=='bad_debt'&&(record.monitoring.basis==='payment'?record.monitoring.dueAmount:record.monitoring.lateFeeEstimate)!==null&&<Text style={{color:theme.warning,fontSize:13}}>{record.monitoring.basis==='payment'?'Tiền đến hạn':'Phí trễ tạm tính'}: {money((record.monitoring.basis==='payment'?record.monitoring.dueAmount:record.monitoring.lateFeeEstimate)!)}</Text>}
+            {scope==='overdue'&&record.status!=='bad_debt'&&record.monitoring.basis==='return'&&record.monitoring.referencePrice&&<Text style={{color:theme.muted,fontSize:13}}>Theo bảng giá ngày tham chiếu</Text>}
             {scope === "vat" && <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>Đã thu vào TK công ty: {money(record.monitoring.companyPaidAmount)}</Text>}
           </View>
         )}
@@ -249,6 +253,7 @@ export function CatalogueScreen({
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [actionRecord, setActionRecord] = useState<MobileRecord | null>(null);
   const list = useRef<FlatList<MobileRecord>>(null);
+  const nextPageGesture = useRef(true);
   const settings = { ...catalogueConfig[kind], ...(kind === "contracts" && scope ? { title: contractWorkspace(scope)!.title } : {}) };
   const allowed = session?.user.permissions.includes(`${kind}.read`);
   useEffect(() => {
@@ -256,6 +261,7 @@ export function CatalogueScreen({
     return () => clearTimeout(timer);
   }, [input]);
   useEffect(() => {
+    nextPageGesture.current = true;
     list.current?.scrollToOffset({ offset: 0, animated: false });
   }, [search, status, store, scope, from, to, storeBasis, customerId]);
   const query = useInfiniteQuery({
@@ -274,8 +280,7 @@ export function CatalogueScreen({
         }).toString(),
         signal,
       ),
-    getNextPageParam: (last) =>
-      last.page < last.pages ? last.page + 1 : undefined,
+    ...cataloguePageWindow,
     enabled: !!api && !!allowed && datesValid,
     staleTime: 30_000,
     gcTime: 300_000,
@@ -284,7 +289,7 @@ export function CatalogueScreen({
   const statistics = useQuery({
     queryKey: ['catalogue', 'status-counts', 'contracts', session?.user.id, session?.user.storeId, session?.user.allStores, scope, search, store, from, to, storeBasis, customerId],
     queryFn: ({ signal }) => api!.catalogue('contracts', new URLSearchParams({ statistics: '1', size: '1', scope, search, store, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) }).toString(), signal),
-    enabled: kind === 'contracts' && !operationsCatalogue && !!api && !!allowed && datesValid && query.isSuccess,
+    enabled: kind === 'contracts' && !!api && !!allowed && datesValid && query.isSuccess,
     staleTime: 30_000, gcTime: 300_000, retry: false,
   });
   const records = useMemo(() => [
@@ -295,7 +300,7 @@ export function CatalogueScreen({
       record={item}
       kind={kind}
       scope={scope}
-      onOpenActions={() => setActionRecord(item)}
+      onOpenActions={setActionRecord}
     />
   ), [kind, scope]);
   const statusCountsMap = useMemo(() => {
@@ -328,9 +333,7 @@ export function CatalogueScreen({
         "Cơ sở được phân công";
   const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source") + Number(!!customerId);
 
-  const quickStatuses = [
-    ...new Set(["", ...(kind === 'contracts' && scope === 'drafts' ? ['draft'] : settings.quickStatuses), ...(status ? [status] : [])]),
-  ].filter(value => !value || status === value || !(scope === 'overdue' && value === 'overdue'));
+  const quickStatuses = [...new Set([...catalogueStatuses(kind, scope), ...(status ? [status] : [])])];
   function resetFilters() {
     setInput("");
     setSearch("");
@@ -341,9 +344,18 @@ export function CatalogueScreen({
     setStoreBasis("source");
     setCustomerId("");
   }
-  function fetchMore() {
-    if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError)
+  function fetchMore(automatic = true) {
+    if (automatic && !nextPageGesture.current) return;
+    if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError) {
+      // Trimming a full page window can emit another native edge event without
+      // user movement. Consume one gesture so it cannot drain every later page.
+      nextPageGesture.current = false;
       void query.fetchNextPage({ cancelRefetch: false });
+    }
+  }
+  function checkListEnd({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (contentSize.height > 0 && contentSize.height - contentOffset.y - layoutMeasurement.height <= layoutMeasurement.height * 0.4)
+      fetchMore();
   }
   const actions: { label: string; onPress: () => void; disabled?: boolean }[] = [];
   if (kind === "vehicles") {
@@ -361,7 +373,7 @@ export function CatalogueScreen({
     );
   }
   const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}) }).toString();
-  if (kind === 'contracts' && !operationsCatalogue && canManageAccounts(session?.user)) actions.push({ label: 'Nhập nháp hợp đồng từ Excel', onPress: () => router.push('/import-contracts') });
+  if (kind === 'contracts' && !operationsCatalogue && isAdminAccount(session?.user)) actions.push({ label: 'Nhập nháp hợp đồng từ Excel', onPress: () => router.push('/import-contracts') });
   if (!operationsCatalogue) {
     if (session?.user.permissions.includes(kind === 'contracts' ? 'contracts.delete' : 'settings.write'))
       actions.push({ label: "Chọn nhiều hồ sơ để xóa", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
@@ -433,6 +445,7 @@ export function CatalogueScreen({
             </Text>
           </View>
         )}
+        {kind === 'vehicles' && <Text style={{ color: theme.muted, fontSize: 13 }}>Xe đang quản lý không gồm xe đã bán. Chọn “Đã bán” để tra cứu lịch sử.</Text>}
         {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
           <Button label="+ Thêm xe mới" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />
         )}
@@ -556,18 +569,14 @@ export function CatalogueScreen({
             >
               {quickStatuses.map((value) => {
                 const isSelected = status === value;
-                const tabLabel = kind === 'contracts' && scope === 'drafts' && (!value || value === 'draft') ? value ? 'Lưu nháp' : 'Tất cả bản nháp' : value
+                const tabLabel = value
                   ? contextualStatusLabel(kind, value) || statuses[value] || value
-                  : kind === 'contracts' && scope ? contractWorkspace(scope)!.title : "Tất cả";
+                  : catalogueAllLabel(kind, scope);
                 const count = (() => {
                   if (!value) return kind === 'contracts' ? statistics.data?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined) : query.data?.pages[0]?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined);
                   if (statusCountsMap.size === 0 && !(kind === 'contracts' ? statistics.data : query.data)) return undefined;
                   if (kind === "contracts" && value === "renting") {
-                    const renting = statusCountsMap.get("renting") || 0;
-                    const overdue = statusCountsMap.get("overdue") || 0;
-                    const badDebt = statusCountsMap.get("bad_debt") || 0;
-                    const sum = renting + overdue + badDebt;
-                    return sum;
+                    return statistics.data?.tabCount === undefined ? undefined : activeRentalCount(statusCountsMap, statistics.data.tabCount);
                   }
                   if (kind === 'contracts' && value === 'overdue') return (statusCountsMap.get('overdue') || 0) + (statusCountsMap.get('bad_debt') || 0);
                   if (kind === 'customers' && value === 'blacklist') return statusCountsMap.get('bad_debt') ?? statusCountsMap.get('blacklist') ?? 0;
@@ -607,7 +616,7 @@ export function CatalogueScreen({
             </ScrollView>
 
             {!!customerId && <Text style={{ color: theme.text, fontSize: 14 }}>Hợp đồng của khách: {customerName || `#${customerId}`}</Text>}
-            {kind === 'contracts' && !operationsCatalogue && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
+            {kind === 'contracts' && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
 
             {/* Scope notification banner if filtered by specialized workspace */}
             {kind === "contracts" && !!scope && (
@@ -700,6 +709,7 @@ export function CatalogueScreen({
         windowSize={5}
         removeClippedSubviews={Platform.OS === 'android'}
         updateCellsBatchingPeriod={32}
+        maintainVisibleContentPosition={Platform.OS!=='web'&&(query.data?.pages.length||0)>=CATALOGUE_MAX_PAGES?{minIndexForVisible:1}:undefined}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'}
@@ -710,21 +720,19 @@ export function CatalogueScreen({
             onRefresh={() => {
               void restore(true);
               void query.refetch();
-              if (kind === 'contracts' && !operationsCatalogue) void statistics.refetch();
+              if (kind === 'contracts') void statistics.refetch();
               if(kind==='vehicles')void cache.invalidateQueries({queryKey:['record-media','vehicle-thumbnail']});
             }}
             tintColor={theme.primary}
           />
         }
         onEndReachedThreshold={0.4}
-        onEndReached={fetchMore}
+        onEndReached={() => fetchMore()}
         scrollEventThrottle={100}
-        onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-          // Cached filter results can reuse a content length already reported by
-          // onEndReached. Check the actual scroll distance as well in that case.
-          if (contentSize.height > 0 && contentSize.height - contentOffset.y - layoutMeasurement.height <= layoutMeasurement.height * 0.4)
-            fetchMore();
-        }}
+        onScrollBeginDrag={() => { nextPageGesture.current = true; }}
+        onScroll={checkListEnd}
+        onScrollEndDrag={checkListEnd}
+        onMomentumScrollEnd={checkListEnd}
         ListHeaderComponent={
           <>{toolbar}{query.isError && !!records.length ? (
             <View style={{ gap: 12, marginBottom: 12 }}>
@@ -737,7 +745,10 @@ export function CatalogueScreen({
                 }}
               />
             </View>
-          ) : null}</>
+          ) : null}{query.hasPreviousPage&&<View style={{gap:10,paddingVertical:12}}>
+            <Button label="Xem kết quả trước" secondary loading={query.isFetchingPreviousPage} disabled={query.isFetching&&!query.isFetchingPreviousPage} onPress={()=>{void query.fetchPreviousPage({cancelRefetch:false});}}/>
+            {query.isFetchPreviousPageError&&<InlineError message="Chưa tải được kết quả trước. Các hồ sơ đang xem vẫn được giữ."/>}
+          </View>}</>
         }
         ListEmptyComponent={
           !datesValid ? <StateView title="Kiểm tra khoảng ngày" message="Chọn ngày kết thúc từ ngày bắt đầu trở đi." /> : query.isPending ? (
@@ -780,6 +791,10 @@ export function CatalogueScreen({
                 }}
               />
             </View>
+          ) : records.length > 0 && query.hasNextPage ? (
+            <View style={{ paddingVertical: 16 }}>
+              <Button label="Tải thêm kết quả" secondary disabled={query.isFetching} onPress={() => fetchMore(false)} />
+            </View>
           ) : records.length > 0 ? (
             <Text
               style={{
@@ -789,9 +804,7 @@ export function CatalogueScreen({
                 paddingVertical: 24,
               }}
             >
-              {query.hasNextPage
-                ? "Cuộn để xem thêm"
-                : "Đã hiển thị hết kết quả"}
+              Đã đến cuối kết quả
             </Text>
           ) : undefined
         }
@@ -799,6 +812,7 @@ export function CatalogueScreen({
       {filtersOpen && (
         <CatalogueFilters
           kind={kind}
+          scope={scope}
           selected={{ status, store, from, to, storeBasis }}
           defaultStore={defaultStore}
           stores={stores}

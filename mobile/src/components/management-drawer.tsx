@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -17,6 +17,7 @@ import {
   Building2,
   CalendarDays,
   CarFront,
+  ChevronDown,
   FilePenLine,
   Files,
   History,
@@ -36,6 +37,7 @@ import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { roles, useTheme } from "@/theme";
 import { canManageAccounts } from "../../../shared/mobile-managed-accounts";
+import { isAdminAccount } from "../../../shared/access-permissions";
 import { Brand } from "./ui";
 
 interface DrawerItem {
@@ -82,7 +84,7 @@ export function ManagementDrawer({
       title: "VẬN HÀNH & QUẦY",
       items: [
         { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock, permission: null },
-        { id: "shift-reports", label: "Báo cáo cuối ca", route: "/shift-reports", icon: ReceiptText, permission: null },
+        { id: "shift-reports", label: "Báo cáo cuối ca", route: "/shift-reports", icon: ReceiptText, permission: "contracts.read" },
         { id: "operations", label: "Thao tác nhanh", route: "/(tabs)", icon: House, permission: null },
         { id: "dashboard", label: "Tổng quan giao dịch", route: "/dashboard", icon: LayoutDashboard, permission: "contracts.read" },
         { id: "staff-sales", label: "Báo cáo doanh thu", route: "/staff-sales", icon: ReceiptText, permission: "contracts.read" },
@@ -114,6 +116,7 @@ export function ManagementDrawer({
     {
       title: "NHÂN SỰ & CƠ SỞ",
       items: [
+        { id: "attendance-history", label: "Lịch sử chấm công", route: "/attendance-history", icon: History },
         { id: "staff", label: "Nhân sự", route: "/directory/staff", icon: UsersRound, permission: "hr.read" },
         { id: "shift-registrations", label: "Đăng ký ca", route: "/shift-registrations", icon: CalendarDays, permission: "hr.read" },
         { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays, permission: "hr.read" },
@@ -132,11 +135,25 @@ export function ManagementDrawer({
   ], []);
 
   const hasAccess = (item: DrawerItem) => {
+    if (item.id === "integrations") return isAdminAccount(session?.user);
     if (item.permission === null) return true;
     if (item.id === "accounts") return canManageAccounts(session?.user);
     if (!item.permission) return true;
     return permissions.includes(item.permission);
   };
+
+  const isItemActive = (item: DrawerItem) =>
+    pathname === (item.route.replace(/\/\([^/]+\)/g, "") || "/");
+  const activeSection = sections.find(section =>
+    section.items.some(item => hasAccess(item) && isItemActive(item)),
+  )?.title ?? null;
+  const [expandedSection, setExpandedSection] = useState<{
+    pathname: string;
+    title: string | null;
+  } | null>(null);
+  const expandedTitle = expandedSection?.pathname === pathname
+    ? expandedSection.title
+    : activeSection;
 
   const handleNavigate = (route: Href & string) => {
     onClose();
@@ -247,16 +264,39 @@ export function ManagementDrawer({
             {sections.map((section) => {
               const visibleItems = section.items.filter(hasAccess);
               if (visibleItems.length === 0) return null;
+              const expanded = expandedTitle === section.title;
 
               return (
                 <View key={section.title} style={styles.sectionContainer}>
-                  <Text style={[styles.sectionTitle, { color: theme.muted }]}>
-                    {section.title}
-                  </Text>
-                  <View style={styles.sectionItems}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={section.title}
+                    accessibilityState={{ expanded }}
+                    aria-expanded={expanded}
+                    onPress={() => setExpandedSection(current => ({
+                      pathname,
+                      title: (current?.pathname === pathname ? current.title : activeSection) === section.title
+                        ? null : section.title,
+                    }))}
+                    style={({ pressed }) => [
+                      styles.sectionToggle,
+                      { backgroundColor: pressed ? theme.background : "transparent" },
+                    ]}
+                  >
+                    <Text style={[styles.sectionTitle, { color: activeSection === section.title ? theme.primary : theme.muted }]}>
+                      {section.title}
+                    </Text>
+                    <ChevronDown
+                      size={18}
+                      color={theme.muted}
+                      accessible={false}
+                      style={{ transform: [{ rotate: expanded ? "180deg" : "0deg" }] }}
+                    />
+                  </Pressable>
+                  {expanded && <View style={styles.sectionItems}>
                     {visibleItems.map((item) => {
                       const Icon = item.icon;
-                      const isActive = pathname === (item.route.replace(/\/\([^/]+\)/g, "") || "/");
+                      const isActive = isItemActive(item);
 
                       return (
                         <Pressable
@@ -300,7 +340,7 @@ export function ManagementDrawer({
                         </Pressable>
                       );
                     })}
-                  </View>
+                  </View>}
                 </View>
               );
             })}
@@ -437,17 +477,25 @@ const styles = StyleSheet.create({
   scrollList: {
     paddingHorizontal: 10,
     paddingBottom: 24,
-    gap: 16,
+    gap: 6,
   },
   sectionContainer: {
     gap: 4,
   },
   sectionTitle: {
+    flex: 1,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0.8,
+  },
+  sectionToggle: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
   sectionItems: {
     gap: 2,

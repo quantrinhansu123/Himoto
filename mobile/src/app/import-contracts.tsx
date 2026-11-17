@@ -3,7 +3,7 @@ import {ScrollView,Text} from 'react-native';
 import {router,usePreventRemove} from 'expo-router';
 import {uuid} from 'expo';
 import {useQuery} from '@tanstack/react-query';
-import {canManageAccounts} from '../../../shared/mobile-managed-accounts';
+import {isAdminAccount} from '../../../shared/mobile-managed-accounts';
 import type {MobileContractWorkbook,MobileContractImportPreview} from '../../../shared/mobile-contract-import';
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
@@ -15,7 +15,7 @@ import {Button,Card,InlineError,StateView} from '@/components/ui';
 import {ChoiceField} from '@/components/form-fields';
 import {ConfirmEdit} from '@/components/editor-sheet';
 
-export default function Route(){const{api,session}=useSession();if(!api||!session||!canManageAccounts(session.user))return <StateView title="Chỉ quản trị viên được nhập nháp hợp đồng từ Excel"/>;return <Importer key={[api.origin,session.token,session.user.storeId,session.user.allStores].join('|')}/>;}
+export default function Route(){const{api,session}=useSession();if(!api||!session||!isAdminAccount(session.user))return <StateView title="Chỉ quản trị viên được nhập nháp hợp đồng từ Excel"/>;return <Importer key={[api.origin,session.token,session.user.storeId,session.user.allStores].join('|')}/>;}
 function Importer(){
   const {api,session}=useSession(),theme=useTheme(),download=useCsvExport();
   const scope=useMemo(()=>({origin:api!.origin,userId:session!.user.id,storeId:session!.user.allStores?null:session!.user.storeId,allStores:session!.user.allStores}),[api,session]);

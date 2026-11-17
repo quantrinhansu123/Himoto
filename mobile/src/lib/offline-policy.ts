@@ -1,6 +1,11 @@
 import type { MobileUser } from '../../../shared/mobile-contract';
 
 export const OFFLINE_TTL = 24 * 60 * 60 * 1000;
+export const GPS_CACHE_TTL = 5 * 60 * 1000;
+export const cacheReadTtl=(path:string)=>path.split('?')[0]==='/gps/devices'?GPS_CACHE_TTL:OFFLINE_TTL;
+export function cachedReadValue(path:string,data:unknown) {
+  return path.split('?')[0]==='/gps/devices'&&data&&typeof data==='object'?{...data,canMap:false}:data;
+}
 export const MAX_CACHE_PAGES = 180;
 export const MAX_OFFLINE_WRITES = 8;
 export type OfflineScope = { origin: string; user: MobileUser };
@@ -13,7 +18,7 @@ export function cacheableRead(path: string, method = 'GET') {
   const route = path.split('?')[0];
   const query = new URLSearchParams(path.split('?')[1] || '');
   if (query.has('photo') || query.has('request_id')) return false;
-  return route === '/workspace' ||
+  return route === '/workspace' || route === '/gps/devices' ||
     /^\/catalogue\/(vehicles|customers|contracts)(\/\d+)?$/.test(route) ||
     /^\/(customers|vehicles)\/(\d+|options)$/.test(route) ||
     /^\/drafts\/(\d+|options|staff|inventory)$/.test(route) ||

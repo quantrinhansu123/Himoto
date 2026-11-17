@@ -1,4 +1,4 @@
-import { MAX_CACHE_PAGES, MAX_OFFLINE_WRITES, OFFLINE_TTL, offlineOperation, retryDelay } from './offline-policy';
+import { MAX_CACHE_PAGES, MAX_OFFLINE_WRITES, OFFLINE_TTL, cacheReadTtl, cachedReadValue, offlineOperation, retryDelay } from './offline-policy';
 
 type SqlValue = string | number | null;
 export interface OfflineDatabase {
@@ -44,15 +44,18 @@ export async function createOfflineStore(db: OfflineDatabase, changed = () => {}
       await db.runAsync('DELETE FROM lookup_queries WHERE scope=? AND hash=?', scope, hash);
     },
     async cache(scope: string, path: string, data: unknown) {
-      const body = JSON.stringify(data);
+      const body = JSON.stringify(cachedReadValue(path,data));
       if (body.length > 512 * 1024) return;
       await db.runAsync('INSERT INTO offline_cache(scope,path,body,saved_at) VALUES(?,?,?,?) ON CONFLICT(scope,path) DO UPDATE SET body=excluded.body,saved_at=excluded.saved_at', scope, path, body, now());
       await db.runAsync('DELETE FROM offline_cache WHERE saved_at<? OR rowid IN (SELECT rowid FROM offline_cache ORDER BY saved_at DESC,rowid DESC LIMIT -1 OFFSET ?)', now() - OFFLINE_TTL, MAX_CACHE_PAGES);
     },
     async read(scope: string, path: string) {
-      const row = await db.getFirstAsync<{body: string; saved_at: number}>('SELECT body,saved_at FROM offline_cache WHERE scope=? AND path=? AND saved_at>?', scope, path, now() - OFFLINE_TTL);
+      const row = await db.getFirstAsync<{body: string; saved_at: number}>('SELECT body,saved_at FROM offline_cache WHERE scope=? AND path=? AND saved_at>?', scope, path, now() - cacheReadTtl(path));
       if (!row) return null;
       try { return { data: JSON.parse(row.body) as unknown, savedAt: row.saved_at }; } catch { return null; }
+    },
+    async invalidateRead(scope:string,path:string) {
+      await db.runAsync('DELETE FROM offline_cache WHERE scope=? AND path=?',scope,path);
     },
     async clearCache(scope?: string) {
       await db.runAsync(scope ? 'DELETE FROM offline_cache WHERE scope=?' : 'DELETE FROM offline_cache', ...(scope ? [scope] : []));

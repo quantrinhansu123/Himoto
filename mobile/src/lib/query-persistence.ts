@@ -1,6 +1,7 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import type { OfflineStore } from './offline-store';
-import { OFFLINE_TTL } from './offline-policy';
+import { OFFLINE_TTL, GPS_CACHE_TTL } from './offline-policy';
+import { isMobileGpsWorkspace } from '../../../shared/mobile-gps';
 import { ApiError } from './api';
 import { offlineStatus } from './offline-status';
 
@@ -14,9 +15,10 @@ const lookupFamilies = new Set([
   'report-options', 'sales-report', 'dashboard', 'shifts', 'duty-roster',
   'attendance', 'guide-faq', 'notifications', 'notification-activity',
   'notification-list', 'reminder-history', 'reminder-contracts',
-  'batteries', 'contract-types',
+  'batteries', 'contract-types', 'gps-devices',
 ]);
 export interface LookupSnapshot { key: QueryKey; data: unknown; updatedAt: number }
+const lookupTtl=(key:QueryKey)=>key[0]==='gps-devices'?GPS_CACHE_TTL:OFFLINE_TTL;
 export function persistableLookup(key: QueryKey) {
   return lookupFamilies.has(String(key[0])) && !/hm1_|hmr2_/.test(JSON.stringify(key));
 }
@@ -43,6 +45,12 @@ export function refreshTabLookups(client: QueryClient, tab: string) {
 }
 export function lookupSnapshot(key: QueryKey, data: unknown, updatedAt: number): LookupSnapshot | null {
   if (!persistableLookup(key) || data === undefined || !Number.isFinite(updatedAt) || updatedAt <= 0) return null;
+  if(key[0]==='gps-devices') {
+    if(!isMobileGpsWorkspace(data)||data.events.length||data.eventDevices.length)return null;
+    // Offline fallbacks are successful Query reads, but cannot extend GPS age.
+    updatedAt=Math.min(updatedAt,Date.parse(data.observedAt));
+    data={...data,canMap:false};
+  }
   // A long scrolling session must not turn the next launch into a huge hydration.
   if (data && typeof data === 'object' && 'pages' in data && 'pageParams' in data) {
     const infinite = data as { pages: unknown[]; pageParams: unknown[] };
@@ -58,7 +66,8 @@ export async function restoreLookupQueries(client: QueryClient, store: OfflineSt
     if (!value || typeof value !== 'object') continue;
     const row = value as LookupSnapshot;
     if (!Array.isArray(row.key) || !persistableLookup(row.key) || row.data === undefined ||
-      !Number.isFinite(row.updatedAt) || row.updatedAt > now || now - row.updatedAt >= OFFLINE_TTL) continue;
+      !Number.isFinite(row.updatedAt) || row.updatedAt > now || now - row.updatedAt >= lookupTtl(row.key)) continue;
+    if(row.key[0]==='gps-devices'&&(!isMobileGpsWorkspace(row.data)||row.data.events.length||row.data.eventDevices.length||now-Date.parse(row.data.observedAt)>=GPS_CACHE_TTL))continue;
     const existing = client.getQueryState(row.key);
     if (!existing || existing.dataUpdatedAt < row.updatedAt) {
       client.setQueryData(row.key, row.data, { updatedAt: row.updatedAt });
@@ -77,7 +86,8 @@ export function persistLookupQueries(client: QueryClient, store: OfflineStore, s
       const error = event.action.error, { data, dataUpdatedAt } = query.state;
       if (error instanceof ApiError && [401,403,404].includes(error.status) && data !== undefined)
         query.setState({ data: undefined, dataUpdatedAt: 0 });
-      if (alive && active() && data !== undefined && Date.now() - dataUpdatedAt < OFFLINE_TTL &&
+      if (alive && active() && data !== undefined && Date.now() - dataUpdatedAt < lookupTtl(query.queryKey) &&
+        (query.queryKey[0]!=='gps-devices'||isMobileGpsWorkspace(data)&&Date.now()-Date.parse(data.observedAt)<GPS_CACHE_TTL) &&
         error instanceof ApiError && !['INVALID_RESPONSE','CONFIGURATION','SESSION_CHANGED'].includes(error.code) &&
         (error.status === 0 || error.status >= 500 || error.status === 429)) {
         if (error.status === 0) offlineStatus.update({ connected: false });

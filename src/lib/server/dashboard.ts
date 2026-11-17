@@ -40,6 +40,8 @@ export async function readDashboardSummary(db: Database, params: URLSearchParams
       WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
         AND o.order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
         AND (COALESCE(o.rent_at,dates.start_date) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date
+      AND (o.rent_at IS NULL OR (o.rent_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND o.rent_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')))
         AND ($3::bigint IS NULL OR o.store_id=$3)
     )
     SELECT COALESCE(store_id::text,'unassigned') AS key,COALESCE(max(store_name),'Chưa có cơ sở') AS name,

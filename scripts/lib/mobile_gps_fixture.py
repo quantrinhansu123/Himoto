@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
 SCHEMA = 'himoto.qa.gps.v1'
-MODES = ('none', 'read-error', 'sync-error', 'mapping-lost', 'mapping-drop', 'mapping-conflict')
+MODES = ('none', 'read-error', 'sync-error', 'sync-pending', 'sync-partial', 'history-error', 'mapping-lost', 'mapping-drop', 'mapping-conflict')
 STORES = [{'id': 23, 'name': 'Cơ sở GPS QA A'}, {'id': 24, 'name': 'Cơ sở GPS QA B'}]
 STATES = ('online', 'stopped', 'long_stopped', 'offline', 'warning', 'stale', 'none', 'unavailable')
 def utc(): return datetime.now(timezone.utc)
@@ -99,12 +99,38 @@ def workspace(state,params,user):
             'eventAt':stamp(now-timedelta(minutes=index*5)),'observedAt':stamp(now),'label':v['license']})
     result['events']=events
     return result
+def split_response(url,method,headers,state,user):
+    params=parse_qs(url.query,keep_blank_values=True)
+    if method=='GET' and url.path in ('/api/mobile/v1/gps/devices','/api/mobile/v1/gps/history','/api/mobile/v1/gps/event-options'):
+        section=url.path.rsplit('/',1)[-1]
+        counter={'devices':'reads','history':'historyReads','event-options':'optionReads'}[section]
+        state[counter]=state.get(counter,0)+1
+        if state['mode']=='read-error' or section=='history' and state['mode']=='history-error':
+            return 503,{'code':'SERVICE_UNAVAILABLE','message':'QA gián đoạn đọc GPS; giữ dữ liệu gần nhất.'},False
+        full=workspace(state,params,user)
+        if section=='devices':full.update(events=[],eventDevices=[]);return 200,full,False
+        if section=='history':return 200,{'query':{k:full['query'][k] for k in ('store','event_source','event_device')},'events':full['events'],'observedAt':full['observedAt']},False
+        return 200,{'store':full['query']['store'],'devices':full['eventDevices']},False
+    if method=='GET' and url.path=='/api/mobile/v1/gps/sync-state':
+        state['syncStateReads']=state.get('syncStateReads',0)+1
+        return 200,{'inProgress':state['mode']=='sync-pending','enabledAccounts':4,'failedAccounts':1 if state['mode']=='sync-partial' else 0,
+            'lastFinishedAt':stamp(utc()),'latestSuccessAt':stamp(utc()),'oldestSuccessAt':stamp(utc()),'nextAttemptAt':None},False
+    if method=='POST' and url.path=='/api/mobile/v1/gps/refresh' and (headers.get('prefer') or headers.get('Prefer'))=='respond-async':
+        state['syncs']+=1
+        if state['mode']=='sync-error':return 503,{'code':'GPS_SYNC_UNAVAILABLE','message':'QA chưa đồng bộ được GPS. Giữ trạng thái gần nhất.'},False
+        at=stamp(utc());pending=state['mode']=='sync-pending'
+        return 202,{'status':'queued' if pending else 'not_due','requestedAt':at,'state':{'inProgress':False,'enabledAccounts':4,'failedAccounts':0,
+            'lastFinishedAt':None,'latestSuccessAt':at,'oldestSuccessAt':at,'nextAttemptAt':stamp(utc()+timedelta(minutes=1))}},False
+    return None
+
 def read_overlay_response(path,method,body,headers,state,user):
     """Add read-only fleet QA to the existing contract watch without replacing its data."""
     url=urlparse(path)
     if not url.path.startswith('/api/mobile/v1/gps'):return None
     assert user['role']!='admin', 'Administrator write QA uses its own dedicated checkpoint'
     gps=state.setdefault('gps',seed_state())
+    split=split_response(url,method,headers,gps,user)
+    if split is not None:return split
     if url.path=='/api/mobile/v1/gps' and method=='GET':
         gps['reads']+=1;return 200,workspace(gps,parse_qs(url.query,keep_blank_values=True),user),False
     if url.path=='/api/mobile/v1/gps/refresh' and method=='POST':
@@ -127,6 +153,8 @@ def response(path,method,body,headers,state):
     if url.path=='/api/mobile/v1/catalogue/vehicles':
         from lib.mobile_contract_flow_fixture import record
         return 200,{'rows':[record('vehicles',101,{'profiles':{}})],'total':len(state['vehicles']),'page':1,'pages':len(state['vehicles']),'statusCounts':[],'updatedAt':stamp(utc())},False
+    split=split_response(url,method,headers,state,user)
+    if split is not None:return split
     if url.path=='/api/mobile/v1/gps' and method=='GET':
         state['reads']+=1
         if state['mode']=='read-error':return 503,{'code':'SERVICE_UNAVAILABLE','message':'QA gián đoạn đọc GPS; giữ dữ liệu gần nhất.'},False

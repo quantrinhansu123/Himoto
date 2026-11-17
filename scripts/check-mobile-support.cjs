@@ -9,6 +9,9 @@ async function main(){
   const {PGlite}=require(path.resolve(process.argv[at+1])),pg=new PGlite(),checks=[];
   await pg.exec(`CREATE SCHEMA himoto;CREATE TABLE himoto.users(id bigint PRIMARY KEY);CREATE TABLE himoto.stores(id bigint PRIMARY KEY,store_name text);CREATE TABLE himoto.staff_profiles(id bigint PRIMARY KEY,user_id bigint,full_name text,store_id bigint,status text);CREATE TABLE himoto.store_duty_schedules(id bigint,staff_id bigint,store_id bigint,shift_name text,starts_at timestamptz,ends_at timestamptz,deleted_at timestamptz);INSERT INTO himoto.users VALUES(7),(8),(9);INSERT INTO himoto.stores VALUES(2,'Branch QA'),(3,'Other QA');INSERT INTO himoto.staff_profiles VALUES(101,7,'Actor QA',2,'active'),(102,8,'Other QA',3,'active');`);
   await pg.exec(fs.readFileSync('scripts/attendance-schema.sql','utf8'));
+  await pg.exec(`CREATE TABLE himoto.staff_shift_registrations(staff_id bigint,store_id bigint,work_date date,shift_code text);
+    CREATE TABLE himoto.management_attendance_locations(store_id bigint,latitude numeric,longitude numeric);
+    INSERT INTO himoto.management_attendance_locations VALUES(2,21,105.8);`);
   await pg.exec(fs.readFileSync('docs/sql/2026-11-06-guide-faq.sql','utf8'));
   const client={release(){},async query(sql,values){const result=await pg.query(sql,values);return {...result,rowCount:result.affectedRows??result.rows.length};}};
   global.himotoPool={query:client.query,async connect(){return client;}};
@@ -39,6 +42,22 @@ async function main(){
     assert.equal((await attendance.POST(request('attendance','POST',body('out',out)))).status,200);assert.equal((await attendance.POST(request('attendance','POST',body('out',out)))).status,200);
     assert.equal((await pg.query('SELECT count(*)::integer AS n FROM himoto.management_staff_attendance WHERE actor_id=7')).rows[0].n,1);
     checks.push('Actual web attendance writer: in/out pairing, repeated UUID and lost-response lookup, double-in rejection, actor-bound resolution/photos, HR branch scope and authenticated image headers');
+    const closed=await(await attendance.GET(request(`attendance?from=${today}&to=${today}`))).json(),row=closed.rows[0];
+    assert.equal(row.in_distance_m,0);assert.equal(row.earned_credit,null);assert.equal(row.can_manage,false);
+    assert(!dto.isAttendanceSummary({...closed,rows:[{...row,earned_credit:-1}]}));
+    const edit={id:row.id,original_in:row.clock_in_at,original_out:row.clock_out_at,clock_in_at:new Date(Date.parse(row.clock_in_at)-60000).toISOString(),clock_out_at:row.clock_out_at};
+    assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify(edit)))).status,403);
+    const exporter=load(path.join(root,'lib/server/mobile-list-export'));
+    await assert.rejects(()=>exporter.exportMobileList(user,'attendance',request(`list-exports/attendance?from=${today}&to=${today}`)),error=>error.status===403);
+    actor={...user,id:9,role:'admin',access_role:'admin',scope_all:true};
+    assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify({...edit,original_in:'2000-01-01T00:00:00.000Z'})))).status,409);
+    assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify(edit)))).status,200);
+    assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify(edit)))).status,409);
+    const file=await exporter.exportMobileList(actor,'attendance',request(`list-exports/attendance?from=${today}&to=${today}`)),book=new(require('exceljs').Workbook)();await book.xlsx.load(Buffer.from(file.contentBase64,'base64'));assert.equal(file.rowCount,2);assert.equal(book.worksheets[0].getCell('I1').value,'Công thực tế');
+    const output=process.argv.indexOf('--fixture-output');if(output>=0){const dir=path.resolve(process.argv[output+1]);assert(dir.startsWith(path.resolve('.backups')+path.sep)&&!fs.existsSync(dir));fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'fixture.json'),JSON.stringify({fixtureOnly:true,summary:{...closed,total:1,rows:[{...row,can_manage:true,shift_name:'S',standard_credit:1,earned_credit:0.9375,late_minutes:15,early_leave_minutes:15}]},file},null,2));}
+    assert.equal((await attendance.DELETE(request('attendance','DELETE',JSON.stringify({id:row.id,original_in:edit.clock_in_at,original_out:row.clock_out_at})))).status,200);
+    actor=user;
+    checks.push('Native history uses shared registered-shift metrics and GPS distance; admin-only CAS edit/delete rejects stale/foreign grants, workbook reopens with exact headers and all scoped rows, invalid credit DTO rejects');
 
     for(let index=0;index<25;index++){const form=new FormData();form.set('action','ask');form.set('request_id',randomUUID());form.set('category','Hợp đồng');form.set('question','Synthetic question '+index);assert.equal((await faq.POST(request('guide-faq','POST',form))).status,200);}
     let data=await(await faq.GET(request('guide-faq'))).json();assert(dto.isMobileGuideFaq(data));assert.equal(data.total,25);assert.equal(data.rows.length,20);assert(data.hasMore);assert.equal(data.can_answer,false);

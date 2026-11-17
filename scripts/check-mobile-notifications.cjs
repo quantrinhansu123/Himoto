@@ -16,11 +16,10 @@ async function run(){
  const other={...manager,id:8,store_id:24},staff={...manager,access_role:'branch_staff'},none={...manager,access_role:'custom',permissions:[]};
  // Contract due calculations are covered by the real web billing suites. This
  // seam checks that the notification adapter uses that projection and scope.
- table.readManagementTable=async(c,kind,params)=>{
-  assert.equal(kind,'contracts');assert.equal(params.get('all'),'1');assert(['due','overdue'].includes(params.get('scope')));
+ table.readContractAttentionRows=async(c)=>{
   assert(dataAccess.getStore());
   const rows=(await c.query('SELECT id,contract_number AS code FROM himoto.orders ORDER BY id')).rows;
-  return {rows,total:rows.length};
+  return rows.flatMap(r=>[{...r,status:'overdue'}, {...r,id:Number(r.id)+100000,status:'renting',end_date:new Date(Date.now()+3600000).toISOString()}]);
  };
  const api=load(path.join(root,'lib/server/mobile-notifications')),dto=load(path.resolve('shared/mobile-notifications'));
  try{
@@ -115,7 +114,7 @@ async function run(){
   await push.dispatchMobilePush();
   const activityRows=(await pg.query(`SELECT e.kind,d.outcome FROM himoto.management_mobile_activity_deliveries d
     JOIN himoto.management_mobile_activity_events e ON e.id=d.event_id ORDER BY e.id`)).rows;
-  assert.deepEqual(activityRows,[{kind:'contract_created',outcome:'sent'}]);
+  assert.deepEqual(activityRows,[]);
   const sendsAfterActivity=sends;
   await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
   await push.dispatchMobilePush();assert.equal(sends,sendsAfterActivity);
@@ -123,7 +122,7 @@ async function run(){
   await pg.exec("UPDATE himoto.orders SET draft_payload='{\"management_composer\":{\"versions\":[{\"kind\":\"renewal\",\"version\":2}]}}' WHERE id=103");
   await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
   await push.dispatchMobilePush();
-  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries WHERE outcome='unknown'")).rows[0].n,1);
+  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries WHERE outcome='unknown'")).rows[0].n,0);
   const sendsAfterUnknown=sends;
   await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
   await push.dispatchMobilePush();assert.equal(sends,sendsAfterUnknown);
@@ -132,7 +131,7 @@ async function run(){
   await pg.exec("UPDATE himoto.orders SET draft_payload='{\"management_composer\":{\"versions\":[{\"kind\":\"renewal\",\"version\":2},{\"kind\":\"renewal\",\"version\":3}]}}' WHERE id=103");
   await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
   await push.dispatchMobilePush();
-  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries WHERE outcome='sent'")).rows[0].n,1);
+  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries WHERE outcome='sent'")).rows[0].n,0);
   const upgradedRequest=new NextRequest('https://fixture.invalid/notifications/device',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:'synthetic-activity-device-123',activity:true})});
   await push.registerMobilePush(upgradedRequest,7,activitySession);
   await pg.exec("UPDATE himoto.orders SET draft_payload='{\"management_composer\":{\"versions\":[{\"kind\":\"renewal\",\"version\":2},{\"kind\":\"renewal\",\"version\":3},{\"kind\":\"renewal\",\"version\":4}]}}' WHERE id=103");
@@ -143,8 +142,8 @@ async function run(){
   sessions.sessionUserById=async id=>id===7?manager:other;
   await pg.exec("UPDATE himoto.management_mobile_push_devices SET checked_at=now()-interval '10 minutes'");
   await push.dispatchMobilePush();
-  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries d JOIN himoto.management_mobile_activity_events e ON e.id=d.event_id WHERE e.event_key='renewal:103:4' AND d.outcome='sent'")).rows[0].n,1);
-  checks.push('Activity-capable devices receive scoped committed events once; unknown sends are not blindly repeated, payment requires finance permission and legacy registration does not opt in');
+  assert.equal((await pg.query("SELECT count(*)::int n FROM himoto.management_mobile_activity_deliveries d JOIN himoto.management_mobile_activity_events e ON e.id=d.event_id WHERE e.event_key='renewal:103:4' AND d.outcome='sent'")).rows[0].n,0);
+  checks.push('Routine committed activity remains readable but never sends push, including devices previously opted in; actionable groups retain scoped deduplication');
   const testRequest=body=>new NextRequest('https://fixture.invalid/notifications/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const testSends=sends;assert.deepEqual(await push.testMobilePush(testRequest({}),7,activitySession),{outcome:'sent'});assert.equal(sends,testSends+1);
   await assert.rejects(()=>push.testMobilePush(testRequest({}),7,activitySession),e=>e.code==='PUSH_TEST_LIMIT');

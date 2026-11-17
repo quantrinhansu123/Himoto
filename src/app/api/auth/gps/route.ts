@@ -6,6 +6,7 @@ import { isAdminAccount } from '@/lib/management/permissions';
 import { readSelectedVehicleGps,selectedVehicleIds } from '@/lib/server/selected-vehicle-gps';
 import {readGpsWorkspace,writeGpsMapping} from '@/lib/server/gps-workspace';
 import { failureResponse } from '@/lib/server/public-failure';
+import {readGpsEvents} from '@/lib/server/gps-events';
 export const runtime='nodejs';
 export const GET=withAccessRequest(async(request:NextRequest)=>{
   if(request.nextUrl.searchParams.has('vehicle_ids')){
@@ -17,7 +18,7 @@ export const GET=withAccessRequest(async(request:NextRequest)=>{
   const source=request.nextUrl.searchParams.get('event_source')||'all',device=request.nextUrl.searchParams.get('event_device')||'';
   if(!['all','poll','history','webhook'].includes(source)||device&&!/^[1-9]\d{0,14}$/.test(device))return NextResponse.json({status:'error',message:'Bộ lọc nhật ký không hợp lệ.'},{status:400});
   try{
-    const data=await readGpsWorkspace(himotoPool,store,source,device);
+    const data=request.nextUrl.searchParams.get('view')==='history'?{devices:[],events:(await readGpsEvents(himotoPool,store,source,device)).rows}:await readGpsWorkspace(himotoPool,store,source,device,request.nextUrl.searchParams.get('view')!=='devices');
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'no-store'}});
   }catch(error){return failureResponse('Không tải được trạng thái GPS.',error);}
 });

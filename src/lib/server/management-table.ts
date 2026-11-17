@@ -201,12 +201,12 @@ function customerPageClause(store:string,status:string) {
     :status==='active'?` AND c.status NOT IN (0,2) AND NULLIF(BTRIM(c.warning),'') IS NULL`:'';
   return `${storeSql}${statusSql}`;
 }
-export function customerPageSql(scopeClause:string) {
+export function customerPageSql(scopeClause:string,source:'himoto.customers'|'page_customers'='himoto.customers') {
   return `SELECT c.id, c.name, c.phone, c.id_card, c.address,
     CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
          WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
     c.warning, c.store_id, s.store_name, COALESCE(oc.contract_count,0) AS contract_count
-    FROM himoto.customers c
+    FROM ${source} c
     LEFT JOIN ${usesScopedDatabase()?'himoto.store_directory()':'himoto.stores'} s ON s.id = c.store_id
     LEFT JOIN LATERAL (
       SELECT count(*)::int AS contract_count FROM himoto.orders o WHERE o.customer_id=c.id AND o.deleted_at IS NULL
@@ -305,11 +305,11 @@ function vehicleDerivedClause(query:ManagementTableInput['query']) {
   const missing=query.filters.missing_contract==='1'?` AND ${vehicleMissingOpenContractSql()}`:'';
   return `${days}${missing}`;
 }
-export function vehiclePageClause(store:string,status:string,filters:Record<string,string>) {
+export function vehiclePageClause(store:string,status:string,filters:Record<string,string>,includeSold=false) {
   // Branch picker on /vehicles scopes by current physical warehouse (COALESCE(v.current_store_id, v.store_id)).
   const storeSql=store==='all'?'':` AND (COALESCE(v.current_store_id,v.store_id)=${Number(store)} OR himoto.ownership_may_use_headquarters_vehicle(v.store_id))`;
   const mapped:Record<string,string>={using:"'using','rent'",repairing:"'repairing','maintenance'",pending:"'pending','holding'"};
-  const statusSql=!status?'':mapped[status]?` AND v.status IN (${mapped[status]})`
+  const statusSql=!status?(includeSold?'':" AND v.status IS DISTINCT FROM 'sold'"):mapped[status]?` AND v.status IN (${mapped[status]})`
     :/^[a-z][a-z0-9_]{0,63}$/.test(status)?` AND v.status='${status}'`:'';
   const type=filters.type||'';
   const typeSql=!type?'':type==='xe_dien'?` AND v.type IN ('xe_dien','electric')`
@@ -411,6 +411,18 @@ function catalogueOrder(input:ManagementTableInput) {
   const direction=input.direction==='desc'?'DESC':'ASC';
   return `${expression} ${direction} NULLS LAST,${id} ${direction}`;
 }
+/** Limit customers before the per-customer contract count. Sorting by that
+ * count needs the complete projection and retains the original query. */
+export function customerListPageSql(input:ManagementTableInput) {
+  const search=customerSearchSql(input.query.search),clause=customerPageClause(input.store,input.query.status),order=catalogueOrder(input);
+  if(input.sort==='contract_count')return `${customerPageSql(clause)}${search.sql} ORDER BY ${order} LIMIT $1 OFFSET $2`;
+  const stores=usesScopedDatabase()?'himoto.store_directory()':'himoto.stores';
+  return `WITH page_customers AS MATERIALIZED (
+    SELECT c.id,c.name,c.phone,c.id_card,c.address,c.status,c.warning,c.store_id FROM himoto.customers c
+    ${input.sort==='store_name'?`LEFT JOIN ${stores} s ON s.id=c.store_id`:''}
+    WHERE true${clause}${search.sql} ORDER BY ${order} LIMIT $1 OFFSET $2
+  ) ${customerPageSql('','page_customers')} ORDER BY ${order}`;
+}
 /** Count lightweight records under the same RLS/store rules as their list.
  * Search and category filters affect tab counts; the selected status affects
  * pagination only. The heading always counts the entire permitted catalogue.
@@ -419,12 +431,12 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
   const {kind,store,query}=input;
   const source=kind==='customers'?'himoto.customers c':kind==='vehicles'?'himoto.vehicles v':kind==='staff'?'himoto.staff_profiles p':'himoto.stores s';
   const scope=kind==='customers'?customerPageClause(store,'')
-    :kind==='vehicles'?` AND v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{})}`
+    :kind==='vehicles'?` AND v.deleted_at IS NULL AND COALESCE(v.current_store_id,v.store_id)>0${vehiclePageClause(store,'',{},true)}`
     :kind==='staff'?staffPageClause(store,'',{}):'';
   // missing_contract narrows the page total only; tab/status badges and the banner count stay on the broader catalogue.
   const vehicleFilters=kind==='vehicles'?Object.fromEntries(Object.entries(query.filters).filter(([key])=>key!=='missing_contract')):query.filters;
   const missingOnly=kind==='vehicles'&&query.filters.missing_contract==='1';
-  const filters=kind==='vehicles'?`${vehiclePageClause('all','',vehicleFilters)}${vehicleDerivedClause({...query,filters:vehicleFilters})}`:kind==='staff'?staffPageClause('all','',query.filters):'';
+  const filters=kind==='vehicles'?`${vehiclePageClause('all','',vehicleFilters,true)}${vehicleDerivedClause({...query,filters:vehicleFilters})}`:kind==='staff'?staffPageClause('all','',query.filters):'';
   const selected=kind==='customers'?customerPageClause('all',query.status)
     :kind==='vehicles'?vehiclePageClause('all',query.status,{})
     :kind==='staff'?staffPageClause('all',query.status,{}):storePageClause(query.status);
@@ -438,7 +450,7 @@ async function readCatalogueCounts(client:Pick<PoolClient,'query'>,input:Managem
   const result=await client.query(`WITH counted AS MATERIALIZED (
     SELECT ${status} AS status,(true${filters}${search.sql.replaceAll('$3','$1')}) AS matches,(true${selected}) AS selected${missingFlag}
     FROM ${source} ${kind==='vehicles'&&query.filters.beneficiary_store_id?VEHICLE_RENTAL_SOURCE_JOIN_SQL:''} WHERE true${scope}
-  ) SELECT count(*)::int AS scope_count,count(*) FILTER (WHERE matches)::int AS tab_count,
+  ) SELECT count(*) FILTER (WHERE ${kind==='vehicles'?"status IS DISTINCT FROM 'sold'":'true'})::int AS scope_count,count(*) FILTER (WHERE matches${kind==='vehicles'?" AND status IS DISTINCT FROM 'sold'":''})::int AS tab_count,
     count(*) FILTER (WHERE ${totalFilter})::int AS total${missingSelect},
     COALESCE((SELECT jsonb_agg(jsonb_build_array(status,n) ORDER BY status) FROM (
       SELECT status,count(*)::int AS n FROM counted WHERE matches GROUP BY status
@@ -457,6 +469,13 @@ function mapManagementRows(kind:TableKind,rows:unknown[]) {
     catch (error) { console.error('Skipping unreadable management row', error); }
   }
   return mapped;
+}
+/** Notification membership needs billing/dates, never documents or every vehicle label. */
+export async function readContractAttentionRows(client:Pick<PoolClient,'query'>,now=Date.now()){
+  const sql=contractStatisticsSql(` AND o.order_status IN('renting','overdue','wait_payment','bad_debt')`,false,true);
+  const result=await client.query(`SELECT listing.*,(SELECT COALESCE(json_agg(json_build_object('return_at',d.return_at) ORDER BY d.id),'[]'::json)
+    FROM himoto.order_vehicle_details d WHERE d.order_id=listing.id AND d.deleted_at IS NULL AND d.completed_at IS NULL) AS overdue_items FROM (${sql}) listing`);
+  return result.rows.map(mapContractStatistics).map(row=>withContractMonitoring(applyInstallmentBilling(row,now),now));
 }
 export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:TableKind,params:URLSearchParams) {
   const input=parseManagementTable(kind,params);
@@ -531,7 +550,7 @@ export async function readManagementTable(client:Pick<PoolClient,'query'>,kind:T
     // Count only this tab's matching orders, before LIMIT. Do not hydrate history
     // or query the other tabs merely to obtain a real page count.
     const pageSql=kind==='contracts'?`SELECT indexed.id FROM (${contractPageSql(clause)}${search.sql}) indexed ORDER BY indexed.id DESC LIMIT $1 OFFSET $2`
-      :kind==='customers'?`${customerPageSql(customerPageClause(input.store,input.query.status))}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
+      :kind==='customers'?customerListPageSql(input)
       :kind==='vehicles'?`${vehiclePageSql(vehiclePageClause(input.store,input.query.status,input.query.filters))}${vehicleDerivedClause(input.query)}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
       :kind==='staff'?`${staffPageSql(staffPageClause(input.store,input.query.status,input.query.filters))}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`
       :`${storePageSql(storePageClause(input.query.status))}${search.sql} ORDER BY ${catalogueOrder(input)} LIMIT $1 OFFSET $2`;

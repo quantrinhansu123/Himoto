@@ -7,13 +7,13 @@ const React = require('../mobile/node_modules/react'), jsx = require('../mobile/
 const config = loadDomain(path.join(root, 'mobile/src/lib/catalogue-config'));
 const workspaces = loadDomain(path.join(root, 'shared/mobile-contract-workspaces'));
 const checks = [], pushed = [], requests = [];
-let user, pathname, params, hookIndex, hookValues, infiniteOptions, statisticsOptions, listPage, statisticsPage;
+let user, pathname, params, hookIndex, hookValues, infiniteOptions, statisticsOptions, listPage, statisticsPage, infiniteState, nextCalls;
 const theme = new Proxy({}, { get: (_o, key) => key });
 const components = Object.fromEntries(['Button','Card','InlineError','StateView','StatusBadge','Brand'].map(name => [name, name]));
 const native = Object.fromEntries(['Modal','Pressable','ScrollView','Text','View','FlatList','ActivityIndicator','RefreshControl','TextInput'].map(name => [name, name]));
 Object.assign(native, { StyleSheet: { create: value => value }, Platform: { OS: 'android' }, Keyboard: { dismiss() {} }, useWindowDimensions: () => ({ width: 375, height: 812 }) });
 const hooks = { ...React, useMemo: fn => fn(), useCallback: fn => fn, useEffect() {}, useRef: value => ({ current: value }),
-  useState(value) { const position = hookIndex++; return [Object.hasOwn(hookValues, position) ? hookValues[position] : typeof value === 'function' ? value() : value, next => { hookValues[position] = next; }]; } };
+  useState(value) { const position = hookIndex++, current = Object.hasOwn(hookValues, position) ? hookValues[position] : typeof value === 'function' ? value() : value; return [current, next => { hookValues[position] = typeof next === 'function' ? next(Object.hasOwn(hookValues, position) ? hookValues[position] : current) : next; }]; } };
 const queryClient = { invalidateQueries: async () => {}, prefetchQuery: async () => {} };
 const api = { origin: 'https://fixture.invalid', catalogue: async (kind, query) => { requests.push({ kind, query: new URLSearchParams(query) }); return listPage; } };
 const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, 'lucide-react-native': new Proxy({}, { get: () => () => null }),
@@ -22,13 +22,15 @@ const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, '
   '@/theme': { useTheme: () => theme, statuses: { renting: 'Đang thuê', draft: 'Nháp' }, roles: {}, money: String, dateTime: String },
   '@/components/ui': components, './ui': components,
   '@/lib/catalogue-config': config, '../../../shared/mobile-contract-workspaces': workspaces,
+  '@/lib/catalogue-pages': loadDomain(path.join(root,'mobile/src/lib/catalogue-pages')),
   '../../../shared/mobile-backfill': loadDomain(path.join(root, 'shared/mobile-backfill')),
   '../../../shared/mobile-managed-accounts': loadDomain(path.join(root, 'shared/mobile-managed-accounts')),
+  '../../../shared/access-permissions': loadDomain(path.join(root, 'shared/access-permissions')),
   '../../../../shared/mobile-contract-workspaces': workspaces,
   '@/providers/session': { useSession: () => ({ session: { user }, api, logout: async () => {}, restore: async () => {} }) },
   '@/hooks/use-workspace': { useWorkspace: () => ({ data: { stores: [{ id: 23, name: 'Branch A' }, { id: 24, name: 'Branch B' }] } }) },
   '@tanstack/react-query': { useQueryClient: () => queryClient,
-    useInfiniteQuery: options => { infiniteOptions = options; return { data: { pages: [listPage] }, isSuccess: true }; },
+    useInfiniteQuery: options => { infiniteOptions = options; return { data: { pages: [listPage] }, isSuccess: true, fetchNextPage: async () => { nextCalls++; }, ...infiniteState }; },
     useQuery: options => { statisticsOptions = options; return { data: statisticsPage, isSuccess: !!statisticsPage }; },
     useQueries: options => options.queries.map(() => ({ data: listPage, isPending: false })), },
 };
@@ -46,6 +48,7 @@ function reset() {
   user = { id: 7, role: 'staff', storeId: 23, allStores: false, permissions: ['contracts.read','customers.read','vehicles.read'] };
   pathname = '/contracts'; params = {}; hookIndex = 0; hookValues = {}; pushed.length = requests.length = 0;
   listPage = { rows: [], total: 0, page: 1, pages: 1, statusCounts: [] };
+  infiniteState = {}; nextCalls = 0;
   statisticsPage = { ...listPage, active: 0, overdue: 0, tabCount: 10, statusCounts: [['renting', 4], ['overdue', 2], ['bad_debt', 1], ['completed', 3]] };
 }
 const { RecordActionsModal } = load('mobile/src/components/record-actions-modal.tsx');
@@ -85,22 +88,54 @@ async function main() {
   params = history.params; const screen = Contracts(); assert.equal(screen.props.initialCustomerId, '101'); assert.equal(screen.props.initialStatus, '');
   params = { search: 'Same Name' }; assert.equal(Contracts().props.initialSearch, 'Same Name'); assert.equal(Contracts().props.initialStatus, '');
   params = {}; assert.equal(Contracts().props.initialStatus, 'draft');
+  params = { scope: 'overdue' }; assert.equal(Contracts().props.initialStatus, '');
   for (const customer_id of ['0','01','101 OR 1=1','', ['101']]) { params = { customer_id }; assert.equal(Contracts().type, 'StateView'); }
   checks.push('Customer history binds an exact ID and all statuses; general search is consumed, normal opening still defaults to drafts and malformed IDs fail closed');
 
   const { ManagementDrawer } = load('mobile/src/components/management-drawer.tsx', { '../../../shared/mobile-managed-accounts': { canManageAccounts: () => false } });
   user.permissions.push('hr.read','settings.write');
-  const drawer = nodes(ManagementDrawer({ visible: true, onClose() {} }));
-  for (const [key, route] of [['staff','/directory/staff'],['stores','/directory/stores']]) { drawer.find(n => n.key === key).props.onPress(); assert.equal(pushed.pop(), route); }
+  hookValues = {};
+  const renderDrawer = () => { hookIndex = 0; return nodes(ManagementDrawer({ visible: true, onClose() {} })); };
+  const sectionButtons = tree => tree.filter(n => n.type === 'Pressable' && typeof n.props.accessibilityState?.expanded === 'boolean');
+  const openSection = title => {
+    let tree = renderDrawer(); const button = sectionButtons(tree).find(n => n.props.accessibilityLabel === title); assert(button, title);
+    if (!button.props.accessibilityState.expanded) { button.props.onPress(); tree = renderDrawer(); }
+    return tree;
+  };
+  let drawer = renderDrawer();
+  assert.equal(sectionButtons(drawer).length, 5);
+  assert.equal(sectionButtons(drawer).filter(n => n.props.accessibilityState.expanded).length, 1);
   assert.equal(drawer.find(n => n.key === 'contracts').props.accessibilityState.selected, true);
+  assert(!drawer.some(n => n.key === 'staff'));
+  drawer = openSection('VẬN HÀNH & QUẦY');
+  assert(drawer.some(n => n.key === 'attendance')); assert(!drawer.some(n => n.key === 'contracts'));
+  sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.onPress(); drawer = renderDrawer();
+  assert.equal(sectionButtons(drawer).filter(n => n.props.accessibilityState.expanded).length, 0);
+  assert(!drawer.some(n => n.key === 'attendance'));
+  pathname = '/gps'; drawer = renderDrawer();
+  assert.equal(drawer.find(n => n.key === 'gps').props.accessibilityState.selected, true);
+  assert.equal(sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.accessibilityLabel, 'ĐỘI XE & ĐỊNH VỊ');
+  pathname = '/contracts'; drawer = openSection('NHÂN SỰ & CƠ SỞ');
+  for (const [key, route] of [['staff','/directory/staff'],['stores','/directory/stores']]) { drawer.find(n => n.key === key).props.onPress(); assert.equal(pushed.pop(), route); }
   const files = fs.readdirSync(path.join(root,'mobile/src/app'), { recursive: true }).filter(file => /\.tsx$/.test(file));
   const routes = files.map(file => file.replaceAll('\\','/').replace(/\.tsx$/,'').replace(/(^|\/)index$/,'').replace(/(^|\/)\([^/]+\)(?=\/|$)/g,'').replace(/^\//,''));
   function exists(route) { const clean = typeof route === 'string' ? route : route.pathname; return routes.some(pattern => new RegExp('^/' + pattern.replace(/\[[^\]]+\]/g,'[^/]+') + '/?$').test(clean.replace(/\/\([^/]+\)/g,'') || '/')); }
-  for (const item of drawer.filter(n => n.type === 'Pressable' && n.key)) { item.props.onPress(); assert(exists(pushed.pop()), 'Missing route for ' + item.key); }
-  user.permissions = ['contracts.read']; const limitedDrawer = nodes(ManagementDrawer({ visible: true, onClose() {} }));
+  for (const title of sectionButtons(drawer).map(n => n.props.accessibilityLabel)) {
+    for (const item of openSection(title).filter(n => n.type === 'Pressable' && n.key)) { item.props.onPress(); assert(exists(pushed.pop()), 'Missing route for ' + item.key); }
+  }
+  user.role='ownership_manager';
+  assert(!openSection('TÀI CHÍNH & HỆ THỐNG').some(n=>n.key==='integrations'));
+  user.role='admin';
+  assert(openSection('TÀI CHÍNH & HỆ THỐNG').some(n=>n.key==='integrations'));
+  user.role='staff';user.permissions=user.permissions.filter(p=>p!=='contracts.read');
+  assert(!openSection('VẬN HÀNH & QUẦY').some(n=>n.key==='shift-reports'));
+  assert(openSection('VẬN HÀNH & QUẦY').some(n=>n.key==='attendance'));
+  checks.push('Integration menu follows the admin-only API even with settings.write; end-of-shift reporting requires contracts.read while personal attendance remains available');
+  user.permissions = ['contracts.read']; const limitedDrawer = openSection('NHÂN SỰ & CƠ SỞ');
   assert(!limitedDrawer.some(n => n.key === 'staff'));
   assert(limitedDrawer.some(n => n.key === 'stores'));
-  checks.push('Every drawer destination exists, staff/stores open directories, grouped tab paths highlight correctly and denied sections remain hidden');
+  assert(!sectionButtons(limitedDrawer).some(n => n.props.accessibilityLabel === 'ĐỘI XE & ĐỊNH VỊ'));
+  checks.push('Drawer groups expand one at a time, toggle closed and open the active route by default; every permitted destination exists and denied sections remain hidden');
 
   reset(); const { default: Overview } = load('mobile/src/app/(tabs)/index.tsx', { '@/components/workspace-links': { WorkspaceLinks: 'WorkspaceLinks' }, '@/components/management-drawer': { ManagementDrawer: 'Drawer' } });
   for (const allStores of [true, false]) {
@@ -128,20 +163,26 @@ async function main() {
   assert.deepEqual(statisticsOptions.queryKey, countKey); assert(text(tree).includes('Tất cả (10)'));
   statisticsPage = undefined; hookIndex = 0; hookValues = {}; tree = CatalogueScreen({ kind: 'contracts', initialStatus: 'draft' });
   assert(!text(tree).includes('Tất cả (0)'), 'Unavailable statistics must not be replaced with a filtered zero');
-  hookIndex = 0; hookValues = {}; CatalogueScreen({ kind: 'contracts', operationsCatalogue: true }); assert(!statisticsOptions.enabled);
+  hookIndex = 0; hookValues = {}; CatalogueScreen({ kind: 'contracts', operationsCatalogue: true }); assert(statisticsOptions.enabled);
   checks.push('Independent counters keep All=10 and active=7 even on an empty draft tab; customer/store filters bind both reads, status switches reuse counts and unavailable counts never show a false zero');
   reset(); hookIndex = 0;
   tree = CatalogueScreen({ kind: 'contracts', initialStatus: '' });
   assert(text(tree).includes('Quá hạn (3)'));
   for (const scope of ['overdue','drafts','vat','due','ownership']) {
     reset(); tree = CatalogueScreen({ kind: 'contracts', initialScope: scope });
-    const label = scope === 'drafts' ? 'Tất cả bản nháp' : workspaces.contractWorkspace(scope).title;
+    const label = config.catalogueAllLabel('contracts', scope);
     assert(text(tree).includes(label + ' (10)'), scope);
     assert(!text(tree).includes('Tất cả (10)'), scope);
     await infiniteOptions.queryFn({ pageParam: 1, signal: new AbortController().signal });
     assert.equal(requests[0].query.get('scope'), scope);
     assert.equal(requests[0].query.get('status'), '');
+    if (scope === 'overdue') assert(!text(tree).includes('Đang thuê'), 'Overdue workspace must not advertise a second active-rental scope');
+    if (scope === 'drafts' || scope === 'due') assert.deepEqual(config.catalogueStatuses('contracts',scope), ['']);
   }
+  reset(); statisticsPage = { ...statisticsPage, tabCount: 8, statusCounts: [['renting',4],['overdue',3],['bad_debt',1],['completed',2]] };
+  tree = CatalogueScreen({ kind: 'contracts', initialScope: 'ownership' });
+  assert(text(tree).includes('Đang thuê (6)'), 'Installment overdue badges must not count the same rental twice');
+  checks.push('Scoped lists avoid duplicate rental tabs, operation links load independent counters, and installment overdue badges cannot inflate active-rental totals');
   checks.push('Overdue tab counts bad debt; five drawer workspaces select their own group with an unfiltered status instead of misleading All');
   reset(); statisticsPage = { ...statisticsPage, tabCount: 0, statusCounts: [] };
   tree = CatalogueScreen({ kind: 'contracts', initialStatus: '' });
@@ -150,6 +191,28 @@ async function main() {
   tree = CatalogueScreen({ kind: 'customers' });
   assert(text(tree).includes('Nợ xấu / Cấm thuê (2)'));
   checks.push('Customer blacklist tab counts the web bad_debt status instead of showing a false zero for its filter alias');
+  reset(); listPage = { ...listPage, rows: [record], total: 418, pages: 21 };
+  infiniteState = { hasNextPage: true, isFetching: false, isFetchNextPageError: false };
+  tree = CatalogueScreen({ kind: 'vehicles' });
+  let list = nodes(tree).find(n => n.type === 'FlatList');
+  const far = { nativeEvent: { contentOffset: { y: 0 }, contentSize: { height: 2000 }, layoutMeasurement: { height: 600 } } };
+  const end = { nativeEvent: { contentOffset: { y: 1350 }, contentSize: { height: 2000 }, layoutMeasurement: { height: 600 } } };
+  for (const callback of ['onScroll', 'onScrollEndDrag', 'onMomentumScrollEnd']) {
+    list.props[callback](far); assert.equal(nextCalls, 0);
+  }
+  for (const callback of ['onScrollEndDrag', 'onMomentumScrollEnd']) list.props[callback](end);
+  assert.equal(nextCalls, 1);
+  list.props.onEndReached(); list.props.onScroll(end); assert.equal(nextCalls, 1, 'Native layout/edge events must not drain later pages without a new gesture');
+  list.props.onScrollBeginDrag(); list.props.onMomentumScrollEnd(end); assert.equal(nextCalls, 2);
+  const loadMore = nodes(list.props.ListFooterComponent).find(n => n.props?.label === 'Tải thêm kết quả');
+  assert(loadMore && !loadMore.props.disabled); loadMore.props.onPress(); assert.equal(nextCalls, 3);
+  for (const blocked of [{ isFetching: true }, { isFetchNextPageError: true }, { hasNextPage: false }]) {
+    infiniteState = { hasNextPage: true, isFetching: false, isFetchNextPageError: false, ...blocked };
+    hookIndex = 0; hookValues = {}; tree = CatalogueScreen({ kind: 'vehicles' });
+    list = nodes(tree).find(n => n.type === 'FlatList'); list.props.onMomentumScrollEnd(end);
+    assert.equal(nextCalls, 3);
+  }
+  checks.push('Native terminal events load once per drag and cannot drain later pages after window trimming; explicit load-more recovers missed edges, with fetching/error/end guards');
   console.log(JSON.stringify({ passed: checks.length, checks, operationalWrites: 0, nativeScreenReaderCertified: false }, null, 2));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

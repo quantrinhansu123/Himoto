@@ -1,4 +1,4 @@
-import {isAttendanceSummary,isAttendanceReceipt,isAttendanceResolution,isMobileGuideFaq} from '../../../shared/mobile-support';
+import {isAttendanceOverview,isAttendanceSummary,isAttendanceReceipt,isAttendanceResolution,isMobileGuideFaq} from '../../../shared/mobile-support';
 import {isBatteryMedia,type BatteryMedia} from '../../../shared/battery-media';
 import {isMobileNotifications, isMobileNotificationList, isMobilePushStatus, isMobilePushTest, type MobileNotificationKind} from '../../../shared/mobile-notifications';
 import type { OfflineTransport } from './offline-transport';
@@ -28,7 +28,7 @@ import { isMobileReceiptCorrections, isMobileRenewalCorrections, isMobileContrac
 import { isMobileContractEditProfile, isMobileContractEditResult, type MobileContractEditInput, type MobileContractEditProfile, type MobileContractEditResult } from "../../../shared/mobile-contract-edit";
 import { isMobileContractApprovalContext, isMobileContractApprovalResult, type MobileContractApprovalContext, type MobileContractApprovalResult } from '../../../shared/mobile-contract-approval';
 import { isMobileOperations,type MobileOperations } from '../../../shared/mobile-operations';
-import { isIntegrationSettings,isIntegrationReceipt,isIntegrationResult,isIntegrationResolution,type IntegrationSettings,type IntegrationInput,type IntegrationReceipt,type IntegrationResult,type IntegrationResolution,type IntegrationOperation } from '../../../shared/mobile-integrations';
+import { isIntegrationHealth,type IntegrationHealth,isIntegrationSettings,isIntegrationReceipt,isIntegrationResult,isIntegrationResolution,type IntegrationSettings,type IntegrationInput,type IntegrationReceipt,type IntegrationResult,type IntegrationResolution,type IntegrationOperation } from '../../../shared/mobile-integrations';
 import { isManagedAccountsPage,isManagedAccount,isManagedAccountOptions,isManagedAccountWriteResult,isManagedAccountResult,isManagedPasswordResult,type ManagedAccountsPage,type ManagedAccount,type ManagedAccountOptions,type ManagedAccountWriteResult,type ManagedAccountResult,type ManagedPasswordResult,type ManagedAccountInput } from '../../../shared/mobile-managed-accounts';
 import { isContractTypes,isContractTypeReceipt,isContractTypeResult,isContractTypeResolution,type ContractType,type ContractTypeInput,type MobileContractTypeReceipt,type MobileContractTypeResult,type MobileContractTypeResolution,type ContractTypeOperation } from '../../../shared/mobile-contract-types';
 import type {
@@ -72,7 +72,7 @@ import { isStaffProfile, isStaffOptions, isStaffWriteResult, isStaffResult, type
 import { isCashbookPage, isCashbookAccount, isCashbookAccounts, isCashbookTransactions, isCashbookAccountResult, type MobileCashbookPage, type MobileCashbookAccount, type MobileCashbookAccounts, type MobileCashbookTransactions, type MobileCashbookAccountResult, type CashbookAccountKind, type CashbookAccountInput } from "../../../shared/mobile-cashbook";
 import { isStoreProfile, isStoreResult, isStoreManagers, type MobileStoreProfile, type MobileStoreResult, type MobileStoreManagers, type StoreCreation, type StoreEdits } from "../../../shared/mobile-stores";
 import { isDutyRoster, isDutyResult, type MobileDutyInput, type MobileDutyRoster, type MobileDutyResult } from "../../../shared/mobile-duty-roster";
-import {isMobileGpsWorkspace,gpsQueryString,type MobileGpsQuery,type MobileGpsWorkspace} from '../../../shared/mobile-gps';
+import {isMobileGpsWorkspace,gpsQueryString,isMobileGpsHistory,isMobileGpsEventOptions,isMobileGpsSyncState,isMobileGpsSyncRequest,type MobileGpsQuery,type MobileGpsWorkspace,type MobileGpsHistoryQuery,type MobileGpsHistory,type MobileGpsEventOptions,type MobileGpsSyncState,type MobileGpsSyncRequest} from '../../../shared/mobile-gps';
 import {isMobilePlateOcr,isMobilePlateMatch,type MobilePlateOcr,type MobilePlateMatch} from '../../../shared/mobile-plate-ocr';
 import {isMediaDeleteReceipt,type MobileMediaDeleteReceipt} from '../../../shared/mobile-media-delete';
 import {isCustomerPhotoCopyReview,isCustomerPhotoCopyReceipt,type MobileCustomerPhotoCopyReview,type MobileCustomerPhotoCopyReceipt} from '../../../shared/mobile-customer-photo-copy';
@@ -267,6 +267,8 @@ export function createApi(
   }
   return {
     attendance:(params:string,signal?:AbortSignal)=>request(`/attendance?${params}`,isAttendanceSummary,{signal}),
+    attendanceOverview:(signal?:AbortSignal)=>request('/attendance?view=summary',isAttendanceOverview,{signal}),
+    manageAttendance:(method:'PATCH'|'DELETE',body:import('../../../shared/mobile-support').AttendanceEdit)=>request('/attendance',(v):v is {success:true}=>!!v&&typeof v==='object'&&'success'in v&&v.success===true,{method,body:JSON.stringify(body)}),
     clockAttendance:(body:FormData)=>request('/attendance',isAttendanceReceipt,{method:'POST',body},45000),
     resolveAttendance:(key:string)=>request(`/attendance?request_id=${encodeURIComponent(key)}`,isAttendanceResolution),
     guideFaq:(params:string,signal?:AbortSignal)=>request(`/guide-faq?${params}`,isMobileGuideFaq,{signal}),
@@ -388,6 +390,11 @@ export function createApi(
       {method:'POST',body:bytes,headers:{'Content-Type':'image/jpeg','X-Photo-Kind':'plate','X-Ocr-Request':key},signal},45000),
     plateLookup:(license:string,signal?:AbortSignal)=>request<MobilePlateMatch>(`/drafts/plate-lookup?${new URLSearchParams({license})}`,(v):v is MobilePlateMatch=>isMobilePlateMatch(v,license),{signal}),
     gps:(query:MobileGpsQuery,signal?:AbortSignal)=>request<MobileGpsWorkspace>(`/gps?${gpsQueryString(query)}`,(v):v is MobileGpsWorkspace=>isMobileGpsWorkspace(v,query),{signal}),
+    gpsDevices:(query:MobileGpsQuery,signal?:AbortSignal)=>request<MobileGpsWorkspace>(`/gps/devices?${gpsQueryString(query)}`,(v):v is MobileGpsWorkspace=>isMobileGpsWorkspace(v,query)&&v.events.length===0&&v.eventDevices.length===0,{signal}),
+    gpsHistory:(query:MobileGpsHistoryQuery,signal?:AbortSignal)=>request<MobileGpsHistory>(`/gps/history?${new URLSearchParams(query)}`,(v):v is MobileGpsHistory=>isMobileGpsHistory(v,query),{signal}),
+    gpsEventOptions:(store:string,signal?:AbortSignal)=>request<MobileGpsEventOptions>(`/gps/event-options?${new URLSearchParams({store})}`,(v):v is MobileGpsEventOptions=>isMobileGpsEventOptions(v,store),{signal}),
+    gpsSyncState:(signal?:AbortSignal)=>request<MobileGpsSyncState>('/gps/sync-state',isMobileGpsSyncState,{signal},10000),
+    requestGpsRefresh:()=>request<MobileGpsSyncRequest>('/gps/refresh',isMobileGpsSyncRequest,{method:'POST',headers:{Prefer:'respond-async'}},10000),
     refreshGps:()=>request<{synced:true;observedAt:string}>('/gps/refresh',(v):v is {synced:true;observedAt:string}=>!!v&&typeof v==='object'&&'synced' in v&&v.synced===true&&'observedAt' in v&&typeof v.observedAt==='string'&&Number.isFinite(Date.parse(v.observedAt)),{method:'POST'},65000),
     gpsMapping:(id:string,signal?:AbortSignal)=>request<MobileGpsMappingPreparation>(`/gps/devices/${encodeURIComponent(id)}/mapping`,(v):v is MobileGpsMappingPreparation=>isGpsMappingPreparation(v)&&String(v.device.id)===id,{signal}),
     gpsMappingCandidates:(id:string,search:string,page:number,signal?:AbortSignal)=>request<MobileGpsMappingCandidates>(`/gps/devices/${encodeURIComponent(id)}/candidates?${new URLSearchParams({search,page:String(page)})}`,
@@ -448,7 +455,8 @@ export function createApi(
       request<{ receipt: MobilePaymentReceipt | null }>(`/payments/requests/${encodeURIComponent(key)}`,
         (value): value is { receipt: MobilePaymentReceipt | null } => !!value && typeof value === "object" && "receipt" in value && (value.receipt === null || isMobilePaymentReceipt(value.receipt))),
     operations: (params:URLSearchParams,signal?:AbortSignal)=>request<MobileOperations>(`/operations?${params}`,isMobileOperations,{signal}),
-    integrations: (signal?:AbortSignal)=>request<IntegrationSettings>('/integrations',isIntegrationSettings,{signal}),
+    integrations: (signal?:AbortSignal)=>request<IntegrationSettings>('/integrations?view=config',isIntegrationSettings,{signal}),
+    integrationHealth: (signal?:AbortSignal)=>request<IntegrationHealth>('/integrations/health',isIntegrationHealth,{signal},60000),
     saveIntegration: (input:IntegrationInput,key:string)=>request<IntegrationReceipt>('/integrations',isIntegrationReceipt,{method:'POST',body:JSON.stringify(input),headers:{'Idempotency-Key':key}}),
     integrationResult: (key:string,signal?:AbortSignal)=>request<IntegrationResult>(`/integrations/requests/${encodeURIComponent(key)}`,(v):v is IntegrationResult=>isIntegrationResult(v)&&v.key===key,{signal}),
     resolveIntegration: (key:string,operation:IntegrationOperation)=>request<IntegrationResolution>(`/integrations/requests/${encodeURIComponent(key)}/resolve`,(v):v is IntegrationResolution=>isIntegrationResolution(v)&&v.key===key&&v.operation===operation,{method:'POST',body:JSON.stringify({operation})}),

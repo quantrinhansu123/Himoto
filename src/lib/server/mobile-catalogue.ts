@@ -99,6 +99,7 @@ export function mobileRecord(
       dueAmount: number(row.billing_due_amount),
       rentalDebt: number(row.rental_debt_amount),
       lateFeeEstimate: number(row.overdue_fee_estimate),
+      referencePrice:row.overdue_reference_price===1,
       overdueMinutes: number(row.overdue_minutes),
       companyPaidAmount: number(row.company_paid_amount),
       collectionOverdue: row.collection_overdue === 1,

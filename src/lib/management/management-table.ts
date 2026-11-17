@@ -71,12 +71,12 @@ export function projectManagementTable(source: ManagementRow[], input: Managemen
   const scoped=filterRows(rows,EMPTY_QUERY,sourceStore),tabRows=filterRows(scoped,{...input.query,status:'',overdueBucket:undefined},'all');
   const counts=new Map<string,number>();for(const row of tabRows)counts.set(row.status,(counts.get(row.status)||0)+1);
   if(monitoring)for(const row of tabRows)if(row.status!=='overdue'&&row.collection_overdue===1)counts.set('overdue',(counts.get('overdue')||0)+1);
-  const filtered=filterRows(scoped,input.query,'all');
+  const filtered=filterRows(scoped,input.query,'all').filter(row=>input.kind!=='vehicles'||Boolean(input.query.status)||row.status!=='sold');
   const sorted=input.kind==='contracts' && !['overdue','due'].includes(input.scope) && !input.query.overdueBucket && input.query.status!=='overdue'
     ? sortContractRows(filtered,input.sort,input.direction,{pinDrafts:true,pinOwnershipTypes:input.scope==='ownership',pinActiveRentals:!input.scope&&Boolean(input.query.search.trim())}) : sortRows(filtered,input.sort,input.direction);
   const pages=Math.max(1,Math.ceil(sorted.length/input.size)),page=Math.min(input.page,pages),offset=(page-1)*input.size;
   const missingOpenContractCount=input.kind==='vehicles'?tabRows.filter(vehicleMissingOpenContract).length:undefined;
-  return {rows:all ? sorted : sorted.slice(offset,offset+input.size),total:sorted.length,scopeCount:scoped.length,tabCount:tabRows.length,page,pages,
+  return {rows:all ? sorted : sorted.slice(offset,offset+input.size),total:sorted.length,scopeCount:input.kind==='vehicles'?scoped.filter(row=>row.status!=='sold').length:scoped.length,tabCount:input.kind==='vehicles'?tabRows.filter(row=>row.status!=='sold').length:tabRows.length,page,pages,
     statusCounts:[...counts].sort(([a],[b])=>a.localeCompare(b)),statuses:[...new Set(rows.map(row=>row.status))].sort(),dueCount:scoped.filter(row=>row.billing_overdue_at && Number(row.billing_due_amount)>0).length,
     summary:input.kind==='contracts' ? summarizeContracts(filtered,[]) : null,recentDays:input.recentDays??null,...(monitoring?{overdueCounts}:{}),
     ...(missingOpenContractCount===undefined?{}:{missingOpenContractCount})};

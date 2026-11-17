@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { AppState, Platform, Text, View } from 'react-native';
+import { AppState, Platform, Text } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Updates from 'expo-updates';
 import { useTheme } from '@/theme';
 
@@ -22,7 +23,7 @@ export function AppUpdateBridge() {
   }, []);
   if (__DEV__ || Platform.OS === 'web' || !state.isUpdatePending) return null;
   // Never reload automatically while an employee is entering a transaction.
-  return <View style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: theme.tint }}>
+  return <SafeAreaView edges={['top', 'left', 'right']} style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: theme.tint }}>
     <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 13, lineHeight: 19 }}>Đã tải bản cập nhật mới. Mở lại ứng dụng hoặc vào Tài khoản để áp dụng.</Text>
-  </View>;
+  </SafeAreaView>;
 }

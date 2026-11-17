@@ -169,13 +169,6 @@ function PreparationForm({ id }: { id: string }) {
         data.depositAmount === null
       )
         throw Error("Cần đối chiếu giá trị hợp đồng trước khi phát hành.");
-      if (
-        rentalCollected > Math.max(data.totalAmount - data.rentalPaid, 0) ||
-        depositCollected > Math.max(data.depositAmount - data.depositPaid, 0)
-      )
-        throw Error(
-          "Số tiền nhập vượt số còn phải thu. Kiểm tra các khoản thực nhận.",
-        );
       if (action.code === "reservation_overlap" && !ack)
         throw Error("Xác nhận đã kiểm tra chồng lịch cọc trước khi tiếp tục.");
       setConfirm({
@@ -526,6 +519,8 @@ function PreparationForm({ id }: { id: string }) {
                 {text(
                   `Đang nhập: thuê/giữ xe ${money(rentalCollected)} · cọc ${money(depositCollected)}.`,
                 )}
+                {data?.totalAmount!=null&&data.rentalPaid!=null&&rentalCollected>Math.max(data.totalAmount-data.rentalPaid,0)&&text(`Thu dư tiền thuê/phí: ${money(rentalCollected-Math.max(data.totalAmount-data.rentalPaid,0))}. Vẫn lưu đúng số thực nhận, không tăng giá hợp đồng.`)}
+                {data?.depositAmount!=null&&depositCollected>Math.max(data.depositAmount-data.depositPaid,0)&&text(`Thu dư cọc: ${money(depositCollected-Math.max(data.depositAmount-data.depositPaid,0))}. Vẫn lưu đúng số thực nhận.`)}
               </View>
             ) : undefined
           }

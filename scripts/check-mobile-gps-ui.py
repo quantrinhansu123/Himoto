@@ -20,7 +20,7 @@ def run(base,output):
             if url.netloc==urlparse(base).netloc:return route.continue_()
             if url.hostname=='www.google.com':maps.append({'url':request.url,'authorization':request.headers.get('authorization')});return route.fulfill(status=204)
             if url.hostname!='mobile-api.example.invalid':unexpected.append(url.hostname);return route.abort()
-            headers={'Access-Control-Allow-Origin':base,'Access-Control-Allow-Headers':'authorization,content-type,idempotency-key','Access-Control-Allow-Methods':'GET,POST,DELETE,OPTIONS'}
+            headers={'Access-Control-Allow-Origin':base,'Access-Control-Allow-Headers':'authorization,content-type,idempotency-key,prefer','Access-Control-Allow-Methods':'GET,POST,DELETE,OPTIONS'}
             if request.method=='OPTIONS':return route.fulfill(status=204,headers=headers)
             body=request.post_data_json if request.post_data else {}
             status,data,lost=journal.transact(url.path+('?' +url.query if url.query else ''),request.method,body,dict(request.headers))
@@ -43,6 +43,7 @@ def run(base,output):
         try:
             login('qa-settings')
             expect(page.get_by_text('39 dòng · Trang 1/2',exact=True)).to_be_visible()
+            assert journal.state.get('historyReads',0)==0 and journal.state.get('optionReads',0)==0
             # One unlinked stopped device has 30 hours of valid provider evidence.
             since=model.stamp(model.utc()-model.timedelta(hours=30))
             journal.control(lambda state:model.device(state,8).update(stopped_since=since,provider_stopped_since=since))
@@ -67,12 +68,22 @@ def run(base,output):
             checks.append('Settings-only staff sees full fleet with exact unique long-stop count, old speed hidden, store/search filters and all pagination; no administrator mapping controls')
             button('Trang GPS trước').click();button('Lịch sử GPS').click();choose('Nguồn lịch sử GPS','Nhật ký đọc bù');expect(page.get_by_text('Tắt khóa điện',exact=True)).to_be_visible();expect(page.get_by_text('Mất kết nối',exact=True)).to_have_count(0)
             choose('Nguồn lịch sử GPS','Tất cả nguồn');choose('Thiết bị trong lịch sử GPS','GPS-QA-102');expect(page.get_by_text('Kết nối trở lại',exact=True)).to_be_visible();expect(page.get_by_text('Tắt khóa điện',exact=True)).to_have_count(0)
-            button('Thiết bị GPS').click();journal.control(lambda state:state.update(mode='read-error'));button('Tải lại GPS').click();expect(page.get_by_text('QA gián đoạn đọc GPS; giữ dữ liệu gần nhất.',exact=True)).to_be_visible();expect(button('Mở bản đồ GPS-QA-101').first).to_be_visible()
+            assert journal.state.get('optionReads',0)==1,'History filters must reuse their device selector'
+            journal.control(lambda state:state.update(mode='history-error'));button('Tải lại GPS').click();expect(page.get_by_text('QA gián đoạn đọc GPS; giữ dữ liệu gần nhất.',exact=True)).to_be_visible()
+            button('Thiết bị GPS').click();button('Tải lại GPS').click();expect(button('Mở bản đồ GPS-QA-101').first).to_be_visible()
+            expect(page.get_by_text('QA gián đoạn đọc GPS; giữ dữ liệu gần nhất.',exact=True)).to_have_count(0)
+            checks.append('Device page never loads history/options; selector is reused and a history outage cannot block device reads')
+            journal.control(lambda state:state.update(mode='sync-pending'));button('Đồng bộ ngay').click()
+            expect(page.get_by_text('Đang lấy tín hiệu GPS mới. Anh vẫn có thể xem dữ liệu gần nhất.',exact=True)).to_be_visible();expect(button('Mở bản đồ GPS-QA-101').first).to_be_visible();expect(button('Đang đồng bộ…')).to_be_disabled()
+            journal.control(lambda state:state.update(mode='none'));page.clock.fast_forward(2500)
+            expect(button('Đồng bộ ngay')).to_be_enabled()
+            checks.append('Asynchronous provider refresh keeps rows usable, locks repeat requests and completes from server worker progress')
+            journal.control(lambda state:state.update(mode='read-error'));button('Tải lại GPS').click();expect(page.get_by_text('QA gián đoạn đọc GPS; giữ dữ liệu gần nhất.',exact=True)).to_be_visible();expect(button('Mở bản đồ GPS-QA-101').first).to_be_visible()
             journal.control(lambda state:state.update(mode='sync-error'));button('Đồng bộ ngay').click();expect(page.get_by_text('QA chưa đồng bộ được GPS. Giữ trạng thái gần nhất.',exact=True)).to_be_visible();expect(button('Mở bản đồ GPS-QA-101').first).to_be_visible()
             journal.control(lambda state:state.update(mode='none'));button('Tải lại GPS').click()
             page.wait_for_timeout(300);before=journal.state['reads']
             page.clock.fast_forward(5000);page.wait_for_timeout(200);assert journal.state['reads']==before
-            with page.expect_response(lambda response:'/api/mobile/v1/gps?' in response.url):
+            with page.expect_response(lambda response:'/api/mobile/v1/gps/devices?' in response.url):
                 page.clock.fast_forward(60000)
             assert journal.state['reads']>before
             page.go_back();page.wait_for_timeout(300);before=journal.state['reads'];page.clock.fast_forward(60000);page.wait_for_timeout(200);assert journal.state['reads']==before
@@ -97,6 +108,10 @@ def run(base,output):
                 page.set_viewport_size({'width':width,'height':height});expect(button('Tải lại GPS')).to_be_visible();assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
                 page.screenshot(path=str(output/f'03-gps-{width}.png'),full_page=True)
             checks.append('GPS list fits 320/375/390/430 widths without horizontal page overflow')
+            page.emulate_media(color_scheme='dark');page.set_viewport_size({'width':812,'height':375});page.screenshot(path=str(output/'dark-landscape.png'),full_page=True)
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+            page.set_viewport_size({'width':430,'height':932});page.screenshot(path=str(output/'dark-portrait.png'),full_page=True)
+            checks.append('Dark portrait/landscape layouts preserve the GPS controls with reduced motion')
             logout();assert journal.summary()['activeSessions']==0;assert not errors and not unexpected
         except Exception as error:
             page.screenshot(path=str(output/'failure.png'),full_page=True);(output/'failure.txt').write_text(str(error)+'\n'+page.locator('body').inner_text(),encoding='utf-8')

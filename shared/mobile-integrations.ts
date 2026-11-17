@@ -1,10 +1,18 @@
 export { parseIntegrationSettings,IntegrationSettingsError } from './integration-settings';
 export { OWNERSHIP_TELEGRAM_DESTINATIONS,type OwnershipTelegramRoute } from './telegram-destinations';
 export type IntegrationOperation='integration.gps-account'|'integration.gps-enabled'|'integration.telegram';
+export type IntegrationHealth=Omit<IntegrationSettings['gps_history'],'channels'|'pending'|'counts_at'>&{counts_at:string};
+export function isIntegrationHealth(value:unknown):value is IntegrationHealth{
+  if(!value||typeof value!=='object')return false;
+  const v=value as Record<string,unknown>;
+  return ['streams','completed_streams','failed_streams','behind_streams','inaccessible_streams','history_events','webhook_events','waiting_webhooks'].every(k=>Number.isSafeInteger(v[k])&&Number(v[k])>=0)
+    &&typeof v.counts_at==='string'&&Number.isFinite(Date.parse(v.counts_at))
+    &&['covered_until','last_success_at'].every(k=>v[k]===null||typeof v[k]==='string'&&Number.isFinite(Date.parse(v[k])));
+}
 export interface IntegrationAccount {id:string;provider:string;label:string;username:string;enabled:boolean;last_attempt_at:string|null;last_success_at:string|null;last_error:string|null;device_count:number}
 export interface IntegrationGroup {store_id:number;store_name:string;chat_id:string|null;thread_id:number|null;enabled:boolean}
 export interface IntegrationOwnershipGroup {route:'ownership_new'|'ownership_renewal';label:string;chat_id:string|null;thread_id:number|null;enabled:boolean}
-export interface IntegrationSettings {configVersion:string;accounts:IntegrationAccount[];telegram_configured:boolean;groups:IntegrationGroup[];ownership_groups:IntegrationOwnershipGroup[];notifications:{id:string;order_id:number;code:string;event_type:string;status:string;photos:number;created_at:string;sent_at:string|null;error_code:string|null}[];scheduler:{enabled:boolean;last_dispatched_at:string|null;last_response_at:string|null;last_http_status:number|null;last_error_code:string|null}|null;gps_history:{channels:{id:string;provider:string;label:string;motion_enabled:boolean;alarms_enabled:boolean;webhook_enabled:boolean;last_webhook_at:string|null;last_error:string|null}[];streams:number;completed_streams:number;failed_streams:number;behind_streams:number;inaccessible_streams:number;covered_until:string|null;last_success_at:string|null;history_events:number;webhook_events:number;waiting_webhooks:number}}
+export interface IntegrationSettings {configVersion:string;accounts:IntegrationAccount[];telegram_configured:boolean;groups:IntegrationGroup[];ownership_groups:IntegrationOwnershipGroup[];notifications:{id:string;order_id:number;code:string;event_type:string;status:string;photos:number;created_at:string;sent_at:string|null;error_code:string|null}[];scheduler:{enabled:boolean;last_dispatched_at:string|null;last_response_at:string|null;last_http_status:number|null;last_error_code:string|null}|null;gps_history:{pending?:boolean;counts_at?:string;channels:{id:string;provider:string;label:string;motion_enabled:boolean;alarms_enabled:boolean;webhook_enabled:boolean;last_webhook_at:string|null;last_error:string|null}[];streams:number;completed_streams:number;failed_streams:number;behind_streams:number;inaccessible_streams:number;covered_until:string|null;last_success_at:string|null;history_events:number;webhook_events:number;waiting_webhooks:number}}
 export type IntegrationInput={expectedVersion:string}&(
  {action:'gps_account';provider:'protrack'|'iopgps';label:string;username:string;password:string}|
  {action:'gps_enabled';id:string;enabled:boolean}|

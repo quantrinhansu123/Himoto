@@ -2,9 +2,10 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import { GPS_LONG_STOP_MS, GPS_SYNC_STALE_MS } from '../../../shared/gps';
 import type { MobileGpsQuery, MobileGpsWorkspace } from '../../../shared/mobile-gps';
+import { readGpsEvents } from './gps-events';
 
 /** Same device/evidence rules as shared/gps; page in PostgreSQL, not Node memory. */
-export async function readMobileGpsPage(db: Pick<PoolClient, 'query'>, query: MobileGpsQuery, now: number) {
+export async function readMobileGpsPage(db: Pick<PoolClient, 'query'>, query: MobileGpsQuery, now: number, devicesOnly = false) {
   const result = await db.query(`WITH devices AS (
     SELECT d.id,d.vehicle_id,d.provider,d.external_device_id,d.provider_device_name,d.mapping_status,
       CASE WHEN d.provider_status='not_visible_in_account' THEN 'unavailable' ELSE d.management_status END AS management_status,
@@ -52,18 +53,12 @@ export async function readMobileGpsPage(db: Pick<PoolClient, 'query'>, query: Mo
         'long_stopped',(SELECT count(*) FROM long_vehicles),'offline',count(*) FILTER(WHERE "displayState"='offline'),
         'warning',count(*) FILTER(WHERE "displayState"='warning'),'stale',count(*) FILTER(WHERE "displayState"='stale'),
         'none',count(*) FILTER(WHERE "displayState"='none'),'unavailable',count(*) FILTER(WHERE "displayState"='unavailable'))) FROM projected) AS summary,
-    COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'label',COALESCE(NULLIF(license,''),NULLIF(provider_device_name,''),external_device_id))
-      ORDER BY sync_received_at DESC NULLS LAST,id DESC) FROM devices WHERE id>0),'[]'::jsonb) AS "eventDevices"`,
+    ${devicesOnly ? `'[]'::jsonb` : `COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'label',COALESCE(NULLIF(license,''),NULLIF(provider_device_name,''),external_device_id))
+      ORDER BY sync_received_at DESC NULLS LAST,id DESC) FROM devices WHERE id>0),'[]'::jsonb)`} AS "eventDevices"`,
   [query.store === 'all' ? null : Number(query.store), new Date(now).toISOString(), GPS_SYNC_STALE_MS, GPS_LONG_STOP_MS,
     query.provider, query.state, query.search.toLowerCase(), query.page]);
   const row = result.rows[0];
-  const events = await db.query(`SELECT e.id,e.vehicle_id,e.from_status,e.to_status,e.observed_at,e.event_kind,e.source,
-    CASE WHEN e.source='poll' THEN e.observed_at ELSE COALESCE(e.provider_recorded_at,e.observed_at) END AS event_at,
-    COALESCE(v.license,d.provider_device_name,d.external_device_id) AS license
-    FROM himoto.management_gps_status_events e JOIN himoto.gps_devices d ON d.id=e.gps_device_id LEFT JOIN himoto.vehicles v ON v.id=e.vehicle_id
-    WHERE ($1::bigint IS NULL OR COALESCE(v.current_store_id,v.store_id)=$1)
-      AND ($2::text IS NULL OR e.source=$2) AND ($3::bigint IS NULL OR e.gps_device_id=$3)
-    ORDER BY event_at DESC,e.id DESC LIMIT 100`, [query.store === 'all' ? null : Number(query.store), query.event_source === 'all' ? null : query.event_source, query.event_device ? Number(query.event_device) : null]);
+  const events = devicesOnly ? { rows: [] } : await readGpsEvents(db, query.store, query.event_source, query.event_device);
   const stores = await db.query('SELECT id,store_name FROM himoto.stores ORDER BY store_name,id');
   const iso = (value: unknown) => value == null ? null : value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
   const dates = ['sync_received_at','heartbeat_at','provider_reported_at','position_recorded_at','stopped_since','provider_stopped_since'];

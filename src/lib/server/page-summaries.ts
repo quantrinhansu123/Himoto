@@ -41,6 +41,8 @@ export async function readSalesSummary(client:Pick<PoolClient,'query'>,params:UR
     WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
       AND o.order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
       AND (COALESCE(o.rent_at,dates.start_date) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date
+      AND (o.rent_at IS NULL OR (o.rent_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND o.rent_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')))
       AND ($3::bigint IS NULL OR o.store_id=$3)
   ) SELECT o.id,o.customer_id,COALESCE(c.name,o.customer_name) AS customer_name,o.store_id,s.store_name,
     CASE WHEN o.order_status='renting' AND o.ended_at<now() THEN 'overdue' ELSE o.order_status END AS status,

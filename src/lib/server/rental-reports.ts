@@ -31,14 +31,18 @@ const amount = (value: unknown) => {
 // Native finalize writes the whole contract on its first line: distribute its
 // rental-only base equally (the composer has one shared rate), then add each
 // line's renewals/return adjustments. No business record is rewritten.
-export const VEHICLE_REVENUE_LINES_CTE = `WITH lines AS (
+export const VEHICLE_REVENUE_LINES_CTE = `WITH period_lines AS MATERIALIZED (
+  SELECT d.* FROM himoto.order_vehicle_details d WHERE d.deleted_at IS NULL
+    AND d.rent_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+    AND d.rent_at < (($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+), lines AS (
   SELECT d.id,d.vehicle_id,d.order_id,o.store_id AS operating_store_id,d.rent_at,d.return_at,COALESCE(o.contract_number,o.draft_reference,'#'||o.id::text) AS code,
     CASE WHEN n.native AND o.total_rental_fees IS NOT NULL THEN
       trunc(o.total_rental_fees::numeric/c.quantity) + CASE WHEN c.position < mod(o.total_rental_fees::numeric,c.quantity) THEN 1 ELSE 0 END
       WHEN COALESCE(d.handler_price,0)<>0 THEN d.handler_price ELSE COALESCE(d.total_money,0) END AS rental,
     CASE WHEN n.native THEN COALESCE(d.total_renewal_amount,0) ELSE 0 END AS renewal,
     COALESCE(a.adjustment,0) + CASE WHEN n.native OR COALESCE(d.handler_price,0)<>0 THEN 0 ELSE LEAST(COALESCE(d.money_out_date,0),0) END AS adjustment
-  FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+  FROM period_lines d JOIN himoto.orders o ON o.id=d.order_id
   CROSS JOIN LATERAL (SELECT o.draft_payload::jsonb->'legacy_migration' IS NULL
     AND jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,draft}')='object' AS native) n
   LEFT JOIN LATERAL (SELECT count(*) AS quantity,count(*) FILTER(WHERE sibling.id<d.id) AS position
@@ -53,7 +57,9 @@ export const VEHICLE_REVENUE_LINES_CTE = `WITH lines AS (
     AND d.rent_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
     AND d.rent_at < (($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
 )`;
-export const VEHICLE_REVENUE_CTE = `${VEHICLE_REVENUE_LINES_CTE}, totals AS (
+// A scoped nested-loop plan can otherwise recompute the complete aggregate for
+// every visible vehicle. Its result is shared by the page and summary.
+export const VEHICLE_REVENUE_CTE = `${VEHICLE_REVENUE_LINES_CTE}, totals AS MATERIALIZED (
   SELECT vehicle_id,count(*)::int AS rentals,sum(rental) AS rental,sum(renewal) AS renewal,sum(adjustment) AS adjustment,sum(rental+renewal+adjustment) AS revenue
   FROM lines GROUP BY vehicle_id
 ), matched AS (

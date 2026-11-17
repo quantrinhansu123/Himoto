@@ -9,6 +9,9 @@ import {readGpsWorkspace} from './gps-workspace';
 import {parseGpsQuery,projectGpsRows,isMobileGpsWorkspace,type MobileGpsWorkspace} from '../../../shared/mobile-gps';
 import type {GpsVehicle} from '../management/gps';
 import { readMobileGpsPage } from './mobile-gps-page';
+import { readGpsEvents, readGpsEventOptions } from './gps-events';
+import {parseGpsHistoryQuery,type MobileGpsHistory,type MobileGpsEventOptions} from '../../../shared/mobile-gps';
+import type {PoolClient} from 'pg';
 
 export function requireMobileGps(user:SessionUser,mapping=false) {
   if(!hasPermission(user,'vehicles.read')||mapping&&!isAdminAccount(user))throw new MobileError(mapping?'Chỉ quản trị được ghép GPS với xe.':'Tài khoản không có quyền xem GPS.',403,'FORBIDDEN');
@@ -23,10 +26,10 @@ async function readGpsSnapshot(user:SessionUser,request:NextRequest) {
     try{
       await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       await db.query("SET LOCAL statement_timeout='20s'");
-      const raw=await readGpsWorkspace(db,query.store,query.event_source,query.event_device);
+      const raw=await readGpsWorkspace(db,query.store,query.event_source,query.event_device,false);
       const rows=raw.devices.map(row=>({
         id:row.id,vehicle_id:row.vehicle_id,provider:row.provider,external_device_id:label(row.external_device_id),provider_device_name:label(row.provider_device_name),
-        license:row.license==null?null:label(row.license),store_id:row.store_id,store_name:row.store_name==null?null:label(row.store_name),
+        license:row.license==null?null:label(row.license),store_id:row.store_id,store_name:row.store_name==null?null:label(row.store_name),vehicle_status:row.vehicle_status??null,
         mapping_status:label(row.mapping_status),management_status:row.management_status,sync_received_at:iso(row.sync_received_at),heartbeat_at:iso(row.heartbeat_at),
         position_recorded_at:iso(row.position_recorded_at),provider_reported_at:iso(row.provider_reported_at),stopped_since:iso(row.stopped_since),
         provider_stopped_since:iso(row.provider_stopped_since),last_latitude:row.last_latitude,last_longitude:row.last_longitude,last_speed:row.last_speed,last_ignition:row.last_ignition??null,
@@ -43,7 +46,7 @@ async function readGpsSnapshot(user:SessionUser,request:NextRequest) {
   });
 }
 
-export async function readMobileGps(user:SessionUser,request:NextRequest):Promise<MobileGpsWorkspace>{
+export async function readMobileGps(user:SessionUser,request:NextRequest,devicesOnly=false):Promise<MobileGpsWorkspace>{
   requireMobileGps(user);
   let query;try{query=parseGpsQuery(request.nextUrl.searchParams);}catch{throw new MobileError('Bộ lọc GPS không hợp lệ.',400,'INVALID_GPS_QUERY');}
   return withMobileData(user,'fleet_read',async()=>{
@@ -51,7 +54,7 @@ export async function readMobileGps(user:SessionUser,request:NextRequest):Promis
     try{
       await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       await db.query("SET LOCAL statement_timeout='20s'");
-      const result={...await readMobileGpsPage(db,query,Date.now()),canMap:isAdminAccount(user)};
+      const result={...await readMobileGpsPage(db,query,Date.now(),devicesOnly),canMap:isAdminAccount(user)};
       if(!isMobileGpsWorkspace(result,query))throw new MobileError('Dữ liệu GPS cần được kiểm tra. Giữ nguyên bộ lọc và tải lại.',503,'INVALID_GPS_DATA');
       await db.query('COMMIT');return result;
     }catch(error){await db.query('ROLLBACK').catch(()=>{});throw error;}finally{db.release();}
@@ -59,4 +62,31 @@ export async function readMobileGps(user:SessionUser,request:NextRequest):Promis
 }
 export async function readMobileGpsExportRows(user:SessionUser,request:NextRequest){
   const {rows,query,now}=await readGpsSnapshot(user,request);return projectGpsRows(rows,query,now,true).rows;
+}
+
+async function gpsRead<T>(user:SessionUser,read:(db:PoolClient)=>Promise<T>) {
+  requireMobileGps(user);
+  return withMobileData(user,'fleet_read',async()=>{
+    const db=await himotoPool.connect();
+    try {
+      await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      await db.query("SET LOCAL statement_timeout='20s'");
+      const value=await read(db);await db.query('COMMIT');return value;
+    }catch(error){await db.query('ROLLBACK').catch(()=>{});throw error;}finally{db.release();}
+  });
+}
+export async function readMobileGpsHistory(user:SessionUser,request:NextRequest):Promise<MobileGpsHistory> {
+  requireMobileGps(user);
+  let query;try{query=parseGpsHistoryQuery(request.nextUrl.searchParams);}catch{throw new MobileError('Bộ lọc lịch sử GPS không hợp lệ.',400,'INVALID_GPS_QUERY');}
+  return gpsRead(user,async db=>{
+    const result=await readGpsEvents(db,query.store,query.event_source,query.event_device);
+    return {query,observedAt:new Date().toISOString(),events:result.rows.map(e=>({id:Number(e.id),vehicleId:e.vehicle_id==null?null:Number(e.vehicle_id),
+      fromStatus:e.from_status??null,toStatus:label(e.to_status),kind:label(e.event_kind),source:e.source,eventAt:iso(e.event_at)!,observedAt:iso(e.observed_at)!,label:label(e.license)}))};
+  });
+}
+export async function readMobileGpsEventOptions(user:SessionUser,request:NextRequest):Promise<MobileGpsEventOptions> {
+  requireMobileGps(user);
+  for(const [key]of request.nextUrl.searchParams)if(key!=='store')throw new MobileError('Bộ lọc thiết bị GPS không hợp lệ.',400,'INVALID_GPS_QUERY');
+  let store;try{store=parseGpsHistoryQuery(request.nextUrl.searchParams).store;}catch{throw new MobileError('Cơ sở GPS không hợp lệ.',400,'INVALID_GPS_QUERY');}
+  return gpsRead(user,async db=>({store,devices:(await readGpsEventOptions(db,store)).rows.map(d=>({id:Number(d.id),label:label(d.label)}))}));
 }

@@ -2,7 +2,7 @@
 export const NOTIFICATION_KINDS = ['transfer', 'due', 'overdue', 'approval'] as const;
 export type MobileNotificationKind = typeof NOTIFICATION_KINDS[number];
 export const NOTIFICATION_LABELS: Record<MobileNotificationKind, string> = {
-  transfer: 'Điều chuyển cần nhận', due: 'Hợp đồng đến hạn đóng tiền',
+  transfer: 'Điều chuyển cần nhận', due: 'Hợp đồng sắp đến hạn (24 giờ)',
   overdue: 'Hợp đồng quá hạn', approval: 'Hợp đồng chờ duyệt',
 };
 export interface MobileNotificationGroup { kind: MobileNotificationKind; count: number }

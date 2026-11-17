@@ -7,7 +7,7 @@ import { OWNERSHIP_TELEGRAM_DESTINATIONS } from '@/lib/management/telegram-desti
 import { IntegrationSettingsError,parseIntegrationSettings } from '../../../shared/integration-settings';
 export { IntegrationSettingsError,parseIntegrationSettings } from '../../../shared/integration-settings';
 type Database=Pick<PoolClient,'query'>;
-export async function readIntegrationSettings(database:Database=ownerDatabase) {
+export async function readIntegrationSettings(database:Database=ownerDatabase,includeHistory=true) {
   const [accounts,bot,groups,notifications,scheduler,channels,history,ownershipGroups]=await Promise.all([
     database.query('SELECT id,provider,label,username,enabled,last_attempt_at,last_success_at,last_error,device_count FROM himoto.management_gps_accounts ORDER BY provider,label'),
     database.query('SELECT bot_cipher IS NOT NULL AS configured FROM himoto.management_telegram_settings WHERE singleton=true'),
@@ -18,7 +18,7 @@ export async function readIntegrationSettings(database:Database=ownerDatabase) {
       COALESCE(c.alarms_enabled,false) AS alarms_enabled,COALESCE(c.webhook_enabled,false) AS webhook_enabled,c.last_webhook_at,
       c.last_error
       FROM himoto.management_gps_accounts a LEFT JOIN himoto.management_gps_event_channels c ON c.account_id=a.id ORDER BY a.provider,a.label`),
-    database.query(`SELECT count(*)::int AS streams,count(*) FILTER(WHERE last_success_at IS NOT NULL)::int AS completed_streams,
+    includeHistory?database.query(`SELECT count(*)::int AS streams,count(*) FILTER(WHERE last_success_at IS NOT NULL)::int AS completed_streams,
       count(*) FILTER(WHERE last_error IS NOT NULL)::int AS failed_streams,
       count(*) FILTER(WHERE covered_until<now()-interval '15 minutes')::int AS behind_streams,
       (SELECT count(*)::int FROM himoto.management_gps_history_cursors blocked JOIN himoto.gps_devices d ON d.id=blocked.gps_device_id
@@ -27,7 +27,7 @@ export async function readIntegrationSettings(database:Database=ownerDatabase) {
       (SELECT count(*)::int FROM himoto.management_gps_status_events WHERE source='history') AS history_events,
       (SELECT count(*)::int FROM himoto.management_gps_status_events WHERE source='webhook') AS webhook_events,
       (SELECT count(*)::int FROM himoto.management_gps_webhook_receipts WHERE status IN('pending','awaiting_device')) AS waiting_webhooks
-      FROM himoto.management_gps_history_cursors`),
+      FROM himoto.management_gps_history_cursors`):Promise.resolve({rows:[{streams:0,completed_streams:0,failed_streams:0,behind_streams:0,inaccessible_streams:0,covered_until:null,last_success_at:null,history_events:0,webhook_events:0,waiting_webhooks:0,pending:true}]}),
     database.query('SELECT route,chat_id,thread_id,enabled FROM himoto.management_ownership_telegram ORDER BY route'),
   ]);
   return {accounts:accounts.rows,telegram_configured:bot.rows[0]?.configured===true,groups:groups.rows,

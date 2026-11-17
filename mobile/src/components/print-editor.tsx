@@ -11,6 +11,7 @@ import { dateTime, useTheme } from '@/theme';
 import { Button, Card, InlineError, StateView } from './ui';
 import { ChoiceField } from './form-fields';
 import { PrintPaper } from './print-paper';
+import { printFailure } from '@/lib/print-feedback';
 
 export function PrintEditor({ kind, id, initialVersion = '' }: { kind: MobilePrintKind; id: string; initialVersion?: string }) {
   const { api, session } = useSession(), theme = useTheme(), [version, setVersion] = useState(initialVersion), [includeQr, setIncludeQr] = useState(kind === 'contracts'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [pages, setPages] = useState<number | null>(null);
@@ -32,16 +33,17 @@ export function PrintEditor({ kind, id, initialVersion = '' }: { kind: MobilePri
     if (Platform.OS === 'web') { setError('Mở Himoto trên Android hoặc iPhone để in / chia sẻ PDF của hồ sơ.'); return; }
     running.current = true; setBusy(true); setError(''); setNotice('');
     try {
-      const generated = await pdf(p); if (!alive.current) return;
       if (action === 'print') {
-        const Print = await import('expo-print'); await Print.printAsync({ uri: generated.uri, orientation: p.portrait ? Print.Orientation.portrait : Print.Orientation.landscape });
+        const Print = await import('expo-print');
+        await Print.printAsync({ html: p.html, width: p.portrait ? 595.28 : 841.89, height: p.portrait ? 841.89 : 595.28, orientation: p.portrait ? Print.Orientation.portrait : Print.Orientation.landscape });
         if (alive.current) setNotice('Đã mở hộp thoại in. Kiểm tra giấy và máy in trong hộp thoại hệ thống.');
       } else {
+        const generated = await pdf(p); if (!alive.current) return;
         const Sharing = await import('expo-sharing'); if (!await Sharing.isAvailableAsync()) throw Error('Thiết bị chưa có chức năng chia sẻ tệp. Có thể dùng hộp thoại in để lưu PDF.');
         if (!alive.current) return; await Sharing.shareAsync(generated.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: `Himoto · ${p.code}` });
         if (alive.current) setNotice('Đã mở tùy chọn chia sẻ / lưu PDF.');
       }
-    } catch (cause) { if (alive.current && !/cancel/i.test((cause as Error).message)) setError((cause as Error).message); }
+    } catch (cause) { if (alive.current) { const feedback = printFailure(cause, action); setError(feedback.error); setNotice(feedback.notice); } }
     finally { running.current = false; if (alive.current) setBusy(false); }
   }
   return <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}><Stack.Screen options={{ title: 'Xem giấy và in hợp đồng' }} />
@@ -58,6 +60,6 @@ export function PrintEditor({ kind, id, initialVersion = '' }: { kind: MobilePri
         <Button secondary label="Tạo lại giấy từ hồ sơ mới nhất" disabled={busy || query.isFetching} onPress={() => { setPages(null); setNotice(''); void query.refetch(); }} />
       </>}
     </ScrollView>
-    {p && <View style={{ padding: 16, gap: 10, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface }}><Button label="Mở hộp thoại in" loading={busy} disabled={query.isFetching || query.isError} onPress={() => void output('print')} /><Button secondary label="Chia sẻ / lưu PDF hợp đồng" disabled={busy || query.isFetching || query.isError} onPress={() => void output('pdf')} /></View>}
+    {p && <View style={{ padding: 16, gap: 10, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface }}><Text style={muted}>Chọn máy in hoặc “Lưu dưới dạng PDF” trong hộp thoại của điện thoại. Có thể dùng nút chia sẻ PDF để gửi tệp sang máy tính hoặc ứng dụng khác.</Text><Button label="Mở hộp thoại in" loading={busy} disabled={query.isFetching || query.isError} onPress={() => void output('print')} /><Button secondary label="Chia sẻ / lưu PDF hợp đồng" disabled={busy || query.isFetching || query.isError} onPress={() => void output('pdf')} /></View>}
   </SafeAreaView>;
 }

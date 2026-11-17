@@ -11,8 +11,8 @@ import {depositReceiptSql,rentalPaidSql} from './contract-deposits';
 
 /** Counts and balances need dates and numeric fields, not every vehicle,
  * customer document or form field from 26,000 historical contracts. */
-export function contractStatisticsSql(scopeClause:string,company:boolean){
- const needsPaid=`(o.order_status IN('renting','overdue','wait_payment','reserved','bad_debt') OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL OR (${BAD_DEBT_CLOSED_AT_SQL}) IS NOT NULL)`;
+export function contractStatisticsSql(scopeClause:string,company:boolean,attention=false){
+ const needsPaid=attention?`(o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL)`:`(o.order_status IN('renting','overdue','wait_payment','reserved','bad_debt') OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL OR (${BAD_DEBT_CLOSED_AT_SQL}) IS NOT NULL)`;
  return `SELECT o.id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
    CASE WHEN o.order_status='renting' AND COALESCE(o.return_at,dates.end_date)<now() THEN 'overdue' ELSE o.order_status END AS status,
    o.customer_id,c.status AS customer_status,o.store_id,s.kind AS store_kind,
