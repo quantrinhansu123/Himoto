@@ -74,7 +74,7 @@ function SummaryTable({title,description,column,unit,summary,filename,loading,er
   </div>;
 }
 export function StaffSalesPage() {
-  const {selectedStore,dataset,error:datasetError,resources,reload,accessUser,ensureData}=useManagement();const today=vietnamDate();
+  const {selectedStore,dataset,error:datasetError,reload,accessUser}=useManagement();const today=vietnamDate();
   const canViewFleet=canViewOwnedFleetRevenue(accessUser);
   const [from,setFrom]=useState(`${today.slice(0,7)}-01`),[to,setTo]=useState(today),[department,setDepartment]=useState('');
   const [reportView, setReportView] = useState<ReportView>('actual');
@@ -87,9 +87,7 @@ export function StaffSalesPage() {
   useEffect(()=>{if(!needAssigned)return;const controller=new AbortController();setLoading(true);setError('');loadStaffSales(from,to,selectedStore,controller.signal).then(value=>{if(!controller.signal.aborted)setReport(value);}).catch(cause=>{if(!controller.signal.aborted){setReport(null);setError(cause instanceof Error ? cause.message : 'Không tải được doanh số.');}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[needAssigned,from,to,selectedStore,retry]);
   const rows=(report?.rows || []).filter(row=>!department || row.department === department);
   const [summary,setSummary]=useState<SalesSummaryReport|null>(null),[summaryLoading,setSummaryLoading]=useState(true),[summaryError,setSummaryError]=useState('');
-  const staff=dataset?.staff;
-  useEffect(()=>{if(needSummary)void ensureData(['staff']).catch(()=>{});},[needSummary,ensureData]);
-  useEffect(()=>{if(!needSummary||toolsOpen&&!resources.staff.loaded&&!resources.staff.error)return;const controller=new AbortController();setSummaryLoading(true);setSummaryError('');loadSalesSummary(from,to,selectedStore,staff||[],controller.signal).then(value=>{if(!controller.signal.aborted)setSummary(value);}).catch(cause=>{if(!controller.signal.aborted)setSummaryError(cause instanceof Error?cause.message:'Không tải được thống kê.');}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});return()=>controller.abort();},[needSummary,toolsOpen,from,to,selectedStore,staff,retry,resources.staff.loaded,resources.staff.error]);
+  useEffect(()=>{if(!needSummary)return;const controller=new AbortController();setSummaryLoading(true);setSummaryError('');loadSalesSummary(from,to,selectedStore,[],controller.signal).then(value=>{if(!controller.signal.aborted)setSummary(value);}).catch(cause=>{if(!controller.signal.aborted)setSummaryError(cause instanceof Error?cause.message:'Không tải được thống kê.');}).finally(()=>{if(!controller.signal.aborted)setSummaryLoading(false);});return()=>controller.abort();},[needSummary,from,to,selectedStore,retry]);
   const sources=summary?.sources||summarizeBySalesStaff([],from,to,selectedStore),stores=summary?.stores||summarizeByStore([],from,to,selectedStore),kpis=summary?.kpis||summarizeSalesKpis([],from,to,selectedStore),contractsError=summaryError||datasetError;
   const activePreset=PRESETS.find(preset=>{const [start,end]=presetRange(preset.id,today);return start===from && end===to;})?.id;
   const periodDays=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;

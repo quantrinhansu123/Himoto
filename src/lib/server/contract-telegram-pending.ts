@@ -4,19 +4,24 @@ import { VEHICLE_ORDER_SQL } from './contract-classification';
 
 /** Only the newest attempt per transaction matters; an initial manual snapshot remains after a successful send. */
 export async function readPendingContractTelegram(db: Pick<PoolClient, 'query'>, storeId: number | null, page = 1) {
-  const result = await db.query(`WITH latest AS (
+  const result = await db.query(`WITH latest_notice AS MATERIALIZED (
       SELECT DISTINCT ON (n.order_id,COALESCE(n.root_event_key,n.event_key))
         n.order_id,COALESCE(n.root_event_key,n.event_key) AS event_key,n.event_type,
         CASE WHEN n.retraction->>'state'='done' THEN 'retracted' WHEN n.retraction->>'state'='failed' THEN 'retraction_failed'
-          WHEN n.retraction IS NOT NULL THEN 'retracting' ELSE n.status END AS status,n.error_code,n.created_at,
+          WHEN n.retraction IS NOT NULL THEN 'retracting' ELSE n.status END AS status,n.error_code,n.created_at
+      FROM himoto.management_contract_notifications n
+      ORDER BY n.order_id,COALESCE(n.root_event_key,n.event_key),n.created_at DESC,n.id DESC
+    ), pending AS (
+      SELECT ln.order_id,ln.event_key,ln.event_type,ln.status,ln.error_code,ln.created_at,
         COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
         COALESCE(NULLIF(o.customer_name,''),c.name,'') AS customer_name,o.store_id,s.store_name
-      FROM himoto.management_contract_notifications n JOIN himoto.orders o ON o.id=n.order_id
+      FROM latest_notice ln
+      JOIN himoto.orders o ON o.id=ln.order_id
       LEFT JOIN himoto.customers c ON c.id=o.customer_id LEFT JOIN himoto.stores s ON s.id=o.store_id
-      WHERE o.deleted_at IS NULL AND o.order_status NOT IN ('draft','cancelled') AND ${VEHICLE_ORDER_SQL}
+      WHERE ln.status IN ('manual','awaiting_config','failed','unknown','retracted','retraction_failed')
+        AND o.deleted_at IS NULL AND o.order_status NOT IN ('draft','cancelled') AND ${VEHICLE_ORDER_SQL}
         AND ($1::bigint IS NULL OR o.store_id=$1)
-      ORDER BY n.order_id,COALESCE(n.root_event_key,n.event_key),n.created_at DESC,n.id DESC
-    ), pending AS (SELECT * FROM latest WHERE status IN ('manual','awaiting_config','failed','unknown','retracted','retraction_failed'))
+    )
     SELECT (SELECT count(*)::int FROM pending) AS total,
       COALESCE((SELECT jsonb_agg(page_rows) FROM (
         SELECT * FROM pending ORDER BY created_at DESC,order_id DESC,event_key LIMIT 30 OFFSET $2

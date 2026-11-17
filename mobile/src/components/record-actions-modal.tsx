@@ -249,6 +249,13 @@ export function RecordActionsModal({
             params: { id },
           }),
       });
+    } else {
+      actions.push({
+        id: "telegram",
+        label: "Telegram hợp đồng",
+        blockedReason: "Bản nháp chưa phát hành — phát hành hợp đồng trước khi gửi Telegram.",
+        icon: MessageCircle,
+      });
     }
 
     // 9. Thuê pin / sạc
@@ -292,7 +299,21 @@ export function RecordActionsModal({
       });
     }
 
-    // 12. Tiếp tục sửa bản nháp
+    // 12. Tiếp tục sửa bản nháp / Phát hành & giao xe giữ chỗ
+    if (has("contracts.finalize") && (status === "draft" || status === "deposit_contract")) {
+      actions.push({
+        id: "finalize_handover",
+        label: status === "draft" ? "Rà soát & Phát hành hợp đồng" : "Xác nhận giao xe giữ chỗ",
+        description: status === "draft" ? "Duyệt phát hành hợp đồng nháp" : "Bàn giao xe từ hợp đồng đặt cọc",
+        icon: ShieldCheck,
+        color: "#16A34A",
+        onPress: () =>
+          router.push({
+            pathname: "/contract/[id]",
+            params: { id },
+          }),
+      });
+    }
     if (has("contracts.draft") && status === "draft") {
       actions.push({
         id: "draft_edit",
@@ -332,18 +353,41 @@ export function RecordActionsModal({
         }),
     });
 
-    if (has("vehicles.transfer")) actions.push({
-      id: "transfer",
-      label: "Điều chuyển cơ sở",
-      description: "Chuyển xe sang cơ sở khác",
-      icon: ArrowLeftRight,
-      color: "#4F46E5",
-      onPress: () =>
-        router.push({
-          pathname: "/vehicle-transfer-editor/[id]",
-          params: { id },
-        }),
-    });
+    if (has("vehicles.transfer")) {
+      if (record.status === "in_transit" || record.status === "sold") {
+        actions.push({
+          id: "transfer",
+          label: "Điều chuyển cơ sở",
+          blockedReason: record.status === "in_transit"
+            ? "Xe đang Chờ luân chuyển — cơ sở đích cần Nhận xe hoặc Từ chối trước khi chuyển tiếp."
+            : "Xe đã bán — không điều chuyển cơ sở.",
+          icon: ArrowLeftRight,
+        });
+      } else {
+        actions.push({
+          id: "transfer",
+          label: "Điều chuyển cơ sở",
+          description: "Chuyển xe sang cơ sở khác",
+          icon: ArrowLeftRight,
+          color: "#4F46E5",
+          onPress: () =>
+            router.push({
+              pathname: "/vehicle-transfer-editor/[id]",
+              params: { id },
+            }),
+        });
+      }
+    }
+    if (record.status === "in_transit" && has("vehicles.receive")) {
+      actions.push({
+        id: "receive_transfer",
+        label: "Xử lý xe đang luân chuyển",
+        description: "Nhận xe, từ chối hoặc hủy phiếu điều chuyển",
+        icon: ShieldCheck,
+        color: "#059669",
+        onPress: () => router.push("/vehicle-transfers"),
+      });
+    }
 
     actions.push({
       id: "history",

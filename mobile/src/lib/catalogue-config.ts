@@ -111,7 +111,7 @@ export function catalogueStatuses(kind: CatalogueKind, scope: MobileContractScop
     if (scope === 'overdue') return ['', 'bad_debt'];
     if (scope === 'drafts' || scope === 'due') return [''];
     if (scope === 'active') return ['', 'overdue', 'wait_payment'];
-    if (scope === 'renewable') return ['', 'overdue', 'bad_debt'];
+    if (scope === 'renewable') return ['', 'overdue', 'bad_debt', 'wait_payment'];
   }
   return all ? ['', ...catalogueConfig[kind].allStatuses] : catalogueConfig[kind].quickStatuses;
 }

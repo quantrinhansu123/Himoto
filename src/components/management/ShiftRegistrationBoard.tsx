@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, RotateCcw } from 'lucide-react';
 import { dutyRequest, vietnamDate } from '@/lib/management/duty-roster';
 import { registrationDates, registrationMonthRange, registrationExcel, REGISTRATION_SHIFTS, registrationCredit, type RegisteredStaff, type RegistrationRange, type ShiftRegistration } from '@/lib/management/shift-registration';
@@ -67,12 +67,13 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
       setRange(next); setFrom(next.from); setTo(next.to); setFilterError(''); setFitMonth(nextDates.length <= 31);
     } catch (cause) { setFilterError(cause instanceof Error ? cause.message : 'Khoảng ngày không hợp lệ.'); }
   }
+  const deferredSearch = useDeferredValue(search);
   const cells = useMemo(() => new Map(data?.registrations.map(row => [keyOf(row.staff_id, row.work_date), row])), [data]);
   const people = useMemo(() => (data?.staff || []).filter(person =>
     (!staffFilter || String(person.id) === staffFilter) &&
     (store === 'all' || (store === 'none' ? person.store_id === null : String(person.store_id) === store)) &&
-    `${person.name} ${person.position}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi')),
-  ), [data, staffFilter, store, search]);
+    `${person.name} ${person.position}`.toLocaleLowerCase('vi').includes(deferredSearch.trim().toLocaleLowerCase('vi')),
+  ), [data, staffFilter, store, deferredSearch]);
   const groups = useMemo(() => {
     const result = new Map<string, RegisteredStaff[]>();
     for (const person of people) { const key = String(person.store_id ?? 'none'); result.set(key, [...(result.get(key) || []), person]); }

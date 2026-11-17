@@ -25,24 +25,33 @@ export async function estimatedSales(db: Database, from: string, to: string, sto
     throw new RentalRevenueError('Kiểm tra khoảng ngày và cơ sở của báo cáo.');
   }
 
-  const result = await db.query(`WITH scoped AS (
+  const result = await db.query(`WITH candidate_orders AS MATERIALIZED (
+    SELECT o.id, o.order_status, o.total, o.draft_payload
+    FROM himoto.orders o
+    LEFT JOIN LATERAL (
+      SELECT min(d.rent_at) AS started_at
+      FROM himoto.order_vehicle_details d
+      WHERE d.order_id=o.id AND d.deleted_at IS NULL
+    ) dates ON o.rent_at IS NULL
+    WHERE o.deleted_at IS NULL
+      AND o.order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
+      AND (COALESCE(o.rent_at,dates.started_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date
+      AND (o.rent_at IS NULL OR (o.rent_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+        AND o.rent_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')))
+      AND ($3::bigint IS NULL OR o.store_id=$3)
+      AND ${VEHICLE_ORDER_SQL}
+  ), scoped AS (
     SELECT o.id,${rentalSalesValueSql()} AS sales,
       COALESCE(lines.vehicles,0) AS vehicles,
       o.order_status IN ('renting','overdue','wait_payment','reserved')
         AND COALESCE(lines.open_lines,0)>0 AS active
-    FROM himoto.orders o
+    FROM candidate_orders o
     LEFT JOIN LATERAL (
-      SELECT min(d.rent_at) AS started_at,count(DISTINCT d.vehicle_id)::int AS vehicles,
+      SELECT count(DISTINCT d.vehicle_id)::int AS vehicles,
         count(*) FILTER (WHERE d.completed_at IS NULL)::int AS open_lines
       FROM himoto.order_vehicle_details d
       WHERE d.order_id=o.id AND d.deleted_at IS NULL
     ) lines ON true
-    WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-      AND o.order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
-      AND (COALESCE(o.rent_at,lines.started_at) AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN $1::date AND $2::date
-      AND (o.rent_at IS NULL OR (o.rent_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-        AND o.rent_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')))
-      AND ($3::bigint IS NULL OR o.store_id=$3)
   )
   SELECT COALESCE(sum(sales),0)::bigint AS sales,count(*)::int AS contracts,
     COALESCE(sum(vehicles),0)::int AS vehicles,0::bigint AS vehicle_days,

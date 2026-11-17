@@ -54,7 +54,7 @@ export function Cell({ row, column, config }: { row: ManagementRow; column: Mana
   if (column.format === 'person' || column.format === 'vehicle') {
     const holder=config.kind==='vehicles'&&column.key==='name'?vehicleHolderLabel(row.status,row.holder_name):'';
      return <div className={`mg-identity ${column.format === 'vehicle' ? 'mg-identity-vehicle' : ''}`}>
-     {config.kind === 'vehicles' && column.key === 'name' && <VehicleThumbnail id={row.id} />}
+     {config.kind === 'vehicles' && column.key === 'name' && <VehicleThumbnail id={row.id} revision={row.vehicle_revision} photoRevision={row.photo_revision} />}
     {column.format === 'person' && <span className={`mg-avatar mg-avatar-${row.id % 4}`} aria-hidden="true">{String(value || '').split(' ').filter(Boolean).slice(-2).map(word => word[0]).join('')}</span>}
     <div>
       <strong title={String(value || '')}>{value || '—'}</strong>

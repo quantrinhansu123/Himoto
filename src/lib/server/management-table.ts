@@ -92,7 +92,7 @@ function contractScopeClause(scope:string):string {
   // applies the actual overdue test; filtering by the header first loses them.
   if(scope==='overdue'||scope==='collection')return contractPageScopeClause(scope);
   return scope==='due' ? ` AND o.order_status IN ('renting','overdue','wait_payment','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NOT NULL`
-    : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue','bad_debt') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
+    : scope==='renewable' ? ` AND o.order_status IN ('renting','overdue','bad_debt','wait_payment') AND o.draft_payload::jsonb #> '{management_composer,installment_plan}' IS NULL` : contractListScopeClause(scope);
 }
 function contractPageScopeClause(scope:string):string {
   if(scope==='active'||scope==='backfill')return contractScopeClause(scope);
@@ -346,10 +346,13 @@ export function vehicleHydrateSql() {
     gps.has_device AS gps_has_device, gps.normalized_status AS gps_normalized_status, gps.last_at AS gps_last_at,
     gps.latitude AS gps_latitude, gps.longitude AS gps_longitude, gps.synced_at AS gps_last_sync, gps.provider AS gps_provider,
     gps.heartbeat_at AS gps_heartbeat_at, gps.position_recorded_at AS gps_position_at,
-    gps.provider_reported_at AS gps_reported_at, gps.last_ignition AS gps_ignition
+    gps.provider_reported_at AS gps_reported_at, gps.last_ignition AS gps_ignition,
+    CASE WHEN vp.entity_id IS NOT NULL THEN COALESCE(vp.updated_at::text, vp.xmin::text, '1') ELSE 'none' END AS photo_revision
     FROM himoto.vehicles v
     LEFT JOIN himoto.stores s ON s.id=COALESCE(v.current_store_id,v.store_id)
     LEFT JOIN himoto.stores os ON os.id=v.store_id
+    LEFT JOIN himoto.management_record_photos vp ON vp.entity_type='vehicles' AND vp.entity_id=v.id AND vp.slot='vehicle-photo'
+      AND (vp.data IS NOT NULL OR (vp.cloudinary_public_id IS NOT NULL AND vp.cloudinary_cloud_name IS NOT NULL) OR (vp.object_bucket IS NOT NULL AND vp.object_key IS NOT NULL AND vp.object_etag IS NOT NULL))
     ${VEHICLE_TRANSFER_JOIN_SQL}
     LEFT JOIN LATERAL (
       SELECT json_agg(json_build_object('order_id', o.id,

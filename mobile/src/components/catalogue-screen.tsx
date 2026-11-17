@@ -313,6 +313,19 @@ export function CatalogueScreen({
     }
     return map;
   }, [kind, statistics.data, query.data]);
+  const fetchMore = useCallback((automatic = true) => {
+    if (automatic && !nextPageGesture.current) return;
+    if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError) {
+      // Trimming a full page window can emit another native edge event without
+      // user movement. Consume one gesture so it cannot drain every later page.
+      nextPageGesture.current = false;
+      void query.fetchNextPage({ cancelRefetch: false });
+    }
+  }, [query]);
+  const checkListEnd = useCallback(({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (contentSize.height > 0 && contentSize.height - contentOffset.y - layoutMeasurement.height <= layoutMeasurement.height * 0.4)
+      fetchMore();
+  }, [fetchMore]);
   if (!allowed)
     return (
       <StateView
@@ -346,20 +359,12 @@ export function CatalogueScreen({
     setStoreBasis("source");
     setCustomerId("");
   }
-  function fetchMore(automatic = true) {
-    if (automatic && !nextPageGesture.current) return;
-    if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError) {
-      // Trimming a full page window can emit another native edge event without
-      // user movement. Consume one gesture so it cannot drain every later page.
-      nextPageGesture.current = false;
-      void query.fetchNextPage({ cancelRefetch: false });
-    }
-  }
-  function checkListEnd({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }: NativeSyntheticEvent<NativeScrollEvent>) {
-    if (contentSize.height > 0 && contentSize.height - contentOffset.y - layoutMeasurement.height <= layoutMeasurement.height * 0.4)
-      fetchMore();
-  }
   const actions: { label: string; onPress: () => void; disabled?: boolean }[] = [];
+  if (kind === "contracts" && !operationsCatalogue) {
+    actions.push({ label: "Chưa gửi Telegram", onPress: () => router.push("/telegram-pending") });
+    if (session?.user.permissions.includes("contracts.draft") || session?.user.permissions.includes("finance.write"))
+      actions.push({ label: "Nhắc nợ hợp đồng", onPress: () => router.push("/debt-reminders") });
+  }
   if (kind === "vehicles") {
     actions.push(
       { label: "Lịch sử điều chuyển", onPress: () => router.push("/vehicle-transfers") },

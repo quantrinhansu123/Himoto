@@ -10,9 +10,11 @@ const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFini
 // date filtering. Renewal snapshots identify receipts; unpaid snapshots add no revenue.
 // Resolve attribution and initial fees once per relevant contract, rather than
 // repeating its JSON/permission joins for every historical receipt.
-export const RENTAL_REVENUE_CTE=`WITH ranked_orders AS MATERIALIZED (
+export const RENTAL_REVENUE_CTE=`WITH target_customers AS MATERIALIZED (
+  SELECT DISTINCT customer_id FROM himoto.orders WHERE id=ANY($4::bigint[]) AND customer_id IS NOT NULL
+), ranked_orders AS MATERIALIZED (
   SELECT id,row_number() OVER(PARTITION BY customer_id ORDER BY COALESCE(rent_at,created_at),id) AS rental_number
-  FROM himoto.orders WHERE customer_id IS NOT NULL
+  FROM himoto.orders WHERE customer_id IN (SELECT customer_id FROM target_customers)
     AND order_status NOT IN ('draft','pending','deposit_contract','cancelled','cancel_pending_settlement')
 ), scoped_orders AS MATERIALIZED (
   SELECT o.id,

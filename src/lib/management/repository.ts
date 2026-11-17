@@ -126,6 +126,7 @@ export function mapApiRow(kind: ManagementKind, raw: ApiRow): ManagementRow {
     });
     const latestCustomer = blockers.map(rental => text(rental.customer || rental.customer_name)).find(Boolean) || '';
     return { ...base, license: text(raw.license), brand: text(raw.brand), type: text(raw.type) === 'electric' ? 'xe_dien' : text(raw.type), vehicle_revision: text(raw.vehicle_revision),
+    ...(raw.photo_revision !== undefined ? { photo_revision: text(raw.photo_revision) } : {}),
     transfer_event_id:number(raw.transfer_event_id),transfer_from_store_id:number(raw.transfer_from_store_id),transfer_to_store_id:number(raw.transfer_to_store_id),
     transfer_from_store_name:text(raw.transfer_from_store_name),transfer_to_store_name:text(raw.transfer_to_store_name),transfer_receivable:number(raw.transfer_receivable),transfer_created_by:number(raw.transfer_created_by),
     color: text(raw.color), chassis: text(raw.chassis), engine: text(raw.engine),
