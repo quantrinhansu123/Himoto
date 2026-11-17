@@ -101,6 +101,7 @@ export default function Guide() {
       <ChoiceField label="Bước thao tác" value={String(step)} choices={selected.steps.map((item,index)=>({value:String(index),label:`${index+1}. ${item.short}`}))} onChange={value=>setStep(Number(value))}/>
       <Card style={{gap:16}}><Text style={{color:theme.primary,fontSize:13,fontWeight:'700'}}>BƯỚC {step+1} / {selected.steps.length}</Text><Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800',lineHeight:30}}>{current.title}</Text>
         <Text style={{color:theme.muted,lineHeight:23}}>{current.place}</Text>
+        {current.image&&<Image cachePolicy="memory-disk" source={{uri:`${api!.origin}/help/images/${current.image}`}} style={{width:'100%',aspectRatio:16/10,borderRadius:12,backgroundColor:theme.background}} contentFit="contain" accessibilityLabel={`Ảnh minh họa ${current.title}`}/>}
         {current.actions.map((action,index)=><View key={action} style={{flexDirection:'row',gap:10}}><Text style={{color:theme.primary,fontWeight:'700'}}>{index+1}.</Text><Text style={{color:theme.text,fontSize:16,lineHeight:25,flex:1}}>{action}</Text></View>)}
         {current.note&&<Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>{current.note}</Text>}
         {current.table&&<View style={{gap:12}}>{current.table.rows.map((row,index)=><View key={index} style={{paddingVertical:8,borderBottomWidth:1,borderColor:theme.border,gap:5}}>{row.map((cell,column)=><Text key={column} style={{color:theme.text,lineHeight:22}}>{current.table!.headers[column]}: {cell}</Text>)}</View>)}</View>}

@@ -14,7 +14,8 @@ import {registrationDates,registrationExcel} from '../../../shared/mobile-shift-
 import {readMobileRegistrationRange} from './mobile-shift-registration';
 import {handleAttendance} from './attendance-handler';
 import {NextRequest as AttendanceRequest} from 'next/server';
-import {formatDateTime} from '@/lib/formatters';
+import {buildAttendanceWorkbook} from '@/lib/management/attendance-workbook';
+import {vietnamDate} from '@/lib/management/duty-roster';
 import type {AttendanceEntry} from '../../../shared/mobile-support';
 import {hasPermission} from '@/lib/management/permissions';
 import {readMobileDuties} from './mobile-duty-roster';
@@ -34,12 +35,15 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
   const params=new URLSearchParams(request.nextUrl.searchParams);
   if(kind==='attendance'){
     if([...params.keys()].some(k=>!['from','to','store'].includes(k)||params.getAll(k).length!==1))throw new MobileError('Bộ lọc chấm công không hợp lệ.');
-    params.set('export','1');
+    const exportFrom=params.get('from')||vietnamDate().slice(0,7)+'-01',exportTo=params.get('to')||exportFrom;
+    params.set('from',exportFrom);params.set('to',exportTo);params.set('export','1');
     const response=await handleAttendance(new AttendanceRequest(request.nextUrl.origin+'/api/mobile/v1/attendance?'+params),user),body=await response.json();
     if(!response.ok)throw new MobileError(body.message||'Chưa xuất được chấm công.',response.status);
     const rows:AttendanceEntry[]=body.data.rows;
     if(rows.length!==body.data.total||new Set(rows.map(row=>String(row.id))).size!==rows.length)throw new MobileError('Chưa đọc đủ lịch sử chấm công. Tải lại rồi xuất Excel.');
-    return mobileFilteredWorkbook(`himoto-cham-cong-${params.get('from')}-${params.get('to')}`,['ID','Nhân viên','Cơ sở','Ca làm','Giờ vào','Giờ ra','Số phút đi muộn','Số phút về sớm','Công thực tế'],rows.map(row=>[row.id,row.staff_name,row.store_name,row.shift_name,formatDateTime(row.clock_in_at),row.clock_out_at?formatDateTime(row.clock_out_at):null,row.late_minutes,row.early_leave_minutes??null,row.earned_credit??null]));
+    const bytes=await buildAttendanceWorkbook(rows.map(row=>({...row,id:Number(row.id),late_minutes:row.late_minutes,early_leave_minutes:row.early_leave_minutes??null,earned_credit:row.earned_credit??null})),exportFrom,exportTo);
+    if(bytes.byteLength>12*1024*1024)throw new MobileError('File quá lớn. Thu hẹp bộ lọc rồi xuất lại; chưa xuất file bị cắt.',413,'EXPORT_TOO_LARGE');
+    return{filename:`himoto-cham-cong-${exportFrom}-${exportTo}.xlsx`,mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',contentBase64:Buffer.from(bytes).toString('base64'),rowCount:rows.length};
   }
   if(kind==='shift-registrations'){
     if([...params.keys()].some(k=>!['from','to','store','search'].includes(k)||params.getAll(k).length!==1))throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');

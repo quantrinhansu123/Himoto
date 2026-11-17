@@ -15,7 +15,7 @@ export function AttendanceEdit({row,onClose,onReload}:{row:AttendanceEntry;onClo
  usePreventRemove(busy,()=>{});
  async function save(method:'PATCH'|'DELETE'){
   if(lock.current||uncertain||!row.can_manage)return;
-  let input;try{input={id:row.id,original_in:row.clock_in_at,original_out:row.clock_out_at,...(method==='PATCH'?{clock_in_at:start===local(row.clock_in_at)?row.clock_in_at:iso(start),clock_out_at:end===(row.clock_out_at?local(row.clock_out_at):'')?row.clock_out_at:iso(end)}:{})};}catch(cause){setConfirm(null);setError((cause as Error).message);return;}
+  let input;try{if(method==='PATCH'&&row.clock_out_at&&!end.trim())throw Error('Lượt đã chấm công ra không được xóa trống giờ ra.');input={id:row.id,original_in:row.clock_in_at,original_out:row.clock_out_at,...(method==='PATCH'?{clock_in_at:start===local(row.clock_in_at)?row.clock_in_at:iso(start),clock_out_at:end===(row.clock_out_at?local(row.clock_out_at):'')?row.clock_out_at:iso(end)}:{})};}catch(cause){setConfirm(null);setError((cause as Error).message);return;}
   lock.current=true;setBusy(true);setConfirm(null);setError('');
   try{await api!.manageAttendance(method,input);onReload();}catch(cause){setUncertain(true);setError((cause as Error).message+' Tải lại để đối chiếu trước khi sửa tiếp.');}finally{lock.current=false;setBusy(false);}
  }
@@ -25,6 +25,6 @@ export function AttendanceEdit({row,onClose,onReload}:{row:AttendanceEntry;onClo
   <Text style={{color:theme.muted,lineHeight:22}}>Chỉ sửa giờ vào/ra; ảnh và GPS được giữ nguyên. Thời gian được hiển thị theo giờ Việt Nam.</Text>
   {!!error&&<InlineError message={error}/>}<Button label="Lưu thay đổi" disabled={busy||uncertain} onPress={()=>setConfirm('PATCH')}/><Button secondary label="Xóa lượt chấm công" disabled={busy||uncertain} onPress={()=>setConfirm('DELETE')}/>
   {uncertain&&<Button secondary label="Tải lại để đối chiếu" disabled={busy} onPress={onReload}/>}
-  {confirm&&<ConfirmEdit title={confirm==='DELETE'?'Xóa lượt chấm công?':'Lưu thay đổi chấm công?'} message={confirm==='DELETE'?`Xóa lượt #${row.id} của ${row.staff_name}, gồm ảnh/GPS đính kèm.`:`${row.staff_name} · Vào: ${start} · Ra: ${end||'Đang trong ca'}`} confirmLabel={confirm==='DELETE'?'Xóa lượt chấm công':'Lưu thay đổi'} onCancel={()=>setConfirm(null)} onConfirm={()=>void save(confirm)}/>}
+  {confirm&&<ConfirmEdit title={confirm==='DELETE'?'Xóa lượt chấm công?':'Lưu thay đổi chấm công?'} message={confirm==='DELETE'?`Xóa lượt #${row.id} của ${row.staff_name}, gồm ảnh/GPS đính kèm.`:`${row.staff_name} · Vào: ${start} · Ra: ${end||'Chưa chấm công ra'}`} confirmLabel={confirm==='DELETE'?'Xóa lượt chấm công':'Lưu thay đổi'} onCancel={()=>setConfirm(null)} onConfirm={()=>void save(confirm)}/>}
  </KeyboardFormScrollView></EditorSheet>;
 }
