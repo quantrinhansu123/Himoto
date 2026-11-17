@@ -47,11 +47,21 @@ export async function writeMobileTransferTelegram(user:SessionUser,rawId:string,
   permission(user,true);const vehicleId=id(rawId),eventId=id(rawEvent),key=mobileRequestKey(request.headers.get('idempotency-key')),body=await mobileBody(request,1024);
   if(request.nextUrl.search||Object.keys(body).some(k=>!['action','review'].includes(k))||body.action!=='send'||typeof body.review!=='string'||!/^[a-f0-9]{64}$/.test(body.review))throw new MobileError('Rà soát đúng lượt chuyển/nhận trước khi gửi.');
   return transaction(user,true,true,async db=>{
+    let updatedTransfer:MobileTransferTelegram|null=null;
     const operation=`telegram.transfer:${eventId}`,receipt=await idempotentMobileWrite(db,user.id,key,operation,{vehicleId,eventId,...body},async()=>{
       await db.query('SELECT id FROM himoto.vehicle_location_events WHERE id=$1 AND vehicle_id=$2 FOR UPDATE',[eventId,vehicleId]);
-      const current=await transfer(db,user,vehicleId,eventId);if(current.review!==body.review)throw new MobileError('Nội dung, ảnh hoặc nơi nhận đã đổi. Tải lại trước khi gửi.',409,'TELEGRAM_REVIEW_REQUIRED');
-      await saveVehicleTransferTelegram(db,vehicleId,eventId,user);return{id:eventId,revision:'1'};
+      const read=await readVehicleTransferTelegram(db,vehicleId,eventId,user);
+      const review=digest({payload:read.payload,destinations:read.destinations});
+      if(review!==body.review)throw new MobileError('Nội dung, ảnh hoặc nơi nhận đã đổi. Tải lại trước khi gửi.',409,'TELEGRAM_REVIEW_REQUIRED');
+      const nextState=await saveVehicleTransferTelegram(db,vehicleId,eventId,user,read);
+      const candidate={...nextState,kind:read.kind==='vehicle_receive'?'receive' as const:'transfer' as const,review};
+      if(isMobileTransferTelegram(candidate))updatedTransfer=candidate;
+      return{id:eventId,revision:'1'};
     });
+    if(updatedTransfer&&!receipt.replayed){
+      const value:MobileTelegramResult={key,operation,receipt:{id:eventId,revision:receipt.revision,replayed:false},action:'send',id:vehicleId,eventId,contract:null,transfer:updatedTransfer};
+      if(isMobileTelegramResult(value))return value;
+    }
     return result(db,user,key,{operation,resource_id:eventId,resource_revision:receipt.revision},receipt.replayed);
   });
 }

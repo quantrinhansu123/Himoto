@@ -176,16 +176,44 @@ export function notificationContentMatches(kind:ContractEventType,current:Notifi
   const {payment_amounts:_amounts,...legacy}=current;void _amounts;
   return notificationHash(kind,legacy)===expected;
 }
-export async function notificationPhotos(db:Database,orderId:number,phases:string[]):Promise<Attachment[]> {
+export interface CachedPhotoRow extends Attachment {
+  revision?:string;data_bytes?:number|null;has_source?:boolean;active_plate?:boolean;
+}
+export interface NotificationReadCache {
+  baseOrder?:Record<string,any>|null;
+  approvedTransactions?:any[];
+  contractPhotos?:CachedPhotoRow[];
+  photoMetaBySlot?:Map<string,CachedPhotoRow>;
+}
+export async function notificationPhotos(db:Database,orderId:number,phases:string[],cache?:NotificationReadCache):Promise<Attachment[]> {
   // Queue only slot / Cloudinary refs. Embedding multi-MB base64 blobs here made finalize roll back
   // under statement_timeout when staff attached hồ sơ photos. Dispatch reloads bytes by slot.
-  const result=await db.query(`SELECT slot,mime_type,NULL::text AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag
-    FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND
-      (slot ~ ANY($2::text[]) OR ($3 AND regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','') ~ '^plate-[1-9][0-9]{0,14}$' AND EXISTS
-        (SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.vehicle_id::text=substring(regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','') from 7) AND d.deleted_at IS NULL))) ORDER BY slot`,
-    [orderId,phases.map(phase=>`^${phase}-(?:[1-9][0-9]{0,14}|video-[1-3]|document-[1-9][0-9]{0,14})(?:-extra-[1-9][0-9]{0,14})?$`).concat(phases.includes('rental')?['^rental-signed-[1-9][0-9]{0,14}$','^(driver-license|customer-id-front|customer-id-back|customer-driver-license)(-extra-[1-9][0-9]{0,14})?$']:[]),phases.includes('rental')]);
+  const rawPatterns=phases.map(phase=>`^${phase}-(?:[1-9][0-9]{0,14}|video-[1-3]|document-[1-9][0-9]{0,14})(?:-extra-[1-9][0-9]{0,14})?$`)
+    .concat(phases.includes('rental')?['^rental-signed-[1-9][0-9]{0,14}$','^(driver-license|customer-id-front|customer-id-back|customer-driver-license)(-extra-[1-9][0-9]{0,14})?$']:[]);
+  let rows:Attachment[];
+  if(cache){
+    if(!cache.contractPhotos){
+      const all=(await db.query(`SELECT slot,mime_type,NULL::text AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag,
+        xmin::text AS revision,octet_length(data) AS data_bytes,
+        (data IS NOT NULL OR (cloudinary_public_id IS NOT NULL AND cloudinary_cloud_name IS NOT NULL) OR (object_bucket IS NOT NULL AND object_key IS NOT NULL AND object_etag IS NOT NULL)) AS has_source,
+        EXISTS (SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.vehicle_id::text=substring(regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','') from 7) AND d.deleted_at IS NULL) AS active_plate
+        FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 ORDER BY slot`,[orderId])).rows as CachedPhotoRow[];
+      cache.contractPhotos=all;
+      cache.photoMetaBySlot=new Map(all.map(row=>[String(row.slot),row]));
+    }
+    const regexes=rawPatterns.map(pattern=>new RegExp(pattern));
+    const includePlates=phases.includes('rental');
+    rows=cache.contractPhotos.filter(row=>regexes.some(re=>re.test(row.slot))||(includePlates&&/^plate-[1-9][0-9]{0,14}$/.test(row.slot.replace(/-extra-[1-9][0-9]{0,14}$/,''))&&row.active_plate===true))
+      .map(({slot,mime_type,bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag})=>({slot,mime_type,bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag}));
+  }else{
+    rows=(await db.query(`SELECT slot,mime_type,NULL::text AS bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag
+      FROM himoto.management_record_photos WHERE entity_type='contracts' AND entity_id=$1 AND
+        (slot ~ ANY($2::text[]) OR ($3 AND regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','') ~ '^plate-[1-9][0-9]{0,14}$' AND EXISTS
+          (SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=$1 AND d.vehicle_id::text=substring(regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','') from 7) AND d.deleted_at IS NULL))) ORDER BY slot`,
+      [orderId,rawPatterns,phases.includes('rental')])).rows as Attachment[];
+  }
   // Preserve the legacy payload shape/hash when an attachment has no object reference.
-  const photos=(result.rows as Attachment[]).map<Attachment>(({object_bucket,object_key,object_etag,...photo})=>object_key?{...photo,object_bucket,object_key,object_etag}:photo)
+  const photos=rows.map<Attachment>(({object_bucket,object_key,object_etag,...photo})=>object_key?{...photo,object_bucket,object_key,object_etag}:photo)
     .filter(photo=>photo.slot.startsWith('plate-')||isContractTransactionPhoto(photo.slot));
   photos.sort((a,b)=>{
     const rank=(slot:string)=>slot==='driver-license'?1000:CONTRACT_CUSTOMER_PHOTO_SLOTS.some(p=>p.key===slot)?1001:slot.startsWith('plate-')?999:phases.findIndex(phase=>slot.startsWith(`${phase}-`));
@@ -211,13 +239,13 @@ export async function hydrateNotificationPhotos(db:Database,orderId:number|null,
     return loaded?{...photo,...loaded}:photo;
   });
 }
-export async function notificationPayload(db:Database,orderId:number,kind:ContractEventType,actorId:number,phases:string[],renewal?:RenewalNotice):Promise<NotificationPayload&{store_id:number}> {
+export async function notificationPayload(db:Database,orderId:number,kind:ContractEventType,actorId:number,phases:string[],renewal?:RenewalNotice,cache?:NotificationReadCache):Promise<NotificationPayload&{store_id:number}> {
   const returnIds=kind==='return'?phases.map(phase=>phase.match(/^return-([1-9]\d*)$/)?.[1]).filter(Boolean):[];
   const swapId=kind==='battery_swap'?phases[0]?.match(/^battery-swap-([1-9]\d*)$/)?.[1]:undefined;
   const labels=contractVehicleLabelSource(),fleet=contractVehicleReadSource();
   const swap=swapId?(await db.query(`SELECT s.*,v.license,v.name AS vehicle_name FROM himoto.management_contract_battery_swaps s JOIN ${labels} v ON v.id=s.vehicle_id WHERE s.id=$1 AND s.order_id=$2 AND s.status='confirmed'`,[swapId,orderId])).rows[0]:undefined;
   if(kind==='battery_swap'&&!swap)throw Error('Không tìm thấy lượt đổi pin đã xác nhận.');
-  const o=(await db.query(`SELECT o.store_id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
+  const loadOrder=async(ids:string[]|null)=>(await db.query(`SELECT o.store_id,COALESCE(NULLIF(o.contract_number,''),o.draft_reference,'#'||o.id::text) AS code,
     COALESCE(NULLIF(trim(o.customer_name),''),NULLIF(trim(c.name),''),'') AS customer,COALESCE(NULLIF(trim(o.customer_phone),''),NULLIF(trim(c.phone),''),'') AS phone,
     s.store_name AS store,u.name AS actor,${OWNERSHIP_ORDER_SQL} AS ownership,
     COALESCE(NULLIF(trim(o.draft_payload->'management_composer'->'profile'->>'staff_name'),''),
@@ -242,7 +270,16 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
       FROM himoto.order_vehicle_details d JOIN ${labels} v ON v.id=d.vehicle_id
       WHERE d.order_id=o.id AND d.deleted_at IS NULL AND ($3::bigint[] IS NULL OR d.id=ANY($3))
     ) vehicle_labels ON true
-    WHERE o.id=$1 AND o.deleted_at IS NULL`,[orderId,actorId,returnIds.length?returnIds:null])).rows[0];
+    WHERE o.id=$1 AND o.deleted_at IS NULL`,[orderId,actorId,ids])).rows[0];
+  let o:Record<string,any>|undefined;
+  if(returnIds.length){
+    o=await loadOrder(returnIds as string[]);
+  }else if(cache){
+    if(cache.baseOrder===undefined)cache.baseOrder=(await loadOrder(null))??null;
+    o=cache.baseOrder??undefined;
+  }else{
+    o=await loadOrder(null);
+  }
   if(!o)throw Error('Không tạo được thông báo hợp đồng.');
   if(kind==='vehicle_swap'){
     const id=phases.length===1?phases[0].match(/^vehicle-swap-([1-9]\d{0,14})$/)?.[1]:undefined;
@@ -255,14 +292,21 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     // actor = tài khoản đang gửi Telegram (JOIN users $2); người đổi xe vẫn hiện qua Người thực hiện nếu khác.
     return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor||changed.actor||'',
       vehicles:changed.to_license||'',vehicle_names:changed.to_name||'',total:o.total,at:requireTelegramTimestamp(changed.created_at,'Thời gian đổi xe'),
-      photos:await notificationPhotos(db,orderId,phases),vehicle_swap:{from_license:changed.from_license||'',from_name:changed.from_name||'',to_license:changed.to_license||'',to_name:changed.to_name||''}};
+      photos:await notificationPhotos(db,orderId,phases,cache),vehicle_swap:{from_license:changed.from_license||'',from_name:changed.from_name||'',to_license:changed.to_license||'',to_name:changed.to_name||''}};
   }
-  const tx=(await db.query(`SELECT t.id,t.name,t.type,t.value,t.created_at,t.order_item_id,t.payment_method,r.renewal_payload,
+  const loadTransactions=async()=>(await db.query(`SELECT t.id,t.name,t.type,t.value,t.created_at,t.order_item_id,t.payment_method,r.renewal_payload,
     CASE WHEN t.bank_id IS NOT NULL AND t.bank_owner_type='company' THEN 'CK TK công ty'
       WHEN t.bank_id IS NOT NULL THEN 'CK TK cá nhân'
       WHEN t.cash_id IS NOT NULL OR t.payment_method=1 THEN 'Tiền mặt'
       WHEN t.payment_method=2 THEN 'Chuyển khoản (chưa phân loại TK)' ELSE 'Chưa xác định' END AS method
     FROM himoto.transactions t LEFT JOIN himoto.management_contract_payments r ON r.transaction_id=t.id WHERE t.order_id=$1 AND t.status='approved' ORDER BY t.created_at,t.id`,[orderId])).rows;
+  let tx:any[];
+  if(cache){
+    if(!cache.approvedTransactions)cache.approvedTransactions=await loadTransactions();
+    tx=cache.approvedTransactions;
+  }else{
+    tx=await loadTransactions();
+  }
   const draft=o.draft_payload?.management_composer?.draft;
   const composer=o.draft_payload?.management_composer;
   const edits=[...(Array.isArray(composer?.contract_edits)?composer.contract_edits:[]),...(Array.isArray(composer?.full_contract_edits)?composer.full_contract_edits:[]),...(Array.isArray(composer?.rental_terms_history)?composer.rental_terms_history:[])];
@@ -328,7 +372,7 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const pendingRefund=kind==='return'&&settlement?.refund_deferred&&pendingAmount>0
     ?{...(settlement.recipient||{}),amount:pendingAmount}:undefined;
   return {store_id:Number(o.store_id),code:o.code,customer:o.customer,phone:o.phone,store:o.store,actor:o.actor,contract_staff:o.contract_staff||'',vehicles:o.vehicles||'',vehicle_names:o.vehicle_names||'',total:o.total,
-    at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases),days:Number.isFinite(duration)&&duration>0?duration:null,
+    at:new Date().toISOString(),photos:await notificationPhotos(db,orderId,phases,cache),days:Number.isFinite(duration)&&duration>0?duration:null,
     payment_amounts:paymentAmounts,
     ...(['rental','reservation','handover'].includes(kind)&&lastEdit?{contract_edit:{at:String(lastEdit.at),previous_code:String(previousCode),code:String(o.code)}}:{}),
     ...(!['return','renewal','battery_swap'].includes(kind)&&composer?.rental_terms_history?.length?{rental_correction:{request_id:composer.rental_terms_history.at(-1).request_id,start_at:requireTelegramTimestamp(start,'Ngày thuê trong hồ sơ hợp đồng'),end_at:requireTelegramTimestamp(end,'Ngày trả trong hồ sơ hợp đồng')}}:{}),

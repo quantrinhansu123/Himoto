@@ -15,7 +15,7 @@ export function SePayNotifications(){
       if(received.some(row=>row.mode==='live'))invalidateData(['contracts']);
       if(sound&&audio.current?.state==='running'){const oscillator=audio.current.createOscillator(),gain=audio.current.createGain();oscillator.type='sine';oscillator.frequency.setValueAtTime(880,audio.current.currentTime);gain.gain.setValueAtTime(0.08,audio.current.currentTime);gain.gain.exponentialRampToValueAtTime(0.001,audio.current.currentTime+0.5);oscillator.connect(gain);gain.connect(audio.current.destination);oscillator.start();oscillator.stop(audio.current.currentTime+0.5);}
     }catch{/* Retry automatically after a network interruption. */}finally{running=false;}};
-    void poll();const timer=setInterval(()=>void poll(),4000);return()=>{controller.abort();clearInterval(timer);};
+    void poll();const timer=setInterval(()=>void poll(),12000);return()=>{controller.abort();clearInterval(timer);};
   },[enabled,sound,notify,invalidateData]);
   if(!enabled)return null;
   return <button type="button" className="mg-button mg-sepay-sound" aria-pressed={sound} onClick={()=>{if(!sound){audio.current??=new AudioContext();void audio.current.resume();}setSound(!sound);}}>{sound?'Âm báo tiền: bật':'Bật âm báo tiền'}</button>;

@@ -66,7 +66,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
   const suggested=renewalRateSuggestion(item?.returnAt||null,returnAt,rate,unit),amount=customAmount??(suggested===null?"":String(suggested));
   const locked = !action.checked || action.busy || action.checking || !!action.key || !!action.receipt;
   const billKey = bill.data?.photoRevision ? `${bill.data.version}:${bill.data.photoRevision}` : "";
-  const source = billKey && api && session ? { uri: `${api.origin}/api/mobile/v1/contracts/${encodeURIComponent(id)}/renewals/${bill.data!.version}/bill?revision=${encodeURIComponent(bill.data!.photoRevision!)}`, headers: { Authorization: `Bearer ${session.token}` } } : null;
+  const source = billKey && api ? api.renewalBillImageSource(id, bill.data!.version, bill.data!.photoRevision!) : null;
   function review() {
     Keyboard.dismiss(); setLocalError("");
     if (!data || locked || query.isFetching || query.isError || (collected && (bill.isFetching || bill.isError))) return;
@@ -122,6 +122,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
         <View style={{ gap: 8 }}>
           <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: "800" }}>{data.code}</Text>
           {backfill&&<Text style={{color:theme.warning,lineHeight:24}}>Nhập bổ sung gia hạn bị quên. Xe đã trả chỉ bổ sung lịch sử và phí, giữ kho hiện tại. Kiểm tra lịch sử để tránh nhập trùng.</Text>}
+          {!backfill&&data.status==="bad_debt"&&<Text style={{color:theme.warning,lineHeight:24}}>Hợp đồng nợ xấu đã thu hồi xe. Bổ sung kỳ gia hạn sẽ cộng phí và lịch sử, giữ trạng thái nợ xấu và kho xe hiện tại.</Text>}
           <Text style={{ color: theme.muted, fontSize: 16 }}>Gia hạn #{data.nextVersion} · Tiền thuê còn thiếu {money(data.rentalRemaining)}</Text>
         </View>
         {!!(localError || action.error) && <InlineError message={localError || action.error} />}

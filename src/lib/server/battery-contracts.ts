@@ -6,19 +6,33 @@ type Database = Pick<PoolClient, 'query'>;
 import { BatteryContractError,parseBatteryInput } from "../../../shared/battery-validation";
 export { BatteryContractError,parseBatteryInput };
 
-const SELECT = `SELECT b.*, b.signed_on::text AS signed_on_text, b.id_card_issued_on::text AS id_card_issued_on_text, b.xmin::text AS revision,
+const BATTERY_TX_CTE = (targetFilterSql: string) => `WITH target_batteries AS MATERIALIZED (
+  SELECT b.*, b.signed_on::text AS signed_on_text, b.id_card_issued_on::text AS id_card_issued_on_text, b.xmin::text AS revision
+  FROM himoto.battery_contracts b
+  WHERE ${targetFilterSql}
+),
+battery_tx AS MATERIALIZED (
+  SELECT DISTINCT ON (t.object_id, CASE WHEN t.name='battery:deposit' THEN 'deposit' ELSE 'paid' END)
+    t.object_id,
+    CASE WHEN t.name='battery:deposit' THEN 'deposit' ELSE 'paid' END AS purpose,
+    COALESCE(t.cash_id,t.bank_id) AS account_id,
+    CASE WHEN t.cash_id IS NOT NULL THEN 'cash' WHEN t.bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method,
+    t.created_at AS collected_at
+  FROM himoto.transactions t
+  WHERE t.object_type='battery_contract' AND t.status='approved'
+    AND t.name IN ('battery:rental','battery:renewal','battery:deposit')
+    AND t.object_id IN (SELECT id FROM target_batteries)
+  ORDER BY t.object_id, CASE WHEN t.name='battery:deposit' THEN 'deposit' ELSE 'paid' END, t.id DESC
+)`;
+const SELECT_FIELDS = `SELECT b.*,
   s.store_name, s.store_address, s.store_phone,
   COALESCE(NULLIF(vo.contract_number,''),NULLIF(vo.draft_reference,''),'#' || vo.id::text) AS vehicle_contract_code,
   rp.account_id AS paid_account_id,rp.method AS paid_account_type,dp.account_id AS deposit_account_id,dp.method AS deposit_account_type,
   GREATEST(rp.collected_at,dp.collected_at) AS collection_at
-  FROM himoto.battery_contracts b LEFT JOIN himoto.stores s ON s.id=b.store_id
+  FROM target_batteries b LEFT JOIN himoto.stores s ON s.id=b.store_id
   LEFT JOIN himoto.orders vo ON vo.id=b.vehicle_contract_id
-  LEFT JOIN LATERAL (SELECT COALESCE(t.cash_id,t.bank_id) AS account_id,
-    CASE WHEN t.cash_id IS NOT NULL THEN 'cash' WHEN t.bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method,t.created_at AS collected_at
-    FROM himoto.transactions t WHERE t.object_type='battery_contract' AND t.object_id=b.id AND t.name IN ('battery:rental','battery:renewal') AND t.status='approved' ORDER BY t.id DESC LIMIT 1) rp ON true
-  LEFT JOIN LATERAL (SELECT COALESCE(t.cash_id,t.bank_id) AS account_id,
-    CASE WHEN t.cash_id IS NOT NULL THEN 'cash' WHEN t.bank_owner_type='company' THEN 'company_transfer' ELSE 'transfer' END AS method,t.created_at AS collected_at
-    FROM himoto.transactions t WHERE t.object_type='battery_contract' AND t.object_id=b.id AND t.name='battery:deposit' AND t.status='approved' ORDER BY t.id DESC LIMIT 1) dp ON true`;
+  LEFT JOIN battery_tx rp ON rp.object_id=b.id AND rp.purpose='paid'
+  LEFT JOIN battery_tx dp ON dp.object_id=b.id AND dp.purpose='deposit'`;
 const localTime = (input: unknown) => input instanceof Date ? new Date(input.getTime() + 7 * 3600000).toISOString().slice(0, 16) : '';
 const money = (input: unknown) => input == null ? null : Number(input);
 const text = (input: unknown) => input == null ? '' : String(input);
@@ -51,7 +65,7 @@ export async function countBatteryContracts(client: Database, storeId?: number) 
 export async function listBatteryContracts(client: Database, storeId?: number, vehicleContractId?: number) {
   if (storeId !== undefined && (!Number.isSafeInteger(storeId) || storeId <= 0)) throw new BatteryContractError('Cơ sở không hợp lệ.');
   if (vehicleContractId !== undefined && (!Number.isSafeInteger(vehicleContractId) || vehicleContractId <= 0)) throw new BatteryContractError('Hợp đồng xe liên kết không hợp lệ.');
-  const result = await client.query(`${SELECT} WHERE b.deleted_at IS NULL AND ($1::bigint IS NULL OR b.store_id=$1) AND ($2::bigint IS NULL OR b.vehicle_contract_id=$2) ORDER BY b.starts_at DESC, b.id DESC LIMIT 5000`, [storeId ?? null, vehicleContractId ?? null]);
+  const result = await client.query(`${BATTERY_TX_CTE('b.deleted_at IS NULL AND ($1::bigint IS NULL OR b.store_id=$1) AND ($2::bigint IS NULL OR b.vehicle_contract_id=$2) ORDER BY b.starts_at DESC, b.id DESC LIMIT 5000')} ${SELECT_FIELDS} ORDER BY b.starts_at DESC, b.id DESC`, [storeId ?? null, vehicleContractId ?? null]);
   return result.rows.map(map);
 }
 async function lock(client: Database) {
@@ -59,7 +73,7 @@ async function lock(client: Database) {
   await client.query('LOCK TABLE himoto.battery_contracts IN SHARE ROW EXCLUSIVE MODE');
 }
 async function readOne(client: Database, id: number) {
-  const result = await client.query(`${SELECT} WHERE b.id=$1 AND b.deleted_at IS NULL`, [id]);
+  const result = await client.query(`${BATTERY_TX_CTE('b.id=$1 AND b.deleted_at IS NULL')} ${SELECT_FIELDS}`, [id]);
   if (!result.rowCount) throw new BatteryContractError('Hợp đồng thuê pin không còn tồn tại.', 404);
   return map(result.rows[0]);
 }

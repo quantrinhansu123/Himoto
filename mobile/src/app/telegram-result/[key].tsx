@@ -3,22 +3,28 @@ import {ScrollView,Text} from 'react-native';
 import {router,useLocalSearchParams,usePreventRemove} from 'expo-router';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
 import {NOTICE_STATUS_LABELS} from '../../../../shared/contract-telegram';
-import {isTelegramOperation} from '../../../../shared/mobile-telegram';
+import {isTelegramOperation,type MobileTelegramResult} from '../../../../shared/mobile-telegram';
 import {isImportUuid} from '../../../../shared/mobile-customer-import';
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {useTheme} from '@/theme';
 import {Button,Card,InlineError,StateView} from '@/components/ui';
 import {ConfirmEdit} from '@/components/editor-sheet';
+type PendingItem=Awaited<ReturnType<typeof pendingWrites.list>>[number];
 function Result({requestKey}:{requestKey:string}){
   const {api,session}=useSession(),theme=useTheme(),cache=useQueryClient();
   const scope=useMemo(()=>({origin:api!.origin,userId:session!.user.id,storeId:session!.user.allStores?null:session!.user.storeId,allStores:session!.user.allStores}),[api,session]);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[confirm,setConfirm]=useState(false),alive=useRef(true),running=useRef(false);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);const disable=usePreventRemove(busy,()=>{});
-  const query=useQuery({queryKey:['telegram-result',scope,requestKey],retry:false,gcTime:0,queryFn:async({signal})=>{
+  const query=useQuery<{pending:PendingItem|undefined;result:MobileTelegramResult|null}>({queryKey:['telegram-result',scope,requestKey],retry:false,staleTime:1500,gcTime:60_000,queryFn:async({signal})=>{
     const pending=(await pendingWrites.list(scope,true)).find(p=>p.key===requestKey),value=(await api!.telegramResult(requestKey,signal)).result;
     if(pending&&!isTelegramOperation(pending.operation)||value&&pending&&value.operation!==pending.operation)throw Error('Xác nhận Telegram không khớp mã gốc.');return{pending,result:value};
-  }});
+  },refetchInterval:q=>{
+    if(busy)return false;
+    const current=q.state.data?.result;
+    const active=current?.transfer?['pending','sending'].includes(current.transfer.status||''):current?.contract?.events.some(e=>['pending','sending','retracting'].includes(e.status||''));
+    return active?2000:false;
+  },refetchIntervalInBackground:false});
   const value=query.data?.result,text={color:theme.text,fontSize:16,lineHeight:25},muted={color:theme.muted,fontSize:15,lineHeight:24};
   async function resolve(){setConfirm(false);const entry=query.data?.pending;if(!entry||running.current)return;running.current=true;setBusy(true);setError('');try{const result=await api!.resolveWrite(requestKey,entry.operation);if(!alive.current)return;if(result.status==='cancelled'){await pendingWrites.complete(scope,entry.operation,requestKey);if(!alive.current)return;setNotice('Máy chủ xác nhận chưa ghi yêu cầu này. Mã cũ đã khóa; tải lại hồ sơ trước khi thao tác tiếp.');}await query.refetch();}catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}}
   async function acknowledge(){if(!value||running.current)return;running.current=true;setBusy(true);setError('');try{const original=await pendingWrites.entryScope(scope,value.operation,requestKey);if(original)await pendingWrites.complete(original,value.operation,requestKey);if(!alive.current)return;void cache.invalidateQueries({queryKey:['telegram']});disable();if(value.transfer)router.replace({pathname:'/transfer-telegram/[id]/[eventId]',params:{id:String(value.id),eventId:String(value.eventId)}});else router.replace({pathname:'/contract-telegram/[id]',params:{id:String(value.id)}});}catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}}

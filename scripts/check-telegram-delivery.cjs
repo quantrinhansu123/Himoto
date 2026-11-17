@@ -8,12 +8,12 @@ async function main(){
   const originalFetch=global.fetch;global.fetch=async()=>{throw Error('Real network disabled during QA');};
   try {
     const files=[...Array.from({length:7},(_,i)=>photo(i,400000)),photo(8,3428871,'video/mp4'),photo(9,3428871,'video/mp4')];
-    const split=await batches(files);assert.deepEqual(split.map(group=>group.length),[5,2,1,1]);
+    const split=await batches(files);assert.deepEqual(split.map(group=>group.length),[7,1,1]);
     assert(split.filter(group=>group[0].type==='video/mp4').every(group=>group.length===1));
     const pixels=Buffer.alloc(1400*1000*3);let seed=17;for(let i=0;i<pixels.length;i++){seed=(Math.imul(seed,1664525)+1013904223)|0;pixels[i]=seed>>>24;}
     const jpeg=await sharp(pixels,{raw:{width:1400,height:1000,channels:3}}).jpeg({quality:94}).toBuffer();
-    const large=await batches(Array.from({length:7},(_,i)=>({...photo(i),bytes:jpeg.toString('base64')})));
-    assert.equal(large.flat().length,7);assert(large.length>1);
+    const large=await batches(Array.from({length:10},(_,i)=>({...photo(i),bytes:jpeg.toString('base64')})));
+    assert.equal(large.flat().length,10);assert(large.length>1);
     assert(large.every(group=>group.reduce((sum,f)=>sum+f.data.length,0)<=delivery.TELEGRAM_ALBUM_BYTES));
     assert.deepEqual((await batches(Array.from({length:23},(_,i)=>photo(i)))).map(group=>group.length),[10,10,3]);
     await assert.rejects(batches([photo(1,2*1024*1024+1)]),/PHOTO_SIZE/);

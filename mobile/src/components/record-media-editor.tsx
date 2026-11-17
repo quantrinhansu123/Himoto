@@ -123,7 +123,7 @@ function MediaForm({entity,id,initial}:{entity:MobileMediaEntity;id:string;initi
       <Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{row.label}</Text>
       <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>{dateTime(row.updatedAt)} · {row.kind==='video'?'Video':row.bytes?Math.ceil(row.bytes/1024)+' KB':'Ảnh đã lưu'}</Text>
       {!!row.blockedReason&&<Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{row.blockedReason}</Text>}
-      {row.readable&&row.kind==='image'&&<BillPhoto context="hồ sơ" source={api!.recordMediaImageSource(galleryData.target,row)} label={row.label}/>}
+      {row.readable&&row.kind==='image'&&<BillPhoto context="hồ sơ" previewSource={api!.recordMediaImageSource(galleryData.target,row,true)} source={api!.recordMediaImageSource(galleryData.target,row)} label={row.label}/>}
       <Button secondary label={'Mở mục '+row.label} disabled={locked||gallery.isFetching||gallery.isError} onPress={()=>choose(row.slot)}/>
     </Card>)}
     {galleryData&&!galleryData.rows.length&&<Text style={{color:theme.muted,fontSize:16}}>Chưa có ảnh cho lượt ghi nhận này.</Text>}

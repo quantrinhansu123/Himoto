@@ -404,6 +404,10 @@ export function createApi(
       {method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify(input)}),
     gpsMappingReceipt:(key:string)=>request<{receipt:MobileGpsMappingReceipt|null}>(`/gps/mappings/requests/${encodeURIComponent(key)}`,
       (v):v is {receipt:MobileGpsMappingReceipt|null}=>!!v&&typeof v==='object'&&'receipt' in v&&(v.receipt===null||isGpsMappingReceipt(v.receipt)&&v.receipt.requestId===key)),
+    renewalBillImageSource: (id: string, version: number, revision: string, collection = false) => ({
+      uri: `${origin}/api/mobile/v1/contracts/${encodeURIComponent(id)}/renewals/${version}${collection ? '/collection' : ''}/bill?revision=${encodeURIComponent(revision)}`,
+      headers: authorization(),
+    }),
     renewalBill: (id: string, version: number, signal?: AbortSignal) =>
       request<MobileBillInfo>(`/contracts/${encodeURIComponent(id)}/renewals/${version}/bill`,
         (value): value is MobileBillInfo => isMobileBillInfo(value) && String(value.id)===id && value.version===version,{signal}),
@@ -654,9 +658,9 @@ export function createApi(
       return request<MobileRecordMedia>(`/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}?page=${page}`,
         (value):value is MobileRecordMedia=>isMobileRecordMedia(value)&&matchesMobileMediaTarget(value.target,target)&&value.page===page,{signal});
     },
-    recordMediaImageSource:(target:MobileMediaIdentity,photo:MobileMediaPhoto)=>{
+    recordMediaImageSource:(target:MobileMediaIdentity,photo:MobileMediaPhoto,preview=false)=>{
       if(!isMobileMediaIdentity(target)||!isMobileMediaPhoto(photo,target)||!photo.readable||photo.kind!=='image')throw new ApiError('Ảnh không thuộc hồ sơ hoặc chưa hỗ trợ xem.',400,'INVALID_MEDIA_TARGET');
-      return{uri:`${origin}/api/mobile/v1/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}/${encodeURIComponent(photo.slot)}?revision=${encodeURIComponent(photo.revision)}`,
+      return{uri:`${origin}/api/mobile/v1/record-media/${target.entity}/${target.id}/${target.kind}/${target.referenceId}/${encodeURIComponent(photo.slot)}?revision=${encodeURIComponent(photo.revision)}${preview?'&preview=1':''}`,
         headers:authorization()};
     },
     vehicleThumbnailSource: (id: number, revision: string) => {

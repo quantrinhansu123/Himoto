@@ -60,9 +60,9 @@ export async function readVehicleTransferTelegram(db:Database,vehicleId:number,e
     can_send:eligible&&allowed&&(aggregate.can_requeue||!notices.length)};
   return {state,payload,store_id:storeId,allowed,kind:received?'vehicle_receive':'vehicle_transfer' as const,destinations};
 }
-export async function saveVehicleTransferTelegram(db:Database,vehicleId:number,eventId:number,user:User) {
-  await db.query('SELECT id FROM himoto.vehicle_location_events WHERE id=$1 AND vehicle_id=$2 FOR UPDATE',[eventId,vehicleId]);
-  const read=await readVehicleTransferTelegram(db,vehicleId,eventId,user);
+export async function saveVehicleTransferTelegram(db:Database,vehicleId:number,eventId:number,user:User,preloaded?:Awaited<ReturnType<typeof readVehicleTransferTelegram>>) {
+  if(!preloaded)await db.query('SELECT id FROM himoto.vehicle_location_events WHERE id=$1 AND vehicle_id=$2 FOR UPDATE',[eventId,vehicleId]);
+  const read=preloaded??await readVehicleTransferTelegram(db,vehicleId,eventId,user);
   if(!read.allowed)throw new VehicleTransferTelegramError('Chỉ người có quyền chuyển/nhận tại cơ sở thực hiện được gửi lượt này.',403);
   if(!read.state.eligible)throw new VehicleTransferTelegramError('Không xác định đủ cơ sở chuyển đi và cơ sở nhận của lượt này.');
   if(!read.state.can_send){if(['sent','pending','sending'].includes(read.state.status||''))return read.state;throw new VehicleTransferTelegramError('Không được gửi lại lượt chưa rõ kết quả hoặc thao tác ngoài cơ sở được phân quyền.',403);}
@@ -74,5 +74,7 @@ export async function saveVehicleTransferTelegram(db:Database,vehicleId:number,e
         WHERE management_contract_notifications.status IN ('failed','awaiting_config')`,
     [randomUUID(),target.store_id,eventKey,`vehicle-event:${eventId}`,read.kind,JSON.stringify(read.payload),eventId]);
   }
-  return (await readVehicleTransferTelegram(db,vehicleId,eventId,user)).state;
+  const notices=(await db.query('SELECT status,message_ids,event_key FROM himoto.management_contract_notifications WHERE vehicle_event_id=$1 ORDER BY event_key',[eventId])).rows;
+  const aggregate=noticeStatus(notices);
+  return {...read.state,status:aggregate.status,message_count:aggregate.message_count,can_send:read.state.eligible&&read.allowed&&(aggregate.can_requeue||!notices.length)};
 }

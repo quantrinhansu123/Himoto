@@ -27,6 +27,18 @@ import { MAX_VIDEO_BYTES, normalizeVideoFile } from './video-media';
 export const isVideoSlot = (slot:string) => /-video-[1-3]$/.test(slot);
 export interface CloudUploadReceipt { public_id: string; version: number; signature: string; resource_type?: 'video' }
 const uploads = new WeakMap<File, { id: string; promise: Promise<CloudUploadReceipt> }>();
+let cachedCloudFlyPhotoProvider = false;
+
+async function postCloudFlyImage(file: File, id: string): Promise<CloudUploadReceipt> {
+  return withRequestDeadline(async signal=>{
+    const response=await fetch('/api/auth/photo-uploads/image',{method:'POST',credentials:'same-origin',signal,
+      headers:{'Content-Type':file.type,'x-upload-id':id},body:file});
+    if(response.status===503)cachedCloudFlyPhotoProvider=false;
+    const result=await response.json().catch(()=>null);
+    if(!response.ok||result?.status!=='success'||result.data?.public_id?.split('/').at(-1)!==id||result.data?.version!==1||!/^[a-f0-9]{64}$/.test(result.data?.signature||''))throw new Error(result?.message||'Chưa tải được ảnh lên CloudFly. Ảnh vẫn được giữ trong form.');
+    return result.data as CloudUploadReceipt;
+  },60000,'Tải ảnh quá lâu. Giữ form và thử tải lại.');
+}
 
 export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploadReceipt> {
   const previous = uploads.get(file);
@@ -34,6 +46,9 @@ export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploa
   const id = retry ? crypto.randomUUID() : previous?.id || crypto.randomUUID();
   const promise = (async () => {
     const video=file.type.startsWith('video/');
+    if (!video && cachedCloudFlyPhotoProvider && !retry) {
+      return postCloudFlyImage(file, id);
+    }
     const {signed,envelope}=await withRequestDeadline(async signal=>{
       const signed = await fetch('/api/auth/photo-uploads/sign', { method: 'POST', credentials: 'same-origin',signal, headers: { 'Content-Type': 'application/json',...(!video?{'x-photo-storage':'cloudfly'}:{}) }, body: JSON.stringify({ upload_id: id, ...(video?{resource_type:'video'}:{}) }) });
       return {signed,envelope:await signed.json().catch(() => null)};
@@ -41,13 +56,8 @@ export function uploadRecordPhoto(file: File, retry = false): Promise<CloudUploa
     if (!signed.ok || envelope?.status !== 'success') throw new Error(envelope?.message || 'Không khởi tạo được tải ảnh.');
     const settings = envelope.data;
     if (!video && settings?.provider === 'cloudfly') {
-      return withRequestDeadline(async signal=>{
-        const response=await fetch('/api/auth/photo-uploads/image',{method:'POST',credentials:'same-origin',signal,
-          headers:{'Content-Type':file.type,'x-upload-id':id},body:file});
-        const result=await response.json().catch(()=>null);
-        if(!response.ok||result?.status!=='success'||result.data?.public_id?.split('/').at(-1)!==id||result.data?.version!==1||!/^[a-f0-9]{64}$/.test(result.data?.signature||''))throw new Error(result?.message||'Chưa tải được ảnh lên CloudFly. Ảnh vẫn được giữ trong form.');
-        return result.data as CloudUploadReceipt;
-      },60000,'Tải ảnh quá lâu. Giữ form và thử tải lại.');
+      cachedCloudFlyPhotoProvider = true;
+      return postCloudFlyImage(file, id);
     }
     if (!/^[a-z0-9_-]+$/i.test(settings?.cloud_name || '') || !settings.api_key || !settings.signature || !settings.params) throw new Error('Cấu hình tải ảnh chưa hợp lệ.');
     const body = new FormData(); body.append('file', file);
@@ -139,7 +149,11 @@ export async function prepareRecordPhoto(file: File): Promise<File> {
     if (!context) throw new Error('Không xử lý được ảnh trên thiết bị này.');
     context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+    let blob: Blob | null = null;
+    for (const quality of [0.85, 0.72, 0.58]) {
+      blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+      if (blob && blob.size <= MAX_PHOTO_BYTES) break;
+    }
     if (!blob || blob.size > MAX_PHOTO_BYTES) throw new Error('Ảnh sau xử lý vẫn quá 2 MB. Hãy chụp gần hơn hoặc chọn ảnh nhỏ hơn.');
     return new File([blob], 'anh-ho-so.jpg', { type: 'image/jpeg' });
   } finally { URL.revokeObjectURL(url); }

@@ -18,7 +18,7 @@ export function AppUpdateBridge() {
       finally { running.current = false; }
     }
     // Let Expo finish its startup check before making an additional request.
-    const subscription = AppState.addEventListener('change', next => { if (next === 'active') void check(); });
+    const subscription = AppState.addEventListener('change', next => { if (next === 'active') setTimeout(() => { void check(); }, 800); });
     return () => subscription.remove();
   }, []);
   if (__DEV__ || Platform.OS === 'web' || !state.isUpdatePending) return null;

@@ -172,6 +172,8 @@ export function ManagementDrawer({
 
   const userRoleLabel = session?.user?.role ? (roles[session.user.role] || session.user.role) : "Nhân viên";
 
+  if (!visible) return null;
+
   return (
     <Modal
       visible={visible}

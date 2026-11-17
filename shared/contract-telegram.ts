@@ -6,6 +6,10 @@ export function canSendContractEvent(user:PermissionAccount,kind:ContractEventTy
 }
 export const CONTRACT_EVENT_LABELS:Record<ContractEventType,string> = {rental:'Thuê xe',reservation:'Nhận cọc giữ xe',handover:'Giao xe',return:'Trả xe',renewal:'Gia hạn',battery_swap:'Đổi pin',vehicle_swap:'Đổi xe'};
 export const NOTICE_STATUS_LABELS:Record<string,string> = {manual:'Chờ bấm gửi',awaiting_config:'Chờ cấu hình nhóm / bot',pending:'Đang chờ gửi',sending:'Đang gửi / cần kiểm tra nếu kéo dài',sent:'Telegram đã nhận tin và ảnh',failed:'Gửi thất bại',unknown:'Chưa xác định — kiểm tra nhóm trước khi gửi lại',retracted:'Đã thu hồi Telegram',retracting:'Đang thu hồi Telegram',retraction_failed:'Chưa thu hồi đủ tin Telegram'};
+export interface ContractTelegramAttachment {
+  slot:string;mime_type:string;label:string;
+  revision?:string;bytes?:number|null;updated_at?:string;readable?:boolean;blocked_reason?:string|null;
+}
 export interface ContractTelegramEvent {
   key:string;kind:ContractEventType;label:string;phases:string[];text:string;hash:string;photo_count:number;video_count?:number;
   status:string|null;sent_at:string|null;can_send:boolean;unchanged:boolean;
@@ -17,7 +21,7 @@ export interface ContractTelegramEvent {
   destination_label?:string;
   renewal_receipt_ids?:number[];
   renewal_receipts_cancelled?:boolean;
-  attachments?:{slot:string;mime_type:string;label:string}[];
+  attachments?:ContractTelegramAttachment[];
   deliveries?:ContractTelegramDelivery[];
 }
 export interface ContractTelegramDelivery {

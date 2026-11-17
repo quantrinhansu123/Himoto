@@ -51,7 +51,7 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
   </KeyboardFormScrollView>;
 }
 export default function Route() {
-  const { api, session } = useSession(), [week, setWeek] = useState(() => dutyAddDays(dutyWeekStart(dutyToday()), 7));
+  const { api, session } = useSession(), [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
   const query = useQuery({ queryKey: ['self-shift-registration', session?.user.id, week], queryFn: ({ signal }) => api!.selfRegistration(week, signal), enabled: !!api && !!session, retry: false, refetchOnReconnect: false, refetchOnWindowFocus: false });
   return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}>{query.isPending ? <StateView title="Đang tải đăng ký ca…" loading /> : query.isError ? <StateView title="Chưa mở được đăng ký ca" message={query.error.message} retry={() => void query.refetch()} /> : <WeekForm key={`${api!.origin}:${session!.token}:${week}`} initial={query.data} moveWeek={setWeek} />}</SafeAreaView>;
 }

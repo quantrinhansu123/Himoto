@@ -44,6 +44,7 @@ import { useWorkspace } from "@/hooks/use-workspace";
 import { useTheme, roles } from "@/theme";
 import { WorkspaceLinks } from "@/components/workspace-links";
 import { ManagementDrawer } from "@/components/management-drawer";
+import { backfillActions } from "../../../../shared/mobile-backfill";
 
 const modules = [
   {
@@ -473,11 +474,11 @@ export default function Overview() {
             )}
 
             {/* 6. Nhập bổ sung */}
-            {grants.includes("contracts.draft") && (
+            {grants.includes("contracts.read") && backfillActions(grants).length > 0 && (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Nhập bổ sung hợp đồng"
-                onPress={() => router.push("/backfill-contract")}
+                onPress={() => router.push("/backfill")}
                 style={({ pressed }) => [
                   styles.gridItem,
                   {

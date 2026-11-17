@@ -3,19 +3,27 @@ import { Modal, Pressable, ScrollView, Text, View, useWindowDimensions } from "r
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Image, type ImageSource } from "expo-image";
 import { X } from "lucide-react-native";
+import { useSession } from "@/providers/session";
+import { offlineScopeKey } from "@/lib/offline-policy";
 import { useTheme } from "@/theme";
 import { Button, InlineError } from "./ui";
 
-export function BillPhoto({source,label,onReady,context='bill'}:{source:ImageSource;label:string;onReady?:(ready:boolean)=>void;context?:string}) {
-  const theme=useTheme(),window=useWindowDimensions();
+export function BillPhoto({source,previewSource,label,onReady,context='bill'}:{source:ImageSource;previewSource?:ImageSource;label:string;onReady?:(ready:boolean)=>void;context?:string}) {
+  const theme=useTheme(),window=useWindowDimensions(),{api,session}=useSession();
   const [expanded,setExpanded]=useState(false),[zoom,setZoom]=useState(1),[error,setError]=useState(false);
   const [aspect,setAspect]=useState(1);
   const imageWidth=window.width*zoom,imageHeight=imageWidth/aspect;
+  const bindSource=(item:ImageSource)=>{
+    const uri=typeof item==='object'&&item&&'uri' in item?item.uri:undefined;
+    if(!api||!session||!uri||uri.startsWith('file:'))return{source:item,cachePolicy:'none' as const};
+    return{source:{...item,cacheKey:JSON.stringify([offlineScopeKey({origin:api.origin,user:session.user}),session.sessionId||session.expiresAt,uri])},cachePolicy:'memory' as const};
+  };
+  const cardImage=bindSource(previewSource??source),fullImage=bindSource(source);
   return <View style={{gap:12}}>
     {error&&<InlineError message={'Chưa tải được ảnh '+context+'. Tải lại số liệu để kiểm tra đúng ảnh hiện tại.'}/>}
     <Pressable accessibilityRole="button" accessibilityLabel={`Xem lớn ${label}`} onPress={()=>{setZoom(1);setExpanded(true);}}
       style={{borderRadius:16,overflow:"hidden",borderWidth:1,borderColor:theme.border}}>
-      <Image source={source} accessibilityLabel={label} cachePolicy="none" contentFit="contain" style={{width:"100%",height:280,backgroundColor:theme.background}}
+      <Image source={cardImage.source} accessibilityLabel={label} cachePolicy={cardImage.cachePolicy} contentFit="contain" style={{width:"100%",height:280,backgroundColor:theme.background}}
         onLoad={event=>{setError(false);if(event.source.width>0&&event.source.height>0)setAspect(Math.max(.1,Math.min(10,event.source.width/event.source.height)));onReady?.(true);}}
         onError={()=>{setError(true);onReady?.(false);}}/>
       <Text style={{color:theme.primary,textAlign:"center",padding:16,fontSize:16,fontWeight:"700"}}>Xem ảnh lớn</Text>
@@ -38,7 +46,7 @@ export function BillPhoto({source,label,onReady,context='bill'}:{source:ImageSou
         </View>
         <View style={{flex:1,minHeight:0,overflow:"hidden"}}><ScrollView horizontal nestedScrollEnabled style={{flex:1}} contentContainerStyle={{width:imageWidth}}>
           <ScrollView nestedScrollEnabled style={{width:imageWidth}} contentContainerStyle={{height:imageHeight}}>
-            <Image source={source} cachePolicy="none" contentFit="contain" accessibilityLabel={label}
+            <Image source={fullImage.source} cachePolicy={fullImage.cachePolicy} contentFit="contain" accessibilityLabel={label}
               style={{width:imageWidth,height:imageHeight}}/>
           </ScrollView>
         </ScrollView></View>

@@ -64,7 +64,7 @@ export async function withMobileMedia<T>(user:SessionUser,target:MobileMediaIden
 const missing=()=>new MobileError('Không tìm thấy hồ sơ hoặc lượt ghi nhận trong phạm vi hiện tại.',404,'NOT_FOUND');
 // Older/issued records may have a null or differently shaped draft payload.
 // Only an array contributes draft vehicle IDs; issued lines remain authoritative.
-const draftVehicleRows="jsonb_array_elements(CASE jsonb_typeof(o.draft_payload #> '{management_composer,draft,vehicles}') WHEN 'array' THEN o.draft_payload #> '{management_composer,draft,vehicles}' ELSE '[]'::jsonb END)";
+const draftVehicleRows="jsonb_array_elements(CASE jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,draft,vehicles}') WHEN 'array' THEN o.draft_payload::jsonb #> '{management_composer,draft,vehicles}' ELSE '[]'::jsonb END)";
 function targetSnapshot(target:MobileMediaIdentity,revision:string,referenceRevision:string,label:string,canWrite?:boolean):MobileMediaTarget {
   const fields={entity:target.entity,id:target.id,kind:target.kind,referenceId:target.referenceId,revision,referenceRevision,label,...(canWrite===undefined?{}:{canWrite})};return{...fields,snapshot:createHash('sha256').update(JSON.stringify(fields)).digest('hex')};
 }
@@ -255,35 +255,24 @@ export async function readMobileRecordMedia(user:SessionUser,raw:Params,request:
 }
 
 export function parseMobileMediaImage(raw:Params,slot:string,request:NextRequest) {
-  const target=parseMobileMediaTarget(raw),p=request.nextUrl.searchParams,revision=p.get('revision');
+  const target=parseMobileMediaTarget(raw),p=request.nextUrl.searchParams,revision=p.get('revision'),preview=p.get('preview')==='1';
   if(!isMobileMediaSlot(target,slot))throw new MobileError('Ảnh không thuộc lượt ghi nhận này.',400,'INVALID_MEDIA_TARGET');
   parsePhotoTarget(target.entity,String(target.id),slot);
-  if([...p.keys()].some(k=>k!=='revision'||p.getAll(k).length!==1)||!isMediaRevision(revision)||request.headers.has('idempotency-key'))
+  if([...p.keys()].some(k=>(k!=='revision'&&!(k==='preview'&&preview))||p.getAll(k).length!==1)||!isMediaRevision(revision)||request.headers.has('idempotency-key'))
     throw new MobileError('Cần phiên bản ảnh chính xác để xem.',400,'INVALID_QUERY');
   if(/-video-[1-3]$/.test(photoBaseSlot(slot)))throw new MobileError('Video chưa hỗ trợ xem trong ứng dụng.',415,'UNSUPPORTED_MEDIA');
-  return{target,slot,revision};
+  return{target,slot,revision,preview};
 }
-export async function readMobileRecordMediaImage(user:SessionUser,raw:Params,slot:string,request:NextRequest) {
-  const query=parseMobileMediaImage(raw,slot,request);requireMedia(user,query.target);
-  const image=await withMobileMedia(user,query.target,async db=>{
-    await readMediaTarget(db,query.target);await requireContractPhotoSlot(db,query.target.entity,query.target.id,slot);
-    const row=(await db.query(photoSql.replace('FROM himoto.management_record_photos',',data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag FROM himoto.management_record_photos')+
-      ' AND slot=$3',[query.target.entity,query.target.id,slot])).rows[0];
-    if(!row)throw new MobileError('Chưa có ảnh trong ô này.',404,'NOT_FOUND');
-    const photo=mapMediaPhoto(query.target,row);
-    if(photo.revision!==query.revision)throw new MobileError('Ảnh đã thay đổi. Tải lại hồ sơ trước khi xem.',409,'MEDIA_REVIEW_REQUIRED');
-    if(!photo.readable)throw new MobileError(photo.blockedReason!,415,'UNSUPPORTED_MEDIA');
-    return{row,photo};
-  });
+async function streamVerifiedMediaBytes(row:Record<string,unknown>,mimeType:string):Promise<Uint8Array> {
   let data:Uint8Array;
-  if(image.row.data!=null)data=new Uint8Array(image.row.data);
+  if(row.data!=null)data=new Uint8Array(row.data as ArrayBufferLike);
   else{
     // Import outside the read-only DB transaction; no storage URL/redirect is
     // returned to a device carrying its Himoto bearer token.
     const {readCloudinaryPhoto}=await import('./cloudinary-photos');
-    const remote=image.row.object_key
-      ?await (await import('./object-media')).readObjectMedia(image.row as import('./object-media').ObjectMediaRef,image.photo.mimeType)
-      :await readCloudinaryPhoto(image.row as {cloudinary_public_id:string;cloudinary_cloud_name:string;cloudinary_version:number;mime_type:string});
+    const remote=row.object_key
+      ?await (await import('./object-media')).readObjectMedia(row as unknown as import('./object-media').ObjectMediaRef,mimeType)
+      :await readCloudinaryPhoto(row as {cloudinary_public_id:string;cloudinary_cloud_name:string;cloudinary_version:number;mime_type:string});
     const reader=remote.body?.getReader();
     if(!remote.ok||!reader)throw new MobileError('Chưa tải được ảnh. Thử lại.',503,'SERVICE_UNAVAILABLE');
     const chunks:Uint8Array[]=[];let length=0;
@@ -292,7 +281,64 @@ export async function readMobileRecordMediaImage(user:SessionUser,raw:Params,slo
     finally{reader.releaseLock();}
     data=new Uint8Array(Buffer.concat(chunks));
   }
-  try{validatePhotoBytes(image.photo.mimeType,Buffer.from(data));}
+  try{validatePhotoBytes(mimeType,Buffer.from(data));}
   catch(error){if(error instanceof RecordPhotoError)throw new MobileError('Không đọc được ảnh đã lưu. Tải lại hồ sơ để kiểm tra.',409,'MEDIA_REVIEW_REQUIRED');throw error;}
-  return{data,mimeType:image.photo.mimeType,revision:query.revision};
+  return data;
+}
+export async function readMobileRecordMediaImage(user:SessionUser,raw:Params,slot:string,request:NextRequest) {
+  const query=parseMobileMediaImage(raw,slot,request);requireMedia(user,query.target);
+  const image=await withMobileMedia(user,query.target,async db=>{
+    await readMediaTarget(db,query.target);
+    if(query.target.entity==='customers'||query.target.kind==='rental'||query.target.kind==='plate')await requireContractPhotoSlot(db,query.target.entity,query.target.id,slot);
+    const row=(await db.query(photoSql.replace('FROM himoto.management_record_photos',',data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag FROM himoto.management_record_photos')+
+      ' AND slot=$3',[query.target.entity,query.target.id,slot])).rows[0];
+    if(!row)throw new MobileError('Chưa có ảnh trong ô này.',404,'NOT_FOUND');
+    const photo=mapMediaPhoto(query.target,row);
+    if(photo.revision!==query.revision)throw new MobileError('Ảnh đã thay đổi. Tải lại hồ sơ trước khi xem.',409,'MEDIA_REVIEW_REQUIRED');
+    if(!photo.readable)throw new MobileError(photo.blockedReason!,415,'UNSUPPORTED_MEDIA');
+    return{row,photo};
+  });
+  const etag=query.preview?`"preview-${query.revision}"`:`"${query.revision}"`;
+  if(request.headers.get('if-none-match')===etag)return{notModified:true as const,data:new Uint8Array(),mimeType:query.preview?'image/jpeg':image.photo.mimeType,revision:query.revision,etag};
+  if(query.preview){
+    const {cloudflyPhotosEnabled,readOrCreatePreviewBytes}=await import('./object-media');
+    if(image.row.object_key&&cloudflyPhotosEnabled()){
+      const bytes=await readOrCreatePreviewBytes('384-q65-v1',`${image.row.object_bucket}:${image.row.object_key}:${image.row.object_etag}`,384,384,98_304,async()=>Buffer.from(await streamVerifiedMediaBytes(image.row,image.photo.mimeType)));
+      return{notModified:false as const,data:new Uint8Array(bytes),mimeType:'image/jpeg',revision:query.revision,etag};
+    }
+    const rawBytes=await streamVerifiedMediaBytes(image.row,image.photo.mimeType);
+    if(rawBytes.byteLength<=48*1024&&image.photo.mimeType==='image/jpeg')return{notModified:false as const,data:rawBytes,mimeType:'image/jpeg',revision:query.revision,etag};
+    const sharp=(await import('sharp')).default;
+    try{
+      const resized=await sharp(rawBytes,{limitInputPixels:40_000_000,animated:false}).rotate().resize({width:384,height:384,fit:'inside',withoutEnlargement:true}).flatten({background:'#fff'}).jpeg({quality:65}).toBuffer();
+      return{notModified:false as const,data:new Uint8Array(resized),mimeType:'image/jpeg',revision:query.revision,etag};
+    }catch{return{notModified:false as const,data:rawBytes,mimeType:image.photo.mimeType,revision:query.revision,etag};}
+  }
+  const data=await streamVerifiedMediaBytes(image.row,image.photo.mimeType);
+  return{notModified:false as const,data,mimeType:image.photo.mimeType,revision:query.revision,etag};
+}
+export async function readMobileVehicleThumbnail(user:SessionUser,id:string,request:NextRequest) {
+  const query=parseMobileMediaImage({entity:'vehicles',id,kind:'vehicle',referenceId:id},'vehicle-photo',request);
+  if(query.preview)throw new MobileError('Cần phiên bản ảnh chính xác để xem.',400,'INVALID_QUERY');
+  requireMedia(user,query.target);
+  const image=await withMobileMedia(user,query.target,async db=>{
+    await readMediaTarget(db,query.target);
+    const row=(await db.query(photoSql.replace('FROM himoto.management_record_photos',',data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag FROM himoto.management_record_photos')+
+      ' AND slot=$3',[query.target.entity,query.target.id,'vehicle-photo'])).rows[0];
+    if(!row)throw new MobileError('Chưa có ảnh trong ô này.',404,'NOT_FOUND');
+    const photo=mapMediaPhoto(query.target,row);
+    if(photo.revision!==query.revision)throw new MobileError('Ảnh đã thay đổi. Tải lại hồ sơ trước khi xem.',409,'MEDIA_REVIEW_REQUIRED');
+    if(!photo.readable)throw new MobileError(photo.blockedReason!,415,'UNSUPPORTED_MEDIA');
+    return{row,photo};
+  });
+  const etag=`"thumbnail-${query.revision}"`;
+  if(request.headers.get('if-none-match')===etag)return{notModified:true as const,data:new Uint8Array(),revision:query.revision,etag};
+  const {cloudflyPhotosEnabled,readOrCreatePreviewBytes}=await import('./object-media');
+  if(image.row.object_key&&cloudflyPhotosEnabled()){
+    const bytes=await readOrCreatePreviewBytes('228x192-q65-v1',`${image.row.object_bucket}:${image.row.object_key}:${image.row.object_etag}`,228,192,64*1024,async()=>Buffer.from(await streamVerifiedMediaBytes(image.row,image.photo.mimeType)));
+    return{notModified:false as const,data:new Uint8Array(bytes),revision:query.revision,etag};
+  }
+  const {mobileThumbnail}=await import('./mobile-thumbnail');
+  const data=await mobileThumbnail(await streamVerifiedMediaBytes(image.row,image.photo.mimeType));
+  return{notModified:false as const,data:new Uint8Array(data),revision:query.revision,etag};
 }

@@ -25,7 +25,13 @@ export default function GpsScreen() {
   const syncBaseline=useRef<{finished:string|null;success:string|null}>({finished:null,success:null});
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const data=query.isPlaceholderData?undefined:query.data,[now,setNow]=useState(()=>Date.now()),[filtersOpen,setFiltersOpen]=useState(false),[helpOpen,setHelpOpen]=useState(false);
-  useFocusEffect(useCallback(()=>{visible.current=true;const timer=setInterval(()=>{if(AppState.currentState==='active')setNow(Date.now());},5000);return()=>{visible.current=false;clearInterval(timer);};},[]));
+  useFocusEffect(useCallback(()=>{
+    visible.current=true;
+    if(mode!=='devices')return()=>{visible.current=false;};
+    setNow(Date.now());
+    const timer=setInterval(()=>{if(AppState.currentState==='active')setNow(Date.now());},15_000);
+    return()=>{visible.current=false;clearInterval(timer);};
+  },[mode]));
   useEffect(()=>{
     if(!requestedAt)return;
     const timer=setTimeout(()=>{setRequestedAt(null);setSyncing(false);syncBusy.current=false;setNotice('Chưa nhận được xác nhận đồng bộ. Dữ liệu gần nhất được giữ; hệ thống vẫn cập nhật mỗi phút.');},75_000);
@@ -93,7 +99,7 @@ export default function GpsScreen() {
         {!!requestedAt&&syncState.isError&&<InlineError message="Chưa đọc được tiến độ đồng bộ. Dữ liệu gần nhất vẫn được giữ."/>}
         {!!currentRead.data&&!currentRead.isPlaceholderData&&<Text style={muted}>Lần tải thành công: {date(currentRead.data.observedAt)}{currentRead.error?' · Đang giữ dữ liệu gần nhất':''}</Text>}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8,paddingVertical:4}}>
-          {GPS_FILTER_STATES.map(s=><Pressable key={s} accessibilityRole="button" accessibilityState={{selected:filters.state===s}} onPress={()=>{if(s==='all'){setSearch('');filter({state:s,provider:'all',search:''});}else filter({state:filters.state===s?'all':s});}}
+          {GPS_FILTER_STATES.map(s=><Pressable key={s} accessibilityRole="button" accessibilityState={{selected:filters.state===s}} onPress={()=>{if(s==='all'){setSearch('');filter({state:s,provider:'all',vehicle_status:'all',search:''});}else filter({state:filters.state===s?'all':s});}}
             style={{minHeight:48,maxWidth:230,padding:12,borderRadius:12,borderWidth:1,borderColor:filters.state===s?theme.primary:theme.controlBorder,backgroundColor:filters.state===s?theme.tint:theme.surface}}><Text style={{color:theme.text,fontWeight:'600'}}>{s==='all'?'Toàn bộ xe':GPS_STATE_LABELS[s]} · {data?(s==='all'?data.summary.fleet:data.summary.states[s]):'—'}</Text></Pressable>)}
         </ScrollView>
         <Text style={muted}>{data?.summary.unmapped??'—'} thiết bị chưa ghép xe · {filters.store==='all'?'Toàn bộ cơ sở':query.data?.stores.find(s=>String(s.id)===filters.store)?.name||'Cơ sở đã chọn'}</Text>
@@ -102,6 +108,7 @@ export default function GpsScreen() {
         <ChoiceField label="Cơ sở GPS" value={filters.store} choices={[{value:'all',label:'Toàn bộ cơ sở'},...(query.data?.stores||[]).map(s=>({value:String(s.id),label:s.name}))]} onChange={store=>filter({store,event_device:''})} searchable/>
         <FormField label="Tìm GPS" value={search} onChangeText={setSearch} maxLength={120} placeholder="Biển số, tên GPS, IMEI hoặc cơ sở" returnKeyType="search" onSubmitEditing={()=>filter({search})}/>
         <Button label="Tìm GPS theo nội dung đã nhập" secondary onPress={()=>filter({search})}/>
+        <ChoiceField label="Trạng thái xe" value={filters.vehicle_status} choices={[{value:'all',label:'Tất cả trạng thái xe'},{value:'ready',label:'Lưu kho'},{value:'using',label:'Đang thuê'},{value:'repairing',label:'Bảo dưỡng'},{value:'pending',label:'Đặt trước'},{value:'sold',label:'Đã bán'},{value:'bad_debt',label:'Nợ xấu'},{value:'broken',label:'Hỏng'},{value:'in_transit',label:'Chờ luân chuyển'}]} onChange={vehicle_status=>filter({vehicle_status:vehicle_status as MobileGpsQuery['vehicle_status']})}/>
         <ChoiceField label="Nền tảng GPS" value={filters.provider} choices={[{value:'all',label:'Tất cả nền tảng'},{value:'protrack',label:'Protrack'},{value:'iopgps',label:'IOPGPS'}]} onChange={provider=>filter({provider:provider as MobileGpsQuery['provider']})}/>
         </>}
         <Button label={helpOpen?'Ẩn cách đọc trạng thái GPS':'Cách đọc trạng thái GPS'} secondary onPress={()=>setHelpOpen(old=>!old)}/>

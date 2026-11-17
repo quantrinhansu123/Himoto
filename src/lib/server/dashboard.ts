@@ -24,8 +24,7 @@ function emptyMetrics(): Omit<DashboardStoreRow, 'key' | 'name'> {
 export async function readDashboardSummary(db: Database, params: URLSearchParams): Promise<DashboardSummary> {
   const { from, to, store } = rentalReportScope(params);
 
-  const [contracts, cash] = await Promise.all([
-    db.query(`WITH scoped AS (
+  const contracts = await db.query(`WITH scoped AS (
       SELECT o.store_id,s.store_name,
         -- orders.total is text in Himoto; never COALESCE it directly with an integer 0.
         ${rentalSalesValueSql()} AS total,
@@ -50,10 +49,9 @@ export async function readDashboardSummary(db: Database, params: URLSearchParams
       count(*) FILTER (WHERE is_ownership)::int AS ownership_contracts,
       count(*) FILTER (WHERE status IN ('overdue','bad_debt'))::int AS overdue_contracts,
       COALESCE(sum(total),0)::bigint AS sales
-    FROM scoped GROUP BY store_id ORDER BY name,key`, [from, to, store]),
-    rentalOverview(db,new URLSearchParams({from,to,view:'stores',...(store===null?{}:{store_id:String(store)})}))
-      .then(report=>({rows:report.rows.map(row=>({key:row.key,name:row.name,revenue:row.revenue,repair:row.breakdown.repair_income}))})),
-  ]);
+    FROM scoped GROUP BY store_id ORDER BY name,key`, [from, to, store]);
+  const cashReport = await rentalOverview(db,new URLSearchParams({from,to,view:'stores',...(store===null?{}:{store_id:String(store)})}));
+  const cash = {rows:cashReport.rows.map(row=>({key:row.key,name:row.name,revenue:row.revenue,repair:row.breakdown.repair_income}))};
 
   const rows = new Map<string, DashboardStoreRow>();
   for (const row of contracts.rows) {

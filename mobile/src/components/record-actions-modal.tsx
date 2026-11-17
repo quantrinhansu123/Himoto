@@ -34,9 +34,10 @@ interface RecordActionItem {
   id: string;
   label: string;
   description?: string;
+  blockedReason?: string;
   icon: React.ComponentType<{ size: number; color: string }>;
   color?: string;
-  onPress: () => void;
+  onPress?: () => void;
 }
 
 export function RecordActionsModal({
@@ -96,68 +97,110 @@ export function RecordActionsModal({
         }),
     });
 
+    const statusText = contextualStatusLabel("contracts", status) || statuses[status] || status || "hiện tại";
+
     // 2. Trả xe
-    if (has("contracts.return") && ["renting", "overdue", "wait_payment"].includes(status)) {
-      actions.push({
-        id: "return",
-        label: "Trả xe tại quầy",
-        description: "Kiểm tra xe & kết thúc hợp đồng",
-        icon: RotateCcw,
-        color: "#4F46E5",
-        onPress: () =>
-          router.push({
-            pathname: "/return-editor/[id]",
-            params: { id },
-          }),
-      });
+    if (has("contracts.return")) {
+      if (["renting", "overdue", "wait_payment"].includes(status)) {
+        actions.push({
+          id: "return",
+          label: "Trả xe tại quầy",
+          description: "Kiểm tra xe & kết thúc hợp đồng",
+          icon: RotateCcw,
+          color: "#4F46E5",
+          onPress: () =>
+            router.push({
+              pathname: "/return-editor/[id]",
+              params: { id },
+            }),
+        });
+      } else {
+        actions.push({
+          id: "return",
+          label: "Trả xe tại quầy",
+          blockedReason: status === "bad_debt"
+            ? "Hợp đồng đang nợ xấu — mở chi tiết để dùng chức năng Thu hồi xe nợ xấu."
+            : `Không thể trả xe khi hợp đồng đang ở trạng thái ${statusText}.`,
+          icon: RotateCcw,
+        });
+      }
     }
 
     // 3. Gia hạn
-    if (has("contracts.renew") && ["renting", "overdue", "bad_debt"].includes(status)) {
-      actions.push({
-        id: "renew",
-        label: "Gia hạn hợp đồng",
-        description: "Cập nhật ngày hẹn trả xe",
-        icon: CalendarPlus,
-        color: "#059669",
-        onPress: () =>
-          router.push({
-            pathname: "/renewal/[id]",
-            params: { id },
-          }),
-      });
+    if (has("contracts.renew")) {
+      if (["renting", "overdue", "wait_payment", "bad_debt"].includes(status)) {
+        actions.push({
+          id: "renew",
+          label: "Gia hạn hợp đồng",
+          description: "Cập nhật ngày hẹn trả xe",
+          icon: CalendarPlus,
+          color: "#059669",
+          onPress: () =>
+            router.push({
+              pathname: "/renewal/[id]",
+              params: { id },
+            }),
+        });
+      } else {
+        actions.push({
+          id: "renew",
+          label: "Gia hạn hợp đồng",
+          blockedReason: `Chỉ gia hạn hợp đồng đang thuê, quá hạn, chờ thanh toán hoặc nợ xấu (hiện tại: ${statusText}).`,
+          icon: CalendarPlus,
+        });
+      }
     }
 
     // 4. Đổi xe
-    if (has("contracts.return") && ["renting", "overdue", "wait_payment"].includes(status)) {
-      actions.push({
-        id: "swap",
-        label: "Đổi xe cho khách",
-        description: "Đổi sang xe khác trong kho",
-        icon: CarFront,
-        color: "#0284C7",
-        onPress: () =>
-          router.push({
-            pathname: "/swap-editor/[id]",
-            params: { id },
-          }),
-      });
+    if (has("contracts.return")) {
+      if (["renting", "overdue", "wait_payment"].includes(status)) {
+        actions.push({
+          id: "swap",
+          label: "Đổi xe cho khách",
+          description: "Đổi sang xe khác trong kho",
+          icon: CarFront,
+          color: "#0284C7",
+          onPress: () =>
+            router.push({
+              pathname: "/swap-editor/[id]",
+              params: { id },
+            }),
+        });
+      } else {
+        actions.push({
+          id: "swap",
+          label: "Đổi xe cho khách",
+          blockedReason: `Chỉ đổi xe khi hợp đồng đang thuê, quá hạn hoặc chờ thanh toán (hiện tại: ${statusText}).`,
+          icon: CarFront,
+        });
+      }
     }
 
     // 5. Thu tiền
-    if (has("finance.write") && !["draft", "cancelled"].includes(status)) {
-      actions.push({
-        id: "payment",
-        label: "Thu tiền hợp đồng",
-        description: "Ghi nhận phiếu thu sổ quỹ",
-        icon: Wallet,
-        color: "#9333EA",
-        onPress: () =>
-          router.push({
-            pathname: "/payment/[id]",
-            params: { id },
-          }),
-      });
+    if (has("finance.write")) {
+      if (!["draft", "cancelled"].includes(status)) {
+        actions.push({
+          id: "payment",
+          label: "Thu tiền hợp đồng",
+          description: "Ghi nhận phiếu thu sổ quỹ",
+          icon: Wallet,
+          color: "#9333EA",
+          onPress: () =>
+            router.push({
+              pathname: "/payment/[id]",
+              params: { id },
+            }),
+        });
+      } else {
+        actions.push({
+          id: "payment",
+          label: "Thu tiền hợp đồng",
+          blockedReason: status === "draft"
+            ? "Hợp đồng đang lưu nháp — phát hành hợp đồng trước khi ghi phiếu thu."
+            : "Hợp đồng đã hủy — không ghi thêm phiếu thu.",
+          icon: Wallet,
+        });
+      }
     }
 
     // 6. Mã QR chuyển khoản
@@ -387,11 +430,53 @@ export function RecordActionsModal({
           >
             {actions.map((action) => {
               const Icon = action.icon;
+              if (action.blockedReason || !action.onPress) {
+                return (
+                  <View
+                    key={action.id}
+                    accessible
+                    accessibilityLabel={`${action.label}. ${action.blockedReason || ""}`}
+                    style={[
+                      styles.actionItem,
+                      {
+                        borderBottomColor: theme.border,
+                        opacity: 0.62,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.actionIconBox,
+                        { backgroundColor: theme.background },
+                      ]}
+                    >
+                      <Icon size={20} color={theme.muted} />
+                    </View>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text
+                        style={{
+                          color: theme.muted,
+                          fontSize: 15,
+                          fontWeight: "600",
+                        }}
+                      >
+                        {action.label}
+                      </Text>
+                      {!!action.blockedReason && (
+                        <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 17 }}>
+                          {action.blockedReason}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              }
+              const run = action.onPress;
               return (
                 <Pressable
                   key={action.id}
                   accessibilityRole="button"
-                  onPress={() => handleAction(action.onPress)}
+                  onPress={() => handleAction(run)}
                   style={({ pressed }) => [
                     styles.actionItem,
                     {

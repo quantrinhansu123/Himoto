@@ -46,9 +46,9 @@ async function main(){
     checks.push('An idempotent source GET retries once; an unavailable source fails before any Telegram POST');
 
     let clock=original.now(),slowReads=0;Date.now=()=>clock;
-    objects.readObjectMedia=async()=>{if(slowReads++%3===0)clock+=50000;return new Response(Buffer.from([255,216,255,1]));};
+    objects.readObjectMedia=async()=>{if(slowReads++%6===0)clock+=50000;return new Response(Buffer.from([255,216,255,1]));};
     const iterator=delivery.telegramMediaBatches(Array.from({length:20},(_,i)=>photo(i+1)),0,clock+240000);
-    const checkpoint=await iterator.next();assert(!checkpoint.done);assert.equal(checkpoint.value.length,3);
+    const checkpoint=await iterator.next();assert(!checkpoint.done);assert.equal(checkpoint.value.length,6);
     delivery.requireTelegramTime(clock+190000,120000);
     await assert.rejects(()=>iterator.next(),delivery.TelegramContinuation);
     Date.now=original.now;

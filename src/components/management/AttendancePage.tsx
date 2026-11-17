@@ -70,6 +70,37 @@ function attendanceCreditLabel(row: Attendance) {
   return row.standard_credit == null ? '—' : 'Chưa chốt';
 }
 
+function LiveVietnamClock({serverNow,onDayChanged}:{serverNow:string|null|undefined;onDayChanged:()=>void}) {
+  const [now,setNow] = useState<number|null>(null);
+  const serverClock = useRef<{server:number;received:number;day:string}|null>(null);
+  const notifiedDay = useRef<string|null>(null);
+  useEffect(()=>{
+    if(serverNow){
+      const parsed = Date.parse(serverNow);
+      serverClock.current = {server:parsed,received:Date.now(),day:vietnamDate(new Date(parsed))};
+      notifiedDay.current = null;
+    }
+  },[serverNow]);
+  useEffect(()=>{
+    const tick=()=>{
+      const clock=serverClock.current;
+      const current=clock?clock.server+Date.now()-clock.received:Date.now();
+      setNow(current);
+      if(clock){
+        const currentDay=vietnamDate(new Date(current));
+        if(clock.day<currentDay&&notifiedDay.current!==currentDay){
+          notifiedDay.current=currentDay;
+          onDayChanged();
+        }
+      }
+    };
+    tick();
+    const timer=setInterval(tick,1000);
+    return()=>clearInterval(timer);
+  },[onDayChanged]);
+  return <div className="mg-attendance-live-clock"><strong suppressHydrationWarning>{now?new Date(now).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour12:false}):'—'}</strong><small>{now?new Date(now).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Giờ Việt Nam'}</small></div>;
+}
+
 export function AttendancePage() {
   const {notify,can} = useManagement();
   const canViewRegistration = can('hr.read');
@@ -79,23 +110,22 @@ export function AttendancePage() {
   const [action,setAction] = useState<'in'|'out'|null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [registrationOpen, setRegistrationOpen] = useState(false);
-  const [now,setNow] = useState<number|null>(null);
-  const serverClock = useRef<{server:number;received:number}|null>(null);
-  useEffect(()=>{if(data?.server_now)serverClock.current={server:Date.parse(data.server_now),received:Date.now()};},[data]);
-  useEffect(()=>{const tick=()=>{const clock=serverClock.current;setNow(clock?clock.server+Date.now()-clock.received:Date.now());};tick();const timer=setInterval(tick,1000);return()=>clearInterval(timer);},[]);
-  const reportDay = data ? vietnamDate(new Date(data.server_now)) : null;
-  const currentDay = now === null ? null : vietnamDate(new Date(now));
-  const dayChanged = !!(reportDay && currentDay && reportDay < currentDay);
-  useEffect(() => {
-    if (!dayChanged) return;
-    setAction(null);
-    refresh();
-  }, [dayChanged, refresh]);
+  const handleDayChanged = useCallback(()=>{setAction(null);refresh();},[refresh]);
   useEffect(()=>{
     const controller=new AbortController();setLoading(true);setError('');setData(null);
     void fetch('/api/auth/attendance?view=summary',{cache:'no-store',signal:controller.signal}).then(responseData<Summary>).then(value=>{if(!controller.signal.aborted)setData(value);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được chấm công.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
   },[retry]);
+  const clockInBlockedReason = loading ? 'Đang kiểm tra trạng thái chấm công…'
+    : error ? 'Không tải được trạng thái ca — tải lại trang để kiểm tra.'
+    : !data?.staff ? 'Tài khoản chưa liên kết với nhân viên đang hoạt động.'
+    : !data.staff.store_id ? 'Nhân viên chưa được gắn cơ sở chấm công.'
+    : data.open ? 'Đang có ca mở — cần chấm công ra ca trước khi vào ca mới.'
+    : undefined;
+  const clockOutBlockedReason = loading ? 'Đang kiểm tra trạng thái chấm công…'
+    : error ? 'Không tải được trạng thái ca — tải lại trang để kiểm tra.'
+    : !data?.open ? 'Chưa có ca đang mở để chấm công ra.'
+    : undefined;
   return <section className="mg-page mg-attendance-page"><div className="mg-page-content">
     {settingsOpen && <AttendanceLocationsDialog canEdit onClose={() => setSettingsOpen(false)} />}
     {registrationOpen && <WeeklyShiftRegistrationDialog onClose={() => setRegistrationOpen(false)} onSaved={() => { setRegistrationOpen(false); refresh(); notify('Đã lưu đăng ký ca làm trong tuần.'); }} />}
@@ -116,14 +146,14 @@ export function AttendancePage() {
         {canViewRegistration&&<Link className="mg-button" href="/shift-registration">Bảng đăng ký ca</Link>}
       </div>
       <p className="mg-attendance-hint">Vào ca được ghi nhận tại cơ sở của hồ sơ nhân viên.</p>
-      <div className="mg-attendance-clock-heading"><div><strong>{data?.staff?.name || 'Tài khoản chấm công'}</strong><p>{loading?'Đang kiểm tra ca…':data?.open?'Đang trong ca':data?.staff?'Chưa vào ca':error?'Không tải được trạng thái ca.':'Tài khoản chưa liên kết nhân viên đang hoạt động.'}</p></div><div className="mg-attendance-live-clock"><strong suppressHydrationWarning>{now?new Date(now).toLocaleTimeString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',hour12:false}):'—'}</strong><small>{now?new Date(now).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Giờ Việt Nam'}</small></div></div>
+      <div className="mg-attendance-clock-heading"><div><strong>{data?.staff?.name || 'Tài khoản chấm công'}</strong><p>{loading?'Đang kiểm tra ca…':data?.open?'Đang trong ca':data?.staff?'Chưa vào ca':error?'Không tải được trạng thái ca.':'Tài khoản chưa liên kết nhân viên đang hoạt động.'}</p></div><LiveVietnamClock serverNow={data?.server_now} onDayChanged={handleDayChanged}/></div>
       <div className="mg-attendance-shift-label">{data?.shift_code==='G1+G3'&&!data.latest?'G1+G3 · 08:00–12:00 · 17:00–21:00':data?.shift?data.shift.shift_name+' · '+timeOnly(data.shift.starts_at)+' – '+timeOnly(data.shift.ends_at):data?.shift_code==='O'?'Đăng ký nghỉ':'Chưa có ca đăng ký'}</div>
       <dl className="mg-attendance-time-metrics"><div><dt>Giờ vào</dt><dd>{timeOnly(data?.latest?.clock_in_at)}</dd></div><div><dt>Giờ ra</dt><dd>{timeOnly(data?.latest?.clock_out_at)}</dd></div><div className={data?.late_minutes?'is-late':''}><dt>Đi muộn</dt><dd>{lateLabel(data?.late_minutes,data?.shift_code)}</dd></div><div className={data?.early_leave_minutes?'is-late':''}><dt>Về sớm</dt><dd>{earlyLabel(data?.early_leave_minutes,data?.latest?.clock_out_at,data?.shift_code)}</dd></div></dl>
       <div className="mg-attendance-punch-actions">
-        <button type="button" className="mg-button" disabled={dayChanged||loading||Boolean(error)||!data?.staff?.store_id||Boolean(data.open)} onClick={()=>setAction('in')}>
+        <button type="button" className="mg-button" disabled={Boolean(clockInBlockedReason)} title={clockInBlockedReason} onClick={()=>setAction('in')}>
           <LogIn size={22} aria-hidden="true"/>Vào ca
         </button>
-        <button type="button" className="mg-button" disabled={dayChanged||loading||Boolean(error)||!data?.open} onClick={()=>setAction('out')}>
+        <button type="button" className="mg-button" disabled={Boolean(clockOutBlockedReason)} title={clockOutBlockedReason} onClick={()=>setAction('out')}>
           <LogOut size={22} aria-hidden="true"/>Ra ca
         </button>
       </div>

@@ -11,8 +11,9 @@ export async function GET(request:NextRequest,{params}:Params) {
     const {user}=await requireMobileSession(request),raw=await params;
     if(!request.nextUrl.searchParams.has('revision'))return mobileJson(await readMobileMediaSlotInfo(user,raw,raw.slot,request));
     const image=await readMobileRecordMediaImage(user,raw,raw.slot,request);
+    if(image.notModified)return new NextResponse(null,{status:304,headers:{...MOBILE_HEADERS,'ETag':image.etag}});
     return new NextResponse(new Uint8Array(image.data),{headers:{...MOBILE_HEADERS,'Content-Type':image.mimeType,'Content-Length':String(image.data.byteLength),
-      'Content-Disposition':'inline; filename=record-photo','ETag':`"${image.revision}"`}});
+      'Content-Disposition':'inline; filename=record-photo','ETag':image.etag}});
   }catch(error){return mobileFailure(error);}
 }
 export async function PUT(request:NextRequest,{params}:Params) {

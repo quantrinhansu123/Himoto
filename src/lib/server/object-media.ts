@@ -94,12 +94,44 @@ export async function readyObjectPhoto(receipt: ObjectPhotoReceipt, actor: numbe
 function requireObject(ref: ObjectMediaRef, mime: string) {
   if (ref.object_bucket !== cloudflyVideoSettings().bucket || (!PHOTO_KEY.test(ref.object_key) && !LEGACY_KEY.test(ref.object_key) && !PREVIEW_KEY.test(ref.object_key)) || !ref.object_etag || !extensions[mime] || !ref.object_key.endsWith(`.${extensions[mime]}`)) throw new RecordPhotoError('Tham chiếu kho dữ liệu không hợp lệ.', 503);
 }
+const knownPreviewEtags = new Map<string, string>();
+const previewBufferCache = new Map<string, Buffer>();
+let previewBufferBytes = 0;
+function rememberPreviewEtag(cacheKey: string, etag: string) {
+  if (knownPreviewEtags.has(cacheKey)) knownPreviewEtags.delete(cacheKey);
+  knownPreviewEtags.set(cacheKey, etag);
+  while (knownPreviewEtags.size > 500) {
+    const oldest = knownPreviewEtags.keys().next().value;
+    if (!oldest) break;
+    knownPreviewEtags.delete(oldest);
+  }
+}
+function rememberPreviewBytes(cacheKey: string, bytes: Buffer) {
+  const previous = previewBufferCache.get(cacheKey);
+  if (previous) { previewBufferBytes -= previous.byteLength; previewBufferCache.delete(cacheKey); }
+  if (bytes.byteLength > 98_304) return;
+  previewBufferCache.set(cacheKey, bytes);
+  previewBufferBytes += bytes.byteLength;
+  while (previewBufferCache.size > 100 || previewBufferBytes > 4 * 1024 * 1024) {
+    const oldest = previewBufferCache.keys().next().value;
+    if (!oldest) break;
+    const evicted = previewBufferCache.get(oldest);
+    if (evicted) previewBufferBytes -= evicted.byteLength;
+    previewBufferCache.delete(oldest);
+  }
+}
 /** One fixed rendition, cached privately in S3; arbitrary resize parameters are never accepted. */
 export async function photoPreviewUrl(identity: string, read: () => Promise<Buffer>) {
   const key=`himoto/previews/${createHash('sha256').update(`384-q65-v1:${identity}`).digest('hex')}.jpg`,config=cloudflyVideoSettings();
+  const cacheKey=`${config.bucket}:${key}`,cachedEtag=knownPreviewEtags.get(cacheKey);
+  if(cachedEtag){
+    rememberPreviewEtag(cacheKey,cachedEtag);
+    return objectMediaUrl({object_bucket:config.bucket,object_key:key,object_etag:cachedEtag},'image/jpeg');
+  }
   try {
     const head=await cloudflyVideoClient().send(new HeadObjectCommand({Bucket:config.bucket,Key:key}),{abortSignal:AbortSignal.timeout(10000)});
     if(!head.ETag||head.ContentType!=='image/jpeg'||!head.ContentLength||head.ContentLength>98304)throw new RecordPhotoError('Ảnh xem trước trong kho chưa hợp lệ.',502);
+    rememberPreviewEtag(cacheKey,head.ETag);
     return objectMediaUrl({object_bucket:config.bucket,object_key:key,object_etag:head.ETag},'image/jpeg');
   }catch(error){if((error as {$metadata?:{httpStatusCode?:number}}).$metadata?.httpStatusCode!==404)throw error;}
   const source=await read();
@@ -108,7 +140,29 @@ export async function photoPreviewUrl(identity: string, read: () => Promise<Buff
   catch{throw new RecordPhotoError('Không tạo được ảnh xem trước. Mở ảnh gốc để kiểm tra.',415);}
   if(!bytes.length||bytes.length>98304)throw new RecordPhotoError('Ảnh xem trước vượt giới hạn. Mở ảnh gốc để kiểm tra.',413);
   const etag=await putVerifiedObject(key,bytes,'image/jpeg');
+  rememberPreviewEtag(cacheKey,etag);
+  rememberPreviewBytes(cacheKey,bytes);
   return objectMediaUrl({object_bucket:config.bucket,object_key:key,object_etag:etag},'image/jpeg');
+}
+export async function readOrCreatePreviewBytes(variant:'384-q65-v1'|'228x192-q65-v1',identity:string,maxWidth:number,maxHeight:number,maxBytes:number,read:()=>Promise<Buffer>):Promise<Buffer> {
+  const key=`himoto/previews/${createHash('sha256').update(`${variant}:${identity}`).digest('hex')}.jpg`,config=cloudflyVideoSettings();
+  const cacheKey=`${config.bucket}:${key}`,warm=previewBufferCache.get(cacheKey);
+  if(warm){rememberPreviewBytes(cacheKey,warm);return warm;}
+  try{
+    const remote=await cloudflyVideoClient().send(new GetObjectCommand({Bucket:config.bucket,Key:key}),{abortSignal:AbortSignal.timeout(10_000)});
+    if(remote.Body&&remote.ContentType==='image/jpeg'&&remote.ContentLength&&remote.ContentLength<=maxBytes){
+      const existing=await boundedObjectBytes(remote.Body.transformToWebStream() as ReadableStream<Uint8Array>,maxBytes);
+      if(existing.length>0){if(remote.ETag)rememberPreviewEtag(cacheKey,remote.ETag);rememberPreviewBytes(cacheKey,existing);return existing;}
+    }
+  }catch(error){if((error as {$metadata?:{httpStatusCode?:number}}).$metadata?.httpStatusCode!==404)throw error;}
+  const source=await read();
+  let bytes:Buffer;
+  try{bytes=await sharp(source,{limitInputPixels:40_000_000,animated:false}).rotate().resize({width:maxWidth,height:maxHeight,fit:'inside',withoutEnlargement:true}).flatten({background:'#fff'}).jpeg({quality:65}).toBuffer();}
+  catch{throw new RecordPhotoError('Không tạo được ảnh xem trước. Mở ảnh gốc để kiểm tra.',415);}
+  if(!bytes.length||bytes.length>maxBytes)throw new RecordPhotoError('Ảnh xem trước vượt giới hạn. Mở ảnh gốc để kiểm tra.',413);
+  try{const etag=await putVerifiedObject(key,bytes,'image/jpeg');rememberPreviewEtag(cacheKey,etag);}catch{/* Best-effort S3 preview cache; serve generated bytes directly. */}
+  rememberPreviewBytes(cacheKey,bytes);
+  return bytes;
 }
 export async function objectPhotoPreviewUrl(ref:ObjectMediaRef,mime:string) {
   requireObject(ref,mime);

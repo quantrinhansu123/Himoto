@@ -134,7 +134,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
             offlineStatus.update({ error: (error as Error).message }); return null;
           });
           if (current !== generation.current) return;
-          setOfflineStore(local);
+          setOfflineStore(prev => prev === local ? prev : local);
         }
         stored = await sessionStore.read(origin.value);
         if (current !== generation.current) return;
@@ -277,11 +277,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
       inFlight = true;
       const before = offlineStatus.get().revision;
       try {
-        const rows = await offlineStore.listActor(origin.value, session.user.id);
-        if (rows.some(row => row.state === 'queued' || row.state === 'sending')) await syncOffline(origin.value);
+        if (await offlineStore.hasPendingWrites()) {
+          const rows = await offlineStore.listActor(origin.value, session.user.id);
+          if (rows.some(row => row.state === 'queued' || row.state === 'sending')) await syncOffline(origin.value);
+        }
         if (alive && currentSession.current?.token === session.token) {
           if (offlineStatus.get().revision !== before) void queryClient.invalidateQueries();
-          if (offlineStatus.get().revision !== before || Date.now() - lastVerified.current > 60_000) await restoreRef.current(true);
+          if (offlineStatus.get().revision !== before || Date.now() - lastVerified.current > 5 * 60_000) await restoreRef.current(true);
         }
       } finally { inFlight = false; }
     };
@@ -324,7 +326,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       biometricLock.notePasswordLogin(origin.value, sessionFamily(next));
       const local = Platform.OS === 'web' ? null : await openOfflineStore().catch(() => null);
       if (current !== generation.current) return;
-      if (local) { setOfflineStore(local); await activateLookups(next.user, local, () => current === generation.current); }
+      if (local) { setOfflineStore(prev => prev === local ? prev : local); await activateLookups(next.user, local, () => current === generation.current); }
       else queryClient.clear();
       if (current !== generation.current) return;
       offlineStatus.update({ connected: true, cachedAt: null });
@@ -343,19 +345,21 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }
     expire(token);
   }, [api, expire, session?.token]);
+  const contextValue = useMemo(
+    () => ({
+      session,
+      api,
+      restoring,
+      restoreError,
+      restore,
+      login,
+      logout,
+    }),
+    [session, api, restoring, restoreError, restore, login, logout],
+  );
   return (
     <QueryClientProvider client={queryClient}>
-      <Context.Provider
-        value={{
-          session,
-          api,
-          restoring,
-          restoreError,
-          restore,
-          login,
-          logout,
-        }}
-      >
+      <Context.Provider value={contextValue}>
         {children}
       </Context.Provider>
     </QueryClientProvider>

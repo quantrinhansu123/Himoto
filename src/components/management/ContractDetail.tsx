@@ -273,10 +273,10 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
           {onQr && row.status !== 'cancelled' && <button type="button" className="mg-button" onClick={onQr}><Wallet size={15} />Nhập phiếu chi</button>}
           {canPay && <button type="button" className="mg-button mg-button-primary" onClick={() => onPayment?.(remaining && remaining > 0 ? 'debt' : 'extra')}><Plus size={15} />Điền phiếu thu</button>}
           {refreshButton}
-          {canPay && <><button type="button" className="mg-button" disabled={remaining === 0} onClick={() => onPayment?.('debt')}><Wallet size={15} />Thu công nợ{remaining && remaining > 0 ? ` (${formatMoney(remaining)})` : ''}</button>
+          {canPay && <><button type="button" className="mg-button" disabled={remaining === 0} title={remaining === 0 ? 'Hợp đồng không còn công nợ tiền thuê cần thu.' : undefined} onClick={() => onPayment?.('debt')}><Wallet size={15} />Thu công nợ{remaining && remaining > 0 ? ` (${formatMoney(remaining)})` : ''}</button>
           {canOperateRental && <button type="button" className="mg-button" onClick={() => onPayment?.('renewal')}><Wallet size={15} />Thu gia hạn</button>}
           <button type="button" className="mg-button" onClick={() => onPayment?.('extra')}><Wallet size={15} />Thu thêm</button>
-          <button type="button" className="mg-button" disabled={depositHeld == null || depositHeld <= 0} onClick={() => onPayment?.('deposit_refund')}><Wallet size={15} />Trả cọc{depositHeld != null && depositHeld > 0 ? ` (${formatMoney(depositHeld)})` : ''}</button></>}
+          <button type="button" className="mg-button" disabled={depositHeld == null || depositHeld <= 0} title={depositHeld == null ? 'Chưa đối chiếu được số tiền cọc đang giữ.' : depositHeld <= 0 ? 'Hợp đồng không còn tiền cọc đang giữ để hoàn trả.' : undefined} onClick={() => onPayment?.('deposit_refund')}><Wallet size={15} />Trả cọc{depositHeld != null && depositHeld > 0 ? ` (${formatMoney(depositHeld)})` : ''}</button></>}
         </div></div>
         {history && history.cashflow.length > 0 && <dl className="mg-payment-totals"><div><dt>Tổng thu (đã duyệt)</dt><dd>{formatMoney(incomeTotal)}</dd></div>
           <div><dt>Tổng chi (đã duyệt)</dt><dd>{formatMoney(expenseTotal)}</dd></div><div><dt>Chênh lệch</dt><dd>{formatMoney(incomeTotal - expenseTotal)}</dd></div></dl>}

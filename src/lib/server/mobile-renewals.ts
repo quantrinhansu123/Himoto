@@ -20,9 +20,10 @@ export function requireMobileRenewal(user: SessionUser) {
     throw new MobileError("Tài khoản không có quyền gia hạn hợp đồng.", 403, "FORBIDDEN");
 }
 const searchText = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
-export function mobileRenewalBlockedReason(context: PaymentContext, hasInstallments: boolean, backfill=false, itemCount=context.items.length) {
+export function mobileRenewalBlockedReason(context: PaymentContext, hasInstallments: boolean, backfill=false, itemCount=context.items.length, closed=false) {
   return hasInstallments ? "Thuê sở hữu đóng tiền theo lịch đã lập; không cộng kỳ đóng tiền thành phí gia hạn."
     : context.completed_from_hold ? "Hợp đồng đã hoàn thành sau bảo lưu."
+    : !backfill && closed ? "Hợp đồng nợ xấu đã đóng; chỉ tiếp tục theo dõi và thu công nợ."
     : !backfill && context.hold_active ? "Hợp đồng đang bảo lưu; cần xử lý bảo lưu trước khi gia hạn."
     : !(backfill ? ["renting","overdue","wait_payment","completed","bad_debt"] : ["renting", "overdue", "wait_payment", "bad_debt"]).includes(context.status) ? "Chỉ gia hạn hợp đồng đang thuê, quá hạn, nợ xấu hoặc chờ thanh toán còn xe chưa trả."
     : itemCount === 0 ? "Hợp đồng không còn xe đang thuê."
@@ -31,7 +32,12 @@ export function mobileRenewalBlockedReason(context: PaymentContext, hasInstallme
 }
 
 export async function mobileRenewalItems(client:PoolClient,id:number,context:PaymentContext,backfill:boolean):Promise<MobileRenewalPreparation["items"]["rows"]>{
-  if(backfill)return(await loadContractReturnableItems(client,id,true)).map(item=>({id:item.item_id,vehicleId:item.vehicle_id,name:item.vehicle_name,license:item.license,revision:item.item_revision,returnAt:item.scheduled_return_at,dailyPrice:item.daily_price,renewalAmount:null,startedAt:item.scheduled_start_at,completedAt:item.completed_at}));
+  if(backfill || (context.status === "bad_debt" && context.items.length === 0)){
+    const activeById=new Map(context.items.map(item=>[item.id,item]));
+    return(await loadContractReturnableItems(client,id,true))
+      .filter(item=>backfill||!item.completed_at||context.status==="bad_debt")
+      .map(item=>({id:item.item_id,vehicleId:item.vehicle_id,name:item.vehicle_name,license:item.license,revision:item.item_revision,returnAt:item.scheduled_return_at,dailyPrice:item.daily_price,renewalAmount:backfill?null:(activeById.get(item.item_id)?.renewal_amount??item.daily_price??null),startedAt:item.scheduled_start_at,completedAt:item.completed_at}));
+  }
   return context.items.map(item=>({id:item.id,vehicleId:item.vehicle_id,name:item.name,license:item.license,revision:item.revision,returnAt:item.return_at,dailyPrice:item.daily_price,renewalAmount:item.renewal_amount}));
 }
 
@@ -58,7 +64,8 @@ export async function readMobileRenewalPreparation(user: SessionUser, value: str
         WHERE entity_type='contracts' AND entity_id=$1 AND
           (slot=$2 OR slot LIKE $3 OR regexp_replace(slot,'-extra-[1-9][0-9]{0,14}$','')=$2) LIMIT 1`, [id, slot, `renewal-${nextVersion}-document-%`]);
       const availableItems=await mobileRenewalItems(client,id,context,backfill);
-      const blockedReason = mobileRenewalBlockedReason(context, !!composer?.installment_plan,backfill,availableItems.length);
+      const closed=Boolean(composer?.lifecycle?.bad_debt_closure||composer?.lifecycle?.payment_closure);
+      const blockedReason = mobileRenewalBlockedReason(context, !!composer?.installment_plan,backfill,availableItems.length,closed);
       const term = searchText((params.get("search") ?? "").trim());
       const items = availableItems.filter(item => searchText(`${item.name} ${item.license}`).includes(term));
       const pages = Math.max(1, Math.ceil(items.length / 25)), page = Math.min(Number(params.get("page") ?? 1), pages);

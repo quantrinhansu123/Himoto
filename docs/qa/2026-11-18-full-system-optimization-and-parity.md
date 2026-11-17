@@ -1,0 +1,50 @@
+# Tối ưu hiệu năng, ảnh, Telegram và đồng bộ nghiệp vụ Web / App toàn dự án — 18/11/2026
+
+## 1. Sửa lỗi Production & Tối ưu Server / Database
+
+- **Sửa lỗi `500` trên `/api/mobile/v1/record-media/contracts/:id`:** cột `himoto.orders.draft_payload` ở PostgreSQL production có kiểu `json` (không phải `jsonb`), khiến biểu thức `jsonb_typeof(o.draft_payload #> ...)` trong `src/lib/server/mobile-record-media.ts` ném lỗi `function jsonb_typeof(json) does not exist` trên toàn bộ 35 tài khoản. Đã ép kiểu `o.draft_payload::jsonb` an toàn, trả đúng `200` theo RLS từng tài khoản.
+- **Tăng tốc đọc & gửi Telegram (`9.8s–17.2s` xuống `1.4s–2.2s` qua mạng xa, `<350ms` nội bộ):**
+  - Bổ sung `NotificationReadCache` trong `src/lib/server/contract-notification-content.ts` và `src/lib/server/contract-telegram.ts`: đọc hợp đồng gốc, giao dịch đã duyệt và toàn bộ metadata `management_record_photos` một lần duy nhất cho cả danh sách sự kiện (`~7` truy vấn SQL thay vì `91–97` truy vấn N+1), giữ nguyên cấu trúc dữ liệu và `notificationHash`.
+  - Đính kèm trực tiếp `{ revision, bytes, readable, blocked_reason }` vào từng ảnh của sự kiện Telegram (`shared/contract-telegram.ts`, `shared/mobile-telegram.ts`), loại bỏ hoàn toàn 10 lượt gọi N+1 `mediaSlotInfo` khi mở màn Telegram trên App.
+  - Tăng giới hạn album `TELEGRAM_ALBUM_BYTES` từ `2 MiB` lên `8 MiB` (`src/lib/server/telegram-delivery.ts`) để gửi trọn 10 ảnh trong 1 lượt `sendMediaGroup` thay vì tách 4 đợt; bỏ qua bước nén lại bằng `sharp` với ảnh JPEG thẳng chiều đã đạt chuẩn kích thước (`<= 1.4 MB`, `<= 1600px/1800px`); tăng độ song song tải ảnh S3 từ `3` lên `6`.
+  - Gộp cập nhật `delivery_target` + lease ban đầu, bỏ gia hạn lease thừa ở batch đầu tiên, gộp CTE đánh dấu `sent` + xóa lease, và bỏ 4 lượt đọc lặp lại trong luồng Telegram điều chuyển xe (`src/lib/server/contract-notifications.ts`, `src/lib/server/vehicle-transfer-telegram.ts`, `src/lib/server/mobile-telegram.ts`).
+- **Tăng tốc Dashboard, Hợp đồng Pin / Sạc và Thống kê Hợp đồng:**
+  - `src/lib/server/rental-reports.ts` & `src/lib/server/dashboard.ts`: tách `RENTAL_OVERVIEW_CTE` cho tổng quan Dashboard (bỏ CTE `ranked_orders` quét toàn bộ 29.446 hợp đồng không dùng tới, giảm hơn `1s` mỗi lần mở) và dùng chung 1 `PoolClient` cho toàn bộ truy vấn đọc Dashboard.
+  - `src/lib/server/battery-contracts.ts`, `src/lib/server/mobile-battery.ts` & `src/lib/server/battery-contracts-route.ts`: materialize danh sách `target_batteries` trước rồi lọc `transactions` theo `object_id IN (SELECT id FROM target_batteries)` thay cho 2 truy vấn `LATERAL` trên mỗi dòng, đồng thời bỏ truy vấn `countBatteryContracts` dư thừa khi chưa lọc theo hợp đồng xe và tổng `< 5000` (giảm thời gian đọc Pin / Sạc từ `3.418ms` xuống `330ms–401ms`).
+  - `src/lib/server/contract-table-stats.ts`: gộp 2 lần quét toàn bảng `himoto.orders` trong `fastContractStatistics` thành 1 CTE `WITH classified AS MATERIALIZED` duy nhất (giảm 50% chi phí quét bảng và đọc TOAST).
+
+## 2. Tăng tốc tải ảnh & Upload ảnh trên Web / App
+
+- **Cache ảnh xem trước (`?preview=1` và thumbnail xe) trên S3 + RAM + HTTP `304`:**
+  - `src/lib/server/object-media.ts`, `src/lib/server/mobile-record-media.ts`, route `record-media` và `vehicles/[id]/thumbnail`: tạo và lưu bản xem trước JPEG nhẹ (`384×384 q65 ~35 KB` cho album giấy tờ/hợp đồng, `228×192 q65 ~12 KB` cho ảnh đại diện xe) vào `himoto/previews/` trên S3 kèm bộ nhớ đệm LRU giới hạn dung lượng trên server; hỗ trợ đối chiếu `If-None-Match` trả `304 Not Modified` sau khi đã kiểm tra phiên đăng nhập, quyền và RLS.
+  - `src/components/management/VehicleThumbnail.tsx`: bổ sung `&preview=1` để danh sách xe trên Web tải ảnh xem trước `~35 KB` thay vì ảnh gốc `2 MB`.
+  - `src/lib/management/record-photos.ts`: nhớ trạng thái `{ provider: 'cloudfly' }` giữa các ảnh trong cùng lô upload (giảm `N - 1` vòng gọi `/photo-uploads/sign`) và nén JPEG giảm dần mức chất lượng `[0.85, 0.72, 0.58]` khi ảnh vượt ngưỡng dung lượng.
+- **Cache ảnh theo phiên & tối ưu lô chụp ảnh trên Mobile App:**
+  - Chuyển các thẻ ảnh từ `cachePolicy="none"` sang `cachePolicy="memory"` gắn `cacheKey` theo phiên đăng nhập (`[scope, sessionId || expiresAt, uri]`) và tự động xóa bộ nhớ ảnh khi đổi/đăng xuất tài khoản; dùng `previewSource` (`?preview=1`) cho lưới thu nhỏ và giữ ảnh độ phân giải gốc trong hộp thoại phóng to (`Modal`).
+  - `mobile/src/lib/api.ts`, `renewal-editor.tsx`, `renewal-collection-editor.tsx`: bổ sung `api.renewalBillImageSource` lấy `Authorization` mới nhất thay vì dùng `session.token` cố định lúc mở màn hình (tránh lỗi `401` ảnh bill sau khi xoay vòng access token 15 phút).
+  - `mobile/src/lib/photo-batch-store.ts`, `photo-batch.tsx`, `battery-photo-batch.tsx`, `shift-evidence.tsx`, `record-photo-batch.tsx`: trì hoãn tạo file tạm Base64 sang getter `uri` (không ghi file tạm ra bộ nhớ máy trong quá trình upload hàng loạt), đọc danh sách lô 1 lần khi chọn nhiều ảnh và bỏ lượt GET lại toàn bộ media sau từng ảnh lẻ.
+
+## 3. Độ mượt giao diện Mobile & Đồng bộ 100% Nghiệp vụ Web / App
+
+- **Độ mượt trên thiết bị thật (đặc biệt dòng máy Android như Samsung Note9):**
+  - `mobile/src/lib/session-store.ts`: lưu bản đệm phiên đã giải mã trong RAM (tuần tự hóa đọc/ghi), loại bỏ 2 lần giải mã Android Keystore AES-GCM trên mỗi request API và mỗi ảnh có xác thực.
+  - `mobile/src/lib/offline-store.ts`: thêm cột `byte_len` cho `lookup_queries` để không phải tính `SUM(LENGTH(payload_json))` trên hàng megabyte chuỗi JSON mỗi lần lưu cache, và thêm `hasPendingWrites()` (`SELECT 1 ... LIMIT 1`) để vòng đồng bộ nền 10 giây bỏ qua ngay khi hàng đợi trống.
+  - `mobile/src/app/(tabs)/_layout.tsx` & `mobile/src/lib/query-persistence.ts`: lùi `refreshTabLookups` sang sau khung hình chuyển tab (`requestAnimationFrame` + `setTimeout`), bổ sung làm mới `'operations-overview'` ở tab Thao tác.
+  - `mobile/src/components/management-drawer.tsx`, `catalogue-screen.tsx`, `shift-registrations.tsx`, `managed-accounts.tsx`, `gps.tsx`: không mount `<Modal>` ẩn của menu ở các tab đang đóng; dùng `useDebouncedValue`, tra cứu `Map` $O(1)$ và cấu hình cửa sổ `FlatList`; tạm dừng bộ đếm 15 giây của GPS khi chuyển sang tab con khác.
+  - **Phản hồi gửi Telegram tức thì:** `use-telegram-write.ts`, `telegram-result/[key].tsx` và `battery-telegram-status.tsx` nạp ngay trạng thái vừa nhận từ POST vào cache React Query (mở màn kết quả `0ms`, không chờ tải lại) và tự động hỏi trạng thái mỗi `2 giây` cho tới khi gửi xong.
+  - **Web UI mượt hơn:** tách đồng hồ giây thành component lá `<LiveVietnamClock>` trong `AttendancePage.tsx` (tránh render lại cả trang Chấm công mỗi giây), bỏ fetch trùng ở `StaffSalesPage.tsx`, tiền tải JS chunk thay vì tải toàn bộ danh sách xe/khách khi rê chuột ở `ManagementPage.tsx`, và giãn chu kỳ hỏi thông báo SePay hợp lý (`12s`).
+- **Đồng bộ đầy đủ chức năng & quy tắc nghiệp vụ giữa Web và App:**
+  - **Gia hạn & đóng hợp đồng nợ xấu sau thu hồi xe** (khớp commit Web `b593305`): cập nhật `mobile-renewals.ts`, `mobile-renewal-write.ts`, `renewal-editor.tsx` và sửa lỗi điều kiện `isBadDebt` bị lồng bên trong `isRenting` ở `contract-detail-view.tsx`, hiển thị đầy đủ `Gia hạn`, `Thu / Chi`, cảnh báo nợ xấu đã thu hồi xe và nút `Đóng hợp đồng nợ xấu` (đúng quyền `contracts.settle`).
+  - **Giải thích rõ nguyên nhân thao tác bị khóa** (theo quy tắc bắt buộc toàn dự án): các thao tác không khả dụng trong `record-actions-modal.tsx`, `ContractDetail.tsx` và `AttendancePage.tsx` hiển thị rõ lý do tiếng Việt cụ thể theo từng trạng thái/quyền thay vì ẩn âm thầm hoặc khóa không lời giải thích; mở gia hạn cho cả trạng thái `wait_payment` trên menu thao tác nhanh.
+  - **Quyền Tích hợp, Nhập bù quá khứ, Lọc GPS & Đăng ký ca:** đồng bộ kiểm tra `isAdminAccount` cho mục `/integrations` trên menu App (`workspace-links.tsx`), bổ sung nhóm lối tắt `/backfill` trên màn Thao tác (`(tabs)/index.tsx`), bổ sung bộ lọc `vehicle_status` trên trang GPS App khớp `GpsPage.tsx` của Web, và đặt mặc định tuần hiện tại kèm nhãn `"Đăng ký ca trong tuần"` / `"Bảng đăng ký ca"` trên App khớp Web (`15fd881`).
+
+## 4. Kiểm tra tự động & Đối chiếu 35 tài khoản (9 vai trò)
+
+- `npm run typecheck`, `npm run lint`, `npm run mobile:typecheck`, `npm run mobile:lint`, `npm run build`: **đạt 100% (0 lỗi)**.
+- `npm run test:release` (**55/55 suite**), `npm run test:mobile` (**37/37 suite**), `test:mobile:handoff`, `test:mobile:parity`, `test:mobile:performance`, `test:mobile:offline`, `test:telegram-recovery`, `test:telegram-retractions`, `test:scoped-pool`: **đạt 100%**.
+- Các bộ kiểm tra cô lập với PGlite / TEMP rollback (`check-battery-contracts.cjs --live-temp`, `check-mobile-battery.cjs`, `check-mobile-refresh.cjs`, `check-mobile-gps.cjs`, `check-mobile-support.cjs`, `check-product-speed.cjs`, `check-photo-ocr.cjs`, `check-mobile-photo-batches.cjs`, `check-mobile-payload.cjs`): **đạt 100%, 0 ghi dữ liệu nghiệp vụ thật**.
+- Đối chiếu trên **toàn bộ 35 tài khoản đang hoạt động** (đủ 9 nhóm vai trò: `admin`, `accounting`, `internal_control`, `hr`, `headquarters_sales`, `headquarters_debt`, `ownership_manager`, `ownership_staff`, `branch_manager`, `branch_staff`):
+  - `0` lỗi `500` ở `record-media/contracts/:id` (trước khi sửa bị lỗi `500` trên cả 35 tài khoản).
+  - Đọc Telegram hợp đồng nhiều sự kiện/ảnh giảm còn `1.4s–2.2s` qua kết nối từ xa, có sẵn `revision` cho toàn bộ ảnh đính kèm.
+  - Danh sách hợp đồng Pin / Sạc giảm còn `330ms–401ms`.
+  - Không tạo giao dịch thử, không gửi tin Telegram thử, không gửi push thử, không thay đổi bất kỳ thông tin hay quyền nào của 35 tài khoản; mọi phiên kiểm tra tạm đều được xóa sạch và xác nhận trả `401`.

@@ -133,8 +133,8 @@ export function ContractDetailView({
       >
         {!!callError && <InlineError message={callError} />}
 
-        {/* Quick Priority Action Bar for Active Contracts */}
-        {isRenting && (
+        {/* Quick Priority Action Bar for Active & Bad-Debt Contracts */}
+        {(isRenting || isBadDebt) && (
           <Card style={[styles.priorityCard, { borderColor: theme.primary, backgroundColor: theme.surface }]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <Text style={{ color: theme.text, fontSize: 16, fontWeight: "800" }}>
@@ -156,7 +156,7 @@ export function ContractDetailView({
                   />
                 </View>
               )}
-              {permissions.includes("contracts.return") && (
+              {isRenting && permissions.includes("contracts.return") && (
                 <View style={{ flex: 1 }}>
                   <Button
                     secondary
@@ -169,7 +169,7 @@ export function ContractDetailView({
             </View>
 
             <View style={styles.priorityBtnRow}>
-              {permissions.includes("contracts.return") && (
+              {isRenting && permissions.includes("contracts.return") && (
                 <View style={{ flex: 1 }}>
                   <Button
                     secondary
@@ -191,13 +191,13 @@ export function ContractDetailView({
               )}
             </View>
 
-            {isBadDebt && (
+            {isBadDebt && permissions.includes("contracts.settle") && (
               <View style={[styles.priorityBtnRow, { marginTop: 4 }]}>
                 <View style={{ flex: 1 }}>
                   <Button
                     label="Đóng hợp đồng nợ xấu"
                     icon={<FileCheck size={16} color={theme.primaryText} />}
-                    onPress={() => router.push({ pathname: "/contract-lifecycle/[id]", params: { id } })}
+                    onPress={() => router.push({ pathname: "/contract-lifecycle/[id]", params: { id, action: "close_bad_debt" } })}
                   />
                 </View>
               </View>

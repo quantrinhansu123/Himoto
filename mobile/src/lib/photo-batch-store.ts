@@ -22,7 +22,18 @@ export async function openPhotoBatchStore(scope:string):Promise<PhotoBatchStore>
     async list(){return(await db.getAllAsync<{metadata:string}>('SELECT metadata FROM photos WHERE scope=? ORDER BY sequence,id',scope)).map(row=>JSON.parse(row.metadata) as BatchPhoto);},
     async add(row,photo){const bytes=new Uint8Array(await photo.bytes());if(bytes.byteLength!==row.size||bytes.length>2097152)throw Error('Ảnh chuẩn bị không khớp.');await db.runAsync('INSERT INTO photos(scope,id,metadata,bytes,sequence) VALUES(?,?,?,?,?)',scope,row.id,JSON.stringify(row),bytes,Date.now());},
     async update(row){const result=await db.runAsync('UPDATE photos SET metadata=? WHERE scope=? AND id=?',JSON.stringify(row),scope,row.id);if(result.changes!==1)throw Error('Chưa lưu được tiến độ bộ ảnh.');},
-    async photo(row){const stored=await db.getFirstAsync<{bytes:Uint8Array}>('SELECT bytes FROM photos WHERE scope=? AND id=?',scope,row.id);if(!stored||stored.bytes.byteLength!==row.size)throw Error('Chưa đọc được ảnh đã giữ trên thiết bị.');const file=new File(Paths.cache,`batch-${uuid.v4().toLowerCase()}.jpg`);file.create({overwrite:false});file.write(stored.bytes);return{uri:file.uri,width:row.width,height:row.height,size:row.size,mimeType:'image/jpeg',bytes:async()=>{const bytes=await file.arrayBuffer();if(bytes.byteLength!==row.size)throw Error('Ảnh không khớp.');return bytes;},dispose:()=>{if(file.exists)file.delete();}};},
+    async photo(row){
+      const stored=await db.getFirstAsync<{bytes:Uint8Array}>('SELECT bytes FROM photos WHERE scope=? AND id=?',scope,row.id);
+      if(!stored||stored.bytes.byteLength!==row.size)throw Error('Chưa đọc được ảnh đã giữ trên thiết bị.');
+      let file:File|null=null;
+      const ensureFile=()=>{if(!file){file=new File(Paths.cache,`batch-${uuid.v4().toLowerCase()}.jpg`);file.create({overwrite:false});file.write(stored.bytes);}return file;};
+      return{
+        get uri(){return ensureFile().uri;},
+        width:row.width,height:row.height,size:row.size,mimeType:'image/jpeg',
+        bytes:async()=>{const copy=stored.bytes.slice();if(copy.byteLength!==row.size)throw Error('Ảnh không khớp.');return copy.buffer;},
+        dispose:()=>{if(file?.exists)file.delete();},
+      };
+    },
     async remove(id){await db.runAsync('DELETE FROM photos WHERE scope=? AND id=?',scope,id);},
   };
 }

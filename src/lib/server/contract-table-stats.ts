@@ -66,17 +66,17 @@ export async function fastContractStatistics(db:Pick<PoolClient,'query'>,input:M
  const needsDetail=`(o.order_status IN('draft','renting','overdue','wait_payment','reserved','bad_debt')
    OR o.draft_payload #> '{management_composer,installment_plan}' IS NOT NULL OR (${BAD_DEBT_CLOSED_AT_SQL}) IS NOT NULL
    OR NOT(o.total IS NULL OR o.total='' OR o.total ~ '^[0-9]{1,13}$'))`;
- // Classify history before resolving dates, deposits and billing JSON. A closed
- // rental contributes counts/money only; those joins used to run for every row.
+ // Classify history in one pass before resolving dates, deposits and billing JSON.
+ // A closed rental contributes counts/money only; those joins used to run for every row.
  // Both reads share the caller's repeatable-read transaction and ordinary RLS.
- const result=(await db.query(`WITH closed AS MATERIALIZED (
-     SELECT o.customer_id,o.order_status AS status,o.total AS total_amount
+ const result=(await db.query(`WITH classified AS MATERIALIZED (
+     SELECT o.id,o.customer_id,o.order_status AS status,o.total AS total_amount,(${needsDetail}) AS needs_detail
      FROM himoto.orders o
-     WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND NOT ${needsDetail}${scope}),
+     WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}${scope}),
+   closed AS (SELECT customer_id,status,total_amount FROM classified WHERE NOT needs_detail),
    blacklisted AS MATERIALIZED (SELECT id FROM himoto.customers WHERE status=2),
    selected AS (SELECT * FROM closed WHERE $1::text='' OR status=$1)
-   SELECT COALESCE((SELECT jsonb_agg(o.id) FROM himoto.orders o
-     WHERE o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL} AND ${needsDetail}${scope}),'[]'::jsonb) AS detailed_ids,
+   SELECT COALESCE((SELECT jsonb_agg(id) FROM classified WHERE needs_detail),'[]'::jsonb) AS detailed_ids,
      (SELECT count(*)::int FROM closed) AS closed_total,(SELECT count(*)::int FROM selected) AS closed_selected,
      COALESCE((SELECT jsonb_agg(jsonb_build_array(status,n) ORDER BY status) FROM (SELECT status,count(*)::int AS n FROM closed GROUP BY status) c),'[]'::jsonb) AS closed_counts,
      COALESCE((SELECT jsonb_agg(DISTINCT customer_id) FROM selected WHERE customer_id IN (SELECT id FROM blacklisted)),'[]'::jsonb) AS blacklist,

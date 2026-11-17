@@ -1,5 +1,5 @@
 import { useEffect,useRef,useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery,useQueryClient } from "@tanstack/react-query";
 import { Text } from "react-native";
 import { useSession } from "@/providers/session";
 import { useTheme } from "@/theme";
@@ -19,6 +19,7 @@ export function BatteryTelegramStatus({
 }) {
   const { api, session } = useSession(),
     theme = useTheme(),
+    cache = useQueryClient(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false),
@@ -29,10 +30,13 @@ export function BatteryTelegramStatus({
       alive.current = false;
     };
   }, []);
+  const queryKey = ["battery-telegram", session!.user.id, id, requestKey] as const;
   const query = useQuery({
-    queryKey: ["battery-telegram", session!.user.id, id, requestKey],
+    queryKey,
     queryFn: ({ signal }) => api!.batteryTelegram(id, requestKey, signal),
     retry: false,
+    refetchInterval: q => !busy && ["pending", "sending"].includes(q.state.data?.status || "") ? 2000 : false,
+    refetchIntervalInBackground: false,
   });
   async function send() {
     if (!api || busy || disabled) return;
@@ -40,8 +44,8 @@ export function BatteryTelegramStatus({
     setConfirm(false);
     setError("");
     try {
-      await api.sendBatteryTelegram(id, requestKey);
-      if (alive.current) void query.refetch();
+      const updated = await api.sendBatteryTelegram(id, requestKey);
+      if (alive.current) cache.setQueryData(queryKey, updated);
     } catch (cause) {
       if (alive.current) setError((cause as Error).message);
     } finally {

@@ -102,7 +102,7 @@ function CollectionForm({ id, version }: { id: string; version?: string }) {
     if (!action.checked || query.isPending && targetVersion !== null) return <StateView title="Đang kiểm tra khoản thu theo kỳ" loading />;
     return <StateView title={targetVersion === null ? "Chưa chọn kỳ gia hạn" : "Chưa tải được số tiền còn thu"} message={query.error?.message || action.error || "Mở kỳ gia hạn đã lưu để kiểm tra số còn thu."} retry={targetVersion === null ? undefined : () => { void query.refetch(); }} />;
   }
-  const source = bill.data?.photoRevision && api && session ? { uri: `${api.origin}/api/mobile/v1/contracts/${encodeURIComponent(id)}/renewals/${data.period.version}/collection/bill?revision=${encodeURIComponent(bill.data.photoRevision)}`, headers: { Authorization: `Bearer ${session.token}` } } : null;
+  const source = bill.data?.photoRevision && api ? api.renewalBillImageSource(id, data.period.version, bill.data.photoRevision, true) : null;
   const chosenAccount = confirm && data.accounts.find(row => row.method === confirm.method && row.id === confirm.account_id);
   return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>

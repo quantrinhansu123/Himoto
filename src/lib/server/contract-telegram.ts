@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { canSendContractEvent,CONTRACT_EVENT_LABELS, type ContractEventType, type ContractTelegramState } from '@/lib/management/contract-telegram';
 import { hasPermission, type PermissionAccount } from '@/lib/management/permissions';
-import { contractNotificationText, notificationContentMatches, notificationHash, notificationPayload, sameRenewalPeriod, type NotificationPayload, type RenewalNotice } from './contract-notification-content';
+import { contractNotificationText, notificationContentMatches, notificationHash, notificationPayload, sameRenewalPeriod, type NotificationPayload, type NotificationReadCache, type RenewalNotice } from './contract-notification-content';
 import { contractPhotoLabel } from '@/lib/management/contract-photos';
 import { OWNERSHIP_ORDER_SQL,contractTelegramDestination } from './contract-telegram-routing';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
@@ -76,6 +76,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
   // Sent history stays reachable even after a contract was cancelled or its event shape changed.
   for(const notice of notices)if(notice.message_ids?.length)add({key:notice.root_event_key||notice.event_key,kind:notice.event_type,phases:notice.photo_phases||[],payload:notice.payload});
   const payloads=new Map<string,NotificationPayload>();
+  const readCache:NotificationReadCache={};
   const result:ContractTelegramState={auto_enabled:false,next_renewal_version:await nextContractRenewalVersion(db,id,versions),events:[]};
   // Snapshot business facts for an existing transaction; refresh saved photos and verified payment/refund receipts.
   for(const event of events) {
@@ -83,7 +84,7 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
     if(eventKey&&event.key!==eventKey)continue;
     const related=notices.filter(n=>(n.root_event_key||n.event_key)===event.key);
     try {
-    const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal);void _store;
+    const {store_id:_store,...fresh}=await notificationPayload(db,id,event.kind,actorId,event.phases,event.renewal||event.payload?.renewal,readCache);void _store;
     const delivered=related.find(n=>n.status==='sent'&&n.retraction?.state!=='done');
     // Once a bad delivery is retracted, rebuild from the corrected contract. A later
     // successful resend becomes the baseline so it stays locked against duplication.
@@ -121,7 +122,16 @@ export async function readContractTelegram(db:Database,id:number,actorId:number,
       destination_label:contractTelegramDestination(event.kind,o.ownership===true,o.store_name),
       ...(event.kind==='renewal'?{renewal_receipt_ids:matchingReceipts.map(row=>Number(row.transaction_id)),renewal_receipts_cancelled:cancelledReceipts}:{}),
       text,hash,photo_count:payload.photos.filter(p=>p.mime_type!=='video/mp4').length,video_count:payload.photos.filter(p=>p.mime_type==='video/mp4').length,status:latest?.retraction?.state==='done'?'retracted':latest?.retraction?.state==='failed'?'retraction_failed':latest?.retraction?'retracting':latest?.status||null,sent_at:telegramTimestamp(latest?.sent_at),
-      attachments:payload.photos.map(photo=>({slot:photo.slot,mime_type:photo.mime_type,label:contractPhotoLabel(photo.slot)})),
+      attachments:payload.photos.map(photo=>{
+        const base={slot:photo.slot,mime_type:photo.mime_type,label:contractPhotoLabel(photo.slot)};
+        const meta=readCache.photoMetaBySlot?.get(photo.slot);
+        if(!meta?.revision||!/^[1-9]\d{0,19}$/.test(meta.revision))return base;
+        const bytes=meta.data_bytes==null?null:Number(meta.data_bytes);
+        const video=photo.mime_type==='video/mp4'&&/-video-[1-3]$/.test(photo.slot);
+        const image=['image/jpeg','image/png','image/webp'].includes(photo.mime_type)&&!/-video-[1-3]$/.test(photo.slot);
+        const blocked_reason=video?(bytes!==null&&(bytes===0||bytes>45*1024*1024)?'Video vượt giới hạn xem hoặc không có dữ liệu.':!meta.has_source?'Chưa đọc được nguồn video này.':null):!image?'Định dạng chưa hỗ trợ xem trong ứng dụng.':bytes!==null&&(bytes===0||bytes>2*1024*1024)?'Ảnh vượt giới hạn xem hoặc không có dữ liệu.':!meta.has_source?'Chưa đọc được nguồn ảnh này.':null;
+        return {...base,revision:meta.revision,bytes,readable:blocked_reason===null,blocked_reason};
+      }),
       can_send:!['draft','cancelled'].includes(o.order_status)&&!cancelledReceipts&&canSendContractEvent(user,event.kind)&&!same&&!unresolved,unchanged:Boolean(same),notice_id:latest?.id,delivery_error:latest?.error_code||null,delivery_message_count:latest?.message_ids?.length||0,
       delivery_contract_code:latest?.payload?.code,
       delivery_started_at:latest?.delivery_target?.started_at||null,delivery_updated_at:progress?.at||latest?.delivery_target?.started_at||null,

@@ -65,7 +65,7 @@ async function run() {
   checks.push('The next renewal version includes saved notification/payment references; bill evidence is checked only for that exact version without reserving a version or writing data');
 
   seed();context.status='bad_debt';assert.equal((await read()).available,true);
-  for (const [patch,extra] of [[{status:'draft'},{}],[{completed_from_hold:true},{}],[{hold_active:true},{}],[{items:[]},{}],[{total_amount:null},{}],[{}, {installment_plan:{version:1}}]]) {
+  for (const [patch,extra] of [[{status:'draft'},{}],[{completed_from_hold:true},{}],[{hold_active:true},{}],[{status:'bad_debt'},{lifecycle:{bad_debt_closure:{at:'2026-11-01T00:00:00Z'}}}],[{items:[]},{}],[{total_amount:null},{}],[{}, {installment_plan:{version:1}}]]) {
     seed(); Object.assign(context,patch); Object.assign(composer,extra);
     const blocked=await read(); assert.equal(blocked.available,false); assert.equal(typeof blocked.blockedReason,'string');
   }

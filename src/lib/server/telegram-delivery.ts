@@ -11,7 +11,7 @@ export const TELEGRAM_MEDIA_TIMEOUT_MS = 120_000;
 export const TELEGRAM_VIDEO_TIMEOUT_MS = 180_000;
 export const TELEGRAM_TEXT_TIMEOUT_MS = 30_000;
 export const TELEGRAM_DISPATCH_BUDGET_MS = 240_000;
-export const TELEGRAM_ALBUM_BYTES = 2 * 1024 * 1024;
+export const TELEGRAM_ALBUM_BYTES = 8 * 1024 * 1024;
 export const TELEGRAM_PHOTO_PASSTHROUGH_BYTES = 512 * 1024;
 /** Telegram downloads URL media itself; non-photo URL payloads cap at 20 MB. */
 export const TELEGRAM_URL_VIDEO_BYTES = 20 * 1024 * 1024;
@@ -129,11 +129,20 @@ async function loadMedia(photo: TelegramAttachment, upload: boolean): Promise<Me
   if (photo.mime_type !== 'video/mp4' && (photo.mime_type !== 'image/jpeg' || data.length > TELEGRAM_PHOTO_PASSTHROUGH_BYTES)) {
     // Preserve document resolution and colour detail. Originals are never modified.
     const document = /identity|passport|license|registration|document|receipt|bill/i.test(photo.slot);
+    const maxEdge = document ? 1800 : 1600;
     try {
-      const prepared = await sharp(data, { limitInputPixels: 40_000_000, animated: false }).rotate()
-        .resize({ width: document ? 1800 : 1600, height: document ? 1800 : 1600, fit: 'inside', withoutEnlargement: true })
-        .flatten({ background: '#fff' }).jpeg({ quality: document ? 84 : 80, chromaSubsampling: document ? '4:4:4' : '4:2:0' }).toBuffer();
-      if (photo.mime_type !== 'image/jpeg' || prepared.length < data.length) data = prepared;
+      const meta = photo.mime_type === 'image/jpeg' && data.length <= 1_400_000
+        ? await sharp(data, { limitInputPixels: 40_000_000, animated: false }).metadata()
+        : null;
+      const alreadySized = meta?.format === 'jpeg' && (meta.orientation || 1) === 1
+        && (meta.width || 0) > 0 && (meta.height || 0) > 0
+        && (meta.width || 0) <= maxEdge && (meta.height || 0) <= maxEdge;
+      if (!alreadySized) {
+        const prepared = await sharp(data, { limitInputPixels: 40_000_000, animated: false }).rotate()
+          .resize({ width: maxEdge, height: maxEdge, fit: 'inside', withoutEnlargement: true })
+          .flatten({ background: '#fff' }).jpeg({ quality: document ? 84 : 80, chromaSubsampling: document ? '4:4:4' : '4:2:0' }).toBuffer();
+        if (photo.mime_type !== 'image/jpeg' || prepared.length < data.length) data = prepared;
+      }
     } catch { throw new TelegramDeliveryError('MEDIA_FETCH_FAILED', true); }
   }
   if (photo.mime_type !== 'video/mp4' && data.length > TELEGRAM_ALBUM_BYTES) throw new TelegramDeliveryError('PHOTO_SIZE', true);
@@ -156,7 +165,7 @@ export async function* telegramMediaBatches(photos: TelegramAttachment[], offset
     }
     if (batch.length === 10) { yield batch; batch = []; bytes = 0; }
     const chunk: TelegramAttachment[] = [];
-    for (let i = offset; i < photos.length && chunk.length < Math.min(3, 10 - batch.length) && photos[i].mime_type !== 'video/mp4'; i++) chunk.push(photos[i]);
+    for (let i = offset; i < photos.length && chunk.length < Math.min(6, 10 - batch.length) && photos[i].mime_type !== 'video/mp4'; i++) chunk.push(photos[i]);
     try {
       requireTelegramTime(deadline, TELEGRAM_MEDIA_TIMEOUT_MS + (chunk.some(photo => !photo.telegram_file_id && (photo.object_key || photo.cloudinary_public_id)) ? 65_000 : 5_000));
     } catch (error) {

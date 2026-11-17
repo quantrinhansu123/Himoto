@@ -1,12 +1,13 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePreventRemove } from 'expo-router';
 import { FlatList, RefreshControl, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { REGISTRATION_SHIFTS, registrationDates, registrationMonthRange, registrationCredit, type RegistrationInput, type RegisteredStaff } from '../../../shared/mobile-shift-registration';
+import { REGISTRATION_SHIFTS, registrationDates, registrationMonthRange, registrationCredit, type RegistrationInput, type RegisteredStaff, type ShiftRegistration } from '../../../shared/mobile-shift-registration';
 import { dutyToday } from '../../../shared/mobile-duty-roster';
 import { shiftCreditLabel } from '../../../shared/attendance-shifts';
 import { useSession } from '@/providers/session';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useTheme } from '@/theme';
 import { Button, Card, InlineError, StateView } from '@/components/ui';
 import { ChoiceField, FormField } from '@/components/form-fields';
@@ -21,10 +22,25 @@ function Board() {
   const [pending, setPending] = useState<{ input: RegistrationInput; staff: RegisteredStaff } | null>(null), [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false), [error, setError] = useState('');
   const query = useQuery({ queryKey: ['shift-registrations', session!.user.id, range.from,range.to], queryFn: ({ signal }) => api!.registrationRange(range.from,range.to, signal), retry: false });
   usePreventRemove(busy, () => {});
-  const dates = registrationDates(range.from,range.to), data = query.data, selectedDay = dates.includes(day) ? day : dates[0];
+  const dates = useMemo(() => registrationDates(range.from,range.to), [range.from, range.to]), data = query.data, selectedDay = dates.includes(day) ? day : dates[0];
   const writable = session!.user.permissions.includes('hr.write'), locked = busy || query.isFetching || query.isError || uncertain;
-  const normalize = (value: string) => value.toLocaleLowerCase('vi');
-  const staff = data?.staff.filter(row => (store === 'all' || store === 'none' ? store === 'all' || !row.store_id : String(row.store_id) === store) && normalize(`${row.name} ${row.position}`).includes(normalize(search.trim()))) || [];
+  const debouncedSearch = useDebouncedValue(search, 250);
+  const staff = useMemo(() => {
+    const normalize = (value: string) => value.toLocaleLowerCase('vi');
+    const needle = normalize(debouncedSearch.trim());
+    return data?.staff.filter(row => (store === 'all' || store === 'none' ? store === 'all' || !row.store_id : String(row.store_id) === store) && (!needle || normalize(`${row.name} ${row.position}`).includes(needle))) || [];
+  }, [data?.staff, store, debouncedSearch]);
+  const { byStaffDay, creditsByStaff } = useMemo(() => {
+    const dateSet = new Set(dates);
+    const cellMap = new Map<string, ShiftRegistration>();
+    const creditMap = new Map<number, number>();
+    for (const r of data?.registrations || []) {
+      cellMap.set(`${r.staff_id}:${r.work_date}`, r);
+      if (dateSet.has(r.work_date)) creditMap.set(r.staff_id, (creditMap.get(r.staff_id) || 0) + registrationCredit(r.shift_code));
+    }
+    return { byStaffDay: cellMap, creditsByStaff: creditMap };
+  }, [data?.registrations, dates]);
+  const shiftChoices = useMemo(() => [{ value: '', label: 'Chưa đăng ký' }, ...REGISTRATION_SHIFTS.map(s => ({ value: s.code, label: `${s.code} · ${s.name}${s.start ? ` (${s.start}–${s.end})` : ''} · ${shiftCreditLabel(s.credit)} công` }))], []);
   function chooseMonth(value:string){const next=registrationMonthRange(value);setMonth(value);setRange(next);setFrom(next.from);setTo(next.to);setFilterError('');setUncertain(false);setError('');}
   function moveMonth(delta: number) { const [year, value] = month.split('-').map(Number); const next = new Date(Date.UTC(year, value - 1 + delta, 1)).toISOString().slice(0, 7); if (next >= '2000-01' && next <= '2100-12') chooseMonth(next); }
   function applyRange(extend=false){try{registrationDates(from,to);const next=extend?{from:from<range.from?from:range.from,to:to>range.to?to:range.to}:{from,to};registrationDates(next.from,next.to);setRange(next);setFrom(next.from);setTo(next.to);setFilterError('');}catch(cause){setFilterError((cause as Error).message);}}
@@ -37,7 +53,7 @@ function Board() {
     } catch (cause) { setError((cause as Error).message + ' Làm mới bảng để đối chiếu trước khi đăng ký tiếp.'); setUncertain(true); }
     finally { running.current = false; setBusy(false); }
   }
-  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}><FlatList data={staff} keyExtractor={person => String(person.id)} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => void reload()} />}
+  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}><FlatList data={staff} keyExtractor={person => String(person.id)} initialNumToRender={10} maxToRenderPerBatch={10} windowSize={5} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => void reload()} />}
     ListHeaderComponent={<View style={{ gap: 14 }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: '800' }}>Đăng ký ca</Text>
       <Text style={{ color: theme.muted, lineHeight: 22 }}>Bảng ca làm theo tháng, nhóm nhân viên theo cơ sở. Dùng chung dữ liệu nhân viên đăng ký trong tuần.</Text>
@@ -54,10 +70,10 @@ function Board() {
       {!!error && <InlineError message={error} />}
     </View>}
     renderItem={({ item: person }) => {
-      const row = data?.registrations.find(r => r.staff_id === person.id && r.work_date === selectedDay);
+      const row = byStaffDay.get(`${person.id}:${selectedDay}`);
       return <Card style={{ gap: 12 }}><Text style={{ color: theme.text, fontSize: 19, fontWeight: '700' }}>{person.name}</Text><Text style={{ color: theme.muted }}>{person.position} · {person.store_name}</Text>
-        <Text style={{ color: theme.text }}>Tổng công đăng ký trong khoảng ngày: {shiftCreditLabel((data?.registrations || []).filter(r => r.staff_id === person.id&&dates.includes(r.work_date)).reduce((sum, r) => sum + registrationCredit(r.shift_code), 0))} công</Text>
-        <ChoiceField label={`Ca của ${person.name} ngày ${selectedDay.split('-').reverse().join('/')}`} value={row?.shift_code || ''} searchable disabled={!writable || locked || !person.store_id || person.status !== 'active'} choices={[{ value: '', label: 'Chưa đăng ký' }, ...REGISTRATION_SHIFTS.map(s => ({ value: s.code, label: `${s.code} · ${s.name}${s.start ? ` (${s.start}–${s.end})` : ''} · ${shiftCreditLabel(s.credit)} công` }))]} onChange={code => { if (code !== (row?.shift_code || '') && person.store_id) setPending({ staff: person, input: { staff_id: person.id, store_id: person.store_id, work_date: selectedDay, shift_code: code || null, revision: row?.revision || null } }); }} />
+        <Text style={{ color: theme.text }}>Tổng công đăng ký trong khoảng ngày: {shiftCreditLabel(creditsByStaff.get(person.id) || 0)} công</Text>
+        <ChoiceField label={`Ca của ${person.name} ngày ${selectedDay.split('-').reverse().join('/')}`} value={row?.shift_code || ''} searchable disabled={!writable || locked || !person.store_id || person.status !== 'active'} choices={shiftChoices} onChange={code => { if (code !== (row?.shift_code || '') && person.store_id) setPending({ staff: person, input: { staff_id: person.id, store_id: person.store_id, work_date: selectedDay, shift_code: code || null, revision: row?.revision || null } }); }} />
         {!person.store_id && <Text style={{ color: theme.muted }}>Cần gán cơ sở trong hồ sơ nhân viên trước khi đăng ký.</Text>}
       </Card>;
     }}

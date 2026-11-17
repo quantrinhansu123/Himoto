@@ -22,7 +22,7 @@ export async function handleBatteryContractRequest(request: NextRequest, method:
     client = await himotoPool.connect(); await client.query(method === 'GET' ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
     let data:unknown = method === 'GET' ? await listBatteryContracts(client, store === null ? undefined : Number(store), vehicleContract === null ? undefined : Number(vehicleContract))
       : method === 'DELETE' ? await deleteBatteryContract(client, id!, raw.revision, user!.id) : await saveBatteryContract(client, user!.id, raw, id);
-    if(method==='GET'&&request.nextUrl.searchParams.get('scope_count')==='1')data={rows:data,scopeCount:await countBatteryContracts(client,store===null?undefined:Number(store))};
+    if(method==='GET'&&request.nextUrl.searchParams.get('scope_count')==='1')data={rows:data,scopeCount:vehicleContract===null&&Array.isArray(data)&&data.length<5000?data.length:await countBatteryContracts(client,store===null?undefined:Number(store))};
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

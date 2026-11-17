@@ -30,8 +30,8 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
     if(!active||busy)return;
     const controller=new AbortController();
     let timer:ReturnType<typeof setTimeout>;
-    const poll=async()=>{await refresh(controller.signal);if(!controller.signal.aborted)timer=setTimeout(()=>void poll(),5000);};
-    timer=setTimeout(()=>void poll(),3000);
+    const poll=async()=>{await refresh(controller.signal);if(!controller.signal.aborted)timer=setTimeout(()=>void poll(),2500);};
+    timer=setTimeout(()=>void poll(),1500);
     return()=>{clearTimeout(timer);controller.abort();};
   },[active,busy,refresh]);
   return <section className="mg-contract-telegram">

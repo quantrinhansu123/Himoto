@@ -16,7 +16,7 @@ import {FAQ_CATEGORIES,type GuideFaq} from '../../../shared/guide-faq';
 import {dateTime,useTheme} from '@/theme';
 
 function FaqEditor({row,name,onClose,onSaved}:{row:GuideFaq|null;name:string;onClose:()=>void;onSaved:()=>void}) {
-  const {api}=useSession(),theme=useTheme();
+  const {api,session}=useSession(),theme=useTheme();
   const [category,setCategory]=useState<string>(FAQ_CATEGORIES[0]),[question,setQuestion]=useState(''),[answer,setAnswer]=useState(row?.answer||''),[keep,setKeep]=useState(row?.images||[]),[photos,setPhotos]=useState<RecordMediaPhoto[]>([]);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[uncertain,setUncertain]=useState(false),[closing,setClosing]=useState(false);
   const lock=useRef(false),request=useRef(uuid.v4().toLowerCase()),alive=useRef(true),current=useRef(photos);
@@ -39,7 +39,7 @@ function FaqEditor({row,name,onClose,onSaved}:{row:GuideFaq|null;name:string;onC
         <Text style={{color:theme.text,fontSize:18,fontWeight:'700',lineHeight:26}}>{row.question}</Text><Text style={{color:theme.muted}}>{row.asker_name} · {row.category}</Text>
         <FormField label="Câu trả lời" value={answer} onChangeText={setAnswer} editable={!disabled} multiline maxLength={10000}/>
         <Text style={{color:theme.muted,lineHeight:22}}>Tối đa 10 ảnh; mỗi ảnh được chuẩn bị dưới 2 MB.</Text>
-        {keep.map(id=><View key={id} style={{gap:8}}><Image cachePolicy="none" source={api!.supportPhoto('guide-faq',String(id))} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh câu trả lời #${id}`}/><Button secondary label={`Bỏ ảnh đã lưu #${id}`} disabled={disabled} onPress={()=>setKeep(items=>items.filter(value=>value!==id))}/></View>)}
+        {keep.map(id=>{const src=api!.supportPhoto('guide-faq',String(id));return <View key={id} style={{gap:8}}><Image cachePolicy="memory" source={{...src,cacheKey:JSON.stringify([session!.user.id,session!.sessionId||session!.expiresAt,src.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh câu trả lời #${id}`}/><Button secondary label={`Bỏ ảnh đã lưu #${id}`} disabled={disabled} onPress={()=>setKeep(items=>items.filter(value=>value!==id))}/></View>;})}
         {photos.map((photo,index)=><View key={photo.uri} style={{gap:8}}><Image cachePolicy="none" source={{uri:photo.uri}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh mới ${index+1}`}/><Button secondary label={`Bỏ ảnh mới ${index+1}`} disabled={disabled} onPress={()=>{setPhotos(items=>items.filter(item=>item!==photo));photo.dispose();}}/></View>)}
         <Button secondary label="Chọn ảnh trả lời" disabled={disabled||keep.length+photos.length>=10} onPress={()=>{void pick();}}/>
         {Platform.OS!=='web'&&<Button secondary label="Chụp ảnh trả lời" disabled={disabled||keep.length+photos.length>=10} onPress={()=>{void pick(true);}}/>}
@@ -77,7 +77,7 @@ function FaqList() {
         <Text style={{color:theme.muted,fontSize:13,lineHeight:21}}>{row.asker_name} · {dateTime(row.created_at)}</Text>
         {!!row.answer&&<Text selectable style={{color:theme.text,fontSize:16,lineHeight:25}}>{row.answer}</Text>}
         {!!row.answerer_name&&<Text style={{color:theme.muted}}>Trả lời: {row.answerer_name}</Text>}
-        {row.images.map(id=><Image cachePolicy="none" key={id} source={api!.supportPhoto('guide-faq',String(id))} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh minh họa câu trả lời #${id}`}/>)}
+        {row.images.map(id=>{const src=api!.supportPhoto('guide-faq',String(id));return <Image cachePolicy="memory" key={id} source={{...src,cacheKey:JSON.stringify([session!.user.id,session!.sessionId||session!.expiresAt,src.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh minh họa câu trả lời #${id}`}/>;})}
         {query.data?.can_answer&&<Button secondary label={`Trả lời câu hỏi #${row.id}`} onPress={()=>setEditor({row})}/>}
       </Card>}
       ListEmptyComponent={!query.isPending&&!query.isError?<Text style={{color:theme.muted,padding:20,textAlign:'center'}}>Chưa có câu hỏi phù hợp.</Text>:undefined}

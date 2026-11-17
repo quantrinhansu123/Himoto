@@ -1,4 +1,5 @@
 import { canManageAccounts } from '../../../shared/mobile-managed-accounts';
+import { isAdminAccount } from '../../../shared/access-permissions';
 import { router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { Building2, CalendarDays, ChartNoAxesCombined, ChevronRight, Files, UsersRound } from "lucide-react-native";
@@ -22,7 +23,7 @@ export function WorkspaceLinks() {
     ...(permissions.includes("contracts.read") ? [{ key: "stores", title: "Cơ sở", description: "Thông tin quản lý và liên hệ cơ sở", icon: Building2, open: () => router.push({ pathname: "/directory/[kind]", params: { kind: "stores" } }) }] : []),
     ...(permissions.includes("settings.write") && permissions.includes("contracts.read") ? [{ key: "contract-types", title: "Loại hợp đồng", description: "Danh mục, cách tính tiền, thời hạn và trạng thái", icon: Files, open: () => router.push("/contract-types") }] : []),
     ...(canManageAccounts(session?.user) ? [{ key: "managed-accounts", title: "Tài khoản và phân quyền", description: "Vai trò, cơ sở, quyền thao tác và trạng thái đăng nhập", icon: UsersRound, open: () => router.push("/managed-accounts") }] : []),
-    ...(canManageAccounts(session?.user) ? [{ key: "integrations", title: "Tích hợp GPS và Telegram", description: "Tài khoản GPS, nhóm nhận tin và trạng thái đồng bộ", icon: Files, open: () => router.push("/integrations") }] : []),
+    ...(isAdminAccount(session?.user) ? [{ key: "integrations", title: "Tích hợp GPS và Telegram", description: "Tài khoản GPS, nhóm nhận tin và trạng thái đồng bộ", icon: Files, open: () => router.push("/integrations") }] : []),
   ];
   if (!links.length) return null;
   return <View style={{ gap: 12 }}>

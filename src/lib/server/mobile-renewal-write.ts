@@ -105,7 +105,8 @@ export async function recordMobileRenewal(user:SessionUser,value:string,request:
         if(order.revision!==input.order_revision)throw new MobileError("Hợp đồng đã thay đổi. Đối chiếu và tải lại trước khi gia hạn.",409,"RENEWAL_CONFLICT");
         const options={page:1,size:0,asOf:Date.now()},context=await readPaymentContext(client,id,options),composer=order.draft_payload?.management_composer;
         const backfill=!!input.occurred_at,items=await mobileRenewalItems(client,id,context,backfill);
-        const blocked=mobileRenewalBlockedReason(context,!!composer?.installment_plan,backfill,items.length);
+        const closed=Boolean(composer?.lifecycle?.bad_debt_closure||composer?.lifecycle?.payment_closure);
+        const blocked=mobileRenewalBlockedReason(context,!!composer?.installment_plan,backfill,items.length,closed);
         if(blocked)throw new MobileError(blocked,409,"RENEWAL_CONFLICT");
         if(input.occurred_at){
           const item=items.find(row=>row.id===input.item_id),at=Date.parse(`${input.occurred_at}:00+07:00`);

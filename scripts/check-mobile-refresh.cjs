@@ -17,17 +17,18 @@ async function main() {
     return { ...result, rowCount: result.rows.length || result.affectedRows || 0 };
   } };
   const database = { connect: async () => client, query: client.query.bind(client) };
-  const actor = { id: 7, name: 'QA Session', email: 'qa-session@example.invalid', role: 'staff', access_role: 'branch_staff', permissions: ['vehicles.read', 'customers.read'], store_id: 23, scope_all: false, password_version: 3 };
+  const actor = { id: 7, name: 'QA Session', email: 'qa-session@example.invalid', role: 'staff', access_role: 'branch_staff', permissions: ['vehicles.read', 'contracts.read'], store_id: 23, scope_all: false, password_version: 3 };
   const sessions = load(path.join(root, 'lib/server/mobile-session'));
   const refresh = load(path.join(root, 'lib/server/mobile-refresh'));
   const request = token => new NextRequest('https://qa.invalid/api/mobile/v1/session', { headers: { Authorization: `Bearer ${token}` } });
   try {
     await pg.exec(`CREATE SCHEMA himoto; CREATE ROLE himoto_scoped; CREATE ROLE anon; CREATE ROLE authenticated;
-      CREATE TABLE himoto.users(id bigint PRIMARY KEY,name text,email text,role text,role_id bigint,status text,management_password_version integer,deleted_at timestamptz);
+      CREATE TABLE himoto.stores(id bigint PRIMARY KEY,kind text); INSERT INTO himoto.stores VALUES(23,'physical');
+      CREATE TABLE himoto.users(id bigint PRIMARY KEY,name text,email text,role text,role_id bigint,store_id bigint,status text,management_password_version integer,deleted_at timestamptz);
       CREATE TABLE himoto.roles(id bigint PRIMARY KEY,slug text); INSERT INTO himoto.roles VALUES(2,'staff');
       CREATE TABLE himoto.management_account_access(user_id bigint PRIMARY KEY,access_role text,permissions text[],store_id bigint,scope_all boolean,enabled boolean);
-      INSERT INTO himoto.users VALUES(7,'QA Session','qa-session@example.invalid','staff',2,'active',3,NULL);
-      INSERT INTO himoto.management_account_access VALUES(7,'branch_staff',ARRAY['vehicles.read','customers.read'],23,false,true);`);
+      INSERT INTO himoto.users VALUES(7,'QA Session','qa-session@example.invalid','staff',2,23,'active',3,NULL);
+      INSERT INTO himoto.management_account_access VALUES(7,'branch_staff',ARRAY['vehicles.read','contracts.read'],23,false,true);`);
     await pg.exec(sql('docs/sql/2026-10-31-mobile-sessions.sql'));
     const legacy = await sessions.createMobileSession(actor, 'QA old app', 'android', database);
     const before = JSON.stringify((await pg.query('SELECT * FROM himoto.management_mobile_sessions')).rows);
@@ -64,7 +65,7 @@ async function main() {
 
     await pg.query('UPDATE himoto.management_account_access SET permissions=ARRAY[\'vehicles.read\'] WHERE user_id=7');
     const changed = await refresh.rotateMobileSession(recovered.refreshToken, randomUUID(), database);
-    assert(changed.user.permissions.includes('vehicles.read')); assert(!changed.user.permissions.includes('customers.read'));
+    assert(changed.user.permissions.includes('vehicles.read')); assert(!changed.user.permissions.includes('contracts.read'));
     await pg.query('UPDATE himoto.users SET management_password_version=4 WHERE id=7');
     await assert.rejects(() => refresh.rotateMobileSession(changed.refreshToken, randomUUID(), database), error => error.status === 401);
     await assert.rejects(() => sessions.requireMobileSession(request(changed.token), database), error => error.status === 401);

@@ -21,7 +21,7 @@ export default function TabLayout() {
   const permissions = session?.user.permissions || [];
   return (
     <Tabs
-      screenListeners={({ route }) => ({ tabPress: () => { void refreshTabLookups(cache, route.name); } })}
+      screenListeners={({ route }) => ({ tabPress: () => { requestAnimationFrame(() => { setTimeout(() => { void refreshTabLookups(cache, route.name); }, 0); }); } })}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: theme.primary,

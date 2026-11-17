@@ -2,9 +2,10 @@ import {displayedGpsState,longStoppedVehicleIds,gpsStoppedDurationMs,GPS_LONG_ST
 export {GPS_POLL_INTERVAL_MS,GPS_SYNC_STALE_MS,GPS_STATE_LABELS,gpsMapLink,gpsStopEvidence,gpsStoppedDurationMs,displayedGpsState} from './gps';
 
 export const GPS_FILTER_STATES=['all','online','stopped','long_stopped','offline','warning','stale','none','unavailable'] as const;
+export const GPS_VEHICLE_STATUSES=['all','ready','using','repairing','pending','sold','bad_debt','broken','in_transit'] as const;
 export type MobileGpsState=Exclude<typeof GPS_FILTER_STATES[number],'all'>;
-export interface MobileGpsQuery {store:string;provider:'all'|'protrack'|'iopgps';state:typeof GPS_FILTER_STATES[number];search:string;page:number;event_source:'all'|'poll'|'history'|'webhook';event_device:string}
-export const defaultGpsQuery:MobileGpsQuery={store:'all',provider:'all',state:'all',search:'',page:1,event_source:'all',event_device:''};
+export interface MobileGpsQuery {store:string;provider:'all'|'protrack'|'iopgps';state:typeof GPS_FILTER_STATES[number];vehicle_status:typeof GPS_VEHICLE_STATUSES[number];search:string;page:number;event_source:'all'|'poll'|'history'|'webhook';event_device:string}
+export const defaultGpsQuery:MobileGpsQuery={store:'all',provider:'all',state:'all',vehicle_status:'all',search:'',page:1,event_source:'all',event_device:''};
 export interface MobileGpsRow extends GpsVehicle {displayState:MobileGpsState}
 export interface MobileGpsEvent {id:number;vehicleId:number|null;fromStatus:string|null;toStatus:string;kind:string;source:'poll'|'history'|'webhook';eventAt:string;observedAt:string;label:string}
 export type MobileGpsHistoryQuery=Pick<MobileGpsQuery,'store'|'event_source'|'event_device'>;
@@ -56,7 +57,7 @@ export function parseGpsQuery(params:URLSearchParams):MobileGpsQuery {
   const allowed=Object.keys(defaultGpsQuery);
   for(const [key] of params)if(!allowed.includes(key)||params.getAll(key).length!==1)throw Error('INVALID_GPS_QUERY');
   const result={...defaultGpsQuery,...Object.fromEntries(params),page:Number(params.get('page')||1)} as MobileGpsQuery;
-  if(result.store!=='all'&&!idText(result.store)||!['all','protrack','iopgps'].includes(result.provider)||!GPS_FILTER_STATES.includes(result.state)||
+  if(result.store!=='all'&&!idText(result.store)||!['all','protrack','iopgps'].includes(result.provider)||!GPS_FILTER_STATES.includes(result.state)||!GPS_VEHICLE_STATUSES.includes(result.vehicle_status)||
     result.search.length>120||/[\u0000-\u001f\u007f]/.test(result.search)||!gpsId(result.page)||result.page>100000||
     !['all','poll','history','webhook'].includes(result.event_source)||result.event_device!==''&&!idText(result.event_device))throw Error('INVALID_GPS_QUERY');
   return result;
@@ -68,7 +69,7 @@ export function projectGpsRows(rows:GpsVehicle[],query:MobileGpsQuery,now:number
   const projected=rows.map(row=>({...row,displayState:(displayedGpsState(row.management_status,row.sync_received_at,now)==='stopped'&&row.vehicle_id!==null&&long.has(row.vehicle_id)?'long_stopped':displayedGpsState(row.management_status,row.sync_received_at,now)) as MobileGpsState}));
   const states=Object.fromEntries(GPS_FILTER_STATES.filter(v=>v!=='all').map(v=>[v,v==='long_stopped'?long.size:projected.filter(r=>r.displayState===v).length])) as Record<MobileGpsState,number>;
   const search=query.search.toLowerCase();
-  const filtered=projected.filter(r=>(query.provider==='all'||r.provider===query.provider)&&(query.state==='all'||r.displayState===query.state)&&
+  const filtered=projected.filter(r=>(query.provider==='all'||r.provider===query.provider)&&(query.state==='all'||r.displayState===query.state)&&(query.vehicle_status==='all'||r.vehicle_status===query.vehicle_status)&&
     [r.license,r.provider_device_name,r.external_device_id,r.store_name].some(v=>(v||'').toLowerCase().includes(search)));
   const page=Math.min(query.page,Math.max(1,Math.ceil(filtered.length/25)));
   return {page,pageSize:25 as const,total:filtered.length,hasMore:page*25<filtered.length,rows:allRows?filtered:filtered.slice((page-1)*25,page*25),
@@ -101,7 +102,7 @@ export function isMobileGpsWorkspace(v:unknown,expected?:MobileGpsQuery):v is Mo
   return v.rows.every(r=>{
     const base=displayedGpsState(r.management_status,r.sync_received_at,observed);
     return (r.displayState==='long_stopped'?base==='stopped'&&(gpsStoppedDurationMs(r,observed)??0)>GPS_LONG_STOP_MS:r.displayState===base)&&
-      (query.store==='all'||String(r.store_id)===query.store)&&(query.provider==='all'||r.provider===query.provider)&&(query.state==='all'||r.displayState===query.state)&&
+      (query.store==='all'||String(r.store_id)===query.store)&&(query.provider==='all'||r.provider===query.provider)&&(query.state==='all'||r.displayState===query.state)&&(query.vehicle_status==='all'||r.vehicle_status===query.vehicle_status)&&
       [r.license,r.provider_device_name,r.external_device_id,r.store_name].some(t=>(t||'').toLowerCase().includes(search));
   });
 }

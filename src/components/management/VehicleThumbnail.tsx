@@ -20,7 +20,7 @@ export function VehicleThumbnail({ id, revision = '', className = '' }: { id: nu
       .then(body => {
         if (body?.status !== 'success' || !Array.isArray(body.data)) return '';
         const photo = body.data.find((item: { slot: string }) => item.slot === 'vehicle-photo');
-        return photo?`${photoEndpoint('vehicles', id, 'vehicle-photo')}?v=${encodeURIComponent(photo.updated_at || revision)}`:'';
+        return photo?`${photoEndpoint('vehicles', id, 'vehicle-photo')}?v=${encodeURIComponent(photo.updated_at || revision)}&preview=1`:'';
       })).then(url=>{if(alive)setPhotoUrl(url);})
       .catch(() => {});
     };

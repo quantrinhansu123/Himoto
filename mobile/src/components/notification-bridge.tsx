@@ -36,7 +36,7 @@ export function NotificationBridge() {
           void api.pushStatus().then(s => !disposed && s.enabled ? api.enablePush(token.data as string) : undefined).catch(() => {});
       });
       cleanup.push(() => c.remove());
-      const d = AppState.addEventListener('change', state => { if (state === 'active') void register().catch(() => {}); });
+      const d = AppState.addEventListener('change', state => { if (state === 'active') setTimeout(() => { if (!disposed) void register().catch(() => {}); }, 600); });
       cleanup.push(() => d.remove());
       await register();
     }).catch(() => {});

@@ -385,6 +385,10 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   function view(row: ManagementRow) {
     setViewing(row);
   }
+  function warmComposerChunk() {
+    if (loading || error) return;
+    void loadComposer().catch(() => {});
+  }
   function warmComposer() {
     if (loading || error) return;
     void loadComposer().catch(() => {});
@@ -401,7 +405,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       <div className="mg-page-heading">{kind === 'contracts' ? <div><h1>{config.title}</h1><RecordTotal label={overdueOnly?'Tổng hợp đồng quá hạn':paymentDueOnly?'Tổng hợp đồng đến hạn':recentWindow?'Hợp đồng đang mở và gần đây':'Toàn bộ hợp đồng'} count={table.data&&!statisticsUnavailable ? scopeCount : null} loading={statisticsLoading} className="mg-contract-total"/>{!draftsOnly&&<p>Cơ sở đang xem lọc theo nguồn khách (cơ sở tạo hợp đồng). Dưới biển số ghi cơ sở sở hữu xe.</p>}{overdueOnly&&!compactContracts&&<p>{config.description}</p>}</div> : <div><div className="mg-eyebrow">DANH MỤC QUẢN LÝ <span>/</span> {String(navigationNumber(kind)).padStart(2, '0')}</div><h1>{config.title}</h1><RecordTotal label={{customers:'Toàn bộ khách hàng',vehicles:'Xe đang quản lý',stores:'Toàn bộ cơ sở',staff:'Toàn bộ nhân viên'}[kind]} count={table.data ? scopeCount : null} loading={loading}/><p>{kind==='vehicles'?'Tổng xe đang quản lý không gồm xe đã bán; chọn Đã bán để tra cứu lịch sử. Cơ sở đang xem lọc theo cơ sở sở hữu xe. Dưới tên khách ghi nguồn khách; kho quản lý vẫn hiện riêng.':config.description}</p></div>}
         {kind==='contracts'&&<div className="mg-heading-actions mg-contract-flow">
           {(canSaveContractDrafts||can('contracts.renew')||canPayContracts)&&<button type="button" className="mg-button" onClick={()=>setBackfillOpen(true)}><Plus size={17}/>Nhập bổ sung giao dịch</button>}
-          {canSaveContractDrafts&&<><button type="button" className="mg-button" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposer} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}}><Plus size={17}/>Nhập hợp đồng</button></>}
+          {canSaveContractDrafts&&<><button type="button" className="mg-button" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposerChunk} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('reservation');setComposerOpen(true);}}><Plus size={17}/>Nhận cọc giữ xe</button><button type="button" className="mg-button mg-button-primary" disabled={loading||Boolean(error)||!dataset} onPointerEnter={warmComposerChunk} onFocus={warmComposer} onClick={()=>{setPrintRow(null);setComposerMode('draft');setComposerOpen(true);}}><Plus size={17}/>Nhập hợp đồng</button></>}
         </div>}
         <button type="button" className="mg-button mg-excel-export" onClick={() => void exportExcel()} disabled={loading || Boolean(error) || !resultCount || exporting}><ArrowDownToLine size={17} />{exporting ? 'Đang xuất…' : 'Tải Excel theo bộ lọc'}</button>
         <OptionalTools collapsed={compactContracts} label="Thao tác khác"><div className="mg-heading-actions">{kind !== 'contracts' && kind !== 'vehicles' && <ResponsiveDataActions>{canBulkDelete && <button type="button" className="mg-button mg-button-danger" disabled={loading || Boolean(error) || !selectedIds.size} onClick={() => { setBulkDeleteError(''); setBulkDeleteOpen(true); }}><Trash2 size={16} />Xóa đã chọn{selectedIds.size ? ` (${selectedIds.size})` : ''}</button>}

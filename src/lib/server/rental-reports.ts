@@ -4,7 +4,8 @@ import { CASHBOOK_BREAKDOWN_KEYS, type CashbookBreakdown } from '@/lib/managemen
 import { rentalOverviewRow, type VehicleRevenueRow, type VehicleRevenueDetail } from '@/lib/management/rental-reports';
 import { CASHBOOK_LIST_SQL } from './cashbook-list';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
-import { RENTAL_REVENUE_CTE } from './rental-revenue';
+import { depositReceiptSql } from './contract-deposits';
+import { renewalReceiptSql } from './contract-receipts';
 
 type Database = Pick<PoolClient, 'query'>;
 export class RentalReportError extends Error {}
@@ -99,6 +100,33 @@ export async function vehicleRevenue(db: Database, params: URLSearchParams) {
     rentals: amount(data.rentals), rental: amount(data.rental), renewal: amount(data.renewal), adjustment: amount(data.adjustment), revenue: amount(data.revenue), rows: data.rows.map(vehicleRow) };
 }
 
+const RENTAL_OVERVIEW_CTE = `WITH scoped_orders AS MATERIALIZED (
+  SELECT o.id, COALESCE(f.amount,0) AS initial_fees
+  FROM himoto.orders o
+  LEFT JOIN LATERAL (SELECT SUM(CASE WHEN charge->>'amount' ~ '^[0-9]{1,13}$' THEN (charge->>'amount')::numeric ELSE 0 END) AS amount
+    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.draft_payload::jsonb #> '{management_composer,draft,extra_charges}')='array'
+      THEN o.draft_payload::jsonb #> '{management_composer,draft,extra_charges}' ELSE '[]'::jsonb END) charge) f ON true
+  WHERE o.id=ANY($4::bigint[]) AND ${VEHICLE_ORDER_SQL}
+), classified AS (
+  SELECT t.id,t.order_id,t.created_at,t.value,
+    CASE WHEN t.type='out' THEN CASE WHEN t.name='order:rental_refund' THEN 'early'
+      WHEN t.name='order:deposit_refund' OR t.name LIKE 'order:complete:%' THEN 'excluded' ELSE 'unclassified' END
+    WHEN ${depositReceiptSql()} THEN 'excluded'
+    WHEN t.name IN('order:return_repair','order:extra','order:outside','order:vat','order:tax') THEN 'company_fee'
+    WHEN t.name='order:return_late' THEN 'late'
+    WHEN ${renewalReceiptSql()} THEN 'renewal'
+    WHEN t.name LIKE 'order:rental_fees%' OR t.name='order:payment' THEN 'rental'
+    ELSE 'unclassified' END AS category,
+    o.initial_fees
+  FROM himoto.transactions t JOIN scoped_orders o ON o.id=t.order_id
+  WHERE t.status='approved' AND t.type IN('in','addon','out')
+    AND t.order_id=ANY($4::bigint[])
+    AND t.created_at < (($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+), allocated AS (
+  SELECT id,category,value,initial_fees,SUM(CASE WHEN category='rental' THEN value ELSE 0 END)
+    OVER(PARTITION BY order_id ORDER BY created_at,id ROWS UNBOUNDED PRECEDING) AS regular_total FROM classified
+)`;
+
 // Same approved vouchers and categories as Cashbook. No per-contract snapshots
 // are added to received money; daily/store subtotals reconcile to the overview.
 export async function rentalOverview(db: Database, params: URLSearchParams) {
@@ -111,7 +139,12 @@ export async function rentalOverview(db: Database, params: URLSearchParams) {
       AND t.created_at>=($1::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
       AND t.created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
       AND ($3::bigint IS NULL OR t.store_id=$3)`,[from,to,store]);
-  const result = await db.query(`${RENTAL_REVENUE_CTE}, original_vouchers AS (${CASHBOOK_LIST_SQL}), vouchers AS (
+  const total = Object.fromEntries(CASHBOOK_BREAKDOWN_KEYS.map(field => [field, 0])) as CashbookBreakdown;
+  if (!relevant.rows.length) {
+    const summary = rentalOverviewRow('total', 'Tổng', total);
+    return { rows: [], total: summary };
+  }
+  const result = await db.query(`${RENTAL_OVERVIEW_CTE}, original_vouchers AS (${CASHBOOK_LIST_SQL}), vouchers AS (
     SELECT v.*,CASE WHEN a.category='rental' THEN LEAST(a.regular_total,a.initial_fees)-LEAST(a.regular_total-a.value,a.initial_fees) ELSE 0 END AS company_share
     FROM original_vouchers v LEFT JOIN allocated a ON a.id=v.id
   ) SELECT ${key} AS key,${name} AS name,
@@ -126,7 +159,6 @@ export async function rentalOverview(db: Database, params: URLSearchParams) {
       AND ($3::bigint IS NULL OR v.store_id=$3)
       AND EXISTS(SELECT 1 FROM himoto.orders o WHERE o.id=v.order_id AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL})
     GROUP BY ${key} ORDER BY ${view === 'days' ? 'key DESC' : 'name,key'}`, [from, to, store,relevant.rows.map(row=>String(row.order_id))]);
-  const total = Object.fromEntries(CASHBOOK_BREAKDOWN_KEYS.map(field => [field, 0])) as CashbookBreakdown;
   const rows = result.rows.map(row => {
     const breakdown = Object.fromEntries(CASHBOOK_BREAKDOWN_KEYS.map(field => [field, amount(row[field])])) as CashbookBreakdown;
     for (const field of CASHBOOK_BREAKDOWN_KEYS) total[field] += breakdown[field];

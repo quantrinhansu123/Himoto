@@ -41,6 +41,7 @@ export async function readMobileGpsPage(db: Pick<PoolClient, 'query'>, query: Mo
       THEN 'long_stopped' ELSE base_state END AS "displayState" FROM base
   ), filtered AS (
     SELECT * FROM projected WHERE ($5::text='all' OR provider=$5) AND ($6::text='all' OR "displayState"=$6)
+      AND ($9::text='all' OR vehicle_status=$9)
       AND (position($7::text in lower(COALESCE(license,'')))>0 OR position($7::text in lower(COALESCE(provider_device_name,'')))>0
         OR position($7::text in lower(COALESCE(external_device_id,'')))>0 OR position($7::text in lower(COALESCE(store_name,'')))>0)
   ), bounds AS (
@@ -56,7 +57,7 @@ export async function readMobileGpsPage(db: Pick<PoolClient, 'query'>, query: Mo
     ${devicesOnly ? `'[]'::jsonb` : `COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'label',COALESCE(NULLIF(license,''),NULLIF(provider_device_name,''),external_device_id))
       ORDER BY sync_received_at DESC NULLS LAST,id DESC) FROM devices WHERE id>0),'[]'::jsonb)`} AS "eventDevices"`,
   [query.store === 'all' ? null : Number(query.store), new Date(now).toISOString(), GPS_SYNC_STALE_MS, GPS_LONG_STOP_MS,
-    query.provider, query.state, query.search.toLowerCase(), query.page]);
+    query.provider, query.state, query.search.toLowerCase(), query.page, query.vehicle_status]);
   const row = result.rows[0];
   const events = devicesOnly ? { rows: [] } : await readGpsEvents(db, query.store, query.event_source, query.event_device);
   const stores = await db.query('SELECT id,store_name FROM himoto.stores ORDER BY store_name,id');

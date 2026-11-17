@@ -34,9 +34,12 @@ function PhotoBatchForm({adapter,nextSlot,onSaved,onTelegram,onPrepared,onPendin
   async function pick(camera:boolean){
     if(!store||running.current||disabled)return;running.current=true;setBusy(true);setError('');const at=token.current;abort.current=new AbortController();
     let first:BatchPhoto|undefined;
-    try{await selectRecordMediaPhotos(camera,abort.current.signal,async(photo,index,total)=>{
-      try{if(!alive.current||token.current!==at||identityRef.current!==identity)return;const existing=await store.list();const row:BatchPhoto={id:uuid.v4().toLowerCase(),slot:nextSlot(existing),width:photo.width,height:photo.height,size:photo.size,key:uuid.v4().toLowerCase(),attempt:null,state:'queued',error:''};await store.add(row,photo);first??=row;await refresh();if(alive.current&&identityRef.current===identity)setNotice(`Đã giữ ảnh ${index+1}/${total}. Chờ chuẩn bị xong cả bộ để rời màn hình.`);}finally{photo.dispose();}
-    });}catch(e){if(alive.current)setError((e as Error).message);}finally{
+    try{
+      const existing=await store.list();
+      await selectRecordMediaPhotos(camera,abort.current.signal,async(photo,index,total)=>{
+        try{if(!alive.current||token.current!==at||identityRef.current!==identity)return;const row:BatchPhoto={id:uuid.v4().toLowerCase(),slot:nextSlot(existing),width:photo.width,height:photo.height,size:photo.size,key:uuid.v4().toLowerCase(),attempt:null,state:'queued',error:''};await store.add(row,photo);existing.push(row);first??=row;if(alive.current&&identityRef.current===identity){setRows([...existing]);setNotice(`Đã giữ ảnh ${index+1}/${total}. Chờ chuẩn bị xong cả bộ để rời màn hình.`);}}finally{photo.dispose();}
+      });
+    }catch(e){if(alive.current)setError((e as Error).message);}finally{
       // OCR runs only after the whole album is durable; it never delays holding the remaining files.
       running.current=false;if(alive.current)setBusy(false);
       if(first&&onPrepared&&alive.current&&token.current===at&&identityRef.current===identity){const firstPhoto=first;void(async()=>{let held:RecordMediaPhoto|undefined;try{held=await store.photo(firstPhoto);if(alive.current&&token.current===at&&identityRef.current===identity)await onPrepared(held,0);}catch(e){if(alive.current&&identityRef.current===identity)setError((e as Error).message);}finally{held?.dispose();}})();}

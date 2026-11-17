@@ -10,7 +10,7 @@ import { offlineStatus } from './offline-status';
 const lookupFamilies = new Set([
   'workspace', 'overview', 'catalogue', 'record', 'vehicle-profile',
   'fleet-inventory', 'vehicle-history', 'vehicle-contracts', 'transfer-history',
-  'directory', 'staff-organization', 'store-contracts', 'operations',
+  'directory', 'staff-organization', 'store-contracts', 'operations', 'operations-overview',
   'cashbook', 'cashbook-accounts', 'cashbook-account-transactions',
   'report-options', 'sales-report', 'dashboard', 'shifts', 'duty-roster',
   'attendance', 'guide-faq', 'notifications', 'notification-activity',
@@ -33,7 +33,7 @@ export function refreshActiveLookups(client: QueryClient) {
  * Inactive destinations are marked stale and load on mount. Never touch writes. */
 export function refreshTabLookups(client: QueryClient, tab: string) {
   const families: Record<string, readonly string[]> = {
-    index: ['overview', 'workspace', 'operations'],
+    index: ['overview', 'workspace', 'operations', 'operations-overview'],
     vehicles: ['catalogue', 'workspace'], contracts: ['catalogue', 'workspace'],
     customers: ['catalogue', 'workspace'], account: ['workspace'],
   };

@@ -204,6 +204,8 @@ const RecordCard = memo(function RecordCard({
     </Card>
   );
 });
+const CatalogueSeparator = () => <View style={{ height: 10 }} />;
+
 export function CatalogueScreen({
   kind,
   initialStatus = "",
@@ -713,7 +715,7 @@ export function CatalogueScreen({
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+        ItemSeparatorComponent={CatalogueSeparator}
         refreshControl={
           <RefreshControl
             refreshing={query.isRefetching && !query.isFetchingNextPage}

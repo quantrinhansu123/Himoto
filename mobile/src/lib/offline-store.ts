@@ -24,16 +24,21 @@ export async function createOfflineStore(db: OfflineDatabase, changed = () => {}
       retry_at INTEGER NOT NULL DEFAULT 0, lease_until INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
     CREATE INDEX IF NOT EXISTS offline_outbox_scope ON offline_outbox(scope,created_at);`);
   await db.execAsync(`CREATE TABLE IF NOT EXISTS lookup_queries (
-    scope TEXT NOT NULL, hash TEXT NOT NULL, body TEXT NOT NULL, saved_at INTEGER NOT NULL,
+    scope TEXT NOT NULL, hash TEXT NOT NULL, body TEXT NOT NULL, saved_at INTEGER NOT NULL, byte_len INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(scope,hash));`);
+  try {
+    await db.execAsync('ALTER TABLE lookup_queries ADD COLUMN byte_len INTEGER NOT NULL DEFAULT 0');
+    await db.execAsync('UPDATE lookup_queries SET byte_len=length(CAST(body AS BLOB)) WHERE byte_len=0 AND length(body)>0');
+  } catch {}
+  const utf8Length = (value: string) => typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(value).byteLength : value.length * 3;
   const store = {
     async cacheQuery(scope: string, hash: string, snapshot: unknown) {
-      const body = JSON.stringify(snapshot);
-      if (body.length > 128 * 1024) return;
-      await db.runAsync('INSERT INTO lookup_queries(scope,hash,body,saved_at) VALUES(?,?,?,?) ON CONFLICT(scope,hash) DO UPDATE SET body=excluded.body,saved_at=excluded.saved_at', scope, hash, body, now());
+      const body = JSON.stringify(snapshot), byteLen = utf8Length(body);
+      if (body.length > 128 * 1024 || byteLen > 256 * 1024) return;
+      await db.runAsync('INSERT INTO lookup_queries(scope,hash,body,saved_at,byte_len) VALUES(?,?,?,?,?) ON CONFLICT(scope,hash) DO UPDATE SET body=excluded.body,saved_at=excluded.saved_at,byte_len=excluded.byte_len', scope, hash, body, now(), byteLen);
       await db.runAsync(`DELETE FROM lookup_queries WHERE saved_at<? OR rowid IN (
         SELECT rowid FROM (SELECT rowid,row_number() OVER(ORDER BY saved_at DESC,rowid DESC) AS n,
-          sum(length(CAST(body AS BLOB))) OVER(ORDER BY saved_at DESC,rowid DESC) AS bytes FROM lookup_queries)
+          sum(CASE WHEN byte_len>0 THEN byte_len ELSE length(CAST(body AS BLOB)) END) OVER(ORDER BY saved_at DESC,rowid DESC) AS bytes FROM lookup_queries)
         WHERE n>40 OR bytes>4194304)`, now() - OFFLINE_TTL);
     },
     async readQueries(scope: string): Promise<unknown[]> {
@@ -78,6 +83,10 @@ export async function createOfflineStore(db: OfflineDatabase, changed = () => {}
       changed(); return row;
     },
     list(scope: string) { return db.getAllAsync<OfflineWrite>("SELECT * FROM offline_outbox WHERE scope=? ORDER BY CASE WHEN state='committed' THEN 1 ELSE 0 END,created_at,key LIMIT 40", scope); },
+    async hasPendingWrites() {
+      const row = await db.getFirstAsync<{ one: number }>("SELECT 1 AS one FROM offline_outbox WHERE state IN ('queued','sending') LIMIT 1");
+      return row !== null;
+    },
     listActor(origin: string, userId: number) {
       return db.getAllAsync<OfflineWrite>("SELECT * FROM offline_outbox WHERE json_extract(scope,'$[0]')=? AND json_extract(scope,'$[1]')=? ORDER BY CASE WHEN state='committed' THEN 1 ELSE 0 END,created_at,key LIMIT 40", origin, userId);
     },

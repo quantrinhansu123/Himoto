@@ -6,6 +6,8 @@ import type { StoredSession } from './session-codec';
 
 const KEY = "himoto.mobile.session.v1";
 let previewSession: string | null = null;
+let hydrated = false;
+let cachedRaw: string | null = null;
 // Native storage is asynchronous. A late delete from a previous session must
 // finish before a new login writes its token.
 let pending: Promise<unknown> = Promise.resolve();
@@ -14,18 +16,35 @@ function serialize<T>(operation: () => Promise<T>): Promise<T> {
   pending = result.catch(() => {});
   return result;
 }
-const get = () => Platform.OS === 'web' ? Promise.resolve(previewSession) : SecureStore.getItemAsync(KEY);
+async function get() {
+  if (Platform.OS === 'web') return previewSession;
+  if (hydrated) return cachedRaw;
+  const value = await SecureStore.getItemAsync(KEY);
+  cachedRaw = value;
+  hydrated = true;
+  return value;
+}
 async function put(value: string) {
   if (Platform.OS === 'web') previewSession = value;
-  else await SecureStore.setItemAsync(KEY, value, { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY });
+  else {
+    await SecureStore.setItemAsync(KEY, value, { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY });
+    cachedRaw = value;
+    hydrated = true;
+  }
+}
+async function removeStored() {
+  if (Platform.OS === 'web') previewSession = null;
+  else {
+    await SecureStore.deleteItemAsync(KEY);
+    cachedRaw = null;
+    hydrated = true;
+  }
 }
 export const sessionStore = {
   async read(origin: string) {
     return serialize(async () =>
       decodeStoredSession(
-        Platform.OS === "web"
-          ? previewSession
-          : await SecureStore.getItemAsync(KEY),
+        await get(),
         origin,
       ),
     );
@@ -69,15 +88,13 @@ export const sessionStore = {
     return serialize(async () => {
       const current = decodeStoredSession(await get(), origin);
       if (!current || (current.sessionId || current.token) !== family) return false;
-      if (Platform.OS === 'web') previewSession = null;
-      else await SecureStore.deleteItemAsync(KEY);
+      await removeStored();
       return true;
     });
   },
   async clear() {
     return serialize(async () => {
-      if (Platform.OS === "web") previewSession = null;
-      else await SecureStore.deleteItemAsync(KEY);
+      await removeStored();
     });
   },
 };
