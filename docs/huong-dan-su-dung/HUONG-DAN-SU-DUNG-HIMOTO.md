@@ -465,7 +465,7 @@ Chụp ảnh, lấy GPS và ghi nhận giờ vào/ra theo giờ Việt Nam.
 
 **Kết quả cần thấy:** Có đủ giờ vào và giờ ra; ca đã kết thúc.
 
-**Lưu ý:** Phải ra ca trước khi bắt đầu ca mới. Giờ ghi nhận theo máy chủ, giờ Việt Nam. Ảnh minh họa hộp thoại khi camera chưa sẵn sàng; cần mở được camera và chụp ảnh để bật nút xác nhận.
+**Lưu ý:** Trong cùng ngày, phải ra ca trước khi vào ca tiếp theo. Từ 00:00 giờ Việt Nam, bạn có thể vào ca mới; lượt hôm trước thiếu giờ ra sẽ hiển thị Chưa chấm công ra. Ảnh minh họa hộp thoại khi camera chưa sẵn sàng; cần mở được camera và chụp ảnh để bật nút xác nhận.
 
 ### Đối chiếu lịch sử chấm công
 

@@ -16,8 +16,9 @@ CREATE TABLE IF NOT EXISTS himoto.management_staff_attendance (
   out_location jsonb,
   CHECK(clock_out_at IS NULL OR clock_out_at >= clock_in_at)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS management_staff_attendance_open
-  ON himoto.management_staff_attendance(staff_id) WHERE clock_out_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS management_staff_attendance_open_day
+  ON himoto.management_staff_attendance(staff_id, ((clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date))
+  WHERE clock_out_at IS NULL;
 CREATE INDEX IF NOT EXISTS management_staff_attendance_date
   ON himoto.management_staff_attendance(clock_in_at DESC,store_id);
 ALTER TABLE himoto.management_staff_attendance ENABLE ROW LEVEL SECURITY;

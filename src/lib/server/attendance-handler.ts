@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { SessionUser } from '@/lib/server/management-session';
 import { ownerDatabase } from '@/lib/server/himoto-database';
-import { ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
+import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
 import { failureResponse } from '@/lib/server/public-failure';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { isAdminAccount } from '@/lib/management/permissions';
@@ -37,9 +37,12 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       if (!valid(from)||!valid(to)||from>to||Date.parse(to)-Date.parse(from)>93*86400000||store!=='all'&&!/^[1-9]\d{0,14}$/.test(store)||!Number.isSafeInteger(page)||page<1||page>100000) throw new AttendanceError('Chọn khoảng ngày tối đa 93 ngày và cơ sở hợp lệ.');
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const staff = await attendanceStaff(client,user);
-      const open = staff ? (await client.query('SELECT id,clock_in_at FROM himoto.management_staff_attendance WHERE staff_id=$1 AND clock_out_at IS NULL',[staff.id])).rows[0] : null;
-      const latest = staff ? (await client.query(`SELECT clock_in_at,clock_out_at FROM himoto.management_staff_attendance WHERE staff_id=$1 AND (clock_out_at IS NULL OR (clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date=(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) ORDER BY clock_in_at DESC LIMIT 1`,[staff.id])).rows[0] : null;
-      const registration = staff ? (await client.query(`SELECT registration.work_date::text,registration.shift_code FROM (SELECT $1::bigint AS staff_id,$2::timestamptz AS clock_in_at) a ${ATTENDANCE_SHIFT_JOIN}`,[staff.id,latest?.clock_in_at || new Date()])).rows[0] : undefined;
+      const { now } = (await client.query('SELECT clock_timestamp() AS now')).rows[0];
+      const open = staff ? (await client.query(`SELECT id,clock_in_at FROM himoto.management_staff_attendance
+        WHERE staff_id=$1 AND clock_out_at IS NULL AND ${ATTENDANCE_ON_LOCAL_DATE}`,[staff.id,now])).rows[0] : null;
+      const latest = staff ? (await client.query(`SELECT clock_in_at,clock_out_at FROM himoto.management_staff_attendance
+        WHERE staff_id=$1 AND ${ATTENDANCE_ON_LOCAL_DATE} ORDER BY clock_in_at DESC,id DESC LIMIT 1`,[staff.id,now])).rows[0] : null;
+      const registration = staff ? (await client.query(`SELECT registration.work_date::text,registration.shift_code FROM (SELECT $1::bigint AS staff_id,$2::timestamptz AS clock_in_at) a ${ATTENDANCE_SHIFT_JOIN}`,[staff.id,latest?.clock_in_at || now])).rows[0] : undefined;
       const comparison = compareRegisteredAttendance(registration, latest?.clock_in_at, latest?.clock_out_at);
       const shift = comparison.scheduled_in && comparison.scheduled_out
         ? { shift_name: comparison.shift_name, starts_at: comparison.scheduled_in, ends_at: comparison.scheduled_out }
@@ -48,7 +51,7 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
         staff:staff?{name:staff.full_name,store_id:staff.store_id,store_name:staff.store_name}:null,
         open:open||null,latest:latest||null,shift,shift_code:comparison.shift_name,
         late_minutes:comparison.late_minutes,early_leave_minutes:comparison.early_leave_minutes,
-        server_now:new Date().toISOString(),
+        server_now:now.toISOString(),
       };
       if (params.get('view') === 'summary') {
         await client.query('COMMIT');

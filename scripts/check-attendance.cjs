@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict'), path = require('node:path');
+const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
 const {load,root} = require('./lib/load-typescript.cjs');
 const {ownerDatabase} = load(path.join(root,'lib/server/himoto-database'));
@@ -45,10 +45,18 @@ async function main() {
   const client=await ownerDatabase.connect();
   try {
     await client.query('BEGIN');
-    await client.query('CREATE TEMP TABLE qa_attendance (LIKE himoto.management_staff_attendance INCLUDING ALL) ON COMMIT DROP');
+    await client.query(`CREATE TEMP TABLE qa_attendance (LIKE himoto.management_staff_attendance INCLUDING ALL EXCLUDING INDEXES) ON COMMIT DROP;
+      ALTER TABLE qa_attendance ADD PRIMARY KEY (id), ADD UNIQUE (in_request), ADD UNIQUE (out_request);
+      CREATE UNIQUE INDEX management_staff_attendance_open ON qa_attendance(staff_id) WHERE clock_out_at IS NULL`);
+    const migration = fs.readFileSync('docs/sql/2026-11-17-attendance-open-per-day.sql','utf8')
+      .replace(/^(BEGIN|COMMIT);$/gm,'')
+      .replace('ON himoto.management_staff_attendance(','ON pg_temp.qa_attendance(')
+      .replace('DROP INDEX IF EXISTS himoto.', 'DROP INDEX IF EXISTS pg_temp.');
+    await client.query(migration);
     const staff = {id:900001,full_name:'QA chấm công',store_id:2};
-    let linked=true;
+    let linked=true, punchTime;
     const db = {query(sql,args) {
+      if(punchTime && sql==='SELECT clock_timestamp() AS now') return Promise.resolve({rows:[{now:punchTime}]});
       if(sql.includes('FROM himoto.staff_profiles')) return Promise.resolve({rows:linked?[staff]:[]});
       sql=sql.replaceAll('himoto.management_staff_attendance','pg_temp.qa_attendance');
       assert(!sql.includes('himoto.'));
@@ -89,9 +97,22 @@ async function main() {
     await assert.rejects(manageAttendance(db,admin,'DELETE',original),e=>e.status===409);
     await manageAttendance(db,admin,'DELETE',{...original,original_in:correction.clock_in_at});
     assert.equal((await client.query('SELECT id FROM qa_attendance WHERE id=$1',[first.id])).rowCount,0);
+    const yesterdayId='66666666-6666-4666-8666-666666666666', todayId='77777777-7777-4777-8777-777777777777',
+      checkoutId='88888888-8888-4888-8888-888888888888';
+    punchTime = new Date('2026-11-15T16:59:59Z');
+    const yesterday = await recordAttendance(db,user,'in',yesterdayId,photo,location);
+    punchTime = new Date('2026-11-15T17:00:00Z');
+    await assert.rejects(recordAttendance(db,user,'out',checkoutId,photo,location),e=>e.status===409);
+    const today = await recordAttendance(db,user,'in',todayId,photo,location);
+    assert.equal((await recordAttendance(db,user,'in',yesterdayId,photo,location)).id,yesterday.id);
+    await assert.rejects(recordAttendance(db,user,'in','99999999-9999-4999-8999-999999999999',photo,location),e=>e.status===409);
+    assert.equal((await recordAttendance(db,user,'out',checkoutId,photo,location)).id,today.id);
+    const punches = (await client.query('SELECT clock_out_at,out_request,out_photo FROM qa_attendance ORDER BY id')).rows;
+    assert.deepEqual(punches[0],{clock_out_at:null,out_request:null,out_photo:null});
+    assert.equal(punches[1].clock_out_at.toISOString(),punchTime.toISOString());
     linked=false;
     await assert.rejects(recordAttendance(db,user,'in','55555555-5555-4555-8555-555555555555',photo,location),e=>e.status===409);
-    console.log('PASS: in/out pairing, request safety, shift matching, scoped reads and admin-only edits/deletes. Real attendance writes: 0 (TEMP only).');
+    console.log('PASS: in/out pairing, Vietnam midnight rollover, request safety, shift matching, scoped reads and admin-only edits/deletes. Real attendance writes: 0 (TEMP only).');
   } finally {await client.query('ROLLBACK');client.release();await globalThis.himotoPool?.end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

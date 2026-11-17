@@ -31,19 +31,40 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
   const canReview=session!.user.permissions.includes('hr.read');
   const [editing,setEditing]=useState<AttendanceEntry|null>(null);
   const query=useQuery({queryKey:['attendance',session!.user.id,session!.user.storeId,session!.user.permissions.join(','),historyOnly,from,to,store,page],queryFn:async({signal})=>historyOnly?api!.attendance(new URLSearchParams({from,to,store,page:String(page)}).toString(),signal):{...await api!.attendanceOverview(signal),rows:[] as AttendanceEntry[],total:0,page:1},enabled:!!api&&(!historyOnly||from<=to)});
+  const {server_now: serverNow} = query.data ?? {};
+  const {dataUpdatedAt, refetch} = query;
+  const pendingIsFromPriorDay = Boolean(pending && serverNow &&
+    dutyToday(new Date(pending.location.timestamp)) < dutyToday(new Date(serverNow)));
+  useEffect(() => {
+    if (historyOnly || !serverNow) return;
+    const nextMidnight = Date.parse(dutyToday(new Date(serverNow)) + 'T00:00:00+07:00') + 86400000;
+    const delay = nextMidnight - Date.parse(serverNow) - (Date.now() - dataUpdatedAt);
+    const timer = setTimeout(() => {
+      setAction(null);
+      void refetch();
+    }, Math.max(1000, delay));
+    return () => clearTimeout(timer);
+  }, [historyOnly, serverNow, dataUpdatedAt, refetch]);
   useEffect(()=>{alive.current=true;void loadAttendancePending(actor,origin).then(value=>{if(alive.current)setPending(value);}).catch(failure=>{if(alive.current)setError(failure.message);}).finally(()=>{if(alive.current)setRestoring(false);});return()=>{alive.current=false;camera.current?.abort();currentPhoto.current?.dispose();};},[actor,origin]);
   async function run(job:()=>Promise<void>){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await job();}catch(failure){if(alive.current)setError((failure as Error).message);}finally{lock.current=false;if(alive.current)setBusy(false);}}
   async function acknowledge(id:string){await clearAttendancePending(session!.user.id,id);setPending(null);setAction(null);setLocation(null);photo?.dispose();setPhoto(null);setNotice('Máy chủ đã xác nhận chấm công.');await query.refetch();}
   async function resolve(){if(!pending)return;const result=await api!.resolveAttendance(pending.id);if(result.result)await acknowledge(pending.id);else setNotice('Máy chủ chưa ghi nhận mã này. Thử lại cùng lần chấm; không tạo mã mới.');}
   async function restartFromPending(){
     if(!pending)return;
-    const targetAction=pending.action;
+    let targetAction=pending.action;
     try {
       const result=await api!.resolveAttendance(pending.id);
       if(result.result){await acknowledge(pending.id);return;}
     } catch {}
+    if (pendingIsFromPriorDay) {
+      const latest = await refetch({throwOnError:true});
+      targetAction = latest.data?.open ? 'out' : 'in';
+    }
     await discardAttendancePending(session!.user.id,pending.id);
     setPending(null);
+    photo?.dispose();
+    setPhoto(null);
+    setLocation(null);
     setNotice('');
     setError('');
     setAction(targetAction);
@@ -57,6 +78,7 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
     }else{
       const result=await api!.resolveAttendance(attempt.id);
       if(result.result){await acknowledge(attempt.id);return;}
+      if(pendingIsFromPriorDay)throw Error('Lần chấm đang chờ thuộc ngày trước. Bấm Chấm công cho ngày mới.');
       if(Math.abs(Date.now()-attempt.location.timestamp)>4*60000){
         const refreshed=await locateAttendance();
         attempt=await refreshAttendancePendingLocation(actor,origin,attempt.id,refreshed);setPending(attempt);
@@ -80,7 +102,7 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
           {copy(query.data?.open?'Đang trong ca · Vào lúc '+dateTime(query.data.open.clock_in_at):'Chưa có ca đang mở')}
           {query.data?.shift&&copy(`Ca ${query.data.shift.shift_name} · ${dateTime(query.data.shift.starts_at)} → ${dateTime(query.data.shift.ends_at)}`)}
           {query.data?.late_minutes!==null&&query.data?.late_minutes!==undefined&&copy(query.data.late_minutes?`Đi muộn ${query.data.late_minutes} phút`:'Đúng giờ theo ca đăng ký')}
-          {pending?<><InlineError message={`Có lần ${pending.action==='in'?'vào':'ra'} ca chưa xác nhận. Giữ mã ${pending.id} để đối chiếu.`}/><Button label="Đối chiếu lần chấm đang chờ" loading={busy} onPress={()=>{void run(resolve);}}/><Button secondary label="Thử lại cùng lần chấm công" disabled={busy} onPress={()=>{void run(save);}}/><Button secondary label={`Chụp lại ảnh để ${pending.action==='in'?'vào ca':'ra ca'} ngay`} disabled={busy} onPress={()=>{void run(restartFromPending);}}/></>:<Button label={query.data?.open?'Ra ca':'Vào ca'} disabled={restoring||busy||query.isError||!query.data?.staff} onPress={()=>{setAction(query.data?.open?'out':'in');setError('');setNotice('');}}/>}
+          {pending?<><InlineError message={`Có lần ${pending.action==='in'?'vào':'ra'} ca chưa xác nhận. Giữ mã ${pending.id} để đối chiếu.`}/><Button label="Đối chiếu lần chấm đang chờ" loading={busy} onPress={()=>{void run(resolve);}}/>{!pendingIsFromPriorDay&&<Button secondary label="Thử lại cùng lần chấm công" disabled={busy} onPress={()=>{void run(save);}}/>}<Button secondary label={pendingIsFromPriorDay?'Chấm công cho ngày mới':`Chụp lại ảnh để ${pending.action==='in'?'vào ca':'ra ca'} ngay`} disabled={busy} onPress={()=>{void run(restartFromPending);}}/></>:<Button label={query.data?.open?'Ra ca':'Vào ca'} disabled={restoring||busy||query.isError||!query.data?.staff} onPress={()=>{setAction(query.data?.open?'out':'in');setError('');setNotice('');}}/>}
           {query.data&&!query.data.staff&&copy('Tài khoản chưa liên kết với một nhân viên đang hoạt động. Liên hệ quản lý nhân sự.')}
           {copy('Chấm công cần mạng, ảnh hiện tại và GPS. Giờ được ghi theo máy chủ; ảnh không tự gửi nền.')}
         </Card>
@@ -102,7 +124,7 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
       </View>}
       renderItem={({item:row})=><Card style={{gap:10}}>
         <Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{row.staff_name}</Text>
-        {copy(row.store_name||'Chưa có cơ sở')}{copy(`Vào ca: ${dateTime(row.clock_in_at)}`)}{copy(row.clock_out_at?`Ra ca: ${dateTime(row.clock_out_at)}`:'Đang trong ca')}
+        {copy(row.store_name||'Chưa có cơ sở')}{copy(`Vào ca: ${dateTime(row.clock_in_at)}`)}{copy(row.clock_out_at?`Ra ca: ${dateTime(row.clock_out_at)}`:'Chưa chấm công ra')}
         {row.shift_name&&copy('Ca '+row.shift_name)}{row.late_minutes!==null&&copy(row.late_minutes?`Đi muộn ${row.late_minutes} phút`:'Đúng giờ')}
         {typeof row.standard_credit==='number'&&copy(`Công quy định: ${row.standard_credit.toLocaleString('vi-VN')}`)}
         {row.early_leave_minutes!=null&&copy(row.early_leave_minutes?`Về sớm ${row.early_leave_minutes} phút`:'Không về sớm')}

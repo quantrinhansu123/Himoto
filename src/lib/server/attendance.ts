@@ -6,6 +6,7 @@ import { attendanceShift } from '@/lib/management/attendance-shifts';
 import { REGISTRATION_SHIFTS } from '@/lib/management/shift-registration';
 
 type Database = Pick<PoolClient, 'query'>;
+export const ATTENDANCE_ON_LOCAL_DATE = "(clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date=($2::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date";
 export class AttendanceError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export const canReviewAttendance = (user: SessionUser) => hasPermission(user, 'hr.read');
 export function attendanceScope(user: SessionUser) {
@@ -27,7 +28,7 @@ export async function manageAttendance(db: Database, user: SessionUser, method: 
     throw new AttendanceError('Lượt chấm công không hợp lệ.');
   }
   const body = input as Record<string, unknown>;
-  const current = (await db.query(`SELECT clock_in_at,clock_out_at
+  const current = (await db.query(`SELECT clock_in_at,clock_out_at,clock_timestamp() AS now
     FROM himoto.management_staff_attendance WHERE id=$1 FOR UPDATE`,[body.id])).rows[0];
   if (!current) throw new AttendanceError('Không tìm thấy lượt chấm công.',404);
   if (current.clock_in_at.toISOString() !== body.original_in || (current.clock_out_at?.toISOString() ?? null) !== body.original_out) {
@@ -40,11 +41,18 @@ export async function manageAttendance(db: Database, user: SessionUser, method: 
   const clockIn = attendanceEditTime(body.clock_in_at);
   const clockOut = body.clock_out_at === null && current.clock_out_at === null ? null : attendanceEditTime(body.clock_out_at);
   if (clockOut && clockOut < clockIn) throw new AttendanceError('Giờ ra phải từ giờ vào trở đi.');
-  if ((clockOut ?? clockIn).getTime() > Date.now()) throw new AttendanceError('Giờ chấm công không được ở tương lai.');
-  await db.query(`UPDATE himoto.management_staff_attendance
+  if ((clockOut ?? clockIn) > current.now) throw new AttendanceError('Giờ chấm công không được ở tương lai.');
+  try {
+    await db.query(`UPDATE himoto.management_staff_attendance
     SET clock_in_at=CASE WHEN $2::boolean THEN clock_in_at ELSE $3 END,
         clock_out_at=CASE WHEN $4::boolean THEN clock_out_at ELSE $5 END
     WHERE id=$1`,[body.id,body.clock_in_at === body.original_in,clockIn,body.clock_out_at === body.original_out,clockOut]);
+  } catch (error) {
+    if ((error as {constraint?: string}).constraint === 'management_staff_attendance_open_day') {
+      throw new AttendanceError('Nhân viên đã có một lượt chưa chấm công ra trong ngày này.',409);
+    }
+    throw error;
+  }
 }
 export function parseAttendanceLocation(value: string) {
   let raw;
@@ -96,15 +104,17 @@ export async function recordAttendance(db: Database, user: SessionUser, action: 
     if (String(previous.rows[0][action === 'in' ? 'in_request' : 'out_request']).toLowerCase() !== requestId.toLowerCase()) throw new AttendanceError('Mã lần chấm công thuộc thao tác khác.',409);
     return { id: Number(previous.rows[0].id), replayed: true };
   }
-  const opened = await db.query('SELECT id FROM himoto.management_staff_attendance WHERE staff_id=$1 AND clock_out_at IS NULL FOR UPDATE',[staff.id]);
+  const { now } = (await db.query('SELECT clock_timestamp() AS now')).rows[0];
+  const opened = await db.query(`SELECT id FROM himoto.management_staff_attendance
+    WHERE staff_id=$1 AND clock_out_at IS NULL AND ${ATTENDANCE_ON_LOCAL_DATE} FOR UPDATE`,[staff.id,now]);
   if (action === 'in') {
     if (opened.rows.length) throw new AttendanceError('Bạn đã vào ca. Bấm Ra ca trước khi bắt đầu ca mới.',409);
-    const result = await db.query(`INSERT INTO himoto.management_staff_attendance(staff_id,actor_id,store_id,staff_name,in_request,in_photo,in_mime,in_location)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING id`,[staff.id,user.id,staff.store_id,staff.full_name,requestId,photo,mime,JSON.stringify(location)]);
+    const result = await db.query(`INSERT INTO himoto.management_staff_attendance(staff_id,actor_id,store_id,staff_name,in_request,in_photo,in_mime,in_location,clock_in_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id`,[staff.id,user.id,staff.store_id,staff.full_name,requestId,photo,mime,JSON.stringify(location),now]);
     return { id: Number(result.rows[0].id) };
   }
-  if (!opened.rows.length) throw new AttendanceError('Bạn chưa vào ca hoặc ca đã được kết thúc.',409);
-  await db.query(`UPDATE himoto.management_staff_attendance SET clock_out_at=clock_timestamp(),out_request=$2,out_photo=$3,out_mime=$4,out_location=$5::jsonb WHERE id=$1`,[opened.rows[0].id,requestId,photo,mime,JSON.stringify(location)]);
+  if (!opened.rows.length) throw new AttendanceError('Bạn chưa có ca đang mở trong ngày hôm nay.',409);
+  await db.query(`UPDATE himoto.management_staff_attendance SET clock_out_at=$6,out_request=$2,out_photo=$3,out_mime=$4,out_location=$5::jsonb WHERE id=$1`,[opened.rows[0].id,requestId,photo,mime,JSON.stringify(location),now]);
   return { id: Number(opened.rows[0].id) };
 }
 

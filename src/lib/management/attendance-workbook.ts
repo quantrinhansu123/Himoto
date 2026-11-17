@@ -31,7 +31,7 @@ export async function buildAttendanceWorkbook(records: AttendanceRecord[], from:
   const dates: string[] = [];
   for (let date = from; date <= to; date = addDays(date, 1)) dates.push(date);
   const columnCount = 4 + dates.length;
-  sheet.columns = [12, 28, 26, 16, ...dates.map(() => 17)].map(width => ({ width }));
+  sheet.columns = [12, 28, 26, 16, ...dates.map(() => 22)].map(width => ({ width }));
   sheet.mergeCells('A1:D1');
   sheet.getCell('A1').value = `Lịch sử chấm công · ${from.split('-').reverse().join('/')} – ${to.split('-').reverse().join('/')}`;
   sheet.getRow(1).height = 25;
@@ -75,7 +75,7 @@ export async function buildAttendanceWorkbook(records: AttendanceRecord[], from:
         record ? timeFormat.format(new Date(record.clock_in_at)) : null)]);
       const clockOut = sheet.addRow([null, null, null, `Giờ ra${suffix}`, ...entries.map((record, index) => {
         if (!record) return null;
-        if (!record.clock_out_at) return 'Chưa ra ca';
+        if (!record.clock_out_at) return 'Chưa chấm công ra';
         const instant = new Date(record.clock_out_at);
         const date = vietnamDate(instant);
         const time = timeFormat.format(instant);
