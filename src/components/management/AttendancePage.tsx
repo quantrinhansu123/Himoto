@@ -9,6 +9,8 @@ import { Dialog } from './Dialog';
 import { FilteredExcelButton } from './FilteredExcelButton';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { shiftCreditLabel } from '@/lib/management/attendance-shifts';
+import { buildAttendanceWorkbook } from '@/lib/management/attendance-workbook';
+import { downloadExcel } from '@/lib/management/excel-export';
 import { formatDateTime } from '@/lib/formatters';
 import { isAdminAccount } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
@@ -135,7 +137,9 @@ export function AttendanceHistoryPage() {
   const [recordDialog, setRecordDialog] = useState<{ mode: RecordMode; row: Attendance } | null>(null);
   const monthPreset = () => {setFrom(vietnamDate().slice(0,7)+'-01');setTo(vietnamDate());setPage(1);};
   async function exportAttendance() {
-    const query = new URLSearchParams({from,to,store:selectedStore});
+    const exportFrom = from || vietnamDate().slice(0, 7) + '-01';
+    const exportTo = to || exportFrom;
+    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:selectedStore});
     const rows: Attendance[] = [];
     let total = 0;
     for (let index=1; index===1 || rows.length<total; index++) {
@@ -150,8 +154,9 @@ export function AttendanceHistoryPage() {
     if (rows.length!==total || new Set(rows.map(row=>row.id)).size!==total) {
       throw new Error('Chưa đọc đủ lịch sử chấm công. Tải lại rồi xuất Excel.');
     }
-    return rows.map(row=>[row.id,row.staff_name,row.store_name,row.shift_name,formatDateTime(row.clock_in_at),
-      row.clock_out_at?formatDateTime(row.clock_out_at):null,row.late_minutes,row.early_leave_minutes,row.earned_credit]);
+    const bytes = await buildAttendanceWorkbook(rows, exportFrom, exportTo);
+    downloadExcel(bytes, `himoto-cham-cong-${exportFrom}-${exportTo}`);
+    return rows.length;
   }
   useEffect(()=>{
     const controller=new AbortController();setLoading(true);setError('');setData(null);
@@ -180,7 +185,7 @@ export function AttendanceHistoryPage() {
       setRecordDialog(null);
       refresh();
     }} />}
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{isAdmin && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} filename={`himoto-cham-cong-${from}-${to}`} headers={['ID','Nhân viên','Cơ sở','Ca làm','Giờ vào','Giờ ra','Số phút đi muộn','Số phút về sớm','Công thực tế']} getRows={exportAttendance}/>}</div></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{isAdmin && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} label="Tải Excel theo nhân sự" exportFile={exportAttendance}/>}</div></div>
     <div className="mg-data-panel"><div className="mg-attendance-filters"><label>Cơ sở xem lịch sử<select aria-label="Cơ sở xem lịch sử chấm công" value={selectedStore} onChange={event=>{selectStore(event.target.value);setPage(1);}}><option value="all">Tất cả cơ sở được phép</option>{dataset?.stores.map(store=><option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></label><label>Từ ngày<input aria-label="Từ ngày chấm công" type="date" value={from} onChange={event=>{setFrom(event.target.value);setPage(1);}}/></label><label>Đến ngày<input aria-label="Đến ngày chấm công" type="date" value={to} onChange={event=>{setTo(event.target.value);setPage(1);}}/></label><button type="button" className="mg-button" onClick={monthPreset}>Tháng này</button><span>{data?.total??'—'} lượt chấm công</span></div>
     {error?<p className="mg-field-error" role="alert">{error}</p>:loading?<p className="mg-table-state" role="status">Đang tải bảng chấm công…</p>:<>
       <div className="mg-attendance-mobile-list">{data?.rows.map(row=><article key={row.id} className="mg-attendance-history-card"><div className="mg-attendance-history-heading"><strong>{row.staff_name}</strong><small>#{row.id} · {new Date(row.clock_in_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</small></div><p>{row.store_name||'Chưa gắn cơ sở'} · {shiftLink(row)}{row.standard_credit!=null?' · '+shiftCreditLabel(row.standard_credit)+' công quy định':''}{row.scheduled_in?' · '+timeOnly(row.scheduled_in)+' – '+timeOnly(row.scheduled_out):''}</p><div className="mg-attendance-history-times"><span>Vào <b>{timeOnly(row.clock_in_at)}</b></span><span>Ra <b>{timeOnly(row.clock_out_at)}</b></span><span className={row.late_minutes?'is-late':''}>Đi muộn <b>{lateLabel(row.late_minutes,row.shift_name)}</b></span><span className={row.early_leave_minutes?'is-late':''}>Về sớm <b>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</b></span><span>Công thực tế <b>{attendanceCreditLabel(row)}</b>{row.credit_aggregated && ' · Tổng hợp cùng ca'}</span></div>{rowActions(row)}</article>)}{!data?.rows.length&&<p className="mg-table-state">Chưa có chấm công trong khoảng ngày đã chọn.</p>}</div>

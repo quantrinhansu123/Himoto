@@ -4,17 +4,31 @@ import { ArrowDownToLine } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { downloadFilteredExcel } from '@/lib/management/excel-export';
 
-export function FilteredExcelButton({ disabled, headers, getRows, filename }: {
-  disabled: boolean; headers: string[]; filename: string;
-  getRows: () => (string | number | null | undefined)[][] | Promise<(string | number | null | undefined)[][]>;
-}) {
+type ExcelRows = (string | number | null | undefined)[][];
+type ExportOptions = {
+  headers: string[]; filename: string; getRows: () => ExcelRows | Promise<ExcelRows>;
+} | {
+  label: string; exportFile: () => Promise<number>;
+};
+
+export function FilteredExcelButton({ disabled, ...options }: { disabled: boolean } & ExportOptions) {
   const [busy, setBusy] = useState(false);
   const { notify } = useManagement();
   return <button type="button" className="mg-button mg-excel-export" disabled={disabled || busy} onClick={async () => {
     if (busy) return;
     setBusy(true);
-    try { const rows = await getRows(); await downloadFilteredExcel(headers, rows, filename); notify(`Đã xuất ${rows.length} bản ghi theo bộ lọc.`); }
+    try {
+      let count: number;
+      if ('exportFile' in options) {
+        count = await options.exportFile();
+      } else {
+        const rows = await options.getRows();
+        await downloadFilteredExcel(options.headers, rows, options.filename);
+        count = rows.length;
+      }
+      notify(`Đã xuất ${count} bản ghi theo bộ lọc.`);
+    }
     catch (cause) { notify(cause instanceof Error ? cause.message : 'Không tải được Excel.'); }
     finally { setBusy(false); }
-  }}><ArrowDownToLine size={17}/>{busy ? 'Đang xuất…' : 'Tải Excel theo bộ lọc'}</button>;
+  }}><ArrowDownToLine size={17}/>{busy ? 'Đang xuất…' : 'label' in options ? options.label : 'Tải Excel theo bộ lọc'}</button>;
 }

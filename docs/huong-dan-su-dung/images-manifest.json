@@ -79,10 +79,18 @@
     {
       "filename": "12-cham-cong-ra-ca.jpg",
       "local_path": "images/12-cham-cong-ra-ca.jpg",
-      "sha256": "378a24451dcf74c4edd3c6381b07f9a0e2f089d6c41c497e119d5872930f4a3b",
+      "sha256": "4d2d12e50adebfa8a25e72e81216ccb8cff91f8480bf7f6645743965abacab5d",
       "secure_url": null,
-      "captured_on": "2026-11-13",
-      "source": "Local attendance UI"
+      "captured_on": "2026-11-17",
+      "source": "Rendered local attendance dialog with annotated controls"
+    },
+    {
+      "filename": "13-cham-cong-vao-ca.jpg",
+      "local_path": "images/13-cham-cong-vao-ca.jpg",
+      "sha256": "e2133d58a42f53992d7ed60188199863c585bec59a5a97a4bbabd69f20991c7e",
+      "secure_url": null,
+      "captured_on": "2026-11-17",
+      "source": "Rendered local attendance dialog with annotated controls"
     }
   ]
 }

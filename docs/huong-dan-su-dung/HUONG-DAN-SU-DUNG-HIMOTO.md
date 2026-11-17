@@ -441,6 +441,8 @@ Chụp ảnh, lấy GPS và ghi nhận giờ vào/ra theo giờ Việt Nam.
 
 ### Chụp ảnh và xác nhận vào ca
 
+![Khoanh đỏ nút Chụp ảnh và Xác nhận vào ca](images/13-cham-cong-vao-ca.jpg)
+
 **Mở tại:** Chấm công → Vào ca
 
 1. Cho phép camera và vị trí trên thiết bị.
@@ -453,7 +455,7 @@ Chụp ảnh, lấy GPS và ghi nhận giờ vào/ra theo giờ Việt Nam.
 
 ### Xác nhận ra ca bằng ảnh và GPS mới
 
-![Xác nhận ra ca bằng ảnh và GPS mới](images/12-cham-cong-ra-ca.jpg)
+![Khoanh đỏ nút Chụp ảnh và Xác nhận ra ca](images/12-cham-cong-ra-ca.jpg)
 
 **Mở tại:** Chấm công → Ra ca
 

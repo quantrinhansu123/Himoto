@@ -19,6 +19,7 @@ type NavLink = { href: string; label: string; kind: string; icon: LucideIcon };
 type NavGroup = { id: string; label: string; icon: LucideIcon; links: NavLink[] };
 const navigation: (NavLink | NavGroup)[] = [
   { href: '/operations', label: 'Thao tác nhanh', kind: 'operations', icon: House },
+  { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock },
   { href: '/dashboard', label: 'Dashboard', kind: 'dashboard', icon: LayoutDashboard },
   { id: 'contracts', label: 'Hợp đồng', icon: Files, links: [
     { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts', icon: Files },
@@ -31,7 +32,6 @@ const navigation: (NavLink | NavGroup)[] = [
     { href: '/contracts/types', label: 'Loại hợp đồng', kind: 'contract-types', icon: Files },
   ] },
   { id: 'hr', label: 'HCNS', icon: UsersRound, links: [
-    { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock },
     { href: '/attendance/history', label: 'Lịch sử chấm công', kind: 'attendance', icon: History },
     { href: '/staff', label: 'Nhân sự', kind: 'staff', icon: UsersRound },
     { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
