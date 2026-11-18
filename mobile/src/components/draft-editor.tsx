@@ -61,6 +61,7 @@ import {useContractPhotos} from '@/hooks/use-contract-photos';
 import {ContractPhotoFields} from './contract-photo-fields';
 import {ContractPhotoSave} from './contract-photo-save';
 import {CustomerPhotoCopyStage} from './customer-photo-copy';
+import { addRentalDuration } from "../../../shared/rental-time";
 import {plateSelectionIndex} from '../../../shared/mobile-plate-ocr';
 import {
   DraftFees,
@@ -71,7 +72,7 @@ import {
   DraftVehicleLines,
 } from "./draft-document-fields";
 
-export function DraftEditor({ id,workId,backfill=false,defaultStore }: { id: string | null;workId?:string;backfill?:boolean;defaultStore?:string }) {
+export function DraftEditor({ id,workId,backfill=false,reservation=false,defaultStore }: { id: string | null;workId?:string;backfill?:boolean;reservation?:boolean;defaultStore?:string }) {
   const { api, session } = useSession();
   const allowed =
     !!session?.user.permissions.includes("contracts.draft") &&
@@ -136,10 +137,10 @@ export function DraftEditor({ id,workId,backfill=false,defaultStore }: { id: str
       />
     );
   return (
-    <DraftWorkGate key={`${api?.origin}:${session?.token}:${session?.user.permissions.join(',')}:${scope.join(":")}:${id||"new"}:${workId||""}`} id={id} workId={workId} backfill={backfill}>{(work,initialPhotos)=><DraftForm
-      key={`${api?.origin}:${session?.token}:${session?.user.permissions.join(',')}:${scope.join(":")}:${id || "new"}:${work?.id||"memory"}`}
+    <DraftWorkGate key={`${api?.origin}:${session?.token}:${session?.user.permissions.join(',')}:${scope.join(":")}:${id||"new"}:${workId||""}:${reservation?"res":""}`} id={id} workId={workId} backfill={backfill}>{(work,initialPhotos)=><DraftForm
+      key={`${api?.origin}:${session?.token}:${session?.user.permissions.join(',')}:${scope.join(":")}:${id || "new"}:${work?.id||"memory"}:${reservation?"res":""}`}
       id={work?.getHead()?work.getHead()!.work.baseDraftId===null?null:String(work.getHead()!.work.baseDraftId):id} work={work} initialPhotos={initialPhotos}
-      options={options.data!} backfill={backfill} defaultStore={defaultStore}
+      options={options.data!} backfill={backfill} reservation={reservation} defaultStore={defaultStore}
       profile={id === null ? undefined : profile.data}
     />}</DraftWorkGate>
   );
@@ -147,17 +148,17 @@ export function DraftEditor({ id,workId,backfill=false,defaultStore }: { id: str
 function DraftForm({
   id,
   options,
-  profile,work,initialPhotos,backfill=false,defaultStore,
+  profile,work,initialPhotos,backfill=false,reservation=false,defaultStore,
 }: {
   id: string | null;
   options: MobileDraftOptions;
-  profile?: MobileDraftProfile;work:DraftWorkController|null;initialPhotos:WorkLocalPhoto[];backfill?:boolean;defaultStore?:string;
+  profile?: MobileDraftProfile;work:DraftWorkController|null;initialPhotos:WorkLocalPhoto[];backfill?:boolean;reservation?:boolean;defaultStore?:string;
 }) {
   const theme = useTheme(),
     reduced = useReducedMotion(),
     { api, session } = useSession();
   const [input, setInput] = useState(() =>
-    work?.initialInput??(profile ? restoreDraftType(profile.input, options) : (()=>{const value=newDraftInput(options);if(defaultStore&&options.stores.some(s=>String(s.id)===defaultStore)){value.draft.store_id=defaultStore;value.draft.vehicle_store_id=defaultStore;}if(backfill)value.draft.backfill={note:""};return value;})()),
+    work?.initialInput??(profile ? restoreDraftType(profile.input, options) : (()=>{const value=newDraftInput(options);if(defaultStore&&options.stores.some(s=>String(s.id)===defaultStore)){value.draft.store_id=defaultStore;value.draft.vehicle_store_id=defaultStore;}if(backfill)value.draft.backfill={note:""};else if(reservation){value.draft.reservation=true;const nextStart=addRentalDuration(value.draft.start_date,1,"day")||value.draft.start_date,nextEnd=addRentalDuration(nextStart,1,"day")||value.draft.end_date;value.draft=alignDraftWindow({...value.draft,start_date:nextStart,end_date:nextEnd});}return value;})()),
   );
   const [baseline, setBaseline] = useState(() => JSON.stringify(input)),
     [step, setStep] = useState(work?.initialStep??0),
@@ -366,7 +367,7 @@ function DraftForm({
     >
       <Stack.Screen
         options={{
-          title: profile ? `Soạn ${profile.code}` : d.backfill ? "Nhập bổ sung lịch sử" : "Thêm bản nháp",
+          title: profile ? `Soạn ${profile.code}` : d.backfill ? "Nhập bổ sung lịch sử" : d.reservation ? "Nhận cọc giữ xe" : "Nhập hợp đồng",
           headerShown: !compact,
         }}
       />
@@ -594,6 +595,18 @@ function DraftForm({
           {step === 0 && (
             <>
               <DraftSection title="Hợp đồng và cơ sở">
+                {!d.backfill && (
+                  <ChoiceField
+                    label="Hình thức lập hồ sơ"
+                    value={d.reservation ? "reservation" : "rental"}
+                    choices={[
+                      { value: "rental", label: "Nhập hợp đồng thuê xe" },
+                      { value: "reservation", label: "Nhận cọc giữ xe (chưa giao xe)" },
+                    ]}
+                    disabled={disabled}
+                    onChange={(value) => set("reservation", value === "reservation")}
+                  />
+                )}
                 <ChoiceField
                   label="Loại hợp đồng"
                   value={d.contract_type_id || ""}

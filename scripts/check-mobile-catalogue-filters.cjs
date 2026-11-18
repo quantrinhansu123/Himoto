@@ -27,8 +27,23 @@ async function main() {
       'customer_id=101&customer_id=102', 'filter_customer_id=101', 'statistics=0', 'statistics=1&statistics=1', 'statistics_only=1']) {
       await assert.rejects(() => catalogue.readMobilePage(actor, 'contracts', new URLSearchParams(invalid)), error => error.status === 400);
     }
-    for (const kind of ['customers','vehicles']) for (const value of ['customer_id=101','statistics=1'])
+    for (const kind of ['customers','vehicles']) for (const value of ['customer_id=101','statistics=1','rental_type=daily','ownership_term_months=12'])
       assert.throws(() => catalogue.mobileTableParams(new URLSearchParams(value), kind));
+    for (const kind of ['customers','contracts']) for (const value of ['vehicle_type=xega','warehouse_store_id=23','beneficiary_store_id=23'])
+      assert.throws(() => catalogue.mobileTableParams(new URLSearchParams(value), kind));
+    for (const badContractFilter of ['rental_type=bad-type!','ownership_term_months=3','ownership_term_months=99'])
+      assert.throws(() => catalogue.mobileTableParams(new URLSearchParams(badContractFilter), 'contracts'));
+    for (const badVehicleFilter of ['vehicle_type=oto','warehouse_store_id=0','beneficiary_store_id=abc'])
+      assert.throws(() => catalogue.mobileTableParams(new URLSearchParams(badVehicleFilter), 'vehicles'));
+    const mappedContract = catalogue.mobileTableParams(new URLSearchParams('rental_type=ownership&ownership_term_months=12'), 'contracts');
+    assert.equal(mappedContract.get('filter_rental_type'), 'ownership');
+    assert.equal(mappedContract.get('filter_ownership_term_months'), '12');
+    assert(!mappedContract.has('rental_type') && !mappedContract.has('ownership_term_months'));
+    const mappedVehicle = catalogue.mobileTableParams(new URLSearchParams('vehicle_type=xe_dien&warehouse_store_id=23&beneficiary_store_id=24'), 'vehicles');
+    assert.equal(mappedVehicle.get('filter_type'), 'xe_dien');
+    assert.equal(mappedVehicle.get('filter_warehouse_store_id'), '23');
+    assert.equal(mappedVehicle.get('filter_beneficiary_store_id'), '24');
+    assert(!mappedVehicle.has('vehicle_type') && !mappedVehicle.has('warehouse_store_id') && !mappedVehicle.has('beneficiary_store_id'));
     assert.equal(connects, 0);
     checks.push('Strict singular customer IDs and explicit statistics mode apply only to contracts; malformed/duplicate/raw filters fail before DB access');
     table.readManagementTable = async (_db, kind, params) => {

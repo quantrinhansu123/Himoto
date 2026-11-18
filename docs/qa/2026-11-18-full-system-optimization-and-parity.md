@@ -50,3 +50,18 @@
   - Đọc Telegram hợp đồng nhiều sự kiện/ảnh giảm còn `1.4s–2.2s` qua kết nối từ xa, có sẵn `revision` cho toàn bộ ảnh đính kèm.
   - Danh sách hợp đồng Pin / Sạc giảm còn `330ms–401ms`.
   - Không tạo giao dịch thử, không gửi tin Telegram thử, không gửi push thử, không thay đổi bất kỳ thông tin hay quyền nào của 35 tài khoản; mọi phiên kiểm tra tạm đều được xóa sạch và xác nhận trả `401`.
+
+## 5. Đồng bộ giao diện, nhãn gọi & luồng thao tác quen thuộc Web ↔ App
+
+- **Luồng `+ Nhận cọc giữ xe` xuyên suốt từ đầu đến cuối khớp Web (`ContractComposer.tsx` ↔ `draft/new.tsx`, `draft-editor.tsx`, `contract-preparation.tsx`):**
+  - Sửa lỗi màn `/draft/new` bỏ qua tham số `?reservation=1`: khi bấm `+ Nhận cọc giữ xe` từ tab Thao tác hoặc danh sách Hợp đồng, App tự động bật chế độ `reservation = true`, cộng lùi lịch nhận xe sang ngày mai (`+1 ngày`) kèm căn thời hạn trả xe tương ứng, đổi tiêu đề màn hình thành `"Nhận cọc giữ xe"` (và `"Nhập hợp đồng"` cho đơn thuê thường khớp tên nút trên Web), đồng thời bổ sung trường chọn `"Hình thức lập hồ sơ"` ngay ở bước đầu tiên (`"Nhập hợp đồng thuê xe"` / `"Nhận cọc giữ xe (chưa giao xe)"`). Khi lưu nháp xong và mở duyệt tại `/contract/[id]`, phần Chuẩn bị duyệt tự động chọn sẵn `"Nhận cọc giữ xe"`.
+- **Đồng bộ đầy đủ Bộ lọc danh sách Xe & Hợp đồng + Xuất Excel (`mobile-catalogue.ts`, `catalogue-filters.tsx`, `catalogue-screen.tsx`):**
+  - Bổ sung trên danh sách Hợp đồng App bộ lọc **Loại hợp đồng** (`daily`, `monthly`, `monthly_3`, `monthly_6`, `monthly_12`, `rental`, `tour`, `ownership`, `ownership_cd`) và **Thời hạn sở hữu** (`6`, `9`, `12`, `18`, `24` tháng, `custom`) khớp 100% thanh lọc trên Web.
+  - Bổ sung trên danh sách Xe App bộ lọc **Loại xe** (`Xe ga`, `Xe số`, `Xe điện`, `Xe côn tay`, `Xe SH`), **Kho xe hiện tại** (`warehouse_store_id`) và **Nguồn khách (HĐ đang thuê)** (`beneficiary_store_id`) khớp 100% thanh lọc trên Web; đồng bộ các bộ lọc này vào cả đếm số lượng tab và xuất Excel từ App.
+- **Đồng bộ tên mục Menu, Thanh điều hướng trái (Drawer) & Màn hình chính (`management-drawer.tsx`, `workspace-links.tsx`):**
+  - Đổi tên `"Tổng quan giao dịch"` thành **`"Dashboard · Tổng quan"`** trên cả Drawer và danh sách nghiệp vụ để nhân sự quen gọi `"Dashboard"` trên Web nhận ra ngay.
+  - Bổ sung **`"Chưa gửi Telegram"`** vào nhóm `HỢP ĐỒNG & KHÁCH HÀNG` và **`"Kho xe toàn hệ thống"`** vào nhóm `ĐỘI XE & ĐỊNH VỊ` trong Drawer; sắp xếp lại danh sách nghiệp vụ theo đúng thứ tự các phân hệ thanh bên trái của Web (`Dashboard · Tổng quan`, `Báo cáo doanh thu`, `Sổ quỹ / Sổ két`, `Báo cáo cuối ca`, `Gửi nhắc nợ`, `Chưa gửi Telegram`, `Định vị GPS`, `Thông báo công việc`, `Chấm công & Lịch sử chấm công`, `Đăng ký ca`, `Lịch trực cơ sở`, `Nhân sự`, `Cơ sở`, `Loại hợp đồng`, `Tài khoản & Phân quyền`, `Tích hợp GPS & Telegram`, `Hướng dẫn sử dụng`).
+- **Đồng bộ luồng Chi tiết Hợp đồng, Hồ sơ Khách hàng & Menu nhanh `...` từng dòng (`contract-history/[id].tsx`, `contract-detail-view.tsx`, `record/[kind]/[id].tsx`, `record-actions-modal.tsx`):**
+  - Tách riêng 2 lối tắt **`"Phiếu thu / chi"`** (mở thẳng tab `Phiếu thu / chi` thay vì mở nhầm tab `Diễn biến`) và **`"Lịch sử chỉnh sửa"`** (mở thẳng tab `Diễn biến`) ngay trong Chi tiết hợp đồng giống Web `ContractDetail.tsx`.
+  - Bổ sung nút **`"Xem hợp đồng của khách"`** ngay trên màn Hồ sơ khách hàng để tra cứu lịch sử thuê 1 chạm như Web.
+  - Bổ sung **`"Sửa thông tin xe"`**, **`"Ảnh & giấy tờ xe"`** trong menu `...` của dòng Xe (khi có quyền `vehicles.write`) và **`"Sửa hồ sơ / Blacklist khách"`**, **`"Giấy tờ & CCCD khách hàng"`** trong menu `...` của dòng Khách hàng (khi có quyền `customers.write`).

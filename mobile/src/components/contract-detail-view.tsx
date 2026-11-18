@@ -434,7 +434,7 @@ export function ContractDetailView({
                     secondary
                     label="Phiếu thu / chi"
                     icon={<Wallet size={16} color={theme.text} />}
-                    onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id } })}
+                    onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "cashflow" } })}
                   />
                 </View>
                 {record.status !== "cancelled" && (
@@ -483,11 +483,21 @@ export function ContractDetailView({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Lịch sử thu chi"
-                  onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id } })}
+                  onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "cashflow" } })}
                   style={({ pressed }) => [styles.gridItem, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
                 >
                   <Wallet size={20} color={theme.text} />
-                  <Text style={[styles.gridItemText, { color: theme.text }]}>Sổ quỹ thu/chi</Text>
+                  <Text style={[styles.gridItemText, { color: theme.text }]}>Lịch sử thu chi</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Lịch sử chỉnh sửa"
+                  onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "changes" } })}
+                  style={({ pressed }) => [styles.gridItem, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
+                >
+                  <FilePenLine size={20} color={theme.text} />
+                  <Text style={[styles.gridItemText, { color: theme.text }]}>Lịch sử chỉnh sửa</Text>
                 </Pressable>
 
                 <Pressable

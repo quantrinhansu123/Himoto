@@ -340,18 +340,44 @@ export function RecordActionsModal({
         }),
     });
 
-    if (has("vehicles.write")) actions.push({
-      id: "status",
-      label: "Đổi trạng thái xe",
-      description: "Lưu kho, bảo dưỡng, sẵn sàng",
-      icon: RotateCcw,
-      color: "#059669",
-      onPress: () =>
-        router.push({
-          pathname: "/vehicle-status-editor/[id]",
-          params: { id },
-        }),
-    });
+    if (has("vehicles.write")) {
+      actions.push({
+        id: "edit",
+        label: "Sửa thông tin xe",
+        description: "Biển số, loại xe, giá thuê, số khung / số máy",
+        icon: FilePenLine,
+        color: "#2563EB",
+        onPress: () =>
+          router.push({
+            pathname: "/vehicle-editor/[id]",
+            params: { id },
+          }),
+      });
+      actions.push({
+        id: "status",
+        label: "Đổi trạng thái xe",
+        description: "Lưu kho, bảo dưỡng, sẵn sàng",
+        icon: RotateCcw,
+        color: "#059669",
+        onPress: () =>
+          router.push({
+            pathname: "/vehicle-status-editor/[id]",
+            params: { id },
+          }),
+      });
+      actions.push({
+        id: "media",
+        label: "Ảnh & giấy tờ xe",
+        description: "Ảnh đại diện xe và đăng ký xe",
+        icon: Files,
+        color: "#0284C7",
+        onPress: () =>
+          router.push({
+            pathname: "/record-media/[entity]/[id]",
+            params: { entity: "vehicles", id },
+          }),
+      });
+    }
 
     if (has("vehicles.transfer")) {
       if (record.status === "in_transit" || record.status === "sold") {
@@ -411,6 +437,33 @@ export function RecordActionsModal({
           params: { kind: "customers", id },
         }),
     });
+
+    if (has("customers.write")) {
+      actions.push({
+        id: "edit",
+        label: "Sửa hồ sơ / Blacklist khách",
+        description: "Cập nhật thông tin, cảnh báo hoặc Blacklist",
+        icon: FilePenLine,
+        color: "#2563EB",
+        onPress: () =>
+          router.push({
+            pathname: "/customer/[id]",
+            params: { id },
+          }),
+      });
+      actions.push({
+        id: "documents",
+        label: "Giấy tờ & CCCD khách hàng",
+        description: "Xem hoặc chụp bổ sung CCCD, GPLX",
+        icon: Files,
+        color: "#0284C7",
+        onPress: () =>
+          router.push({
+            pathname: "/record-media/[entity]/[id]",
+            params: { entity: "customers", id },
+          }),
+      });
+    }
 
     if (has("contracts.read")) actions.push({
       id: "history",

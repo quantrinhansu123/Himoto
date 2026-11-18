@@ -28,6 +28,11 @@ export interface CatalogueSelection {
   from?: string;
   to?: string;
   storeBasis?: string;
+  rentalType?: string;
+  ownershipTerm?: string;
+  vehicleType?: string;
+  warehouseStore?: string;
+  beneficiaryStore?: string;
 }
 export function CatalogueFilters({
   kind,
@@ -121,8 +126,51 @@ export function CatalogueFilters({
                 {kind === "contracts" && <>
                   <DateField label="Thuê từ ngày" value={selection.from || ""} onChange={from => setSelection(current => ({ ...current, from }))} />
                   <DateField label="Thuê đến ngày" value={selection.to || ""} onChange={to => setSelection(current => ({ ...current, to }))} />
+                  <ChoiceField label="Loại hợp đồng" value={selection.rentalType || ""} choices={[
+                    { value: "", label: "Tất cả loại hợp đồng" },
+                    { value: "daily", label: "Thuê theo ngày" },
+                    { value: "monthly", label: "Thuê theo tháng" },
+                    { value: "monthly_3", label: "Thuê 3 tháng" },
+                    { value: "monthly_6", label: "Thuê 6 tháng" },
+                    { value: "monthly_12", label: "Thuê 12 tháng" },
+                    { value: "rental", label: "Thuê xe" },
+                    { value: "tour", label: "Tour / phượt" },
+                    { value: "ownership", label: "Thuê sở hữu" },
+                    { value: "ownership_cd", label: "Thuê sở hữu( cd)" },
+                  ]} onChange={rentalType => setSelection(current => ({ ...current, rentalType }))} />
+                  {(scope === "ownership" || selection.rentalType === "ownership" || selection.rentalType === "ownership_cd" || !!selection.ownershipTerm) && (
+                    <ChoiceField label="Thời hạn sở hữu" value={selection.ownershipTerm || ""} choices={[
+                      { value: "", label: "Tất cả thời hạn sở hữu" },
+                      { value: "6", label: "6 tháng" },
+                      { value: "9", label: "9 tháng" },
+                      { value: "12", label: "12 tháng" },
+                      { value: "18", label: "18 tháng" },
+                      { value: "24", label: "24 tháng" },
+                      { value: "custom", label: "Chưa phân loại" },
+                    ]} onChange={ownershipTerm => setSelection(current => ({ ...current, ownershipTerm }))} />
+                  )}
                   <ChoiceField label="Lọc cơ sở theo" value={selection.storeBasis || "source"} choices={[{ value: "source", label: "Cơ sở ghi nhận hợp đồng" }, { value: "warehouse", label: "Kho xe" }]} onChange={storeBasis => setSelection(current => ({ ...current, storeBasis }))} />
                   {selection.from && selection.to && selection.from > selection.to ? <InlineError message="Ngày kết thúc phải từ ngày bắt đầu trở đi." /> : null}
+                </>}
+                {kind === "vehicles" && <>
+                  <ChoiceField label="Loại xe" value={selection.vehicleType || ""} choices={[
+                    { value: "", label: "Tất cả loại xe" },
+                    { value: "xega", label: "Xe ga" },
+                    { value: "xeso", label: "Xe số" },
+                    { value: "xe_dien", label: "Xe điện" },
+                    { value: "xecon", label: "Xe côn tay" },
+                    { value: "xesh", label: "Xe SH" },
+                  ]} onChange={vehicleType => setSelection(current => ({ ...current, vehicleType }))} />
+                  {stores.length > 0 && <>
+                    <ChoiceField label="Kho xe hiện tại" value={selection.warehouseStore || ""} choices={[
+                      { value: "", label: "Tất cả kho xe" },
+                      ...stores.map(s => ({ value: String(s.id), label: `Kho xe: ${s.name}` })),
+                    ]} onChange={warehouseStore => setSelection(current => ({ ...current, warehouseStore }))} searchable />
+                    <ChoiceField label="Nguồn khách (HĐ đang thuê)" value={selection.beneficiaryStore || ""} choices={[
+                      { value: "", label: "Tất cả nguồn khách" },
+                      ...stores.map(s => ({ value: String(s.id), label: `Nguồn khách: ${s.name}` })),
+                    ]} onChange={beneficiaryStore => setSelection(current => ({ ...current, beneficiaryStore }))} searchable />
+                  </>}
                 </>}
                 <Text style={[styles.label, { color: theme.text }]}>
                   Trạng thái
@@ -265,6 +313,11 @@ export function CatalogueFilters({
               )
             }
           />
+          {selection.from && selection.to && selection.from > selection.to ? (
+            <Text style={{ color: theme.danger, fontSize: 13, paddingHorizontal: 16, paddingTop: 10 }}>
+              Chưa thể áp dụng: Ngày kết thúc phải từ ngày bắt đầu trở đi.
+            </Text>
+          ) : null}
           <View style={[styles.actions, { borderColor: theme.border }]}>
             <View style={{ flex: 1 }}>
               <Button

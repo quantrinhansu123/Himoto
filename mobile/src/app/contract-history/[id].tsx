@@ -10,12 +10,12 @@ import { Button, Card, StateView } from '@/components/ui';
 import { ChoiceField, FormField } from '@/components/form-fields';
 
 export default function ContractHistoryScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>(), { api, session } = useSession();
+  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>(), { api, session } = useSession();
   if (!api || !session || !/^[1-9]\d{0,14}$/.test(id) || !session.user.permissions.includes('contracts.read')) return <StateView title="Không mở được lịch sử hợp đồng" />;
-  return <ContractHistoryView key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${id}`} id={id} />;
+  return <ContractHistoryView key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${id}:${tab || ''}`} id={id} initialTab={tab === 'cashflow' ? 'cashflow' : 'changes'} />;
 }
-function ContractHistoryView({ id }: { id: string }) {
-  const { api, session } = useSession(), theme = useTheme(), [tab, setTab] = useState<'changes' | 'cashflow'>('changes'), [search, setSearch] = useState(''), [filter, setFilter] = useState(''), [page, setPage] = useState(1);
+function ContractHistoryView({ id, initialTab = 'changes' }: { id: string; initialTab?: 'changes' | 'cashflow' }) {
+  const { api, session } = useSession(), theme = useTheme(), [tab, setTab] = useState<'changes' | 'cashflow'>(initialTab), [search, setSearch] = useState(''), [filter, setFilter] = useState(''), [page, setPage] = useState(1);
   const query = useQuery({ queryKey: ['contract-history', api?.origin, session?.user.id, session?.user.storeId, session?.user.allStores, id, tab, filter, page], gcTime: 0, staleTime: 0, retry: false,
     enabled: !!api, queryFn: ({ signal }) => api!.contractHistory(id, new URLSearchParams({ tab, search: filter, page: String(page) }), signal) });
   const data = query.data, text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };

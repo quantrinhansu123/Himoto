@@ -60,7 +60,7 @@ const RecordCard = memo(function RecordCard({
   record: MobileRecord;
   kind: CatalogueKind;
   scope: MobileContractScope;
-  onOpenActions?: (record:MobileRecord) => void;
+  onOpenActions?: (record: MobileRecord) => void;
 }) {
   const theme = useTheme();
   const cache = useQueryClient();
@@ -88,7 +88,7 @@ const RecordCard = memo(function RecordCard({
   return (
     <Card style={{ gap: 12, padding: 16 }}>
       <View style={styles.row}>
-        {kind === 'vehicles' && <VehicleThumbnail id={record.id} revision={record.thumbnailRevision}/>}
+        {kind === 'vehicles' && <VehicleThumbnail id={record.id} revision={record.thumbnailRevision} />}
         <Pressable
           style={{ flex: 1 }}
           accessibilityRole="button"
@@ -193,10 +193,10 @@ const RecordCard = memo(function RecordCard({
           <View style={{ gap: 5 }}>
             {!!record.monitoring.contractTypeName && <Text style={{ color: theme.muted, fontSize: 13 }}>{record.monitoring.contractTypeName}</Text>}
             {!!record.monitoring.nextDueAt && <Text style={{ color: theme.text, fontSize: 13 }}>Kỳ tiếp theo: {dateTime(record.monitoring.nextDueAt)}</Text>}
-            {scope!=='overdue'&&record.monitoring.dueAmount !== null && <Text style={{ color: record.monitoring.collectionOverdue ? theme.danger : theme.text, fontSize: 14, fontWeight: "600" }}>Còn phải đóng theo kỳ: {money(record.monitoring.dueAmount)}</Text>}
+            {scope !== 'overdue' && record.monitoring.dueAmount !== null && <Text style={{ color: record.monitoring.collectionOverdue ? theme.danger : theme.text, fontSize: 14, fontWeight: "600" }}>Còn phải đóng theo kỳ: {money(record.monitoring.dueAmount)}</Text>}
             {(scope === "overdue" || scope === "ownership") && record.monitoring.rentalDebt !== null && <Text style={{ color: theme.text, fontSize: 13 }}>Tiền thuê còn thiếu: {money(record.monitoring.rentalDebt)}</Text>}
-            {scope === "overdue"&&record.status!=='bad_debt'&&(record.monitoring.basis==='payment'?record.monitoring.dueAmount:record.monitoring.lateFeeEstimate)!==null&&<Text style={{color:theme.warning,fontSize:13}}>{record.monitoring.basis==='payment'?'Tiền đến hạn':'Phí trễ tạm tính'}: {money((record.monitoring.basis==='payment'?record.monitoring.dueAmount:record.monitoring.lateFeeEstimate)!)}</Text>}
-            {scope==='overdue'&&record.status!=='bad_debt'&&record.monitoring.basis==='return'&&record.monitoring.referencePrice&&<Text style={{color:theme.muted,fontSize:13}}>Theo bảng giá ngày tham chiếu</Text>}
+            {scope === "overdue" && record.status !== 'bad_debt' && (record.monitoring.basis === 'payment' ? record.monitoring.dueAmount : record.monitoring.lateFeeEstimate) !== null && <Text style={{ color: theme.warning, fontSize: 13 }}>{record.monitoring.basis === 'payment' ? 'Tiền đến hạn' : 'Phí trễ tạm tính'}: {money((record.monitoring.basis === 'payment' ? record.monitoring.dueAmount : record.monitoring.lateFeeEstimate)!)}</Text>}
+            {scope === 'overdue' && record.status !== 'bad_debt' && record.monitoring.basis === 'return' && record.monitoring.referencePrice && <Text style={{ color: theme.muted, fontSize: 13 }}>Theo bảng giá ngày tham chiếu</Text>}
             {scope === "vat" && <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>Đã thu vào TK công ty: {money(record.monitoring.companyPaidAmount)}</Text>}
           </View>
         )}
@@ -211,25 +211,25 @@ export function CatalogueScreen({
   initialStatus = "",
   initialScope = "",
   initialStore,
-  initialSearch="",
+  initialSearch = "",
   initialCustomerId,
   customerName,
-  operationsCatalogue=false,
-  showManagementMenu=true,
+  operationsCatalogue = false,
+  showManagementMenu = true,
 }: {
   kind: CatalogueKind;
   initialStatus?: string;
   initialScope?: MobileContractScope;
   initialStore?: string;
-  initialSearch?:string;
-  initialCustomerId?:string;
-  customerName?:string;
-  operationsCatalogue?:boolean;
-  showManagementMenu?:boolean;
+  initialSearch?: string;
+  initialCustomerId?: string;
+  customerName?: string;
+  operationsCatalogue?: boolean;
+  showManagementMenu?: boolean;
 }) {
   const theme = useTheme();
   const { session, api, restore } = useSession();
-  const cache=useQueryClient();
+  const cache = useQueryClient();
   const workspace = useWorkspace();
   const { height } = useWindowDimensions();
   const compact = height < 500;
@@ -246,14 +246,21 @@ export function CatalogueScreen({
     kind === "vehicles"
       ? "all"
       : session?.user.storeId
-      ? String(session.user.storeId)
-      : "all";
+        ? String(session.user.storeId)
+        : "all";
   const [store, setStore] = useState(kind === 'vehicles' || session?.user.allStores ? initialStore || defaultStore : defaultStore);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [actionRecord, setActionRecord] = useState<MobileRecord | null>(null);
+  const [extraFilters, setExtraFilters] = useState<{
+    rentalType?: string;
+    ownershipTerm?: string;
+    vehicleType?: string;
+    warehouseStore?: string;
+    beneficiaryStore?: string;
+  }>({});
   const list = useRef<FlatList<MobileRecord>>(null);
   const nextPageGesture = useRef(true);
   const settings = { ...catalogueConfig[kind], ...(kind === "contracts" && scope ? { title: contractWorkspace(scope)!.title } : {}) };
@@ -265,12 +272,27 @@ export function CatalogueScreen({
   useEffect(() => {
     nextPageGesture.current = true;
     list.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [search, status, store, scope, from, to, storeBasis, customerId]);
+  }, [search, status, store, scope, from, to, storeBasis, customerId, extraFilters]);
+  const extraParams = useMemo(() => ({
+    ...(kind === "contracts"
+      ? {
+          ...(extraFilters.rentalType ? { rental_type: extraFilters.rentalType } : {}),
+          ...(extraFilters.ownershipTerm ? { ownership_term_months: extraFilters.ownershipTerm } : {}),
+        }
+      : {}),
+    ...(kind === "vehicles"
+      ? {
+          ...(extraFilters.vehicleType ? { vehicle_type: extraFilters.vehicleType } : {}),
+          ...(extraFilters.warehouseStore ? { warehouse_store_id: extraFilters.warehouseStore } : {}),
+          ...(extraFilters.beneficiaryStore ? { beneficiary_store_id: extraFilters.beneficiaryStore } : {}),
+        }
+      : {}),
+  }), [kind, extraFilters]);
   const query = useInfiniteQuery({
-    queryKey: ["catalogue", session?.user.id, session?.user.storeId, session?.user.allStores, kind, search, status, store, scope, from, to, storeBasis,operationsCatalogue,customerId],
+    queryKey: ["catalogue", session?.user.id, session?.user.storeId, session?.user.allStores, kind, search, status, store, scope, from, to, storeBasis, operationsCatalogue, customerId, extraParams],
     initialPageParam: 1,
     queryFn: ({ pageParam, signal }) =>
-      (operationsCatalogue?(_kind:CatalogueKind,query:string,signal:AbortSignal)=>api!.operationContracts(query,signal):api!.catalogue)(
+      (operationsCatalogue ? (_kind: CatalogueKind, query: string, signal: AbortSignal) => api!.operationContracts(query, signal) : api!.catalogue)(
         kind,
         new URLSearchParams({
           page: String(pageParam),
@@ -279,6 +301,7 @@ export function CatalogueScreen({
           status,
           store,
           ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}),
+          ...extraParams,
         }).toString(),
         signal,
       ),
@@ -289,8 +312,8 @@ export function CatalogueScreen({
   });
   // Counts are independent of the selected status and never block the first page.
   const statistics = useQuery({
-    queryKey: ['catalogue', 'status-counts', 'contracts', session?.user.id, session?.user.storeId, session?.user.allStores, scope, search, store, from, to, storeBasis, customerId],
-    queryFn: ({ signal }) => api!.catalogue('contracts', new URLSearchParams({ statistics: '1', size: '1', scope, search, store, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) }).toString(), signal),
+    queryKey: ['catalogue', 'status-counts', 'contracts', session?.user.id, session?.user.storeId, session?.user.allStores, scope, search, store, from, to, storeBasis, customerId, extraParams],
+    queryFn: ({ signal }) => api!.catalogue('contracts', new URLSearchParams({ statistics: '1', size: '1', scope, search, store, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}), ...(kind === 'contracts' ? extraParams : {}) }).toString(), signal),
     enabled: kind === 'contracts' && !!api && !!allowed && datesValid && query.isSuccess,
     staleTime: 30_000, gcTime: 300_000, retry: false,
   });
@@ -345,8 +368,9 @@ export function CatalogueScreen({
         ? "Toàn bộ cơ sở"
         : "Cơ sở được phân công"
       : stores.find((item) => String(item.id) === store)?.name ||
-        "Cơ sở được phân công";
-  const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source") + Number(!!customerId);
+      "Cơ sở được phân công";
+  const extraFilterCount = Object.values(extraParams).filter(Boolean).length;
+  const filterCount = Number(!!status) + Number(store !== defaultStore) + Number(!!from) + Number(!!to) + Number(storeBasis !== "source") + Number(!!customerId) + extraFilterCount;
 
   const quickStatuses = [...new Set([...catalogueStatuses(kind, scope), ...(status ? [status] : [])])];
   function resetFilters() {
@@ -358,6 +382,7 @@ export function CatalogueScreen({
     setTo("");
     setStoreBasis("source");
     setCustomerId("");
+    setExtraFilters({});
   }
   const actions: { label: string; onPress: () => void; disabled?: boolean }[] = [];
   if (kind === "contracts" && !operationsCatalogue) {
@@ -379,325 +404,325 @@ export function CatalogueScreen({
       { label: "Khớp cơ sở khách từ Excel", onPress: () => router.push("/customer-store-import") },
     );
   }
-  const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}) }).toString();
+  const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}), ...extraParams }).toString();
   if (kind === 'contracts' && !operationsCatalogue && isAdminAccount(session?.user)) actions.push({ label: 'Nhập nháp hợp đồng từ Excel', onPress: () => router.push('/import-contracts') });
   if (!operationsCatalogue) {
     if (session?.user.permissions.includes(kind === 'contracts' ? 'contracts.delete' : 'settings.write'))
       actions.push({ label: "Chọn nhiều hồ sơ để xóa", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
   }
   const toolbar = (
-      <View
-        style={[
-          styles.toolbar,
-          { paddingTop: compact ? 8 : 14, paddingBottom: compact ? 8 : 12 },
-        ]}
-      >
-        {/* Top Header with Hamburger Menu and Fast Store Selector */}
-        {!compact && (
-          <View style={styles.topHeader}>
-            {showManagementMenu && <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Mở danh mục quản lý"
-              onPress={() => setDrawerOpen(true)}
-              style={({ pressed }) => [
-                styles.menuButton,
-                {
-                  borderColor: theme.border,
-                  backgroundColor: theme.surface,
-                  opacity: pressed ? 0.65 : 1,
-                },
-              ]}
-            >
-              <Menu size={20} color={theme.text} accessible={false} />
-            </Pressable>}
-
-            <Text
-              accessibilityRole="header"
-              numberOfLines={1}
-              style={[styles.headerTitle, { color: theme.text }]}
-            >
-              {settings.title}
-            </Text>
-
-            {kind === 'customers' ? <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ color: theme.muted, fontSize: 12, flexShrink: 1 }}>
-              {query.data ? `${query.data.pages[0].total.toLocaleString('vi-VN')} khách hàng` : 'Đang tải…'}
-            </Text> : <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Chọn cơ sở"
-              onPress={() => setStoreModalOpen(true)}
-              style={({ pressed }) => [
-                styles.storePillHeader,
-                {
-                  borderColor: theme.border,
-                  backgroundColor: theme.surface,
-                  opacity: pressed ? 0.7 : 1,
-                },
-              ]}
-            >
-              <MapPin size={13} color={theme.primary} />
-              <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: "600", maxWidth: 105 }}>
-                {storeName}
-              </Text>
-              <ChevronDown size={13} color={theme.muted} />
-            </Pressable>}
-          </View>
-        )}
-
-        {!compact && kind !== 'customers' && (
-          <View style={styles.row}>
-            <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>
-              {query.data
-                ? `${query.data.pages[0].total.toLocaleString("vi-VN")} ${settings.noun}`
-                : "Đang tải…"}
-            </Text>
-          </View>
-        )}
-        {kind === 'vehicles' && <Text style={{ color: theme.muted, fontSize: 13 }}>Xe đang quản lý không gồm xe đã bán. Chọn “Đã bán” để tra cứu lịch sử.</Text>}
-        {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
-          <Button label="+ Thêm xe mới" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />
-        )}
-        {kind === "customers" && session?.user.permissions.includes("customers.write") && (
-          <Button label="+ Thêm khách hàng" onPress={() => router.push("/customer/new")} />
-        )}
-        {kind === "contracts" && session?.user.permissions.includes("contracts.draft") && (
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Button
-                secondary
-                label="+ Nhận cọc giữ xe"
-                onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store, reservation: "1" } })}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Button
-                label="+ Nhập hợp đồng"
-                onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store } })}
-              />
-            </View>
-          </View>
-        )}
-        {kind === 'contracts' && !operationsCatalogue && !!backfillActions(session!.user.permissions).length && <Button secondary label="+ Nhập bổ sung giao dịch" onPress={() => router.push({ pathname: '/backfill', params: { store_id: store } })} />}
-        {!operationsCatalogue && <Button secondary label="Tải Excel theo bộ lọc" disabled={!datesValid || query.isPending || query.isError || input.trim() !== search} onPress={() => router.push({ pathname: '/catalogue-export/[kind]', params: { kind, filters: exportFilters } })} />}
-        {actions.length > 0 && <View style={{ gap: 8 }}>
-          <Pressable
+    <View
+      style={[
+        styles.toolbar,
+        { paddingTop: compact ? 8 : 14, paddingBottom: compact ? 8 : 12 },
+      ]}
+    >
+      {/* Top Header with Hamburger Menu and Fast Store Selector */}
+      {!compact && (
+        <View style={styles.topHeader}>
+          {showManagementMenu && <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Thao tác khác"
-            accessibilityState={{ expanded: actionsOpen }}
-            aria-expanded={actionsOpen}
-            onPress={() => setActionsOpen(open => !open)}
-            style={({ pressed }) => ({ minHeight: 48, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, opacity: pressed ? 0.72 : 1 })}
-          >
-            <Text style={{ color: theme.muted, fontSize: 15, fontWeight: "600", flex: 1 }}>Thao tác khác</Text>
-            <ChevronDown size={20} color={theme.muted} accessible={false} style={{ transform: [{ rotate: actionsOpen ? "180deg" : "0deg" }] }} />
-          </Pressable>
-          {actionsOpen && <Card style={{ gap: 8, padding: 12 }}>
-            {actions.map(action => <Button key={action.label} secondary {...action} />)}
-          </Card>}
-        </View>}
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <View
-            style={[
-              styles.search,
-              {
-                backgroundColor: theme.surface,
-                borderColor: theme.controlBorder,
-              },
-            ]}
-          >
-            <Search size={20} color={theme.muted} accessible={false} />
-            <TextInput
-              accessibilityLabel={`Tìm ${settings.title.toLowerCase()}`}
-              placeholder={settings.placeholder}
-              placeholderTextColor={theme.muted}
-              value={input}
-              onChangeText={setInput}
-              autoCorrect={false}
-              returnKeyType="search"
-              style={{
-                color: theme.text,
-                flex: 1,
-                minWidth: 0,
-                minHeight: 52,
-                fontSize: 16,
-              }}
-              maxLength={120}
-            />
-            {input ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Xóa tìm kiếm"
-                onPress={() => setInput("")}
-                style={styles.iconButton}
-              >
-                <X size={19} color={theme.muted} />
-              </Pressable>
-            ) : null}
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              filterCount ? `Bộ lọc, ${filterCount} đang áp dụng` : "Bộ lọc"
-            }
-            onPress={() => setFiltersOpen(true)}
+            accessibilityLabel="Mở danh mục quản lý"
+            onPress={() => setDrawerOpen(true)}
             style={({ pressed }) => [
-              styles.filterButton,
+              styles.menuButton,
               {
-                borderColor: filterCount ? theme.primary : theme.controlBorder,
-                backgroundColor: filterCount ? theme.tint : theme.surface,
-                opacity: pressed ? 0.72 : 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                opacity: pressed ? 0.65 : 1,
               },
             ]}
           >
-            <SlidersHorizontal
-              size={21}
-              color={filterCount ? theme.primary : theme.text}
-              accessible={false}
-            />
-            {!!filterCount && (
-              <Text
-                style={{
-                  color: theme.primary,
-                  fontWeight: "700",
-                  fontSize: 12,
-                }}
-              >
-                {filterCount}
-              </Text>
-            )}
-          </Pressable>
-        </View>
-        {!compact && (
-          <View style={{ gap: 6 }}>
-            {/* 10 Standard Status Tabs matching Web contract-tabs.ts */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8 }}
-            >
-              {quickStatuses.map((value) => {
-                const isSelected = status === value;
-                const tabLabel = value
-                  ? contextualStatusLabel(kind, value) || statuses[value] || value
-                  : catalogueAllLabel(kind, scope);
-                const count = (() => {
-                  if (!value) return kind === 'contracts' ? statistics.data?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined) : query.data?.pages[0]?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined);
-                  if (statusCountsMap.size === 0 && !(kind === 'contracts' ? statistics.data : query.data)) return undefined;
-                  if (kind === "contracts" && value === "renting") {
-                    return statistics.data?.tabCount === undefined ? undefined : activeRentalCount(statusCountsMap, statistics.data.tabCount);
-                  }
-                  if (kind === 'contracts' && value === 'overdue') return (statusCountsMap.get('overdue') || 0) + (statusCountsMap.get('bad_debt') || 0);
-                  if (kind === 'customers' && value === 'blacklist') return statusCountsMap.get('bad_debt') ?? statusCountsMap.get('blacklist') ?? 0;
-                  return statusCountsMap.get(value) ?? 0;
-                })();
+            <Menu size={20} color={theme.text} accessible={false} />
+          </Pressable>}
 
-                return (
-                  <Pressable
-                    key={value || "all"}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected }}
-                    aria-selected={isSelected}
-                    onPress={() => setStatus(value)}
-                    style={({ pressed }) => [
-                      styles.chip,
-                      {
-                        backgroundColor:
-                          isSelected ? theme.primary : theme.surface,
-                        borderColor:
-                          isSelected ? theme.primary : theme.controlBorder,
-                        opacity: pressed ? 0.75 : 1,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={{
-                        color: isSelected ? theme.primaryText : theme.text,
-                        fontSize: 13,
-                        fontWeight: isSelected ? "700" : "500",
-                      }}
-                    >
-                      {tabLabel}{count !== undefined ? ` (${count})` : ""}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            {!!customerId && <Text style={{ color: theme.text, fontSize: 14 }}>Hợp đồng của khách: {customerName || `#${customerId}`}</Text>}
-            {kind === 'contracts' && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
-
-            {/* Scope notification banner if filtered by specialized workspace */}
-            {kind === "contracts" && !!scope && (
-              <View
-                style={[
-                  styles.scopeBanner,
-                  { backgroundColor: theme.tint, borderColor: theme.border },
-                ]}
-              >
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
-                    Đang xem: {contractWorkspace(scope)!.title}
-                  </Text>
-                  <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
-                    {contractWorkspace(scope)!.description}
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Xem tất cả hợp đồng"
-                  onPress={() => { setScope(""); setStatus(""); }}
-                  style={[
-                    styles.scopeClearChip,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
-                  ]}
-                >
-                  <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
-                    Xem tất cả
-                  </Text>
-                  <X size={13} color={theme.primary} />
-                </Pressable>
-              </View>
-            )}
-          </View>
-        )}
-        <View style={styles.row}>
           <Text
-            numberOfLines={2}
-            style={{
-              color: theme.muted,
-              flex: 1,
-              fontSize: 13,
-              lineHeight: 19,
-            }}
+            accessibilityRole="header"
+            numberOfLines={1}
+            style={[styles.headerTitle, { color: theme.text }]}
           >
-            {storeName}
-            {storeBasis === "warehouse" ? " · Theo kho xe" : ""}
-            {from || to ? ` · ${from || "…"} → ${to || "…"}` : ""}
-            {compact && status ? ` · ${statuses[status]}` : ""}
+            {settings.title}
           </Text>
-          {(input || filterCount > 0) && (
+
+          {kind === 'customers' ? <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ color: theme.muted, fontSize: 12, flexShrink: 1 }}>
+            {query.data ? `${query.data.pages[0].total.toLocaleString('vi-VN')} khách hàng` : 'Đang tải…'}
+          </Text> : <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Chọn cơ sở"
+            onPress={() => setStoreModalOpen(true)}
+            style={({ pressed }) => [
+              styles.storePillHeader,
+              {
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <MapPin size={13} color={theme.primary} />
+            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: "600", maxWidth: 105 }}>
+              {storeName}
+            </Text>
+            <ChevronDown size={13} color={theme.muted} />
+          </Pressable>}
+        </View>
+      )}
+
+      {!compact && kind !== 'customers' && (
+        <View style={styles.row}>
+          <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>
+            {query.data
+              ? `${query.data.pages[0].total.toLocaleString("vi-VN")} ${settings.noun}`
+              : "Đang tải…"}
+          </Text>
+        </View>
+      )}
+      {kind === 'vehicles' && <Text style={{ color: theme.muted, fontSize: 13 }}>Xe đang quản lý không gồm xe đã bán. Chọn “Đã bán” để tra cứu lịch sử.</Text>}
+      {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
+        <Button label="+ Thêm xe mới" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />
+      )}
+      {kind === "customers" && session?.user.permissions.includes("customers.write") && (
+        <Button label="+ Thêm khách hàng" onPress={() => router.push("/customer/new")} />
+      )}
+      {kind === "contracts" && session?.user.permissions.includes("contracts.draft") && (
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Button
+              secondary
+              label="+ Nhận cọc giữ xe"
+              onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store, reservation: "1" } })}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="+ Nhập hợp đồng"
+              onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store } })}
+            />
+          </View>
+        </View>
+      )}
+      {kind === 'contracts' && !operationsCatalogue && !!backfillActions(session!.user.permissions).length && <Button secondary label="+ Nhập bổ sung giao dịch" onPress={() => router.push({ pathname: '/backfill', params: { store_id: store } })} />}
+      {!operationsCatalogue && <Button secondary label="Tải Excel theo bộ lọc" disabled={!datesValid || query.isPending || query.isError || input.trim() !== search} onPress={() => router.push({ pathname: '/catalogue-export/[kind]', params: { kind, filters: exportFilters } })} />}
+      {actions.length > 0 && <View style={{ gap: 8 }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Thao tác khác"
+          accessibilityState={{ expanded: actionsOpen }}
+          aria-expanded={actionsOpen}
+          onPress={() => setActionsOpen(open => !open)}
+          style={({ pressed }) => ({ minHeight: 48, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, opacity: pressed ? 0.72 : 1 })}
+        >
+          <Text style={{ color: theme.muted, fontSize: 15, fontWeight: "600", flex: 1 }}>Thao tác khác</Text>
+          <ChevronDown size={20} color={theme.muted} accessible={false} style={{ transform: [{ rotate: actionsOpen ? "180deg" : "0deg" }] }} />
+        </Pressable>
+        {actionsOpen && <Card style={{ gap: 8, padding: 12 }}>
+          {actions.map(action => <Button key={action.label} secondary {...action} />)}
+        </Card>}
+      </View>}
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <View
+          style={[
+            styles.search,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.controlBorder,
+            },
+          ]}
+        >
+          <Search size={20} color={theme.muted} accessible={false} />
+          <TextInput
+            accessibilityLabel={`Tìm ${settings.title.toLowerCase()}`}
+            placeholder={settings.placeholder}
+            placeholderTextColor={theme.muted}
+            value={input}
+            onChangeText={setInput}
+            autoCorrect={false}
+            returnKeyType="search"
+            style={{
+              color: theme.text,
+              flex: 1,
+              minWidth: 0,
+              minHeight: 52,
+              fontSize: 16,
+            }}
+            maxLength={120}
+          />
+          {input ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Xóa bộ lọc và tìm kiếm"
-              onPress={resetFilters}
+              accessibilityLabel="Xóa tìm kiếm"
+              onPress={() => setInput("")}
+              style={styles.iconButton}
+            >
+              <X size={19} color={theme.muted} />
+            </Pressable>
+          ) : null}
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            filterCount ? `Bộ lọc, ${filterCount} đang áp dụng` : "Bộ lọc"
+          }
+          onPress={() => setFiltersOpen(true)}
+          style={({ pressed }) => [
+            styles.filterButton,
+            {
+              borderColor: filterCount ? theme.primary : theme.controlBorder,
+              backgroundColor: filterCount ? theme.tint : theme.surface,
+              opacity: pressed ? 0.72 : 1,
+            },
+          ]}
+        >
+          <SlidersHorizontal
+            size={21}
+            color={filterCount ? theme.primary : theme.text}
+            accessible={false}
+          />
+          {!!filterCount && (
+            <Text
               style={{
-                minHeight: 48,
-                justifyContent: "center",
-                paddingHorizontal: 8,
+                color: theme.primary,
+                fontWeight: "700",
+                fontSize: 12,
               }}
             >
-              <Text
-                style={{
-                  color: theme.primary,
-                  fontSize: 13,
-                  fontWeight: "600",
-                }}
+              {filterCount}
+            </Text>
+          )}
+        </Pressable>
+      </View>
+      {!compact && (
+        <View style={{ gap: 6 }}>
+          {/* 10 Standard Status Tabs matching Web contract-tabs.ts */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8 }}
+          >
+            {quickStatuses.map((value) => {
+              const isSelected = status === value;
+              const tabLabel = value
+                ? contextualStatusLabel(kind, value) || statuses[value] || value
+                : catalogueAllLabel(kind, scope);
+              const count = (() => {
+                if (!value) return kind === 'contracts' ? statistics.data?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined) : query.data?.pages[0]?.tabCount ?? (!status ? query.data?.pages[0]?.total : undefined);
+                if (statusCountsMap.size === 0 && !(kind === 'contracts' ? statistics.data : query.data)) return undefined;
+                if (kind === "contracts" && value === "renting") {
+                  return statistics.data?.tabCount === undefined ? undefined : activeRentalCount(statusCountsMap, statistics.data.tabCount);
+                }
+                if (kind === 'contracts' && value === 'overdue') return (statusCountsMap.get('overdue') || 0) + (statusCountsMap.get('bad_debt') || 0);
+                if (kind === 'customers' && value === 'blacklist') return statusCountsMap.get('bad_debt') ?? statusCountsMap.get('blacklist') ?? 0;
+                return statusCountsMap.get(value) ?? 0;
+              })();
+
+              return (
+                <Pressable
+                  key={value || "all"}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
+                  aria-selected={isSelected}
+                  onPress={() => setStatus(value)}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    {
+                      backgroundColor:
+                        isSelected ? theme.primary : theme.surface,
+                      borderColor:
+                        isSelected ? theme.primary : theme.controlBorder,
+                      opacity: pressed ? 0.75 : 1,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: isSelected ? theme.primaryText : theme.text,
+                      fontSize: 13,
+                      fontWeight: isSelected ? "700" : "500",
+                    }}
+                  >
+                    {tabLabel}{count !== undefined ? ` (${count})` : ""}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {!!customerId && <Text style={{ color: theme.text, fontSize: 14 }}>Hợp đồng của khách: {customerName || `#${customerId}`}</Text>}
+          {kind === 'contracts' && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
+
+          {/* Scope notification banner if filtered by specialized workspace */}
+          {kind === "contracts" && !!scope && (
+            <View
+              style={[
+                styles.scopeBanner,
+                { backgroundColor: theme.tint, borderColor: theme.border },
+              ]}
+            >
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
+                  Đang xem: {contractWorkspace(scope)!.title}
+                </Text>
+                <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
+                  {contractWorkspace(scope)!.description}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Xem tất cả hợp đồng"
+                onPress={() => { setScope(""); setStatus(""); }}
+                style={[
+                  styles.scopeClearChip,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                ]}
               >
-                Đặt lại
-              </Text>
-            </Pressable>
+                <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
+                  Xem tất cả
+                </Text>
+                <X size={13} color={theme.primary} />
+              </Pressable>
+            </View>
           )}
         </View>
+      )}
+      <View style={styles.row}>
+        <Text
+          numberOfLines={2}
+          style={{
+            color: theme.muted,
+            flex: 1,
+            fontSize: 13,
+            lineHeight: 19,
+          }}
+        >
+          {storeName}
+          {storeBasis === "warehouse" ? " · Theo kho xe" : ""}
+          {from || to ? ` · ${from || "…"} → ${to || "…"}` : ""}
+          {compact && status ? ` · ${statuses[status]}` : ""}
+        </Text>
+        {(input || filterCount > 0) && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Xóa bộ lọc và tìm kiếm"
+            onPress={resetFilters}
+            style={{
+              minHeight: 48,
+              justifyContent: "center",
+              paddingHorizontal: 8,
+            }}
+          >
+            <Text
+              style={{
+                color: theme.primary,
+                fontSize: 13,
+                fontWeight: "600",
+              }}
+            >
+              Đặt lại
+            </Text>
+          </Pressable>
+        )}
       </View>
+    </View>
   );
   return (
     <SafeAreaView
@@ -716,7 +741,7 @@ export function CatalogueScreen({
         windowSize={5}
         removeClippedSubviews={Platform.OS === 'android'}
         updateCellsBatchingPeriod={32}
-        maintainVisibleContentPosition={Platform.OS!=='web'&&(query.data?.pages.length||0)>=CATALOGUE_MAX_PAGES?{minIndexForVisible:1}:undefined}
+        maintainVisibleContentPosition={Platform.OS !== 'web' && (query.data?.pages.length || 0) >= CATALOGUE_MAX_PAGES ? { minIndexForVisible: 1 } : undefined}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'}
@@ -728,7 +753,7 @@ export function CatalogueScreen({
               void restore(true);
               void query.refetch();
               if (kind === 'contracts') void statistics.refetch();
-              if(kind==='vehicles')void cache.invalidateQueries({queryKey:['record-media','vehicle-thumbnail']});
+              if (kind === 'vehicles') void cache.invalidateQueries({ queryKey: ['record-media', 'vehicle-thumbnail'] });
             }}
             tintColor={theme.primary}
           />
@@ -752,9 +777,9 @@ export function CatalogueScreen({
                 }}
               />
             </View>
-          ) : null}{query.hasPreviousPage&&<View style={{gap:10,paddingVertical:12}}>
-            <Button label="Xem kết quả trước" secondary loading={query.isFetchingPreviousPage} disabled={query.isFetching&&!query.isFetchingPreviousPage} onPress={()=>{void query.fetchPreviousPage({cancelRefetch:false});}}/>
-            {query.isFetchPreviousPageError&&<InlineError message="Chưa tải được kết quả trước. Các hồ sơ đang xem vẫn được giữ."/>}
+          ) : null}{query.hasPreviousPage && <View style={{ gap: 10, paddingVertical: 12 }}>
+            <Button label="Xem kết quả trước" secondary loading={query.isFetchingPreviousPage} disabled={query.isFetching && !query.isFetchingPreviousPage} onPress={() => { void query.fetchPreviousPage({ cancelRefetch: false }); }} />
+            {query.isFetchPreviousPageError && <InlineError message="Chưa tải được kết quả trước. Các hồ sơ đang xem vẫn được giữ." />}
           </View>}</>
         }
         ListEmptyComponent={
@@ -820,7 +845,7 @@ export function CatalogueScreen({
         <CatalogueFilters
           kind={kind}
           scope={scope}
-          selected={{ status, store, from, to, storeBasis }}
+          selected={{ status, store, from, to, storeBasis, ...extraFilters }}
           defaultStore={defaultStore}
           stores={stores}
           allowAll={kind === "vehicles" || session?.user.allStores === true}
@@ -836,6 +861,13 @@ export function CatalogueScreen({
             setFrom(selection.from || "");
             setTo(selection.to || "");
             setStoreBasis(selection.storeBasis || "source");
+            setExtraFilters({
+              rentalType: selection.rentalType || undefined,
+              ownershipTerm: selection.ownershipTerm || undefined,
+              vehicleType: selection.vehicleType || undefined,
+              warehouseStore: selection.warehouseStore || undefined,
+              beneficiaryStore: selection.beneficiaryStore || undefined,
+            });
             setFiltersOpen(false);
           }}
         />

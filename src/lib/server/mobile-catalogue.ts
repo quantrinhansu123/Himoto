@@ -117,7 +117,11 @@ export function mobileRecord(
   };
 }
 export function mobileTableParams(params: URLSearchParams, kind: CatalogueKind = "contracts") {
-  const allowed = new Set(["page", "size", "search", "status", "store", ...(kind === "contracts" ? ["scope", "from", "to", "store_basis", "customer_id", "statistics"] : [])]);
+  const allowed = new Set([
+    "page", "size", "search", "status", "store",
+    ...(kind === "contracts" ? ["scope", "from", "to", "store_basis", "customer_id", "statistics", "rental_type", "ownership_term_months"] : []),
+    ...(kind === "vehicles" ? ["vehicle_type", "warehouse_store_id", "beneficiary_store_id"] : []),
+  ]);
   for (const [key] of params)
     if (!allowed.has(key) || params.getAll(key).length !== 1) {
       throw new MobileError("Bộ lọc không hợp lệ.");
@@ -128,6 +132,40 @@ export function mobileTableParams(params: URLSearchParams, kind: CatalogueKind =
     if (!/^[1-9]\d{0,14}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new MobileError("Khách hàng cần lọc chưa hợp lệ.");
     result.delete("customer_id");
     result.set("filter_customer_id", id);
+  }
+  if (result.has("rental_type")) {
+    const rt = result.get("rental_type")!;
+    result.delete("rental_type");
+    if (rt) {
+      if (!/^[a-z0-9_]{1,40}$/.test(rt)) throw new MobileError("Loại hợp đồng lọc chưa hợp lệ.");
+      result.set("filter_rental_type", rt);
+    }
+  }
+  if (result.has("ownership_term_months")) {
+    const term = result.get("ownership_term_months")!;
+    result.delete("ownership_term_months");
+    if (term) {
+      if (!/^(6|9|12|18|24|custom)$/.test(term)) throw new MobileError("Thời hạn sở hữu lọc chưa hợp lệ.");
+      result.set("filter_ownership_term_months", term);
+    }
+  }
+  if (result.has("vehicle_type")) {
+    const vt = result.get("vehicle_type")!;
+    result.delete("vehicle_type");
+    if (vt) {
+      if (!/^(xega|xeso|xecon|xesh|xe_dien)$/.test(vt)) throw new MobileError("Loại xe lọc chưa hợp lệ.");
+      result.set("filter_type", vt);
+    }
+  }
+  for (const storeKey of ["warehouse_store_id", "beneficiary_store_id"] as const) {
+    if (result.has(storeKey)) {
+      const val = result.get(storeKey)!;
+      result.delete(storeKey);
+      if (val) {
+        if (!/^[1-9]\d{0,14}$/.test(val) || !Number.isSafeInteger(Number(val))) throw new MobileError("Cơ sở lọc xe chưa hợp lệ.");
+        result.set(`filter_${storeKey}`, val);
+      }
+    }
   }
   if (result.has("statistics")) {
     if (result.get("statistics") !== "1") throw new MobileError("Yêu cầu số lượng chưa hợp lệ.");

@@ -273,6 +273,20 @@ export default function RecordDetail() {
           />
         )}
 
+        {session?.user.permissions.includes("contracts.read") && (
+          <Button
+            secondary
+            label="Xem hợp đồng của khách"
+            icon={<FileText size={16} color={theme.text} />}
+            onPress={() =>
+              router.push({
+                pathname: "/(tabs)/contracts",
+                params: { customer_id: params.id, customer_name: row.name || "", status: "all", store: "all" },
+              })
+            }
+          />
+        )}
+
         <Button
           secondary
           label="Giấy tờ, CCCD & Ảnh khách hàng"
