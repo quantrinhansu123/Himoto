@@ -1,8 +1,9 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, findPaymentAccount, paymentAccountMatchesMethod, paymentMethodLabel, type RenewalPaymentCorrection } from '@/lib/management/contract-payments';
-import { ContractPaymentError, readPaymentContext } from './contract-payments';
+import { MAX_PAYMENT_AMOUNT, PAYMENT_METHODS, findPaymentAccount, paymentAccountMatchesMethod, paymentMethodLabel, vietnamPaymentTime, type RenewalPaymentCorrection } from '@/lib/management/contract-payments';
+import type { RenewalVersion } from '@/lib/management/contract-renewals';
+import { ContractPaymentError, readPaymentContext, recordContractPayment } from './contract-payments';
 import { sameRenewalPeriod } from './contract-notification-content';
 
 function correctionTime(value:unknown,label:string):string|undefined {
@@ -16,10 +17,12 @@ function correctionTime(value:unknown,label:string):string|undefined {
 export function parseRenewalPaymentCorrection(body: unknown): RenewalPaymentCorrection {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ContractPaymentError('Thông tin sửa thanh toán không hợp lệ.');
   const value = body as Record<string, unknown>;
-  const allowed = ['request_id','transaction_id','revision','method','account_id','reason','before_return_at','return_at','amount','paid_at','collected_amount'];
+  const allowed = ['request_id','transaction_id','renewal_version','revision','method','account_id','reason','before_return_at','return_at','amount','paid_at','collected_amount'];
+  const byVersion = value.renewal_version !== undefined;
   if (Object.keys(value).some(key => !allowed.includes(key)) ||
     typeof value.request_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.request_id) ||
-    !Number.isSafeInteger(Number(value.transaction_id)) || Number(value.transaction_id) <= 0 ||
+    (byVersion ? value.transaction_id !== undefined || !Number.isSafeInteger(value.renewal_version) || Number(value.renewal_version) < 2
+      : !Number.isSafeInteger(Number(value.transaction_id)) || Number(value.transaction_id) <= 0) ||
     typeof value.revision !== 'string' || !/^\d{1,20}$/.test(value.revision) ||
     typeof value.reason !== 'string' || !value.reason.trim() || value.reason.trim().length > 500) {
     throw new ContractPaymentError('Thông tin sửa không hợp lệ hoặc thiếu lý do sửa (tối đa 500 ký tự).');
@@ -47,13 +50,16 @@ export function parseRenewalPaymentCorrection(body: unknown): RenewalPaymentCorr
     throw new ContractPaymentError('Ngày hẹn trả mới phải sau ngày bắt đầu gia hạn.');
   }
   if ((method === undefined) !== (accountId === undefined)) throw new ContractPaymentError('Chọn đủ hình thức và tài khoản nhận.');
+  if (byVersion && (value.collected_amount ? !method || !paidAt : method || paidAt)) {
+    throw new ContractPaymentError('Nhập đủ số tiền đã thu, ngày thu và tài khoản nhận để lập phiếu.');
+  }
   if (value.amount !== undefined && (typeof value.amount !== 'string' || !/^(0|[1-9]\d{0,12})$/.test(value.amount) || Number(value.amount) > MAX_PAYMENT_AMOUNT)) {
     throw new ContractPaymentError('Phí gia hạn phải là số tiền VNĐ nguyên, không âm và trong giới hạn.');
   }
 
   return {
     request_id: value.request_id.toLowerCase(),
-    transaction_id: Number(value.transaction_id),
+    ...(byVersion ? {renewal_version:Number(value.renewal_version)} : {transaction_id:Number(value.transaction_id)}),
     revision: value.revision,
     method,
     account_id: accountId,
@@ -72,27 +78,49 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   if (![orderId,actorId].every(id => Number.isSafeInteger(id) && id > 0)) throw new ContractPaymentError('Hợp đồng hoặc người sửa không hợp lệ.');
   await db.query("SET LOCAL lock_timeout='5s'");
   await db.query("SET LOCAL statement_timeout='15s'");
-  const order = (await db.query('SELECT store_id,order_status,total,pid,draft_payload FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[orderId])).rows[0];
+  if (input.renewal_version && input.collected_amount) {
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`contract-payment:${input.request_id}`]);
+    await db.query('LOCK TABLE himoto.orders IN ROW EXCLUSIVE MODE');
+  }
+  const order = (await db.query('SELECT store_id,order_status,total,pid,draft_payload,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[orderId])).rows[0];
   if (!order) throw new ContractPaymentError('Không tìm thấy hợp đồng trong cơ sở được phân quyền.',404);
   const payload = structuredClone(order.draft_payload || {}), composer = payload.management_composer || {};
   const edits = Array.isArray(composer.payment_corrections) ? composer.payment_corrections : [];
-  const hash = createHash('sha256').update(JSON.stringify({orderId,actorId,transaction:input.transaction_id,...(input.paid_at?{paid_at:input.paid_at}:{}),...(input.collected_amount?{collected_amount:input.collected_amount}:{}),method:input.method,account:input.account_id,reason:input.reason,before_return_at:input.before_return_at,return_at:input.return_at,...(input.amount===undefined?{}:{amount:input.amount})})).digest('hex');
+  const hash = createHash('sha256').update(JSON.stringify({orderId,actorId,transaction:input.transaction_id,renewal_version:input.renewal_version,...(input.paid_at?{paid_at:input.paid_at}:{}),...(input.collected_amount?{collected_amount:input.collected_amount}:{}),method:input.method,account:input.account_id,reason:input.reason,before_return_at:input.before_return_at,return_at:input.return_at,...(input.amount===undefined?{}:{amount:input.amount})})).digest('hex');
   const previous = edits.find((edit: {request_id: string}) => edit.request_id === input.request_id);
   if (previous) {
     if (previous.request_hash !== hash) throw new ContractPaymentError('Mã lần sửa đã dùng cho nội dung khác. Tải lại phiếu để kiểm tra.',409);
     return readPaymentContext(db,orderId);
   }
   if (['draft','cancelled'].includes(order.order_status)) throw new ContractPaymentError('Không sửa thanh toán của hợp đồng nháp hoặc đã hủy.',409);
-  const receipt = (await db.query(`SELECT t.id,t.store_id,t.type,t.status,t.value,t.bank_id,t.cash_id,t.payment_method,t.bank_owner_type,
+  const versions: RenewalVersion[] = Array.isArray(composer.versions) ? [...composer.versions] : [];
+  const withoutReceipt = input.renewal_version !== undefined;
+  const version = versions.find(v => v.kind === 'renewal' && Number(v.version) === input.renewal_version);
+  if (withoutReceipt && (!version || !version.item_id || order.revision !== input.revision)) {
+    throw new ContractPaymentError('Kỳ gia hạn đã thay đổi hoặc không còn hợp lệ. Tải lại thông tin trước khi sửa.',409);
+  }
+  if (version) {
+    const linked = await db.query(`SELECT p.renewal_payload FROM himoto.management_contract_payments p
+      JOIN himoto.transactions t ON t.id=p.transaction_id AND t.order_id=p.order_id
+      WHERE p.order_id=$1 AND p.renewal_payload->>'version'=$2 AND t.status='approved' AND t.type IN ('in','addon')`,
+      [orderId,String(version.version)]);
+    if (linked.rows.some(row => sameRenewalPeriod(row.renewal_payload,version))) {
+      throw new ContractPaymentError('Kỳ gia hạn đã có phiếu thu. Tải lại thông tin để sửa phiếu.',409);
+    }
+  }
+  const receipt = withoutReceipt ? {
+    renewal_payload: version, status: 'approved', revision: order.revision, value: 0, created_at: null,
+    bank_id: null, cash_id: null, payment_method: null, bank_owner_type: null,
+  } : (await db.query(`SELECT t.id,t.store_id,t.type,t.status,t.value,t.bank_id,t.cash_id,t.payment_method,t.bank_owner_type,
       t.created_at,t.xmin::text AS revision,p.renewal_payload
     FROM himoto.transactions t JOIN himoto.management_contract_payments p ON p.transaction_id=t.id AND p.order_id=t.order_id
     WHERE t.id=$1 AND t.order_id=$2 FOR UPDATE OF t,p`,[input.transaction_id,orderId])).rows[0];
-  if (!receipt || !receipt.renewal_payload || !['in','addon'].includes(receipt.type) || !['approved','cancelled'].includes(receipt.status) || Number(receipt.value) <= 0 || Number(receipt.store_id) !== Number(order.store_id)) {
+  if (!receipt || !receipt.renewal_payload || (!withoutReceipt && (!['in','addon'].includes(receipt.type) || !['approved','cancelled'].includes(receipt.status) || Number(receipt.value) <= 0 || Number(receipt.store_id) !== Number(order.store_id)))) {
     throw new ContractPaymentError('Chỉ sửa thông tin gia hạn thuộc hợp đồng này.',409);
   }
   if (receipt.revision !== input.revision) throw new ContractPaymentError('Phiếu đã được cập nhật. Tải lại rồi sửa trên thông tin mới.',409);
   const eventKey = receipt.renewal_payload.version !== undefined ? `renewal:${orderId}:${receipt.renewal_payload.version}` : `renewal-receipt:${orderId}:${input.transaction_id}`;
-  const eventKeys=[...new Set([eventKey,`renewal-receipt:${orderId}:${input.transaction_id}`])];
+  const eventKeys=input.transaction_id ? [...new Set([eventKey,`renewal-receipt:${orderId}:${input.transaction_id}`])] : [eventKey];
   const notices = (await db.query(`SELECT status,message_ids,retraction FROM himoto.management_contract_notifications
     WHERE order_id=$1 AND (event_key=ANY($2::text[]) OR root_event_key=ANY($2::text[])) FOR UPDATE`,[orderId,eventKeys])).rows;
   if (notices.some(notice => notice.retraction?.state !== 'done' && (['pending','sending','unknown'].includes(notice.status) ||
@@ -134,22 +162,24 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   const newBefore = input.before_return_at || currentBefore;
   const newReturn = input.return_at || currentReturn;
   if (!newBefore || !newReturn || Date.parse(newReturn) <= Date.parse(newBefore)) throw new ContractPaymentError('Ngày hẹn trả mới phải sau ngày bắt đầu gia hạn.');
-  const versions = Array.isArray(composer.versions) ? [...composer.versions] : [];
-  const idx = versions.findIndex((v:Record<string,unknown>)=>v.kind==='renewal' && Number(v.version)===Number(receipt.renewal_payload.version) && sameRenewalPeriod(v,receipt.renewal_payload));
+  const idx = versions.findIndex(v=>v.kind==='renewal' && Number(v.version)===Number(receipt.renewal_payload.version) && sameRenewalPeriod(v,receipt.renewal_payload));
   const currentAmount = Number(idx>=0 ? versions[idx].amount : receipt.renewal_payload.amount);
   const newAmount = input.amount === undefined ? currentAmount : Number(input.amount);
   const amountChanged = newAmount !== currentAmount;
-  if (amountChanged && (!old?.renewal_fee_editable || idx < 0)) throw new ContractPaymentError('Chỉ sửa phí của kỳ gia hạn đã đối chiếu khi xe còn đang thuê. Phiếu đã hủy hoặc xe đã trả không làm thay đổi tiền hợp đồng tại đây.',409);
+  const feeEditable = withoutReceipt
+    ? context.renewals?.find(row => row.version === input.renewal_version)?.fee_editable
+    : old?.renewal_fee_editable;
+  if (amountChanged && (!feeEditable || idx < 0)) throw new ContractPaymentError('Chỉ sửa phí của kỳ gia hạn đã đối chiếu khi xe còn đang thuê.',409);
   const delta = newAmount - currentAmount;
   if (amountChanged && (![currentAmount,Number(order.total),Number(order.total)+delta].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=MAX_PAYMENT_AMOUNT))) throw new ContractPaymentError('Tiền hợp đồng hiện tại chưa hợp lệ để sửa phí gia hạn.',409);
   const newCollected=input.collected_amount===undefined?Number(receipt.value):Number(input.collected_amount);
   const collectedDelta=newCollected-Number(receipt.value);
-  const newPaidAt=input.paid_at||new Date(receipt.created_at).toISOString();
-  const dateChanged=Boolean(input.paid_at)&&Date.parse(newPaidAt)!==new Date(receipt.created_at).getTime();
+  const newPaidAt=input.paid_at||(receipt.created_at ? new Date(receipt.created_at).toISOString() : null);
+  const dateChanged=Boolean(input.paid_at && newPaidAt && Date.parse(newPaidAt)!==new Date(receipt.created_at).getTime());
   const receiptChanged=collectedDelta!==0||dateChanged;
   if(receiptChanged && receipt.status!=='approved')throw new ContractPaymentError('Không sửa số tiền hoặc ngày của phiếu đã hủy.',409);
-  if(collectedDelta && (order.pid==null || !Number.isSafeInteger(Number(order.pid)+collectedDelta)||Number(order.pid)+collectedDelta<0))throw new ContractPaymentError('Không đối chiếu được tổng tiền đã thu.',409);
-  const affectedTransactionIds=[input.transaction_id];
+  if(!withoutReceipt && collectedDelta && (order.pid==null || !Number.isSafeInteger(Number(order.pid)+collectedDelta)||Number(order.pid)+collectedDelta<0))throw new ContractPaymentError('Không đối chiếu được tổng tiền đã thu.',409);
+  const affectedTransactionIds=input.transaction_id ? [input.transaction_id] : [];
 
   if (newBefore !== currentBefore || newReturn !== currentReturn) {
     periodChanged = true;
@@ -159,7 +189,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   // correction or fail just because Telegram previously used the wrong clock.
   if (!paymentChanged && !periodChanged && !amountChanged && !receiptChanged) return context;
 
-  {
+  if (!withoutReceipt) {
     // Bump the receipt revision for metadata-only edits too, so stale editors
     // cannot overwrite a newer period/fee with an unchanged routing revision.
     const changed = await db.query(`UPDATE himoto.transactions SET bank_id=$3,cash_id=$4,payment_method=$5,bank_owner_type=$6,value=$7,created_at=$8::timestamptz,updated_at=now()
@@ -175,11 +205,11 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
       ...(newBefore ? { before_return_at: newBefore } : {}),
       ...(newReturn ? { return_at: newReturn } : {}),
     };
-    await db.query(`UPDATE himoto.management_contract_payments SET renewal_payload=$3::jsonb WHERE transaction_id=$1 AND order_id=$2`,
+    if (!withoutReceipt) await db.query(`UPDATE himoto.management_contract_payments SET renewal_payload=$3::jsonb WHERE transaction_id=$1 AND order_id=$2`,
       [input.transaction_id, orderId, JSON.stringify(updatedRenewalPayload)]);
     // Several receipts may collect one fee in parts. Keep their coverage/fee
     // snapshots together; each voucher's value, collected_amount and date stay intact.
-    if(receipt.status==='approved'&&idx>=0){
+    if(!withoutReceipt&&receipt.status==='approved'&&idx>=0){
       const siblings=(await db.query(`SELECT p.transaction_id,p.renewal_payload FROM himoto.management_contract_payments p
         JOIN himoto.transactions t ON t.id=p.transaction_id AND t.order_id=p.order_id
         WHERE p.order_id=$1 AND p.transaction_id<>$2 AND p.renewal_payload IS NOT NULL
@@ -197,23 +227,19 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
     const renewalVersion = receipt.renewal_payload.version;
     if (renewalVersion !== undefined && idx >= 0) {
       const existingVersions = versions;
-      const entry = {
-        kind: 'renewal',
-        version: renewalVersion,
-        license: receipt.renewal_payload.license,
-        vehicle_name: receipt.renewal_payload.vehicle_name,
+      existingVersions[idx] = {
+        ...existingVersions[idx],
         amount: newAmount,
-        ...(newBefore ? { before_return_at: newBefore } : {}),
-        ...(newReturn ? { return_at: newReturn } : {}),
+        before_return_at: newBefore,
+        return_at: newReturn,
       };
-      existingVersions[idx] = { ...existingVersions[idx], ...entry };
       composer.versions = existingVersions;
     }
 
     const itemId = receipt.renewal_payload.item_id;
     if (itemId) {
       const item=(await db.query('SELECT rent_at,return_at,total_renewal_amount,completed_at FROM himoto.order_vehicle_details WHERE id=$1 AND order_id=$2 AND deleted_at IS NULL FOR UPDATE',[itemId,orderId])).rows[0];
-      if (!item || amountChanged && Number(item.total_renewal_amount||0)+delta<0) throw new ContractPaymentError('Không đối chiếu được xe và phí gia hạn đã ghi nhận.',409);
+      if (!item || amountChanged && (withoutReceipt && item.completed_at || Number(item.total_renewal_amount||0)+delta<0)) throw new ContractPaymentError('Không đối chiếu được xe và phí gia hạn đã ghi nhận.',409);
       if(periodChanged && item.rent_at && Date.parse(newBefore)<new Date(item.rent_at).getTime())throw new ContractPaymentError('Kỳ gia hạn không thể bắt đầu trước ngày nhận xe.',409);
       // Editing an older period must not move the bike back from a later renewal.
       const moveDeadline=periodChanged && receipt.status==='approved' && idx>=0 && !item.completed_at && new Date(item.return_at).getTime()===Date.parse(currentReturn!);
@@ -227,7 +253,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
 
   payload.management_composer = { ...composer, payment_corrections: [...edits, {
     request_id: input.request_id, request_hash: hash, at: new Date().toISOString(), actor_id: actorId, reason: input.reason,
-    transaction_id: input.transaction_id, renewal_version: receipt.renewal_payload.version ?? null, amount: Number(receipt.value),
+    transaction_id: input.transaction_id ?? null, renewal_version: receipt.renewal_payload.version ?? null, amount: Number(receipt.value),
     affected_transaction_ids:affectedTransactionIds,
     before: {
       bank_id: receipt.bank_id, cash_id: receipt.cash_id, payment_method: receipt.payment_method, bank_owner_type: receipt.bank_owner_type,
@@ -241,6 +267,14 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
       renewal_amount: newAmount, collected_amount:newCollected,paid_at:newPaidAt,
     },
   }] };
-  await db.query('UPDATE himoto.orders SET draft_payload=$2::json,pid=CASE WHEN $4::bigint=0 THEN pid ELSE pid+$4::bigint END,total=CASE WHEN $3::bigint=0 THEN total ELSE (total::numeric+$3)::text END,updated_at=now() WHERE id=$1',[orderId,JSON.stringify(payload),amountChanged?delta:0,receipt.status==='approved'?collectedDelta:0]);
+  const updated = await db.query('UPDATE himoto.orders SET draft_payload=$2::json,pid=CASE WHEN $4::bigint=0 THEN pid ELSE pid+$4::bigint END,total=CASE WHEN $3::bigint=0 THEN total ELSE (total::numeric+$3)::text END,updated_at=now() WHERE id=$1 RETURNING xmin::text AS revision',[orderId,JSON.stringify(payload),amountChanged?delta:0,!withoutReceipt&&receipt.status==='approved'?collectedDelta:0]);
+  if (input.renewal_version && input.collected_amount && input.method && input.account_id && newPaidAt) {
+    const result = await recordContractPayment(db,orderId,actorId,{
+      request_id:input.request_id, revision:updated.rows[0].revision, renewal_version:input.renewal_version,
+      amount:input.collected_amount, method:input.method, account_id:input.account_id,
+      paid_at:vietnamPaymentTime(new Date(newPaidAt)), note:input.reason,
+    });
+    return result.context;
+  }
   return readPaymentContext(db,orderId);
 }

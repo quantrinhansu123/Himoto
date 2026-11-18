@@ -51,9 +51,16 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
   const busy = useRef(false), pending = useRef<RenewalPaymentCorrection | null>(null);
   const [uncertain, setUncertain] = useState(false), [retry, setRetry] = useState(0);
   const receiptIdsKey=receiptIds?.join(',');
+  const renewalVersion = eventKey?.startsWith(`renewal:${orderId}:`) ? Number(eventKey.split(':')[2]) : undefined;
   const matchesReceipt=(row:PaymentContext['history'][number])=>Boolean(row.renewal && row.type==='in' && !row.deposit && (receiptId!==undefined?row.id===receiptId:receiptIds!==undefined?receiptIds.includes(row.id):eventKey===`renewal-receipt:${orderId}:${row.id}` || eventKey===`renewal:${orderId}:${row.renewal.version}`));
   const receipts = (context?.history || []).filter(matchesReceipt);
   const receipt = receipts.find(row => String(row.id) === selected);
+  const renewal = !receipts.length ? context?.renewals?.find(row => row.version === renewalVersion) : undefined;
+  const originalPeriod = receipt?.renewal || renewal;
+  const feeEditable = receipt?.renewal_fee_editable ?? renewal?.fee_editable;
+  const collecting = Boolean(receipt || Number(collectedAmount) > 0);
+  const revision = receipt?.revision || (renewal && context?.revision);
+  const fieldId = receipt?.id ?? (renewal && `v${renewal.version}`);
   const accounts = context ? paymentAccounts(context, method) : [];
   const account = accounts.find(row => paymentAccountKey(row) === accountKey);
 
@@ -66,12 +73,14 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
       setContext(value); pending.current = null; setUncertain(false);
       const matching = value.history.filter(matchesReceipt);
       const first = matching.find(row=>row.status!=='cancelled') || matching[0];
+      const savedRenewal = !first ? value.renewals?.find(row => row.version === renewalVersion) : undefined;
+      const period = first?.renewal || savedRenewal;
       setSelected(first ? String(first.id) : '');
       setMethod(first?.payment_method || 'cash');
       setAccountKey(first?.account_id && first.payment_method ? `${first.payment_method === 'cash' ? 'cash' : 'bank'}:${first.account_id}` : '');
-      setBeforeReturnAt(toVietnamLocal(first?.renewal?.before_return_at));
-      setReturnAt(toVietnamLocal(first?.renewal?.return_at));
-      setAmount(String(first?.renewal?.amount ?? first?.amount ?? ''));
+      setBeforeReturnAt(toVietnamLocal(period?.before_return_at));
+      setReturnAt(toVietnamLocal(period?.return_at));
+      setAmount(String(period?.amount ?? first?.amount ?? ''));
       setPaidAt(toVietnamLocal(first?.paid_at));setCollectedAmount(String(first?.amount??''));
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được phiếu gia hạn.'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -82,37 +91,37 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
 
   if (!allowed) return null;
   async function save() {
-    if (busy.current || disabled || !receipt?.revision) return;
+    if (busy.current || disabled || !revision || (!receipt && !renewal)) return;
     if (!pending.current) {
-      if (!account) return setError('Chọn tài khoản thực nhận tiền.');
-      if(!paidAt||!fromVietnamLocal(paidAt)||!collectedAmount)return setError('Nhập ngày thực hiện và số tiền thực tế đã thu.');
+      if (collecting && !account) return setError('Chọn tài khoản thực nhận tiền.');
+      if (collecting && (!fromVietnamLocal(paidAt) || Number(collectedAmount) <= 0)) return setError('Nhập ngày thực hiện và số tiền thực tế đã thu.');
+      if (!receipt && Number(collectedAmount) > Number(amount)) return setError('Số tiền đã thu không được vượt phí gia hạn.');
       if (!reason.trim()) return setError('Nhập lý do sửa thanh toán / thời gian gia hạn.');
       if (beforeReturnAt && returnAt && new Date(`${returnAt}:00+07:00`).getTime() <= new Date(`${beforeReturnAt}:00+07:00`).getTime()) {
         return setError('Thời gian kết thúc gia hạn phải sau thời gian bắt đầu.');
       }
       pending.current = {
         request_id: crypto.randomUUID(),
-        transaction_id: receipt.id,
-        revision: receipt.revision,
-        method,
-        account_id: account.id,
+        ...(receipt ? {transaction_id:receipt.id} : {renewal_version:renewal?.version}),
+        revision,
+        ...(collecting && account ? {method,account_id:account.id} : {}),
         reason: reason.trim(),
-        ...(paidAt!==toVietnamLocal(receipt.paid_at)?{paid_at:fromVietnamLocal(paidAt)}:{}),
-        ...(collectedAmount!==String(receipt.amount)?{collected_amount:collectedAmount}:{}),
+        ...(collecting && paidAt!==toVietnamLocal(receipt?.paid_at)?{paid_at:fromVietnamLocal(paidAt)}:{}),
+        ...(collecting && collectedAmount!==String(receipt?.amount)?{collected_amount:collectedAmount}:{}),
         before_return_at: fromVietnamLocal(beforeReturnAt),
         return_at: fromVietnamLocal(returnAt),
-        ...(receipt.renewal_fee_editable && amount !== String(receipt.renewal?.amount ?? receipt.amount) ? {amount} : {}),
+        ...(feeEditable && amount !== String(originalPeriod?.amount ?? receipt?.amount) ? {amount} : {}),
       };
       // Preserve sub-minute precision when the user did not edit the date.
-      if(beforeReturnAt===toVietnamLocal(receipt.renewal?.before_return_at))delete pending.current.before_return_at;
-      if(returnAt===toVietnamLocal(receipt.renewal?.return_at))delete pending.current.return_at;
+      if(beforeReturnAt===toVietnamLocal(originalPeriod?.before_return_at))delete pending.current.before_return_at;
+      if(returnAt===toVietnamLocal(originalPeriod?.return_at))delete pending.current.return_at;
     }
     busy.current = true; setSaving(true); onBusyChange?.(true); setError('');
     try {
       const saved = await correctRenewalPayment(orderId, pending.current);
       pending.current = null; setUncertain(false); setContext(saved); acceptContractPayment(saved);
       setOpen(false); setReason('');
-      notify(`Đã lưu kỳ gia hạn / thanh toán phiếu #${receipt.id}. Bản xem trước được cập nhật; tin Telegram đã gửi giữ nguyên.`);
+      notify(receipt ? `Đã lưu kỳ gia hạn / thanh toán phiếu #${receipt.id}.` : collecting ? 'Đã lưu kỳ gia hạn và lập phiếu thu.' : 'Đã lưu kỳ gia hạn.');
       onSaved(saved);
     } catch (cause) {
       if (cause instanceof PaymentRequestError && cause.status >= 400 && cause.status < 500) { pending.current = null; setUncertain(false); }
@@ -133,7 +142,7 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
       : <fieldset className="mg-payment-fields" aria-label="Sửa kỳ gia hạn & thanh toán" disabled={saving || disabled}>
         <legend>Sửa kỳ gia hạn & thanh toán</legend>
         {loading && <p role="status"><LoaderCircle size={15} className="mg-spin"/> Đang tải phiếu thu…</p>}
-        {!loading && context && !receipts.length && <p>Chưa có phiếu thu gia hạn để sửa trong giao dịch này.</p>}
+        {!loading && context && !receipts.length && !renewal && <p>Không tìm thấy kỳ gia hạn đã lưu hoặc phiếu thu của giao dịch này.</p>}
         {!loading && receipts.length > 1 && <label className="mg-field-wide">Phiếu thu<select aria-label="Phiếu thu cần sửa" disabled={uncertain} value={selected} onChange={event => {
           const next = receipts.find(row => row.id === Number(event.target.value));
           setSelected(event.target.value); setMethod(next?.payment_method || 'cash');
@@ -143,43 +152,44 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
           setAmount(String(next?.renewal?.amount ?? next?.amount ?? ''));
           setPaidAt(toVietnamLocal(next?.paid_at));setCollectedAmount(String(next?.amount??''));
         }}>{receipts.map(row => <option key={row.id} value={row.id}>#{row.id} · {formatMoney(row.amount)} · {row.status==='cancelled'?'Đã hủy':row.method}</option>)}</select></label>}
-        {!loading && receipt && <>
-          <p className="mg-field-wide">Phiếu #{receipt.id} · <strong>{formatMoney(receipt.amount)}</strong><br/>{receipt.method} · {receipt.account || 'Chưa rõ tài khoản'}</p>
-          {receipt.status==='cancelled' && <p className="mg-field-wide mg-field-error">Phiếu này đã hủy, không tính vào tiền đã thu. Kiểm tra kỳ gia hạn và phiếu thu đang có hiệu lực trước khi sửa.</p>}
+        {!loading && (receipt || renewal) && <>
+          {receipt ? <p className="mg-field-wide">Phiếu #{receipt.id} · <strong>{formatMoney(receipt.amount)}</strong><br/>{receipt.method} · {receipt.account || 'Chưa rõ tài khoản'}</p>
+            : <p className="mg-field-wide">Kỳ này chưa có phiếu thu. Nhập số tiền thực tế đã thu để lập phiếu, hoặc để trống nếu khách chưa thanh toán.</p>}
+          {receipt?.status==='cancelled' && <p className="mg-field-wide mg-field-error">Phiếu này đã hủy, không tính vào tiền đã thu. Kiểm tra kỳ gia hạn và phiếu thu đang có hiệu lực trước khi sửa.</p>}
           <fieldset className="mg-renewal-period mg-field-wide" disabled={uncertain}>
             <div className="mg-field">
-              <label htmlFor={`renewal-start-${receipt.id}`}>Từ ngày giờ gia hạn</label>
-              <DateTime24Controls id={`renewal-start-${receipt.id}`} label="Từ ngày giờ gia hạn" value={beforeReturnAt} onChange={setBeforeReturnAt}/>
+              <label htmlFor={`renewal-start-${fieldId}`}>Từ ngày giờ gia hạn</label>
+              <DateTime24Controls id={`renewal-start-${fieldId}`} label="Từ ngày giờ gia hạn" value={beforeReturnAt} onChange={setBeforeReturnAt}/>
             </div>
             <div className="mg-field">
-              <label htmlFor={`renewal-end-${receipt.id}`}>Đến ngày giờ (hạn trả mới)</label>
-              <DateTime24Controls id={`renewal-end-${receipt.id}`} label="Đến ngày giờ gia hạn" value={returnAt} onChange={setReturnAt}/>
+              <label htmlFor={`renewal-end-${fieldId}`}>Đến ngày giờ (hạn trả mới)</label>
+              <DateTime24Controls id={`renewal-end-${fieldId}`} label="Đến ngày giờ gia hạn" value={returnAt} onChange={setReturnAt}/>
             </div>
           </fieldset>
           <label className="mg-field-wide">Đơn vị gia hạn<select value={durationUnit} onChange={e=>setDurationUnit(e.target.value as 'day'|'hour')} disabled={uncertain}><option value="day">Ngày</option><option value="hour">Giờ</option></select></label>
-          <label className="mg-field-wide">Số ngày / giờ<input aria-label="Số ngày / giờ gia hạn" type="number" min="1" max="8760" disabled={uncertain} value={renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||''} onChange={e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>0&&n<=8760){const rate=Number(amount)/(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1);setReturnAt(addRentalDuration(beforeReturnAt,n,durationUnit));if(receipt.renewal_fee_editable)setAmount(String(Math.round(rate*n)));}}}/></label>
-          <label className="mg-field-wide">Đơn giá (VNĐ / {durationUnit==='day'?'ngày':'giờ'})<input aria-label="Đơn giá gia hạn" inputMode="numeric" disabled={uncertain||!receipt.renewal_fee_editable} value={Math.round(Number(amount)/(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1))||''} onChange={e=>setAmount(String(Number(e.target.value.replace(/\D/g,''))*(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1)))}/></label>
+          <label className="mg-field-wide">Số ngày / giờ<input aria-label="Số ngày / giờ gia hạn" type="number" min="1" max="8760" disabled={uncertain} value={renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||''} onChange={e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>0&&n<=8760){const rate=Number(amount)/(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1);setReturnAt(addRentalDuration(beforeReturnAt,n,durationUnit));if(feeEditable)setAmount(String(Math.round(rate*n)));}}}/></label>
+          <label className="mg-field-wide">Đơn giá (VNĐ / {durationUnit==='day'?'ngày':'giờ'})<input aria-label="Đơn giá gia hạn" inputMode="numeric" disabled={uncertain||!feeEditable} value={Math.round(Number(amount)/(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1))||''} onChange={e=>setAmount(String(Number(e.target.value.replace(/\D/g,''))*(renewalDurationUnits(beforeReturnAt,returnAt,durationUnit)||1)))}/></label>
           {beforeReturnAt && returnAt && (
             <p className="mg-field-wide" style={{ margin: '2px 0 8px 0', fontSize: '13px', color: durationText.includes('phải sau') ? '#dc2626' : '#0284c7' }}>
               Thời gian gia hạn mới: <strong>{durationText}</strong>
             </p>
           )}
-          <label className="mg-field-wide">Ngày giờ thực hiện / thu tiền<DateTime24Controls id={`renewal-paid-${receipt.id}`} label="Ngày giờ thực hiện / thu tiền" value={paidAt} onChange={setPaidAt}/></label>
-          <label className="mg-field-wide">Số tiền thực tế đã thu (VNĐ)<input aria-label="Số tiền thực tế đã thu" inputMode="numeric" value={collectedAmount} disabled={uncertain||receipt.status==='cancelled'} onChange={event=>setCollectedAmount(event.target.value.replace(/\D/g,''))}/></label>
-          <label className="mg-field-wide">Phí gia hạn (VNĐ)<input aria-label="Phí gia hạn (VNĐ)" inputMode="numeric" value={amount} disabled={uncertain || !receipt.renewal_fee_editable} onChange={event=>setAmount(event.target.value.replace(/\D/g,''))}/></label>
-          <p className="mg-field-wide">Phí gia hạn là tiền phải thu; số tiền thực tế đã thu là khoản khách đã thanh toán. Sửa ngày và khoản đã thu sẽ cập nhật sổ quỹ, công nợ và doanh thu theo ngày đã chọn.{!receipt.renewal_fee_editable&&' Phí của phiếu đã hủy hoặc kỳ chưa đối chiếu không được sửa tại đây.'}</p>
+          {collecting && <label className="mg-field-wide">Ngày giờ thực hiện / thu tiền<DateTime24Controls id={`renewal-paid-${fieldId}`} label="Ngày giờ thực hiện / thu tiền" value={paidAt} onChange={setPaidAt}/></label>}
+          <label className="mg-field-wide">Số tiền thực tế đã thu (VNĐ)<input aria-label="Số tiền thực tế đã thu" inputMode="numeric" value={collectedAmount} disabled={uncertain||receipt?.status==='cancelled'} onChange={event=>setCollectedAmount(event.target.value.replace(/\D/g,''))}/></label>
+          <label className="mg-field-wide">Phí gia hạn (VNĐ)<input aria-label="Phí gia hạn (VNĐ)" inputMode="numeric" value={amount} disabled={uncertain || !feeEditable} onChange={event=>setAmount(event.target.value.replace(/\D/g,''))}/></label>
+          <p className="mg-field-wide">Phí gia hạn là tiền phải thu; số tiền thực tế đã thu là khoản khách đã thanh toán. Sửa ngày và khoản đã thu sẽ cập nhật sổ quỹ, công nợ và doanh thu theo ngày đã chọn.{!feeEditable&&' Kỳ này không cho sửa phí tại đây.'}</p>
 
-          <label className="mg-field-wide">Hình thức thanh toán mới<select aria-label="Hình thức thanh toán mới" disabled={uncertain} value={method} onChange={event => {
+          <label className="mg-field-wide">Hình thức thanh toán mới<select aria-label="Hình thức thanh toán mới" disabled={uncertain || !collecting} value={method} onChange={event => {
             const next = event.target.value as PaymentMethod, nextAccounts = context ? paymentAccounts(context,next) : [];
             setMethod(next); setAccountKey(nextAccounts.length === 1 ? paymentAccountKey(nextAccounts[0]) : '');
           }}>{PAYMENT_METHODS.map(row => <option key={row.value} value={row.value}>{paymentMethodLabel(row.value)}</option>)}</select></label>
-          <label className="mg-field-wide">Tài khoản nhận mới<select aria-label="Tài khoản nhận mới" disabled={uncertain} value={accountKey} onChange={event => setAccountKey(event.target.value)}>
+          <label className="mg-field-wide">Tài khoản nhận mới<select aria-label="Tài khoản nhận mới" disabled={uncertain || !collecting} value={accountKey} onChange={event => setAccountKey(event.target.value)}>
             <option value="">Chọn tài khoản thực nhận</option>{accounts.map(row => <option key={paymentAccountKey(row)} value={paymentAccountKey(row)}>{row.label}</option>)}
           </select></label>
-          {!accounts.length && <p className="mg-field-wide mg-field-error">Chưa có tài khoản nhận đang hoạt động phù hợp hình thức và cơ sở hợp đồng.</p>}
+          {collecting && !accounts.length && <p className="mg-field-wide mg-field-error">Chưa có tài khoản nhận đang hoạt động phù hợp hình thức và cơ sở hợp đồng.</p>}
           <label className="mg-field-wide">Lý do sửa<textarea aria-label="Lý do sửa thanh toán" maxLength={500} disabled={uncertain} placeholder="Ví dụ: Chỉnh lại ngày gia hạn và số ngày theo thỏa thuận với khách" value={reason} onChange={event => setReason(event.target.value)}/></label>
           <p className="mg-field-wide">Bản xem trước Telegram cập nhật sau khi lưu. Tin đã gửi cần được kiểm tra và chủ động thu hồi / gửi lại khi cần.</p>
-          <button type="button" className="mg-button mg-button-primary" disabled={loading || !receipt.revision || (!uncertain && (!account || !reason.trim() || !amount || !paidAt || !collectedAmount || !beforeReturnAt || !returnAt || durationText.includes('phải sau')))} onClick={() => void save()}>
+          <button type="button" className="mg-button mg-button-primary" disabled={loading || !revision || (!uncertain && (!reason.trim() || !amount || (collecting && (!account || !paidAt || Number(collectedAmount) <= 0)) || !beforeReturnAt || !returnAt || durationText.includes('phải sau')))} onClick={() => void save()}>
             {saving ? <LoaderCircle size={15} className="mg-spin"/> : null}{saving ? 'Đang lưu…' : uncertain ? 'Thử lại lần sửa này' : 'Lưu sửa thông tin'}
           </button>
         </>}

@@ -125,6 +125,11 @@ export async function readPaymentContext(client: Database, id: number, options?:
       ${dailyPriceSql()} AS daily_price,d.return_at,d.total_renewal_amount,d.xmin::text AS revision
     FROM himoto.order_vehicle_details d LEFT JOIN ${contractVehicleLabelSource('ARRAY[$1::bigint]')} v ON v.id=d.vehicle_id JOIN himoto.orders o ON o.id=d.order_id
     WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY d.id`, [id]);
+  const composer = order.draft_payload?.management_composer;
+  const renewals: RenewalVersion[] = Array.isArray(composer?.versions) ? composer.versions : [];
+  const canEditRenewalFee = !plan && !composer?.installment_plan && !composer?.lifecycle?.hold_completion
+    && !composer?.lifecycle?.payment_closure && !composer?.lifecycle?.bad_debt_closure
+    && ['renting','overdue','wait_payment'].includes(String(order.status));
   return { id: Number(order.id), code: String(order.code), status: String(order.status), store_id: Number(order.store_id), revision: String(order.revision),
     hold_active:Boolean(order.draft_payload?.management_composer?.lifecycle?.active_hold),completed_from_hold:Boolean(order.draft_payload?.management_composer?.lifecycle?.hold_completion),
     total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0), ...(billing ? {billing, billing_base_total: baseTotal} : {}),
@@ -139,6 +144,10 @@ export async function readPaymentContext(client: Database, id: number, options?:
       return_at: row.return_at instanceof Date ? row.return_at.toISOString() : row.return_at == null ? null : String(row.return_at), renewal_amount: row.total_renewal_amount == null ? 0 : money(row.total_renewal_amount),
       daily_price: row.daily_price == null ? null : money(row.daily_price) })),
     accounts: accounts.rows.map(row => ({ ...row, id: Number(row.id), store_id: Number(row.store_id) })),
+    renewals: renewals.filter(v => v?.kind === 'renewal').map(v => ({
+      version:Number(v.version),before_return_at:v.before_return_at,return_at:v.return_at,amount:v.amount,
+      fee_editable:canEditRenewalFee && items.rows.some(item => Number(item.id) === Number(v.item_id)),
+    })),
     history: history.rows.map(row => ({ id: Number(row.id), type: row.type === 'out' ? 'out' as const : 'in' as const,
       deposit: row.name === 'order:deposit' || row.name === 'order:additional_deposit' || String(row.name || '').startsWith('order:deposit:') || row.name === DEPOSIT_REFUND_NAME || String(row.name || '').startsWith('order:complete:'), amount: Number(row.amount), paid_at: row.paid_at instanceof Date ? row.paid_at.toISOString() : String(row.paid_at),
       note: String(row.note || ''), actor: String(row.actor || ''), method: String(row.method), account: String(row.account || ''),

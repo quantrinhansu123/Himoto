@@ -15,6 +15,11 @@ async function main(){
  assert.throws(()=>parse({...base,account_id:1}));
  for(const before_return_at of ['2026-02-30T10:00:00Z','2026-10-23T08:00','',null])assert.throws(()=>parse({...base,before_return_at}));
  assert.throws(()=>parse({...base,before_return_at:renewal.return_at,return_at:renewal.before_return_at}));
+ const byVersion={request_id:randomUUID(),renewal_version:2,revision:'1',reason:'Bổ sung phí gia hạn'};
+ assert.equal(parse({...byVersion,amount:'900000'}).renewal_version,2);
+ assert.throws(()=>parse({...byVersion,transaction_id:51}));
+ assert.throws(()=>parse({...byVersion,collected_amount:'500000'}));
+ assert.throws(()=>parse({...byVersion,method:'cash',account_id:1}));
  assert.equal(renewalPeriodStart(renewal),renewal.before_return_at);
  const text=contractNotificationText('renewal',{code:'QA-RENEWAL',customer:'Fixture',phone:'',store:'Fixture',actor:'Fixture',vehicles:renewal.license,total:'900000',renewal,photos:[],at:renewal.created_at});
  assert(text.includes('20/10/2026 15:04 - 27/10/2026 15:04 (7 ngày)'));
@@ -42,6 +47,26 @@ async function main(){
       VALUES(101,1,100,'2026-10-01T08:04:00Z','2026-10-27T08:04:00Z',600000,900000);
     INSERT INTO himoto.cash(id,store_id,name,status,opening_balance) VALUES(1,23,'Cash QA','Active',0);`);
    await db.query('UPDATE himoto.orders SET draft_payload=$1 WHERE id=1',[JSON.stringify({management_composer:{versions:[renewal]}})]);
+   await c.query('SAVEPOINT no_receipt');
+   await db.query('UPDATE himoto.orders SET pid=0,total=\'600000\' WHERE id=1');
+   await db.query("UPDATE himoto.order_vehicle_details SET total_renewal_amount=0 WHERE id=101");
+   await db.query('UPDATE himoto.orders SET draft_payload=$1 WHERE id=1',[JSON.stringify({management_composer:{versions:[{...renewal,amount:0}]}})]);
+   const empty=await context();
+   const feeOnly=await atomic(()=>update(db,1,143,{...byVersion,revision:empty.revision,amount:'900000'}));
+   assert.equal(feeOnly.total_amount,1500000);
+   assert.equal(feeOnly.paid_amount,0);
+   assert.equal(feeOnly.history.length,0);
+   const capture={...byVersion,request_id:randomUUID(),revision:feeOnly.revision,amount:'950000',
+     collected_amount:'500000',method:'cash',account_id:1,paid_at:'2026-10-22T08:04:00Z'};
+   const captured=await atomic(()=>update(db,1,143,capture));
+   assert.equal(captured.paid_amount,500000);
+   assert.equal(captured.total_amount,1550000);
+   assert.equal(captured.history[0].renewal.version,2);
+   assert.equal(captured.history[0].renewal.amount,950000);
+   assert.deepEqual(await atomic(()=>update(db,1,143,capture)),captured);
+   assert.deepEqual((await preview()).find(e=>e.key==='renewal:1:2').renewal_receipt_ids,[captured.history[0].id]);
+   await c.query('ROLLBACK TO SAVEPOINT no_receipt; RELEASE SAVEPOINT no_receipt');
+   checks.push('A zero-fee renewal can be corrected with or without a receipt, and retries never duplicate collection');
    await db.query(`INSERT INTO himoto.transactions(id,order_id,name,type,value,status,user_id,store_id,cash_id,payment_method,created_at,note)
     VALUES(51,1,'order:payment','in',900000,'approved',143,23,1,1,'2026-10-29T11:00:00Z','QA');`);
    await db.query('INSERT INTO himoto.management_contract_payments(request_id,order_id,transaction_id,actor_id,request_hash,renewal_payload) VALUES($1,1,51,143,$2,$3)',[randomUUID(),'qa',JSON.stringify(renewal)]);

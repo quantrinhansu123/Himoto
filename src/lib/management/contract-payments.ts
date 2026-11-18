@@ -52,6 +52,7 @@ export interface PaymentContext {
   rental_refundable?:number;
   company_paid_amount: number; company_payment_count: number;
   accounts: PaymentAccount[]; history: ContractPayment[];
+  renewals?: {version:number; before_return_at:string|null; return_at:string; amount:number; fee_editable:boolean}[];
   items: RenewalItem[]; end_date: string | null;
   history_page?: number; history_pages?: number; history_total?: number;
   billing?: import('./contract-billing').InstallmentBalance;
@@ -83,7 +84,7 @@ export interface PaymentInput {
 }
 export interface PaymentResult { context: PaymentContext; transaction_id: number; replayed: boolean; company_transfer: boolean }
 export interface RenewalPaymentCorrection {
-  request_id: string; transaction_id: number; revision: string; method?: PaymentMethod; account_id?: number; reason: string;
+  request_id: string; transaction_id?: number; renewal_version?: number; revision: string; method?: PaymentMethod; account_id?: number; reason: string;
   before_return_at?: string; return_at?: string; amount?: string; paid_at?: string; collected_amount?: string;
 }
 export async function correctRenewalPayment(id: number, input: RenewalPaymentCorrection): Promise<PaymentContext> {
