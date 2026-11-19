@@ -4,7 +4,7 @@ import { GPS_STATE_LABELS, type GpsVehicle } from './gps';
 import { batteryStatusLabel, type BatteryContract } from './battery-contracts';
 import { localDutyTime, type DutySchedule } from './duty-roster';
 import type { TransferHistoryRow } from './vehicle-transfer-history';
-import { SHIFT_SUMMARY_FIELDS, type ShiftReport } from './shift-reports';
+import { SHIFT_SUMMARY_FIELDS, shiftReportTypeLabel, type ShiftReport } from './shift-reports';
 import { REMINDER_STATUS_LABELS, type DebtReminderRow } from './debt-reminders';
 import { VEHICLE_STATUSES } from './config';
 
@@ -19,8 +19,8 @@ export const batteryExportRows = (rows: BatteryContract[]) => rows.map(row => [r
 export const ACCOUNT_EXPORT_HEADERS = ['Nhân sự','Đăng nhập','Vai trò','Cơ sở','Trạng thái'];
 interface ExportAccount { name: string; login_name: string | null; email: string; access_role: AccessRole | null; scope_all: boolean; store_name: string | null; enabled: boolean | null; status: string }
 export const accountExportRows = (rows: ExportAccount[]) => rows.map(row => [row.name,row.login_name||row.email,row.access_role?ACCESS_ROLES[row.access_role].label:'Tài khoản hiện có',row.scope_all?'Toàn hệ thống':row.store_name,(row.enabled??row.status==='active')?'Hoạt động':'Đã khóa']);
-export const SHIFT_EXPORT_HEADERS = ['Ngày','Cơ sở','Nhân viên','Trạng thái','Xe','Pin','Tiền mặt','Tài khoản cá nhân','Tài khoản công ty','Ghi chú',...SHIFT_SUMMARY_FIELDS.map(([,label])=>label)];
-export const shiftExportRows = (rows: ShiftReport[]) => rows.map(row => [row.payload.date,row.store_name,row.payload.staff,row.status==='draft'?'Bản nháp':'Đã gửi',row.payload.vehicles,row.payload.batteries,row.payload.cash,row.payload.personal,row.payload.company,row.payload.notes,...SHIFT_SUMMARY_FIELDS.map(([key])=>row.payload.summary?.[key]??0)]);
+export const SHIFT_EXPORT_HEADERS = ['Ngày','Cơ sở','Loại báo cáo','Nhân viên','Trạng thái','Xe','Pin','Tiền mặt','Tài khoản cá nhân','Tài khoản công ty','Ghi chú',...SHIFT_SUMMARY_FIELDS.map(([,label])=>label)];
+export const shiftExportRows = (rows: ShiftReport[]) => rows.map(row => [row.payload.date,row.store_name,shiftReportTypeLabel(row.payload.report_type),row.payload.staff,row.status==='draft'?'Bản nháp':'Đã gửi',row.payload.vehicles,row.payload.batteries,row.payload.cash,row.payload.personal,row.payload.company,row.payload.notes,...SHIFT_SUMMARY_FIELDS.map(([key])=>row.payload.summary?.[key]??0)]);
 export const DUTY_EXPORT_HEADERS = ['Nhân viên','Cơ sở','Ngày','Bắt đầu','Kết thúc','Ca trực','Vai trò','Ghi chú'];
 export const dutyExportRows = (rows: DutySchedule[]) => rows.map(row => [row.staff_name,row.store_name,row.duty_date,row.starts_at?localDutyTime(row.starts_at):'',row.ends_at?localDutyTime(row.ends_at):'',row.shift_name,row.role_in_shift,row.notes]);
 export const REMINDER_EXPORT_HEADERS = ['Thời gian','Hợp đồng','Khách hàng','Cơ sở','Số điện thoại','Số tiền nhắc','Nội dung','Trạng thái','Người gửi'];

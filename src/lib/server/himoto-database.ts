@@ -47,6 +47,7 @@ async function scopedConnect():Promise<PoolClient> {
   const begin=async(statement='BEGIN')=>{
     const result=await rawQuery(statement);transaction=true;
     try {
+      if(scope.cross_store_read)await rawQuery('SET TRANSACTION READ ONLY');
       // Supabase port 6543 pools transactions, not sessions. Pin scope and role to
       // the same transaction as the business query; never use session SET ROLE.
       await rawQuery("SELECT set_config('himoto.scope_all',$1,true),set_config('himoto.store_id',$2,true),set_config('himoto.actor_id',$3,true),set_config('himoto.operation',$4,true),set_config('himoto.transfer_vehicle_id',$5,true)",

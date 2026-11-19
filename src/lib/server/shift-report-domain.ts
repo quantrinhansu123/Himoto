@@ -2,16 +2,17 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import type { DataAccess } from './access-context';
 import { hasPermission } from '@/lib/management/permissions';
-import { parseShiftInput,type ShiftReport } from '@/lib/management/shift-reports';
+import { parseShiftInput,shiftReportTypeLabel,type ShiftReport } from '@/lib/management/shift-reports';
 import { ShiftRequestError,shiftRequestHash,readShiftReceipt,writeShiftReceipt } from './shift-report-requests';
 import { readShiftSnapshot } from './shift-audits';
 import { readOwnershipReport } from './ownership-report';
 import { ownershipReportText,validateOwnershipSubmission } from '@/lib/management/ownership-report';
 import { queueReportTelegram,shiftTelegramAttachments } from './report-telegram';
 type Database=Pick<PoolClient,'query'>;
-export async function listShiftReports(client:Database,store:string|null,date:string|null,id?:number,all=false):Promise<ShiftReport[]> {
+export async function listShiftReports(client:Database,store:string|null,date:string|null,id?:number,all=false,reportType:string|null=null):Promise<ShiftReport[]> {
   if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date))throw new ShiftRequestError('Ngày báo cáo không hợp lệ.');
   if(store&&!/^[1-9]\d*$/.test(store))throw new ShiftRequestError('PGD không hợp lệ.');
+  if(reportType!==null&&reportType!=='mid_shift'&&reportType!=='end_shift')throw new ShiftRequestError('Loại báo cáo không hợp lệ.');
     const result = await client.query(`SELECT r.id,r.payload,r.status,r.revision,r.updated_at,r.app_snapshot,s.store_name,COALESCE(u.name,'Nhân sự') AS created_by_name,
       (SELECT jsonb_build_object('status',n.status,'message_id',n.message_id,'error_code',n.error_code) FROM himoto.management_report_deliveries n WHERE n.delivery_key='shift:'||r.id::text) AS telegram,
       ARRAY(SELECT p.slot FROM himoto.management_shift_photos p WHERE p.report_id=r.id) AS legacy_photos,
@@ -21,7 +22,9 @@ export async function listShiftReports(client:Database,store:string|null,date:st
       CASE WHEN a.report_id IS NOT NULL THEN jsonb_build_object('input',a.input,'snapshot',a.app_snapshot,'status',a.status,'result',a.result,'revision',a.revision,'reviewer_name',COALESCE(a.reviewer_name,reviewer.name,'KTNB'),'updated_at',a.updated_at,'confirmed_at',a.confirmed_at) END AS audit
       FROM himoto.management_shift_reports r JOIN himoto.stores s ON s.id=r.store_id LEFT JOIN himoto.users u ON u.id=r.created_by
       LEFT JOIN himoto.management_shift_audits a ON a.report_id=r.id LEFT JOIN himoto.users reviewer ON reviewer.id=a.reviewer_id
-      WHERE ($1::bigint IS NULL OR r.store_id=$1) AND ($2::date IS NULL OR r.report_date=$2) AND ($3::bigint IS NULL OR r.id=$3) ORDER BY r.report_date DESC,r.id DESC${all?'':' LIMIT 100'}`, [store || null,date||null,id??null]);
+      WHERE ($1::bigint IS NULL OR r.store_id=$1) AND ($2::date IS NULL OR r.report_date=$2) AND ($3::bigint IS NULL OR r.id=$3)
+      AND ($4::text IS NULL OR COALESCE(r.payload->>'report_type','end_shift')=$4)
+      ORDER BY r.report_date DESC,r.id DESC${all?'':' LIMIT 100'}`, [store || null,date||null,id??null,reportType]);
   return result.rows.map(r=>({...r,id:Number(r.id)}));
 }
 
@@ -38,6 +41,9 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
       const existing = (await client.query('SELECT * FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE', [raw.id])).rows[0];
       if (!existing || existing.status !== 'draft' || existing.revision !== raw.revision || Number(existing.store_id) !== input.store_id || existing.payload.date !== input.date) {
         throw new ShiftRequestError('Báo cáo đã thay đổi hoặc đã chốt. Mở lại từ danh sách để kiểm tra.',409);
+      }
+      if ((existing.payload.report_type ?? 'end_shift') !== (input.report_type ?? 'end_shift')) {
+        throw new ShiftRequestError('Loại báo cáo đã lưu không thể thay đổi.', 409);
       }
     }
     if (raw.status === 'submitted' && !input.electricity_off) throw new ShiftRequestError('Xác nhận đã tắt thiết bị điện trước khi chốt.');
@@ -63,7 +69,7 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
         await client.query('UPDATE himoto.management_shift_reports SET submitted_at=now() WHERE id=$1',[saved.id]);
       }
       await client.query('RELEASE SAVEPOINT shift_snapshot');
-      const text=input.ownership_report?ownershipReportText(input.date,input.ownership_report):`BÁO CÁO CUỐI CA · PGD #${input.store_id}\nNgày: ${input.date}\nNhân sự: ${input.staff}\nXe tại cơ sở: ${input.vehicles}\nPin: ${input.batteries}\nTiền mặt: ${input.cash.toLocaleString('vi-VN')} đ\nTK cá nhân: ${input.personal.toLocaleString('vi-VN')} đ\nTK công ty: ${input.company.toLocaleString('vi-VN')} đ\n${input.notes}`.slice(0,3900);
+      const text=input.ownership_report?ownershipReportText(input.date,input.ownership_report):`BÁO CÁO ${shiftReportTypeLabel(input.report_type).toUpperCase()} · PGD #${input.store_id}\nNgày: ${input.date}\nNhân sự: ${input.staff}\nXe tại cơ sở: ${input.vehicles}\nPin: ${input.batteries}\nTiền mặt: ${input.cash.toLocaleString('vi-VN')} đ\nTK cá nhân: ${input.personal.toLocaleString('vi-VN')} đ\nTK công ty: ${input.company.toLocaleString('vi-VN')} đ\n${input.notes}`.slice(0,3900);
       await queueReportTelegram(client,`shift:${saved.id}`,input.store_id,text,input.ownership_report?'ownership_new':'store',await shiftTelegramAttachments(client,saved.id,'pgd'));
     }
     await writeShiftReceipt(client, requestId, actor.id, input.store_id, hash, saved);

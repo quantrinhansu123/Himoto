@@ -5,6 +5,7 @@ import { vietnamDate } from '@/lib/management/duty-roster';
 import { emptyAuditValues, type ShiftSnapshot } from '@/lib/management/shift-audits';
 import type { ShiftInput } from '@/lib/management/shift-reports';
 import { rentalRevenue } from './rental-revenue';
+import { readShiftTransfers } from './shift-transfers';
 
 type DB=Pick<PoolClient,'query'>;
 export async function readShiftSnapshot(db:DB,report:{payload:ShiftInput;app_snapshot?:ShiftSnapshot|null},inventoryOnly=false):Promise<ShiftSnapshot> {
@@ -45,15 +46,7 @@ export async function readShiftSnapshot(db:DB,report:{payload:ShiftInput;app_sna
     values.other_vehicles=values.daily_vehicles!==null&&values.monthly_vehicles!==null?assets_total-values.vehicles-values.daily_vehicles-values.monthly_vehicles:null;
     inventory_note='Kho xe tại thời điểm chụp số liệu app. Xe bảo dưỡng, điều chuyển, nợ xấu và thuê sở hữu vẫn thuộc tổng tài sản; không tự gộp vào xe có mặt tại PGD.';
   }
-  const transfers=inventoryOnly?[]:(await db.query(`SELECT v.license AS plate,
-    COALESCE(e.audit_snapshot->>'from_store_name',fs.store_name,e.from_store_id::text) AS "from",
-    COALESCE(e.audit_snapshot->>'to_store_name',ts.store_name,e.to_store_id::text) AS "to"
-    FROM himoto.vehicle_location_events e JOIN himoto.vehicles v ON v.id=e.vehicle_id
-    LEFT JOIN himoto.stores fs ON fs.id=e.from_store_id LEFT JOIN himoto.stores ts ON ts.id=e.to_store_id
-    WHERE (e.from_store_id=$1 OR e.to_store_id=$1) AND e.event_type IN('manual_transfer','transfer_dispatch')
-      AND COALESCE(e.audit_snapshot #>> '{reconciliation,superseded}','false')<>'true'
-      AND e.created_at>=($2::date::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh') AND e.created_at<(($2::date+1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
-    ORDER BY e.id`,[store,date])).rows;
+  const transfers=inventoryOnly?[]:(await readShiftTransfers(db,store,date)).map(({plate,from,to})=>({plate,from,to}));
   const stable={date,values,assets_total,revenue:month?{rental:day.rental,renewal:day.renewal,late:day.late,early:day.early,revenue:day.revenue}:null,
     unclassified_count:month?.unclassified_count??null,inventory_only:inventoryOnly,transfers,inventory_note,
     accounts_note:'Số dư sổ quỹ app đến hết ngày, từ số dư đầu kỳ và phiếu đã duyệt. Chỉ cộng tài khoản gắn PGD; tài khoản công ty dùng chung không tự phân bổ. Đây không phải số dư ngân hàng trực tiếp.'};

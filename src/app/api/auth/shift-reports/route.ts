@@ -11,8 +11,8 @@ export const runtime='nodejs';
 export const maxDuration=300;
 export const GET=withAccessRequest(async(request:NextRequest)=>{
   const params=request.nextUrl.searchParams;
-  try{return NextResponse.json({data:await listShiftReports(himotoPool,params.get('store_id'),params.get('date'),undefined,params.get('all')==='1')},{headers:{'Cache-Control':'no-store'}});}
-  catch(error){return error instanceof ShiftRequestError?NextResponse.json({message:error.message},{status:error.status}):failureResponse('Không tải được báo cáo cuối ca.',error);}
+  try{return NextResponse.json({data:await listShiftReports(himotoPool,params.get('store_id'),params.get('date'),undefined,params.get('all')==='1',params.get('report_type'))},{headers:{'Cache-Control':'no-store'}});}
+  catch(error){return error instanceof ShiftRequestError?NextResponse.json({message:error.message},{status:error.status}):failureResponse('Không tải được báo cáo ca.',error);}
 });
 export const POST=withAccessRequest(async(request:NextRequest)=>{
   const user=dataAccess.getStore();
@@ -28,7 +28,7 @@ export const POST=withAccessRequest(async(request:NextRequest)=>{
     if(client)await client.query('ROLLBACK').catch(()=>{});
     if(error instanceof ShiftRequestError)return NextResponse.json({message:error.message},{status:error.status});
     const code=(error as {code?:string}).code;
-    if(code==='23505')return failureResponse('PGD đã có báo cáo ngày này. Mở báo cáo trong danh sách.',error);
+    if(code==='23505')return failureResponse('PGD đã có báo cáo cùng loại trong ngày này. Mở báo cáo trong danh sách.',error);
     if(code)return failureResponse('Chưa lưu được báo cáo.',error);
     return NextResponse.json({message:error instanceof Error&&error.message?error.message:'Thông tin không hợp lệ.'},{status:400});
   }finally{client?.release();}

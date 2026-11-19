@@ -19,7 +19,10 @@ type NavLink = { href: string; label: string; kind: string; icon: LucideIcon };
 type NavGroup = { id: string; label: string; icon: LucideIcon; links: NavLink[] };
 const navigation: (NavLink | NavGroup)[] = [
   { href: '/operations', label: 'Thao tác nhanh', kind: 'operations', icon: House },
-  { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock },
+  { id: 'attendance', label: 'Chấm công', icon: AlarmClock, links: [
+    { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock },
+    { href: '/attendance/history', label: 'Lịch sử chấm công', kind: 'attendance', icon: History },
+  ] },
   { href: '/dashboard', label: 'Dashboard', kind: 'dashboard', icon: LayoutDashboard },
   { id: 'contracts', label: 'Hợp đồng', icon: Files, links: [
     { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts', icon: Files },
@@ -32,7 +35,6 @@ const navigation: (NavLink | NavGroup)[] = [
     { href: '/contracts/types', label: 'Loại hợp đồng', kind: 'contract-types', icon: Files },
   ] },
   { id: 'hr', label: 'HCNS', icon: UsersRound, links: [
-    { href: '/attendance/history', label: 'Lịch sử chấm công', kind: 'attendance', icon: History },
     { href: '/staff', label: 'Nhân sự', kind: 'staff', icon: UsersRound },
     { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
     { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster', icon: CalendarDays },
@@ -40,8 +42,11 @@ const navigation: (NavLink | NavGroup)[] = [
   { id: 'finance', label: 'Kế toán', icon: Wallet, links: [
     { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook', icon: Wallet },
     { href: '/staff-sales', label: 'Báo cáo doanh thu', kind: 'staff-sales', icon: ReceiptText },
-    { href: '/shift-reports', label: 'Báo cáo cuối ca', kind: 'shift-reports', icon: ReceiptText },
     { href: '/debt-reminders', label: 'Gửi nhắc nợ', kind: 'debt-reminders', icon: MessageCircle },
+  ] },
+  { id: 'reports', label: 'Báo cáo', icon: ReceiptText, links: [
+    { href: '/shift-reports/mid-shift', label: 'Báo cáo giữa ca', kind: 'shift-reports', icon: ReceiptText },
+    { href: '/shift-reports', label: 'Báo cáo Hết ca', kind: 'shift-reports', icon: ReceiptText },
   ] },
   { id: 'operations', label: 'Vận hành', icon: Building2, links: [
     { href: '/customers', label: 'Khách hàng', kind: 'customers', icon: ContactRound },
@@ -198,10 +203,10 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
       <header className="mg-topbar">
         <div className="mg-breadcrumb"><button type="button" className="mg-icon-button mg-desktop-toggle" aria-label={collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'} onClick={() => setCollapsed(!collapsed)}><PanelLeftClose size={19} /></button>
           <button type="button" className="mg-icon-button mg-mobile-toggle" aria-label="Mở menu" onClick={() => setMobileOpen(true)}><Menu size={21} /></button>
-          <span>Quản lý</span><ChevronRight size={14} />{activeGroup && <><span>{activeGroup.label}</span><ChevronRight size={14} /></>}<strong>{active.label}</strong></div>
+          <span>Quản lý</span><ChevronRight size={14} />{activeGroup && activeGroup.label !== active.label && <><span>{activeGroup.label}</span><ChevronRight size={14} /></>}<strong>{active.label}</strong></div>
         <div className="mg-topbar-right"><ReloadButton name="Làm mới dữ liệu" busy={refreshing} onClick={() => { requestReload(); void reload(); router.refresh(); }} />
           <label className="mg-branch-select"><Building2 size={16} /><span className="mg-sr-only">Cơ sở đang xem</span><select aria-label="Cơ sở đang xem" value={selectedStore} onChange={event => selectStore(event.target.value)}>
-          {(user?.scope_all||active.kind==='customers'||active.kind==='vehicles'||active.kind==='vehicle-transfers'||active.kind==='gps')&&<option value="all">Tất cả cơ sở</option>}{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+          {(user?.scope_all||user?.scope_all_read||active.kind==='customers'||active.kind==='vehicles'||active.kind==='vehicle-transfers'||active.kind==='gps')&&<option value="all">Tất cả cơ sở</option>}{dataset?.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
           <span className={`mg-source-badge ${source === 'api' ? 'is-api' : ''}`}>{gpsPage?'Tự đồng bộ':integrationPage?'Cấu hình tích hợp':writableDrafts ? 'Lưu nháp' : writableVehicles ? 'Đồng bộ xe' : writableCustomers || writableStores || writableDuties || writableBattery || writableRegistrations ? 'Có thể sửa' : 'Chỉ đọc'}</span>
           <details className="mg-user-menu" ref={menuRef}><summary aria-label="Menu người dùng"><span className="mg-user-avatar">QT</span><div><strong>{user?.name || 'Quản trị viên'}</strong><small>{user ? 'Đã đăng nhập' : writableCustomers ? 'Supabase' : 'Phiên tra cứu'}</small></div><ChevronDown size={14} /></summary>
             <div className="mg-popover"><strong>{gpsPage?'Định vị GPS tự động':integrationPage?'Quản lý tích hợp':writableBattery ? 'Hợp đồng thuê pin kết nối Supabase' : writableDuties ? 'Quản lý lịch trực' : writableCustomers ? 'Khách hàng kết nối Supabase' : writableStores ? 'Cơ sở kết nối Supabase' : writableVehicles ? 'Xe kết nối Supabase' : 'Phiên tra cứu API'}</strong><p>{gpsPage?'Trạng thái xe được cập nhật từ Protrack và IOPGPS; có lưu lịch sử thay đổi.':integrationPage?'Quản trị cập nhật tài khoản GPS và nhóm Telegram của từng cơ sở tại đây.':writableBattery ? 'Tạo, sửa, xóa và in hợp đồng thuê pin; dữ liệu lưu trực tiếp vào Supabase.' : writableDuties ? 'Thêm, sửa hoặc xóa ca; hệ thống kiểm tra trùng giờ của cùng nhân viên.' : writableCustomers ? 'Thêm và cập nhật lưu trực tiếp; xóa hồ sơ có đơn thuê sẽ bị chặn để giữ lịch sử.' : writableStores ? 'Thêm và sửa cơ sở; xóa cơ sở có dữ liệu liên quan sẽ bị chặn để giữ lịch sử.' : writableVehicles ? 'Đồng bộ Excel có sao lưu. Xóa hết bị chặn khi xe có dữ liệu liên quan.' : 'Thao tác ghi dữ liệu chưa được tích hợp cho danh mục này.'}</p>

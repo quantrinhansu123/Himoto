@@ -7,6 +7,7 @@ import type { CustomerImportStore } from '@/lib/management/customer-import';
 import { VEHICLE_IMPORT_LIMIT } from '@/lib/management/vehicle-import';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { MobileDetailsCard } from './MobileDetailsCard';
 
 async function request<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
@@ -125,6 +126,12 @@ function VehicleImportDialog({ stores, onClose }: { stores: CustomerImportStore[
         </>)}
       </div>
       {result && !result.committed && <>
+        <FilteredExcelButton disabled={Boolean(busy) || !shown.length} filename="himoto-kiem-tra-nhap-xe"
+          headers={['Dòng', 'ID', 'Tên xe', 'Biển số', 'Màu sắc', 'Loại / hãng', 'Năm', 'Số khung', 'Số máy', 'Số km', 'Cơ sở trong file', 'Trạng thái trong file', 'Kết quả']} getRows={() => shown.map(row => [
+            row.rowNumber, row.targetId || row.values.id || 'Mới', row.values.name, row.values.license, row.values.color,
+            `${row.values.type} / ${row.values.brand}`, row.values.year, row.values.chassis, row.values.engine, row.values.odometer, row.values.store, row.values.status,
+            [row.state === 'skipped' ? 'Bỏ qua' : row.state === 'invalid' ? 'Lỗi' : row.action === 'update' ? 'Cập nhật' : 'Thêm mới', ...row.errors, ...row.warnings].join(' · '),
+          ])}/>
         <label className="mg-import-filter"><input type="checkbox" checked={issuesOnly} onChange={event => { setIssuesOnly(event.target.checked); setPage(1); }} />Chỉ xem dòng lỗi / cần đối chiếu</label>
         <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{shown.slice((safePage - 1) * 20, safePage * 20).map(row => <MobileDetailsCard key={row.rowNumber} title={row.values.name || `Dòng ${row.rowNumber}`}
           summary={<><span>Dòng {row.rowNumber} · {row.values.license || '—'}</span><span>{row.state === 'skipped' ? 'Bỏ qua' : row.state === 'invalid' ? 'Lỗi' : row.action === 'update' ? 'Cập nhật' : 'Thêm mới'}</span></>}

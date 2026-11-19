@@ -20,8 +20,12 @@ export const SHIFT_SUMMARY_FIELDS = [
   ['late_penalty', 'Tổng tiền phạt muộn', true],
 ] as const;
 export type ShiftSummary = Record<typeof SHIFT_SUMMARY_FIELDS[number][0], number>;
+export const SHIFT_REPORT_TYPE_LABELS = { mid_shift: 'Giữa ca', end_shift: 'Cuối ca' } as const;
+export type ShiftReportType = keyof typeof SHIFT_REPORT_TYPE_LABELS;
+export const shiftReportTypeLabel = (type?: ShiftReportType) => SHIFT_REPORT_TYPE_LABELS[type ?? 'end_shift'];
 export const emptyShiftSummary = (): ShiftSummary => Object.fromEntries(SHIFT_SUMMARY_FIELDS.map(([key]) => [key, 0])) as ShiftSummary;
 export interface ShiftInput {
+  report_type?: ShiftReportType;
   ownership_report?:OwnershipReport;
   store_id: number; date: string; staff: string; vehicles: number; batteries: number;
   charged: number; transfers: number; cash: number; personal: number; company: number;
@@ -50,6 +54,7 @@ export function shiftVehicleTotal(input: Pick<ShiftInput, 'vehicles'|'daily_vehi
 export function parseShiftInput(raw: unknown): ShiftInput {
   if (!raw || typeof raw !== 'object') throw new Error('Thông tin báo cáo không hợp lệ.');
   const b = raw as Record<string, unknown>;
+  if (b.report_type !== undefined && b.report_type !== 'mid_shift' && b.report_type !== 'end_shift') throw new Error('Loại báo cáo không hợp lệ.');
   if (!Number.isSafeInteger(b.store_id) || Number(b.store_id) <= 0) throw new Error('Chọn PGD.');
   if (typeof b.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !Number.isFinite(Date.parse(b.date)) || new Date(b.date).toISOString().slice(0, 10) !== b.date) throw new Error('Ngày báo cáo không hợp lệ.');
   if (typeof b.staff !== 'string' || !b.staff.trim() || b.staff.length > 1000) throw new Error('Nhập nhân sự trực ca (tối đa 1.000 ký tự).');
@@ -76,6 +81,7 @@ export function parseShiftInput(raw: unknown): ShiftInput {
     summary = Object.fromEntries(SHIFT_SUMMARY_FIELDS.map(([key]) => [key, values[key]])) as ShiftSummary;
   }
   return { store_id: Number(b.store_id), date: b.date, staff: b.staff.trim(), notes: b.notes.trim(), electricity_off: b.electricity_off,
+    ...(b.report_type !== undefined ? { report_type: b.report_type } : {}),
     ...(b.ownership_report!==undefined?{ownership_report:parseOwnershipReport(b.ownership_report)}:{}),
     ...(typeof b.electrical_devices === 'string' ? { electrical_devices: b.electrical_devices.trim() } : {}),
     ...(b.rented_batteries !== undefined ? { rented_batteries: b.rented_batteries } : {}),

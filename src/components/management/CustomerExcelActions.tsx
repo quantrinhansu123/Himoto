@@ -6,6 +6,7 @@ import { CUSTOMER_IMPORT_LIMIT, CustomerImportInput, CustomerImportResult, Custo
 import { CUSTOMER_STATUSES } from '@/lib/management/config';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { CustomerStoreExcelActions } from './CustomerStoreExcelActions';
 import { MobileDetailsCard } from './MobileDetailsCard';
 
@@ -102,6 +103,12 @@ function CustomerExcelDialog({ onClose }: { onClose: () => void }) {
         </>}
       </div>
       {result && !result.committed && <>
+        <FilteredExcelButton disabled={Boolean(busy) || !shown.length} filename="himoto-kiem-tra-nhap-khach-hang"
+          headers={['Dòng', 'Khách hàng', 'Điện thoại', 'CCCD / CMND', 'Email', 'Địa chỉ', 'Cơ sở', 'Trạng thái', 'Ghi chú / cảnh báo', 'Kết quả']} getRows={() => shown.map(row => [
+            row.rowNumber, row.values.name, row.values.phone, row.values.id_card, row.values.email, row.values.address, row.values.store,
+            CUSTOMER_STATUSES.find(status => status.value === row.values.status)?.label || row.values.status, row.values.warning_note,
+            [row.state === 'valid' ? 'Hợp lệ' : row.state === 'duplicate' ? 'Trùng' : 'Lỗi', ...row.errors, ...(row.warnings ?? [])].join(' · '),
+          ])}/>
         <label className="mg-import-filter"><input type="checkbox" checked={filter === 'issues'} onChange={event => { setFilter(event.target.checked ? 'issues' : 'all'); setPage(1); }} />Chỉ xem dòng lỗi / trùng</label>
         <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{shown.slice((safePage - 1) * 20, safePage * 20).map(row => <MobileDetailsCard key={row.rowNumber} title={row.values.name || `Dòng ${row.rowNumber}`}
           summary={<><span>Dòng {row.rowNumber} · {row.values.phone || '—'}</span><span>{row.state === 'valid' ? 'Hợp lệ' : row.state === 'duplicate' ? 'Trùng' : 'Lỗi'}</span></>}

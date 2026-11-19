@@ -1,12 +1,13 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarDays, Camera, History, LogIn, LogOut, MapPin, Settings } from 'lucide-react';
+import { CalendarDays, Camera, Eye, History, LogIn, LogOut, MapPin, Pencil, Settings, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { AttendanceLocationsDialog } from './AttendanceLocationsDialog';
 import { useManagement } from './ManagementProvider';
 import { Dialog } from './Dialog';
 import { FilteredExcelButton } from './FilteredExcelButton';
+import { RowActionsMenu, type RowAction } from './RowActionsMenu';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { shiftCreditLabel } from '@/lib/management/attendance-shifts';
 import { buildAttendanceWorkbook } from '@/lib/management/attendance-workbook';
@@ -211,13 +212,18 @@ export function AttendanceHistoryPage() {
     return <Link className="mg-attendance-registration-link" href={`/shift-registration?${query}`}
       aria-label={`${label} — xem bảng đăng ký của ${row.staff_name} ngày ${date.split('-').reverse().join('/')}`}>{label}</Link>;
   };
-  const rowActions = (row:Attendance) => <div className="mg-attendance-row-actions">
-    <button type="button" className="mg-button" onClick={() => setRecordDialog({mode:'view',row})}>Xem</button>
-    {isAdmin && row.can_manage && <>
-      <button type="button" className="mg-button" onClick={() => setRecordDialog({mode:'edit',row})}>Sửa</button>
-      <button type="button" className="mg-button" onClick={() => setRecordDialog({mode:'delete',row})}>Xóa</button>
-    </>}
-  </div>;
+  const rowActions = (row: Attendance) => {
+    const actions: RowAction[] = [
+      { key: 'view', label: 'Xem', icon: <Eye size={16} />, onSelect: () => setRecordDialog({ mode: 'view', row }) },
+    ];
+    if (isAdmin && row.can_manage) {
+      actions.push(
+        { key: 'edit', label: 'Sửa', icon: <Pencil size={16} />, onSelect: () => setRecordDialog({ mode: 'edit', row }) },
+        { key: 'delete', label: 'Xóa', icon: <Trash2 size={16} />, onSelect: () => setRecordDialog({ mode: 'delete', row }), danger: true },
+      );
+    }
+    return <RowActionsMenu label={`Thao tác lượt chấm công #${row.id}`} actions={actions} />;
+  };
   return <section className="mg-page mg-attendance-page"><div className="mg-page-content">
     {recordDialog && <AttendanceRecordDialog {...recordDialog} onClose={() => setRecordDialog(null)} onSaved={() => {
       notify(recordDialog.mode==='delete'?'Đã xóa lượt chấm công.':'Đã cập nhật giờ chấm công.');

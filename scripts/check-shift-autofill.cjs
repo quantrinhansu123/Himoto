@@ -35,7 +35,9 @@ async function main(){
   }};
   const past=await readShiftAutofill(historical,input('batteries','2026-01-01'));assert.equal(past.values.vehicles,undefined);assert.equal(past.values.charged,2);
   assert.equal(past.values.rented_batteries,3);
-  rows=[{total:1}];assert.equal((await readShiftAutofill(db,input('transfers'))).values.transfers,1);
+  rows=[{id:'1',vehicle_id:'42',created_at:'2026-01-01T09:00:00+07:00',resolved_at:null}];
+  const transfers=await readShiftAutofill(db,input('transfers'));
+  assert.equal(transfers.values.transfers,1);assert.equal(transfers.transfers[0].at,'2026-01-01T02:00:00.000Z');
   rows=[{...emptyShiftSummary(),income_total:'770000',income_renewal:'570000',income_rental:'200000'}];
   assert.equal((await readShiftAutofill(db,input('summary'))).values.summary.income_total,770000);
   assert(sqls.some(sql=>sql.includes("status='approved'")));assert(sqls.some(sql=>sql.includes("created_at AT TIME ZONE 'Asia/Ho_Chi_Minh'")));

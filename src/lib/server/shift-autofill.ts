@@ -8,6 +8,7 @@ import { depositReceiptSql } from './contract-deposits';
 import {renewalReceiptSql} from './contract-receipts';
 import {readOwnershipReport} from './ownership-report';
 import {readShiftInventory} from './shift-inventory';
+import {readShiftTransfers} from './shift-transfers';
 
 type Database = Pick<PoolClient,'query'>;
 export class ShiftAutofillError extends Error { constructor(message: string, public status=400) { super(message); } }
@@ -24,6 +25,7 @@ export async function readShiftAutofill(db: Database, input: ReturnType<typeof p
   const cutoff=new Date(Math.min(Date.parse(end),Date.now())).toISOString();
   const values: Partial<ShiftInput>={},notices:string[]=[],sources:string[]=[];
   let inventory:ShiftAutofillResult['inventory'];
+  let transfers:ShiftAutofillResult['transfers'];
   if (!(await db.query('SELECT id FROM himoto.stores WHERE id=$1::bigint',[store_id])).rowCount) throw new ShiftAutofillError('PGD không tồn tại hoặc nằm ngoài phạm vi truy cập.',404);
   if(section==='ownership'){
     values.ownership_report=await readOwnershipReport(db,store_id,date);
@@ -65,12 +67,9 @@ export async function readShiftAutofill(db: Database, input: ReturnType<typeof p
     else notices.push('Chưa có số kiểm kê pin lưu trong DB cho ngày này; giữ số pin đã nhập, kiểm kê pin/pin đầy thực tế.');
   }
   if(section==='transfers') {
-    const transfers=(await db.query(`SELECT count(*)::int AS total FROM himoto.vehicle_location_events
-      WHERE from_store_id=$1::bigint AND event_type IN ('manual_transfer','transfer_dispatch')
-      AND (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')>=$2::timestamptz AND (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')<$3::timestamptz
-      AND COALESCE(audit_snapshot #>> '{reconciliation,superseded}','false')<>'true'`,[store_id,start,end])).rows[0];
-    values.transfers=Number(transfers.total);
-    sources.push('Lượt xe điều chuyển đi từ cơ sở trong ngày báo cáo.');
+    transfers=await readShiftTransfers(db,store_id,date);
+    values.transfers=new Set(transfers.map(item=>item.vehicle_id)).size;
+    sources.push('Mỗi xe được tính một lần cho ngày báo cáo, gồm cả xe chuyển đi và xe chuyển đến.');
   }
   if(section==='summary') {
     const contracts=(await db.query(`SELECT count(*)::int AS contracts_total,
@@ -133,5 +132,5 @@ export async function readShiftAutofill(db: Database, input: ReturnType<typeof p
     sources.push('Danh sách thiết bị từ báo cáo đã chốt gần nhất của PGD, không sau ngày đang chọn.');
     notices.push('Chỉ điền danh sách thiết bị để tham khảo; nhân sự tự xác nhận tắt điện, ghi bất thường và đính kèm ảnh khóa cửa.');
   }
-  return {...input,values,notices,sources,read_at:new Date().toISOString(),...(inventory?{inventory}:{})};
+  return {...input,values,notices,sources,read_at:new Date().toISOString(),...(inventory?{inventory}:{}),...(transfers?{transfers}:{})};
 }

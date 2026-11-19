@@ -12,7 +12,8 @@ import { createStoreRecord, deleteStoreRecord, updateStoreRecord } from '@/lib/m
 import { updateCustomerBlacklist } from '@/lib/management/customer-blacklist';
 import { CUSTOMER_STATUSES } from '@/lib/management/config';
 import type { PaymentContext } from '@/lib/management/contract-payments';
-import { hasPermission,type AccessPermission,type PermissionAccount } from '@/lib/management/permissions';
+import { hasPermission,type AccessPermission } from '@/lib/management/permissions';
+import type { SessionUser } from '@/lib/server/management-session';
 
 interface ManagementContextValue {
   dataset: ManagementDataset | null;
@@ -26,7 +27,7 @@ interface ManagementContextValue {
   canPayContracts: boolean;
   canFinalizeContracts:boolean;
   can:(permission:AccessPermission)=>boolean;
-  accessUser:PermissionAccount|null;
+  accessUser:SessionUser|null;
   selectedStore: string;
   selectStore: (id: string) => void;
   reload: (kinds?: readonly ManagementKind[]) => Promise<void>;
@@ -50,7 +51,7 @@ interface ManagementContextValue {
 }
 const ManagementContext = createContext<ManagementContextValue | null>(null);
 
-export function ManagementProvider({ children, canPayContracts = false,user=null }: { children: ReactNode; canPayContracts?: boolean;user?:PermissionAccount|null }) {
+export function ManagementProvider({ children, canPayContracts = false,user=null }: { children: ReactNode; canPayContracts?: boolean;user?:SessionUser|null }) {
   const can=useCallback((permission:AccessPermission)=>hasPermission(user,permission),[user]);
   const [repository] = useState<ManagementRepository>(()=>createManagementRepository({staffDirectory:!hasPermission(user,'hr.read')}));
   const [loader] = useState(() => createManagementDataLoader(repository));
@@ -76,7 +77,7 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   const selectStore=useCallback((id:string)=>{
     if(customerPage)setCustomerStore(id);
     else if(fleetPage)setFleetStore(id);
-    else setBranchStore(user&&!user.scope_all&&user.store_id?String(user.store_id):id);
+    else setBranchStore(user&&!user.scope_all&&!user.scope_all_read&&user.store_id?String(user.store_id):id);
   },[customerPage,fleetPage,user]);
   useEffect(()=>{
     if(!directoryPage)return;const controller=new AbortController();setFleetStoresError('');

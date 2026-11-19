@@ -6,6 +6,7 @@ import type { CustomerStoreInput, CustomerStoreResult } from '@/lib/management/c
 import { CustomerStorePreview, CustomerStoreProgress, previewCustomerStoreBatches, saveCustomerStoreBatches } from '@/lib/management/customer-store-batches';
 import { Dialog } from './Dialog';
 import { useManagement } from './ManagementProvider';
+import { FilteredExcelButton } from './FilteredExcelButton';
 import { MobileDetailsCard } from './MobileDetailsCard';
 
 async function checkStores(rows: CustomerStoreInput[], commit: boolean, revision = ''): Promise<CustomerStoreResult> {
@@ -102,6 +103,12 @@ function CustomerStoreExcelDialog({ onClose }: { onClose: () => void }) {
         </>)}
       </div>
       {result && !result.committed && <>
+        <FilteredExcelButton disabled={Boolean(busy) || !shown.length} filename="himoto-kiem-tra-khop-co-so"
+          headers={['Dòng', 'Căn cước', 'Khách hàng khớp', 'Cơ sở hiện tại', 'Cơ sở trong Excel', 'Cơ sở sẽ lưu', 'Kết quả']} getRows={() => shown.map(row => [
+            row.rowNumber, row.values.id_card, row.customer_id ? `${row.customer_name} (#${row.customer_id})` : null,
+            row.previous_store_name || 'Chưa có cơ sở', row.values.store, row.store_name,
+            [row.state === 'ready' ? 'Sẽ cập nhật' : row.state === 'unchanged' ? 'Đã đúng cơ sở' : 'Lỗi', ...row.errors].join(' · '),
+          ])}/>
         <label className="mg-import-filter"><input type="checkbox" checked={issuesOnly} onChange={event => { setIssuesOnly(event.target.checked); setPage(1); }} />Chỉ xem dòng lỗi</label>
         <div className="mg-mobile-records"><ul className="mg-mobile-card-list">{shown.slice((safePage - 1) * 20, safePage * 20).map(row => <MobileDetailsCard key={row.rowNumber} title={row.customer_name || row.values.id_card || `Dòng ${row.rowNumber}`}
           summary={<><span>Dòng {row.rowNumber} · {row.store_name || row.values.store || '—'}</span><span>{row.state === 'ready' ? 'Sẽ cập nhật' : row.state === 'unchanged' ? 'Đã đúng cơ sở' : 'Lỗi'}</span></>}

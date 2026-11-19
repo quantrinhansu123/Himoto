@@ -2,7 +2,7 @@ import 'server-only';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PermissionAccount } from '@/lib/management/permissions';
 
-export interface DataAccess extends PermissionAccount { id:number; store_id:number|null; scope_all:boolean; operation:string; transfer_vehicle_id?:string }
+export interface DataAccess extends PermissionAccount { id:number; store_id:number|null; scope_all:boolean; operation:string; transfer_vehicle_id?:string; cross_store_read?:boolean }
 export const dataAccess = new AsyncLocalStorage<DataAccess>();
 
 // Keep this aligned with himotoPool: admins use the owner connection without

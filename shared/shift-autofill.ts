@@ -1,6 +1,12 @@
 import type { ShiftInput } from './shift-reports';
 export const SHIFT_AUTOFILL_SECTIONS = ['information','inventory','batteries','transfers','summary','accounts','safety','ownership'] as const;
 export type ShiftAutofillSection = typeof SHIFT_AUTOFILL_SECTIONS[number];
+export interface ShiftTransfer {
+  id: string; vehicle_id: string; plate: string; from: string; to: string; at: string;
+  direction: 'out' | 'in';
+  status: 'pending' | 'received' | 'rejected' | 'cancelled';
+  resolved_at: string | null;
+}
 export interface ShiftInventoryCheck {
   started_contracts:number; started_vehicles:number;
   active_contracts:number; active_vehicles:number;
@@ -13,4 +19,5 @@ export interface ShiftAutofillResult {
   section: ShiftAutofillSection; store_id: number; date: string;
   values: Partial<ShiftInput>; notices: string[]; sources: string[]; read_at: string;
   inventory?:ShiftInventoryCheck;
+  transfers?:ShiftTransfer[];
 }
