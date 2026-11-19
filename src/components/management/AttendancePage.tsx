@@ -17,6 +17,7 @@ import { isAdminAccount } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 
 type Location = {latitude:number;longitude:number;accuracy:number;timestamp:number};
+type InitialClockLocation = Location | Error;
 
 function readClockLocation(): Promise<Location> {
   return new Promise((resolve, reject) => {
@@ -125,9 +126,9 @@ export function AttendancePage() {
   const [retry,setRetry] = useState(0);
   const refresh = useCallback(()=>setRetry(value=>value+1),[]);
   const [data,setData] = useState<Summary|null>(null),[loading,setLoading] = useState(true),[error,setError] = useState('');
-  const [clock,setClock] = useState<{action:'in'|'out';initialLocation:Promise<Error|null>}|null>(null);
+  const [clock,setClock] = useState<{action:'in'|'out';initialLocation:Promise<InitialClockLocation>}|null>(null);
   function startClock(nextAction:'in'|'out') {
-    const initialLocation = readClockLocation().then(() => null, (error:Error) => error);
+    const initialLocation = readClockLocation().catch((error:Error) => error);
     setClock({action:nextAction,initialLocation});
   }
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -338,15 +339,15 @@ function AttendanceRecordDialog({mode,row,onClose,onSaved}:{
   </Dialog>;
 }
 
-function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out';initialLocation:Promise<Error|null>;onClose:()=>void;onSaved:()=>void}) {
+function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out';initialLocation:Promise<InitialClockLocation>;onClose:()=>void;onSaved:()=>void}) {
   const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),lock=useRef(false),requestId=useRef(crypto.randomUUID());
   const [cameraReady,setCameraReady]=useState(false),[photo,setPhoto]=useState<Blob|null>(null),[preview,setPreview]=useState(''),[locating,setLocating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [checkingLocation,setCheckingLocation]=useState(true);
   useEffect(()=>{let current=true;
-    void initialLocation.then(locationError => {
+    void initialLocation.then(location => {
       if(!current)return;
       setCheckingLocation(false);
-      if(locationError)setError(locationError.message);
+      if(location instanceof Error)setError(location.message);
       if(!navigator.mediaDevices?.getUserMedia){
         setError('Trình duyệt chưa hỗ trợ camera. Mở bằng HTTPS hoặc localhost và cho phép camera.');
         return;
@@ -363,6 +364,8 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
   async function locate(): Promise<Location> {
     setLocating(true);
     try {
+      const initial = await initialLocation;
+      if (!(initial instanceof Error) && Math.abs(Date.now()-initial.timestamp)<60_000) return initial;
       return await readClockLocation();
     } finally {
       setLocating(false);
