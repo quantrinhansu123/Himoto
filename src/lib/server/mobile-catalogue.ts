@@ -7,7 +7,7 @@ import {
 } from "@/lib/management/permissions";
 import type { ManagementRow } from "@/lib/management/types";
 import { mapApiRow } from "@/lib/management/repository";
-import { dataAccess } from "./access-context";
+import { canMobileCrossStoreRead, withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import {
   readManagementTable,
@@ -47,17 +47,8 @@ function scope<T>(
   kind: CatalogueKind | null,
   read: () => Promise<T>,
 ) {
-  // Same fleet visibility policy as withAccessRequest; never broaden the actor's
-  // scope_all flag. Customers and contracts continue to use the existing RLS.
-  return dataAccess.run(
-    {
-      ...user,
-      store_id: user.store_id ?? null,
-      scope_all: user.scope_all === true,
-      operation: kind === "vehicles" ? "fleet_read" : "",
-    },
-    read,
-  );
+  // Same fleet and cross-store read-only visibility policy as withAccessRequest.
+  return withMobileReadData(user, kind === "vehicles" ? "fleet_read" : "", read);
 }
 const text = (value: unknown) => (value == null ? "" : String(value));
 const number = (value: unknown): number | null =>
@@ -199,7 +190,7 @@ export async function readMobilePage(
 ): Promise<MobilePage> {
   assertPermission(user, kind);
   const query = mobileTableParams(params, kind);
-  if (!user.scope_all && user.store_id && !query.has('store') && kind !== 'vehicles') {
+  if (!canMobileCrossStoreRead(user) && user.store_id && !query.has('store') && kind !== 'vehicles') {
     query.set('store', String(user.store_id));
   }
   return scope(user, kind, async () => {

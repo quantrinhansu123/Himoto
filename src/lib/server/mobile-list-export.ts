@@ -68,10 +68,11 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
   if(kind==='shifts'){
     const status=localFilter(params,'status','all');
     if(!['all','draft','submitted','pending','confirmed','explained'].includes(status))throw new MobileError('Trạng thái báo cáo ca không hợp lệ.');
+    const reportType=params.get('report_type');
     params.set('all','1');
     const {rows}=await readMobileShifts(user,params);
     const visible=rows.filter(row=>status==='submitted'?row.status==='submitted':matchesShiftReportProgress(row,status));
-    return mobileFilteredWorkbook('himoto-bao-cao-cuoi-ca',SHIFT_EXPORT_HEADERS,shiftExportRows(visible));
+    return mobileFilteredWorkbook(reportType==='mid_shift'?'himoto-bao-cao-giua-ca':'himoto-bao-cao-het-ca',SHIFT_EXPORT_HEADERS,shiftExportRows(visible));
   }
   if(kind==='duties'){
     const day=localFilter(params,'day','all');

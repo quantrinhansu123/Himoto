@@ -60,7 +60,7 @@ async function main(){
  const file=await exportApi.exportMobileList(actor,'shifts',req('store_id=23&status=draft'));
  assert(allRequested);assert.equal(file.rowCount,151);
  const book=new(require('exceljs').Workbook)();await book.xlsx.load(Buffer.from(file.contentBase64,'base64'));
- assert.equal(book.worksheets[0].rowCount,152);assert.equal(book.worksheets[0].getCell('G152').value,123456);
+ assert.equal(book.worksheets[0].rowCount,152);assert.equal(book.worksheets[0].getCell('C1').value,'Loại báo cáo');assert.equal(book.worksheets[0].getCell('H152').value,123456);
  assert(book.worksheets[0].getRow(2).values.includes('=SUM(1,2)'));
  checks.push('Shift XLSX reads all 151 matching reports beyond the 100 displayed rows; numeric cash and literal formula text survive reopening the actual web workbook');
  const shiftCatalogue=await exportApi.exportMobileList(actor,'work-shifts',req());

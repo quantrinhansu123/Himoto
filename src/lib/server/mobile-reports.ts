@@ -2,7 +2,7 @@ import "server-only";
 import type { PoolClient } from "pg";
 import type { SessionUser } from "./management-session";
 import { hasPermission, canViewOwnedFleetRevenue } from "@/lib/management/permissions";
-import { withMobileData } from "./mobile-context";
+import { withMobileReadData } from "./mobile-context";
 import { himotoPool, ownerDatabase } from "./himoto-database";
 import { MobileError } from "./mobile-session";
 import { rentalRevenue, RentalRevenueError } from "./rental-revenue";
@@ -59,7 +59,7 @@ export function reportQuery(kind: SalesReportKind, raw: URLSearchParams) {
 }
 async function read<T>(user: SessionUser, kind: SalesReportKind | null, run: (client: PoolClient) => Promise<T>) {
   permission(user, kind || undefined);
-  return withMobileData(user, "", async () => {
+  return withMobileReadData(user, "", async () => {
     // Exactly the web's individual, read-only exception. Never widen workspace scope.
     const client = await (kind === "fleet" ? ownerDatabase : himotoPool).connect();
     try {

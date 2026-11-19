@@ -39,7 +39,7 @@ async function run(){
   if(kind==='gps'){assert.equal(ws.getCell('D2').value,'000000123');assert.equal(ws.getCell('F1').value,'Trạng thái xe');assert.equal(ws.getCell('H2').value,now);assert.equal(ws.getCell('I1').value,'Vĩ độ');assert.equal(ws.getCell('I2').value,0);assert.equal(ws.getCell('J1').value,'Kinh độ');assert.equal(ws.getCell('J2').value,0);}
   if(kind==='battery'){assert.equal(ws.getCell('C2').value,'0900000001');assert.equal(ws.getCell('H2').value,300000);assert.equal(ws.getCell('E2').value,'=SUM(1,2)');assert.equal(ws.getCell('F2').value,'08:00 01/11/2026');}
   if(kind==='accounts'){assert.equal(ws.getCell('B2').value,'0001');assert.equal(ws.columnCount,5);}
-  if(kind==='shifts')assert.equal(ws.getCell('G2').value,123456);
+  if(kind==='shifts'){assert.equal(ws.getCell('C1').value,'Loại báo cáo');assert.equal(ws.getCell('C2').value,'Cuối ca');assert.equal(ws.getCell('H2').value,123456);}
   if(kind==='duties'){assert.equal(ws.getCell('D2').value,'2026-11-03T23:00');assert.equal(ws.getCell('E2').value,'2026-11-04T01:00');}
   if(kind==='reminders'){assert.equal(ws.getCell('E2').value,'0900000001');assert.equal(ws.getCell('F2').value,123456);}
   const trace=statements.slice(before);assert.equal(trace.filter(s=>s==='BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY').length,1);assert.equal(trace.filter(s=>s==='COMMIT').length,1);assert(!trace.some(s=>/INSERT|UPDATE|DELETE|ALTER/.test(s)));files[kind]=file;

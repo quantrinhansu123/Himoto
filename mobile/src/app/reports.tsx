@@ -53,9 +53,17 @@ export default function ReportsHub() {
 
   const operationalReports: ReportItem[] = [
     {
+      key: "mid-shift-reports",
+      title: "Báo cáo giữa ca",
+      description: "Kiểm kê xe, pin và tiền mặt tại thời điểm giữa ca của từng PGD.",
+      icon: Clock3,
+      href: "/mid-shift-reports",
+      permission: "contracts.read",
+    },
+    {
       key: "shift-reports",
-      title: "Báo cáo cuối ca & Giao ca",
-      description: "PGD kiểm kê xe, số dư tiền mặt tại quầy, ảnh minh chứng két và xác nhận KTNB.",
+      title: "Báo cáo Hết ca & Đối soát KTNB",
+      description: "PGD kiểm kê xe, số dư tiền mặt hết ca, ảnh minh chứng két và xác nhận KTNB.",
       icon: Clock3,
       href: "/shift-reports",
       permission: "contracts.read",

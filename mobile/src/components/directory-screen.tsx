@@ -17,6 +17,7 @@ const storeStatuses = [{ value: 'active', label: 'Hoạt động' }, { value: 'i
 
 export function DirectoryScreen({ kind, initialStore }: { kind: MobileDirectoryKind; initialStore?: string }) {
   const { api, session } = useSession(), theme = useTheme(), workspace = useWorkspace();
+  const canReadAll = Boolean(session!.user.allStores || session!.user.allStoresRead);
   const [input, setInput] = useState(""), [status, setStatus] = useState(""), [store, setStore] = useState(initialStore || (session!.user.allStores ? "all" : String(session!.user.storeId || "all")));
   const [position, setPosition] = useState(""), search = useDebouncedValue(input);
   const allowed = session!.user.permissions.includes(kind === "staff" ? "hr.read" : "contracts.read");
@@ -26,21 +27,21 @@ export function DirectoryScreen({ kind, initialStore }: { kind: MobileDirectoryK
   if (!allowed) return <StateView title="Không có quyền xem danh bạ" />;
   const rows = [...new Map(query.data?.pages.flatMap(page => page.rows).map(row => [row.id, row])).values()];
   const title = kind === "staff" ? "Nhân sự" : "Cơ sở";
-  const stores = (workspace.data?.stores || []).filter(item => session!.user.allStores || item.id === session!.user.storeId);
+  const stores = (workspace.data?.stores || []).filter(item => canReadAll || item.id === session!.user.storeId);
   return <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}>
     <FlatList data={rows} keyExtractor={row => String(row.id)} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 14, maxWidth: 760, width: "100%", alignSelf: "center" }}
       refreshControl={<RefreshControl refreshing={query.isRefetching && !query.isFetchingNextPage} onRefresh={() => { void query.refetch(); }} tintColor={theme.primary} />}
       ListHeaderComponent={<View style={{ gap: 14 }}>
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{title}</Text>
         {kind === "stores" && session!.user.permissions.includes("settings.write") && <Button secondary label="Thêm cơ sở" onPress={() => router.push({ pathname: "/store-editor/[id]", params: { id: "new" } })} />}
-        {kind === "staff" && session!.user.permissions.includes("hr.write") && <Button secondary label="Thêm nhân sự" onPress={() => router.push({ pathname: "/staff-editor/[id]", params: { id: "new", store } })} />}
+        {kind === "staff" && session!.user.permissions.includes("hr.write") && <Button secondary label="Thêm nhân sự" onPress={() => router.push({ pathname: "/staff-editor/[id]", params: { id: "new", store: session!.user.allStores ? store : String(session!.user.storeId || "") } })} />}
         {kind==='staff'&&<Button secondary label="Sơ đồ nhân sự" onPress={()=>router.push('/staff-organization')}/>}
         {session!.user.permissions.includes(kind==='staff'?'hr.write':'settings.write')&&<Button secondary label="Chọn nhiều hồ sơ để xóa" onPress={()=>router.push({pathname:'/bulk-delete/[kind]',params:{kind,filters:new URLSearchParams({search,status,...(kind==='staff'?{store,position}:{})}).toString()}})}/>}
         <Button secondary label="Tải Excel theo bộ lọc" disabled={query.isPending || query.isError || input.trim() !== search} onPress={() => router.push({ pathname: "/catalogue-export/[kind]", params: { kind, filters: new URLSearchParams({ search, status, ...(kind === "staff" ? { store, position } : {}) }).toString() } })} />
         <FormField label={kind === "staff" ? "Tìm tên, mã nhân sự, điện thoại" : "Tìm tên, mã, địa chỉ cơ sở"} value={input} onChangeText={setInput} maxLength={120} />
         <ChoiceField label="Trạng thái" value={status} choices={[{ value: "", label: "Tất cả trạng thái" }, ...(kind === "staff" ? STAFF_PROFILE_STATUSES : [{ value: "active", label: "Hoạt động" }, { value: "inactive", label: "Tạm ngừng" }])]} onChange={setStatus} />
         {kind === "staff" && <ChoiceField label="Lọc chức vụ nhân sự" value={position} choices={[{ value: "", label: "Tất cả chức vụ" }, ...[...new Set([...STAFF_POSITIONS, ...rows.map(row => row.position)].filter(Boolean))].map(value => ({ value, label: value }))]} onChange={setPosition} searchable />}
-        {kind === "staff" && <ChoiceField label="Cơ sở nhân sự" value={store} choices={[...(session!.user.allStores ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} searchable />}
+        {kind === "staff" && <ChoiceField label="Cơ sở nhân sự" value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} searchable />}
         <Text style={{ color: theme.muted }}>{query.data ? `${query.data.pages[0].total} hồ sơ` : "Đang tải…"}</Text>
         {query.isError && rows.length > 0 && <><InlineError message={query.error.message} /><Button secondary label="Tải lại danh bạ" onPress={() => { void query.refetch(); }} /></>}
       </View>}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, usePreventRemove } from 'expo-router';
-import type { MobileCorrectionKind, MobileReceiptCorrections, MobileReceiptCorrectionInput, MobileRenewalCorrections, MobileRenewalCorrectionInput, MobileRenewalCorrectionReceipt, MobileCorrectionAccount, MobileReceiptSplit } from '../../../shared/mobile-contract-corrections';
+import type { MobileCorrectionKind, MobileReceiptCorrections, MobileReceiptCorrectionInput, MobileRenewalCorrections, MobileRenewalCorrectionInput, MobileRenewalCorrectionPeriod, MobileRenewalCorrectionReceipt, MobileCorrectionAccount, MobileReceiptSplit } from '../../../shared/mobile-contract-corrections';
 import type { MobileCollectionMethod } from '@himoto/mobile-contract';
 import { validDraftTime } from '@himoto/mobile-draft-validation';
 import { useContractCorrectionWrite } from '@/hooks/use-contract-correction-write';
@@ -24,8 +24,17 @@ export function ContractCorrectionEditor({ id, kind }: { id: string; kind: Mobil
   if (confirm && 'deposit_amount' in confirm) {
     reviewDetails = `Cọc thỏa thuận: ${money(Number(confirm.deposit_amount))}\n` + confirm.receipts.filter(r => JSON.stringify(r.parts) !== JSON.stringify((context as MobileReceiptCorrections | null)?.receipts.find(old => old.id === r.id)?.parts)).map(r => `Phiếu #${r.id}: ${r.parts.map(p => `${money(Number(p.amount))} · ${methods.find(m => m.value === p.method)?.label} · ${p.account_id ? `tài khoản/két #${p.account_id}` : 'chưa phân bổ'}`).join(' + ')}`).join('\n');
   } else if (confirm) {
-    const original = (context as MobileRenewalCorrections | null)?.receipts.find(r => r.id === confirm.transaction_id);
-    reviewDetails = `Phiếu #${confirm.transaction_id}\nThực thu: ${money(confirm.collected_amount === undefined ? original?.collectedAmount ?? null : Number(confirm.collected_amount))}\nNgày thu: ${dateTime(confirm.paid_at || original?.paidAt || '')}\nPhí kỳ: ${money(confirm.amount === undefined ? original?.amount ?? null : Number(confirm.amount))}\nKỳ: ${dateTime(confirm.before_return_at || original?.beforeReturnAt || '')} → ${dateTime(confirm.return_at || original?.returnAt || '')}`;
+    const renewalCtx = context as MobileRenewalCorrections | null;
+    if (confirm.renewal_version !== undefined) {
+      const period = renewalCtx?.renewals?.find(p => p.version === confirm.renewal_version);
+      const collectedLine = confirm.collected_amount
+        ? `${money(Number(confirm.collected_amount))} (lập phiếu thu mới · ${dateTime(confirm.paid_at || '')})`
+        : 'Chưa thu (chỉ sửa kỳ / phí gia hạn)';
+      reviewDetails = `Kỳ gia hạn v${confirm.renewal_version} (chưa có phiếu thu)\nThực thu: ${collectedLine}\nPhí kỳ: ${money(confirm.amount === undefined ? period?.amount ?? null : Number(confirm.amount))}\nKỳ: ${dateTime(confirm.before_return_at || period?.beforeReturnAt || '')} → ${dateTime(confirm.return_at || period?.returnAt || '')}`;
+    } else {
+      const original = renewalCtx?.receipts.find(r => r.id === confirm.transaction_id);
+      reviewDetails = `Phiếu #${confirm.transaction_id}\nThực thu: ${money(confirm.collected_amount === undefined ? original?.collectedAmount ?? null : Number(confirm.collected_amount))}\nNgày thu: ${dateTime(confirm.paid_at || original?.paidAt || '')}\nPhí kỳ: ${money(confirm.amount === undefined ? original?.amount ?? null : Number(confirm.amount))}\nKỳ: ${dateTime(confirm.before_return_at || original?.beforeReturnAt || '')} → ${dateTime(confirm.return_at || original?.returnAt || '')}`;
+    }
   }
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title }} />
@@ -95,44 +104,90 @@ function ReceiptCorrectionForm({ initial, disabled, onDirty, onReview }: { initi
   </>;
 }
 const localTime = (value: string | null) => value && Number.isFinite(Date.parse(value)) ? new Date(Date.parse(value) + 7 * 3600000).toISOString().slice(0, 16) : '';
+const nowLocalTime = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16);
 function RenewalCorrectionForm({ initial, disabled, onDirty, onReview }: { initial: MobileRenewalCorrections; disabled: boolean; onDirty: () => void; onReview: (input: MobileRenewalCorrectionInput) => void }) {
-  const theme = useTheme(), [selected, setSelected] = useState(String(initial.receipts.find(r => r.status === 'approved')?.id || initial.receipts[0]?.id || ''));
+  const theme = useTheme();
+  const periods = initial.renewals || [];
+  const defaultTarget = initial.receipts.find(r => r.status === 'approved')
+    ? `receipt:${initial.receipts.find(r => r.status === 'approved')!.id}`
+    : periods[0]
+      ? `version:${periods[0].version}`
+      : initial.receipts[0]
+        ? `receipt:${initial.receipts[0].id}`
+        : '';
+  const [selected, setSelected] = useState(defaultTarget);
   const [forms, setForms] = useState<Record<string, { method: MobileCollectionMethod; account_id: number; paidAt: string; collected: string; before: string; end: string; amount: string; reason: string }>>({}), [error, setError] = useState('');
-  const receipt = initial.receipts.find(r => String(r.id) === selected), text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
-  function defaults(r: MobileRenewalCorrectionReceipt) { return { method: r.method || 'cash' as const, account_id: r.accountId || 0, paidAt: localTime(r.paidAt), collected: String(r.collectedAmount), before: localTime(r.beforeReturnAt), end: localTime(r.returnAt), amount: String(r.amount ?? r.collectedAmount), reason: '' }; }
-  const form = receipt ? forms[selected] || defaults(receipt) : null;
+  const receipt = selected.startsWith('receipt:') ? initial.receipts.find(r => `receipt:${r.id}` === selected) : undefined;
+  const renewal: MobileRenewalCorrectionPeriod | undefined = selected.startsWith('version:') ? periods.find(p => `version:${p.version}` === selected) : undefined;
+  const text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
+  function defaultsForReceipt(r: MobileRenewalCorrectionReceipt) { return { method: r.method || 'cash' as const, account_id: r.accountId || 0, paidAt: localTime(r.paidAt), collected: String(r.collectedAmount), before: localTime(r.beforeReturnAt), end: localTime(r.returnAt), amount: String(r.amount ?? r.collectedAmount), reason: '' }; }
+  function defaultsForPeriod(p: MobileRenewalCorrectionPeriod) {
+    const cashAccounts = initial.accounts.filter(a => a.method === 'cash');
+    return { method: 'cash' as const, account_id: cashAccounts.length === 1 ? cashAccounts[0].id : 0, paidAt: nowLocalTime(), collected: '', before: localTime(p.beforeReturnAt), end: localTime(p.returnAt), amount: String(p.amount), reason: '' };
+  }
+  const form = receipt ? forms[selected] || defaultsForReceipt(receipt) : renewal ? forms[selected] || defaultsForPeriod(renewal) : null;
+  const collecting = Boolean(receipt || (form && Number(form.collected) > 0));
+  const feeEditable = receipt ? receipt.feeEditable : renewal ? renewal.feeEditable : false;
   function change(next: NonNullable<typeof form>) { if (!disabled) { setForms(current => ({ ...current, [selected]: next })); onDirty(); setError(''); } }
   function review() {
-    Keyboard.dismiss(); if (!receipt || !form) return;
-    if (!form.reason.trim() || !form.account_id || !initial.accounts.some(a => a.method === form.method && a.id === form.account_id)) { setError('Nhập lý do và chọn tài khoản/két nhận đang hoạt động.'); return; }
-    const input: MobileRenewalCorrectionInput = { transaction_id: receipt.id, revision: receipt.revision, method: form.method, account_id: form.account_id, reason: form.reason.trim() };
-    for (const [field, original, next] of [['paid_at', receipt.paidAt, form.paidAt], ['before_return_at', receipt.beforeReturnAt, form.before], ['return_at', receipt.returnAt, form.end]] as const) {
-      if (next === localTime(original)) continue;
+    Keyboard.dismiss(); if ((!receipt && !renewal) || !form) return;
+    if (!form.reason.trim()) { setError('Nhập lý do sửa thanh toán / thời gian gia hạn.'); return; }
+    if (collecting && (!form.account_id || !initial.accounts.some(a => a.method === form.method && a.id === form.account_id))) { setError('Chọn tài khoản / két nhận đang hoạt động.'); return; }
+    if (collecting && (!validDraftTime(form.paidAt) || !/^[1-9]\d{0,12}$/.test(form.collected))) { setError('Nhập ngày thực hiện hợp lệ và số tiền thực tế đã thu lớn hơn 0.'); return; }
+    if (renewal && form.collected && !/^(0|[1-9]\d{0,12})$/.test(form.collected)) { setError('Số tiền thực tế đã thu phải là số nguyên VND không âm.'); return; }
+    if (renewal && Number(form.collected) > Number(form.amount)) { setError('Số tiền đã thu không được vượt phí gia hạn của kỳ.'); return; }
+    if (feeEditable && !/^(0|[1-9]\d{0,12})$/.test(form.amount)) { setError('Phí gia hạn phải là số nguyên VND không âm.'); return; }
+    if (form.before && form.end && validDraftTime(form.before) && validDraftTime(form.end) && Date.parse(`${form.end}:00+07:00`) <= Date.parse(`${form.before}:00+07:00`)) {
+      setError('Thời gian kết thúc gia hạn phải sau thời gian bắt đầu.'); return;
+    }
+    const input: MobileRenewalCorrectionInput = receipt
+      ? { transaction_id: receipt.id, revision: receipt.revision, method: form.method, account_id: form.account_id, reason: form.reason.trim() }
+      : { renewal_version: renewal!.version, revision: initial.revision, reason: form.reason.trim(), ...(collecting ? { method: form.method, account_id: form.account_id } : {}) };
+    const origBefore = receipt ? receipt.beforeReturnAt : renewal!.beforeReturnAt;
+    const origEnd = receipt ? receipt.returnAt : renewal!.returnAt;
+    const origPaidAt = receipt ? receipt.paidAt : null;
+    for (const [field, original, next, active] of [
+      ['paid_at', origPaidAt, form.paidAt, collecting],
+      ['before_return_at', origBefore, form.before, true],
+      ['return_at', origEnd, form.end, true],
+    ] as const) {
+      if (!active) continue;
+      if (original && next === localTime(original)) continue;
+      if (!next && !original) continue;
       if (!validDraftTime(next)) { setError('Nhập đủ ngày giờ hợp lệ theo giờ Việt Nam.'); return; }
       input[field] = new Date(`${next}:00+07:00`).toISOString();
     }
     // Preserve original sub-minute timestamps whenever a date was not edited.
-    if (form.collected !== String(receipt.collectedAmount)) input.collected_amount = form.collected;
-    if (receipt.feeEditable && form.amount !== String(receipt.amount ?? receipt.collectedAmount)) input.amount = form.amount;
+    if (receipt && form.collected !== String(receipt.collectedAmount)) input.collected_amount = form.collected;
+    if (renewal && collecting) input.collected_amount = form.collected;
+    const origAmount = receipt ? (receipt.amount ?? receipt.collectedAmount) : renewal!.amount;
+    if (feeEditable && form.amount !== String(origAmount)) input.amount = form.amount;
     onReview(input);
   }
+  const targetChoices = [
+    ...initial.receipts.map(r => ({ value: `receipt:${r.id}`, label: `#${r.id} · ${money(r.collectedAmount)} · ${r.status === 'cancelled' ? 'Đã hủy' : r.license || 'Gia hạn nhiều xe'}` })),
+    ...periods.map(p => ({ value: `version:${p.version}`, label: `Kỳ gia hạn v${p.version} (chưa có phiếu thu) · Phí ${money(p.amount)}` })),
+  ];
   return <>
-    <Card style={{ gap: 12 }}><Text style={text}>{initial.code}</Text><Text style={text}>Giá trị hợp đồng: {money(initial.totalAmount)} · Thuê đã thu: {money(initial.rentalPaid)}</Text><Text style={muted}>Ngày thực hiện và tiền thực thu thuộc phiếu. Khoảng gia hạn và phí gia hạn là số liệu riêng. Sửa ngày không tự thay thời điểm ghi nhận lịch sử.</Text></Card>
-    {initial.receipts.length ? <ChoiceField label="Phiếu gia hạn cần sửa" value={selected} choices={initial.receipts.map(r => ({ value: String(r.id), label: `#${r.id} · ${money(r.collectedAmount)} · ${r.status === 'cancelled' ? 'Đã hủy' : r.license || 'Gia hạn nhiều xe'}` }))} disabled={disabled} searchable onChange={v => { setSelected(v); setError(''); }} /> : <Card><Text style={text}>Chưa có phiếu gia hạn để sửa trong hợp đồng.</Text></Card>}
-    {receipt && form && <>
+    <Card style={{ gap: 12 }}><Text style={text}>{initial.code}</Text><Text style={text}>Giá trị hợp đồng: {money(initial.totalAmount)} · Thuê đã thu: {money(initial.rentalPaid)}</Text><Text style={muted}>Ngày thực hiện và tiền thực thu thuộc phiếu. Khoảng gia hạn và phí gia hạn là số liệu riêng. Có thể sửa cả kỳ gia hạn chưa có phiếu thu hoặc lập phiếu thu kèm theo.</Text></Card>
+    {targetChoices.length ? <ChoiceField label="Phiếu / kỳ gia hạn cần sửa" value={selected} choices={targetChoices} disabled={disabled} searchable onChange={v => { setSelected(v); setError(''); }} /> : <Card><Text style={text}>Chưa có kỳ gia hạn hoặc phiếu gia hạn để sửa trong hợp đồng.</Text></Card>}
+    {(receipt || renewal) && form && <>
       <Card style={{ gap: 16 }}>
-        <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Phiếu #{receipt.id} · {receipt.license || receipt.vehicleName || 'Gia hạn nhiều xe'}</Text>
-        <RentalDateTime label="thực hiện khoản thu" value={form.paidAt} disabled={disabled || receipt.status === 'cancelled'} onChange={paidAt => change({ ...form, paidAt })} />
-        <FormField label="Số tiền thực tế đã thu (VND)" value={form.collected} keyboardType="number-pad" editable={!disabled && receipt.status === 'approved'} maxLength={13} onChangeText={collected => change({ ...form, collected })} hint={money(Number(form.collected || 0))} />
-        <CorrectionRouting label={`phiếu gia hạn ${receipt.id}`} value={form} accounts={initial.accounts} disabled={disabled} onChange={routing => change({ ...form, ...routing })} />
+        <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>
+          {receipt ? `Phiếu #${receipt.id} · ${receipt.license || receipt.vehicleName || 'Gia hạn nhiều xe'}` : `Kỳ gia hạn v${renewal!.version} · Chưa có phiếu thu`}
+        </Text>
+        {renewal && <Text style={muted}>Kỳ này chưa có phiếu thu. Nhập số tiền thực tế đã thu để lập phiếu, hoặc để trống nếu khách chưa thanh toán.</Text>}
+        {collecting && <RentalDateTime label="thực hiện khoản thu" value={form.paidAt} disabled={disabled || receipt?.status === 'cancelled'} onChange={paidAt => change({ ...form, paidAt })} />}
+        <FormField label="Số tiền thực tế đã thu (VND)" value={form.collected} keyboardType="number-pad" editable={!disabled && (!receipt || receipt.status === 'approved')} maxLength={13} onChangeText={collected => change({ ...form, collected: collected.replace(/\D/g, '') })} hint={form.collected ? money(Number(form.collected || 0)) : 'Để trống nếu khách chưa thanh toán'} />
+        {collecting && <CorrectionRouting label={receipt ? `phiếu gia hạn ${receipt.id}` : `kỳ gia hạn v${renewal!.version}`} value={form} accounts={initial.accounts} disabled={disabled} onChange={routing => change({ ...form, ...routing })} />}
         <RentalDateTime label="bắt đầu kỳ gia hạn" value={form.before} disabled={disabled} onChange={before => change({ ...form, before })} />
         <RentalDateTime label="kết thúc kỳ gia hạn" value={form.end} disabled={disabled} onChange={end => change({ ...form, end })} />
-        <FormField label="Phí gia hạn của kỳ (VND)" value={form.amount} keyboardType="number-pad" maxLength={13} editable={!disabled && receipt.feeEditable} onChangeText={amount => change({ ...form, amount })} hint={receipt.feeEditable ? 'Phí hợp đồng của kỳ, khác với số thực thu trên phiếu.' : 'Phí chỉ sửa được khi phiếu và kỳ đã đối chiếu, xe còn đang thuê.'} />
-        {receipt.status === 'cancelled' && <Text style={muted}>Phiếu đã hủy giữ nguyên ngày và tiền thực thu; chỉ chỉnh thông tin gia hạn/hình thức theo điều kiện cho phép.</Text>}
+        <FormField label="Phí gia hạn của kỳ (VND)" value={form.amount} keyboardType="number-pad" maxLength={13} editable={!disabled && feeEditable} onChangeText={amount => change({ ...form, amount: amount.replace(/\D/g, '') })} hint={feeEditable ? 'Phí hợp đồng của kỳ, khác với số thực thu trên phiếu.' : 'Kỳ này không cho sửa phí tại đây (phiếu đã hủy, xe đã trả hoặc hợp đồng đã chốt).'} />
+        {receipt?.status === 'cancelled' && <Text style={muted}>Phiếu đã hủy giữ nguyên ngày và tiền thực thu; chỉ chỉnh thông tin gia hạn/hình thức theo điều kiện cho phép.</Text>}
       </Card>
       <FormField label="Lý do sửa gia hạn / khoản thu" value={form.reason} multiline maxLength={500} editable={!disabled} onChangeText={reason => change({ ...form, reason })} />
       {!!error && <InlineError message={error} />}
-      <Button label="Kiểm tra sửa ngày / tiền thực thu gia hạn" disabled={disabled} onPress={review} />
+      <Button label={renewal ? (collecting ? 'Kiểm tra lưu kỳ gia hạn và lập phiếu thu' : 'Kiểm tra sửa kỳ gia hạn') : 'Kiểm tra sửa ngày / tiền thực thu gia hạn'} disabled={disabled} onPress={review} />
     </>}
   </>;
 }

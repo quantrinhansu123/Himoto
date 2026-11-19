@@ -6,6 +6,7 @@ import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { paymentAccounts, type PaymentContext } from '@/lib/management/contract-payments';
 import { readReceiptCorrections, parseReceiptCorrection, updateReceiptCorrections } from './receipt-corrections';
 import { parseRenewalPaymentCorrection, updateRenewalPayment } from './renewal-payment-corrections';
+import { sameRenewalPeriod } from './contract-notification-content';
 import { ContractPaymentError, readPaymentContext } from './contract-payments';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { mobileContractId } from './mobile-contracts';
@@ -56,13 +57,23 @@ export async function readMobileRenewalCorrections(user: SessionUser, value: str
   const id = mobileContractId(value);
   return transaction(user, 'renewal', false, async client => {
     await visible(client, id);
-    const context = await readPaymentContext(client, id), result = {
+    const context = await readPaymentContext(client, id);
+    const renewalHistory = context.history.filter(r => r.renewal && r.type === 'in' && !r.deposit);
+    const unreceiptedRenewals = (context.renewals || []).filter(v =>
+      Number.isSafeInteger(v.version) && v.version >= 2 &&
+      !renewalHistory.some(r => r.status === 'approved' && r.renewal && sameRenewalPeriod(r.renewal, v)),
+    );
+    const result = {
       id, code: context.code, revision: context.revision, status: context.status, totalAmount: context.total_amount, rentalPaid: context.paid_amount,
-      accounts: accounts(context), receipts: context.history.filter(r => r.renewal && r.type === 'in' && !r.deposit).map(r => ({
+      accounts: accounts(context), receipts: renewalHistory.map(r => ({
         id: r.id, revision: r.revision, status: r.status, collectedAmount: r.amount, paidAt: r.paid_at,
         method: r.payment_method || null, accountId: r.account_id || null, account: r.account, feeEditable: r.renewal_fee_editable === true,
         amount: r.renewal?.amount == null ? null : Number(r.renewal.amount), beforeReturnAt: r.renewal?.before_return_at || null, returnAt: r.renewal?.return_at || null,
         version: r.renewal?.version == null ? null : Number(r.renewal.version), license: r.renewal?.license || '', vehicleName: r.renewal?.vehicle_name || '',
+      })),
+      renewals: unreceiptedRenewals.map(v => ({
+        version: Number(v.version), beforeReturnAt: v.before_return_at || null, returnAt: v.return_at,
+        amount: Number(v.amount), feeEditable: v.fee_editable === true,
       })),
     };
     if (!isMobileRenewalCorrections(result)) throw new MobileError('Phiếu gia hạn cần kiểm tra dữ liệu trên web trước khi sửa.', 409, 'DATA_REVIEW_REQUIRED');

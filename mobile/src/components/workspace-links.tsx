@@ -16,7 +16,8 @@ export function WorkspaceLinks() {
     ] : []),
     ...(permissions.includes("finance.read") ? [{ key: "cashbook", title: "Sổ quỹ / Sổ két", description: "Phiếu thu chi, số dư két tiền mặt và tài khoản ngân hàng", icon: Wallet, open: () => router.push("/cashbook") }] : []),
     ...(permissions.includes("contracts.read") ? [
-      { key: "shift-reports", title: "Báo cáo cuối ca", description: "PGD kiểm kê xe, chốt tiền mặt cuối ca và KTNB đối soát", icon: ReceiptText, open: () => router.push("/shift-reports") },
+      { key: "mid-shift-reports", title: "Báo cáo giữa ca", description: "Kiểm kê xe, pin và tiền mặt tại thời điểm giữa ca", icon: ReceiptText, open: () => router.push("/mid-shift-reports") },
+      { key: "shift-reports", title: "Báo cáo Hết ca", description: "PGD kiểm kê xe, chốt tiền mặt hết ca và KTNB đối soát", icon: ReceiptText, open: () => router.push("/shift-reports") },
       { key: "debt-reminders", title: "Gửi nhắc nợ", description: "Hợp đồng đến hạn / quá hạn và lịch sử gửi tin nhắc nợ", icon: MessageCircle, open: () => router.push("/debt-reminders") },
       { key: "telegram-pending", title: "Chưa gửi Telegram", description: "Kiểm tra giao dịch chưa gửi, gửi lỗi hoặc đã thu hồi", icon: MessageCircle, open: () => router.push("/telegram-pending") },
     ] : []),

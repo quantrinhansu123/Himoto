@@ -10,8 +10,11 @@ export interface MobileRenewalCorrectionReceipt {
   method: MobileCollectionMethod | null; accountId: number | null; account: string; feeEditable: boolean;
   amount: number | null; beforeReturnAt: string | null; returnAt: string | null; version: number | null; license: string; vehicleName: string;
 }
-export interface MobileRenewalCorrections { id: number; code: string; revision: string; status: string; totalAmount: number | null; rentalPaid: number | null; accounts: MobileCorrectionAccount[]; receipts: MobileRenewalCorrectionReceipt[] }
-export interface MobileRenewalCorrectionInput { transaction_id: number; revision: string; reason: string; method?: MobileCollectionMethod; account_id?: number; before_return_at?: string; return_at?: string; amount?: string; paid_at?: string; collected_amount?: string }
+export interface MobileRenewalCorrectionPeriod {
+  version: number; beforeReturnAt: string | null; returnAt: string; amount: number; feeEditable: boolean;
+}
+export interface MobileRenewalCorrections { id: number; code: string; revision: string; status: string; totalAmount: number | null; rentalPaid: number | null; accounts: MobileCorrectionAccount[]; receipts: MobileRenewalCorrectionReceipt[]; renewals?: MobileRenewalCorrectionPeriod[] }
+export interface MobileRenewalCorrectionInput { transaction_id?: number; renewal_version?: number; revision: string; reason: string; method?: MobileCollectionMethod; account_id?: number; before_return_at?: string; return_at?: string; amount?: string; paid_at?: string; collected_amount?: string }
 export interface MobileContractCorrectionResult { key: string; operation: string; receipt: MobileWriteReceipt }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const id = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
@@ -28,7 +31,8 @@ export function isMobileReceiptCorrections(v: unknown): v is MobileReceiptCorrec
 }
 export function isMobileRenewalCorrections(v: unknown): v is MobileRenewalCorrections {
   return object(v) && id(v.id) && text(v.code) && revision(v.revision) && text(v.status) && amount(v.totalAmount) && amount(v.rentalPaid) && accounts(v.accounts) && Array.isArray(v.receipts) && v.receipts.every(r => object(r) &&
-    id(r.id) && revision(r.revision) && ['approved', 'cancelled'].includes(String(r.status)) && nonnegative(r.collectedAmount) && stamp(r.paidAt) && (r.method === null || method(r.method)) && (r.accountId === null || id(r.accountId)) && text(r.account) && typeof r.feeEditable === 'boolean' && amount(r.amount) && (r.beforeReturnAt === null || stamp(r.beforeReturnAt)) && (r.returnAt === null || stamp(r.returnAt)) && (r.version === null || id(r.version)) && text(r.license) && text(r.vehicleName)) && new Set(v.receipts.map(r => r.id)).size === v.receipts.length;
+    id(r.id) && revision(r.revision) && ['approved', 'cancelled'].includes(String(r.status)) && nonnegative(r.collectedAmount) && stamp(r.paidAt) && (r.method === null || method(r.method)) && (r.accountId === null || id(r.accountId)) && text(r.account) && typeof r.feeEditable === 'boolean' && amount(r.amount) && (r.beforeReturnAt === null || stamp(r.beforeReturnAt)) && (r.returnAt === null || stamp(r.returnAt)) && (r.version === null || id(r.version)) && text(r.license) && text(r.vehicleName)) && new Set(v.receipts.map(r => r.id)).size === v.receipts.length &&
+    (v.renewals === undefined || Array.isArray(v.renewals) && v.renewals.every(p => object(p) && id(p.version) && Number(p.version) >= 2 && (p.beforeReturnAt === null || stamp(p.beforeReturnAt)) && stamp(p.returnAt) && nonnegative(p.amount) && typeof p.feeEditable === 'boolean') && new Set(v.renewals.map(p => p.version)).size === v.renewals.length);
 }
 export function isMobileContractCorrectionResult(v: unknown): v is MobileContractCorrectionResult {
   if (!object(v) || typeof v.key !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v.key) || !object(v.receipt)) return false;

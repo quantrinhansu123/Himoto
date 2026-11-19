@@ -28,6 +28,7 @@ export function CashbookVoucherCard({ row }: { row: MobileCashbookVoucher }) {
 }
 export function CashbookScreen({ initialStore }: { initialStore?: string }) {
   const { api, session } = useSession(), workspace = useWorkspace(), theme = useTheme();
+  const canReadAll = Boolean(session!.user.allStores || session!.user.allStoresRead);
   const [selected, setSelected] = useState<Map<string, MobileCashbookVoucher>>(new Map());
   const [store, setStore] = useState(initialStore || (session!.user.allStores ? "all" : String(session!.user.storeId || "all")));
   const [input, setInput] = useState(""), search = useDebouncedValue(input), [actor, setActor] = useState(""), [from, setFrom] = useState(""), [to, setTo] = useState("");
@@ -43,7 +44,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
   const query = useQuery({ queryKey: ["cashbook", session!.user.id, params.toString()], queryFn: ({ signal }) => api!.cashbook(params.toString(), signal), enabled: allowed && valid });
   if (!allowed) return <StateView title="Không có quyền xem sổ quỹ" />;
   const data = valid ? query.data : undefined, current = data?.[kind], totals = data ? cashbookRentalTotals(data.breakdown) : null;
-  const stores = (workspace.data?.stores || []).filter(row => session!.user.allStores || row.id === session!.user.storeId), paging = kind === "income" ? income : expense;
+  const stores = (workspace.data?.stores || []).filter(row => canReadAll || row.id === session!.user.storeId), paging = kind === "income" ? income : expense;
   const updatePaging = (values: Partial<typeof income>) => (kind === "income" ? setIncome : setExpense)(current => ({ ...current, page: 1, ...values, filter }));
   const pages = current ? Math.max(1, Math.ceil(current.total / current.pageSize)) : 1;
   return <FlatList ref={list} data={current?.rows || []} keyExtractor={row => row.id} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 14, width: "100%", maxWidth: 760, alignSelf: "center" }}
@@ -55,7 +56,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
       <Button secondary label={open ? "Ẩn bộ lọc sổ quỹ" : "Bộ lọc sổ quỹ"} onPress={() => setOpen(value => !value)} />
       {open && <Card style={{ gap: 16 }}>
         <FormField label="Tìm phiếu thu chi" value={input} onChangeText={setInput} maxLength={300} />
-        <ChoiceField label="Cơ sở sổ quỹ" value={store} choices={[...(session!.user.allStores ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(row => ({ value: String(row.id), label: row.name }))]} searchable onChange={value => { setStore(value); setActor(""); }} />
+        <ChoiceField label="Cơ sở sổ quỹ" value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(row => ({ value: String(row.id), label: row.name }))]} searchable onChange={value => { setStore(value); setActor(""); }} />
         <ChoiceField label="Người thực hiện phiếu" value={actor} choices={[{ value: "", label: "Tất cả người thực hiện" }, ...(data?.actors || []).map(([value, label]) => ({ value, label }))]} searchable onChange={setActor} />
         <DateField label="Thu chi từ ngày" value={from} onChange={setFrom} /><DateField label="Thu chi đến ngày" value={to} onChange={setTo} />
         <ChoiceField label="Sắp xếp phiếu" value={paging.sort} choices={CASHBOOK_SORTS} onChange={sort => updatePaging({ sort })} />

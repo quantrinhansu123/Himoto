@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import type { PoolClient } from "pg";
 import type { SessionUser } from "./management-session";
 import { hasPermission } from "@/lib/management/permissions";
-import { withMobileData } from "./mobile-context";
+import { withMobileData, withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { MobileError } from "./mobile-session";
 import { mobileBody, mobileRequestKey, idempotentMobileWrite } from "./mobile-writes";
@@ -20,8 +20,9 @@ function storeId(raw: string) {
   if (!/^[1-9]\d{0,14}$/.test(raw)) throw new MobileError("Mã cơ sở không hợp lệ.");
   return Number(raw);
 }
-async function transaction<T>(user: SessionUser, read: boolean, run: (client: PoolClient) => Promise<T>) {
-  return withMobileData(user, "", async () => {
+async function transaction<T>(user: SessionUser, read: boolean, run: (client: PoolClient) => Promise<T>, crossStore = false) {
+  const scope = read && crossStore ? withMobileReadData : withMobileData;
+  return scope(user, "", async () => {
     const client = await himotoPool.connect();
     try {
       await client.query(read ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
@@ -57,7 +58,7 @@ export async function readMobileStore(user: SessionUser, rawId: string) {
     const row = await profile(client, id);
     if (!row) throw new MobileError("Cơ sở không tồn tại hoặc ngoài phạm vi truy cập.", 404, "NOT_FOUND");
     return row;
-  });
+  }, true);
 }
 export async function readMobileStoreManagers(user: SessionUser) {
   allowed(user, true);
@@ -77,7 +78,7 @@ export async function readMobileStoreContracts(user:SessionUser,rawId:string,par
     const amount=(v:unknown)=>v==null||v===''||!Number.isFinite(Number(v))?0:Number(v),text=(v:unknown)=>v==null?'':String(v),counts=new Map<string,number>();
     for(const row of all)counts.set(row.status,(counts.get(row.status)||0)+1);
     return{id,name:String(store.store_name||''),page,pages,total:filtered.length,summary:{count:all.length,total:all.reduce((sum,r)=>sum+amount(r.total_amount),0),paid:all.reduce((sum,r)=>sum+amount(r.paid_amount),0),debt:all.reduce((sum,r)=>sum+Math.max(amount(r.total_amount)-amount(r.paid_amount),0),0)},statusCounts:[...counts],rows:filtered.slice((page-1)*25,page*25).map(r=>({id:r.id,code:r.code,customer:text(r.customer_name),status:r.status,license:text(r.license),startsAt:text(r.start_date),endsAt:text(r.end_date),total:amount(r.total_amount),paid:amount(r.paid_amount)}))};
-  });
+  },true);
 }
 export async function saveMobileStore(user: SessionUser, request: NextRequest, method: "POST" | "PATCH" | "DELETE", rawId?: string) {
   allowed(user, true);

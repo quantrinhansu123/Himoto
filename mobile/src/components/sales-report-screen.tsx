@@ -14,6 +14,7 @@ import { SalesReportView } from "./sales-report-view";
 const contractKinds: SalesReportKind[] = ["contracts", "by-staff", "by-store", "new-customers", "assigned"];
 export function SalesReportScreen() {
   const { api, session } = useSession(), theme = useTheme(), scroll = useRef<ScrollViewInstance>(null);
+  const canReadAll = Boolean(session!.user.allStores || session!.user.allStoresRead);
   const [today, setToday] = useState(() => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10));
   useFocusEffect(useCallback(() => { setToday(new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)); }, []));
   const [kind, setKind] = useState<SalesReportKind>("actual"), [from, setFrom] = useState(`${today.slice(0, 7)}-01`), [to, setTo] = useState(today), [store, setStore] = useState(session!.user.allStores ? "all" : String(session!.user.storeId || "all"));
@@ -52,7 +53,7 @@ export function SalesReportScreen() {
       <ChoiceField label="Kỳ báo cáo" value={preset} choices={[...REPORT_PRESETS, { value: "custom", label: "Tùy chọn ngày" }]} onChange={value => { setPreset(value); if (value !== "custom") { const [start, end] = salesReportPeriod(value, today); setFrom(start); setTo(end); } }} />
       <DateField label="Từ ngày doanh số" value={from} onChange={value => { setPreset("custom"); setFrom(value); if (value > to) setTo(value); }} error={from > today ? "Ngày không được sau hôm nay." : undefined} />
       <DateField label="Đến ngày doanh số" value={to} onChange={value => { setPreset("custom"); setTo(value); if (value < from) setFrom(value); }} error={to > today ? "Ngày không được sau hôm nay." : undefined} />
-      <ChoiceField label={kind === "fleet" ? "Cơ sở chủ quản" : "Cơ sở báo cáo"} value={store} choices={[...(session!.user.allStores ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...(options.data?.stores || []).filter(row => session!.user.allStores || row.id === session!.user.storeId).map(row => ({ value: String(row.id), label: row.name }))]} onChange={setStore} searchable />
+      <ChoiceField label={kind === "fleet" ? "Cơ sở chủ quản" : "Cơ sở báo cáo"} value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...(options.data?.stores || []).filter(row => canReadAll || row.id === session!.user.storeId).map(row => ({ value: String(row.id), label: row.name }))]} onChange={setStore} searchable />
       <Button secondary label="Đặt lại kỳ tháng này" onPress={() => { setPreset("month"); setFrom(`${today.slice(0, 7)}-01`); setTo(today); setDepartment(""); }} />
     </Card>
     {["ledger", "vehicles", "new-customers"].includes(kind) && <FormField label="Tìm trong báo cáo" value={input} onChangeText={setInput} maxLength={kind === "ledger" ? 200 : 255} />}

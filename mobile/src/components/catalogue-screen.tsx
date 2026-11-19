@@ -248,7 +248,8 @@ export function CatalogueScreen({
       : session?.user.storeId
         ? String(session.user.storeId)
         : "all";
-  const [store, setStore] = useState(kind === 'vehicles' || session?.user.allStores ? initialStore || defaultStore : defaultStore);
+  const canReadAllStores = Boolean(session?.user.allStores || session?.user.allStoresRead);
+  const [store, setStore] = useState(kind === 'vehicles' || canReadAllStores ? initialStore || defaultStore : defaultStore);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -359,12 +360,12 @@ export function CatalogueScreen({
   const stores = (workspace.data?.stores || []).filter(
     (item) =>
       kind === "vehicles" ||
-      session?.user.allStores ||
+      canReadAllStores ||
       item.id === session?.user.storeId,
   );
   const storeName =
     store === "all"
-      ? kind === "vehicles" || session?.user.allStores
+      ? kind === "vehicles" || canReadAllStores
         ? "Toàn bộ cơ sở"
         : "Cơ sở được phân công"
       : stores.find((item) => String(item.id) === store)?.name ||
@@ -848,7 +849,7 @@ export function CatalogueScreen({
           selected={{ status, store, from, to, storeBasis, ...extraFilters }}
           defaultStore={defaultStore}
           stores={stores}
-          allowAll={kind === "vehicles" || session?.user.allStores === true}
+          allowAll={kind === "vehicles" || canReadAllStores}
           loading={workspace.isPending}
           error={workspace.isError}
           retry={() => {
@@ -920,7 +921,7 @@ export function CatalogueScreen({
             </View>
 
             <ScrollView style={{ maxHeight: 360 }}>
-              {(kind === "vehicles" || session?.user.allStores) && (
+              {(kind === "vehicles" || canReadAllStores) && (
                 <Pressable
                   onPress={() => {
                     setStore("all");

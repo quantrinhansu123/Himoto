@@ -73,10 +73,8 @@ export function ManagementDrawer({
 
   const currentStore = useMemo(() => {
     if (session?.user.allStores) return "Toàn bộ cơ sở";
-    return (
-      workspace.data?.stores.find((s) => s.id === session?.user.storeId)?.name ||
-      "Cơ sở được phân công"
-    );
+    const homeName = workspace.data?.stores.find((s) => s.id === session?.user.storeId)?.name || "Cơ sở được phân công";
+    return session?.user.allStoresRead ? `${homeName} · Xem toàn hệ thống` : homeName;
   }, [session, workspace.data?.stores]);
 
   const sections: DrawerSection[] = useMemo(() => [
@@ -84,7 +82,8 @@ export function ManagementDrawer({
       title: "VẬN HÀNH & QUẦY",
       items: [
         { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock, permission: null },
-        { id: "shift-reports", label: "Báo cáo cuối ca", route: "/shift-reports", icon: ReceiptText, permission: "contracts.read" },
+        { id: "mid-shift-reports", label: "Báo cáo giữa ca", route: "/mid-shift-reports", icon: ReceiptText, permission: "contracts.read" },
+        { id: "shift-reports", label: "Báo cáo Hết ca", route: "/shift-reports", icon: ReceiptText, permission: "contracts.read" },
         { id: "operations", label: "Thao tác nhanh", route: "/(tabs)", icon: House, permission: null },
         { id: "dashboard", label: "Dashboard · Tổng quan", route: "/dashboard", icon: LayoutDashboard, permission: "contracts.read" },
         { id: "staff-sales", label: "Báo cáo doanh thu", route: "/staff-sales", icon: ReceiptText, permission: "contracts.read" },

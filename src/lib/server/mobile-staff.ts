@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import type { SessionUser } from "./management-session";
 import { hasPermission } from "@/lib/management/permissions";
 import { staffPositionSuggestions } from "@/lib/management/staff-positions";
-import { withMobileData } from "./mobile-context";
+import { withMobileData, withMobileReadData } from "./mobile-context";
 import { himotoPool, ownerDatabase } from "./himoto-database";
 import { MobileError } from "./mobile-session";
 import { AccountAccessError } from "./account-management";
@@ -22,8 +22,9 @@ function staffId(raw: string) {
   if (!/^[1-9]\d{0,14}$/.test(raw)) throw new MobileError("Mã nhân sự không hợp lệ.");
   return Number(raw);
 }
-async function transaction<T>(user: SessionUser, read: boolean, owner: boolean, run: (client: PoolClient) => Promise<T>) {
-  return withMobileData(user, "", async () => {
+async function transaction<T>(user: SessionUser, read: boolean, owner: boolean, run: (client: PoolClient) => Promise<T>, crossStore = false) {
+  const scope = read && crossStore ? withMobileReadData : withMobileData;
+  return scope(user, "", async () => {
     const client = await (owner ? ownerDatabase : himotoPool).connect();
     try {
       await client.query(read ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
@@ -52,7 +53,7 @@ export async function readMobileStaff(user: SessionUser, rawId: string) {
     const row = await profile(client, id);
     if (!row) throw new MobileError("Nhân sự không tồn tại hoặc ngoài phạm vi hiện tại.", 404, "NOT_FOUND");
     return row;
-  });
+  }, true);
 }
 export async function readMobileStaffOptions(user: SessionUser): Promise<MobileStaffOptions> {
   allowed(user, true);

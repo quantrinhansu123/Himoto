@@ -160,7 +160,8 @@ export default function Overview() {
   };
 
   const grants = session?.user.permissions || [];
-  const canSwitchStore = session?.user.allStores || (workspace.data?.stores && workspace.data.stores.length > 1);
+  const canReadAllStores = Boolean(session?.user.allStores || session?.user.allStoresRead);
+  const canSwitchStore = canReadAllStores || (workspace.data?.stores && workspace.data.stores.length > 1);
 
   return (
     <SafeAreaView
@@ -712,11 +713,40 @@ export default function Overview() {
               Tiện ích ca trực
             </Text>
             <View style={styles.grid}>
-              {/* Báo cáo cuối ca */}
+              {/* Báo cáo giữa ca */}
               {grants.includes("contracts.read") && (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Báo cáo cuối ca"
+                  accessibilityLabel="Báo cáo giữa ca"
+                  onPress={() => router.push("/mid-shift-reports")}
+                  style={({ pressed }) => [
+                    styles.gridItem,
+                    {
+                      borderColor: theme.border,
+                      backgroundColor: theme.surface,
+                      opacity: pressed ? 0.72 : 1,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[styles.gridIcon, { backgroundColor: "#FEF3C7" }]}
+                  >
+                    <ReceiptText size={22} color="#D97706" />
+                  </View>
+                  <Text style={[styles.gridTitle, { color: theme.text }]}>
+                    Báo cáo giữa ca
+                  </Text>
+                  <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                    Kiểm kê xe, pin & tiền giữa ca
+                  </Text>
+                </Pressable>
+              )}
+
+              {/* Báo cáo Hết ca */}
+              {grants.includes("contracts.read") && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Báo cáo Hết ca"
                   onPress={() => router.push("/shift-reports")}
                   style={({ pressed }) => [
                     styles.gridItem,
@@ -733,10 +763,10 @@ export default function Overview() {
                     <ReceiptText size={22} color="#2563EB" />
                   </View>
                   <Text style={[styles.gridTitle, { color: theme.text }]}>
-                    Báo cáo cuối ca
+                    Báo cáo Hết ca
                   </Text>
                   <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                    Bàn giao ca & nộp tiền
+                    Bàn giao hết ca & nộp tiền
                   </Text>
                 </Pressable>
               )}
@@ -944,7 +974,7 @@ export default function Overview() {
             </View>
 
             <ScrollView style={{ maxHeight: 360 }}>
-              {session?.user.allStores && (
+              {canReadAllStores && (
                 <Pressable
                   onPress={() => {
                     setSelectedStore("all");

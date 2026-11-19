@@ -12,7 +12,7 @@ import { ChoiceField,FormField } from "@/components/form-fields";
 import { ReminderCard } from "@/components/reminder-card";
 import { ReminderBatch } from "@/components/reminder-batch";
 function Reminders() {
-  const {api,session}=useSession(),theme=useTheme(),cache=useQueryClient(),[store,setStore]=useState(session!.user.allStores?"all":String(session!.user.storeId||"all")),[tab,setTab]=useState("history"),[page,setPage]=useState(1),[input,setInput]=useState(""),search=useDebouncedValue(input),[selection,setSelection]=useState<Record<string,MobileRecord>>({}),[batch,setBatch]=useState<number[]|null>(null);
+  const {api,session}=useSession(),theme=useTheme(),cache=useQueryClient(),canReadAll=Boolean(session!.user.allStores||session!.user.allStoresRead),[store,setStore]=useState(session!.user.allStores?"all":String(session!.user.storeId||"all")),[tab,setTab]=useState("history"),[page,setPage]=useState(1),[input,setInput]=useState(""),search=useDebouncedValue(input),[selection,setSelection]=useState<Record<string,MobileRecord>>({}),[batch,setBatch]=useState<number[]|null>(null);
   const allowed=session!.user.permissions.includes("contracts.read"),canSend=allowed&&session!.user.permissions.some(p=>p==="contracts.draft"||p==="finance.write");
   const options=useQuery({queryKey:["reminder-options",session!.user.id],queryFn:({signal})=>api!.reminderOptions(signal),enabled:allowed});
   const filters=new URLSearchParams({store,page:String(page)}),params=filters.toString();filters.set("search",search);const contractParams=filters.toString();
@@ -26,7 +26,7 @@ function Reminders() {
     <Text accessibilityRole="header" style={{color:theme.text,fontSize:28,fontWeight:"800"}}>Gửi nhắc nợ</Text>
     <Text style={{color:theme.muted,lineHeight:24}}>Soạn tin Zalo theo khoản đến hạn và theo dõi lịch sử từng cơ sở. “Webhook đã tiếp nhận” chưa xác nhận khách đã nhận hoặc đọc tin.</Text>
     {canSend&&<ChoiceField label="Mục nhắc nợ" value={tab} choices={[{value:"history",label:"Lịch sử gửi"},{value:"compose",label:"Chọn hợp đồng để soạn"}]} onChange={value=>{setTab(value);setPage(1);}} />}
-    <ChoiceField label="Cơ sở nhắc nợ" value={store} searchable choices={[...(session!.user.allStores?[{value:"all",label:"Tất cả cơ sở"}]:[]),...(options.data?.stores||[]).filter(row=>session!.user.allStores||row.id===session!.user.storeId).map(row=>({value:String(row.id),label:row.name}))]} onChange={value=>{setStore(value);setPage(1);setSelection({});}} />
+    <ChoiceField label="Cơ sở nhắc nợ" value={store} searchable choices={[...(canReadAll?[{value:"all",label:"Tất cả cơ sở"}]:[]),...(options.data?.stores||[]).filter(row=>canReadAll||row.id===session!.user.storeId).map(row=>({value:String(row.id),label:row.name}))]} onChange={value=>{setStore(value);setPage(1);setSelection({});}} />
     {options.isError&&<InlineError message={options.error.message} />}
     {tab==="compose"&&<><FormField label="Tìm hợp đồng cần nhắc nợ" value={input} onChangeText={value=>{setInput(value);setPage(1);}} maxLength={200} /><Text style={{color:theme.muted,lineHeight:23}}>Chỉ hợp đồng còn khoản đến hạn. Chọn nhiều dòng ở các trang để gửi nội dung mẫu hàng loạt, hoặc mở soạn riêng để sửa nội dung.</Text>
       {!!selected.length&&<Card style={{gap:12}}><Text style={{color:theme.text,fontWeight:"700"}}>Đã chọn {selected.length} hợp đồng</Text><Button label="Rà soát gửi nhắc nợ hàng loạt" onPress={()=>setBatch(selected.map(row=>row.id))} /><Button secondary label="Bỏ chọn hợp đồng nhắc nợ" onPress={()=>setSelection({})} /></Card>}

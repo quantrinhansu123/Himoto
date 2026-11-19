@@ -93,7 +93,8 @@ function Navigator() {
           <Stack.Screen name="battery-action/[id]" options={{ title: "Gia hạn / trả pin" }} />
           <Stack.Screen name="battery-result/[key]" options={{ title: "Xác nhận pin / sạc" }} />
           <Stack.Screen name="battery-media/[id]/[eventKey]" options={{ title: "Ảnh và Telegram pin / sạc" }} />
-          <Stack.Screen name="shift-reports" options={{ title: "Báo cáo cuối ca" }} />
+          <Stack.Screen name="mid-shift-reports" options={{ title: "Báo cáo giữa ca" }} />
+          <Stack.Screen name="shift-reports" options={{ title: "Báo cáo Hết ca" }} />
           <Stack.Screen name="shift/[id]" options={{ title: "Hồ sơ báo cáo ca" }} />
           <Stack.Screen name="shift-video/[id]" options={{ title: "Video minh chứng ca" }} />
           <Stack.Screen name="vehicle-contracts/[id]" options={{title:'Hợp đồng của xe'}} />

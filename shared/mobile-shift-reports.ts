@@ -1,12 +1,12 @@
-import { parseShiftInput,type ShiftReport,type ShiftInput } from "./shift-reports";
+import { parseShiftInput,type ShiftReport,type ShiftInput,type ShiftReportType } from "./shift-reports";
 import { parseAuditInput,type ShiftSnapshot,type AuditInput } from "./shift-audits";
-export { SHIFT_PHOTOS,SHIFT_SUMMARY_FIELDS,emptyShiftSummary,parseShiftInput,shiftVehicleTotal } from "./shift-reports";
+export { SHIFT_PHOTOS,SHIFT_SUMMARY_FIELDS,SHIFT_REPORT_TYPE_LABELS,shiftReportTypeLabel,emptyShiftSummary,parseShiftInput,shiftVehicleTotal } from "./shift-reports";
 export { AUDIT_FIELDS,emptyAuditInput,parseAuditInput,auditComparisons,validateAuditConfirmation } from "./shift-audits";
 export { OWNERSHIP_REPORT_GROUPS,blankOwnershipReport,ownershipKeys,validateOwnershipSubmission,reconciliation } from "./ownership-report";
 export { SHIFT_AUTOFILL_SECTIONS } from "./shift-autofill";
-export type { ShiftReport,ShiftInput,ShiftSnapshot,AuditInput };
+export type { ShiftReport,ShiftInput,ShiftReportType,ShiftSnapshot,AuditInput };
 export interface ShiftTelegramState {status:string;message_id:number|null;error_code:string|null;attachment_count?:number;media_count?:number}
-export type { ShiftAutofillResult,ShiftAutofillSection } from "./shift-autofill";
+export type { ShiftAutofillResult,ShiftAutofillSection,ShiftTransfer } from "./shift-autofill";
 export interface MobileShiftOptions { canWrite:boolean;canReview:boolean;stores:{id:number;name:string;kind:string}[] }
 export interface MobileShiftResult { key:string;operation:string;receipt:{id:number;revision:string};current:ShiftReport }
 export interface MobileShiftSave { payload:ShiftInput;id?:number;revision?:number;status:"draft"|"submitted" }

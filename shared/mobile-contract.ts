@@ -9,6 +9,7 @@ export interface MobileUser {
   permissions: string[];
   storeId: number | null;
   allStores: boolean;
+  allStoresRead?: boolean;
 }
 export interface MobileSession {
   token: string;

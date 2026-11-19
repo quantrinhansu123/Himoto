@@ -11,7 +11,7 @@ import { bulkDelete, parseBulkDelete, BulkDeleteError } from "./bulk-delete";
 import { CASHBOOK_DELETE_OPERATION, isVoucherDeletion, type VoucherDeletion, type VoucherDeleteSelection } from "../../../shared/mobile-cashbook-delete";
 import { listCashbook, CashbookQueryError } from "./cashbook-list";
 import { CASHBOOK_ACCOUNTS_SQL, CashbookAccountError, parseCashbookAccount, saveDatabaseCashbookAccount, deleteDatabaseCashbookAccount, setDatabaseCashbookAccountStatus, readDatabaseCashbookTransactions } from "./cashbook-account-domain";
-import { withMobileData } from "./mobile-context";
+import { withMobileData, withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { MobileError } from "./mobile-session";
 import { mobileBody, mobileRequestKey, idempotentMobileWrite } from "./mobile-writes";
@@ -34,8 +34,9 @@ function dateRange(params: URLSearchParams) {
   if (from && to && from > to) throw new MobileError("Đến ngày phải bằng hoặc sau Từ ngày.");
   return { from: from || null, to: to || null };
 }
-async function transaction<T>(user: SessionUser, read: boolean, run: (client: PoolClient) => Promise<T>) {
-  return withMobileData(user, "", async () => {
+async function transaction<T>(user: SessionUser, read: boolean, run: (client: PoolClient) => Promise<T>, crossStore = false) {
+  const scope = read && crossStore ? withMobileReadData : withMobileData;
+  return scope(user, "", async () => {
     const client = await himotoPool.connect();
     try {
       await client.query(read ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
@@ -65,7 +66,7 @@ export async function readMobileCashbook(user: SessionUser, params: URLSearchPar
     const result = { ...data, income: page(data.income), expense: page(data.expense) };
     if (!isCashbookPage(result)) throw new MobileError("Số tổng hợp hoặc phiếu sổ quỹ chưa hợp lệ. Tải lại để đối chiếu.", 503, "INVALID_CASHBOOK_DATA");
     return result;
-  });
+  }, true);
 }
 function accountRow(raw: Record<string, unknown>): MobileCashbookAccount {
   const row = mapCashbookAccount(raw);
@@ -90,7 +91,7 @@ export async function exportMobileCashbook(user: SessionUser, raw: URLSearchPara
       return mobileFilteredWorkbook(`himoto-so-quy-${new Date().toISOString().slice(0,10)}`,CASHBOOK_COLUMNS.map(c=>c.label),values.map(row=>CASHBOOK_COLUMNS.map(c=>c.key==='amount'?row.amount:cashbookCell(row,c.key))));
     }
     return { filename: `himoto-so-quy-${new Date().toISOString().replace(/\D/g, "")}.csv`, mimeType: "text/csv", content: "\uFEFF" + cashbookCsv(rows.map(row => mapCashbookRow({ ...row, created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at }))), rowCount: rows.length };
-  });
+  }, true);
 }
 function canDeleteVouchers(user: SessionUser) {
   allowed(user);
@@ -153,7 +154,7 @@ export async function readMobileCashbookAccounts(user: SessionUser, params: URLS
   return transaction(user, true, async client => {
     const rows = (await client.query(`${CASHBOOK_ACCOUNTS_SQL} ORDER BY a.kind,a.id`)).rows.map(accountRow);
     return { rows: rows.filter(row => (store === "all" || String(row.storeId) === store || row.ownerType === "company" && !row.storeId) && (status === "all" || status === row.status)) };
-  });
+  }, true);
 }
 export async function readMobileCashbookAccount(user: SessionUser, rawKind: string, rawId: string) {
   allowed(user); const kind = mobileCashbookKind(rawKind), id = accountId(rawId);
@@ -161,7 +162,7 @@ export async function readMobileCashbookAccount(user: SessionUser, rawKind: stri
     const row = await profile(client, kind, id);
     if (!row) throw new MobileError("Tài khoản không tồn tại hoặc ngoài phạm vi truy cập.", 404, "NOT_FOUND");
     return row;
-  });
+  }, true);
 }
 export async function readMobileCashbookOptions(user: SessionUser) {
   allowed(user, true);
@@ -174,7 +175,7 @@ export async function readMobileCashbookTransactions(user: SessionUser, rawKind:
     const rows = await readDatabaseCashbookTransactions(client, kind, id, from, to);
     return { kind, id, sourceLimit: 2000, rows: rows.map(row => ({ id: String(row.id), ...{ date: "", time: "", ...cashbookDateTime(row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at) },
       type: row.type === "out" ? "expense" : "income", amount: Number(row.amount ?? 0), actorName: String(row.user_name || ""), contractCode: String(row.contract_code || ""), content: String(row.content || "") })) };
-  });
+  }, true);
 }
 export async function saveMobileCashbookAccount(user: SessionUser, rawKind: string, rawId: string | null, action: "create" | "update" | "status" | "delete", request: NextRequest) {
   allowed(user, true); const kind = mobileCashbookKind(rawKind), id = rawId === null ? null : accountId(rawId), key = mobileRequestKey(request.headers.get("Idempotency-Key"));

@@ -3,7 +3,7 @@ import { hasPermission } from '@/lib/management/permissions';
 import { readContractHistory, ContractHistoryError } from './contract-history';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { mobileContractId } from './mobile-contracts';
-import { withMobileData } from './mobile-context';
+import { withMobileReadData } from './mobile-context';
 import { himotoPool } from './himoto-database';
 import type { SessionUser } from './management-session';
 import { MobileError } from './mobile-session';
@@ -14,7 +14,7 @@ export async function readMobileContractHistory(user: SessionUser, value: string
   if (!hasPermission(user, 'contracts.read')) throw new MobileError('Tài khoản chưa được cấp quyền xem hợp đồng.', 403, 'FORBIDDEN');
   const id = mobileContractId(value), page = params.get('page') || '1', tab = params.get('tab') || 'changes', search = (params.get('search') || '').trim();
   if ([...params.keys()].some(k => !['page', 'tab', 'search'].includes(k) || params.getAll(k).length !== 1) || !/^[1-9]\d{0,5}$/.test(page) || !['changes', 'cashflow'].includes(tab) || search.length > 120) throw new MobileError('Bộ lọc lịch sử chưa hợp lệ.');
-  return withMobileData(user, '', async () => {
+  return withMobileReadData(user, '', async () => {
     const client = await himotoPool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY'); await client.query("SET LOCAL statement_timeout='20s'");

@@ -1,7 +1,7 @@
 import 'server-only';
 import type { NextRequest } from 'next/server';
 import type { SessionUser } from './management-session';
-import { dataAccess } from './access-context';
+import { withMobileReadData } from './mobile-context';
 import { himotoPool } from './himoto-database';
 import { readManagementTable, ManagementTableError } from './management-table';
 import { mobileTableParams } from './mobile-catalogue';
@@ -59,7 +59,7 @@ export async function exportMobileCatalogue(user: SessionUser, value: string, re
   if (kind === 'contracts' || kind === 'customers') query.set('all', '1');
   else query.set('size', '50');
   query.set('page', '1');
-  return dataAccess.run({ ...user, store_id: user.store_id ?? null, scope_all: user.scope_all === true, operation: kind === 'vehicles' ? 'fleet_read' : '' }, async () => {
+  return withMobileReadData(user, kind === 'vehicles' ? 'fleet_read' : '', async () => {
     const client = await himotoPool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY'); await client.query("SET LOCAL statement_timeout='45s'");

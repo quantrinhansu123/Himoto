@@ -1,7 +1,7 @@
 import "server-only";
 import type { SessionUser } from "./management-session";
 import { hasPermission } from "@/lib/management/permissions";
-import { withMobileData } from "./mobile-context";
+import { withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { readManagementTable, ManagementTableError } from "./management-table";
 import { mobileTableParams } from "./mobile-catalogue";
@@ -19,7 +19,7 @@ export async function readMobileDirectory(user: SessionUser, kind: MobileDirecto
   base.delete("position");
   const query = mobileTableParams(base, "customers");
   if (position) query.set("filter_position", position);
-  return withMobileData(user, "", async () => {
+  return withMobileReadData(user, "", async () => {
     const client = await himotoPool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");

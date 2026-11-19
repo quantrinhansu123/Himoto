@@ -6,7 +6,7 @@ import type { PaymentContext } from "@/lib/management/contract-payments";
 import { canAddExtraReceipt, PAYABLE_STATUSES,RENEWABLE_STATUSES, paymentAccounts } from "@/lib/management/contract-payments";
 import { hasPermission } from "@/lib/management/permissions";
 import { ContractPaymentError, parseContractPayment, readPaymentContext, recordContractPayment } from "./contract-payments";
-import { withMobileData } from "./mobile-context";
+import { withMobileData, withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { MobileError } from "./mobile-session";
 import { idempotentMobileWrite, mobileBody, mobileRequestKey } from "./mobile-writes";
@@ -24,9 +24,10 @@ export function requireMobileFinance(user: SessionUser, writing = false) {
     : !hasPermission(user, "finance.read") && !hasPermission(user, "finance.write")))
     throw new MobileError("Tài khoản không có quyền xem hoặc ghi thu/chi hợp đồng.", 403, "FORBIDDEN");
 }
-async function transaction<T>(user: SessionUser, writing: boolean, task: (client: PoolClient) => Promise<T>) {
+async function transaction<T>(user: SessionUser, writing: boolean, task: (client: PoolClient) => Promise<T>, crossStore = false) {
   requireMobileFinance(user, writing);
-  return withMobileData(user, "", async () => {
+  const scope = !writing && crossStore ? withMobileReadData : withMobileData;
+  return scope(user, "", async () => {
     const client = await himotoPool.connect();
     try {
       await client.query(writing ? "BEGIN" : "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -90,7 +91,7 @@ export async function readMobileFinance(user: SessionUser, value: string, reques
   const id = mobileFinanceId(value), params = request.nextUrl.searchParams;
   if ([...params.keys()].some((key) => key !== "page") || params.getAll("page").length > 1 || !/^[1-9]\d{0,5}$/.test(params.get("page") ?? "1") || Number(params.get("page") ?? 1) > 100000)
     throw new MobileError("Trang lịch sử thu/chi không hợp lệ.", 400, "INVALID_PAGE");
-  return transaction(user, false, async (client) => project(await readPaymentContext(client, id, { page: Number(params.get("page") ?? 1), size: 25 }), user));
+  return transaction(user, false, async (client) => project(await readPaymentContext(client, id, { page: Number(params.get("page") ?? 1), size: 25 }), user), true);
 }
 async function receipt(client: PoolClient, user: SessionUser, key: string): Promise<MobilePaymentReceipt | null> {
   const row = (await client.query(

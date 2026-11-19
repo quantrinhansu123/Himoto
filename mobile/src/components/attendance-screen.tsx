@@ -24,9 +24,26 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
   const {api,session}=useSession(),workspace=useWorkspace(),theme=useTheme();
   const actor=session!.user.id,origin=api!.origin;
   const today=dutyToday(),[from,setFrom]=useState(today.slice(0,7)+'-01'),[to,setTo]=useState(today),[store,setStore]=useState('all'),[page,setPage]=useState(1);
-  const [action,setAction]=useState<'in'|'out'|null>(null),[photo,setPhoto]=useState<RecordMediaPhoto|null>(null),[location,setLocation]=useState<AttendanceLocation|null>(null);
+  const [action,setAction]=useState<'in'|'out'|null>(null),[photo,setPhoto]=useState<RecordMediaPhoto|null>(null),[location,setLocation]=useState<AttendanceLocation|null>(null),[locating,setLocating]=useState(false);
   const [pending,setPending]=useState<AttendancePending|null>(null),[restoring,setRestoring]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[evidence,setEvidence]=useState<string|null>(null);
   const lock=useRef(false),alive=useRef(true),camera=useRef<AbortController|null>(null),currentPhoto=useRef(photo);
+  const clockSessionRef=useRef(0),initialLocationRef=useRef<Promise<AttendanceLocation|Error>|null>(null);
+  function startClock(nextAction:'in'|'out') {
+    const token=++clockSessionRef.current;
+    setAction(nextAction);
+    setLocation(null);
+    setError('');
+    setNotice('');
+    setLocating(true);
+    const promise=locateAttendance().catch((cause:unknown)=>cause instanceof Error?cause:Error('Chưa lấy được tín hiệu GPS. Vui lòng thử lại.'));
+    initialLocationRef.current=promise;
+    void promise.then(result=>{
+      if(!alive.current||clockSessionRef.current!==token)return;
+      setLocating(false);
+      if(result instanceof Error)setError(result.message);
+      else setLocation(result);
+    });
+  }
   useEffect(()=>{currentPhoto.current=photo;},[photo]);
   const canReview=session!.user.permissions.includes('hr.read');
   const [editing,setEditing]=useState<AttendanceEntry|null>(null);
@@ -67,13 +84,31 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
     setLocation(null);
     setNotice('');
     setError('');
-    setAction(targetAction);
+    startClock(targetAction);
+  }
+  async function resolveClockLocation():Promise<AttendanceLocation> {
+    if(location&&Math.abs(Date.now()-location.timestamp)<60_000)return location;
+    if(initialLocationRef.current){
+      const initial=await initialLocationRef.current;
+      if(!(initial instanceof Error)&&Math.abs(Date.now()-initial.timestamp)<60_000){
+        if(alive.current)setLocation(initial);
+        return initial;
+      }
+    }
+    setLocating(true);
+    try{
+      const fresh=await locateAttendance();
+      if(alive.current)setLocation(fresh);
+      return fresh;
+    }finally{
+      if(alive.current)setLocating(false);
+    }
   }
   async function save(){
     let attempt=pending;
     if(!attempt){
-      if(!action||!photo||!location)throw Error('Chụp ảnh và lấy vị trí trước khi xác nhận.');
-      const gps=Math.abs(Date.now()-location.timestamp)>4*60000?await locateAttendance():location;
+      if(!action||!photo)throw Error('Chụp ảnh hiện tại trước khi xác nhận chấm công.');
+      const gps=await resolveClockLocation();
       attempt=await storeAttendancePending(session!.user.id,api!.origin,{id:uuid.v4().toLowerCase(),action,photo,location:gps});setPending(attempt);
     }else{
       const result=await api!.resolveAttendance(attempt.id);
@@ -105,7 +140,7 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
           {query.data&&(query.data.shift_code==='G1+G3'&&!query.data.latest?copy('Ca G1+G3 · 08:00–12:00 · 17:00–21:00'):query.data.shift?copy(`Ca ${query.data.shift.shift_name} · ${dateTime(query.data.shift.starts_at)} → ${dateTime(query.data.shift.ends_at)}`):query.data.shift_code==='O'?copy('Ca đăng ký: Nghỉ'):copy('Chưa có ca đăng ký'))}
           {query.data?.late_minutes!==null&&query.data?.late_minutes!==undefined&&copy(query.data.late_minutes?`Đi muộn ${query.data.late_minutes} phút`:'Đúng giờ theo ca đăng ký')}
           {query.data?.early_leave_minutes!==null&&query.data?.early_leave_minutes!==undefined&&copy(query.data.early_leave_minutes?`Về sớm ${query.data.early_leave_minutes} phút`:'Đủ giờ theo ca đăng ký')}
-          {pending?<><InlineError message={`Có lần ${pending.action==='in'?'vào':'ra'} ca chưa xác nhận. Giữ mã ${pending.id} để đối chiếu.`}/><Button label="Đối chiếu lần chấm đang chờ" loading={busy} onPress={()=>{void run(resolve);}}/>{!pendingIsFromPriorDay&&<Button secondary label="Thử lại cùng lần chấm công" disabled={busy} onPress={()=>{void run(save);}}/>}<Button secondary label={pendingIsFromPriorDay?'Chấm công cho ngày mới':`Chụp lại ảnh để ${pending.action==='in'?'vào ca':'ra ca'} ngay`} disabled={busy} onPress={()=>{void run(restartFromPending);}}/></>:<Button label={query.data?.open?'Ra ca':'Vào ca'} disabled={restoring||busy||query.isError||!query.data?.staff||(!query.data.open&&query.data.staff.store_id===null)} onPress={()=>{setAction(query.data?.open?'out':'in');setError('');setNotice('');}}/>}
+          {pending?<><InlineError message={`Có lần ${pending.action==='in'?'vào':'ra'} ca chưa xác nhận. Giữ mã ${pending.id} để đối chiếu.`}/><Button label="Đối chiếu lần chấm đang chờ" loading={busy} onPress={()=>{void run(resolve);}}/>{!pendingIsFromPriorDay&&<Button secondary label="Thử lại cùng lần chấm công" disabled={busy} onPress={()=>{void run(save);}}/>}<Button secondary label={pendingIsFromPriorDay?'Chấm công cho ngày mới':`Chụp lại ảnh để ${pending.action==='in'?'vào ca':'ra ca'} ngay`} disabled={busy} onPress={()=>{void run(restartFromPending);}}/></>:<Button label={query.data?.open?'Ra ca':'Vào ca'} disabled={restoring||busy||query.isError||!query.data?.staff||(!query.data.open&&query.data.staff.store_id===null)} onPress={()=>{startClock(query.data?.open?'out':'in');}}/>}
           {query.data&&!query.data.staff&&copy('Tài khoản chưa liên kết với một nhân viên đang hoạt động. Liên hệ quản lý nhân sự.')}
           {query.data?.staff&&query.data.staff.store_id===null&&!query.data.open&&copy('Nhân viên chưa được gắn cơ sở. Liên hệ quản lý nhân sự trước khi chấm công.')}
           {copy('Chấm công cần mạng, ảnh hiện tại và GPS. Giờ được ghi theo máy chủ; ảnh không tự gửi nền.')}
@@ -142,12 +177,12 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
       ListEmptyComponent={historyOnly&&!query.isPending&&!query.isError?<Text style={{color:theme.muted,textAlign:'center',padding:20}}>Chưa có chấm công trong khoảng ngày đã chọn.</Text>:undefined}
       ListFooterComponent={historyOnly&&query.data&&query.data.total>50?<View style={{gap:10}}>{copy(`Trang ${query.data.page} · ${query.data.total} lần chấm công`)}<Button secondary label="Trang chấm công trước" disabled={page<=1||query.isFetching} onPress={()=>setPage(value=>value-1)}/><Button secondary label="Trang chấm công sau" disabled={page*50>=query.data!.total||query.isFetching} onPress={()=>setPage(value=>value+1)}/></View>:undefined}/>
     {editing&&<AttendanceEdit row={editing} onClose={()=>setEditing(null)} onReload={()=>{setEditing(null);void query.refetch();}}/>}
-    {action&&<EditorSheet title={action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!busy){setAction(null);if(!pending){photo?.dispose();setPhoto(null);setLocation(null);}}}}>
+    {action&&<EditorSheet title={action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!busy){clockSessionRef.current++;initialLocationRef.current=null;setLocating(false);setAction(null);if(!pending){photo?.dispose();setPhoto(null);setLocation(null);}}}}>
       <ScrollView contentContainerStyle={{padding:20,gap:16}}>
-        {copy('Chụp ảnh hiện tại và cho phép vị trí. Kiểm tra trước khi xác nhận.')}
+        {copy(locating?'Đang tự động lấy vị trí GPS… Nếu thiết bị hỏi quyền vị trí, hãy chọn Cho phép. Bạn có thể chụp ảnh ngay trong lúc chờ.':'Chụp ảnh hiện tại để xác nhận chấm công. Vị trí gần nhất (trong 60 giây) sẽ được dùng ngay khi xác nhận.')}
         {(pending?.photo||photo)&&<Image cachePolicy="none" source={{uri:(pending?.photo||photo)!.uri}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel="Ảnh chấm công vừa chụp"/>}
         <Button secondary label={photo?'Chụp lại ảnh hiện tại':'Chụp ảnh hiện tại'} disabled={busy||!!pending} onPress={()=>{void run(async()=>{const controller=new AbortController();camera.current=controller;const next=await captureAttendancePhoto(controller.signal);if(next){if(!alive.current){next.dispose();return;}photo?.dispose();setPhoto(next);}});}}/>
-        <Button secondary label={location?'Lấy lại GPS':'Lấy vị trí GPS'} disabled={busy||!!pending} onPress={()=>{void run(async()=>{const next=await locateAttendance();if(alive.current)setLocation(next);});}}/>
+        <Button secondary label={locating?'Đang lấy vị trí GPS…':location?'Lấy lại GPS':'Lấy vị trí GPS'} disabled={busy||locating||!!pending} loading={locating&&!busy} onPress={()=>{void run(async()=>{setLocating(true);try{const next=await locateAttendance();if(alive.current)setLocation(next);}finally{if(alive.current)setLocating(false);}});}}/>
         {(pending?.location||location)&&<View style={{gap:6}}>
           {copy(`Đã lấy GPS · sai số khoảng ${Math.round((pending?.location||location)!.accuracy)} m`)}
           <Button secondary label="Xem vị trí hiện tại trên Google Maps" onPress={()=>{
@@ -157,7 +192,8 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
         </View>}
         {!!error&&<InlineError message={error}/>}
         {pending&&copy('Ảnh và mã gốc được giữ trên máy. Thử lại sẽ đối chiếu kết quả trước khi gửi.')}
-        <Button label={action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'} disabled={!pending&&(!photo||!location)} loading={busy} onPress={()=>{void run(save);}}/>
+        <Button label={locating&&busy?'Đang lấy vị trí…':action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'} disabled={!pending&&!photo} loading={busy} onPress={()=>{void run(save);}}/>
+        {!pending&&!photo&&copy('Chụp ảnh hiện tại để bật nút xác nhận chấm công.')}
       </ScrollView>
     </EditorSheet>}
   </>;

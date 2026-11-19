@@ -3,7 +3,7 @@ import type { PoolClient } from "pg";
 import type { NextRequest } from "next/server";
 import type { SessionUser } from "./management-session";
 import { hasPermission } from "@/lib/management/permissions";
-import { withMobileData } from "./mobile-context";
+import { canMobileCrossStoreRead,withMobileData,withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { MobileError } from "./mobile-session";
 import { listShiftReports,saveShiftReport } from "./shift-report-domain";
@@ -18,17 +18,17 @@ function permission(user:SessionUser,action:"read"|"write"|"audit"="read") {
 }
 export function mobileShiftId(id:string){if(!/^[1-9]\d{0,14}$/.test(id))throw new MobileError("Mã báo cáo không hợp lệ.");return Number(id);}
 function fields(raw:URLSearchParams,keys:string[]){for(const[k]of raw)if(!keys.includes(k)||raw.getAll(k).length!==1)throw new MobileError("Bộ lọc báo cáo ca không hợp lệ.");}
-async function transaction<T>(user:SessionUser,read:boolean,run:(client:PoolClient)=>Promise<T>) {
-  permission(user);return withMobileData(user,"",async()=>{const client=await himotoPool.connect();try{
+async function transaction<T>(user:SessionUser,read:boolean,run:(client:PoolClient)=>Promise<T>,crossStore=false) {
+  permission(user);const scope=read&&crossStore?withMobileReadData:withMobileData;return scope(user,"",async()=>{const client=await himotoPool.connect();try{
     await client.query(read?"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY":"BEGIN");await client.query("SET LOCAL lock_timeout='5s'");const result=await run(client);await client.query("COMMIT");return result;
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});if(error instanceof ShiftRequestError||error instanceof ShiftAutofillError)throw new MobileError(error.message,error.status);if((error as {code?:string}).code==='23505')throw new MobileError("Cơ sở đã có báo cáo ngày này. Mở lại từ danh sách.",409);throw error;}finally{client.release();}});
+  }catch(error){await client.query("ROLLBACK").catch(()=>{});if(error instanceof ShiftRequestError||error instanceof ShiftAutofillError)throw new MobileError(error.message,error.status);if((error as {code?:string}).code==='23505')throw new MobileError("PGD đã có báo cáo cùng loại trong ngày này. Mở lại từ danh sách.",409);throw error;}finally{client.release();}});
 }
 function report(row:ShiftReport):ShiftReport {return {...row,updated_at:new Date(row.updated_at).toISOString(),media:row.media?.map(m=>({...m,url:`/api/mobile/v1/shift-reports/${row.id}/media/${m.id}`}))};}
 async function current(client:PoolClient,id:number) {const row=(await listShiftReports(client,null,null,id))[0];if(!row)throw new MobileError("Báo cáo không tồn tại hoặc ngoài phạm vi truy cập.",404,"NOT_FOUND");return report(row);}
-export function readMobileShiftOptions(user:SessionUser){return transaction(user,true,async client=>({canWrite:hasPermission(user,"contracts.draft")||hasPermission(user,"finance.write"),canReview:hasPermission(user,"shift.review"),stores:(await client.query("SELECT id,store_name,kind FROM himoto.stores ORDER BY store_name,id")).rows.map(s=>({id:Number(s.id),name:String(s.store_name||""),kind:String(s.kind||"")}))}));}
-export function readMobileShifts(user:SessionUser,params:URLSearchParams){fields(params,["store_id","date","all"]);if(params.has('all')&&params.get('all')!=='1')throw new MobileError('Bộ lọc báo cáo ca không hợp lệ.');return transaction(user,true,async client=>({rows:(await listShiftReports(client,params.get("store_id"),params.get("date"),undefined,params.get('all')==='1')).map(report)}));}
-export function readMobileShift(user:SessionUser,rawId:string){const id=mobileShiftId(rawId);return transaction(user,true,client=>current(client,id));}
-export function readMobileShiftAutofill(user:SessionUser,params:URLSearchParams){fields(params,["store_id","date","section"]);const input=parseShiftAutofill(params);if(!user.scope_all&&input.store_id!==user.store_id)throw new MobileError("PGD ngoài phạm vi được phân công.",403,"FORBIDDEN");return transaction(user,true,client=>readShiftAutofill(client,input));}
+export function readMobileShiftOptions(user:SessionUser){return transaction(user,true,async client=>({canWrite:hasPermission(user,"contracts.draft")||hasPermission(user,"finance.write"),canReview:hasPermission(user,"shift.review"),stores:(await client.query("SELECT id,store_name,kind FROM himoto.stores ORDER BY store_name,id")).rows.map(s=>({id:Number(s.id),name:String(s.store_name||""),kind:String(s.kind||"")}))}),true);}
+export function readMobileShifts(user:SessionUser,params:URLSearchParams){fields(params,["store_id","date","all","report_type"]);if(params.has('all')&&params.get('all')!=='1')throw new MobileError('Bộ lọc báo cáo ca không hợp lệ.');return transaction(user,true,async client=>({rows:(await listShiftReports(client,params.get("store_id"),params.get("date"),undefined,params.get('all')==='1',params.get("report_type"))).map(report)}),true);}
+export function readMobileShift(user:SessionUser,rawId:string){const id=mobileShiftId(rawId);return transaction(user,true,client=>current(client,id),true);}
+export function readMobileShiftAutofill(user:SessionUser,params:URLSearchParams){fields(params,["store_id","date","section"]);const input=parseShiftAutofill(params);if(!canMobileCrossStoreRead(user)&&input.store_id!==user.store_id)throw new MobileError("PGD ngoài phạm vi được phân công.",403,"FORBIDDEN");return transaction(user,true,client=>readShiftAutofill(client,input),true);}
 export async function saveMobileShift(user:SessionUser,request:NextRequest){
   permission(user,"write");const key=mobileRequestKey(request.headers.get("Idempotency-Key")),body=await mobileBody(request,65536);
   if(Object.keys(body).some(k=>!["payload","id","revision","status"].includes(k)))throw new MobileError("Thông tin báo cáo không hợp lệ.");
@@ -37,7 +37,7 @@ export async function saveMobileShift(user:SessionUser,request:NextRequest){
   const receipt=await transaction(user,false,client=>idempotentMobileWrite(client,user.id,key,operation,raw,async()=>{const saved=await saveShiftReport(client,{...user,store_id:user.store_id??null,scope_all:user.scope_all===true},raw,key);return{id:Number(saved.id),revision:String(saved.revision)};}));
   return {key,operation,receipt,deliveryKey:raw.status==="submitted"?`shift:${receipt.id}`:null};
 }
-export function readMobileShiftSnapshot(user:SessionUser,id:string){mobileShiftId(id);return transaction(user,true,client=>readShiftAuditSnapshot(client,id));}
+export function readMobileShiftSnapshot(user:SessionUser,id:string){mobileShiftId(id);return transaction(user,true,client=>readShiftAuditSnapshot(client,id),true);}
 export function readMobileShiftTelegram(user:SessionUser,id:string,stage='pgd'){mobileShiftId(id);return transaction(user,true,client=>readShiftTelegram(client,id,stage));}
 export function retryMobileShiftTelegram(user:SessionUser,id:string,stage='pgd'){permission(user,stage==='audit'?'audit':'write');mobileShiftId(id);return transaction(user,true,client=>retryShiftTelegram(client,id,stage));}
 export async function saveMobileShiftAudit(user:SessionUser,id:string,request:NextRequest){
