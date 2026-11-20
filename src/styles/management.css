@@ -4807,6 +4807,11 @@
 .mg-attendance-capture img { max-height:160px; }
 .mg-attendance-capture-footer { flex-wrap:wrap; }
 .mg-attendance-capture-footer > p { flex-basis:100%; margin:0; }
+@media (max-width:768px) {
+  .mg-attendance-capture-dialog[open] { display:flex; flex-direction:column; overflow:hidden; }
+  .mg-attendance-capture-dialog > .mg-dialog-body { min-height:0; overflow-y:auto; }
+  .mg-attendance-capture-dialog > :is(.mg-dialog-header,.mg-dialog-footer) { position:static; flex:none; }
+}
 .mg-attendance-location-fields { display:grid; gap:12px; }
 .mg-attendance-location-fields > .mg-attendance-locate { justify-content:center; width:100%; }
 @media(max-width:767px) { .mg-attendance-clock { align-items:stretch; flex-direction:column; gap:8px; padding:12px; } .mg-attendance-clock .mg-heading-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; } .mg-attendance-clock .mg-button { justify-content:center; } .mg-attendance-filters { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:12px; } .mg-attendance-filters > span { grid-column:1/-1; margin:0; padding:0; } }

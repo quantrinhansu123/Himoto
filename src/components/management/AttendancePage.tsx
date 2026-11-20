@@ -326,6 +326,7 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
   const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),lock=useRef(false),requestId=useRef(crypto.randomUUID());
   const [cameraReady,setCameraReady]=useState(false),[photo,setPhoto]=useState<Blob|null>(null),[preview,setPreview]=useState(''),[locating,setLocating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [clockLocation,setClockLocation]=useState<InitialClockLocation|null>(null);
+  const [deniedRetries,setDeniedRetries]=useState(0);
   useEffect(()=>{let current=true;
     void initialLocation.then(location => {
       if(!current)return;
@@ -348,9 +349,15 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
     try {
       const location = await requestBrowserLocation();
       setClockLocation(location);
+      setDeniedRetries(0);
       return location;
     } catch (cause) {
       setClockLocation(cause instanceof Error ? cause : new Error('Chưa lấy được vị trí. Vui lòng thử lại.'));
+      if(cause instanceof BrowserLocationError && cause.reason==='permission-denied') {
+        setDeniedRetries(count=>count+1);
+      } else {
+        setDeniedRetries(0);
+      }
       return null;
     } finally {
       setLocating(false);
@@ -375,24 +382,34 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
   const locationError = clockLocation instanceof Error ? clockLocation : null;
   const permissionDenied = locationError instanceof BrowserLocationError && locationError.reason==='permission-denied';
   const checkingLocation = locating || !clockLocation;
+  const showLocationHelp = permissionDenied && deniedRetries>0;
 
-  return <Dialog title={action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}>
-    <div className="mg-dialog-body mg-attendance-capture">
+  return <Dialog className="mg-attendance-capture-dialog" title={showLocationHelp?'Bật vị trí để chấm công':action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}>
+    <div className="mg-dialog-body mg-attendance-capture" hidden={showLocationHelp}>
       <video ref={video} autoPlay playsInline muted onLoadedData={()=>setCameraReady(true)} aria-label="Camera chấm công"/>
       <button type="button" className="mg-button" disabled={!cameraReady||busy} onClick={capture}><Camera size={17}/>{photo?'Chụp lại':'Chụp ảnh'}</button>
       {preview&&<img src={preview} alt="Ảnh chấm công vừa chụp"/>}
       {error&&<p className="mg-field-error" role="alert">{error}</p>}
     </div>
+    {showLocationHelp && <div className="mg-dialog-body">
+      <p>Trình duyệt đã từ chối yêu cầu lấy vị trí. Trên iPhone, bạn có thể bật lại ngay cho trang này.</p>
+      <ol>
+        <li>Trong Safari, chạm vào biểu tượng menu bên trái thanh địa chỉ. Chọn <strong>Cài đặt trang web</strong> (trong mục <strong>Thêm</strong> nếu có), rồi chọn <strong>Vị trí → Cho phép</strong>.</li>
+        <li>Nếu vẫn bị chặn, mở <strong>Cài đặt iPhone → Quyền riêng tư &amp; Bảo mật → Dịch vụ định vị</strong>. Bật định vị và chọn <strong>Trang web Safari → Khi dùng ứng dụng</strong>.</li>
+        <li>Quay lại màn hình này và bấm <strong>Kiểm tra lại vị trí</strong>.</li>
+      </ol>
+      {photo && <p>Ảnh bạn vừa chụp vẫn được giữ trong lần chấm công này.</p>}
+    </div>}
     <div className="mg-dialog-footer mg-attendance-capture-footer">
       {checkingLocation ? <p role="status">Đang lấy vị trí. Nếu trình duyệt hỏi quyền vị trí, hãy chọn Cho phép.</p>
         : locationError ? <p className="mg-field-error" role="alert">{permissionDenied
-          ? 'Quyền vị trí đang bị chặn. Trong Safari, mở menu cạnh thanh địa chỉ → Cài đặt trang web → Vị trí → Cho phép, rồi bấm nút bên dưới.'
+          ? showLocationHelp ? `Lần kiểm tra ${deniedRetries}: trình duyệt vẫn chặn vị trí.` : 'Chưa có quyền vị trí. Bấm thử lại để yêu cầu trình duyệt hoặc xem cách bật quyền.'
           : locationError.message}</p>
         : <p role="status">Đã lấy được vị trí.</p>}
       <button type="button" className="mg-button" disabled={busy} onClick={onClose}>Đóng</button>
       {locationError && !busy
         ? <button type="button" className="mg-button mg-button-primary" disabled={locating} onClick={()=>void retryLocation()}>
-          <MapPin size={17} aria-hidden="true"/>{locating?'Đang lấy vị trí…':permissionDenied?'Yêu cầu quyền vị trí':'Lấy vị trí hiện tại'}
+          <MapPin size={17} aria-hidden="true"/>{locating?'Đang lấy vị trí…':showLocationHelp?'Kiểm tra lại vị trí':'Lấy vị trí hiện tại'}
         </button>
         : <button type="button" className="mg-button mg-button-primary" disabled={busy||checkingLocation||!photo} onClick={()=>void save()}>
           {checkingLocation?'Đang lấy vị trí…':busy?'Đang lưu…':action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'}
