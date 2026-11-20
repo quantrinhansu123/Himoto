@@ -203,7 +203,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
 
   return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}><KeyboardFormScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
     <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{`BÁO CÁO ${typeLabel.toUpperCase()}${input.date ? " - NGÀY " + input.date.split("-").reverse().join("/") : ""}`}</Text>
-    <Text style={{ color: theme.muted, lineHeight: 22 }}>Loại báo cáo: {typeLabel} · Bản nháp · Ảnh đính kèm không bắt buộc</Text>
+    <Text style={{ color: theme.muted, lineHeight: 22 }}>Loại báo cáo: {typeLabel} · Bản nháp · {stockPhotosRequired ? "Cần ảnh toàn xe và ảnh biển số để chốt" : "Ảnh đính kèm không bắt buộc"}</Text>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{tabs.map(item => <Pressable key={item.value} accessibilityRole="tab" accessibilityLabel={item.label} accessibilityState={{ selected: tab === item.value, disabled: busy || pending }} disabled={busy || pending} onPress={() => setTab(item.value)} style={{ minHeight: 48, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 10, borderColor: tab === item.value ? theme.primary : theme.controlBorder, backgroundColor: tab === item.value ? theme.tint : theme.surface }}><Text style={{ color: tab === item.value ? theme.primary : theme.text, fontWeight: "600" }}>{item.label}</Text></Pressable>)}</ScrollView>
     {tab === "information" && <Card style={{ gap: 16 }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "700" }}>Thông tin chung</Text>
