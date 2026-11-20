@@ -203,7 +203,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
 
   return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}><KeyboardFormScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
     <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{`BÁO CÁO ${typeLabel.toUpperCase()}${input.date ? " - NGÀY " + input.date.split("-").reverse().join("/") : ""}`}</Text>
-    <Text style={{ color: theme.muted, lineHeight: 22 }}>Loại báo cáo: {typeLabel} · Bản nháp · {stockPhotosRequired ? "Cần ảnh toàn xe và ảnh biển số để chốt" : "Ảnh đính kèm không bắt buộc"}</Text>
+    <Text style={{ color: theme.muted, lineHeight: 22 }}>Loại báo cáo: {typeLabel} · Bản nháp · {stockPhotosRequired ? "Cần ảnh cận biển số từng xe Lưu kho để chốt" : "Ảnh đính kèm không bắt buộc"}</Text>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{tabs.map(item => <Pressable key={item.value} accessibilityRole="tab" accessibilityLabel={item.label} accessibilityState={{ selected: tab === item.value, disabled: busy || pending }} disabled={busy || pending} onPress={() => setTab(item.value)} style={{ minHeight: 48, paddingHorizontal: 14, justifyContent: "center", borderWidth: 1, borderRadius: 10, borderColor: tab === item.value ? theme.primary : theme.controlBorder, backgroundColor: tab === item.value ? theme.tint : theme.surface }}><Text style={{ color: tab === item.value ? theme.primary : theme.text, fontWeight: "600" }}>{item.label}</Text></Pressable>)}</ScrollView>
     {tab === "information" && <Card style={{ gap: 16 }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "700" }}>Thông tin chung</Text>
@@ -225,7 +225,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
         {n("monthly_vehicles", "Đang thuê tháng")}
         {stockPhotosRequired ? <View style={{gap:8}}>
           <Text style={{color:theme.text,fontWeight:'700'}}>Lưu kho đã chụp: {record?.stock_captures?.length ?? 0} xe</Text>
-          <Text style={{color:theme.muted,lineHeight:22}}>Số xe lưu kho được xác nhận theo từng cặp ảnh khớp kho khi chốt.</Text>
+          <Text style={{color:theme.muted,lineHeight:22}}>Số xe Lưu kho được xác nhận theo từng ảnh biển số khớp kho.</Text>
           <Button secondary label={record?'Mở hồ sơ để chụp ảnh':'Lưu nháp để bắt đầu chụp'} disabled={busy||pending}
             onPress={()=>record?router.push({pathname:'/shift/[id]',params:{id:String(record.id)}}):review('draft')} />
         </View> : n("vehicles", "Lưu kho thực tế")}

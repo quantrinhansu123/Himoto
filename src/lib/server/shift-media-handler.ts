@@ -68,7 +68,7 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
     if(report.revision!==revision)throw new RecordPhotoError('Báo cáo đã thay đổi. Tải lại trước khi sửa minh chứng.',409);
     if(request.method==='DELETE'){
       if(!existing||existing.stage!==stage)throw new RecordPhotoError('Không tìm thấy minh chứng cần xóa.',404);
-      if(existing.category===SHIFT_STOCK_CATEGORY)throw new RecordPhotoError('Mở mục Kiểm kê xe bằng ảnh để sửa cặp ảnh.',409);
+      if(existing.category===SHIFT_STOCK_CATEGORY)throw new RecordPhotoError('Mở mục Kiểm kê xe bằng ảnh để sửa ảnh đã ghi nhận.',409);
       await client.query('DELETE FROM himoto.management_shift_media WHERE id=$1 AND report_id=$2',[mediaId,id]);
     }else{
       if(existing)throw new RecordPhotoError('Minh chứng này đã được lưu. Tải lại báo cáo để kiểm tra.',409);

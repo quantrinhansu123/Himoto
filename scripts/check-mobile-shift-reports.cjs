@@ -97,9 +97,11 @@ async function main(){
       body:Buffer.from([255,216,255,9,255,216,255,last])});
     const upload=(...args)=>stock.mobileShiftStockPhotos(requestPhoto(...args),actor,reportId);
     const closeReport=(revision,payload=currentPayload)=>save({id:reportId,revision,payload,status:'submitted'});
-    let scans=0;
+    let scans=0,singleScans=0;
     ocr.extractPhoto=async(kind,mime,bytes,_signal,_fetch,options)=>{
-      scans++;assert.equal(kind,'plate');assert.equal(mime,'image/jpeg');assert.equal(options.additional[0].data[3],9);assert(options.verifyPlatePair);
+      scans++;assert.equal(kind,'plate');assert.equal(mime,'image/jpeg');
+      if(options){assert.equal(options.additional[0].data[3],9);assert(options.verifyPlatePair);}
+      else singleScans++;
       return {fields:{license:bytes[3]===0?'':`29 A1 0000${bytes[3]}`}};
     };
     const initialStock=await inspect();
@@ -127,24 +129,33 @@ async function main(){
     assert.equal((await evidence(reportId,'pgd',3,randomUUID(),'DELETE',captured.capture.plate_photo_id)).response.status,409);
     const webStockUrl=stockUrl.replace('/mobile/v1/','/auth/');
     const webContext={params:Promise.resolve({id:String(reportId)})};
-    const makeWebUpload=(id,origin='https://qa.invalid')=>{
-      const request=requestPhoto(3,id,2);
-      const headers=new Headers(request.headers);
-      headers.set('origin',origin);
-      return new NextRequest(webStockUrl,{method:'PUT',headers,body:Buffer.from([255,216,255,9,255,216,255,2])});
-    };
+    const makePlateUpload=(url,id,origin='https://qa.invalid',point=coordinates,last=2)=>new NextRequest(url,{method:'PUT',
+      headers:{'origin':origin,'content-type':'image/jpeg','x-shift-request-id':id,'x-report-revision':'3','x-plate-gps':JSON.stringify(point)},
+      body:Buffer.from([255,216,255,last])});
+    const makeWebUpload=(id,origin)=>makePlateUpload(webStockUrl,id,origin);
     sessions.userFromSession=async()=>null;
     assert.equal((await stockWeb.PUT(makeWebUpload(randomUUID()),webContext)).status,401);
     sessions.userFromSession=async()=>({...actor,permissions:['contracts.read']});
     assert.equal((await stockWeb.PUT(makeWebUpload(randomUUID()),webContext)).status,403);
     sessions.userFromSession=async()=>actor;
     assert.equal((await stockWeb.PUT(makeWebUpload(randomUUID(),'https://other.invalid'),webContext)).status,403);
+    await assert.rejects(stock.mobileShiftStockPhotos(makePlateUpload(stockUrl,randomUUID(),'https://qa.invalid',{...coordinates,latitude:21.1}),actor,reportId),error=>error.status===422);
+    assert.equal(singleScans,0);
+    await assert.rejects(stock.mobileShiftStockPhotos(makePlateUpload(stockUrl,randomUUID(),'https://qa.invalid',coordinates,0),actor,reportId),error=>error.status===422);
     const webKey=randomUUID();
     const webResponse=await stockWeb.PUT(makeWebUpload(webKey),webContext);
     assert.equal(webResponse.status,200);
     const {data:second}=await webResponse.json();assert.equal(second.revision,4);
-    assert.deepEqual(await upload(3,webKey,2),second);
+    assert.equal(second.capture.vehicle_photo_id,null);
+    assert.equal(singleScans,2);
+    assert.deepEqual(await stock.mobileShiftStockPhotos(makePlateUpload(stockUrl,webKey),actor,reportId),second);
+    assert.equal(singleScans,2);
     assert.equal((await inspect()).captures.length,2);
+    assert.equal((await query('SELECT count(*)::int AS n FROM himoto.management_shift_media WHERE report_id=$1',[reportId])).rows[0].n,3);
+    const mixed=await api.readMobileShift(actor,String(reportId));assert(dto.isShiftReport(mixed));
+    assert.equal(mixed.payload.vehicles,2);
+    assert.equal(api.mobileShiftPhotoView(mixed,new Headers()).stock_captures,undefined);
+    assert.equal(api.mobileShiftPhotoView(mixed,new Headers({'x-himoto-shift-stock':'plate'})).stock_captures.length,2);
     await query("UPDATE himoto.vehicles SET current_store_id=24 WHERE id=2");
     await assert.rejects(closeReport(4),error=>error.code==='SHIFT_STOCK_INCOMPLETE');
     const removal=await stockWeb.DELETE(new NextRequest(webStockUrl,{method:'DELETE',headers:{
@@ -160,6 +171,7 @@ async function main(){
     await assert.rejects(upload(6,randomUUID(),1),error=>error.status===409);
     checks.push('Stock capture uses actual scoped inventory SQL, GPS and two-photo OCR inputs; rejects stale location, ambiguous/unmatched plates, duplicate photos and stale writes; web edits preserve evidence and web/app share final stock validation');
     checks.push('Web stock writes enforce session, grants and same origin; web capture replays from mobile with the same receipt and web removal deletes the same capture pair');
+    checks.push('Single JPEGs require fresh in-branch GPS, reject unreadable OCR before writing, add exactly one plate photo, coexist with legacy pairs and keep old mobile report payloads readable');
     const out=process.argv.indexOf('--fixture-output');if(out>=0){const file=path.resolve(process.argv[out+1]);assert(file.startsWith(path.resolve('.backups')+path.sep)&&!fs.existsSync(file));const seeded=await save({payload:{...base,date:'2026-11-01'},status:'draft'});const record=await api.readMobileShift(actor,String(seeded.receipt.id));const options=await api.readMobileShiftOptions(actor);options.canReview=false;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify({fixtureOnly:true,source:'Actual shared SQL report domain with deterministic analytics source; no operational data or messaging',options,record,auditReport:confirmedReport,exported,snapshot:snapshot(),stock:{record:{...record,payload:currentPayload},inventory:initialStock}},null,2));}
     console.log(JSON.stringify({passed:checks.length,checks,operationalWrites:0,realMessagesSent:0,snapshotSource:'Deterministic QA adapter; real analytics/RLS/multi-session acceptance remains separate'},null,2));
   }finally{snap.readShiftSnapshot=originalSnapshot;ownership.readOwnershipReport=originalOwnership;ocr.extractPhoto=originalOcr;sessions.userFromSession=originalSession;for(const[k,d]of Object.entries(descriptors)){if(d)Object.defineProperty(db.himotoPool,k,d);else delete db.himotoPool[k];}await sql.close();}

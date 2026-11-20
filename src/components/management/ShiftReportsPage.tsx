@@ -115,10 +115,10 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
   const stockLock = useRef(false);
   const stockPhotos = useRef(false);
   const [stockBlocking,setStockBlocking] = useState(false);
-  const [stockHasPair,setStockHasPair] = useState(false);
+  const [stockHasPhoto,setStockHasPhoto] = useState(false);
   const rememberStockPhotos = useCallback((value:boolean)=>{
     stockPhotos.current=value;
-    setStockHasPair(value);
+    setStockHasPhoto(value);
   },[]);
   const pendingSave = useRef<SavePlan | null>(null);
   const [unconfirmed, setUnconfirmed] = useState(false);
@@ -167,7 +167,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
   }, []);
   function open(row?: ShiftReport) {
     if (stockLock.current) return false;
-    if (stockHasPair && row?.id!==record?.id && !window.confirm('Bỏ ảnh đang chụp để mở báo cáo khác?')) return false;
+    if (stockHasPhoto && row?.id!==record?.id && !window.confirm('Bỏ ảnh đang chụp để mở báo cáo khác?')) return false;
     if (dirty.current && !window.confirm('Có thay đổi chưa lưu. Bỏ thay đổi để mở báo cáo khác?')) return false;
     if (row?.id!==record?.id) rememberStockPhotos(false);
     dirty.current = false; setInput(row ? { ...row.payload, ...(row.status === 'draft' ? { rented_batteries: row.payload.rented_batteries ?? 0, daily_vehicles: row.payload.daily_vehicles ?? 0, monthly_vehicles: row.payload.monthly_vehicles ?? 0, other_vehicles: row.payload.other_vehicles ?? 0 } : {}), ...(row.status === 'draft' && !row.payload.summary ? { summary: emptyShiftSummary() } : {}) } : { ...blank(selectedStore === 'all' ? 0 : Number(selectedStore)), report_type: reportType, staff: accessUser?.name.trim() ?? '' });
@@ -246,8 +246,8 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
   }
   async function save(submit: boolean) {
     if (lock.current || stockLock.current) return;
-    if (submit && stockHasPair) {
-      setTab('inventory');setInventoryTab('vehicles');setError('Lưu hoặc bỏ cặp ảnh đang chụp trước khi chốt báo cáo.');return;
+    if (submit && stockHasPhoto) {
+      setTab('inventory');setInventoryTab('vehicles');setError('Quét và lưu hoặc bỏ ảnh đang chụp trước khi chốt báo cáo.');return;
     }
     if(pendingDelete.current){await removeEvidence(pendingDelete.current.file);return;}
     setError('');
@@ -342,7 +342,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
       setError(field.validationMessage);
       requestAnimationFrame(() => field.focus());
     }} onSubmit={e => { e.preventDefault(); void save(false); }}>
-      <div className="shift-form-title"><ClipboardList size={22}/><div><h2>BÁO CÁO KIỂM KÊ PGD{input.date ? ' - NGÀY '+input.date.split('-').reverse().join('/') : ''}</h2><p>{record?.status === 'submitted' ? 'Đã chốt · Chỉ xem' : stockPhotosRequired ? 'Bản nháp · Cần ảnh toàn xe và ảnh biển số để chốt' : 'Bản nháp · Ảnh đính kèm không bắt buộc'}</p></div></div>
+      <div className="shift-form-title"><ClipboardList size={22}/><div><h2>BÁO CÁO KIỂM KÊ PGD{input.date ? ' - NGÀY '+input.date.split('-').reverse().join('/') : ''}</h2><p>{record?.status === 'submitted' ? 'Đã chốt · Chỉ xem' : stockPhotosRequired ? 'Bản nháp · Cần ảnh cận biển số từng xe Lưu kho để chốt' : 'Bản nháp · Ảnh đính kèm không bắt buộc'}</p></div></div>
       <div className="shift-tabs" role="tablist" aria-label="Các phần báo cáo cuối ca">{REPORT_TABS.map(([key,label], index) => <button key={key} id={'shift-tab-'+key} type="button" role="tab" aria-selected={tab === key} aria-controls={'shift-panel-'+key} tabIndex={tab === key ? 0 : -1} disabled={stockBlocking && tab!==key} onClick={() => setTab(key)} onKeyDown={event => {
         if (stockBlocking) return;
         const next = event.key === 'ArrowRight' ? (index+1)%REPORT_TABS.length : event.key === 'ArrowLeft' ? (index+REPORT_TABS.length-1)%REPORT_TABS.length : event.key === 'Home' ? 0 : event.key === 'End' ? REPORT_TABS.length-1 : -1;
@@ -378,7 +378,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
             ? <ShiftStockPanel key={record.id} reportId={record.id} revision={record.revision} captures={record.stock_captures ?? []}
               writable={!readonly} active={!showList && workflow==='pgd' && tab==='inventory' && inventoryTab==='vehicles'}
               blocked={busy||unconfirmed} onBlocking={value=>{stockLock.current=value;setStockBlocking(value);}}
-              onChanged={acceptStock} onHasPair={rememberStockPhotos}/>
+              onChanged={acceptStock} onHasPhoto={rememberStockPhotos}/>
             : <ShiftStockProofs reportId={record.id} captures={record.stock_captures ?? []}/>)}
         </details>}
         <div className="mg-form-grid shift-vehicle-grid">{numeric('daily_vehicles','Đang thuê ngày')}{numeric('monthly_vehicles','Đang thuê tháng')}

@@ -50,12 +50,14 @@ export function verifyStockLocation(raw: string, branch: Awaited<ReturnType<type
   return distance;
 }
 
-async function readPair(request: NextRequest) {
+async function readStockPhotos(request: NextRequest) {
+  const single = request.headers.get('content-type') === MIME;
   const split = Number(request.headers.get('x-vehicle-photo-bytes'));
-  if (request.headers.get('content-type') !== 'application/octet-stream' ||
-      !Number.isSafeInteger(split) || split < 1 || split > MAX_IMAGE) throw new ShiftRequestError('Thiếu cặp ảnh xe và biển số.');
+  if (!single && (request.headers.get('content-type') !== 'application/octet-stream' ||
+      !Number.isSafeInteger(split) || split < 1 || split > MAX_IMAGE)) throw new ShiftRequestError('Cần ảnh JPEG chụp cận biển số.');
+  const limit = single ? MAX_IMAGE : split + MAX_IMAGE;
   const reader = request.body?.getReader();
-  if (!reader) throw new ShiftRequestError('Thiếu cặp ảnh xe và biển số.');
+  if (!reader) throw new ShiftRequestError('Thiếu ảnh biển số.');
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
@@ -63,7 +65,7 @@ async function readPair(request: NextRequest) {
       const next = await reader.read();
       if (next.done) break;
       size += next.value.byteLength;
-      if (size > split + MAX_IMAGE) {
+      if (size > limit) {
         await reader.cancel();
         throw new ShiftRequestError('Mỗi ảnh tối đa 2 MB.', 413);
       }
@@ -73,6 +75,10 @@ async function readPair(request: NextRequest) {
     reader.releaseLock();
   }
   const bytes = Buffer.concat(chunks);
+  if (single) {
+    validatePhotoBytes(MIME, bytes);
+    return [bytes] as const;
+  }
   const pair = [bytes.subarray(0, split), bytes.subarray(split)] as const;
   for (const photo of pair) validatePhotoBytes(MIME, photo);
   if (pair[0].equals(pair[1])) throw new ShiftRequestError('Cần chụp riêng một ảnh xe và một ảnh cận biển số.');
@@ -109,7 +115,7 @@ export async function readShiftStockCheck(client:Pick<PoolClient,'query'>, id:nu
 async function replaceCapture(client: PoolClient, reportId: number, captures: ShiftStockCapture[], removed?: ShiftStockCapture) {
   if (removed) {
     await client.query('DELETE FROM himoto.management_shift_media WHERE report_id=$1 AND id=ANY($2::uuid[])',
-      [reportId, [removed.vehicle_photo_id, removed.plate_photo_id]]);
+      [reportId, removed.vehicle_photo_id ? [removed.vehicle_photo_id, removed.plate_photo_id] : [removed.plate_photo_id]]);
   }
   const { rows } = await client.query(`UPDATE himoto.management_shift_reports
     SET payload=jsonb_set(jsonb_set(payload,'{stock_captures}',$2::jsonb),'{vehicles}',to_jsonb($3::int)),
@@ -149,9 +155,10 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
     const key = reading ? null : shiftRequestId(request.headers);
     if (!reading && (!key || !Number.isSafeInteger(revision) || revision < 1 ||
       removing && (!Number.isSafeInteger(removingId) || removingId < 1))) throw new ShiftRequestError('Thiếu mã hoặc phiên bản kiểm kê.');
-    const pair = reading || removing ? null : await readPair(request);
+    const photos = reading || removing ? null : await readStockPhotos(request);
+    const vehiclePhoto = photos?.length === 2 ? photos[0] : null;
     const vehicleGps = request.headers.get('x-vehicle-gps') ?? '', plateGps = request.headers.get('x-plate-gps') ?? '';
-    const hash = shiftRequestHash(JSON.stringify({kind: 'stock-photos', id, revision, removing, removingId, vehicleGps, plateGps, split:pair?.[0].length}), ...(pair ?? []));
+    const hash = shiftRequestHash(JSON.stringify({kind: 'stock-photos', id, revision, removing, removingId, vehicleGps, plateGps, split:vehiclePhoto?.length}), ...(photos ?? []));
     async function readReceipt(client:PoolClient) {
         const replay = await readShiftReceipt(client, key, user.id, hash);
         if (replay) {
@@ -162,22 +169,25 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
     }
     if (reading) return await stockTransaction(user, true, client => readShiftStockCheck(client, id, branchId));
     let distance = 0, plate = '';
-    if (pair) {
+    if (photos) {
       const ready = await stockTransaction(user, false, async client => {
         const replay = await readReceipt(client);
         if (replay) return {replay};
         const report = await draft(client, id, branchId, revision);
         const branch = await branchCoordinates(client,Number(report.store_id));
-        return {distance:Math.max(verifyStockLocation(vehicleGps, branch), verifyStockLocation(plateGps, branch))};
+        const plateDistance = verifyStockLocation(plateGps, branch);
+        return {distance:vehiclePhoto ? Math.max(verifyStockLocation(vehicleGps, branch), plateDistance) : plateDistance};
       });
       if (ready.replay) return ready.replay;
       distance = ready.distance;
       limitPhotoOcr(user.id);
-      const result = await extractPhoto('plate', MIME, pair[1], request.signal, undefined, {
-        additional:[{mimeType:MIME,data:pair[0]}], verifyPlatePair:true,
-      });
+      const result = await extractPhoto('plate', MIME, photos[1] ?? photos[0], request.signal, undefined, vehiclePhoto ? {
+        additional:[{mimeType:MIME,data:vehiclePhoto}], verifyPlatePair:true,
+      } : undefined);
       plate = result.fields.license ?? '';
-      if (!plate) throw new ShiftRequestError('AI chưa xác nhận được cùng một biển số trên hai ảnh. Chụp toàn xe từ phía sau và chụp cận biển số cho rõ.', 422);
+      if (!plate) throw new ShiftRequestError(vehiclePhoto
+        ? 'AI chưa xác nhận được cùng một biển số trên hai ảnh. Chụp toàn xe từ phía sau và chụp cận biển số cho rõ.'
+        : 'AI chưa đọc rõ biển số. Chụp cận cảnh một biển số, giữ ảnh sáng và rõ nét.', 422);
     }
     return await stockTransaction(user, false, async client => {
         const replay = await readReceipt(client);
@@ -186,34 +196,34 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
         const store = Number(report.store_id);
         const captures = storedShiftStock(report.payload);
         let response;
-        if (pair) {
+        if (photos) {
           const matches = matchShiftStockPlate(plate, await readShiftStock(client, store));
           if (matches.length !== 1) throw new ShiftRequestError(matches.length
             ? `Biển ${plate} trùng nhiều hồ sơ trong kho. Kiểm tra danh sách xe trước khi chụp lại.`
             : `Biển ${plate} không khớp xe Lưu kho của cơ sở này. Kiểm tra biển hoặc danh sách xe.`, 422);
           const vehicle = matches[0], previous = captures.find(entry => entry.vehicle.id === vehicle.id);
           if (previous && matchShiftStockPlate(previous.plate, [vehicle]).length) {
-            throw new ShiftRequestError(`Xe ${vehicle.license} đã có cặp ảnh trong báo cáo. Mở ảnh đã lưu nếu cần chụp lại.`, 422);
+            throw new ShiftRequestError(`Xe ${vehicle.license} đã có ảnh kiểm kê. Mở ảnh đã lưu nếu cần chụp lại.`, 422);
           }
-          const ids = [randomUUID(), randomUUID()] as const;
+          const ids = photos.map(()=>randomUUID());
           const uploads = cloudflyPhotosEnabled()
-            ? await Promise.all(pair.map((photo, index) => storeObjectPhoto(photo, MIME, user.id, ids[index])))
+            ? await Promise.all(photos.map((photo, index) => storeObjectPhoto(photo, MIME, user.id, ids[index])))
             : [];
-          for (const [index, photo] of pair.entries()) {
+          for (const [index, photo] of photos.entries()) {
             const uploaded = uploads[index];
             await client.query(`INSERT INTO himoto.management_shift_media
               (id,report_id,store_id,category,stage,filename,mime_type,data,created_by,object_bucket,object_key,object_etag,storage_sha256,storage_bytes)
               VALUES($1,$2,$3,$4,'pgd',$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-            [ids[index], id, store, SHIFT_STOCK_CATEGORY, `${index === 0 ? 'Xe' : 'Biển số'} · ${vehicle.license}.jpg`, MIME,
+            [ids[index], id, store, SHIFT_STOCK_CATEGORY, `${vehiclePhoto && index === 0 ? 'Xe' : 'Biển số'} · ${vehicle.license}.jpg`, MIME,
               uploaded ? null : photo, user.id, uploaded?.object_bucket ?? null, uploaded?.object_key ?? null,
               uploaded?.object_etag ?? null, uploaded?.storage_sha256 ?? null, uploaded?.storage_bytes ?? null]);
           }
-          const capture = {vehicle, plate, vehicle_photo_id: ids[0], plate_photo_id: ids[1],
+          const capture = {vehicle, plate, vehicle_photo_id: vehiclePhoto ? ids[0] : null, plate_photo_id: ids[1] ?? ids[0],
             captured_at: new Date().toISOString(), actor_name: user.name, distance_m: distance};
           response = {...await replaceCapture(client, id, [...captures.filter(entry => entry !== previous), capture], previous), capture};
         } else {
           const previous = captures.find(entry => entry.vehicle.id === removingId);
-          if (!previous) throw new ShiftRequestError('Không tìm thấy cặp ảnh đã kiểm kê.', 404);
+          if (!previous) throw new ShiftRequestError('Không tìm thấy ảnh đã kiểm kê.', 404);
           response = await replaceCapture(client, id, captures.filter(entry => entry !== previous), previous);
         }
         await writeShiftReceipt(client, key, user.id, store, hash, response);

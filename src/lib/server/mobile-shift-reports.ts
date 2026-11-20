@@ -13,6 +13,17 @@ import { readShiftTelegram,retryShiftTelegram } from "./shift-telegram-domain";
 import { ShiftAutofillError,parseShiftAutofill,readShiftAutofill } from "./shift-autofill";
 import { idempotentMobileWrite,mobileBody,mobileRequestKey } from "./mobile-writes";
 import { parseShiftInput,type ShiftReport,type MobileShiftSave,type MobileAuditSave,type MobileShiftResult } from "../../../shared/mobile-shift-reports";
+import {SHIFT_STOCK_FORMAT_HEADER, SHIFT_STOCK_PLATE_FORMAT} from "../../../shared/shift-stock-check";
+
+export function mobileShiftPhotoView(row:ShiftReport,headers:Headers):ShiftReport {
+  // Older installed versions can still open the report and see its saved count.
+  if (headers.get(SHIFT_STOCK_FORMAT_HEADER)===SHIFT_STOCK_PLATE_FORMAT ||
+      !row.stock_captures?.some(capture=>capture.vehicle_photo_id===null)) return row;
+  const compatible={...row};
+  delete compatible.stock_captures;
+  return compatible;
+}
+
 function permission(user:SessionUser,action:"read"|"write"|"audit"="read") {
   if(!hasPermission(user,"contracts.read")||action==="write"&&!hasPermission(user,"contracts.draft")&&!hasPermission(user,"finance.write")||action==="audit"&&!hasPermission(user,"shift.review"))throw new MobileError("Tài khoản không có quyền thực hiện báo cáo ca.",403,"FORBIDDEN");
 }

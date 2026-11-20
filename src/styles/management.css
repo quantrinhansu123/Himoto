@@ -4398,9 +4398,9 @@
 .shift-inventory-stock small { color:var(--mg-muted); }
 .shift-stock-panel { display:grid; gap:12px; justify-items:start; padding:12px 0; }
 .shift-stock-panel > p { margin:0; }
-.shift-stock-pair,.shift-stock-actions { display:flex; align-items:center; gap:8px 12px; flex-wrap:wrap; }
-.shift-stock-pair > div { display:grid; gap:8px; }
-.shift-stock-pair img { display:block; width:144px; height:108px; object-fit:contain; background:var(--mg-slate-50); border:1px solid var(--mg-line); border-radius:8px; }
+.shift-stock-actions { display:flex; align-items:center; gap:8px 12px; flex-wrap:wrap; }
+.shift-stock-preview { display:grid; gap:8px; }
+.shift-stock-preview img { display:block; width:144px; height:108px; object-fit:contain; background:var(--mg-slate-50); border:1px solid var(--mg-line); border-radius:8px; }
 .shift-stock-actions a { text-decoration:underline; text-underline-offset:3px; }
 .shift-inventory-issues { padding:14px 16px; background:#fffbeb; border-top:1px solid #fcd34d; color:#854d0e; }
 .shift-inventory-issues p { margin:4px 0 8px; }

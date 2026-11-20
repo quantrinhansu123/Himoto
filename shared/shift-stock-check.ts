@@ -3,6 +3,8 @@ import {plateKey} from './mobile-plate-ocr';
 export const SHIFT_STOCK_CATEGORY = 'vehicle_stock';
 export const SHIFT_STOCK_RADIUS_METERS = 150;
 export const SHIFT_STOCK_MAX_ACCURACY_METERS = 100;
+export const SHIFT_STOCK_FORMAT_HEADER = 'x-himoto-shift-stock';
+export const SHIFT_STOCK_PLATE_FORMAT = 'plate';
 
 export interface ShiftStockVehicle {
   id: number;
@@ -12,7 +14,7 @@ export interface ShiftStockVehicle {
 export interface ShiftStockCapture {
   vehicle: ShiftStockVehicle;
   plate: string;
-  vehicle_photo_id: string;
+  vehicle_photo_id: string | null;
   plate_photo_id: string;
   captured_at: string;
   actor_name: string;
@@ -52,7 +54,7 @@ const stockVehicle = (value: unknown): value is ShiftStockVehicle =>
 export function isShiftStockCapture(value: unknown): value is ShiftStockCapture {
   return object(value) && stockVehicle(value.vehicle) && typeof value.plate === 'string' &&
     !!plateKey(value.plate) && plateKey(value.plate) === plateKey(value.vehicle.license) &&
-    photoId(value.vehicle_photo_id) && photoId(value.plate_photo_id) &&
+    (value.vehicle_photo_id === null || photoId(value.vehicle_photo_id)) && photoId(value.plate_photo_id) &&
     value.vehicle_photo_id !== value.plate_photo_id && typeof value.actor_name === 'string' &&
     typeof value.captured_at === 'string' && Number.isFinite(Date.parse(value.captured_at)) &&
     Number.isInteger(value.distance_m) && Number(value.distance_m) >= 0 && Number(value.distance_m) <= SHIFT_STOCK_RADIUS_METERS;

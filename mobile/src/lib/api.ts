@@ -63,7 +63,7 @@ import type {MobileListExportKind} from '../../../shared/mobile-list-export';
 import { isSalesReportOptions, isMobileSalesReport, type SalesReportOptions, type MobileSalesReport, type SalesReportKind } from "../../../shared/mobile-reports";
 import { isMobileBatteryStaff,type MobileBatteryStaff,isBatteryOptions,isBatteryPage,isBatteryWorkflow,isBatteryResult,isBatteryTelegram,type MobileBatteryOptions,type MobileBatteryPage,type BatteryWorkflowContext,type MobileBatteryResult,type MobileBatteryInput,type MobileBatteryAction,type MobileBatteryPrefill,type MobileBatteryTelegram } from "../../../shared/mobile-battery";
 import { isShiftReport,isShiftOptions,isShiftResult,isShiftSnapshot,type ShiftTelegramState,type ShiftReport,type MobileShiftOptions,type MobileShiftSave,type MobileAuditSave,type MobileShiftVideoReview,type ShiftSnapshot,type MobileShiftResult,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
-import {isShiftStockCapture,isShiftStockCheck,type ShiftStockCapture} from '../../../shared/shift-stock-check';
+import {isShiftStockCapture,isShiftStockCheck,SHIFT_STOCK_FORMAT_HEADER,SHIFT_STOCK_PLATE_FORMAT,type ShiftStockCapture} from '../../../shared/shift-stock-check';
 import type {AttendanceLocation} from '../../../shared/mobile-support';
 import { isRegistrationMonth, isRegistrationRange, isSelfRegistrationWeek, isShiftRegistration, type RegistrationMonth, type RegistrationRange, type SelfRegistrationWeek, type ShiftRegistration, type RegistrationInput, type SelfRegistrationInput } from '../../../shared/mobile-shift-registration';
 import { isMobileStaffAccounts, type MobileStaffAccount } from '../../../shared/mobile-staff-accounts';
@@ -323,21 +323,21 @@ export function createApi(
     saveSelfRegistration:(input:SelfRegistrationInput)=>request<SelfRegistrationWeek>('/attendance/shift-registration',isSelfRegistrationWeek,{method:'PUT',body:JSON.stringify(input)}),
     staffAccounts:(id:string,signal?:AbortSignal)=>request<MobileStaffAccount[]>(`/staff/${id}/accounts`,isMobileStaffAccounts,{signal}),
     shiftOptions:(signal?:AbortSignal)=>request<MobileShiftOptions>("/shift-reports/options",isShiftOptions,{signal}),
-    shifts:(params:string,signal?:AbortSignal)=>request<{rows:ShiftReport[]}>(`/shift-reports?${params}`,(v):v is {rows:ShiftReport[]}=>!!v&&typeof v==="object"&&"rows" in v&&Array.isArray(v.rows)&&v.rows.every(isShiftReport),{signal}),
-    shift:(id:string,signal?:AbortSignal)=>request<ShiftReport>(`/shift-reports/${encodeURIComponent(id)}`,(v):v is ShiftReport=>isShiftReport(v)&&String(v.id)===id,{signal}),
+    shifts:(params:string,signal?:AbortSignal)=>request<{rows:ShiftReport[]}>(`/shift-reports?${params}`,(v):v is {rows:ShiftReport[]}=>!!v&&typeof v==="object"&&"rows" in v&&Array.isArray(v.rows)&&v.rows.every(isShiftReport),{signal,headers:{[SHIFT_STOCK_FORMAT_HEADER]:SHIFT_STOCK_PLATE_FORMAT}}),
+    shift:(id:string,signal?:AbortSignal)=>request<ShiftReport>(`/shift-reports/${encodeURIComponent(id)}`,(v):v is ShiftReport=>isShiftReport(v)&&String(v.id)===id,{signal,headers:{[SHIFT_STOCK_FORMAT_HEADER]:SHIFT_STOCK_PLATE_FORMAT}}),
     shiftAutofill:(store:number,date:string,section:ShiftAutofillSection,signal?:AbortSignal)=>request<ShiftAutofillResult>(`/shift-reports/autofill?${new URLSearchParams({store_id:String(store),date,section})}`,(v):v is ShiftAutofillResult=>!!v&&typeof v==="object"&&"store_id" in v&&v.store_id===store&&"date" in v&&v.date===date&&"section" in v&&v.section===section&&"values" in v&&!!v.values&&typeof v.values==="object"&&"notices" in v&&Array.isArray(v.notices)&&v.notices.every(n=>typeof n==="string")&&"sources" in v&&Array.isArray(v.sources)&&v.sources.every(n=>typeof n==="string")&&(!("transfers" in v)||v.transfers===undefined||Array.isArray(v.transfers)),{signal},65000),
     saveShift:(input:MobileShiftSave,key:string)=>request<MobileWriteReceipt>("/shift-reports",isWriteReceipt,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},90000),
-    shiftStock:(id:number,signal?:AbortSignal)=>request(`/shift-reports/${id}/stock-photos`,isShiftStockCheck,{signal}),
-    saveShiftStock:(id:number,revision:number,key:string,bytes:ArrayBuffer,split:number,vehicleGps:AttendanceLocation,plateGps:AttendanceLocation,signal:AbortSignal)=>
+    shiftStock:(id:number,signal?:AbortSignal)=>request(`/shift-reports/${id}/stock-photos`,isShiftStockCheck,{signal,headers:{[SHIFT_STOCK_FORMAT_HEADER]:SHIFT_STOCK_PLATE_FORMAT}}),
+    saveShiftStock:(id:number,revision:number,key:string,bytes:ArrayBuffer,plateGps:AttendanceLocation,signal:AbortSignal)=>
       request(`/shift-reports/${id}/stock-photos`,(value):value is {revision:number;capture:ShiftStockCapture}=>
         !!value&&typeof value==='object'&&'revision' in value&&value.revision===revision+1&&'capture' in value&&isShiftStockCapture(value.capture),
-      {method:'PUT',signal,body:bytes,headers:{'Content-Type':'application/octet-stream','x-shift-request-id':key,'x-report-revision':String(revision),
-        'x-vehicle-photo-bytes':String(split),'x-vehicle-gps':JSON.stringify(vehicleGps),'x-plate-gps':JSON.stringify(plateGps)}},90000),
+      {method:'PUT',signal,body:bytes,headers:{'Content-Type':'image/jpeg','x-shift-request-id':key,'x-report-revision':String(revision),
+        'x-plate-gps':JSON.stringify(plateGps)}},90000),
     deleteShiftStock:(id:number,revision:number,key:string,vehicleId:number)=>
       request(`/shift-reports/${id}/stock-photos`,(value):value is {revision:number}=>
         !!value&&typeof value==='object'&&'revision' in value&&value.revision===revision+1,
       {method:'DELETE',headers:{'x-shift-request-id':key,'x-report-revision':String(revision),'x-vehicle-id':String(vehicleId)}}),
-    shiftResult:(key:string,signal?:AbortSignal)=>request<MobileShiftResult>(`/shift-reports/requests/${encodeURIComponent(key)}`,(v):v is MobileShiftResult=>isShiftResult(v)&&v.key===key,{signal}),
+    shiftResult:(key:string,signal?:AbortSignal)=>request<MobileShiftResult>(`/shift-reports/requests/${encodeURIComponent(key)}`,(v):v is MobileShiftResult=>isShiftResult(v)&&v.key===key,{signal,headers:{[SHIFT_STOCK_FORMAT_HEADER]:SHIFT_STOCK_PLATE_FORMAT}}),
     shiftSnapshot:(id:string,signal?:AbortSignal)=>request<ShiftSnapshot>(`/shift-reports/${encodeURIComponent(id)}/audit`,isShiftSnapshot,{signal},65000),
     shiftTelegram:(id:string,signal?:AbortSignal,stage='pgd')=>request<ShiftTelegramState|null>(`/shift-reports/${encodeURIComponent(id)}/telegram${stage==='audit'?'?stage=audit':''}`,(v):v is ShiftTelegramState|null=>v===null||!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string"&&"message_id" in v&&(v.message_id===null||Number.isSafeInteger(v.message_id))&&"error_code" in v&&(v.error_code===null||typeof v.error_code==="string"),{signal}),
     retryShiftTelegram:(id:string,stage='pgd')=>request<{status:string}>(`/shift-reports/${encodeURIComponent(id)}/telegram${stage==='audit'?'?stage=audit':''}`,(v):v is {status:string}=>!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string",{method:"POST"}),

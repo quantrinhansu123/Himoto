@@ -7,12 +7,9 @@ import {shiftApi, UnconfirmedSaveError} from '@/lib/management/shift-report-clie
 import {compareShiftStock, isShiftStockCapture, isShiftStockCheck, type ShiftStockCapture, type ShiftStockCheck} from '../../../shared/shift-stock-check';
 import {ShiftStockCamera, type StockCameraPhoto} from './ShiftStockCamera';
 
-const sides = [{key:'vehicle',label:'Ảnh toàn xe'}, {key:'plate',label:'Ảnh cận biển số'}] as const;
-type Side = typeof sides[number]['key'];
-type Pair = Partial<Record<Side,StockCameraPhoto>>;
 type Attempt = {
   key:string; revision:number;
-} & ({method:'PUT';vehicle:StockCameraPhoto;plate:StockCameraPhoto} | {method:'DELETE';vehicleId:number});
+} & ({method:'PUT';plate:StockCameraPhoto} | {method:'DELETE';vehicleId:number});
 
 export function ShiftStockProofs({reportId,captures,onRemove}:{
   reportId:number; captures:ShiftStockCapture[]; onRemove?:(item:ShiftStockCapture)=>void;
@@ -22,9 +19,9 @@ export function ShiftStockProofs({reportId,captures,onRemove}:{
     <div><strong>{entry.vehicle.license}</strong> · {entry.vehicle.name}</div>
     <small>{entry.actor_name} · {new Date(entry.captured_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · Cách cơ sở {entry.distance_m} m</small>
     <div className="shift-stock-actions">
-      <a href={`/api/auth/shift-reports/${reportId}/media/${entry.vehicle_photo_id}`} target="_blank" rel="noreferrer">Ảnh toàn xe</a>
       <a href={`/api/auth/shift-reports/${reportId}/media/${entry.plate_photo_id}`} target="_blank" rel="noreferrer">Ảnh biển số</a>
-      {onRemove&&<button type="button" className="mg-button" onClick={()=>onRemove(entry)} aria-label={`Bỏ cặp ảnh xe ${entry.vehicle.license}`}>Bỏ cặp ảnh</button>}
+      {entry.vehicle_photo_id&&<a href={`/api/auth/shift-reports/${reportId}/media/${entry.vehicle_photo_id}`} target="_blank" rel="noreferrer">Ảnh toàn xe</a>}
+      {onRemove&&<button type="button" className="mg-button" onClick={()=>onRemove(entry)} aria-label={`Bỏ ảnh kiểm kê xe ${entry.vehicle.license}`}>Bỏ ảnh kiểm kê</button>}
     </div>
   </li>)}</ul>;
 }
@@ -39,19 +36,19 @@ function PhotoPreview({photo,label}:{photo:StockCameraPhoto;label:string}) {
   return src?<img src={src} alt={label}/>:null;
 }
 
-export function ShiftStockPanel({reportId,revision,captures,writable,active,blocked,onBlocking,onChanged,onHasPair}:{
+export function ShiftStockPanel({reportId,revision,captures,writable,active,blocked,onBlocking,onChanged,onHasPhoto}:{
   reportId:number; revision:number; captures:ShiftStockCapture[]; writable:boolean; active:boolean; blocked:boolean;
   onBlocking:(value:boolean)=>void;
   onChanged:(from:number,revision:number,captures:ShiftStockCapture[])=>void;
-  onHasPair:(value:boolean)=>void;
+  onHasPhoto:(value:boolean)=>void;
 }) {
   const [check,setCheck] = useState<ShiftStockCheck|null>(null);
   const [loading,setLoading] = useState(true);
   const [reload,setReload] = useState(0);
   const [error,setError] = useState('');
   const [notice,setNotice] = useState('');
-  const [camera,setCamera] = useState<Side|null>(null);
-  const [pair,setPair] = useState<Pair>({});
+  const [camera,setCamera] = useState(false);
+  const [plate,setPlate] = useState<StockCameraPhoto|null>(null);
   const [pending,setPending] = useState<Attempt|null>(null);
   const [saving,setSaving] = useState(false);
   const sending = useRef(false);
@@ -69,8 +66,8 @@ export function ShiftStockPanel({reportId,revision,captures,writable,active,bloc
       .finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return ()=>controller.abort();
   },[active,endpoint,revision,reload]);
-  const hasPair=!!pair.vehicle||!!pair.plate;
-  useEffect(()=>onHasPair(hasPair),[hasPair,onHasPair]);
+  const hasPhoto=!!plate;
+  useEffect(()=>onHasPhoto(hasPhoto),[hasPhoto,onHasPhoto]);
 
   const stale=!!check && check.revision!==revision;
   const result=check ? compareShiftStock(check.expected,check.captures) : null;
@@ -85,11 +82,9 @@ export function ShiftStockPanel({reportId,revision,captures,writable,active,bloc
       const headers:Record<string,string>={'x-shift-request-id':attempt.key,'x-report-revision':String(attempt.revision)};
       let body:Blob|undefined;
       if (attempt.method==='PUT') {
-        headers['Content-Type']='application/octet-stream';
-        headers['x-vehicle-photo-bytes']=String(attempt.vehicle.image.size);
-        headers['x-vehicle-gps']=JSON.stringify(attempt.vehicle.gps);
+        headers['Content-Type']='image/jpeg';
         headers['x-plate-gps']=JSON.stringify(attempt.plate.gps);
-        body=new Blob([attempt.vehicle.image,attempt.plate.image],{type:'application/octet-stream'});
+        body=attempt.plate.image;
       } else headers['x-vehicle-id']=String(attempt.vehicleId);
       const saved=await shiftApi<{revision:number;capture?:ShiftStockCapture}>(endpoint,{
         method:attempt.method, headers, body, signal:abortTimeout(95_000),
@@ -102,11 +97,11 @@ export function ShiftStockPanel({reportId,revision,captures,writable,active,bloc
       const next=(check?.captures??captures).filter(row=>row.vehicle.id!==changedId);
       if (changed) {
         next.push(changed);
-        setPair({});
+        setPlate(null);
       }
       setCheck(previous=>previous ? {...previous,revision:saved.revision,captures:next} : previous);
       onChanged(attempt.revision,saved.revision,next);
-      setNotice(changed?`Đã khớp ${changed.vehicle.license} · ${changed.vehicle.name}.`:'Đã bỏ cặp ảnh kiểm kê.');
+      setNotice(changed?`Đã khớp ${changed.vehicle.license} · ${changed.vehicle.name}.`:'Đã bỏ ảnh kiểm kê.');
     } catch (cause) {
       uncertain=cause instanceof UnconfirmedSaveError;
       setError((cause as Error).message+(uncertain?' Bấm Thử lại thao tác để xác nhận.':''));
@@ -133,34 +128,32 @@ export function ShiftStockPanel({reportId,revision,captures,writable,active,bloc
       {!!result.unexpected.length && <p>Lệch kho: {result.unexpected.map(entry=>entry.vehicle.license).join(', ')}</p>}
     </>}
     {writable && <>
-      <p>Chụp toàn xe từ phía sau sao cho thấy biển số, rồi chụp cận biển số của cùng xe.</p>
-      <div className="shift-stock-pair">
-        {sides.map(side=><div key={side.key}>
-          {pair[side.key] && <PhotoPreview photo={pair[side.key]!} label={side.label}/>}
-          <button type="button" className="mg-button" disabled={!canChange||!check?.gps_configured||side.key==='plate'&&!pair.vehicle}
-            onClick={()=>setCamera(side.key)}><Camera size={16}/>{pair[side.key]?'Chụp lại':'Chụp'} {side.label.toLowerCase()}</button>
-        </div>)}
+      <p>Chụp một ảnh cận biển số cho mỗi xe. AI đọc biển số và đối chiếu với danh sách Lưu kho của cơ sở.</p>
+      <div className="shift-stock-preview">
+        {plate&&<PhotoPreview photo={plate} label="Ảnh cận biển số"/>}
+        <button type="button" className="mg-button" disabled={!canChange||!check?.gps_configured||!check.expected.length}
+          onClick={()=>setCamera(true)}><Camera size={16}/>{plate?'Chụp lại ảnh cận biển số':'Chụp ảnh cận biển số'}</button>
       </div>
       <div className="shift-stock-actions">
         {pending ? <button type="button" className="mg-button mg-button-primary" disabled={saving} onClick={()=>void send(pending)}>
           {saving?'Đang xử lý…':'Thử lại thao tác'}
-        </button> : <button type="button" className="mg-button mg-button-primary" disabled={!canChange||!pair.vehicle||!pair.plate}
-          onClick={()=>{if(pair.vehicle&&pair.plate)void send({method:'PUT',key:crypto.randomUUID(),revision,vehicle:pair.vehicle,plate:pair.plate});}}>
-          Quét biển số và lưu cặp ảnh
+        </button> : <button type="button" className="mg-button mg-button-primary" disabled={!canChange||!plate}
+          onClick={()=>{if(plate)void send({method:'PUT',key:crypto.randomUUID(),revision,plate});}}>
+          Quét biển số và lưu ảnh
         </button>}
-        {hasPair && <button type="button" className="mg-button" disabled={!!pending||blocked}
-          onClick={()=>{setPair({});setError('');}}>Bỏ ảnh đang chụp</button>}
+        {hasPhoto && <button type="button" className="mg-button" disabled={!!pending||blocked}
+          onClick={()=>{setPlate(null);setError('');}}>Bỏ ảnh đang chụp</button>}
       </div>
     </>}
     <ShiftStockProofs reportId={reportId} captures={check?.captures??captures} onRemove={canChange?entry=>{
-      if (window.confirm(`Bỏ cặp ảnh của xe ${entry.vehicle.license}?`)) {
+      if (window.confirm(`Bỏ ảnh kiểm kê của xe ${entry.vehicle.license}?`)) {
         void send({method:'DELETE',key:crypto.randomUUID(),revision,vehicleId:entry.vehicle.id});
       }
     }:undefined}/>
-    {active && camera && <ShiftStockCamera label={camera==='vehicle'?'Chụp ảnh toàn xe':'Chụp ảnh cận biển số'}
-      onClose={()=>setCamera(null)} onCapture={photo=>{
-        setPair(current=>camera==='vehicle'?{vehicle:photo}:{...current,plate:photo});
-        setError('');setNotice('');setCamera(null);
+    {active && camera && <ShiftStockCamera label="Chụp ảnh cận biển số"
+      onClose={()=>setCamera(false)} onCapture={photo=>{
+        setPlate(photo);
+        setError('');setNotice('');setCamera(false);
       }}/>}
   </section>;
 }
