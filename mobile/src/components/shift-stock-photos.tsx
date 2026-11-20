@@ -3,7 +3,7 @@ import {useQuery, useQueryClient} from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import {usePreventRemove} from 'expo-router';
 import {uuid} from 'expo';
-import {Linking, Platform, Text, View} from 'react-native';
+import {Linking, Platform, Text} from 'react-native';
 import {locateAttendance} from '@/lib/attendance-capture';
 import {ApiError} from '@/lib/api';
 import {prepareRecordMediaAsset, type RecordMediaPhoto} from '@/lib/record-media-photo';
