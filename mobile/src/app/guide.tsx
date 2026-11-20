@@ -92,7 +92,7 @@ export default function Guide() {
   const [tab,setTab]=useState<'guide'|'faq'>('guide'),[workflow,setWorkflow]=useState(GUIDE_WORKFLOWS[0].id),[step,setStep]=useState(0);
   const selected=GUIDE_WORKFLOWS.find(item=>item.id===workflow)!,current=selected.steps[step];
   return <View style={{flex:1}}>
-    <View style={{paddingHorizontal:20,paddingTop:16,gap:10}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:27,fontWeight:'800'}}>Hướng dẫn và hỏi đáp</Text><View style={{flexDirection:'row',gap:10}}><View style={{flex:1}}><Button secondary={tab!=='guide'} label="Hướng dẫn" onPress={()=>setTab('guide')}/></View><View style={{flex:1}}><Button secondary={tab!=='faq'} label="Hỏi đáp" onPress={()=>setTab('faq')}/></View></View></View>
+    <View style={{paddingHorizontal:20,paddingTop:16,gap:10}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:27,fontWeight:'800'}}>Hướng dẫn và hỏi đáp</Text><View style={{flexDirection:'row',gap:10}}><Button equalWidth secondary={tab!=='guide'} label="Hướng dẫn" onPress={()=>setTab('guide')}/><Button equalWidth secondary={tab!=='faq'} label="Hỏi đáp" onPress={()=>setTab('faq')}/></View></View>
     {tab==='faq'?<FaqList/>:<ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:800,width:'100%',alignSelf:'center'}}>
       <ChoiceField label="Nghiệp vụ cần hướng dẫn" value={workflow} choices={GUIDE_WORKFLOWS.map(item=>({value:item.id,label:item.name}))} onChange={value=>{setWorkflow(value);setStep(0);}}/>
       <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>{selected.description}</Text>

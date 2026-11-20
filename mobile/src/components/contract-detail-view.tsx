@@ -148,58 +148,53 @@ export function ContractDetailView({
 
             <View style={styles.priorityBtnRow}>
               {permissions.includes("contracts.renew") && (
-                <View style={{ flex: 1 }}>
-                  <Button
-                    label="Gia hạn"
-                    icon={<CalendarPlus size={16} color={theme.primaryText} />}
-                    onPress={() => router.push({ pathname: "/renewal/[id]", params: { id } })}
-                  />
-                </View>
+                <Button
+                  equalWidth
+                  label="Gia hạn"
+                  icon={<CalendarPlus size={16} color={theme.primaryText} />}
+                  onPress={() => router.push({ pathname: "/renewal/[id]", params: { id } })}
+                />
               )}
               {isRenting && permissions.includes("contracts.return") && (
-                <View style={{ flex: 1 }}>
-                  <Button
-                    secondary
-                    label="Trả xe"
-                    icon={<RotateCcw size={16} color={theme.text} />}
-                    onPress={() => router.push({ pathname: "/return-editor/[id]", params: { id } })}
-                  />
-                </View>
+                <Button
+                  equalWidth
+                  secondary
+                  label="Trả xe"
+                  icon={<RotateCcw size={16} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/return-editor/[id]", params: { id } })}
+                />
               )}
             </View>
 
             <View style={styles.priorityBtnRow}>
               {isRenting && permissions.includes("contracts.return") && (
-                <View style={{ flex: 1 }}>
-                  <Button
-                    secondary
-                    label="Đổi xe"
-                    icon={<ArrowLeftRight size={16} color={theme.text} />}
-                    onPress={() => router.push({ pathname: "/swap-editor/[id]", params: { id } })}
-                  />
-                </View>
+                <Button
+                  equalWidth
+                  secondary
+                  label="Đổi xe"
+                  icon={<ArrowLeftRight size={16} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/swap-editor/[id]", params: { id } })}
+                />
               )}
               {permissions.some((p) => p === "finance.read" || p === "finance.write") && (
-                <View style={{ flex: 1 }}>
-                  <Button
-                    secondary
-                    label="Thu / Chi"
-                    icon={<Wallet size={16} color={theme.text} />}
-                    onPress={() => router.push({ pathname: "/finance/[id]", params: { id } })}
-                  />
-                </View>
+                <Button
+                  equalWidth
+                  secondary
+                  label="Thu / Chi"
+                  icon={<Wallet size={16} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/finance/[id]", params: { id } })}
+                />
               )}
             </View>
 
             {isBadDebt && permissions.includes("contracts.settle") && (
               <View style={[styles.priorityBtnRow, { marginTop: 4 }]}>
-                <View style={{ flex: 1 }}>
-                  <Button
-                    label="Đóng hợp đồng nợ xấu"
-                    icon={<FileCheck size={16} color={theme.primaryText} />}
-                    onPress={() => router.push({ pathname: "/contract-lifecycle/[id]", params: { id, action: "close_bad_debt" } })}
-                  />
-                </View>
+                <Button
+                  equalWidth
+                  label="Đóng hợp đồng nợ xấu"
+                  icon={<FileCheck size={16} color={theme.primaryText} />}
+                  onPress={() => router.push({ pathname: "/contract-lifecycle/[id]", params: { id, action: "close_bad_debt" } })}
+                />
               </View>
             )}
           </Card>
@@ -429,23 +424,21 @@ export function ContractDetailView({
 
               {/* Quick links to cashflow and QR */}
               <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
-                <View style={{ flex: 1 }}>
-                  <Button
-                    secondary
-                    label="Phiếu thu / chi"
-                    icon={<Wallet size={16} color={theme.text} />}
-                    onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "cashflow" } })}
-                  />
-                </View>
+                <Button
+                  equalWidth
+                  secondary
+                  label="Phiếu thu / chi"
+                  icon={<Wallet size={16} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "cashflow" } })}
+                />
                 {record.status !== "cancelled" && (
-                  <View style={{ flex: 1 }}>
-                    <Button
-                      secondary
-                      label="Mã QR CK"
-                      icon={<QrCode size={16} color={theme.text} />}
-                      onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
-                    />
-                  </View>
+                  <Button
+                    equalWidth
+                    secondary
+                    label="Mã QR CK"
+                    icon={<QrCode size={16} color={theme.text} />}
+                    onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
+                  />
                 )}
               </View>
             </Card>

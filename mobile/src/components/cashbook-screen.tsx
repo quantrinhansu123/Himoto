@@ -102,7 +102,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
         {session!.user.permissions.includes('finance.write') && <Button label="Thêm tài khoản"
           onPress={()=>router.push({pathname:'/cashbook-account-editor/[kind]/[id]',params:{kind:'cash',id:'new',store}})} />}
       </Card>
-      <View style={{ flexDirection: "row", gap: 10 }}><View style={{ flex: 1 }}><Button secondary={kind !== "income"} label={`Phiếu thu${data ? ` (${data.income.total})` : ""}`} onPress={() => setKind("income")} /></View><View style={{ flex: 1 }}><Button secondary={kind !== "expense"} label={`Phiếu chi${data ? ` (${data.expense.total})` : ""}`} onPress={() => setKind("expense")} /></View></View>
+      <View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary={kind !== "income"} label={`Phiếu thu${data ? ` (${data.income.total})` : ""}`} onPress={() => setKind("income")} /><Button equalWidth secondary={kind !== "expense"} label={`Phiếu chi${data ? ` (${data.expense.total})` : ""}`} onPress={() => setKind("expense")} /></View>
       {session!.user.permissions.includes("settings.write") && <View style={{ gap: 12 }}>
         <Button secondary label="Chọn toàn bộ phiếu trang này" disabled={!current?.rows.length} onPress={() => setSelected(previous => { const next = new Map(previous); for (const row of current?.rows || []) next.set(row.id, row); return next; })} />
         {!!selected.size && <Button secondary label={`Bỏ chọn tất cả (${selected.size})`} onPress={() => setSelected(new Map())} />}
@@ -118,6 +118,6 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
       <CashbookVoucherCard row={item} />
     </View>}
     ListEmptyComponent={!valid ? <StateView title="Kiểm tra khoảng ngày" /> : query.isPending ? <StateView title="Đang tính sổ quỹ" loading /> : query.isError ? <StateView title="Chưa tải được sổ quỹ" message={query.error.message} retry={() => { void query.refetch(); }} /> : <StateView title="Không có phiếu phù hợp" />}
-    ListFooterComponent={current ? <View style={{ gap: 12 }}><Text style={{ color: theme.muted }}>Trang {current.page}/{pages} · {current.total} phiếu · Tổng {money(current.amount)}</Text><View style={{ flexDirection: "row", gap: 12 }}><View style={{ flex: 1 }}><Button secondary label="Trang phiếu trước" disabled={current.page <= 1 || query.isFetching} onPress={() => updatePaging({ page: current.page - 1 })} /></View><View style={{ flex: 1 }}><Button secondary label="Trang phiếu tiếp" disabled={current.page >= pages || query.isFetching} onPress={() => updatePaging({ page: current.page + 1 })} /></View></View></View> : undefined}
+    ListFooterComponent={current ? <View style={{ gap: 12 }}><Text style={{ color: theme.muted }}>Trang {current.page}/{pages} · {current.total} phiếu · Tổng {money(current.amount)}</Text><View style={{ flexDirection: "row", gap: 12 }}><Button equalWidth secondary label="Trang phiếu trước" disabled={current.page <= 1 || query.isFetching} onPress={() => updatePaging({ page: current.page - 1 })} /><Button equalWidth secondary label="Trang phiếu tiếp" disabled={current.page >= pages || query.isFetching} onPress={() => updatePaging({ page: current.page + 1 })} /></View></View> : undefined}
   />;
 }

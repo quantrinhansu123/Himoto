@@ -478,10 +478,8 @@ export function CatalogueScreen({
       {kind === 'vehicles' && <>
         <Button secondary label="Kho xe toàn hệ thống" onPress={()=>router.push('/fleet-inventory')} />
         <View style={{flexDirection:'row',gap:10}}>
-          <View style={{flex:1}}><Button secondary label="Lịch sử luân chuyển" onPress={()=>router.push('/vehicle-transfers')} /></View>
-          {session?.user.permissions.includes('vehicles.transfer') && <View style={{flex:1}}>
-            <Button secondary label="Chuyển xe" onPress={()=>router.push({pathname:'/fleet-inventory',params:{purpose:'transfer',store}})} />
-          </View>}
+          <Button equalWidth secondary label="Lịch sử luân chuyển" onPress={()=>router.push('/vehicle-transfers')} />
+          {session?.user.permissions.includes('vehicles.transfer') && <Button equalWidth secondary label="Chuyển xe" onPress={()=>router.push({pathname:'/fleet-inventory',params:{purpose:'transfer',store}})} />}
         </View>
       </>}
       {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
@@ -492,19 +490,17 @@ export function CatalogueScreen({
       )}
       {kind === "contracts" && session?.user.permissions.includes("contracts.draft") && (
         <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <Button
-              secondary
-              label="+ Nhận cọc giữ xe"
-              onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store, reservation: "1" } })}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              label="+ Nhập hợp đồng"
-              onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store } })}
-            />
-          </View>
+          <Button
+            equalWidth
+            secondary
+            label="+ Nhận cọc giữ xe"
+            onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store, reservation: "1" } })}
+          />
+          <Button
+            equalWidth
+            label="+ Nhập hợp đồng"
+            onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store } })}
+          />
         </View>
       )}
       {kind === 'contracts' && !operationsCatalogue && !!backfillActions(session!.user.permissions).length && <Button secondary label="+ Nhập bổ sung giao dịch" onPress={() => router.push({ pathname: '/backfill', params: { store_id: store } })} />}

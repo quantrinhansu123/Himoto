@@ -154,29 +154,27 @@ export function DraftCustomerPicker({
     <EditorSheet title="Chọn khách hàng" onClose={onClose}>
       <View style={{ padding: 18, gap: 14 }}>
         <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <Button
-              secondary={mode !== "branch"}
-              label="Hồ sơ quản lý"
-              onPress={() => {
-                setMode("branch");
-                setSearch("");
-                setError("");
-              }}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              secondary={mode !== "exact"}
-              label="Tra cứu chính xác"
-              onPress={() => {
-                setMode("exact");
-                setSearch("");
-                setSubmitted("");
-                setError("");
-              }}
-            />
-          </View>
+          <Button
+            equalWidth
+            secondary={mode !== "branch"}
+            label="Hồ sơ quản lý"
+            onPress={() => {
+              setMode("branch");
+              setSearch("");
+              setError("");
+            }}
+          />
+          <Button
+            equalWidth
+            secondary={mode !== "exact"}
+            label="Tra cứu chính xác"
+            onPress={() => {
+              setMode("exact");
+              setSearch("");
+              setSubmitted("");
+              setError("");
+            }}
+          />
         </View>
         <FormField
           label={

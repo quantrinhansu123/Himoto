@@ -30,6 +30,7 @@ export function Button({
   secondary = false,
   danger = false,
   disabled = false,
+  equalWidth = false,
   icon,
 }: {
   label: string;
@@ -38,6 +39,7 @@ export function Button({
   secondary?: boolean;
   danger?: boolean;
   disabled?: boolean;
+  equalWidth?: boolean;
   icon?: React.ReactNode;
 }) {
   const theme = useTheme();
@@ -68,6 +70,7 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        equalWidth && styles.equalWidthButton,
         {
           backgroundColor: bg,
           borderColor: border,
@@ -232,7 +235,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
-  buttonText: { fontSize: 16, fontWeight: "700" },
+  equalWidthButton: {
+    flex: 1,
+    minWidth: 0,
+    alignSelf: "stretch",
+    paddingHorizontal: 12,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
+    flexShrink: 1,
+  },
   card: { padding: 20, borderWidth: 1, borderRadius: 20 },
   error: {
     padding: 16,

@@ -92,7 +92,10 @@ export default function GpsScreen() {
     <FlatList<MobileGpsRow|MobileGpsEvent> data={mode==='devices'?data?.rows||[]:history.isPlaceholderData?[]:history.data?.events||[]} keyExtractor={r=>`${mode}:${r.id}`} keyboardShouldPersistTaps="handled" initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} contentContainerStyle={{padding:16,gap:12,paddingBottom:32}}
       ListHeaderComponent={<View style={{gap:14,paddingBottom:4}}>
         <Text accessibilityRole="header" style={{...titleStyle,fontSize:25}}>Định vị GPS</Text>
-        <View style={{flexDirection:'row',gap:10,flexWrap:'wrap'}}><Button label="Tải lại GPS" secondary loading={currentRead.isFetching&&!currentRead.data} onPress={()=>void refreshCurrent({cancelRefetch:false})}/><Button label={syncing?'Đang đồng bộ…':'Đồng bộ ngay'} loading={syncing} onPress={()=>void sync()}/></View>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Button equalWidth label="Tải lại GPS" secondary loading={currentRead.isFetching && !currentRead.data} onPress={() => void refreshCurrent({ cancelRefetch: false })} />
+          <Button equalWidth label={syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'} loading={syncing} onPress={() => void sync()} />
+        </View>
 <FilteredListExport kind="gps" filters={new URLSearchParams({...filters,page:String(filters.page)}).toString()} disabled={query.isFetching||query.isError||!data?.total||search!==filters.search}/>
         {!!(error||currentRead.error)&&<InlineError message={error||currentRead.error?.message||'Chưa tải được GPS.'}/>}
         {!!notice&&<Text accessibilityLiveRegion="polite" style={muted}>{notice}</Text>}
@@ -113,7 +116,10 @@ export default function GpsScreen() {
         </>}
         <Button label={helpOpen?'Ẩn cách đọc trạng thái GPS':'Cách đọc trạng thái GPS'} secondary onPress={()=>setHelpOpen(old=>!old)}/>
         {helpOpen&&<Text style={muted}>GPS tự cập nhật mỗi phút khi đang mở màn hình. ON/OFF là kết nối thiết bị, độc lập với khóa điện. Dữ liệu quá 10 phút hiện “Chưa cập nhật”. Dừng trên 3 ngày: hơn 72 giờ, có bằng chứng dừng và tất cả thiết bị còn khả dụng của cùng xe đều xác nhận. Mốc Protrack được ưu tiên; tắt khóa điện không phải thời gian dừng. Số trạng thái tính theo thiết bị; tổng xe và nhóm dừng trên 3 ngày không đếm trùng.</Text>}
-        <View style={{flexDirection:'row',gap:10,flexWrap:'wrap'}}><Button label="Thiết bị GPS" secondary={mode!=='devices'} onPress={()=>setMode('devices')}/><Button label="Lịch sử GPS" secondary={mode!=='events'} onPress={()=>setMode('events')}/></View>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Button equalWidth label="Thiết bị GPS" secondary={mode !== 'devices'} onPress={() => setMode('devices')} />
+          <Button equalWidth label="Lịch sử GPS" secondary={mode !== 'events'} onPress={() => setMode('events')} />
+        </View>
         {mode==='events'?<><Text style={muted}>100 sự kiện gần nhất. Nhật ký đọc bù và trực tiếp dùng thời điểm nhà cung cấp; lấy mẫu dùng thời điểm Himoto quan sát. Lịch sử lọc theo cơ sở, nguồn và thiết bị.</Text>
           <ChoiceField label="Nguồn lịch sử GPS" value={filters.event_source} choices={[{value:'all',label:'Tất cả nguồn'},{value:'poll',label:'Lấy mẫu'},{value:'history',label:'Nhật ký đọc bù'},{value:'webhook',label:'Sự kiện trực tiếp'}]} onChange={event_source=>filter({event_source:event_source as MobileGpsQuery['event_source']})}/>
           <ChoiceField label="Thiết bị trong lịch sử GPS" value={filters.event_device} choices={[{value:'',label:'Tất cả thiết bị'},...(!options.isPlaceholderData?options.data?.devices||[]:[]).map(d=>({value:String(d.id),label:d.label}))]} onChange={event_device=>filter({event_device})} searchable/>

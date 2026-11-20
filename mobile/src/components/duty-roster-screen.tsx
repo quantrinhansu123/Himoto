@@ -90,7 +90,7 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
         <Button secondary label={showShifts?'Ẩn danh mục 7 mã ca':'Xem danh mục 7 mã ca'} onPress={()=>setShowShifts(value=>!value)}/>
         {showShifts&&<View style={{gap:10}}>{ATTENDANCE_SHIFTS.map(shift=><Text key={shift.code} style={{color:theme.text,lineHeight:23}}>{shift.code} · {shift.name}{shift.start?` · ${shift.start}–${shift.end}`:''} · {shiftCreditLabel(shift.credit)} công</Text>)}<Text style={{color:theme.muted,lineHeight:22}}>O: nghỉ, không tạo ca làm việc. Công quy định dùng để đối chiếu, chưa phải công đã duyệt.</Text></View>}
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>Lịch trực cơ sở</Text>
-        <View style={{ flexDirection: "row", gap: 10 }}><View style={{ flex: 1 }}><Button secondary label="Tuần trước" onPress={() => moveWeek(dutyAddDays(week, -7))} /></View><View style={{ flex: 1 }}><Button secondary label="Tuần này" onPress={() => moveWeek(dutyToday())} /></View><View style={{ flex: 1 }}><Button secondary label="Tuần sau" onPress={() => moveWeek(dutyAddDays(week, 7))} /></View></View>
+        <View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary label="Tuần trước" onPress={() => moveWeek(dutyAddDays(week, -7))} /><Button equalWidth secondary label="Tuần này" onPress={() => moveWeek(dutyToday())} /><Button equalWidth secondary label="Tuần sau" onPress={() => moveWeek(dutyAddDays(week, 7))} /></View>
         <DateField label="Ngày trong tuần cần xem" value={week} onChange={moveWeek} />
         <ChoiceField label="Cơ sở" value={store} choices={[{ value: "all", label: "Tất cả cơ sở" }, ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} searchable />
         <ChoiceField label="Ngày trực" value={day} choices={[{ value: "all", label: `Cả tuần: ${week} → ${days[6]}` }, ...days.map(value => ({ value, label: value.split("-").reverse().join("/") }))]} onChange={setDay} />
@@ -100,7 +100,7 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
         {roster.isError && <><InlineError message={roster.error.message} /><Button secondary label="Tải lại lịch trực" onPress={() => { void roster.refetch(); }} /></>}
         {!!writer.error && <InlineError message={writer.error} />}
       </View>}
-      renderItem={({ item }) => <DutyScheduleCard row={item}>{writable && <View style={{ flexDirection: "row", gap: 10 }}><View style={{ flex: 1 }}><Button secondary label={`Sửa ca #${item.id}`} disabled={writer.busy} onPress={() => setEditor({ row: item })} /></View><View style={{ flex: 1 }}><Button secondary label={`Xóa ca #${item.id}`} disabled={writer.busy} onPress={() => setDeleting(item)} /></View></View>}</DutyScheduleCard>}
+      renderItem={({ item }) => <DutyScheduleCard row={item}>{writable && <View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary label={`Sửa ca #${item.id}`} disabled={writer.busy} onPress={() => setEditor({ row: item })} /><Button equalWidth secondary label={`Xóa ca #${item.id}`} disabled={writer.busy} onPress={() => setDeleting(item)} /></View>}</DutyScheduleCard>}
       ListEmptyComponent={roster.isPending ? <StateView title="Đang tải lịch trực" loading /> : !roster.isError ? <StateView title="Chưa có ca trực" message="Chọn tuần hoặc cơ sở khác để xem lịch." /> : undefined}
     />
     {editor && <DutyEditor row={editor.row} date={day === "all" ? week : day} store={store} onClose={() => setEditor(null)} />}

@@ -35,7 +35,7 @@ function VehicleHistory({ id }: { id: string }) {
       {!!item.order_id && session!.user.permissions.includes("contracts.read") && <Button secondary label={`Mở hợp đồng #${item.order_id}`} onPress={() => router.push({ pathname: "/record/[kind]/[id]", params: { kind: "contracts", id: String(item.order_id) } })} />}
     </Card>}
     ListEmptyComponent={query.isPending ? <StateView title="Đang tải lịch sử xe" loading /> : query.isError ? <StateView title="Chưa tải được lịch sử xe" retry={() => { void query.refetch(); }} /> : <StateView title="Chưa có sự kiện phù hợp" />}
-    ListFooterComponent={query.data ? <View style={{ gap: 10, paddingVertical: 12 }}><Text style={{ color: theme.muted, textAlign: "center" }}>Trang {query.data.page}/{query.data.pages}</Text><View style={{ flexDirection: "row", gap: 10 }}><View style={{ flex: 1 }}><Button secondary label="Trang trước" disabled={query.data.page <= 1} onPress={() => setPage(query.data!.page - 1)} /></View><View style={{ flex: 1 }}><Button secondary label="Trang sau" disabled={query.data.page >= query.data.pages} onPress={() => setPage(query.data!.page + 1)} /></View></View></View> : undefined}
+    ListFooterComponent={query.data ? <View style={{ gap: 10, paddingVertical: 12 }}><Text style={{ color: theme.muted, textAlign: "center" }}>Trang {query.data.page}/{query.data.pages}</Text><View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary label="Trang trước" disabled={query.data.page <= 1} onPress={() => setPage(query.data!.page - 1)} /><Button equalWidth secondary label="Trang sau" disabled={query.data.page >= query.data.pages} onPress={() => setPage(query.data!.page + 1)} /></View></View> : undefined}
   />;
 }
 export default function VehicleHistoryRoute() {

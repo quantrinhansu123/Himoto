@@ -57,7 +57,7 @@ function TransferHistory() {
       <Button secondary label={`Điều chuyển / nhận xe #${item.vehicle_id}`} onPress={() => router.push({ pathname: "/vehicle-transfer-editor/[id]", params: { id: String(item.vehicle_id) } })} />
     </Card>}
     ListEmptyComponent={!validDates ? <StateView title="Kiểm tra khoảng ngày" /> : query.isPending ? <StateView title="Đang tải điều chuyển" loading /> : query.isError ? <StateView title="Chưa tải được điều chuyển" retry={() => { void query.refetch(); }} /> : <StateView title="Không có điều chuyển phù hợp" />}
-    ListFooterComponent={query.data && validDates ? <View style={{ gap: 10, paddingVertical: 12 }}><Text style={{ color: theme.muted, textAlign: "center" }}>Trang {query.data.page}/{query.data.pages}</Text><View style={{ flexDirection: "row", gap: 10 }}><View style={{ flex: 1 }}><Button secondary label="Trang trước" disabled={query.data.page <= 1} onPress={() => setPage(query.data!.page - 1)} /></View><View style={{ flex: 1 }}><Button secondary label="Trang sau" disabled={query.data.page >= query.data.pages} onPress={() => setPage(query.data!.page + 1)} /></View></View></View> : undefined}
+    ListFooterComponent={query.data && validDates ? <View style={{ gap: 10, paddingVertical: 12 }}><Text style={{ color: theme.muted, textAlign: "center" }}>Trang {query.data.page}/{query.data.pages}</Text><View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary label="Trang trước" disabled={query.data.page <= 1} onPress={() => setPage(query.data!.page - 1)} /><Button equalWidth secondary label="Trang sau" disabled={query.data.page >= query.data.pages} onPress={() => setPage(query.data!.page + 1)} /></View></View> : undefined}
   />;
 }
 export default function TransferHistoryRoute() {

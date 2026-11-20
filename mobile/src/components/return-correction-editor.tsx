@@ -46,7 +46,7 @@ export function ReturnCorrectionEditor({ id }: { id: string }) {
           {choices.length > 0 && <ChoiceField label="Lượt trả cần chỉnh sửa" value={itemId} choices={choices} disabled={disabled} searchable onChange={v => { if (v === itemId) return; if (dirty) setSwitchTo(v); else acceptAnchor(v); }} />}
           {!options.rows.length && <Text style={muted}>Hợp đồng chưa có lượt xe đã trả để sửa.</Text>}
           <Text style={muted}>Trang {options.page}/{options.pages}. Chọn một xe sẽ mở toàn bộ nhóm xe và phiếu của cùng lượt trả.</Text>
-          {options.pages > 1 && <View style={{ flexDirection: 'row', gap: 10 }}><View style={{ flex: 1 }}><Button secondary label="Trang lượt trả trước" disabled={disabled || page <= 1} onPress={() => setPage(p => p - 1)} /></View><View style={{ flex: 1 }}><Button secondary label="Trang lượt trả tiếp" disabled={disabled || page >= options.pages} onPress={() => setPage(p => p + 1)} /></View></View>}
+          {options.pages > 1 && <View style={{ flexDirection: 'row', gap: 10 }}><Button equalWidth secondary label="Trang lượt trả trước" disabled={disabled || page <= 1} onPress={() => setPage(p => p - 1)} /><Button equalWidth secondary label="Trang lượt trả tiếp" disabled={disabled || page >= options.pages} onPress={() => setPage(p => p + 1)} /></View>}
         </>}
         {itemId && profile.isPending && !write.key && <StateView title="Đang mở hồ sơ, nhóm xe và phiếu gốc" loading />}
         {profile.isError && !write.key && <><InlineError message={profile.error.message} /><Button secondary label="Tải lại hồ sơ lượt trả" onPress={() => void profile.refetch()} /></>}

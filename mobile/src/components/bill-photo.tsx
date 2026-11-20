@@ -39,8 +39,8 @@ export function BillPhoto({source,previewSource,label,onReady,context='bill'}:{s
             </Pressable>
           </View>
           <View style={{flexDirection:"row",gap:12}}>
-            <View style={{flex:1}}><Button secondary label="Thu nhỏ" disabled={zoom===1} onPress={()=>setZoom(value=>Math.max(1,value-1))}/></View>
-            <View style={{flex:1}}><Button label="Phóng to" disabled={zoom===3} onPress={()=>setZoom(value=>Math.min(3,value+1))}/></View>
+            <Button equalWidth secondary label="Thu nhỏ" disabled={zoom===1} onPress={()=>setZoom(value=>Math.max(1,value-1))}/>
+            <Button equalWidth label="Phóng to" disabled={zoom===3} onPress={()=>setZoom(value=>Math.min(3,value+1))}/>
           </View>
           <Text accessibilityLiveRegion="polite" style={{color:theme.muted,fontSize:15}}>Mức {zoom}× · Kéo để xem chi tiết.</Text>
         </View>

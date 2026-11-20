@@ -319,18 +319,15 @@ export function CatalogueFilters({
             </Text>
           ) : null}
           <View style={[styles.actions, { borderColor: theme.border }]}>
-            <View style={{ flex: 1 }}>
-              <Button
-                label="Đặt lại"
-                secondary
-                onPress={() =>
-                  setSelection({ status: "", store: defaultStore })
-                }
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Button label="Áp dụng" disabled={!!(selection.from && selection.to && selection.from > selection.to)} onPress={() => onApply(selection)} />
-            </View>
+            <Button
+              equalWidth
+              label="Đặt lại"
+              secondary
+              onPress={() =>
+                setSelection({ status: "", store: defaultStore })
+              }
+            />
+            <Button equalWidth label="Áp dụng" disabled={!!(selection.from && selection.to && selection.from > selection.to)} onPress={() => onApply(selection)} />
           </View>
         </SafeAreaView>
       </KeyboardAvoidingView>

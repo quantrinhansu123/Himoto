@@ -1041,33 +1041,42 @@ function DraftForm({
                     />
                   </Pressable>
                 )}
-                <View style={{ flex: 1 }}>
-                  <Button
-                    label="Lưu nháp"
-                    loading={write.busy}
-                    disabled={
-                      !write.checked || !!write.receipt || !!pendingCustomer || customerCreate || photos.picking || photos.reading || localSave.scopeChanged || localSave.waiting
-                    }
-                    onPress={()=>save()}
-                  />
-                </View>
+                <Button
+                  equalWidth
+                  label="Lưu nháp"
+                  loading={write.busy}
+                  disabled={
+                    !write.checked || !!write.receipt || !!pendingCustomer || customerCreate || photos.picking || photos.reading || localSave.scopeChanged || localSave.waiting
+                  }
+                  onPress={()=>save()}
+                />
                 {step < draftSteps.length - 1 && (
-                  <View style={{ flex: 1 }}>
-                    <Button
-                      secondary
-                      label="Tiếp theo"
-                      disabled={disabled}
-                      onPress={() => jump(step + 1)}
-                    />
-                  </View>
+                  <Button
+                    equalWidth
+                    secondary
+                    label="Tiếp theo"
+                    disabled={disabled}
+                    onPress={() => jump(step + 1)}
+                  />
                 )}
               </View>
-              <View style={{flexDirection:'row',gap:10}}>
-                <View style={{flex:1}}><Button secondary label="Xem mẫu in" loading={previewBusy}
-                  disabled={disabled||photos.picking||photos.reading} onPress={()=>{void previewPrint();}} /></View>
-                {canIssue&&<View style={{flex:1}}><Button label={needsApproval?'Duyệt hợp đồng':d.reservation?'Ghi nhận cọc giữ xe':'Hoàn tất & thanh toán'}
-                  disabled={disabled||!write.checked||photos.picking||photos.reading||previewBusy}
-                  onPress={()=>save(needsApproval?'approve':'issue')} /></View>}
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Button
+                  equalWidth
+                  secondary
+                  label="Xem mẫu in"
+                  loading={previewBusy}
+                  disabled={disabled || photos.picking || photos.reading}
+                  onPress={() => { void previewPrint(); }}
+                />
+                {canIssue && (
+                  <Button
+                    equalWidth
+                    label={needsApproval ? "Duyệt hợp đồng" : d.reservation ? "Ghi nhận cọc giữ xe" : "Hoàn tất & thanh toán"}
+                    disabled={disabled || !write.checked || photos.picking || photos.reading || previewBusy}
+                    onPress={() => save(needsApproval ? "approve" : "issue")}
+                  />
+                )}
               </View>
             </View>
           </View>

@@ -59,10 +59,19 @@ function Section({ section, onPage }: { section: ReportSection; onPage: ReportPa
     {rows.map(row => <RowCard key={row.key} row={row} section={section} />)}
     {!rows.length && <Text style={{ color: theme.muted, lineHeight: 23 }}>Không có dữ liệu phù hợp trong kỳ.</Text>}
     {section.total && <Card style={{ gap: 10 }}><Text style={{ color: theme.text, fontSize: 18, fontWeight: "800" }}>Tổng toàn bộ kết quả</Text>{section.columns.slice(1).map((col, index) => <Text key={col.key} style={{ color: theme.text, lineHeight: 23 }}>{col.label}: {reportValue(section.total![index + 1], col.format)}</Text>)}</Card>}
-    {total > 0 && <View style={{ gap: 10 }}><Text style={{ color: theme.muted }}>{total} dòng · Trang {page}/{pages}</Text><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-      <Button secondary label={`Đầu · ${section.title}`} disabled={page <= 1} onPress={() => choose(1)} /><Button secondary label={`Trước · ${section.title}`} disabled={page <= 1} onPress={() => choose(page - 1)} />
-      <Button secondary label={`Sau · ${section.title}`} disabled={page >= pages} onPress={() => choose(page + 1)} /><Button secondary label={`Cuối · ${section.title}`} disabled={page >= pages} onPress={() => choose(pages)} />
-    </View></View>}
+    {total > 0 && (
+      <View style={{ gap: 10 }}>
+        <Text style={{ color: theme.muted }}>{total} dòng · Trang {page}/{pages}</Text>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Button equalWidth secondary label={`Đầu · ${section.title}`} disabled={page <= 1} onPress={() => choose(1)} />
+          <Button equalWidth secondary label={`Trước · ${section.title}`} disabled={page <= 1} onPress={() => choose(page - 1)} />
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Button equalWidth secondary label={`Sau · ${section.title}`} disabled={page >= pages} onPress={() => choose(page + 1)} />
+          <Button equalWidth secondary label={`Cuối · ${section.title}`} disabled={page >= pages} onPress={() => choose(pages)} />
+        </View>
+      </View>
+    )}
   </View>;
 }
 export function SalesReportView({ report, onPage }: { report: MobileSalesReport; onPage: ReportPageChange }) {

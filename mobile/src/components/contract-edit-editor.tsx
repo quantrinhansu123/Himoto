@@ -131,7 +131,7 @@ export function ContractEditEditor({ id }: { id: string }) {
         </>}
       </ScrollView>
       {value && !write.key && <View style={{ padding: 16, gap: 10, backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.border }}>
-        <View style={{ flexDirection: 'row', gap: 10 }}>{step > 0 && <View style={{ flex: 1 }}><Button secondary label="Bước trước" disabled={write.busy} onPress={() => jump(step - 1)} /></View>}{step < 4 && <View style={{ flex: 1 }}><Button secondary label="Tiếp theo" disabled={write.busy} onPress={() => jump(step + 1)} /></View>}</View>
+        <View style={{ flexDirection: 'row', gap: 10 }}>{step > 0 && <Button equalWidth secondary label="Bước trước" disabled={write.busy} onPress={() => jump(step - 1)} />}{step < 4 && <Button equalWidth secondary label="Tiếp theo" disabled={write.busy} onPress={() => jump(step + 1)} />}</View>
         <Button label="Kiểm tra và lưu hợp đồng" loading={write.busy} disabled={disabled || write.query.isError || write.query.isFetching} onPress={() => { Keyboard.dismiss(); setConfirm(true); }} />
       </View>}
       </KeyboardScrollContext.Provider>

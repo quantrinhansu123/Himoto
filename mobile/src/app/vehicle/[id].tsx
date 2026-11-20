@@ -450,22 +450,20 @@ function VehicleProfile({ id }: { id: string }) {
                   Trang {historyQuery.data.page} / {historyQuery.data.pages}
                 </Text>
                 <View style={{ flexDirection: "row", gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Button
-                      secondary
-                      label="Trang trước"
-                      disabled={historyQuery.data.page <= 1}
-                      onPress={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Button
-                      secondary
-                      label="Trang sau"
-                      disabled={historyQuery.data.page >= historyQuery.data.pages}
-                      onPress={() => setHistoryPage((p) => p + 1)}
-                    />
-                  </View>
+                  <Button
+                    equalWidth
+                    secondary
+                    label="Trang trước"
+                    disabled={historyQuery.data.page <= 1}
+                    onPress={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                  />
+                  <Button
+                    equalWidth
+                    secondary
+                    label="Trang sau"
+                    disabled={historyQuery.data.page >= historyQuery.data.pages}
+                    onPress={() => setHistoryPage((p) => p + 1)}
+                  />
                 </View>
               </View>
             ) : undefined
