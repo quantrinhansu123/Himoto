@@ -15,26 +15,9 @@ import { downloadExcel } from '@/lib/management/excel-export';
 import { formatDateTime } from '@/lib/formatters';
 import { isAdminAccount } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
+import { BrowserLocationError, requestBrowserLocation, type BrowserLocation as Location } from '@/lib/management/browser-geolocation';
 
-type Location = {latitude:number;longitude:number;accuracy:number;timestamp:number};
 type InitialClockLocation = Location | Error;
-
-function readClockLocation(): Promise<Location> {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Trình duyệt không hỗ trợ vị trí GPS.'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(({coords,timestamp}) => {
-      resolve({latitude:coords.latitude,longitude:coords.longitude,accuracy:coords.accuracy,timestamp});
-    }, error => {
-      const message = error.code === error.PERMISSION_DENIED
-        ? 'Chưa có quyền vị trí. Trên Safari, mở menu bên trái thanh địa chỉ → Cài đặt trang web → Vị trí → Cho phép.'
-        : 'Chưa lấy được tín hiệu GPS. Vui lòng thử lại.';
-      reject(new Error(message));
-    }, {enableHighAccuracy:true,maximumAge:0,timeout:20000});
-  });
-}
 type Attendance = {id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:Location;out_location:Location|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
 type Summary = {staff:{name:string;store_id:number|null;store_name:string|null}|null;open:{id:number;clock_in_at:string}|null;latest:{clock_in_at:string;clock_out_at:string|null}|null;shift:{shift_name:string;starts_at:string;ends_at:string}|null;shift_code:string|null;late_minutes:number|null;early_leave_minutes:number|null;server_now:string};
 type Report = {rows:Attendance[];total:number;page:number};
@@ -128,7 +111,7 @@ export function AttendancePage() {
   const [data,setData] = useState<Summary|null>(null),[loading,setLoading] = useState(true),[error,setError] = useState('');
   const [clock,setClock] = useState<{action:'in'|'out';initialLocation:Promise<InitialClockLocation>}|null>(null);
   function startClock(nextAction:'in'|'out') {
-    const initialLocation = readClockLocation().catch((error:Error) => error);
+    const initialLocation = requestBrowserLocation().catch((error:Error) => error);
     setClock({action:nextAction,initialLocation});
   }
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -342,12 +325,11 @@ function AttendanceRecordDialog({mode,row,onClose,onSaved}:{
 function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out';initialLocation:Promise<InitialClockLocation>;onClose:()=>void;onSaved:()=>void}) {
   const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),lock=useRef(false),requestId=useRef(crypto.randomUUID());
   const [cameraReady,setCameraReady]=useState(false),[photo,setPhoto]=useState<Blob|null>(null),[preview,setPreview]=useState(''),[locating,setLocating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  const [checkingLocation,setCheckingLocation]=useState(true);
+  const [clockLocation,setClockLocation]=useState<InitialClockLocation|null>(null);
   useEffect(()=>{let current=true;
     void initialLocation.then(location => {
       if(!current)return;
-      setCheckingLocation(false);
-      if(location instanceof Error)setError(location.message);
+      setClockLocation(location);
       if(!navigator.mediaDevices?.getUserMedia){
         setError('Trình duyệt chưa hỗ trợ camera. Mở bằng HTTPS hoặc localhost và cho phép camera.');
         return;
@@ -361,12 +343,15 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
     return()=>{current=false;stream.current?.getTracks().forEach(track=>track.stop());};
   },[initialLocation]);
   useEffect(()=>{if(!photo){setPreview('');return;}const url=URL.createObjectURL(photo);setPreview(url);return()=>URL.revokeObjectURL(url);},[photo]);
-  async function locate(): Promise<Location> {
+  async function retryLocation(): Promise<Location|null> {
     setLocating(true);
     try {
-      const initial = await initialLocation;
-      if (!(initial instanceof Error) && Math.abs(Date.now()-initial.timestamp)<60_000) return initial;
-      return await readClockLocation();
+      const location = await requestBrowserLocation();
+      setClockLocation(location);
+      return location;
+    } catch (cause) {
+      setClockLocation(cause instanceof Error ? cause : new Error('Chưa lấy được vị trí. Vui lòng thử lại.'));
+      return null;
     } finally {
       setLocating(false);
     }
@@ -377,11 +362,41 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
     canvas.getContext('2d')?.drawImage(video.current,0,0);canvas.toBlob(blob=>{if(blob){setPhoto(blob);}else setError('Không chụp được ảnh. Vui lòng thử lại.');},'image/jpeg',0.8);
   }
   async function save() {
-    if(lock.current||!photo)return;
+    if(lock.current||locating||!photo||!clockLocation||clockLocation instanceof Error)return;
     lock.current=true;setBusy(true);setError('');
-    try {const location=await locate();const form=new FormData();form.set('action',action);form.set('request_id',requestId.current);form.set('photo',photo,'cham-cong.jpg');form.set('location',JSON.stringify(location));await responseData(await fetch('/api/auth/attendance',{method:'POST',body:form}));onSaved();}
+    try {
+      const location = Math.abs(Date.now()-clockLocation.timestamp)<60_000 ? clockLocation : await retryLocation();
+      if(!location)return;
+      const form=new FormData();form.set('action',action);form.set('request_id',requestId.current);form.set('photo',photo,'cham-cong.jpg');form.set('location',JSON.stringify(location));await responseData(await fetch('/api/auth/attendance',{method:'POST',body:form}));onSaved();
+    }
     catch(cause){setError(cause instanceof Error?cause.message:'Chưa xác nhận được chấm công. Giữ màn hình này để thử lại cùng lần chấm.');}
     finally {lock.current=false;setBusy(false);}
   }
-  return <Dialog title={action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}><div className="mg-dialog-body mg-attendance-capture"><p role="status">{checkingLocation ? 'Đang lấy vị trí. Nếu Safari hỏi quyền vị trí, hãy chọn Cho phép.' : 'Chụp ảnh hiện tại để xác nhận chấm công.'}</p><video ref={video} autoPlay playsInline muted onLoadedData={()=>setCameraReady(true)} aria-label="Camera chấm công"/><button type="button" className="mg-button" disabled={!cameraReady||busy||locating} onClick={capture}><Camera size={17}/>{photo?'Chụp lại':'Chụp ảnh'}</button>{preview&&<img src={preview} alt="Ảnh chấm công vừa chụp"/>}{error&&<p className="mg-field-error" role="alert">{error}</p>}</div><div className="mg-dialog-footer"><button className="mg-button" disabled={busy} onClick={onClose}>Đóng</button><button className="mg-button mg-button-primary" disabled={busy||!photo} onClick={()=>void save()}>{locating?'Đang lấy vị trí…':busy?'Đang lưu…':action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'}</button></div></Dialog>;
+  const locationError = clockLocation instanceof Error ? clockLocation : null;
+  const permissionDenied = locationError instanceof BrowserLocationError && locationError.reason==='permission-denied';
+  const checkingLocation = locating || !clockLocation;
+
+  return <Dialog title={action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}>
+    <div className="mg-dialog-body mg-attendance-capture">
+      <video ref={video} autoPlay playsInline muted onLoadedData={()=>setCameraReady(true)} aria-label="Camera chấm công"/>
+      <button type="button" className="mg-button" disabled={!cameraReady||busy} onClick={capture}><Camera size={17}/>{photo?'Chụp lại':'Chụp ảnh'}</button>
+      {preview&&<img src={preview} alt="Ảnh chấm công vừa chụp"/>}
+      {error&&<p className="mg-field-error" role="alert">{error}</p>}
+    </div>
+    <div className="mg-dialog-footer mg-attendance-capture-footer">
+      {checkingLocation ? <p role="status">Đang lấy vị trí. Nếu trình duyệt hỏi quyền vị trí, hãy chọn Cho phép.</p>
+        : locationError ? <p className="mg-field-error" role="alert">{permissionDenied
+          ? 'Quyền vị trí đang bị chặn. Trong Safari, mở menu cạnh thanh địa chỉ → Cài đặt trang web → Vị trí → Cho phép, rồi bấm nút bên dưới.'
+          : locationError.message}</p>
+        : <p role="status">Đã lấy được vị trí.</p>}
+      <button type="button" className="mg-button" disabled={busy} onClick={onClose}>Đóng</button>
+      {locationError && !busy
+        ? <button type="button" className="mg-button mg-button-primary" disabled={locating} onClick={()=>void retryLocation()}>
+          <MapPin size={17} aria-hidden="true"/>{locating?'Đang lấy vị trí…':permissionDenied?'Yêu cầu quyền vị trí':'Lấy vị trí hiện tại'}
+        </button>
+        : <button type="button" className="mg-button mg-button-primary" disabled={busy||checkingLocation||!photo} onClick={()=>void save()}>
+          {checkingLocation?'Đang lấy vị trí…':busy?'Đang lưu…':action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'}
+        </button>}
+    </div>
+  </Dialog>;
 }
