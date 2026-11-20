@@ -152,7 +152,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => isOwnershipCustomerSourceStore(store)).map(store => store.id)), [dataset?.stores]);
   const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
   const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
-  const tableInput:ManagementTableInput={kind,query,store:selectedStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:3}:{})};
+  const staffSearch = kind === 'staff' && Boolean(query.search.trim());
+  const tableStore = staffSearch && (accessUser?.scope_all || accessUser?.scope_all_read) ? 'all' : selectedStore;
+  const tableInput:ManagementTableInput={kind,query,store:tableStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:3}:{})};
   const resourceRevision=resources[kind].revision;
   const tableRevision=useMemo(()=>({revision:resourceRevision}),[resourceRevision]);
   const contractsRevision=useMemo(()=>({revision:resources.contracts.revision}),[resources.contracts.revision]);
@@ -257,7 +259,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     const status=statusFromUrl||(overdueOnly?'overdue':'');
     setQuery(current=>current.status===status?current:{...current,status});setPage(1);
   },[kind,statusFromUrl,overdueOnly]);
-  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [selectedStore]);
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [selectedStore, tableStore]);
   useEffect(() => {
     const close = (event: MouseEvent) => { if (columnsRef.current && !columnsRef.current.contains(event.target as Node)) columnsRef.current.open = false; };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && columnsRef.current?.open) { columnsRef.current.open = false; columnsRef.current.querySelector<HTMLElement>('summary')?.focus(); } };
@@ -272,8 +274,8 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const rows:ManagementRow[] = useMemo(() => kind === 'vehicles' ? allRows.map(row => ({...row,overdue_days:vehicleOverdueDays(row,openedAt)})) : compactContracts?allRows.map(row=>({...row,contract_signed_at:row.signed_on||row.start_date,...contractGpsFields(row,listGps,gpsAllowed)})):allRows,[allRows,kind,openedAt,compactContracts,listGps,gpsAllowed]);
   const scopedRows = useMemo(() => {
     if(kind==='vehicles')return rows.filter(row=>selectedStore==='all'||String(row.owner_store_id??row.store_id??'')===selectedStore);
-    return filterRows(rows, EMPTY_QUERY, selectedStore);
-  }, [rows, selectedStore, kind]);
+    return filterRows(rows, EMPTY_QUERY, tableStore);
+  }, [rows, selectedStore, tableStore, kind]);
   const dueCount = paged ? table.data?.dueCount || 0 : scopedRows.filter(row => row.billing_overdue_at && Number(row.billing_due_amount) > 0).length;
   const filteredRows = useMemo(() => paged ? rows : sortRows(filterRows(scopedRows,query,'all').filter(row=>kind!=='vehicles'||Boolean(query.status)||row.status!=='sold'),sort.key,sort.direction),[paged,rows,scopedRows,query,sort,kind]);
   useEffect(()=>{
@@ -308,6 +310,9 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const statusOptions = [...config.statuses, ...Array.from(new Set(paged?table.data?.statuses || []:rows.map(row => row.status))).filter(status => status && !config.statuses.some(option => option.value === status)).map(value => ({ value, label: kind === 'contracts' ? optionLabel(config, 'status', value) : `Trạng thái ${value}` }))];
   const contractTabs = kind === 'contracts' && !draftsOnly;
   const isFiltered = Boolean(query.search || query.status || query.startDate || query.endDate || query.overdueDays.trim() || query.overdueBucket || selectedStore !== 'all' || Object.values(query.filters).some(Boolean));
+  const staffSearchStore = staffSearch && tableStore !== 'all'
+    ? dataset?.stores.find(store => String(store.id) === tableStore)?.name || `cơ sở #${tableStore}`
+    : '';
   const canManageStaff = can('hr.write') || can('settings.write');
   const canEdit = kind === 'customers' ? can('customers.write') : kind === 'stores' ? can('settings.write') : kind === 'vehicles' ? can('vehicles.write') : kind === 'staff' ? canManageStaff : false;
   const canDelete = source === 'api' && (
@@ -479,7 +484,13 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           {customerId && <span className="mg-active-filter">Khách hàng #{customerId}<button type="button" aria-label="Bỏ lọc khách hàng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}{contractId && <span className="mg-active-filter">Hợp đồng #{contractId}<button type="button" aria-label="Bỏ lọc hợp đồng" onClick={() => router.replace(contractPath)}><X size={13} /></button></span>}</div>}
           </OptionalTools>
         </div>
-        {isFiltered && <div className="mg-filter-summary"><span><strong>{resultCount}</strong> kết quả phù hợp</span><button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button></div>}
+        {isFiltered && <div className="mg-filter-summary">
+          <span role="status">
+            {staffSearch && loading ? 'Đang tìm nhân sự…' : staffSearch && error ? 'Chưa tải được kết quả tìm kiếm.' : <><strong>{resultCount}</strong> kết quả phù hợp</>}
+            {staffSearch && !loading && !error && (staffSearchStore ? <> tại <strong>{staffSearchStore}</strong></> : ' trong các cơ sở được phép xem')}
+          </span>
+          <button type="button" onClick={clearFilters}><RotateCcw size={13} />Xóa bộ lọc</button>
+        </div>}
         {kind === 'vehicles' && Boolean(query.filters.warehouse_store_id) && <p className="mg-composer-hint" style={{margin:'2px 0 8px'}}>Đang lọc theo kho xe hiện tại của xe.</p>}
         {kind === 'vehicles' && Boolean(query.filters.beneficiary_store_id) && <p className="mg-composer-hint" style={{margin:'2px 0 8px'}}>Đang lọc theo nguồn khách của hợp đồng đang thuê. Xe lưu kho không thuộc nguồn khách nào.</p>}
         {kind==='vehicles'&&!loading&&!error&&missingOpenContractCount>0&&<div className="mg-billing-reminder" role="status"><p><TriangleAlert size={16} aria-hidden="true"/> <strong>{missingOpenContractCount} xe</strong> đang ở trạng thái Đang thuê nhưng không có hợp đồng mở. Kiểm tra và chuyển Lưu kho hoặc lập hợp đồng.</p>{query.filters.missing_contract!=='1'&&<button type="button" className="mg-button" onClick={()=>updateQuery({status:'using',filters:{...query.filters,missing_contract:'1'}})}>Lọc xe thiếu HĐ</button>}{query.filters.missing_contract==='1'&&<button type="button" className="mg-button" onClick={()=>{const next={...query.filters};delete next.missing_contract;updateQuery({filters:next});}}>Bỏ lọc thiếu HĐ</button>}{can('vehicles.write')&&missingContractVehicles[0]&&<button type="button" className="mg-button" onClick={()=>setVehicleAction({mode:'status',vehicle:missingContractVehicles[0]})}><RefreshCw size={16}/>Đổi trạng thái xe</button>}</div>}
