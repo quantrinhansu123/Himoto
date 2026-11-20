@@ -9,6 +9,8 @@ async function main(){
   const dto=load(path.resolve('shared/mobile-shift-reports')),{dataAccess}=load(path.join(root,'lib/server/access-context')),{withMobileData}=load(path.join(root,'lib/server/mobile-context')),{resolveMobileWrite}=load(path.join(root,'lib/server/mobile-write-recovery'));
   const media=load(path.join(root,'lib/server/shift-media-handler')),snap=load(path.join(root,'lib/server/shift-audits')),ownership=load(path.join(root,'lib/server/ownership-report'));
   const stock=load(path.join(root,'lib/server/shift-stock-photos')),ocr=load(path.join(root,'lib/server/photo-ocr'));
+  const stockWeb=load(path.join(root,'app/api/auth/shift-reports/[id]/stock-photos/route'));
+  const sessions=load(path.join(root,'lib/server/management-session')), originalSession=sessions.userFromSession;
   const originalSnapshot=snap.readShiftSnapshot,originalOwnership=ownership.readOwnershipReport,descriptors=Object.fromEntries(['query','connect'].map(k=>[k,Object.getOwnPropertyDescriptor(db.himotoPool,k)]));
   const originalOcr=ocr.extractPhoto;
   const actor={id:7,name:'KTNB QA',store_id:23,scope_all:false,access_role:'custom',role:'staff',permissions:['contracts.read','contracts.draft','shift.review']},checks=[];
@@ -123,11 +125,32 @@ async function main(){
     assert.equal(afterWebEdit.revision,3);assert.equal((await inspect()).captures.length,1);
     await assert.rejects(closeReport(3),error=>error.code==='SHIFT_STOCK_INCOMPLETE');
     assert.equal((await evidence(reportId,'pgd',3,randomUUID(),'DELETE',captured.capture.plate_photo_id)).response.status,409);
-    const second=await upload(3,randomUUID(),2);assert.equal(second.revision,4);
+    const webStockUrl=stockUrl.replace('/mobile/v1/','/auth/');
+    const webContext={params:Promise.resolve({id:String(reportId)})};
+    const makeWebUpload=(id,origin='https://qa.invalid')=>{
+      const request=requestPhoto(3,id,2);
+      const headers=new Headers(request.headers);
+      headers.set('origin',origin);
+      return new NextRequest(webStockUrl,{method:'PUT',headers,body:Buffer.from([255,216,255,9,255,216,255,2])});
+    };
+    sessions.userFromSession=async()=>null;
+    assert.equal((await stockWeb.PUT(makeWebUpload(randomUUID()),webContext)).status,401);
+    sessions.userFromSession=async()=>({...actor,permissions:['contracts.read']});
+    assert.equal((await stockWeb.PUT(makeWebUpload(randomUUID()),webContext)).status,403);
+    sessions.userFromSession=async()=>actor;
+    assert.equal((await stockWeb.PUT(makeWebUpload(randomUUID(),'https://other.invalid'),webContext)).status,403);
+    const webKey=randomUUID();
+    const webResponse=await stockWeb.PUT(makeWebUpload(webKey),webContext);
+    assert.equal(webResponse.status,200);
+    const {data:second}=await webResponse.json();assert.equal(second.revision,4);
+    assert.deepEqual(await upload(3,webKey,2),second);
+    assert.equal((await inspect()).captures.length,2);
     await query("UPDATE himoto.vehicles SET current_store_id=24 WHERE id=2");
     await assert.rejects(closeReport(4),error=>error.code==='SHIFT_STOCK_INCOMPLETE');
-    const removed=await stock.mobileShiftStockPhotos(new NextRequest(stockUrl,{method:'DELETE',headers:{
-      'x-shift-request-id':randomUUID(),'x-report-revision':'4','x-vehicle-id':'2'}}),actor,reportId);
+    const removal=await stockWeb.DELETE(new NextRequest(webStockUrl,{method:'DELETE',headers:{
+      'origin':'https://qa.invalid','x-shift-request-id':randomUUID(),'x-report-revision':'4','x-vehicle-id':'2'}}),webContext);
+    assert.equal(removal.status,200);
+    const {data:removed}=await removal.json();
     assert.equal(removed.revision,5);
     const closed=await closeReport(5);assert.equal(closed.receipt.revision,'6');
     const checked=await api.readMobileShift(actor,String(reportId));
@@ -136,8 +159,9 @@ async function main(){
     assert.equal((await query('SELECT count(*)::int AS n FROM himoto.management_shift_media WHERE report_id=$1',[reportId])).rows[0].n,2);
     await assert.rejects(upload(6,randomUUID(),1),error=>error.status===409);
     checks.push('Stock capture uses actual scoped inventory SQL, GPS and two-photo OCR inputs; rejects stale location, ambiguous/unmatched plates, duplicate photos and stale writes; web edits preserve evidence and web/app share final stock validation');
+    checks.push('Web stock writes enforce session, grants and same origin; web capture replays from mobile with the same receipt and web removal deletes the same capture pair');
     const out=process.argv.indexOf('--fixture-output');if(out>=0){const file=path.resolve(process.argv[out+1]);assert(file.startsWith(path.resolve('.backups')+path.sep)&&!fs.existsSync(file));const seeded=await save({payload:{...base,date:'2026-11-01'},status:'draft'});const record=await api.readMobileShift(actor,String(seeded.receipt.id));const options=await api.readMobileShiftOptions(actor);options.canReview=false;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify({fixtureOnly:true,source:'Actual shared SQL report domain with deterministic analytics source; no operational data or messaging',options,record,auditReport:confirmedReport,exported,snapshot:snapshot(),stock:{record:{...record,payload:currentPayload},inventory:initialStock}},null,2));}
     console.log(JSON.stringify({passed:checks.length,checks,operationalWrites:0,realMessagesSent:0,snapshotSource:'Deterministic QA adapter; real analytics/RLS/multi-session acceptance remains separate'},null,2));
-  }finally{snap.readShiftSnapshot=originalSnapshot;ownership.readOwnershipReport=originalOwnership;ocr.extractPhoto=originalOcr;for(const[k,d]of Object.entries(descriptors)){if(d)Object.defineProperty(db.himotoPool,k,d);else delete db.himotoPool[k];}await sql.close();}
+  }finally{snap.readShiftSnapshot=originalSnapshot;ownership.readOwnershipReport=originalOwnership;ocr.extractPhoto=originalOcr;sessions.userFromSession=originalSession;for(const[k,d]of Object.entries(descriptors)){if(d)Object.defineProperty(db.himotoPool,k,d);else delete db.himotoPool[k];}await sql.close();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

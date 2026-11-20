@@ -19,7 +19,8 @@ import {OwnershipReportFields} from './OwnershipReportFields';
 import {ShiftTelegramStatus} from './ShiftTelegramStatus';
 import {ShiftInventoryCheck} from './ShiftInventoryCheck';
 import { SHIFT_REPORT_TABS, SHIFT_REPORT_PROGRESS, SHIFT_REPORT_DESCRIPTION, matchesShiftReportProgress } from '../../../shared/shift-report-workflow';
-import {compareShiftStock, isShiftStockCheck, isShiftStockDay, type ShiftStockCapture, type ShiftStockCheck} from '../../../shared/shift-stock-check';
+import {isShiftStockDay, type ShiftStockCapture} from '../../../shared/shift-stock-check';
+import {ShiftStockPanel, ShiftStockProofs} from './ShiftStockPanel';
 
 const blank = (store = 0): ShiftInput => ({ store_id: store, date: vietnamDate(), staff: '', vehicles: 0, batteries: 0, charged: 0, rented_batteries: 0, transfers: 0, cash: 0, personal: 0, company: 0, electricity_off: false, notes: '', summary: emptyShiftSummary(), daily_vehicles: 0, monthly_vehicles: 0, other_vehicles: 0 });
 
@@ -46,48 +47,6 @@ const transferStatuses = {
   rejected: 'Đã từ chối',
   cancelled: 'Đã hủy',
 };
-
-function ShiftStockProofs({reportId,captures}: {reportId:number;captures:ShiftStockCapture[]}) {
-  if (!captures.length) return null;
-  return <ul className="shift-inventory-stock">{captures.map(entry=><li key={entry.vehicle.id}>
-    <strong>{entry.vehicle.license}</strong> · {entry.vehicle.name} · {entry.actor_name} · {new Date(entry.captured_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · Cách cơ sở {entry.distance_m} m
-    {' · '}<a href={`/api/auth/shift-reports/${reportId}/media/${entry.vehicle_photo_id}`} target="_blank" rel="noreferrer">Ảnh toàn xe</a>
-    {' · '}<a href={`/api/auth/shift-reports/${reportId}/media/${entry.plate_photo_id}`} target="_blank" rel="noreferrer">Ảnh biển số</a>
-  </li>)}</ul>;
-}
-
-function ShiftStockProgress({reportId, revision, captures}:{reportId:number;revision:number;captures:ShiftStockCapture[]}) {
-  const [check,setCheck] = useState<ShiftStockCheck|null>(null);
-  const [error,setError] = useState('');
-  const [loading,setLoading] = useState(true);
-  const [reload,setReload] = useState(0);
-  useEffect(()=>{
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    api<ShiftStockCheck>(`/api/auth/shift-reports/${reportId}/stock-photos`,{signal:controller.signal})
-      .then(value=>{
-        if (!isShiftStockCheck(value)) throw Error('Kết quả đối chiếu kho không hợp lệ.');
-        if (!controller.signal.aborted) setCheck(value);
-      })
-      .catch((cause:Error)=>{if(!controller.signal.aborted)setError(cause.message);})
-      .finally(()=>{if(!controller.signal.aborted)setLoading(false);});
-    return ()=>controller.abort();
-  },[reportId,revision,reload]);
-  const result = check ? compareShiftStock(check.expected,check.captures) : null;
-  return <section aria-label="Tiến độ kiểm kê xe">
-    <button type="button" className="mg-button" disabled={loading} onClick={()=>setReload(value=>value+1)}>Làm mới đối chiếu kho</button>
-    {loading && <p role="status">Đang đối chiếu danh sách Lưu kho…</p>}
-    {error && <p className="mg-field-error" role="alert">{error}</p>}
-    {check && result && <>
-      <p aria-live="polite">Đã khớp {check.expected.length-result.missing.length}/{check.expected.length} xe Lưu kho.</p>
-      {!check.gps_configured && <p className="mg-field-error">Cơ sở chưa cài tọa độ GPS trong mục Chấm công.</p>}
-      {!!result.missing.length && <p>Còn thiếu: {result.missing.map(vehicle=>vehicle.license || vehicle.name || `#${vehicle.id}`).join(', ')}</p>}
-      {!!result.unexpected.length && <p>Lệch kho: {result.unexpected.map(entry=>entry.vehicle.license).join(', ')}</p>}
-    </>}
-    <ShiftStockProofs reportId={reportId} captures={check?.captures ?? captures}/>
-  </section>;
-}
 
 function ShiftTransferList({store,date,autofilled}: {store:number;date:string;autofilled?:ShiftAutofillResult}) {
   const [loaded,setLoaded] = useState<ShiftAutofillResult>();
@@ -153,6 +112,14 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
   const pendingDelete=useRef<{file:ShiftMedia;key:string;revision:number}|null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [listError, setListError] = useState('');
   const lock = useRef(false);
+  const stockLock = useRef(false);
+  const stockPhotos = useRef(false);
+  const [stockBlocking,setStockBlocking] = useState(false);
+  const [stockHasPair,setStockHasPair] = useState(false);
+  const rememberStockPhotos = useCallback((value:boolean)=>{
+    stockPhotos.current=value;
+    setStockHasPair(value);
+  },[]);
   const pendingSave = useRef<SavePlan | null>(null);
   const [unconfirmed, setUnconfirmed] = useState(false);
   const [autofilled, setAutofilled] = useState<Partial<Record<ShiftAutofillSection, ShiftAutofillResult>>>({});
@@ -182,7 +149,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
   const dirty = useRef(false);
   useEffect(() => {
     const leave = (event: BeforeUnloadEvent) => {
-      if (dirty.current || lock.current) { event.preventDefault(); event.returnValue = ''; }
+      if (dirty.current || lock.current || stockLock.current || stockPhotos.current) { event.preventDefault(); event.returnValue = ''; }
     };
     const navigate = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -190,7 +157,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
       if (!link || link.hasAttribute('download') || (link.target && link.target !== '_self')) return;
       const url = new URL(link.href, window.location.href);
       if (!['http:','https:'].includes(url.protocol) || (url.origin === location.origin && url.pathname === location.pathname && url.search === location.search)) return;
-      if (lock.current || (dirty.current && !window.confirm('Báo cáo có dữ liệu hoặc ảnh chưa lưu. Rời trang và bỏ các thay đổi?'))) {
+      if (lock.current || stockLock.current || ((dirty.current||stockPhotos.current) && !window.confirm('Báo cáo có dữ liệu hoặc ảnh chưa lưu. Rời trang và bỏ các thay đổi?'))) {
         event.preventDefault(); event.stopImmediatePropagation();
       }
     };
@@ -199,7 +166,10 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
     return () => { window.removeEventListener('beforeunload',leave); document.removeEventListener('click',navigate,true); };
   }, []);
   function open(row?: ShiftReport) {
+    if (stockLock.current) return false;
+    if (stockHasPair && row?.id!==record?.id && !window.confirm('Bỏ ảnh đang chụp để mở báo cáo khác?')) return false;
     if (dirty.current && !window.confirm('Có thay đổi chưa lưu. Bỏ thay đổi để mở báo cáo khác?')) return false;
+    if (row?.id!==record?.id) rememberStockPhotos(false);
     dirty.current = false; setInput(row ? { ...row.payload, ...(row.status === 'draft' ? { rented_batteries: row.payload.rented_batteries ?? 0, daily_vehicles: row.payload.daily_vehicles ?? 0, monthly_vehicles: row.payload.monthly_vehicles ?? 0, other_vehicles: row.payload.other_vehicles ?? 0 } : {}), ...(row.status === 'draft' && !row.payload.summary ? { summary: emptyShiftSummary() } : {}) } : { ...blank(selectedStore === 'all' ? 0 : Number(selectedStore)), report_type: reportType, staff: accessUser?.name.trim() ?? '' });
     if(!row&&stores.find(s=>s.id===Number(selectedStore))?.kind==='lease_to_own')setInput(current=>({...current,ownership_report:blankOwnershipReport()}));
     autoStarted.current.clear();pendingDelete.current=null;setAuditTarget(row?.status==='submitted'?row:null);setAuditOpened(false);setWorkflow('pgd');
@@ -208,11 +178,19 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
     return true;
 
   }
+  function acceptStock(from:number,revision:number,captures:ShiftStockCapture[]) {
+    setRecord(current=>current?.id===record?.id && current?.revision===from
+      ? {...current,revision,stock_captures:captures} : current);
+    setRows(previous=>previous.map(row=>row.id===record?.id && row.revision===from
+      ? {...row,revision,stock_captures:captures,payload:{...row.payload,vehicles:captures.length}} : row));
+    setInput(current=>({...current,vehicles:captures.length}));
+    setRetry(value=>value+1);
+  }
   function update<K extends keyof ShiftInput>(key: K, value: ShiftInput[K]) { dirty.current = true; if(key==='store_id'||key==='date')autoStarted.current.clear();setInput(current => ({ ...current, [key]: value,
     ...((key==='store_id'||key==='date')?{summary:emptyShiftSummary(),ownership_report:current.ownership_report||key==='store_id'&&stores.find(s=>s.id===value)?.kind==='lease_to_own'?blankOwnershipReport():undefined}:{}),
   })); }
   async function autofill(section: ShiftAutofillSection,silent=false) {
-    if (lock.current || readonly || unconfirmed) return;
+    if (lock.current || stockLock.current || readonly || unconfirmed) return;
     if (!input.store_id || !input.date) { setTab('information'); setError('Chọn PGD và ngày báo cáo ở tab Thông tin trước khi tự điền.'); return; }
     const controller = new AbortController(); fillController.current = controller;
     const store = input.store_id, date = input.date;
@@ -267,7 +245,10 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
     </div>;
   }
   async function save(submit: boolean) {
-    if (lock.current) return;
+    if (lock.current || stockLock.current) return;
+    if (submit && stockHasPair) {
+      setTab('inventory');setInventoryTab('vehicles');setError('Lưu hoặc bỏ cặp ảnh đang chụp trước khi chốt báo cáo.');return;
+    }
     if(pendingDelete.current){await removeEvidence(pendingDelete.current.file);return;}
     setError('');
     if (!pendingSave.current) {
@@ -297,7 +278,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
       }
       if (plan.submit) {
         const completed = await api<{id:number;revision:number;vehicles?:number;ownership_report?:ShiftInput['ownership_report']}>('/api/auth/shift-reports', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-shift-request-id': plan.submitKey }, body: JSON.stringify({ id: plan.current!.id, revision: plan.current!.revision, payload: plan.input, status: 'submitted' }) });
-        if(completed.ownership_report)setInput(current=>({...current,ownership_report:completed.ownership_report}));
+        setInput(current=>({...current,ownership_report:completed.ownership_report??current.ownership_report,vehicles:completed.vehicles??current.vehicles}));
         plan.current = { ...plan.current!, ...completed, status: 'submitted' }; setRecord(plan.current);
         setAuditTarget({...plan.current,payload:{...plan.input,vehicles:completed.vehicles??plan.input.vehicles},store_name:stores.find(s=>s.id===plan.input.store_id)?.name||'PGD',created_by_name:'PGD',updated_at:new Date().toISOString()});
       }
@@ -313,7 +294,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
     finally { lock.current = false; setBusy(false); setRetry(n => n + 1); }
   }
   async function removeEvidence(file:ShiftMedia){
-    if(!record||lock.current)return;
+    if(!record||lock.current||stockLock.current)return;
     if(!pendingDelete.current&&!window.confirm('Xóa minh chứng kiểm kê này?'))return;
     pendingDelete.current??={file,key:crypto.randomUUID(),revision:record.revision};
     lock.current=true;setBusy(true);dirty.current=true;setError('');
@@ -340,10 +321,10 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
     return shiftExportRows(filterHistory(result));
   }
   return <section className="mg-page"><div className="mg-page-content shift-reports">
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">VẬN HÀNH PGD</div><h1>{title}</h1><p>{midShift ? 'Kiểm kê xe, pin và tiền tại thời điểm giữa ca.' : SHIFT_REPORT_DESCRIPTION}</p></div><div className="mg-heading-actions"><FilteredExcelButton disabled={loading || Boolean(listError)} filename={midShift ? "himoto-bao-cao-giua-ca" : "himoto-bao-cao-het-ca"} headers={SHIFT_EXPORT_HEADERS} getRows={exportHistory}/><button className="mg-button" disabled={busy || loading} onClick={() => setRetry(n => n+1)}><RefreshCw size={16}/>Làm mới</button>{writable && <button className="mg-button mg-button-primary" disabled={busy || unconfirmed || !stores.length} onClick={() => open()}><Plus size={16}/>Tạo báo cáo</button>}</div></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">VẬN HÀNH PGD</div><h1>{title}</h1><p>{midShift ? 'Kiểm kê xe, pin và tiền tại thời điểm giữa ca.' : SHIFT_REPORT_DESCRIPTION}</p></div><div className="mg-heading-actions"><FilteredExcelButton disabled={loading || Boolean(listError)} filename={midShift ? "himoto-bao-cao-giua-ca" : "himoto-bao-cao-het-ca"} headers={SHIFT_EXPORT_HEADERS} getRows={exportHistory}/><button className="mg-button" disabled={busy || loading} onClick={() => setRetry(n => n+1)}><RefreshCw size={16}/>Làm mới</button>{writable && <button className="mg-button mg-button-primary" disabled={busy || stockBlocking || unconfirmed || !stores.length} onClick={() => open()}><Plus size={16}/>Tạo báo cáo</button>}</div></div>
     {directoryError && <p role="alert">{directoryError}</p>}
     <div className="shift-view-navigation" aria-label="Danh sách và chi tiết báo cáo">
-      <button type="button" className={'mg-button'+(showList ? ' mg-button-primary' : '')} aria-pressed={showList} disabled={busy || unconfirmed} onClick={() => setShowList(true)}><ClipboardList size={16}/>Danh sách báo cáo{!loading && !listError ? ` (${rows.length})` : ''}</button>
+      <button type="button" className={'mg-button'+(showList ? ' mg-button-primary' : '')} aria-pressed={showList} disabled={busy || stockBlocking || unconfirmed} onClick={() => setShowList(true)}><ClipboardList size={16}/>Danh sách báo cáo{!loading && !listError ? ` (${rows.length})` : ''}</button>
       {editing && <button type="button" className={'mg-button'+(!showList ? ' mg-button-primary' : '')} aria-pressed={!showList} disabled={busy} onClick={() => setShowList(false)}>{record?.status === 'submitted' ? 'Chi tiết báo cáo' : 'Tiếp tục soạn báo cáo'}</button>}
     </div>
     {editing&&!showList&&auditTarget&&<div className="shift-workflow" role="group" aria-label="Bước báo cáo"><button type="button" className="mg-button" aria-pressed={workflow==='pgd'} onClick={()=>setWorkflow('pgd')}>1. PGD kiểm kê</button><button type="button" className="mg-button" aria-pressed={workflow==='audit'} onClick={()=>{setAuditOpened(true);setWorkflow('audit');}}>2. KTNB đối soát</button></div>}
@@ -362,11 +343,13 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
       requestAnimationFrame(() => field.focus());
     }} onSubmit={e => { e.preventDefault(); void save(false); }}>
       <div className="shift-form-title"><ClipboardList size={22}/><div><h2>BÁO CÁO KIỂM KÊ PGD{input.date ? ' - NGÀY '+input.date.split('-').reverse().join('/') : ''}</h2><p>{record?.status === 'submitted' ? 'Đã chốt · Chỉ xem' : stockPhotosRequired ? 'Bản nháp · Cần ảnh toàn xe và ảnh biển số để chốt' : 'Bản nháp · Ảnh đính kèm không bắt buộc'}</p></div></div>
-      <div className="shift-tabs" role="tablist" aria-label="Các phần báo cáo cuối ca">{REPORT_TABS.map(([key,label], index) => <button key={key} id={'shift-tab-'+key} type="button" role="tab" aria-selected={tab === key} aria-controls={'shift-panel-'+key} tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)} onKeyDown={event => {
+      <div className="shift-tabs" role="tablist" aria-label="Các phần báo cáo cuối ca">{REPORT_TABS.map(([key,label], index) => <button key={key} id={'shift-tab-'+key} type="button" role="tab" aria-selected={tab === key} aria-controls={'shift-panel-'+key} tabIndex={tab === key ? 0 : -1} disabled={stockBlocking && tab!==key} onClick={() => setTab(key)} onKeyDown={event => {
+        if (stockBlocking) return;
         const next = event.key === 'ArrowRight' ? (index+1)%REPORT_TABS.length : event.key === 'ArrowLeft' ? (index+REPORT_TABS.length-1)%REPORT_TABS.length : event.key === 'Home' ? 0 : event.key === 'End' ? REPORT_TABS.length-1 : -1;
         if (next >= 0) { event.preventDefault(); setTab(REPORT_TABS[next][0]); document.getElementById('shift-tab-'+REPORT_TABS[next][0])?.focus(); }
       }}>{label}</button>)}</div>
-      {tab === 'inventory' && <div className="shift-tabs shift-inventory-tabs" role="tablist" aria-label="Các mục kiểm kê">{INVENTORY_TABS.map(([key,label],index) => <button key={key} id={'shift-inventory-tab-'+key} type="button" role="tab" aria-selected={inventoryTab === key} aria-controls={'shift-inventory-panel-'+key} tabIndex={inventoryTab === key ? 0 : -1} onClick={() => setInventoryTab(key)} onKeyDown={event => {
+      {tab === 'inventory' && <div className="shift-tabs shift-inventory-tabs" role="tablist" aria-label="Các mục kiểm kê">{INVENTORY_TABS.map(([key,label],index) => <button key={key} id={'shift-inventory-tab-'+key} type="button" role="tab" aria-selected={inventoryTab === key} aria-controls={'shift-inventory-panel-'+key} tabIndex={inventoryTab === key ? 0 : -1} disabled={stockBlocking && inventoryTab!==key} onClick={() => setInventoryTab(key)} onKeyDown={event => {
+        if (stockBlocking) return;
         const next = event.key === 'ArrowRight' ? (index+1)%INVENTORY_TABS.length : event.key === 'ArrowLeft' ? (index+INVENTORY_TABS.length-1)%INVENTORY_TABS.length : event.key === 'Home' ? 0 : event.key === 'End' ? INVENTORY_TABS.length-1 : -1;
         if (next >= 0) { event.preventDefault(); setInventoryTab(INVENTORY_TABS[next][0]); document.getElementById('shift-inventory-tab-'+INVENTORY_TABS[next][0])?.focus(); }
       }}>{label}</button>)}</div>}
@@ -385,11 +368,17 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
         </div><div id="shift-panel-inventory" role="tabpanel" aria-labelledby="shift-tab-inventory" hidden={tab !== 'inventory'} tabIndex={0}>
         {error && tab === 'inventory' && <p className="mg-field-error" role="alert">{error}</p>}
         <div id="shift-inventory-panel-vehicles" role="tabpanel" aria-labelledby="shift-inventory-tab-vehicles" data-inventory-section="vehicles" hidden={inventoryTab !== 'vehicles'} tabIndex={0}><h3>Kiểm kê xe</h3>{renderAutofill('inventory')}
-        {(stockPhotosRequired || record?.stock_captures) && <details>
+        {(stockPhotosRequired || record?.stock_captures) && <details open>
           <summary>Kiểm kê xe bằng ảnh{record?.status==='submitted' ? ` · ${record.stock_captures?.length ?? 0} xe đã chụp` : ''}</summary>
-          {!readonly && <p>Lưu nháp, sau đó mở báo cáo trong app Himoto để chụp toàn xe và biển số tại cơ sở.</p>}
-          {record && (stockPhotosRequired && record.status === 'draft' && tab === 'inventory' && inventoryTab === 'vehicles'
-            ? <ShiftStockProgress key={record.id} reportId={record.id} revision={record.revision} captures={record.stock_captures ?? []}/>
+          {!readonly && !record && <div className="shift-stock-panel">
+            <p>Chọn PGD và lưu nháp để mở camera chụp xe tại cơ sở.</p>
+            <button type="submit" className="mg-button mg-button-primary"><Save size={16}/>Lưu nháp để bắt đầu chụp</button>
+          </div>}
+          {record && (stockPhotosRequired && record.status === 'draft'
+            ? <ShiftStockPanel key={record.id} reportId={record.id} revision={record.revision} captures={record.stock_captures ?? []}
+              writable={!readonly} active={!showList && workflow==='pgd' && tab==='inventory' && inventoryTab==='vehicles'}
+              blocked={busy||unconfirmed} onBlocking={value=>{stockLock.current=value;setStockBlocking(value);}}
+              onChanged={acceptStock} onHasPair={rememberStockPhotos}/>
             : <ShiftStockProofs reportId={record.id} captures={record.stock_captures ?? []}/>)}
         </details>}
         <div className="mg-form-grid shift-vehicle-grid">{numeric('daily_vehicles','Đang thuê ngày')}{numeric('monthly_vehicles','Đang thuê tháng')}
@@ -421,7 +410,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
         <div id="shift-panel-ownership" role="tabpanel" aria-labelledby="shift-tab-ownership" hidden={tab!=='ownership'} tabIndex={0}><h3>Báo cáo cuối ngày thuê sở hữu</h3>{input.ownership_report?<>{renderAutofill('ownership')}<OwnershipReportFields report={input.ownership_report} date={input.date} readonly={readonly} onChange={value=>update('ownership_report',value)}/></>:<p>Chọn mẫu Thuê sở hữu trong tab Thông tin để lập báo cáo theo mẫu và gửi Telegram khi chốt.</p>}</div>
       </fieldset>
       {record?.status==='submitted'&&<ShiftTelegramStatus id={record.id} canSend={writable}/>}
-      {!readonly && <div className="shift-actions">{unconfirmed ? <button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(false)}><RefreshCw size={16}/>{busy ? 'Đang xác nhận…' : 'Thử lại thao tác lưu'}</button> : <><button type="submit" className="mg-button" disabled={busy}><Save size={16}/>{busy ? 'Đang lưu…' : 'Lưu nháp'}</button><button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(true)}><CheckCircle2 size={16}/>Chốt báo cáo</button></>}</div>}
+      {!readonly && <div className="shift-actions">{unconfirmed ? <button type="button" className="mg-button mg-button-primary" disabled={busy} onClick={() => void save(false)}><RefreshCw size={16}/>{busy ? 'Đang xác nhận…' : 'Thử lại thao tác lưu'}</button> : <><button type="submit" className="mg-button" disabled={busy||stockBlocking}><Save size={16}/>{busy ? 'Đang lưu…' : 'Lưu nháp'}</button><button type="button" className="mg-button mg-button-primary" disabled={busy||stockBlocking} onClick={() => void save(true)}><CheckCircle2 size={16}/>Chốt báo cáo</button></>}</div>}
     </form>}
     {auditTarget&&auditOpened&&<div hidden={showList||workflow!=='audit'}><ShiftAuditPanel key={auditTarget.id} report={auditTarget} onDirty={value=>{dirty.current=value;}} onBusy={value=>{lock.current=value;setBusy(value);}} onSaved={()=>setRetry(n=>n+1)}/></div>}
     {showList&&<div className="mg-data-panel shift-history"><h2>Báo cáo theo cơ sở</h2><p>100 báo cáo gần nhất trong phạm vi PGD đang chọn. Chọn ngày để xem báo cáo cũ. Mỗi PGD có một báo cáo mỗi ngày cho loại báo cáo này.</p>

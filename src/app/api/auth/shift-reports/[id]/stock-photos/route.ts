@@ -1,12 +1,15 @@
 import {NextRequest, NextResponse} from 'next/server';
-import {withAccessRequest} from '@/lib/server/access-request';
+import {withAccessRequest, withAccessUser} from '@/lib/server/access-request';
 import {himotoPool} from '@/lib/server/himoto-database';
-import {readShiftStockCheck} from '@/lib/server/shift-stock-photos';
+import {readShiftStockCheck, mobileShiftStockPhotos as writeShiftStockPhotos} from '@/lib/server/shift-stock-photos';
 import {ShiftRequestError} from '@/lib/server/shift-report-requests';
+import {MobileError} from '@/lib/server/mobile-session';
 
 export const runtime = 'nodejs';
+export const maxDuration = 90;
+type Context = {params:Promise<{id:string}>};
 
-export const GET = withAccessRequest(async (request:NextRequest, {params}:{params:Promise<{id:string}>}) => {
+export const GET = withAccessRequest(async (request:NextRequest, {params}:Context) => {
   const rawId = (await params).id;
   const id = Number(rawId);
   if (!/^[1-9]\d*$/.test(rawId) || !Number.isSafeInteger(id) || request.nextUrl.search) {
@@ -26,3 +29,22 @@ export const GET = withAccessRequest(async (request:NextRequest, {params}:{param
     client.release();
   }
 });
+
+const write = withAccessUser<Context>(async (request, {params}, user) => {
+  const rawId = (await params).id;
+  if (!/^[1-9]\d{0,14}$/.test(rawId)) {
+    return NextResponse.json({message:'Báo cáo kiểm kê không hợp lệ.'},{status:400});
+  }
+  try {
+    const data = await writeShiftStockPhotos(request,user,Number(rawId));
+    return NextResponse.json({data},{headers:{'Cache-Control':'private, no-store'}});
+  } catch (error) {
+    if (error instanceof MobileError) {
+      return NextResponse.json({message:error.message,code:error.code},{status:error.status});
+    }
+    throw error;
+  }
+});
+
+export const PUT = write;
+export const DELETE = write;

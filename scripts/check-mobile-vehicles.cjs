@@ -17,8 +17,13 @@ async function main() {
   const actor = { id: 7, name: 'QA actor', access_role: 'custom', role: 'staff', store_id: 23, scope_all: false, permissions: ['vehicles.write'] };
   const input = { name: 'Xe QA', license: ' qa-0311 ', brand: 'honda', type: 'xega', year: 2026, store_id: 23, status: 'ready', color: 'Đỏ', chassis: 'QA0001', engine: 'QA0002', odometer: 100, note: 'Nhập xe QA' };
   const descriptors = ['connect', 'query'].map(key => [key, Object.getOwnPropertyDescriptor(db.himotoPool, key)]);
+  const ownerQueryDescriptor = Object.getOwnPropertyDescriptor(db.ownerDatabase, 'query');
   const query = async (text, values) => { const r = await sql.query(text, values); return { rows: r.rows, rowCount: r.rows.length || r.affectedRows || 0 }; };
   Object.defineProperty(db.himotoPool, 'query', { configurable: true, value: query });
+  Object.defineProperty(db.ownerDatabase, 'query', { configurable: true, value: (text, values) => {
+    assert.equal(text, 'SELECT 1 FROM himoto.stores WHERE id=$1');
+    return query(text, values);
+  } });
   Object.defineProperty(db.himotoPool, 'connect', { configurable: true, value: async () => {
     const context = dataAccess.getStore(); assert.equal(context.id, 7); assert.equal(context.store_id, 23); assert.equal(context.scope_all, false);
     assert(['', 'fleet_read', 'transfer'].includes(context.operation)); return { query, release() {} };
@@ -37,7 +42,7 @@ async function main() {
       CREATE TABLE himoto.vehicle_transfers(id bigint PRIMARY KEY,transfer_code text,reason text);
       CREATE TABLE himoto.vehicle_location_events(id bigserial PRIMARY KEY,vehicle_id bigint,from_store_id bigint,to_store_id bigint,event_type text,ref_type text,ref_id bigint,odometer bigint,notes text,customer_name text,customer_phone text,customer_id_card text,created_by bigint,created_at timestamp,updated_at timestamp,audit_snapshot jsonb);
       CREATE TABLE himoto.management_mobile_requests(user_id bigint,request_id uuid,operation varchar(64),fingerprint char(64),resource_id bigint,resource_revision varchar(32),PRIMARY KEY(user_id,request_id));
-      CREATE TABLE himoto.management_record_photos(entity_type text,entity_id bigint,slot text,mime_type text,data bytea,updated_by bigint,updated_at timestamptz DEFAULT now(),cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,object_bucket text,object_key text,object_etag text,PRIMARY KEY(entity_type,entity_id,slot));
+      CREATE TABLE himoto.management_record_photos(entity_type text,entity_id bigint,slot text,mime_type text,data bytea,updated_by bigint,updated_at timestamptz DEFAULT now(),cloudinary_public_id text,cloudinary_cloud_name text,cloudinary_version bigint,object_bucket text,object_key text,object_etag text,storage_sha256 text,storage_bytes bigint,PRIMARY KEY(entity_type,entity_id,slot));
       CREATE TABLE himoto.management_mobile_record_media(user_id bigint,request_id uuid,entity_type text,entity_id bigint,proof jsonb,PRIMARY KEY(user_id,request_id));
       CREATE TABLE himoto.management_mobile_media_deletions(user_id bigint,request_id uuid,entity_type text,entity_id bigint,proof jsonb,PRIMARY KEY(user_id,request_id));`);
     const key = randomUUID(), created = await server.saveMobileVehicle(actor, null, request('POST', key, input));
@@ -56,12 +61,12 @@ async function main() {
     assert.equal(audit.actor_name, 'QA actor'); assert(audit.changes.some(row => row.field === 'color' && row.from === 'Đỏ' && row.to === 'Đen'));
     const oldProof = await server.readMobileVehicleResult(actor, key); assert.equal(oldProof.receipt.revision, created.revision); assert.equal(oldProof.current.revision, updated.revision);
     await sql.exec("INSERT INTO himoto.orders(id,order_status,store_id) VALUES(100,'renting',23);INSERT INTO himoto.order_vehicle_details(id,vehicle_id,order_id) VALUES(200,1,100);");
-    await assert.rejects(server.saveMobileVehicle(actor, '1', request('PATCH', randomUUID(), { ...input, status: 'repairing', revision: updated.revision })), e => /hợp đồng mở/.test(e.message));
+    await assert.rejects(server.saveMobileVehicle(actor, '1', request('PATCH', randomUUID(), { ...input, store_id: 24, revision: updated.revision })), e => /hợp đồng mở/.test(e.message));
     assert((await server.readMobileVehicleProfile(actor, '1')).hasOpenContract);
     await sql.exec("UPDATE himoto.order_vehicle_details SET completed_at=now();UPDATE himoto.vehicles SET status='in_transit' WHERE id=1;");
     const transit = await server.readMobileVehicleProfile(actor, '1');
     await assert.rejects(server.saveMobileVehicle(actor, '1', request('PATCH', randomUUID(), { ...input, status: 'ready', revision: transit.revision })), e => e.status === 409);
-    checks.push('Update preserves ownership and audited before/after values; immutable create receipt survives later edits; open-contract and in-transit status guards match web');
+    checks.push('Update preserves ownership and audited before/after values; immutable create receipt survives later edits; an open contract blocks moving stock and in-transit status cannot be bypassed');
     const history = await server.readMobileVehicleHistory(actor, '1', new URLSearchParams('action=edit'));
     assert(dto.isVehicleHistory(history)); assert.equal(history.rows.length, 1); assert(history.rows[0].changes.length >= 2);
     await sql.exec("INSERT INTO himoto.vehicle_location_events(vehicle_id,from_store_id,to_store_id,event_type,created_by,created_at,notes,audit_snapshot) VALUES(1,23,24,'manual_transfer',7,now() AT TIME ZONE 'Asia/Ho_Chi_Minh','QA transfer','{\"version\":1,\"actor_name\":\"Historical QA actor\",\"vehicle_name\":\"Historical QA vehicle\",\"license\":\"OLD-QA\",\"from_store_name\":\"Old store A\",\"to_store_name\":\"Old store B\",\"changes\":[]}');");
@@ -126,6 +131,10 @@ async function main() {
     await assert.rejects(()=>server.readMobileVehicleContracts(contractActor,'1',new URLSearchParams('page=1&page=2')),e=>e.status===400);
     checks.push('Vehicle contracts use the same open-line statuses as web; completed lines excluded, deposit retained and contracts.read/filter guards applied');
     console.log(JSON.stringify({ passed: checks.length, checks, operationalWrites: 0, externalNetworkAllowed: false, database: 'isolated PGlite; deployed RLS/multiple sessions/native camera are separate' }, null, 2));
-  } finally { for (const [name, descriptor] of descriptors) Object.defineProperty(db.himotoPool, name, descriptor); await sql.close(); }
+  } finally {
+    for (const [name, descriptor] of descriptors) Object.defineProperty(db.himotoPool, name, descriptor);
+    Object.defineProperty(db.ownerDatabase, 'query', ownerQueryDescriptor);
+    await sql.close();
+  }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
