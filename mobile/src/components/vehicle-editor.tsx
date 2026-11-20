@@ -8,17 +8,13 @@ import type { MobileVehicleInput, MobileVehicleOptions, MobileVehicleProfile } f
 import { useSession } from "@/providers/session";
 import { useVehicleProfileWrite } from "@/hooks/use-vehicle-profile-write";
 import { money, useTheme } from "@/theme";
+import { VEHICLE_PROFILE_FIELDS } from '../../../shared/vehicle-profile-fields';
 import { Button, Card, InlineError, StateView } from "./ui";
 import { ChoiceField, FormField } from "./form-fields";
 import { ConfirmEdit } from "./editor-sheet";
 import { VehicleRegistrationOcr } from "./vehicle-registration-ocr";
 type Form = { [K in keyof Omit<MobileVehicleInput, "revision">]-?: string };
-const fields: { key: keyof Form; label: string; max: number; numeric?: boolean; required?: boolean }[] = [
-  { key: "name", label: "Tên / dòng xe", max: 255, required: true }, { key: "license", label: "Biển số", max: 25, required: true },
-  { key: "brand", label: "Hãng xe", max: 255, required: true }, { key: "color", label: "Màu sắc", max: 255 },
-  { key: "year", label: "Năm sản xuất", max: 4, required: true, numeric: true }, { key: "odometer", label: "Số km", max: 15, numeric: true },
-  { key: "chassis", label: "Số khung", max: 255 }, { key: "engine", label: "Số máy", max: 255 },
-];
+const fields = VEHICLE_PROFILE_FIELDS;
 function initialForm(profile: MobileVehicleProfile | null, store: string, options: MobileVehicleOptions): Form {
   const row = profile?.values;
   return { name: row?.name || "", license: row?.license || "", brand: row?.brand || "honda", type: row?.type || options.types[0].value,
@@ -57,6 +53,15 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
       ...(!profile || profile.values.cost_price !== undefined || cost_price !== initial.cost_price ? {cost_price:cost_price === '' ? null : Number(cost_price)} : {}),
       ...(profile ? { revision: profile.revision } : {}) };
   }
+  function renderField(field: typeof fields[number]) {
+    const {key,label,max} = field, amount = key === 'daily_price' || key === 'cost_price';
+    return <FormField key={key} label={label} value={form[key]}
+      onChangeText={value => change(key, amount ? value.replace(/\D/g,'') : value)} editable={!locked}
+      maxLength={max} keyboardType={'numeric' in field ? 'number-pad' : 'default'}
+      autoCapitalize={key === 'license' ? 'characters' : 'none'} error={errors[key]}
+      hint={amount && form[key] ? money(Number(form[key])) : undefined}
+      inputRef={value => { inputs.current[key] = value; }} />;
+  }
   return <><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom, gap: 18, width: "100%", maxWidth: 760, alignSelf: "center" }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{profile ? `Sửa xe ${profile.values.license}` : "Thêm xe"}</Text>
       {Object.keys(errors).length > 0 && <InlineError message="Kiểm tra các trường được đánh dấu trước khi lưu xe." />}
@@ -66,7 +71,7 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
       <VehicleRegistrationOcr onBusyChange={setPhotosBusy} vehicleId={profile?.id} values={{ license: form.license, chassis: form.chassis, engine: form.engine, color: form.color, year: form.year }} disabled={write.busy||write.pending||write.checking} onApply={values => { setForm(current => ({ ...current, ...values })); setErrors({}); }} />
       <Card style={{ gap: 16 }}>
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>Thông tin xe</Text>
-        {fields.map(field => <FormField key={field.key} label={field.label} value={form[field.key]} onChangeText={value => change(field.key, value)} editable={!locked} maxLength={field.max} keyboardType={field.numeric ? "number-pad" : "default"} autoCapitalize={field.key === "license" ? "characters" : "none"} error={errors[field.key]} inputRef={value => { inputs.current[field.key] = value; }} />)}
+        {fields.slice(0,4).map(renderField)}
         <ChoiceField label="Loại xe" value={form.type} choices={options.types} onChange={value => change("type", value)} disabled={locked} error={errors.type} />
       </Card>
       <Card style={{ gap: 16 }}>
@@ -77,11 +82,10 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
         <Text style={{ color: theme.muted, lineHeight: 23 }}>{profile?.inTransit ? "Xe đang chờ luân chuyển. Dùng xác nhận nhận xe ở cơ sở đích để cập nhật kho và trạng thái." : "Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ. Xe còn hợp đồng mở giữ nguyên cơ sở hiện tại."}</Text>
       </Card>
       <Card style={{gap:16}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Giá trị và giá thuê</Text>
-        {([['cost_price','Giá trị / giá mua xe'],['daily_price','Giá thuê xe']] as const).map(([key,label])=><FormField key={key} label={label} value={form[key]} onChangeText={value=>change(key,value)} editable={!locked} keyboardType="number-pad" maxLength={16} error={errors[key]} hint={form[key] && /^\d+$/.test(form[key]) ? money(Number(form[key])) : 'Để trống khi chưa ghi nhận giá.'} />)}
+        {fields.slice(4).map(renderField)}
       </Card>
-      <FormField label="Ghi chú thay đổi xe" value={form.note} onChangeText={value => change("note", value)} multiline maxLength={500} editable={!locked} hint="Thay đổi và ghi chú được lưu vào lịch sử cùng người thực hiện." />
-      <Button label={profile ? "Rà soát và lưu xe" : "Rà soát và thêm xe"} loading={write.busy || write.checking} disabled={write.pending} onPress={validate} />
+      <FormField label="Ghi chú" value={form.note} onChangeText={value => change("note", value)} multiline maxLength={500} editable={!locked} hint="Thay đổi và ghi chú được lưu vào lịch sử cùng người thực hiện." />
+      <Button label={profile ? "Lưu xe" : "Thêm xe"} loading={write.busy || write.checking} disabled={locked} onPress={validate} />
     </KeyboardFormScrollView>
     {confirm && <ConfirmEdit title={profile ? "Lưu thay đổi xe?" : "Thêm xe vào kho?"} message={`${form.name}\n${form.license.trim().toUpperCase()} · ${form.year}\n${stores.find(row => row.value === form.store_id)?.label}\n${options.statuses.find(row => row.value === form.status)?.label}\nLưu hồ sơ xe và ghi nhận thay đổi vào lịch sử.`} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); void write.save(input()); }} />}
     {write.exit && <ConfirmEdit title="Rời biểu mẫu xe?" message="Thông tin chưa gửi trong biểu mẫu sẽ mất. Yêu cầu đã gửi vẫn giữ mã để đối chiếu trong Tài khoản." confirmLabel="Rời biểu mẫu" busy={write.busy} onCancel={write.cancelExit} onConfirm={write.leave} />}

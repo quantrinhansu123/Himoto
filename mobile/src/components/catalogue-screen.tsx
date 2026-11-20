@@ -392,10 +392,6 @@ export function CatalogueScreen({
       actions.push({ label: "Nhắc nợ hợp đồng", onPress: () => router.push("/debt-reminders") });
   }
   if (kind === "vehicles") {
-    actions.push(
-      { label: "Lịch sử điều chuyển", onPress: () => router.push("/vehicle-transfers") },
-      { label: "Kho xe toàn hệ thống", onPress: () => router.push("/fleet-inventory") },
-    );
     if (session?.user.permissions.includes("settings.write"))
       actions.push({ label: "Nhập và đồng bộ Excel xe", onPress: () => router.push("/vehicle-import") });
   }
@@ -479,8 +475,17 @@ export function CatalogueScreen({
         </View>
       )}
       {kind === 'vehicles' && <Text style={{ color: theme.muted, fontSize: 13 }}>Xe đang quản lý không gồm xe đã bán. Chọn “Đã bán” để tra cứu lịch sử.</Text>}
+      {kind === 'vehicles' && <>
+        <Button secondary label="Kho xe toàn hệ thống" onPress={()=>router.push('/fleet-inventory')} />
+        <View style={{flexDirection:'row',gap:10}}>
+          <View style={{flex:1}}><Button secondary label="Lịch sử luân chuyển" onPress={()=>router.push('/vehicle-transfers')} /></View>
+          {session?.user.permissions.includes('vehicles.transfer') && <View style={{flex:1}}>
+            <Button secondary label="Chuyển xe" onPress={()=>router.push({pathname:'/fleet-inventory',params:{purpose:'transfer',store}})} />
+          </View>}
+        </View>
+      </>}
       {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
-        <Button label="+ Thêm xe mới" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />
+        <Button label="+ Thêm xe" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />
       )}
       {kind === "customers" && session?.user.permissions.includes("customers.write") && (
         <Button label="+ Thêm khách hàng" onPress={() => router.push("/customer/new")} />

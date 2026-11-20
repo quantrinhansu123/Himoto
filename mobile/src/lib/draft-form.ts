@@ -253,6 +253,7 @@ export function draftErrors(input: MobileDraftInput): DraftErrors {
 }
 export function errorDraftStep(errors: DraftErrors) {
   const key = Object.keys(errors)[0] || "";
+  if (key === 'vehicle_store_id' || key === 'staff_id') return 1;
   return /^vehicle_|^vehicles/.test(key)
     ? 2
     : key === "authorization_date"

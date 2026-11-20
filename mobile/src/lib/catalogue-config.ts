@@ -15,7 +15,7 @@ export const catalogueConfig: Record<
   vehicles: {
     title: "Danh sách xe",
     noun: "xe",
-    placeholder: "Tìm biển số, tên xe, nhãn hiệu",
+    placeholder: "Tìm mã xe, tên xe, biển số hoặc tên khách",
     quickStatuses: [
       "",
       "ready",

@@ -7,6 +7,7 @@ import type { CashbookAccount } from '@/lib/management/cashbook-repository';
 import { AccountDialogMode, CashbookAccountDialog } from './CashbookAccountDialog';
 import { useManagement } from './ManagementProvider';
 import { RowActionsMenu } from './RowActionsMenu';
+import {CASHBOOK_ACCOUNT_EXPORT_HEADERS,cashbookAccountExportRow} from '../../../shared/mobile-cashbook';
 
 const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)} ₫`;
 const typeLabel = (account: CashbookAccount) => account.kind === 'cash' ? 'Tiền mặt' : account.owner_type === 'company' ? 'TK công ty' : 'Ngân hàng';
@@ -25,7 +26,11 @@ export function CashbookAccounts({ accounts:allAccounts, loading, error, onRetry
       <div><h2 id="cashbook-accounts-title">Danh sách TK<span className="mg-title-count">{loading || error ? '—' : accounts.length}</span></h2><p>Số dư = số dư đầu kỳ + tổng thu − tổng chi của từng tài khoản.</p></div>
       <span className="mg-cashbook-panel-description">Tính trên toàn bộ phiếu, không theo bộ lọc ngày</span>
       <label className="mg-field"><span className="mg-sr-only">Trạng thái tài khoản</span><select aria-label="Trạng thái tài khoản" value={status} onChange={event=>setStatus(event.target.value)}><option value="active">Đang sử dụng</option><option value="inactive">Ngừng sử dụng</option><option value="all">Tất cả tài khoản</option></select></label>
-      <FilteredExcelButton filename="himoto-tai-khoan-so-quy" disabled={loading || Boolean(error) || !accounts.length} headers={['Loại','Tài khoản','Cơ sở','Số dư đầu kỳ','Tổng thu','Tổng chi','Số dư','Trạng thái']} getRows={()=>accounts.map(a=>[typeLabel(a),a.label,a.store_name || (a.owner_type === 'company' ? 'Toàn công ty' : ''),a.opening_balance,a.income,a.expense,a.balance,a.status])}/>
+      <FilteredExcelButton filename="himoto-tai-khoan-so-quy" disabled={loading || Boolean(error) || !accounts.length}
+        headers={CASHBOOK_ACCOUNT_EXPORT_HEADERS} getRows={()=>accounts.map(a=>cashbookAccountExportRow({
+          kind:a.kind,ownerType:a.owner_type,label:a.label,storeName:a.store_name??'',opening:a.opening_balance,
+          income:a.income,expense:a.expense,balance:a.balance,status:a.status,
+        }))}/>
       {canManage&&<button type="button" className="mg-button mg-button-primary mg-cashbook-account-add" onClick={() => setCreating(true)}><Plus size={16} />Thêm tài khoản</button>}
     </div>
     <div className="mg-mobile-records" aria-busy={loading}>

@@ -51,7 +51,9 @@ import { ContractTypeManager } from "./contract-type-manager";
 import { ChoiceField, FormField, KeyboardScrollContext } from "./form-fields";
 import { DateField } from "./date-field";
 import { RentalDateTime } from "./rental-date-time";
-import { ConfirmEdit } from "./editor-sheet";
+import { ConfirmEdit, EditorSheet } from "./editor-sheet";
+import { PrintPaper } from './print-paper';
+import { canFinalizeRentalContract, requiresOwnershipApproval } from '../../../shared/contract-approval';
 import { DraftCustomerPicker, DraftVehiclePicker } from "./draft-pickers";
 import { CustomerCreateSheet } from "./customer-editor";
 import {useDraftWorkLifecycle} from '@/hooks/use-draft-work-lifecycle';
@@ -68,6 +70,7 @@ import {
   DraftRequirements,
   DraftParty,
   DraftPeople,
+  DraftRepresentative,
   DraftSection,
   DraftVehicleLines,
 } from "./draft-document-fields";
@@ -164,6 +167,11 @@ function DraftForm({
     [step, setStep] = useState(work?.initialStep??0),
     [errors, setErrors] = useState<DraftErrors>({});
   const [typeManager,setTypeManager]=useState(false);
+  const [lookup,setLookup]=useState(''),[submittedLookup,setSubmittedLookup]=useState('');
+  const [printHtml,setPrintHtml]=useState(''),[previewBusy,setPreviewBusy]=useState(false);
+  const previewRequest=useRef<AbortController|null>(null);
+  const nextAction=useRef<'issue'|'approve'|null>(null);
+  useEffect(()=>()=>previewRequest.current?.abort(),[]);
   const [customerPicker, setCustomerPicker] = useState(false),
     [customerCreate, setCustomerCreate] = useState(false),
     [vehiclePicker, setVehiclePicker] = useState(false),
@@ -259,12 +267,27 @@ function DraftForm({
     onReset: () => reset(newDraftInput(options)),
     onError: reveal,
     onCommitted:result=>{if(photos.getPhotos().some(row=>row.savedTo!==result.id)){setPhotoStage(true);return true;}if(inputRef.current.draft.customer_id&&!work?.getHead()?.work.attempts.some(a=>a.kind==='copy'&&a.state==='committed'&&a.acknowledged)){setCopyStage(true);return true;}return false;},
+    onOpen:result=>{
+      const action=nextAction.current;
+      if(!action)return false;
+      router.replace({pathname:action==='approve'?'/contract-approval/[id]':'/contract/[id]',params:{id:String(result.id)}});
+      return true;
+    },
   });
   const disabled = write.busy || !!write.receipt || !!pendingCustomer || customerCreate || localSave.scopeChanged || localSave.waiting;
+  const canReadCustomers=!!session?.user.permissions.includes('customers.read');
+  const canIssue=canFinalizeRentalContract(session?{access_role:session.user.role,permissions:session.user.permissions}:null,input.rental_type);
+  const needsApproval=requiresOwnershipApproval(input.rental_type);
+  const exactCustomer=useQuery({
+    queryKey:['draft-inline-customer',api?.origin,session?.user.id,session?.user.storeId,submittedLookup],
+    queryFn:({signal})=>api!.draftCustomer({query:submittedLookup},signal),
+    enabled:!!api&&canReadCustomers&&step===1&&!!submittedLookup,
+    retry:false,gcTime:0,staleTime:0,
+  });
   const staff = useQuery({
     queryKey: ["draft-staff", session?.user.id],
     queryFn: ({ signal }) => api!.draftStaff(signal),
-    enabled: !!api && step === 0,
+    enabled: !!api && (step === 0 || step === 1),
     staleTime: 60000,
     gcTime: 60000,
   });
@@ -311,7 +334,7 @@ function DraftForm({
       `Bước ${index + 1}: ${draftSteps[index]}`,
     );
   }
-  function save() {
+  function save(action: 'issue'|'approve'|null = null) {
     if(photos.picking||photos.reading)return;
     if(photos.getPhotos().some(p=>p.slot.startsWith('scan_plate')||p.slot.startsWith('plate-')&&!d.vehicles.some(v=>p.slot===`plate-${v.id}`||p.slot.startsWith(`plate-${v.id}-extra-`)))){
       setLocalError('Có ảnh biển số chưa gắn đúng xe đang chọn. Rà soát, gắn xe hoặc bỏ ảnh này trước khi lưu nháp.');setStep(2);return;
@@ -322,7 +345,28 @@ function DraftForm({
       reveal(fields);
       return;
     }
+    if(action && !d.customer_id){reveal({id_card:'Tra cứu hoặc tạo hồ sơ khách trước khi hoàn tất.'});return;}
+    nextAction.current=action;
     void photos.ensurePersistent().then(()=>write.submit()).catch(cause=>setLocalError((cause as Error).message));
+  }
+  async function previewPrint() {
+    if(!api||previewRequest.current)return;
+    const controller=new AbortController();
+    previewRequest.current=controller;
+    setPreviewBusy(true);
+    setLocalError('');
+    Keyboard.dismiss();
+    try {
+      const preview=await api.draftPrintPreview(inputRef.current,controller.signal);
+      if(!controller.signal.aborted)setPrintHtml(preview.html);
+    } catch(cause) {
+      if(controller.signal.aborted)return;
+      if(cause instanceof ApiError&&cause.fields)reveal(cause.fields);
+      setLocalError((cause as Error).message);
+    } finally {
+      previewRequest.current=null;
+      if(!controller.signal.aborted)setPreviewBusy(false);
+    }
   }
   function check() {
     Keyboard.dismiss();
@@ -620,7 +664,7 @@ function DraftForm({
                 />
                 {session?.user.permissions.includes("settings.write")&&session.user.permissions.includes("finance.write")&&<Button secondary label="Quản lý loại hợp đồng ngay khi soạn" disabled={disabled} onPress={()=>setTypeManager(true)} />}
                 <ChoiceField
-                  label="Cơ sở ghi nhận hợp đồng"
+                  label="Liên kết nguồn khách"
                   value={d.store_id}
                   choices={options.stores.map((row) => ({
                     value: String(row.id),
@@ -628,18 +672,8 @@ function DraftForm({
                   }))}
                   disabled={disabled || !session?.user.allStores}
                   error={errors.store_id}
-                  onChange={(value) => set("store_id", value)}
-                  searchable
-                />
-                <ChoiceField
-                  label="Cơ sở xe / nhân sự"
-                  value={d.vehicle_store_id || d.store_id}
-                  choices={options.vehicleStores.map((row) => ({
-                    value: String(row.id),
-                    label: row.name,
-                  }))}
-                  disabled={disabled}
-                  onChange={(value) => set("vehicle_store_id", value)}
+                  onChange={(value) => change({...input,draft:{...d,store_id:value,
+                    customer_source_url:options.stores.find(row=>String(row.id)===value)?.name??''}})}
                   searchable
                 />
                 <FormField
@@ -670,6 +704,7 @@ function DraftForm({
                 disabled={disabled}
                 staff={staff.data?.rows || []}
                 stores={options.vehicleStores}
+                representative={false}
               />
               <DraftRequirements {...props} />
               <DraftSection title="Ngày và thông tin bổ sung">
@@ -730,7 +765,30 @@ function DraftForm({
           )}
           {step === 1 && (
             <>
-              {session?.user.permissions.includes("customers.read") && (
+              <DraftSection title="Thông tin khách hàng (Bên B)">
+                <ChoiceField label="Cửa hàng xe" value={d.vehicle_store_id || d.store_id}
+                  choices={options.vehicleStores.map(row=>({value:String(row.id),label:row.name}))}
+                  disabled={disabled} error={errors.vehicle_store_id} searchable onChange={value=>set('vehicle_store_id',value)} />
+                <DraftRepresentative input={input} change={change} disabled={disabled}
+                  staff={staff.data?.rows??[]} error={errors.staff_id} />
+                {staff.isError&&<Button secondary label="Tải lại gợi ý nhân sự" onPress={()=>{void staff.refetch();}} />}
+              </DraftSection>
+              {canReadCustomers && <DraftSection title="Tra cứu khách hàng">
+                <FormField label="Tra cứu theo CCCD / hộ chiếu / SĐT / liên hệ"
+                  value={lookup} editable={!disabled} maxLength={100} autoCapitalize="none" returnKeyType="search"
+                  onChangeText={value=>{setLookup(value);setSubmittedLookup('');}}
+                  onSubmitEditing={()=>{Keyboard.dismiss();setSubmittedLookup(lookup.trim());}} />
+                <Button secondary label="Tra cứu" loading={exactCustomer.isFetching} disabled={disabled||!lookup.trim()}
+                  onPress={()=>{Keyboard.dismiss();const value=lookup.trim();if(value===submittedLookup)void exactCustomer.refetch();else setSubmittedLookup(value);}} />
+                {!!submittedLookup&&exactCustomer.isError&&<InlineError message={exactCustomer.error.message} />}
+                {!!submittedLookup&&exactCustomer.data?.rows.length===0&&<Text accessibilityLiveRegion="polite" style={{color:theme.muted}}>
+                  {session?.user.permissions.includes('customers.write') ? 'Chưa tìm thấy hồ sơ. Kiểm tra thông tin hoặc bấm Thêm mới khách hàng.' : 'Chưa tìm thấy hồ sơ. Kiểm tra lại thông tin tra cứu.'}
+                </Text>}
+                {!!submittedLookup&&exactCustomer.data?.rows.map(customer=><Button key={customer.id} secondary
+                  label={`${customer.details.name} · ${customer.details.phone || customer.details.id_card || customer.id}`}
+                  disabled={disabled} onPress={()=>{setPendingCustomer(customer);setSubmittedLookup('');}} />)}
+              </DraftSection>}
+              {canReadCustomers && (
                 <Button
                   secondary
                   label="Chọn hồ sơ khách"
@@ -744,8 +802,8 @@ function DraftForm({
               {session?.user.permissions.includes("customers.read") && session.user.permissions.includes("customers.write") && (
                 <Button
                   secondary
-                  label="Thêm khách trong hợp đồng"
-                  disabled={disabled}
+                  label="Thêm mới khách hàng"
+                  disabled={disabled||!d.store_id}
                   onPress={() => {
                     Keyboard.dismiss();
                     setCustomerCreate(true);
@@ -788,7 +846,7 @@ function DraftForm({
                   />
                 </Card>
               )}
-              <DraftParty {...props} />
+              <DraftParty {...props} disabled={disabled||!d.customer_id} />
             </>
           )}
           {step === 2 && (
@@ -990,7 +1048,7 @@ function DraftForm({
                     disabled={
                       !write.checked || !!write.receipt || !!pendingCustomer || customerCreate || photos.picking || photos.reading || localSave.scopeChanged || localSave.waiting
                     }
-                    onPress={save}
+                    onPress={()=>save()}
                   />
                 </View>
                 {step < draftSteps.length - 1 && (
@@ -1004,11 +1062,21 @@ function DraftForm({
                   </View>
                 )}
               </View>
+              <View style={{flexDirection:'row',gap:10}}>
+                <View style={{flex:1}}><Button secondary label="Xem mẫu in" loading={previewBusy}
+                  disabled={disabled||photos.picking||photos.reading} onPress={()=>{void previewPrint();}} /></View>
+                {canIssue&&<View style={{flex:1}}><Button label={needsApproval?'Duyệt hợp đồng':d.reservation?'Ghi nhận cọc giữ xe':'Hoàn tất & thanh toán'}
+                  disabled={disabled||!write.checked||photos.picking||photos.reading||previewBusy}
+                  onPress={()=>save(needsApproval?'approve':'issue')} /></View>}
+              </View>
             </View>
           </View>
         )}
         </KeyboardScrollContext.Provider>
       </KeyboardAvoidingView>
+      {!!printHtml&&<EditorSheet title="Xem mẫu in" onClose={()=>setPrintHtml('')}><View style={{flex:1}}>
+        <PrintPaper html={printHtml} />
+      </View></EditorSheet>}
       {customerCreate && (
         <CustomerCreateSheet
           storeId={Number(d.store_id) || session?.user.storeId || null}

@@ -142,7 +142,7 @@ def run(args):
             else:raise RuntimeError('QA_NETWORK_RECONNECT_FAILED')
             checks.append('Offline process restore retains session; reconnect/retry restores authenticated workspace')
         progress('account-list');tab('Tổng quan');press('Mở Tài khoản và phân quyền');wait('Tạo tài khoản',90);qa.screenshot('03-live-accounts')
-        progress('return-to-catalogue');qa.back();tab('Tổng quan');reveal('Lập hợp đồng',True);tab('Đội xe');reveal('Lịch sử điều chuyển',True)
+        progress('return-to-catalogue');qa.back();tab('Tổng quan');reveal('Lập hợp đồng',True);tab('Đội xe');reveal('Lịch sử luân chuyển',True)
         progress('export-columns');press('Tải Excel theo bộ lọc');wait('Chọn tất cả cột',90);qa.screenshot('04-live-export-columns')
         # Do not download the entire operational fleet. Columns/read only here;
         # actual native XLSX save is checked with a bounded synthetic file.

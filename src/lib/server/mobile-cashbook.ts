@@ -15,7 +15,7 @@ import { withMobileData, withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { MobileError } from "./mobile-session";
 import { mobileBody, mobileRequestKey, idempotentMobileWrite } from "./mobile-writes";
-import { isCashbookAccount, isCashbookPage, type CashbookAccountKind, type MobileCashbookPage, type MobileCashbookAccount, type MobileCashbookAccountResult, type MobileCashbookTransactions } from "../../../shared/mobile-cashbook";
+import { CASHBOOK_ACCOUNT_EXPORT_HEADERS,cashbookAccountExportRow,isCashbookAccount, isCashbookPage, type CashbookAccountKind, type MobileCashbookPage, type MobileCashbookAccount, type MobileCashbookAccountResult, type MobileCashbookTransactions } from "../../../shared/mobile-cashbook";
 
 function allowed(user: SessionUser, write = false) {
   if (!hasPermission(user, write ? "finance.write" : "finance.read")) throw new MobileError("Tài khoản không có quyền thực hiện thao tác sổ quỹ.", 403, "FORBIDDEN");
@@ -155,6 +155,10 @@ export async function readMobileCashbookAccounts(user: SessionUser, params: URLS
     const rows = (await client.query(`${CASHBOOK_ACCOUNTS_SQL} ORDER BY a.kind,a.id`)).rows.map(accountRow);
     return { rows: rows.filter(row => (store === "all" || String(row.storeId) === store || row.ownerType === "company" && !row.storeId) && (status === "all" || status === row.status)) };
   }, true);
+}
+export async function exportMobileCashbookAccounts(user:SessionUser,params:URLSearchParams) {
+  const {rows}=await readMobileCashbookAccounts(user,params);
+  return mobileFilteredWorkbook('himoto-tai-khoan-so-quy',CASHBOOK_ACCOUNT_EXPORT_HEADERS,rows.map(cashbookAccountExportRow));
 }
 export async function readMobileCashbookAccount(user: SessionUser, rawKind: string, rawId: string) {
   allowed(user); const kind = mobileCashbookKind(rawKind), id = accountId(rawId);

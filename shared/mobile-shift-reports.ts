@@ -1,5 +1,6 @@
 import { parseShiftInput,type ShiftReport,type ShiftInput,type ShiftReportType } from "./shift-reports";
 import { parseAuditInput,type ShiftSnapshot,type AuditInput } from "./shift-audits";
+import { isShiftStockCapture } from './shift-stock-check';
 export { SHIFT_PHOTOS,SHIFT_SUMMARY_FIELDS,SHIFT_REPORT_TYPE_LABELS,shiftReportTypeLabel,emptyShiftSummary,parseShiftInput,shiftVehicleTotal } from "./shift-reports";
 export { AUDIT_FIELDS,emptyAuditInput,parseAuditInput,auditComparisons,validateAuditConfirmation } from "./shift-audits";
 export { OWNERSHIP_REPORT_GROUPS,blankOwnershipReport,ownershipKeys,validateOwnershipSubmission,reconciliation } from "./ownership-report";
@@ -16,6 +17,7 @@ const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&
 const integer=(v:unknown)=>Number.isSafeInteger(v)&&Number(v)>0;
 export function isShiftReport(v:unknown):v is ShiftReport {
   if(!object(v)||!integer(v.id)||!integer(v.revision)||!["draft","submitted"].includes(String(v.status))||!["store_name","created_by_name","updated_at"].every(k=>typeof v[k]==="string")||!Array.isArray(v.photos)||!v.photos.every(p=>typeof p==="string"))return false;
+  if(v.stock_captures!==undefined&&(!Array.isArray(v.stock_captures)||!v.stock_captures.every(isShiftStockCapture)))return false;
   if(v.media!==undefined&&(!Array.isArray(v.media)||!v.media.every(m=>
     object(m)&&typeof m.id==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(m.id)&&
     ['pgd','audit'].includes(String(m.stage))&&typeof m.category==='string'&&

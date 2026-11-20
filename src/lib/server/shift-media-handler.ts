@@ -14,6 +14,7 @@ import { reserveShiftMobileReceipt,finishShiftMobileReceipt } from './shift-mobi
 import {streamMobileVideo} from './mobile-video-read';
 import {MobileError} from './mobile-session';
 import {cloudflyPhotosEnabled,storeObjectPhoto,objectMediaUrl,readObjectMedia} from './object-media';
+import {SHIFT_STOCK_CATEGORY} from '../../../shared/shift-stock-check';
 type Context={params:Promise<{id:string;mediaId:string}>};
 export async function handleShiftMedia(request:NextRequest,context:Context,mobile=false){
   const {id,mediaId}=await context.params,actor=dataAccess.getStore()!;let client;
@@ -39,7 +40,7 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
     client=await himotoPool.connect();await client.query('BEGIN');
     if(mobile&&writing)await reserveShiftMobileReceipt(client,actor.id,key!,`shift.media:${id}`,hash);
     const receipt=await readShiftReceipt(client,key,actor.id,hash);if(receipt){await client.query('COMMIT');client.release();client=undefined;if(cloud&&!isBrowserVideoReceipt(cloud))await cleanupConvertedVideo(cloud);return NextResponse.json({data:receipt});}
-    const report=(await client.query('SELECT store_id,status,revision FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE',[id])).rows[0];
+    const report=(await client.query(`SELECT store_id,status,revision FROM himoto.management_shift_reports WHERE id=$1${writing?' FOR UPDATE':''}`,[id])).rows[0];
     if(!report)throw new RecordPhotoError('Không tìm thấy báo cáo.',404);
     const existing=(await client.query('SELECT * FROM himoto.management_shift_media WHERE id=$1 AND report_id=$2',[mediaId,id])).rows[0];
     if(!writing){
@@ -67,11 +68,12 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
     if(report.revision!==revision)throw new RecordPhotoError('Báo cáo đã thay đổi. Tải lại trước khi sửa minh chứng.',409);
     if(request.method==='DELETE'){
       if(!existing||existing.stage!==stage)throw new RecordPhotoError('Không tìm thấy minh chứng cần xóa.',404);
+      if(existing.category===SHIFT_STOCK_CATEGORY)throw new RecordPhotoError('Mở mục Kiểm kê xe bằng ảnh để sửa cặp ảnh.',409);
       await client.query('DELETE FROM himoto.management_shift_media WHERE id=$1 AND report_id=$2',[mediaId,id]);
     }else{
       if(existing)throw new RecordPhotoError('Minh chứng này đã được lưu. Tải lại báo cáo để kiểm tra.',409);
       if(cloud){asset=isBrowserVideoReceipt(cloud)?{cloud_name:'',mime_type:'video/mp4',...await readyBrowserVideo(cloud,actor.id,180)}:await shiftCloudAsset(cloud);mime=asset.mime_type;}
-      const count=(await client.query(`SELECT (count(*) FILTER(WHERE mime_type LIKE 'image/%')+CASE WHEN $2='pgd' THEN (SELECT count(*) FROM himoto.management_shift_photos WHERE report_id=$1) ELSE 0 END)::int AS images,count(*) FILTER(WHERE mime_type LIKE 'video/%')::int AS videos FROM himoto.management_shift_media WHERE report_id=$1 AND stage=$2`,[id,stage])).rows[0];
+      const count=(await client.query(`SELECT (count(*) FILTER(WHERE mime_type LIKE 'image/%')+CASE WHEN $2='pgd' THEN (SELECT count(*) FROM himoto.management_shift_photos WHERE report_id=$1) ELSE 0 END)::int AS images,count(*) FILTER(WHERE mime_type LIKE 'video/%')::int AS videos FROM himoto.management_shift_media WHERE report_id=$1 AND stage=$2 AND category<>'${SHIFT_STOCK_CATEGORY}'`,[id,stage])).rows[0];
       if(mime.startsWith('video/')?count.videos>=3:count.images>=60)throw new RecordPhotoError('Mỗi phần PGD / KTNB tối đa 60 ảnh và 3 video.');
       const object=storedPhoto||(asset&&'object_key' in asset?asset:null);
       await client.query(`INSERT INTO himoto.management_shift_media(id,report_id,store_id,category,stage,filename,mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,created_by,object_bucket,object_key,object_etag,storage_sha256,storage_bytes)

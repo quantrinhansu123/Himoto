@@ -119,9 +119,11 @@ export function DraftPeople<T extends MobileContractFormInput>({
   disabled,
   staff,
   stores,
+  representative = true,
 }: Omit<Props<T>, "errors"> & {
   staff: MobileDraftStaff[];
   stores: MobileDraftOptions["vehicleStores"];
+  representative?: boolean;
 }) {
   const d = input.draft;
   const salesFollowsSource = useRef(!d.sales_staff_id && !d.sales_staff_name?.trim() && !d.tls_staff_id);
@@ -176,12 +178,7 @@ export function DraftPeople<T extends MobileContractFormInput>({
       title="Nhân sự và nguồn khách"
       initial={!!d.sales_staff_id || !!d.sales_staff_name || !!d.tls_staff_id}
     >
-      <FormField
-        label="Người làm hợp đồng"
-        value={d.staff_name}
-        editable={false}
-        hint="Hợp đồng mới lấy tên tài khoản đăng nhập. Hồ sơ đã lưu giữ nguyên người làm hợp đồng."
-      />
+      {representative && <DraftRepresentative input={input} change={change} disabled={disabled} staff={staff} />}
       <ChoiceField
         label="NVKD ghi nhận doanh số"
         value={d.sales_staff_id || (manualSales || d.sales_staff_name ? "manual" : "")}
@@ -272,6 +269,23 @@ export function DraftPeople<T extends MobileContractFormInput>({
       />
     </Disclosure>
   );
+}
+export function DraftRepresentative<T extends MobileContractFormInput>({
+  input,change,disabled,staff,error,
+}: Omit<Props<T>,'errors'> & {staff:MobileDraftStaff[];error?:string}) {
+  const d=input.draft;
+  const set=(id:string,name:string)=>change({...input,draft:{...d,staff_id:id,staff_name:name}});
+  return <>
+    <FormField label="Người làm hợp đồng / đại diện Bên A" value={d.staff_name}
+      editable={!disabled} maxLength={191} error={error}
+      onChangeText={name=>{
+        const matches=staff.filter(person=>person.name.toLocaleLowerCase('vi')===name.trim().toLocaleLowerCase('vi'));
+        set(matches.length===1?String(matches[0].id):'',name);
+      }} />
+    {!!staff.length && <ChoiceField label="Chọn người làm hợp đồng" value={d.staff_id} disabled={disabled} searchable
+      choices={staff.map(person=>({value:String(person.id),label:person.sourceLabel||person.name}))}
+      onChange={id=>{const person=staff.find(row=>String(row.id)===id);if(person)set(id,person.name);}} />}
+  </>;
 }
 export function DraftParty<T extends MobileContractFormInput>({ input, change, disabled, errors }: Props<T>) {
   const d = input.draft,

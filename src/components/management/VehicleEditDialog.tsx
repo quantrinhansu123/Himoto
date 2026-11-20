@@ -11,14 +11,9 @@ import { VehicleDocumentFields } from './VehicleDocumentFields';
 import { type PendingPhotos, type VehicleDocumentSlot } from '@/lib/management/record-photos';
 import { usePhotoOcr } from './usePhotoOcr';
 import { mergeOcrVehicle, OCR_VEHICLE_KEYS, type OcrFields, type VehicleRegistrationValues } from '@/lib/management/photo-ocr';
+import { VEHICLE_PROFILE_FIELDS } from '../../../shared/vehicle-profile-fields';
 
-const FIELDS: { key: keyof VehicleEdits; label: string; required?: boolean; type?: 'number'; max?: number }[] = [
-  { key: 'name', label: 'Tên / dòng xe', required: true, max: 255 }, { key: 'license', label: 'Biển số', required: true, max: 25 },
-  { key: 'brand', label: 'Hãng xe', required: true, max: 255 }, { key: 'color', label: 'Màu sắc', max: 255 },
-  { key: 'year', label: 'Năm sản xuất', required: true, type: 'number' }, { key: 'odometer', label: 'Số km', type: 'number' },
-  { key: 'daily_price', label: 'Giá thuê / ngày (VNĐ)', type: 'number' }, { key: 'cost_price', label: 'Giá mua xe (VNĐ)', type: 'number' },
-  { key: 'chassis', label: 'Số khung', max: 255 }, { key: 'engine', label: 'Số máy', max: 255 },
-];
+const FIELDS = VEHICLE_PROFILE_FIELDS.map(field => ({...field, type: 'numeric' in field ? 'number' : undefined}));
 /** Amount inputs keep digits only in state and show "1.234.567" while typing. */
 const MONEY_FIELDS = new Set<keyof VehicleEdits>(['daily_price', 'cost_price']);
 const groupThousands = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');

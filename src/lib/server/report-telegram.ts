@@ -4,6 +4,7 @@ import { ownerDatabase } from './himoto-database';
 import { openIntegrationSecret } from './integration-secrets';
 import { telegramCall,telegramMediaBatches,canUploadRejectedTelegramMedia,TelegramContinuation,TelegramDeliveryError,type Media } from './telegram-delivery';
 import type {Attachment} from './contract-notification-content';
+import {SHIFT_STOCK_CATEGORY} from '../../../shared/shift-stock-check';
 
 type Database=Pick<PoolClient,'query'>;
 export async function queueReportTelegram(db:Database,key:string,store:number,text:string,route:'store'|'ownership_new',attachments:Attachment[]=[]) {
@@ -14,7 +15,7 @@ export async function queueReportTelegram(db:Database,key:string,store:number,te
 export async function shiftTelegramAttachments(db:Database,id:number,stage:'pgd'|'audit'):Promise<Attachment[]>{
   return(await db.query(`SELECT 'shift-'||stage||'-'||id::text AS slot,mime_type,encode(data,'base64') AS bytes,
     cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag
-    FROM himoto.management_shift_media WHERE report_id=$1 AND stage=$2
+    FROM himoto.management_shift_media WHERE report_id=$1 AND stage=$2 AND category<>'${SHIFT_STOCK_CATEGORY}'
     UNION ALL SELECT 'shift-legacy-'||slot,mime_type,encode(data,'base64'),NULL::text,NULL::text,NULL::integer,object_bucket,object_key,object_etag
     FROM himoto.management_shift_photos WHERE report_id=$1 AND $2='pgd' ORDER BY slot`,[id,stage])).rows;
 }

@@ -8,12 +8,15 @@ import { ShiftTelegramStatus } from "@/components/shift-telegram-status";
 import { ShiftSummary } from "@/components/shift-summary";
 import { ShiftEvidence } from "@/components/shift-evidence";
 import {ShiftAuditExport} from '@/components/shift-audit-export';
+import {ShiftStockPhotos} from '@/components/shift-stock-photos';
 function Report({id}:{id:string}){
   const{api,session}=useSession(),theme=useTheme(),query=useQuery({queryKey:["shift",session!.user.id,id],queryFn:({signal})=>api!.shift(id,signal),enabled:session!.user.permissions.includes("contracts.read"),retry:false});
   if(!session!.user.permissions.includes("contracts.read"))return <StateView title="Không có quyền xem báo cáo ca" />;
   if(query.isPending)return <StateView title="Đang mở báo cáo ca" loading />;if(query.isError)return <StateView title="Chưa mở được báo cáo ca" message={query.error.message} retry={()=>{void query.refetch();}} />;const report=query.data;
+  const writable=(session!.user.allStores||session!.user.storeId===report.payload.store_id)&&session!.user.permissions.some(p=>p==="contracts.draft"||p==="finance.write");
   return <ScrollView contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}} refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={()=>{void query.refetch();}} />}>
-    {report.status==="draft"&&session!.user.permissions.some(p=>p==="contracts.draft"||p==="finance.write")&&<Button label="Tiếp tục kiểm kê và chốt ca" onPress={()=>router.push({pathname:"/shift-editor/[id]",params:{id}})} />}
+    {report.status==="draft"&&writable&&<Button label="Sửa thông tin / Chốt báo cáo" onPress={()=>router.push({pathname:"/shift-editor/[id]",params:{id}})} />}
+    <ShiftStockPhotos report={report} writable={writable} />
     {report.status==="submitted"&&<Button label="Mở đối soát KTNB" onPress={()=>router.push({pathname:"/shift-audit/[id]",params:{id}})} />}
     <ShiftSummary report={report} /><ShiftEvidence key={`${report.id}:${report.revision}:${report.audit?.revision||0}`} report={report} onChanged={()=>{void query.refetch();}} />
     <ShiftAuditExport key={`${report.id}:${report.audit?.revision||0}`} report={report}/>

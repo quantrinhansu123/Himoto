@@ -63,6 +63,8 @@ import type {MobileListExportKind} from '../../../shared/mobile-list-export';
 import { isSalesReportOptions, isMobileSalesReport, type SalesReportOptions, type MobileSalesReport, type SalesReportKind } from "../../../shared/mobile-reports";
 import { isMobileBatteryStaff,type MobileBatteryStaff,isBatteryOptions,isBatteryPage,isBatteryWorkflow,isBatteryResult,isBatteryTelegram,type MobileBatteryOptions,type MobileBatteryPage,type BatteryWorkflowContext,type MobileBatteryResult,type MobileBatteryInput,type MobileBatteryAction,type MobileBatteryPrefill,type MobileBatteryTelegram } from "../../../shared/mobile-battery";
 import { isShiftReport,isShiftOptions,isShiftResult,isShiftSnapshot,type ShiftTelegramState,type ShiftReport,type MobileShiftOptions,type MobileShiftSave,type MobileAuditSave,type MobileShiftVideoReview,type ShiftSnapshot,type MobileShiftResult,type ShiftAutofillResult,type ShiftAutofillSection } from "../../../shared/mobile-shift-reports";
+import {isShiftStockCapture,isShiftStockCheck,type ShiftStockCapture} from '../../../shared/shift-stock-check';
+import type {AttendanceLocation} from '../../../shared/mobile-support';
 import { isRegistrationMonth, isRegistrationRange, isSelfRegistrationWeek, isShiftRegistration, type RegistrationMonth, type RegistrationRange, type SelfRegistrationWeek, type ShiftRegistration, type RegistrationInput, type SelfRegistrationInput } from '../../../shared/mobile-shift-registration';
 import { isMobileStaffAccounts, type MobileStaffAccount } from '../../../shared/mobile-staff-accounts';
 import { isMobileAttendanceLocations, type MobileAttendanceLocation } from '../../../shared/mobile-attendance-locations';
@@ -325,6 +327,16 @@ export function createApi(
     shift:(id:string,signal?:AbortSignal)=>request<ShiftReport>(`/shift-reports/${encodeURIComponent(id)}`,(v):v is ShiftReport=>isShiftReport(v)&&String(v.id)===id,{signal}),
     shiftAutofill:(store:number,date:string,section:ShiftAutofillSection,signal?:AbortSignal)=>request<ShiftAutofillResult>(`/shift-reports/autofill?${new URLSearchParams({store_id:String(store),date,section})}`,(v):v is ShiftAutofillResult=>!!v&&typeof v==="object"&&"store_id" in v&&v.store_id===store&&"date" in v&&v.date===date&&"section" in v&&v.section===section&&"values" in v&&!!v.values&&typeof v.values==="object"&&"notices" in v&&Array.isArray(v.notices)&&v.notices.every(n=>typeof n==="string")&&"sources" in v&&Array.isArray(v.sources)&&v.sources.every(n=>typeof n==="string")&&(!("transfers" in v)||v.transfers===undefined||Array.isArray(v.transfers)),{signal},65000),
     saveShift:(input:MobileShiftSave,key:string)=>request<MobileWriteReceipt>("/shift-reports",isWriteReceipt,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}},90000),
+    shiftStock:(id:number,signal?:AbortSignal)=>request(`/shift-reports/${id}/stock-photos`,isShiftStockCheck,{signal}),
+    saveShiftStock:(id:number,revision:number,key:string,bytes:ArrayBuffer,split:number,vehicleGps:AttendanceLocation,plateGps:AttendanceLocation,signal:AbortSignal)=>
+      request(`/shift-reports/${id}/stock-photos`,(value):value is {revision:number;capture:ShiftStockCapture}=>
+        !!value&&typeof value==='object'&&'revision' in value&&value.revision===revision+1&&'capture' in value&&isShiftStockCapture(value.capture),
+      {method:'PUT',signal,body:bytes,headers:{'Content-Type':'application/octet-stream','x-shift-request-id':key,'x-report-revision':String(revision),
+        'x-vehicle-photo-bytes':String(split),'x-vehicle-gps':JSON.stringify(vehicleGps),'x-plate-gps':JSON.stringify(plateGps)}},90000),
+    deleteShiftStock:(id:number,revision:number,key:string,vehicleId:number)=>
+      request(`/shift-reports/${id}/stock-photos`,(value):value is {revision:number}=>
+        !!value&&typeof value==='object'&&'revision' in value&&value.revision===revision+1,
+      {method:'DELETE',headers:{'x-shift-request-id':key,'x-report-revision':String(revision),'x-vehicle-id':String(vehicleId)}}),
     shiftResult:(key:string,signal?:AbortSignal)=>request<MobileShiftResult>(`/shift-reports/requests/${encodeURIComponent(key)}`,(v):v is MobileShiftResult=>isShiftResult(v)&&v.key===key,{signal}),
     shiftSnapshot:(id:string,signal?:AbortSignal)=>request<ShiftSnapshot>(`/shift-reports/${encodeURIComponent(id)}/audit`,isShiftSnapshot,{signal},65000),
     shiftTelegram:(id:string,signal?:AbortSignal,stage='pgd')=>request<ShiftTelegramState|null>(`/shift-reports/${encodeURIComponent(id)}/telegram${stage==='audit'?'?stage=audit':''}`,(v):v is ShiftTelegramState|null=>v===null||!!v&&typeof v==="object"&&"status" in v&&typeof v.status==="string"&&"message_id" in v&&(v.message_id===null||Number.isSafeInteger(v.message_id))&&"error_code" in v&&(v.error_code===null||typeof v.error_code==="string"),{signal}),
@@ -362,6 +374,8 @@ export function createApi(
     deleteCashbookVouchers: (ids: number[], key: string) => request<VoucherDeletion>("/cashbook/vouchers", (value): value is VoucherDeletion => isVoucherDeletion(value) && value.key === key && value.deletedCount === ids.length, { method: "DELETE", body: JSON.stringify({ ids }), headers: { "Idempotency-Key": key } }),
     cashbookDeletion: (key: string, signal?: AbortSignal) => request<VoucherDeletion>(`/cashbook/deletions/requests/${encodeURIComponent(key)}`, (value): value is VoucherDeletion => isVoucherDeletion(value) && value.key === key, { signal }),
     cashbookAccounts: (params: string, signal?: AbortSignal) => request<MobileCashbookAccounts>(`/cashbook/accounts?${params}`, isCashbookAccounts, { signal }),
+    cashbookAccountsExcel: (params:string,signal?:AbortSignal)=>request(`/cashbook/accounts/export?${params}`,isMobileFileExport,
+      {signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000),
     cashbookAccount: (kind: CashbookAccountKind, id: string, signal?: AbortSignal) => request<MobileCashbookAccount>(`/cashbook/accounts/${kind}/${encodeURIComponent(id)}`, (value): value is MobileCashbookAccount => isCashbookAccount(value) && value.kind === kind && String(value.id) === id, { signal }),
     cashbookAccountTransactions: (kind: CashbookAccountKind, id: string, params: string, signal?: AbortSignal) => request<MobileCashbookTransactions>(`/cashbook/accounts/${kind}/${encodeURIComponent(id)}/transactions?${params}`, (value): value is MobileCashbookTransactions => isCashbookTransactions(value) && value.kind === kind && String(value.id) === id, { signal }),
     cashbookOptions: (signal?: AbortSignal) => request<{ stores: { id: number; name: string }[] }>("/cashbook/accounts/options", (value): value is { stores: { id: number; name: string }[] } => !!value && typeof value === "object" && Array.isArray((value as { stores: unknown }).stores) && (value as { stores: unknown[] }).stores.every(row => !!row && typeof row === "object" && Number.isSafeInteger((row as { id: unknown }).id) && Number((row as { id: unknown }).id) > 0 && typeof (row as { name: unknown }).name === "string"), { signal }),
@@ -553,6 +567,11 @@ export function createApi(
         (value):value is MobileCustomerOcr=>isMobileCustomerOcr(value,requestId,kind,expectedIdentity),
         {method:'POST',body,signal,headers:{'X-Photo-Kind':kind,'X-Ocr-Request':requestId,'X-Expected-Identity':expectedIdentity,
           ...(body instanceof FormData?{}:{'Content-Type':'image/jpeg'})}},45000),
+    draftPrintPreview: (input:MobileDraftInput, signal?:AbortSignal)=>
+      request('/drafts/print-preview',(value):value is {html:string}=>
+        !!value&&typeof value==='object'&&'html' in value&&typeof value.html==='string'&&
+        value.html.length<=2_097_152&&value.html.startsWith('<!doctype html>'),
+      {method:'POST',body:JSON.stringify(input),signal},35000),
     draftOptions: (signal?: AbortSignal) =>
       request<MobileDraftOptions>("/drafts/options", isMobileDraftOptions, {
         signal,

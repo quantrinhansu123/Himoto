@@ -1,5 +1,6 @@
 import { parseExternalVehicles, type ExternalVehicle, type ShiftAudit, type ShiftMedia, type ShiftSnapshot } from './shift-audits';
 import {parseOwnershipReport,type OwnershipReport} from './ownership-report';
+import type { ShiftStockCapture } from './shift-stock-check';
 export const SHIFT_PHOTOS = [
   ['vehicles', 'Ảnh kiểm kê xe'], ['batteries', 'Ảnh kiểm kê pin'],
   ['cash', 'Ảnh tiền mặt thực tế'], ['personal', 'Ảnh tài khoản cá nhân'],
@@ -44,6 +45,7 @@ export interface ShiftReport {
   revision: number; created_by_name: string; updated_at: string; photos: string[];
   media?:ShiftMedia[]; audit?:ShiftAudit|null; app_snapshot?:ShiftSnapshot|null;
   legacy_photos?:string[];
+  stock_captures?: ShiftStockCapture[];
 }
 export function shiftVehicleTotal(input: Pick<ShiftInput, 'vehicles'|'daily_vehicles'|'monthly_vehicles'|'external_vehicles'|'other_vehicles'>): number | null {
   if(input.other_vehicles!==undefined&&(!Number.isSafeInteger(input.other_vehicles)||input.other_vehicles<0))return null;

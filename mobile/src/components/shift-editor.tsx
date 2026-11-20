@@ -15,6 +15,8 @@ import { Button, Card, InlineError } from "./ui";
 import { SHIFT_REPORT_TABS } from "../../../shared/shift-report-workflow";
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import { ConfirmEdit } from "./editor-sheet";
+import {ApiError} from '@/lib/api';
+import {compareShiftStock,isShiftStockDay} from '../../../shared/shift-stock-check';
 
 const tabs = SHIFT_REPORT_TABS.map(([value, label]) => ({ value, label }));
 const transferTime = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
@@ -142,12 +144,15 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
   const transfers = autofilledTransfers ?? (transferPreview.key === transferStamp ? transferPreview.rows : undefined);
   const outgoingTransfers = transfers ? transfers.filter(item => item.direction === "out").length : 0;
   const uniqueTransferVehicles = transfers ? new Set(transfers.map(item => item.vehicle_id)).size : 0;
+  const stockPhotosRequired = (input.report_type ?? 'end_shift') === 'end_shift' &&
+    (isShiftStockDay(input.date) || record?.stock_captures !== undefined);
 
   function review(status: "draft" | "submitted") {
     try {
       parseShiftInput(input);
       if (status === "submitted") {
         if (!input.electricity_off) throw Error("Xác nhận đã tắt thiết bị điện trước khi chốt.");
+        if (stockPhotosRequired && !record) throw Error('Lưu nháp trước để mở Kiểm kê xe bằng ảnh.');
         if (input.ownership_report) validateOwnershipSubmission(input.ownership_report);
       }
       setError(""); setConfirm(status);
@@ -158,17 +163,32 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
     if (!api || !session || running.current || !confirm) return;
     const status = confirm; running.current = true; setBusy(true); setConfirm(null); setError("");
     const scope = { origin: api.origin, userId: session.user.id, storeId: session.user.allStores ? null : session.user.storeId, allStores: session.user.allStores }, operation = record ? `shift.update:${record.id}` : "shift.create";
+    let requestKey: string|undefined;
     try {
       if (record && status === 'submitted') await requireShiftPhotosSaved(scope, record.id, 'pgd');
+      if (record && status === 'submitted' && stockPhotosRequired) {
+        const stock = await api.shiftStock(record.id);
+        const {missing,unexpected} = compareShiftStock(stock.expected, stock.captures);
+        if (missing.length || unexpected.length) {
+          throw Error(`Còn ${missing.length} xe thiếu ảnh và ${unexpected.length} xe lệch kho. Mở hồ sơ báo cáo để hoàn tất kiểm kê.`);
+        }
+      }
       const intent = await pendingWrites.reserveExclusive(scope, operation, record ? [operation, `shift.audit:${record.id}`, `shift.media:${record.id}`] : [operation], () => uuid.v4().toLowerCase());
       if (!alive.current) return;
       setPending(true);
       if (!intent.created) throw Error("Còn thao tác báo cáo ca chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.");
+      requestKey = intent.key;
       await api.saveShift({ payload: parseShiftInput(input), status, ...(record ? { id: record.id, revision: record.revision } : {}) }, intent.key);
       if (!alive.current) return;
       setLeaving(true); disablePrevention();
       router.replace({ pathname: "/shift-result/[key]", params: { key: intent.key } });
-    } catch (cause) { if (alive.current) setError((cause as Error).message); }
+    } catch (cause) {
+      if (requestKey && cause instanceof ApiError && cause.code === 'SHIFT_STOCK_INCOMPLETE') {
+        await pendingWrites.complete(scope, operation, requestKey);
+        if (alive.current) setPending(false);
+      }
+      if (alive.current) setError((cause as Error).message);
+    }
     finally { running.current = false; if (alive.current) setBusy(false); }
   }
 
@@ -203,9 +223,14 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
         </Text>}
         {n("daily_vehicles", "Đang thuê ngày")}
         {n("monthly_vehicles", "Đang thuê tháng")}
-        {n("vehicles", "Lưu kho thực tế")}
+        {stockPhotosRequired ? <View style={{gap:8}}>
+          <Text style={{color:theme.text,fontWeight:'700'}}>Lưu kho đã chụp: {record?.stock_captures?.length ?? 0} xe</Text>
+          <Text style={{color:theme.muted,lineHeight:22}}>Số xe lưu kho được xác nhận theo từng cặp ảnh khớp kho khi chốt.</Text>
+          <Button secondary label={record?'Mở hồ sơ để chụp ảnh':'Lưu nháp để bắt đầu chụp'} disabled={busy||pending}
+            onPress={()=>record?router.push({pathname:'/shift/[id]',params:{id:String(record.id)}}):review('draft')} />
+        </View> : n("vehicles", "Lưu kho thực tế")}
         {n("other_vehicles", "Xe khác / thuê sở hữu")}
-        <Text style={{ color: theme.text, fontWeight: "700", fontSize: 16 }}>Tổng số xe: {shiftVehicleTotal(input) ?? "Chưa đủ số liệu"} (gồm cả xe giữ bên ngoài)</Text>
+        <Text style={{ color: theme.text, fontWeight: "700", fontSize: 16 }}>Tổng số xe: {shiftVehicleTotal(stockPhotosRequired ? {...input,vehicles:record?.stock_captures?.length ?? 0} : input) ?? "Chưa đủ số liệu"} (gồm cả xe giữ bên ngoài)</Text>
         {inventoryFilled?.inventory && <View style={{ gap: 10 }}>
           <Button secondary label={inventoryDetailOpen ? "Ẩn chi tiết đối chiếu xe" : "Chi tiết đối chiếu xe"} onPress={() => setInventoryDetailOpen(open => !open)} />
           {inventoryDetailOpen && <Card style={{ gap: 8 }}>

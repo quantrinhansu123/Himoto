@@ -17,9 +17,9 @@ function Preview({row,store}:{row:BatchPhoto;store:PhotoBatchStore}){
   useEffect(()=>{let alive=true,held:RecordMediaPhoto|undefined;void store.photo(row).then(value=>{held=value;if(alive)setPhoto(value);else value.dispose();}).catch(e=>{if(alive)setError(e.message);});return()=>{alive=false;held?.dispose();};},[store,row]);
   return <>{photo&&<BillPhoto source={{uri:photo.uri}} label={`Ảnh ${row.slot}`} context="bộ ảnh"/>}{!!error&&<InlineError message={error}/>}</>;
 }
-type PhotoBatchProps={adapter:PhotoBatchAdapter;nextSlot:(rows:BatchPhoto[])=>string;onSaved?:()=>void;onTelegram?:()=>void;onPrepared?:(photo:RecordMediaPhoto,index:number)=>Promise<void>;onPendingChange?:(pending:boolean)=>void;onBusyChange?:(busy:boolean)=>void;disabled?:boolean;allowSave?:boolean};
+type PhotoBatchProps={adapter:PhotoBatchAdapter;nextSlot:(rows:BatchPhoto[])=>string;onSaved?:()=>void;onTelegram?:()=>void;onPrepared?:(photo:RecordMediaPhoto,index:number)=>Promise<void>;onPendingChange?:(pending:boolean)=>void;onBusyChange?:(busy:boolean)=>void;disabled?:boolean;allowSave?:boolean;autoSave?:boolean};
 export function PhotoBatch(props:PhotoBatchProps){const{api,session}=useSession();return <PhotoBatchForm key={JSON.stringify([api?.origin,session?.user.id,session?.user.allStores?null:session?.user.storeId,session?.user.allStores,props.adapter.identity])} {...props}/>;}
-function PhotoBatchForm({adapter,nextSlot,onSaved,onTelegram,onPrepared,onPendingChange,onBusyChange,disabled=false,allowSave=true}:PhotoBatchProps){
+function PhotoBatchForm({adapter,nextSlot,onSaved,onTelegram,onPrepared,onPendingChange,onBusyChange,disabled=false,allowSave=true,autoSave=false}:PhotoBatchProps){
   const{api,session}=useSession(),theme=useTheme(),[store,setStore]=useState<PhotoBatchStore|null>(null),[rows,setRows]=useState<BatchPhoto[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [preview,setPreview]=useState<string|null>(null);
   const[exit,setExit]=useState<(()=>void)|null>(null);
@@ -67,6 +67,13 @@ function PhotoBatchForm({adapter,nextSlot,onSaved,onTelegram,onPrepared,onPendin
     }catch(e){if(alive.current&&identityRef.current===identity)setError((e as Error).message);}finally{running.current=false;if(alive.current&&identityRef.current===identity)setBusy(false);}
   }
   const pending=rows.filter(r=>r.state!=='saved'),saved=rows.length-pending.length;
+  const autoStarted=useRef(false),saveLatest=useRef(save);
+  useEffect(()=>{saveLatest.current=save;});
+  useEffect(()=>{
+    if(!autoSave||!allowSave||!store||disabled||busy||!pending.length||autoStarted.current)return;
+    autoStarted.current=true;
+    void saveLatest.current();
+  },[autoSave,allowSave,store,disabled,busy,pending.length]);
   useEffect(()=>{onPendingChange?.(!store||busy||pending.length>0);},[store,busy,pending.length,onPendingChange]);
   useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
   return <Card style={{gap:14}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{adapter.label}</Text>

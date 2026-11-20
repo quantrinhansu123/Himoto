@@ -84,7 +84,7 @@ try:
     qa.wait('Chọn mục ảnh hoặc video'); qa.tap('Chọn mục ảnh hoặc video'); qa.wait('Đăng ký xe mặt trước'); qa.screenshot('04-vehicle-document-slots'); qa.back(); qa.back()
     qa.passed('Native revision update retains the same vehicle/owner/store and shows its timeline; the saved-vehicle registration/purchase gallery opens with typed slots (no camera/provider claims)')
 
-    tabs(); qa.tap('Đội xe', bottom=True); qa.tap('Lịch sử điều chuyển'); qa.wait('Điều chuyển toàn hệ thống'); qa.wait('QA-001 · Nhận xe'); qa.screenshot('05-global-transfer-history')
+    tabs(); qa.tap('Đội xe', bottom=True); qa.tap('Lịch sử luân chuyển'); qa.wait('Điều chuyển toàn hệ thống'); qa.wait('QA-001 · Nhận xe'); qa.screenshot('05-global-transfer-history')
     qa.tap('Bộ lọc điều chuyển'); press('Thao tác điều chuyển'); qa.tap('Chuyển xe'); press('Ẩn bộ lọc điều chuyển',True);qa.wait('Không có điều chuyển phù hợp'); qa.screenshot('06-filtered-transfer-history')
     account_empty(); qa.screenshot('07-final-work-ledger-empty'); tabs(); qa.tap('Tổng quan', bottom=True); reveal('Lập hợp đồng', True); qa.screenshot('08-vehicle-demo-ready')
     assert source_snapshot() == qa.source_files

@@ -1,9 +1,11 @@
 import 'server-only';
+import type { NextRequest } from 'next/server';
 import { mobilePrintHtml } from './mobile-print-html';
 import { ContractPrintBody } from '@/components/contracts/ContractPrintBody';
 import { ContractPaymentQrMarkup } from '@/components/management/ContractPaymentQrMarkup';
 import type { ContractQrData } from '@/lib/management/sepay';
-import { buildContractDocument, contractStaffStoreId, createContractDraft } from '@/lib/management/contract-document';
+import { buildContractDocument, contractStaffStoreId, createContractDraft, validateContractDraft, type ContractDraft } from '@/lib/management/contract-document';
+import type { ManagementRow } from '@/lib/management/types';
 import { mapApiRow } from '@/lib/management/repository';
 import { hasPermission } from '@/lib/management/permissions';
 import type { SessionUser } from './management-session';
@@ -12,11 +14,43 @@ import { himotoPool } from './himoto-database';
 import { mobileContractId } from './mobile-contracts';
 import { MobileError } from './mobile-session';
 import { CONTRACT_LIST_SQL } from './contract-drafts';
-import { contractVehicleDetailsSql } from './contract-vehicle-reads';
+import { contractVehicleDetailsSql, contractVehicleReadSource } from './contract-vehicle-reads';
 import { readContractHistory } from './contract-history';
 import { readContractQr, SePayError } from './sepay';
 import { ContractPaymentError } from './contract-payments';
 import { mobilePrintQrImage } from './mobile-print-qr';
+import { requireMobileDraft, withMobileDraft } from './mobile-drafts';
+import { readMobileDraftStaff } from './mobile-draft-lookups';
+import { parseMobileDraft } from './mobile-draft-shape';
+import { mobileBody } from './mobile-writes';
+
+export async function previewMobileDraftPrint(user: SessionUser, request: NextRequest) {
+  requireMobileDraft(user);
+  const input = parseMobileDraft(await mobileBody(request, 524288));
+  const draft: ContractDraft = input.draft;
+  if (!user.scope_all && Number(draft.store_id) !== user.store_id) {
+    throw new MobileError('Chọn cơ sở ghi nhận hợp đồng được phân công.', 403, 'FORBIDDEN');
+  }
+  const staff = draft.staff_id ? (await readMobileDraftStaff(user)).rows
+    .filter(person=>String(person.id)===draft.staff_id)
+    .map(person=>({id:person.id,code:'',status:'active',name:person.name,position:person.position})) : [];
+  const document = await withMobileDraft(user, '', async client => {
+    const ids = [draft.store_id, contractStaffStoreId(draft)].filter(value=>/^[1-9]\d{0,14}$/.test(value));
+    const vehicleIds = draft.vehicles.map(vehicle=>vehicle.id).filter(value=>/^[1-9]\d{0,14}$/.test(value));
+    const storesResult = await client.query('SELECT id,store_name,store_address,store_phone FROM himoto.store_directory() WHERE id=ANY($1::bigint[])',[ids]);
+    const vehiclesResult = await client.query(`SELECT id FROM ${contractVehicleReadSource()} WHERE id=ANY($1::bigint[])`,[vehicleIds]);
+    const stores: ManagementRow[] = storesResult.rows.map(row=>({id:Number(row.id),code:'',status:'active',name:String(row.store_name),address:String(row.store_address??''),phone:String(row.store_phone??'')}));
+    const vehicles: ManagementRow[] = vehiclesResult.rows.map(row=>({id:Number(row.id),code:'',status:'',name:''}));
+    const branch = stores.find(row=>String(row.id)===contractStaffStoreId(draft));
+    const errors = validateContractDraft(draft,{stores,staff,vehicles,customers:[],contracts:[]},staff,'api');
+    if (!input.revision && !draft.contract_type_id) errors.contract_type_id='Chọn loại hợp đồng đang dùng.';
+    if (!branch || Object.keys(errors).length) {
+      throw new MobileError('Kiểm tra các mục bắt buộc trước khi xem mẫu in.', 422, 'PRINT_FIELDS', errors);
+    }
+    return buildContractDocument(draft,branch,staff[0]??{id:-1,code:'',status:'active',name:draft.staff_name.trim(),position:''});
+  });
+  return {html:await mobilePrintHtml('Himoto · Mẫu in hợp đồng', <ContractPrintBody doc={document} />)};
+}
 
 /** Web's legal template and draft builder, rendered without client effects. */
 export async function readMobileContractPrint(user: SessionUser, value: string, params: URLSearchParams) {

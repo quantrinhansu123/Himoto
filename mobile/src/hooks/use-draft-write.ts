@@ -18,7 +18,7 @@ export function useDraftWrite({
   onReload,
   onReset,
   onError,
-  onCommitted,work=null,beforeLeave,
+  onCommitted,onOpen,work=null,beforeLeave,
 }: {
   id: string | null;work?:DraftWorkController|null;beforeLeave?:()=>Promise<void>;
   input: MobileDraftInput;
@@ -27,6 +27,7 @@ export function useDraftWrite({
   onReset: () => void;
   onError: (fields: Record<string, string>) => void;
   onCommitted?: (receipt:MobileWriteReceipt)=>boolean;
+  onOpen?: (receipt:MobileWriteReceipt)=>boolean;
 }) {
   const { api, session } = useSession(),
     cache = useQueryClient();
@@ -115,6 +116,7 @@ export function useDraftWrite({
     setSaved(true);
     disablePrevention();
     invalidate();
+    if(onOpen?.(result))return;
     router.dismissTo({
       pathname: "/record/[kind]/[id]",
       params: { kind: "contracts", id: String(result.id) },

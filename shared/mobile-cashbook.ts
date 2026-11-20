@@ -18,6 +18,12 @@ export interface MobileCashbookAccount {
   opening: number; income: number; expense: number; balance: number; voucherCount: number;
 }
 export interface MobileCashbookAccounts { rows: MobileCashbookAccount[] }
+export const CASHBOOK_ACCOUNT_EXPORT_HEADERS = ['Loại','Tài khoản','Cơ sở','Số dư đầu kỳ','Tổng thu','Tổng chi','Số dư','Trạng thái'];
+export function cashbookAccountExportRow(account: Pick<MobileCashbookAccount,'kind'|'ownerType'|'label'|'storeName'|'opening'|'income'|'expense'|'balance'|'status'>) {
+  const type = account.kind === 'cash' ? 'Tiền mặt' : account.ownerType === 'company' ? 'TK công ty' : 'Ngân hàng';
+  return [type,account.label,account.storeName || (account.ownerType === 'company' ? 'Toàn công ty' : ''),
+    account.opening,account.income,account.expense,account.balance,account.status];
+}
 export interface MobileCashbookTransactions { kind: "bank" | "cash"; id: number; rows: { id: string; date: string; time: string; type: "income" | "expense"; amount: number; actorName: string; contractCode: string; content: string }[]; sourceLimit: number }
 export interface MobileCashbookAccountResult { key: string; operation: string; kind: "bank" | "cash"; receipt: MobileWriteReceipt; current: MobileCashbookAccount | null; deleted: boolean }
 export const cashbookAccountOperations = (kind: "bank" | "cash", id: string) => [`${kind}.update:${id}`, `${kind}.status:${id}`, `${kind}.delete:${id}`];

@@ -2,16 +2,11 @@ import type { BrowserVideoReceipt, VideoProgressCallback } from './video-media';
 import { abortTimeout } from '@/lib/abort-signal';
 import { withRequestDeadline } from '@/lib/request-deadline';
 import { isSupplementalPhotoSlot,photoBaseSlot } from './photo-slot-groups';
+import { VEHICLE_DOCUMENT_SLOTS } from '../../../shared/vehicle-profile-fields';
+export { VEHICLE_DOCUMENT_SLOTS };
 export { MAX_VIDEO_BYTES } from './video-media';
 export type MediaUploadReceipt = CloudUploadReceipt | BrowserVideoReceipt;
 export type PhotoEntity = 'customers' | 'contracts' | 'vehicles';
-export const VEHICLE_DOCUMENT_SLOTS = [
-  { key: 'vehicle-photo', label: 'Ảnh xe' },
-  { key: 'registration-front', label: 'Đăng ký xe mặt trước' },
-  { key: 'registration-back', label: 'Đăng ký xe mặt sau' },
-  { key: 'purchase-document-1', label: 'Giấy mua bán trang 1' },
-  { key: 'purchase-document-2', label: 'Giấy mua bán trang 2' },
-] as const;
 type VehicleDocumentBaseSlot = typeof VEHICLE_DOCUMENT_SLOTS[number]['key'];
 export type VehicleDocumentSlot = VehicleDocumentBaseSlot | `${VehicleDocumentBaseSlot}-extra-${number}`;
 export const isVehicleDocumentSlot = (slot: string): slot is VehicleDocumentSlot => VEHICLE_DOCUMENT_SLOTS.some(item => item.key === slot || isSupplementalPhotoSlot(slot)&&item.key===photoBaseSlot(slot));

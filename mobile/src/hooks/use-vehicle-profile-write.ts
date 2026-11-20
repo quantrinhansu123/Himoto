@@ -42,7 +42,7 @@ export function useVehicleProfileWrite(id: string | null, dirty: boolean) {
       if(id===null)await bindStagedPhotos(scope,receipt.id,reserved.key);
       if (!alive.current) return;
       for (const queryKey of [["catalogue"], ["overview"], ["record"], ["vehicle-profile"], ["vehicle-history"], ["transfer-history"]]) void cache.invalidateQueries({ queryKey });
-      disable(); router.replace({ pathname: "/vehicle-result/[key]", params: { key: reserved.key } });
+      disable(); router.replace({ pathname: "/vehicle-result/[key]", params: { key: reserved.key, ...(id===null?{savePhotos:'1'}:{}) } });
     } catch (cause) { if (alive.current) setError((cause as Error).message); }
     finally { running.current = false; if (alive.current) setBusy(false); }
   }

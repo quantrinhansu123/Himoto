@@ -19,6 +19,7 @@ import {OwnershipReportFields} from './OwnershipReportFields';
 import {ShiftTelegramStatus} from './ShiftTelegramStatus';
 import {ShiftInventoryCheck} from './ShiftInventoryCheck';
 import { SHIFT_REPORT_TABS, SHIFT_REPORT_PROGRESS, SHIFT_REPORT_DESCRIPTION, matchesShiftReportProgress } from '../../../shared/shift-report-workflow';
+import {compareShiftStock, isShiftStockCheck, isShiftStockDay, type ShiftStockCapture, type ShiftStockCheck} from '../../../shared/shift-stock-check';
 
 const blank = (store = 0): ShiftInput => ({ store_id: store, date: vietnamDate(), staff: '', vehicles: 0, batteries: 0, charged: 0, rented_batteries: 0, transfers: 0, cash: 0, personal: 0, company: 0, electricity_off: false, notes: '', summary: emptyShiftSummary(), daily_vehicles: 0, monthly_vehicles: 0, other_vehicles: 0 });
 
@@ -27,7 +28,7 @@ const REPORT_TABS = SHIFT_REPORT_TABS;
 type ReportTab = typeof REPORT_TABS[number][0];
 const INVENTORY_TABS = [['vehicles','Tổng kết xe'],['batteries','Pin cửa hàng'],['transfers','Xe điều chuyển']] as const;
 type InventoryTab = typeof INVENTORY_TABS[number][0];
-type SavedReport = Pick<ShiftReport,'id'|'revision'|'status'|'photos'|'media'|'legacy_photos'>;
+type SavedReport = Pick<ShiftReport,'id'|'revision'|'status'|'photos'|'media'|'legacy_photos'|'stock_captures'>;
 
 type SavePlan = {
   input: ShiftInput; submit: boolean; current: SavedReport | null; draftSaved: boolean;
@@ -45,6 +46,48 @@ const transferStatuses = {
   rejected: 'Đã từ chối',
   cancelled: 'Đã hủy',
 };
+
+function ShiftStockProofs({reportId,captures}: {reportId:number;captures:ShiftStockCapture[]}) {
+  if (!captures.length) return null;
+  return <ul className="shift-inventory-stock">{captures.map(entry=><li key={entry.vehicle.id}>
+    <strong>{entry.vehicle.license}</strong> · {entry.vehicle.name} · {entry.actor_name} · {new Date(entry.captured_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · Cách cơ sở {entry.distance_m} m
+    {' · '}<a href={`/api/auth/shift-reports/${reportId}/media/${entry.vehicle_photo_id}`} target="_blank" rel="noreferrer">Ảnh toàn xe</a>
+    {' · '}<a href={`/api/auth/shift-reports/${reportId}/media/${entry.plate_photo_id}`} target="_blank" rel="noreferrer">Ảnh biển số</a>
+  </li>)}</ul>;
+}
+
+function ShiftStockProgress({reportId, revision, captures}:{reportId:number;revision:number;captures:ShiftStockCapture[]}) {
+  const [check,setCheck] = useState<ShiftStockCheck|null>(null);
+  const [error,setError] = useState('');
+  const [loading,setLoading] = useState(true);
+  const [reload,setReload] = useState(0);
+  useEffect(()=>{
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    api<ShiftStockCheck>(`/api/auth/shift-reports/${reportId}/stock-photos`,{signal:controller.signal})
+      .then(value=>{
+        if (!isShiftStockCheck(value)) throw Error('Kết quả đối chiếu kho không hợp lệ.');
+        if (!controller.signal.aborted) setCheck(value);
+      })
+      .catch((cause:Error)=>{if(!controller.signal.aborted)setError(cause.message);})
+      .finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    return ()=>controller.abort();
+  },[reportId,revision,reload]);
+  const result = check ? compareShiftStock(check.expected,check.captures) : null;
+  return <section aria-label="Tiến độ kiểm kê xe">
+    <button type="button" className="mg-button" disabled={loading} onClick={()=>setReload(value=>value+1)}>Làm mới đối chiếu kho</button>
+    {loading && <p role="status">Đang đối chiếu danh sách Lưu kho…</p>}
+    {error && <p className="mg-field-error" role="alert">{error}</p>}
+    {check && result && <>
+      <p aria-live="polite">Đã khớp {check.expected.length-result.missing.length}/{check.expected.length} xe Lưu kho.</p>
+      {!check.gps_configured && <p className="mg-field-error">Cơ sở chưa cài tọa độ GPS trong mục Chấm công.</p>}
+      {!!result.missing.length && <p>Còn thiếu: {result.missing.map(vehicle=>vehicle.license || vehicle.name || `#${vehicle.id}`).join(', ')}</p>}
+      {!!result.unexpected.length && <p>Lệch kho: {result.unexpected.map(entry=>entry.vehicle.license).join(', ')}</p>}
+    </>}
+    <ShiftStockProofs reportId={reportId} captures={check?.captures ?? captures}/>
+  </section>;
+}
 
 function ShiftTransferList({store,date,autofilled}: {store:number;date:string;autofilled?:ShiftAutofillResult}) {
   const [loaded,setLoaded] = useState<ShiftAutofillResult>();
@@ -118,6 +161,9 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
   useEffect(() => () => fillController.current?.abort(), []);
   const writable = can('contracts.draft') || can('finance.write');
   const readonly = !writable || record?.status === 'submitted';
+  const stockPhotosRequired = (input.report_type ?? 'end_shift') === 'end_shift' &&
+    (isShiftStockDay(input.date) || record?.stock_captures !== undefined);
+  const inventoryValues = !readonly && stockPhotosRequired ? {...input,vehicles:record?.stock_captures?.length ?? 0} : input;
   const stores = dataset?.stores || [];
   const historyForStore = rows.filter(row => row.payload.store_id === input.store_id);
   const deviceOptions = Array.from(new Set([
@@ -241,7 +287,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
     try {
       if (!plan.draftSaved) {
         const result = await api<{id:number;revision:number}>('/api/auth/shift-reports', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-shift-request-id': plan.draftKey }, body: JSON.stringify({ id: plan.current?.id, revision: plan.current?.revision, payload: plan.input, status: 'draft' }) });
-        plan.current = { ...result, status: 'draft', photos: plan.current?.photos || [],media:plan.current?.media||[],legacy_photos:plan.current?.legacy_photos||[] }; plan.draftSaved = true; setRecord(plan.current);
+        plan.current = { ...result, status: 'draft', photos: plan.current?.photos || [],media:plan.current?.media||[],legacy_photos:plan.current?.legacy_photos||[],stock_captures:plan.current?.stock_captures }; plan.draftSaved = true; setRecord(plan.current);
       }
       for (const item of plan.photos) {
         if (item.saved) continue;
@@ -250,10 +296,10 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
         setFiles(previous => { const next = { ...previous }; delete next[item.key]; return next; });
       }
       if (plan.submit) {
-        const completed = await api<{id:number;revision:number;ownership_report?:ShiftInput['ownership_report']}>('/api/auth/shift-reports', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-shift-request-id': plan.submitKey }, body: JSON.stringify({ id: plan.current!.id, revision: plan.current!.revision, payload: plan.input, status: 'submitted' }) });
+        const completed = await api<{id:number;revision:number;vehicles?:number;ownership_report?:ShiftInput['ownership_report']}>('/api/auth/shift-reports', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-shift-request-id': plan.submitKey }, body: JSON.stringify({ id: plan.current!.id, revision: plan.current!.revision, payload: plan.input, status: 'submitted' }) });
         if(completed.ownership_report)setInput(current=>({...current,ownership_report:completed.ownership_report}));
         plan.current = { ...plan.current!, ...completed, status: 'submitted' }; setRecord(plan.current);
-        setAuditTarget({...plan.current,payload:plan.input,store_name:stores.find(s=>s.id===plan.input.store_id)?.name||'PGD',created_by_name:'PGD',updated_at:new Date().toISOString()});
+        setAuditTarget({...plan.current,payload:{...plan.input,vehicles:completed.vehicles??plan.input.vehicles},store_name:stores.find(s=>s.id===plan.input.store_id)?.name||'PGD',created_by_name:'PGD',updated_at:new Date().toISOString()});
       }
       pendingSave.current = null; setUnconfirmed(false);
       dirty.current = false; notify(plan.submit ? 'Đã chốt báo cáo cuối ca.' : 'Đã lưu nháp báo cáo và ảnh.');
@@ -339,12 +385,23 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
         </div><div id="shift-panel-inventory" role="tabpanel" aria-labelledby="shift-tab-inventory" hidden={tab !== 'inventory'} tabIndex={0}>
         {error && tab === 'inventory' && <p className="mg-field-error" role="alert">{error}</p>}
         <div id="shift-inventory-panel-vehicles" role="tabpanel" aria-labelledby="shift-inventory-tab-vehicles" data-inventory-section="vehicles" hidden={inventoryTab !== 'vehicles'} tabIndex={0}><h3>Kiểm kê xe</h3>{renderAutofill('inventory')}
-        <div className="mg-form-grid shift-vehicle-grid">{numeric('daily_vehicles','Đang thuê ngày')}{numeric('monthly_vehicles','Đang thuê tháng')}{numeric('vehicles','Lưu kho thực tế')}{numeric('other_vehicles','Xe khác / thuê sở hữu')}</div>
-        <p className="shift-vehicle-total"><strong>Tổng số xe</strong> <output id="shift-vehicle-total">{shiftVehicleTotal(input) ?? 'Chưa đủ số liệu'}</output><small>Gồm cả xe giữ bên ngoài.</small></p>
+        {(stockPhotosRequired || record?.stock_captures) && <details>
+          <summary>Kiểm kê xe bằng ảnh{record?.status==='submitted' ? ` · ${record.stock_captures?.length ?? 0} xe đã chụp` : ''}</summary>
+          {!readonly && <p>Lưu nháp, sau đó mở báo cáo trong app Himoto để chụp toàn xe và biển số tại cơ sở.</p>}
+          {record && (stockPhotosRequired && record.status === 'draft' && tab === 'inventory' && inventoryTab === 'vehicles'
+            ? <ShiftStockProgress key={record.id} reportId={record.id} revision={record.revision} captures={record.stock_captures ?? []}/>
+            : <ShiftStockProofs reportId={record.id} captures={record.stock_captures ?? []}/>)}
+        </details>}
+        <div className="mg-form-grid shift-vehicle-grid">{numeric('daily_vehicles','Đang thuê ngày')}{numeric('monthly_vehicles','Đang thuê tháng')}
+          {stockPhotosRequired && !readonly
+            ? <div className="mg-field"><label htmlFor="shift-stock-confirmed">Lưu kho đã chụp</label><input id="shift-stock-confirmed" value={inventoryValues.vehicles} readOnly /></div>
+            : numeric('vehicles','Lưu kho thực tế')}
+          {numeric('other_vehicles','Xe khác / thuê sở hữu')}</div>
+        <p className="shift-vehicle-total"><strong>Tổng số xe</strong> <output id="shift-vehicle-total">{shiftVehicleTotal(inventoryValues) ?? 'Chưa đủ số liệu'}</output><small>Gồm cả xe giữ bên ngoài.</small></p>
         {autofilled.inventory?.store_id===input.store_id&&autofilled.inventory.date===input.date&&<details><summary>Chi tiết đối chiếu xe</summary><ShiftInventoryCheck result={autofilled.inventory}/></details>}
         {readonly && shiftVehicleTotal(input) === null && <p>Báo cáo cũ chưa ghi nhận đủ số xe cho thuê ngày/tháng để tính tổng.</p>}
         <details><summary>Xe giữ bên ngoài (CA giữ, sửa chữa…)</summary><p>Tách khỏi số xe có mặt tại PGD và cộng vào tổng tài sản xe.</p>{(input.external_vehicles||[]).map((item,index)=><div className="shift-edit-row" key={index}><input aria-label={`PGD biển số xe ngoài ${index+1}`} placeholder="Biển số" value={item.plate} onChange={e=>update('external_vehicles',input.external_vehicles!.map((v,i)=>i===index?{...v,plate:e.target.value}:v))}/><input aria-label={`PGD lý do xe ngoài ${index+1}`} placeholder="Lý do / nơi giữ" value={item.reason} onChange={e=>update('external_vehicles',input.external_vehicles!.map((v,i)=>i===index?{...v,reason:e.target.value}:v))}/>{!readonly&&<button type="button" className="mg-button" onClick={()=>update('external_vehicles',input.external_vehicles!.filter((_,i)=>i!==index))}>Bỏ dòng</button>}</div>)}{!readonly&&<button type="button" className="mg-button" onClick={()=>update('external_vehicles',[...(input.external_vehicles||[]),{plate:'',reason:''}])}>Thêm xe giữ bên ngoài</button>}</details>
-        {renderPhotos(['vehicles'])}</div>
+        {(!stockPhotosRequired || readonly || record?.photos.includes('vehicles') || record?.media?.some(item=>item.category==='vehicles')) && renderPhotos(['vehicles'])}</div>
         <div id="shift-inventory-panel-batteries" role="tabpanel" aria-labelledby="shift-inventory-tab-batteries" data-inventory-section="batteries" hidden={inventoryTab !== 'batteries'} tabIndex={0}><h3>Pin cửa hàng</h3>{renderAutofill('batteries')}<div className="mg-form-grid shift-battery-grid">{numeric('batteries','Tổng số pin (pin)')}{numeric('charged','Trong đó pin đầy (pin)')}{numeric('rented_batteries','Pin đã cho thuê (pin)')}</div>
         {renderPhotos(['batteries'])}</div>
         <div id="shift-inventory-panel-transfers" role="tabpanel" aria-labelledby="shift-inventory-tab-transfers" data-inventory-section="transfers" hidden={inventoryTab !== 'transfers'} tabIndex={0}>

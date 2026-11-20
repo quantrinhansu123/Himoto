@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 
 export class ShiftRequestError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  constructor(message: string, public status = 400, public code?: string) { super(message); }
 }
 export function shiftRequestId(headers: Headers): string | null {
   const key = headers.get('x-shift-request-id');

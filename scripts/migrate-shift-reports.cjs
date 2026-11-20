@@ -5,6 +5,11 @@ const { load, root } = require('./lib/load-typescript.cjs');
 const { ownerDatabase } = load(path.join(root, 'lib/server/himoto-database'));
 async function main() {
   if (!process.argv.includes('--apply')) throw new Error('Dùng --apply để tạo bảng báo cáo cuối ca và phân quyền PGD.');
+  if (process.argv.includes('--stock-photos-only')) {
+    await ownerDatabase.query(fs.readFileSync(path.join(process.cwd(), 'docs/sql/2026-11-20-shift-vehicle-stock-photos.sql'), 'utf8'));
+    console.log('Đã thêm ảnh kiểm kê xe và quyền đọc tọa độ GPS theo PGD.');
+    return;
+  }
   if (process.argv.includes('--types-only')) {
     await ownerDatabase.query(fs.readFileSync(path.join(process.cwd(), 'docs/sql/2026-11-19-shift-report-types.sql'), 'utf8'));
     console.log('Đã tách báo cáo giữa ca và hết ca theo PGD và ngày.');

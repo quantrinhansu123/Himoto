@@ -13,6 +13,8 @@ import { ChoiceField, FormField } from "./form-fields";
 import { DateField } from "./date-field";
 import { FileExportButton } from "./file-export-button";
 import { CashbookDeleteActions } from "./cashbook-delete-actions";
+import { CashbookAccountCard } from "./cashbook-account-card";
+import { dutyToday } from "../../../shared/mobile-duty-roster";
 const details: [keyof CashbookBreakdown, string][] = [["rental_income", "Phí thuê"], ["renewal_income", "Tiền gia hạn"], ["late_fee_income", "Tiền trả muộn"], ["deposit_income", "Tổng thu cọc"], ["deposit_refund_expense", "Tiền cọc trả khách"], ["rental_refund_expense", "Tiền hoàn do trả sớm"], ["repair_income", "Phí sửa chữa"], ["extra_income", "Thu thêm hợp đồng"], ["other_income", "Thu khác / chưa phân loại"], ["other_expense", "Chi khác"]];
 export function CashbookVoucherCard({ row }: { row: MobileCashbookVoucher }) {
   const { session } = useSession(), theme = useTheme();
@@ -33,6 +35,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
   const [store, setStore] = useState(initialStore || (session!.user.allStores ? "all" : String(session!.user.storeId || "all")));
   const [input, setInput] = useState(""), search = useDebouncedValue(input), [actor, setActor] = useState(""), [from, setFrom] = useState(""), [to, setTo] = useState("");
   const [open, setOpen] = useState(false), [expanded, setExpanded] = useState(false), [kind, setKind] = useState<"income" | "expense">("income");
+  const [allAccounts, setAllAccounts] = useState(false);
   const [incomeState, setIncome] = useState({ page: 1, limit: "5", sort: "date", direction: "desc", filter: "" }), [expenseState, setExpense] = useState(incomeState);
   const filter = JSON.stringify([store, search, actor, from, to]);
   const income = incomeState.filter === filter ? incomeState : { ...incomeState, page: 1 }, expense = expenseState.filter === filter ? expenseState : { ...expenseState, page: 1 };
@@ -42,16 +45,20 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
     income_page: String(income.page), income_limit: income.limit, income_sort: income.sort, income_direction: income.direction,
     expense_page: String(expense.page), expense_limit: expense.limit, expense_sort: expense.sort, expense_direction: expense.direction });
   const query = useQuery({ queryKey: ["cashbook", session!.user.id, params.toString()], queryFn: ({ signal }) => api!.cashbook(params.toString(), signal), enabled: allowed && valid });
+  const [accountStatus,setAccountStatus] = useState('active');
+  const accountParams = new URLSearchParams({store_id:store,status:accountStatus}).toString();
+  const accounts = useQuery({queryKey:['cashbook-accounts',session!.user.id,store,accountStatus],
+    queryFn:({signal})=>api!.cashbookAccounts(accountParams,signal),enabled:allowed});
   if (!allowed) return <StateView title="Không có quyền xem sổ quỹ" />;
   const data = valid ? query.data : undefined, current = data?.[kind], totals = data ? cashbookRentalTotals(data.breakdown) : null;
   const stores = (workspace.data?.stores || []).filter(row => canReadAll || row.id === session!.user.storeId), paging = kind === "income" ? income : expense;
   const updatePaging = (values: Partial<typeof income>) => (kind === "income" ? setIncome : setExpense)(current => ({ ...current, page: 1, ...values, filter }));
   const pages = current ? Math.max(1, Math.ceil(current.total / current.pageSize)) : 1;
+  const balances = accounts.data?.rows ?? [];
   return <FlatList ref={list} data={current?.rows || []} keyExtractor={row => row.id} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 14, width: "100%", maxWidth: 760, alignSelf: "center" }}
-    refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => { void query.refetch(); }} tintColor={theme.primary} />}
+    refreshControl={<RefreshControl refreshing={query.isRefetching||accounts.isRefetching} onRefresh={() => { if(valid) void query.refetch(); void accounts.refetch(); }} tintColor={theme.primary} />}
     ListHeaderComponent={<View style={{ gap: 16 }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 27, fontWeight: "800" }}>Sổ quỹ / Sổ két</Text>
-      <Button secondary label="Tài khoản ngân hàng và két" onPress={() => router.push({ pathname: "/cashbook-accounts", params: { store } })} />
       <FileExportButton key={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} disabled={!valid || query.isFetching || query.isError || !data || input.trim() !== search} load={signal => api!.cashbookExcel(new URLSearchParams({ store_id: store, search, actor, from, to }).toString(), signal)} />
       <Button secondary label={open ? "Ẩn bộ lọc sổ quỹ" : "Bộ lọc sổ quỹ"} onPress={() => setOpen(value => !value)} />
       {open && <Card style={{ gap: 16 }}>
@@ -59,6 +66,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
         <ChoiceField label="Cơ sở sổ quỹ" value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(row => ({ value: String(row.id), label: row.name }))]} searchable onChange={value => { setStore(value); setActor(""); }} />
         <ChoiceField label="Người thực hiện phiếu" value={actor} choices={[{ value: "", label: "Tất cả người thực hiện" }, ...(data?.actors || []).map(([value, label]) => ({ value, label }))]} searchable onChange={setActor} />
         <DateField label="Thu chi từ ngày" value={from} onChange={setFrom} /><DateField label="Thu chi đến ngày" value={to} onChange={setTo} />
+        <Button secondary label="Hôm nay" onPress={()=>{const today=dutyToday();setFrom(today);setTo(today);}} />
         <ChoiceField label="Sắp xếp phiếu" value={paging.sort} choices={CASHBOOK_SORTS} onChange={sort => updatePaging({ sort })} />
         <ChoiceField label="Chiều sắp xếp phiếu" value={paging.direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={direction => updatePaging({ direction })} />
         <ChoiceField label="Số phiếu mỗi trang" value={paging.limit} choices={[5, 10, 25, 50].map(value => ({ value: String(value), label: String(value) }))} onChange={limit => updatePaging({ limit })} />
@@ -67,12 +75,32 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
       </Card>}
       <Text style={{ color: theme.muted, lineHeight: 22 }}>{stores.find(row => String(row.id) === store)?.name || "Tất cả cơ sở"} · Theo ngày thực thu / thực chi</Text>
       <Card style={{ gap: 14 }}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Tổng hợp thu chi</Text>
         {[["Doanh thu thuê xe", totals?.revenue], ["Tổng thu thực tế", totals?.income], ["Tổng chi thực tế", totals?.expense]].map(([label, amount]) => <View key={String(label)} style={{ gap: 4 }}><Text style={{ color: theme.muted }}>{label}</Text><Text style={{ color: theme.text, fontWeight: "800", fontSize: 23 }}>{typeof amount === "number" ? money(amount) : "—"}</Text></View>)}
         <Button secondary label={expanded ? "Thu gọn đối chiếu thu chi" : "Chi tiết và đối chiếu thu chi"} onPress={() => setExpanded(value => !value)} />
         {expanded && <View style={{ gap: 10 }}><Text style={{ color: theme.muted, lineHeight: 22 }}>Ba số tổng tính theo khoản thuê xe đã thu / hoàn thực tế. Tiền cọc chưa trả và khoản chưa thu chưa tính vào chi. Các khoản khác đối chiếu riêng bên dưới.</Text>
           {details.map(([key, label]) => <Text key={key} style={{ color: theme.text }}>{label}: {data ? money(data.breakdown[key]) : "—"}</Text>)}
           <Text style={{ color: theme.text }}>Tổng tất cả phiếu thu: {data ? money(data.income.amount) : "—"}</Text><Text style={{ color: theme.text }}>Tổng tất cả phiếu chi: {data ? money(data.expense.amount) : "—"}</Text>
         </View>}
+      </Card>
+      <Card style={{gap:14}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Danh sách tài khoản{accounts.data ? ` (${balances.length})` : ''}</Text>
+        <Text style={{color:theme.muted,lineHeight:22}}>Số dư tài khoản tính trên toàn bộ phiếu, không theo bộ lọc ngày.</Text>
+        <ChoiceField label="Trạng thái tài khoản sổ quỹ" value={accountStatus} choices={[{value:'active',label:'Đang sử dụng'},{value:'inactive',label:'Ngừng sử dụng'},{value:'all',label:'Tất cả tài khoản'}]} onChange={setAccountStatus} />
+        {accounts.isPending && <Text style={{color:theme.muted}}>Đang tính số dư tài khoản…</Text>}
+        {accounts.isError && <InlineError message={accounts.error.message} />}
+        {accounts.data && <Text style={{color:theme.text,fontWeight:'800'}}>Tổng số dư {money(balances.reduce((sum,row)=>sum+row.balance,0))}</Text>}
+        <FileExportButton key={accountParams} label="Tải Excel tài khoản theo bộ lọc" disabled={accounts.isFetching||accounts.isError||!balances.length}
+          load={signal=>api!.cashbookAccountsExcel(accountParams,signal)} />
+        {(allAccounts ? balances : balances.slice(0,3)).map(row=><Pressable key={`${row.kind}:${row.id}`} accessibilityRole="button"
+          accessibilityLabel={`Mở tài khoản ${row.label}`} onPress={()=>router.push({pathname:'/cashbook-account/[kind]/[id]',params:{kind:row.kind,id:String(row.id)}})}>
+          <CashbookAccountCard row={row} />
+        </Pressable>)}
+        {balances.length > 3 && <Button secondary label={allAccounts ? "Thu gọn danh sách tài khoản" : `Xem đủ ${balances.length} tài khoản`}
+          onPress={()=>setAllAccounts(value=>!value)} />}
+        <Button secondary label="Tài khoản ngân hàng và két" onPress={()=>router.push({pathname:'/cashbook-accounts',params:{store,status:accountStatus}})} />
+        {session!.user.permissions.includes('finance.write') && <Button label="Thêm tài khoản"
+          onPress={()=>router.push({pathname:'/cashbook-account-editor/[kind]/[id]',params:{kind:'cash',id:'new',store}})} />}
       </Card>
       <View style={{ flexDirection: "row", gap: 10 }}><View style={{ flex: 1 }}><Button secondary={kind !== "income"} label={`Phiếu thu${data ? ` (${data.income.total})` : ""}`} onPress={() => setKind("income")} /></View><View style={{ flex: 1 }}><Button secondary={kind !== "expense"} label={`Phiếu chi${data ? ` (${data.expense.total})` : ""}`} onPress={() => setKind("expense")} /></View></View>
       {session!.user.permissions.includes("settings.write") && <View style={{ gap: 12 }}>

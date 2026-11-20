@@ -9,8 +9,8 @@ export async function captureAttendancePhoto(signal:AbortSignal) {
   if(result.canceled||signal.aborted)return null;
   return prepareRecordMediaAsset(result.assets[0],signal);
 }
-export async function locateAttendance():Promise<AttendanceLocation> {
-  if(!(await Location.requestForegroundPermissionsAsync()).granted)throw Error('Cần cấp quyền vị trí khi dùng app để chấm công.');
+export async function locateAttendance(purpose = 'chấm công'):Promise<AttendanceLocation> {
+  if(!(await Location.requestForegroundPermissionsAsync()).granted)throw Error(`Cần cấp quyền vị trí khi dùng app để ${purpose}.`);
   if(!await Location.hasServicesEnabledAsync())throw Error('GPS đang tắt. Bật vị trí trên thiết bị rồi thử lại.');
   let timer:ReturnType<typeof setTimeout>|undefined;
   try {

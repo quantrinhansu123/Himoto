@@ -3,6 +3,22 @@ import type {PoolClient} from 'pg';
 import type {ShiftInventoryCheck} from '@/lib/management/shift-autofill';
 import {VEHICLE_ORDER_SQL} from './contract-classification';
 import {contractVehicleReadSource} from './contract-vehicle-reads';
+import type {ShiftStockVehicle} from '../../../shared/shift-stock-check';
+
+const stockSource = `ready AS MATERIALIZED (
+   SELECT id,name,license FROM himoto.vehicles
+   WHERE COALESCE(current_store_id,store_id)=$1::bigint AND status='ready' AND deleted_at IS NULL
+ ), conflicts AS MATERIALIZED (
+   SELECT DISTINCT vehicle_id FROM himoto.vehicle_rental_blockers(ARRAY(SELECT id::bigint FROM ready))
+   WHERE status IN('renting','overdue','wait_payment','bad_debt') AND COALESCE(rent_at,'-infinity'::timestamptz)<=now()
+ ), stock AS (
+   SELECT * FROM ready WHERE id NOT IN(SELECT vehicle_id FROM conflicts)
+ )`;
+
+export async function readShiftStock(db:Pick<PoolClient,'query'>,store:number):Promise<ShiftStockVehicle[]> {
+ const {rows} = await db.query(`WITH ${stockSource} SELECT id,name,license FROM stock ORDER BY license,id`,[store]);
+ return rows.map(row=>({id:Number(row.id),name:String(row.name??''),license:String(row.license??'')}));
+}
 
 /** Current inventory and selected-day activity are different measures. Never
  * reconstruct historical stock from today's vehicle status. No data is changed. */
@@ -23,14 +39,7 @@ export async function readShiftInventory(db:Pick<PoolClient,'query'>,store:numbe
      WHEN rental_type IN('ownership','ownership_cd') THEN 'other'
      WHEN type='day' THEN 'daily' WHEN type='month' THEN 'monthly' ELSE 'other' END AS category
    FROM local_lines WHERE vehicle_id IS NOT NULL ORDER BY vehicle_id,rent_at DESC NULLS LAST,line_id DESC
- ), ready AS MATERIALIZED (
-   SELECT id FROM himoto.vehicles WHERE COALESCE(current_store_id,store_id)=$1::bigint AND status='ready'
- ), conflicts AS MATERIALIZED (
-   -- The existing helper checks stock attached to another branch's contract
-   -- without exposing that branch's customer or financial records.
-   SELECT DISTINCT vehicle_id FROM himoto.vehicle_rental_blockers(ARRAY(SELECT id::bigint FROM ready))
-   WHERE status IN('renting','overdue','wait_payment','bad_debt') AND COALESCE(rent_at,'-infinity'::timestamptz)<=now()
- ), started AS MATERIALIZED (
+ ), ${stockSource}, started AS MATERIALIZED (
    SELECT o.id FROM himoto.orders o LEFT JOIN LATERAL (
      SELECT min(d.rent_at) AS starts_at FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL
    ) ov ON true
@@ -53,7 +62,7 @@ export async function readShiftInventory(db:Pick<PoolClient,'query'>,store:numbe
    (SELECT count(*)::int FROM rented WHERE category='daily') AS daily_vehicles,
    (SELECT count(*)::int FROM rented WHERE category='monthly') AS monthly_vehicles,
    (SELECT count(*)::int FROM rented WHERE category='other') AS other_vehicles,
-   (SELECT count(*)::int FROM ready WHERE id NOT IN(SELECT vehicle_id FROM conflicts)) AS stock_vehicles,
+   (SELECT count(*)::int FROM stock) AS stock_vehicles,
    (SELECT count(*)::int FROM ready) AS ready_vehicles_raw,
    (SELECT count(*)::int FROM conflicts) AS ready_conflicts,
    (SELECT count(*)::int FROM issues WHERE kind='ready_rental') AS ready_rentals,

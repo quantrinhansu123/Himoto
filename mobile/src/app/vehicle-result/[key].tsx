@@ -9,7 +9,7 @@ import { Button, Card, InlineError, StateView } from "@/components/ui";
 import { VehicleProfileCard } from "@/components/vehicle-profile-card";
 import {RecordPhotoBatch} from '@/components/record-photo-batch';
 import {bindStagedPhotos,completeStagedPhotos} from '@/lib/staged-photo-work';
-function VehicleResult({ requestKey }: { requestKey: string }) {
+function VehicleResult({ requestKey,savePhotos }: { requestKey: string;savePhotos:boolean }) {
   const { api, session } = useSession(), theme = useTheme(), alive = useRef(true);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const[photosPending,setPhotosPending]=useState(true);
@@ -43,13 +43,13 @@ function VehicleResult({ requestKey }: { requestKey: string }) {
       <Text style={{ color: theme.muted, lineHeight: 22 }}>Thông tin xe hiện tại{result.current.revision !== result.receipt.revision ? " đã thay đổi sau lần lưu này" : ""}.</Text>
     </Card>
     <VehicleProfileCard profile={result.current} />
-    {result.photoBatchId&&<RecordPhotoBatch target={{entity:'vehicles',id:result.receipt.id,kind:'vehicle',referenceId:result.receipt.id}} slot="registration-front" queueId={result.photoBatchId} showTelegram={false} onPendingChange={setPhotosPending}/>}
+    {result.photoBatchId&&<RecordPhotoBatch target={{entity:'vehicles',id:result.receipt.id,kind:'vehicle',referenceId:result.receipt.id}} slot="registration-front" queueId={result.photoBatchId} autoSave={savePhotos} showTelegram={false} onPendingChange={setPhotosPending}/>}
     {!!error && <InlineError message={error} />}
     <Button label="Đã kiểm tra xác nhận lưu xe" disabled={!!result.photoBatchId&&photosPending} loading={busy} onPress={() => { void acknowledge(); }} />
   </ScrollView>;
 }
 export default function VehicleResultRoute() {
-  const { key } = useLocalSearchParams<{ key: string }>(), { api, session } = useSession();
+  const { key,savePhotos } = useLocalSearchParams<{ key: string;savePhotos?:string }>(), { api, session } = useSession();
   if (!api || !session) return <StateView title="Đăng nhập để đối chiếu" />;
-  return <VehicleResult key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} requestKey={key} />;
+  return <VehicleResult key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} requestKey={key} savePhotos={savePhotos==='1'} />;
 }
